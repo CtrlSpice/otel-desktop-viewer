@@ -68,7 +68,6 @@ func aggregateScopeData(scope pcommon.InstrumentationScope) *ScopeData {
 	}
 }
 
-// TODO: Complete Span Data with all relevant fields
 func aggregateSpanData(span ptrace.Span, scopeData *ScopeData, resourceData *ResourceData) SpanData {
 	return SpanData{
 		TraceID:      span.TraceID().HexString(),
