@@ -21,7 +21,7 @@ func NewTraceStore() *TraceStore {
 	return &TraceStore{
 		mut:        sync.Mutex{},
 		traceQueue: list.New(),
-		traceMap:   make(map[string][]SpanData),
+		traceMap:   map[string][]SpanData{},
 	}
 }
 
@@ -35,14 +35,14 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 }
 
 func (store *TraceStore) enqueueTrace(traceID string) {
-	// Make room for the trace in the queue if need be
+	// If we have exceeded the maximum number of traces we plan to store
+	// make room for the trace in the queue by deleting the oldest trace
 	for store.traceQueue.Len() >= MAX_QUEUE_SIZE {
 		store.dequeueTrace()
 	}
 
 	// If the traceID is already in the queue, move it to the back of the line
-	// Note to future self, who will absolutely forget this:
-	// Fifo implementation here means the FRONT element is set to expire first
+	// TODO: change the direction of the queue to this section of code more readable
 	_, traceIDExists := store.traceMap[traceID]
 	if traceIDExists {
 		e := store.findQueueElement(traceID)
@@ -52,7 +52,7 @@ func (store *TraceStore) enqueueTrace(traceID string) {
 
 		store.traceQueue.MoveToBack(e)
 	} else {
-		//Enqueue traceID
+		// Add traceID to the back of the queue with the most recent traceIDs
 		store.traceQueue.PushBack(traceID)
 	}
 }

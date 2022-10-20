@@ -31,7 +31,9 @@ type ScopeData struct {
 	DroppedAttributesCount uint32
 }
 
-func extractSpans(context context.Context, traces ptrace.Traces, store *TraceStore) {
+func extractSpans(_ context.Context, traces ptrace.Traces) []SpanData {
+	extractedSpans := make([]SpanData, 0, traces.SpanCount())
+
 	for rsi := 0; rsi < traces.ResourceSpans().Len(); rsi++ {
 		resourceSpan := traces.ResourceSpans().At(rsi)
 		resourceData := aggregateResourceData(resourceSpan.Resource())
@@ -43,11 +45,11 @@ func extractSpans(context context.Context, traces ptrace.Traces, store *TraceSto
 			for si := 0; si < scopeSpan.Spans().Len(); si++ {
 				span := scopeSpan.Spans().At(si)
 				spanData := aggregateSpanData(span, scopeData, resourceData)
-				store.Add(context, spanData)
+				extractedSpans = append(extractedSpans, spanData)
 			}
 		}
 	}
-
+	return extractedSpans
 }
 
 func aggregateResourceData(resource pcommon.Resource) *ResourceData {
