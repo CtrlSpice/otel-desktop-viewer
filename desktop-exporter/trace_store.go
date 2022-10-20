@@ -41,7 +41,7 @@ func (store *TraceStore) enqueueTrace(traceID string) {
 		store.dequeueTrace()
 	}
 
-	// If the traceID is already in the queue, move it to the back of the line
+	// If the traceID is already in the queue, move it to the front of the line
 	_, traceIDExists := store.traceMap[traceID]
 	if traceIDExists {
 		element := store.findQueueElement(traceID)
@@ -49,17 +49,17 @@ func (store *TraceStore) enqueueTrace(traceID string) {
 			panic(errors.New("traceID mismatch between TraceStore.traceMap and TraceStore.traceQueue"))
 		}
 
-		store.traceQueue.MoveToBack(element)
+		store.traceQueue.MoveToFront(element)
 	} else {
-		// Add traceID to the back of the queue with the most recent traceIDs
-		store.traceQueue.PushBack(traceID)
+		// Add traceID to the front of the queue with the most recent traceIDs
+		store.traceQueue.PushFront(traceID)
 	}
 }
 
 func (store *TraceStore) dequeueTrace() {
-	expiringTraceID := store.traceQueue.Front().Value.(string)
+	expiringTraceID := store.traceQueue.Back().Value.(string)
 	delete(store.traceMap, expiringTraceID)
-	store.traceQueue.Remove(store.traceQueue.Front())
+	store.traceQueue.Remove(store.traceQueue.Back())
 }
 
 func (store *TraceStore) findQueueElement(traceID string) *list.Element {
