@@ -1,9 +1,8 @@
 package main
 
 import (
-	"go.opentelemetry.io/collector/component"
-	//loggingexporter "go.opentelemetry.io/collector/exporter/loggingexporter"
 	desktopexporter "github.com/CtrlSpice/desktop-collector/desktop-exporter"
+	"go.opentelemetry.io/collector/component"
 	batchprocessor "go.opentelemetry.io/collector/processor/batchprocessor"
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"
 )
