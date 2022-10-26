@@ -21,15 +21,15 @@ type ScopeData struct {
 }
 
 type SpanData struct {
-	TraceID    string
-	TraceState string
-
-	SpanId       string
+	TraceID      string
+	TraceState   string
+	SpanID       string
 	ParentSpanID string
-	Name         string
-	Kind         string
-	StartTime    time.Time
-	EndTime      time.Time
+
+	Name      string
+	Kind      string
+	StartTime time.Time
+	EndTime   time.Time
 
 	Attributes map[string]interface{}
 	Events     []EventData
@@ -141,7 +141,7 @@ func aggregateSpanData(span ptrace.Span, eventData []EventData, LinkData []LinkD
 		TraceID:    span.TraceID().HexString(),
 		TraceState: span.TraceState().AsRaw(),
 
-		SpanId:       span.SpanID().HexString(),
+		SpanID:       span.SpanID().HexString(),
 		ParentSpanID: span.ParentSpanID().HexString(),
 		Name:         span.Name(),
 		Kind:         span.Kind().String(),

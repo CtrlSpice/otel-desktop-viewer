@@ -42,7 +42,7 @@ func TestExtractSpans(t *testing.T) {
 	expectedEventTime := time.Date(2020, 10, 21, 7, 10, 2, 150, time.UTC)
 
 	assert.Equal(t, expectedTraceID, spans[0].TraceID)
-	assert.Equal(t, expectedSpanID, spans[0].SpanId)
+	assert.Equal(t, expectedSpanID, spans[0].SpanID)
 	assert.Equal(t, expectedParentSpanID, spans[0].ParentSpanID)
 	assert.Equal(t, "span", spans[0].Name)
 	assert.Equal(t, "SPAN_KIND_INTERNAL", spans[0].Kind)
