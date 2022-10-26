@@ -15,6 +15,7 @@ type SpanData struct {
 	Name         string
 	StartTime    time.Time
 	EndTime      time.Time
+	Attributes   map[string]interface{}
 	Resource     *ResourceData
 	Scope        *ScopeData
 }
@@ -76,6 +77,7 @@ func aggregateSpanData(span ptrace.Span, scopeData *ScopeData, resourceData *Res
 		Name:         span.Name(),
 		StartTime:    span.StartTimestamp().AsTime(),
 		EndTime:      span.EndTimestamp().AsTime(),
+		Attributes:   span.Attributes().AsRaw(),
 		Scope:        scopeData,
 		Resource:     resourceData,
 	}

@@ -13,7 +13,7 @@ var (
 	spanEndTimestamp   = pcommon.NewTimestampFromTime(time.Date(2020, 10, 21, 7, 10, 2, 300, time.UTC))
 )
 
-func GenerateTraces(resourceCount, scopeCount, spanCount int) ptrace.Traces {
+func GenerateOTLPPayload(resourceCount, scopeCount, spanCount int) ptrace.Traces {
 	traceData := ptrace.NewTraces()
 
 	// Create and populate resource data
@@ -60,6 +60,7 @@ func fillSpan(span ptrace.Span, spanIndex int) {
 	span.SetDroppedAttributesCount(3)
 	span.SetTraceID([16]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10})
 	span.SetSpanID([8]byte{0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18})
+	span.SetParentSpanID([8]byte{0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28})
 	span.Attributes().PutInt("span index", int64(spanIndex))
 	span.SetDroppedAttributesCount(3)
 	span.SetDroppedEventsCount(4)
