@@ -39,13 +39,31 @@ func TestExtractSpans(t *testing.T) {
 	expectedParentSpanID := hex.EncodeToString([]byte{0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28})
 	expectedStartTime := time.Date(2022, 10, 21, 7, 10, 2, 100, time.UTC)
 	expectedEndTime := time.Date(2020, 10, 21, 7, 10, 2, 300, time.UTC)
+	expectedEventTime := time.Date(2020, 10, 21, 7, 10, 2, 150, time.UTC)
 
 	assert.Equal(t, expectedTraceID, spans[0].TraceID)
-	assert.Equal(t, expectedSpanID, spans[0].SpanId)
+	assert.Equal(t, expectedSpanID, spans[0].SpanID)
 	assert.Equal(t, expectedParentSpanID, spans[0].ParentSpanID)
 	assert.Equal(t, "span", spans[0].Name)
+	assert.Equal(t, "SPAN_KIND_INTERNAL", spans[0].Kind)
 	assert.Equal(t, expectedStartTime, spans[0].StartTime)
 	assert.Equal(t, expectedEndTime, spans[0].EndTime)
+	assert.Equal(t, uint32(3), spans[0].DroppedAttributesCount)
+	assert.Equal(t, uint32(4), spans[0].DroppedEventsCount)
+	assert.Equal(t, uint32(5), spans[0].DroppedLinksCount)
+	assert.Equal(t, "STATUS_CODE_OK", spans[0].StatusCode)
+	assert.Equal(t, "status ok", spans[0].StatusMessage)
+
+	// Validate static event data
+	assert.Equal(t, "span event", spans[0].Events[0].Name)
+	assert.Equal(t, expectedEventTime, spans[0].Events[0].Timestamp)
+	assert.Equal(t, "span event attribute value", spans[0].Events[0].Attributes["span event attribute"])
+	assert.Equal(t, uint32(6), spans[0].Events[0].DroppedAttributesCount)
+
+	//Validate static link data
+	assert.Equal(t, expectedTraceID, spans[0].Links[0].TraceID)
+	assert.Equal(t, "span link attribute value", spans[0].Links[0].Attributes["span link attribute"])
+	assert.Equal(t, uint32(7), spans[0].Links[0].DroppedAttributesCount)
 
 	// Validate that the correct resource and instrumentation scope is attached to each span
 	for i, span := range spans {
