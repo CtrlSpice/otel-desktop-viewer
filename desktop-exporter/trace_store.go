@@ -7,21 +7,19 @@ import (
 	"sync"
 )
 
-const (
-	MAX_QUEUE_SIZE = 10000
-)
-
 type TraceStore struct {
-	mut        sync.Mutex
-	traceQueue *list.List
-	traceMap   map[string][]SpanData
+	maxQueueSize int
+	mut          sync.Mutex
+	traceQueue   *list.List
+	traceMap     map[string][]SpanData
 }
 
-func NewTraceStore() *TraceStore {
+func NewTraceStore(maxQueueSize int) *TraceStore {
 	return &TraceStore{
-		mut:        sync.Mutex{},
-		traceQueue: list.New(),
-		traceMap:   map[string][]SpanData{},
+		maxQueueSize: maxQueueSize,
+		mut:          sync.Mutex{},
+		traceQueue:   list.New(),
+		traceMap:     map[string][]SpanData{},
 	}
 }
 
@@ -37,7 +35,7 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 func (store *TraceStore) enqueueTrace(traceID string) {
 	// If we have exceeded the maximum number of traces we plan to store
 	// make room for the trace in the queue by deleting the oldest trace
-	for store.traceQueue.Len() >= MAX_QUEUE_SIZE {
+	for store.traceQueue.Len() >= store.maxQueueSize {
 		store.dequeueTrace()
 	}
 
