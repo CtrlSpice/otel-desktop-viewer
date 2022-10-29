@@ -8,6 +8,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	MAX_QUEUE_LENGTH = 10000
+)
+
 type desktopExporter struct {
 	logger          *zap.Logger
 	traceStore      *TraceStore
@@ -27,7 +31,7 @@ func newDesktopExporter(logger *zap.Logger) *desktopExporter {
 
 	return &desktopExporter{
 		logger:          logger,
-		traceStore:      NewTraceStore(),
+		traceStore:      NewTraceStore(MAX_QUEUE_LENGTH),
 		tracesMarshaler: ptrace.NewJSONMarshaler(),
 	}
 }
