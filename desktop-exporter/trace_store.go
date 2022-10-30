@@ -33,12 +33,6 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 }
 
 func (store *TraceStore) enqueueTrace(traceID string) {
-	// If we have exceeded the maximum number of traces we plan to store
-	// make room for the trace in the queue by deleting the oldest trace
-	for store.traceQueue.Len() >= store.maxQueueSize {
-		store.dequeueTrace()
-	}
-
 	// If the traceID is already in the queue, move it to the front of the line
 	_, traceIDExists := store.traceMap[traceID]
 	if traceIDExists {
@@ -49,6 +43,11 @@ func (store *TraceStore) enqueueTrace(traceID string) {
 
 		store.traceQueue.MoveToFront(element)
 	} else {
+		// If we have exceeded the maximum number of traces we plan to store
+		// make room for the trace in the queue by deleting the oldest trace
+		for store.traceQueue.Len() >= store.maxQueueSize {
+			store.dequeueTrace()
+		}
 		// Add traceID to the front of the queue with the most recent traceIDs
 		store.traceQueue.PushFront(traceID)
 	}
