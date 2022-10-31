@@ -17,17 +17,17 @@ func TestNewTraceStore(t *testing.T) {
 }
 
 func TestAdd(t *testing.T) {
-	maxQueueLenght := 3
+	maxQueueLength := 3
 	spansPerTrace := 3
 
-	traces := testdata.GenerateOTLPPayload(1, 1, maxQueueLenght*spansPerTrace)
+	traces := testdata.GenerateOTLPPayload(1, 1, maxQueueLength*spansPerTrace)
 
-	store := NewTraceStore(maxQueueLenght)
+	store := NewTraceStore(maxQueueLength)
 	spans := extractSpans(context.Background(), traces)
 	ctx := context.Background()
 
 	// Assign each span a TraceID derived from its index before adding it to the store
-	// This TraceID is used tp validate indexing in the store's traceMap
+	// This TraceID is used to validate indexing in the store's traceMap
 	for i, span := range spans {
 		span.TraceID = strconv.Itoa(i % spansPerTrace)
 		store.Add(ctx, span)
@@ -38,31 +38,31 @@ func TestAdd(t *testing.T) {
 	}
 
 	// Verify that 3 unique TraceIDs are indexed in the traceMap
-	assert.Equal(t, maxQueueLenght, len(store.traceMap))
+	assert.Equal(t, maxQueueLength, len(store.traceMap))
 
-	// Verify that three spans are associaded with each TraceID and that
-	// Each span is attached to the trace indicated by its span index attribute
-	for _, trace := range store.traceMap {
-		assert.Len(t, trace, spansPerTrace)
-		for i, span := range trace {
-			spanIndex := span.Attributes["span index"].(int64)
-			assert.Equal(t, int64(i), spanIndex/int64(spansPerTrace))
+	for traceID, spans := range store.traceMap {
+		// Verify that three spans are associaded with each TraceID
+		assert.Len(t, spans, spansPerTrace)
+
+		// Verify that each span has the correct traceID
+		for _, span := range spans {
+			assert.Equal(t, traceID, span.TraceID)
 		}
 	}
 }
 
-func TestAddWithDequeue(t *testing.T) {
-	maxQueueLenght := 5
+func TestAddExceedingTraceLimits(t *testing.T) {
+	maxQueueLength := 5
 	queueOffset := 2
 
-	traces := testdata.GenerateOTLPPayload(1, 1, maxQueueLenght+queueOffset)
+	traces := testdata.GenerateOTLPPayload(1, 1, maxQueueLength+queueOffset)
 
-	store := NewTraceStore(maxQueueLenght)
+	store := NewTraceStore(maxQueueLength)
 	spans := extractSpans(context.Background(), traces)
 	ctx := context.Background()
 
 	// Assign each span a TraceID derived from its index before adding it to the store
-	// This TraceID is used tp validate queue and dequeue functionality
+	// This TraceID is used to validate queue and dequeue functionality
 	for i, span := range spans {
 		span.TraceID = strconv.Itoa(i)
 		store.Add(ctx, span)
@@ -73,7 +73,7 @@ func TestAddWithDequeue(t *testing.T) {
 	}
 
 	// Verify that the maximum number of unique TraceIDs have been indexed in the traceMap
-	assert.Equal(t, maxQueueLenght, len(store.traceMap))
+	assert.Equal(t, maxQueueLength, len(store.traceMap))
 
 	// Verify that the correct number of elements have dropped off the queue
 	assert.Equal(t, strconv.Itoa(queueOffset), store.traceQueue.Back().Value)
@@ -85,7 +85,7 @@ func TestAddWithDequeue(t *testing.T) {
 	}
 
 	// Verify that all the remaining traceIDs are still present
-	for i := queueOffset; i < maxQueueLenght; i++ {
+	for i := queueOffset; i < maxQueueLength; i++ {
 		assert.Contains(t, store.traceMap, strconv.Itoa(i))
 	}
 }
