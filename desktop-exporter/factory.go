@@ -2,10 +2,6 @@ package desktopexporter
 
 import (
 	"context"
-	"time"
-
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config"
@@ -14,9 +10,7 @@ import (
 )
 
 const (
-	typeStr                   = "desktop"
-	defaultSamplingInitial    = 2
-	defaultSamplingThereafter = 500
+	typeStr = "desktop"
 )
 
 func NewFactory() component.ExporterFactory {
@@ -29,17 +23,13 @@ func NewFactory() component.ExporterFactory {
 
 func createDefaultConfig() config.Exporter {
 	return &Config{
-		ExporterSettings:   config.NewExporterSettings(config.NewComponentID(typeStr)),
-		LogLevel:           zapcore.InfoLevel,
-		SamplingInitial:    defaultSamplingInitial,
-		SamplingThereafter: defaultSamplingThereafter,
+		ExporterSettings: config.NewExporterSettings(config.NewComponentID(typeStr)),
 	}
 }
 
 func createTracesExporter(ctx context.Context, set component.ExporterCreateSettings, config config.Exporter) (component.TracesExporter, error) {
 	cfg := config.(*Config)
-	exporterLogger := createLogger(cfg, set.TelemetrySettings.Logger)
-	desktopExporter := newDesktopExporter(exporterLogger)
+	desktopExporter := newDesktopExporter()
 	return exporterhelper.NewTracesExporter(ctx, set, cfg,
 		desktopExporter.pushTraces,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
@@ -50,15 +40,4 @@ func createTracesExporter(ctx context.Context, set component.ExporterCreateSetti
 		exporterhelper.WithStart(desktopExporter.Start),
 		exporterhelper.WithShutdown(desktopExporter.Shutdown),
 	)
-}
-
-func createLogger(cfg *Config, logger *zap.Logger) *zap.Logger {
-	core := zapcore.NewSamplerWithOptions(
-		logger.Core(),
-		1*time.Second,
-		cfg.SamplingInitial,
-		cfg.SamplingThereafter,
-	)
-
-	return zap.New(core)
 }
