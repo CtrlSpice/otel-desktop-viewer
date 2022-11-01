@@ -38,6 +38,5 @@ func createTracesExporter(ctx context.Context, set component.ExporterCreateSetti
 		exporterhelper.WithRetry(exporterhelper.RetrySettings{Enabled: false}),
 		exporterhelper.WithQueue(exporterhelper.QueueSettings{Enabled: false}),
 		exporterhelper.WithStart(desktopExporter.Start),
-		exporterhelper.WithShutdown(desktopExporter.Shutdown),
 	)
 }
