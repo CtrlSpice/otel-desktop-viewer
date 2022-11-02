@@ -50,7 +50,7 @@ func NewServer(traceStore *TraceStore) *Server {
 	router := mux.NewRouter()
 	router.HandleFunc("/traces", getTracesHandler(traceStore))
 	router.HandleFunc("/trace/{id}", getTraceIDHandler(traceStore))
-	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./static/")))
+	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./desktop-exporter/static/")))
 
 	return &Server{
 		server: http.Server{
