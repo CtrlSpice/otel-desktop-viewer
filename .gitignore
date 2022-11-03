@@ -2,3 +2,4 @@
 desktop-collector
 desktop-exporter/static/main.css
 desktop-exporter/static/main.js
+desktop-exporter/node_modules
