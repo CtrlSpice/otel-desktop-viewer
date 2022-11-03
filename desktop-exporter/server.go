@@ -18,13 +18,13 @@ func getTracesHandler(traceStore *TraceStore) func(http.ResponseWriter, *http.Re
 		traceStore.mut.Lock()
 		defer traceStore.mut.Unlock()
 
-		writer.WriteHeader(http.StatusOK)
-
-		traces, err := json.Marshal(traceStore.traceMap)
+		jsonTraces, err := json.Marshal(traceStore.traceMap)
 		if err != nil {
-			fmt.Printf("error marshalling traceStore: %s\n", err)
+			panic(fmt.Errorf("error marshalling traceStore: %s\n", err))
 		} else {
-			fmt.Fprintf(writer, "Hello traceStore:\n%s\n", traces)
+			writer.WriteHeader(http.StatusCreated)
+			writer.Header().Set("Content-Type", "application/json")
+			writer.Write(jsonTraces)
 		}
 	}
 }
@@ -37,11 +37,13 @@ func getTraceIDHandler(traceStore *TraceStore) func(http.ResponseWriter, *http.R
 		writer.WriteHeader(http.StatusOK)
 
 		traceID := mux.Vars(request)["id"]
-		spans, err := json.Marshal(traceStore.traceMap[traceID])
+		jsonTrace, err := json.Marshal(traceStore.traceMap[traceID])
 		if err != nil {
 			fmt.Printf("error marshalling trace %s: %s\n", traceID, err)
 		} else {
-			fmt.Fprintf(writer, "Hello trace %s:\n%s\n", traceID, spans)
+			writer.WriteHeader(http.StatusCreated)
+			writer.Header().Set("Content-Type", "application/json")
+			writer.Write(jsonTrace)
 		}
 	}
 }
@@ -49,7 +51,7 @@ func getTraceIDHandler(traceStore *TraceStore) func(http.ResponseWriter, *http.R
 func NewServer(traceStore *TraceStore) *Server {
 	router := mux.NewRouter()
 	router.HandleFunc("/traces", getTracesHandler(traceStore))
-	router.HandleFunc("/trace/{id}", getTraceIDHandler(traceStore))
+	router.HandleFunc("/traces/{id}", getTraceIDHandler(traceStore))
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./desktop-exporter/static/")))
 
 	return &Server{

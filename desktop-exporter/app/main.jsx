@@ -1,5 +1,5 @@
 import * as React from 'react'
-import ReactDOM from 'react-dom'
+import {createRoot} from 'react-dom/client'
 
 function App() {
   return (
@@ -9,4 +9,9 @@ function App() {
   );
 }
 
-ReactDOM.render(<App />, document.querySelector('#root'));
+// ReactDOM.render is no longer supported in React 18 - using createRoot instead
+const container = document.getElementById('root')
+const root = createRoot(container)
+root.render(<App />)
+
+fetch("/traces").then(response => response.json()).then(data => console.log(data))
