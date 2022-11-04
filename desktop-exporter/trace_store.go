@@ -32,6 +32,35 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 	store.traceMap[spanData.TraceID] = append(store.traceMap[spanData.TraceID], spanData)
 }
 
+func (store *TraceStore) GetRecentTraceIDs(traceCount int) []string {
+	store.mut.Lock()
+	defer store.mut.Unlock()
+
+	if traceCount > store.traceQueue.Len() {
+		traceCount = store.traceQueue.Len()
+	}
+
+	recentTraceIDs := make([]string, 0, traceCount)
+	element := store.traceQueue.Front()
+
+	for i := 0; i < traceCount; i++ {
+		recentTraceIDs = append(recentTraceIDs, element.Value.(string))
+		element = element.Next()
+	}
+
+	return recentTraceIDs
+}
+
+func (store *TraceStore) GetTraceByID(traceID string) ([]SpanData, error) {
+	trace, traceExists := store.traceMap[traceID]
+
+	if !traceExists {
+		return nil, errors.New("traceID not found")
+	}
+
+	return trace, nil
+}
+
 func (store *TraceStore) enqueueTrace(traceID string) {
 	// If the traceID is already in the queue, move it to the front of the line
 	_, traceIDExists := store.traceMap[traceID]
