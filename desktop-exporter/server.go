@@ -22,7 +22,7 @@ func getTracesHandler(traceStore *TraceStore) func(http.ResponseWriter, *http.Re
 		if err != nil {
 			panic(fmt.Errorf("error marshalling traceStore: %s\n", err))
 		} else {
-			writer.WriteHeader(http.StatusCreated)
+			writer.WriteHeader(http.StatusOK)
 			writer.Header().Set("Content-Type", "application/json")
 			writer.Write(jsonTraces)
 		}
@@ -34,14 +34,12 @@ func getTraceIDHandler(traceStore *TraceStore) func(http.ResponseWriter, *http.R
 		traceStore.mut.Lock()
 		defer traceStore.mut.Unlock()
 
-		writer.WriteHeader(http.StatusOK)
-
 		traceID := mux.Vars(request)["id"]
 		jsonTrace, err := json.Marshal(traceStore.traceMap[traceID])
 		if err != nil {
 			fmt.Printf("error marshalling trace %s: %s\n", traceID, err)
 		} else {
-			writer.WriteHeader(http.StatusCreated)
+			writer.WriteHeader(http.StatusOK)
 			writer.Header().Set("Content-Type", "application/json")
 			writer.Write(jsonTrace)
 		}

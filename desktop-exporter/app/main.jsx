@@ -9,7 +9,6 @@ function App() {
   );
 }
 
-// ReactDOM.render is no longer supported in React 18 - using createRoot instead
 const container = document.getElementById('root')
 const root = createRoot(container)
 root.render(<App />)
