@@ -15,7 +15,7 @@ type TraceSummary struct {
 
 type TraceData struct {
 	Spans      []SpanData `json:"spans"`
-	DurationMS int64      `json:"duration"`
+	DurationMS int64      `json:"durationMS"`
 }
 
 type ResourceData struct {
