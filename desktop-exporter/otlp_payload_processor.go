@@ -2,63 +2,10 @@ package desktopexporter
 
 import (
 	"context"
-	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
-
-type ResourceData struct {
-	Attributes             map[string]interface{}
-	DroppedAttributesCount uint32
-}
-
-type ScopeData struct {
-	Name                   string
-	Version                string
-	Attributes             map[string]interface{}
-	DroppedAttributesCount uint32
-}
-
-type SpanData struct {
-	TraceID      string
-	TraceState   string
-	SpanID       string
-	ParentSpanID string
-
-	Name      string
-	Kind      string
-	StartTime time.Time
-	EndTime   time.Time
-
-	Attributes map[string]interface{}
-	Events     []EventData
-	Links      []LinkData
-	Resource   *ResourceData
-	Scope      *ScopeData
-
-	DroppedAttributesCount uint32
-	DroppedEventsCount     uint32
-	DroppedLinksCount      uint32
-
-	StatusCode    string
-	StatusMessage string
-}
-
-type EventData struct {
-	Name                   string
-	Timestamp              time.Time
-	Attributes             map[string]interface{}
-	DroppedAttributesCount uint32
-}
-
-type LinkData struct {
-	TraceID                string
-	SpanID                 string
-	TraceState             string
-	Attributes             map[string]interface{}
-	DroppedAttributesCount uint32
-}
 
 func extractSpans(_ context.Context, traces ptrace.Traces) []SpanData {
 	extractedSpans := make([]SpanData, 0, traces.SpanCount())
