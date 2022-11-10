@@ -147,5 +147,5 @@ func TestGetTrace(t *testing.T) {
 
 	// Verify that looking up an invalid TraceID returns the appropriate error
 	_, err := store.GetSpansByTraceID(strconv.Itoa(-1))
-	assert.EqualError(t, err, "traceID not found: -1")
+	assert.EqualError(t, err, "traceID not found")
 }
