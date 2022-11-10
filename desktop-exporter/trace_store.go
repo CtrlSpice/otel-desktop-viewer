@@ -3,7 +3,7 @@ package desktopexporter
 import (
 	"container/list"
 	"context"
-	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -38,13 +38,35 @@ func (store *TraceStore) GetSpansByTraceID(traceID string) ([]SpanData, error) {
 
 	spans, traceIDExists := store.traceMap[traceID]
 	if !traceIDExists {
-		return nil, errors.New("traceID not found: " + traceID)
+		return nil, ErrTraceIDNotFound
 	}
 
 	return spans, nil
 }
 
+func (store *TraceStore) GetRecentTraces(traceCount int) map[string][]SpanData {
+	store.mut.Lock()
+	defer store.mut.Unlock()
+
+	recentIDs := store.getRecentTraceIDs(traceCount)
+	recentTraces := map[string][]SpanData{}
+
+	for _, traceID := range recentIDs {
+		spans, err := store.GetSpansByTraceID(traceID)
+		if err != nil {
+			fmt.Printf("error: %s\t traceID: %s\n", err, traceID)
+		} else {
+			recentTraces[traceID] = append(recentTraces[traceID], spans...)
+		}
+	}
+
+	return recentTraces
+}
+
 func (store *TraceStore) getRecentTraceIDs(traceCount int) []string {
+	store.mut.Lock()
+	defer store.mut.Unlock()
+
 	if traceCount > store.traceQueue.Len() {
 		traceCount = store.traceQueue.Len()
 	}
@@ -66,7 +88,7 @@ func (store *TraceStore) enqueueTrace(traceID string) {
 	if traceIDExists {
 		element := store.findQueueElement(traceID)
 		if element == nil {
-			panic(errors.New("traceID mismatch between TraceStore.traceMap and TraceStore.traceQueue"))
+			panic(ErrTraceIDMismatch)
 		}
 
 		store.traceQueue.MoveToFront(element)
@@ -94,24 +116,4 @@ func (store *TraceStore) findQueueElement(traceID string) *list.Element {
 		}
 	}
 	return nil
-}
-
-func getTraceDuration(spans []SpanData) (int64, error) {
-	if len(spans) < 1 {
-		return 0, errors.New("can't calculate trace duration - spans slice is empty")
-	}
-
-	// Determine the total duration of the trace
-	traceStartTime := spans[0].StartTime
-	traceEndTime := spans[0].EndTime
-	for i := 1; i < len(spans); i++ {
-		if spans[i].StartTime.Before(traceStartTime) {
-			traceStartTime = spans[i].StartTime
-		}
-
-		if spans[i].EndTime.After(traceEndTime) {
-			traceEndTime = spans[i].EndTime
-		}
-	}
-	return traceEndTime.Sub(traceStartTime).Milliseconds(), nil
 }
