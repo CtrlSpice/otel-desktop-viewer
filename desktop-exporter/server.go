@@ -13,35 +13,79 @@ type Server struct {
 	traceStore *TraceStore
 }
 
+func newTraceSummary(store *TraceStore, traceID string) (*TraceSummary, error) {
+	spans, err := store.GetSpansByTraceID(traceID)
+	if err != nil {
+		return nil, err
+	}
+
+	durationMS, err := getTraceDuration(spans)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TraceSummary{
+		TraceID:    traceID,
+		SpanCount:  uint32(len(spans)),
+		DurationMS: durationMS,
+	}, nil
+}
+
+func newTraceData(store *TraceStore, traceID string) (*TraceData, error) {
+	spans, err := store.GetSpansByTraceID(traceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TraceData{
+		Spans: spans,
+	}, nil
+}
+
 func getTracesHandler(traceStore *TraceStore) func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		traceStore.mut.Lock()
-		defer traceStore.mut.Unlock()
+		// This is hardcoded until I get the value from the request
+		numberOfTracesIWant := 10
+		recentTraceIDs := traceStore.getRecentTraceIDs(numberOfTracesIWant)
+		traceSummaries := make([]TraceSummary, 0, len(recentTraceIDs))
 
-		jsonTraces, err := json.Marshal(traceStore.traceMap)
+		for _, traceID := range recentTraceIDs {
+			summary, err := newTraceSummary(traceStore, traceID)
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				traceSummaries = append(traceSummaries, *summary)
+			}
+		}
+
+		jsonResponse, err := json.Marshal(traceSummaries)
 		if err != nil {
 			panic(fmt.Errorf("error marshalling traceStore: %s\n", err))
 		} else {
 			writer.WriteHeader(http.StatusOK)
 			writer.Header().Set("Content-Type", "application/json")
-			writer.Write(jsonTraces)
+			writer.Write(jsonResponse)
 		}
 	}
 }
 
 func getTraceIDHandler(traceStore *TraceStore) func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		traceStore.mut.Lock()
-		defer traceStore.mut.Unlock()
 
 		traceID := mux.Vars(request)["id"]
-		jsonTrace, err := json.Marshal(traceStore.traceMap[traceID])
+		traceData, err := newTraceData(traceStore, traceID)
 		if err != nil {
-			fmt.Printf("error marshalling trace %s: %s\n", traceID, err)
+			fmt.Println(err)
+		} else {
+
+		}
+		jsonResponse, err := json.Marshal(traceData)
+		if err != nil {
+			panic(fmt.Errorf("error marshalling traceStore: %s\n", err))
 		} else {
 			writer.WriteHeader(http.StatusOK)
 			writer.Header().Set("Content-Type", "application/json")
-			writer.Write(jsonTrace)
+			writer.Write(jsonResponse)
 		}
 	}
 }

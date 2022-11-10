@@ -32,10 +32,19 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 	store.traceMap[spanData.TraceID] = append(store.traceMap[spanData.TraceID], spanData)
 }
 
-func (store *TraceStore) GetRecentTraceIDs(traceCount int) []string {
+func (store *TraceStore) GetSpansByTraceID(traceID string) ([]SpanData, error) {
 	store.mut.Lock()
 	defer store.mut.Unlock()
 
+	spans, traceIDExists := store.traceMap[traceID]
+	if !traceIDExists {
+		return nil, errors.New("traceID not found: " + traceID)
+	}
+
+	return spans, nil
+}
+
+func (store *TraceStore) getRecentTraceIDs(traceCount int) []string {
 	if traceCount > store.traceQueue.Len() {
 		traceCount = store.traceQueue.Len()
 	}
@@ -49,16 +58,6 @@ func (store *TraceStore) GetRecentTraceIDs(traceCount int) []string {
 	}
 
 	return recentTraceIDs
-}
-
-func (store *TraceStore) GetTraceByID(traceID string) ([]SpanData, error) {
-	trace, traceExists := store.traceMap[traceID]
-
-	if !traceExists {
-		return nil, errors.New("traceID not found")
-	}
-
-	return trace, nil
 }
 
 func (store *TraceStore) enqueueTrace(traceID string) {
@@ -95,4 +94,24 @@ func (store *TraceStore) findQueueElement(traceID string) *list.Element {
 		}
 	}
 	return nil
+}
+
+func getTraceDuration(spans []SpanData) (int64, error) {
+	if len(spans) < 1 {
+		return 0, errors.New("can't calculate trace duration - spans slice is empty")
+	}
+
+	// Determine the total duration of the trace
+	traceStartTime := spans[0].StartTime
+	traceEndTime := spans[0].EndTime
+	for i := 1; i < len(spans); i++ {
+		if spans[i].StartTime.Before(traceStartTime) {
+			traceStartTime = spans[i].StartTime
+		}
+
+		if spans[i].EndTime.After(traceEndTime) {
+			traceEndTime = spans[i].EndTime
+		}
+	}
+	return traceEndTime.Sub(traceStartTime).Milliseconds(), nil
 }

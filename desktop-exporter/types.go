@@ -4,18 +4,14 @@ import (
 	"time"
 )
 
-type RecentSummaries struct {
-	TraceSummaries []TraceSummary `json:"traceSummaries"`
-}
-
 type TraceSummary struct {
-	TraceID   string `json:"traceID"`
-	SpanCount uint32 `json:"spanCount"`
+	TraceID    string `json:"traceID"`
+	SpanCount  uint32 `json:"spanCount"`
+	DurationMS int64  `json:"durationMS"`
 }
 
 type TraceData struct {
-	Spans      []SpanData `json:"spans"`
-	DurationMS int64      `json:"durationMS"`
+	Spans []SpanData `json:"spans"`
 }
 
 type ResourceData struct {

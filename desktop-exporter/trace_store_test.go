@@ -106,7 +106,7 @@ func TestGetRecentTraceIDs(t *testing.T) {
 		store.Add(ctx, span)
 	}
 
-	recentTraceIDs := store.GetRecentTraceIDs(numRecentTraceIDs)
+	recentTraceIDs := store.getRecentTraceIDs(numRecentTraceIDs)
 
 	// Validate that the number of IDs returned is equal to the lesser value of:
 	// - The number of IDs requested or
@@ -141,11 +141,11 @@ func TestGetTrace(t *testing.T) {
 
 	// Verify that we are able to retrieve every trace in the store by its TraceID
 	for i := 0; i < totalTraces; i++ {
-		trace, _ := store.GetTraceByID(strconv.Itoa(i))
+		trace, _ := store.GetSpansByTraceID(strconv.Itoa(i))
 		assert.Equal(t, strconv.Itoa(i), trace[0].TraceID)
 	}
 
 	// Verify that looking up an invalid TraceID returns the appropriate error
-	_, err := store.GetTraceByID(strconv.Itoa(-1))
-	assert.EqualError(t, err, "traceID not found")
+	_, err := store.GetSpansByTraceID(strconv.Itoa(-1))
+	assert.EqualError(t, err, "traceID not found: -1")
 }
