@@ -4,13 +4,13 @@ import (
 	"time"
 )
 
-func (trace *TraceData) GetTraceSummary() (*TraceSummary, error) {
+func (trace *TraceData) GetTraceSummary() (TraceSummary, error) {
 	duration, err := trace.getTraceDuration()
 	if err != nil {
-		return nil, err
+		return TraceSummary{}, err
 	}
 
-	return &TraceSummary{
+	return TraceSummary{
 		TraceID:    trace.Spans[0].TraceID,
 		SpanCount:  uint32(len(trace.Spans)),
 		DurationMS: duration.Milliseconds(),
