@@ -1,21 +1,26 @@
 package desktopexporter
 
 import (
+	"errors"
 	"time"
 )
+
+var ErrEmptySpansSlice = errors.New("slice of spans associated with this traceID must not be empty")
+var ErrTraceIDNotFound = errors.New("traceID not found")
+var ErrTraceIDMismatch = errors.New("traceID mismatch between TraceStore.traceMap and TraceStore.traceQueue")
 
 type RecentSummaries struct {
 	TraceSummaries []TraceSummary `json:"traceSummaries"`
 }
 
 type TraceSummary struct {
-	TraceID   string `json:"traceID"`
-	SpanCount uint32 `json:"spanCount"`
+	TraceID    string `json:"traceID"`
+	SpanCount  uint32 `json:"spanCount"`
+	DurationMS int64  `json:"durationMS"`
 }
 
 type TraceData struct {
-	Spans      []SpanData `json:"spans"`
-	DurationMS int64      `json:"durationMS"`
+	Spans []SpanData `json:"spans"`
 }
 
 type ResourceData struct {
