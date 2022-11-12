@@ -40,12 +40,12 @@ func TestAdd(t *testing.T) {
 	// Verify that 3 unique TraceIDs are indexed in the traceMap
 	assert.Equal(t, maxQueueLength, len(store.traceMap))
 
-	for traceID, spans := range store.traceMap {
+	for traceID, trace := range store.traceMap {
 		// Verify that three spans are associaded with each TraceID
-		assert.Len(t, spans, spansPerTrace)
+		assert.Len(t, trace.Spans, spansPerTrace)
 
 		// Verify that each span has the correct traceID
-		for _, span := range spans {
+		for _, span := range trace.Spans {
 			assert.Equal(t, traceID, span.TraceID)
 		}
 	}
@@ -142,7 +142,7 @@ func TestGetTrace(t *testing.T) {
 	// Verify that we are able to retrieve every trace in the store by its TraceID
 	for i := 0; i < totalTraces; i++ {
 		trace, _ := store.GetTraceByID(strconv.Itoa(i))
-		assert.Equal(t, strconv.Itoa(i), trace[0].TraceID)
+		assert.Equal(t, strconv.Itoa(i), trace.Spans[0].TraceID)
 	}
 
 	// Verify that looking up an invalid TraceID returns the appropriate error
