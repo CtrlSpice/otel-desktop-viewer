@@ -3,7 +3,7 @@ package desktopexporter
 import (
 	"container/list"
 	"context"
-	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -55,7 +55,7 @@ func (store *TraceStore) GetTraceByID(traceID string) ([]SpanData, error) {
 	trace, traceExists := store.traceMap[traceID]
 
 	if !traceExists {
-		return nil, errors.New("traceID not found")
+		return nil, ErrTraceIDNotFound
 	}
 
 	return trace, nil
@@ -67,7 +67,7 @@ func (store *TraceStore) enqueueTrace(traceID string) {
 	if traceIDExists {
 		element := store.findQueueElement(traceID)
 		if element == nil {
-			panic(errors.New("traceID mismatch between TraceStore.traceMap and TraceStore.traceQueue"))
+			fmt.Println(ErrTraceIDMismatch)
 		}
 
 		store.traceQueue.MoveToFront(element)
