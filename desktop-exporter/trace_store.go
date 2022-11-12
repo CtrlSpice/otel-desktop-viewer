@@ -11,7 +11,7 @@ type TraceStore struct {
 	maxQueueSize int
 	mut          sync.Mutex
 	traceQueue   *list.List
-	traceMap     map[string][]SpanData
+	traceMap     map[string]*TraceData
 }
 
 func NewTraceStore(maxQueueSize int) *TraceStore {
@@ -19,7 +19,7 @@ func NewTraceStore(maxQueueSize int) *TraceStore {
 		maxQueueSize: maxQueueSize,
 		mut:          sync.Mutex{},
 		traceQueue:   list.New(),
-		traceMap:     map[string][]SpanData{},
+		traceMap:     map[string]*TraceData{},
 	}
 }
 
@@ -29,7 +29,14 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 
 	// Enqueue, then append, as the enqueue process checks if the traceID is already in the map to keep the trace alive
 	store.enqueueTrace(spanData.TraceID)
-	store.traceMap[spanData.TraceID] = append(store.traceMap[spanData.TraceID], spanData)
+	traceData, traceExists := store.traceMap[spanData.TraceID]
+	if !traceExists {
+		traceData = &TraceData{
+			Spans: []SpanData{},
+		}
+	}
+	traceData.Spans = append(traceData.Spans, spanData)
+	store.traceMap[spanData.TraceID] = traceData
 }
 
 func (store *TraceStore) GetRecentTraceIDs(traceCount int) []string {
@@ -51,7 +58,7 @@ func (store *TraceStore) GetRecentTraceIDs(traceCount int) []string {
 	return recentTraceIDs
 }
 
-func (store *TraceStore) GetTraceByID(traceID string) ([]SpanData, error) {
+func (store *TraceStore) GetTraceByID(traceID string) (*TraceData, error) {
 	trace, traceExists := store.traceMap[traceID]
 
 	if !traceExists {
