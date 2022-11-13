@@ -11,7 +11,7 @@ type TraceStore struct {
 	maxQueueSize int
 	mut          sync.Mutex
 	traceQueue   *list.List
-	traceMap     map[string]*TraceData
+	traceMap     map[string]TraceData
 }
 
 func NewTraceStore(maxQueueSize int) *TraceStore {
@@ -19,7 +19,7 @@ func NewTraceStore(maxQueueSize int) *TraceStore {
 		maxQueueSize: maxQueueSize,
 		mut:          sync.Mutex{},
 		traceQueue:   list.New(),
-		traceMap:     map[string]*TraceData{},
+		traceMap:     map[string]TraceData{},
 	}
 }
 
@@ -31,7 +31,7 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 	store.enqueueTrace(spanData.TraceID)
 	traceData, traceExists := store.traceMap[spanData.TraceID]
 	if !traceExists {
-		traceData = &TraceData{
+		traceData = TraceData{
 			Spans: []SpanData{},
 		}
 	}
@@ -39,33 +39,35 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 	store.traceMap[spanData.TraceID] = traceData
 }
 
-func (store *TraceStore) GetRecentTraceIDs(traceCount int) []string {
+func (store *TraceStore) GetTrace(traceID string) (TraceData, error) {
 	store.mut.Lock()
 	defer store.mut.Unlock()
 
-	if traceCount > store.traceQueue.Len() {
-		traceCount = store.traceQueue.Len()
-	}
-
-	recentTraceIDs := make([]string, 0, traceCount)
-	element := store.traceQueue.Front()
-
-	for i := 0; i < traceCount; i++ {
-		recentTraceIDs = append(recentTraceIDs, element.Value.(string))
-		element = element.Next()
-	}
-
-	return recentTraceIDs
-}
-
-func (store *TraceStore) GetTraceByID(traceID string) (*TraceData, error) {
 	trace, traceExists := store.traceMap[traceID]
-
 	if !traceExists {
-		return nil, ErrTraceIDNotFound
+		return TraceData{}, ErrTraceIDNotFound
 	}
 
 	return trace, nil
+}
+
+func (store *TraceStore) GetRecentTraces(traceCount int) []TraceData {
+	store.mut.Lock()
+	defer store.mut.Unlock()
+
+	recentIDs := store.getRecentTraceIDs(traceCount)
+	recentTraces := make([]TraceData, 0, len(recentIDs))
+
+	for _, traceID := range recentIDs {
+		trace, traceExists := store.traceMap[traceID]
+		if !traceExists {
+			fmt.Printf("error: %s\t traceID: %s\n", ErrTraceIDNotFound, traceID)
+		} else {
+			recentTraces = append(recentTraces, trace)
+		}
+	}
+
+	return recentTraces
 }
 
 func (store *TraceStore) enqueueTrace(traceID string) {
@@ -102,4 +104,20 @@ func (store *TraceStore) findQueueElement(traceID string) *list.Element {
 		}
 	}
 	return nil
+}
+
+func (store *TraceStore) getRecentTraceIDs(traceCount int) []string {
+	if traceCount > store.traceQueue.Len() {
+		traceCount = store.traceQueue.Len()
+	}
+
+	recentTraceIDs := make([]string, 0, traceCount)
+	element := store.traceQueue.Front()
+
+	for i := 0; i < traceCount; i++ {
+		recentTraceIDs = append(recentTraceIDs, element.Value.(string))
+		element = element.Next()
+	}
+
+	return recentTraceIDs
 }

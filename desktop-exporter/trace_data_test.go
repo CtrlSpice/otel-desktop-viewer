@@ -27,7 +27,7 @@ func TestGetTraceSummary(t *testing.T) {
 		store.Add(ctx, span)
 	}
 
-	trace, err := store.GetTraceByID("1")
+	trace, err := store.GetTrace("1")
 	assert.NoError(t, err)
 
 	summary, err := trace.GetTraceSummary()
