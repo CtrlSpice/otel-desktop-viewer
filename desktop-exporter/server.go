@@ -54,20 +54,24 @@ func tracesHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
 func traceIDHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		traceID := mux.Vars(request)["id"]
+
 		traceData, err := store.GetTrace(traceID)
 		if err != nil {
 			fmt.Println(err)
 			writer.WriteHeader(http.StatusInternalServerError)
-		} else {
-			jsonTraceData, err := json.Marshal(traceData)
-			if err != nil {
-				writer.WriteHeader(http.StatusInternalServerError)
-			} else {
-				writer.WriteHeader(http.StatusOK)
-				writer.Header().Set("Content-Type", "application/json")
-				writer.Write(jsonTraceData)
-			}
+			return
 		}
+
+		jsonTraceData, err := json.Marshal(traceData)
+		if err != nil {
+			fmt.Println(err)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		writer.WriteHeader(http.StatusOK)
+		writer.Header().Set("Content-Type", "application/json")
+		writer.Write(jsonTraceData)
 	}
 }
 
