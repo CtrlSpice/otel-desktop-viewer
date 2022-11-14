@@ -51,27 +51,34 @@ func tracesHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func getTraceIDHandler(traceStore *TraceStore) func(http.ResponseWriter, *http.Request) {
+func traceIDHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		traceStore.mut.Lock()
-		defer traceStore.mut.Unlock()
-
 		traceID := mux.Vars(request)["id"]
-		jsonTrace, err := json.Marshal(traceStore.traceMap[traceID])
+
+		traceData, err := store.GetTrace(traceID)
 		if err != nil {
 			fmt.Println(err)
-		} else {
-			writer.WriteHeader(http.StatusOK)
-			writer.Header().Set("Content-Type", "application/json")
-			writer.Write(jsonTrace)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
 		}
+
+		jsonTraceData, err := json.Marshal(traceData)
+		if err != nil {
+			fmt.Println(err)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		writer.WriteHeader(http.StatusOK)
+		writer.Header().Set("Content-Type", "application/json")
+		writer.Write(jsonTraceData)
 	}
 }
 
 func NewServer(traceStore *TraceStore) *Server {
 	router := mux.NewRouter()
 	router.HandleFunc("/traces", tracesHandler(traceStore))
-	router.HandleFunc("/traces/{id}", getTraceIDHandler(traceStore))
+	router.HandleFunc("/traces/{id}", traceIDHandler(traceStore))
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./desktop-exporter/static/")))
 
 	return &Server{
