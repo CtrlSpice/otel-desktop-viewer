@@ -90,14 +90,14 @@ func TestAddExceedingTraceLimits(t *testing.T) {
 	}
 }
 
-func TestGetRecentTraceIDs(t *testing.T) {
+func TestGetRecentTraces(t *testing.T) {
 	totalTraces := 10
-	numRecentTraceIDs := 5
-	traces := testdata.GenerateOTLPPayload(1, 1, totalTraces)
+	numRecent := 5
+	tracePayload := testdata.GenerateOTLPPayload(1, 1, totalTraces)
 
 	store := NewTraceStore(totalTraces)
 	ctx := context.Background()
-	spans := extractSpans(ctx, traces)
+	spans := extractSpans(ctx, tracePayload)
 
 	// Assign each span a TraceID derived from its index before adding it to the store
 	// This TraceID is used to validate the ordering of the slice returned by *TraceStore.GetRecentTraceIDs
@@ -106,21 +106,21 @@ func TestGetRecentTraceIDs(t *testing.T) {
 		store.Add(ctx, span)
 	}
 
-	recentTraceIDs := store.GetRecentTraceIDs(numRecentTraceIDs)
+	recentTraces := store.GetRecentTraces(numRecent)
 
 	// Validate that the number of IDs returned is equal to the lesser value of:
 	// - The number of IDs requested or
 	// - The number traces available in the store
-	if totalTraces < numRecentTraceIDs {
-		assert.Len(t, recentTraceIDs, totalTraces)
+	if totalTraces < numRecent {
+		assert.Len(t, recentTraces, totalTraces)
 	} else {
-		assert.Len(t, recentTraceIDs, numRecentTraceIDs)
+		assert.Len(t, recentTraces, numRecent)
 	}
 
 	// Validate the order of the traces based of their ID
-	for i, traceID := range recentTraceIDs {
+	for i, trace := range recentTraces {
 		expectedTraceID := strconv.Itoa(totalTraces - (i + 1))
-		assert.Equal(t, expectedTraceID, traceID)
+		assert.Equal(t, expectedTraceID, trace.Spans[0].TraceID)
 	}
 }
 
@@ -141,11 +141,11 @@ func TestGetTrace(t *testing.T) {
 
 	// Verify that we are able to retrieve every trace in the store by its TraceID
 	for i := 0; i < totalTraces; i++ {
-		trace, _ := store.GetTraceByID(strconv.Itoa(i))
+		trace, _ := store.GetTrace(strconv.Itoa(i))
 		assert.Equal(t, strconv.Itoa(i), trace.Spans[0].TraceID)
 	}
 
 	// Verify that looking up an invalid TraceID returns the appropriate error
-	_, err := store.GetTraceByID(strconv.Itoa(-1))
+	_, err := store.GetTrace(strconv.Itoa(-1))
 	assert.EqualError(t, err, "traceID not found")
 }
