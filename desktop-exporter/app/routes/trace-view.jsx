@@ -1,11 +1,12 @@
 import React from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
+
 
 export default function TraceView() {
     let { traceID } = useParams();
     return (
         <>
-            <a href="/">Back</a>
+            <Link to={"/"}>Back</Link>
             <p>I am Item {traceID}</p>
         </>
     )
