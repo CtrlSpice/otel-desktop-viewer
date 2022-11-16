@@ -1,16 +1,33 @@
-import * as React from 'react'
-import {createRoot} from 'react-dom/client'
+import React from 'react';
+import { createRoot } from 'react-dom/client';
 
-function App() {
-  return (
-    <div className="App">
-      <h1>Hello World</h1>
-    </div>
-  );
-}
+import {
+  createBrowserRouter,
+  RouterProvider,
+  Route,
+} from "react-router-dom";
+import MainView from './routes/main-view';
+import TraceView from "./routes/trace-view";
+import ErrorPage from './error-page';
 
-const container = document.getElementById('root')
-const root = createRoot(container)
-root.render(<App />)
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <MainView />,
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: "traces/:traceID",
+    element: <TraceView />,
+    errorElement: <ErrorPage />,
+  }
+]);
 
-fetch("/traces").then(response => response.json()).then(data => console.log(data))
+const container = document.getElementById('root');
+const root = createRoot(container);
+
+root.render(
+  <React.StrictMode>
+    <RouterProvider router={router} />
+  </React.StrictMode>
+);
