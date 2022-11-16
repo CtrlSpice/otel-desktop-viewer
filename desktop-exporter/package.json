@@ -5,8 +5,9 @@
     "keywords": [],
     "author": "Mila Ardath <amelia.ardath@gmail.com>",
     "devDependencies": {
-      "esbuild": "^0.15.12",
-      "react": "^18.2.0",
-      "react-dom": "^18.2.0"
+        "esbuild": "^0.15.12",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "react-router-dom": "^6.4.3"
     }
-  }
+}
