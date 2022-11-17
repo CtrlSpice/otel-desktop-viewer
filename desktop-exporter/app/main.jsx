@@ -7,7 +7,7 @@ import {
   Route,
 } from "react-router-dom";
 import MainView, { mainLoader } from './routes/main-view';
-import TraceView from "./routes/trace-view";
+import TraceView, { traceLoader } from "./routes/trace-view";
 import ErrorPage from './error-page';
 
 const router = createBrowserRouter([
@@ -20,6 +20,7 @@ const router = createBrowserRouter([
   {
     path: "traces/:traceID",
     element: <TraceView />,
+    loader: traceLoader,
     errorElement: <ErrorPage />,
   }
 ]);
