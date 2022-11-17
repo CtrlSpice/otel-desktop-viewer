@@ -6,7 +6,7 @@ import {
   RouterProvider,
   Route,
 } from "react-router-dom";
-import MainView from './routes/main-view';
+import MainView, { loader as summaryLoader } from './routes/main-view';
 import TraceView from "./routes/trace-view";
 import ErrorPage from './error-page';
 
@@ -14,6 +14,7 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: <MainView />,
+    loader: summaryLoader,
     errorElement: <ErrorPage />,
   },
   {

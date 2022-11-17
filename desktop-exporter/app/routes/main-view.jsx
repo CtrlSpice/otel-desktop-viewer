@@ -1,20 +1,31 @@
 import React from 'react';
-import { Link } from "react-router-dom";
+import { Link, useLoaderData } from "react-router-dom";
+
+export async function loader() {
+    const response = await fetch("/traces");
+    const traceSummaries = await response.json();
+    return traceSummaries;
+}
 
 export default function MainView() {
+    const { traceSummaries } = useLoaderData();
+    console.log(traceSummaries);
+
+    const summaries = traceSummaries.map((summary) => (
+        <li key={summary.traceID}>
+            <Link to={`traces/${summary.traceID}`}>
+                Trace: {summary.traceID}
+            </Link>
+        </li>
+    ));
+
     return (
         <>
-            <ul>
-                <li>
-                    <Link to={"traces/1"}>Item 1</Link>
-                </li>
-                <li>
-                    <Link to={"traces/2"}>Item 2</Link>
-                </li>
-                <li>
-                    <Link to={"traces/3"}>Item 3</Link>
-                </li>
-            </ul>
+            {traceSummaries.length ? (
+                <ul>{summaries}</ul>
+            ) : (
+                <p><i>No traces</i></p>
+            )}
         </>
     )
 }
