@@ -9,7 +9,6 @@ export async function mainLoader() {
 
 export default function MainView() {
     const { traceSummaries } = useLoaderData();
-    console.log(traceSummaries);
 
     const summaries = traceSummaries.map((summary) => (
         <tr key={summary.traceID}>
