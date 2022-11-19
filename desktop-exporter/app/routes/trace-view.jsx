@@ -1,5 +1,7 @@
 import React from 'react';
-import { useParams, Link, useLoaderData } from 'react-router-dom';
+import { Link, useLoaderData } from 'react-router-dom';
+import { FixedSizeList as List } from 'react-window';
+
 
 export async function traceLoader({ params }) {
     const response = await fetch(`/traces/${params.traceID}`);
@@ -7,14 +9,26 @@ export async function traceLoader({ params }) {
     return traceData;
 }
 
+function Row({ index, style, data }) {
+    return (
+        <div className={index % 2 ? "ListItemOdd" : "ListItemEven"} style={style}>
+            SpanID: {data[index].spanID} Name: {data[index].name}
+        </div>
+    );
+}
 
 export default function TraceView() {
     const { spans } = useLoaderData();
-    console.log(spans);
     return (
-        <>
-            <Link to={"/"}>Back</Link>
-            <p>I am Item {spans[0].traceID}</p>
-        </>
+        <List
+            className="List"
+            height={300}
+            itemData={spans}
+            itemCount={spans.length}
+            itemSize={50}
+            width={"100%"}
+        >
+            {Row}
+        </List>
     )
 }
