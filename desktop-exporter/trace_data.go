@@ -11,7 +11,7 @@ func (trace *TraceData) GetTraceSummary() (TraceSummary, error) {
 	}
 
 	return TraceSummary{
-		TraceID:    trace.Spans[0].TraceID,
+		TraceID:    trace.TraceID,
 		SpanCount:  uint32(len(trace.Spans)),
 		DurationMS: duration.Milliseconds(),
 	}, nil

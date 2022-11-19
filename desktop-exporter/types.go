@@ -20,7 +20,8 @@ type TraceSummary struct {
 }
 
 type TraceData struct {
-	Spans []SpanData `json:"spans"`
+	TraceID string     `json:"traceID"`
+	Spans   []SpanData `json:"spans"`
 }
 
 type ResourceData struct {

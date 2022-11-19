@@ -32,6 +32,7 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 	traceData, traceExists := store.traceMap[spanData.TraceID]
 	if !traceExists {
 		traceData = TraceData{
+			TraceID: spanData.TraceID,
 			Spans: []SpanData{},
 		}
 	}
