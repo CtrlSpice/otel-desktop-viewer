@@ -4,7 +4,7 @@ import { FixedSizeList } from 'react-window';
 
 
 export async function traceLoader({ params }) {
-    const response = await fetch(`/traces/${params.traceID}`);
+    const response = await fetch(`/api/traces/${params.traceID}`);
     const traceData = await response.json();
     return traceData;
 }
