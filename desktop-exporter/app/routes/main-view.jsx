@@ -1,5 +1,6 @@
 import React from 'react';
-import { Link, useLoaderData } from "react-router-dom";
+import { Outlet, NavLink, useLoaderData } from "react-router-dom";
+import { FixedSizeList } from 'react-window';
 
 export async function mainLoader() {
     const response = await fetch("/api/traces");
@@ -7,36 +8,45 @@ export async function mainLoader() {
     return traceSummaries;
 }
 
+
+function Row({ index, style, data }) {
+    return (
+        <NavLink to={`traces/${data[index].traceID}`} style={style}>
+            {data[index].traceID}
+        </NavLink>
+    );
+}
+
 export default function MainView() {
     const { traceSummaries } = useLoaderData();
-
-    const summaries = traceSummaries.map((summary) => (
-        <tr key={summary.traceID}>
-            <td><Link to={`traces/${summary.traceID}`}>{summary.traceID}</Link></td>
-            <td>{summary.spanCount}</td>
-            <td>{summary.durationMS}</td>
-        </tr>
-    ));
-
     return (
-        <>
-            {traceSummaries.length ? (
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Trace ID</th>
-                            <th>Span Count</th>
-                            <th>Duration (MS)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {summaries}
-                    </tbody>
-                </table>
+        <div className='wrapper'>
+            <div className='sidebar'>
+                <button>Refresh</button>
+                <button>Collapse</button>
+                <nav>
+                    <FixedSizeList
+                        className="List"
+                        height={300}
+                        itemData={traceSummaries}
+                        itemCount={traceSummaries.length}
+                        itemSize={50}
+                        width={"100%"}
+                    >
+                        {Row}
+                    </FixedSizeList>
+                </nav>
+            </div>
 
-            ) : (
-                    <p>No traces yet</p>
-            )}
-        </>
+            <div className='header'>
+                <h1>Hello, I'm Heather!</h1>
+            </div>
+            <div className="traceview">
+                <Outlet />
+            </div>
+            <div className='detail'>
+                Span details live here.
+            </div>
+        </div>
     )
 }

@@ -16,13 +16,14 @@ const router = createBrowserRouter([
     element: <MainView />,
     loader: mainLoader,
     errorElement: <ErrorPage />,
+    children: [
+      {
+        path: "traces/:traceID",
+        element: <TraceView />,
+        loader: traceLoader,
+      },
+    ],
   },
-  {
-    path: "traces/:traceID",
-    element: <TraceView />,
-    loader: traceLoader,
-    errorElement: <ErrorPage />,
-  }
 ]);
 
 const container = document.getElementById('root');

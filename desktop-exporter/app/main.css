@@ -1,0 +1,34 @@
+.wrapper {
+  height: 100vh;
+  display: grid;
+  grid-gap: 0px;
+  grid-template-columns: 1fr 3fr 2fr;
+  grid-template-rows: 100px 1fr;
+  grid-template-areas:
+    "sidebar header header header header header"
+    "sidebar traceview traceview traceview detail detail";
+}
+
+.sidebar {
+  grid-area: sidebar;
+  background-color: #45aaf2;
+}
+
+.header {
+  grid-area: header;
+  background-color: #fed330;
+  padding: 20px;
+}
+
+.traceview {
+  grid-area: traceview;
+  background-color: #20bf6b;
+  padding: 20px;
+}
+
+.detail {
+  grid-area: detail;
+  background-color: #e6a3a3;
+  padding: 20px;
+}
+
