@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLoaderData } from "react-router-dom";
 
 export async function mainLoader() {
-    const response = await fetch("/traces");
+    const response = await fetch("/api/traces");
     const traceSummaries = await response.json();
     return traceSummaries;
 }
