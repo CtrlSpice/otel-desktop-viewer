@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLoaderData } from 'react-router-dom';
-import { FixedSizeList as List } from 'react-window';
+import { FixedSizeList } from 'react-window';
 
 
 export async function traceLoader({ params }) {
@@ -20,7 +20,7 @@ function Row({ index, style, data }) {
 export default function TraceView() {
     const { spans } = useLoaderData();
     return (
-        <List
+        <FixedSizeList
             className="List"
             height={300}
             itemData={spans}
@@ -29,6 +29,6 @@ export default function TraceView() {
             width={"100%"}
         >
             {Row}
-        </List>
+        </FixedSizeList>
     )
 }
