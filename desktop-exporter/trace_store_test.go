@@ -120,7 +120,7 @@ func TestGetRecentTraces(t *testing.T) {
 	// Validate the order of the traces based of their ID
 	for i, trace := range recentTraces {
 		expectedTraceID := strconv.Itoa(totalTraces - (i + 1))
-		assert.Equal(t, expectedTraceID, trace.Spans[0].TraceID)
+		assert.Equal(t, expectedTraceID, trace.TraceID)
 	}
 }
 
@@ -142,7 +142,7 @@ func TestGetTrace(t *testing.T) {
 	// Verify that we are able to retrieve every trace in the store by its TraceID
 	for i := 0; i < totalTraces; i++ {
 		trace, _ := store.GetTrace(strconv.Itoa(i))
-		assert.Equal(t, strconv.Itoa(i), trace.Spans[0].TraceID)
+		assert.Equal(t, strconv.Itoa(i), trace.TraceID)
 	}
 
 	// Verify that looking up an invalid TraceID returns the appropriate error
