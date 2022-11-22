@@ -1,0 +1,58 @@
+html,
+body {
+  height: 100%;
+  margin: 0px;
+  overflow: hidden;
+}
+
+.container {
+  display: flex;
+}
+
+.sidebar {
+    width: 200px;
+    transition: width 0.2s ease-in-out;
+    height: 100vh;
+    background-color: #ffaaa5;
+    padding-top: 30px;
+}
+
+.sidebar.closed {
+    transition: width 0.2s ease-in-out;
+    width: 50px
+}
+
+.traceview {
+  height: 100vh;
+  width: 100vw;
+  display: grid;
+  grid-gap: 0px;
+  grid-template-columns: 3fr 200px;
+  grid-template-rows: 60px 1fr;
+  grid-template-areas:
+    "header  header"
+    "content detail";
+}
+
+.header {
+  grid-area: header;
+  background-color: #698474;
+}
+
+.main {
+  grid-area: content;
+  background-color: #fcf8f3;
+}
+
+.detail {
+  grid-area: detail;
+  background-color: #ffd3b6;
+}
+
+.waterfall.even{
+    background-color: rgb(217, 247, 237);
+}
+
+.waterfall.odd{
+    background-color: rgb(14, 239, 164);
+}
