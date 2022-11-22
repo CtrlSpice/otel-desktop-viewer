@@ -1,6 +1,7 @@
-import React from 'react';
+import React from "react";
 import { Outlet, NavLink, useLoaderData } from "react-router-dom";
-import { FixedSizeList } from 'react-window';
+import { FixedSizeList } from "react-window";
+import { useToggle } from "usehooks-ts";
 
 
 export async function mainLoader() {
@@ -18,19 +19,11 @@ function Row({ index, style, data }) {
     );
 }
 
-function useToggle(initialValue = false) {
-    const [value, setValue] = React.useState(initialValue);
-    const toggle = React.useCallback(() => {
-        setValue((v) => !v);
-    }, []);
-    return [value, toggle];
-}
-
 
 function Sidebar(props) {
     if (props.isClosed) {
         return (
-            <div className='sidebar closed'>
+            <div className="sidebar closed">
                 <button className="menuBtn" onClick={props.toggle}>
                     Expand
                 </button>
@@ -40,13 +33,13 @@ function Sidebar(props) {
 
     const { traceSummaries } = useLoaderData();
     return (
-        <div className='sidebar'>
+        <div className="sidebar">
             <button className="menuBtn" onClick={props.toggle}>
                 Collapse
             </button>
             <nav>
                 <FixedSizeList
-                    className="List"
+                    className="list"
                     height={500}
                     itemData={traceSummaries}
                     itemCount={traceSummaries.length}
@@ -65,7 +58,7 @@ export default function MainView() {
     let [isClosed, toggleClosed] = useToggle();
 
     return (
-        <div className='container'>
+        <div className="container">
             <Sidebar isClosed={isClosed} toggle={toggleClosed} />
             <Outlet />
         </div>

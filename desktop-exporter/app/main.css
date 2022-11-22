@@ -10,15 +10,15 @@ body {
 }
 
 .sidebar {
-    width: 250px;
-    transition: width 0.3s ease-in-out;
+    width: 200px;
+    transition: width 0.2s ease-in-out;
     height: 100vh;
     background-color: #ffaaa5;
     padding-top: 30px;
 }
 
 .sidebar.closed {
-    transition: width 0.3s ease-in-out;
+    transition: width 0.2s ease-in-out;
     width: 50px
 }
 
@@ -28,7 +28,7 @@ body {
   display: grid;
   grid-gap: 0px;
   grid-template-columns: 3fr 200px;
-  grid-template-rows: 200px 1fr;
+  grid-template-rows: 60px 1fr;
   grid-template-areas:
     "header  header"
     "content detail";
