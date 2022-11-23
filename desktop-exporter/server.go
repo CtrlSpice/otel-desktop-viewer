@@ -75,10 +75,15 @@ func traceIDHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) 
 	}
 }
 
+func indexHandler(writer http.ResponseWriter, request *http.Request){
+	http.ServeFile(writer, request, "./desktop-exporter/static/index.html")
+}
+
 func NewServer(traceStore *TraceStore) *Server {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/traces", tracesHandler(traceStore))
 	router.HandleFunc("/api/traces/{id}", traceIDHandler(traceStore))
+	router.HandleFunc("/traces/{id}", indexHandler)
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./desktop-exporter/static/")))
 
 	return &Server{
