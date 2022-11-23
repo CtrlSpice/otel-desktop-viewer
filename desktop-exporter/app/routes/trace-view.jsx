@@ -10,9 +10,13 @@ export async function traceLoader({ params }) {
 }
 
 function WaterfallRow({ index, style, data }) {
+    let className = "waterfallItem"
+    className += index % 2 ? " odd" : " even";
+    className += index === data.activeIndex ? " active" : ""
+
     return (
-        <div className={index % 2 ? "waterfall odd" : "waterfall even"} style={style}>
-            Name: {data[index].name} SpanID: {data[index].spanID} 
+        <div className={className} style={style} onClick={() => data.clickHandler(index)}>
+            Name: {data.spans[index].name} SpanID: {data.spans[index].spanID} 
         </div>
     );
 }
@@ -20,7 +24,7 @@ function WaterfallRow({ index, style, data }) {
 function Header(props) {
     return (
         <div className='header'>
-            <h1>Trace ID: {props.traceID}</h1>
+            <h2>Trace ID: {props.traceID}</h2>
         </div>
     );
 }
@@ -30,7 +34,7 @@ function WaterfallView(props) {
         <FixedSizeList
             className="List"
             height={300}
-            itemData={props.spans}
+            itemData={props}
             itemCount={props.spans.length}
             itemSize={30}
             width={"100%"}
@@ -40,22 +44,29 @@ function WaterfallView(props) {
     );
 }
 
-function DetailView() {
+function DetailView(props) {
     return (
         <div className='detail'>
-            Details will go here
+            Name: {props.spanData.name} <br />
+            Kind: {props.spanData.kind} <br />
+            Start: {props.spanData.startTime} <br />
+            End: {props.spanData.endTime} <br />
         </div>
-    )
+    );
 }
 
 export default function TraceView() {
     const traceData = useLoaderData();
+    const [activeIndex, setActiveIndex] = React.useState(0);
+    const handleOnClick = index => {
+        setActiveIndex(index);
+    };
 
     return (
         <div className="traceview">
             <Header traceID={traceData.traceID} />
-            <WaterfallView spans={traceData.spans} />
-            <DetailView />
+            <WaterfallView spans={traceData.spans} clickHandler={handleOnClick} activeIndex={activeIndex} />
+            <DetailView spanData={traceData.spans[activeIndex]} />
         </div>
     );
 }

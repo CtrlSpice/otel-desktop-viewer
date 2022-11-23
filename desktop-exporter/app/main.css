@@ -49,10 +49,15 @@ body {
   background-color: #ffd3b6;
 }
 
-.waterfall.even{
+.waterfallItem.even{
     background-color: rgb(217, 247, 237);
 }
 
-.waterfall.odd{
+.waterfallItem.odd{
     background-color: rgb(14, 239, 164);
+}
+
+.waterfallItem.active {
+    border-left: 5px solid rgb(255, 190, 0);
+    background-color: palegoldenrod;
 }
