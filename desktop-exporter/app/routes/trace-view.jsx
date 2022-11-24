@@ -10,13 +10,18 @@ export async function traceLoader({ params }) {
 }
 
 function WaterfallRow({ index, style, data }) {
-    let className = "waterfallItem"
+    let { spans, selectedSpanID, setSelectedSpanID } = data;
+    let span = spans[index]
+
+    let className = "waterfallItem";
     className += index % 2 ? " odd" : " even";
-    className += index === data.activeIndex ? " active" : ""
+    if (!!selectedSpanID) {
+        className += span.spanID === selectedSpanID ? " active" : ""
+    }
 
     return (
-        <div className={className} style={style} onClick={() => data.clickHandler(index)}>
-            Name: {data.spans[index].name} SpanID: {data.spans[index].spanID} 
+        <div className={className} style={style} onClick={() => setSelectedSpanID(span.spanID)}>
+            Name: {span.name} SpanID: {span.spanID} 
         </div>
     );
 }
@@ -45,28 +50,38 @@ function WaterfallView(props) {
 }
 
 function DetailView(props) {
+    let { span } = props
+    if (!span) {
+        return (
+            <div className='detail'></div>
+        );
+    }
     return (
         <div className='detail'>
-            Name: {props.spanData.name} <br />
-            Kind: {props.spanData.kind} <br />
-            Start: {props.spanData.startTime} <br />
-            End: {props.spanData.endTime} <br />
+            Name: {span.name} <br />
+            Kind: {span.kind} <br />
+            Start: {span.startTime} <br />
+            End: {span.endTime} <br />
         </div>
     );
 }
 
 export default function TraceView() {
     const traceData = useLoaderData();
-    const [activeIndex, setActiveIndex] = React.useState(0);
-    const handleOnClick = index => {
-        setActiveIndex(index);
-    };
+    const [selectedSpanID, setSelectedSpanID] = React.useState(traceData.spans[0].spanID);
+
+    // if we get a new trace because the route changed, reset the selected span
+    React.useEffect(() => {
+        setSelectedSpanID(traceData.spans[0].spanID)
+    }, [traceData])
+
+    const selectedSpan = traceData.spans.find(span => span.spanID === selectedSpanID);
 
     return (
         <div className="traceview">
             <Header traceID={traceData.traceID} />
-            <WaterfallView spans={traceData.spans} clickHandler={handleOnClick} activeIndex={activeIndex} />
-            <DetailView spanData={traceData.spans[activeIndex]} />
+            <WaterfallView spans={traceData.spans} selectedSpanID={selectedSpanID} setSelectedSpanID={setSelectedSpanID} />
+            <DetailView span={selectedSpan} />
         </div>
     );
 }
