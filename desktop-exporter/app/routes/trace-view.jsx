@@ -13,7 +13,7 @@ function WaterfallRow({ index, style, data }) {
     let { spans, selectedSpanID, setSelectedSpanID } = data;
     let span = spans[index]
 
-    let className = "waterfallItem";
+    let className = "waterfall-item";
     className += index % 2 ? " odd" : " even";
     if (!!selectedSpanID) {
         className += span.spanID === selectedSpanID ? " active" : ""
@@ -58,10 +58,12 @@ function DetailView(props) {
     }
     return (
         <div className='detail'>
-            Name: {span.name} <br />
-            Kind: {span.kind} <br />
-            Start: {span.startTime} <br />
-            End: {span.endTime} <br />
+            <pre>{`
+Name: ${span.name}
+Kind: ${span.kind}
+Start: ${span.startTime}
+End: ${span.endTime}
+    `}</pre>
         </div>
     );
 }
