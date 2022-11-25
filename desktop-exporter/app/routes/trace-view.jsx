@@ -28,8 +28,6 @@ function WaterfallRow({ index, style, data }) {
     );
 }
 
-
-
 function WaterfallView(props) {
     return (
         <FixedSizeList
