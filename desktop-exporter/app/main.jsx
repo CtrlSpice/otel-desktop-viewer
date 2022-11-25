@@ -1,10 +1,10 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { ChakraProvider } from '@chakra-ui/react'
 import {
   createBrowserRouter,
   RouterProvider,
-  Route,
 } from "react-router-dom";
 import MainView, { mainLoader } from './routes/main-view';
 import TraceView, { traceLoader } from "./routes/trace-view";
@@ -31,6 +31,8 @@ const root = createRoot(container);
 
 root.render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <ChakraProvider>
+      <RouterProvider router={router} />
+    </ChakraProvider>
   </React.StrictMode>
 );

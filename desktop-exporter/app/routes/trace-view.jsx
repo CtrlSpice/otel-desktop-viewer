@@ -2,6 +2,8 @@ import React from 'react';
 import { useLoaderData } from 'react-router-dom';
 import { FixedSizeList } from 'react-window';
 
+import { Header } from '../components/header';
+
 
 export async function traceLoader({ params }) {
     const response = await fetch(`/api/traces/${params.traceID}`);
@@ -26,13 +28,7 @@ function WaterfallRow({ index, style, data }) {
     );
 }
 
-function Header(props) {
-    return (
-        <div className='header'>
-            <h2>Trace ID: {props.traceID}</h2>
-        </div>
-    );
-}
+
 
 function WaterfallView(props) {
     return (
@@ -64,7 +60,7 @@ Kind: ${span.kind}
 Start: ${span.startTime}
 End: ${span.endTime}
     `}</pre>
-        </div>
+        </div> 
     );
 }
 
