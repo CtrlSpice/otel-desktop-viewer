@@ -13,7 +13,7 @@ jobs:
         with:
           node-version: 18
           cache: 'npm'
-        cache-dependency-path: desktop-exporter/package-lock.json
+          cache-dependency-path: desktop-exporter/package-lock.json
 
       - name: Build
         run: cd desktop-exporter && npm install
