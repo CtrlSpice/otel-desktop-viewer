@@ -13,7 +13,7 @@ export async function traceLoader({ params }: any) {
 
 type WaterfallRowProps = {
   index: number;
-  style: {};
+  style: React.CSSProperties;
   data: WaterfallViewProps;
 };
 
