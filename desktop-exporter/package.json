@@ -20,7 +20,7 @@
     },
     "prettier": {
         "jsxSingleQuote": false,
-        "printWidth": 100,
+        "printWidth": 80,
         "semi": true,
         "singleAttributePerLine": true,
         "singleQuote": false,

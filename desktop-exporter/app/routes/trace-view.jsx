@@ -65,14 +65,18 @@ End: ${span.endTime}
 
 export default function TraceView() {
   const traceData = useLoaderData();
-  const [selectedSpanID, setSelectedSpanID] = React.useState(traceData.spans[0].spanID);
+  const [selectedSpanID, setSelectedSpanID] = React.useState(
+    traceData.spans[0].spanID,
+  );
 
   // if we get a new trace because the route changed, reset the selected span
   React.useEffect(() => {
     setSelectedSpanID(traceData.spans[0].spanID);
   }, [traceData]);
 
-  const selectedSpan = traceData.spans.find((span) => span.spanID === selectedSpanID);
+  const selectedSpan = traceData.spans.find(
+    (span) => span.spanID === selectedSpanID,
+  );
 
   return (
     <div className="traceview">
