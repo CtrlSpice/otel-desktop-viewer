@@ -21,3 +21,7 @@ build-js:
 .PHONY: watch-js
 watch-js:
 	cd desktop-exporter; npx esbuild --watch --bundle app/main.jsx app/main.css --outdir=static
+
+.PHONY: format-js
+format-js:
+	cd desktop-exporter; npx prettier -w app

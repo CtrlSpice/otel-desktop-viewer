@@ -5,16 +5,26 @@
     "keywords": [],
     "author": "Mila Ardath <amelia.ardath@gmail.com>",
     "devDependencies": {
-        "esbuild": "^0.15.12",
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0",
-        "react-router-dom": "^6.4.3",
-        "react-window": "^1.8.8",
-        "usehooks-ts": "^2.9.1",
         "@chakra-ui/icons": "^2.0.12",
         "@chakra-ui/react": "^2.4.1",
         "@emotion/react": "^11.10.5",
         "@emotion/styled": "^11.10.5",
-        "framer-motion": "^7.6.12"
+        "esbuild": "^0.15.12",
+        "framer-motion": "^7.6.12",
+        "prettier": "^2.8.0",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "react-router-dom": "^6.4.3",
+        "react-window": "^1.8.8",
+        "usehooks-ts": "^2.9.1"
+    },
+    "prettier": {
+        "jsxSingleQuote": false,
+        "printWidth": 80,
+        "semi": true,
+        "singleAttributePerLine": true,
+        "singleQuote": false,
+        "tabWidth": 2,
+        "trailingComma": "all"
     }
 }

@@ -1,13 +1,11 @@
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import { ChakraProvider } from '@chakra-ui/react'
-import {
-  createBrowserRouter,
-  RouterProvider,
-} from "react-router-dom";
-import MainView, { mainLoader } from './routes/main-view';
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { ChakraProvider } from "@chakra-ui/react";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
+
+import MainView, { mainLoader } from "./routes/main-view";
 import TraceView, { traceLoader } from "./routes/trace-view";
-import ErrorPage from './error-page';
+import ErrorPage from "./error-page";
 
 const router = createBrowserRouter([
   {
@@ -25,7 +23,7 @@ const router = createBrowserRouter([
   },
 ]);
 
-const container = document.getElementById('root');
+const container = document.getElementById("root");
 const root = createRoot(container);
 
 root.render(
@@ -33,5 +31,5 @@ root.render(
     <ChakraProvider>
       <RouterProvider router={router} />
     </ChakraProvider>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
