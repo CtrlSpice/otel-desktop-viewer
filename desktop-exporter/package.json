@@ -17,5 +17,14 @@
         "react-router-dom": "^6.4.3",
         "react-window": "^1.8.8",
         "usehooks-ts": "^2.9.1"
+    },
+    "prettier": {
+        "jsxSingleQuote": false,
+        "printWidth": 100,
+        "semi": true,
+        "singleAttributePerLine": true,
+        "singleQuote": false,
+        "tabWidth": 2,
+        "trailingComma": "all"
     }
 }
