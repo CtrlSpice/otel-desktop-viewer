@@ -24,4 +24,4 @@ watch-js:
 
 .PHONY: format-js
 format-js:
-	cd desktop-exporter; npx prettier -w app 
+	cd desktop-exporter; npx prettier -w app
