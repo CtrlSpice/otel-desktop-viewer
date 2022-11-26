@@ -24,12 +24,14 @@ const router = createBrowserRouter([
 ]);
 
 const container = document.getElementById("root");
-const root = createRoot(container);
+if (!!container) {
+  const root = createRoot(container);
 
-root.render(
-  <React.StrictMode>
-    <ChakraProvider>
-      <RouterProvider router={router} />
-    </ChakraProvider>
-  </React.StrictMode>,
-);
+  root.render(
+    <React.StrictMode>
+      <ChakraProvider>
+        <RouterProvider router={router} />
+      </ChakraProvider>
+    </React.StrictMode>,
+  );
+}
