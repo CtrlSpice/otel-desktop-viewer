@@ -1,6 +1,7 @@
 import React from "react";
 import { useLoaderData } from "react-router-dom";
 import { FixedSizeList } from "react-window";
+import { Grid, GridItem } from "@chakra-ui/react";
 
 import { Header } from "../components/header";
 import { SpanData, TraceData } from "../types/api-types";
@@ -96,14 +97,28 @@ export default function TraceView() {
   );
 
   return (
-    <div className="traceview">
-      <Header traceID={traceData.traceID} />
-      <WaterfallView
-        spans={traceData.spans}
-        selectedSpanID={selectedSpanID}
-        setSelectedSpanID={setSelectedSpanID}
-      />
-      <DetailView span={selectedSpan} />
-    </div>
+    <Grid
+      templateAreas={`"header header"
+                       "main detail"`}
+      gridTemplateColumns={"1fr 250px"}
+      gridTemplateRows={"60px 1fr"}
+      gap={"0"}
+      h={"100vh"}
+      w={"100vw"}
+    >
+      <GridItem area={"header"}>
+        <Header traceID={traceData.traceID} />
+      </GridItem>
+      <GridItem area={"main"}>
+        <WaterfallView
+          spans={traceData.spans}
+          selectedSpanID={selectedSpanID}
+          setSelectedSpanID={setSelectedSpanID}
+        />
+      </GridItem>
+      <GridItem area={"detail"}>
+        <DetailView span={selectedSpan} />
+      </GridItem>
+    </Grid>
   );
 }
