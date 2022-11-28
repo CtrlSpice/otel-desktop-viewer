@@ -4,7 +4,7 @@
 
     /* Language and Environment */
     "target": "es2016",                                  /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */
-    "jsx": "preserve",                                   /* Specify what JSX code is generated. */
+    "jsx": "react",                                   /* Specify what JSX code is generated. */
 
     /* Modules */
     "module": "commonjs",                                /* Specify what module code is generated. */
