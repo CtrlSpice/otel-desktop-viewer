@@ -9,7 +9,11 @@ import {
 } from "@chakra-ui/react";
 import { SunIcon, MoonIcon } from "@chakra-ui/icons";
 
-export function Header(props) {
+type HeaderProps = {
+  traceID: string;
+};
+
+export function Header(props: HeaderProps) {
   const { colorMode, toggleColorMode } = useColorMode();
   return (
     <Flex

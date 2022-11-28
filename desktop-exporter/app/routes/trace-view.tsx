@@ -3,14 +3,21 @@ import { useLoaderData } from "react-router-dom";
 import { FixedSizeList } from "react-window";
 
 import { Header } from "../components/header";
+import { SpanData, TraceData } from "../types/api-types";
 
-export async function traceLoader({ params }) {
+export async function traceLoader({ params }: any) {
   const response = await fetch(`/api/traces/${params.traceID}`);
   const traceData = await response.json();
   return traceData;
 }
 
-function WaterfallRow({ index, style, data }) {
+type WaterfallRowProps = {
+  index: number;
+  style: React.CSSProperties;
+  data: WaterfallViewProps;
+};
+
+function WaterfallRow({ index, style, data }: WaterfallRowProps) {
   let { spans, selectedSpanID, setSelectedSpanID } = data;
   let span = spans[index];
 
@@ -31,7 +38,13 @@ function WaterfallRow({ index, style, data }) {
   );
 }
 
-function WaterfallView(props) {
+type WaterfallViewProps = {
+  spans: SpanData[];
+  selectedSpanID: string | undefined;
+  setSelectedSpanID: (spanID: string) => void;
+};
+
+function WaterfallView(props: WaterfallViewProps) {
   return (
     <FixedSizeList
       className="List"
@@ -46,7 +59,11 @@ function WaterfallView(props) {
   );
 }
 
-function DetailView(props) {
+type DetailViewProps = {
+  span: SpanData | undefined;
+};
+
+function DetailView(props: DetailViewProps) {
   let { span } = props;
   if (!span) {
     return <div className="detail"></div>;
@@ -64,9 +81,9 @@ End: ${span.endTime}
 }
 
 export default function TraceView() {
-  const traceData = useLoaderData();
-  const [selectedSpanID, setSelectedSpanID] = React.useState(
-    traceData.spans[0].spanID,
+  const traceData = useLoaderData() as TraceData;
+  const [selectedSpanID, setSelectedSpanID] = React.useState<string>(
+    traceData.spans.length ? traceData.spans[0].spanID : "",
   );
 
   // if we get a new trace because the route changed, reset the selected span

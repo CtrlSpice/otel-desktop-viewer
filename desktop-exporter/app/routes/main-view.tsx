@@ -3,13 +3,21 @@ import { Outlet, NavLink, useLoaderData } from "react-router-dom";
 import { FixedSizeList } from "react-window";
 import { useToggle } from "usehooks-ts";
 
+import { TraceSummaries, TraceSummary } from "../types/api-types";
+
 export async function mainLoader() {
   const response = await fetch("/api/traces");
   const traceSummaries = await response.json();
   return traceSummaries;
 }
 
-function Row({ index, style, data }) {
+type RowProps = {
+  index: number;
+  style: Object;
+  data: TraceSummary[];
+};
+
+function Row({ index, style, data }: RowProps) {
   return (
     <NavLink
       to={`traces/${data[index].traceID}`}
@@ -20,7 +28,12 @@ function Row({ index, style, data }) {
   );
 }
 
-function Sidebar(props) {
+type SidebarProps = {
+  isClosed: boolean;
+  toggle: () => void;
+};
+
+function Sidebar(props: SidebarProps) {
   if (props.isClosed) {
     return (
       <div className="sidebar closed">
@@ -34,7 +47,7 @@ function Sidebar(props) {
     );
   }
 
-  const { traceSummaries } = useLoaderData();
+  const { traceSummaries } = useLoaderData() as TraceSummaries;
   return (
     <div className="sidebar">
       <button
