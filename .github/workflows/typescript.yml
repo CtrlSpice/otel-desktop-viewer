@@ -1,0 +1,22 @@
+name: Typescript
+
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: desktop-exporter/package-lock.json
+
+      - name: Build
+        run: cd desktop-exporter && npm install
+
+      - name: Test
+        run: make validate-typescript
