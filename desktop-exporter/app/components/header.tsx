@@ -20,6 +20,7 @@ export function Header(props: HeaderProps) {
       className="header"
       bg={useColorModeValue("gray.100", "gray.900")}
       align="center"
+      h={"60px"}
       px={2}
     >
       <Heading
