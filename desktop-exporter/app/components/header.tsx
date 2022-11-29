@@ -18,10 +18,10 @@ export function Header(props: HeaderProps) {
   const { colorMode, toggleColorMode } = useColorMode();
   return (
     <Flex
-      bg={useColorModeValue("gray.100", "gray.900")}
+      bgColor={useColorModeValue("gray.100", "gray.900")}
       align="center"
       height={"60px"}
-      px={2}
+      paddingX={2}
     >
       <Heading
         as="h1"

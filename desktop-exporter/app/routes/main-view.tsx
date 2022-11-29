@@ -67,7 +67,7 @@ function Sidebar(props: SidebarProps) {
 
   return (
     <Flex
-      bg={sidebarColour}
+      bgColor={sidebarColour}
       direction="column"
       transition="width 0.2s ease-in-out"
       width={sidebarWidth}

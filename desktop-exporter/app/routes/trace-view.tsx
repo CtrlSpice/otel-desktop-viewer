@@ -103,8 +103,8 @@ export default function TraceView() {
       gridTemplateColumns={"1fr 250px"}
       gridTemplateRows={"60px 1fr"}
       gap={"0"}
-      h={"100vh"}
-      w={"100vw"}
+      height={"100vh"}
+      width={"100vw"}
     >
       <GridItem area={"header"}>
         <Header traceID={traceData.traceID} />
