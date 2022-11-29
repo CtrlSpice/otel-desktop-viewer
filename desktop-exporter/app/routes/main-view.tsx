@@ -1,7 +1,14 @@
 import React from "react";
 import { Outlet, NavLink, useLoaderData } from "react-router-dom";
 import { FixedSizeList } from "react-window";
-import { useToggle } from "usehooks-ts";
+import {
+  Flex,
+  IconButton,
+  Spacer,
+  useBoolean,
+  useColorModeValue,
+} from "@chakra-ui/react";
+import { ArrowLeftIcon, ArrowRightIcon } from "@chakra-ui/icons";
 
 import { TraceSummaries, TraceSummary } from "../types/api-types";
 
@@ -29,57 +36,64 @@ function Row({ index, style, data }: RowProps) {
 }
 
 type SidebarProps = {
-  isClosed: boolean;
+  isFullWidth: boolean;
   toggle: () => void;
 };
 
 function Sidebar(props: SidebarProps) {
-  if (props.isClosed) {
-    return (
-      <div className="sidebar closed">
-        <button
-          className="menuBtn"
-          onClick={props.toggle}
-        >
-          Expand
-        </button>
-      </div>
+  const sidebarColour = useColorModeValue("pink.100", "pink.900");
+  const { traceSummaries } = useLoaderData() as TraceSummaries;
+
+  let sidebarWidth = "80px";
+  let buttonIcon = <ArrowRightIcon />;
+  let traceList = <></>;
+
+  if (props.isFullWidth) {
+    sidebarWidth = "250px";
+    buttonIcon = <ArrowLeftIcon />;
+    traceList = (
+      <FixedSizeList
+        className="list"
+        height={500}
+        itemData={traceSummaries}
+        itemCount={traceSummaries.length}
+        itemSize={30}
+        width="100%"
+      >
+        {Row}
+      </FixedSizeList>
     );
   }
 
-  const { traceSummaries } = useLoaderData() as TraceSummaries;
   return (
-    <div className="sidebar">
-      <button
-        className="menuBtn"
-        onClick={props.toggle}
-      >
-        Collapse
-      </button>
-      <nav>
-        <FixedSizeList
-          className="list"
-          height={500}
-          itemData={traceSummaries}
-          itemCount={traceSummaries.length}
-          itemSize={30}
-          width={"100%"}
-        >
-          {Row}
-        </FixedSizeList>
-      </nav>
-    </div>
+    <Flex
+      bgColor={sidebarColour}
+      direction="column"
+      transition="width 0.2s ease-in-out"
+      width={sidebarWidth}
+    >
+      <Flex justifyContent="flex-end">
+        <IconButton
+          aria-label="Expand Sidebar"
+          colorScheme="pink"
+          icon={buttonIcon}
+          margin="15px"
+          onClick={props.toggle}
+        />
+      </Flex>
+      {traceList}
+    </Flex>
   );
 }
 
 export default function MainView() {
-  let [isClosed, toggleClosed] = useToggle();
+  let [isFullWidth, setFullWidth] = useBoolean();
 
   return (
     <div className="container">
       <Sidebar
-        isClosed={isClosed}
-        toggle={toggleClosed}
+        isFullWidth={isFullWidth}
+        toggle={setFullWidth.toggle}
       />
       <Outlet />
     </div>
