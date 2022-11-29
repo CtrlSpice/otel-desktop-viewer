@@ -3,6 +3,7 @@ import {
   Button,
   Flex,
   Heading,
+  IconButton,
   Spacer,
   useColorMode,
   useColorModeValue,
@@ -17,10 +18,9 @@ export function Header(props: HeaderProps) {
   const { colorMode, toggleColorMode } = useColorMode();
   return (
     <Flex
-      className="header"
       bg={useColorModeValue("gray.100", "gray.900")}
       align="center"
-      h={"60px"}
+      height={"60px"}
       px={2}
     >
       <Heading
@@ -33,13 +33,13 @@ export function Header(props: HeaderProps) {
 
       <Spacer />
 
-      <Button
-        aria-label="Toggle Colour Mode"
+      <IconButton
+        aria-label="Toddle Colour Mode"
+        colorScheme="pink"
+        icon={colorMode === "light" ? <MoonIcon /> : <SunIcon />}
+        margin="15px"
         onClick={toggleColorMode}
-        w="fit-content"
-      >
-        {colorMode === "light" ? <MoonIcon /> : <SunIcon />}
-      </Button>
+      />
     </Flex>
   );
 }

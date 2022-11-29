@@ -9,21 +9,6 @@ body {
   display: flex;
 }
 
-.sidebar {
-  width: 200px;
-  transition: width 0.2s ease-in-out;
-  height: 100vh;
-  background-color: #ffaaa5;
-  padding-top: 30px;
-}
-
-.sidebar.closed {
-  transition: width 0.2s ease-in-out;
-  width: 50px;
-}
-
-
-
 .detail {
   grid-area: detail;
   background-color: #ffd3b6;
