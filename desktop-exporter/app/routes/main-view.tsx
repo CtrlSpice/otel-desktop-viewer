@@ -72,13 +72,13 @@ function Sidebar(props: SidebarProps) {
       transition="width 0.2s ease-in-out"
       width={sidebarWidth}
     >
-      <Flex justifyContent={"flex-end"}>
+      <Flex justifyContent="flex-end">
         <IconButton
           aria-label="Expand Sidebar"
           colorScheme="pink"
           icon={buttonIcon}
           margin="15px"
-          onClick={() => props.toggle()}
+          onClick={props.toggle}
         />
       </Flex>
       {traceList}
