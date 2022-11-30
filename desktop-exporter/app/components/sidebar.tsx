@@ -3,10 +3,12 @@ import { ArrowLeftIcon, ArrowRightIcon } from "@chakra-ui/icons";
 import { Flex, IconButton, useColorModeValue } from "@chakra-ui/react";
 
 import { TraceList } from "../components/traceList";
+import { TraceSummary } from "../types/api-types";
 
 type SidebarProps = {
   isFullWidth: boolean;
   toggle: () => void;
+  traceSummaries: TraceSummary[];
 };
 
 export function Sidebar(props: SidebarProps) {
@@ -19,7 +21,7 @@ export function Sidebar(props: SidebarProps) {
   if (props.isFullWidth) {
     sidebarWidth = "250px";
     buttonIcon = <ArrowLeftIcon />;
-    traceList = <TraceList />;
+    traceList = <TraceList traceSummaries={props.traceSummaries} />;
   }
 
   return (
