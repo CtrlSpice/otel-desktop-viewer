@@ -5,11 +5,6 @@ body {
   overflow: hidden;
 }
 
-.container {
-  display: flex;
-  height: 100vh;
-}
-
 .detail {
   grid-area: detail;
   background-color: #ffd3b6;

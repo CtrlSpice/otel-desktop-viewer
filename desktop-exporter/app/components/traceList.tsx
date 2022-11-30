@@ -37,7 +37,6 @@ export function TraceList(props: TraceListProps) {
       height="100%"
     >
       <FixedSizeList
-        className="list"
         height={size ? size.height : 0}
         itemData={props.traceSummaries}
         itemCount={props.traceSummaries.length}
