@@ -1,16 +1,11 @@
 import React, { useRef } from "react";
 import { FixedSizeList } from "react-window";
-import { NavLink } from "react-router-dom";
+import { NavLink, useMatch } from "react-router-dom";
 import {
-  Box,
-  Card,
-  CardBody,
   Flex,
   Heading,
   LinkBox,
   LinkOverlay,
-  Stack,
-  StackDivider,
   Text,
   useColorModeValue,
 } from "@chakra-ui/react";
@@ -25,12 +20,11 @@ type RowProps = {
 };
 
 function Row({ index, style, data }: RowProps) {
-  const backgroundColour = useColorModeValue(
-    "whiteAlpha.700",
-    "whiteAlpha.400",
-  );
+  let isSelected = useMatch(`traces/${data[index].traceID}`);
 
-  const selectedColour = useColorModeValue("teal.100", "teal.900");
+  let backgroundColour = isSelected
+    ? useColorModeValue("teal.100", "teal.700")
+    : useColorModeValue("whiteAlpha.700", "whiteAlpha.400");
 
   return (
     <div style={style}>
@@ -41,7 +35,6 @@ function Row({ index, style, data }: RowProps) {
         marginX="10px"
         marginTop="10px"
         rounded="md"
-        _selected={{ bgColor: { selectedColour } }} // This is too much curlies
       >
         <Heading
           marginY="1"
@@ -56,7 +49,7 @@ function Row({ index, style, data }: RowProps) {
           </LinkOverlay>
         </Heading>
         <Text>Number of spans: {data[index].spanCount}</Text>
-        <Text>Duration: {data[index].spanCount}</Text>
+        <Text>Duration: {data[index].durationMS} ms</Text>
       </LinkBox>
     </div>
   );
