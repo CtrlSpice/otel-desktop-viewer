@@ -19,7 +19,7 @@ export function Sidebar(props: SidebarProps) {
   let traceList = <></>;
 
   if (props.isFullWidth) {
-    sidebarWidth = "450px";
+    sidebarWidth = "350px";
     buttonIcon = <ArrowLeftIcon />;
     traceList = <TraceList traceSummaries={props.traceSummaries} />;
   }

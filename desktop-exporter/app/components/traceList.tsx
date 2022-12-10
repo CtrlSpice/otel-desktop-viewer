@@ -13,73 +13,79 @@ import { useSize } from "@chakra-ui/react-use-size";
 
 import { TraceSummary } from "../types/api-types";
 
- const listItemHeight = 100;
- const listItemTopMargin = 10;
+const listItemHeight = 100;
+const listItemBottomMargin = 2;
 
- type RowProps = {
-   index: number;
-   style: Object;
-   data: TraceSummary[];
- };
+type RowProps = {
+  index: number;
+  style: Object;
+  data: TraceSummary[];
+};
 
- function Row({ index, style, data }: RowProps) {
-   let isSelected = useMatch(`traces/${data[index].traceID}`);
+function Row({ index, style, data }: RowProps) {
+  let isSelected = useMatch(`traces/${data[index].traceID}`);
+  let backgroundColour = isSelected
+    ? useColorModeValue("whiteAlpha.800", "whiteAlpha.400")
+    : useColorModeValue("whiteAlpha.600", "whiteAlpha.200");
+  let borderLeft = isSelected ? "7px solid" : "none";
 
-   let backgroundColour = isSelected
-     ? useColorModeValue("teal.100", "teal.700")
-     : useColorModeValue("whiteAlpha.700", "whiteAlpha.400");
+  return (
+    <div style={style}>
+      <LinkBox
+        bgColor={backgroundColour}
+        height="100px"
+        padding="10px"
+        marginBottom={`${listItemBottomMargin}px`}
+        borderLeft={borderLeft}
+        borderColor="pink.500"
+      >
+        <Heading
+          marginY="1"
+          noOfLines={1}
+          size="sm"
+        >
+          <LinkOverlay
+            as={NavLink}
+            to={`traces/${data[index].traceID}`}
+          >
+            {data[index].traceID}
+          </LinkOverlay>
+        </Heading>
+        <Text>
+          <strong>Number of spans: </strong>
+          {data[index].spanCount}
+        </Text>
+        <Text>
+          <strong>Duration: </strong>
+          {data[index].durationMS} ms
+        </Text>
+      </LinkBox>
+    </div>
+  );
+}
 
-   return (
-     <div style={style}>
-       <LinkBox
-         bgColor={backgroundColour}
-         height="100px"
-         padding="10px"
-         marginX="10px"
-         marginTop={`${listItemTopMargin}px`}
-         rounded="md"
-       >
-         <Heading
-           marginY="1"
-           noOfLines={1}
-           size="sm"
-         >
-           <LinkOverlay
-             as={NavLink}
-             to={`traces/${data[index].traceID}`}
-           >
-             {data[index].traceID}
-           </LinkOverlay>
-         </Heading>
-         <Text>Number of spans: {data[index].spanCount}</Text>
-         <Text>Duration: {data[index].durationMS} ms</Text>
-       </LinkBox>
-     </div>
-   );
- }
+type TraceListProps = {
+  traceSummaries: TraceSummary[];
+};
 
- type TraceListProps = {
-   traceSummaries: TraceSummary[];
- };
+export function TraceList(props: TraceListProps) {
+  const ref = useRef(null);
+  const size = useSize(ref);
 
- export function TraceList(props: TraceListProps) {
-   const ref = useRef(null);
-   const size = useSize(ref);
-
-   return (
-     <Flex
-       ref={ref}
-       height="100%"
-     >
-       <FixedSizeList
-         height={size ? size.height : 0}
-         itemData={props.traceSummaries}
-         itemCount={props.traceSummaries.length}
-         itemSize={listItemHeight + listItemTopMargin}
-         width="100%"
-       >
-         {Row}
-       </FixedSizeList>
-     </Flex>
-   );
- }
+  return (
+    <Flex
+      ref={ref}
+      height="100%"
+    >
+      <FixedSizeList
+        height={size ? size.height : 0}
+        itemData={props.traceSummaries}
+        itemCount={props.traceSummaries.length}
+        itemSize={listItemHeight + listItemBottomMargin}
+        width="100%"
+      >
+        {Row}
+      </FixedSizeList>
+    </Flex>
+  );
+}
