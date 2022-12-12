@@ -7,9 +7,9 @@ import {
   TabPanel,
   Box,
   AccordionIcon,
-  Divider,
   List,
   Heading,
+  Tag,
 } from "@chakra-ui/react";
 
 import { SpanData } from "../../types/api-types";
@@ -29,8 +29,72 @@ export function FieldsPannel(props: FieldsPannelProps) {
       </TabPanel>
     );
   }
+
+  // Root span: label with a little tag
+  let isRoot = span.parentSpanID.length ? false : true;
+  let rootTag = isRoot ? (
+    <Tag
+      marginStart={2}
+      colorScheme="cyan"
+      variant="subtle"
+    >
+      root
+    </Tag>
+  ) : null;
+
+  // parentSpanID: omit field if the span is root
+  let parentSpanIDField = !isRoot ? (
+    <SpanField
+      fieldName="parent span id"
+      fieldValue={span.parentSpanID}
+    />
+  ) : null;
+
+  // Duration: label in appropriate human-readable time unit (s, ms, μs, ns)
   let durationString = getDurationString(span.startTime, span.endTime);
 
+  // Dropped Counts: omit if they are equal to 0
+  let droppedAttributesCountField =
+    span.droppedAttributesCount > 0 ? (
+      <SpanField
+        fieldName="dropped attributes count"
+        fieldValue={span.droppedAttributesCount}
+      />
+    ) : null;
+
+  let droppedEventsCountField =
+    span.droppedEventsCount > 0 ? (
+      <SpanField
+        fieldName="dropped events count"
+        fieldValue={span.droppedEventsCount}
+      />
+    ) : null;
+
+  let droppedLinksCountField =
+    span.droppedLinksCount > 0 ? (
+      <SpanField
+        fieldName="dropped links count"
+        fieldValue={span.droppedLinksCount}
+      />
+    ) : null;
+
+  let droppedResourceAttributesCountField =
+    span.resource.droppedAttributesCount > 0 ? (
+      <SpanField
+        fieldName="dropped attributes count"
+        fieldValue={span.resource.droppedAttributesCount}
+      />
+    ) : null;
+
+  let droppedScopeAttributesCountField =
+    span.scope.droppedAttributesCount > 0 ? (
+      <SpanField
+        fieldName="dropped attributes count"
+        fieldValue={span.scope.droppedAttributesCount}
+      />
+    ) : null;
+
+  // Attributes:
   let spanAttributes = Object.entries(span.attributes).map(([key, value]) => (
     <li key={key}>
       <SpanField
@@ -74,7 +138,12 @@ export function FieldsPannel(props: FieldsPannelProps) {
               flex="1"
               textAlign="left"
             >
-              <Heading size="sm">Span Data</Heading>
+              <Heading
+                lineHeight="revert"
+                size="sm"
+              >
+                Span Data{rootTag}
+              </Heading>
             </Box>
             <AccordionIcon />
           </AccordionButton>
@@ -99,8 +168,6 @@ export function FieldsPannel(props: FieldsPannelProps) {
               fieldName="duration"
               fieldValue={durationString}
             />
-            <Divider />
-
             <SpanField
               fieldName="status code"
               fieldValue={span.statusCode}
@@ -109,37 +176,19 @@ export function FieldsPannel(props: FieldsPannelProps) {
               fieldName="status message"
               fieldValue={span.statusMessage}
             />
-            <Divider />
-
             <SpanField
               fieldName="trace id"
               fieldValue={span.traceID}
             />
+            {parentSpanIDField}
             <SpanField
               fieldName="span id"
               fieldValue={span.spanID}
             />
-            <SpanField
-              fieldName="parent span id"
-              fieldValue={span.parentSpanID}
-            />
-            <Divider />
-
-            <SpanField
-              fieldName="dropped attributes count"
-              fieldValue={span.droppedAttributesCount}
-            />
-            <SpanField
-              fieldName="dropped events count"
-              fieldValue={span.droppedEventsCount}
-            />
-            <SpanField
-              fieldName="dropped links count"
-              fieldValue={span.droppedLinksCount}
-            />
-            <Divider />
-
             <List>{spanAttributes}</List>
+            {droppedAttributesCountField}
+            {droppedEventsCountField}
+            {droppedLinksCountField}
           </AccordionPanel>
         </AccordionItem>
         <AccordionItem>
@@ -153,13 +202,8 @@ export function FieldsPannel(props: FieldsPannelProps) {
             <AccordionIcon />
           </AccordionButton>
           <AccordionPanel>
-            <SpanField
-              fieldName="dropped attributes count"
-              fieldValue={span.resource.droppedAttributesCount}
-            />
-            <Divider />
-
             <List>{resourceAttributes}</List>
+            {droppedResourceAttributesCountField}
           </AccordionPanel>
         </AccordionItem>
         <AccordionItem>
@@ -181,17 +225,8 @@ export function FieldsPannel(props: FieldsPannelProps) {
               fieldName="scope version"
               fieldValue={span.scope.version}
             />
-            <SpanField
-              fieldName="scope version"
-              fieldValue={span.scope.version}
-            />
-            <SpanField
-              fieldName="dropped attributes count"
-              fieldValue={span.scope.droppedAttributesCount}
-            />
-            <Divider />
-
             <List>{scopeAttributes}</List>
+            {droppedScopeAttributesCountField}
           </AccordionPanel>
         </AccordionItem>
       </Accordion>

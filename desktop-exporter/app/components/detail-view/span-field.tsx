@@ -17,8 +17,14 @@ export function SpanField(props: SpanFieldProps) {
   let { fieldName, fieldValue } = props;
   let fieldNameColour = useColorModeValue("gray.600", "gray.400");
 
-  if (fieldValue == null || fieldValue === "") {
-    return null;
+  switch (fieldValue) {
+    case null:
+      fieldValue = "null";
+      break;
+    case undefined:
+      fieldValue = "undelined";
+    case "":
+      fieldValue = '""';
   }
 
   return (
@@ -27,7 +33,7 @@ export function SpanField(props: SpanFieldProps) {
         <Flex experimental_spaceX={2}>
           <Tag
             size="sm"
-            variant="subtle"
+            variant="outline"
             colorScheme="cyan"
           >
             <TagLabel fontSize="xs">{typeof fieldValue}</TagLabel>
