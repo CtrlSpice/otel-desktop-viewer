@@ -2,7 +2,7 @@ import React from "react";
 import { ArrowLeftIcon, ArrowRightIcon } from "@chakra-ui/icons";
 import { Flex, IconButton, useColorModeValue } from "@chakra-ui/react";
 
-import { TraceList } from "../components/traceList";
+import { TraceList } from "../components/trace-list";
 import { TraceSummary } from "../types/api-types";
 
 type SidebarProps = {

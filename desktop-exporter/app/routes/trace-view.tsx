@@ -4,6 +4,7 @@ import { FixedSizeList } from "react-window";
 import { Grid, GridItem } from "@chakra-ui/react";
 
 import { Header } from "../components/header";
+import { DetailView } from "../components/detail-view/detail-view";
 import { SpanData, TraceData } from "../types/api-types";
 
 export async function traceLoader({ params }: any) {
@@ -60,27 +61,6 @@ function WaterfallView(props: WaterfallViewProps) {
   );
 }
 
-type DetailViewProps = {
-  span: SpanData | undefined;
-};
-
-function DetailView(props: DetailViewProps) {
-  let { span } = props;
-  if (!span) {
-    return <div className="detail"></div>;
-  }
-  return (
-    <div className="detail">
-      <pre>{`
-Name: ${span.name}
-Kind: ${span.kind}
-Start: ${span.startTime}
-End: ${span.endTime}
-    `}</pre>
-    </div>
-  );
-}
-
 export default function TraceView() {
   const traceData = useLoaderData() as TraceData;
   const [selectedSpanID, setSelectedSpanID] = React.useState<string>(
@@ -100,7 +80,7 @@ export default function TraceView() {
     <Grid
       templateAreas={`"header header"
                        "main detail"`}
-      gridTemplateColumns={"1fr 250px"}
+      gridTemplateColumns={"1fr 350px"}
       gridTemplateRows={"60px 1fr"}
       gap={"0"}
       height={"100vh"}
