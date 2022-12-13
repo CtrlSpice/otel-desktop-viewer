@@ -16,18 +16,6 @@ export function DetailView(props: DetailViewProps) {
   let numEvents = span.events.length;
   let numLinks = span.links.length;
 
-  let eventsTab = numEvents ? (
-    <Tab>Events({numEvents})</Tab>
-  ) : (
-    <Tab isDisabled>Events(0)</Tab>
-  );
-
-  let linksTab = numLinks ? (
-    <Tab>Links({numLinks})</Tab>
-  ) : (
-    <Tab isDisabled>Links(0)</Tab>
-  );
-
   return (
     <Flex
       grow="0"
@@ -45,8 +33,8 @@ export function DetailView(props: DetailViewProps) {
       >
         <TabList>
           <Tab>Fields</Tab>
-          {eventsTab}
-          {linksTab}
+          <Tab isDisabled={numEvents === 0}>Events({numEvents})</Tab>
+          <Tab isDisabled={numLinks === 0}>Links({numLinks})</Tab>
         </TabList>
         <TabPanels>
           <FieldsPannel span={span} />

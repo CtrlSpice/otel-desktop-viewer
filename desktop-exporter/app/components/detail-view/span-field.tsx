@@ -11,11 +11,16 @@ import {
 type SpanFieldProps = {
   fieldName: string;
   fieldValue: number | string | boolean | null;
+  hidden?: boolean;
 };
 
 export function SpanField(props: SpanFieldProps) {
-  let { fieldName, fieldValue } = props;
+  let { fieldName, fieldValue, hidden } = props;
   let fieldNameColour = useColorModeValue("gray.600", "gray.400");
+
+  if (hidden) {
+    return null;
+  }
 
   switch (fieldValue) {
     case null:
