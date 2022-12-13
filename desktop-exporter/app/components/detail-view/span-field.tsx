@@ -27,7 +27,7 @@ export function SpanField(props: SpanFieldProps) {
       fieldValue = "null";
       break;
     case undefined:
-      fieldValue = "undelined";
+      fieldValue = "undefined";
     case "":
       fieldValue = '""';
   }
