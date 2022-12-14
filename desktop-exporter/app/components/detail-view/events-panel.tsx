@@ -22,7 +22,6 @@ type EventsPanelProps = {
 };
 
 export function EventsPanel(props: EventsPanelProps) {
-  console.log(props);
   let { events, spanStartTime } = props;
   if (!events) {
     return null;
