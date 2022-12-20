@@ -43,16 +43,6 @@ function WaterfallRow({ index, style, data }: WaterfallRowProps) {
     .replaceAll("-", "-\u200B")
     .replaceAll(".", ".\u200B");
 
-  let stripZeroWidthSpaces = (e: ClipboardEvent<HTMLParagraphElement>) => {
-    let selection = window.getSelection();
-    if (!selection) {
-      return;
-    }
-    let text = selection.toString().replaceAll("\u200B", "");
-    e.clipboardData?.setData("text/plain", text);
-    e.preventDefault();
-  };
-
   return (
     <Flex
       style={style}
@@ -67,7 +57,6 @@ function WaterfallRow({ index, style, data }: WaterfallRowProps) {
         <Text
           noOfLines={2}
           fontSize="sm"
-          onCopy={(e) => stripZeroWidthSpaces(e)}
         >
           {nameLabel}
         </Text>
@@ -125,6 +114,7 @@ export function WaterfallView(props: WaterfallViewProps) {
       direction="column"
       ref={ref}
       height="100%"
+      onCopy={stripZeroWidthSpacesOnCopyCallback}
     >
       <HeaderRow />
       <FixedSizeList
@@ -139,4 +129,16 @@ export function WaterfallView(props: WaterfallViewProps) {
       </FixedSizeList>
     </Flex>
   );
+}
+
+function stripZeroWidthSpacesOnCopyCallback(
+  e: ClipboardEvent<HTMLParagraphElement>,
+) {
+  let selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+  let text = selection.toString().replaceAll("\u200B", "");
+  e.clipboardData?.setData("text/plain", text);
+  e.preventDefault();
 }
