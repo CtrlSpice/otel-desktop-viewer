@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, ClipboardEvent } from "react";
 import { FixedSizeList } from "react-window";
 import {
   Text,
@@ -12,6 +12,9 @@ import { useSize } from "@chakra-ui/react-use-size";
 import { SpanData } from "../../types/api-types";
 
 const waterfallItemHeight = 50;
+const headerRowHeight = 30;
+const spanNameColumnWidth = 244;
+const serviceNameColumnWidth = 120;
 
 type WaterfallRowProps = {
   index: number;
@@ -23,45 +26,54 @@ function WaterfallRow({ index, style, data }: WaterfallRowProps) {
   let { spans, selectedSpanID, setSelectedSpanID } = data;
   let span = spans[index];
 
-  // Add zero-width space after forward slashes, dashes, and dots
-  // to indicate line breaking opportunity
-  let nameLabel = span.name.replaceAll("/", "/\u200B");
-  nameLabel = span.name.replaceAll("-", "-\u200B");
-  nameLabel = span.name.replaceAll(".", ".\u200B");
-
   // Set the background colour to make the list striped.
   let backgroundColour =
     index % 2 ? "" : useColorModeValue("gray.50", "gray.700");
-  let borderLeft = "none";
+  let selectedColour = useColorModeValue("pink.50", "pink.900");
 
   //Set the style for the selected item
   if (!!selectedSpanID && selectedSpanID === span.spanID) {
-    backgroundColour = useColorModeValue("pink.50", "pink.900");
-    borderLeft = "5px solid";
+    backgroundColour = selectedColour;
   }
+
+  // Add zero-width space after forward slashes, dashes, and dots
+  // to indicate line breaking opportunity
+  let nameLabel = span.name
+    .replaceAll("/", "/\u200B")
+    .replaceAll("-", "-\u200B")
+    .replaceAll(".", ".\u200B");
+
+  let stripZeroWidthSpaces = (e: ClipboardEvent<HTMLParagraphElement>) => {
+    let selection = window.getSelection();
+    if (!selection) {
+      return;
+    }
+    let text = selection.toString().replaceAll("\u200B", "");
+    e.clipboardData?.setData("text/plain", text);
+    e.preventDefault();
+  };
 
   return (
     <Flex
       style={style}
       bgColor={backgroundColour}
-      borderLeft={borderLeft}
-      borderColor="pink.500"
       onClick={() => setSelectedSpanID(span.spanID)}
     >
       <Flex
-        width={244}
+        width={spanNameColumnWidth}
         alignItems="center"
         paddingStart={2}
       >
         <Text
           noOfLines={2}
           fontSize="sm"
+          onCopy={(e) => stripZeroWidthSpaces(e)}
         >
           {nameLabel}
         </Text>
       </Flex>
       <Flex
-        width={120}
+        width={serviceNameColumnWidth}
         alignItems="center"
         paddingStart={3}
       >
@@ -74,9 +86,9 @@ function WaterfallRow({ index, style, data }: WaterfallRowProps) {
 
 function HeaderRow() {
   return (
-    <Flex height="30px">
+    <Flex height={`${headerRowHeight}px`}>
       <Flex
-        width={244}
+        width={spanNameColumnWidth}
         alignItems="center"
       >
         <Heading
@@ -87,7 +99,7 @@ function HeaderRow() {
         </Heading>
       </Flex>
       <Flex
-        width={120}
+        width={serviceNameColumnWidth}
         alignItems="center"
         paddingStart={3}
       >
@@ -117,7 +129,7 @@ export function WaterfallView(props: WaterfallViewProps) {
       <HeaderRow />
       <FixedSizeList
         className="List"
-        height={size ? size.height - waterfallItemHeight : 0}
+        height={size ? size.height - headerRowHeight : 0}
         itemData={props}
         itemCount={props.spans.length}
         itemSize={waterfallItemHeight}
