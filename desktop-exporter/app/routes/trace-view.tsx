@@ -1,11 +1,11 @@
 import React from "react";
 import { useLoaderData } from "react-router-dom";
-import { FixedSizeList } from "react-window";
 import { Grid, GridItem } from "@chakra-ui/react";
 
 import { Header } from "../components/header";
 import { DetailView } from "../components/detail-view/detail-view";
-import { SpanData, TraceData } from "../types/api-types";
+import { WaterfallView } from "../components/waterfall-view/waterfall-view";
+import { TraceData } from "../types/api-types";
 
 export async function traceLoader({ params }: any) {
   const response = await fetch(`/api/traces/${params.traceID}`);
@@ -13,53 +13,7 @@ export async function traceLoader({ params }: any) {
   return traceData;
 }
 
-type WaterfallRowProps = {
-  index: number;
-  style: React.CSSProperties;
-  data: WaterfallViewProps;
-};
 
-function WaterfallRow({ index, style, data }: WaterfallRowProps) {
-  let { spans, selectedSpanID, setSelectedSpanID } = data;
-  let span = spans[index];
-
-  let className = "waterfall-item";
-  className += index % 2 ? " odd" : " even";
-  if (!!selectedSpanID) {
-    className += span.spanID === selectedSpanID ? " active" : "";
-  }
-
-  return (
-    <div
-      className={className}
-      style={style}
-      onClick={() => setSelectedSpanID(span.spanID)}
-    >
-      Name: {span.name} SpanID: {span.spanID}
-    </div>
-  );
-}
-
-type WaterfallViewProps = {
-  spans: SpanData[];
-  selectedSpanID: string | undefined;
-  setSelectedSpanID: (spanID: string) => void;
-};
-
-function WaterfallView(props: WaterfallViewProps) {
-  return (
-    <FixedSizeList
-      className="List"
-      height={300}
-      itemData={props}
-      itemCount={props.spans.length}
-      itemSize={30}
-      width={"100%"}
-    >
-      {WaterfallRow}
-    </FixedSizeList>
-  );
-}
 
 export default function TraceView() {
   const traceData = useLoaderData() as TraceData;
@@ -89,7 +43,10 @@ export default function TraceView() {
       <GridItem area={"header"}>
         <Header traceID={traceData.traceID} />
       </GridItem>
-      <GridItem area={"main"}>
+      <GridItem
+        area={"main"}
+        marginLeft="20px"
+      >
         <WaterfallView
           spans={traceData.spans}
           selectedSpanID={selectedSpanID}
