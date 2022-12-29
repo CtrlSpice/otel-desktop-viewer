@@ -1,103 +1,12 @@
 import React, { useRef, ClipboardEvent } from "react";
 import { FixedSizeList } from "react-window";
-import {
-  Text,
-  Flex,
-  Heading,
-  Spacer,
-  useColorModeValue,
-} from "@chakra-ui/react";
+import { Flex } from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
 
+import { getTraceDuration } from "../../utils/duration";
 import { SpanData } from "../../types/api-types";
-
-const waterfallItemHeight = 50;
-const headerRowHeight = 30;
-const spanNameColumnWidth = 244;
-const serviceNameColumnWidth = 120;
-
-type WaterfallRowProps = {
-  index: number;
-  style: React.CSSProperties;
-  data: WaterfallViewProps;
-};
-
-function WaterfallRow({ index, style, data }: WaterfallRowProps) {
-  let { spans, selectedSpanID, setSelectedSpanID } = data;
-  let span = spans[index];
-
-  // Set the background colour to make the list striped.
-  let backgroundColour =
-    index % 2 ? "" : useColorModeValue("gray.50", "gray.700");
-  let selectedColour = useColorModeValue("pink.50", "pink.900");
-
-  //Set the style for the selected item
-  if (!!selectedSpanID && selectedSpanID === span.spanID) {
-    backgroundColour = selectedColour;
-  }
-
-  // Add zero-width space after forward slashes, dashes, and dots
-  // to indicate line breaking opportunity
-  let nameLabel = span.name
-    .replaceAll("/", "/\u200B")
-    .replaceAll("-", "-\u200B")
-    .replaceAll(".", ".\u200B");
-
-  return (
-    <Flex
-      style={style}
-      bgColor={backgroundColour}
-      onClick={() => setSelectedSpanID(span.spanID)}
-    >
-      <Flex
-        width={spanNameColumnWidth}
-        alignItems="center"
-        paddingStart={2}
-      >
-        <Text
-          noOfLines={2}
-          fontSize="sm"
-        >
-          {nameLabel}
-        </Text>
-      </Flex>
-      <Flex
-        width={serviceNameColumnWidth}
-        alignItems="center"
-        paddingStart={3}
-      >
-        <Text fontSize="sm">{span.resource.attributes["service.name"]}</Text>
-      </Flex>
-      <Spacer />
-    </Flex>
-  );
-}
-
-function HeaderRow() {
-  return (
-    <Flex height={`${headerRowHeight}px`}>
-      <Flex
-        width={spanNameColumnWidth}
-        alignItems="center"
-      >
-        <Heading
-          paddingStart={2}
-          size="sm"
-        >
-          name
-        </Heading>
-      </Flex>
-      <Flex
-        width={serviceNameColumnWidth}
-        alignItems="center"
-        paddingStart={3}
-      >
-        <Heading size="sm">service.name</Heading>
-      </Flex>
-      <Spacer />
-    </Flex>
-  );
-}
+import { WaterfallRow } from "./waterfall-row";
+import { HeaderRow } from "./header-row";
 
 type WaterfallViewProps = {
   spans: SpanData[];
@@ -109,6 +18,21 @@ export function WaterfallView(props: WaterfallViewProps) {
   const ref = useRef(null);
   const size = useSize(ref);
 
+  const waterfallItemHeight = 50;
+  const headerRowHeight = 30;
+  const spanNameColumnWidth = 244;
+  const serviceNameColumnWidth = 120;
+
+  let traceDuration = getTraceDuration(props.spans);
+
+  let rowData = {
+    spans: props.spans,
+    spanNameColumnWidth: spanNameColumnWidth,
+    serviceNameColumnWidth: serviceNameColumnWidth,
+    selectedSpanID: props.selectedSpanID,
+    setSelectedSpanID: props.setSelectedSpanID,
+  };
+
   return (
     <Flex
       direction="column"
@@ -116,11 +40,16 @@ export function WaterfallView(props: WaterfallViewProps) {
       height="100%"
       onCopy={stripZeroWidthSpacesOnCopyCallback}
     >
-      <HeaderRow />
+      <HeaderRow
+        headerRowHeight={headerRowHeight}
+        spanNameColumnWidth={spanNameColumnWidth}
+        serviceNameColumnWidth={serviceNameColumnWidth}
+        traceDuration={traceDuration}
+      />
       <FixedSizeList
         className="List"
         height={size ? size.height - headerRowHeight : 0}
-        itemData={props}
+        itemData={rowData}
         itemCount={props.spans.length}
         itemSize={waterfallItemHeight}
         width={"100%"}
