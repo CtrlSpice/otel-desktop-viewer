@@ -17,11 +17,11 @@ import { SpanField } from "./span-field";
 import { getSpanDurationString } from "../../utils/duration";
 import { StatusCodeString, SpanKindString } from "../../utils/enum-mapping";
 
-type FieldsPannelProps = {
+type FieldsPanelProps = {
   span: SpanData | undefined;
 };
 
-export function FieldsPannel(props: FieldsPannelProps) {
+export function FieldsPanel(props: FieldsPanelProps) {
   let { span } = props;
   if (!span) {
     return (
