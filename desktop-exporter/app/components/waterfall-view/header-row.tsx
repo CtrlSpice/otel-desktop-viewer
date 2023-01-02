@@ -43,14 +43,14 @@ function DurationIndicator(props: DurationIndicatorProps) {
   let durationSections = Array(numSections - 1)
     .fill(null)
     .map((_, i) => {
-      let sectionLablel = `${+(sectionDuration * i).toFixed(3)}${timeUnit}`;
+      let sectionLabel = `${+(sectionDuration * i).toFixed(3)}${timeUnit}`;
       return (
         <Text
           key={i}
           fontSize="x-small"
           width={sectionWidth}
         >
-          {sectionLablel}
+          {sectionLabel}
         </Text>
       );
     });
