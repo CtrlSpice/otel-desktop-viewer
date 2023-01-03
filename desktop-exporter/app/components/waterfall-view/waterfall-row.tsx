@@ -37,6 +37,9 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
     backgroundColour = selectedColour;
   }
 
+  // Set the padding to indicate parent/children relationship between spans
+  let paddingLeft = span.depth ? span.depth * 25 : 0;
+
   // Add zero-width space after forward slashes, dashes, and dots
   // to indicate line breaking opportunity
   let nameLabel = span.name
@@ -48,10 +51,11 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
     <Flex
       style={style}
       bgColor={backgroundColour}
+      paddingLeft={`${paddingLeft}px`}
       onClick={() => setSelectedSpanID(span.spanID)}
     >
       <Flex
-        width={spanNameColumnWidth}
+        width={spanNameColumnWidth - paddingLeft}
         alignItems="center"
         paddingStart={2}
       >

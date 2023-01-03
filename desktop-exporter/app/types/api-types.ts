@@ -36,6 +36,8 @@ export type SpanData = {
 
   statusCode: string;
   statusMessage: string;
+
+  depth?: number;
 };
 
 export type ResourceData = {

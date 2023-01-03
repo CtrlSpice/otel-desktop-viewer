@@ -20,8 +20,8 @@ export function WaterfallView(props: WaterfallViewProps) {
 
   const waterfallItemHeight = 50;
   const headerRowHeight = 30;
-  const spanNameColumnWidth = 244;
-  const serviceNameColumnWidth = 120;
+  const spanNameColumnWidth = 250;
+  const serviceNameColumnWidth = 250;
 
   let traceDuration = getTraceDuration(props.spans);
 
@@ -71,3 +71,4 @@ function stripZeroWidthSpacesOnCopyCallback(
   e.clipboardData?.setData("text/plain", text);
   e.preventDefault();
 }
+
