@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 import { useSize } from "@chakra-ui/react-use-size";
-import { Flex, Heading, Spacer, Text } from "@chakra-ui/react";
+import { Flex, Heading, List, ListItem, Spacer, Text } from "@chakra-ui/react";
 
 type DurationIndicatorProps = {
   traceDuration: number;
@@ -45,23 +45,22 @@ function DurationIndicator(props: DurationIndicatorProps) {
     .map((_, i) => {
       let sectionLabel = `${+(sectionDuration * i).toFixed(3)}${timeUnit}`;
       return (
-        <Text
+        <ListItem
           key={i}
-          fontSize="x-small"
-          width={sectionWidth}
+          float="left"
         >
-          {sectionLabel}
-        </Text>
+          <Text
+            fontSize="x-small"
+            width={sectionWidth}
+          >
+            {sectionLabel}
+          </Text>
+        </ListItem>
       );
     });
-  durationSections.push(<Spacer />);
-  durationSections.push(
-    <Text
-      key={numSections - 1}
-      fontSize="x-small"
-    >
-      {`${+traceDuration.toFixed(3)}${timeUnit}`}
-    </Text>,
+
+  let lastDurationLabel = (
+    <Text fontSize="x-small">{`${+traceDuration.toFixed(3)}${timeUnit}`}</Text>
   );
 
   return (
@@ -72,7 +71,9 @@ function DurationIndicator(props: DurationIndicatorProps) {
       flex="1 1 auto"
       ref={ref}
     >
-      {durationSections}
+      <List>{durationSections}</List>
+      <Spacer />
+      {lastDurationLabel}
     </Flex>
   );
 }
