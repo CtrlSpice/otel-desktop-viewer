@@ -2,7 +2,7 @@ import React from "react";
 import { Flex, Tab, TabList, TabPanels, Tabs } from "@chakra-ui/react";
 
 import { SpanData } from "../../types/api-types";
-import { FieldsPannel } from "./fields-pannel";
+import { FieldsPanel } from "./fields-panel";
 import { EventsPanel } from "./events-panel";
 
 type DetailViewProps = {
@@ -38,7 +38,7 @@ export function DetailView(props: DetailViewProps) {
           <Tab isDisabled={numLinks === 0}>Links({numLinks})</Tab>
         </TabList>
         <TabPanels>
-          <FieldsPannel span={span} />
+          <FieldsPanel span={span} />
           <EventsPanel
             events={span.events}
             spanStartTime={span.startTime}
