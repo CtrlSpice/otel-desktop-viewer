@@ -3,13 +3,13 @@ import { FixedSizeList } from "react-window";
 import { Flex } from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
 
-import { getTraceDuration } from "../../utils/duration";
-import { SpanData } from "../../types/api-types";
+import { SpanWithMetadata } from "../../types/metadata-types";
 import { WaterfallRow } from "./waterfall-row";
 import { HeaderRow } from "./header-row";
 
 type WaterfallViewProps = {
-  spans: SpanData[];
+  orderedSpans: SpanWithMetadata[];
+  traceDurationNs: number;
   selectedSpanID: string | undefined;
   setSelectedSpanID: (spanID: string) => void;
 };
@@ -23,10 +23,8 @@ export function WaterfallView(props: WaterfallViewProps) {
   const spanNameColumnWidth = 250;
   const serviceNameColumnWidth = 250;
 
-  let traceDuration = getTraceDuration(props.spans);
-
   let rowData = {
-    spans: props.spans,
+    orderedSpans: props.orderedSpans,
     spanNameColumnWidth: spanNameColumnWidth,
     serviceNameColumnWidth: serviceNameColumnWidth,
     selectedSpanID: props.selectedSpanID,
@@ -44,13 +42,13 @@ export function WaterfallView(props: WaterfallViewProps) {
         headerRowHeight={headerRowHeight}
         spanNameColumnWidth={spanNameColumnWidth}
         serviceNameColumnWidth={serviceNameColumnWidth}
-        traceDuration={traceDuration}
+        traceDuration={props.traceDurationNs}
       />
       <FixedSizeList
         className="List"
         height={size ? size.height - headerRowHeight : 0}
         itemData={rowData}
-        itemCount={props.spans.length}
+        itemCount={props.orderedSpans.length}
         itemSize={waterfallItemHeight}
         width={"100%"}
       >

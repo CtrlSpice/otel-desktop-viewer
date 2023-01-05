@@ -46,7 +46,7 @@ export function getSpanDurationString(
   return `${durationNs} ns`;
 }
 
-export function getTraceDuration(spans: SpanData[]) {
+export function getTraceDurationNs(spans: SpanData[]) {
   if (!spans.length) {
     return 0;
   }

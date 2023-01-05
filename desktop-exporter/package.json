@@ -21,7 +21,7 @@
         "react-window": "^1.8.8",
         "timestamp-nano": "^1.0.0",
         "typescript": "^4.9.3",
-         "performant-array-to-tree": "^1.11.0"
+        "performant-array-to-tree": "^1.11.0"
     },
     "prettier": {
         "jsxSingleQuote": false,

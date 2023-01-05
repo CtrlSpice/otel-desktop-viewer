@@ -3,11 +3,13 @@ import { useLoaderData } from "react-router-dom";
 import { Grid, GridItem } from "@chakra-ui/react";
 import { arrayToTree, TreeItem } from "performant-array-to-tree";
 
+import { TraceData } from "../types/api-types";
+import { SpanWithMetadata } from "../types/metadata-types";
+
 import { Header } from "../components/header";
 import { DetailView } from "../components/detail-view/detail-view";
 import { WaterfallView } from "../components/waterfall-view/waterfall-view";
-import { getNsFromString } from "../utils/duration";
-import { TraceData, SpanData } from "../types/api-types";
+import { getNsFromString, getTraceDurationNs } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
   let response = await fetch(`/api/traces/${params.traceID}`);
@@ -17,18 +19,20 @@ export async function traceLoader({ params }: any) {
 
 export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
+  let traceDurationNs = getTraceDurationNs(traceData.spans);
+
   let spanTree = arrayToTree(traceData.spans, {
     id: "spanID",
     parentId: "parentSpanID",
   });
   let orderedSpans = orderSpans(spanTree[0], 0, []);
   let [selectedSpanID, setSelectedSpanID] = React.useState<string>(
-    orderedSpans.length ? orderedSpans[0].spanID : "",
+    orderedSpans.length ? orderedSpans[0].span.spanID : "",
   );
 
   // if we get a new trace because the route changed, reset the selected span
   React.useEffect(() => {
-    setSelectedSpanID(orderedSpans[0].spanID);
+    setSelectedSpanID(orderedSpans[0].span.spanID);
   }, [traceData]);
 
   let selectedSpan = traceData.spans.find(
@@ -53,7 +57,8 @@ export default function TraceView() {
         marginLeft="20px"
       >
         <WaterfallView
-          spans={orderedSpans}
+          orderedSpans={orderedSpans}
+          traceDurationNs={traceDurationNs}
           selectedSpanID={selectedSpanID}
           setSelectedSpanID={setSelectedSpanID}
         />
@@ -68,14 +73,14 @@ export default function TraceView() {
 function orderSpans(
   parentNode: TreeItem,
   depth: number,
-  orderedSpans: SpanData[],
+  orderedSpans: SpanWithMetadata[],
 ) {
-  let parentSpan = parentNode.data;
-  parentSpan.depth = depth;
-  orderedSpans.push(parentSpan);
+  orderedSpans.push({
+    span: parentNode.data,
+    metadata: { depth },
+  });
 
   let children = parentNode.children.sort(
-    // Not sure if this is how you write this in typescript, but I did my best
     (a: { data: { startTime: string } }, b: { data: { startTime: string } }) =>
       getNsFromString(a.data.startTime) - getNsFromString(b.data.startTime),
   );

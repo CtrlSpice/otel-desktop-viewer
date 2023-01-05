@@ -1,10 +1,10 @@
 import React from "react";
 import { Text, Flex, Spacer, useColorModeValue } from "@chakra-ui/react";
 
-import { SpanData } from "../../types/api-types";
+import { SpanWithMetadata } from "../../types/metadata-types";
 
 type WaterfallRowData = {
-  spans: SpanData[];
+  orderedSpans: SpanWithMetadata[];
   spanNameColumnWidth: number;
   serviceNameColumnWidth: number;
   selectedSpanID: string | undefined;
@@ -19,13 +19,14 @@ type WaterfallRowProps = {
 
 export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
   let {
-    spans,
+    orderedSpans,
     spanNameColumnWidth,
     serviceNameColumnWidth,
     selectedSpanID,
     setSelectedSpanID,
   } = data;
-  let span = spans[index];
+  let span = orderedSpans[index].span;
+  let spanDepth = orderedSpans[index].metadata.depth;
 
   // Set the background colour to make the list striped.
   let backgroundColour =
@@ -38,7 +39,7 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
   }
 
   // Set the padding to indicate parent/children relationship between spans
-  let paddingLeft = span.depth ? span.depth * 25 : 0;
+  let paddingLeft = spanDepth ? spanDepth * 25 : 0;
 
   // Add zero-width space after forward slashes, dashes, and dots
   // to indicate line breaking opportunity
