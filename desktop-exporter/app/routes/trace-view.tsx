@@ -20,12 +20,51 @@ export async function traceLoader({ params }: any) {
 export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
   let traceDurationNs = getTraceDurationNs(traceData.spans);
+  let orderedSpans: SpanWithMetadata[] = [];
 
   let spanTree = arrayToTree(traceData.spans, {
     id: "spanID",
     parentId: "parentSpanID",
   });
-  let orderedSpans = orderSpans(spanTree[0], 0, []);
+
+  for (let root of spanTree) {
+    let stack = [
+      {
+        treeItem: root,
+        depth: 0,
+      },
+    ];
+
+    while (stack.length) {
+      let node = stack.pop();
+      if (!node) {
+        break;
+      }
+      let { treeItem, depth } = node;
+
+      orderedSpans.push({
+        span: treeItem.data,
+        metadata: { depth: node.depth },
+      });
+
+      treeItem.children
+        .sort(
+          (
+            a: { data: { startTime: string } },
+            b: { data: { startTime: string } },
+          ) =>
+            getNsFromString(a.data.startTime) -
+            getNsFromString(b.data.startTime),
+        )
+        .forEach((child: TreeItem) =>
+          stack.push({
+            treeItem: child,
+            depth: depth + 1,
+          }),
+        );
+    }
+  }
+
   let [selectedSpanID, setSelectedSpanID] = React.useState<string>(
     orderedSpans.length ? orderedSpans[0].span.spanID : "",
   );
@@ -68,26 +107,4 @@ export default function TraceView() {
       </GridItem>
     </Grid>
   );
-}
-
-function orderSpans(
-  parentNode: TreeItem,
-  depth: number,
-  orderedSpans: SpanWithMetadata[],
-) {
-  orderedSpans.push({
-    span: parentNode.data,
-    metadata: { depth },
-  });
-
-  let children = parentNode.children.sort(
-    (a: { data: { startTime: string } }, b: { data: { startTime: string } }) =>
-      getNsFromString(a.data.startTime) - getNsFromString(b.data.startTime),
-  );
-
-  children.forEach((node: TreeItem) => {
-    orderedSpans = orderSpans(node, depth + 1, orderedSpans);
-  });
-
-  return orderedSpans;
 }
