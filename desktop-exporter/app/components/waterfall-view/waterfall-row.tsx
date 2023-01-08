@@ -25,7 +25,7 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
     selectedSpanID,
     setSelectedSpanID,
   } = data;
-  let span = orderedSpans[index].span;
+  let { spanID, spanData } = orderedSpans[index];
   let spanDepth = orderedSpans[index].metadata.depth;
 
   // Set the background colour to make the list striped.
@@ -34,7 +34,7 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
   let selectedColour = useColorModeValue("pink.50", "pink.900");
 
   //Set the style for the selected item
-  if (!!selectedSpanID && selectedSpanID === span.spanID) {
+  if (!!selectedSpanID && selectedSpanID === spanID) {
     backgroundColour = selectedColour;
   }
 
@@ -43,17 +43,22 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
 
   // Add zero-width space after forward slashes, dashes, and dots
   // to indicate line breaking opportunity
-  let nameLabel = span.name
-    .replaceAll("/", "/\u200B")
-    .replaceAll("-", "-\u200B")
-    .replaceAll(".", ".\u200B");
+  let nameLabel = spanData
+    ? spanData.name
+        .replaceAll("/", "/\u200B")
+        .replaceAll("-", "-\u200B")
+        .replaceAll(".", ".\u200B")
+    : "missing span";
 
+  let resourceLabel = spanData
+    ? spanData.resource.attributes["service.name"]
+    : "";
   return (
     <Flex
       style={style}
       bgColor={backgroundColour}
       paddingLeft={`${paddingLeft}px`}
-      onClick={() => setSelectedSpanID(span.spanID)}
+      onClick={() => setSelectedSpanID(spanID)}
     >
       <Flex
         width={spanNameColumnWidth - paddingLeft}
@@ -72,7 +77,7 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
         alignItems="center"
         paddingStart={3}
       >
-        <Text fontSize="sm">{span.resource.attributes["service.name"]}</Text>
+        <Text fontSize="sm">{}</Text>
       </Flex>
       <Spacer />
     </Flex>

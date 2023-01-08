@@ -5,6 +5,7 @@ export type SpanMetaData = {
 };
 
 export type SpanWithMetadata = {
-  span: SpanData;
+  spanID: string;
+  spanData: SpanData | null;
   metadata: SpanMetaData;
 };

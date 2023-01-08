@@ -1,7 +1,6 @@
 import React from "react";
 import { useLoaderData } from "react-router-dom";
 import { Grid, GridItem } from "@chakra-ui/react";
-import { arrayToTree, TreeItem } from "performant-array-to-tree";
 
 import { TraceData } from "../types/api-types";
 import { SpanWithMetadata } from "../types/metadata-types";
@@ -9,6 +8,7 @@ import { SpanWithMetadata } from "../types/metadata-types";
 import { Header } from "../components/header";
 import { DetailView } from "../components/detail-view/detail-view";
 import { WaterfallView } from "../components/waterfall-view/waterfall-view";
+import { arrayToTree, TreeItem } from "../utils/array-to-tree";
 import { getNsFromString, getTraceDurationNs } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
@@ -21,11 +21,10 @@ export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
   let traceDurationNs = getTraceDurationNs(traceData.spans);
   let orderedSpans: SpanWithMetadata[] = [];
+  let spanTree: TreeItem[] = [];
 
-  let spanTree = arrayToTree(traceData.spans, {
-    id: "spanID",
-    parentId: "parentSpanID",
-  });
+  spanTree = arrayToTree(traceData.spans);
+  console.log(spanTree);
 
   for (let root of spanTree) {
     let stack = [
@@ -43,19 +42,25 @@ export default function TraceView() {
       let { treeItem, depth } = node;
 
       orderedSpans.push({
-        span: treeItem.data,
+        spanID: treeItem.span.spanID,
+        spanData: treeItem.span.spanData,
         metadata: { depth: node.depth },
       });
 
       treeItem.children
-        .sort(
-          (
-            a: { data: { startTime: string } },
-            b: { data: { startTime: string } },
-          ) =>
-            getNsFromString(a.data.startTime) -
-            getNsFromString(b.data.startTime),
-        )
+        .sort((a, b) => {
+          let aStart = a.span.spanData
+            ? getNsFromString(a.span.spanData.startTime)
+            : 0;
+          let bStart = b.span.spanData
+            ? getNsFromString(b.span.spanData.startTime)
+            : 0;
+
+          if ((aStart = 0)) {
+            return bStart - aStart;
+          }
+          return aStart - bStart;
+        })
         .forEach((child: TreeItem) =>
           stack.push({
             treeItem: child,
@@ -66,16 +71,16 @@ export default function TraceView() {
   }
 
   let [selectedSpanID, setSelectedSpanID] = React.useState<string>(
-    orderedSpans.length ? orderedSpans[0].span.spanID : "",
+    orderedSpans.length ? orderedSpans[0].spanID : "",
   );
 
   // if we get a new trace because the route changed, reset the selected span
   React.useEffect(() => {
-    setSelectedSpanID(orderedSpans[0].span.spanID);
+    setSelectedSpanID(orderedSpans[0].spanID);
   }, [traceData]);
 
   let selectedSpan = traceData.spans.find(
-    (span) => span.spanID === selectedSpanID,
+    (span: { spanID: string }) => span.spanID === selectedSpanID,
   );
 
   return (
