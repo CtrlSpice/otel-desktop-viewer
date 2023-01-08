@@ -24,7 +24,6 @@ export default function TraceView() {
   let spanTree: TreeItem[] = [];
 
   spanTree = arrayToTree(traceData.spans);
-  console.log(spanTree);
 
   for (let root of spanTree) {
     let stack = [
