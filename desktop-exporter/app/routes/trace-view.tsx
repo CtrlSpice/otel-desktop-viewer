@@ -26,12 +26,13 @@ export default function TraceView() {
   let [selectedSpanID, setSelectedSpanID] = React.useState<string>(() => {
     if (
       !orderedSpans.length ||
-      (!orderedSpans[0].status && orderedSpans.length < 2)
+      (!(orderedSpans[0].status === SpanDataStatus.present) &&
+        orderedSpans.length < 2)
     ) {
       return "";
     }
 
-    if (!orderedSpans[0].status) {
+    if (!(orderedSpans[0].status === SpanDataStatus.present)) {
       return orderedSpans[1].metadata.spanID;
     }
 
@@ -41,7 +42,7 @@ export default function TraceView() {
   // if we get a new trace because the route changed, reset the selected span
   React.useEffect(() => {
     setSelectedSpanID(
-      orderedSpans[0].status
+      orderedSpans[0].status === SpanDataStatus.present
         ? orderedSpans[0].metadata.spanID
         : orderedSpans[1].metadata.spanID,
     );
@@ -82,6 +83,16 @@ export default function TraceView() {
   );
 }
 
+// Do a depth-first traverse of the generated tree, re-flattening it out into an array
+// ordering each set of children by start time and capturing information about the
+// depth of each span so we can render it correctly
+//
+// In the case that we are missing spans in the tree, orphaned subtrees will have a
+// phantom parent span.
+//
+// We are sorting each set of children, but not the set of root nodes we are starting with,
+// as the array-to-tree implementation is such that the root span (if one is present)
+// is displayed first and all missing spans come after
 function orderSpans(spanTree: TreeItem[]): SpanWithUIData[] {
   let orderedSpans: SpanWithUIData[] = [];
 
@@ -115,12 +126,16 @@ function orderSpans(spanTree: TreeItem[]): SpanWithUIData[] {
 
       treeItem.children
         .sort((a, b) => {
-          if (a.status && b.status) {
+          if (
+            a.status === SpanDataStatus.present &&
+            b.status === SpanDataStatus.present
+          ) {
             return (
               getNsFromString(a.spanData.startTime) -
               getNsFromString(b.spanData.startTime)
             );
           }
+          // TODO: Throw a good error. Like, yeet it real good.
           // This doesn't happen- all missing spans are root,
           // and all children by definition have a present status
           return 0;

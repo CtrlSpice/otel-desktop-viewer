@@ -1,8 +1,8 @@
 import { SpanData } from "./api-types";
 
 export enum SpanDataStatus {
-  missing,
-  present,
+  missing = "missing",
+  present = "present",
 }
 
 export type SpanUIData = {

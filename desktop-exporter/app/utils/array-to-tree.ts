@@ -30,9 +30,9 @@ export function arrayToTree(spans: SpanData[]): TreeItem[] {
       };
     }
 
+    // Note A:
     // If the span has been added to the lookup structure as a missing/incomplete parent
-    // on a previous pass, update it and mark it present, and remove it from the missing set.
-    // (See comment on next block of code - line 52ish)
+    // on a previous pass (see Note B), update it and mark it present, and remove it from the missing set.
     if (lookup[spanID].status === SpanDataStatus.missing) {
       let children = lookup[spanID].children;
       lookup[spanID] = {
@@ -49,9 +49,9 @@ export function arrayToTree(spans: SpanData[]): TreeItem[] {
     if (!parentSpanID) {
       rootItems.push(treeItem);
     } else {
+      // Note B:
       // If the current span's parentSpanID is not in the lookup structure yet, add it
-      // as a missing/incomplete span, to be updated in a subsequent loop if found
-      // (See comment on previous block of code - line 33ish)
+      // as a missing/incomplete span, to be updated in a subsequent loop if found (see note A)
       if (!lookup[parentSpanID]) {
         lookup[parentSpanID] = {
           status: SpanDataStatus.missing,
@@ -67,7 +67,8 @@ export function arrayToTree(spans: SpanData[]): TreeItem[] {
     }
   }
 
-  // In order to handle incomplete traces, the missing spans get added to rootItems
+  // In order to handle incomplete traces, the missing spans get appended to the end of the rootItems array
+  // This way we make sure that the root span is added first (if present), followed by any missing spans
   for (let spanID of missingSpanIDs) {
     rootItems.push(lookup[spanID]);
   }
