@@ -1,14 +1,14 @@
 import React from "react";
 import { useLoaderData } from "react-router-dom";
 import { Grid, GridItem } from "@chakra-ui/react";
-import { arrayToTree, TreeItem } from "performant-array-to-tree";
 
 import { TraceData } from "../types/api-types";
-import { SpanWithMetadata } from "../types/metadata-types";
+import { SpanDataStatus, SpanWithUIData } from "../types/metadata-types";
 
 import { Header } from "../components/header";
 import { DetailView } from "../components/detail-view/detail-view";
 import { WaterfallView } from "../components/waterfall-view/waterfall-view";
+import { arrayToTree, TreeItem } from "../utils/array-to-tree";
 import { getNsFromString, getTraceDurationNs } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
@@ -20,62 +20,36 @@ export async function traceLoader({ params }: any) {
 export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
   let traceDurationNs = getTraceDurationNs(traceData.spans);
-  let orderedSpans: SpanWithMetadata[] = [];
+  let spanTree: TreeItem[] = arrayToTree(traceData.spans);
+  let orderedSpans = orderSpans(spanTree);
 
-  let spanTree = arrayToTree(traceData.spans, {
-    id: "spanID",
-    parentId: "parentSpanID",
-  });
-
-  for (let root of spanTree) {
-    let stack = [
-      {
-        treeItem: root,
-        depth: 0,
-      },
-    ];
-
-    while (stack.length) {
-      let node = stack.pop();
-      if (!node) {
-        break;
-      }
-      let { treeItem, depth } = node;
-
-      orderedSpans.push({
-        span: treeItem.data,
-        metadata: { depth: node.depth },
-      });
-
-      treeItem.children
-        .sort(
-          (
-            a: { data: { startTime: string } },
-            b: { data: { startTime: string } },
-          ) =>
-            getNsFromString(a.data.startTime) -
-            getNsFromString(b.data.startTime),
-        )
-        .forEach((child: TreeItem) =>
-          stack.push({
-            treeItem: child,
-            depth: depth + 1,
-          }),
-        );
+  let [selectedSpanID, setSelectedSpanID] = React.useState<string>(() => {
+    if (
+      !orderedSpans.length ||
+      (!(orderedSpans[0].status === SpanDataStatus.present) &&
+        orderedSpans.length < 2)
+    ) {
+      return "";
     }
-  }
 
-  let [selectedSpanID, setSelectedSpanID] = React.useState<string>(
-    orderedSpans.length ? orderedSpans[0].span.spanID : "",
-  );
+    if (!(orderedSpans[0].status === SpanDataStatus.present)) {
+      return orderedSpans[1].metadata.spanID;
+    }
+
+    return orderedSpans[0].metadata.spanID;
+  });
 
   // if we get a new trace because the route changed, reset the selected span
   React.useEffect(() => {
-    setSelectedSpanID(orderedSpans[0].span.spanID);
+    setSelectedSpanID(
+      orderedSpans[0].status === SpanDataStatus.present
+        ? orderedSpans[0].metadata.spanID
+        : orderedSpans[1].metadata.spanID,
+    );
   }, [traceData]);
 
   let selectedSpan = traceData.spans.find(
-    (span) => span.spanID === selectedSpanID,
+    (span: { spanID: string }) => span.spanID === selectedSpanID,
   );
 
   return (
@@ -107,4 +81,73 @@ export default function TraceView() {
       </GridItem>
     </Grid>
   );
+}
+
+// Do a depth-first traverse of the generated tree, re-flattening it out into an array
+// ordering each set of children by start time and capturing information about the
+// depth of each span so we can render it correctly
+//
+// In the case that we are missing spans in the tree, orphaned subtrees will have a
+// phantom parent span.
+//
+// We are sorting each set of children, but not the set of root nodes we are starting with,
+// as the array-to-tree implementation is such that the root span (if one is present)
+// is displayed first and all missing spans come after
+function orderSpans(spanTree: TreeItem[]): SpanWithUIData[] {
+  let orderedSpans: SpanWithUIData[] = [];
+
+  for (let root of spanTree) {
+    let stack = [
+      {
+        treeItem: root,
+        depth: 0,
+      },
+    ];
+
+    while (stack.length) {
+      let node = stack.pop();
+      if (!node) {
+        break;
+      }
+      let { treeItem, depth } = node;
+
+      if (treeItem.status === SpanDataStatus.present) {
+        orderedSpans.push({
+          status: SpanDataStatus.present,
+          spanData: treeItem.spanData,
+          metadata: { depth: depth, spanID: treeItem.spanData.spanID },
+        });
+      } else {
+        orderedSpans.push({
+          status: SpanDataStatus.missing,
+          metadata: { depth: depth, spanID: treeItem.spanID },
+        });
+      }
+
+      treeItem.children
+        .sort((a, b) => {
+          if (
+            a.status === SpanDataStatus.present &&
+            b.status === SpanDataStatus.present
+          ) {
+            return (
+              getNsFromString(a.spanData.startTime) -
+              getNsFromString(b.spanData.startTime)
+            );
+          }
+          // TODO: Throw a good error. Like, yeet it real good.
+          // This doesn't happen- all missing spans are root,
+          // and all children by definition have a present status
+          return 0;
+        })
+        .forEach((child: TreeItem) =>
+          stack.push({
+            treeItem: child,
+            depth: depth + 1,
+          }),
+        );
+    }
+  }
+
+  return orderedSpans;
 }
