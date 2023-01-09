@@ -3,7 +3,7 @@ import { useLoaderData } from "react-router-dom";
 import { Grid, GridItem } from "@chakra-ui/react";
 
 import { TraceData } from "../types/api-types";
-import { SpanWithMetadata } from "../types/metadata-types";
+import { SpanDataStatus, SpanWithUIData } from "../types/metadata-types";
 
 import { Header } from "../components/header";
 import { DetailView } from "../components/detail-view/detail-view";
@@ -20,62 +20,31 @@ export async function traceLoader({ params }: any) {
 export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
   let traceDurationNs = getTraceDurationNs(traceData.spans);
-  let orderedSpans: SpanWithMetadata[] = [];
-  let spanTree: TreeItem[] = [];
+  let spanTree: TreeItem[] = arrayToTree(traceData.spans);
+  let orderedSpans = orderSpans(spanTree);
 
-  spanTree = arrayToTree(traceData.spans);
-
-  for (let root of spanTree) {
-    let stack = [
-      {
-        treeItem: root,
-        depth: 0,
-      },
-    ];
-
-    while (stack.length) {
-      let node = stack.pop();
-      if (!node) {
-        break;
-      }
-      let { treeItem, depth } = node;
-
-      orderedSpans.push({
-        spanID: treeItem.span.spanID,
-        spanData: treeItem.span.spanData,
-        metadata: { depth: node.depth },
-      });
-
-      treeItem.children
-        .sort((a, b) => {
-          let aStart = a.span.spanData
-            ? getNsFromString(a.span.spanData.startTime)
-            : 0;
-          let bStart = b.span.spanData
-            ? getNsFromString(b.span.spanData.startTime)
-            : 0;
-
-          if ((aStart = 0)) {
-            return bStart - aStart;
-          }
-          return aStart - bStart;
-        })
-        .forEach((child: TreeItem) =>
-          stack.push({
-            treeItem: child,
-            depth: depth + 1,
-          }),
-        );
+  let [selectedSpanID, setSelectedSpanID] = React.useState<string>(() => {
+    if (
+      !orderedSpans.length ||
+      (!orderedSpans[0].status && orderedSpans.length < 2)
+    ) {
+      return "";
     }
-  }
 
-  let [selectedSpanID, setSelectedSpanID] = React.useState<string>(
-    orderedSpans.length ? orderedSpans[0].spanID : "",
-  );
+    if (!orderedSpans[0].status) {
+      return orderedSpans[1].metadata.spanID;
+    }
+
+    return orderedSpans[0].metadata.spanID;
+  });
 
   // if we get a new trace because the route changed, reset the selected span
   React.useEffect(() => {
-    setSelectedSpanID(orderedSpans[0].spanID);
+    setSelectedSpanID(
+      orderedSpans[0].status
+        ? orderedSpans[0].metadata.spanID
+        : orderedSpans[1].metadata.spanID,
+    );
   }, [traceData]);
 
   let selectedSpan = traceData.spans.find(
@@ -111,4 +80,59 @@ export default function TraceView() {
       </GridItem>
     </Grid>
   );
+}
+
+function orderSpans(spanTree: TreeItem[]): SpanWithUIData[] {
+  let orderedSpans: SpanWithUIData[] = [];
+
+  for (let root of spanTree) {
+    let stack = [
+      {
+        treeItem: root,
+        depth: 0,
+      },
+    ];
+
+    while (stack.length) {
+      let node = stack.pop();
+      if (!node) {
+        break;
+      }
+      let { treeItem, depth } = node;
+
+      if (treeItem.status === SpanDataStatus.present) {
+        orderedSpans.push({
+          status: SpanDataStatus.present,
+          spanData: treeItem.spanData,
+          metadata: { depth: depth, spanID: treeItem.spanData.spanID },
+        });
+      } else {
+        orderedSpans.push({
+          status: SpanDataStatus.missing,
+          metadata: { depth: depth, spanID: treeItem.spanID },
+        });
+      }
+
+      treeItem.children
+        .sort((a, b) => {
+          if (a.status && b.status) {
+            return (
+              getNsFromString(a.spanData.startTime) -
+              getNsFromString(b.spanData.startTime)
+            );
+          }
+          // This doesn't happen- all missing spans are root,
+          // and all children by definition have a present status
+          return 0;
+        })
+        .forEach((child: TreeItem) =>
+          stack.push({
+            treeItem: child,
+            depth: depth + 1,
+          }),
+        );
+    }
+  }
+
+  return orderedSpans;
 }

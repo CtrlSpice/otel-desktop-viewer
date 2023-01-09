@@ -1,11 +1,22 @@
 import { SpanData } from "./api-types";
 
-export type SpanMetaData = {
+export enum SpanDataStatus {
+  missing,
+  present,
+}
+
+export type SpanUIData = {
   depth: number;
+  spanID: string;
 };
 
-export type SpanWithMetadata = {
-  spanID: string;
-  spanData: SpanData | null;
-  metadata: SpanMetaData;
-};
+export type SpanWithUIData =
+  | {
+      status: SpanDataStatus.present;
+      spanData: SpanData;
+      metadata: SpanUIData;
+    }
+  | {
+      status: SpanDataStatus.missing;
+      metadata: SpanUIData;
+    };
