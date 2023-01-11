@@ -14,7 +14,7 @@ import {
 
 import { SpanData } from "../../types/api-types";
 import { SpanField } from "./span-field";
-import { getSpanDurationString } from "../../utils/duration";
+import { DurationNs, DurationString } from "../../utils/duration";
 import { StatusCodeString, SpanKindString } from "../../utils/enum-mapping";
 
 type FieldsPanelProps = {
@@ -44,7 +44,8 @@ export function FieldsPanel(props: FieldsPanelProps) {
   ) : null;
 
   // Duration: label in appropriate human-readable time unit (s, ms, μs, ns)
-  let durationString = getSpanDurationString(span.startTime, span.endTime);
+
+  let durationString = DurationString(DurationNs(span.startTime, span.endTime));
 
   let statusString = StatusCodeString[span.statusCode];
 
