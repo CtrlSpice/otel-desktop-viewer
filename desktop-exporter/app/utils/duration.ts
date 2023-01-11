@@ -56,17 +56,17 @@ export function getDurationString(durationNs: number) {
 
   // Label in seconds
   if (durationNs >= 1e9) {
-    return `${durationNs / 1e9} s`;
+    return `${(durationNs / 1e9).toFixed(3)} s`;
   }
 
   // Label in milliseconds
   if (durationNs >= 1e6) {
-    return `${durationNs / 1e6} ms`;
+    return `${(durationNs / 1e6).toFixed(3)} ms`;
   }
 
   // Label in microseconds
   if (durationNs >= 1e3) {
-    return `${durationNs / 1e3} μs`;
+    return `${(durationNs / 1e3).toFixed(3)} μs`;
   }
 
   // Label in nanoseconds
