@@ -1,12 +1,12 @@
 import React from "react";
 import { Box, Flex, useColorModeValue } from "@chakra-ui/react";
 
-import { NsFromString, TraceTimeAttributes } from "../../utils/duration";
-import { EventData } from "../../types/api-types";
+import { getNsFromString, TraceTiming } from "../../utils/duration";
+import { SpanData } from "../../types/api-types";
 
 type DurationBarProps = {
-  events: EventData[];
-  traceTimeAttributes: TraceTimeAttributes;
+  spanData: SpanData;
+  traceTimeAttributes: TraceTiming;
   spanStartTimestamp: string;
   spanEndTimestamp: string;
 };
@@ -15,8 +15,8 @@ export function DurationBar(props: DurationBarProps) {
   let durationBarColour = useColorModeValue("cyan.800", "cyan.700");
 
   let { traceStartTimeNS, traceDurationNS } = props.traceTimeAttributes;
-  let spanStartTimeNs = NsFromString(props.spanStartTimestamp);
-  let spanEndTimeNs = NsFromString(props.spanEndTimestamp);
+  let spanStartTimeNs = getNsFromString(props.spanStartTimestamp);
+  let spanEndTimeNs = getNsFromString(props.spanEndTimestamp);
 
   let offsetStart = Math.floor(
     ((spanStartTimeNs - traceStartTimeNS) / traceDurationNS) * 100,

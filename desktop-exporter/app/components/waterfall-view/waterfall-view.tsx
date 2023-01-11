@@ -6,11 +6,11 @@ import { useSize } from "@chakra-ui/react-use-size";
 import { SpanWithUIData } from "../../types/metadata-types";
 import { WaterfallRow } from "./waterfall-row";
 import { HeaderRow } from "./header-row";
-import { TraceTimeAttributes } from "../../utils/duration";
+import { TraceTiming } from "../../utils/duration";
 
 type WaterfallViewProps = {
   orderedSpans: SpanWithUIData[];
-  traceTimeAttributes: TraceTimeAttributes;
+  traceTimeAttributes: TraceTiming;
   selectedSpanID: string | undefined;
   setSelectedSpanID: (spanID: string) => void;
 };

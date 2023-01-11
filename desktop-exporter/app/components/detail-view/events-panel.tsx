@@ -14,7 +14,7 @@ import {
 
 import { EventData } from "../../types/api-types";
 import { SpanField } from "./span-field";
-import { DurationNs, DurationString } from "../../utils/duration";
+import { getDurationNs, getDurationString } from "../../utils/duration";
 
 type EventsPanelProps = {
   events: EventData[] | undefined;
@@ -28,8 +28,8 @@ export function EventsPanel(props: EventsPanelProps) {
   }
 
   let eventList = events.map((event) => {
-    let timeSinceSpanStart = DurationNs(spanStartTime, event.timestamp);
-    let durationString = DurationString(timeSinceSpanStart);
+    let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
+    let durationString = getDurationString(timeSinceSpanStart);
     let eventAttributes = Object.entries(event.attributes).map(
       ([key, value]) => (
         <li key={key}>

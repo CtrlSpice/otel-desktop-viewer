@@ -9,7 +9,7 @@ import { Header } from "../components/header";
 import { DetailView } from "../components/detail-view/detail-view";
 import { WaterfallView } from "../components/waterfall-view/waterfall-view";
 import { arrayToTree, TreeItem } from "../utils/array-to-tree";
-import { NsFromString, getTraceTimeAttributes } from "../utils/duration";
+import { getNsFromString, calculateTraceTiming } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
   let response = await fetch(`/api/traces/${params.traceID}`);
@@ -19,7 +19,7 @@ export async function traceLoader({ params }: any) {
 
 export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
-  let traceTimeAttributes = getTraceTimeAttributes(traceData.spans);
+  let traceTimeAttributes = calculateTraceTiming(traceData.spans);
   let spanTree: TreeItem[] = arrayToTree(traceData.spans);
   let orderedSpans = orderSpans(spanTree);
 
@@ -131,8 +131,8 @@ function orderSpans(spanTree: TreeItem[]): SpanWithUIData[] {
             b.status === SpanDataStatus.present
           ) {
             return (
-              NsFromString(b.spanData.startTime) -
-              NsFromString(a.spanData.startTime)
+              getNsFromString(b.spanData.startTime) -
+              getNsFromString(a.spanData.startTime)
             );
           }
           // TODO: Throw a good error. Like, yeet it real good.

@@ -1,12 +1,12 @@
 import Timestamp from "timestamp-nano";
 import { SpanData } from "../types/api-types";
 
-export type TraceTimeAttributes = {
+export type TraceTiming = {
   traceStartTimeNS: number;
   traceDurationNS: number;
 };
 
-export function getTraceTimeAttributes(spans: SpanData[]): TraceTimeAttributes {
+export function calculateTraceTiming(spans: SpanData[]): TraceTiming {
   if (!spans.length) {
     return {
       traceStartTimeNS: 0,
@@ -14,16 +14,16 @@ export function getTraceTimeAttributes(spans: SpanData[]): TraceTimeAttributes {
     };
   }
 
-  let earliestStartTime = NsFromString(spans[0].startTime);
-  let latestEndTime = NsFromString(spans[0].endTime);
+  let earliestStartTime = getNsFromString(spans[0].startTime);
+  let latestEndTime = getNsFromString(spans[0].endTime);
 
   spans.forEach((span) => {
-    let spanStart = NsFromString(span.startTime);
+    let spanStart = getNsFromString(span.startTime);
     if (spanStart < earliestStartTime) {
       earliestStartTime = spanStart;
     }
 
-    let spanEnd = NsFromString(span.endTime);
+    let spanEnd = getNsFromString(span.endTime);
     if (spanEnd > latestEndTime) {
       latestEndTime = spanEnd;
     }
@@ -35,21 +35,21 @@ export function getTraceTimeAttributes(spans: SpanData[]): TraceTimeAttributes {
   };
 }
 
-export function NsFromString(timestampString: string) {
+export function getNsFromString(timestampString: string) {
   let milliseconds = Date.parse(timestampString.split(".")[0]);
   let nanoseconds =
     milliseconds * 1e6 + Timestamp.fromString(timestampString).getNano();
   return nanoseconds;
 }
 
-export function DurationNs(startTimestamp: string, endTimestamp: string) {
-  let startTimeNs = NsFromString(startTimestamp);
-  let endTimeNs = NsFromString(endTimestamp);
+export function getDurationNs(startTimestamp: string, endTimestamp: string) {
+  let startTimeNs = getNsFromString(startTimestamp);
+  let endTimeNs = getNsFromString(endTimestamp);
 
   return endTimeNs - startTimeNs;
 }
 
-export function DurationString(durationNs: number) {
+export function getDurationString(durationNs: number) {
   if (durationNs === null || durationNs < 0) {
     return null;
   }
