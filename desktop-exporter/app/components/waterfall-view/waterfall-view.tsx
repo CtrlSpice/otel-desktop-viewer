@@ -3,12 +3,12 @@ import { FixedSizeList } from "react-window";
 import { Flex } from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
 
-import { SpanWithMetadata } from "../../types/metadata-types";
+import { SpanWithUIData } from "../../types/metadata-types";
 import { WaterfallRow } from "./waterfall-row";
 import { HeaderRow } from "./header-row";
 
 type WaterfallViewProps = {
-  orderedSpans: SpanWithMetadata[];
+  orderedSpans: SpanWithUIData[];
   traceDurationNs: number;
   selectedSpanID: string | undefined;
   setSelectedSpanID: (spanID: string) => void;
