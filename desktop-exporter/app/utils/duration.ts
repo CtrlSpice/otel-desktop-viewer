@@ -1,28 +1,55 @@
 import Timestamp from "timestamp-nano";
 import { SpanData } from "../types/api-types";
 
-export function getSpanDuration(startTimestamp: string, endTimestamp: string) {
-  try {
-    let startTimeMs = Date.parse(startTimestamp.split(".")[0]);
-    let endTimeMs = Date.parse(endTimestamp.split(".")[0]);
+export type TraceTimeAttributes = {
+  traceStartTimeNS: number;
+  traceDurationNS: number;
+};
 
-    let startTimeNs =
-      startTimeMs * 1e6 + Timestamp.fromString(startTimestamp).getNano();
-    let endTimeNs =
-      endTimeMs * 1e6 + Timestamp.fromString(endTimestamp).getNano();
-
-    return endTimeNs - startTimeNs;
-  } catch (error) {
-    return null;
+export function getTraceTimeAttributes(spans: SpanData[]): TraceTimeAttributes {
+  if (!spans.length) {
+    return {
+      traceStartTimeNS: 0,
+      traceDurationNS: 0,
+    };
   }
+
+  let earliestStartTime = NsFromString(spans[0].startTime);
+  let latestEndTime = NsFromString(spans[0].endTime);
+
+  spans.forEach((span) => {
+    let spanStart = NsFromString(span.startTime);
+    if (spanStart < earliestStartTime) {
+      earliestStartTime = spanStart;
+    }
+
+    let spanEnd = NsFromString(span.endTime);
+    if (spanEnd > latestEndTime) {
+      latestEndTime = spanEnd;
+    }
+  });
+
+  return {
+    traceStartTimeNS: earliestStartTime,
+    traceDurationNS: latestEndTime - earliestStartTime,
+  };
 }
 
-export function getSpanDurationString(
-  startTimestamp: string,
-  endTimestamp: string,
-) {
-  let durationNs = getSpanDuration(startTimestamp, endTimestamp);
+export function NsFromString(timestampString: string) {
+  let milliseconds = Date.parse(timestampString.split(".")[0]);
+  let nanoseconds =
+    milliseconds * 1e6 + Timestamp.fromString(timestampString).getNano();
+  return nanoseconds;
+}
 
+export function DurationNs(startTimestamp: string, endTimestamp: string) {
+  let startTimeNs = NsFromString(startTimestamp);
+  let endTimeNs = NsFromString(endTimestamp);
+
+  return endTimeNs - startTimeNs;
+}
+
+export function DurationString(durationNs: number) {
   if (durationNs === null || durationNs < 0) {
     return null;
   }
@@ -46,32 +73,4 @@ export function getSpanDurationString(
   return `${durationNs} ns`;
 }
 
-export function getTraceDurationNs(spans: SpanData[]) {
-  if (!spans.length) {
-    return 0;
-  }
 
-  let earliestStartTime = getNsFromString(spans[0].startTime);
-  let latestEndTime = getNsFromString(spans[0].endTime);
-
-  spans.forEach((span) => {
-    let spanStart = getNsFromString(span.startTime);
-    if (spanStart < earliestStartTime) {
-      earliestStartTime = spanStart;
-    }
-
-    let spanEnd = getNsFromString(span.endTime);
-    if (spanEnd > latestEndTime) {
-      latestEndTime = spanEnd;
-    }
-  });
-
-  return latestEndTime - earliestStartTime;
-}
-
-export function getNsFromString(timestampString: string) {
-  let milliseconds = Date.parse(timestampString.split(".")[0]);
-  let nanoseconds =
-    milliseconds * 1e6 + Timestamp.fromString(timestampString).getNano();
-  return nanoseconds;
-}

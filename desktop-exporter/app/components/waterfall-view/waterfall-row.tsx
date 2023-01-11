@@ -3,9 +3,12 @@ import { Text, Flex, Spacer, useColorModeValue } from "@chakra-ui/react";
 import { WarningTwoIcon } from "@chakra-ui/icons";
 
 import { SpanDataStatus, SpanWithUIData } from "../../types/metadata-types";
+import { TraceTimeAttributes } from "../../utils/duration";
+import { DurationBar } from "./duration-bar";
 
 type WaterfallRowData = {
   orderedSpans: SpanWithUIData[];
+  traceTimeAttributes: TraceTimeAttributes;
   spanNameColumnWidth: number;
   serviceNameColumnWidth: number;
   selectedSpanID: string | undefined;
@@ -21,6 +24,7 @@ type WaterfallRowProps = {
 export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
   let {
     orderedSpans,
+    traceTimeAttributes,
     spanNameColumnWidth,
     serviceNameColumnWidth,
     selectedSpanID,
@@ -36,7 +40,9 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
   let selectedColour = useColorModeValue("pink.50", "pink.900");
 
   if (span.status === SpanDataStatus.present) {
-    // Set the padding to indicate parent/children relationship between spans
+    let { spanData } = span;
+
+    // Set the margin to indicate parent/children relationship between spans
     let paddingLeft = depth * 25;
 
     //Set the style for the selected item
@@ -45,12 +51,12 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
     }
     // Add zero-width space after forward slashes, dashes, and dots
     // to indicate line breaking opportunity
-    let nameLabel = span.spanData.name
+    let nameLabel = spanData.name
       .replaceAll("/", "/\u200B")
       .replaceAll("-", "-\u200B")
       .replaceAll(".", ".\u200B");
 
-    let resourceLabel = span.spanData.resource.attributes["service.name"];
+    let resourceLabel = spanData.resource.attributes["service.name"];
 
     return (
       <Flex
@@ -62,9 +68,11 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
         <Flex
           width={spanNameColumnWidth - paddingLeft}
           alignItems="center"
-          paddingStart={2}
+          flexGrow="1"
+          flexShrink="0"
         >
           <Text
+            paddingX={2}
             noOfLines={2}
             fontSize="sm"
           >
@@ -74,11 +82,22 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
         <Flex
           width={serviceNameColumnWidth}
           alignItems="center"
-          paddingStart={3}
+          flexGrow="1"
+          flexShrink="0"
         >
-          <Text fontSize="sm">{resourceLabel}</Text>
+          <Text
+            paddingX={2}
+            fontSize="sm"
+          >
+            {resourceLabel}
+          </Text>
         </Flex>
-        <Spacer />
+        <DurationBar
+          events={spanData.events}
+          traceTimeAttributes={traceTimeAttributes}
+          spanStartTimestamp={spanData.startTime}
+          spanEndTimestamp={spanData.endTime}
+        />
       </Flex>
     );
   }
