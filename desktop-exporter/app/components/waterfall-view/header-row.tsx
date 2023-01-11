@@ -69,6 +69,7 @@ function DurationIndicator(props: DurationIndicatorProps) {
       height="100%"
       flex-direction="row"
       flex="1 1 auto"
+      marginX={2}
       ref={ref}
     >
       <List>{durationSections}</List>
@@ -94,21 +95,28 @@ export function HeaderRow(props: HeaderRowProps) {
   } = props;
 
   return (
-    <Flex
-      height={`${headerRowHeight}px`}
-      experimental_spaceX={2}
-    >
+    <Flex height={`${headerRowHeight}px`}>
       <Flex
         width={spanNameColumnWidth}
         alignItems="center"
       >
-        <Heading size="sm">name</Heading>
+        <Heading
+          paddingX={2}
+          size="sm"
+        >
+          name
+        </Heading>
       </Flex>
       <Flex
         width={serviceNameColumnWidth}
         alignItems="center"
       >
-        <Heading size="sm">service.name</Heading>
+        <Heading
+          paddingX={1}
+          size="sm"
+        >
+          service.name
+        </Heading>
       </Flex>
       <DurationIndicator traceDuration={traceDuration} />
     </Flex>
