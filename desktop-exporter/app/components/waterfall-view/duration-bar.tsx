@@ -19,6 +19,7 @@ type DurationBarProps = {
 export function DurationBar(props: DurationBarProps) {
   const ref = useRef(null);
   const size = useSize(ref);
+  // approximate width of the label in pixels
   const labelWidth = 80;
 
   let durationBarColour = useColorModeValue("cyan.800", "cyan.700");
