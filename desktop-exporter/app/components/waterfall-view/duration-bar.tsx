@@ -19,6 +19,10 @@ type DurationBarProps = {
 export function DurationBar(props: DurationBarProps) {
   const ref = useRef(null);
   const size = useSize(ref);
+<<<<<<< HEAD
+=======
+
+>>>>>>> 8c656b9 (Add comments based on feedback)
   // approximate width of the label in pixels
   const labelWidth = 80;
 
@@ -29,20 +33,23 @@ export function DurationBar(props: DurationBarProps) {
   let spanStartTimeNs = getNsFromString(props.spanStartTimestamp);
   let spanEndTimeNs = getNsFromString(props.spanEndTimestamp);
 
-  let barOffset = Math.floor(
+  let barOffsetPercent = Math.floor(
     ((spanStartTimeNs - traceStartTimeNS) / traceDurationNS) * 100,
   );
-  let barWidth = Math.round(
+  let barWidthPercent = Math.round(
     ((spanEndTimeNs - spanStartTimeNs) / traceDurationNS) * 100,
   );
 
   let labelOffset;
   if (size && size.width >= labelWidth) {
+    // Label is inside the bar
     labelOffset = "0px";
     labelTextColour = "white";
-  } else if (size && barOffset < 50) {
+  } else if (size && barOffsetPercent < 50) {
+    // Label is left of the bar
     labelOffset = `${Math.floor(size.width)}px`;
   } else {
+    // Label is right of the bar
     labelOffset = `${Math.floor(-labelWidth)}px`;
   }
 
@@ -60,8 +67,8 @@ export function DurationBar(props: DurationBarProps) {
         borderRadius="md"
         overflow="visible"
         position="relative"
-        left={`${barOffset}%`}
-        width={`${barWidth}%`}
+        left={`${barOffsetPercent}%`}
+        width={`${barWidthPercent}%`}
         minWidth="2px"
         ref={ref}
       >
