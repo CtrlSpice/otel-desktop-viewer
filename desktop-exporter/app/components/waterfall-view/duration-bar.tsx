@@ -1,5 +1,13 @@
 import React, { useRef } from "react";
-import { Box, Flex, Text, useColorModeValue } from "@chakra-ui/react";
+import {
+  Box,
+  Circle,
+  Flex,
+  LightMode,
+  List,
+  Text,
+  useColorModeValue,
+} from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
 
 import {
@@ -51,6 +59,29 @@ export function DurationBar(props: DurationBarProps) {
   }
 
   let label = getDurationString(spanEndTimeNs - spanStartTimeNs);
+
+  let eventCircles = props.spanData.events.map((eventData, index) => {
+    let eventTimeNs = getNsFromString(eventData.timestamp);
+    let spanDurationNS = spanEndTimeNs - spanStartTimeNs;
+    let eventOffsetPercent = Math.floor(
+      ((eventTimeNs - spanStartTimeNs) / spanDurationNS) * 100,
+    );
+
+    return (
+      <li key={index}>
+        <Circle
+          size="18px"
+          bg="whiteAlpha.400"
+          border="solid 1px"
+          borderColor="cyan.800"
+          position="absolute"
+          left={`${eventOffsetPercent}%`}
+          transformOrigin="center"
+          transform="translate(-50%)"
+        />
+      </li>
+    );
+  });
   return (
     <Flex
       border="0"
@@ -69,6 +100,7 @@ export function DurationBar(props: DurationBarProps) {
         minWidth="2px"
         ref={ref}
       >
+        <List>{eventCircles}</List>
         <Text
           fontSize="xs"
           fontWeight="700"
