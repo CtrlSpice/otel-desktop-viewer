@@ -1,7 +1,12 @@
-import React from "react";
-import { Box, Flex, useColorModeValue } from "@chakra-ui/react";
+import React, { useRef } from "react";
+import { Box, Flex, Text, useColorModeValue } from "@chakra-ui/react";
+import { useSize } from "@chakra-ui/react-use-size";
 
-import { getNsFromString, TraceTiming } from "../../utils/duration";
+import {
+  getDurationString,
+  getNsFromString,
+  TraceTiming,
+} from "../../utils/duration";
 import { SpanData } from "../../types/api-types";
 
 type DurationBarProps = {
@@ -12,18 +17,40 @@ type DurationBarProps = {
 };
 
 export function DurationBar(props: DurationBarProps) {
+  const ref = useRef(null);
+  const size = useSize(ref);
+
+  // approximate width of the label in pixels
+  const labelWidth = 80;
+
   let durationBarColour = useColorModeValue("cyan.800", "cyan.700");
+  let labelTextColour = useColorModeValue("blackAlpha.800", "white");
 
   let { traceStartTimeNS, traceDurationNS } = props.traceTimeAttributes;
   let spanStartTimeNs = getNsFromString(props.spanStartTimestamp);
   let spanEndTimeNs = getNsFromString(props.spanEndTimestamp);
 
-  let offsetStart = Math.floor(
+  let barOffsetPercent = Math.floor(
     ((spanStartTimeNs - traceStartTimeNS) / traceDurationNS) * 100,
   );
-  let durationBarWidth = Math.round(
+  let barWidthPercent = Math.round(
     ((spanEndTimeNs - spanStartTimeNs) / traceDurationNS) * 100,
   );
+
+  let labelOffset;
+  if (size && size.width >= labelWidth) {
+    // Label is inside the bar
+    labelOffset = "0px";
+    labelTextColour = "white";
+  } else if (size && barOffsetPercent < 50) {
+    // Label is left of the bar
+    labelOffset = `${Math.floor(size.width)}px`;
+  } else {
+    // Label is right of the bar
+    labelOffset = `${Math.floor(-labelWidth)}px`;
+  }
+
+  let label = getDurationString(spanEndTimeNs - spanStartTimeNs);
   return (
     <Flex
       border="0"
@@ -35,11 +62,25 @@ export function DurationBar(props: DurationBarProps) {
       <Box
         bgColor={durationBarColour}
         borderRadius="md"
+        overflow="visible"
         position="relative"
-        left={`${offsetStart}%`}
-        width={`${durationBarWidth}%`}
-        minWidth="5px"
-      />
+        left={`${barOffsetPercent}%`}
+        width={`${barWidthPercent}%`}
+        minWidth="2px"
+        ref={ref}
+      >
+        <Text
+          fontSize="xs"
+          fontWeight="700"
+          paddingLeft={2}
+          color={labelTextColour}
+          position="absolute"
+          width={`${labelWidth}px`}
+          left={labelOffset}
+        >
+          {label}
+        </Text>
+      </Box>
     </Flex>
   );
 }
