@@ -19,10 +19,7 @@ type DurationBarProps = {
 export function DurationBar(props: DurationBarProps) {
   const ref = useRef(null);
   const size = useSize(ref);
-<<<<<<< HEAD
-=======
 
->>>>>>> 8c656b9 (Add comments based on feedback)
   // approximate width of the label in pixels
   const labelWidth = 80;
 
