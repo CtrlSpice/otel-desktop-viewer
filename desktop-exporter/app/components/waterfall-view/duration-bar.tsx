@@ -3,9 +3,9 @@ import {
   Box,
   Circle,
   Flex,
-  LightMode,
   List,
   Text,
+  Tooltip,
   useColorModeValue,
 } from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
@@ -61,6 +61,7 @@ export function DurationBar(props: DurationBarProps) {
   let label = getDurationString(spanEndTimeNs - spanStartTimeNs);
 
   let eventCircles = props.spanData.events.map((eventData, index) => {
+    let eventName = eventData.name;
     let eventTimeNs = getNsFromString(eventData.timestamp);
     let spanDurationNS = spanEndTimeNs - spanStartTimeNs;
     let eventOffsetPercent = Math.floor(
@@ -69,16 +70,22 @@ export function DurationBar(props: DurationBarProps) {
 
     return (
       <li key={index}>
-        <Circle
-          size="18px"
-          bg="whiteAlpha.400"
-          border="solid 1px"
-          borderColor="cyan.800"
-          position="absolute"
-          left={`${eventOffsetPercent}%`}
-          transformOrigin="center"
-          transform="translate(-50%)"
-        />
+        <Tooltip
+          hasArrow
+          label={eventName}
+          placement="top"
+        >
+          <Circle
+            size="18px"
+            bg="whiteAlpha.400"
+            border="solid 1px"
+            borderColor="cyan.800"
+            position="absolute"
+            left={`${eventOffsetPercent}%`}
+            transformOrigin="center"
+            transform="translate(-50%)"
+          />
+        </Tooltip>
       </li>
     );
   });
@@ -87,7 +94,6 @@ export function DurationBar(props: DurationBarProps) {
       border="0"
       marginX={2}
       marginY="16px"
-      overflow="hidden"
       width="100%"
     >
       <Box
@@ -100,18 +106,22 @@ export function DurationBar(props: DurationBarProps) {
         minWidth="2px"
         ref={ref}
       >
-        <List>{eventCircles}</List>
-        <Text
-          fontSize="xs"
-          fontWeight="700"
-          paddingLeft={2}
-          color={labelTextColour}
+        <Flex
           position="absolute"
           width={`${labelWidth}px`}
           left={labelOffset}
+          justifyContent="center"
         >
-          {label}
-        </Text>
+          <Text
+            fontSize="xs"
+            fontWeight="700"
+            paddingLeft={2}
+            color={labelTextColour}
+          >
+            {label}
+          </Text>
+        </Flex>
+        <List>{eventCircles}</List>
       </Box>
     </Flex>
   );
