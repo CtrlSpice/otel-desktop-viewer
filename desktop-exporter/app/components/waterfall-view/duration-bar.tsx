@@ -1,5 +1,13 @@
 import React, { useRef } from "react";
-import { Box, Flex, Text, useColorModeValue } from "@chakra-ui/react";
+import {
+  Box,
+  Circle,
+  Flex,
+  List,
+  Text,
+  Tooltip,
+  useColorModeValue,
+} from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
 
 import {
@@ -7,7 +15,49 @@ import {
   getNsFromString,
   TraceTiming,
 } from "../../utils/duration";
-import { SpanData } from "../../types/api-types";
+import { EventData, SpanData } from "../../types/api-types";
+
+type EventDotsListProps = {
+  events: EventData[];
+  spanStartTimeNs: number;
+  spanEndTimeNs: number;
+};
+
+function EventDotsList(props: EventDotsListProps) {
+  let { events, spanStartTimeNs, spanEndTimeNs } = props;
+
+  let eventDotsList = events.map((eventData) => {
+    let eventName = eventData.name;
+    let eventTimeNs = getNsFromString(eventData.timestamp);
+    let spanDurationNS = spanEndTimeNs - spanStartTimeNs;
+    let eventOffsetPercent = Math.floor(
+      ((eventTimeNs - spanStartTimeNs) / spanDurationNS) * 100,
+    );
+
+    return (
+      <li key={`${eventName}-${eventData.timestamp}`}>
+        <Tooltip
+          hasArrow
+          label={eventName}
+          placement="top"
+        >
+          <Circle
+            size="18px"
+            bg="whiteAlpha.400"
+            border="solid 1px"
+            borderColor="cyan.800"
+            position="absolute"
+            left={`${eventOffsetPercent}%`}
+            transformOrigin="center"
+            transform="translate(-50%)"
+          />
+        </Tooltip>
+      </li>
+    );
+  });
+
+  return <List>{eventDotsList}</List>;
+}
 
 type DurationBarProps = {
   spanData: SpanData;
@@ -51,12 +101,12 @@ export function DurationBar(props: DurationBarProps) {
   }
 
   let label = getDurationString(spanEndTimeNs - spanStartTimeNs);
+
   return (
     <Flex
       border="0"
       marginX={2}
       marginY="16px"
-      overflow="hidden"
       width="100%"
     >
       <Box
@@ -69,17 +119,26 @@ export function DurationBar(props: DurationBarProps) {
         minWidth="2px"
         ref={ref}
       >
-        <Text
-          fontSize="xs"
-          fontWeight="700"
-          paddingLeft={2}
-          color={labelTextColour}
+        <Flex
           position="absolute"
           width={`${labelWidth}px`}
           left={labelOffset}
+          justifyContent="center"
         >
-          {label}
-        </Text>
+          <Text
+            fontSize="xs"
+            fontWeight="700"
+            paddingLeft={2}
+            color={labelTextColour}
+          >
+            {label}
+          </Text>
+        </Flex>
+        <EventDotsList
+          events={props.spanData.events}
+          spanStartTimeNs={spanStartTimeNs}
+          spanEndTimeNs={spanEndTimeNs}
+        />
       </Box>
     </Flex>
   );
