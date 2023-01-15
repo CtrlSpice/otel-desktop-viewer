@@ -15,7 +15,49 @@ import {
   getNsFromString,
   TraceTiming,
 } from "../../utils/duration";
-import { SpanData } from "../../types/api-types";
+import { EventData, SpanData } from "../../types/api-types";
+
+type EventDotsListProps = {
+  events: EventData[];
+  spanStartTimeNs: number;
+  spanEndTimeNs: number;
+};
+
+function EventDotsList(props: EventDotsListProps) {
+  let { events, spanStartTimeNs, spanEndTimeNs } = props;
+
+  let eventDotsList = events.map((eventData) => {
+    let eventName = eventData.name;
+    let eventTimeNs = getNsFromString(eventData.timestamp);
+    let spanDurationNS = spanEndTimeNs - spanStartTimeNs;
+    let eventOffsetPercent = Math.floor(
+      ((eventTimeNs - spanStartTimeNs) / spanDurationNS) * 100,
+    );
+
+    return (
+      <li key={`${eventName}-${eventData.timestamp}`}>
+        <Tooltip
+          hasArrow
+          label={eventName}
+          placement="top"
+        >
+          <Circle
+            size="18px"
+            bg="whiteAlpha.400"
+            border="solid 1px"
+            borderColor="cyan.800"
+            position="absolute"
+            left={`${eventOffsetPercent}%`}
+            transformOrigin="center"
+            transform="translate(-50%)"
+          />
+        </Tooltip>
+      </li>
+    );
+  });
+
+  return <List>{eventDotsList}</List>;
+}
 
 type DurationBarProps = {
   spanData: SpanData;
@@ -60,35 +102,6 @@ export function DurationBar(props: DurationBarProps) {
 
   let label = getDurationString(spanEndTimeNs - spanStartTimeNs);
 
-  let eventCircles = props.spanData.events.map((eventData, index) => {
-    let eventName = eventData.name;
-    let eventTimeNs = getNsFromString(eventData.timestamp);
-    let spanDurationNS = spanEndTimeNs - spanStartTimeNs;
-    let eventOffsetPercent = Math.floor(
-      ((eventTimeNs - spanStartTimeNs) / spanDurationNS) * 100,
-    );
-
-    return (
-      <li key={index}>
-        <Tooltip
-          hasArrow
-          label={eventName}
-          placement="top"
-        >
-          <Circle
-            size="18px"
-            bg="whiteAlpha.400"
-            border="solid 1px"
-            borderColor="cyan.800"
-            position="absolute"
-            left={`${eventOffsetPercent}%`}
-            transformOrigin="center"
-            transform="translate(-50%)"
-          />
-        </Tooltip>
-      </li>
-    );
-  });
   return (
     <Flex
       border="0"
@@ -121,7 +134,11 @@ export function DurationBar(props: DurationBarProps) {
             {label}
           </Text>
         </Flex>
-        <List>{eventCircles}</List>
+        <EventDotsList
+          events={props.spanData.events}
+          spanStartTimeNs={spanStartTimeNs}
+          spanEndTimeNs={spanEndTimeNs}
+        />
       </Box>
     </Flex>
   );
