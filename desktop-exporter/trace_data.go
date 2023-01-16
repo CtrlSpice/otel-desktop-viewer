@@ -1,6 +1,8 @@
 package desktopexporter
 
-import "time"
+import (
+	"time"
+)
 
 func (trace *TraceData) GetTraceSummary() (TraceSummary) {
 	rootSpan, err := trace.getRootSpan()
@@ -16,10 +18,10 @@ func (trace *TraceData) GetTraceSummary() (TraceSummary) {
 			TraceID:         trace.TraceID,
 		}
 	}
-
+	
 	return TraceSummary{
 		HasRootSpan:     true,
-		RootServiceName: rootSpan.Attributes["service.name"].(string),
+		RootServiceName: rootSpan.Resource.Attributes["service.name"].(string),
 		RootName:        rootSpan.Name,
 		RootStartTime:   rootSpan.StartTime,
 		RootEndTime:	 rootSpan.EndTime,
