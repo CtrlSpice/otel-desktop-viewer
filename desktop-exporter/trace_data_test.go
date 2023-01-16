@@ -25,7 +25,7 @@ func TestGetTraceSummaryWithRootSpan(t *testing.T) {
 		if i == 0 {
 			span.Name = "rootSpan"
 			span.ParentSpanID = ""
-			span.Attributes["service.name"] = "service name"
+			span.Resource.Attributes["service.name"] = "service name"
 		} else {
 			span.ParentSpanID = "0";
 		}
