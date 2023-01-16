@@ -31,7 +31,7 @@ func tracesHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
 
 		// Generate a summary for each trace
 		for _, trace := range traces {
-			summary, err := trace.GetTraceSummary()
+			summary := trace.GetTraceSummary()
 			if err != nil {
 				fmt.Println(err)
 			} else {
