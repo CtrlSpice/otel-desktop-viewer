@@ -51,7 +51,7 @@ export function getDurationNs(startTimestamp: string, endTimestamp: string) {
 
 export function getDurationString(durationNs: number) {
   if (durationNs === null || durationNs < 0) {
-    return null;
+    return "";
   }
 
   // Label in seconds

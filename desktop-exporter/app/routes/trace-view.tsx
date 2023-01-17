@@ -3,7 +3,7 @@ import { useLoaderData } from "react-router-dom";
 import { Grid, GridItem } from "@chakra-ui/react";
 
 import { TraceData } from "../types/api-types";
-import { SpanDataStatus, SpanWithUIData } from "../types/metadata-types";
+import { SpanDataStatus, SpanWithUIData } from "../types/ui-types";
 
 import { Header } from "../components/header";
 import { DetailView } from "../components/detail-view/detail-view";
