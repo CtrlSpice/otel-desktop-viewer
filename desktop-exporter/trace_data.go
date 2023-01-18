@@ -4,37 +4,37 @@ import (
 	"time"
 )
 
-func (trace *TraceData) GetTraceSummary() (TraceSummary, error) {
-	duration, err := trace.getTraceDuration()
-	if err != nil {
-		return TraceSummary{}, err
+func (trace *TraceData) GetTraceSummary() TraceSummary {
+	rootSpan, err := trace.getRootSpan()
+
+	if err == WarningMissingRootSpan {
+		return TraceSummary{
+			HasRootSpan:     false,
+			RootServiceName: "",
+			RootName:        "",
+			RootStartTime:   time.Time{},
+			RootEndTime:     time.Time{},
+			SpanCount:       uint32(len(trace.Spans)),
+			TraceID:         trace.TraceID,
+		}
 	}
 
 	return TraceSummary{
-		TraceID:    trace.TraceID,
-		SpanCount:  uint32(len(trace.Spans)),
-		DurationMS: duration.Milliseconds(),
-	}, nil
-
+		HasRootSpan:     true,
+		RootServiceName: rootSpan.GetServiceName(),
+		RootName:        rootSpan.Name,
+		RootStartTime:   rootSpan.StartTime,
+		RootEndTime:     rootSpan.EndTime,
+		SpanCount:       uint32(len(trace.Spans)),
+		TraceID:         trace.TraceID,
+	}
 }
 
-func (trace *TraceData) getTraceDuration() (time.Duration, error) {
-	if len(trace.Spans) < 1 {
-		return 0, ErrEmptySpansSlice
-	}
-
-	// Determine the total duration of the trace
-	traceStartTime := trace.Spans[0].StartTime
-	traceEndTime := trace.Spans[0].EndTime
-	for i := 1; i < len(trace.Spans); i++ {
-
-		if trace.Spans[i].StartTime.Before(traceStartTime) {
-			traceStartTime = trace.Spans[i].StartTime
-		}
-
-		if trace.Spans[i].EndTime.After(traceEndTime) {
-			traceEndTime = trace.Spans[i].EndTime
+func (trace *TraceData) getRootSpan() (SpanData, error) {
+	for i := 0; i < len(trace.Spans); i++ {
+		if trace.Spans[i].ParentSpanID == "" {
+			return trace.Spans[i], nil
 		}
 	}
-	return traceEndTime.Sub(traceStartTime), nil
+	return SpanData{}, WarningMissingRootSpan
 }

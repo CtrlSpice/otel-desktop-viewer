@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/gorilla/mux"
 )
+
+// Maximum number of traces to keep in memory
+const maxNumTraces = 10000
 
 type Server struct {
 	server     http.Server
@@ -17,10 +19,9 @@ type Server struct {
 func tracesHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		// Determine how many recent traces to display
-		results := request.URL.Query().Get("results")
-		numTraces, err := strconv.Atoi(results)
-		if err != nil {
-			numTraces = len(store.traceMap)
+		numTraces := len(store.traceMap)
+		if numTraces > maxNumTraces {
+			numTraces = maxNumTraces
 		}
 
 		// Get the TraceData for the requested number of traces
@@ -31,12 +32,8 @@ func tracesHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
 
 		// Generate a summary for each trace
 		for _, trace := range traces {
-			summary, err := trace.GetTraceSummary()
-			if err != nil {
-				fmt.Println(err)
-			} else {
-				summaries.TraceSummaries = append(summaries.TraceSummaries, summary)
-			}
+			summary := trace.GetTraceSummary()
+			summaries.TraceSummaries = append(summaries.TraceSummaries, summary)
 		}
 
 		// Marshal the TraceSummaries struct and wish it well on its journey to the kingdom of frontend.

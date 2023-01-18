@@ -9,14 +9,23 @@ var ErrEmptySpansSlice = errors.New("slice of spans associated with this traceID
 var ErrTraceIDNotFound = errors.New("traceID not found")
 var ErrTraceIDMismatch = errors.New("traceID mismatch between TraceStore.traceMap and TraceStore.traceQueue")
 
+var WarningMissingRootSpan = errors.New("warning: trace is incomplete - no root span found")
+var WarningInvalidServiceName = errors.New("warning: Resource.Attributes['service.name'] must be a string value that helps to distinguish a group of services")
+
 type RecentSummaries struct {
 	TraceSummaries []TraceSummary `json:"traceSummaries"`
 }
 
 type TraceSummary struct {
-	TraceID    string `json:"traceID"`
-	SpanCount  uint32 `json:"spanCount"`
-	DurationMS int64  `json:"durationMS"`
+	HasRootSpan bool `json:"hasRootSpan"`
+
+	RootServiceName string    `json:"rootServiceName"`
+	RootName        string    `json:"rootName"`
+	RootStartTime   time.Time `json:"rootStartTime"`
+	RootEndTime     time.Time `json:"rootEndTime"`
+
+	SpanCount uint32 `json:"spanCount"`
+	TraceID   string `json:"traceID"`
 }
 
 type TraceData struct {
