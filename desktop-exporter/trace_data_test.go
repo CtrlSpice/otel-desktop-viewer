@@ -20,14 +20,15 @@ func TestGetTraceSummaryWithRootSpan(t *testing.T) {
 
 	for i, span := range spans {
 		span.TraceID = "1"
-		span.SpanID = string(rune(i));
+		span.SpanID = string(rune(i))
+		// All spans from testdata.GenerateOTLPPayload have the same parent span ID
 		// make 0 the root span.
 		if i == 0 {
 			span.Name = "rootSpan"
 			span.ParentSpanID = ""
 			span.Resource.Attributes["service.name"] = "service name"
 		} else {
-			span.ParentSpanID = "0";
+			span.ParentSpanID = "0"
 		}
 		store.Add(ctx, span)
 	}
@@ -49,6 +50,7 @@ func TestGetTraceSummaryMissingRootSpan(t *testing.T) {
 	maxQueueLength := 1
 	spansPerTrace := 3
 
+	// All spans from testdata.GenerateOTLPPayload have the same parent span ID
 	traces := testdata.GenerateOTLPPayload(1, 1, maxQueueLength*spansPerTrace)
 	ctx := context.Background()
 	store := NewTraceStore(maxQueueLength)

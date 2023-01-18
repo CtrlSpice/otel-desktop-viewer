@@ -8,7 +8,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-//Maximum number of traces to keep in memory
+// Maximum number of traces to keep in memory
 const maxNumTraces = 10000
 
 type Server struct {
