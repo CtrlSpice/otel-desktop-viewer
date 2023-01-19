@@ -2,7 +2,7 @@ import React from "react";
 import { Text, Flex, Spacer, useColorModeValue } from "@chakra-ui/react";
 import { WarningTwoIcon } from "@chakra-ui/icons";
 
-import { SpanDataStatus, SpanWithUIData } from "../../types/metadata-types";
+import { SpanDataStatus, SpanWithUIData } from "../../types/ui-types";
 import { TraceTiming } from "../../utils/duration";
 import { DurationBar } from "./duration-bar";
 

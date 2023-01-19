@@ -20,3 +20,18 @@ export type SpanWithUIData =
       status: SpanDataStatus.missing;
       metadata: SpanUIData;
     };
+
+export type TraceSummaryWithUIData =
+  | {
+      hasRootSpan: true;
+      rootServiceName: string;
+      rootName: string;
+      rootDurationString: string;
+      spanCount: number;
+      traceID: string;
+    }
+  | {
+      hasRootSpan: false;
+      spanCount: number;
+      traceID: string;
+    };

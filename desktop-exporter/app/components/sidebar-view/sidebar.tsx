@@ -2,31 +2,33 @@ import React from "react";
 import { ArrowLeftIcon, ArrowRightIcon } from "@chakra-ui/icons";
 import { Flex, IconButton, useColorModeValue } from "@chakra-ui/react";
 
-import { TraceList } from "../components/trace-list";
-import { TraceSummary } from "../types/api-types";
+import { TraceList } from "./trace-list";
+import { TraceSummaryWithUIData } from "../../types/ui-types";
 
 type SidebarProps = {
   isFullWidth: boolean;
   toggle: () => void;
-  traceSummaries: TraceSummary[];
+  traceSummaries: TraceSummaryWithUIData[];
 };
 
 export function Sidebar(props: SidebarProps) {
-  const sidebarColour = useColorModeValue("pink.100", "pink.900");
+  let sidebarColour = useColorModeValue("gray.50", "gray.700");
+  let { isFullWidth, toggle, traceSummaries } = props;
 
   let sidebarWidth = "70px";
   let buttonIcon = <ArrowRightIcon />;
   let traceList = <></>;
 
-  if (props.isFullWidth) {
+  if (isFullWidth) {
     sidebarWidth = "350px";
     buttonIcon = <ArrowLeftIcon />;
-    traceList = <TraceList traceSummaries={props.traceSummaries} />;
+    traceList = <TraceList traceSummaries={traceSummaries} />;
   }
 
   return (
     <Flex
       bgColor={sidebarColour}
+      flexShrink="0"
       direction="column"
       transition="width 0.2s ease-in-out"
       width={sidebarWidth}
@@ -37,7 +39,7 @@ export function Sidebar(props: SidebarProps) {
           colorScheme="pink"
           icon={buttonIcon}
           margin="15px"
-          onClick={props.toggle}
+          onClick={toggle}
         />
       </Flex>
       {traceList}

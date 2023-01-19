@@ -1,5 +1,5 @@
 import { SpanData } from "../types/api-types";
-import { SpanDataStatus } from "../types/metadata-types";
+import { SpanDataStatus } from "../types/ui-types";
 
 export type TreeItem =
   | {

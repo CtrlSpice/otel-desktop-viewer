@@ -1,7 +1,11 @@
 export type TraceSummary = {
-  traceID: string;
+  hasRootSpan: boolean;
+  rootServiceName: string;
+  rootName: string;
+  rootStartTime: string;
+  rootEndTime: string;
   spanCount: number;
-  durationMS: number;
+  traceID: string;
 };
 
 export type TraceSummaries = {

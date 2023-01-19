@@ -3,7 +3,7 @@ import { FixedSizeList } from "react-window";
 import { Flex } from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
 
-import { SpanWithUIData } from "../../types/metadata-types";
+import { SpanWithUIData } from "../../types/ui-types";
 import { WaterfallRow } from "./waterfall-row";
 import { HeaderRow } from "./header-row";
 import { TraceTiming } from "../../utils/duration";
