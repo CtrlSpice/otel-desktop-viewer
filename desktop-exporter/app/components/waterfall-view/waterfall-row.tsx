@@ -37,7 +37,7 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
   // Set the background colour to make the list striped.
   let backgroundColour =
     index % 2 ? "" : useColorModeValue("gray.50", "gray.700");
-  let selectedColour = useColorModeValue("pink.50", "pink.900");
+  let selectedColour = useColorModeValue("pink.100", "pink.900");
 
   if (span.status === SpanDataStatus.present) {
     let { spanData } = span;

@@ -5,7 +5,7 @@ import { Grid, GridItem } from "@chakra-ui/react";
 import { TraceData } from "../types/api-types";
 import { SpanDataStatus, SpanWithUIData } from "../types/ui-types";
 
-import { Header } from "../components/header";
+import { Header } from "../components/header-view/header";
 import { DetailView } from "../components/detail-view/detail-view";
 import { WaterfallView } from "../components/waterfall-view/waterfall-view";
 import { arrayToTree, TreeItem } from "../utils/array-to-tree";
@@ -57,7 +57,7 @@ export default function TraceView() {
       templateAreas={`"header header"
                        "main detail"`}
       gridTemplateColumns={"1fr 350px"}
-      gridTemplateRows={"60px 1fr"}
+      gridTemplateRows={"100px 1fr"}
       gap={"0"}
       height={"100vh"}
       width={"100vw"}
