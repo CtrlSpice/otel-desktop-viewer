@@ -1,7 +1,7 @@
 package main
 
 import (
-	desktopexporter "github.com/CtrlSpice/desktop-collector/desktop-exporter"
+	desktopexporter "github.com/CtrlSpice/otel-desktop-viewer/desktop-exporter"
 	"go.opentelemetry.io/collector/component"
 	batchprocessor "go.opentelemetry.io/collector/processor/batchprocessor"
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"

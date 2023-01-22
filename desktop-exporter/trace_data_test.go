@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CtrlSpice/desktop-collector/desktop-exporter/testdata"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktop-exporter/testdata"
 	"github.com/stretchr/testify/assert"
 )
 

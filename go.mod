@@ -1,4 +1,4 @@
-module github.com/CtrlSpice/desktop-collector
+module github.com/CtrlSpice/otel-desktop-viewer
 
 go 1.19
 
