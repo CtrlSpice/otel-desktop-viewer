@@ -25,7 +25,7 @@ export default function MainView() {
     <Flex height="100vh">
       <Sidebar
         isFullWidth={isFullWidth}
-        toggle={setFullWidth.toggle}
+        toggleSidebarWidth={setFullWidth.toggle}
         traceSummaries={sidebarSummaries}
       />
       <Outlet />
