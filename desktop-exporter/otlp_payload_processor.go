@@ -2,7 +2,6 @@ package desktopexporter
 
 import (
 	"context"
-	"encoding/hex"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -75,11 +74,9 @@ func aggregateEventData(event ptrace.SpanEvent) EventData {
 }
 
 func aggregateLinkData(link ptrace.SpanLink) LinkData {
-	traceID := link.TraceID()
-	spanID := link.SpanID()
 	return LinkData{
-		TraceID:                hex.EncodeToString(traceID[:]),
-		SpanID:                 hex.EncodeToString(spanID[:]),
+		TraceID:                link.TraceID().String(),
+		SpanID:                 link.SpanID().String(),
 		TraceState:             link.TraceState().AsRaw(),
 		Attributes:             link.Attributes().AsRaw(),
 		DroppedAttributesCount: link.DroppedAttributesCount(),
@@ -87,15 +84,12 @@ func aggregateLinkData(link ptrace.SpanLink) LinkData {
 }
 
 func aggregateSpanData(span ptrace.Span, eventData []EventData, LinkData []LinkData, scopeData *ScopeData, resourceData *ResourceData) SpanData {
-	traceID := span.TraceID()
-	spanID := span.SpanID()
-	parentSpanID := span.ParentSpanID()
 	return SpanData{
-		TraceID:    hex.EncodeToString(traceID[:]),
+		TraceID:    span.TraceID().String(),
 		TraceState: span.TraceState().AsRaw(),
 
-		SpanID:       hex.EncodeToString(spanID[:]),
-		ParentSpanID: hex.EncodeToString(parentSpanID[:]),
+		SpanID:       span.SpanID().String(),
+		ParentSpanID: span.ParentSpanID().String(),
 		Name:         span.Name(),
 		Kind:         span.Kind().String(),
 		StartTime:    span.StartTimestamp().AsTime(),
