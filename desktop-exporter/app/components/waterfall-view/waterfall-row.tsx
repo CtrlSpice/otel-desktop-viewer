@@ -22,6 +22,11 @@ type WaterfallRowProps = {
 };
 
 export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
+  let selectedColour = useColorModeValue("pink.100", "pink.900");
+  let oddStripeColour = useColorModeValue("gray.50", "gray.700");
+  // Set the background colour to make the list striped.
+  let backgroundColour = index % 2 ? "" : oddStripeColour;
+
   let {
     orderedSpans,
     traceTimeAttributes,
@@ -33,11 +38,6 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
 
   let span = orderedSpans[index];
   let { spanID, depth } = span.metadata;
-
-  // Set the background colour to make the list striped.
-  let backgroundColour =
-    index % 2 ? "" : useColorModeValue("gray.50", "gray.700");
-  let selectedColour = useColorModeValue("pink.50", "pink.900");
 
   if (span.status === SpanDataStatus.present) {
     let { spanData } = span;

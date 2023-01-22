@@ -1,48 +1,54 @@
 import React from "react";
-import { ArrowLeftIcon, ArrowRightIcon } from "@chakra-ui/icons";
-import { Flex, IconButton, useColorModeValue } from "@chakra-ui/react";
+import { Flex, useColorModeValue } from "@chakra-ui/react";
 
 import { TraceList } from "./trace-list";
 import { TraceSummaryWithUIData } from "../../types/ui-types";
+import { SidebarButtons } from "./sidebar-buttons";
+
+const sidebarFullWidth = 350;
+const sidebarCollapsedWidth = 70;
 
 type SidebarProps = {
   isFullWidth: boolean;
-  toggle: () => void;
+  toggleSidebarWidth: () => void;
   traceSummaries: TraceSummaryWithUIData[];
 };
 
 export function Sidebar(props: SidebarProps) {
   let sidebarColour = useColorModeValue("gray.50", "gray.700");
-  let { isFullWidth, toggle, traceSummaries } = props;
-
-  let sidebarWidth = "70px";
-  let buttonIcon = <ArrowRightIcon />;
-  let traceList = <></>;
+  let { isFullWidth, toggleSidebarWidth, traceSummaries } = props;
 
   if (isFullWidth) {
-    sidebarWidth = "350px";
-    buttonIcon = <ArrowLeftIcon />;
-    traceList = <TraceList traceSummaries={traceSummaries} />;
+    return (
+      <Flex
+        backgroundColor={sidebarColour}
+        flexShrink="0"
+        direction="column"
+        transition="width 0.2s ease-in-out"
+        width={sidebarFullWidth}
+      >
+        <SidebarButtons
+          isFullWidth={isFullWidth}
+          toggleSidebarWidth={toggleSidebarWidth}
+        />
+        <TraceList traceSummaries={traceSummaries} />
+      </Flex>
+    );
   }
 
   return (
     <Flex
-      bgColor={sidebarColour}
+      alignItems="center"
+      backgroundColor={sidebarColour}
       flexShrink="0"
       direction="column"
       transition="width 0.2s ease-in-out"
-      width={sidebarWidth}
+      width={sidebarCollapsedWidth}
     >
-      <Flex justifyContent="flex-end">
-        <IconButton
-          aria-label="Expand Sidebar"
-          colorScheme="pink"
-          icon={buttonIcon}
-          margin="15px"
-          onClick={toggle}
-        />
-      </Flex>
-      {traceList}
+      <SidebarButtons
+        isFullWidth={isFullWidth}
+        toggleSidebarWidth={toggleSidebarWidth}
+      />
     </Flex>
   );
 }

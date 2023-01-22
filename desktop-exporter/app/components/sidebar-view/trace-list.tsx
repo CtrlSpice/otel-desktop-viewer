@@ -29,17 +29,15 @@ type SidebarRowProps = {
 };
 
 function SidebarRow({ index, style, data }: SidebarRowProps) {
+  let selectedColor = useColorModeValue("pink.100", "pink.900");
+  let dividerColour = useColorModeValue("blackAlpha.300", "whiteAlpha.300");
   let { selectedTraceID, traceSummaries } = data;
   let traceSummary = traceSummaries[index];
 
   let isSelected =
     selectedTraceID && selectedTraceID === traceSummary.traceID ? true : false;
 
-  let backgroundColour = isSelected
-    ? useColorModeValue("pink.50", "pink.900")
-    : "";
-
-  let dividerColour = useColorModeValue("blackAlpha.300", "whiteAlpha.300");
+  let backgroundColour = isSelected ? selectedColor : "";
 
   if (traceSummary.hasRootSpan) {
     // Add zero-width space after forward slashes, dashes, and dots
