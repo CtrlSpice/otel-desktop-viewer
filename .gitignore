@@ -1,5 +1,3 @@
 .DS_Store
-desktop-collector
-desktop-exporter/static/main.css
-desktop-exporter/static/main.js
+otel-desktop-viewer
 desktop-exporter/node_modules

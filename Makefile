@@ -4,7 +4,7 @@ install:
 
 .PHONY: build-go
 build-go:
-	go build ./...
+	go build
 
 .PHONY: test-go
 test-go:
