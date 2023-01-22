@@ -15,7 +15,6 @@ import {
 import { SpanData } from "../../types/api-types";
 import { SpanField } from "./span-field";
 import { getDurationNs, getDurationString } from "../../utils/duration";
-import { StatusCodeString, SpanKindString } from "../../utils/enum-mapping";
 
 type FieldsPanelProps = {
   span: SpanData | undefined;
@@ -48,10 +47,6 @@ export function FieldsPanel(props: FieldsPanelProps) {
   let durationString = getDurationString(
     getDurationNs(span.startTime, span.endTime),
   );
-
-  let statusString = StatusCodeString[span.statusCode];
-
-  let spanKindString = SpanKindString[span.kind];
 
   // Attributes:
   let spanAttributes = Object.entries(span.attributes).map(([key, value]) => (
@@ -113,7 +108,7 @@ export function FieldsPanel(props: FieldsPanelProps) {
             />
             <SpanField
               fieldName="kind"
-              fieldValue={spanKindString}
+              fieldValue={span.kind}
             />
             <SpanField
               fieldName="start time"
@@ -129,12 +124,12 @@ export function FieldsPanel(props: FieldsPanelProps) {
             />
             <SpanField
               fieldName="status code"
-              fieldValue={statusString}
+              fieldValue={span.statusCode}
             />
             <SpanField
               fieldName="status message"
               fieldValue={span.statusMessage}
-              hidden={statusString === "unset" || statusString === "ok"}
+              hidden={span.statusCode === "Unset" || span.statusCode === "Ok"}
             />
             <SpanField
               fieldName="trace id"
