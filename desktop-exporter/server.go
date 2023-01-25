@@ -4,8 +4,6 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
-	"log"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -79,12 +77,13 @@ func traceIDHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) 
 }
 
 func indexHandler(writer http.ResponseWriter, request *http.Request){
-	indexBytes, err := assets.ReadFile("static/index.html")
-	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-            return
-	}
-	writer.Write(indexBytes)
+	http.ServeFile(writer, request, "./desktop-exporter/static/index.html")
+	// indexBytes, err := assets.ReadFile("static/index.html")
+	// if err != nil {
+	// 	writer.WriteHeader(http.StatusInternalServerError)
+    //         return
+	// }
+	// writer.Write(indexBytes)
 }
 
 func NewServer(traceStore *TraceStore) *Server {
@@ -92,12 +91,12 @@ func NewServer(traceStore *TraceStore) *Server {
 	router.HandleFunc("/api/traces", tracesHandler(traceStore))
 	router.HandleFunc("/api/traces/{id}", traceIDHandler(traceStore))
 	router.HandleFunc("/traces/{id}", indexHandler)
-
-	staticContent, err := fs.Sub(assets, "static")
-	if err != nil {
-		log.Fatal(err)
-	}
-	router.PathPrefix("/").Handler(http.FileServer(http.FS(staticContent)))
+	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./desktop-exporter/static/")))
+	// staticContent, err := fs.Sub(assets, "static")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// router.PathPrefix("/").Handler(http.FileServer(http.FS(staticContent)))
 
 	return &Server{
 		server: http.Server{

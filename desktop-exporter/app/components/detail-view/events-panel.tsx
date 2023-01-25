@@ -32,7 +32,7 @@ export function EventsPanel(props: EventsPanelProps) {
     let durationString = getDurationString(timeSinceSpanStart);
     let eventAttributes = Object.entries(event.attributes).map(
       ([key, value]) => (
-        <li key={key}>
+        <li key={key + value}>
           <SpanField
             fieldName={key}
             fieldValue={value}
@@ -62,8 +62,8 @@ export function EventsPanel(props: EventsPanelProps) {
             <List>{eventAttributes}</List>
             <SpanField
               fieldName="dropped attributes count"
-              fieldValue={event.droppedAttributeCount}
-              hidden={!event.droppedAttributeCount}
+              fieldValue={event.droppedAttributesCount}
+              hidden={!event.droppedAttributesCount}
             />
           </AccordionPanel>
         </AccordionItem>
