@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/gorilla/mux"
+	"github.com/pkg/browser"
 )
 
 // Maximum number of traces to keep in memory
@@ -61,7 +62,7 @@ func traceIDHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) 
 
 		traceData, err := store.GetTrace(traceID)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Printf("error: %s\t traceID: %s\n", ErrTraceIDNotFound, traceID)
 			writer.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -116,6 +117,7 @@ func NewServer(traceStore *TraceStore) *Server {
 }
 
 func (s Server) Start() error {
+	browser.OpenURL("http://localhost:8000/")
 	return s.server.ListenAndServe()
 }
 
