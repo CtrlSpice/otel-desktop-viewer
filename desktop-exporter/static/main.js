@@ -51866,45 +51866,48 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
 
   // app/components/detail-view/events-panel.tsx
   var import_react151 = __toESM(require_react());
+  function EventItem(props) {
+    let { event, spanStartTime } = props;
+    let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
+    let durationString = getDurationString(timeSinceSpanStart);
+    let eventAttributes = Object.entries(event.attributes).map(([key, value]) => /* @__PURE__ */ import_react151.default.createElement("li", {
+      key: key + value
+    }, /* @__PURE__ */ import_react151.default.createElement(SpanField, {
+      fieldName: key,
+      fieldValue: value
+    })));
+    return /* @__PURE__ */ import_react151.default.createElement("li", {
+      key: event.name + event.timestamp
+    }, /* @__PURE__ */ import_react151.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react151.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react151.default.createElement(Box, {
+      flex: "1",
+      textAlign: "left"
+    }, /* @__PURE__ */ import_react151.default.createElement(Heading, {
+      size: "sm"
+    }, event.name), /* @__PURE__ */ import_react151.default.createElement(Text, {
+      fontSize: "xs"
+    }, durationString, " since span start")), /* @__PURE__ */ import_react151.default.createElement(AccordionIcon, null)), /* @__PURE__ */ import_react151.default.createElement(AccordionPanel, null, /* @__PURE__ */ import_react151.default.createElement(SpanField, {
+      fieldName: "timestamp",
+      fieldValue: event.timestamp
+    }), /* @__PURE__ */ import_react151.default.createElement(List, null, eventAttributes), /* @__PURE__ */ import_react151.default.createElement(SpanField, {
+      fieldName: "dropped attributes count",
+      fieldValue: event.droppedAttributesCount,
+      hidden: !event.droppedAttributesCount
+    }))));
+  }
   function EventsPanel(props) {
     let { events, spanStartTime } = props;
     if (!events) {
       return null;
     }
-    let eventList = events.map((event) => {
-      let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
-      let durationString = getDurationString(timeSinceSpanStart);
-      let eventAttributes = Object.entries(event.attributes).map(
-        ([key, value]) => /* @__PURE__ */ import_react151.default.createElement("li", {
-          key: key + value
-        }, /* @__PURE__ */ import_react151.default.createElement(SpanField, {
-          fieldName: key,
-          fieldValue: value
-        }))
-      );
-      return /* @__PURE__ */ import_react151.default.createElement("li", {
-        key: event.name + event.timestamp
-      }, /* @__PURE__ */ import_react151.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react151.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react151.default.createElement(Box, {
-        flex: "1",
-        textAlign: "left"
-      }, /* @__PURE__ */ import_react151.default.createElement(Heading, {
-        size: "sm"
-      }, event.name), /* @__PURE__ */ import_react151.default.createElement(Text, {
-        fontSize: "xs"
-      }, durationString, " since span start")), /* @__PURE__ */ import_react151.default.createElement(AccordionIcon, null)), /* @__PURE__ */ import_react151.default.createElement(AccordionPanel, null, /* @__PURE__ */ import_react151.default.createElement(SpanField, {
-        fieldName: "timestamp",
-        fieldValue: event.timestamp
-      }), /* @__PURE__ */ import_react151.default.createElement(List, null, eventAttributes), /* @__PURE__ */ import_react151.default.createElement(SpanField, {
-        fieldName: "dropped attributes count",
-        fieldValue: event.droppedAttributesCount,
-        hidden: !event.droppedAttributesCount
-      }))));
-    });
+    let eventItemList = events.map((event) => /* @__PURE__ */ import_react151.default.createElement(EventItem, {
+      event,
+      spanStartTime
+    }));
     return /* @__PURE__ */ import_react151.default.createElement(TabPanel, {
       paddingX: "0px"
     }, /* @__PURE__ */ import_react151.default.createElement(Accordion, {
       allowMultiple: true
-    }, /* @__PURE__ */ import_react151.default.createElement(List, null, eventList)));
+    }, /* @__PURE__ */ import_react151.default.createElement(List, null, eventItemList)));
   }
 
   // app/components/detail-view/links-panel.tsx
@@ -52015,41 +52018,44 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   }
 
   // app/components/detail-view/links-panel.tsx
+  function LinkItem(props) {
+    let { link } = props;
+    let linkAttributes = Object.entries(link.attributes).map(([key, value]) => /* @__PURE__ */ import_react157.default.createElement("li", {
+      key: key + value
+    }, /* @__PURE__ */ import_react157.default.createElement(SpanField, {
+      fieldName: key,
+      fieldValue: value
+    })));
+    return /* @__PURE__ */ import_react157.default.createElement("li", {
+      key: link.traceID + link.spanID
+    }, /* @__PURE__ */ import_react157.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react157.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react157.default.createElement(Box, {
+      flex: "1",
+      textAlign: "left"
+    }, /* @__PURE__ */ import_react157.default.createElement(Text, {
+      fontSize: "sm"
+    }, "Trace ID: ", /* @__PURE__ */ import_react157.default.createElement("strong", null, link.traceID)), /* @__PURE__ */ import_react157.default.createElement(Text, {
+      fontSize: "sm"
+    }, "Span ID: ", /* @__PURE__ */ import_react157.default.createElement("strong", null, link.spanID))), /* @__PURE__ */ import_react157.default.createElement(AccordionIcon, null)), /* @__PURE__ */ import_react157.default.createElement(AccordionPanel, null, /* @__PURE__ */ import_react157.default.createElement(SpanField, {
+      fieldName: "trace state",
+      fieldValue: link.traceState
+    }), /* @__PURE__ */ import_react157.default.createElement(List, null, linkAttributes), /* @__PURE__ */ import_react157.default.createElement(SpanField, {
+      fieldName: "dropped attributes count",
+      fieldValue: link.droppedAttributesCount
+    }))));
+  }
   function LinksPanel(props) {
     let { links } = props;
     if (!links) {
       return null;
     }
-    let linkList = links.map((link) => {
-      let linkAttributes = Object.entries(link.attributes).map(([key, value]) => /* @__PURE__ */ import_react157.default.createElement("li", {
-        key: key + value
-      }, /* @__PURE__ */ import_react157.default.createElement(SpanField, {
-        fieldName: key,
-        fieldValue: value
-      })));
-      return /* @__PURE__ */ import_react157.default.createElement("li", {
-        key: link.traceID + link.spanID
-      }, /* @__PURE__ */ import_react157.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react157.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react157.default.createElement(Box, {
-        flex: "1",
-        textAlign: "left"
-      }, /* @__PURE__ */ import_react157.default.createElement(Text, {
-        fontSize: "sm"
-      }, "Trace ID: ", /* @__PURE__ */ import_react157.default.createElement("strong", null, link.traceID)), /* @__PURE__ */ import_react157.default.createElement(Text, {
-        fontSize: "sm"
-      }, "Span ID: ", /* @__PURE__ */ import_react157.default.createElement("strong", null, link.spanID))), /* @__PURE__ */ import_react157.default.createElement(AccordionIcon, null)), /* @__PURE__ */ import_react157.default.createElement(AccordionPanel, null, /* @__PURE__ */ import_react157.default.createElement(SpanField, {
-        fieldName: "trace state",
-        fieldValue: link.traceState
-      }), /* @__PURE__ */ import_react157.default.createElement(List, null, linkAttributes), /* @__PURE__ */ import_react157.default.createElement(SpanField, {
-        fieldName: "dropped attributes count",
-        fieldValue: link.droppedAttributesCount,
-        hidden: !link.droppedAttributesCount
-      }))));
-    });
+    let linkItemList = links.map((link) => /* @__PURE__ */ import_react157.default.createElement(LinkItem, {
+      link
+    }));
     return /* @__PURE__ */ import_react157.default.createElement(TabPanel, {
       paddingX: "0px"
     }, /* @__PURE__ */ import_react157.default.createElement(UnderConstructionAlert, null), /* @__PURE__ */ import_react157.default.createElement(Accordion, {
       allowMultiple: true
-    }, /* @__PURE__ */ import_react157.default.createElement(List, null, linkList)));
+    }, /* @__PURE__ */ import_react157.default.createElement(List, null, linkItemList)));
   }
 
   // app/components/detail-view/detail-view.tsx
