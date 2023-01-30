@@ -1,7 +1,6 @@
 import React from "react";
 import { Flex, Tab, TabList, TabPanels, Tabs } from "@chakra-ui/react";
 
-
 import { SpanData } from "../../types/api-types";
 import { FieldsPanel } from "./fields-panel";
 import { EventsPanel } from "./events-panel";
