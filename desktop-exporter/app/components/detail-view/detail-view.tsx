@@ -4,6 +4,7 @@ import { Flex, Tab, TabList, TabPanels, Tabs } from "@chakra-ui/react";
 import { SpanData } from "../../types/api-types";
 import { FieldsPanel } from "./fields-panel";
 import { EventsPanel } from "./events-panel";
+import { LinksPanel } from "./links-panel";
 
 type DetailViewProps = {
   span: SpanData | undefined;
@@ -16,7 +17,6 @@ export function DetailView(props: DetailViewProps) {
   }
   let numEvents = span.events.length;
   let numLinks = span.links.length;
-
   return (
     <Flex
       grow="0"
@@ -43,6 +43,7 @@ export function DetailView(props: DetailViewProps) {
             events={span.events}
             spanStartTime={span.startTime}
           />
+          <LinksPanel links={span.links} />
         </TabPanels>
       </Tabs>
     </Flex>

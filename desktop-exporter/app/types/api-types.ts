@@ -58,7 +58,7 @@ export type EventData = {
   name: string;
   timestamp: string;
   attributes: { [key: string]: number | string | boolean | null };
-  droppedAttributeCount: number;
+  droppedAttributesCount: number;
 };
 
 export type LinkData = {

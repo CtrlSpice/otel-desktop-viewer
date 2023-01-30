@@ -2297,9 +2297,9 @@
           if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ !== "undefined" && typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart === "function") {
             __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(new Error());
           }
-          var React44 = require_react();
+          var React48 = require_react();
           var Scheduler = require_scheduler();
-          var ReactSharedInternals = React44.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+          var ReactSharedInternals = React48.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
           var suppressWarning = false;
           function setSuppressWarning(newSuppressWarning) {
             {
@@ -3820,7 +3820,7 @@
             {
               if (props.value == null) {
                 if (typeof props.children === "object" && props.children !== null) {
-                  React44.Children.forEach(props.children, function(child) {
+                  React48.Children.forEach(props.children, function(child) {
                     if (child == null) {
                       return;
                     }
@@ -11981,7 +11981,7 @@
             }
           }
           var fakeInternalInstance = {};
-          var emptyRefsObject = new React44.Component().refs;
+          var emptyRefsObject = new React48.Component().refs;
           var didWarnAboutStateAssignmentForComponent;
           var didWarnAboutUninitializedState;
           var didWarnAboutGetSnapshotBeforeUpdateWithoutDidUpdate;
@@ -25638,7 +25638,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     "node_modules/@emotion/use-insertion-effect-with-fallbacks/dist/emotion-use-insertion-effect-with-fallbacks.cjs.dev.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      var React44 = require_react();
+      var React48 = require_react();
       function _interopNamespace(e) {
         if (e && e.__esModule)
           return e;
@@ -25659,14 +25659,14 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         n["default"] = e;
         return Object.freeze(n);
       }
-      var React__namespace = /* @__PURE__ */ _interopNamespace(React44);
+      var React__namespace = /* @__PURE__ */ _interopNamespace(React48);
       var isBrowser3 = typeof document !== "undefined";
       var syncFallback = function syncFallback2(create) {
         return create();
       };
       var useInsertionEffect2 = React__namespace["useInsertionEffect"] ? React__namespace["useInsertionEffect"] : false;
       var useInsertionEffectAlwaysWithSyncFallback = !isBrowser3 ? syncFallback : useInsertionEffect2 || syncFallback;
-      var useInsertionEffectWithLayoutFallback = useInsertionEffect2 || React44.useLayoutEffect;
+      var useInsertionEffectWithLayoutFallback = useInsertionEffect2 || React48.useLayoutEffect;
       exports.useInsertionEffectAlwaysWithSyncFallback = useInsertionEffectAlwaysWithSyncFallback;
       exports.useInsertionEffectWithLayoutFallback = useInsertionEffectWithLayoutFallback;
     }
@@ -25688,7 +25688,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var require_emotion_element_b63ca7c6_cjs_dev = __commonJS({
     "node_modules/@emotion/react/dist/emotion-element-b63ca7c6.cjs.dev.js"(exports) {
       "use strict";
-      var React44 = require_react();
+      var React48 = require_react();
       var createCache = require_emotion_cache_cjs();
       var _extends5 = require_extends();
       var weakMemoize = require_emotion_weak_memoize_cjs();
@@ -25703,7 +25703,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       var weakMemoize__default = /* @__PURE__ */ _interopDefault(weakMemoize);
       var isBrowser3 = typeof document !== "undefined";
       var hasOwnProperty = {}.hasOwnProperty;
-      var EmotionCacheContext = /* @__PURE__ */ React44.createContext(
+      var EmotionCacheContext = /* @__PURE__ */ React48.createContext(
         typeof HTMLElement !== "undefined" ? /* @__PURE__ */ createCache__default["default"]({
           key: "css"
         }) : null
@@ -25713,23 +25713,23 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
       var CacheProvider = EmotionCacheContext.Provider;
       var __unsafe_useEmotionCache = function useEmotionCache() {
-        return React44.useContext(EmotionCacheContext);
+        return React48.useContext(EmotionCacheContext);
       };
       exports.withEmotionCache = function withEmotionCache(func) {
-        return /* @__PURE__ */ React44.forwardRef(function(props, ref) {
-          var cache = React44.useContext(EmotionCacheContext);
+        return /* @__PURE__ */ React48.forwardRef(function(props, ref) {
+          var cache = React48.useContext(EmotionCacheContext);
           return func(props, cache, ref);
         });
       };
       if (!isBrowser3) {
         exports.withEmotionCache = function withEmotionCache(func) {
           return function(props) {
-            var cache = React44.useContext(EmotionCacheContext);
+            var cache = React48.useContext(EmotionCacheContext);
             if (cache === null) {
               cache = createCache__default["default"]({
                 key: "css"
               });
-              return /* @__PURE__ */ React44.createElement(EmotionCacheContext.Provider, {
+              return /* @__PURE__ */ React48.createElement(EmotionCacheContext.Provider, {
                 value: cache
               }, func(props, cache));
             } else {
@@ -25738,12 +25738,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           };
         };
       }
-      var ThemeContext2 = /* @__PURE__ */ React44.createContext({});
+      var ThemeContext2 = /* @__PURE__ */ React48.createContext({});
       if (true) {
         ThemeContext2.displayName = "EmotionThemeContext";
       }
       var useTheme2 = function useTheme3() {
-        return React44.useContext(ThemeContext2);
+        return React48.useContext(ThemeContext2);
       };
       var getTheme2 = function getTheme3(outerTheme, theme2) {
         if (typeof theme2 === "function") {
@@ -25764,24 +25764,24 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         });
       });
       var ThemeProvider2 = function ThemeProvider3(props) {
-        var theme2 = React44.useContext(ThemeContext2);
+        var theme2 = React48.useContext(ThemeContext2);
         if (props.theme !== theme2) {
           theme2 = createCacheWithTheme(theme2)(props.theme);
         }
-        return /* @__PURE__ */ React44.createElement(ThemeContext2.Provider, {
+        return /* @__PURE__ */ React48.createElement(ThemeContext2.Provider, {
           value: theme2
         }, props.children);
       };
       function withTheme(Component3) {
         var componentName = Component3.displayName || Component3.name || "Component";
         var render = function render2(props, ref) {
-          var theme2 = React44.useContext(ThemeContext2);
-          return /* @__PURE__ */ React44.createElement(Component3, _extends5({
+          var theme2 = React48.useContext(ThemeContext2);
+          return /* @__PURE__ */ React48.createElement(Component3, _extends5({
             theme: theme2,
             ref
           }, props));
         };
-        var WithTheme = /* @__PURE__ */ React44.forwardRef(render);
+        var WithTheme = /* @__PURE__ */ React48.forwardRef(render);
         WithTheme.displayName = "WithTheme(" + componentName + ")";
         return _isolatedHnrs_dist_emotionReact_isolatedHnrs["default"](WithTheme, Component3);
       }
@@ -25851,7 +25851,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
             serializedNames += " " + next.name;
             next = next.next;
           }
-          return /* @__PURE__ */ React44.createElement("style", (_ref2 = {}, _ref2["data-emotion"] = cache.key + " " + serializedNames, _ref2.dangerouslySetInnerHTML = {
+          return /* @__PURE__ */ React48.createElement("style", (_ref2 = {}, _ref2["data-emotion"] = cache.key + " " + serializedNames, _ref2.dangerouslySetInnerHTML = {
             __html: rules
           }, _ref2.nonce = cache.sheet.nonce, _ref2));
         }
@@ -25870,7 +25870,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         } else if (props.className != null) {
           className = props.className + " ";
         }
-        var serialized = serialize.serializeStyles(registeredStyles, void 0, React44.useContext(ThemeContext2));
+        var serialized = serialize.serializeStyles(registeredStyles, void 0, React48.useContext(ThemeContext2));
         if (serialized.name.indexOf("-") === -1) {
           var labelFromStack = props[labelPropName];
           if (labelFromStack) {
@@ -25886,11 +25886,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         }
         newProps.ref = ref;
         newProps.className = className;
-        return /* @__PURE__ */ React44.createElement(React44.Fragment, null, /* @__PURE__ */ React44.createElement(Insertion, {
+        return /* @__PURE__ */ React48.createElement(React48.Fragment, null, /* @__PURE__ */ React48.createElement(Insertion, {
           cache,
           serialized,
           isStringTag: typeof WrappedComponent === "string"
-        }), /* @__PURE__ */ React44.createElement(WrappedComponent, newProps));
+        }), /* @__PURE__ */ React48.createElement(WrappedComponent, newProps));
       });
       if (true) {
         Emotion.displayName = "EmotionCssPropInternal";
@@ -25913,7 +25913,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     "node_modules/@emotion/react/dist/emotion-react.cjs.dev.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      var React44 = require_react();
+      var React48 = require_react();
       require_emotion_cache_cjs();
       var emotionElement = require_emotion_element_b63ca7c6_cjs_dev();
       require_extends();
@@ -26048,7 +26048,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       var jsx = function jsx2(type, props) {
         var args = arguments;
         if (props == null || !emotionElement.hasOwnProperty.call(props, "css")) {
-          return React44.createElement.apply(void 0, args);
+          return React48.createElement.apply(void 0, args);
         }
         var argsLength = args.length;
         var createElementArgArray = new Array(argsLength);
@@ -26057,7 +26057,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         for (var i = 2; i < argsLength; i++) {
           createElementArgArray[i] = args[i];
         }
-        return React44.createElement.apply(null, createElementArgArray);
+        return React48.createElement.apply(null, createElementArgArray);
       };
       var warnedAboutCssPropForGlobal = false;
       var Global3 = /* @__PURE__ */ emotionElement.withEmotionCache(function(props, cache) {
@@ -26066,7 +26066,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           warnedAboutCssPropForGlobal = true;
         }
         var styles2 = props.styles;
-        var serialized = serialize.serializeStyles([styles2], void 0, React44.useContext(emotionElement.ThemeContext));
+        var serialized = serialize.serializeStyles([styles2], void 0, React48.useContext(emotionElement.ThemeContext));
         if (!emotionElement.isBrowser) {
           var _ref;
           var serializedNames = serialized.name;
@@ -26085,11 +26085,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           if (shouldCache) {
             return null;
           }
-          return /* @__PURE__ */ React44.createElement("style", (_ref = {}, _ref["data-emotion"] = cache.key + "-global " + serializedNames, _ref.dangerouslySetInnerHTML = {
+          return /* @__PURE__ */ React48.createElement("style", (_ref = {}, _ref["data-emotion"] = cache.key + "-global " + serializedNames, _ref.dangerouslySetInnerHTML = {
             __html: rules
           }, _ref.nonce = cache.sheet.nonce, _ref));
         }
-        var sheetRef = React44.useRef();
+        var sheetRef = React48.useRef();
         useInsertionEffectWithFallbacks.useInsertionEffectWithLayoutFallback(function() {
           var key = cache.key + "-global";
           var sheet = new cache.sheet.constructor({
@@ -26217,7 +26217,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         });
         if (!emotionElement.isBrowser && rules.length !== 0) {
           var _ref2;
-          return /* @__PURE__ */ React44.createElement("style", (_ref2 = {}, _ref2["data-emotion"] = cache.key + " " + serializedArr.map(function(serialized) {
+          return /* @__PURE__ */ React48.createElement("style", (_ref2 = {}, _ref2["data-emotion"] = cache.key + " " + serializedArr.map(function(serialized) {
             return serialized.name;
           }).join(" "), _ref2.dangerouslySetInnerHTML = {
             __html: rules
@@ -26252,11 +26252,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         var content = {
           css: css3,
           cx: cx8,
-          theme: React44.useContext(emotionElement.ThemeContext)
+          theme: React48.useContext(emotionElement.ThemeContext)
         };
         var ele = props.children(content);
         hasRendered = true;
-        return /* @__PURE__ */ React44.createElement(React44.Fragment, null, /* @__PURE__ */ React44.createElement(Insertion, {
+        return /* @__PURE__ */ React48.createElement(React48.Fragment, null, /* @__PURE__ */ React48.createElement(Insertion, {
           cache,
           serializedArr
         }), ele);
@@ -26351,7 +26351,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       var _extends5 = require_extends();
-      var React44 = require_react();
+      var React48 = require_react();
       var isPropValid = require_emotion_is_prop_valid_cjs();
       var react = require_emotion_react_cjs();
       var utils = require_emotion_utils_cjs();
@@ -26400,7 +26400,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
             serializedNames += " " + next.name;
             next = next.next;
           }
-          return /* @__PURE__ */ React44.createElement("style", (_ref2 = {}, _ref2["data-emotion"] = cache.key + " " + serializedNames, _ref2.dangerouslySetInnerHTML = {
+          return /* @__PURE__ */ React48.createElement("style", (_ref2 = {}, _ref2["data-emotion"] = cache.key + " " + serializedNames, _ref2.dangerouslySetInnerHTML = {
             __html: rules
           }, _ref2.nonce = cache.sheet.nonce, _ref2));
         }
@@ -26455,7 +26455,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
               for (var key in props) {
                 mergedProps[key] = props[key];
               }
-              mergedProps.theme = React44.useContext(react.ThemeContext);
+              mergedProps.theme = React48.useContext(react.ThemeContext);
             }
             if (typeof props.className === "string") {
               className = utils.getRegisteredStyles(cache.registered, classInterpolations, props.className);
@@ -26478,11 +26478,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
             }
             newProps.className = className;
             newProps.ref = ref;
-            return /* @__PURE__ */ React44.createElement(React44.Fragment, null, /* @__PURE__ */ React44.createElement(Insertion, {
+            return /* @__PURE__ */ React48.createElement(React48.Fragment, null, /* @__PURE__ */ React48.createElement(Insertion, {
               cache,
               serialized,
               isStringTag: typeof FinalTag === "string"
-            }), /* @__PURE__ */ React44.createElement(FinalTag, newProps));
+            }), /* @__PURE__ */ React48.createElement(FinalTag, newProps));
           });
           Styled.displayName = identifierName !== void 0 ? identifierName : "Styled(" + (typeof baseTag === "string" ? baseTag : baseTag.displayName || baseTag.name || "Component") + ")";
           Styled.defaultProps = tag.defaultProps;
@@ -26814,8 +26814,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var require_tslib = __commonJS({
     "node_modules/popmotion/node_modules/tslib/tslib.js"(exports, module) {
       var __extends2;
-      var __assign2;
-      var __rest2;
+      var __assign3;
+      var __rest3;
       var __decorate2;
       var __param2;
       var __metadata2;
@@ -26878,7 +26878,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           }
           d.prototype = b2 === null ? Object.create(b2) : (__.prototype = b2.prototype, new __());
         };
-        __assign2 = Object.assign || function(t2) {
+        __assign3 = Object.assign || function(t2) {
           for (var s, i = 1, n = arguments.length; i < n; i++) {
             s = arguments[i];
             for (var p in s)
@@ -26887,7 +26887,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           }
           return t2;
         };
-        __rest2 = function(s, e) {
+        __rest3 = function(s, e) {
           var t2 = {};
           for (var p in s)
             if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
@@ -27222,8 +27222,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           return typeof state2 === "function" ? receiver === state2 : state2.has(receiver);
         };
         exporter("__extends", __extends2);
-        exporter("__assign", __assign2);
-        exporter("__rest", __rest2);
+        exporter("__assign", __assign3);
+        exporter("__rest", __rest3);
         exporter("__decorate", __decorate2);
         exporter("__param", __param2);
         exporter("__metadata", __metadata2);
@@ -27716,7 +27716,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   });
 
   // app/main.tsx
-  var import_react166 = __toESM(require_react());
+  var import_react172 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // node_modules/@chakra-ui/react/dist/index.esm.js
@@ -51688,7 +51688,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   }
 
   // app/routes/trace-view.tsx
-  var import_react163 = __toESM(require_react());
+  var import_react169 = __toESM(require_react());
 
   // app/components/header-view/header.tsx
   var import_react145 = __toESM(require_react());
@@ -51704,7 +51704,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   }
 
   // app/components/detail-view/detail-view.tsx
-  var import_react153 = __toESM(require_react());
+  var import_react159 = __toESM(require_react());
 
   // app/components/detail-view/fields-panel.tsx
   var import_react149 = __toESM(require_react());
@@ -51866,87 +51866,240 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
 
   // app/components/detail-view/events-panel.tsx
   var import_react151 = __toESM(require_react());
+  function EventItem(props) {
+    let { event, spanStartTime } = props;
+    let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
+    let durationString = getDurationString(timeSinceSpanStart);
+    let eventAttributes = Object.entries(event.attributes).map(([key, value]) => /* @__PURE__ */ import_react151.default.createElement("li", {
+      key: key + value
+    }, /* @__PURE__ */ import_react151.default.createElement(SpanField, {
+      fieldName: key,
+      fieldValue: value
+    })));
+    return /* @__PURE__ */ import_react151.default.createElement("li", {
+      key: event.name + event.timestamp
+    }, /* @__PURE__ */ import_react151.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react151.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react151.default.createElement(Box, {
+      flex: "1",
+      textAlign: "left"
+    }, /* @__PURE__ */ import_react151.default.createElement(Heading, {
+      size: "sm"
+    }, event.name), /* @__PURE__ */ import_react151.default.createElement(Text, {
+      fontSize: "xs"
+    }, durationString, " since span start")), /* @__PURE__ */ import_react151.default.createElement(AccordionIcon, null)), /* @__PURE__ */ import_react151.default.createElement(AccordionPanel, null, /* @__PURE__ */ import_react151.default.createElement(SpanField, {
+      fieldName: "timestamp",
+      fieldValue: event.timestamp
+    }), /* @__PURE__ */ import_react151.default.createElement(List, null, eventAttributes), /* @__PURE__ */ import_react151.default.createElement(SpanField, {
+      fieldName: "dropped attributes count",
+      fieldValue: event.droppedAttributesCount,
+      hidden: !event.droppedAttributesCount
+    }))));
+  }
   function EventsPanel(props) {
     let { events, spanStartTime } = props;
     if (!events) {
       return null;
     }
-    let eventList = events.map((event) => {
-      let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
-      let durationString = getDurationString(timeSinceSpanStart);
-      let eventAttributes = Object.entries(event.attributes).map(
-        ([key, value]) => /* @__PURE__ */ import_react151.default.createElement("li", {
-          key
-        }, /* @__PURE__ */ import_react151.default.createElement(SpanField, {
-          fieldName: key,
-          fieldValue: value
-        }))
-      );
-      return /* @__PURE__ */ import_react151.default.createElement("li", {
-        key: event.name + event.timestamp
-      }, /* @__PURE__ */ import_react151.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react151.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react151.default.createElement(Box, {
-        flex: "1",
-        textAlign: "left"
-      }, /* @__PURE__ */ import_react151.default.createElement(Heading, {
-        size: "sm"
-      }, event.name), /* @__PURE__ */ import_react151.default.createElement(Text, {
-        fontSize: "xs"
-      }, durationString, " since span start")), /* @__PURE__ */ import_react151.default.createElement(AccordionIcon, null)), /* @__PURE__ */ import_react151.default.createElement(AccordionPanel, null, /* @__PURE__ */ import_react151.default.createElement(SpanField, {
-        fieldName: "timestamp",
-        fieldValue: event.timestamp
-      }), /* @__PURE__ */ import_react151.default.createElement(List, null, eventAttributes), /* @__PURE__ */ import_react151.default.createElement(SpanField, {
-        fieldName: "dropped attributes count",
-        fieldValue: event.droppedAttributeCount,
-        hidden: !event.droppedAttributeCount
-      }))));
-    });
+    let eventItemList = events.map((event) => /* @__PURE__ */ import_react151.default.createElement(EventItem, {
+      event,
+      spanStartTime
+    }));
     return /* @__PURE__ */ import_react151.default.createElement(TabPanel, {
       paddingX: "0px"
     }, /* @__PURE__ */ import_react151.default.createElement(Accordion, {
       allowMultiple: true
-    }, /* @__PURE__ */ import_react151.default.createElement(List, null, eventList)));
+    }, /* @__PURE__ */ import_react151.default.createElement(List, null, eventItemList)));
+  }
+
+  // app/components/detail-view/links-panel.tsx
+  var import_react157 = __toESM(require_react());
+
+  // app/components/alerts/under-construction.tsx
+  var import_react155 = __toESM(require_react());
+
+  // node_modules/react-icons/lib/esm/iconBase.js
+  var import_react154 = __toESM(require_react());
+
+  // node_modules/react-icons/lib/esm/iconContext.js
+  var import_react153 = __toESM(require_react());
+  var DefaultContext = {
+    color: void 0,
+    size: void 0,
+    className: void 0,
+    style: void 0,
+    attr: void 0
+  };
+  var IconContext = import_react153.default.createContext && import_react153.default.createContext(DefaultContext);
+
+  // node_modules/react-icons/lib/esm/iconBase.js
+  var __assign2 = function() {
+    __assign2 = Object.assign || function(t2) {
+      for (var s, i = 1, n = arguments.length; i < n; i++) {
+        s = arguments[i];
+        for (var p in s)
+          if (Object.prototype.hasOwnProperty.call(s, p))
+            t2[p] = s[p];
+      }
+      return t2;
+    };
+    return __assign2.apply(this, arguments);
+  };
+  var __rest2 = function(s, e) {
+    var t2 = {};
+    for (var p in s)
+      if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+        t2[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+      for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
+        if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
+          t2[p[i]] = s[p[i]];
+      }
+    return t2;
+  };
+  function Tree2Element(tree) {
+    return tree && tree.map(function(node, i) {
+      return import_react154.default.createElement(node.tag, __assign2({
+        key: i
+      }, node.attr), Tree2Element(node.child));
+    });
+  }
+  function GenIcon(data) {
+    return function(props) {
+      return import_react154.default.createElement(IconBase, __assign2({
+        attr: __assign2({}, data.attr)
+      }, props), Tree2Element(data.child));
+    };
+  }
+  function IconBase(props) {
+    var elem = function(conf) {
+      var attr = props.attr, size3 = props.size, title = props.title, svgProps = __rest2(props, ["attr", "size", "title"]);
+      var computedSize = size3 || conf.size || "1em";
+      var className;
+      if (conf.className)
+        className = conf.className;
+      if (props.className)
+        className = (className ? className + " " : "") + props.className;
+      return import_react154.default.createElement("svg", __assign2({
+        stroke: "currentColor",
+        fill: "currentColor",
+        strokeWidth: "0"
+      }, conf.attr, attr, svgProps, {
+        className,
+        style: __assign2(__assign2({
+          color: props.color || conf.color
+        }, conf.style), props.style),
+        height: computedSize,
+        width: computedSize,
+        xmlns: "http://www.w3.org/2000/svg"
+      }), title && import_react154.default.createElement("title", null, title), props.children);
+    };
+    return IconContext !== void 0 ? import_react154.default.createElement(IconContext.Consumer, null, function(conf) {
+      return elem(conf);
+    }) : elem(DefaultContext);
+  }
+
+  // node_modules/react-icons/md/index.esm.js
+  function MdConstruction(props) {
+    return GenIcon({ "tag": "svg", "attr": { "viewBox": "0 0 24 24" }, "child": [{ "tag": "path", "attr": { "fill": "none", "d": "M0 0h24v24H0z" } }, { "tag": "path", "attr": { "d": "M13.783 15.172l2.121-2.121 5.996 5.996-2.121 2.121zM17.5 10c1.93 0 3.5-1.57 3.5-3.5 0-.58-.16-1.12-.41-1.6l-2.7 2.7-1.49-1.49 2.7-2.7c-.48-.25-1.02-.41-1.6-.41C15.57 3 14 4.57 14 6.5c0 .41.08.8.21 1.16l-1.85 1.85-1.78-1.78.71-.71-1.41-1.41L12 3.49a3 3 0 00-4.24 0L4.22 7.03l1.41 1.41H2.81l-.71.71 3.54 3.54.71-.71V9.15l1.41 1.41.71-.71 1.78 1.78-7.41 7.41 2.12 2.12L16.34 9.79c.36.13.75.21 1.16.21z" } }] })(props);
+  }
+
+  // app/components/alerts/under-construction.tsx
+  function UnderConstructionAlert() {
+    return /* @__PURE__ */ import_react155.default.createElement(Alert, {
+      status: "warning",
+      variant: "subtle",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      textAlign: "center"
+    }, /* @__PURE__ */ import_react155.default.createElement(AlertIcon, {
+      as: MdConstruction,
+      boxSize: "32px"
+    }), /* @__PURE__ */ import_react155.default.createElement(AlertTitle, null, "This section is under construction."), /* @__PURE__ */ import_react155.default.createElement(AlertDescription, null, "More features coming soon!"));
+  }
+
+  // app/components/detail-view/links-panel.tsx
+  function LinkItem(props) {
+    let { link } = props;
+    let linkAttributes = Object.entries(link.attributes).map(([key, value]) => /* @__PURE__ */ import_react157.default.createElement("li", {
+      key: key + value
+    }, /* @__PURE__ */ import_react157.default.createElement(SpanField, {
+      fieldName: key,
+      fieldValue: value
+    })));
+    return /* @__PURE__ */ import_react157.default.createElement("li", {
+      key: link.traceID + link.spanID
+    }, /* @__PURE__ */ import_react157.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react157.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react157.default.createElement(Box, {
+      flex: "1",
+      textAlign: "left"
+    }, /* @__PURE__ */ import_react157.default.createElement(Text, {
+      fontSize: "sm"
+    }, "Trace ID: ", /* @__PURE__ */ import_react157.default.createElement("strong", null, link.traceID)), /* @__PURE__ */ import_react157.default.createElement(Text, {
+      fontSize: "sm"
+    }, "Span ID: ", /* @__PURE__ */ import_react157.default.createElement("strong", null, link.spanID))), /* @__PURE__ */ import_react157.default.createElement(AccordionIcon, null)), /* @__PURE__ */ import_react157.default.createElement(AccordionPanel, null, /* @__PURE__ */ import_react157.default.createElement(SpanField, {
+      fieldName: "trace state",
+      fieldValue: link.traceState
+    }), /* @__PURE__ */ import_react157.default.createElement(List, null, linkAttributes), /* @__PURE__ */ import_react157.default.createElement(SpanField, {
+      fieldName: "dropped attributes count",
+      fieldValue: link.droppedAttributesCount
+    }))));
+  }
+  function LinksPanel(props) {
+    let { links } = props;
+    if (!links) {
+      return null;
+    }
+    let linkItemList = links.map((link) => /* @__PURE__ */ import_react157.default.createElement(LinkItem, {
+      link
+    }));
+    return /* @__PURE__ */ import_react157.default.createElement(TabPanel, {
+      paddingX: "0px"
+    }, /* @__PURE__ */ import_react157.default.createElement(UnderConstructionAlert, null), /* @__PURE__ */ import_react157.default.createElement(Accordion, {
+      allowMultiple: true
+    }, /* @__PURE__ */ import_react157.default.createElement(List, null, linkItemList)));
   }
 
   // app/components/detail-view/detail-view.tsx
   function DetailView(props) {
     let { span } = props;
     if (!span) {
-      return /* @__PURE__ */ import_react153.default.createElement("div", null);
+      return /* @__PURE__ */ import_react159.default.createElement("div", null);
     }
     let numEvents = span.events.length;
     let numLinks = span.links.length;
-    return /* @__PURE__ */ import_react153.default.createElement(Flex, {
+    return /* @__PURE__ */ import_react159.default.createElement(Flex, {
       grow: "0",
       shrink: "1",
       basis: "350px",
       height: "100vh"
-    }, /* @__PURE__ */ import_react153.default.createElement(Tabs, {
+    }, /* @__PURE__ */ import_react159.default.createElement(Tabs, {
       colorScheme: "pink",
       margin: 3,
       overflowY: "scroll",
       size: "sm",
       variant: "soft-rounded",
       width: "100vw"
-    }, /* @__PURE__ */ import_react153.default.createElement(TabList, null, /* @__PURE__ */ import_react153.default.createElement(Tab, null, "Fields"), /* @__PURE__ */ import_react153.default.createElement(Tab, {
+    }, /* @__PURE__ */ import_react159.default.createElement(TabList, null, /* @__PURE__ */ import_react159.default.createElement(Tab, null, "Fields"), /* @__PURE__ */ import_react159.default.createElement(Tab, {
       isDisabled: numEvents === 0
-    }, "Events(", numEvents, ")"), /* @__PURE__ */ import_react153.default.createElement(Tab, {
+    }, "Events(", numEvents, ")"), /* @__PURE__ */ import_react159.default.createElement(Tab, {
       isDisabled: numLinks === 0
-    }, "Links(", numLinks, ")")), /* @__PURE__ */ import_react153.default.createElement(TabPanels, null, /* @__PURE__ */ import_react153.default.createElement(FieldsPanel, {
+    }, "Links(", numLinks, ")")), /* @__PURE__ */ import_react159.default.createElement(TabPanels, null, /* @__PURE__ */ import_react159.default.createElement(FieldsPanel, {
       span
-    }), /* @__PURE__ */ import_react153.default.createElement(EventsPanel, {
+    }), /* @__PURE__ */ import_react159.default.createElement(EventsPanel, {
       events: span.events,
       spanStartTime: span.startTime
+    }), /* @__PURE__ */ import_react159.default.createElement(LinksPanel, {
+      links: span.links
     }))));
   }
 
   // app/components/waterfall-view/waterfall-view.tsx
-  var import_react161 = __toESM(require_react());
+  var import_react167 = __toESM(require_react());
 
   // app/components/waterfall-view/waterfall-row.tsx
-  var import_react157 = __toESM(require_react());
+  var import_react163 = __toESM(require_react());
 
   // app/components/waterfall-view/duration-bar.tsx
-  var import_react155 = __toESM(require_react());
+  var import_react161 = __toESM(require_react());
   function EventDotsList(props) {
     let { events, spanStartTimeNs, spanEndTimeNs } = props;
     let eventDotsList = events.map((eventData) => {
@@ -51956,13 +52109,13 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       let eventOffsetPercent = Math.floor(
         (eventTimeNs - spanStartTimeNs) / spanDurationNS * 100
       );
-      return /* @__PURE__ */ import_react155.default.createElement("li", {
+      return /* @__PURE__ */ import_react161.default.createElement("li", {
         key: `${eventName}-${eventData.timestamp}`
-      }, /* @__PURE__ */ import_react155.default.createElement(Tooltip, {
+      }, /* @__PURE__ */ import_react161.default.createElement(Tooltip, {
         hasArrow: true,
         label: eventName,
         placement: "top"
-      }, /* @__PURE__ */ import_react155.default.createElement(Circle, {
+      }, /* @__PURE__ */ import_react161.default.createElement(Circle, {
         size: "18px",
         bg: "whiteAlpha.400",
         border: "solid 1px",
@@ -51973,10 +52126,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         transform: "translate(-50%)"
       })));
     });
-    return /* @__PURE__ */ import_react155.default.createElement(List, null, eventDotsList);
+    return /* @__PURE__ */ import_react161.default.createElement(List, null, eventDotsList);
   }
   function DurationBar(props) {
-    const ref = (0, import_react155.useRef)(null);
+    const ref = (0, import_react161.useRef)(null);
     const size3 = useSize(ref);
     const labelWidth = 80;
     let durationBarColour = useColorModeValue("cyan.800", "cyan.700");
@@ -52000,12 +52153,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       labelOffset = `${Math.floor(-labelWidth)}px`;
     }
     let label = getDurationString(spanEndTimeNs - spanStartTimeNs);
-    return /* @__PURE__ */ import_react155.default.createElement(Flex, {
+    return /* @__PURE__ */ import_react161.default.createElement(Flex, {
       border: "0",
       marginX: 2,
       marginY: "16px",
       width: "100%"
-    }, /* @__PURE__ */ import_react155.default.createElement(Box, {
+    }, /* @__PURE__ */ import_react161.default.createElement(Box, {
       bgColor: durationBarColour,
       borderRadius: "md",
       overflow: "visible",
@@ -52014,17 +52167,17 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       width: `${barWidthPercent}%`,
       minWidth: "2px",
       ref
-    }, /* @__PURE__ */ import_react155.default.createElement(Flex, {
+    }, /* @__PURE__ */ import_react161.default.createElement(Flex, {
       position: "absolute",
       width: `${labelWidth}px`,
       left: labelOffset,
       justifyContent: "center"
-    }, /* @__PURE__ */ import_react155.default.createElement(Text, {
+    }, /* @__PURE__ */ import_react161.default.createElement(Text, {
       fontSize: "xs",
       fontWeight: "700",
       paddingLeft: 2,
       color: labelTextColour
-    }, label)), /* @__PURE__ */ import_react155.default.createElement(EventDotsList, {
+    }, label)), /* @__PURE__ */ import_react161.default.createElement(EventDotsList, {
       events: props.spanData.events,
       spanStartTimeNs,
       spanEndTimeNs
@@ -52054,52 +52207,52 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
       let nameLabel = spanData.name.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
       let resourceLabel = spanData.resource.attributes["service.name"];
-      return /* @__PURE__ */ import_react157.default.createElement(Flex, {
+      return /* @__PURE__ */ import_react163.default.createElement(Flex, {
         style,
         bgColor: backgroundColour,
         paddingLeft: `${paddingLeft}px`,
         onClick: () => setSelectedSpanID(spanID)
-      }, /* @__PURE__ */ import_react157.default.createElement(Flex, {
+      }, /* @__PURE__ */ import_react163.default.createElement(Flex, {
         width: spanNameColumnWidth - paddingLeft,
         alignItems: "center",
         flexGrow: "1",
         flexShrink: "0"
-      }, /* @__PURE__ */ import_react157.default.createElement(Text, {
+      }, /* @__PURE__ */ import_react163.default.createElement(Text, {
         paddingX: 2,
         noOfLines: 2,
         fontSize: "sm"
-      }, nameLabel)), /* @__PURE__ */ import_react157.default.createElement(Flex, {
+      }, nameLabel)), /* @__PURE__ */ import_react163.default.createElement(Flex, {
         width: serviceNameColumnWidth,
         alignItems: "center",
         flexGrow: "1",
         flexShrink: "0"
-      }, /* @__PURE__ */ import_react157.default.createElement(Text, {
+      }, /* @__PURE__ */ import_react163.default.createElement(Text, {
         paddingX: 2,
         fontSize: "sm"
-      }, resourceLabel)), /* @__PURE__ */ import_react157.default.createElement(DurationBar, {
+      }, resourceLabel)), /* @__PURE__ */ import_react163.default.createElement(DurationBar, {
         spanData,
         traceTimeAttributes,
         spanStartTimestamp: spanData.startTime,
         spanEndTimestamp: spanData.endTime
       }));
     }
-    return /* @__PURE__ */ import_react157.default.createElement(Flex, {
+    return /* @__PURE__ */ import_react163.default.createElement(Flex, {
       style,
       alignItems: "center",
       bgColor: backgroundColour,
       paddingStart: 2,
       experimental_spaceX: 2
-    }, /* @__PURE__ */ import_react157.default.createElement(WarningTwoIcon, {
+    }, /* @__PURE__ */ import_react163.default.createElement(WarningTwoIcon, {
       color: "orange.500"
-    }), /* @__PURE__ */ import_react157.default.createElement(Text, {
+    }), /* @__PURE__ */ import_react163.default.createElement(Text, {
       fontSize: "sm"
     }, `Missing Span [Span ID:${spanID}]`));
   }
 
   // app/components/waterfall-view/header-row.tsx
-  var import_react159 = __toESM(require_react());
+  var import_react165 = __toESM(require_react());
   function DurationIndicator(props) {
-    let ref = (0, import_react159.useRef)(null);
+    let ref = (0, import_react165.useRef)(null);
     let size3 = useSize(ref);
     let availableWidth = size3 ? size3.width : 0;
     let numSections = 1;
@@ -52128,25 +52281,25 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     let sectionWidth = availableWidth / numSections;
     let durationSections = Array(numSections - 1).fill(null).map((_, i) => {
       let sectionLabel = `${+(sectionDuration * i).toFixed(3)}${timeUnit}`;
-      return /* @__PURE__ */ import_react159.default.createElement(ListItem, {
+      return /* @__PURE__ */ import_react165.default.createElement(ListItem, {
         key: i,
         float: "left"
-      }, /* @__PURE__ */ import_react159.default.createElement(Text, {
+      }, /* @__PURE__ */ import_react165.default.createElement(Text, {
         fontSize: "x-small",
         width: sectionWidth
       }, sectionLabel));
     });
-    let lastDurationLabel = /* @__PURE__ */ import_react159.default.createElement(Text, {
+    let lastDurationLabel = /* @__PURE__ */ import_react165.default.createElement(Text, {
       fontSize: "x-small"
     }, `${+traceDuration.toFixed(3)}${timeUnit}`);
-    return /* @__PURE__ */ import_react159.default.createElement(Flex, {
+    return /* @__PURE__ */ import_react165.default.createElement(Flex, {
       alignItems: "center",
       height: "100%",
       "flex-direction": "row",
       flex: "1 1 auto",
       marginX: 2,
       ref
-    }, /* @__PURE__ */ import_react159.default.createElement(List, null, durationSections), /* @__PURE__ */ import_react159.default.createElement(Spacer, null), lastDurationLabel);
+    }, /* @__PURE__ */ import_react165.default.createElement(List, null, durationSections), /* @__PURE__ */ import_react165.default.createElement(Spacer, null), lastDurationLabel);
   }
   function HeaderRow(props) {
     let {
@@ -52155,28 +52308,28 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       serviceNameColumnWidth,
       traceDuration
     } = props;
-    return /* @__PURE__ */ import_react159.default.createElement(Flex, {
+    return /* @__PURE__ */ import_react165.default.createElement(Flex, {
       height: `${headerRowHeight}px`
-    }, /* @__PURE__ */ import_react159.default.createElement(Flex, {
+    }, /* @__PURE__ */ import_react165.default.createElement(Flex, {
       width: spanNameColumnWidth,
       alignItems: "center"
-    }, /* @__PURE__ */ import_react159.default.createElement(Heading, {
+    }, /* @__PURE__ */ import_react165.default.createElement(Heading, {
       paddingX: 2,
       size: "sm"
-    }, "name")), /* @__PURE__ */ import_react159.default.createElement(Flex, {
+    }, "name")), /* @__PURE__ */ import_react165.default.createElement(Flex, {
       width: serviceNameColumnWidth,
       alignItems: "center"
-    }, /* @__PURE__ */ import_react159.default.createElement(Heading, {
+    }, /* @__PURE__ */ import_react165.default.createElement(Heading, {
       paddingX: 1,
       size: "sm"
-    }, "service.name")), /* @__PURE__ */ import_react159.default.createElement(DurationIndicator, {
+    }, "service.name")), /* @__PURE__ */ import_react165.default.createElement(DurationIndicator, {
       traceDuration
     }));
   }
 
   // app/components/waterfall-view/waterfall-view.tsx
   function WaterfallView(props) {
-    const ref = (0, import_react161.useRef)(null);
+    const ref = (0, import_react167.useRef)(null);
     const size3 = useSize(ref);
     const waterfallItemHeight = 50;
     const headerRowHeight = 30;
@@ -52190,17 +52343,17 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       selectedSpanID: props.selectedSpanID,
       setSelectedSpanID: props.setSelectedSpanID
     };
-    return /* @__PURE__ */ import_react161.default.createElement(Flex, {
+    return /* @__PURE__ */ import_react167.default.createElement(Flex, {
       direction: "column",
       ref,
       height: "100%",
       onCopy: stripZeroWidthSpacesOnCopyCallback
-    }, /* @__PURE__ */ import_react161.default.createElement(HeaderRow, {
+    }, /* @__PURE__ */ import_react167.default.createElement(HeaderRow, {
       headerRowHeight,
       spanNameColumnWidth,
       serviceNameColumnWidth,
       traceDuration: props.traceTimeAttributes.traceDurationNS
-    }), /* @__PURE__ */ import_react161.default.createElement(FixedSizeList, {
+    }), /* @__PURE__ */ import_react167.default.createElement(FixedSizeList, {
       className: "List",
       height: size3 ? size3.height - headerRowHeight : 0,
       itemData: rowData,
@@ -52274,7 +52427,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     let traceTimeAttributes = calculateTraceTiming(traceData.spans);
     let spanTree = arrayToTree(traceData.spans);
     let orderedSpans = orderSpans(spanTree);
-    let [selectedSpanID, setSelectedSpanID] = import_react163.default.useState(() => {
+    let [selectedSpanID, setSelectedSpanID] = import_react169.default.useState(() => {
       if (!orderedSpans.length || !(orderedSpans[0].status === "present" /* present */) && orderedSpans.length < 2) {
         return "";
       }
@@ -52283,7 +52436,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
       return orderedSpans[0].metadata.spanID;
     });
-    import_react163.default.useEffect(() => {
+    import_react169.default.useEffect(() => {
       setSelectedSpanID(
         orderedSpans[0].status === "present" /* present */ ? orderedSpans[0].metadata.spanID : orderedSpans[1].metadata.spanID
       );
@@ -52291,7 +52444,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     let selectedSpan = traceData.spans.find(
       (span) => span.spanID === selectedSpanID
     );
-    return /* @__PURE__ */ import_react163.default.createElement(Grid, {
+    return /* @__PURE__ */ import_react169.default.createElement(Grid, {
       templateAreas: `"header header"
                        "main detail"`,
       gridTemplateColumns: "1fr 350px",
@@ -52299,21 +52452,21 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       gap: "0",
       height: "100vh",
       width: "100vw"
-    }, /* @__PURE__ */ import_react163.default.createElement(GridItem, {
+    }, /* @__PURE__ */ import_react169.default.createElement(GridItem, {
       area: "header"
-    }, /* @__PURE__ */ import_react163.default.createElement(Header, {
+    }, /* @__PURE__ */ import_react169.default.createElement(Header, {
       traceID: traceData.traceID
-    })), /* @__PURE__ */ import_react163.default.createElement(GridItem, {
+    })), /* @__PURE__ */ import_react169.default.createElement(GridItem, {
       area: "main",
       marginLeft: "20px"
-    }, /* @__PURE__ */ import_react163.default.createElement(WaterfallView, {
+    }, /* @__PURE__ */ import_react169.default.createElement(WaterfallView, {
       orderedSpans,
       traceTimeAttributes,
       selectedSpanID,
       setSelectedSpanID
-    })), /* @__PURE__ */ import_react163.default.createElement(GridItem, {
+    })), /* @__PURE__ */ import_react169.default.createElement(GridItem, {
       area: "detail"
-    }, /* @__PURE__ */ import_react163.default.createElement(DetailView, {
+    }, /* @__PURE__ */ import_react169.default.createElement(DetailView, {
       span: selectedSpan
     })));
   }
@@ -52361,26 +52514,26 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   }
 
   // app/error-page.tsx
-  var import_react165 = __toESM(require_react());
+  var import_react171 = __toESM(require_react());
   function ErrorPage() {
     const error = useRouteError();
     console.error(error);
-    return /* @__PURE__ */ import_react165.default.createElement("div", {
+    return /* @__PURE__ */ import_react171.default.createElement("div", {
       id: "error-page"
-    }, /* @__PURE__ */ import_react165.default.createElement("h1", null, "Oops!"), /* @__PURE__ */ import_react165.default.createElement("p", null, "Sorry, an unexpected error has occurred."), /* @__PURE__ */ import_react165.default.createElement("p", null, /* @__PURE__ */ import_react165.default.createElement("i", null, error.message)));
+    }, /* @__PURE__ */ import_react171.default.createElement("h1", null, "Oops!"), /* @__PURE__ */ import_react171.default.createElement("p", null, "Sorry, an unexpected error has occurred."), /* @__PURE__ */ import_react171.default.createElement("p", null, /* @__PURE__ */ import_react171.default.createElement("i", null, error.message)));
   }
 
   // app/main.tsx
   var router = createBrowserRouter([
     {
       path: "/",
-      element: /* @__PURE__ */ import_react166.default.createElement(MainView, null),
+      element: /* @__PURE__ */ import_react172.default.createElement(MainView, null),
       loader: mainLoader,
-      errorElement: /* @__PURE__ */ import_react166.default.createElement(ErrorPage, null),
+      errorElement: /* @__PURE__ */ import_react172.default.createElement(ErrorPage, null),
       children: [
         {
           path: "traces/:traceID",
-          element: /* @__PURE__ */ import_react166.default.createElement(TraceView, null),
+          element: /* @__PURE__ */ import_react172.default.createElement(TraceView, null),
           loader: traceLoader
         }
       ]
@@ -52390,7 +52543,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   if (!!container2) {
     const root = (0, import_client.createRoot)(container2);
     root.render(
-      /* @__PURE__ */ import_react166.default.createElement(import_react166.default.StrictMode, null, /* @__PURE__ */ import_react166.default.createElement(ChakraProvider2, null, /* @__PURE__ */ import_react166.default.createElement(RouterProvider, {
+      /* @__PURE__ */ import_react172.default.createElement(import_react172.default.StrictMode, null, /* @__PURE__ */ import_react172.default.createElement(ChakraProvider2, null, /* @__PURE__ */ import_react172.default.createElement(RouterProvider, {
         router
       })))
     );
