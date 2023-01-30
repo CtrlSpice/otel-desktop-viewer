@@ -12,7 +12,7 @@ test-go:
 	
 .PHONY: run-go
 run-go:
-	go run ./... --config config.yaml
+	SERVE_FROM_FS=true go run ./...
 
 .PHONY: build-js
 build-js:
