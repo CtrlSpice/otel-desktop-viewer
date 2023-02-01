@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
+  AlertDescription,
   AlertIcon,
+  AlertTitle,
   Box,
   Button,
   Card,
@@ -18,8 +20,42 @@ import {
   useColorModeValue,
 } from "@chakra-ui/react";
 
-export function EmptyStateView() {
+function RefreshAlert() {
   let alertColour = useColorModeValue("cyan.700", "cyan.300");
+  let [secondsToRefresh, setSecondsToRefresh] = useState(10);
+  useEffect(() => {
+    setTimeout(() => {
+      if (secondsToRefresh > 0) {
+        setSecondsToRefresh(secondsToRefresh - 1);
+      } else {
+        window.location.reload();
+      }
+    }, 1000);
+  });
+
+  let alertText = "";
+  if (secondsToRefresh > 1) {
+    alertText = `No data yet. Refreshing in ${secondsToRefresh} seconds...`;
+  } else if (secondsToRefresh === 1) {
+    alertText = `No data yet. Refreshing in ${secondsToRefresh} second...`;
+  } else {
+    alertText = "No data yet. Refreshing now!";
+  }
+
+  return (
+    <Alert
+      status="info"
+      variant="solid"
+      minHeight="64px"
+      backgroundColor={alertColour}
+    >
+      <AlertIcon boxSize="24px" />
+      <AlertTitle fontSize="md">{alertText}</AlertTitle>
+    </Alert>
+  );
+}
+
+export function EmptyStateView() {
   return (
     <Flex
       flexDirection="column"
@@ -27,15 +63,7 @@ export function EmptyStateView() {
       width="100%"
       overflowY="scroll"
     >
-      <Alert
-        status="info"
-        variant="solid"
-        minHeight="30px"
-        backgroundColor={alertColour}
-      >
-        <AlertIcon />
-        No data yet. Refreshing in 5 seconds...
-      </Alert>
+      <RefreshAlert />
       <Card
         align="center"
         width="50%"

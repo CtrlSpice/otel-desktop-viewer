@@ -1001,7 +1001,7 @@
             }
             return dispatcher.useContext(Context);
           }
-          function useState20(initialState2) {
+          function useState21(initialState2) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useState(initialState2);
           }
@@ -1013,7 +1013,7 @@
             var dispatcher = resolveDispatcher();
             return dispatcher.useRef(initialValue);
           }
-          function useEffect35(create, deps) {
+          function useEffect36(create, deps) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useEffect(create, deps);
           }
@@ -1793,7 +1793,7 @@
           exports.useContext = useContext16;
           exports.useDebugValue = useDebugValue2;
           exports.useDeferredValue = useDeferredValue;
-          exports.useEffect = useEffect35;
+          exports.useEffect = useEffect36;
           exports.useId = useId8;
           exports.useImperativeHandle = useImperativeHandle;
           exports.useInsertionEffect = useInsertionEffect2;
@@ -1801,7 +1801,7 @@
           exports.useMemo = useMemo19;
           exports.useReducer = useReducer;
           exports.useRef = useRef28;
-          exports.useState = useState20;
+          exports.useState = useState21;
           exports.useSyncExternalStore = useSyncExternalStore3;
           exports.useTransition = useTransition;
           exports.version = ReactVersion;
@@ -51806,19 +51806,44 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
 
   // app/components/empty-state-view/empty-state-view.tsx
   var import_react146 = __toESM(require_react());
-  function EmptyStateView() {
+  function RefreshAlert() {
     let alertColour = useColorModeValue("cyan.700", "cyan.300");
+    let [secondsToRefresh, setSecondsToRefresh] = (0, import_react146.useState)(10);
+    (0, import_react146.useEffect)(() => {
+      setTimeout(() => {
+        if (secondsToRefresh > 0) {
+          setSecondsToRefresh(secondsToRefresh - 1);
+        } else {
+          window.location.reload();
+        }
+      }, 1e3);
+    });
+    let alertText = "";
+    if (secondsToRefresh > 1) {
+      alertText = `No data yet. Refreshing in ${secondsToRefresh} seconds...`;
+    } else if (secondsToRefresh === 1) {
+      alertText = `No data yet. Refreshing in ${secondsToRefresh} second...`;
+    } else {
+      alertText = "No data yet. Refreshing now!";
+    }
+    return /* @__PURE__ */ import_react146.default.createElement(Alert, {
+      status: "info",
+      variant: "solid",
+      minHeight: "64px",
+      backgroundColor: alertColour
+    }, /* @__PURE__ */ import_react146.default.createElement(AlertIcon, {
+      boxSize: "24px"
+    }), /* @__PURE__ */ import_react146.default.createElement(AlertTitle, {
+      fontSize: "md"
+    }, alertText));
+  }
+  function EmptyStateView() {
     return /* @__PURE__ */ import_react146.default.createElement(Flex, {
       flexDirection: "column",
       align: "center",
       width: "100%",
       overflowY: "scroll"
-    }, /* @__PURE__ */ import_react146.default.createElement(Alert, {
-      status: "info",
-      variant: "solid",
-      minHeight: "30px",
-      backgroundColor: alertColour
-    }, /* @__PURE__ */ import_react146.default.createElement(AlertIcon, null), "No data yet. Refreshing in 5 seconds..."), /* @__PURE__ */ import_react146.default.createElement(Card, {
+    }, /* @__PURE__ */ import_react146.default.createElement(RefreshAlert, null), /* @__PURE__ */ import_react146.default.createElement(Card, {
       align: "center",
       width: "50%",
       maxWidth: "700px",
