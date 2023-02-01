@@ -51730,7 +51730,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     let { toggleColorMode } = useColorMode();
     let colourModeIcon = useColorModeValue(/* @__PURE__ */ import_react142.default.createElement(MoonIcon, null), /* @__PURE__ */ import_react142.default.createElement(SunIcon, null));
     let iconColour = useColorModeValue("white", "pink.900");
-    let { isFullWidth, toggleSidebarWidth } = props;
+    let { isFullWidth, isFullWidthDisabled, toggleSidebarWidth } = props;
     if (isFullWidth) {
       return /* @__PURE__ */ import_react142.default.createElement(Flex, {
         height: "100px",
@@ -51758,7 +51758,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       colorScheme: "pink",
       icon: /* @__PURE__ */ import_react142.default.createElement(ArrowRightIcon, null),
       marginTop: "16px",
-      onClick: toggleSidebarWidth
+      onClick: toggleSidebarWidth,
+      isDisabled: isFullWidthDisabled
     }), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
       "aria-label": "Toggle Colour Mode",
       color: iconColour,
@@ -51777,6 +51778,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   function Sidebar(props) {
     let sidebarColour = useColorModeValue("gray.50", "gray.700");
     let { isFullWidth, toggleSidebarWidth, traceSummaries } = props;
+    let isFullWidthDisabled = traceSummaries.length === 0;
     if (isFullWidth) {
       return /* @__PURE__ */ import_react144.default.createElement(Flex, {
         backgroundColor: sidebarColour,
@@ -51786,7 +51788,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         width: sidebarFullWidth
       }, /* @__PURE__ */ import_react144.default.createElement(SidebarButtons, {
         isFullWidth,
-        toggleSidebarWidth
+        toggleSidebarWidth,
+        isFullWidthDisabled: false
       }), /* @__PURE__ */ import_react144.default.createElement(TraceList, {
         traceSummaries
       }));
@@ -51800,6 +51803,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       width: sidebarCollapsedWidth
     }, /* @__PURE__ */ import_react144.default.createElement(SidebarButtons, {
       isFullWidth,
+      isFullWidthDisabled,
       toggleSidebarWidth
     }));
   }
