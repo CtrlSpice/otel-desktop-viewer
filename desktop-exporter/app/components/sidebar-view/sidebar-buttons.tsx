@@ -14,6 +14,7 @@ import {
 
 type SidebarButtonsProps = {
   isFullWidth: boolean;
+  isFullWidthDisabled: boolean;
   toggleSidebarWidth: () => void;
 };
 
@@ -21,7 +22,7 @@ export function SidebarButtons(props: SidebarButtonsProps) {
   let { toggleColorMode } = useColorMode();
   let colourModeIcon = useColorModeValue(<MoonIcon />, <SunIcon />);
   let iconColour = useColorModeValue("white", "pink.900");
-  let { isFullWidth, toggleSidebarWidth } = props;
+  let { isFullWidth, isFullWidthDisabled, toggleSidebarWidth } = props;
 
   if (isFullWidth) {
     return (
@@ -59,6 +60,7 @@ export function SidebarButtons(props: SidebarButtonsProps) {
         icon={<ArrowRightIcon />}
         marginTop="16px"
         onClick={toggleSidebarWidth}
+        isDisabled={isFullWidthDisabled}
       />
       <IconButton
         aria-label="Toggle Colour Mode"

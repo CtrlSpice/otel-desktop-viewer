@@ -17,6 +17,7 @@ type SidebarProps = {
 export function Sidebar(props: SidebarProps) {
   let sidebarColour = useColorModeValue("gray.50", "gray.700");
   let { isFullWidth, toggleSidebarWidth, traceSummaries } = props;
+  let isFullWidthDisabled = traceSummaries.length === 0;
 
   if (isFullWidth) {
     return (
@@ -30,6 +31,7 @@ export function Sidebar(props: SidebarProps) {
         <SidebarButtons
           isFullWidth={isFullWidth}
           toggleSidebarWidth={toggleSidebarWidth}
+          isFullWidthDisabled={false}
         />
         <TraceList traceSummaries={traceSummaries} />
       </Flex>
@@ -47,6 +49,7 @@ export function Sidebar(props: SidebarProps) {
     >
       <SidebarButtons
         isFullWidth={isFullWidth}
+        isFullWidthDisabled={isFullWidthDisabled}
         toggleSidebarWidth={toggleSidebarWidth}
       />
     </Flex>
