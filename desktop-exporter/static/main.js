@@ -51807,6 +51807,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   // app/components/empty-state-view/empty-state-view.tsx
   var import_react146 = __toESM(require_react());
   function EmptyStateView() {
+    let alertColour = useColorModeValue("cyan.700", "cyan.300");
     return /* @__PURE__ */ import_react146.default.createElement(Flex, {
       flexDirection: "column",
       align: "center",
@@ -51815,8 +51816,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }, /* @__PURE__ */ import_react146.default.createElement(Alert, {
       status: "info",
       variant: "solid",
-      minHeight: "30px"
-    }, /* @__PURE__ */ import_react146.default.createElement(AlertIcon, null), "No data yet. Checking again in 15 seconds..."), /* @__PURE__ */ import_react146.default.createElement(Card, {
+      minHeight: "30px",
+      backgroundColor: alertColour
+    }, /* @__PURE__ */ import_react146.default.createElement(AlertIcon, null), "No data yet. Refreshing in 5 seconds..."), /* @__PURE__ */ import_react146.default.createElement(Card, {
       align: "center",
       width: "50%",
       maxWidth: "700px",
@@ -51824,7 +51826,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       variant: "filled"
     }, /* @__PURE__ */ import_react146.default.createElement(CardHeader, null, /* @__PURE__ */ import_react146.default.createElement(Image2, {
       src: "assets/images/lulu.jpg",
-      alt: "An axolotl named Lulu, striking a heroic pose while gazing at a field of stars through a telescope",
+      alt: "A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen.",
       borderRadius: "lg"
     }), /* @__PURE__ */ import_react146.default.createElement(Text, {
       size: "sm"
@@ -51834,7 +51836,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       spacing: 3
     }, /* @__PURE__ */ import_react146.default.createElement(Text, null, "This lightweight [thingy] allows you to [insert a few more words here please]. Let's get you up and running:"), /* @__PURE__ */ import_react146.default.createElement(Box, null, /* @__PURE__ */ import_react146.default.createElement(OrderedList, null, /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Lorem ipsum dolor sit amet"), /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Consectetur adipiscing elit"), /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Integer molestie lorem at massa"), /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Facilisis in pretium nisl aliquet"))), /* @__PURE__ */ import_react146.default.createElement(Text, null, "Alternately, you can load some example data to get a feel for the tool."))), /* @__PURE__ */ import_react146.default.createElement(CardFooter, null, /* @__PURE__ */ import_react146.default.createElement(Button, {
       colorScheme: "pink"
-    }, "Load Example Data"))));
+    }, "Load Sample Data"))));
   }
 
   // app/utils/duration.ts

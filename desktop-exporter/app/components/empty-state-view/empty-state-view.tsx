@@ -15,9 +15,11 @@ import {
   OrderedList,
   Stack,
   Text,
+  useColorModeValue,
 } from "@chakra-ui/react";
 
 export function EmptyStateView() {
+  let alertColour = useColorModeValue("cyan.700", "cyan.300");
   return (
     <Flex
       flexDirection="column"
@@ -29,9 +31,10 @@ export function EmptyStateView() {
         status="info"
         variant="solid"
         minHeight="30px"
+        backgroundColor={alertColour}
       >
         <AlertIcon />
-        No data yet. Checking again in 15 seconds...
+        No data yet. Refreshing in 5 seconds...
       </Alert>
       <Card
         align="center"
@@ -43,7 +46,7 @@ export function EmptyStateView() {
         <CardHeader>
           <Image
             src="assets/images/lulu.jpg"
-            alt="An axolotl named Lulu, striking a heroic pose while gazing at a field of stars through a telescope"
+            alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen."
             borderRadius="lg"
           />
           <Text size="sm">Artwork credit goes here</Text>
@@ -72,7 +75,7 @@ export function EmptyStateView() {
           </Stack>
         </CardBody>
         <CardFooter>
-          <Button colorScheme="pink">Load Example Data</Button>
+          <Button colorScheme="pink">Load Sample Data</Button>
         </CardFooter>
       </Card>
     </Flex>
