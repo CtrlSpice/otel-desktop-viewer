@@ -1,6 +1,7 @@
 package desktopexporter
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,17 @@ var assets embed.FS
 type Server struct {
 	server     http.Server
 	traceStore *TraceStore
+}
+
+func sampleDataHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		ctx := context.Background()
+		sampleSpans := GenerateSampleData(ctx)
+		for _, sampleSpan := range sampleSpans {
+			store.Add(ctx, sampleSpan)
+		}
+		writer.WriteHeader(http.StatusOK)
+	}
 }
 
 func tracesHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
@@ -97,6 +109,7 @@ func NewServer(traceStore *TraceStore) *Server {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/traces", tracesHandler(traceStore))
 	router.HandleFunc("/api/traces/{id}", traceIDHandler(traceStore))
+	router.HandleFunc("/api/sampleData", sampleDataHandler(traceStore))
 	router.HandleFunc("/traces/{id}", indexHandler)
 	if os.Getenv("SERVE_FROM_FS") == "true" {
 		router.PathPrefix("/").Handler(http.FileServer(http.Dir("./desktop-exporter/static/")))
