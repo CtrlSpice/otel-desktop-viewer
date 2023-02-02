@@ -22,7 +22,6 @@ import {
 
 async function loadSampleData() {
   let response = await fetch("/api/sampleData");
-  console.log(response.status);
   if (!response.ok) {
     throw new Error("HTTP status " + response.status);
   } else {
@@ -48,7 +47,7 @@ function SampleDataButton() {
     <Button
       colorScheme="pink"
       onClick={() => {
-        setIsLoading.on;
+        setIsLoading.on();
         loadSampleData();
       }}
     >

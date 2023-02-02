@@ -51812,7 +51812,6 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var import_react146 = __toESM(require_react());
   async function loadSampleData() {
     let response = await fetch("/api/sampleData");
-    console.log(response.status);
     if (!response.ok) {
       throw new Error("HTTP status " + response.status);
     } else {
@@ -51832,7 +51831,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     return /* @__PURE__ */ import_react146.default.createElement(Button, {
       colorScheme: "pink",
       onClick: () => {
-        setIsLoading.on;
+        setIsLoading.on();
         loadSampleData();
       }
     }, "Load Sample Data");
