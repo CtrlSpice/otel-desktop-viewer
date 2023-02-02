@@ -26,7 +26,7 @@ function EventItem(props: EventItemProps) {
   let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
   let durationString = getDurationString(timeSinceSpanStart);
   let eventAttributes = Object.entries(event.attributes).map(([key, value]) => (
-    <li key={key + value}>
+    <li key={key + value?.toString}>
       <SpanField
         fieldName={key}
         fieldValue={value}
@@ -35,32 +35,30 @@ function EventItem(props: EventItemProps) {
   ));
 
   return (
-    <li key={event.name + event.timestamp}>
-      <AccordionItem>
-        <AccordionButton>
-          <Box
-            flex="1"
-            textAlign="left"
-          >
-            <Heading size="sm">{event.name}</Heading>
-            <Text fontSize="xs">{durationString} since span start</Text>
-          </Box>
-          <AccordionIcon />
-        </AccordionButton>
-        <AccordionPanel>
-          <SpanField
-            fieldName="timestamp"
-            fieldValue={event.timestamp}
-          />
-          <List>{eventAttributes}</List>
-          <SpanField
-            fieldName="dropped attributes count"
-            fieldValue={event.droppedAttributesCount}
-            hidden={!event.droppedAttributesCount}
-          />
-        </AccordionPanel>
-      </AccordionItem>
-    </li>
+    <AccordionItem>
+      <AccordionButton>
+        <Box
+          flex="1"
+          textAlign="left"
+        >
+          <Heading size="sm">{event.name}</Heading>
+          <Text fontSize="xs">{durationString} since span start</Text>
+        </Box>
+        <AccordionIcon />
+      </AccordionButton>
+      <AccordionPanel>
+        <SpanField
+          fieldName="timestamp"
+          fieldValue={event.timestamp}
+        />
+        <List>{eventAttributes}</List>
+        <SpanField
+          fieldName="dropped attributes count"
+          fieldValue={event.droppedAttributesCount}
+          hidden={!event.droppedAttributesCount}
+        />
+      </AccordionPanel>
+    </AccordionItem>
   );
 }
 
@@ -76,10 +74,12 @@ export function EventsPanel(props: EventsPanelProps) {
   }
 
   let eventItemList = events.map((event) => (
-    <EventItem
-      event={event}
-      spanStartTime={spanStartTime}
-    />
+    <li key={event.name + event.timestamp}>
+      <EventItem
+        event={event}
+        spanStartTime={spanStartTime}
+      />
+    </li>
   ));
 
   return (
