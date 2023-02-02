@@ -60,13 +60,13 @@ func GenerateSampleData(ctx context.Context) []SpanData {
 	// 7. Add HTTP POST span 3 to http scope
 	httpPostSpan3 := httpScopeSpan.Spans().AppendEmpty()
 	fillHttpPostSpan3(httpPostSpan3)
-	
+
 	spanData := extractSpans(ctx, traceData)
 	return spanData
 }
 
 // currencyservice resource data
-func fillCurrencyResource(resource pcommon.Resource){
+func fillCurrencyResource(resource pcommon.Resource) {
 	resource.SetDroppedAttributesCount(0)
 	resource.Attributes().PutStr("service.name", "sample-currencyservice")
 	resource.Attributes().PutStr("telemetry.sdk.language", "cpp")
@@ -75,7 +75,7 @@ func fillCurrencyResource(resource pcommon.Resource){
 }
 
 // loadgenerator resource data
-func fillLoadGeneratorResource(resource pcommon.Resource){
+func fillLoadGeneratorResource(resource pcommon.Resource) {
 	resource.SetDroppedAttributesCount(0)
 	resource.Attributes().PutStr("service.name", "sample-loadgenerator")
 	resource.Attributes().PutStr("telemetry.sdk.language", "python")
@@ -84,7 +84,7 @@ func fillLoadGeneratorResource(resource pcommon.Resource){
 }
 
 // frontend resource data
-func fillFrontEndResource(resource pcommon.Resource){
+func fillFrontEndResource(resource pcommon.Resource) {
 	resource.SetDroppedAttributesCount(0)
 	resource.Attributes().PutStr("service.name", "sample-frontend")
 	resource.Attributes().PutStr("process.command", "/app/server.js")
@@ -100,35 +100,35 @@ func fillFrontEndResource(resource pcommon.Resource){
 }
 
 // currencyservice scope data
-func fillCurrencyScope(scope pcommon.InstrumentationScope){
+func fillCurrencyScope(scope pcommon.InstrumentationScope) {
 	scope.SetDroppedAttributesCount(0)
 	scope.SetName("sample-currencyservice")
 	scope.SetVersion("v1.2.3")
 }
 
 // requests scope data
-func fillRequestsScope(scope pcommon.InstrumentationScope){
+func fillRequestsScope(scope pcommon.InstrumentationScope) {
 	scope.SetDroppedAttributesCount(0)
 	scope.SetName("sample-opentelemetry.instrumentation.requests")
 	scope.SetVersion("0.28b1")
 }
 
 // urllib3 scope data
-func fillUrlLib3Scope(scope pcommon.InstrumentationScope){
+func fillUrlLib3Scope(scope pcommon.InstrumentationScope) {
 	scope.SetDroppedAttributesCount(0)
 	scope.SetName("sample-opentelemetry.instrumentation.urllib3")
 	scope.SetVersion("0.28b1")
 }
 
 // http scope data
-func fillHttpScope(scope pcommon.InstrumentationScope){
+func fillHttpScope(scope pcommon.InstrumentationScope) {
 	scope.SetDroppedAttributesCount(0)
 	scope.SetName("sample-@opentelemetry/instrumentation-http")
 	scope.SetVersion("0.32.0")
 }
 
 // CurrencyService/Convert span data
-func fillCurrencySpan(span ptrace.Span){
+func fillCurrencySpan(span ptrace.Span) {
 	span.SetDroppedAttributesCount(0)
 	span.SetDroppedEventsCount(0)
 	span.SetDroppedLinksCount(0)
@@ -156,14 +156,14 @@ func fillCurrencySpan(span ptrace.Span){
 }
 
 // HTTP POST span data (client, root)
-func fillHttpPostSpan1(span ptrace.Span){
+func fillHttpPostSpan1(span ptrace.Span) {
 	span.SetDroppedAttributesCount(0)
 	span.SetDroppedEventsCount(0)
 	span.SetDroppedLinksCount(0)
 	span.SetName("sample-HTTP POST")
 	span.SetKind(ptrace.SpanKindClient)
-	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023,02,02,18,17,54,803511676, time.UTC)))
-	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023,02,02,18,17,54,817351051, time.UTC)))
+	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 803511676, time.UTC)))
+	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 817351051, time.UTC)))
 	span.Status().SetCode(ptrace.StatusCodeUnset)
 	span.SetTraceID(encodeTraceID("42957c7c2fca940a0d32a0cdd38c06a4"))
 	span.SetSpanID(encodeSpanID("37fd1349bf83d330"))
@@ -173,14 +173,14 @@ func fillHttpPostSpan1(span ptrace.Span){
 }
 
 // HTTP POST span data (client, child)
-func fillHttpPostSpan2(span ptrace.Span){
+func fillHttpPostSpan2(span ptrace.Span) {
 	span.SetDroppedAttributesCount(0)
 	span.SetDroppedEventsCount(0)
 	span.SetDroppedLinksCount(0)
 	span.SetName("sample-HTTP POST")
 	span.SetKind(ptrace.SpanKindClient)
-	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023,02,02,18,17,54,804417635, time.UTC)))
-	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023,02,02,18,17,54,816959885, time.UTC)))
+	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 804417635, time.UTC)))
+	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 816959885, time.UTC)))
 	span.Status().SetCode(ptrace.StatusCodeUnset)
 	span.SetTraceID(encodeTraceID("42957c7c2fca940a0d32a0cdd38c06a4"))
 	span.SetParentSpanID(encodeSpanID("37fd1349bf83d330"))
@@ -191,14 +191,14 @@ func fillHttpPostSpan2(span ptrace.Span){
 }
 
 // HTTP POST span data (server, child)
-func fillHttpPostSpan3(span ptrace.Span){
+func fillHttpPostSpan3(span ptrace.Span) {
 	span.SetDroppedAttributesCount(0)
 	span.SetDroppedEventsCount(0)
 	span.SetDroppedLinksCount(0)
 	span.SetName("sample-HTTP POST")
 	span.SetKind(ptrace.SpanKindServer)
-	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023,02,02,18,17,54,805039872, time.UTC)))
-	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023,02,02,18,17,54,816274688, time.UTC)))
+	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 805039872, time.UTC)))
+	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 816274688, time.UTC)))
 	span.Status().SetCode(ptrace.StatusCodeUnset)
 	span.SetTraceID(encodeTraceID("42957c7c2fca940a0d32a0cdd38c06a4"))
 	span.SetParentSpanID(encodeSpanID("a24ac1588d52a6fc"))
@@ -218,7 +218,6 @@ func fillHttpPostSpan3(span ptrace.Span){
 	span.Attributes().PutStr("net.peer.ip", "::ffff:172.24.0.23")
 	span.Attributes().PutInt("net.peer.port", 46054)
 	span.Attributes().PutStr("net.transport", "ip_tcp")
-	
 }
 
 func encodeTraceID(traceID string) [16]byte {
@@ -240,5 +239,3 @@ func encodeSpanID(spanID string) [8]byte {
 	copy(byteArray[:], byteSlice[:8])
 	return byteArray
 }
-
-
