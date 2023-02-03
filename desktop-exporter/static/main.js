@@ -52180,7 +52180,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
     let durationString = getDurationString(timeSinceSpanStart);
     let eventAttributes = Object.entries(event.attributes).map(([key, value]) => /* @__PURE__ */ import_react156.default.createElement("li", {
-      key: key + value?.toString
+      key: key + value?.toString()
     }, /* @__PURE__ */ import_react156.default.createElement(SpanField, {
       fieldName: key,
       fieldValue: value
@@ -52330,7 +52330,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   function LinkItem(props) {
     let { link } = props;
     let linkAttributes = Object.entries(link.attributes).map(([key, value]) => /* @__PURE__ */ import_react162.default.createElement("li", {
-      key: key + value?.toString
+      key: key + value?.toString()
     }, /* @__PURE__ */ import_react162.default.createElement(SpanField, {
       fieldName: key,
       fieldValue: value
@@ -52356,7 +52356,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       return null;
     }
     let linkItemList = links.map((link) => /* @__PURE__ */ import_react162.default.createElement("li", {
-      key: link.traceID + link.spanID
+      key: link.spanID
     }, /* @__PURE__ */ import_react162.default.createElement(LinkItem, {
       link
     })));

@@ -26,7 +26,7 @@ function EventItem(props: EventItemProps) {
   let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
   let durationString = getDurationString(timeSinceSpanStart);
   let eventAttributes = Object.entries(event.attributes).map(([key, value]) => (
-    <li key={key + value?.toString}>
+    <li key={key + value?.toString()}>
       <SpanField
         fieldName={key}
         fieldValue={value}

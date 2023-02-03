@@ -22,7 +22,7 @@ type LinkItemProps = {
 function LinkItem(props: LinkItemProps) {
   let { link } = props;
   let linkAttributes = Object.entries(link.attributes).map(([key, value]) => (
-    <li key={key + value?.toString}>
+    <li key={key + value?.toString()}>
       <SpanField
         fieldName={key}
         fieldValue={value}
@@ -72,7 +72,7 @@ export function LinksPanel(props: LinksPanelProps) {
   }
 
   let linkItemList = links.map((link) => (
-    <li key={link.traceID + link.spanID}>
+    <li key={link.spanID}>
       <LinkItem link={link} />
     </li>
   ));
