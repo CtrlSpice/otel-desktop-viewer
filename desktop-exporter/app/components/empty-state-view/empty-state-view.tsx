@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
   Alert,
-  AlertDescription,
   AlertIcon,
   AlertTitle,
   Box,
@@ -17,8 +16,45 @@ import {
   OrderedList,
   Stack,
   Text,
+  useBoolean,
   useColorModeValue,
 } from "@chakra-ui/react";
+
+async function loadSampleData() {
+  let response = await fetch("/api/sampleData");
+  if (!response.ok) {
+    throw new Error("HTTP status " + response.status);
+  } else {
+    window.location.reload();
+  }
+}
+
+function SampleDataButton() {
+  let [isLoading, setIsLoading] = useBoolean(false);
+
+  if (isLoading) {
+    return (
+      <Button
+        isLoading
+        colorScheme="pink"
+        loadingText="Loading"
+        spinnerPlacement="start"
+      />
+    );
+  }
+
+  return (
+    <Button
+      colorScheme="pink"
+      onClick={() => {
+        setIsLoading.on();
+        loadSampleData();
+      }}
+    >
+      Load Sample Data
+    </Button>
+  );
+}
 
 function RefreshAlert() {
   let alertColour = useColorModeValue("cyan.700", "cyan.300");
@@ -103,7 +139,7 @@ export function EmptyStateView() {
           </Stack>
         </CardBody>
         <CardFooter>
-          <Button colorScheme="pink">Load Sample Data</Button>
+          <SampleDataButton />
         </CardFooter>
       </Card>
     </Flex>

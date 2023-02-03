@@ -51810,6 +51810,32 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
 
   // app/components/empty-state-view/empty-state-view.tsx
   var import_react146 = __toESM(require_react());
+  async function loadSampleData() {
+    let response = await fetch("/api/sampleData");
+    if (!response.ok) {
+      throw new Error("HTTP status " + response.status);
+    } else {
+      window.location.reload();
+    }
+  }
+  function SampleDataButton() {
+    let [isLoading, setIsLoading] = useBoolean(false);
+    if (isLoading) {
+      return /* @__PURE__ */ import_react146.default.createElement(Button, {
+        isLoading: true,
+        colorScheme: "pink",
+        loadingText: "Loading",
+        spinnerPlacement: "start"
+      });
+    }
+    return /* @__PURE__ */ import_react146.default.createElement(Button, {
+      colorScheme: "pink",
+      onClick: () => {
+        setIsLoading.on();
+        loadSampleData();
+      }
+    }, "Load Sample Data");
+  }
   function RefreshAlert() {
     let alertColour = useColorModeValue("cyan.700", "cyan.300");
     let [secondsToRefresh, setSecondsToRefresh] = (0, import_react146.useState)(10);
@@ -51863,9 +51889,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       size: "md"
     }, "Welcome to the OpenTelemetry Desktop Viewer."), /* @__PURE__ */ import_react146.default.createElement(CardBody, null, /* @__PURE__ */ import_react146.default.createElement(Stack, {
       spacing: 3
-    }, /* @__PURE__ */ import_react146.default.createElement(Text, null, "This lightweight [thingy] allows you to [insert a few more words here please]. Let's get you up and running:"), /* @__PURE__ */ import_react146.default.createElement(Box, null, /* @__PURE__ */ import_react146.default.createElement(OrderedList, null, /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Lorem ipsum dolor sit amet"), /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Consectetur adipiscing elit"), /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Integer molestie lorem at massa"), /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Facilisis in pretium nisl aliquet"))), /* @__PURE__ */ import_react146.default.createElement(Text, null, "Alternately, you can load some example data to get a feel for the tool."))), /* @__PURE__ */ import_react146.default.createElement(CardFooter, null, /* @__PURE__ */ import_react146.default.createElement(Button, {
-      colorScheme: "pink"
-    }, "Load Sample Data"))));
+    }, /* @__PURE__ */ import_react146.default.createElement(Text, null, "This lightweight [thingy] allows you to [insert a few more words here please]. Let's get you up and running:"), /* @__PURE__ */ import_react146.default.createElement(Box, null, /* @__PURE__ */ import_react146.default.createElement(OrderedList, null, /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Lorem ipsum dolor sit amet"), /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Consectetur adipiscing elit"), /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Integer molestie lorem at massa"), /* @__PURE__ */ import_react146.default.createElement(ListItem, null, "Facilisis in pretium nisl aliquet"))), /* @__PURE__ */ import_react146.default.createElement(Text, null, "Alternately, you can load some example data to get a feel for the tool."))), /* @__PURE__ */ import_react146.default.createElement(CardFooter, null, /* @__PURE__ */ import_react146.default.createElement(SampleDataButton, null))));
   }
 
   // app/utils/duration.ts
