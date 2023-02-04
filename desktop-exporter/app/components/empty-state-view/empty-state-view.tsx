@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   Alert,
   AlertIcon,
@@ -20,6 +20,8 @@ import {
   useColorModeValue,
   useInterval,
 } from "@chakra-ui/react";
+
+import { TraceSummaries } from "../../types/api-types";
 
 async function loadSampleData() {
   let response = await fetch("/api/sampleData");
@@ -58,12 +60,12 @@ function SampleDataButton() {
 }
 
 async function pollTraceCount() {
-  let response = await fetch("/api/traceCount");
+  let response = await fetch("/api/traces");
   if (!response.ok) {
     throw new Error("HTTP status " + response.status);
   } else {
-    let { numTraces } = await response.json();
-    if (numTraces > 0) {
+    let { traceSummaries } = (await response.json()) as TraceSummaries;
+    if (traceSummaries.length > 0) {
       window.location.reload();
     }
   }

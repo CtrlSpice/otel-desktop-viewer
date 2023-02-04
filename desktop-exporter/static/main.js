@@ -1001,7 +1001,7 @@
             }
             return dispatcher.useContext(Context);
           }
-          function useState21(initialState2) {
+          function useState20(initialState2) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useState(initialState2);
           }
@@ -1013,7 +1013,7 @@
             var dispatcher = resolveDispatcher();
             return dispatcher.useRef(initialValue);
           }
-          function useEffect36(create, deps) {
+          function useEffect35(create, deps) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useEffect(create, deps);
           }
@@ -1793,7 +1793,7 @@
           exports.useContext = useContext16;
           exports.useDebugValue = useDebugValue2;
           exports.useDeferredValue = useDeferredValue;
-          exports.useEffect = useEffect36;
+          exports.useEffect = useEffect35;
           exports.useId = useId8;
           exports.useImperativeHandle = useImperativeHandle;
           exports.useInsertionEffect = useInsertionEffect2;
@@ -1801,7 +1801,7 @@
           exports.useMemo = useMemo19;
           exports.useReducer = useReducer;
           exports.useRef = useRef28;
-          exports.useState = useState21;
+          exports.useState = useState20;
           exports.useSyncExternalStore = useSyncExternalStore3;
           exports.useTransition = useTransition;
           exports.version = ReactVersion;
@@ -51867,12 +51867,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }, "Load Sample Data");
   }
   async function pollTraceCount() {
-    let response = await fetch("/api/traceCount");
+    let response = await fetch("/api/traces");
     if (!response.ok) {
       throw new Error("HTTP status " + response.status);
     } else {
-      let { numTraces } = await response.json();
-      if (numTraces > 0) {
+      let { traceSummaries } = await response.json();
+      if (traceSummaries.length > 0) {
         window.location.reload();
       }
     }
