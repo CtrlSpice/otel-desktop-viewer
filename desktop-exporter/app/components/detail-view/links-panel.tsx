@@ -22,7 +22,7 @@ type LinkItemProps = {
 function LinkItem(props: LinkItemProps) {
   let { link } = props;
   let linkAttributes = Object.entries(link.attributes).map(([key, value]) => (
-    <li key={key + value}>
+    <li key={key + value?.toString()}>
       <SpanField
         fieldName={key}
         fieldValue={value}
@@ -31,35 +31,33 @@ function LinkItem(props: LinkItemProps) {
   ));
 
   return (
-    <li key={link.traceID + link.spanID}>
-      <AccordionItem>
-        <AccordionButton>
-          <Box
-            flex="1"
-            textAlign="left"
-          >
-            <Text fontSize="sm">
-              Trace ID: <strong>{link.traceID}</strong>
-            </Text>
-            <Text fontSize="sm">
-              Span ID: <strong>{link.spanID}</strong>
-            </Text>
-          </Box>
-          <AccordionIcon />
-        </AccordionButton>
-        <AccordionPanel>
-          <SpanField
-            fieldName="trace state"
-            fieldValue={link.traceState}
-          />
-          <List>{linkAttributes}</List>
-          <SpanField
-            fieldName="dropped attributes count"
-            fieldValue={link.droppedAttributesCount}
-          />
-        </AccordionPanel>
-      </AccordionItem>
-    </li>
+    <AccordionItem>
+      <AccordionButton>
+        <Box
+          flex="1"
+          textAlign="left"
+        >
+          <Text fontSize="sm">
+            Trace ID: <strong>{link.traceID}</strong>
+          </Text>
+          <Text fontSize="sm">
+            Span ID: <strong>{link.spanID}</strong>
+          </Text>
+        </Box>
+        <AccordionIcon />
+      </AccordionButton>
+      <AccordionPanel>
+        <SpanField
+          fieldName="trace state"
+          fieldValue={link.traceState}
+        />
+        <List>{linkAttributes}</List>
+        <SpanField
+          fieldName="dropped attributes count"
+          fieldValue={link.droppedAttributesCount}
+        />
+      </AccordionPanel>
+    </AccordionItem>
   );
 }
 
@@ -73,7 +71,11 @@ export function LinksPanel(props: LinksPanelProps) {
     return null;
   }
 
-  let linkItemList = links.map((link) => <LinkItem link={link} />);
+  let linkItemList = links.map((link) => (
+    <li key={link.spanID}>
+      <LinkItem link={link} />
+    </li>
+  ));
 
   return (
     <TabPanel paddingX="0px">
