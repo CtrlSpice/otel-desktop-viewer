@@ -25,6 +25,23 @@ type Server struct {
 	traceStore *TraceStore
 }
 
+func traceCountHandler(store *TraceStore) func(http.ResponseWriter, *http.Request){
+	return func(writer http.ResponseWriter, request *http.Request) {
+		numTraces := len(store.traceMap)
+		if numTraces > maxNumTraces {
+			numTraces = maxNumTraces
+		}
+		jsonNumTraces, err := json.Marshal(map[string]int{"numTraces": numTraces})
+		if err != nil {
+			writer.WriteHeader(http.StatusInternalServerError)
+		} else {
+			writer.WriteHeader(http.StatusOK)
+			writer.Header().Set("Content-Type", "application/json")
+			writer.Write(jsonNumTraces)
+		}
+	}
+}
+
 func sampleDataHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		ctx := context.Background()
@@ -109,6 +126,7 @@ func NewServer(traceStore *TraceStore) *Server {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/traces", tracesHandler(traceStore))
 	router.HandleFunc("/api/traces/{id}", traceIDHandler(traceStore))
+	router.HandleFunc("/api/traceCount", traceCountHandler(traceStore))
 	router.HandleFunc("/api/sampleData", sampleDataHandler(traceStore))
 	router.HandleFunc("/traces/{id}", indexHandler)
 	if os.Getenv("SERVE_FROM_FS") == "true" {

@@ -2402,7 +2402,7 @@
               allNativeEvents.add(dependencies[i]);
             }
           }
-          var canUseDOM2 = !!(typeof window !== "undefined" && typeof window.document !== "undefined" && typeof window.document.createElement !== "undefined");
+          var canUseDOM3 = !!(typeof window !== "undefined" && typeof window.document !== "undefined" && typeof window.document.createElement !== "undefined");
           var hasOwnProperty = Object.prototype.hasOwnProperty;
           function typeName(value) {
             {
@@ -5347,7 +5347,7 @@
             return listener;
           }
           var passiveBrowserEventsSupported = false;
-          if (canUseDOM2) {
+          if (canUseDOM3) {
             try {
               var options = {};
               Object.defineProperty(options, "passive", {
@@ -7539,13 +7539,13 @@
           var SyntheticWheelEvent = createSyntheticEvent(WheelEventInterface);
           var END_KEYCODES = [9, 13, 27, 32];
           var START_KEYCODE = 229;
-          var canUseCompositionEvent = canUseDOM2 && "CompositionEvent" in window;
+          var canUseCompositionEvent = canUseDOM3 && "CompositionEvent" in window;
           var documentMode = null;
-          if (canUseDOM2 && "documentMode" in document) {
+          if (canUseDOM3 && "documentMode" in document) {
             documentMode = document.documentMode;
           }
-          var canUseTextInputEvent = canUseDOM2 && "TextEvent" in window && !documentMode;
-          var useFallbackCompositionData = canUseDOM2 && (!canUseCompositionEvent || documentMode && documentMode > 8 && documentMode <= 11);
+          var canUseTextInputEvent = canUseDOM3 && "TextEvent" in window && !documentMode;
+          var useFallbackCompositionData = canUseDOM3 && (!canUseCompositionEvent || documentMode && documentMode > 8 && documentMode <= 11);
           var SPACEBAR_CODE = 32;
           var SPACEBAR_CHAR = String.fromCharCode(SPACEBAR_CODE);
           function registerEvents() {
@@ -7738,7 +7738,7 @@
             return false;
           }
           function isEventSupported(eventNameSuffix) {
-            if (!canUseDOM2) {
+            if (!canUseDOM3) {
               return false;
             }
             var eventName = "on" + eventNameSuffix;
@@ -7790,7 +7790,7 @@
             }
           }
           var isInputEventSupported = false;
-          if (canUseDOM2) {
+          if (canUseDOM3) {
             isInputEventSupported = isEventSupported("input") && (!document.documentMode || document.documentMode > 9);
           }
           function startWatchingForValueChange(target, targetInst) {
@@ -8223,7 +8223,7 @@
               setOffsets(input, offsets);
             }
           }
-          var skipSelectionChangeEvent = canUseDOM2 && "documentMode" in document && document.documentMode <= 11;
+          var skipSelectionChangeEvent = canUseDOM3 && "documentMode" in document && document.documentMode <= 11;
           function registerEvents$3() {
             registerTwoPhaseEvent("onSelect", ["focusout", "contextmenu", "dragend", "focusin", "keydown", "keyup", "mousedown", "mouseup", "selectionchange"]);
           }
@@ -8318,7 +8318,7 @@
           };
           var prefixedEventNames = {};
           var style = {};
-          if (canUseDOM2) {
+          if (canUseDOM3) {
             style = document.createElement("div").style;
             if (!("AnimationEvent" in window)) {
               delete vendorPrefixes.animationend.animation;
@@ -8821,7 +8821,7 @@
                 possibleRegistrationNames
               });
             };
-            canDiffStyleForHydrationWarning = canUseDOM2 && !document.documentMode;
+            canDiffStyleForHydrationWarning = canUseDOM3 && !document.documentMode;
             warnForPropDifference = function(propName, serverValue, clientValue) {
               if (didWarnInvalidHydration) {
                 return;
@@ -22824,7 +22824,7 @@
             rendererPackageName: "react-dom"
           });
           {
-            if (!foundDevTools && canUseDOM2 && window.top === window.self) {
+            if (!foundDevTools && canUseDOM3 && window.top === window.self) {
               if (navigator.userAgent.indexOf("Chrome") > -1 && navigator.userAgent.indexOf("Edge") === -1 || navigator.userAgent.indexOf("Firefox") > -1) {
                 var protocol = window.location.protocol;
                 if (/^(https?|file):$/.test(protocol)) {
@@ -24735,8 +24735,8 @@
             }
         }
       };
-      var isBrowser3 = typeof document !== "undefined";
-      var getServerStylisCache = isBrowser3 ? void 0 : weakMemoize__default["default"](function() {
+      var isBrowser4 = typeof document !== "undefined";
+      var getServerStylisCache = isBrowser4 ? void 0 : weakMemoize__default["default"](function() {
         return memoize__default["default"](function() {
           var cache = {};
           return function(name) {
@@ -24750,7 +24750,7 @@
         if (!key) {
           throw new Error("You have to configure `key` for your cache. Please make sure it's unique (and not equal to 'css') as it's used for linking styles to your cache.\nIf multiple caches share the same key they might \"fight\" for each other's style elements.");
         }
-        if (isBrowser3 && key === "css") {
+        if (isBrowser4 && key === "css") {
           var ssrStyles = document.querySelectorAll("style[data-emotion]:not([data-s])");
           Array.prototype.forEach.call(ssrStyles, function(node) {
             var dataEmotionAttribute = node.getAttribute("data-emotion");
@@ -24770,7 +24770,7 @@
         var inserted = {};
         var container3;
         var nodesToHydrate = [];
-        if (isBrowser3) {
+        if (isBrowser4) {
           container3 = options.container || document.head;
           Array.prototype.forEach.call(
             document.querySelectorAll('style[data-emotion^="' + key + ' "]'),
@@ -24792,7 +24792,7 @@
             }
           }), incorrectImportAlarm);
         }
-        if (isBrowser3) {
+        if (isBrowser4) {
           var currentSheet;
           var finalizingPlugins = [stylis.stringify, true ? function(element) {
             if (!element.root) {
@@ -25188,7 +25188,7 @@
     "node_modules/@emotion/utils/dist/emotion-utils.cjs.dev.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      var isBrowser3 = typeof document !== "undefined";
+      var isBrowser4 = typeof document !== "undefined";
       function getRegisteredStyles(registered, registeredStyles, classNames2) {
         var rawClassName = "";
         classNames2.split(" ").forEach(function(className) {
@@ -25202,7 +25202,7 @@
       }
       var registerStyles = function registerStyles2(cache, serialized, isStringTag) {
         var className = cache.key + "-" + serialized.name;
-        if ((isStringTag === false || isBrowser3 === false && cache.compat !== void 0) && cache.registered[className] === void 0) {
+        if ((isStringTag === false || isBrowser4 === false && cache.compat !== void 0) && cache.registered[className] === void 0) {
           cache.registered[className] = serialized.styles;
         }
       };
@@ -25214,12 +25214,12 @@
           var current = serialized;
           do {
             var maybeStyles = cache.insert(serialized === current ? "." + className : "", current, cache.sheet, true);
-            if (!isBrowser3 && maybeStyles !== void 0) {
+            if (!isBrowser4 && maybeStyles !== void 0) {
               stylesForSSR += maybeStyles;
             }
             current = current.next;
           } while (current !== void 0);
-          if (!isBrowser3 && stylesForSSR.length !== 0) {
+          if (!isBrowser4 && stylesForSSR.length !== 0) {
             return stylesForSSR;
           }
         }
@@ -25660,12 +25660,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         return Object.freeze(n);
       }
       var React__namespace = /* @__PURE__ */ _interopNamespace(React51);
-      var isBrowser3 = typeof document !== "undefined";
+      var isBrowser4 = typeof document !== "undefined";
       var syncFallback = function syncFallback2(create) {
         return create();
       };
       var useInsertionEffect2 = React__namespace["useInsertionEffect"] ? React__namespace["useInsertionEffect"] : false;
-      var useInsertionEffectAlwaysWithSyncFallback = !isBrowser3 ? syncFallback : useInsertionEffect2 || syncFallback;
+      var useInsertionEffectAlwaysWithSyncFallback = !isBrowser4 ? syncFallback : useInsertionEffect2 || syncFallback;
       var useInsertionEffectWithLayoutFallback = useInsertionEffect2 || React51.useLayoutEffect;
       exports.useInsertionEffectAlwaysWithSyncFallback = useInsertionEffectAlwaysWithSyncFallback;
       exports.useInsertionEffectWithLayoutFallback = useInsertionEffectWithLayoutFallback;
@@ -25701,7 +25701,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
       var createCache__default = /* @__PURE__ */ _interopDefault(createCache);
       var weakMemoize__default = /* @__PURE__ */ _interopDefault(weakMemoize);
-      var isBrowser3 = typeof document !== "undefined";
+      var isBrowser4 = typeof document !== "undefined";
       var hasOwnProperty = {}.hasOwnProperty;
       var EmotionCacheContext = /* @__PURE__ */ React51.createContext(
         typeof HTMLElement !== "undefined" ? /* @__PURE__ */ createCache__default["default"]({
@@ -25721,7 +25721,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           return func(props, cache, ref);
         });
       };
-      if (!isBrowser3) {
+      if (!isBrowser4) {
         exports.withEmotionCache = function withEmotionCache(func) {
           return function(props) {
             var cache = React51.useContext(EmotionCacheContext);
@@ -25843,7 +25843,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         var rules = useInsertionEffectWithFallbacks.useInsertionEffectAlwaysWithSyncFallback(function() {
           return utils.insertStyles(cache, serialized, isStringTag);
         });
-        if (!isBrowser3 && rules !== void 0) {
+        if (!isBrowser4 && rules !== void 0) {
           var _ref2;
           var serializedNames = serialized.name;
           var next = serialized.next;
@@ -25902,7 +25902,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       exports.__unsafe_useEmotionCache = __unsafe_useEmotionCache;
       exports.createEmotionProps = createEmotionProps;
       exports.hasOwnProperty = hasOwnProperty;
-      exports.isBrowser = isBrowser3;
+      exports.isBrowser = isBrowser4;
       exports.useTheme = useTheme2;
       exports.withTheme = withTheme;
     }
@@ -26265,10 +26265,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         ClassNames.displayName = "EmotionClassNames";
       }
       if (true) {
-        isBrowser3 = typeof document !== "undefined";
+        isBrowser4 = typeof document !== "undefined";
         isTestEnv = typeof jest !== "undefined" || typeof vi !== "undefined";
-        if (isBrowser3 && !isTestEnv) {
-          globalContext = typeof globalThis !== "undefined" ? globalThis : isBrowser3 ? window : global;
+        if (isBrowser4 && !isTestEnv) {
+          globalContext = typeof globalThis !== "undefined" ? globalThis : isBrowser4 ? window : global;
           globalKey = "__EMOTION_REACT_" + pkg.version.split(".")[0] + "__";
           if (globalContext[globalKey]) {
             console.warn("You are loading @emotion/react when it is already loaded. Running multiple instances may cause problems. This can happen if multiple versions are used, or if multiple builds of the same version are used.");
@@ -26276,7 +26276,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           globalContext[globalKey] = true;
         }
       }
-      var isBrowser3;
+      var isBrowser4;
       var isTestEnv;
       var globalContext;
       var globalKey;
@@ -26385,14 +26385,14 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
 Because you write your CSS inside a JavaScript string you actually have to do double escaping, so for example "content: '\\00d7';" should become "content: '\\\\00d7';".
 You can read more about this here:
 https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals#ES2018_revision_of_illegal_escape_sequences`;
-      var isBrowser3 = typeof document !== "undefined";
+      var isBrowser4 = typeof document !== "undefined";
       var Insertion = function Insertion2(_ref) {
         var cache = _ref.cache, serialized = _ref.serialized, isStringTag = _ref.isStringTag;
         utils.registerStyles(cache, serialized, isStringTag);
         var rules = useInsertionEffectWithFallbacks.useInsertionEffectAlwaysWithSyncFallback(function() {
           return utils.insertStyles(cache, serialized, isStringTag);
         });
-        if (!isBrowser3 && rules !== void 0) {
+        if (!isBrowser4 && rules !== void 0) {
           var _ref2;
           var serializedNames = serialized.name;
           var next = serialized.next;
@@ -29517,6 +29517,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     return result;
   }
   var filterUndefined = (object) => objectFilter(object, (val) => val !== null && val !== void 0);
+  function canUseDOM() {
+    return !!(typeof window !== "undefined" && window.document && window.document.createElement);
+  }
+  var isBrowser = /* @__PURE__ */ canUseDOM();
   var focusableElList = [
     "input:not(:disabled):not([disabled])",
     "select:not(:disabled):not([disabled])",
@@ -34784,10 +34788,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var import_react27 = __toESM(require_react(), 1);
 
   // node_modules/framer-motion/dist/es/utils/is-browser.mjs
-  var isBrowser = typeof document !== "undefined";
+  var isBrowser2 = typeof document !== "undefined";
 
   // node_modules/framer-motion/dist/es/utils/use-isomorphic-effect.mjs
-  var useIsomorphicLayoutEffect = isBrowser ? import_react27.useLayoutEffect : import_react27.useEffect;
+  var useIsomorphicLayoutEffect = isBrowser2 ? import_react27.useLayoutEffect : import_react27.useEffect;
 
   // node_modules/framer-motion/dist/es/context/LazyContext.mjs
   var import_react28 = __toESM(require_react(), 1);
@@ -35016,7 +35020,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       const context = useCreateMotionContext(props);
       const projectionId = isStatic ? void 0 : useProjectionId();
       const visualState = useVisualState(props, isStatic);
-      if (!isStatic && isBrowser) {
+      if (!isStatic && isBrowser2) {
         context.visualElement = useVisualElement(Component3, visualState, configAndProps, createVisualElement);
         const lazyStrictMode = (0, import_react36.useContext)(LazyContext).strict;
         const initialLayoutGroupConfig = (0, import_react36.useContext)(SwitchLayoutGroupContext);
@@ -36010,9 +36014,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   };
 
   // node_modules/framer-motion/dist/es/events/utils.mjs
-  var supportsPointerEvents = () => isBrowser && window.onpointerdown === null;
-  var supportsTouchEvents = () => isBrowser && window.ontouchstart === null;
-  var supportsMouseEvents = () => isBrowser && window.onmousedown === null;
+  var supportsPointerEvents = () => isBrowser2 && window.onpointerdown === null;
+  var supportsTouchEvents = () => isBrowser2 && window.ontouchstart === null;
+  var supportsMouseEvents = () => isBrowser2 && window.onmousedown === null;
 
   // node_modules/framer-motion/dist/es/events/use-pointer-event.mjs
   var mouseEventNames = {
@@ -39129,7 +39133,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         });
       }
       visualElement.render();
-      if (isBrowser && scrollY !== null) {
+      if (isBrowser2 && scrollY !== null) {
         window.scrollTo({ top: scrollY });
       }
       return { target: convertedTarget, transitionEnd };
@@ -39159,7 +39163,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   // node_modules/framer-motion/dist/es/utils/reduced-motion/index.mjs
   function initPrefersReducedMotion() {
     hasReducedMotionListener.current = true;
-    if (!isBrowser)
+    if (!isBrowser2)
       return;
     if (window.matchMedia) {
       const motionMediaQuery = window.matchMedia("(prefers-reduced-motion)");
@@ -42947,6 +42951,17 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var import_react107 = __toESM(require_react());
   var import_react108 = __toESM(require_react());
   var import_react109 = __toESM(require_react());
+  var useSafeLayoutEffect3 = isBrowser ? import_react87.useLayoutEffect : import_react87.useEffect;
+  function useCallbackRef2(fn2, deps = []) {
+    const ref = (0, import_react86.useRef)(fn2);
+    useSafeLayoutEffect3(() => {
+      ref.current = fn2;
+    });
+    return (0, import_react86.useCallback)((...args) => {
+      var _a8;
+      return (_a8 = ref.current) == null ? void 0 : _a8.call(ref, ...args);
+    }, deps);
+  }
   function useBoolean(initialState2 = false) {
     const [value, setValue] = (0, import_react88.useState)(initialState2);
     const callbacks = (0, import_react88.useMemo)(() => ({
@@ -42955,6 +42970,21 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       toggle: () => setValue((prev) => !prev)
     }), []);
     return [value, callbacks];
+  }
+  function useInterval(callback, delay2) {
+    const fn2 = useCallbackRef2(callback);
+    (0, import_react100.useEffect)(() => {
+      let intervalId = null;
+      const tick = () => fn2();
+      if (delay2 !== null) {
+        intervalId = window.setInterval(tick, delay2);
+      }
+      return () => {
+        if (intervalId) {
+          window.clearInterval(intervalId);
+        }
+      };
+    }, [delay2, fn2]);
   }
 
   // node_modules/@chakra-ui/object-utils/dist/index.esm.js
@@ -46193,7 +46223,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
 
   // node_modules/@chakra-ui/react-use-size/dist/index.esm.js
   var import_react123 = __toESM(require_react());
-  var useSafeLayoutEffect3 = Boolean(globalThis == null ? void 0 : globalThis.document) ? import_react123.useLayoutEffect : import_react123.useEffect;
+  var useSafeLayoutEffect4 = Boolean(globalThis == null ? void 0 : globalThis.document) ? import_react123.useLayoutEffect : import_react123.useEffect;
   function trackMutation(el, cb2) {
     var _a8;
     if (!el || !el.parentElement)
@@ -46213,7 +46243,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   }) {
     const [sizes24, setSizes] = (0, import_react123.useState)([]);
     const [count, setCount] = (0, import_react123.useState)(0);
-    useSafeLayoutEffect3(() => {
+    useSafeLayoutEffect4(() => {
       const elements = getNodes();
       const cleanups = elements.map((element, index) => trackElementSize(element, (size3) => {
         setSizes((sizes25) => {
@@ -48067,8 +48097,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     formEncType: void 0,
     formData: void 0
   };
-  var isBrowser2 = typeof window !== "undefined" && typeof window.document !== "undefined" && typeof window.document.createElement !== "undefined";
-  var isServer = !isBrowser2;
+  var isBrowser3 = typeof window !== "undefined" && typeof window.document !== "undefined" && typeof window.document.createElement !== "undefined";
+  var isServer = !isBrowser3;
   function createRouter(init) {
     invariant2(init.routes.length > 0, "You must provide a non-empty routes array to createRouter");
     let dataRoutes = convertRoutesToDataRoutes(init.routes);
@@ -49407,8 +49437,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   function useSyncExternalStore$1(subscribe, getSnapshot, getServerSnapshot) {
     return getSnapshot();
   }
-  var canUseDOM = !!(typeof window !== "undefined" && typeof window.document !== "undefined" && typeof window.document.createElement !== "undefined");
-  var isServerEnvironment = !canUseDOM;
+  var canUseDOM2 = !!(typeof window !== "undefined" && typeof window.document !== "undefined" && typeof window.document.createElement !== "undefined");
+  var isServerEnvironment = !canUseDOM2;
   var shim = isServerEnvironment ? useSyncExternalStore$1 : useSyncExternalStore$2;
   var useSyncExternalStore2 = "useSyncExternalStore" in React27 ? ((module) => module.useSyncExternalStore)(React27) : shim;
   var DataStaticRouterContext = /* @__PURE__ */ React27.createContext(null);
@@ -51836,27 +51866,26 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
     }, "Load Sample Data");
   }
-  function RefreshAlert() {
-    let alertColour = useColorModeValue("cyan.700", "cyan.300");
-    let [secondsToRefresh, setSecondsToRefresh] = (0, import_react146.useState)(10);
-    (0, import_react146.useEffect)(() => {
-      setTimeout(() => {
-        if (secondsToRefresh > 0) {
-          setSecondsToRefresh(secondsToRefresh - 1);
-        } else {
-          window.location.reload();
-        }
-      }, 1e3);
-    });
-    let alertText = "";
-    if (secondsToRefresh > 1) {
-      alertText = `No data yet. Refreshing in ${secondsToRefresh} seconds...`;
-    } else if (secondsToRefresh === 1) {
-      alertText = `No data yet. Refreshing in ${secondsToRefresh} second...`;
+  async function pollTraceCount() {
+    let response = await fetch("/api/traceCount");
+    if (!response.ok) {
+      throw new Error("HTTP status " + response.status);
     } else {
-      alertText = "No data yet. Refreshing now!";
+      let { numTraces } = await response.json();
+      if (numTraces > 0) {
+        window.location.reload();
+      }
     }
-    return /* @__PURE__ */ import_react146.default.createElement(Alert, {
+  }
+  function EmptyStateView() {
+    let alertColour = useColorModeValue("cyan.700", "cyan.300");
+    useInterval(pollTraceCount, 500);
+    return /* @__PURE__ */ import_react146.default.createElement(Flex, {
+      flexDirection: "column",
+      align: "center",
+      width: "100%",
+      overflowY: "scroll"
+    }, /* @__PURE__ */ import_react146.default.createElement(Alert, {
       status: "info",
       variant: "solid",
       minHeight: "64px",
@@ -51865,15 +51894,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       boxSize: "24px"
     }), /* @__PURE__ */ import_react146.default.createElement(AlertTitle, {
       fontSize: "md"
-    }, alertText));
-  }
-  function EmptyStateView() {
-    return /* @__PURE__ */ import_react146.default.createElement(Flex, {
-      flexDirection: "column",
-      align: "center",
-      width: "100%",
-      overflowY: "scroll"
-    }, /* @__PURE__ */ import_react146.default.createElement(RefreshAlert, null), /* @__PURE__ */ import_react146.default.createElement(Card, {
+    }, "Nothing here yet. Waiting for data...")), /* @__PURE__ */ import_react146.default.createElement(Card, {
       align: "center",
       width: "50%",
       maxWidth: "700px",
