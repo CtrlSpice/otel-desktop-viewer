@@ -51277,7 +51277,13 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     let size3 = useSize(ref);
     let location = useLocation();
     let { traceSummaries } = props;
-    let selectedTraceID = location ? location.pathname.split("/")[2] : "";
+    let selectedTraceID = "";
+    if (location.pathname.includes("/traces/")) {
+      selectedTraceID = location.pathname.split("/")[2];
+    } else {
+      selectedTraceID = traceSummaries[0].traceID;
+      window.location.href = `/traces/${selectedTraceID}`;
+    }
     let itemData = {
       selectedTraceID,
       traceSummaries
