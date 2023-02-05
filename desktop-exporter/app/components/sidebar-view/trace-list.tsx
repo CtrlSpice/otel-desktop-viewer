@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 import { VariableSizeList } from "react-window";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useHref, useLocation } from "react-router-dom";
 import {
   Flex,
   LinkBox,
@@ -148,7 +148,15 @@ export function TraceList(props: TraceListProps) {
   let location = useLocation();
   let { traceSummaries } = props;
 
-  let selectedTraceID = location ? location.pathname.split("/")[2] : "";
+  // Default to the first trace in the list if none are selected
+  let selectedTraceID = "";
+  if (location.pathname.includes("/traces/")) {
+    selectedTraceID = location.pathname.split("/")[2];
+  } else {
+    selectedTraceID = traceSummaries[0].traceID;
+    window.location.href = `/traces/${selectedTraceID}`;
+  }
+
   let itemData = {
     selectedTraceID: selectedTraceID,
     traceSummaries: traceSummaries,

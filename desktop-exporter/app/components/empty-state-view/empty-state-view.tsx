@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   Alert,
   AlertIcon,
@@ -18,7 +18,10 @@ import {
   Text,
   useBoolean,
   useColorModeValue,
+  useInterval,
 } from "@chakra-ui/react";
+
+import { TraceSummaries } from "../../types/api-types";
 
 async function loadSampleData() {
   let response = await fetch("/api/sampleData");
@@ -56,42 +59,22 @@ function SampleDataButton() {
   );
 }
 
-function RefreshAlert() {
-  let alertColour = useColorModeValue("cyan.700", "cyan.300");
-  let [secondsToRefresh, setSecondsToRefresh] = useState(10);
-  useEffect(() => {
-    setTimeout(() => {
-      if (secondsToRefresh > 0) {
-        setSecondsToRefresh(secondsToRefresh - 1);
-      } else {
-        window.location.reload();
-      }
-    }, 1000);
-  });
-
-  let alertText = "";
-  if (secondsToRefresh > 1) {
-    alertText = `No data yet. Refreshing in ${secondsToRefresh} seconds...`;
-  } else if (secondsToRefresh === 1) {
-    alertText = `No data yet. Refreshing in ${secondsToRefresh} second...`;
+async function pollTraceCount() {
+  let response = await fetch("/api/traces");
+  if (!response.ok) {
+    throw new Error("HTTP status " + response.status);
   } else {
-    alertText = "No data yet. Refreshing now!";
+    let { traceSummaries } = (await response.json()) as TraceSummaries;
+    if (traceSummaries.length > 0) {
+      window.location.reload();
+    }
   }
-
-  return (
-    <Alert
-      status="info"
-      variant="solid"
-      minHeight="64px"
-      backgroundColor={alertColour}
-    >
-      <AlertIcon boxSize="24px" />
-      <AlertTitle fontSize="md">{alertText}</AlertTitle>
-    </Alert>
-  );
 }
 
 export function EmptyStateView() {
+  let alertColour = useColorModeValue("cyan.700", "cyan.300");
+  useInterval(pollTraceCount, 500);
+
   return (
     <Flex
       flexDirection="column"
@@ -99,7 +82,17 @@ export function EmptyStateView() {
       width="100%"
       overflowY="scroll"
     >
-      <RefreshAlert />
+      <Alert
+        status="info"
+        variant="solid"
+        minHeight="64px"
+        backgroundColor={alertColour}
+      >
+        <AlertIcon boxSize="24px" />
+        <AlertTitle fontSize="md">
+          {"Nothing here yet. Waiting for data..."}
+        </AlertTitle>
+      </Alert>
       <Card
         align="center"
         width="50%"
