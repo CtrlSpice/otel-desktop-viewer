@@ -18,6 +18,8 @@ receivers:
     protocols:
       http:
         endpoint: localhost:4318
+      grpc:
+        endpoint: localhost:4317
 
 processors:
 
