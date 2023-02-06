@@ -8,6 +8,7 @@ needing to send it on to a telemetry vendor.
 
 Its goals are to be easy-to-install with minimal dependencies and fast. It is written in Go
 as a custom exporter on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector).
+Also, it has a dark mode.
 
 ## Getting started
 
@@ -15,7 +16,7 @@ Make sure you have [go](https://go.dev/) installed.
 
 ```bash
 # install the CLI tool
-go install github.com/CtrlSpice/otel-desktop-viewer@v0.1.0
+github.com/CtrlSpice/otel-desktop-viewer@latest
 
 # run it!
 $(go env GOPATH)/bin/otel-desktop-viewer
@@ -61,7 +62,7 @@ If you have [`otel-cli`](https://github.com/equinix-labs/otel-cli) installed, yo
 send some example data with the following script.
 
 ```bash
-# start the desktop viewer
+# start the desktop viewer (best to do this in a separate terminal)
 otel-desktop-viewer
 
 # configure otel-cli to send to our desktop viewer endpoint
@@ -145,3 +146,6 @@ Her name is Lulu Axol'Otel, she is very pink, and I love her.
 More seriously, I like to give my [side projects](https://github.com/CtrlSpice/bumblebee-consolematch) an 
 [animal theme](https://github.com/CtrlSpice/yak-vs-yak) to add a little aesthetic
 interest on what otherwise might be fairly plain applications.
+
+## License
+Apache 2.0, see LICENSE
