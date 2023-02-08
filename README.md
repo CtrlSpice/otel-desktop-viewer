@@ -118,11 +118,11 @@ data, but when working locally our experience often looks more like this:
 ```
 
 You can use [Jaeger's all-in-one](https://www.jaegertracing.io/docs/1.41/deployment/#all-in-one)
-distribution, but this requires quite a bit of additional knowledge for the end-user of docker,
-configuration options, and the user experience is not focused around "show me the data I just
-emitted".
+distribution, but this requires quite a bit of additional knowledge for the end-user around docker and
+navigating a lot of configuration options. Additionally the user experience is not focused around 
+"show me the data I just emitted".
 
-The goal for `otel-desktop-viewer` is to allow a user to install it with one command, require
+The goals for `otel-desktop-viewer` are to allow a user to install it with one command, require
 minimal configuration and additional tooling, and be as approachable as possible for developers
 at all levels of experience.
 
