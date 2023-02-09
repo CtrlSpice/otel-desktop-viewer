@@ -52145,14 +52145,23 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     if (hidden) {
       return null;
     }
+    let typeOfFieldValue = typeof fieldValue;
     switch (fieldValue) {
+      case true:
+        fieldValue = "true";
+        break;
+      case false:
+        fieldValue = "false";
+        break;
       case null:
         fieldValue = "null";
         break;
       case void 0:
         fieldValue = "undefined";
+        break;
       case "":
         fieldValue = '""';
+        break;
     }
     return /* @__PURE__ */ import_react152.default.createElement(Box, {
       paddingTop: 2
@@ -52164,7 +52173,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       colorScheme: "cyan"
     }, /* @__PURE__ */ import_react152.default.createElement(TagLabel, {
       fontSize: "xs"
-    }, typeof fieldValue)), /* @__PURE__ */ import_react152.default.createElement(Text, {
+    }, typeOfFieldValue)), /* @__PURE__ */ import_react152.default.createElement(Text, {
       textColor: fieldNameColour,
       fontSize: "sm"
     }, fieldName))), /* @__PURE__ */ import_react152.default.createElement("dd", null, /* @__PURE__ */ import_react152.default.createElement(Text, {
