@@ -11,7 +11,6 @@ import {
   Heading,
   Image,
   Link,
-  Spacer,
   Stack,
   Text,
   useBoolean,
@@ -39,7 +38,6 @@ function SampleDataButton() {
         isLoading
         colorScheme="pink"
         loadingText="Loading"
-        size="sm"
         spinnerPlacement="start"
         width="fit-content"
       />
@@ -49,7 +47,6 @@ function SampleDataButton() {
   return (
     <Button
       colorScheme="pink"
-      size="sm"
       width="fit-content"
       onClick={() => {
         setIsLoading.on();
@@ -74,9 +71,10 @@ async function pollTraceCount() {
 }
 
 export function EmptyStateView() {
+  let cardBackgroundColour = useColorModeValue("gray.200", "gray.700");
   let codeBackgroundColour = useColorModeValue(
-    "blackAlpha.300",
-    "whiteAlpha.300",
+    "whiteAlpha.700",
+    "blackAlpha.500",
   );
   useInterval(pollTraceCount, 500);
 
@@ -90,49 +88,59 @@ export function EmptyStateView() {
     >
       <Card
         align="center"
-        width="80%"
+        backgroundColor={cardBackgroundColour}
         marginY="64px"
-        minWidth="750px"
-        padding="40px"
+        minWidth="960px"
+        padding="30px"
         variant="filled"
+        width="60%"
       >
-        <CardBody>
+        <CardHeader
+          borderRadius="lg"
+          paddingY="0"
+        >
           <Flex width="100%">
             <Image
-              src="assets/images/lulu.jpg"
+              src="assets/images/lulu.png"
               alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen."
-              maxWidth="500px"
+              maxHeight="400px"
+              maxWidth="400px"
               borderRadius="lg"
             />
-            <Stack
-              spacing={3}
-              justifyContent="center"
-              marginX="24px"
+            <Flex
+              marginLeft="24px"
+              justifyContent="flex-end"
+              direction="column"
             >
-              <Heading size="lg">
-                Welcome to the OpenTelemetry Desktop Viewer.
-              </Heading>
-              <Divider />
-              <Text>
-                This CLI tool allows you to receive OpenTelemetry traces while
-                working on your local machine, helping you visualize and explore
-                your trace data without needing to send it on to a telemetry
-                vendor.
-              </Text>
-              <Heading size="md">Example with Sample Data</Heading>
-              <Divider />
-              <Text>
-                If you would like to explore the application without sending it
-                anything, you can do so by loading some sample data.
-              </Text>
-              <SampleDataButton />
-            </Stack>
+              <Stack spacing={3}>
+                <Heading size="lg">
+                  Welcome to the OpenTelemetry Desktop Viewer.
+                </Heading>
+                <Divider />
+                <Text>
+                  This CLI tool allows you to receive OpenTelemetry traces while
+                  working on your local machine, helping you visualize and
+                  explore your trace data without needing to send it on to a
+                  telemetry vendor.
+                </Text>
+              </Stack>
+              <Stack
+                spacing={3}
+                marginTop="24px"
+              >
+                <Heading size="md">Explore with Sample Data</Heading>
+                <Divider />
+                <Text>
+                  If you would like to explore the application without sending
+                  it anything, you can do so by loading some sample data.
+                </Text>
+                <SampleDataButton />
+              </Stack>
+            </Flex>
           </Flex>
-
-          <Stack
-            spacing={3}
-            marginTop="30px"
-          >
+        </CardHeader>
+        <CardBody>
+          <Stack spacing={3}>
             <Heading size="md">Configuring your OpenTelemetry SDK</Heading>
             <Divider />
             <Text>
@@ -196,19 +204,17 @@ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`}
             spacing={3}
             marginTop="30px"
           >
-            <Heading size="md">Example with Otel-Cli</Heading>
+            <Heading size="md">Example with otel-cli</Heading>
             <Divider />
             <Text>
               If you have{" "}
-              <Code backgroundColor={codeBackgroundColour}>
-                <Link
-                  color="teal.400"
-                  href="https://github.com/equinix-labs/otel-cli"
-                  isExternal
-                >
-                  otel-cli
-                </Link>
-              </Code>{" "}
+              <Link
+                color="teal.400"
+                href="https://github.com/equinix-labs/otel-cli"
+                isExternal
+              >
+                otel-cli
+              </Link>{" "}
               installed, you can send some example data with the following
               script.
             </Text>
@@ -235,7 +241,14 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         </CardBody>
         <CardFooter alignItems="center">
           <Text>
-            Made with ✨ by{" "}
+            Made with{" "}
+            <Image
+              src="assets/images/axolotl.svg"
+              alt="axolotl emoji"
+              display="inline"
+              width="30px"
+            />{" "}
+            by{" "}
             <Link
               color="teal.500"
               href="https://github.com/CtrlSpice"

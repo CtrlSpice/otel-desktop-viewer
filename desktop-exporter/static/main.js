@@ -51861,14 +51861,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         isLoading: true,
         colorScheme: "pink",
         loadingText: "Loading",
-        size: "sm",
         spinnerPlacement: "start",
         width: "fit-content"
       });
     }
     return /* @__PURE__ */ import_react146.default.createElement(Button, {
       colorScheme: "pink",
-      size: "sm",
       width: "fit-content",
       onClick: () => {
         setIsLoading.on();
@@ -51888,9 +51886,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }
   }
   function EmptyStateView() {
+    let cardBackgroundColour = useColorModeValue("gray.200", "gray.700");
     let codeBackgroundColour = useColorModeValue(
-      "blackAlpha.300",
-      "whiteAlpha.300"
+      "whiteAlpha.700",
+      "blackAlpha.500"
     );
     useInterval(pollTraceCount, 500);
     return /* @__PURE__ */ import_react146.default.createElement(Flex, {
@@ -51901,29 +51900,38 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       overflowY: "scroll"
     }, /* @__PURE__ */ import_react146.default.createElement(Card, {
       align: "center",
-      width: "80%",
+      backgroundColor: cardBackgroundColour,
       marginY: "64px",
-      minWidth: "750px",
-      padding: "40px",
-      variant: "filled"
-    }, /* @__PURE__ */ import_react146.default.createElement(CardBody, null, /* @__PURE__ */ import_react146.default.createElement(Flex, {
+      minWidth: "960px",
+      padding: "30px",
+      variant: "filled",
+      width: "60%"
+    }, /* @__PURE__ */ import_react146.default.createElement(CardHeader, {
+      borderRadius: "lg",
+      paddingY: "0"
+    }, /* @__PURE__ */ import_react146.default.createElement(Flex, {
       width: "100%"
     }, /* @__PURE__ */ import_react146.default.createElement(Image2, {
-      src: "assets/images/lulu.jpg",
+      src: "assets/images/lulu.png",
       alt: "A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen.",
-      maxWidth: "500px",
+      maxHeight: "400px",
+      maxWidth: "400px",
       borderRadius: "lg"
-    }), /* @__PURE__ */ import_react146.default.createElement(Stack, {
-      spacing: 3,
-      justifyContent: "center",
-      marginX: "24px"
+    }), /* @__PURE__ */ import_react146.default.createElement(Flex, {
+      marginLeft: "24px",
+      justifyContent: "flex-end",
+      direction: "column"
+    }, /* @__PURE__ */ import_react146.default.createElement(Stack, {
+      spacing: 3
     }, /* @__PURE__ */ import_react146.default.createElement(Heading, {
       size: "lg"
-    }, "Welcome to the OpenTelemetry Desktop Viewer."), /* @__PURE__ */ import_react146.default.createElement(Divider, null), /* @__PURE__ */ import_react146.default.createElement(Text, null, "This CLI tool allows you to receive OpenTelemetry traces while working on your local machine, helping you visualize and explore your trace data without needing to send it on to a telemetry vendor."), /* @__PURE__ */ import_react146.default.createElement(Heading, {
-      size: "md"
-    }, "Example with Sample Data"), /* @__PURE__ */ import_react146.default.createElement(Divider, null), /* @__PURE__ */ import_react146.default.createElement(Text, null, "If you would like to explore the application without sending it anything, you can do so by loading some sample data."), /* @__PURE__ */ import_react146.default.createElement(SampleDataButton, null))), /* @__PURE__ */ import_react146.default.createElement(Stack, {
+    }, "Welcome to the OpenTelemetry Desktop Viewer."), /* @__PURE__ */ import_react146.default.createElement(Divider, null), /* @__PURE__ */ import_react146.default.createElement(Text, null, "This CLI tool allows you to receive OpenTelemetry traces while working on your local machine, helping you visualize and explore your trace data without needing to send it on to a telemetry vendor.")), /* @__PURE__ */ import_react146.default.createElement(Stack, {
       spacing: 3,
-      marginTop: "30px"
+      marginTop: "24px"
+    }, /* @__PURE__ */ import_react146.default.createElement(Heading, {
+      size: "md"
+    }, "Explore with Sample Data"), /* @__PURE__ */ import_react146.default.createElement(Divider, null), /* @__PURE__ */ import_react146.default.createElement(Text, null, "If you would like to explore the application without sending it anything, you can do so by loading some sample data."), /* @__PURE__ */ import_react146.default.createElement(SampleDataButton, null))))), /* @__PURE__ */ import_react146.default.createElement(CardBody, null, /* @__PURE__ */ import_react146.default.createElement(Stack, {
+      spacing: 3
     }, /* @__PURE__ */ import_react146.default.createElement(Heading, {
       size: "md"
     }, "Configuring your OpenTelemetry SDK"), /* @__PURE__ */ import_react146.default.createElement(Divider, null), /* @__PURE__ */ import_react146.default.createElement(Text, null, "To send telemetry to OpenTelemetry Desktop Viewer from your application, you need to configure an OTLP exporter to send via grpc to", " ", /* @__PURE__ */ import_react146.default.createElement(Code, {
@@ -51965,13 +51973,11 @@ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`
       marginTop: "30px"
     }, /* @__PURE__ */ import_react146.default.createElement(Heading, {
       size: "md"
-    }, "Example with Otel-Cli"), /* @__PURE__ */ import_react146.default.createElement(Divider, null), /* @__PURE__ */ import_react146.default.createElement(Text, null, "If you have", " ", /* @__PURE__ */ import_react146.default.createElement(Code, {
-      backgroundColor: codeBackgroundColour
-    }, /* @__PURE__ */ import_react146.default.createElement(Link, {
+    }, "Example with otel-cli"), /* @__PURE__ */ import_react146.default.createElement(Divider, null), /* @__PURE__ */ import_react146.default.createElement(Text, null, "If you have", " ", /* @__PURE__ */ import_react146.default.createElement(Link, {
       color: "teal.400",
       href: "https://github.com/equinix-labs/otel-cli",
       isExternal: true
-    }, "otel-cli")), " ", "installed, you can send some example data with the following script."), /* @__PURE__ */ import_react146.default.createElement(Flex, {
+    }, "otel-cli"), " ", "installed, you can send some example data with the following script."), /* @__PURE__ */ import_react146.default.createElement(Flex, {
       backgroundColor: codeBackgroundColour,
       padding: 2
     }, /* @__PURE__ */ import_react146.default.createElement(Code, {
@@ -51989,7 +51995,12 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
 `
     })))), /* @__PURE__ */ import_react146.default.createElement(CardFooter, {
       alignItems: "center"
-    }, /* @__PURE__ */ import_react146.default.createElement(Text, null, "Made with \u2728 by", " ", /* @__PURE__ */ import_react146.default.createElement(Link, {
+    }, /* @__PURE__ */ import_react146.default.createElement(Text, null, "Made with", " ", /* @__PURE__ */ import_react146.default.createElement(Image2, {
+      src: "assets/images/axolotl.svg",
+      alt: "axolotl emoji",
+      display: "inline",
+      width: "30px"
+    }), " ", "by", " ", /* @__PURE__ */ import_react146.default.createElement(Link, {
       color: "teal.500",
       href: "https://github.com/CtrlSpice",
       isExternal: true
