@@ -21,15 +21,24 @@ export function SpanField(props: SpanFieldProps) {
   if (hidden) {
     return null;
   }
+  let typeOfFieldValue = typeof fieldValue;
 
   switch (fieldValue) {
+    case true:
+      fieldValue = "true";
+      break;
+    case false:
+      fieldValue = "false";
+      break;
     case null:
       fieldValue = "null";
       break;
     case undefined:
       fieldValue = "undefined";
+      break;
     case "":
       fieldValue = '""';
+      break;
   }
 
   return (
@@ -41,7 +50,7 @@ export function SpanField(props: SpanFieldProps) {
             variant="outline"
             colorScheme="cyan"
           >
-            <TagLabel fontSize="xs">{typeof fieldValue}</TagLabel>
+            <TagLabel fontSize="xs">{typeOfFieldValue}</TagLabel>
           </Tag>
           <Text
             textColor={fieldNameColour}
