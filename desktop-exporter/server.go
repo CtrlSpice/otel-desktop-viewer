@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/browser"
@@ -130,7 +131,11 @@ func NewServer(traceStore *TraceStore) *Server {
 }
 
 func (s Server) Start() error {
-	browser.OpenURL("http://localhost:8000/")
+	go func() {
+		// Wait a bit for the server to come up to avoid a 404 as a first experience
+		time.Sleep(250 * time.Millisecond)
+		browser.OpenURL("http://localhost:8000/")
+	}()
 	return s.server.ListenAndServe()
 }
 
