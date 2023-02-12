@@ -65,7 +65,9 @@ async function pollTraceCount() {
   } else {
     let { traceSummaries } = (await response.json()) as TraceSummaries;
     if (traceSummaries.length > 0) {
-      setTimeout(window.location.reload, 500);
+     setTimeout(() => {
+       window.location.reload();
+     }, 500);
     }
   }
 }
