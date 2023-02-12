@@ -349,27 +349,27 @@
           {
             didWarnAboutStringRefs = {};
           }
-          function hasValidRef(config2) {
+          function hasValidRef(config3) {
             {
-              if (hasOwnProperty.call(config2, "ref")) {
-                var getter = Object.getOwnPropertyDescriptor(config2, "ref").get;
+              if (hasOwnProperty.call(config3, "ref")) {
+                var getter = Object.getOwnPropertyDescriptor(config3, "ref").get;
                 if (getter && getter.isReactWarning) {
                   return false;
                 }
               }
             }
-            return config2.ref !== void 0;
+            return config3.ref !== void 0;
           }
-          function hasValidKey(config2) {
+          function hasValidKey(config3) {
             {
-              if (hasOwnProperty.call(config2, "key")) {
-                var getter = Object.getOwnPropertyDescriptor(config2, "key").get;
+              if (hasOwnProperty.call(config3, "key")) {
+                var getter = Object.getOwnPropertyDescriptor(config3, "key").get;
                 if (getter && getter.isReactWarning) {
                   return false;
                 }
               }
             }
-            return config2.key !== void 0;
+            return config3.key !== void 0;
           }
           function defineKeyPropWarningGetter(props, displayName) {
             var warnAboutAccessingKey = function() {
@@ -401,12 +401,12 @@
               configurable: true
             });
           }
-          function warnIfStringRefCannotBeAutoConverted(config2) {
+          function warnIfStringRefCannotBeAutoConverted(config3) {
             {
-              if (typeof config2.ref === "string" && ReactCurrentOwner.current && config2.__self && ReactCurrentOwner.current.stateNode !== config2.__self) {
+              if (typeof config3.ref === "string" && ReactCurrentOwner.current && config3.__self && ReactCurrentOwner.current.stateNode !== config3.__self) {
                 var componentName = getComponentNameFromType(ReactCurrentOwner.current.type);
                 if (!didWarnAboutStringRefs[componentName]) {
-                  error('Component "%s" contains the string ref "%s". Support for string refs will be removed in a future major release. This case cannot be automatically converted to an arrow function. We ask you to manually fix this case by using useRef() or createRef() instead. Learn more about using refs safely here: https://reactjs.org/link/strict-mode-string-ref', componentName, config2.ref);
+                  error('Component "%s" contains the string ref "%s". Support for string refs will be removed in a future major release. This case cannot be automatically converted to an arrow function. We ask you to manually fix this case by using useRef() or createRef() instead. Learn more about using refs safely here: https://reactjs.org/link/strict-mode-string-ref', componentName, config3.ref);
                   didWarnAboutStringRefs[componentName] = true;
                 }
               }
@@ -448,31 +448,31 @@
             }
             return element;
           };
-          function createElement11(type, config2, children) {
+          function createElement11(type, config3, children) {
             var propName;
             var props = {};
             var key = null;
             var ref = null;
             var self2 = null;
             var source = null;
-            if (config2 != null) {
-              if (hasValidRef(config2)) {
-                ref = config2.ref;
+            if (config3 != null) {
+              if (hasValidRef(config3)) {
+                ref = config3.ref;
                 {
-                  warnIfStringRefCannotBeAutoConverted(config2);
+                  warnIfStringRefCannotBeAutoConverted(config3);
                 }
               }
-              if (hasValidKey(config2)) {
+              if (hasValidKey(config3)) {
                 {
-                  checkKeyStringCoercion(config2.key);
+                  checkKeyStringCoercion(config3.key);
                 }
-                key = "" + config2.key;
+                key = "" + config3.key;
               }
-              self2 = config2.__self === void 0 ? null : config2.__self;
-              source = config2.__source === void 0 ? null : config2.__source;
-              for (propName in config2) {
-                if (hasOwnProperty.call(config2, propName) && !RESERVED_PROPS.hasOwnProperty(propName)) {
-                  props[propName] = config2[propName];
+              self2 = config3.__self === void 0 ? null : config3.__self;
+              source = config3.__source === void 0 ? null : config3.__source;
+              for (propName in config3) {
+                if (hasOwnProperty.call(config3, propName) && !RESERVED_PROPS.hasOwnProperty(propName)) {
+                  props[propName] = config3[propName];
                 }
               }
             }
@@ -516,7 +516,7 @@
             var newElement = ReactElement(oldElement.type, newKey, oldElement.ref, oldElement._self, oldElement._source, oldElement._owner, oldElement.props);
             return newElement;
           }
-          function cloneElement6(element, config2, children) {
+          function cloneElement6(element, config3, children) {
             if (element === null || element === void 0) {
               throw new Error("React.cloneElement(...): The argument must be a React element, but you passed " + element + ".");
             }
@@ -527,27 +527,27 @@
             var self2 = element._self;
             var source = element._source;
             var owner = element._owner;
-            if (config2 != null) {
-              if (hasValidRef(config2)) {
-                ref = config2.ref;
+            if (config3 != null) {
+              if (hasValidRef(config3)) {
+                ref = config3.ref;
                 owner = ReactCurrentOwner.current;
               }
-              if (hasValidKey(config2)) {
+              if (hasValidKey(config3)) {
                 {
-                  checkKeyStringCoercion(config2.key);
+                  checkKeyStringCoercion(config3.key);
                 }
-                key = "" + config2.key;
+                key = "" + config3.key;
               }
               var defaultProps2;
               if (element.type && element.type.defaultProps) {
                 defaultProps2 = element.type.defaultProps;
               }
-              for (propName in config2) {
-                if (hasOwnProperty.call(config2, propName) && !RESERVED_PROPS.hasOwnProperty(propName)) {
-                  if (config2[propName] === void 0 && defaultProps2 !== void 0) {
+              for (propName in config3) {
+                if (hasOwnProperty.call(config3, propName) && !RESERVED_PROPS.hasOwnProperty(propName)) {
+                  if (config3[propName] === void 0 && defaultProps2 !== void 0) {
                     props[propName] = defaultProps2[propName];
                   } else {
-                    props[propName] = config2[propName];
+                    props[propName] = config3[propName];
                   }
                 }
               }
@@ -23032,7 +23032,7 @@
         function object() {
         }
         return function(proto) {
-          if (!isObject4(proto)) {
+          if (!isObject5(proto)) {
             return {};
           }
           if (objectCreate) {
@@ -23261,17 +23261,17 @@
         return isObjectLike(value) && baseGetTag(value) == argsTag;
       }
       function baseIsNative(value) {
-        if (!isObject4(value) || isMasked(value)) {
+        if (!isObject5(value) || isMasked(value)) {
           return false;
         }
-        var pattern = isFunction5(value) ? reIsNative : reIsHostCtor;
+        var pattern = isFunction6(value) ? reIsNative : reIsHostCtor;
         return pattern.test(toSource(value));
       }
       function baseIsTypedArray(value) {
         return isObjectLike(value) && isLength(value.length) && !!typedArrayTags[baseGetTag(value)];
       }
       function baseKeysIn(object) {
-        if (!isObject4(object)) {
+        if (!isObject5(object)) {
           return nativeKeysIn(object);
         }
         var isProto = isPrototype(object), result = [];
@@ -23288,7 +23288,7 @@
         }
         baseFor(source, function(srcValue, key) {
           stack || (stack = new Stack2());
-          if (isObject4(srcValue)) {
+          if (isObject5(srcValue)) {
             baseMergeDeep(object, source, key, srcIndex, baseMerge, customizer, stack);
           } else {
             var newValue = customizer ? customizer(safeGet(object, key), srcValue, key + "", object, source, stack) : void 0;
@@ -23328,7 +23328,7 @@
             newValue = objValue;
             if (isArguments(objValue)) {
               newValue = toPlainObject(objValue);
-            } else if (!isObject4(objValue) || isFunction5(objValue)) {
+            } else if (!isObject5(objValue) || isFunction6(objValue)) {
               newValue = initCloneObject(srcValue);
             }
           } else {
@@ -23460,7 +23460,7 @@
         return !!length && (type == "number" || type != "symbol" && reIsUint.test(value)) && (value > -1 && value % 1 == 0 && value < length);
       }
       function isIterateeCall(value, index, object) {
-        if (!isObject4(object)) {
+        if (!isObject5(object)) {
           return false;
         }
         var type = typeof index;
@@ -23556,14 +23556,14 @@
       };
       var isArray = Array.isArray;
       function isArrayLike(value) {
-        return value != null && isLength(value.length) && !isFunction5(value);
+        return value != null && isLength(value.length) && !isFunction6(value);
       }
       function isArrayLikeObject(value) {
         return isObjectLike(value) && isArrayLike(value);
       }
       var isBuffer = nativeIsBuffer || stubFalse;
-      function isFunction5(value) {
-        if (!isObject4(value)) {
+      function isFunction6(value) {
+        if (!isObject5(value)) {
           return false;
         }
         var tag = baseGetTag(value);
@@ -23572,7 +23572,7 @@
       function isLength(value) {
         return typeof value == "number" && value > -1 && value % 1 == 0 && value <= MAX_SAFE_INTEGER;
       }
-      function isObject4(value) {
+      function isObject5(value) {
         var type = typeof value;
         return value != null && (type == "object" || type == "function");
       }
@@ -23597,7 +23597,7 @@
       function keysIn(object) {
         return isArrayLike(object) ? arrayLikeKeys(object, true) : baseKeysIn(object);
       }
-      var mergeWith5 = createAssigner(function(object, source, srcIndex, customizer) {
+      var mergeWith6 = createAssigner(function(object, source, srcIndex, customizer) {
         baseMerge(object, source, srcIndex, customizer);
       });
       function constant(value) {
@@ -23611,7 +23611,7 @@
       function stubFalse() {
         return false;
       }
-      module.exports = mergeWith5;
+      module.exports = mergeWith6;
     }
   });
 
@@ -25745,39 +25745,39 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       var useTheme2 = function useTheme3() {
         return React51.useContext(ThemeContext2);
       };
-      var getTheme2 = function getTheme3(outerTheme, theme2) {
-        if (typeof theme2 === "function") {
-          var mergedTheme = theme2(outerTheme);
+      var getTheme2 = function getTheme3(outerTheme, theme3) {
+        if (typeof theme3 === "function") {
+          var mergedTheme = theme3(outerTheme);
           if (mergedTheme == null || typeof mergedTheme !== "object" || Array.isArray(mergedTheme)) {
             throw new Error("[ThemeProvider] Please return an object from your theme function, i.e. theme={() => ({})}!");
           }
           return mergedTheme;
         }
-        if (theme2 == null || typeof theme2 !== "object" || Array.isArray(theme2)) {
+        if (theme3 == null || typeof theme3 !== "object" || Array.isArray(theme3)) {
           throw new Error("[ThemeProvider] Please make your theme prop a plain object");
         }
-        return _extends5({}, outerTheme, theme2);
+        return _extends5({}, outerTheme, theme3);
       };
       var createCacheWithTheme = /* @__PURE__ */ weakMemoize__default["default"](function(outerTheme) {
-        return weakMemoize__default["default"](function(theme2) {
-          return getTheme2(outerTheme, theme2);
+        return weakMemoize__default["default"](function(theme3) {
+          return getTheme2(outerTheme, theme3);
         });
       });
       var ThemeProvider2 = function ThemeProvider3(props) {
-        var theme2 = React51.useContext(ThemeContext2);
-        if (props.theme !== theme2) {
-          theme2 = createCacheWithTheme(theme2)(props.theme);
+        var theme3 = React51.useContext(ThemeContext2);
+        if (props.theme !== theme3) {
+          theme3 = createCacheWithTheme(theme3)(props.theme);
         }
         return /* @__PURE__ */ React51.createElement(ThemeContext2.Provider, {
-          value: theme2
+          value: theme3
         }, props.children);
       };
       function withTheme(Component3) {
         var componentName = Component3.displayName || Component3.name || "Component";
         var render = function render2(props, ref) {
-          var theme2 = React51.useContext(ThemeContext2);
+          var theme3 = React51.useContext(ThemeContext2);
           return /* @__PURE__ */ React51.createElement(Component3, _extends5({
-            theme: theme2,
+            theme: theme3,
             ref
           }, props));
         };
@@ -27959,22 +27959,22 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var isFunction = (value) => typeof value === "function";
   var isImportant = (value) => /!(important)?$/.test(value);
   var withoutImportant = (value) => typeof value === "string" ? value.replace(/!(important)?$/, "").trim() : value;
-  var tokenToCSSVar = (scale3, value) => (theme2) => {
+  var tokenToCSSVar = (scale3, value) => (theme3) => {
     const valueStr = String(value);
     const important = isImportant(valueStr);
     const valueWithoutImportant = withoutImportant(valueStr);
     const key = scale3 ? `${scale3}.${valueWithoutImportant}` : valueWithoutImportant;
-    let transformed = isObject(theme2.__cssMap) && key in theme2.__cssMap ? theme2.__cssMap[key].varRef : value;
+    let transformed = isObject(theme3.__cssMap) && key in theme3.__cssMap ? theme3.__cssMap[key].varRef : value;
     transformed = withoutImportant(transformed);
     return important ? `${transformed} !important` : transformed;
   };
   function createTransform(options) {
     const { scale: scale3, transform: transform2, compose } = options;
-    const fn2 = (value, theme2) => {
-      const _value = tokenToCSSVar(scale3, value)(theme2);
-      let result = (transform2 == null ? void 0 : transform2(_value, theme2)) ?? _value;
+    const fn2 = (value, theme3) => {
+      const _value = tokenToCSSVar(scale3, value)(theme3);
+      let result = (transform2 == null ? void 0 : transform2(_value, theme3)) ?? _value;
       if (compose) {
-        result = compose(result, theme2);
+        result = compose(result, theme3);
       }
       return result;
     };
@@ -27991,7 +27991,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       return result;
     };
   }
-  var getRtl = ({ rtl, ltr }) => (theme2) => theme2.direction === "rtl" ? rtl : ltr;
+  var getRtl = ({ rtl, ltr }) => (theme3) => theme3.direction === "rtl" ? rtl : ltr;
   function logical(options) {
     const { property, scale: scale3, transform: transform2 } = options;
     return {
@@ -28122,7 +28122,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     "unset"
   ]);
   var trimSpace = (str) => str.trim();
-  function parseGradient(value, theme2) {
+  function parseGradient(value, theme3) {
     var _a8;
     if (value == null || globalSet.has(value))
       return value;
@@ -28143,7 +28143,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       const [_color, _stop] = firstStop !== -1 ? [stop.substr(0, firstStop), stop.substr(firstStop + 1)] : [stop];
       const _stopOrFunc = isCSSFunction(_stop) ? _stop : _stop && _stop.split(" ");
       const key = `colors.${_color}`;
-      const color22 = key in theme2.__cssMap ? theme2.__cssMap[key].varRef : _color;
+      const color22 = key in theme3.__cssMap ? theme3.__cssMap[key].varRef : _color;
       return _stopOrFunc ? [
         color22,
         ...Array.isArray(_stopOrFunc) ? _stopOrFunc : [_stopOrFunc]
@@ -28154,7 +28154,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var isCSSFunction = (value) => {
     return typeof value === "string" && value.includes("(") && value.includes(")");
   };
-  var gradientTransform = (value, theme2) => parseGradient(value, theme2 ?? {});
+  var gradientTransform = (value, theme3) => parseGradient(value, theme3 ?? {});
   function isCssVar(value) {
     return /^var\(--.+\)$/.test(value);
   }
@@ -28196,9 +28196,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     fraction(value) {
       return !(typeof value === "number") || value > 1 ? value : `${value * 100}%`;
     },
-    float(value, theme2) {
+    float(value, theme3) {
       const map = { left: "right", right: "left" };
-      return theme2.direction === "rtl" ? map[value] : value;
+      return theme3.direction === "rtl" ? map[value] : value;
     },
     degree(value) {
       if (isCssVar(value) || value == null)
@@ -28622,9 +28622,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     overflow: "visible",
     whiteSpace: "normal"
   };
-  var getWithPriority = (theme2, key, styles2) => {
+  var getWithPriority = (theme3, key, styles2) => {
     const result = {};
-    const obj = memoizedGet(theme2, key, {});
+    const obj = memoizedGet(theme3, key, {});
     for (const prop in obj) {
       const isInStyles = prop in styles2 && styles2[prop] != null;
       if (!isInStyles)
@@ -28644,15 +28644,15 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     },
     layerStyle: {
       processResult: true,
-      transform: (value, theme2, styles2) => getWithPriority(theme2, `layerStyles.${value}`, styles2)
+      transform: (value, theme3, styles2) => getWithPriority(theme3, `layerStyles.${value}`, styles2)
     },
     textStyle: {
       processResult: true,
-      transform: (value, theme2, styles2) => getWithPriority(theme2, `textStyles.${value}`, styles2)
+      transform: (value, theme3, styles2) => getWithPriority(theme3, `textStyles.${value}`, styles2)
     },
     apply: {
       processResult: true,
-      transform: (value, theme2, styles2) => getWithPriority(theme2, value, styles2)
+      transform: (value, theme3, styles2) => getWithPriority(theme3, value, styles2)
     }
   };
   var position = {
@@ -29154,12 +29154,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     "transition",
     "blur"
   ];
-  function extractTokens(theme2) {
+  function extractTokens(theme3) {
     const _tokens = tokens;
-    return pick(theme2, _tokens);
+    return pick(theme3, _tokens);
   }
-  function extractSemanticTokens(theme2) {
-    return theme2.semanticTokens;
+  function extractSemanticTokens(theme3) {
+    return theme3.semanticTokens;
   }
   function omitVars(rawTheme) {
     const { __cssMap, __cssVars, __breakpoints, ...cleanTheme } = rawTheme;
@@ -29199,11 +29199,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   }
   function toCSSVar(rawTheme) {
     var _a8;
-    const theme2 = omitVars(rawTheme);
-    const tokens2 = extractTokens(theme2);
-    const semanticTokens2 = extractSemanticTokens(theme2);
+    const theme3 = omitVars(rawTheme);
+    const tokens2 = extractTokens(theme3);
+    const semanticTokens2 = extractSemanticTokens(theme3);
     const flatTokens = flattenTokens({ tokens: tokens2, semanticTokens: semanticTokens2 });
-    const cssVarPrefix = (_a8 = theme2.config) == null ? void 0 : _a8.cssVarPrefix;
+    const cssVarPrefix = (_a8 = theme3.config) == null ? void 0 : _a8.cssVarPrefix;
     const {
       cssMap,
       cssVars: cssVars2
@@ -29218,12 +29218,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       "--chakra-space-x-reverse": "0",
       "--chakra-space-y-reverse": "0"
     };
-    Object.assign(theme2, {
+    Object.assign(theme3, {
       __cssVars: { ...defaultCssVars, ...cssVars2 },
       __cssMap: cssMap,
-      __breakpoints: analyzeBreakpoints(theme2.breakpoints)
+      __breakpoints: analyzeBreakpoints(theme3.breakpoints)
     });
-    return theme2;
+    return theme3;
   }
   var systemProps = (0, import_lodash3.default)({}, background, border, color, flexbox, layout, filter, ring, interactivity, grid, others, position, effect, space, scroll, typography, textDecoration, transform, list, transition);
   var layoutSystem = Object.assign({}, space, layout, flexbox, grid, position);
@@ -29231,13 +29231,13 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var propNames = [...Object.keys(systemProps), ...pseudoPropNames];
   var styleProps = { ...systemProps, ...pseudoSelectors };
   var isStyleProp = (prop) => prop in styleProps;
-  var expandResponsive = (styles2) => (theme2) => {
-    if (!theme2.__breakpoints)
+  var expandResponsive = (styles2) => (theme3) => {
+    if (!theme3.__breakpoints)
       return styles2;
-    const { isResponsive, toArrayValue, media: medias } = theme2.__breakpoints;
+    const { isResponsive, toArrayValue, media: medias } = theme3.__breakpoints;
     const computedStyles = {};
     for (const key in styles2) {
-      let value = runIfFn(styles2[key], theme2);
+      let value = runIfFn(styles2[key], theme3);
       if (value == null)
         continue;
       value = isObject(value) && isResponsive(value) ? toArrayValue(value) : value;
@@ -29290,12 +29290,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     return /^var\(--.+\)$/.test(value);
   }
   var isCSSVariableTokenValue = (key, value) => key.startsWith("--") && typeof value === "string" && !isCssVar2(value);
-  var resolveTokenValue = (theme2, value) => {
+  var resolveTokenValue = (theme3, value) => {
     if (value == null)
       return value;
     const getVar = (val) => {
       var _a8, _b3;
-      return (_b3 = (_a8 = theme2.__cssMap) == null ? void 0 : _a8[val]) == null ? void 0 : _b3.varRef;
+      return (_b3 = (_a8 = theme3.__cssMap) == null ? void 0 : _a8[val]) == null ? void 0 : _b3.varRef;
     };
     const getValue = (val) => getVar(val) ?? val;
     const [tokenValue, fallbackValue] = splitByComma(value);
@@ -29303,35 +29303,35 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     return value;
   };
   function getCss(options) {
-    const { configs = {}, pseudos = {}, theme: theme2 } = options;
+    const { configs = {}, pseudos = {}, theme: theme3 } = options;
     const css2 = (stylesOrFn, nested = false) => {
       var _a8;
-      const _styles = runIfFn(stylesOrFn, theme2);
-      const styles2 = expandResponsive(_styles)(theme2);
+      const _styles = runIfFn(stylesOrFn, theme3);
+      const styles2 = expandResponsive(_styles)(theme3);
       let computedStyles = {};
       for (let key in styles2) {
         const valueOrFn = styles2[key];
-        let value = runIfFn(valueOrFn, theme2);
+        let value = runIfFn(valueOrFn, theme3);
         if (key in pseudos) {
           key = pseudos[key];
         }
         if (isCSSVariableTokenValue(key, value)) {
-          value = resolveTokenValue(theme2, value);
+          value = resolveTokenValue(theme3, value);
         }
-        let config2 = configs[key];
-        if (config2 === true) {
-          config2 = { property: key };
+        let config3 = configs[key];
+        if (config3 === true) {
+          config3 = { property: key };
         }
         if (isObject(value)) {
           computedStyles[key] = computedStyles[key] ?? {};
           computedStyles[key] = (0, import_lodash2.default)({}, computedStyles[key], css2(value, true));
           continue;
         }
-        let rawValue = ((_a8 = config2 == null ? void 0 : config2.transform) == null ? void 0 : _a8.call(config2, value, theme2, _styles)) ?? value;
-        rawValue = (config2 == null ? void 0 : config2.processResult) ? css2(rawValue, true) : rawValue;
-        const configProperty = runIfFn(config2 == null ? void 0 : config2.property, theme2);
-        if (!nested && (config2 == null ? void 0 : config2.static)) {
-          const staticStyles = runIfFn(config2.static, theme2);
+        let rawValue = ((_a8 = config3 == null ? void 0 : config3.transform) == null ? void 0 : _a8.call(config3, value, theme3, _styles)) ?? value;
+        rawValue = (config3 == null ? void 0 : config3.processResult) ? css2(rawValue, true) : rawValue;
+        const configProperty = runIfFn(config3 == null ? void 0 : config3.property, theme3);
+        if (!nested && (config3 == null ? void 0 : config3.static)) {
+          const staticStyles = runIfFn(config3.static, theme3);
           computedStyles = (0, import_lodash2.default)({}, computedStyles, staticStyles);
         }
         if (configProperty && Array.isArray(configProperty)) {
@@ -29358,9 +29358,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     };
     return css2;
   }
-  var css = (styles2) => (theme2) => {
+  var css = (styles2) => (theme3) => {
     const cssFn = getCss({
-      theme: theme2,
+      theme: theme3,
       pseudos: pseudoSelectors,
       configs: systemProps
     });
@@ -29369,16 +29369,16 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   function defineStyle(styles2) {
     return styles2;
   }
-  function defineStyleConfig(config2) {
-    return config2;
+  function defineStyleConfig(config3) {
+    return config3;
   }
   function createMultiStyleConfigHelpers(parts) {
     return {
-      definePartsStyle(config2) {
-        return config2;
+      definePartsStyle(config3) {
+        return config3;
       },
-      defineMultiStyleConfig(config2) {
-        return { parts, ...config2 };
+      defineMultiStyleConfig(config3) {
+        return { parts, ...config3 };
       }
     };
   }
@@ -29397,9 +29397,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }
     return -1;
   }
-  function createResolver(theme2) {
-    const breakpointUtil = theme2.__breakpoints;
-    return function resolver(config2, prop, value, props) {
+  function createResolver(theme3) {
+    const breakpointUtil = theme3.__breakpoints;
+    return function resolver(config3, prop, value, props) {
       var _a8, _b3;
       if (!breakpointUtil)
         return;
@@ -29409,16 +29409,16 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         return result;
       const len = normalized.length;
       const isSingle = len === 1;
-      const isMultipart = !!config2.parts;
+      const isMultipart = !!config3.parts;
       for (let i = 0; i < len; i++) {
         const key = breakpointUtil.details[i];
         const nextKey = breakpointUtil.details[getNextIndex(normalized, i)];
         const query = toMediaQueryString(key.minW, nextKey == null ? void 0 : nextKey._minW);
-        const styles2 = runIfFn((_a8 = config2[prop]) == null ? void 0 : _a8[normalized[i]], props);
+        const styles2 = runIfFn((_a8 = config3[prop]) == null ? void 0 : _a8[normalized[i]], props);
         if (!styles2)
           continue;
         if (isMultipart) {
-          (_b3 = config2.parts) == null ? void 0 : _b3.forEach((part) => {
+          (_b3 = config3.parts) == null ? void 0 : _b3.forEach((part) => {
             (0, import_lodash4.default)(result, {
               [part]: isSingle ? styles2[part] : { [query]: styles2[part] }
             });
@@ -29437,16 +29437,16 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       return result;
     };
   }
-  function resolveStyleConfig(config2) {
+  function resolveStyleConfig(config3) {
     return (props) => {
-      const { variant, size: size3, theme: theme2 } = props;
-      const recipe = createResolver(theme2);
-      return (0, import_lodash4.default)({}, runIfFn(config2.baseStyle ?? {}, props), recipe(config2, "sizes", size3, props), recipe(config2, "variants", variant, props));
+      const { variant, size: size3, theme: theme3 } = props;
+      const recipe = createResolver(theme3);
+      return (0, import_lodash4.default)({}, runIfFn(config3.baseStyle ?? {}, props), recipe(config3, "sizes", size3, props), recipe(config3, "variants", variant, props));
     };
   }
-  function getCSSVar(theme2, scale3, value) {
+  function getCSSVar(theme3, scale3, value) {
     var _a8, _b3;
-    return ((_b3 = (_a8 = theme2.__cssMap) == null ? void 0 : _a8[`${scale3}.${value}`]) == null ? void 0 : _b3.varRef) ?? value;
+    return ((_b3 = (_a8 = theme3.__cssMap) == null ? void 0 : _a8[`${scale3}.${value}`]) == null ? void 0 : _b3.varRef) ?? value;
   }
   function omitThemingProps(props) {
     return omit(props, ["styleConfig", "size", "variant", "colorScheme"]);
@@ -30828,19 +30828,19 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     return t2 === r ? l : t2;
   }
   var isEmptyObject = (obj) => Object.keys(obj).length === 0;
-  var getColor = (theme2, color3, fallback) => {
-    const hex2 = dlv_es_default(theme2, `colors.${color3}`, color3);
+  var getColor = (theme3, color3, fallback) => {
+    const hex2 = dlv_es_default(theme3, `colors.${color3}`, color3);
     const { isValid } = new TinyColor(hex2);
     return isValid ? hex2 : fallback;
   };
-  var tone = (color3) => (theme2) => {
-    const hex2 = getColor(theme2, color3);
+  var tone = (color3) => (theme3) => {
+    const hex2 = getColor(theme3, color3);
     const isDark2 = new TinyColor(hex2).isDark();
     return isDark2 ? "dark" : "light";
   };
-  var isDark = (color3) => (theme2) => tone(color3)(theme2) === "dark";
-  var transparentize = (color3, opacity) => (theme2) => {
-    const raw = getColor(theme2, color3);
+  var isDark = (color3) => (theme3) => tone(color3)(theme3) === "dark";
+  var transparentize = (color3, opacity) => (theme3) => {
+    const raw = getColor(theme3, color3);
     return new TinyColor(raw).setAlpha(opacity).toRgbString();
   };
   function generateStripe(size3 = "1rem", color3 = "rgba(255, 255, 255, 0.15)") {
@@ -31056,8 +31056,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }
   });
   function getBg(props) {
-    const { theme: theme2, colorScheme: c2 } = props;
-    const darkBg = transparentize(`${c2}.200`, 0.16)(theme2);
+    const { theme: theme22, colorScheme: c2 } = props;
+    const darkBg = transparentize(`${c2}.200`, 0.16)(theme22);
     return {
       light: `colors.${c2}.100`,
       dark: darkBg
@@ -31231,9 +31231,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   });
   var $avatarBg = cssVar("avatar-background");
   var baseStyleContainer2 = defineStyle((props) => {
-    const { name, theme: theme2 } = props;
+    const { name, theme: theme22 } = props;
     const bg = name ? randomColor({ string: name }) : "colors.gray.400";
-    const isBgDark = isDark(bg)(theme2);
+    const isBgDark = isDark(bg)(theme22);
     let color3 = "white";
     if (!isBgDark)
       color3 = "gray.800";
@@ -31299,8 +31299,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var $bg3 = cssVar("badge-bg");
   var $fg2 = cssVar("badge-color");
   var variantSolid2 = defineStyle((props) => {
-    const { colorScheme: c2, theme: theme2 } = props;
-    const dark = transparentize(`${c2}.500`, 0.6)(theme2);
+    const { colorScheme: c2, theme: theme22 } = props;
+    const dark = transparentize(`${c2}.500`, 0.6)(theme22);
     return {
       [$bg3.variable]: `colors.${c2}.500`,
       [$fg2.variable]: `colors.white`,
@@ -31313,8 +31313,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     };
   });
   var variantSubtle2 = defineStyle((props) => {
-    const { colorScheme: c2, theme: theme2 } = props;
-    const darkBg = transparentize(`${c2}.200`, 0.16)(theme2);
+    const { colorScheme: c2, theme: theme22 } = props;
+    const darkBg = transparentize(`${c2}.200`, 0.16)(theme22);
     return {
       [$bg3.variable]: `colors.${c2}.100`,
       [$fg2.variable]: `colors.${c2}.800`,
@@ -31327,8 +31327,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     };
   });
   var variantOutline = defineStyle((props) => {
-    const { colorScheme: c2, theme: theme2 } = props;
-    const darkColor = transparentize(`${c2}.200`, 0.8)(theme2);
+    const { colorScheme: c2, theme: theme22 } = props;
+    const darkColor = transparentize(`${c2}.200`, 0.8)(theme22);
     return {
       [$fg2.variable]: `colors.${c2}.500`,
       _dark: {
@@ -31394,7 +31394,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }
   });
   var variantGhost = defineStyle((props) => {
-    const { colorScheme: c2, theme: theme2 } = props;
+    const { colorScheme: c2, theme: theme22 } = props;
     if (c2 === "gray") {
       return {
         color: mode(`inherit`, `whiteAlpha.900`)(props),
@@ -31404,8 +31404,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         _active: { bg: mode(`gray.200`, `whiteAlpha.300`)(props) }
       };
     }
-    const darkHoverBg = transparentize(`${c2}.200`, 0.12)(theme2);
-    const darkActiveBg = transparentize(`${c2}.200`, 0.24)(theme2);
+    const darkHoverBg = transparentize(`${c2}.200`, 0.12)(theme22);
+    const darkActiveBg = transparentize(`${c2}.200`, 0.24)(theme22);
     return {
       color: mode(`${c2}.600`, `${c2}.200`)(props),
       bg: "transparent",
@@ -32104,7 +32104,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     };
   }
   var variantOutline3 = definePartsStyle11((props) => {
-    const { theme: theme2 } = props;
+    const { theme: theme22 } = props;
     const { focusBorderColor: fc, errorBorderColor: ec } = getDefaults(props);
     return {
       field: {
@@ -32119,13 +32119,13 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           userSelect: "all"
         },
         _invalid: {
-          borderColor: getColor(theme2, ec),
-          boxShadow: `0 0 0 1px ${getColor(theme2, ec)}`
+          borderColor: getColor(theme22, ec),
+          boxShadow: `0 0 0 1px ${getColor(theme22, ec)}`
         },
         _focusVisible: {
           zIndex: 1,
-          borderColor: getColor(theme2, fc),
-          boxShadow: `0 0 0 1px ${getColor(theme2, fc)}`
+          borderColor: getColor(theme22, fc),
+          boxShadow: `0 0 0 1px ${getColor(theme22, fc)}`
         }
       },
       addon: {
@@ -32136,7 +32136,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     };
   });
   var variantFilled = definePartsStyle11((props) => {
-    const { theme: theme2 } = props;
+    const { theme: theme22 } = props;
     const { focusBorderColor: fc, errorBorderColor: ec } = getDefaults(props);
     return {
       field: {
@@ -32151,11 +32151,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           userSelect: "all"
         },
         _invalid: {
-          borderColor: getColor(theme2, ec)
+          borderColor: getColor(theme22, ec)
         },
         _focusVisible: {
           bg: "transparent",
-          borderColor: getColor(theme2, fc)
+          borderColor: getColor(theme22, fc)
         }
       },
       addon: {
@@ -32166,7 +32166,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     };
   });
   var variantFlushed = definePartsStyle11((props) => {
-    const { theme: theme2 } = props;
+    const { theme: theme22 } = props;
     const { focusBorderColor: fc, errorBorderColor: ec } = getDefaults(props);
     return {
       field: {
@@ -32180,12 +32180,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           userSelect: "all"
         },
         _invalid: {
-          borderColor: getColor(theme2, ec),
-          boxShadow: `0px 1px 0px 0px ${getColor(theme2, ec)}`
+          borderColor: getColor(theme22, ec),
+          boxShadow: `0px 1px 0px 0px ${getColor(theme22, ec)}`
         },
         _focusVisible: {
-          borderColor: getColor(theme2, fc),
-          boxShadow: `0px 1px 0px 0px ${getColor(theme2, fc)}`
+          borderColor: getColor(theme22, fc),
+          boxShadow: `0px 1px 0px 0px ${getColor(theme22, fc)}`
         }
       },
       addon: {
@@ -33564,15 +33564,15 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     };
   });
   var variantSoftRounded = definePartsStyle24((props) => {
-    const { colorScheme: c2, theme: theme2 } = props;
+    const { colorScheme: c2, theme: theme22 } = props;
     return {
       tab: {
         borderRadius: "full",
         fontWeight: "semibold",
         color: "gray.600",
         _selected: {
-          color: getColor(theme2, `${c2}.700`),
-          bg: getColor(theme2, `${c2}.100`)
+          color: getColor(theme22, `${c2}.700`),
+          bg: getColor(theme22, `${c2}.100`)
         }
       }
     };
@@ -34194,6 +34194,36 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
     }
   };
+  function isObject3(value) {
+    const type = typeof value;
+    return value != null && (type === "object" || type === "function") && !Array.isArray(value);
+  }
+  var requiredChakraThemeKeys = [
+    "borders",
+    "breakpoints",
+    "colors",
+    "components",
+    "config",
+    "direction",
+    "fonts",
+    "fontSizes",
+    "fontWeights",
+    "letterSpacings",
+    "lineHeights",
+    "radii",
+    "shadows",
+    "sizes",
+    "space",
+    "styles",
+    "transition",
+    "zIndices"
+  ];
+  function isChakraTheme(unit) {
+    if (!isObject3(unit)) {
+      return false;
+    }
+    return requiredChakraThemeKeys.every((propertyName) => Object.prototype.hasOwnProperty.call(unit, propertyName));
+  }
   var direction = "ltr";
   var config = {
     useSystemColorMode: false,
@@ -34209,57 +34239,89 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     config
   };
 
+  // node_modules/@chakra-ui/theme-utils/dist/index.esm.js
+  var import_lodash6 = __toESM(require_lodash());
+  function isFunction4(value) {
+    return typeof value === "function";
+  }
+  function pipe2(...fns) {
+    return (v) => fns.reduce((a2, b2) => b2(a2), v);
+  }
+  function extendTheme(...extensions) {
+    let overrides = [...extensions];
+    let baseTheme = extensions[extensions.length - 1];
+    if (isChakraTheme(baseTheme) && overrides.length > 1) {
+      overrides = overrides.slice(0, overrides.length - 1);
+    } else {
+      baseTheme = theme;
+    }
+    return pipe2(...overrides.map((extension) => (prevTheme) => isFunction4(extension) ? extension(prevTheme) : mergeThemeOverride(prevTheme, extension)))(baseTheme);
+  }
+  function mergeThemeOverride(...overrides) {
+    return (0, import_lodash6.default)({}, ...overrides, mergeThemeCustomizer);
+  }
+  function mergeThemeCustomizer(source, override, key, object) {
+    if ((isFunction4(source) || isFunction4(override)) && Object.prototype.hasOwnProperty.call(object, key)) {
+      return (...args) => {
+        const sourceValue = isFunction4(source) ? source(...args) : source;
+        const overrideValue = isFunction4(override) ? override(...args) : override;
+        return (0, import_lodash6.default)({}, sourceValue, overrideValue, mergeThemeCustomizer);
+      };
+    }
+    return void 0;
+  }
+
   // node_modules/@chakra-ui/system/dist/index.esm.js
   var import_react15 = __toESM(require_react());
   var import_react_fast_compare = __toESM(require_react_fast_compare());
   function useTheme() {
-    const theme2 = (0, import_react10.useContext)(import_react9.ThemeContext);
-    if (!theme2) {
+    const theme3 = (0, import_react10.useContext)(import_react9.ThemeContext);
+    if (!theme3) {
       throw Error("useTheme: `theme` is undefined. Seems you forgot to wrap your app in `<ChakraProvider />` or `<ThemeProvider />`");
     }
-    return theme2;
+    return theme3;
   }
   function useChakra() {
     const colorModeResult = useColorMode();
-    const theme2 = useTheme();
-    return { ...colorModeResult, theme: theme2 };
+    const theme3 = useTheme();
+    return { ...colorModeResult, theme: theme3 };
   }
-  function getBreakpointValue(theme2, value, fallback) {
+  function getBreakpointValue(theme3, value, fallback) {
     if (value == null)
       return value;
     const getValue = (val) => {
       var _a8, _b3;
-      return (_b3 = (_a8 = theme2.__breakpoints) == null ? void 0 : _a8.asArray) == null ? void 0 : _b3[val];
+      return (_b3 = (_a8 = theme3.__breakpoints) == null ? void 0 : _a8.asArray) == null ? void 0 : _b3[val];
     };
     return getValue(value) ?? getValue(fallback) ?? fallback;
   }
-  function getTokenValue(theme2, value, fallback) {
+  function getTokenValue(theme3, value, fallback) {
     if (value == null)
       return value;
     const getValue = (val) => {
       var _a8, _b3;
-      return (_b3 = (_a8 = theme2.__cssMap) == null ? void 0 : _a8[val]) == null ? void 0 : _b3.value;
+      return (_b3 = (_a8 = theme3.__cssMap) == null ? void 0 : _a8[val]) == null ? void 0 : _b3.value;
     };
     return getValue(value) ?? getValue(fallback) ?? fallback;
   }
   function getToken(scale3, token, fallback) {
     const _token = Array.isArray(token) ? token : [token];
     const _fallback = Array.isArray(fallback) ? fallback : [fallback];
-    return (theme2) => {
+    return (theme3) => {
       const fallbackArr = _fallback.filter(Boolean);
       const result = _token.map((token2, index) => {
         if (scale3 === "breakpoints") {
-          return getBreakpointValue(theme2, token2, fallbackArr[index] ?? token2);
+          return getBreakpointValue(theme3, token2, fallbackArr[index] ?? token2);
         }
         const path = `${scale3}.${token2}`;
-        return getTokenValue(theme2, path, fallbackArr[index] ?? token2);
+        return getTokenValue(theme3, path, fallbackArr[index] ?? token2);
       });
       return Array.isArray(token) ? result : result[0];
     };
   }
   function ThemeProvider(props) {
-    const { cssVarsRoot, theme: theme2, children } = props;
-    const computedTheme = (0, import_react12.useMemo)(() => toCSSVar(theme2), [theme2]);
+    const { cssVarsRoot, theme: theme3, children } = props;
+    const computedTheme = (0, import_react12.useMemo)(() => toCSSVar(theme3), [theme3]);
     return /* @__PURE__ */ import_react7.default.createElement(import_react11.ThemeProvider, {
       theme: computedTheme
     }, /* @__PURE__ */ import_react7.default.createElement(CSSVars, {
@@ -34269,7 +34331,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   function CSSVars({ root = ":host, :root" }) {
     const selector2 = [root, `[data-theme]`].join(",");
     return /* @__PURE__ */ import_react7.default.createElement(import_react11.Global, {
-      styles: (theme2) => ({ [selector2]: theme2.__cssVars })
+      styles: (theme3) => ({ [selector2]: theme3.__cssVars })
     });
   }
   var [StylesProvider, useStyles] = createContext2({
@@ -34279,12 +34341,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   function GlobalStyle() {
     const { colorMode } = useColorMode();
     return /* @__PURE__ */ import_react7.default.createElement(import_react11.Global, {
-      styles: (theme2) => {
-        const styleObjectOrFn = memoizedGet2(theme2, "styles.global");
-        const globalStyles = runIfFn2(styleObjectOrFn, { theme: theme2, colorMode });
+      styles: (theme3) => {
+        const styleObjectOrFn = memoizedGet2(theme3, "styles.global");
+        const globalStyles = runIfFn2(styleObjectOrFn, { theme: theme3, colorMode });
         if (!globalStyles)
           return void 0;
-        const styles2 = css(globalStyles)(theme2);
+        const styles2 = css(globalStyles)(theme3);
         return styles2;
       }
     });
@@ -34307,7 +34369,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     return validHTMLProps.has(prop) || !allPropNames.has(prop);
   }
   var toCSSObject = ({ baseStyle: baseStyle42 }) => (props) => {
-    const { theme: theme2, css: cssProp, __css, sx, ...rest } = props;
+    const { theme: theme3, css: cssProp, __css, sx, ...rest } = props;
     const styleProps2 = objectFilter(rest, (_, prop) => isStyleProp(prop));
     const finalBaseStyle = runIfFn2(baseStyle42, props);
     const finalStyles = Object.assign({}, __css, finalBaseStyle, filterUndefined(styleProps2), sx);
@@ -34336,10 +34398,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   }
   function useStyleConfigImpl(themeKey, props = {}) {
     const { styleConfig: styleConfigProp, ...rest } = props;
-    const { theme: theme2, colorMode } = useChakra();
-    const themeStyleConfig = themeKey ? memoizedGet2(theme2, `components.${themeKey}`) : void 0;
+    const { theme: theme3, colorMode } = useChakra();
+    const themeStyleConfig = themeKey ? memoizedGet2(theme3, `components.${themeKey}`) : void 0;
     const styleConfig = styleConfigProp || themeStyleConfig;
-    const mergedProps = (0, import_lodash5.default)({ theme: theme2, colorMode }, (styleConfig == null ? void 0 : styleConfig.defaultProps) ?? {}, filterUndefined(omit2(rest, ["children"])));
+    const mergedProps = (0, import_lodash5.default)({ theme: theme3, colorMode }, (styleConfig == null ? void 0 : styleConfig.defaultProps) ?? {}, filterUndefined(omit2(rest, ["children"])));
     const stylesRef = (0, import_react15.useRef)({});
     if (styleConfig) {
       const getStyles = resolveStyleConfig(styleConfig);
@@ -35835,10 +35897,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }
     return state2;
   }
-  var makeUseVisualState = (config2) => (props, isStatic) => {
+  var makeUseVisualState = (config3) => (props, isStatic) => {
     const context = (0, import_react40.useContext)(MotionContext);
     const presenceContext = (0, import_react40.useContext)(PresenceContext);
-    const make = () => makeState(config2, props, context, presenceContext);
+    const make = () => makeState(config3, props, context, presenceContext);
     return isStatic ? make() : useConstant(make);
   };
   function makeLatestValues(props, context, presenceContext, scrapeMotionValues) {
@@ -36423,7 +36485,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
 
   // node_modules/popmotion/dist/es/utils/pipe.mjs
   var combineFunctions = (a2, b2) => (v) => b2(a2(v));
-  var pipe2 = (...transformers) => transformers.reduce(combineFunctions);
+  var pipe3 = (...transformers) => transformers.reduce(combineFunctions);
 
   // node_modules/popmotion/dist/es/utils/mix-complex.mjs
   function getMixer(origin, target) {
@@ -36486,7 +36548,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     const targetStats = analyse2(target);
     const canInterpolate = originStats.numHSL === targetStats.numHSL && originStats.numRGB === targetStats.numRGB && originStats.numNumbers >= targetStats.numNumbers;
     if (canInterpolate) {
-      return pipe2(mixArray(originStats.parsed, targetStats.parsed), template);
+      return pipe3(mixArray(originStats.parsed, targetStats.parsed), template);
     } else {
       warning(true, `Complex values '${origin}' and '${target}' too different to mix. Ensure all colors are of the same type, and that each contains the same quantity of number and color values. Falling back to instant transition.`);
       return (p) => `${p > 0 ? target : origin}`;
@@ -36518,7 +36580,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       let mixer = mixerFactory(output[i], output[i + 1]);
       if (ease) {
         const easingFunction = Array.isArray(ease) ? ease[i] : ease;
-        mixer = pipe2(easingFunction, mixer);
+        mixer = pipe3(easingFunction, mixer);
       }
       mixers.push(mixer);
     }
@@ -36661,13 +36723,13 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
 
   // node_modules/popmotion/dist/es/animations/utils/detect-animation-from-options.mjs
   var types = { keyframes: keyframes2, spring, decay };
-  function detectAnimationFromOptions(config2) {
-    if (Array.isArray(config2.to)) {
+  function detectAnimationFromOptions(config3) {
+    if (Array.isArray(config3.to)) {
       return keyframes2;
-    } else if (types[config2.type]) {
-      return types[config2.type];
+    } else if (types[config3.type]) {
+      return types[config3.type];
     }
-    const keys2 = new Set(Object.keys(config2));
+    const keys2 = new Set(Object.keys(config3));
     if (keys2.has("ease") || keys2.has("duration") && !keys2.has("dampingRatio")) {
       return keyframes2;
     } else if (keys2.has("dampingRatio") || keys2.has("stiffness") || keys2.has("mass") || keys2.has("damping") || keys2.has("restSpeed") || keys2.has("restDelta")) {
@@ -37075,7 +37137,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       if (isPressing.current)
         return;
       isPressing.current = true;
-      cancelPointerEndListeners.current = pipe2(addPointerEvent(window, "pointerup", onPointerUp, eventOptions), addPointerEvent(window, "pointercancel", onPointerCancel, eventOptions));
+      cancelPointerEndListeners.current = pipe3(addPointerEvent(window, "pointerup", onPointerUp, eventOptions), addPointerEvent(window, "pointercancel", onPointerCancel, eventOptions));
       visualElement.animationState && visualElement.animationState.setActive(AnimationType.Tap, true);
       onTapStart && onTapStart(event, info);
     }
@@ -38239,7 +38301,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       this.history = [{ ...point, timestamp }];
       const { onSessionStart } = handlers;
       onSessionStart && onSessionStart(event, getPanInfo(initialInfo, this.history));
-      this.removeListeners = pipe2(addPointerEvent(window, "pointermove", this.handlePointerMove), addPointerEvent(window, "pointerup", this.handlePointerUp), addPointerEvent(window, "pointercancel", this.handlePointerUp));
+      this.removeListeners = pipe3(addPointerEvent(window, "pointermove", this.handlePointerMove), addPointerEvent(window, "pointerup", this.handlePointerUp), addPointerEvent(window, "pointercancel", this.handlePointerUp));
     }
     updateHandlers(handlers) {
       this.handlers = handlers;
@@ -40977,7 +41039,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     ...drag,
     ...layoutFeatures
   };
-  var motion = /* @__PURE__ */ createMotionProxy((Component3, config2) => createDomMotionConfig(Component3, config2, featureBundle, createDomVisualElement, HTMLProjectionNode));
+  var motion = /* @__PURE__ */ createMotionProxy((Component3, config3) => createDomMotionConfig(Component3, config3, featureBundle, createDomVisualElement, HTMLProjectionNode));
 
   // node_modules/framer-motion/dist/es/components/AnimatePresence/index.mjs
   var React7 = __toESM(require_react(), 1);
@@ -43001,7 +43063,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var import_react110 = __toESM(require_react());
 
   // node_modules/@chakra-ui/breakpoint-utils/dist/index.esm.js
-  function isObject3(value) {
+  function isObject4(value) {
     const type = typeof value;
     return value != null && (type === "object" || type === "function") && !Array.isArray(value);
   }
@@ -43017,7 +43079,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     if (Array.isArray(prop)) {
       return prop.map((item) => item === null ? null : mapper(item));
     }
-    if (isObject3(prop)) {
+    if (isObject4(prop)) {
       return Object.keys(prop).reduce((result, key) => {
         result[key] = mapper(prop[key]);
         return result;
@@ -43463,8 +43525,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   ListIcon.displayName = "ListIcon";
   var SimpleGrid = forwardRef(function SimpleGrid2(props, ref) {
     const { columns, spacingX, spacingY, spacing: spacing2, minChildWidth, ...rest } = props;
-    const theme2 = useTheme();
-    const templateColumns = minChildWidth ? widthToColumns(minChildWidth, theme2) : countToColumns(columns);
+    const theme3 = useTheme();
+    const templateColumns = minChildWidth ? widthToColumns(minChildWidth, theme3) : countToColumns(columns);
     return /* @__PURE__ */ import_react110.default.createElement(Grid, {
       ref,
       gap: spacing2,
@@ -43478,9 +43540,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   function toPx(n) {
     return typeof n === "number" ? `${n}px` : n;
   }
-  function widthToColumns(width, theme2) {
+  function widthToColumns(width, theme3) {
     return mapResponsive(width, (value) => {
-      const _value = getToken("sizes", value, toPx(value))(theme2);
+      const _value = getToken("sizes", value, toPx(value))(theme3);
       return value === null ? null : `repeat(auto-fit, minmax(${_value}, 1fr))`;
     });
   }
@@ -43693,8 +43755,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         spacingY
       };
       return {
-        "--chakra-wrap-x-spacing": (theme2) => mapResponsive(x, (value) => px3(tokenToCSSVar("space", value)(theme2))),
-        "--chakra-wrap-y-spacing": (theme2) => mapResponsive(y, (value) => px3(tokenToCSSVar("space", value)(theme2))),
+        "--chakra-wrap-x-spacing": (theme3) => mapResponsive(x, (value) => px3(tokenToCSSVar("space", value)(theme3))),
+        "--chakra-wrap-y-spacing": (theme3) => mapResponsive(y, (value) => px3(tokenToCSSVar("space", value)(theme3))),
         "--wrap-x-spacing": "calc(var(--chakra-wrap-x-spacing) / 2)",
         "--wrap-y-spacing": "calc(var(--chakra-wrap-y-spacing) / 2)",
         display: "flex",
@@ -46728,9 +46790,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var import_react131 = __toESM(require_react());
   var import_react132 = __toESM(require_react());
   function runIfFn4(valueOrFn, ...args) {
-    return isFunction4(valueOrFn) ? valueOrFn(...args) : valueOrFn;
+    return isFunction5(valueOrFn) ? valueOrFn(...args) : valueOrFn;
   }
-  var isFunction4 = (value) => typeof value === "function";
+  var isFunction5 = (value) => typeof value === "function";
   var findById = (arr, id3) => arr.find((toast) => toast.id === id3);
   function findToast(toasts, id3) {
     const position2 = getToastPosition(toasts, id3);
@@ -47318,7 +47380,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var Tooltip = forwardRef((props, ref) => {
     const styles2 = useStyleConfig("Tooltip", props);
     const ownProps = omitThemingProps(props);
-    const theme2 = useTheme();
+    const theme3 = useTheme();
     const {
       children,
       label,
@@ -47336,10 +47398,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     const userDefinedBg = background2 ?? backgroundColor ?? bg ?? bgColor;
     if (userDefinedBg) {
       styles2.bg = userDefinedBg;
-      const bgVar = getCSSVar(theme2, "colors", userDefinedBg);
+      const bgVar = getCSSVar(theme3, "colors", userDefinedBg);
       styles2[cssVars.arrowBg.var] = bgVar;
     }
-    const tooltip = useTooltip({ ...rest, direction: theme2.direction });
+    const tooltip = useTooltip({ ...rest, direction: theme3.direction });
     const shouldWrap = typeof children === "string" || shouldWrapChildren;
     let trigger;
     if (shouldWrap) {
@@ -47397,7 +47459,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       colorModeManager,
       portalZIndex,
       resetCSS = true,
-      theme: theme2 = {},
+      theme: theme3 = {},
       environment,
       cssVarsRoot
     } = props;
@@ -47405,11 +47467,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       environment
     }, children);
     return /* @__PURE__ */ import_react136.default.createElement(ThemeProvider, {
-      theme: theme2,
+      theme: theme3,
       cssVarsRoot
     }, /* @__PURE__ */ import_react136.default.createElement(ColorModeProvider, {
       colorModeManager,
-      options: theme2.config
+      options: theme3.config
     }, resetCSS ? /* @__PURE__ */ import_react136.default.createElement(CSSReset, null) : /* @__PURE__ */ import_react136.default.createElement(CSSPolyfill, null), /* @__PURE__ */ import_react136.default.createElement(GlobalStyle, null), portalZIndex ? /* @__PURE__ */ import_react136.default.createElement(PortalManager, {
       zIndex: portalZIndex
     }, _children) : _children));
@@ -47418,12 +47480,12 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   // node_modules/@chakra-ui/react/dist/index.esm.js
   function ChakraProvider2({
     children,
-    theme: theme2 = theme,
+    theme: theme3 = theme,
     toastOptions,
     ...restProps
   }) {
     return /* @__PURE__ */ import_react137.default.createElement(ChakraProvider, {
-      theme: theme2,
+      theme: theme3,
       ...restProps
     }, children, /* @__PURE__ */ import_react137.default.createElement(ToastProvider, {
       ...toastOptions
@@ -52961,6 +53023,11 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   }
 
   // app/main.tsx
+  var config2 = {
+    initialColorMode: "dark",
+    useSystemColorMode: false
+  };
+  var theme2 = extendTheme({ config: config2 });
   var router = createBrowserRouter([
     {
       path: "/",
@@ -52980,7 +53047,9 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   if (!!container2) {
     const root = (0, import_client.createRoot)(container2);
     root.render(
-      /* @__PURE__ */ import_react177.default.createElement(import_react177.default.StrictMode, null, /* @__PURE__ */ import_react177.default.createElement(ChakraProvider2, null, /* @__PURE__ */ import_react177.default.createElement(RouterProvider, {
+      /* @__PURE__ */ import_react177.default.createElement(import_react177.default.StrictMode, null, /* @__PURE__ */ import_react177.default.createElement(ChakraProvider2, {
+        theme: theme2
+      }, /* @__PURE__ */ import_react177.default.createElement(RouterProvider, {
         router
       })))
     );
