@@ -51881,7 +51881,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     } else {
       let { traceSummaries } = await response.json();
       if (traceSummaries.length > 0) {
-        window.location.reload();
+        setTimeout(window.location.reload, 500);
       }
     }
   }
