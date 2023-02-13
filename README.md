@@ -4,11 +4,13 @@
 on your local machine that helps you visualize and explore your trace data without
 needing to send it on to a telemetry vendor.
 
-![OpenTelemetryDesktopViewer](https://user-images.githubusercontent.com/56372758/217080670-3001cb67-ab20-4ae2-ac55-82ca04bad815.png)
+![otel-desktop-viewer demo 3 LQ](https://user-images.githubusercontent.com/56372758/218345612-381fe2ff-8245-429f-ba2f-ca6431585a16.gif)
 
 Its goals are to be easy-to-install with minimal dependencies and fast. It is written in Go
 as a custom exporter on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector).
 Also, it has a dark mode.
+
+![OpenTelemetryDesktopViewer](https://user-images.githubusercontent.com/56372758/217080670-3001cb67-ab20-4ae2-ac55-82ca04bad815.png)
 
 ## Getting started
 
