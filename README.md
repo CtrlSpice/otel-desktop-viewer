@@ -18,7 +18,7 @@ Make sure you have [go](https://go.dev/) installed.
 
 ```bash
 # install the CLI tool
-github.com/CtrlSpice/otel-desktop-viewer@latest
+go install github.com/CtrlSpice/otel-desktop-viewer@latest
 
 # run it!
 $(go env GOPATH)/bin/otel-desktop-viewer
