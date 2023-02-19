@@ -23,11 +23,12 @@ export function DetailView(props: DetailViewProps) {
       shrink="1"
       basis="350px"
       height="100vh"
+      paddingTop="30px"
+      overflowY="scroll"
     >
       <Tabs
         colorScheme="pink"
         margin={3}
-        overflowY="scroll"
         size="sm"
         variant="soft-rounded"
         width="100vw"

@@ -52571,11 +52571,12 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       grow: "0",
       shrink: "1",
       basis: "350px",
-      height: "100vh"
+      height: "100vh",
+      paddingTop: "30px",
+      overflowY: "scroll"
     }, /* @__PURE__ */ import_react164.default.createElement(Tabs, {
       colorScheme: "pink",
       margin: 3,
-      overflowY: "scroll",
       size: "sm",
       variant: "soft-rounded",
       width: "100vw"
@@ -52946,7 +52947,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       (span) => span.spanID === selectedSpanID
     );
     return /* @__PURE__ */ import_react174.default.createElement(Grid, {
-      templateAreas: `"header header"
+      templateAreas: `"header detail"
                        "main detail"`,
       gridTemplateColumns: "1fr 350px",
       gridTemplateRows: "100px 1fr",
