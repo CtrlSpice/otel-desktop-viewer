@@ -52678,7 +52678,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       fontSize: "xs",
       fontWeight: "700",
       paddingLeft: 2,
-      color: labelTextColour
+      color: labelTextColour,
+      whiteSpace: "nowrap"
     }, label)), /* @__PURE__ */ import_react166.default.createElement(EventDotsList, {
       events: props.spanData.events,
       spanStartTimeNs,
