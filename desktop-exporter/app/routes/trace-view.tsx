@@ -54,7 +54,7 @@ export default function TraceView() {
 
   return (
     <Grid
-      templateAreas={`"header header"
+      templateAreas={`"header detail"
                        "main detail"`}
       gridTemplateColumns={"1fr 350px"}
       gridTemplateRows={"100px 1fr"}
