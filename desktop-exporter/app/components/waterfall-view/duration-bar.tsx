@@ -130,6 +130,7 @@ export function DurationBar(props: DurationBarProps) {
             fontWeight="700"
             paddingLeft={2}
             color={labelTextColour}
+            whiteSpace="nowrap"
           >
             {label}
           </Text>
