@@ -1,5 +1,6 @@
 import { SpanData } from "../types/api-types";
 import { SpanDataStatus } from "../types/ui-types";
+import { getNsFromString } from "./duration";
 
 export type TreeItem =
   | {
@@ -67,9 +68,74 @@ export function arrayToTree(spans: SpanData[]): TreeItem[] {
     }
   }
 
-  // In order to handle incomplete traces, the missing spans get appended to the end of the rootItems array
-  // This way we make sure that the root span is added first (if present), followed by any missing spans
-  for (let spanID of missingSpanIDs) {
+  // To handle incomplete traces:
+  // 1. Sort the missing spans by the earliest start time of their children
+  // 2. Appended sorted spand to the end of the rootItems array
+  // This way we make sure that the root span is added first (if present),
+  // and preserve the visual clarity of the waterfall view
+  let missingSpans = Array.from(missingSpanIDs).sort((a: string, b: string) => {
+    if (lookup[a].children.length < 1 || lookup[b].children.length < 1) {
+      // This should logically never happen in this implementation, since a missing span
+      // must have at least one child with its spanID as a parentSpanID in order to be created.
+      throw new Error(
+        "Unexpected type: A 'missing' parent span appears to have no children.",
+      );
+    }
+    let childrenA = lookup[a].children;
+    let childrenB = lookup[b].children;
+
+    let earliestStartTimeA = 0;
+    let earliestStartTimeB = 0;
+
+    if (
+      childrenA[0].status === SpanDataStatus.present &&
+      childrenB[0].status === SpanDataStatus.present
+    ) {
+      earliestStartTimeA = getNsFromString(childrenA[0].spanData.startTime);
+      earliestStartTimeB = getNsFromString(childrenB[0].spanData.startTime);
+    } else {
+      // This should also logically never happen in this implementation, since that the child span
+      // must have SpanData (minimally a parentSpanID) in order for the parent span to be created.
+      throw new Error(
+        "Unexpected type: A child of a 'missing' parent span appears to have no SpanData.",
+      );
+    }
+
+    // Find the earliest start time for A
+    childrenA.forEach((treeItem) => {
+      if (treeItem.status === SpanDataStatus.missing) {
+        // Again, should logically never happen in this implementation, since that the child span
+        // must have SpanData (minimally a parentSpanID) in order for the parent span to be created.
+        throw new Error(
+          "Unexpected type: A child of a 'missing' parent span appears to have no SpanData.",
+        );
+      }
+      let spanStart = getNsFromString(treeItem.spanData.startTime);
+      if (spanStart < earliestStartTimeA) {
+        earliestStartTimeA = spanStart;
+      }
+    });
+
+    // Find the earliest start time for B
+    childrenB.forEach((treeItem) => {
+      if (treeItem.status === SpanDataStatus.missing) {
+        // Again, should logically never happen in this implementation, since that the child span
+        // must have SpanData (minimally a parentSpanID) in order for the parent span to be created.
+        // This is the last one, I swear.
+        throw new Error(
+          "Unexpected type: A child of a 'missing' parent span appears to have no SpanData.",
+        );
+      }
+      let spanStart = getNsFromString(treeItem.spanData.startTime);
+      if (spanStart < earliestStartTimeB) {
+        earliestStartTimeB = spanStart;
+      }
+    });
+
+    return earliestStartTimeA - earliestStartTimeB;
+  });
+
+  for (let spanID of missingSpans) {
     rootItems.push(lookup[spanID]);
   }
 

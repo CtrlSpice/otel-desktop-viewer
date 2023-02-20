@@ -52913,7 +52913,49 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         lookup[parentSpanID].children.push(treeItem);
       }
     }
-    for (let spanID of missingSpanIDs) {
+    let missingSpans = Array.from(missingSpanIDs).sort((a2, b2) => {
+      if (lookup[a2].children.length < 1 || lookup[b2].children.length < 1) {
+        throw new Error(
+          "Unexpected type: A 'missing' parent span appears to have no children."
+        );
+      }
+      let childrenA = lookup[a2].children;
+      let childrenB = lookup[b2].children;
+      let earliestStartTimeA = 0;
+      let earliestStartTimeB = 0;
+      if (childrenA[0].status === "present" /* present */ && childrenB[0].status === "present" /* present */) {
+        earliestStartTimeA = getNsFromString(childrenA[0].spanData.startTime);
+        earliestStartTimeB = getNsFromString(childrenB[0].spanData.startTime);
+      } else {
+        throw new Error(
+          "Unexpected type: A child of a 'missing' parent span appears to have no SpanData."
+        );
+      }
+      childrenA.forEach((treeItem) => {
+        if (treeItem.status === "missing" /* missing */) {
+          throw new Error(
+            "Unexpected type: A child of a 'missing' parent span appears to have no SpanData."
+          );
+        }
+        let spanStart = getNsFromString(treeItem.spanData.startTime);
+        if (spanStart < earliestStartTimeA) {
+          earliestStartTimeA = spanStart;
+        }
+      });
+      childrenB.forEach((treeItem) => {
+        if (treeItem.status === "missing" /* missing */) {
+          throw new Error(
+            "Unexpected type: A child of a 'missing' parent span appears to have no SpanData."
+          );
+        }
+        let spanStart = getNsFromString(treeItem.spanData.startTime);
+        if (spanStart < earliestStartTimeB) {
+          earliestStartTimeB = spanStart;
+        }
+      });
+      return earliestStartTimeA - earliestStartTimeB;
+    });
+    for (let spanID of missingSpans) {
       rootItems.push(lookup[spanID]);
     }
     return rootItems;
