@@ -52913,52 +52913,33 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         lookup[parentSpanID].children.push(treeItem);
       }
     }
-    let missingSpans = Array.from(missingSpanIDs).sort((a2, b2) => {
-      if (lookup[a2].children.length < 1 || lookup[b2].children.length < 1) {
-        throw new Error(
-          "Unexpected type: A 'missing' parent span appears to have no children."
-        );
+    let missingIDsArray = Array.from(missingSpanIDs).sort(
+      (a2, b2) => {
+        let earliestStartTimeA = getEarliestStartTime(lookup[a2].children);
+        let earliestStartTimeB = getEarliestStartTime(lookup[b2].children);
+        return earliestStartTimeA - earliestStartTimeB;
       }
-      let childrenA = lookup[a2].children;
-      let childrenB = lookup[b2].children;
-      let earliestStartTimeA = 0;
-      let earliestStartTimeB = 0;
-      if (childrenA[0].status === "present" /* present */ && childrenB[0].status === "present" /* present */) {
-        earliestStartTimeA = getNsFromString(childrenA[0].spanData.startTime);
-        earliestStartTimeB = getNsFromString(childrenB[0].spanData.startTime);
-      } else {
+    );
+    for (let spanID of missingIDsArray) {
+      rootItems.push(lookup[spanID]);
+    }
+    return rootItems;
+  }
+  function getEarliestStartTime(children) {
+    if (children.length == 0) {
+      throw new Error(
+        "Unexpected type: A 'missing' parent span appears to have no children."
+      );
+    }
+    let startTimes = children.map((treeItem) => {
+      if (treeItem.status === "missing" /* missing */) {
         throw new Error(
           "Unexpected type: A child of a 'missing' parent span appears to have no SpanData."
         );
       }
-      childrenA.forEach((treeItem) => {
-        if (treeItem.status === "missing" /* missing */) {
-          throw new Error(
-            "Unexpected type: A child of a 'missing' parent span appears to have no SpanData."
-          );
-        }
-        let spanStart = getNsFromString(treeItem.spanData.startTime);
-        if (spanStart < earliestStartTimeA) {
-          earliestStartTimeA = spanStart;
-        }
-      });
-      childrenB.forEach((treeItem) => {
-        if (treeItem.status === "missing" /* missing */) {
-          throw new Error(
-            "Unexpected type: A child of a 'missing' parent span appears to have no SpanData."
-          );
-        }
-        let spanStart = getNsFromString(treeItem.spanData.startTime);
-        if (spanStart < earliestStartTimeB) {
-          earliestStartTimeB = spanStart;
-        }
-      });
-      return earliestStartTimeA - earliestStartTimeB;
+      return getNsFromString(treeItem.spanData.startTime);
     });
-    for (let spanID of missingSpans) {
-      rootItems.push(lookup[spanID]);
-    }
-    return rootItems;
+    return Math.min(...startTimes);
   }
 
   // app/routes/trace-view.tsx
