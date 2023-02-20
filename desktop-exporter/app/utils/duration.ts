@@ -35,7 +35,7 @@ export function calculateTraceTiming(spans: SpanData[]): TraceTiming {
   };
 }
 
-export function getNsFromString(timestampString: string) {
+export function getNsFromString(timestampString: string): number {
   let milliseconds = Date.parse(timestampString.split(".")[0]);
   let nanoseconds =
     milliseconds * 1e6 + Timestamp.fromString(timestampString).getNano();

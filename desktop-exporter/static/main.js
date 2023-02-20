@@ -52913,10 +52913,33 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         lookup[parentSpanID].children.push(treeItem);
       }
     }
-    for (let spanID of missingSpanIDs) {
+    let missingIDsArray = Array.from(missingSpanIDs).sort(
+      (a2, b2) => {
+        let earliestStartTimeA = getEarliestStartTime(lookup[a2].children);
+        let earliestStartTimeB = getEarliestStartTime(lookup[b2].children);
+        return earliestStartTimeA - earliestStartTimeB;
+      }
+    );
+    for (let spanID of missingIDsArray) {
       rootItems.push(lookup[spanID]);
     }
     return rootItems;
+  }
+  function getEarliestStartTime(children) {
+    if (children.length == 0) {
+      throw new Error(
+        "Unexpected type: A 'missing' parent span appears to have no children."
+      );
+    }
+    let startTimes = children.map((treeItem) => {
+      if (treeItem.status === "missing" /* missing */) {
+        throw new Error(
+          "Unexpected type: A child of a 'missing' parent span appears to have no SpanData."
+        );
+      }
+      return getNsFromString(treeItem.spanData.startTime);
+    });
+    return Math.min(...startTimes);
   }
 
   // app/routes/trace-view.tsx

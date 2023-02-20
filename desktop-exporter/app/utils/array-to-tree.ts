@@ -1,5 +1,6 @@
 import { SpanData } from "../types/api-types";
 import { SpanDataStatus } from "../types/ui-types";
+import { getNsFromString } from "./duration";
 
 export type TreeItem =
   | {
@@ -67,11 +68,47 @@ export function arrayToTree(spans: SpanData[]): TreeItem[] {
     }
   }
 
-  // In order to handle incomplete traces, the missing spans get appended to the end of the rootItems array
-  // This way we make sure that the root span is added first (if present), followed by any missing spans
-  for (let spanID of missingSpanIDs) {
+  // To handle incomplete traces:
+  // 1. Sort the missing spans by the earliest start time of their children
+  // 2. Appended sorted spand to the end of the rootItems array
+  // This way we make sure that the root span is added first (if present),
+  // and preserve the visual clarity of the waterfall view
+  let missingIDsArray = Array.from(missingSpanIDs).sort(
+    (a: string, b: string) => {
+      let earliestStartTimeA = getEarliestStartTime(lookup[a].children);
+      let earliestStartTimeB = getEarliestStartTime(lookup[b].children);
+
+      return earliestStartTimeA - earliestStartTimeB;
+    },
+  );
+
+  for (let spanID of missingIDsArray) {
     rootItems.push(lookup[spanID]);
   }
 
   return rootItems;
+}
+
+function getEarliestStartTime(children: TreeItem[]): number {
+  if (children.length == 0) {
+    // This should logically never happen in this implementation, since a missing span
+    // must have at least one child with its spanID as a parentSpanID in order to be created.
+    throw new Error(
+      "Unexpected type: A 'missing' parent span appears to have no children.",
+    );
+  }
+
+  let startTimes = children.map((treeItem) => {
+    if (treeItem.status === SpanDataStatus.missing) {
+      throw new Error(
+        // This should also happen in this implementation, since that the child span
+        // must have SpanData (minimally a parentSpanID) in order for the parent span to be created.
+        "Unexpected type: A child of a 'missing' parent span appears to have no SpanData.",
+      );
+    }
+
+    return getNsFromString(treeItem.spanData.startTime);
+  });
+
+  return Math.min(...startTimes);
 }
