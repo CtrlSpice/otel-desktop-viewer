@@ -40,9 +40,10 @@ export function arrayToTree(spans: SpanData[]): RootTreeItem[] {
     // Note A:
     // If the span has been added to the lookup structure as a missing/incomplete parent
     // on a previous pass (see Note B), update it and mark it present, and remove it from the missing set.
-    // After this if statement, the type system knows that treeItem can only be a TreeItem
     if (treeItem.status === SpanDataStatus.missing) {
       let children = treeItem.children;
+      // Re-assign treeItem as a TreeItem type so that after this if statement,
+      // the type system knows that treeItem can only be a TreeItem
       treeItem = {
         status: SpanDataStatus.present,
         spanData: spanData,
