@@ -52889,16 +52889,17 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           children: []
         };
       }
-      if (lookup[spanID].status === "missing" /* missing */) {
-        let children = lookup[spanID].children;
-        lookup[spanID] = {
+      let treeItem = lookup[spanID];
+      if (treeItem.status === "missing" /* missing */) {
+        let children = treeItem.children;
+        treeItem = {
           status: "present" /* present */,
           spanData,
           children
         };
+        lookup[spanID] = treeItem;
         missingSpanIDs.delete(spanID);
       }
-      let treeItem = lookup[spanID];
       if (!parentSpanID) {
         rootItems.push(treeItem);
       } else {
@@ -52932,11 +52933,6 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       );
     }
     let startTimes = children.map((treeItem) => {
-      if (treeItem.status === "missing" /* missing */) {
-        throw new Error(
-          "Unexpected type: A child of a 'missing' parent span appears to have no SpanData."
-        );
-      }
       return getNsFromString(treeItem.spanData.startTime);
     });
     return Math.min(...startTimes);
