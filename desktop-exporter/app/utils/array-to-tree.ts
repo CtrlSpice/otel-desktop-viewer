@@ -2,21 +2,25 @@ import { SpanData } from "../types/api-types";
 import { SpanDataStatus } from "../types/ui-types";
 import { getNsFromString } from "./duration";
 
-export type TreeItem =
-  | {
-      status: SpanDataStatus.present;
-      spanData: SpanData;
-      children: TreeItem[];
-    }
-  | {
-      status: SpanDataStatus.missing;
-      spanID: string;
-      children: TreeItem[];
-    };
+export type TreeItem = {
+  status: SpanDataStatus.present;
+  spanData: SpanData;
+  children: TreeItem[];
+};
 
-export function arrayToTree(spans: SpanData[]): TreeItem[] {
-  let rootItems: TreeItem[] = [];
-  let lookup: { [spanID: string]: TreeItem } = {};
+export type MissingTreeItem = {
+  status: SpanDataStatus.missing;
+  spanID: string;
+  children: TreeItem[];
+};
+
+export type RootTreeItem =
+  | TreeItem
+  | MissingTreeItem;
+
+export function arrayToTree(spans: SpanData[]): RootTreeItem[] {
+  let rootItems: RootTreeItem[] = [];
+  let lookup: { [spanID: string]: RootTreeItem } = {};
   let missingSpanIDs: Set<string> = new Set();
 
   for (let spanData of spans) {
@@ -31,20 +35,23 @@ export function arrayToTree(spans: SpanData[]): TreeItem[] {
       };
     }
 
+    let treeItem = lookup[spanID];
+
     // Note A:
     // If the span has been added to the lookup structure as a missing/incomplete parent
     // on a previous pass (see Note B), update it and mark it present, and remove it from the missing set.
-    if (lookup[spanID].status === SpanDataStatus.missing) {
-      let children = lookup[spanID].children;
-      lookup[spanID] = {
+    if (treeItem.status === SpanDataStatus.missing) {
+      // Re-assign treeItem as a TreeItem type so that after this if statement,
+      // the type system knows that treeItem can only be a TreeItem
+      treeItem = {
         status: SpanDataStatus.present,
         spanData: spanData,
-        children: children,
+        children: treeItem.children,
       };
+      // overwrite the stored version since now we know it is present
+      lookup[spanID] = treeItem
       missingSpanIDs.delete(spanID);
     }
-
-    let treeItem = lookup[spanID];
 
     // If the current span has no parentSpanID, add it to the rootItems
     if (!parentSpanID) {
@@ -99,14 +106,6 @@ function getEarliestStartTime(children: TreeItem[]): number {
   }
 
   let startTimes = children.map((treeItem) => {
-    if (treeItem.status === SpanDataStatus.missing) {
-      throw new Error(
-        // This should also happen in this implementation, since that the child span
-        // must have SpanData (minimally a parentSpanID) in order for the parent span to be created.
-        "Unexpected type: A child of a 'missing' parent span appears to have no SpanData.",
-      );
-    }
-
     return getNsFromString(treeItem.spanData.startTime);
   });
 

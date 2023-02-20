@@ -8,7 +8,7 @@ import { SpanDataStatus, SpanWithUIData } from "../types/ui-types";
 import { Header } from "../components/header-view/header";
 import { DetailView } from "../components/detail-view/detail-view";
 import { WaterfallView } from "../components/waterfall-view/waterfall-view";
-import { arrayToTree, TreeItem } from "../utils/array-to-tree";
+import { arrayToTree, TreeItem, RootTreeItem } from "../utils/array-to-tree";
 import { getNsFromString, calculateTraceTiming } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
@@ -20,7 +20,7 @@ export async function traceLoader({ params }: any) {
 export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
   let traceTimeAttributes = calculateTraceTiming(traceData.spans);
-  let spanTree: TreeItem[] = arrayToTree(traceData.spans);
+  let spanTree: RootTreeItem[] = arrayToTree(traceData.spans);
   let orderedSpans = orderSpans(spanTree);
 
   let [selectedSpanID, setSelectedSpanID] = React.useState<string>(() => {
@@ -93,7 +93,7 @@ export default function TraceView() {
 // We are sorting each set of children, but not the set of root nodes we are starting with,
 // as the array-to-tree implementation is such that the root span (if one is present)
 // is displayed first and all missing spans come after
-function orderSpans(spanTree: TreeItem[]): SpanWithUIData[] {
+function orderSpans(spanTree: RootTreeItem[]): SpanWithUIData[] {
   let orderedSpans: SpanWithUIData[] = [];
 
   for (let root of spanTree) {
