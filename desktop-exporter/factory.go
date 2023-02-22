@@ -28,7 +28,12 @@ func createDefaultConfig() component.Config {
 
 func createTracesExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Traces, error) {
 	cfg := config.(*Config)
-	desktopExporter := newDesktopExporter()
+	err := cfg.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	desktopExporter := newDesktopExporter(cfg)
 	return exporterhelper.NewTracesExporter(ctx, set, cfg,
 		desktopExporter.pushTraces,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
