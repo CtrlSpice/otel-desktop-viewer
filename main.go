@@ -25,7 +25,7 @@ processors:
 
 exporters:
   desktop:
-    endpoint: localhost:8880
+    endpoint: localhost:8000
 
 service:
   pipelines:

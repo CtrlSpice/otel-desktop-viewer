@@ -8,7 +8,7 @@ import (
 
 // Config defines configuration for logging exporter.
 type Config struct {
-	// Endpoint defines where we expose our frontend.
+	// Endpoint defines where we serve our frontend app
 	Endpoint string `mapstructure:"endpoint"`
 }
 
