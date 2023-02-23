@@ -106,7 +106,7 @@ func indexHandler(writer http.ResponseWriter, request *http.Request) {
 	}
 }
 
-func NewServer(traceStore *TraceStore) *Server {
+func NewServer(traceStore *TraceStore, endpoint string) *Server {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/traces", tracesHandler(traceStore))
 	router.HandleFunc("/api/traces/{id}", traceIDHandler(traceStore))
@@ -123,7 +123,7 @@ func NewServer(traceStore *TraceStore) *Server {
 	}
 	return &Server{
 		server: http.Server{
-			Addr:    "localhost:8000",
+			Addr:    endpoint,
 			Handler: router,
 		},
 		traceStore: traceStore,
@@ -134,7 +134,8 @@ func (s Server) Start() error {
 	go func() {
 		// Wait a bit for the server to come up to avoid a 404 as a first experience
 		time.Sleep(250 * time.Millisecond)
-		browser.OpenURL("http://localhost:8000/")
+		endpoint := s.server.Addr
+		browser.OpenURL("http://" + endpoint + "/")
 	}()
 	return s.server.ListenAndServe()
 }

@@ -25,6 +25,7 @@ processors:
 
 exporters:
   desktop:
+    endpoint: localhost:8000
 
 service:
   pipelines:
@@ -60,8 +61,8 @@ service:
 	}
 
 	settings := otelcol.CollectorSettings{
-		BuildInfo: info,
-		Factories: factories,
+		BuildInfo:      info,
+		Factories:      factories,
 		ConfigProvider: configProvider,
 	}
 
