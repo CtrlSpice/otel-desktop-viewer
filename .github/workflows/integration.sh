@@ -1,5 +1,6 @@
 #!/bin/bash
 
+pwd
 # Launch the app in the background
 ./../../otel-desktop-viewer &
 
