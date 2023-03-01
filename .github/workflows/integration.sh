@@ -2,7 +2,7 @@
 
 pwd
 # Launch the app in the background
-./../../otel-desktop-viewer &
+./otel-desktop-viewer &
 
 # Save the process ID to kill it later
 pid=$!
