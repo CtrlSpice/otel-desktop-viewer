@@ -1,6 +1,5 @@
 #!/bin/bash
-
-pwd
+make build-go
 
 ls -la
 # Launch the app in the background
