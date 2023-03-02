@@ -23,10 +23,19 @@ jobs:
 
     - name: Build
       run: go build -v ./...
+      uses: actions/upload-artifact@v3
+      with:
+        name: otel-desktop-viewer
+        path: ./otel-desktop-viewer    
 
     - name: Test
       run: go test -v ./...
 
+    - name: List Files
+      run: ls -la
+
     - name: Integration
       run: ./.github/workflows/integration.sh
       shell: bash
+      env:
+        CI: true

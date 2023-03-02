@@ -1,7 +1,5 @@
 #!/bin/bash
-make build-go
 
-ls -la
 # Launch the app in the background
 ./otel-desktop-viewer &
 
