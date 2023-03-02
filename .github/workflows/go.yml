@@ -26,7 +26,7 @@ jobs:
 
     - name: List Files
       run: ls -la
-      pwd
+
     # - uses: actions/upload-artifact@v3
     #   with:
     #     name: otel-desktop-viewer
