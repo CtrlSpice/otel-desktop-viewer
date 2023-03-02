@@ -22,10 +22,11 @@ jobs:
         go-version: 1.18
 
     - name: Build
-      run: go build -v ./...
+      run: go build -v
 
     - name: List Files
       run: ls -la
+      shell: bash
 
     # - uses: actions/upload-artifact@v3
     #   with:
