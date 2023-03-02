@@ -23,16 +23,7 @@ jobs:
 
     - name: Build
       run: go build -v
-
-    - name: List Files
-      run: ls -la
-      shell: bash
-
-    # - uses: actions/upload-artifact@v3
-    #   with:
-    #     name: otel-desktop-viewer
-    #     path: ./otel-desktop-viewer    
-
+ 
     - name: Test
       run: go test -v ./...
 

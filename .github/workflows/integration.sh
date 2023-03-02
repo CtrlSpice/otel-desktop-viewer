@@ -6,11 +6,7 @@
 # Save the process ID to kill it later
 pid=$!
 
-pwd
-
-ls -la
-
-# Wait a second for everything to boot up
+# Wait 2 seconds for everything to boot up
 sleep 2
 
 # Send an example trace
