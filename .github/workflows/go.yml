@@ -36,8 +36,8 @@ jobs:
     - name: Test
       run: go test -v ./...
 
-    # - name: Integration
-    #   run: ./.github/workflows/integration.sh
-    #   shell: bash
-    #   env:
-    #     CI: true
+    - name: Integration
+      run: ./.github/workflows/integration.sh
+      shell: bash
+      env:
+        CI: true
