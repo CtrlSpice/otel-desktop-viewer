@@ -7,10 +7,10 @@
 pid=$!
 
 # Wait a second for everything to boot up
-sleep 1
+sleep 5
 
 # Send an example trace
-curl -is http://localhost:4318/v1/traces -X POST -H "Content-Type: application/json" -d @./span.json
+curl -i http://localhost:4318/v1/traces -X POST -H "Content-Type: application/json" -d @./span.json
 
 sleep 1
 
