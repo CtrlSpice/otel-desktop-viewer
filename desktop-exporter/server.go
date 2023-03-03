@@ -131,12 +131,15 @@ func NewServer(traceStore *TraceStore, endpoint string) *Server {
 }
 
 func (s Server) Start() error {
-	go func() {
-		// Wait a bit for the server to come up to avoid a 404 as a first experience
-		time.Sleep(250 * time.Millisecond)
-		endpoint := s.server.Addr
-		browser.OpenURL("http://" + endpoint + "/")
-	}()
+	_, isCI := os.LookupEnv("CI")
+	if !isCI {
+		go func() {
+			// Wait a bit for the server to come up to avoid a 404 as a first experience
+			time.Sleep(250 * time.Millisecond)
+			endpoint := s.server.Addr
+			browser.OpenURL("http://" + endpoint + "/")
+		}()
+	}
 	return s.server.ListenAndServe()
 }
 

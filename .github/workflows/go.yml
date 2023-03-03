@@ -22,7 +22,13 @@ jobs:
         go-version: 1.18
 
     - name: Build
-      run: go build -v ./...
-
+      run: go build -v
+ 
     - name: Test
       run: go test -v ./...
+
+    - name: Integration
+      run: ./.github/workflows/integration.sh
+      shell: bash
+      env:
+        CI: true
