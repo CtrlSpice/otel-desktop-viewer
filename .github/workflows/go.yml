@@ -12,6 +12,11 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            env:
+              NO_WINDOWS_SERVICE: 0
+
 
     steps:
     - uses: actions/checkout@v3
