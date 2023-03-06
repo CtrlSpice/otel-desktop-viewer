@@ -1,14 +1,19 @@
 // go:build windows
+//go:build windows
 // +build windows
 
 package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"golang.org/x/sys/windows/svc"
 
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/confmap"
+	"go.opentelemetry.io/collector/confmap/provider/yamlprovider"
 	"go.opentelemetry.io/collector/otelcol"
 )
 
@@ -38,7 +43,7 @@ func checkUseInteractiveMode() (bool, error) {
 	return !isWindowsService, nil
 }
 
-func runService(buildInfoparams component.BuildInfo) error {
+func runService(buildInfo component.BuildInfo) error {
 	configContents := `yaml:
 receivers:
   otlp:
@@ -82,7 +87,7 @@ service:
 	}
 
 	collectorSettings := otelcol.CollectorSettings{
-		BuildInfo:      info,
+		BuildInfo:      buildInfo,
 		Factories:      factories,
 		ConfigProvider: configProvider,
 	}
