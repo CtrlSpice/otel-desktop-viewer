@@ -54,7 +54,7 @@ processors:
 
 exporters:
   desktop:
-    endpoint: localhost:8000
+    endpoint: localhost:` + strconv.Itoa(browserPortFlag) + `
 
 service:
   pipelines:
