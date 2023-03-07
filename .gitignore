@@ -1,4 +1,5 @@
 .DS_Store
 otel-desktop-viewer
 desktop-exporter/node_modules
-.vscode/settings.json
+.vscode
+.vscode/*

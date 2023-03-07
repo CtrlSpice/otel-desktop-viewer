@@ -1,3 +1,0 @@
-{
-  "go.buildFlags": ["-tags=windows"]
-}
