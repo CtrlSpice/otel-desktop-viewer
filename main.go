@@ -24,7 +24,6 @@ func main() {
 }
 
 func runInteractive(buildInfo component.BuildInfo) error {
-	// cmd := otelcol.NewCommand(params)
 	cmd := newCommand(buildInfo)
 	if err := cmd.Execute(); err != nil {
 		log.Fatalf("collector server run finished with error: %v", err)
