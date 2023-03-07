@@ -5,8 +5,8 @@
 
 package main
 
-import "go.opentelemetry.io/collector/otelcol"
+import "go.opentelemetry.io/collector/component"
 
-func run(params otelcol.CollectorSettings) error {
-	return runInteractive(params)
+func run(info component.BuildInfo) error {
+	return runInteractive(info)
 }
