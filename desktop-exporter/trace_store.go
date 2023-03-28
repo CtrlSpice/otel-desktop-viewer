@@ -71,6 +71,14 @@ func (store *TraceStore) GetRecentTraces(traceCount int) []TraceData {
 	return recentTraces
 }
 
+func (store *TraceStore) ClearTraces(){
+	store.mut.Lock()
+	defer store.mut.Unlock()
+
+	store.traceQueue = list.New()
+	store.traceMap = map[string]TraceData{}
+}
+
 func (store *TraceStore) enqueueTrace(traceID string) {
 	// If the traceID is already in the queue, move it to the front of the line
 	_, traceIDExists := store.traceMap[traceID]

@@ -51824,6 +51824,15 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   });
 
   // app/components/sidebar-view/sidebar-buttons.tsx
+  async function clearTraceData() {
+    let response = await fetch("/api/clearData");
+    if (!response.ok) {
+      throw new Error("HTTP status " + response.status);
+    } else {
+      let home = window.location.href.split("/traces")[0];
+      window.location.replace(home);
+    }
+  }
   function SidebarButtons(props) {
     let { toggleColorMode } = useColorMode();
     let colourModeIcon = useColorModeValue(/* @__PURE__ */ import_react142.default.createElement(MoonIcon, null), /* @__PURE__ */ import_react142.default.createElement(SunIcon, null));
@@ -51835,6 +51844,13 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         justifyContent: "flex-end",
         alignItems: "center"
       }, /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+        "aria-label": "Clear Trace Data",
+        color: iconColour,
+        colorScheme: "pink",
+        icon: /* @__PURE__ */ import_react142.default.createElement(DeleteIcon, null),
+        marginEnd: "16px",
+        onClick: clearTraceData
+      }), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
         "aria-label": "Toggle Colour Mode",
         color: iconColour,
         colorScheme: "pink",
@@ -52891,11 +52907,10 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       }
       let treeItem = lookup[spanID];
       if (treeItem.status === "missing" /* missing */) {
-        let children = treeItem.children;
         treeItem = {
           status: "present" /* present */,
           spanData,
-          children
+          children: treeItem.children
         };
         lookup[spanID] = treeItem;
         missingSpanIDs.delete(spanID);

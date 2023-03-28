@@ -2,6 +2,7 @@ import React from "react";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  DeleteIcon,
   MoonIcon,
   SunIcon,
 } from "@chakra-ui/icons";
@@ -11,6 +12,16 @@ import {
   useColorMode,
   useColorModeValue,
 } from "@chakra-ui/react";
+
+async function clearTraceData() {
+  let response = await fetch("/api/clearData");
+  if (!response.ok) {
+    throw new Error("HTTP status " + response.status);
+  } else {
+    let home = window.location.href.split("/traces")[0];
+    window.location.replace(home);
+  }
+}
 
 type SidebarButtonsProps = {
   isFullWidth: boolean;
@@ -31,6 +42,14 @@ export function SidebarButtons(props: SidebarButtonsProps) {
         justifyContent="flex-end"
         alignItems="center"
       >
+        <IconButton
+          aria-label="Clear Trace Data"
+          color={iconColour}
+          colorScheme="pink"
+          icon={<DeleteIcon />}
+          marginEnd="16px"
+          onClick={clearTraceData}
+        />
         <IconButton
           aria-label="Toggle Colour Mode"
           color={iconColour}

@@ -26,6 +26,13 @@ type Server struct {
 	traceStore *TraceStore
 }
 
+func clearDataHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		store.ClearTraces()
+		writer.WriteHeader(http.StatusOK)
+	}
+}
+
 func sampleDataHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		ctx := context.Background()
@@ -111,6 +118,7 @@ func NewServer(traceStore *TraceStore, endpoint string) *Server {
 	router.HandleFunc("/api/traces", tracesHandler(traceStore))
 	router.HandleFunc("/api/traces/{id}", traceIDHandler(traceStore))
 	router.HandleFunc("/api/sampleData", sampleDataHandler(traceStore))
+	router.HandleFunc("/api/clearData", clearDataHandler(traceStore))
 	router.HandleFunc("/traces/{id}", indexHandler)
 	if os.Getenv("SERVE_FROM_FS") == "true" {
 		router.PathPrefix("/").Handler(http.FileServer(http.Dir("./desktop-exporter/static/")))
