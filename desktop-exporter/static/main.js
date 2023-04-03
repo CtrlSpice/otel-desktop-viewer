@@ -51829,8 +51829,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     if (!response.ok) {
       throw new Error("HTTP status " + response.status);
     } else {
-      let home = window.location.href.split("/traces")[0];
-      window.location.replace(home);
+      window.location.replace("/");
     }
   }
   function SidebarButtons(props) {

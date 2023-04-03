@@ -18,8 +18,7 @@ async function clearTraceData() {
   if (!response.ok) {
     throw new Error("HTTP status " + response.status);
   } else {
-    let home = window.location.href.split("/traces")[0];
-    window.location.replace(home);
+    window.location.replace("/");
   }
 }
 
