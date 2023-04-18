@@ -1001,7 +1001,7 @@
             }
             return dispatcher.useContext(Context);
           }
-          function useState20(initialState2) {
+          function useState21(initialState2) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useState(initialState2);
           }
@@ -1013,7 +1013,7 @@
             var dispatcher = resolveDispatcher();
             return dispatcher.useRef(initialValue);
           }
-          function useEffect35(create, deps) {
+          function useEffect36(create, deps) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useEffect(create, deps);
           }
@@ -1793,7 +1793,7 @@
           exports.useContext = useContext16;
           exports.useDebugValue = useDebugValue2;
           exports.useDeferredValue = useDeferredValue;
-          exports.useEffect = useEffect35;
+          exports.useEffect = useEffect36;
           exports.useId = useId8;
           exports.useImperativeHandle = useImperativeHandle;
           exports.useInsertionEffect = useInsertionEffect2;
@@ -1801,7 +1801,7 @@
           exports.useMemo = useMemo19;
           exports.useReducer = useReducer;
           exports.useRef = useRef28;
-          exports.useState = useState20;
+          exports.useState = useState21;
           exports.useSyncExternalStore = useSyncExternalStore3;
           exports.useTransition = useTransition;
           exports.version = ReactVersion;
@@ -3816,7 +3816,7 @@
           var didWarnSelectedSetOnOption = false;
           var didWarnInvalidChild = false;
           var didWarnInvalidInnerHTML = false;
-          function validateProps3(element, props) {
+          function validateProps2(element, props) {
             {
               if (props.value == null) {
                 if (typeof props.children === "object" && props.children !== null) {
@@ -9050,7 +9050,7 @@
                 listenToNonDelegatedEvent("invalid", domElement);
                 break;
               case "option":
-                validateProps3(domElement, rawProps);
+                validateProps2(domElement, rawProps);
                 props = rawProps;
                 break;
               case "select":
@@ -9297,7 +9297,7 @@
                 listenToNonDelegatedEvent("invalid", domElement);
                 break;
               case "option":
-                validateProps3(domElement, rawProps);
+                validateProps2(domElement, rawProps);
                 break;
               case "select":
                 initWrapperState$1(domElement, rawProps);
@@ -50699,13 +50699,13 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   }
   function createListComponent(_ref) {
     var _class;
-    var getItemOffset3 = _ref.getItemOffset, getEstimatedTotalSize4 = _ref.getEstimatedTotalSize, getItemSize3 = _ref.getItemSize, getOffsetForIndexAndAlignment3 = _ref.getOffsetForIndexAndAlignment, getStartIndexForOffset3 = _ref.getStartIndexForOffset, getStopIndexForStartIndex3 = _ref.getStopIndexForStartIndex, initInstanceProps3 = _ref.initInstanceProps, shouldResetStyleCacheOnItemSizeChange = _ref.shouldResetStyleCacheOnItemSizeChange, validateProps3 = _ref.validateProps;
+    var getItemOffset2 = _ref.getItemOffset, getEstimatedTotalSize2 = _ref.getEstimatedTotalSize, getItemSize2 = _ref.getItemSize, getOffsetForIndexAndAlignment2 = _ref.getOffsetForIndexAndAlignment, getStartIndexForOffset2 = _ref.getStartIndexForOffset, getStopIndexForStartIndex2 = _ref.getStopIndexForStartIndex, initInstanceProps2 = _ref.initInstanceProps, shouldResetStyleCacheOnItemSizeChange = _ref.shouldResetStyleCacheOnItemSizeChange, validateProps2 = _ref.validateProps;
     return _class = /* @__PURE__ */ function(_PureComponent) {
       _inheritsLoose(List3, _PureComponent);
       function List3(props) {
         var _this;
         _this = _PureComponent.call(this, props) || this;
-        _this._instanceProps = initInstanceProps3(_this.props, _assertThisInitialized(_this));
+        _this._instanceProps = initInstanceProps2(_this.props, _assertThisInitialized(_this));
         _this._outerRef = void 0;
         _this._resetIsScrollingTimeoutId = null;
         _this.state = {
@@ -50740,8 +50740,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           if (itemStyleCache.hasOwnProperty(index)) {
             style = itemStyleCache[index];
           } else {
-            var _offset = getItemOffset3(_this.props, index, _this._instanceProps);
-            var size3 = getItemSize3(_this.props, index, _this._instanceProps);
+            var _offset = getItemOffset2(_this.props, index, _this._instanceProps);
+            var size3 = getItemSize2(_this.props, index, _this._instanceProps);
             var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
             var isRtl = direction2 === "rtl";
             var offsetHorizontal = isHorizontal ? _offset : 0;
@@ -50829,7 +50829,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
       List3.getDerivedStateFromProps = function getDerivedStateFromProps(nextProps, prevState) {
         validateSharedProps$1(nextProps, prevState);
-        validateProps3(nextProps);
+        validateProps2(nextProps);
         return null;
       };
       var _proto = List3.prototype;
@@ -50862,7 +50862,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
             scrollbarSize = outerRef.scrollHeight > outerRef.clientHeight ? getScrollbarSize() : 0;
           }
         }
-        this.scrollTo(getOffsetForIndexAndAlignment3(this.props, index, align, scrollOffset, this._instanceProps, scrollbarSize));
+        this.scrollTo(getOffsetForIndexAndAlignment2(this.props, index, align, scrollOffset, this._instanceProps, scrollbarSize));
       };
       _proto.componentDidMount = function componentDidMount() {
         var _this$props3 = this.props, direction2 = _this$props3.direction, initialScrollOffset = _this$props3.initialScrollOffset, layout2 = _this$props3.layout;
@@ -50927,7 +50927,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
             }));
           }
         }
-        var estimatedTotalSize = getEstimatedTotalSize4(this.props, this._instanceProps);
+        var estimatedTotalSize = getEstimatedTotalSize2(this.props, this._instanceProps);
         return (0, import_react138.createElement)(outerElementType || outerTagName || "div", {
           className,
           onScroll,
@@ -50970,8 +50970,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         if (itemCount === 0) {
           return [0, 0, 0, 0];
         }
-        var startIndex = getStartIndexForOffset3(this.props, scrollOffset, this._instanceProps);
-        var stopIndex = getStopIndexForStartIndex3(this.props, startIndex, scrollOffset, this._instanceProps);
+        var startIndex = getStartIndexForOffset2(this.props, scrollOffset, this._instanceProps);
+        var stopIndex = getStopIndexForStartIndex2(this.props, startIndex, scrollOffset, this._instanceProps);
         var overscanBackward = !isScrolling || scrollDirection === "backward" ? Math.max(1, overscanCount) : 1;
         var overscanForward = !isScrolling || scrollDirection === "forward" ? Math.max(1, overscanCount) : 1;
         return [Math.max(0, startIndex - overscanBackward), Math.max(0, Math.min(itemCount - 1, stopIndex + overscanForward)), startIndex, stopIndex];
@@ -51027,180 +51027,20 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
     }
   };
-  var DEFAULT_ESTIMATED_ITEM_SIZE$1 = 50;
-  var getItemMetadata$1 = function getItemMetadata(props, index, instanceProps) {
-    var _ref = props, itemSize = _ref.itemSize;
-    var itemMetadataMap = instanceProps.itemMetadataMap, lastMeasuredIndex = instanceProps.lastMeasuredIndex;
-    if (index > lastMeasuredIndex) {
-      var offset2 = 0;
-      if (lastMeasuredIndex >= 0) {
-        var itemMetadata = itemMetadataMap[lastMeasuredIndex];
-        offset2 = itemMetadata.offset + itemMetadata.size;
-      }
-      for (var i = lastMeasuredIndex + 1; i <= index; i++) {
-        var size3 = itemSize(i);
-        itemMetadataMap[i] = {
-          offset: offset2,
-          size: size3
-        };
-        offset2 += size3;
-      }
-      instanceProps.lastMeasuredIndex = index;
-    }
-    return itemMetadataMap[index];
-  };
-  var findNearestItem$1 = function findNearestItem(props, instanceProps, offset2) {
-    var itemMetadataMap = instanceProps.itemMetadataMap, lastMeasuredIndex = instanceProps.lastMeasuredIndex;
-    var lastMeasuredItemOffset = lastMeasuredIndex > 0 ? itemMetadataMap[lastMeasuredIndex].offset : 0;
-    if (lastMeasuredItemOffset >= offset2) {
-      return findNearestItemBinarySearch$1(props, instanceProps, lastMeasuredIndex, 0, offset2);
-    } else {
-      return findNearestItemExponentialSearch$1(props, instanceProps, Math.max(0, lastMeasuredIndex), offset2);
-    }
-  };
-  var findNearestItemBinarySearch$1 = function findNearestItemBinarySearch(props, instanceProps, high, low, offset2) {
-    while (low <= high) {
-      var middle = low + Math.floor((high - low) / 2);
-      var currentOffset = getItemMetadata$1(props, middle, instanceProps).offset;
-      if (currentOffset === offset2) {
-        return middle;
-      } else if (currentOffset < offset2) {
-        low = middle + 1;
-      } else if (currentOffset > offset2) {
-        high = middle - 1;
-      }
-    }
-    if (low > 0) {
-      return low - 1;
-    } else {
-      return 0;
-    }
-  };
-  var findNearestItemExponentialSearch$1 = function findNearestItemExponentialSearch(props, instanceProps, index, offset2) {
-    var itemCount = props.itemCount;
-    var interval = 1;
-    while (index < itemCount && getItemMetadata$1(props, index, instanceProps).offset < offset2) {
-      index += interval;
-      interval *= 2;
-    }
-    return findNearestItemBinarySearch$1(props, instanceProps, Math.min(index, itemCount - 1), Math.floor(index / 2), offset2);
-  };
-  var getEstimatedTotalSize = function getEstimatedTotalSize2(_ref2, _ref3) {
-    var itemCount = _ref2.itemCount;
-    var itemMetadataMap = _ref3.itemMetadataMap, estimatedItemSize = _ref3.estimatedItemSize, lastMeasuredIndex = _ref3.lastMeasuredIndex;
-    var totalSizeOfMeasuredItems = 0;
-    if (lastMeasuredIndex >= itemCount) {
-      lastMeasuredIndex = itemCount - 1;
-    }
-    if (lastMeasuredIndex >= 0) {
-      var itemMetadata = itemMetadataMap[lastMeasuredIndex];
-      totalSizeOfMeasuredItems = itemMetadata.offset + itemMetadata.size;
-    }
-    var numUnmeasuredItems = itemCount - lastMeasuredIndex - 1;
-    var totalSizeOfUnmeasuredItems = numUnmeasuredItems * estimatedItemSize;
-    return totalSizeOfMeasuredItems + totalSizeOfUnmeasuredItems;
-  };
-  var VariableSizeList = /* @__PURE__ */ createListComponent({
-    getItemOffset: function getItemOffset(props, index, instanceProps) {
-      return getItemMetadata$1(props, index, instanceProps).offset;
-    },
-    getItemSize: function getItemSize(props, index, instanceProps) {
-      return instanceProps.itemMetadataMap[index].size;
-    },
-    getEstimatedTotalSize,
-    getOffsetForIndexAndAlignment: function getOffsetForIndexAndAlignment(props, index, align, scrollOffset, instanceProps, scrollbarSize) {
-      var direction2 = props.direction, height = props.height, layout2 = props.layout, width = props.width;
-      var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
-      var size3 = isHorizontal ? width : height;
-      var itemMetadata = getItemMetadata$1(props, index, instanceProps);
-      var estimatedTotalSize = getEstimatedTotalSize(props, instanceProps);
-      var maxOffset = Math.max(0, Math.min(estimatedTotalSize - size3, itemMetadata.offset));
-      var minOffset = Math.max(0, itemMetadata.offset - size3 + itemMetadata.size + scrollbarSize);
-      if (align === "smart") {
-        if (scrollOffset >= minOffset - size3 && scrollOffset <= maxOffset + size3) {
-          align = "auto";
-        } else {
-          align = "center";
-        }
-      }
-      switch (align) {
-        case "start":
-          return maxOffset;
-        case "end":
-          return minOffset;
-        case "center":
-          return Math.round(minOffset + (maxOffset - minOffset) / 2);
-        case "auto":
-        default:
-          if (scrollOffset >= minOffset && scrollOffset <= maxOffset) {
-            return scrollOffset;
-          } else if (scrollOffset < minOffset) {
-            return minOffset;
-          } else {
-            return maxOffset;
-          }
-      }
-    },
-    getStartIndexForOffset: function getStartIndexForOffset(props, offset2, instanceProps) {
-      return findNearestItem$1(props, instanceProps, offset2);
-    },
-    getStopIndexForStartIndex: function getStopIndexForStartIndex(props, startIndex, scrollOffset, instanceProps) {
-      var direction2 = props.direction, height = props.height, itemCount = props.itemCount, layout2 = props.layout, width = props.width;
-      var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
-      var size3 = isHorizontal ? width : height;
-      var itemMetadata = getItemMetadata$1(props, startIndex, instanceProps);
-      var maxOffset = scrollOffset + size3;
-      var offset2 = itemMetadata.offset + itemMetadata.size;
-      var stopIndex = startIndex;
-      while (stopIndex < itemCount - 1 && offset2 < maxOffset) {
-        stopIndex++;
-        offset2 += getItemMetadata$1(props, stopIndex, instanceProps).size;
-      }
-      return stopIndex;
-    },
-    initInstanceProps: function initInstanceProps(props, instance) {
-      var _ref4 = props, estimatedItemSize = _ref4.estimatedItemSize;
-      var instanceProps = {
-        itemMetadataMap: {},
-        estimatedItemSize: estimatedItemSize || DEFAULT_ESTIMATED_ITEM_SIZE$1,
-        lastMeasuredIndex: -1
-      };
-      instance.resetAfterIndex = function(index, shouldForceUpdate) {
-        if (shouldForceUpdate === void 0) {
-          shouldForceUpdate = true;
-        }
-        instanceProps.lastMeasuredIndex = Math.min(instanceProps.lastMeasuredIndex, index - 1);
-        instance._getItemStyleCache(-1);
-        if (shouldForceUpdate) {
-          instance.forceUpdate();
-        }
-      };
-      return instanceProps;
-    },
-    shouldResetStyleCacheOnItemSizeChange: false,
-    validateProps: function validateProps(_ref5) {
-      var itemSize = _ref5.itemSize;
-      if (true) {
-        if (typeof itemSize !== "function") {
-          throw Error('An invalid "itemSize" prop has been specified. Value should be a function. ' + ('"' + (itemSize === null ? "null" : typeof itemSize) + '" was specified.'));
-        }
-      }
-    }
-  });
   var FixedSizeList = /* @__PURE__ */ createListComponent({
-    getItemOffset: function getItemOffset2(_ref, index) {
+    getItemOffset: function getItemOffset(_ref, index) {
       var itemSize = _ref.itemSize;
       return index * itemSize;
     },
-    getItemSize: function getItemSize2(_ref2, index) {
+    getItemSize: function getItemSize(_ref2, index) {
       var itemSize = _ref2.itemSize;
       return itemSize;
     },
-    getEstimatedTotalSize: function getEstimatedTotalSize3(_ref3) {
+    getEstimatedTotalSize: function getEstimatedTotalSize(_ref3) {
       var itemCount = _ref3.itemCount, itemSize = _ref3.itemSize;
       return itemSize * itemCount;
     },
-    getOffsetForIndexAndAlignment: function getOffsetForIndexAndAlignment2(_ref4, index, align, scrollOffset, instanceProps, scrollbarSize) {
+    getOffsetForIndexAndAlignment: function getOffsetForIndexAndAlignment(_ref4, index, align, scrollOffset, instanceProps, scrollbarSize) {
       var direction2 = _ref4.direction, height = _ref4.height, itemCount = _ref4.itemCount, itemSize = _ref4.itemSize, layout2 = _ref4.layout, width = _ref4.width;
       var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
       var size3 = isHorizontal ? width : height;
@@ -51240,11 +51080,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           }
       }
     },
-    getStartIndexForOffset: function getStartIndexForOffset2(_ref5, offset2) {
+    getStartIndexForOffset: function getStartIndexForOffset(_ref5, offset2) {
       var itemCount = _ref5.itemCount, itemSize = _ref5.itemSize;
       return Math.max(0, Math.min(itemCount - 1, Math.floor(offset2 / itemSize)));
     },
-    getStopIndexForStartIndex: function getStopIndexForStartIndex2(_ref6, startIndex, scrollOffset) {
+    getStopIndexForStartIndex: function getStopIndexForStartIndex(_ref6, startIndex, scrollOffset) {
       var direction2 = _ref6.direction, height = _ref6.height, itemCount = _ref6.itemCount, itemSize = _ref6.itemSize, layout2 = _ref6.layout, width = _ref6.width;
       var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
       var offset2 = startIndex * itemSize;
@@ -51255,10 +51095,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         startIndex + numVisibleItems - 1
       ));
     },
-    initInstanceProps: function initInstanceProps2(props) {
+    initInstanceProps: function initInstanceProps(props) {
     },
     shouldResetStyleCacheOnItemSizeChange: true,
-    validateProps: function validateProps2(_ref7) {
+    validateProps: function validateProps(_ref7) {
       var itemSize = _ref7.itemSize;
       if (true) {
         if (typeof itemSize !== "number") {
@@ -51269,9 +51109,6 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   });
 
   // app/components/sidebar-view/trace-list.tsx
-  var sidebarItemHeightWithRoot = 120;
-  var sidebarItemHeightWithoutRoot = 80;
-  var dividerHeight = 1;
   function SidebarRow({ index, style, data }) {
     let selectedColor = useColorModeValue("pink.100", "pink.900");
     let dividerColour = useColorModeValue("blackAlpha.300", "whiteAlpha.300");
@@ -51285,14 +51122,14 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       return /* @__PURE__ */ import_react139.default.createElement("div", {
         style
       }, /* @__PURE__ */ import_react139.default.createElement(Divider, {
-        height: dividerHeight,
+        height: "1px",
         borderColor: dividerColour
       }), /* @__PURE__ */ import_react139.default.createElement(LinkBox, {
         display: "flex",
         flexDirection: "column",
         justifyContent: "center",
         bgColor: backgroundColour,
-        height: `${sidebarItemHeightWithRoot}px`,
+        height: "120px",
         paddingX: "20px"
       }, /* @__PURE__ */ import_react139.default.createElement(Text, {
         fontSize: "xs",
@@ -51314,14 +51151,14 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     return /* @__PURE__ */ import_react139.default.createElement("div", {
       style
     }, /* @__PURE__ */ import_react139.default.createElement(Divider, {
-      height: dividerHeight,
+      height: "1px",
       borderColor: dividerColour
     }), /* @__PURE__ */ import_react139.default.createElement(LinkBox, {
       display: "flex",
       flexDirection: "column",
       justifyContent: "center",
       bgColor: backgroundColour,
-      height: `${sidebarItemHeightWithoutRoot}px`,
+      height: "120px",
       paddingX: "20px"
     }, /* @__PURE__ */ import_react139.default.createElement(Text, {
       fontSize: "xs"
@@ -51350,20 +51187,19 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       selectedTraceID,
       traceSummaries
     };
-    let getItemHeight = (index) => traceSummaries[index].hasRootSpan ? sidebarItemHeightWithRoot + dividerHeight : sidebarItemHeightWithoutRoot + dividerHeight;
     return /* @__PURE__ */ import_react139.default.createElement(Flex, {
       ref,
       height: "100%"
-    }, /* @__PURE__ */ import_react139.default.createElement(VariableSizeList, {
+    }, /* @__PURE__ */ import_react139.default.createElement(FixedSizeList, {
       height: size3 ? size3.height : 0,
       itemData,
       itemCount: props.traceSummaries.length,
-      itemSize: getItemHeight,
+      itemSize: 121,
       width: "100%"
     }, SidebarRow));
   }
 
-  // app/components/sidebar-view/sidebar-buttons.tsx
+  // app/components/sidebar-view/sidebar-header.tsx
   var import_react142 = __toESM(require_react());
 
   // node_modules/@chakra-ui/icons/dist/index.esm.js
@@ -51823,7 +51659,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     d: "M 3 5 A 1.0001 1.0001 0 1 0 3 7 L 21 7 A 1.0001 1.0001 0 1 0 21 5 L 3 5 z M 3 11 A 1.0001 1.0001 0 1 0 3 13 L 21 13 A 1.0001 1.0001 0 1 0 21 11 L 3 11 z M 3 17 A 1.0001 1.0001 0 1 0 3 19 L 21 19 A 1.0001 1.0001 0 1 0 21 17 L 3 17 z"
   });
 
-  // app/components/sidebar-view/sidebar-buttons.tsx
+  // app/components/sidebar-view/sidebar-header.tsx
   async function clearTraceData() {
     let response = await fetch("/api/clearData");
     if (!response.ok) {
@@ -51832,56 +51668,89 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       window.location.replace("/");
     }
   }
-  function SidebarButtons(props) {
+  function SidebarHeader(props) {
     let { toggleColorMode } = useColorMode();
     let colourModeIcon = useColorModeValue(/* @__PURE__ */ import_react142.default.createElement(MoonIcon, null), /* @__PURE__ */ import_react142.default.createElement(SunIcon, null));
-    let iconColour = useColorModeValue("white", "pink.900");
-    let { isFullWidth, isFullWidthDisabled, toggleSidebarWidth } = props;
+    let { isFullWidth, isFullWidthDisabled, toggleSidebarWidth, numNewTraces } = props;
     if (isFullWidth) {
       return /* @__PURE__ */ import_react142.default.createElement(Flex, {
-        height: "100px",
-        justifyContent: "flex-end",
-        alignItems: "center"
-      }, /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+        direction: "column",
+        height: "fit-content",
+        justifyContent: "space-evenly"
+      }, /* @__PURE__ */ import_react142.default.createElement(Flex, {
+        justifyContent: "flex-start",
+        alignItems: "center",
+        height: "50px"
+      }, /* @__PURE__ */ import_react142.default.createElement(Button, {
+        size: "md",
         "aria-label": "Clear Trace Data",
-        color: iconColour,
+        variant: "ghost",
         colorScheme: "pink",
-        icon: /* @__PURE__ */ import_react142.default.createElement(DeleteIcon, null),
-        marginEnd: "16px",
+        fontWeight: "normal",
+        leftIcon: /* @__PURE__ */ import_react142.default.createElement(DeleteIcon, null),
+        marginStart: "10px",
         onClick: clearTraceData
-      }), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+      }, /* @__PURE__ */ import_react142.default.createElement(Text, {
+        fontSize: "sm",
+        fontWeight: "bold",
+        color: "ButtonText"
+      }, "Clear Traces")), /* @__PURE__ */ import_react142.default.createElement(Spacer, null), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+        size: "md",
         "aria-label": "Toggle Colour Mode",
-        color: iconColour,
+        variant: "ghost",
         colorScheme: "pink",
         icon: colourModeIcon,
-        marginEnd: "16px",
+        marginEnd: "2px",
         onClick: toggleColorMode
       }), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+        size: "md",
         "aria-label": "Collapse Sidebar",
-        color: iconColour,
+        variant: "ghost",
         colorScheme: "pink",
         icon: /* @__PURE__ */ import_react142.default.createElement(ArrowLeftIcon, null),
-        marginEnd: "16px",
+        marginEnd: "10px",
         onClick: toggleSidebarWidth
-      }));
+      })), /* @__PURE__ */ import_react142.default.createElement(Flex, {
+        justifyContent: "flex-start",
+        alignItems: "center",
+        transition: "height 0.2s ease-in-out",
+        height: numNewTraces > 0 ? "50px" : 0,
+        overflow: "hidden"
+      }, /* @__PURE__ */ import_react142.default.createElement(Button, {
+        size: "md",
+        "aria-label": "Refresh",
+        variant: "ghost",
+        colorScheme: "pink",
+        fontWeight: "normal",
+        leftIcon: /* @__PURE__ */ import_react142.default.createElement(RepeatIcon, null),
+        marginX: "10px",
+        justifyContent: "flex-start",
+        onClick: () => {
+          window.location.reload();
+        }
+      }, /* @__PURE__ */ import_react142.default.createElement(Text, {
+        fontSize: "sm",
+        fontWeight: "bold",
+        color: "ButtonText"
+      }, numNewTraces, " New Trace", numNewTraces === 1 ? " " : "s"))));
     }
     return /* @__PURE__ */ import_react142.default.createElement(import_react142.default.Fragment, null, /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+      size: "md",
       "aria-label": "Expand Sidebar",
-      color: iconColour,
       colorScheme: "pink",
+      variant: "ghost",
       icon: /* @__PURE__ */ import_react142.default.createElement(ArrowRightIcon, null),
-      marginTop: "16px",
+      marginTop: "10px",
       onClick: toggleSidebarWidth,
       isDisabled: isFullWidthDisabled
     }), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+      size: "md",
       "aria-label": "Toggle Colour Mode",
-      color: iconColour,
       colorScheme: "pink",
-      height: "40px",
+      variant: "ghost",
       icon: colourModeIcon,
-      marginTop: "16px",
-      onClick: toggleColorMode,
-      width: "40px"
+      marginTop: "2px",
+      onClick: toggleColorMode
     }));
   }
 
@@ -51890,7 +51759,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var sidebarCollapsedWidth = 70;
   function Sidebar(props) {
     let sidebarColour = useColorModeValue("gray.50", "gray.700");
-    let { isFullWidth, toggleSidebarWidth, traceSummaries } = props;
+    let { isFullWidth, toggleSidebarWidth, traceSummaries, numNewTraces } = props;
     let isFullWidthDisabled = traceSummaries.length === 0;
     if (isFullWidth) {
       return /* @__PURE__ */ import_react144.default.createElement(Flex, {
@@ -51899,10 +51768,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         direction: "column",
         transition: "width 0.2s ease-in-out",
         width: sidebarFullWidth
-      }, /* @__PURE__ */ import_react144.default.createElement(SidebarButtons, {
+      }, /* @__PURE__ */ import_react144.default.createElement(SidebarHeader, {
         isFullWidth,
         toggleSidebarWidth,
-        isFullWidthDisabled: false
+        isFullWidthDisabled: false,
+        numNewTraces
       }), /* @__PURE__ */ import_react144.default.createElement(TraceList, {
         traceSummaries
       }));
@@ -51914,10 +51784,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       direction: "column",
       transition: "width 0.2s ease-in-out",
       width: sidebarCollapsedWidth
-    }, /* @__PURE__ */ import_react144.default.createElement(SidebarButtons, {
+    }, /* @__PURE__ */ import_react144.default.createElement(SidebarHeader, {
       isFullWidth,
       isFullWidthDisabled,
-      toggleSidebarWidth
+      toggleSidebarWidth,
+      numNewTraces: 0
     }));
   }
 
@@ -52151,47 +52022,93 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   function MainView() {
     let { traceSummaries } = useLoaderData();
     let [isFullWidth, setFullWidth] = useBoolean(traceSummaries.length > 0);
+    let [sidebarData, setSidebarData] = (0, import_react148.useState)(initSidebarData(traceSummaries));
+    (0, import_react148.useEffect)(() => {
+      async function checkForNewData() {
+        let response = await fetch("/api/traces");
+        if (response.ok) {
+          let { traceSummaries: traceSummaries2 } = await response.json();
+          let newSidebarData = {
+            ...updateSidebarData(sidebarData, traceSummaries2)
+          };
+          setSidebarData(newSidebarData);
+        }
+      }
+      let interval = setInterval(checkForNewData, 1e3);
+      return () => clearInterval(interval);
+    }, []);
     if (!traceSummaries.length) {
       return /* @__PURE__ */ import_react148.default.createElement(Flex, {
         height: "100vh"
       }, /* @__PURE__ */ import_react148.default.createElement(Sidebar, {
         isFullWidth,
         toggleSidebarWidth: setFullWidth.toggle,
-        traceSummaries: []
+        traceSummaries: [],
+        numNewTraces: 0
       }), /* @__PURE__ */ import_react148.default.createElement(EmptyStateView, null));
     }
-    let sidebarSummaries = getTraceSummariesWithUIData(traceSummaries);
     return /* @__PURE__ */ import_react148.default.createElement(Flex, {
       height: "100vh"
     }, /* @__PURE__ */ import_react148.default.createElement(Sidebar, {
       isFullWidth,
       toggleSidebarWidth: setFullWidth.toggle,
-      traceSummaries: sidebarSummaries
+      traceSummaries: sidebarData.summaries,
+      numNewTraces: sidebarData.numNewTraces
     }), /* @__PURE__ */ import_react148.default.createElement(Outlet, null));
   }
-  function getTraceSummariesWithUIData(traceSummaries) {
-    return traceSummaries.map((traceSummary) => {
-      if (traceSummary.hasRootSpan) {
-        let duration = getDurationNs(
-          traceSummary.rootStartTime,
-          traceSummary.rootEndTime
-        );
-        let durationString = getDurationString(duration);
-        return {
-          hasRootSpan: true,
-          rootServiceName: traceSummary.rootServiceName,
-          rootName: traceSummary.rootName,
-          rootDurationString: durationString,
-          spanCount: traceSummary.spanCount,
-          traceID: traceSummary.traceID
-        };
+  function initSidebarData(traceSummaries) {
+    return {
+      summaries: traceSummaries.map(
+        (traceSummary) => generateTraceSummaryWithUIData(traceSummary)
+      ),
+      numNewTraces: 0
+    };
+  }
+  function updateSidebarData(sidebarData, traceSummaries) {
+    sidebarData.numNewTraces = 0;
+    for (let i = 0; i < traceSummaries.length; i++) {
+      let traceID = traceSummaries[i].traceID;
+      let sidebarSummaryIndex = sidebarData.summaries.findIndex(
+        (s) => s.traceID === traceID
+      );
+      if (sidebarSummaryIndex === -1) {
+        sidebarData.numNewTraces++;
+      } else if (traceSummaries[i].spanCount > sidebarData.summaries[sidebarSummaryIndex].spanCount) {
+        sidebarData.summaries[sidebarSummaryIndex] = generateTraceSummaryWithUIData(traceSummaries[i]);
       }
+    }
+    for (let i = 0; i < sidebarData.summaries.length; i++) {
+      let traceID = sidebarData.summaries[i].traceID;
+      let counterpartIndex = traceSummaries.findIndex(
+        (s) => s.traceID === traceID
+      );
+      if (counterpartIndex === -1) {
+        sidebarData.summaries.splice(i, 1);
+      }
+    }
+    return sidebarData;
+  }
+  function generateTraceSummaryWithUIData(traceSummary) {
+    if (traceSummary.hasRootSpan) {
+      let duration = getDurationNs(
+        traceSummary.rootStartTime,
+        traceSummary.rootEndTime
+      );
+      let durationString = getDurationString(duration);
       return {
-        hasRootSpan: false,
+        hasRootSpan: true,
+        rootServiceName: traceSummary.rootServiceName,
+        rootName: traceSummary.rootName,
+        rootDurationString: durationString,
         spanCount: traceSummary.spanCount,
         traceID: traceSummary.traceID
       };
-    });
+    }
+    return {
+      hasRootSpan: false,
+      spanCount: traceSummary.spanCount,
+      traceID: traceSummary.traceID
+    };
   }
 
   // app/routes/trace-view.tsx

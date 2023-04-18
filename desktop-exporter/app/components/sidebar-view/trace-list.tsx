@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
-import { VariableSizeList } from "react-window";
-import { NavLink, useHref, useLocation } from "react-router-dom";
+import { FixedSizeList } from "react-window";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   Flex,
   LinkBox,
@@ -12,10 +12,6 @@ import {
 import { useSize } from "@chakra-ui/react-use-size";
 
 import { TraceSummaryWithUIData } from "../../types/ui-types";
-
-const sidebarItemHeightWithRoot = 120;
-const sidebarItemHeightWithoutRoot = 80;
-const dividerHeight = 1;
 
 type SidebarRowData = {
   selectedTraceID: string;
@@ -55,7 +51,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
     return (
       <div style={style}>
         <Divider
-          height={dividerHeight}
+          height="1px"
           borderColor={dividerColour}
         />
         <LinkBox
@@ -63,7 +59,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
           flexDirection="column"
           justifyContent="center"
           bgColor={backgroundColour}
-          height={`${sidebarItemHeightWithRoot}px`}
+          height="120px"
           paddingX="20px"
         >
           <Text
@@ -105,7 +101,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
   return (
     <div style={style}>
       <Divider
-        height={dividerHeight}
+        height="1px"
         borderColor={dividerColour}
       />
       <LinkBox
@@ -113,7 +109,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
         flexDirection="column"
         justifyContent="center"
         bgColor={backgroundColour}
-        height={`${sidebarItemHeightWithoutRoot}px`}
+        height="120px"
         paddingX="20px"
       >
         <Text fontSize="xs">
@@ -162,25 +158,20 @@ export function TraceList(props: TraceListProps) {
     traceSummaries: traceSummaries,
   };
 
-  let getItemHeight = (index: number) =>
-    traceSummaries[index].hasRootSpan
-      ? sidebarItemHeightWithRoot + dividerHeight
-      : sidebarItemHeightWithoutRoot + dividerHeight;
-
   return (
     <Flex
       ref={ref}
       height="100%"
     >
-      <VariableSizeList
+      <FixedSizeList
         height={size ? size.height : 0}
         itemData={itemData}
         itemCount={props.traceSummaries.length}
-        itemSize={getItemHeight}
+        itemSize={121}
         width="100%"
       >
         {SidebarRow}
-      </VariableSizeList>
+      </FixedSizeList>
     </Flex>
   );
 }
