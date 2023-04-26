@@ -102,7 +102,7 @@ func traceIDHandler(store *TraceStore) func(http.ResponseWriter, *http.Request) 
 
 func indexHandler(writer http.ResponseWriter, request *http.Request) {
 	if os.Getenv("SERVE_FROM_FS") == "true" {
-		http.ServeFile(writer, request, "./desktop-exporter/static/index.html")
+		http.ServeFile(writer, request, "./desktopexporter/static/index.html")
 	} else {
 		indexBytes, err := assets.ReadFile("static/index.html")
 		if err != nil {
@@ -121,7 +121,7 @@ func NewServer(traceStore *TraceStore, endpoint string) *Server {
 	router.HandleFunc("/api/clearData", clearDataHandler(traceStore))
 	router.HandleFunc("/traces/{id}", indexHandler)
 	if os.Getenv("SERVE_FROM_FS") == "true" {
-		router.PathPrefix("/").Handler(http.FileServer(http.Dir("./desktop-exporter/static/")))
+		router.PathPrefix("/").Handler(http.FileServer(http.Dir("./desktopexporter/static/")))
 	} else {
 		staticContent, err := fs.Sub(assets, "static")
 		if err != nil {

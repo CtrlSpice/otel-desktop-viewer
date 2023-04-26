@@ -3,7 +3,7 @@ module github.com/CtrlSpice/otel-desktop-viewer
 go 1.19
 
 require (
-	github.com/CtrlSpice/otel-desktop-viewer/desktop-exporter v0.0.0-00010101000000-000000000000
+	github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.0.0-00010101000000-000000000000
 	github.com/stretchr/testify v1.8.2
 	go.opentelemetry.io/collector v0.76.0
 	go.opentelemetry.io/collector/component v0.76.0
@@ -93,4 +93,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/CtrlSpice/otel-desktop-viewer/desktop-exporter => ./desktop-exporter
+replace github.com/CtrlSpice/otel-desktop-viewer/desktopexporter => ./desktopexporter

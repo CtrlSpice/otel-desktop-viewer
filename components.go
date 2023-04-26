@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/collector/otelcol"
 	"go.opentelemetry.io/collector/processor"
 	"go.opentelemetry.io/collector/receiver"
-	desktopexporter "github.com/CtrlSpice/otel-desktop-viewer/desktop-exporter"
+	desktopexporter "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
 	batchprocessor "go.opentelemetry.io/collector/processor/batchprocessor"
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"
 )
