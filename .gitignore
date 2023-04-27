@@ -1,5 +1,5 @@
 .DS_Store
 otel-desktop-viewer
-desktop-exporter/node_modules
+desktopexporter/node_modules
 .vscode/
 dist/

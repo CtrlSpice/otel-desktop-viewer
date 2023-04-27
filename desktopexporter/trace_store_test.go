@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktop-exporter/testdata"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/testdata"
 	"github.com/stretchr/testify/assert"
 )
 

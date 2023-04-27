@@ -1,4 +1,4 @@
-module github.com/CtrlSpice/otel-desktop-viewer/desktop-exporter
+module github.com/CtrlSpice/otel-desktop-viewer/desktopexporter
 
 go 1.19
 

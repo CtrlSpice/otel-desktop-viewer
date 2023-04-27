@@ -1,6 +1,6 @@
 .PHONY: install
 install:
-	cd desktop-exporter; npm install
+	cd desktopexporter; npm install
 
 .PHONY: build-go
 build-go:
@@ -16,18 +16,18 @@ run-go:
 
 .PHONY: build-js
 build-js:
-	cd desktop-exporter; npx esbuild --bundle app/main.tsx app/main.css --outdir=static
+	cd desktopexporter; npx esbuild --bundle app/main.tsx app/main.css --outdir=static
 
 .PHONY: watch-js
 watch-js:
-	cd desktop-exporter; npx esbuild --watch --bundle app/main.tsx app/main.css --outdir=static
+	cd desktopexporter; npx esbuild --watch --bundle app/main.tsx app/main.css --outdir=static
 
 .PHONY: format-js
 format-js:
-	cd desktop-exporter; npx prettier -w app
+	cd desktopexporter; npx prettier -w app
 
 # esbuild will compile typescript files but will not typecheck them. This runs the
 # typescript typechecker but does not build the files.
 .PHONY: validate-typescript
 validate-typescript:
-	cd desktop-exporter; npx tsc --noEmit
+	cd desktopexporter; npx tsc --noEmit
