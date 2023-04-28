@@ -4,8 +4,51 @@ import (
 	"context"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
+
+func extractMetrics(metrics pmetric.Metrics) []MetricData {
+	md := []MetricData{}
+
+	for rsi := 0; rsi < metrics.ResourceMetrics().Len(); rsi++ {
+		rm := metrics.ResourceMetrics().At(rsi)
+		rd := aggregateResourceData(rm.Resource())
+
+		for ssi := 0; ssi < rm.ScopeMetrics().Len(); ssi++ {
+			sm := rm.ScopeMetrics().At(ssi)
+			sd := aggregateScopeData(sm.Scope())
+
+			for si := 0; si < sm.Metrics().Len(); si++ {
+				metric := sm.Metrics().At(si)
+				metricData := aggregateMetricData(metric, sd, rd)
+				md = append(md, metricData)
+			}
+		}
+	}
+	return md
+}
+
+func extractLogs(logs plog.Logs) []LogData {
+	logData := []LogData{}
+
+	for rsi := 0; rsi < logs.ResourceLogs().Len(); rsi++ {
+		rl := logs.ResourceLogs().At(rsi)
+		rd := aggregateResourceData(rl.Resource())
+
+		for ssi := 0; ssi < rl.ScopeLogs().Len(); ssi++ {
+			sl := rl.ScopeLogs().At(ssi)
+			sd := aggregateScopeData(sl.Scope())
+
+			for si := 0; si < sl.LogRecords().Len(); si++ {
+				log := sl.LogRecords().At(si)
+				logData = append(logData, aggregateLogData(log, sd, rd))
+			}
+		}
+	}
+	return logData
+}
 
 func extractSpans(_ context.Context, traces ptrace.Traces) []SpanData {
 	extractedSpans := make([]SpanData, 0, traces.SpanCount())
@@ -107,5 +150,23 @@ func aggregateSpanData(span ptrace.Span, eventData []EventData, LinkData []LinkD
 
 		StatusCode:    span.Status().Code().String(),
 		StatusMessage: span.Status().Message(),
+	}
+}
+
+func aggregateMetricData(source pmetric.Metric, scope *ScopeData, resource *ResourceData) MetricData {
+	return MetricData{
+		Name: source.Name(),
+		// TODO: add other fields
+		Resource: resource,
+		Scope:    scope,
+	}
+}
+
+func aggregateLogData(source plog.LogRecord, scope *ScopeData, resource *ResourceData) LogData {
+	return LogData{
+		Body: source.Body().AsString(),
+		// TODO: add other fields
+		Resource: resource,
+		Scope:    scope,
 	}
 }

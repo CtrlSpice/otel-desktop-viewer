@@ -15,7 +15,21 @@ const (
 	resourceCount = 2
 	scopeCount    = 3
 	spanCount     = 4
+	metricCount   = 5
+	logCount      = 6
 )
+
+func TestExtractLogs(t *testing.T) {
+	logs := testdata.GenerateLogs(resourceCount, scopeCount, logCount)
+	ld := extractLogs(logs)
+	assert.Len(t, ld, logs.LogRecordCount())
+}
+
+func TestExtractMetrics(t *testing.T) {
+	metrics := testdata.GenerateMetrics(resourceCount, scopeCount, metricCount)
+	md := extractMetrics(metrics)
+	assert.Len(t, md, metrics.MetricCount())
+}
 
 func TestExtractSpans(t *testing.T) {
 	traces := testdata.GenerateOTLPPayload(resourceCount, scopeCount, spanCount)

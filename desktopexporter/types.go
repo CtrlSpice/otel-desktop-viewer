@@ -45,6 +45,18 @@ type ScopeData struct {
 	DroppedAttributesCount uint32                 `json:"droppedAttributesCount"`
 }
 
+type LogData struct {
+	Body     string        `json:"body"`
+	Resource *ResourceData `json:"resource"`
+	Scope    *ScopeData    `json:"scope"`
+}
+
+type MetricData struct {
+	Name     string        `json:"name"`
+	Resource *ResourceData `json:"resource"`
+	Scope    *ScopeData    `json:"scope"`
+}
+
 type SpanData struct {
 	TraceID      string `json:"traceID"`
 	TraceState   string `json:"traceState"`

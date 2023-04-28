@@ -23,6 +23,18 @@ func NewTraceStore(maxQueueSize int) *TraceStore {
 	}
 }
 
+func (store *TraceStore) AddMetric(_ context.Context, md MetricData) {
+	store.mut.Lock()
+	defer store.mut.Unlock()
+	// TODO: enqueue metric
+}
+
+func (store *TraceStore) AddLog(_ context.Context, ld LogData) {
+	store.mut.Lock()
+	defer store.mut.Unlock()
+	// TODO: enqueue log
+}
+
 func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 	store.mut.Lock()
 	defer store.mut.Unlock()
@@ -33,7 +45,7 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 	if !traceExists {
 		traceData = TraceData{
 			TraceID: spanData.TraceID,
-			Spans: []SpanData{},
+			Spans:   []SpanData{},
 		}
 	}
 	traceData.Spans = append(traceData.Spans, spanData)
@@ -71,7 +83,7 @@ func (store *TraceStore) GetRecentTraces(traceCount int) []TraceData {
 	return recentTraces
 }
 
-func (store *TraceStore) ClearTraces(){
+func (store *TraceStore) ClearTraces() {
 	store.mut.Lock()
 	defer store.mut.Unlock()
 

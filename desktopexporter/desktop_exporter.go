@@ -7,6 +7,8 @@ import (
 	"net/http"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -17,6 +19,22 @@ const (
 type desktopExporter struct {
 	traceStore *TraceStore
 	server     *Server
+}
+
+func (exporter *desktopExporter) pushMetrics(ctx context.Context, metrics pmetric.Metrics) error {
+	md := extractMetrics(metrics)
+	for _, metric := range md {
+		exporter.traceStore.AddMetric(ctx, metric)
+	}
+	return nil
+}
+
+func (exporter *desktopExporter) pushLogs(ctx context.Context, logs plog.Logs) error {
+	ld := extractLogs(logs)
+	for _, logData := range ld {
+		exporter.traceStore.AddLog(ctx, logData)
+	}
+	return nil
 }
 
 func (exporter *desktopExporter) pushTraces(ctx context.Context, traces ptrace.Traces) error {
@@ -39,7 +57,6 @@ func newDesktopExporter(cfg *Config) *desktopExporter {
 func (exporter *desktopExporter) Start(ctx context.Context, host component.Host) error {
 	go func() {
 		err := exporter.server.Start()
-		defer exporter.server.Close()
 
 		if errors.Is(err, http.ErrServerClosed) {
 			fmt.Printf("server closed\n")
@@ -49,4 +66,8 @@ func (exporter *desktopExporter) Start(ctx context.Context, host component.Host)
 
 	}()
 	return nil
+}
+
+func (exporter *desktopExporter) Shutdown(ctx context.Context) error {
+	return exporter.server.Close()
 }
