@@ -1,4 +1,4 @@
-package desktopexporter
+package telemetry
 
 import (
 	"fmt"
@@ -15,4 +15,3 @@ func (spanData *SpanData) GetServiceName() string {
 	}
 	return serviceName
 }
-

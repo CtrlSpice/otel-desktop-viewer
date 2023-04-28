@@ -1,16 +1,61 @@
-package desktopexporter
+package telemetry
 
 import (
-	"errors"
 	"time"
+
+	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-var ErrEmptySpansSlice = errors.New("slice of spans associated with this traceID must not be empty")
-var ErrTraceIDNotFound = errors.New("traceID not found")
-var ErrTraceIDMismatch = errors.New("traceID mismatch between TraceStore.traceMap and TraceStore.traceQueue")
+type RecentTelemetrySummaries struct {
+	Summaries []TelemetrySummary `json:"summaries"`
+}
 
-var WarningMissingRootSpan = errors.New("warning: trace is incomplete - no root span found")
-var WarningInvalidServiceName = errors.New("warning: Resource.Attributes['service.name'] must be a string value that helps to distinguish a group of services")
+type TelemetrySummary struct {
+	ServiceName string `json:"serviceName"`
+	Type        string `json:"type"`
+	ID          string `json:"ID"`
+}
+
+type TelemetryData struct {
+	ID     string     `json:"ID"`
+	Type   string     `json:"type"`
+	Metric MetricData `json:"metric"`
+	Log    LogData    `json:"log"`
+	Trace  TraceData  `json:"trace"`
+}
+
+type LogData struct {
+	Body                   string                 `json:"body"`
+	TraceID                string                 `json:"traceID"`
+	SpanID                 string                 `json:"spanID"`
+	Timestamp              time.Time              `json:"timestamp"`
+	ObservedTimestamp      time.Time              `json:"observedTimestamp"`
+	Attributes             map[string]interface{} `json:"attributes"`
+	Resource               *ResourceData          `json:"resource"`
+	Scope                  *ScopeData             `json:"scope"`
+	SeverityText           string                 `json:"severityText"`
+	SeverityNumber         plog.SeverityNumber    `json:"severityNumber"`
+	DroppedAttributesCount uint32                 `json:"droppedAttributeCount"`
+	Flags                  plog.LogRecordFlags    `json:"flags"`
+}
+
+type MetricData struct {
+	Name     string        `json:"name"`
+	Resource *ResourceData `json:"resource"`
+	Scope    *ScopeData    `json:"scope"`
+}
+
+type ResourceData struct {
+	Attributes             map[string]interface{} `json:"attributes"`
+	DroppedAttributesCount uint32                 `json:"droppedAttributesCount"`
+}
+
+type ScopeData struct {
+	Name                   string                 `json:"name"`
+	Version                string                 `json:"version"`
+	Attributes             map[string]interface{} `json:"attributes"`
+	DroppedAttributesCount uint32                 `json:"droppedAttributesCount"`
+}
 
 type RecentSummaries struct {
 	TraceSummaries []TraceSummary `json:"traceSummaries"`
@@ -31,18 +76,6 @@ type TraceSummary struct {
 type TraceData struct {
 	TraceID string     `json:"traceID"`
 	Spans   []SpanData `json:"spans"`
-}
-
-type ResourceData struct {
-	Attributes             map[string]interface{} `json:"attributes"`
-	DroppedAttributesCount uint32                 `json:"droppedAttributesCount"`
-}
-
-type ScopeData struct {
-	Name                   string                 `json:"name"`
-	Version                string                 `json:"version"`
-	Attributes             map[string]interface{} `json:"attributes"`
-	DroppedAttributesCount uint32                 `json:"droppedAttributesCount"`
 }
 
 type SpanData struct {

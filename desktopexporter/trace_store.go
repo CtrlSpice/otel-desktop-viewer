@@ -5,13 +5,15 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
 type TraceStore struct {
 	maxQueueSize int
 	mut          sync.Mutex
 	traceQueue   *list.List
-	traceMap     map[string]TraceData
+	traceMap     map[string]telemetry.TraceData
 }
 
 func NewTraceStore(maxQueueSize int) *TraceStore {
@@ -19,11 +21,19 @@ func NewTraceStore(maxQueueSize int) *TraceStore {
 		maxQueueSize: maxQueueSize,
 		mut:          sync.Mutex{},
 		traceQueue:   list.New(),
-		traceMap:     map[string]TraceData{},
+		traceMap:     map[string]telemetry.TraceData{},
 	}
 }
 
-func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
+func (store *TraceStore) AddMetric(_ context.Context, md telemetry.MetricData) {
+	// not implemented for metric store
+}
+
+func (store *TraceStore) AddLog(_ context.Context, ld telemetry.LogData) {
+	// not implemented for trace store
+}
+
+func (store *TraceStore) Add(_ context.Context, spanData telemetry.SpanData) {
 	store.mut.Lock()
 	defer store.mut.Unlock()
 
@@ -31,38 +41,38 @@ func (store *TraceStore) Add(_ context.Context, spanData SpanData) {
 	store.enqueueTrace(spanData.TraceID)
 	traceData, traceExists := store.traceMap[spanData.TraceID]
 	if !traceExists {
-		traceData = TraceData{
+		traceData = telemetry.TraceData{
 			TraceID: spanData.TraceID,
-			Spans: []SpanData{},
+			Spans:   []telemetry.SpanData{},
 		}
 	}
 	traceData.Spans = append(traceData.Spans, spanData)
 	store.traceMap[spanData.TraceID] = traceData
 }
 
-func (store *TraceStore) GetTrace(traceID string) (TraceData, error) {
+func (store *TraceStore) GetTrace(traceID string) (telemetry.TraceData, error) {
 	store.mut.Lock()
 	defer store.mut.Unlock()
 
 	trace, traceExists := store.traceMap[traceID]
 	if !traceExists {
-		return TraceData{}, ErrTraceIDNotFound
+		return telemetry.TraceData{}, telemetry.ErrTraceIDNotFound
 	}
 
 	return trace, nil
 }
 
-func (store *TraceStore) GetRecentTraces(traceCount int) []TraceData {
+func (store *TraceStore) GetRecentTraces(traceCount int) []telemetry.TraceData {
 	store.mut.Lock()
 	defer store.mut.Unlock()
 
 	recentIDs := store.getRecentTraceIDs(traceCount)
-	recentTraces := make([]TraceData, 0, len(recentIDs))
+	recentTraces := make([]telemetry.TraceData, 0, len(recentIDs))
 
 	for _, traceID := range recentIDs {
 		trace, traceExists := store.traceMap[traceID]
 		if !traceExists {
-			fmt.Printf("error: %s\t traceID: %s\n", ErrTraceIDNotFound, traceID)
+			fmt.Printf("error: %s\t traceID: %s\n", telemetry.ErrTraceIDNotFound, traceID)
 		} else {
 			recentTraces = append(recentTraces, trace)
 		}
@@ -71,12 +81,12 @@ func (store *TraceStore) GetRecentTraces(traceCount int) []TraceData {
 	return recentTraces
 }
 
-func (store *TraceStore) ClearTraces(){
+func (store *TraceStore) ClearTraces() {
 	store.mut.Lock()
 	defer store.mut.Unlock()
 
 	store.traceQueue = list.New()
-	store.traceMap = map[string]TraceData{}
+	store.traceMap = map[string]telemetry.TraceData{}
 }
 
 func (store *TraceStore) enqueueTrace(traceID string) {
@@ -85,7 +95,7 @@ func (store *TraceStore) enqueueTrace(traceID string) {
 	if traceIDExists {
 		element := store.findQueueElement(traceID)
 		if element == nil {
-			fmt.Println(ErrTraceIDMismatch)
+			fmt.Println(telemetry.ErrTraceIDMismatch)
 		}
 
 		store.traceQueue.MoveToFront(element)
