@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
-import { VariableSizeList } from "react-window";
-import { NavLink, useHref, useLocation } from "react-router-dom";
+import { FixedSizeList } from "react-window";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   Flex,
   LinkBox,
@@ -13,8 +13,7 @@ import { useSize } from "@chakra-ui/react-use-size";
 
 import { TraceSummaryWithUIData } from "../../types/ui-types";
 
-const sidebarItemHeightWithRoot = 120;
-const sidebarItemHeightWithoutRoot = 80;
+const sidebarSummaryHeight = 120;
 const dividerHeight = 1;
 
 type SidebarRowData = {
@@ -63,7 +62,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
           flexDirection="column"
           justifyContent="center"
           bgColor={backgroundColour}
-          height={`${sidebarItemHeightWithRoot}px`}
+          height={`${sidebarSummaryHeight}px`}
           paddingX="20px"
         >
           <Text
@@ -113,7 +112,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
         flexDirection="column"
         justifyContent="center"
         bgColor={backgroundColour}
-        height={`${sidebarItemHeightWithoutRoot}px`}
+        height={`${sidebarSummaryHeight}px`}
         paddingX="20px"
       >
         <Text fontSize="xs">
@@ -162,25 +161,22 @@ export function TraceList(props: TraceListProps) {
     traceSummaries: traceSummaries,
   };
 
-  let getItemHeight = (index: number) =>
-    traceSummaries[index].hasRootSpan
-      ? sidebarItemHeightWithRoot + dividerHeight
-      : sidebarItemHeightWithoutRoot + dividerHeight;
+  let itemHeight = sidebarSummaryHeight + dividerHeight;
 
   return (
     <Flex
       ref={ref}
       height="100%"
     >
-      <VariableSizeList
+      <FixedSizeList
         height={size ? size.height : 0}
         itemData={itemData}
         itemCount={props.traceSummaries.length}
-        itemSize={getItemHeight}
+        itemSize={itemHeight}
         width="100%"
       >
         {SidebarRow}
-      </VariableSizeList>
+      </FixedSizeList>
     </Flex>
   );
 }
