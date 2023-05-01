@@ -29,9 +29,7 @@ export default function MainView() {
       let response = await fetch("/api/traces");
       if (response.ok) {
         let { traceSummaries } = (await response.json()) as TraceSummaries;
-        let newSidebarData = {
-          ...updateSidebarData(sidebarData, traceSummaries),
-        };
+        let newSidebarData = updateSidebarData(sidebarData, traceSummaries);
         setSidebarData(newSidebarData);
       }
     }
@@ -82,43 +80,46 @@ function updateSidebarData(
   sidebarData: SidebarData,
   traceSummaries: TraceSummary[],
 ): SidebarData {
-  sidebarData.numNewTraces = 0;
+  
+  let mergedData: SidebarData = {
+    numNewTraces: 0,
+    summaries: [...sidebarData.summaries],
+  };
 
   // Check for new and stale traces
-  for (let i = 0; i < traceSummaries.length; i++) {
-    let traceID = traceSummaries[i].traceID;
-    let sidebarSummaryIndex = sidebarData.summaries.findIndex(
+  for (let summary of traceSummaries) {
+    let traceID = summary.traceID;
+    let sidebarSummaryIndex = mergedData.summaries.findIndex(
       (s) => s.traceID === traceID,
     );
 
     if (sidebarSummaryIndex === -1) {
       // If the traceID of the new summary has no match in the sidebar
       // increment the number of new traces.
-      sidebarData.numNewTraces++;
+      mergedData.numNewTraces++;
     } else if (
-      traceSummaries[i].spanCount >
-      sidebarData.summaries[sidebarSummaryIndex].spanCount
+      summary.spanCount > mergedData.summaries[sidebarSummaryIndex].spanCount
     ) {
       // If the number of spans in an existing trace is greater than what's displayed in the sidebar
       // generate a whole new summary with ui data
-      sidebarData.summaries[sidebarSummaryIndex] =
-        generateTraceSummaryWithUIData(traceSummaries[i]);
+      mergedData.summaries[sidebarSummaryIndex] =
+        generateTraceSummaryWithUIData(summary);
     }
   }
 
   // Check for deleted/expired traces
-  for (let i = 0; i < sidebarData.summaries.length; i++) {
-    let traceID = sidebarData.summaries[i].traceID;
+  for (let i = 0; i < mergedData.summaries.length; i++) {
+    let traceID = mergedData.summaries[i].traceID;
     let counterpartIndex = traceSummaries.findIndex(
       (s) => s.traceID === traceID,
     );
     if (counterpartIndex === -1) {
       // If a summary present in the sidebar is not present in the list of incoming traces
       // it is expired and must be removed
-      sidebarData.summaries.splice(i, 1);
+      mergedData.summaries.splice(i, 1);
     }
   }
-  return sidebarData;
+  return mergedData;
 }
 
 function generateTraceSummaryWithUIData(

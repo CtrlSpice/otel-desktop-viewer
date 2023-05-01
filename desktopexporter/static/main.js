@@ -52031,9 +52031,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         let response = await fetch("/api/traces");
         if (response.ok) {
           let { traceSummaries: traceSummaries2 } = await response.json();
-          let newSidebarData = {
-            ...updateSidebarData(sidebarData, traceSummaries2)
-          };
+          let newSidebarData = updateSidebarData(sidebarData, traceSummaries2);
           setSidebarData(newSidebarData);
         }
       }
@@ -52068,28 +52066,31 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     };
   }
   function updateSidebarData(sidebarData, traceSummaries) {
-    sidebarData.numNewTraces = 0;
-    for (let i = 0; i < traceSummaries.length; i++) {
-      let traceID = traceSummaries[i].traceID;
-      let sidebarSummaryIndex = sidebarData.summaries.findIndex(
+    let mergedData = {
+      numNewTraces: 0,
+      summaries: [...sidebarData.summaries]
+    };
+    for (let summary of traceSummaries) {
+      let traceID = summary.traceID;
+      let sidebarSummaryIndex = mergedData.summaries.findIndex(
         (s) => s.traceID === traceID
       );
       if (sidebarSummaryIndex === -1) {
-        sidebarData.numNewTraces++;
-      } else if (traceSummaries[i].spanCount > sidebarData.summaries[sidebarSummaryIndex].spanCount) {
-        sidebarData.summaries[sidebarSummaryIndex] = generateTraceSummaryWithUIData(traceSummaries[i]);
+        mergedData.numNewTraces++;
+      } else if (summary.spanCount > mergedData.summaries[sidebarSummaryIndex].spanCount) {
+        mergedData.summaries[sidebarSummaryIndex] = generateTraceSummaryWithUIData(summary);
       }
     }
-    for (let i = 0; i < sidebarData.summaries.length; i++) {
-      let traceID = sidebarData.summaries[i].traceID;
+    for (let i = 0; i < mergedData.summaries.length; i++) {
+      let traceID = mergedData.summaries[i].traceID;
       let counterpartIndex = traceSummaries.findIndex(
         (s) => s.traceID === traceID
       );
       if (counterpartIndex === -1) {
-        sidebarData.summaries.splice(i, 1);
+        mergedData.summaries.splice(i, 1);
       }
     }
-    return sidebarData;
+    return mergedData;
   }
   function generateTraceSummaryWithUIData(traceSummary) {
     if (traceSummary.hasRootSpan) {
