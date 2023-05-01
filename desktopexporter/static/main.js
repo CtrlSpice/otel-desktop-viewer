@@ -1001,7 +1001,7 @@
             }
             return dispatcher.useContext(Context);
           }
-          function useState20(initialState2) {
+          function useState21(initialState2) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useState(initialState2);
           }
@@ -1013,7 +1013,7 @@
             var dispatcher = resolveDispatcher();
             return dispatcher.useRef(initialValue);
           }
-          function useEffect35(create, deps) {
+          function useEffect36(create, deps) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useEffect(create, deps);
           }
@@ -1793,7 +1793,7 @@
           exports.useContext = useContext16;
           exports.useDebugValue = useDebugValue2;
           exports.useDeferredValue = useDeferredValue;
-          exports.useEffect = useEffect35;
+          exports.useEffect = useEffect36;
           exports.useId = useId8;
           exports.useImperativeHandle = useImperativeHandle;
           exports.useInsertionEffect = useInsertionEffect2;
@@ -1801,7 +1801,7 @@
           exports.useMemo = useMemo19;
           exports.useReducer = useReducer;
           exports.useRef = useRef28;
-          exports.useState = useState20;
+          exports.useState = useState21;
           exports.useSyncExternalStore = useSyncExternalStore3;
           exports.useTransition = useTransition;
           exports.version = ReactVersion;
@@ -51762,7 +51762,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   var sidebarCollapsedWidth = 70;
   function Sidebar(props) {
     let sidebarColour = useColorModeValue("gray.50", "gray.700");
-    let { isFullWidth, toggleSidebarWidth, traceSummaries } = props;
+    let { isFullWidth, toggleSidebarWidth, traceSummaries, numNewTraces } = props;
     let isFullWidthDisabled = traceSummaries.length === 0;
     if (isFullWidth) {
       return /* @__PURE__ */ import_react144.default.createElement(Flex, {
@@ -51775,7 +51775,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         isFullWidth,
         toggleSidebarWidth,
         isFullWidthDisabled: false,
-        numNewTraces: 0
+        numNewTraces
       }), /* @__PURE__ */ import_react144.default.createElement(TraceList, {
         traceSummaries
       }));
@@ -52025,47 +52025,93 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   function MainView() {
     let { traceSummaries } = useLoaderData();
     let [isFullWidth, setFullWidth] = useBoolean(traceSummaries.length > 0);
+    let [sidebarData, setSidebarData] = (0, import_react148.useState)(initSidebarData(traceSummaries));
+    (0, import_react148.useEffect)(() => {
+      async function checkForNewData() {
+        let response = await fetch("/api/traces");
+        if (response.ok) {
+          let { traceSummaries: traceSummaries2 } = await response.json();
+          let newSidebarData = {
+            ...updateSidebarData(sidebarData, traceSummaries2)
+          };
+          setSidebarData(newSidebarData);
+        }
+      }
+      let interval = setInterval(checkForNewData, 1e3);
+      return () => clearInterval(interval);
+    }, []);
     if (!traceSummaries.length) {
       return /* @__PURE__ */ import_react148.default.createElement(Flex, {
         height: "100vh"
       }, /* @__PURE__ */ import_react148.default.createElement(Sidebar, {
         isFullWidth,
         toggleSidebarWidth: setFullWidth.toggle,
-        traceSummaries: []
+        traceSummaries: [],
+        numNewTraces: 0
       }), /* @__PURE__ */ import_react148.default.createElement(EmptyStateView, null));
     }
-    let sidebarSummaries = getTraceSummariesWithUIData(traceSummaries);
     return /* @__PURE__ */ import_react148.default.createElement(Flex, {
       height: "100vh"
     }, /* @__PURE__ */ import_react148.default.createElement(Sidebar, {
       isFullWidth,
       toggleSidebarWidth: setFullWidth.toggle,
-      traceSummaries: sidebarSummaries
+      traceSummaries: sidebarData.summaries,
+      numNewTraces: sidebarData.numNewTraces
     }), /* @__PURE__ */ import_react148.default.createElement(Outlet, null));
   }
-  function getTraceSummariesWithUIData(traceSummaries) {
-    return traceSummaries.map((traceSummary) => {
-      if (traceSummary.hasRootSpan) {
-        let duration = getDurationNs(
-          traceSummary.rootStartTime,
-          traceSummary.rootEndTime
-        );
-        let durationString = getDurationString(duration);
-        return {
-          hasRootSpan: true,
-          rootServiceName: traceSummary.rootServiceName,
-          rootName: traceSummary.rootName,
-          rootDurationString: durationString,
-          spanCount: traceSummary.spanCount,
-          traceID: traceSummary.traceID
-        };
+  function initSidebarData(traceSummaries) {
+    return {
+      summaries: traceSummaries.map(
+        (traceSummary) => generateTraceSummaryWithUIData(traceSummary)
+      ),
+      numNewTraces: 0
+    };
+  }
+  function updateSidebarData(sidebarData, traceSummaries) {
+    sidebarData.numNewTraces = 0;
+    for (let i = 0; i < traceSummaries.length; i++) {
+      let traceID = traceSummaries[i].traceID;
+      let sidebarSummaryIndex = sidebarData.summaries.findIndex(
+        (s) => s.traceID === traceID
+      );
+      if (sidebarSummaryIndex === -1) {
+        sidebarData.numNewTraces++;
+      } else if (traceSummaries[i].spanCount > sidebarData.summaries[sidebarSummaryIndex].spanCount) {
+        sidebarData.summaries[sidebarSummaryIndex] = generateTraceSummaryWithUIData(traceSummaries[i]);
       }
+    }
+    for (let i = 0; i < sidebarData.summaries.length; i++) {
+      let traceID = sidebarData.summaries[i].traceID;
+      let counterpartIndex = traceSummaries.findIndex(
+        (s) => s.traceID === traceID
+      );
+      if (counterpartIndex === -1) {
+        sidebarData.summaries.splice(i, 1);
+      }
+    }
+    return sidebarData;
+  }
+  function generateTraceSummaryWithUIData(traceSummary) {
+    if (traceSummary.hasRootSpan) {
+      let duration = getDurationNs(
+        traceSummary.rootStartTime,
+        traceSummary.rootEndTime
+      );
+      let durationString = getDurationString(duration);
       return {
-        hasRootSpan: false,
+        hasRootSpan: true,
+        rootServiceName: traceSummary.rootServiceName,
+        rootName: traceSummary.rootName,
+        rootDurationString: durationString,
         spanCount: traceSummary.spanCount,
         traceID: traceSummary.traceID
       };
-    });
+    }
+    return {
+      hasRootSpan: false,
+      spanCount: traceSummary.spanCount,
+      traceID: traceSummary.traceID
+    };
   }
 
   // app/routes/trace-view.tsx

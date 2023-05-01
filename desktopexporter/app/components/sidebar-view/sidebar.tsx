@@ -12,11 +12,12 @@ type SidebarProps = {
   isFullWidth: boolean;
   toggleSidebarWidth: () => void;
   traceSummaries: TraceSummaryWithUIData[];
+  numNewTraces: number;
 };
 
 export function Sidebar(props: SidebarProps) {
   let sidebarColour = useColorModeValue("gray.50", "gray.700");
-  let { isFullWidth, toggleSidebarWidth, traceSummaries } = props;
+  let { isFullWidth, toggleSidebarWidth, traceSummaries, numNewTraces } = props;
   let isFullWidthDisabled = traceSummaries.length === 0;
 
   if (isFullWidth) {
@@ -32,7 +33,7 @@ export function Sidebar(props: SidebarProps) {
           isFullWidth={isFullWidth}
           toggleSidebarWidth={toggleSidebarWidth}
           isFullWidthDisabled={false}
-          numNewTraces={0}
+          numNewTraces={numNewTraces}
         />
         <TraceList traceSummaries={traceSummaries} />
       </Flex>

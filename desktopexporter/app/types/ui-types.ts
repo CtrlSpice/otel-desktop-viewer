@@ -35,3 +35,8 @@ export type TraceSummaryWithUIData =
       spanCount: number;
       traceID: string;
     };
+
+    export type SidebarData = {
+      numNewTraces: number;
+      summaries: TraceSummaryWithUIData[];
+    };
