@@ -3816,7 +3816,7 @@
           var didWarnSelectedSetOnOption = false;
           var didWarnInvalidChild = false;
           var didWarnInvalidInnerHTML = false;
-          function validateProps3(element, props) {
+          function validateProps2(element, props) {
             {
               if (props.value == null) {
                 if (typeof props.children === "object" && props.children !== null) {
@@ -9050,7 +9050,7 @@
                 listenToNonDelegatedEvent("invalid", domElement);
                 break;
               case "option":
-                validateProps3(domElement, rawProps);
+                validateProps2(domElement, rawProps);
                 props = rawProps;
                 break;
               case "select":
@@ -9297,7 +9297,7 @@
                 listenToNonDelegatedEvent("invalid", domElement);
                 break;
               case "option":
-                validateProps3(domElement, rawProps);
+                validateProps2(domElement, rawProps);
                 break;
               case "select":
                 initWrapperState$1(domElement, rawProps);
@@ -50699,13 +50699,13 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   }
   function createListComponent(_ref) {
     var _class;
-    var getItemOffset3 = _ref.getItemOffset, getEstimatedTotalSize4 = _ref.getEstimatedTotalSize, getItemSize3 = _ref.getItemSize, getOffsetForIndexAndAlignment3 = _ref.getOffsetForIndexAndAlignment, getStartIndexForOffset3 = _ref.getStartIndexForOffset, getStopIndexForStartIndex3 = _ref.getStopIndexForStartIndex, initInstanceProps3 = _ref.initInstanceProps, shouldResetStyleCacheOnItemSizeChange = _ref.shouldResetStyleCacheOnItemSizeChange, validateProps3 = _ref.validateProps;
+    var getItemOffset2 = _ref.getItemOffset, getEstimatedTotalSize2 = _ref.getEstimatedTotalSize, getItemSize2 = _ref.getItemSize, getOffsetForIndexAndAlignment2 = _ref.getOffsetForIndexAndAlignment, getStartIndexForOffset2 = _ref.getStartIndexForOffset, getStopIndexForStartIndex2 = _ref.getStopIndexForStartIndex, initInstanceProps2 = _ref.initInstanceProps, shouldResetStyleCacheOnItemSizeChange = _ref.shouldResetStyleCacheOnItemSizeChange, validateProps2 = _ref.validateProps;
     return _class = /* @__PURE__ */ function(_PureComponent) {
       _inheritsLoose(List3, _PureComponent);
       function List3(props) {
         var _this;
         _this = _PureComponent.call(this, props) || this;
-        _this._instanceProps = initInstanceProps3(_this.props, _assertThisInitialized(_this));
+        _this._instanceProps = initInstanceProps2(_this.props, _assertThisInitialized(_this));
         _this._outerRef = void 0;
         _this._resetIsScrollingTimeoutId = null;
         _this.state = {
@@ -50740,8 +50740,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           if (itemStyleCache.hasOwnProperty(index)) {
             style = itemStyleCache[index];
           } else {
-            var _offset = getItemOffset3(_this.props, index, _this._instanceProps);
-            var size3 = getItemSize3(_this.props, index, _this._instanceProps);
+            var _offset = getItemOffset2(_this.props, index, _this._instanceProps);
+            var size3 = getItemSize2(_this.props, index, _this._instanceProps);
             var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
             var isRtl = direction2 === "rtl";
             var offsetHorizontal = isHorizontal ? _offset : 0;
@@ -50829,7 +50829,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
       List3.getDerivedStateFromProps = function getDerivedStateFromProps(nextProps, prevState) {
         validateSharedProps$1(nextProps, prevState);
-        validateProps3(nextProps);
+        validateProps2(nextProps);
         return null;
       };
       var _proto = List3.prototype;
@@ -50862,7 +50862,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
             scrollbarSize = outerRef.scrollHeight > outerRef.clientHeight ? getScrollbarSize() : 0;
           }
         }
-        this.scrollTo(getOffsetForIndexAndAlignment3(this.props, index, align, scrollOffset, this._instanceProps, scrollbarSize));
+        this.scrollTo(getOffsetForIndexAndAlignment2(this.props, index, align, scrollOffset, this._instanceProps, scrollbarSize));
       };
       _proto.componentDidMount = function componentDidMount() {
         var _this$props3 = this.props, direction2 = _this$props3.direction, initialScrollOffset = _this$props3.initialScrollOffset, layout2 = _this$props3.layout;
@@ -50927,7 +50927,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
             }));
           }
         }
-        var estimatedTotalSize = getEstimatedTotalSize4(this.props, this._instanceProps);
+        var estimatedTotalSize = getEstimatedTotalSize2(this.props, this._instanceProps);
         return (0, import_react138.createElement)(outerElementType || outerTagName || "div", {
           className,
           onScroll,
@@ -50970,8 +50970,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         if (itemCount === 0) {
           return [0, 0, 0, 0];
         }
-        var startIndex = getStartIndexForOffset3(this.props, scrollOffset, this._instanceProps);
-        var stopIndex = getStopIndexForStartIndex3(this.props, startIndex, scrollOffset, this._instanceProps);
+        var startIndex = getStartIndexForOffset2(this.props, scrollOffset, this._instanceProps);
+        var stopIndex = getStopIndexForStartIndex2(this.props, startIndex, scrollOffset, this._instanceProps);
         var overscanBackward = !isScrolling || scrollDirection === "backward" ? Math.max(1, overscanCount) : 1;
         var overscanForward = !isScrolling || scrollDirection === "forward" ? Math.max(1, overscanCount) : 1;
         return [Math.max(0, startIndex - overscanBackward), Math.max(0, Math.min(itemCount - 1, stopIndex + overscanForward)), startIndex, stopIndex];
@@ -51027,180 +51027,20 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
     }
   };
-  var DEFAULT_ESTIMATED_ITEM_SIZE$1 = 50;
-  var getItemMetadata$1 = function getItemMetadata(props, index, instanceProps) {
-    var _ref = props, itemSize = _ref.itemSize;
-    var itemMetadataMap = instanceProps.itemMetadataMap, lastMeasuredIndex = instanceProps.lastMeasuredIndex;
-    if (index > lastMeasuredIndex) {
-      var offset2 = 0;
-      if (lastMeasuredIndex >= 0) {
-        var itemMetadata = itemMetadataMap[lastMeasuredIndex];
-        offset2 = itemMetadata.offset + itemMetadata.size;
-      }
-      for (var i = lastMeasuredIndex + 1; i <= index; i++) {
-        var size3 = itemSize(i);
-        itemMetadataMap[i] = {
-          offset: offset2,
-          size: size3
-        };
-        offset2 += size3;
-      }
-      instanceProps.lastMeasuredIndex = index;
-    }
-    return itemMetadataMap[index];
-  };
-  var findNearestItem$1 = function findNearestItem(props, instanceProps, offset2) {
-    var itemMetadataMap = instanceProps.itemMetadataMap, lastMeasuredIndex = instanceProps.lastMeasuredIndex;
-    var lastMeasuredItemOffset = lastMeasuredIndex > 0 ? itemMetadataMap[lastMeasuredIndex].offset : 0;
-    if (lastMeasuredItemOffset >= offset2) {
-      return findNearestItemBinarySearch$1(props, instanceProps, lastMeasuredIndex, 0, offset2);
-    } else {
-      return findNearestItemExponentialSearch$1(props, instanceProps, Math.max(0, lastMeasuredIndex), offset2);
-    }
-  };
-  var findNearestItemBinarySearch$1 = function findNearestItemBinarySearch(props, instanceProps, high, low, offset2) {
-    while (low <= high) {
-      var middle = low + Math.floor((high - low) / 2);
-      var currentOffset = getItemMetadata$1(props, middle, instanceProps).offset;
-      if (currentOffset === offset2) {
-        return middle;
-      } else if (currentOffset < offset2) {
-        low = middle + 1;
-      } else if (currentOffset > offset2) {
-        high = middle - 1;
-      }
-    }
-    if (low > 0) {
-      return low - 1;
-    } else {
-      return 0;
-    }
-  };
-  var findNearestItemExponentialSearch$1 = function findNearestItemExponentialSearch(props, instanceProps, index, offset2) {
-    var itemCount = props.itemCount;
-    var interval = 1;
-    while (index < itemCount && getItemMetadata$1(props, index, instanceProps).offset < offset2) {
-      index += interval;
-      interval *= 2;
-    }
-    return findNearestItemBinarySearch$1(props, instanceProps, Math.min(index, itemCount - 1), Math.floor(index / 2), offset2);
-  };
-  var getEstimatedTotalSize = function getEstimatedTotalSize2(_ref2, _ref3) {
-    var itemCount = _ref2.itemCount;
-    var itemMetadataMap = _ref3.itemMetadataMap, estimatedItemSize = _ref3.estimatedItemSize, lastMeasuredIndex = _ref3.lastMeasuredIndex;
-    var totalSizeOfMeasuredItems = 0;
-    if (lastMeasuredIndex >= itemCount) {
-      lastMeasuredIndex = itemCount - 1;
-    }
-    if (lastMeasuredIndex >= 0) {
-      var itemMetadata = itemMetadataMap[lastMeasuredIndex];
-      totalSizeOfMeasuredItems = itemMetadata.offset + itemMetadata.size;
-    }
-    var numUnmeasuredItems = itemCount - lastMeasuredIndex - 1;
-    var totalSizeOfUnmeasuredItems = numUnmeasuredItems * estimatedItemSize;
-    return totalSizeOfMeasuredItems + totalSizeOfUnmeasuredItems;
-  };
-  var VariableSizeList = /* @__PURE__ */ createListComponent({
-    getItemOffset: function getItemOffset(props, index, instanceProps) {
-      return getItemMetadata$1(props, index, instanceProps).offset;
-    },
-    getItemSize: function getItemSize(props, index, instanceProps) {
-      return instanceProps.itemMetadataMap[index].size;
-    },
-    getEstimatedTotalSize,
-    getOffsetForIndexAndAlignment: function getOffsetForIndexAndAlignment(props, index, align, scrollOffset, instanceProps, scrollbarSize) {
-      var direction2 = props.direction, height = props.height, layout2 = props.layout, width = props.width;
-      var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
-      var size3 = isHorizontal ? width : height;
-      var itemMetadata = getItemMetadata$1(props, index, instanceProps);
-      var estimatedTotalSize = getEstimatedTotalSize(props, instanceProps);
-      var maxOffset = Math.max(0, Math.min(estimatedTotalSize - size3, itemMetadata.offset));
-      var minOffset = Math.max(0, itemMetadata.offset - size3 + itemMetadata.size + scrollbarSize);
-      if (align === "smart") {
-        if (scrollOffset >= minOffset - size3 && scrollOffset <= maxOffset + size3) {
-          align = "auto";
-        } else {
-          align = "center";
-        }
-      }
-      switch (align) {
-        case "start":
-          return maxOffset;
-        case "end":
-          return minOffset;
-        case "center":
-          return Math.round(minOffset + (maxOffset - minOffset) / 2);
-        case "auto":
-        default:
-          if (scrollOffset >= minOffset && scrollOffset <= maxOffset) {
-            return scrollOffset;
-          } else if (scrollOffset < minOffset) {
-            return minOffset;
-          } else {
-            return maxOffset;
-          }
-      }
-    },
-    getStartIndexForOffset: function getStartIndexForOffset(props, offset2, instanceProps) {
-      return findNearestItem$1(props, instanceProps, offset2);
-    },
-    getStopIndexForStartIndex: function getStopIndexForStartIndex(props, startIndex, scrollOffset, instanceProps) {
-      var direction2 = props.direction, height = props.height, itemCount = props.itemCount, layout2 = props.layout, width = props.width;
-      var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
-      var size3 = isHorizontal ? width : height;
-      var itemMetadata = getItemMetadata$1(props, startIndex, instanceProps);
-      var maxOffset = scrollOffset + size3;
-      var offset2 = itemMetadata.offset + itemMetadata.size;
-      var stopIndex = startIndex;
-      while (stopIndex < itemCount - 1 && offset2 < maxOffset) {
-        stopIndex++;
-        offset2 += getItemMetadata$1(props, stopIndex, instanceProps).size;
-      }
-      return stopIndex;
-    },
-    initInstanceProps: function initInstanceProps(props, instance) {
-      var _ref4 = props, estimatedItemSize = _ref4.estimatedItemSize;
-      var instanceProps = {
-        itemMetadataMap: {},
-        estimatedItemSize: estimatedItemSize || DEFAULT_ESTIMATED_ITEM_SIZE$1,
-        lastMeasuredIndex: -1
-      };
-      instance.resetAfterIndex = function(index, shouldForceUpdate) {
-        if (shouldForceUpdate === void 0) {
-          shouldForceUpdate = true;
-        }
-        instanceProps.lastMeasuredIndex = Math.min(instanceProps.lastMeasuredIndex, index - 1);
-        instance._getItemStyleCache(-1);
-        if (shouldForceUpdate) {
-          instance.forceUpdate();
-        }
-      };
-      return instanceProps;
-    },
-    shouldResetStyleCacheOnItemSizeChange: false,
-    validateProps: function validateProps(_ref5) {
-      var itemSize = _ref5.itemSize;
-      if (true) {
-        if (typeof itemSize !== "function") {
-          throw Error('An invalid "itemSize" prop has been specified. Value should be a function. ' + ('"' + (itemSize === null ? "null" : typeof itemSize) + '" was specified.'));
-        }
-      }
-    }
-  });
   var FixedSizeList = /* @__PURE__ */ createListComponent({
-    getItemOffset: function getItemOffset2(_ref, index) {
+    getItemOffset: function getItemOffset(_ref, index) {
       var itemSize = _ref.itemSize;
       return index * itemSize;
     },
-    getItemSize: function getItemSize2(_ref2, index) {
+    getItemSize: function getItemSize(_ref2, index) {
       var itemSize = _ref2.itemSize;
       return itemSize;
     },
-    getEstimatedTotalSize: function getEstimatedTotalSize3(_ref3) {
+    getEstimatedTotalSize: function getEstimatedTotalSize(_ref3) {
       var itemCount = _ref3.itemCount, itemSize = _ref3.itemSize;
       return itemSize * itemCount;
     },
-    getOffsetForIndexAndAlignment: function getOffsetForIndexAndAlignment2(_ref4, index, align, scrollOffset, instanceProps, scrollbarSize) {
+    getOffsetForIndexAndAlignment: function getOffsetForIndexAndAlignment(_ref4, index, align, scrollOffset, instanceProps, scrollbarSize) {
       var direction2 = _ref4.direction, height = _ref4.height, itemCount = _ref4.itemCount, itemSize = _ref4.itemSize, layout2 = _ref4.layout, width = _ref4.width;
       var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
       var size3 = isHorizontal ? width : height;
@@ -51240,11 +51080,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           }
       }
     },
-    getStartIndexForOffset: function getStartIndexForOffset2(_ref5, offset2) {
+    getStartIndexForOffset: function getStartIndexForOffset(_ref5, offset2) {
       var itemCount = _ref5.itemCount, itemSize = _ref5.itemSize;
       return Math.max(0, Math.min(itemCount - 1, Math.floor(offset2 / itemSize)));
     },
-    getStopIndexForStartIndex: function getStopIndexForStartIndex2(_ref6, startIndex, scrollOffset) {
+    getStopIndexForStartIndex: function getStopIndexForStartIndex(_ref6, startIndex, scrollOffset) {
       var direction2 = _ref6.direction, height = _ref6.height, itemCount = _ref6.itemCount, itemSize = _ref6.itemSize, layout2 = _ref6.layout, width = _ref6.width;
       var isHorizontal = direction2 === "horizontal" || layout2 === "horizontal";
       var offset2 = startIndex * itemSize;
@@ -51255,10 +51095,10 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         startIndex + numVisibleItems - 1
       ));
     },
-    initInstanceProps: function initInstanceProps2(props) {
+    initInstanceProps: function initInstanceProps(props) {
     },
     shouldResetStyleCacheOnItemSizeChange: true,
-    validateProps: function validateProps2(_ref7) {
+    validateProps: function validateProps(_ref7) {
       var itemSize = _ref7.itemSize;
       if (true) {
         if (typeof itemSize !== "number") {
@@ -51269,8 +51109,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   });
 
   // app/components/sidebar-view/trace-list.tsx
-  var sidebarItemHeightWithRoot = 120;
-  var sidebarItemHeightWithoutRoot = 80;
+  var sidebarSummaryHeight = 120;
   var dividerHeight = 1;
   function SidebarRow({ index, style, data }) {
     let selectedColor = useColorModeValue("pink.100", "pink.900");
@@ -51292,7 +51131,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         flexDirection: "column",
         justifyContent: "center",
         bgColor: backgroundColour,
-        height: `${sidebarItemHeightWithRoot}px`,
+        height: `${sidebarSummaryHeight}px`,
         paddingX: "20px"
       }, /* @__PURE__ */ import_react139.default.createElement(Text, {
         fontSize: "xs",
@@ -51321,7 +51160,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       flexDirection: "column",
       justifyContent: "center",
       bgColor: backgroundColour,
-      height: `${sidebarItemHeightWithoutRoot}px`,
+      height: `${sidebarSummaryHeight}px`,
       paddingX: "20px"
     }, /* @__PURE__ */ import_react139.default.createElement(Text, {
       fontSize: "xs"
@@ -51350,15 +51189,15 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       selectedTraceID,
       traceSummaries
     };
-    let getItemHeight = (index) => traceSummaries[index].hasRootSpan ? sidebarItemHeightWithRoot + dividerHeight : sidebarItemHeightWithoutRoot + dividerHeight;
+    let itemHeight = sidebarSummaryHeight + dividerHeight;
     return /* @__PURE__ */ import_react139.default.createElement(Flex, {
       ref,
       height: "100%"
-    }, /* @__PURE__ */ import_react139.default.createElement(VariableSizeList, {
+    }, /* @__PURE__ */ import_react139.default.createElement(FixedSizeList, {
       height: size3 ? size3.height : 0,
       itemData,
       itemCount: props.traceSummaries.length,
-      itemSize: getItemHeight,
+      itemSize: itemHeight,
       width: "100%"
     }, SidebarRow));
   }
