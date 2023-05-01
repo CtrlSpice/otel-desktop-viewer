@@ -51202,7 +51202,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }, SidebarRow));
   }
 
-  // app/components/sidebar-view/sidebar-buttons.tsx
+  // app/components/sidebar-view/sidebar-header.tsx
   var import_react142 = __toESM(require_react());
 
   // node_modules/@chakra-ui/icons/dist/index.esm.js
@@ -51662,7 +51662,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     d: "M 3 5 A 1.0001 1.0001 0 1 0 3 7 L 21 7 A 1.0001 1.0001 0 1 0 21 5 L 3 5 z M 3 11 A 1.0001 1.0001 0 1 0 3 13 L 21 13 A 1.0001 1.0001 0 1 0 21 11 L 3 11 z M 3 17 A 1.0001 1.0001 0 1 0 3 19 L 21 19 A 1.0001 1.0001 0 1 0 21 17 L 3 17 z"
   });
 
-  // app/components/sidebar-view/sidebar-buttons.tsx
+  // app/components/sidebar-view/sidebar-header.tsx
   async function clearTraceData() {
     let response = await fetch("/api/clearData");
     if (!response.ok) {
@@ -51671,56 +51671,89 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       window.location.replace("/");
     }
   }
-  function SidebarButtons(props) {
+  function SidebarHeader(props) {
     let { toggleColorMode } = useColorMode();
     let colourModeIcon = useColorModeValue(/* @__PURE__ */ import_react142.default.createElement(MoonIcon, null), /* @__PURE__ */ import_react142.default.createElement(SunIcon, null));
-    let iconColour = useColorModeValue("white", "pink.900");
-    let { isFullWidth, isFullWidthDisabled, toggleSidebarWidth } = props;
+    let { isFullWidth, isFullWidthDisabled, toggleSidebarWidth, numNewTraces } = props;
     if (isFullWidth) {
       return /* @__PURE__ */ import_react142.default.createElement(Flex, {
-        height: "100px",
-        justifyContent: "flex-end",
-        alignItems: "center"
-      }, /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+        direction: "column",
+        height: "fit-content",
+        justifyContent: "space-evenly"
+      }, /* @__PURE__ */ import_react142.default.createElement(Flex, {
+        justifyContent: "flex-start",
+        alignItems: "center",
+        height: "50px"
+      }, /* @__PURE__ */ import_react142.default.createElement(Button, {
+        size: "md",
         "aria-label": "Clear Trace Data",
-        color: iconColour,
+        variant: "ghost",
         colorScheme: "pink",
-        icon: /* @__PURE__ */ import_react142.default.createElement(DeleteIcon, null),
-        marginEnd: "16px",
+        fontWeight: "normal",
+        leftIcon: /* @__PURE__ */ import_react142.default.createElement(DeleteIcon, null),
+        marginStart: "10px",
         onClick: clearTraceData
-      }), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+      }, /* @__PURE__ */ import_react142.default.createElement(Text, {
+        fontSize: "sm",
+        fontWeight: "bold",
+        color: "ButtonText"
+      }, "Clear Traces")), /* @__PURE__ */ import_react142.default.createElement(Spacer, null), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+        size: "md",
         "aria-label": "Toggle Colour Mode",
-        color: iconColour,
+        variant: "ghost",
         colorScheme: "pink",
         icon: colourModeIcon,
-        marginEnd: "16px",
+        marginEnd: "2px",
         onClick: toggleColorMode
       }), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+        size: "md",
         "aria-label": "Collapse Sidebar",
-        color: iconColour,
+        variant: "ghost",
         colorScheme: "pink",
         icon: /* @__PURE__ */ import_react142.default.createElement(ArrowLeftIcon, null),
-        marginEnd: "16px",
+        marginEnd: "10px",
         onClick: toggleSidebarWidth
-      }));
+      })), /* @__PURE__ */ import_react142.default.createElement(Flex, {
+        justifyContent: "flex-start",
+        alignItems: "center",
+        transition: "height 0.2s ease-in-out",
+        height: numNewTraces > 0 ? "50px" : 0,
+        overflow: "hidden"
+      }, /* @__PURE__ */ import_react142.default.createElement(Button, {
+        size: "md",
+        "aria-label": "Refresh",
+        variant: "ghost",
+        colorScheme: "pink",
+        fontWeight: "normal",
+        leftIcon: /* @__PURE__ */ import_react142.default.createElement(RepeatIcon, null),
+        marginX: "10px",
+        justifyContent: "flex-start",
+        onClick: () => {
+          window.location.reload();
+        }
+      }, /* @__PURE__ */ import_react142.default.createElement(Text, {
+        fontSize: "sm",
+        fontWeight: "bold",
+        color: "ButtonText"
+      }, numNewTraces, " New Trace", numNewTraces === 1 ? " " : "s"))));
     }
     return /* @__PURE__ */ import_react142.default.createElement(import_react142.default.Fragment, null, /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+      size: "md",
       "aria-label": "Expand Sidebar",
-      color: iconColour,
       colorScheme: "pink",
+      variant: "ghost",
       icon: /* @__PURE__ */ import_react142.default.createElement(ArrowRightIcon, null),
-      marginTop: "16px",
+      marginTop: "10px",
       onClick: toggleSidebarWidth,
       isDisabled: isFullWidthDisabled
     }), /* @__PURE__ */ import_react142.default.createElement(IconButton, {
+      size: "md",
       "aria-label": "Toggle Colour Mode",
-      color: iconColour,
       colorScheme: "pink",
-      height: "40px",
+      variant: "ghost",
       icon: colourModeIcon,
-      marginTop: "16px",
-      onClick: toggleColorMode,
-      width: "40px"
+      marginTop: "2px",
+      onClick: toggleColorMode
     }));
   }
 
@@ -51738,10 +51771,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         direction: "column",
         transition: "width 0.2s ease-in-out",
         width: sidebarFullWidth
-      }, /* @__PURE__ */ import_react144.default.createElement(SidebarButtons, {
+      }, /* @__PURE__ */ import_react144.default.createElement(SidebarHeader, {
         isFullWidth,
         toggleSidebarWidth,
-        isFullWidthDisabled: false
+        isFullWidthDisabled: false,
+        numNewTraces: 0
       }), /* @__PURE__ */ import_react144.default.createElement(TraceList, {
         traceSummaries
       }));
@@ -51753,10 +51787,11 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       direction: "column",
       transition: "width 0.2s ease-in-out",
       width: sidebarCollapsedWidth
-    }, /* @__PURE__ */ import_react144.default.createElement(SidebarButtons, {
+    }, /* @__PURE__ */ import_react144.default.createElement(SidebarHeader, {
       isFullWidth,
       isFullWidthDisabled,
-      toggleSidebarWidth
+      toggleSidebarWidth,
+      numNewTraces: 0
     }));
   }
 
