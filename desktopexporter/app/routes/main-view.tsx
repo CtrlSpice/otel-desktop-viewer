@@ -80,7 +80,6 @@ function updateSidebarData(
   sidebarData: SidebarData,
   traceSummaries: TraceSummary[],
 ): SidebarData {
-  
   let mergedData: SidebarData = {
     numNewTraces: 0,
     summaries: [...sidebarData.summaries],
@@ -108,8 +107,8 @@ function updateSidebarData(
   }
 
   // Check for deleted/expired traces
-  for (let i = 0; i < mergedData.summaries.length; i++) {
-    let traceID = mergedData.summaries[i].traceID;
+  for (let [i, summary] of mergedData.summaries.entries()) {
+    let traceID = summary.traceID;
     let counterpartIndex = traceSummaries.findIndex(
       (s) => s.traceID === traceID,
     );

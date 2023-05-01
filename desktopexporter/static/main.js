@@ -52081,8 +52081,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         mergedData.summaries[sidebarSummaryIndex] = generateTraceSummaryWithUIData(summary);
       }
     }
-    for (let i = 0; i < mergedData.summaries.length; i++) {
-      let traceID = mergedData.summaries[i].traceID;
+    for (let [i, summary] of mergedData.summaries.entries()) {
+      let traceID = summary.traceID;
       let counterpartIndex = traceSummaries.findIndex(
         (s) => s.traceID === traceID
       );
