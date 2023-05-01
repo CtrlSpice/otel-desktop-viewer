@@ -3,7 +3,7 @@ import { Flex, useColorModeValue } from "@chakra-ui/react";
 
 import { TraceList } from "./trace-list";
 import { TraceSummaryWithUIData } from "../../types/ui-types";
-import { SidebarButtons } from "./sidebar-buttons";
+import { SidebarHeader } from "./sidebar-header";
 
 const sidebarFullWidth = 350;
 const sidebarCollapsedWidth = 70;
@@ -28,10 +28,11 @@ export function Sidebar(props: SidebarProps) {
         transition="width 0.2s ease-in-out"
         width={sidebarFullWidth}
       >
-        <SidebarButtons
+        <SidebarHeader
           isFullWidth={isFullWidth}
           toggleSidebarWidth={toggleSidebarWidth}
           isFullWidthDisabled={false}
+          numNewTraces={0}
         />
         <TraceList traceSummaries={traceSummaries} />
       </Flex>
@@ -47,10 +48,11 @@ export function Sidebar(props: SidebarProps) {
       transition="width 0.2s ease-in-out"
       width={sidebarCollapsedWidth}
     >
-      <SidebarButtons
+      <SidebarHeader
         isFullWidth={isFullWidth}
         isFullWidthDisabled={isFullWidthDisabled}
         toggleSidebarWidth={toggleSidebarWidth}
+        numNewTraces={0}
       />
     </Flex>
   );
