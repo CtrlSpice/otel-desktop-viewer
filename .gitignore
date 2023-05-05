@@ -3,3 +3,6 @@ otel-desktop-viewer
 desktopexporter/node_modules
 .vscode/
 dist/
+distribution/linux/*
+.tools/*
+go.work*

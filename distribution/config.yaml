@@ -1,0 +1,13 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+exporters:
+  desktop:
+    endpoint: 0.0.0.0:8000
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [desktop]

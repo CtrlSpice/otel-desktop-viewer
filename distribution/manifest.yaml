@@ -1,0 +1,11 @@
+dist:
+  otelcol_version: 0.76.1
+  description: OpenTelemetry Collector with telemetry viewer
+  name: otelcol
+
+receivers:
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.76.1
+
+exporters:
+  - gomod: github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.0.0-20230427050052-c878f5ca8151
+  - gomod: go.opentelemetry.io/collector/exporter/otlpexporter v0.76.1
