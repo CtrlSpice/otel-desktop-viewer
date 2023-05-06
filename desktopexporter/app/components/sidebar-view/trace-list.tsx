@@ -1,6 +1,6 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { FixedSizeList } from "react-window";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Flex,
   LinkBox,
@@ -12,6 +12,7 @@ import {
 import { useSize } from "@chakra-ui/react-use-size";
 
 import { TraceSummaryWithUIData } from "../../types/ui-types";
+import { useKeyPress } from "../../utils/use-key-press";
 
 const sidebarSummaryHeight = 120;
 const dividerHeight = 1;
@@ -144,17 +145,49 @@ type TraceListProps = {
 export function TraceList(props: TraceListProps) {
   let ref = useRef(null);
   let size = useSize(ref);
+
   let location = useLocation();
+  let navigate = useNavigate();
+
+  let selectedIndex = 0;
+  let selectedTraceID = "";
   let { traceSummaries } = props;
 
   // Default to the first trace in the list if none are selected
-  let selectedTraceID = "";
   if (location.pathname.includes("/traces/")) {
     selectedTraceID = location.pathname.split("/")[2];
+    selectedIndex = traceSummaries.findIndex(
+      (summary) => summary.traceID === selectedTraceID,
+    );
   } else {
-    selectedTraceID = traceSummaries[0].traceID;
-    window.location.href = `/traces/${selectedTraceID}`;
+    selectedTraceID = traceSummaries[selectedIndex].traceID;
+    navigate(`/traces/${selectedTraceID}`);
   }
+
+  // Set up keyboard navigation
+  let arrowLeftPressed = useKeyPress("ArrowLeft");
+  let arrowRightPressed = useKeyPress("ArrowRight");
+  let hPressed = useKeyPress("h");
+  let lPressed = useKeyPress("l");
+
+  useEffect(() => {
+    if (arrowLeftPressed || hPressed) {
+      selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
+      selectedTraceID = traceSummaries[selectedIndex].traceID;
+      navigate(`/traces/${selectedTraceID}`);
+    }
+  }, [arrowLeftPressed, hPressed]);
+
+  useEffect(() => {
+    if (arrowRightPressed || lPressed) {
+      selectedIndex =
+        selectedIndex < traceSummaries.length - 1
+          ? selectedIndex + 1
+          : traceSummaries.length - 1;
+      selectedTraceID = traceSummaries[selectedIndex].traceID;
+      navigate(`/traces/${selectedTraceID}`);
+    }
+  }, [arrowRightPressed, lPressed]);
 
   let itemData = {
     selectedTraceID: selectedTraceID,
