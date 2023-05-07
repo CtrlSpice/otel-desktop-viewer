@@ -51216,7 +51216,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       );
     } else {
       selectedTraceID = traceSummaries[selectedIndex].traceID;
-      navigate(`/traces/${selectedTraceID}`);
+      window.location.href = `/traces/${selectedTraceID}`;
     }
     let arrowLeftPressed = useKeyPress("ArrowLeft");
     let arrowRightPressed = useKeyPress("ArrowRight");

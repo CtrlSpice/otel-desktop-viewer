@@ -161,7 +161,7 @@ export function TraceList(props: TraceListProps) {
     );
   } else {
     selectedTraceID = traceSummaries[selectedIndex].traceID;
-    navigate(`/traces/${selectedTraceID}`);
+    window.location.href = `/traces/${selectedTraceID}`;
   }
 
   // Set up keyboard navigation
