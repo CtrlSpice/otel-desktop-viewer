@@ -1013,7 +1013,7 @@
             var dispatcher = resolveDispatcher();
             return dispatcher.useRef(initialValue);
           }
-          function useEffect38(create, deps) {
+          function useEffect39(create, deps) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useEffect(create, deps);
           }
@@ -1793,7 +1793,7 @@
           exports.useContext = useContext16;
           exports.useDebugValue = useDebugValue2;
           exports.useDeferredValue = useDeferredValue;
-          exports.useEffect = useEffect38;
+          exports.useEffect = useEffect39;
           exports.useId = useId8;
           exports.useImperativeHandle = useImperativeHandle;
           exports.useInsertionEffect = useInsertionEffect2;
@@ -51115,6 +51115,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     (0, import_react139.useEffect)(
       () => {
         const downHandler = (event) => {
+          event.preventDefault();
           if (event.key === targetKey) {
             setKeyPressed(true);
           }
@@ -52825,13 +52826,44 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     const headerRowHeight = 30;
     const spanNameColumnWidth = 300;
     const serviceNameColumnWidth = 200;
+    let { orderedSpans, traceTimeAttributes, selectedSpanID, setSelectedSpanID } = props;
+    let arrowUpPressed = useKeyPress("ArrowUp");
+    let arrowDownPressed = useKeyPress("ArrowDown");
+    let kPressed = useKeyPress("k");
+    let jPressed = useKeyPress("j");
+    let selectedIndex = orderedSpans.findIndex(
+      (span) => span.metadata.spanID === selectedSpanID
+    );
+    let firstSelectableIndex = orderedSpans.findIndex(
+      (span) => span.status === "present" /* present */
+    );
+    (0, import_react173.useEffect)(() => {
+      if (arrowUpPressed || kPressed) {
+        if (selectedIndex > firstSelectableIndex) {
+          do {
+            selectedIndex--;
+          } while (orderedSpans[selectedIndex].status === "missing" /* missing */);
+          setSelectedSpanID(orderedSpans[selectedIndex].metadata.spanID);
+        }
+      }
+    }, [arrowUpPressed, kPressed]);
+    (0, import_react173.useEffect)(() => {
+      if (arrowDownPressed || jPressed) {
+        if (selectedIndex < orderedSpans.length - 1) {
+          do {
+            selectedIndex++;
+          } while (orderedSpans[selectedIndex].status === "missing" /* missing */);
+          setSelectedSpanID(orderedSpans[selectedIndex].metadata.spanID);
+        }
+      }
+    }, [arrowDownPressed, jPressed]);
     let rowData = {
-      orderedSpans: props.orderedSpans,
-      traceTimeAttributes: props.traceTimeAttributes,
+      orderedSpans,
+      traceTimeAttributes,
       spanNameColumnWidth,
       serviceNameColumnWidth,
-      selectedSpanID: props.selectedSpanID,
-      setSelectedSpanID: props.setSelectedSpanID
+      selectedSpanID,
+      setSelectedSpanID
     };
     return /* @__PURE__ */ import_react173.default.createElement(Flex, {
       direction: "column",
@@ -52936,10 +52968,10 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     let spanTree = arrayToTree(traceData.spans);
     let orderedSpans = orderSpans(spanTree);
     let [selectedSpanID, setSelectedSpanID] = import_react175.default.useState(() => {
-      if (!orderedSpans.length || !(orderedSpans[0].status === "present" /* present */) && orderedSpans.length < 2) {
-        return "";
+      if (!orderedSpans.length || orderedSpans[0].status === "missing" /* missing */ && orderedSpans.length < 2) {
+        throw new Error("Number of spans cannot be zero");
       }
-      if (!(orderedSpans[0].status === "present" /* present */)) {
+      if (orderedSpans[0].status === "missing" /* missing */) {
         return orderedSpans[1].metadata.spanID;
       }
       return orderedSpans[0].metadata.spanID;
