@@ -35,6 +35,16 @@ Running the CLI will open a browser tab to `localhost:8000` to load the UI,
 and spin up a server listening on `localhost:4318` for OTLP http payloads and
 `localhost:4317` for OTLP grpc payloads.
 
+## Command Line Options
+```bash
+Flags:
+      --browser int   The port number where we expose our data (default 8000)
+      --grpc int      The port number on which we listen for OTLP grpc payloads (default 4317)
+  -h, --help          help for otel-desktop-viewer
+      --http int      The port number on which we listen for OTLP http payloads (default 4318)
+  -v, --version       version for otel-desktop-viewer
+```
+
 ## Configuring your OpenTelemetry SDK
 
 To send telemetry to `otel-desktop-viewer` from your application, you need to
