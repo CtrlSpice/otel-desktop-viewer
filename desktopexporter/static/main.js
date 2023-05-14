@@ -51203,8 +51203,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }, "Trace ID: ", /* @__PURE__ */ import_react140.default.createElement("strong", null, traceSummary.traceID)))));
   }
   function TraceList(props) {
-    let ref = (0, import_react140.useRef)(null);
-    let size3 = useSize(ref);
+    let containerRef = (0, import_react140.useRef)(null);
+    let summaryListRef = import_react140.default.createRef();
+    let size3 = useSize(containerRef);
     let location = useLocation();
     let navigate = useNavigate();
     let selectedIndex = 0;
@@ -51226,6 +51227,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     (0, import_react140.useEffect)(() => {
       if (arrowLeftPressed || hPressed) {
         selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
+        summaryListRef.current?.scrollToItem(selectedIndex);
         selectedTraceID = traceSummaries[selectedIndex].traceID;
         navigate(`/traces/${selectedTraceID}`);
       }
@@ -51233,24 +51235,29 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     (0, import_react140.useEffect)(() => {
       if (arrowRightPressed || lPressed) {
         selectedIndex = selectedIndex < traceSummaries.length - 1 ? selectedIndex + 1 : traceSummaries.length - 1;
+        summaryListRef.current?.scrollToItem(selectedIndex);
         selectedTraceID = traceSummaries[selectedIndex].traceID;
         navigate(`/traces/${selectedTraceID}`);
       }
     }, [arrowRightPressed, lPressed]);
+    (0, import_react140.useEffect)(() => {
+      summaryListRef.current?.scrollToItem(selectedIndex, "start");
+    }, []);
     let itemData = {
       selectedTraceID,
       traceSummaries
     };
     let itemHeight = sidebarSummaryHeight + dividerHeight;
     return /* @__PURE__ */ import_react140.default.createElement(Flex, {
-      ref,
+      ref: containerRef,
       height: "100%"
     }, /* @__PURE__ */ import_react140.default.createElement(FixedSizeList, {
       height: size3 ? size3.height : 0,
       itemData,
       itemCount: props.traceSummaries.length,
       itemSize: itemHeight,
-      width: "100%"
+      width: "100%",
+      ref: summaryListRef
     }, SidebarRow));
   }
 
@@ -52820,8 +52827,9 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
 
   // app/components/waterfall-view/waterfall-view.tsx
   function WaterfallView(props) {
-    const ref = (0, import_react173.useRef)(null);
-    const size3 = useSize(ref);
+    let containerRef = (0, import_react173.useRef)(null);
+    let spanListRef = import_react173.default.createRef();
+    const size3 = useSize(containerRef);
     const waterfallItemHeight = 50;
     const headerRowHeight = 30;
     const spanNameColumnWidth = 300;
@@ -52844,6 +52852,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
             selectedIndex--;
           } while (orderedSpans[selectedIndex].status === "missing" /* missing */);
           setSelectedSpanID(orderedSpans[selectedIndex].metadata.spanID);
+          spanListRef.current?.scrollToItem(selectedIndex);
         }
       }
     }, [arrowUpPressed, kPressed]);
@@ -52854,6 +52863,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
             selectedIndex++;
           } while (orderedSpans[selectedIndex].status === "missing" /* missing */);
           setSelectedSpanID(orderedSpans[selectedIndex].metadata.spanID);
+          spanListRef.current?.scrollToItem(selectedIndex);
         }
       }
     }, [arrowDownPressed, jPressed]);
@@ -52867,20 +52877,21 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     };
     return /* @__PURE__ */ import_react173.default.createElement(Flex, {
       direction: "column",
-      ref,
+      ref: containerRef,
       height: "100%",
       onCopy: stripZeroWidthSpacesOnCopyCallback
     }, /* @__PURE__ */ import_react173.default.createElement(HeaderRow, {
       headerRowHeight,
       spanNameColumnWidth,
       serviceNameColumnWidth,
-      traceDuration: props.traceTimeAttributes.traceDurationNS
+      traceDuration: traceTimeAttributes.traceDurationNS
     }), /* @__PURE__ */ import_react173.default.createElement(FixedSizeList, {
       className: "List",
       height: size3 ? size3.height - headerRowHeight : 0,
       itemData: rowData,
-      itemCount: props.orderedSpans.length,
+      itemCount: orderedSpans.length,
       itemSize: waterfallItemHeight,
+      ref: spanListRef,
       width: "100%"
     }, WaterfallRow));
   }

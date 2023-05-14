@@ -17,8 +17,9 @@ type WaterfallViewProps = {
 };
 
 export function WaterfallView(props: WaterfallViewProps) {
-  const ref = useRef(null);
-  const size = useSize(ref);
+  let containerRef = useRef(null);
+  let spanListRef = React.createRef<FixedSizeList>();
+  const size = useSize(containerRef);
 
   const waterfallItemHeight = 50;
   const headerRowHeight = 30;
@@ -49,6 +50,7 @@ export function WaterfallView(props: WaterfallViewProps) {
           selectedIndex--;
         } while (orderedSpans[selectedIndex].status === SpanDataStatus.missing);
         setSelectedSpanID(orderedSpans[selectedIndex].metadata.spanID);
+        spanListRef.current?.scrollToItem(selectedIndex);
       }
     }
   }, [arrowUpPressed, kPressed]);
@@ -61,6 +63,7 @@ export function WaterfallView(props: WaterfallViewProps) {
           selectedIndex++;
         } while (orderedSpans[selectedIndex].status === SpanDataStatus.missing);
         setSelectedSpanID(orderedSpans[selectedIndex].metadata.spanID);
+        spanListRef.current?.scrollToItem(selectedIndex);
       }
     }
   }, [arrowDownPressed, jPressed]);
@@ -77,7 +80,7 @@ export function WaterfallView(props: WaterfallViewProps) {
   return (
     <Flex
       direction="column"
-      ref={ref}
+      ref={containerRef}
       height="100%"
       onCopy={stripZeroWidthSpacesOnCopyCallback}
     >
@@ -85,14 +88,15 @@ export function WaterfallView(props: WaterfallViewProps) {
         headerRowHeight={headerRowHeight}
         spanNameColumnWidth={spanNameColumnWidth}
         serviceNameColumnWidth={serviceNameColumnWidth}
-        traceDuration={props.traceTimeAttributes.traceDurationNS}
+        traceDuration={traceTimeAttributes.traceDurationNS}
       />
       <FixedSizeList
         className="List"
         height={size ? size.height - headerRowHeight : 0}
         itemData={rowData}
-        itemCount={props.orderedSpans.length}
+        itemCount={orderedSpans.length}
         itemSize={waterfallItemHeight}
+        ref={spanListRef}
         width={"100%"}
       >
         {WaterfallRow}

@@ -143,8 +143,9 @@ type TraceListProps = {
 };
 
 export function TraceList(props: TraceListProps) {
-  let ref = useRef(null);
-  let size = useSize(ref);
+  let containerRef = useRef(null);
+  let summaryListRef = React.createRef<FixedSizeList>();
+  let size = useSize(containerRef);
 
   let location = useLocation();
   let navigate = useNavigate();
@@ -173,6 +174,8 @@ export function TraceList(props: TraceListProps) {
   useEffect(() => {
     if (arrowLeftPressed || hPressed) {
       selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
+      summaryListRef.current?.scrollToItem(selectedIndex);
+
       selectedTraceID = traceSummaries[selectedIndex].traceID;
       navigate(`/traces/${selectedTraceID}`);
     }
@@ -184,10 +187,16 @@ export function TraceList(props: TraceListProps) {
         selectedIndex < traceSummaries.length - 1
           ? selectedIndex + 1
           : traceSummaries.length - 1;
+      summaryListRef.current?.scrollToItem(selectedIndex);
+
       selectedTraceID = traceSummaries[selectedIndex].traceID;
       navigate(`/traces/${selectedTraceID}`);
     }
   }, [arrowRightPressed, lPressed]);
+
+  useEffect(() => {
+    summaryListRef.current?.scrollToItem(selectedIndex, "start");
+  }, []);
 
   let itemData = {
     selectedTraceID: selectedTraceID,
@@ -198,7 +207,7 @@ export function TraceList(props: TraceListProps) {
 
   return (
     <Flex
-      ref={ref}
+      ref={containerRef}
       height="100%"
     >
       <FixedSizeList
@@ -207,6 +216,7 @@ export function TraceList(props: TraceListProps) {
         itemCount={props.traceSummaries.length}
         itemSize={itemHeight}
         width="100%"
+        ref={summaryListRef}
       >
         {SidebarRow}
       </FixedSizeList>
