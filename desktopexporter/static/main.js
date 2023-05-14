@@ -51262,6 +51262,9 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       selectedTraceID = traceSummaries[selectedIndex].traceID;
       window.location.href = `/traces/${selectedTraceID}`;
     }
+    (0, import_react140.useEffect)(() => {
+      summaryListRef.current?.scrollToItem(selectedIndex, "start");
+    }, []);
     let prevTraceKeyPressed = useKeyPress(["ArrowLeft", "h"]);
     let nextTraceKeyPressed = useKeyPress(["ArrowRight", "l"]);
     let reloadKeyPressed = useKeyPress(["r"]);
@@ -51297,9 +51300,6 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         clearTraceData();
       }
     }, [clearTracesComboPressed]);
-    (0, import_react140.useEffect)(() => {
-      summaryListRef.current?.scrollToItem(selectedIndex, "start");
-    }, []);
     let itemData = {
       selectedTraceID,
       traceSummaries
