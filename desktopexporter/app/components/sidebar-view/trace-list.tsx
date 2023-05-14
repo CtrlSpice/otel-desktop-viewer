@@ -166,23 +166,21 @@ export function TraceList(props: TraceListProps) {
   }
 
   // Set up keyboard navigation
-  let arrowLeftPressed = useKeyPress("ArrowLeft");
-  let arrowRightPressed = useKeyPress("ArrowRight");
-  let hPressed = useKeyPress("h");
-  let lPressed = useKeyPress("l");
+  let prevTraceKeyPressed = useKeyPress(["ArrowLeft", "h"]);
+  let nextTraceKeyPressed = useKeyPress(["ArrowRight", "l"]);
 
   useEffect(() => {
-    if (arrowLeftPressed || hPressed) {
+    if (prevTraceKeyPressed) {
       selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
       summaryListRef.current?.scrollToItem(selectedIndex);
 
       selectedTraceID = traceSummaries[selectedIndex].traceID;
       navigate(`/traces/${selectedTraceID}`);
     }
-  }, [arrowLeftPressed, hPressed]);
+  }, [prevTraceKeyPressed]);
 
   useEffect(() => {
-    if (arrowRightPressed || lPressed) {
+    if (nextTraceKeyPressed) {
       selectedIndex =
         selectedIndex < traceSummaries.length - 1
           ? selectedIndex + 1
@@ -192,7 +190,7 @@ export function TraceList(props: TraceListProps) {
       selectedTraceID = traceSummaries[selectedIndex].traceID;
       navigate(`/traces/${selectedTraceID}`);
     }
-  }, [arrowRightPressed, lPressed]);
+  }, [nextTraceKeyPressed]);
 
   useEffect(() => {
     summaryListRef.current?.scrollToItem(selectedIndex, "start");

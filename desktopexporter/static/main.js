@@ -51110,18 +51110,18 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
 
   // app/utils/use-key-press.ts
   var import_react139 = __toESM(require_react());
-  var useKeyPress = (targetKey) => {
+  var useKeyPress = (targetKeys) => {
     const [keyPressed, setKeyPressed] = (0, import_react139.useState)(false);
     (0, import_react139.useEffect)(
       () => {
         const downHandler = (event) => {
           event.preventDefault();
-          if (event.key === targetKey) {
+          if (targetKeys.includes(event.key)) {
             setKeyPressed(true);
           }
         };
         const upHandler = (event) => {
-          if (event.key === targetKey) {
+          if (targetKeys.includes(event.key)) {
             setKeyPressed(false);
           }
         };
@@ -51132,7 +51132,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           window.removeEventListener("keyup", upHandler);
         };
       },
-      [targetKey, setKeyPressed]
+      [targetKeys, setKeyPressed]
     );
     return keyPressed;
   };
@@ -51220,26 +51220,24 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       selectedTraceID = traceSummaries[selectedIndex].traceID;
       window.location.href = `/traces/${selectedTraceID}`;
     }
-    let arrowLeftPressed = useKeyPress("ArrowLeft");
-    let arrowRightPressed = useKeyPress("ArrowRight");
-    let hPressed = useKeyPress("h");
-    let lPressed = useKeyPress("l");
+    let prevTraceKeyPressed = useKeyPress(["ArrowLeft", "h"]);
+    let nextTraceKeyPressed = useKeyPress(["ArrowRight", "l"]);
     (0, import_react140.useEffect)(() => {
-      if (arrowLeftPressed || hPressed) {
+      if (prevTraceKeyPressed) {
         selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
         summaryListRef.current?.scrollToItem(selectedIndex);
         selectedTraceID = traceSummaries[selectedIndex].traceID;
         navigate(`/traces/${selectedTraceID}`);
       }
-    }, [arrowLeftPressed, hPressed]);
+    }, [prevTraceKeyPressed]);
     (0, import_react140.useEffect)(() => {
-      if (arrowRightPressed || lPressed) {
+      if (nextTraceKeyPressed) {
         selectedIndex = selectedIndex < traceSummaries.length - 1 ? selectedIndex + 1 : traceSummaries.length - 1;
         summaryListRef.current?.scrollToItem(selectedIndex);
         selectedTraceID = traceSummaries[selectedIndex].traceID;
         navigate(`/traces/${selectedTraceID}`);
       }
-    }, [arrowRightPressed, lPressed]);
+    }, [nextTraceKeyPressed]);
     (0, import_react140.useEffect)(() => {
       summaryListRef.current?.scrollToItem(selectedIndex, "start");
     }, []);
@@ -52835,10 +52833,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     const spanNameColumnWidth = 300;
     const serviceNameColumnWidth = 200;
     let { orderedSpans, traceTimeAttributes, selectedSpanID, setSelectedSpanID } = props;
-    let arrowUpPressed = useKeyPress("ArrowUp");
-    let arrowDownPressed = useKeyPress("ArrowDown");
-    let kPressed = useKeyPress("k");
-    let jPressed = useKeyPress("j");
+    let prevSpanKeyPressed = useKeyPress(["ArrowUp", "k"]);
+    let nextSpanKeyPressed = useKeyPress(["ArrowDown", "j"]);
     let selectedIndex = orderedSpans.findIndex(
       (span) => span.metadata.spanID === selectedSpanID
     );
@@ -52846,7 +52842,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       (span) => span.status === "present" /* present */
     );
     (0, import_react173.useEffect)(() => {
-      if (arrowUpPressed || kPressed) {
+      if (prevSpanKeyPressed) {
         if (selectedIndex > firstSelectableIndex) {
           do {
             selectedIndex--;
@@ -52855,9 +52851,9 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           spanListRef.current?.scrollToItem(selectedIndex);
         }
       }
-    }, [arrowUpPressed, kPressed]);
+    }, [prevSpanKeyPressed]);
     (0, import_react173.useEffect)(() => {
-      if (arrowDownPressed || jPressed) {
+      if (nextSpanKeyPressed) {
         if (selectedIndex < orderedSpans.length - 1) {
           do {
             selectedIndex++;
@@ -52866,7 +52862,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           spanListRef.current?.scrollToItem(selectedIndex);
         }
       }
-    }, [arrowDownPressed, jPressed]);
+    }, [nextSpanKeyPressed]);
     let rowData = {
       orderedSpans,
       traceTimeAttributes,
