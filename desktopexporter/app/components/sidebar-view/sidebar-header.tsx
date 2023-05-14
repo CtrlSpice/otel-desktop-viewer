@@ -16,15 +16,7 @@ import {
   useColorMode,
   useColorModeValue,
 } from "@chakra-ui/react";
-
-async function clearTraceData() {
-  let response = await fetch("/api/clearData");
-  if (!response.ok) {
-    throw new Error("HTTP status " + response.status);
-  } else {
-    window.location.replace("/");
-  }
-}
+import { clearTraceData } from "./trace-list";
 
 type SidebarHeaderProps = {
   isFullWidth: boolean;

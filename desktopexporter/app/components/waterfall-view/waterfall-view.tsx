@@ -67,12 +67,12 @@ export function WaterfallView(props: WaterfallViewProps) {
   }, [nextSpanKeyPressed]);
 
   let rowData = {
-    orderedSpans: orderedSpans,
-    traceTimeAttributes: traceTimeAttributes,
-    spanNameColumnWidth: spanNameColumnWidth,
-    serviceNameColumnWidth: serviceNameColumnWidth,
-    selectedSpanID: selectedSpanID,
-    setSelectedSpanID: setSelectedSpanID,
+    orderedSpans,
+    traceTimeAttributes,
+    spanNameColumnWidth,
+    serviceNameColumnWidth,
+    selectedSpanID,
+    setSelectedSpanID,
   };
 
   return (

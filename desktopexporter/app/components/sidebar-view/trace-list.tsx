@@ -12,7 +12,7 @@ import {
 import { useSize } from "@chakra-ui/react-use-size";
 
 import { TraceSummaryWithUIData } from "../../types/ui-types";
-import { useKeyPress } from "../../utils/use-key-press";
+import { useKeyCombo, useKeyPress } from "../../utils/use-key-press";
 
 const sidebarSummaryHeight = 120;
 const dividerHeight = 1;
@@ -168,6 +168,9 @@ export function TraceList(props: TraceListProps) {
   // Set up keyboard navigation
   let prevTraceKeyPressed = useKeyPress(["ArrowLeft", "h"]);
   let nextTraceKeyPressed = useKeyPress(["ArrowRight", "l"]);
+  let reloadKeyPressed = useKeyPress(["r"]);
+  let navHelpComboPressed = useKeyCombo(["Shift"], ["?"]);
+  let clearTracesComboPressed = useKeyCombo(["Control"], ["l"]);
 
   useEffect(() => {
     if (prevTraceKeyPressed) {
@@ -191,6 +194,25 @@ export function TraceList(props: TraceListProps) {
       navigate(`/traces/${selectedTraceID}`);
     }
   }, [nextTraceKeyPressed]);
+
+  useEffect(() => {
+    if (reloadKeyPressed) {
+      window.location.reload();
+    }
+  }, [reloadKeyPressed]);
+
+  useEffect(() => {
+    if (navHelpComboPressed) {
+      //TODO: Pop up a helpful modal that tells you all about the keyboard shortcuts
+      console.log("I'M HELPING!");
+    }
+  }, [navHelpComboPressed]);
+
+  useEffect(() => {
+    if (clearTracesComboPressed) {
+      clearTraceData();
+    }
+  }, [clearTracesComboPressed]);
 
   useEffect(() => {
     summaryListRef.current?.scrollToItem(selectedIndex, "start");
@@ -220,4 +242,13 @@ export function TraceList(props: TraceListProps) {
       </FixedSizeList>
     </Flex>
   );
+}
+
+export async function clearTraceData() {
+  let response = await fetch("/api/clearData");
+  if (!response.ok) {
+    throw new Error("HTTP status " + response.status);
+  } else {
+    window.location.replace("/");
+  }
 }
