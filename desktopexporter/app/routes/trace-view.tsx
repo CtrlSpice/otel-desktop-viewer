@@ -26,13 +26,13 @@ export default function TraceView() {
   let [selectedSpanID, setSelectedSpanID] = React.useState<string>(() => {
     if (
       !orderedSpans.length ||
-      (!(orderedSpans[0].status === SpanDataStatus.present) &&
+      (orderedSpans[0].status === SpanDataStatus.missing &&
         orderedSpans.length < 2)
     ) {
-      return "";
+      throw new Error("Number of spans cannot be zero");
     }
 
-    if (!(orderedSpans[0].status === SpanDataStatus.present)) {
+    if (orderedSpans[0].status === SpanDataStatus.missing) {
       return orderedSpans[1].metadata.spanID;
     }
 
