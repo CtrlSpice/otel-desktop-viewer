@@ -30,10 +30,8 @@ export function WaterfallView(props: WaterfallViewProps) {
     props;
 
   // Set up keyboard navigation
-  let arrowUpPressed = useKeyPress("ArrowUp");
-  let arrowDownPressed = useKeyPress("ArrowDown");
-  let kPressed = useKeyPress("k");
-  let jPressed = useKeyPress("j");
+  let prevSpanKeyPressed = useKeyPress(["ArrowUp", "k"]);
+  let nextSpanKeyPressed = useKeyPress(["ArrowDown", "j"]);
 
   let selectedIndex = orderedSpans.findIndex(
     (span) => span.metadata.spanID === selectedSpanID,
@@ -43,7 +41,7 @@ export function WaterfallView(props: WaterfallViewProps) {
   );
 
   useEffect(() => {
-    if (arrowUpPressed || kPressed) {
+    if (prevSpanKeyPressed) {
       // Move up while skipping the missing spans in incomplete traces
       if (selectedIndex > firstSelectableIndex) {
         do {
@@ -53,10 +51,10 @@ export function WaterfallView(props: WaterfallViewProps) {
         spanListRef.current?.scrollToItem(selectedIndex);
       }
     }
-  }, [arrowUpPressed, kPressed]);
+  }, [prevSpanKeyPressed]);
 
   useEffect(() => {
-    if (arrowDownPressed || jPressed) {
+    if (nextSpanKeyPressed) {
       // Move down while skipping the missing spans in incomplete traces
       if (selectedIndex < orderedSpans.length - 1) {
         do {
@@ -66,7 +64,7 @@ export function WaterfallView(props: WaterfallViewProps) {
         spanListRef.current?.scrollToItem(selectedIndex);
       }
     }
-  }, [arrowDownPressed, jPressed]);
+  }, [nextSpanKeyPressed]);
 
   let rowData = {
     orderedSpans: orderedSpans,
