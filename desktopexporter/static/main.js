@@ -51290,7 +51290,6 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     }, [reloadKeyPressed]);
     (0, import_react140.useEffect)(() => {
       if (navHelpComboPressed) {
-        console.log("I'M HELPING!");
       }
     }, [navHelpComboPressed]);
     (0, import_react140.useEffect)(() => {

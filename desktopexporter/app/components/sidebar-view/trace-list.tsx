@@ -204,7 +204,6 @@ export function TraceList(props: TraceListProps) {
   useEffect(() => {
     if (navHelpComboPressed) {
       //TODO: Pop up a helpful modal that tells you all about the keyboard shortcuts
-      console.log("I'M HELPING!");
     }
   }, [navHelpComboPressed]);
 
