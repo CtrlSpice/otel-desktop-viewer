@@ -12,7 +12,7 @@ import {
 import { useSize } from "@chakra-ui/react-use-size";
 
 import { TraceSummaryWithUIData } from "../../types/ui-types";
-import { useKeyPress } from "../../utils/use-key-press";
+import { useKeyCombo, useKeyPress } from "../../utils/use-key-press";
 
 const sidebarSummaryHeight = 120;
 const dividerHeight = 1;
@@ -165,10 +165,19 @@ export function TraceList(props: TraceListProps) {
     window.location.href = `/traces/${selectedTraceID}`;
   }
 
+  // Scroll to the currently selected trace summary on load
+  useEffect(() => {
+    summaryListRef.current?.scrollToItem(selectedIndex, "start");
+  }, []);
+
   // Set up keyboard navigation
   let prevTraceKeyPressed = useKeyPress(["ArrowLeft", "h"]);
   let nextTraceKeyPressed = useKeyPress(["ArrowRight", "l"]);
+  let reloadKeyPressed = useKeyPress(["r"]);
+  let navHelpComboPressed = useKeyCombo(["Shift"], ["?"]);
+  let clearTracesComboPressed = useKeyCombo(["Control"], ["l"]);
 
+  // Navigate to previous trace
   useEffect(() => {
     if (prevTraceKeyPressed) {
       selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
@@ -179,6 +188,7 @@ export function TraceList(props: TraceListProps) {
     }
   }, [prevTraceKeyPressed]);
 
+  // Navigate to next trace
   useEffect(() => {
     if (nextTraceKeyPressed) {
       selectedIndex =
@@ -192,9 +202,26 @@ export function TraceList(props: TraceListProps) {
     }
   }, [nextTraceKeyPressed]);
 
+  // Reload current window
   useEffect(() => {
-    summaryListRef.current?.scrollToItem(selectedIndex, "start");
-  }, []);
+    if (reloadKeyPressed) {
+      window.location.reload();
+    }
+  }, [reloadKeyPressed]);
+
+  // Show the keyboard navigation help modal
+  useEffect(() => {
+    if (navHelpComboPressed) {
+      //TODO: Pop up a helpful modal that tells you all about the keyboard shortcuts
+    }
+  }, [navHelpComboPressed]);
+
+  // Clear current traces
+  useEffect(() => {
+    if (clearTracesComboPressed) {
+      clearTraceData();
+    }
+  }, [clearTracesComboPressed]);
 
   let itemData = {
     selectedTraceID: selectedTraceID,
@@ -220,4 +247,13 @@ export function TraceList(props: TraceListProps) {
       </FixedSizeList>
     </Flex>
   );
+}
+
+export async function clearTraceData() {
+  let response = await fetch("/api/clearData");
+  if (!response.ok) {
+    throw new Error("HTTP status " + response.status);
+  } else {
+    window.location.replace("/");
+  }
 }

@@ -51111,10 +51111,13 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   // app/utils/use-key-press.ts
   var import_react139 = __toESM(require_react());
   var useKeyPress = (targetKeys) => {
-    const [keyPressed, setKeyPressed] = (0, import_react139.useState)(false);
+    let [keyPressed, setKeyPressed] = (0, import_react139.useState)(false);
     (0, import_react139.useEffect)(
       () => {
         const downHandler = (event) => {
+          if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+            return;
+          }
           event.preventDefault();
           if (targetKeys.includes(event.key)) {
             setKeyPressed(true);
@@ -51135,6 +51138,45 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       [targetKeys, setKeyPressed]
     );
     return keyPressed;
+  };
+  var useKeyCombo = (modifierKeys, targetKeys) => {
+    let [comboPressed, setComboPressed] = (0, import_react139.useState)(false);
+    (0, import_react139.useEffect)(() => {
+      const downHandler = (event) => {
+        event.preventDefault();
+        let modifiersPressed = modifierKeys.map((modKey) => {
+          switch (modKey) {
+            case "Alt":
+              return event.altKey;
+            case "Control":
+              return event.ctrlKey;
+            case "Meta":
+              return event.metaKey;
+            case "Shift":
+              return event.shiftKey;
+            default:
+              return false;
+          }
+        }).reduce((accumulator, currentValue) => {
+          return accumulator && currentValue;
+        });
+        if (modifiersPressed && targetKeys.includes(event.key)) {
+          setComboPressed(true);
+        }
+      };
+      const upHandler = (event) => {
+        if (modifierKeys.map((modKey) => modKey.toString()).includes(event.key) || targetKeys.includes(event.key.toLowerCase())) {
+          setComboPressed(false);
+        }
+      };
+      window.addEventListener("keydown", downHandler);
+      window.addEventListener("keyup", upHandler);
+      return () => {
+        window.removeEventListener("keydown", downHandler);
+        window.removeEventListener("keyup", upHandler);
+      };
+    }, [modifierKeys, targetKeys, setComboPressed]);
+    return comboPressed;
   };
 
   // app/components/sidebar-view/trace-list.tsx
@@ -51220,8 +51262,14 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       selectedTraceID = traceSummaries[selectedIndex].traceID;
       window.location.href = `/traces/${selectedTraceID}`;
     }
+    (0, import_react140.useEffect)(() => {
+      summaryListRef.current?.scrollToItem(selectedIndex, "start");
+    }, []);
     let prevTraceKeyPressed = useKeyPress(["ArrowLeft", "h"]);
     let nextTraceKeyPressed = useKeyPress(["ArrowRight", "l"]);
+    let reloadKeyPressed = useKeyPress(["r"]);
+    let navHelpComboPressed = useKeyCombo(["Shift"], ["?"]);
+    let clearTracesComboPressed = useKeyCombo(["Control"], ["l"]);
     (0, import_react140.useEffect)(() => {
       if (prevTraceKeyPressed) {
         selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
@@ -51239,8 +51287,19 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       }
     }, [nextTraceKeyPressed]);
     (0, import_react140.useEffect)(() => {
-      summaryListRef.current?.scrollToItem(selectedIndex, "start");
-    }, []);
+      if (reloadKeyPressed) {
+        window.location.reload();
+      }
+    }, [reloadKeyPressed]);
+    (0, import_react140.useEffect)(() => {
+      if (navHelpComboPressed) {
+      }
+    }, [navHelpComboPressed]);
+    (0, import_react140.useEffect)(() => {
+      if (clearTracesComboPressed) {
+        clearTraceData();
+      }
+    }, [clearTracesComboPressed]);
     let itemData = {
       selectedTraceID,
       traceSummaries
@@ -51257,6 +51316,14 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
       width: "100%",
       ref: summaryListRef
     }, SidebarRow));
+  }
+  async function clearTraceData() {
+    let response = await fetch("/api/clearData");
+    if (!response.ok) {
+      throw new Error("HTTP status " + response.status);
+    } else {
+      window.location.replace("/");
+    }
   }
 
   // app/components/sidebar-view/sidebar-header.tsx
@@ -51720,14 +51787,6 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
   });
 
   // app/components/sidebar-view/sidebar-header.tsx
-  async function clearTraceData() {
-    let response = await fetch("/api/clearData");
-    if (!response.ok) {
-      throw new Error("HTTP status " + response.status);
-    } else {
-      window.location.replace("/");
-    }
-  }
   function SidebarHeader(props) {
     let { toggleColorMode } = useColorMode();
     let colourModeIcon = useColorModeValue(/* @__PURE__ */ import_react143.default.createElement(MoonIcon, null), /* @__PURE__ */ import_react143.default.createElement(SunIcon, null));
