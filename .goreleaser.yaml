@@ -36,3 +36,17 @@ changelog:
       - '^docs:'
       - '^test:'
 
+brews:
+  - tap:
+      owner: "CtrlSpice"
+      name: "homebrew-otel-desktop-viewer"
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    commit_author:
+      name: "CrtlSpice"
+      email: "amelia.ardath@gmail.com"
+    homepage: "https://github.com/CtrlSpice/otel-desktop-viewer"
+    description: "Command-line tool that allows you to visualize OpenTelemetry traces in your local environment."
+    license: "Apache License 2.0"
+    skip_upload: "auto"
+
+
