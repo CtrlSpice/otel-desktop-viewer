@@ -8,11 +8,13 @@ import {
   Divider,
   Text,
   useColorModeValue,
+  useDisclosure,
 } from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
 
 import { TraceSummaryWithUIData } from "../../types/ui-types";
 import { useKeyCombo, useKeyPress } from "../../utils/use-key-press";
+import { KeyboardHelp } from "../modals/keyboard-help";
 
 const sidebarSummaryHeight = 120;
 const dividerHeight = 1;
@@ -150,6 +152,8 @@ export function TraceList(props: TraceListProps) {
   let location = useLocation();
   let navigate = useNavigate();
 
+  let { isOpen, onOpen, onClose } = useDisclosure();
+
   let selectedIndex = 0;
   let selectedTraceID = "";
   let { traceSummaries } = props;
@@ -212,7 +216,7 @@ export function TraceList(props: TraceListProps) {
   // Show the keyboard navigation help modal
   useEffect(() => {
     if (navHelpComboPressed) {
-      //TODO: Pop up a helpful modal that tells you all about the keyboard shortcuts
+      onOpen();
     }
   }, [navHelpComboPressed]);
 
@@ -245,6 +249,10 @@ export function TraceList(props: TraceListProps) {
       >
         {SidebarRow}
       </FixedSizeList>
+      <KeyboardHelp
+        isOpen={isOpen}
+        onClose={onClose}
+      />
     </Flex>
   );
 }
