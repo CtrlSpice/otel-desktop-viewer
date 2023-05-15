@@ -54812,7 +54812,8 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     return /* @__PURE__ */ import_react153.default.createElement(Modal, {
       onClose,
       isOpen,
-      size: "2xl"
+      size: "2xl",
+      isCentered: true
     }, /* @__PURE__ */ import_react153.default.createElement(ModalOverlay, null), /* @__PURE__ */ import_react153.default.createElement(ModalContent, null, /* @__PURE__ */ import_react153.default.createElement(ModalHeader, null, "Keyboard Help"), /* @__PURE__ */ import_react153.default.createElement(ModalCloseButton, null), /* @__PURE__ */ import_react153.default.createElement(ModalBody, {
       paddingBottom: "16px"
     }, /* @__PURE__ */ import_react153.default.createElement(Flex, {

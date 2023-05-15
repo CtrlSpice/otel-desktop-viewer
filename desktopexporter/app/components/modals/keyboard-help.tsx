@@ -31,6 +31,7 @@ export function KeyboardHelp(props: KeyboardHelpProps) {
       onClose={onClose}
       isOpen={isOpen}
       size="2xl"
+      isCentered
     >
       <ModalOverlay />
       <ModalContent>
