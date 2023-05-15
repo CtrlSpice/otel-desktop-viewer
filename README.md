@@ -68,15 +68,19 @@ export OTEL_TRACES_EXPORTER="otlp"
 export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
 ```
 ## Keyboard navigation and shortcuts
+```bash
+Navigation:
+    Move up the trace summary list:      ← or h 
+    Move down the trace summary list:    → or l 
+    Move up the span list:               ↑ or k
+    Move down the span list:             ↓ or j
 
-`←` or `h` Move up the trace summary list
-`→` or `l` Move down the trace summary list
-`↑` or `k` Move up the span list
-`↓` or `j` Move down the span list
+Shortcuts:
+    Clear all traces:                    ctrl + l 
+    Refresh the page:                    r
+    Bring up the keyboard help dialog:   ? 
+```
 
-`ctrl` + `l` Clear all traces
-`r` Refresh the page
-`?` Bring up the keyboard help dialog
 
 ## Example with `otel-cli`
 
