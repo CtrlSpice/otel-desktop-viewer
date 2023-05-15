@@ -54769,7 +54769,6 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
     let [comboPressed, setComboPressed] = (0, import_react152.useState)(false);
     (0, import_react152.useEffect)(() => {
       const downHandler = (event) => {
-        event.preventDefault();
         let modifiersPressed = modifierKeys.map((modKey) => {
           switch (modKey) {
             case "Alt":
@@ -54787,6 +54786,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
           return accumulator && currentValue;
         });
         if (modifiersPressed && targetKeys.includes(event.key)) {
+          event.preventDefault();
           setComboPressed(true);
         }
       };

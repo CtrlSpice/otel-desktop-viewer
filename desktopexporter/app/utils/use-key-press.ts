@@ -44,7 +44,6 @@ export const useKeyCombo = (
   let [comboPressed, setComboPressed] = useState(false);
   useEffect(() => {
     const downHandler = (event: KeyboardEvent) => {
-      event.preventDefault();
       let modifiersPressed: boolean = modifierKeys
         .map((modKey) => {
           switch (modKey) {
@@ -65,6 +64,7 @@ export const useKeyCombo = (
         });
 
       if (modifiersPressed && targetKeys.includes(event.key)) {
+        event.preventDefault();
         setComboPressed(true);
       }
     };
