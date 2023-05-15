@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ModifierKey } from "../types/ui-types";
 
 export const useKeyPress = (targetKeys: string[]) => {
   let [keyPressed, setKeyPressed] = useState(false);
@@ -36,7 +37,10 @@ export const useKeyPress = (targetKeys: string[]) => {
   return keyPressed;
 };
 
-export const useKeyCombo = (modifierKeys: string[], targetKeys: string[]) => {
+export const useKeyCombo = (
+  modifierKeys: ModifierKey[],
+  targetKeys: string[],
+) => {
   let [comboPressed, setComboPressed] = useState(false);
   useEffect(() => {
     const downHandler = (event: KeyboardEvent) => {
@@ -67,7 +71,7 @@ export const useKeyCombo = (modifierKeys: string[], targetKeys: string[]) => {
 
     const upHandler = (event: KeyboardEvent) => {
       if (
-        modifierKeys.includes(event.key) ||
+        modifierKeys.map((modKey) => modKey.toString()).includes(event.key) ||
         targetKeys.includes(event.key.toLowerCase())
       ) {
         setComboPressed(false);

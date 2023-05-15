@@ -40,3 +40,5 @@ export type TraceSummaryWithUIData =
       numNewTraces: number;
       summaries: TraceSummaryWithUIData[];
     };
+
+    export type ModifierKey = "Alt" | "Control" | "Meta" | "Shift";

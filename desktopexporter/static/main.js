@@ -51165,7 +51165,7 @@ https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_liter
         }
       };
       const upHandler = (event) => {
-        if (modifierKeys.includes(event.key) || targetKeys.includes(event.key.toLowerCase())) {
+        if (modifierKeys.map((modKey) => modKey.toString()).includes(event.key) || targetKeys.includes(event.key.toLowerCase())) {
           setComboPressed(false);
         }
       };
