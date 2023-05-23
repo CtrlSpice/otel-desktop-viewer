@@ -34,6 +34,7 @@ func runInteractive(buildInfo component.BuildInfo) error {
 
 func newCommand(info component.BuildInfo) *cobra.Command {
 	var httpPortFlag, grpcPortFlag, browserPortFlag int
+	var uiFlag bool
 
 	rootCmd := &cobra.Command{
 		Use:          info.Command,
@@ -54,6 +55,7 @@ processors:
 exporters:
   desktop:
     endpoint: localhost:` + strconv.Itoa(browserPortFlag) + `
+    ui-flag: ` + strconv.FormatBool(uiFlag) + `
 
 service:
   pipelines:
@@ -96,6 +98,7 @@ service:
 		},
 	}
 
+	rootCmd.Flags().BoolVar(&uiFlag, "ui-flag", false, "Enable a different UI")
 	rootCmd.Flags().IntVar(&httpPortFlag, "http", 4318, "The port number on which we listen for OTLP http payloads")
 	rootCmd.Flags().IntVar(&grpcPortFlag, "grpc", 4317, "The port number on which we listen for OTLP grpc payloads")
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser", 8000, "The port number where we expose our data")

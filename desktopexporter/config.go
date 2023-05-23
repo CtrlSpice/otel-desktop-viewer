@@ -10,6 +10,7 @@ import (
 type Config struct {
 	// Endpoint defines where we serve our frontend app
 	Endpoint string `mapstructure:"endpoint"`
+	UIFlag   bool   `mapstructure:"ui-flag"`
 }
 
 var _ component.Config = (*Config)(nil)

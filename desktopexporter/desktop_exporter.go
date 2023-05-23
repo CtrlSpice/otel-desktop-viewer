@@ -28,6 +28,7 @@ func (exporter *desktopExporter) pushTraces(ctx context.Context, traces ptrace.T
 }
 
 func newDesktopExporter(cfg *Config) *desktopExporter {
+	fmt.Println(cfg)
 	traceStore := NewTraceStore(MAX_QUEUE_LENGTH)
 	server := NewServer(traceStore, cfg.Endpoint)
 	return &desktopExporter{
