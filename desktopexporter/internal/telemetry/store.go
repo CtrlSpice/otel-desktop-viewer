@@ -24,10 +24,18 @@ func NewTelemetryStore(maxQueueSize int) *Store {
 	}
 }
 
+func generateID(src Unique) string {
+	h := sha256.New()
+	h.Write([]byte(src.ID()))
+	bs := h.Sum(nil)
+
+	return fmt.Sprintf("%x", bs)
+}
+
 func (store *Store) AddMetric(_ context.Context, md MetricData) {
 	store.mut.Lock()
 	defer store.mut.Unlock()
-	metricID := "1111111"
+	metricID := generateID(md)
 	store.enqueueTelemetry(metricID)
 	store.telemetryMap[metricID] = TelemetryData{
 		ID:     metricID,
@@ -36,19 +44,11 @@ func (store *Store) AddMetric(_ context.Context, md MetricData) {
 	}
 }
 
-func generateLogID(log LogData) string {
-	h := sha256.New()
-	h.Write([]byte(log.Body + log.Timestamp.String() + log.ObservedTimestamp.String()))
-	bs := h.Sum(nil)
-
-	return fmt.Sprintf("%x", bs)
-}
-
 func (store *Store) AddLog(_ context.Context, ld LogData) {
 	store.mut.Lock()
 	defer store.mut.Unlock()
 
-	logID := generateLogID(ld)
+	logID := generateID(ld)
 	store.enqueueTelemetry(logID)
 	store.telemetryMap[logID] = TelemetryData{
 		ID:   logID,

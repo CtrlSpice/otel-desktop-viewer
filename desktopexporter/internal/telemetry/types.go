@@ -24,6 +24,10 @@ type TelemetryData struct {
 	Trace  TraceData  `json:"trace"`
 }
 
+type Unique interface {
+	ID() string
+}
+
 type LogData struct {
 	Body                   string                 `json:"body"`
 	TraceID                string                 `json:"traceID"`
@@ -39,10 +43,18 @@ type LogData struct {
 	Flags                  plog.LogRecordFlags    `json:"flags"`
 }
 
+func (l LogData) ID() string {
+	return l.Body + l.Timestamp.String() + l.ObservedTimestamp.String()
+}
+
 type MetricData struct {
 	Name     string        `json:"name"`
 	Resource *ResourceData `json:"resource"`
 	Scope    *ScopeData    `json:"scope"`
+}
+
+func (m MetricData) ID() string {
+	return m.Name
 }
 
 type ResourceData struct {
