@@ -58,11 +58,18 @@ exporters:
 service:
   pipelines:
     traces:
-      receivers:
-        - otlp
+      receivers: [otlp]
       processors: []
-      exporters:
-        - desktop`
+      exporters: [desktop]
+    metrics:
+      receivers: [otlp]
+      processors: []
+      exporters: [desktop]
+    logs:
+      receivers: [otlp]
+      processors: []
+      exporters: [desktop]
+`
 
 			factories, err := components()
 			if err != nil {

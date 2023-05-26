@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -12,6 +14,54 @@ var (
 	spanEventTimestamp = pcommon.NewTimestampFromTime(time.Date(2020, 10, 21, 7, 10, 2, 150, time.UTC))
 	spanEndTimestamp   = pcommon.NewTimestampFromTime(time.Date(2020, 10, 21, 7, 10, 2, 300, time.UTC))
 )
+
+func GenerateMetrics(resourceCount, scopeCount, spanCount int) pmetric.Metrics {
+	metrics := pmetric.NewMetrics()
+	metrics.ResourceMetrics().EnsureCapacity(resourceCount)
+	for resourceIndex := 0; resourceIndex < resourceCount; resourceIndex++ {
+		resourceMetric := metrics.ResourceMetrics().AppendEmpty()
+		fillResource(resourceMetric.Resource(), resourceIndex)
+
+		// Create and populate instrumentation scope data
+		resourceMetric.ScopeMetrics().EnsureCapacity(scopeCount)
+		for scopeIndex := 0; scopeIndex < scopeCount; scopeIndex++ {
+			sm := resourceMetric.ScopeMetrics().AppendEmpty()
+			fillScope(sm.Scope(), scopeIndex)
+
+			//Create and populate spans
+			sm.Metrics().EnsureCapacity(spanCount)
+			for idx := 0; idx < spanCount; idx++ {
+				m := sm.Metrics().AppendEmpty()
+				fillMetric(m, idx)
+			}
+		}
+	}
+	return metrics
+}
+
+func GenerateLogs(resourceCount, scopeCount, logCount int) plog.Logs {
+	logs := plog.NewLogs()
+	logs.ResourceLogs().EnsureCapacity(resourceCount)
+	for resourceIndex := 0; resourceIndex < resourceCount; resourceIndex++ {
+		resourceLog := logs.ResourceLogs().AppendEmpty()
+		fillResource(resourceLog.Resource(), resourceIndex)
+
+		// Create and populate instrumentation scope data
+		resourceLog.ScopeLogs().EnsureCapacity(scopeCount)
+		for scopeIndex := 0; scopeIndex < scopeCount; scopeIndex++ {
+			sl := resourceLog.ScopeLogs().AppendEmpty()
+			fillScope(sl.Scope(), scopeIndex)
+
+			//Create and populate spans
+			sl.LogRecords().EnsureCapacity(logCount)
+			for idx := 0; idx < logCount; idx++ {
+				l := sl.LogRecords().AppendEmpty()
+				fillLog(l, idx)
+			}
+		}
+	}
+	return logs
+}
 
 func GenerateOTLPPayload(resourceCount, scopeCount, spanCount int) ptrace.Traces {
 	traceData := ptrace.NewTraces()
@@ -81,4 +131,16 @@ func fillSpan(span ptrace.Span, spanIndex int) {
 	status := span.Status()
 	status.SetCode(ptrace.StatusCodeOk)
 	status.SetMessage("status ok")
+}
+
+func fillMetric(metric pmetric.Metric, index int) {
+	metric.SetName("metric")
+	// TODO: fill in all the details
+	sum := metric.SetEmptySum()
+	sum.SetIsMonotonic(true)
+}
+
+func fillLog(log plog.LogRecord, index int) {
+	log.Body().SetStr("log body")
+	// TODO: fill in all the details
 }
