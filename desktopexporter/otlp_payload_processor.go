@@ -2,6 +2,7 @@ package desktopexporter
 
 import (
 	"context"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -157,7 +158,11 @@ func aggregateSpanData(span ptrace.Span, eventData []telemetry.EventData, LinkDa
 
 func aggregateMetricData(source pmetric.Metric, scope *telemetry.ScopeData, resource *telemetry.ResourceData) telemetry.MetricData {
 	return telemetry.MetricData{
-		Name: source.Name(),
+		Name:        source.Name(),
+		Description: source.Description(),
+		Unit:        source.Unit(),
+		Type:        source.Type(),
+		Received:    time.Now(),
 		// TODO: add other fields
 		Resource: resource,
 		Scope:    scope,

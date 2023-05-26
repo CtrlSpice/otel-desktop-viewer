@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 type RecentTelemetrySummaries struct {
@@ -19,9 +20,9 @@ type TelemetrySummary struct {
 type TelemetryData struct {
 	ID     string     `json:"ID"`
 	Type   string     `json:"type"`
-	Metric MetricData `json:"metric"`
-	Log    LogData    `json:"log"`
-	Trace  TraceData  `json:"trace"`
+	Metric MetricData `json:"metric,omitempty"`
+	Log    LogData    `json:"log,omitempty"`
+	Trace  TraceData  `json:"trace,omitempty"`
 }
 
 type Unique interface {
@@ -29,32 +30,43 @@ type Unique interface {
 }
 
 type LogData struct {
-	Body                   string                 `json:"body"`
-	TraceID                string                 `json:"traceID"`
-	SpanID                 string                 `json:"spanID"`
-	Timestamp              time.Time              `json:"timestamp"`
-	ObservedTimestamp      time.Time              `json:"observedTimestamp"`
-	Attributes             map[string]interface{} `json:"attributes"`
+	Body                   string                 `json:"body,omitempty"`
+	TraceID                string                 `json:"traceID,omitempty"`
+	SpanID                 string                 `json:"spanID,omitempty"`
+	Timestamp              time.Time              `json:"timestamp,omitempty"`
+	ObservedTimestamp      time.Time              `json:"observedTimestamp,omitempty"`
+	Attributes             map[string]interface{} `json:"attributes,omitempty"`
+	SeverityText           string                 `json:"severityText,omitempty"`
+	SeverityNumber         plog.SeverityNumber    `json:"severityNumber,omitempty"`
+	DroppedAttributesCount uint32                 `json:"droppedAttributeCount,omitempty"`
+	Flags                  plog.LogRecordFlags    `json:"flags,omitempty"`
 	Resource               *ResourceData          `json:"resource"`
 	Scope                  *ScopeData             `json:"scope"`
-	SeverityText           string                 `json:"severityText"`
-	SeverityNumber         plog.SeverityNumber    `json:"severityNumber"`
-	DroppedAttributesCount uint32                 `json:"droppedAttributeCount"`
-	Flags                  plog.LogRecordFlags    `json:"flags"`
 }
 
 func (l LogData) ID() string {
+	// may need to consider additional fields to uniquely identify
+	// a log, for example different resources could potentially
+	// send the same data at the same time and create collisions
 	return l.Body + l.Timestamp.String() + l.ObservedTimestamp.String()
 }
 
 type MetricData struct {
-	Name     string        `json:"name"`
+	Name        string             `json:"name,omitempty"`
+	Description string             `json:"description,omitempty"`
+	Unit        string             `json:"unit,omitempty"`
+	Type        pmetric.MetricType `json:"type,omitempty"`
+	// add datapoints
 	Resource *ResourceData `json:"resource"`
 	Scope    *ScopeData    `json:"scope"`
+	Received time.Time     `json:"-"`
 }
 
 func (m MetricData) ID() string {
-	return m.Name
+	// may need to consider additional fields to uniquely identify
+	// a metric, for example different resources could potentially
+	// send the same data at the same time and create collisions
+	return m.Name + m.Received.String()
 }
 
 type ResourceData struct {

@@ -148,6 +148,8 @@ func GenerateSampleMetricData(ctx context.Context) []telemetry.MetricData {
 
 func fillCurrencyMetric(metric pmetric.Metric) {
 	metric.SetDescription("amount requested")
+	metric.SetName("amount")
+	metric.SetUnit("dollar")
 	sum := metric.SetEmptySum()
 	sum.SetIsMonotonic(true)
 	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
