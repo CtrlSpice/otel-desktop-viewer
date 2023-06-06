@@ -34,6 +34,7 @@ func runInteractive(buildInfo component.BuildInfo) error {
 
 func newCommand(info component.BuildInfo) *cobra.Command {
 	var httpPortFlag, grpcPortFlag, browserPortFlag int
+	var hostFlag string
 
 	rootCmd := &cobra.Command{
 		Use:          info.Command,
@@ -45,15 +46,15 @@ receivers:
   otlp:
     protocols:
       http:
-        endpoint: localhost:` + strconv.Itoa(httpPortFlag) + `
+        endpoint: ` + hostFlag + `:` + strconv.Itoa(httpPortFlag) + `
       grpc:
-        endpoint: localhost:` + strconv.Itoa(grpcPortFlag) + `
+        endpoint: ` + hostFlag + `:` + strconv.Itoa(grpcPortFlag) + `
 
 processors:
 
 exporters:
   desktop:
-    endpoint: localhost:` + strconv.Itoa(browserPortFlag) + `
+    endpoint: ` + hostFlag + `:` + strconv.Itoa(browserPortFlag) + `
 
 service:
   pipelines:
@@ -106,5 +107,6 @@ service:
 	rootCmd.Flags().IntVar(&httpPortFlag, "http", 4318, "The port number on which we listen for OTLP http payloads")
 	rootCmd.Flags().IntVar(&grpcPortFlag, "grpc", 4317, "The port number on which we listen for OTLP grpc payloads")
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser", 8000, "The port number where we expose our data")
+	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser)")
 	return rootCmd
 }
