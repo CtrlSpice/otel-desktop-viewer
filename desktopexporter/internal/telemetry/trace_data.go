@@ -1,4 +1,4 @@
-package desktopexporter
+package telemetry
 
 import (
 	"time"

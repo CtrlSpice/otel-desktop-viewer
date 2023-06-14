@@ -7,10 +7,14 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
-func GenerateSampleData(ctx context.Context) []SpanData {
+func GenerateSampleSpanData(ctx context.Context) []telemetry.SpanData {
 	traceData := ptrace.NewTraces()
 
 	traceData.ResourceSpans().EnsureCapacity(3)
@@ -63,6 +67,107 @@ func GenerateSampleData(ctx context.Context) []SpanData {
 
 	spanData := extractSpans(ctx, traceData)
 	return spanData
+}
+
+func GenerateSampleLogData(ctx context.Context) []telemetry.LogData {
+	ld := plog.NewLogs()
+
+	ld.ResourceLogs().EnsureCapacity(3)
+
+	// Generate sample currency conversion trace:
+	// 1. Set up currencyservice resource
+	currencyResourceLog := ld.ResourceLogs().AppendEmpty()
+	fillCurrencyResource(currencyResourceLog.Resource())
+
+	// 2. Add currencyservice scope to currencyservice resource
+	currencyScopeLog := currencyResourceLog.ScopeLogs().AppendEmpty()
+	fillCurrencyScope(currencyScopeLog.Scope())
+
+	// 3. Add CurrencyService/Convert span to currencyservice scope
+	fillCurrencyLog(currencyScopeLog.LogRecords().AppendEmpty())
+	// fillCurrencySpan(currencySpan)
+
+	// // Generate sample HTTP POST trace:
+	// // 1. Set up loadgenerator resource
+	// loadGeneratorResourceSpan := traceData.ResourceSpans().AppendEmpty()
+	// fillLoadGeneratorResource(loadGeneratorResourceSpan.Resource())
+
+	// // 2. Set up frontend resource
+	// frontEndResourceSpan := traceData.ResourceSpans().AppendEmpty()
+	// fillFrontEndResource(frontEndResourceSpan.Resource())
+
+	// // 3. Add requests and urllib3 scopes to loadgenerator resource
+	// loadGeneratorResourceSpan.ScopeSpans().EnsureCapacity(2)
+	// requestsScopeSpan := loadGeneratorResourceSpan.ScopeSpans().AppendEmpty()
+	// fillRequestsScope(requestsScopeSpan.Scope())
+
+	// urlLib3ScopeSpan := loadGeneratorResourceSpan.ScopeSpans().AppendEmpty()
+	// fillUrlLib3Scope(urlLib3ScopeSpan.Scope())
+
+	// // 4. Add http scope to frontend resource
+	// httpScopeSpan := frontEndResourceSpan.ScopeSpans().AppendEmpty()
+	// fillHttpScope(httpScopeSpan.Scope())
+
+	// // 5. Add HTTP POST span 1 to requests scope
+	// httpPostSpan1 := requestsScopeSpan.Spans().AppendEmpty()
+	// fillHttpPostSpan1(httpPostSpan1)
+
+	// // 6. Add HTTP POST span 2 to urllib3 scope
+	// httpPostSpan2 := urlLib3ScopeSpan.Spans().AppendEmpty()
+	// fillHttpPostSpan2(httpPostSpan2)
+
+	// // 7. Add HTTP POST span 3 to http scope
+	// httpPostSpan3 := httpScopeSpan.Spans().AppendEmpty()
+	// fillHttpPostSpan3(httpPostSpan3)
+
+	return extractLogs(ld)
+}
+
+func GenerateSampleMetricData(ctx context.Context) []telemetry.MetricData {
+	md := pmetric.NewMetrics()
+
+	md.ResourceMetrics().EnsureCapacity(3)
+
+	// Generate sample currency conversion trace:
+	// 1. Set up currencyservice resource
+	currencyResourceMetric := md.ResourceMetrics().AppendEmpty()
+	fillCurrencyResource(currencyResourceMetric.Resource())
+
+	// 2. Add currencyservice scope to currencyservice resource
+	currencyScopeMetric := currencyResourceMetric.ScopeMetrics().AppendEmpty()
+	fillCurrencyScope(currencyScopeMetric.Scope())
+
+	// 3. Add CurrencyService/Convert span to currencyservice scope
+	currencyMetric := currencyScopeMetric.Metrics().AppendEmpty()
+	fillCurrencyMetric(currencyMetric)
+
+	// TODO: add different kinds of metrics
+
+	return extractMetrics(md)
+}
+
+func fillCurrencyMetric(metric pmetric.Metric) {
+	metric.SetDescription("amount requested")
+	metric.SetName("amount")
+	metric.SetUnit("dollar")
+	sum := metric.SetEmptySum()
+	sum.SetIsMonotonic(true)
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	pt := sum.DataPoints().AppendEmpty()
+	pt.SetDoubleValue(1.9)
+}
+
+func fillCurrencyLog(log plog.LogRecord) {
+	log.Attributes().PutBool("bool-attr", true)
+	log.SetDroppedAttributesCount(99)
+	log.SetFlags(plog.DefaultLogRecordFlags)
+	log.SetObservedTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	log.SetSeverityNumber(plog.SeverityNumberError)
+	log.SetSeverityText("ERROR")
+	log.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	log.SetTraceID(encodeTraceID("7979cec4d1c04222fa9a3c7c97c0a99c"))
+	log.SetSpanID(encodeSpanID("2c1ae93af4d3f887"))
+	log.Body().SetStr("something with currency happened")
 }
 
 // currencyservice resource data

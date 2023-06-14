@@ -4,5 +4,6 @@ desktopexporter/node_modules
 .vscode/
 dist/
 distribution/linux/*
+distribution/darwin/*
 .tools/*
 go.work*
