@@ -14,6 +14,13 @@ Also, it has a dark mode.
 
 ## Getting started
 
+#### via Homebrew
+```bash
+brew tap CtrlSpice/homebrew-otel-desktop-viewer
+brew install otel-desktop-viewer
+```
+
+#### via `go install`
 Make sure you have [go](https://go.dev/) installed.
 
 ```bash
