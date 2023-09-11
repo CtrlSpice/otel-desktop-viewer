@@ -21,7 +21,36 @@ export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
   let traceTimeAttributes = calculateTraceTiming(traceData.spans);
   let spanTree: RootTreeItem[] = arrayToTree(traceData.spans);
-  let orderedSpans = orderSpans(spanTree);
+  let [orderedSpans, setOrderedSpans] = React.useState<SpanWithUIData[]>(() => {
+    return orderSpans(spanTree)
+  });
+
+  // ill figure out how to make this a one liner
+  function toggle(id:string) {
+    console.log("toggled "+id)
+    let ids: Array<string> = [id]
+    let first = true
+    let hidden = false
+
+    setOrderedSpans(orderedSpans.map((x) => {
+      // spanData only exists if the status is present
+      if (x.status !== SpanDataStatus.present) {
+        return x
+      }
+
+      if (x.spanData.parentSpanID === id || ids.includes(x.spanData.parentSpanID)) {
+        // TODO(scottshuffler): dont do this dude come on
+        if (first) {
+          first = false
+          hidden = !x.metadata.hidden
+        }
+        ids.push(x.metadata.spanID)
+        x.metadata.hidden = hidden
+      }
+      return x
+    }));
+  }
+
 
   let [selectedSpanID, setSelectedSpanID] = React.useState<string>(() => {
     if (
@@ -35,7 +64,6 @@ export default function TraceView() {
     if (orderedSpans[0].status === SpanDataStatus.missing) {
       return orderedSpans[1].metadata.spanID;
     }
-
     return orderedSpans[0].metadata.spanID;
   });
 
@@ -74,6 +102,7 @@ export default function TraceView() {
           traceTimeAttributes={traceTimeAttributes}
           selectedSpanID={selectedSpanID}
           setSelectedSpanID={setSelectedSpanID}
+          toggle={toggle}
         />
       </GridItem>
       <GridItem area={"detail"}>
@@ -112,15 +141,15 @@ function orderSpans(spanTree: RootTreeItem[]): SpanWithUIData[] {
       let { treeItem, depth } = node;
 
       if (treeItem.status === SpanDataStatus.present) {
-        orderedSpans.push({
-          status: SpanDataStatus.present,
-          spanData: treeItem.spanData,
-          metadata: { depth: depth, spanID: treeItem.spanData.spanID },
-        });
+          orderedSpans.push({
+            status: SpanDataStatus.present,
+            spanData: treeItem.spanData,
+            metadata: { depth: depth, spanID: treeItem.spanData.spanID, hidden: false },
+          });
       } else {
         orderedSpans.push({
           status: SpanDataStatus.missing,
-          metadata: { depth: depth, spanID: treeItem.spanID },
+          metadata: { depth: depth, spanID: treeItem.spanID, hidden: false },
         });
       }
 

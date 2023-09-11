@@ -56417,11 +56417,21 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       spanNameColumnWidth,
       serviceNameColumnWidth,
       selectedSpanID,
-      setSelectedSpanID
+      setSelectedSpanID,
+      toggle
     } = data;
     let span = orderedSpans[index];
     let { spanID, depth } = span.metadata;
     if (span.status === "present" /* present */) {
+      if (span.metadata.hidden) {
+        return /* @__PURE__ */ import_react184.default.createElement(Flex, {
+          alignItems: "center",
+          bgColor: backgroundColour,
+          paddingStart: 2,
+          experimental_spaceX: 2,
+          style: { display: "hidden" }
+        });
+      }
       let { spanData } = span;
       let paddingLeft = depth * 25;
       if (!!selectedSpanID && selectedSpanID === spanID) {
@@ -56438,7 +56448,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         width: spanNameColumnWidth - paddingLeft,
         alignItems: "center",
         flexGrow: "1",
-        flexShrink: "0"
+        flexShrink: "0",
+        onClick: () => toggle(spanID)
       }, /* @__PURE__ */ import_react184.default.createElement(Text, {
         paddingX: 2,
         noOfLines: 2,
@@ -56558,7 +56569,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     const headerRowHeight = 30;
     const spanNameColumnWidth = 300;
     const serviceNameColumnWidth = 200;
-    let { orderedSpans, traceTimeAttributes, selectedSpanID, setSelectedSpanID } = props;
+    let { orderedSpans, traceTimeAttributes, selectedSpanID, setSelectedSpanID, toggle } = props;
     let prevSpanKeyPressed = useKeyPress(["ArrowUp", "k"]);
     let nextSpanKeyPressed = useKeyPress(["ArrowDown", "j"]);
     let selectedIndex = orderedSpans.findIndex(
@@ -56589,13 +56600,15 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         }
       }
     }, [nextSpanKeyPressed]);
+    orderedSpans = orderedSpans.filter((span) => !span.metadata.hidden);
     let rowData = {
       orderedSpans,
       traceTimeAttributes,
       spanNameColumnWidth,
       serviceNameColumnWidth,
       selectedSpanID,
-      setSelectedSpanID
+      setSelectedSpanID,
+      toggle
     };
     return /* @__PURE__ */ import_react188.default.createElement(Flex, {
       direction: "column",
@@ -56699,7 +56712,39 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     let traceData = useLoaderData();
     let traceTimeAttributes = calculateTraceTiming(traceData.spans);
     let spanTree = arrayToTree(traceData.spans);
-    let orderedSpans = orderSpans(spanTree);
+    let [orderedSpans, setOrderedSpans] = import_react190.default.useState(() => {
+      return orderSpans(spanTree);
+    });
+    function toggle(id3) {
+      console.log("toggled " + id3);
+      let ids = [id3];
+      let first = true;
+      let hidden = false;
+      const found = orderedSpans.find((element) => {
+        if (element.status !== "present" /* present */) {
+          return element;
+        }
+        if (ids.includes(element.spanData.parentSpanID)) {
+          return element;
+        }
+      });
+      console.log("found:" + found);
+      setOrderedSpans(orderedSpans.map((x) => {
+        if (x.status !== "present" /* present */) {
+          return x;
+        }
+        if (x.spanData.parentSpanID === id3 || ids.includes(x.spanData.parentSpanID)) {
+          if (first) {
+            first = false;
+            hidden = !x.metadata.hidden;
+          }
+          ids.push(x.metadata.spanID);
+          console.log("found a child " + x.spanData.name);
+          x.metadata.hidden = hidden;
+        }
+        return x;
+      }));
+    }
     let [selectedSpanID, setSelectedSpanID] = import_react190.default.useState(() => {
       if (!orderedSpans.length || orderedSpans[0].status === "missing" /* missing */ && orderedSpans.length < 2) {
         throw new Error("Number of spans cannot be zero");
@@ -56736,7 +56781,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       orderedSpans,
       traceTimeAttributes,
       selectedSpanID,
-      setSelectedSpanID
+      setSelectedSpanID,
+      toggle
     })), /* @__PURE__ */ import_react190.default.createElement(GridItem, {
       area: "detail"
     }, /* @__PURE__ */ import_react190.default.createElement(DetailView, {
@@ -56762,12 +56808,12 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           orderedSpans.push({
             status: "present" /* present */,
             spanData: treeItem.spanData,
-            metadata: { depth, spanID: treeItem.spanData.spanID }
+            metadata: { depth, spanID: treeItem.spanData.spanID, hidden: false }
           });
         } else {
           orderedSpans.push({
             status: "missing" /* missing */,
-            metadata: { depth, spanID: treeItem.spanID }
+            metadata: { depth, spanID: treeItem.spanID, hidden: false }
           });
         }
         treeItem.children.sort((a2, b2) => {

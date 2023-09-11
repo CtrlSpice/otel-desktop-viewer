@@ -14,6 +14,7 @@ type WaterfallViewProps = {
   traceTimeAttributes: TraceTiming;
   selectedSpanID: string | undefined;
   setSelectedSpanID: (spanID: string) => void;
+  toggle: (id: string) => void;
 };
 
 export function WaterfallView(props: WaterfallViewProps) {
@@ -26,7 +27,7 @@ export function WaterfallView(props: WaterfallViewProps) {
   const spanNameColumnWidth = 300;
   const serviceNameColumnWidth = 200;
 
-  let { orderedSpans, traceTimeAttributes, selectedSpanID, setSelectedSpanID } =
+  let { orderedSpans, traceTimeAttributes, selectedSpanID, setSelectedSpanID, toggle } =
     props;
 
   // Set up keyboard navigation
@@ -66,6 +67,9 @@ export function WaterfallView(props: WaterfallViewProps) {
     }
   }, [nextSpanKeyPressed]);
 
+  // filter out any spans that are hidden
+  orderedSpans = orderedSpans.filter((span) => !span.metadata.hidden)
+
   let rowData = {
     orderedSpans,
     traceTimeAttributes,
@@ -73,6 +77,7 @@ export function WaterfallView(props: WaterfallViewProps) {
     serviceNameColumnWidth,
     selectedSpanID,
     setSelectedSpanID,
+    toggle,
   };
 
   return (

@@ -13,6 +13,7 @@ type WaterfallRowData = {
   serviceNameColumnWidth: number;
   selectedSpanID: string | undefined;
   setSelectedSpanID: (spanID: string) => void;
+  toggle: (id: string) => void;
 };
 
 type WaterfallRowProps = {
@@ -34,6 +35,7 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
     serviceNameColumnWidth,
     selectedSpanID,
     setSelectedSpanID,
+    toggle,
   } = data;
 
   let span = orderedSpans[index];
@@ -64,12 +66,13 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
         bgColor={backgroundColour}
         paddingLeft={`${paddingLeft}px`}
         onClick={() => setSelectedSpanID(spanID)}
-      >
+      > 
         <Flex
           width={spanNameColumnWidth - paddingLeft}
           alignItems="center"
           flexGrow="1"
           flexShrink="0"
+          onClick={() => toggle(spanID)}
         >
           <Text
             paddingX={2}
