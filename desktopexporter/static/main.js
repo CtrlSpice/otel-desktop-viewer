@@ -56423,15 +56423,6 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     let span = orderedSpans[index];
     let { spanID, depth } = span.metadata;
     if (span.status === "present" /* present */) {
-      if (span.metadata.hidden) {
-        return /* @__PURE__ */ import_react184.default.createElement(Flex, {
-          alignItems: "center",
-          bgColor: backgroundColour,
-          paddingStart: 2,
-          experimental_spaceX: 2,
-          style: { display: "hidden" }
-        });
-      }
       let { spanData } = span;
       let paddingLeft = depth * 25;
       if (!!selectedSpanID && selectedSpanID === spanID) {
@@ -56439,6 +56430,11 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       }
       let nameLabel = spanData.name.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
       let resourceLabel = spanData.resource.attributes["service.name"];
+      console.log(span);
+      let icon = /* @__PURE__ */ import_react184.default.createElement(ChevronDownIcon, null);
+      if (span.metadata.toggled) {
+        icon = /* @__PURE__ */ import_react184.default.createElement(ChevronRightIcon, null);
+      }
       return /* @__PURE__ */ import_react184.default.createElement(Flex, {
         style,
         bgColor: backgroundColour,
@@ -56448,9 +56444,16 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         width: spanNameColumnWidth - paddingLeft,
         alignItems: "center",
         flexGrow: "1",
-        flexShrink: "0",
+        flexShrink: "0"
+      }, span.metadata.leaf ? /* @__PURE__ */ import_react184.default.createElement(import_react184.default.Fragment, null) : /* @__PURE__ */ import_react184.default.createElement(IconButton, {
+        size: "md",
+        "aria-label": "Collapse Sidebar",
+        variant: "ghost",
+        colorScheme: "pink",
+        icon,
+        marginEnd: "10px",
         onClick: () => toggle(spanID)
-      }, /* @__PURE__ */ import_react184.default.createElement(Text, {
+      }), /* @__PURE__ */ import_react184.default.createElement(Text, {
         paddingX: 2,
         noOfLines: 2,
         fontSize: "sm"
@@ -56718,28 +56721,17 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     function toggle(id3) {
       console.log("toggled " + id3);
       let ids = [id3];
-      let first = true;
       let hidden = false;
-      const found = orderedSpans.find((element) => {
-        if (element.status !== "present" /* present */) {
-          return element;
-        }
-        if (ids.includes(element.spanData.parentSpanID)) {
-          return element;
-        }
-      });
-      console.log("found:" + found);
       setOrderedSpans(orderedSpans.map((x) => {
         if (x.status !== "present" /* present */) {
           return x;
         }
-        if (x.spanData.parentSpanID === id3 || ids.includes(x.spanData.parentSpanID)) {
-          if (first) {
-            first = false;
-            hidden = !x.metadata.hidden;
-          }
+        if (x.spanData.spanID === id3) {
+          hidden = !x.metadata.toggled;
+          x.metadata.toggled = hidden;
+        }
+        if (ids.includes(x.spanData.parentSpanID)) {
           ids.push(x.metadata.spanID);
-          console.log("found a child " + x.spanData.name);
           x.metadata.hidden = hidden;
         }
         return x;
@@ -56808,12 +56800,24 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           orderedSpans.push({
             status: "present" /* present */,
             spanData: treeItem.spanData,
-            metadata: { depth, spanID: treeItem.spanData.spanID, hidden: false }
+            metadata: {
+              depth,
+              spanID: treeItem.spanData.spanID,
+              hidden: false,
+              toggled: false,
+              leaf: treeItem.children.length === 0 ? true : false
+            }
           });
         } else {
           orderedSpans.push({
             status: "missing" /* missing */,
-            metadata: { depth, spanID: treeItem.spanID, hidden: false }
+            metadata: {
+              depth,
+              spanID: treeItem.spanID,
+              hidden: false,
+              toggled: false,
+              leaf: treeItem.children.length === 0 ? true : false
+            }
           });
         }
         treeItem.children.sort((a2, b2) => {

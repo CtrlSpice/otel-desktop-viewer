@@ -27,9 +27,7 @@ export default function TraceView() {
 
   // ill figure out how to make this a one liner
   function toggle(id:string) {
-    console.log("toggled "+id)
     let ids: Array<string> = [id]
-    let first = true
     let hidden = false
 
     setOrderedSpans(orderedSpans.map((x) => {
@@ -38,12 +36,12 @@ export default function TraceView() {
         return x
       }
 
-      if (x.spanData.parentSpanID === id || ids.includes(x.spanData.parentSpanID)) {
-        // TODO(scottshuffler): dont do this dude come on
-        if (first) {
-          first = false
-          hidden = !x.metadata.hidden
-        }
+      if (x.spanData.spanID === id) {
+        hidden = !x.metadata.toggled
+        x.metadata.toggled = hidden
+      }
+
+      if (ids.includes(x.spanData.parentSpanID)) {
         ids.push(x.metadata.spanID)
         x.metadata.hidden = hidden
       }
@@ -144,12 +142,22 @@ function orderSpans(spanTree: RootTreeItem[]): SpanWithUIData[] {
           orderedSpans.push({
             status: SpanDataStatus.present,
             spanData: treeItem.spanData,
-            metadata: { depth: depth, spanID: treeItem.spanData.spanID, hidden: false },
+            metadata: { 
+              depth: depth, 
+              spanID: treeItem.spanData.spanID, 
+              hidden: false, 
+              toggled: false,
+            },
           });
       } else {
         orderedSpans.push({
           status: SpanDataStatus.missing,
-          metadata: { depth: depth, spanID: treeItem.spanID, hidden: false },
+          metadata: { 
+            depth: depth, 
+            spanID: treeItem.spanID, 
+            hidden: false, 
+            toggled: false,
+          },
         });
       }
 

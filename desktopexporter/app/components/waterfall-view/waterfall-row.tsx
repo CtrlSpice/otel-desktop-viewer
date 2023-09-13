@@ -1,7 +1,6 @@
 import React from "react";
-import { Text, Flex, Spacer, useColorModeValue } from "@chakra-ui/react";
-import { WarningTwoIcon } from "@chakra-ui/icons";
-
+import { Text, Flex, Spacer, useColorModeValue,IconButton } from "@chakra-ui/react";
+import { ChevronDownIcon,ChevronRightIcon,MinusIcon, WarningTwoIcon } from "@chakra-ui/icons";
 import { SpanDataStatus, SpanWithUIData } from "../../types/ui-types";
 import { TraceTiming } from "../../utils/duration";
 import { DurationBar } from "./duration-bar";
@@ -60,6 +59,11 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
 
     let resourceLabel = spanData.resource.attributes["service.name"];
 
+    let icon = <ChevronDownIcon />
+    if (span.metadata.toggled) {
+      icon = <ChevronRightIcon />
+    }
+    
     return (
       <Flex
         style={style}
@@ -72,8 +76,16 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
           alignItems="center"
           flexGrow="1"
           flexShrink="0"
-          onClick={() => toggle(spanID)}
         >
+          <IconButton
+            size="md"
+            aria-label="Collapse Sidebar"
+            variant="ghost"
+            colorScheme="pink"
+            icon={icon}
+            marginEnd="10px"
+            onClick={() => toggle(spanID)}
+          /> 
           <Text
             paddingX={2}
             noOfLines={2}
