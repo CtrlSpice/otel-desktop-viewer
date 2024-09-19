@@ -1,7 +1,6 @@
-package server
+package telemetry
 
 import (
-	"context"
 	"encoding/hex"
 	"log"
 	"time"
@@ -10,24 +9,29 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
 type SampleTelemetry struct {
-	spanData   []telemetry.SpanData
-	logData    []telemetry.LogData
-	metricData []telemetry.MetricData
+	spanData   []SpanData
+	logData    []LogData
+	metricData []MetricsData
 }
 
-func generateSampleTraces(ctx context.Context) ptrace.Traces {
-	sampleTraces := ptrace.NewTraces()
+func NewSampleTelemetry() SampleTelemetry {
+	sample := SampleTelemetry{}
+	sample.generateTraces()
+	sample.generateLogs()
+	sample.generateMetrics()
+	return sample
+}
 
-	sampleTraces.ResourceSpans().EnsureCapacity(3)
+func (sample *SampleTelemetry) generateTraces() {
+	payload := SpanPayload{ptrace.NewTraces()}
+	payload.traces.ResourceSpans().EnsureCapacity(3)
 
 	// Generate sample currency conversion trace:
 	// 1. Set up currencyservice resource
-	currencyResourceSpan := sampleTraces.ResourceSpans().AppendEmpty()
+	currencyResourceSpan := payload.traces.ResourceSpans().AppendEmpty()
 	fillCurrencyResource(currencyResourceSpan.Resource())
 
 	// 2. Add currencyservice scope to currencyservice resource
@@ -40,11 +44,11 @@ func generateSampleTraces(ctx context.Context) ptrace.Traces {
 
 	// Generate sample HTTP POST trace:
 	// 1. Set up loadgenerator resource
-	loadGeneratorResourceSpan := sampleTraces.ResourceSpans().AppendEmpty()
+	loadGeneratorResourceSpan := payload.traces.ResourceSpans().AppendEmpty()
 	fillLoadGeneratorResource(loadGeneratorResourceSpan.Resource())
 
 	// 2. Set up frontend resource
-	frontEndResourceSpan := sampleTraces.ResourceSpans().AppendEmpty()
+	frontEndResourceSpan := payload.traces.ResourceSpans().AppendEmpty()
 	fillFrontEndResource(frontEndResourceSpan.Resource())
 
 	// 3. Add requests and urllib3 scopes to loadgenerator resource
@@ -71,72 +75,33 @@ func generateSampleTraces(ctx context.Context) ptrace.Traces {
 	httpPostSpan3 := httpScopeSpan.Spans().AppendEmpty()
 	fillHttpPostSpan3(httpPostSpan3)
 
-	spanData := extractSpans(ctx, sampleTraces)
-	return spanData
+	sample.spanData = payload.ExtractSpans()
 }
 
-func GenerateSampleLogData(ctx context.Context) []LogData {
-	ld := plog.NewLogs()
-
-	ld.ResourceLogs().EnsureCapacity(3)
+func (sample *SampleTelemetry) generateLogs() {
+	payload := LogsPayload{plog.NewLogs()}
 
 	// Generate sample currency conversion trace:
 	// 1. Set up currencyservice resource
-	currencyResourceLog := ld.ResourceLogs().AppendEmpty()
+	currencyResourceLog := payload.logs.ResourceLogs().AppendEmpty()
 	fillCurrencyResource(currencyResourceLog.Resource())
 
 	// 2. Add currencyservice scope to currencyservice resource
 	currencyScopeLog := currencyResourceLog.ScopeLogs().AppendEmpty()
 	fillCurrencyScope(currencyScopeLog.Scope())
 
-	// 3. Add CurrencyService/Convert span to currencyservice scope
+	// 3. Add CurrencyService/Convert log to currencyservice scope
 	fillCurrencyLog(currencyScopeLog.LogRecords().AppendEmpty())
-	// fillCurrencySpan(currencySpan)
 
-	// // Generate sample HTTP POST trace:
-	// // 1. Set up loadgenerator resource
-	// loadGeneratorResourceSpan := traceData.ResourceSpans().AppendEmpty()
-	// fillLoadGeneratorResource(loadGeneratorResourceSpan.Resource())
-
-	// // 2. Set up frontend resource
-	// frontEndResourceSpan := traceData.ResourceSpans().AppendEmpty()
-	// fillFrontEndResource(frontEndResourceSpan.Resource())
-
-	// // 3. Add requests and urllib3 scopes to loadgenerator resource
-	// loadGeneratorResourceSpan.ScopeSpans().EnsureCapacity(2)
-	// requestsScopeSpan := loadGeneratorResourceSpan.ScopeSpans().AppendEmpty()
-	// fillRequestsScope(requestsScopeSpan.Scope())
-
-	// urlLib3ScopeSpan := loadGeneratorResourceSpan.ScopeSpans().AppendEmpty()
-	// fillUrlLib3Scope(urlLib3ScopeSpan.Scope())
-
-	// // 4. Add http scope to frontend resource
-	// httpScopeSpan := frontEndResourceSpan.ScopeSpans().AppendEmpty()
-	// fillHttpScope(httpScopeSpan.Scope())
-
-	// // 5. Add HTTP POST span 1 to requests scope
-	// httpPostSpan1 := requestsScopeSpan.Spans().AppendEmpty()
-	// fillHttpPostSpan1(httpPostSpan1)
-
-	// // 6. Add HTTP POST span 2 to urllib3 scope
-	// httpPostSpan2 := urlLib3ScopeSpan.Spans().AppendEmpty()
-	// fillHttpPostSpan2(httpPostSpan2)
-
-	// // 7. Add HTTP POST span 3 to http scope
-	// httpPostSpan3 := httpScopeSpan.Spans().AppendEmpty()
-	// fillHttpPostSpan3(httpPostSpan3)
-
-	return extractLogs(ld)
+	sample.logData = payload.ExtractLogs()
 }
 
-func GenerateSampleMetricData(ctx context.Context) []MetricData {
-	md := pmetric.NewMetrics()
-
-	md.ResourceMetrics().EnsureCapacity(3)
+func (sample *SampleTelemetry) generateMetrics() {
+	payload := MetricsPayload{pmetric.NewMetrics()}
 
 	// Generate sample currency conversion trace:
 	// 1. Set up currencyservice resource
-	currencyResourceMetric := md.ResourceMetrics().AppendEmpty()
+	currencyResourceMetric := payload.metrics.ResourceMetrics().AppendEmpty()
 	fillCurrencyResource(currencyResourceMetric.Resource())
 
 	// 2. Add currencyservice scope to currencyservice resource
@@ -149,7 +114,7 @@ func GenerateSampleMetricData(ctx context.Context) []MetricData {
 
 	// TODO: add different kinds of metrics
 
-	return extractMetrics(md)
+	sample.metricData = payload.ExtractMetrics()
 }
 
 func fillCurrencyMetric(metric pmetric.Metric) {
