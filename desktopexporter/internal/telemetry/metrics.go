@@ -21,6 +21,10 @@ type MetricsData struct {
 	Received time.Time     `json:"-"`
 }
 
+func NewMetricsPayload(m pmetric.Metrics) *MetricsPayload {
+	return &MetricsPayload{metrics: m}
+}
+
 func (payload *MetricsPayload) ExtractMetrics() []MetricsData {
 	metricsDataSlice := []MetricsData{}
 

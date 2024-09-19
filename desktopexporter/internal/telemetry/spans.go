@@ -36,6 +36,10 @@ type SpanData struct {
 	StatusMessage string `json:"statusMessage"`
 }
 
+func NewSpanPayload(t ptrace.Traces) *SpanPayload {
+	return &SpanPayload{traces: t}
+}
+
 func (payload *SpanPayload) ExtractSpans() []SpanData {
 	spanSlice := []SpanData{}
 

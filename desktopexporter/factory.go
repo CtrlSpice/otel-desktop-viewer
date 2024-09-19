@@ -64,7 +64,7 @@ func createMetricsExporter(ctx context.Context, set exporter.Settings, config co
 	)
 }
 
-func createLogsExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Logs, error) {
+func createLogsExporter(ctx context.Context, set exporter.Settings, config component.Config) (exporter.Logs, error) {
 	cfg := config.(*Config)
 	err := cfg.Validate()
 	if err != nil {
@@ -88,7 +88,7 @@ func createLogsExporter(ctx context.Context, set exporter.CreateSettings, config
 	)
 }
 
-func createTracesExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Traces, error) {
+func createTracesExporter(ctx context.Context, set exporter.Settings, config component.Config) (exporter.Traces, error) {
 	cfg := config.(*Config)
 	err := cfg.Validate()
 	if err != nil {

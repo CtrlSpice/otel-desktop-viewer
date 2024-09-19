@@ -26,7 +26,7 @@ func NewSampleTelemetry() SampleTelemetry {
 }
 
 func (sample *SampleTelemetry) generateTraces() {
-	payload := SpanPayload{ptrace.NewTraces()}
+	payload := NewSpanPayload(ptrace.NewTraces())
 	payload.traces.ResourceSpans().EnsureCapacity(3)
 
 	// Generate sample currency conversion trace:
@@ -79,7 +79,7 @@ func (sample *SampleTelemetry) generateTraces() {
 }
 
 func (sample *SampleTelemetry) generateLogs() {
-	payload := LogsPayload{plog.NewLogs()}
+	payload := NewLogsPayload(plog.NewLogs())
 
 	// Generate sample currency conversion trace:
 	// 1. Set up currencyservice resource
@@ -97,7 +97,7 @@ func (sample *SampleTelemetry) generateLogs() {
 }
 
 func (sample *SampleTelemetry) generateMetrics() {
-	payload := MetricsPayload{pmetric.NewMetrics()}
+	payload := NewMetricsPayload(pmetric.NewMetrics())
 
 	// Generate sample currency conversion trace:
 	// 1. Set up currencyservice resource

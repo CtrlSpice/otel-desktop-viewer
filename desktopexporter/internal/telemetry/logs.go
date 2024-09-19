@@ -25,6 +25,10 @@ type LogData struct {
 	Scope                  *ScopeData             `json:"scope"`
 }
 
+func NewLogsPayload(l plog.Logs) *LogsPayload {
+	return &LogsPayload{logs: l}
+}
+
 func (payload *LogsPayload) ExtractLogs() []LogData {
 	logData := []LogData{}
 
