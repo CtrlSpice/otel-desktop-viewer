@@ -2,8 +2,7 @@
 otel-desktop-viewer
 desktopexporter/node_modules
 .vscode/
-dist/
-distribution/linux/*
-distribution/darwin/*
-.tools/*
+# dist/
+# distribution/linux/*
+# distribution/darwin/*
 go.work*

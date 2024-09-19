@@ -12,9 +12,9 @@ import (
 )
 
 type SampleTelemetry struct {
-	spanData   []SpanData
-	logData    []LogData
-	metricData []MetricsData
+	Spans   []SpanData
+	Logs    []LogData
+	Metrics []MetricsData
 }
 
 func NewSampleTelemetry() SampleTelemetry {
@@ -75,7 +75,7 @@ func (sample *SampleTelemetry) generateTraces() {
 	httpPostSpan3 := httpScopeSpan.Spans().AppendEmpty()
 	fillHttpPostSpan3(httpPostSpan3)
 
-	sample.spanData = payload.ExtractSpans()
+	sample.Spans = payload.ExtractSpans()
 }
 
 func (sample *SampleTelemetry) generateLogs() {
@@ -93,7 +93,7 @@ func (sample *SampleTelemetry) generateLogs() {
 	// 3. Add CurrencyService/Convert log to currencyservice scope
 	fillCurrencyLog(currencyScopeLog.LogRecords().AppendEmpty())
 
-	sample.logData = payload.ExtractLogs()
+	sample.Logs = payload.ExtractLogs()
 }
 
 func (sample *SampleTelemetry) generateMetrics() {
@@ -114,7 +114,7 @@ func (sample *SampleTelemetry) generateMetrics() {
 
 	// TODO: add different kinds of metrics
 
-	sample.metricData = payload.ExtractMetrics()
+	sample.Metrics = payload.ExtractMetrics()
 }
 
 func fillCurrencyMetric(metric pmetric.Metric) {

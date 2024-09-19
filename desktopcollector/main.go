@@ -65,11 +65,11 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 				`yaml:receivers::otlp::protocols::grpc::endpoint: ` + hostFlag + `:` + strconv.Itoa(grpcPortFlag),
 				`yaml:exporters::debug:`,
 				`yaml:service::pipelines::traces::receivers: [otlp]`,
-				`yaml:service::pipelines::traces::exporters: [debug]`,
+				`yaml:service::pipelines::traces::exporters: [desktop]`,
 				`yaml:service::pipelines::metrics::receivers: [otlp]`,
-				`yaml:service::pipelines::metrics::exporters: [debug]`,
+				`yaml:service::pipelines::metrics::exporters: [desktop]`,
 				`yaml:service::pipelines::logs::receivers: [otlp]`,
-				`yaml:service::pipelines::logs::exporters: [debug]`,
+				`yaml:service::pipelines::logs::exporters: [desktop]`,
 			}
 			set.ConfigProviderSettings.ResolverSettings.DefaultScheme = "env"
 			col, err := otelcol.NewCollector(set)
