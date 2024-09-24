@@ -1,134 +1,247 @@
 package store
 
 import (
-	"container/list"
 	"context"
-	"fmt"
+	"database/sql"
+	"encoding/json"
+	"log"
 	"sync"
+	"time"
+
+	"github.com/marcboeker/go-duckdb"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
 type Store struct {
-	MaxQueueSize int
-	mut          sync.Mutex
-	TraceQueue   *list.List
-	TraceMap     map[string]telemetry.TraceData
+	mut       sync.Mutex
+	db        *sql.DB
+	connector *duckdb.Connector
 }
 
-func NewStore(maxQueueSize int) *Store {
+func NewStore() *Store {
+	c, err := duckdb.NewConnector("", nil)
+	if err != nil {
+		log.Fatalf("could not initialize new connector: %s", err.Error())
+	}
+
+	db := sql.OpenDB(c)
+	_, err = db.Exec(CREATE_SPANS_TABLE)
+	if err != nil {
+		log.Fatalf("could not create table spans: %s", err.Error())
+	}
+
 	return &Store{
-		MaxQueueSize: maxQueueSize,
-		mut:          sync.Mutex{},
-		TraceQueue:   list.New(),
-		TraceMap:     map[string]telemetry.TraceData{},
+		mut:       sync.Mutex{},
+		db:        db,
+		connector: c,
 	}
 }
 
-func (store *Store) Add(_ context.Context, spanData telemetry.SpanData) {
-	store.mut.Lock()
-	defer store.mut.Unlock()
+func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) {
+	s.mut.Lock()
+	defer s.mut.Unlock()
 
-	// Enqueue, then append, as the enqueue process checks if the traceID is already in the map to keep the trace alive
-	store.enqueueTrace(spanData.TraceID)
-	traceData, traceExists := store.TraceMap[spanData.TraceID]
-	if !traceExists {
-		traceData = telemetry.TraceData{
-			TraceID: spanData.TraceID,
-			Spans:   []telemetry.SpanData{},
+	con, err := s.connector.Connect(ctx)
+	if err != nil {
+		log.Fatalf("could not connect to database: %s", err.Error())
+	}
+	defer con.Close()
+
+	appender, err := duckdb.NewAppenderFromConn(con, "", "spans")
+	if err != nil {
+		log.Fatalf("could not create new appender for spans: %s", err.Error())
+	}
+	defer appender.Close()
+
+	for _, span := range spans {
+		attributes, err := json.Marshal(span.Attributes)
+		if err != nil {
+			log.Fatalf("could not marshal attributes: %s", err.Error())
+		}
+
+		events, err := json.Marshal(span.Events)
+		if err != nil {
+			log.Fatalf("could not marshal events: %s", err.Error())
+		}
+
+		resourceAttributes, err := json.Marshal(span.Resource.Attributes)
+		if err != nil {
+			log.Fatalf("could not marshal resource attributes: %s", err.Error())
+		}
+
+		scopeAttributes, err := json.Marshal(span.Scope.Attributes)
+		if err != nil {
+			log.Fatalf("could not marshal scope attributes: %s", err.Error())
+		}
+
+		if err := appender.AppendRow(
+			span.TraceID,
+			span.TraceState,
+			span.SpanID,
+			span.ParentSpanID,
+			span.Name,
+			span.Kind,
+			span.StartTime,
+			span.EndTime,
+			attributes,
+			events,
+			resourceAttributes,
+			span.Resource.DroppedAttributesCount,
+			span.Scope.Name,
+			span.Scope.Version,
+			scopeAttributes,
+			span.Scope.DroppedAttributesCount,
+			span.DroppedAttributesCount,
+			span.DroppedEventsCount,
+			span.DroppedLinksCount,
+			span.StatusCode,
+			span.StatusMessage,
+		); err != nil {
+			log.Fatalf("could not append row to spans: %s", err.Error())
 		}
 	}
-	traceData.Spans = append(traceData.Spans, spanData)
-	store.TraceMap[spanData.TraceID] = traceData
 }
 
-func (store *Store) GetTrace(traceID string) (telemetry.TraceData, error) {
-	store.mut.Lock()
-	defer store.mut.Unlock()
+func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceData, error) {
+	s.mut.Lock()
+	defer s.mut.Unlock()
 
-	trace, traceExists := store.TraceMap[traceID]
-	if !traceExists {
-		return telemetry.TraceData{}, telemetry.ErrTraceIDNotFound
+	conn, err := s.db.Conn(context.Background())
+	if err != nil {
+		log.Fatalf("could not connect to database: %s", err.Error())
+	}
+	defer conn.Close()
+
+	trace := telemetry.TraceData{
+		TraceID: traceID,
+		Spans:   []telemetry.SpanData{},
 	}
 
+	rows, err := conn.QueryContext(ctx, SELECT_TRACE, traceID)
+	if err == sql.ErrNoRows {
+		return trace, telemetry.ErrTraceIDNotFound
+	} else if err != nil {
+		log.Fatalf("could not retrieve spans: %s", err.Error())
+	}
+
+	for rows.Next() {
+		span := telemetry.SpanData{}
+		attributes := []byte{}
+		events := []byte{}
+		resourceAttributes := []byte{}
+		scopeAttributes := []byte{}
+
+		if err = rows.Scan(
+			&span.TraceID,
+			&span.TraceState,
+			&span.SpanID,
+			&span.ParentSpanID,
+			&span.Name,
+			&span.Kind,
+			&span.StartTime,
+			&span.EndTime,
+			&attributes,
+			&events,
+			&resourceAttributes,
+			&span.Resource.DroppedAttributesCount,
+			&span.Scope.Name,
+			&span.Scope.Version,
+			&scopeAttributes,
+			&span.Scope.DroppedAttributesCount,
+			&span.DroppedAttributesCount,
+			&span.DroppedEventsCount,
+			&span.DroppedLinksCount,
+			&span.StatusCode,
+			&span.StatusMessage,
+		); err != nil {
+			log.Fatalf("could not scan spans: %s", err.Error())
+		}
+
+		json.Unmarshal(attributes, &span.Attributes)
+		json.Unmarshal(events, &span.Events)
+		json.Unmarshal(resourceAttributes, &span.Resource.Attributes)
+		json.Unmarshal(scopeAttributes, &span.Scope.Attributes)
+
+		trace.Spans = append(trace.Spans, span)
+	}
+	rows.Close()
 	return trace, nil
 }
 
-func (store *Store) GetRecentTraces(traceCount int) []telemetry.TraceData {
-	store.mut.Lock()
-	defer store.mut.Unlock()
+func (s *Store) GetTraceSummaries(ctx context.Context) telemetry.TraceSummaries {
+	s.mut.Lock()
+	defer s.mut.Unlock()
 
-	recentIDs := store.getRecentTraceIDs(traceCount)
-	recentTraces := make([]telemetry.TraceData, 0, len(recentIDs))
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		log.Fatalf("could not connect to database: %s", err.Error())
+	}
+	defer conn.Close()
 
-	for _, traceID := range recentIDs {
-		trace, traceExists := store.TraceMap[traceID]
-		if !traceExists {
-			fmt.Printf("error: %s\t traceID: %s\n", telemetry.ErrTraceIDNotFound, traceID)
+	output := telemetry.TraceSummaries{
+		TraceSummaries: []telemetry.TraceSummary{},
+	}
+
+	rows, err := conn.QueryContext(ctx, SELECT_ORDERED_TRACES)
+	if err == sql.ErrNoRows {
+		rows.Close()
+		return output
+	} else if err != nil {
+		log.Fatalf("could not retrieve trace summaries: %s", err.Error())
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		summary := telemetry.TraceSummary{
+			HasRootSpan:     false,
+			RootServiceName: "",
+			RootName:        "",
+			RootStartTime:   time.Time{},
+			RootEndTime:     time.Time{},
+			SpanCount:       0,
+			TraceID:         "",
+		}
+
+		if err = rows.Scan(&summary.TraceID); err != nil {
+			log.Fatalf("could not scan summary traceID: %s", err.Error())
+		}
+
+		spanCountRow := conn.QueryRowContext(ctx, SELECT_SPAN_COUNT, summary.TraceID)
+		if err = spanCountRow.Scan(&summary.SpanCount); err != nil {
+			log.Fatalf("could not scan summary spanCount: %s", err.Error())
+		}
+
+		rootSpanRow := conn.QueryRowContext(ctx, SELECT_ROOT_SPAN, summary.TraceID)
+		err = rootSpanRow.Scan(&summary.RootServiceName, &summary.RootName, &summary.RootStartTime, &summary.RootEndTime)
+		if err == nil {
+			summary.HasRootSpan = true
+			output.TraceSummaries = append(output.TraceSummaries, summary)
+		} else if err == sql.ErrNoRows {
+			output.TraceSummaries = append(output.TraceSummaries, summary)
 		} else {
-			recentTraces = append(recentTraces, trace)
+			log.Fatalf("could not retrieve trace summaries: %s", err.Error())
 		}
 	}
-
-	return recentTraces
+	return output
 }
 
-func (store *Store) ClearTraces() {
-	store.mut.Lock()
-	defer store.mut.Unlock()
+func (s *Store) ClearTraces(ctx context.Context) {
+	s.mut.Lock()
+	defer s.mut.Unlock()
 
-	store.TraceQueue = list.New()
-	store.TraceMap = map[string]telemetry.TraceData{}
-}
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		log.Fatalf("could not connect to database: %s", err.Error())
+	}
+	defer conn.Close()
 
-func (store *Store) enqueueTrace(traceID string) {
-	// If the traceID is already in the queue, move it to the front of the line
-	_, traceIDExists := store.TraceMap[traceID]
-	if traceIDExists {
-		element := store.findQueueElement(traceID)
-		if element == nil {
-			fmt.Println(telemetry.ErrTraceIDMismatch)
-		}
-
-		store.TraceQueue.MoveToFront(element)
-	} else {
-		// If we have exceeded the maximum number of traces we plan to store
-		// make room for the trace in the queue by deleting the oldest trace
-		for store.TraceQueue.Len() >= store.MaxQueueSize {
-			store.dequeueTrace()
-		}
-		// Add traceID to the front of the queue with the most recent traceIDs
-		store.TraceQueue.PushFront(traceID)
+	_, err = conn.ExecContext(ctx, TRUNCATE_SPANS)
+	if err != nil {
+		log.Fatalf("could not clear traces: %s", err.Error())
 	}
 }
 
-func (store *Store) dequeueTrace() {
-	expiringTraceID := store.TraceQueue.Back().Value.(string)
-	delete(store.TraceMap, expiringTraceID)
-	store.TraceQueue.Remove(store.TraceQueue.Back())
-}
-
-func (store *Store) findQueueElement(traceID string) *list.Element {
-	for element := store.TraceQueue.Front(); element != nil; element = element.Next() {
-		if traceID == element.Value.(string) {
-			return element
-		}
-	}
-	return nil
-}
-
-func (store *Store) getRecentTraceIDs(traceCount int) []string {
-	if traceCount > store.TraceQueue.Len() {
-		traceCount = store.TraceQueue.Len()
-	}
-
-	recentTraceIDs := make([]string, 0, traceCount)
-	element := store.TraceQueue.Front()
-
-	for i := 0; i < traceCount; i++ {
-		recentTraceIDs = append(recentTraceIDs, element.Value.(string))
-		element = element.Next()
-	}
-
-	return recentTraceIDs
+func (s *Store) Close() error {
+	return s.db.Close()
 }

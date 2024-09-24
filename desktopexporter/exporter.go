@@ -26,7 +26,7 @@ type desktopExporter struct {
 }
 
 func newDesktopExporter(cfg *Config) *desktopExporter {
-	store := store.NewStore(MAX_QUEUE_LENGTH)
+	store := store.NewStore()
 	server := server.NewServer(store, cfg.Endpoint)
 	return &desktopExporter{
 		store:  store,
@@ -36,9 +36,8 @@ func newDesktopExporter(cfg *Config) *desktopExporter {
 
 func (exporter *desktopExporter) pushTraces(ctx context.Context, traces ptrace.Traces) error {
 	spanDataSlice := telemetry.NewSpanPayload(traces).ExtractSpans()
-	for _, spanData := range spanDataSlice {
-		exporter.store.Add(ctx, spanData)
-	}
+	exporter.store.AddSpans(ctx, spanDataSlice)
+
 	return nil
 }
 

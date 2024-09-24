@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -18,9 +17,6 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
-// Maximum number of traces to keep in memory
-const maxNumTraces = 10000
-
 //go:embed static/*
 var assets embed.FS
 
@@ -31,7 +27,7 @@ type Server struct {
 
 func (s *Server) clearDataHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		s.store.ClearTraces()
+		s.store.ClearTraces(request.Context())
 		writer.WriteHeader(http.StatusOK)
 	}
 }
@@ -39,9 +35,9 @@ func (s *Server) clearDataHandler() func(http.ResponseWriter, *http.Request) {
 func (s *Server) sampleDataHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		sample := telemetry.NewSampleTelemetry()
-		for _, spanData := range sample.Spans {
-			s.store.Add(context.Background(), spanData)
-		}
+		s.store.AddSpans(request.Context(), sample.Spans)
+
+		//TODO: Add sample logs and metrics
 		writer.WriteHeader(http.StatusOK)
 	}
 }
@@ -61,24 +57,7 @@ func writeJSON(writer http.ResponseWriter, data any) {
 
 func (s *Server) tracesHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		// Determine how many recent traces to display
-		numTraces := len(s.store.TraceMap)
-		if numTraces > maxNumTraces {
-			numTraces = maxNumTraces
-		}
-
-		// Get the TraceData for the requested number of traces
-		traces := s.store.GetRecentTraces(numTraces)
-		summaries := telemetry.RecentSummaries{
-			TraceSummaries: []telemetry.TraceSummary{},
-		}
-
-		// Generate a summary for each trace
-		for _, trace := range traces {
-			summary := trace.GetTraceSummary()
-			summaries.TraceSummaries = append(summaries.TraceSummaries, summary)
-		}
-
+		summaries := s.store.GetTraceSummaries(request.Context())
 		writeJSON(writer, summaries)
 	}
 }
@@ -87,7 +66,7 @@ func (s *Server) traceIDHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		traceID := mux.Vars(request)["id"]
 
-		traceData, err := s.store.GetTrace(traceID)
+		traceData, err := s.store.GetTrace(request.Context(), traceID)
 		if err != nil {
 			fmt.Printf("error: %s\t traceID: %s\n", telemetry.ErrTraceIDNotFound, traceID)
 			writer.WriteHeader(http.StatusInternalServerError)
