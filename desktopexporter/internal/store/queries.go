@@ -14,29 +14,28 @@ const (
 		attributes JSON, 
 		events JSON,
 		resourceAttributes JSON,
-		resourceDroppedAttributesCount INTEGER,
+		resourceDroppedAttributesCount UINTEGER,
 		scopeName VARCHAR,
 		scopeVersion VARCHAR,
 		scopeAttributes JSON,
-		scopeDroppedAttributesCount INTEGER, 
-		droppedAttributesCount INTEGER, 
-		droppedEventsCount INTEGER, 
-		droppedLinksCount INTEGER,
+		scopeDroppedAttributesCount UINTEGER, 
+		droppedAttributesCount UINTEGER, 
+		droppedEventsCount UINTEGER, 
+		droppedLinksCount UINTEGER,
 		statusCode VARCHAR, 
 		statusMessage VARCHAR)
 	`
 
 	SELECT_ORDERED_TRACES = `
-		SELECT DISTINCT ON(traceID) traceID,
+		SELECT traceID 
 		FROM spans
-		ORDER BY startTime DESC;
+		GROUP BY traceID
+		ORDER BY MAX(startTime) DESC
 	`
 	SELECT_TRACE string = `
 		SELECT * 
 		FROM spans 
 		WHERE traceID = ?
-		GROUP BY parentSpanId
-		ORDER BY startTime
 	`
 
 	SELECT_ROOT_SPAN string = `
@@ -53,5 +52,9 @@ const (
 
 	TRUNCATE_SPANS string = `
 		TRUNCATE spans;
+	`
+	ENABLE_JSON string = `
+		INSTALL json;
+		LOAD json;
 	`
 )

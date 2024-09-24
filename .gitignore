@@ -2,6 +2,8 @@
 otel-desktop-viewer
 desktopexporter/internal/app/node_modules
 .vscode/
+duck.*
+help
 # dist/
 # distribution/linux/*
 # distribution/darwin/*

@@ -20,12 +20,17 @@ type Store struct {
 }
 
 func NewStore() *Store {
-	c, err := duckdb.NewConnector("", nil)
+	c, err := duckdb.NewConnector("../duck.db", nil)
 	if err != nil {
 		log.Fatalf("could not initialize new connector: %s", err.Error())
 	}
 
 	db := sql.OpenDB(c)
+	_, err = db.Exec(ENABLE_JSON)
+	if err != nil {
+		log.Fatalf("could not enable json: %s", err.Error())
+	}
+
 	_, err = db.Exec(CREATE_SPANS_TABLE)
 	if err != nil {
 		log.Fatalf("could not create table spans: %s", err.Error())
@@ -84,13 +89,13 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) {
 			span.Kind,
 			span.StartTime,
 			span.EndTime,
-			attributes,
-			events,
-			resourceAttributes,
+			string(attributes),
+			string(events),
+			string(resourceAttributes),
 			span.Resource.DroppedAttributesCount,
 			span.Scope.Name,
 			span.Scope.Version,
-			scopeAttributes,
+			string(scopeAttributes),
 			span.Scope.DroppedAttributesCount,
 			span.DroppedAttributesCount,
 			span.DroppedEventsCount,
