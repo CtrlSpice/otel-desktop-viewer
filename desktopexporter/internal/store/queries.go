@@ -13,6 +13,7 @@ const (
 		endTime TIMESTAMP_NS,
 		attributes JSON, 
 		events JSON,
+		links JSON,
 		resourceAttributes JSON,
 		resourceDroppedAttributesCount UINTEGER,
 		scopeName VARCHAR,

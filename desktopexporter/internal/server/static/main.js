@@ -56962,6 +56962,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     if (!span) {
       return /* @__PURE__ */ import_react129.default.createElement("div", null);
     }
+    console.log(span);
     let numEvents = span.events.length;
     let numLinks = span.links.length;
     return /* @__PURE__ */ import_react129.default.createElement(

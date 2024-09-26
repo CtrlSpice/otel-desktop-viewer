@@ -63,12 +63,17 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) {
 	for _, span := range spans {
 		attributes, err := json.Marshal(span.Attributes)
 		if err != nil {
-			log.Fatalf("could not marshal attributes: %s", err.Error())
+			log.Fatalf("could not marshal span attributes: %s", err.Error())
 		}
 
 		events, err := json.Marshal(span.Events)
 		if err != nil {
-			log.Fatalf("could not marshal events: %s", err.Error())
+			log.Fatalf("could not marshal span events: %s", err.Error())
+		}
+
+		links, err := json.Marshal(span.Links)
+		if err != nil {
+			log.Fatalf("could not marshal span links: %s", err.Error())
 		}
 
 		resourceAttributes, err := json.Marshal(span.Resource.Attributes)
@@ -92,6 +97,7 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) {
 			span.EndTime,
 			string(attributes),
 			string(events),
+			string(links),
 			string(resourceAttributes),
 			span.Resource.DroppedAttributesCount,
 			span.Scope.Name,
@@ -147,6 +153,7 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 		// Placeholders for JSON
 		attrBytes := []byte{}
 		evntBytes := []byte{}
+		linkBytes := []byte{}
 		rAttrBytes := []byte{}
 		sAttrBytes := []byte{}
 
@@ -161,6 +168,7 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			&span.EndTime,
 			&attrBytes,
 			&evntBytes,
+			&linkBytes,
 			&rAttrBytes,
 			&span.Resource.DroppedAttributesCount,
 			&span.Scope.Name,
@@ -179,8 +187,13 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 		if err = json.Unmarshal(attrBytes, &span.Attributes); err != nil {
 			return trace, fmt.Errorf("could not unmarshal span attributes: %s", err.Error())
 		}
+
 		if err = json.Unmarshal(evntBytes, &span.Events); err != nil {
 			return trace, fmt.Errorf("could not unmarshal span events: %s", err.Error())
+		}
+
+		if err = json.Unmarshal(linkBytes, &span.Links); err != nil {
+			return trace, fmt.Errorf("could not unmarshal span links: %s", err.Error())
 		}
 
 		if err = json.Unmarshal(rAttrBytes, &span.Resource.Attributes); err != nil {

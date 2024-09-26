@@ -22,7 +22,7 @@ export default function TraceView() {
   let traceTimeAttributes = calculateTraceTiming(traceData.spans);
   let spanTree: RootTreeItem[] = arrayToTree(traceData.spans);
   let orderedSpans = orderSpans(spanTree);
-
+  
   let [selectedSpanID, setSelectedSpanID] = React.useState<string>(() => {
     if (
       !orderedSpans.length ||
