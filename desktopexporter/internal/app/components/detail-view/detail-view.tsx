@@ -15,7 +15,7 @@ export function DetailView(props: DetailViewProps) {
   if (!span) {
     return <div></div>;
   }
-  console.log(span)
+
   let numEvents = span.events.length;
   let numLinks = span.links.length;
   return (
