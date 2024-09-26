@@ -8,5 +8,5 @@ var ErrEmptySpansSlice = errors.New("slice of spans associated with this traceID
 var ErrTraceIDNotFound = errors.New("traceID not found")
 var ErrTraceIDMismatch = errors.New("traceID mismatch between TraceStore.traceMap and TraceStore.traceQueue")
 
-var WarningMissingRootSpan = errors.New("warning: trace is incomplete - no root span found")
-var WarningInvalidServiceName = errors.New("warning: Resource.Attributes['service.name'] must be a string value that helps to distinguish a group of services")
+var ErrMissingRootSpan = errors.New("warning: trace is incomplete - no root span found")
+var ErrInvalidServiceName = errors.New("warning: Resource.Attributes['service.name'] must be a string value that helps to distinguish a group of services")

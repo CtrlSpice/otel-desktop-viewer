@@ -2,60 +2,69 @@ package desktopexporter
 
 import (
 	"context"
+	"errors"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/metadata"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/sharedcomponent"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
-
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/sharedcomponent"
 )
 
 const (
-	typeStr   = "desktop"
-	stability = component.StabilityLevelDevelopment
+	defaultEndpoint = "localhost:8000"
 )
 
+// Creates a factory for the Desktop Exporter
 func NewFactory() exporter.Factory {
 	return exporter.NewFactory(
-		typeStr,
+		metadata.Type,
 		createDefaultConfig,
-		exporter.WithTraces(createTracesExporter, stability),
-		exporter.WithMetrics(createMetricsExporter, stability),
-		exporter.WithLogs(createLogsExporter, stability),
+		exporter.WithTraces(createTracesExporter, metadata.TracesStability),
+		exporter.WithMetrics(createMetricsExporter, metadata.MetricsStability),
+		exporter.WithLogs(createLogsExporter, metadata.LogsStability),
 	)
 }
 
+// Create default configurations
 func createDefaultConfig() component.Config {
-	return &Config{}
+	return &Config{
+		Endpoint: defaultEndpoint,
+	}
 }
 
-func createMetricsExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Metrics, error) {
-	cfg := config.(*Config)
-	err := cfg.Validate()
+func createMetricsExporter(ctx context.Context, set exporter.Settings, config component.Config) (exporter.Metrics, error) {
+	if config == nil {
+		return nil, errors.New("nil config")
+	}
+
+	desktopCfg := config.(*Config)
+	err := desktopCfg.Validate()
 	if err != nil {
 		return nil, err
 	}
 
-	e, err := exporters.GetOrAdd(cfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(cfg), nil
+	exporter, err := exporters.GetOrAdd(desktopCfg, func() (*desktopExporter, error) {
+		return newDesktopExporter(desktopCfg), nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return exporterhelper.NewMetricsExporter(ctx, set, cfg,
-		e.Unwrap().pushMetrics,
+	return exporterhelper.NewMetricsExporter(
+		ctx,
+		set,
+		desktopCfg,
+		exporter.Unwrap().pushMetrics,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
-		// Disable Timeout/RetryOnFailure and SendingQueue
 		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),
-		exporterhelper.WithRetry(exporterhelper.RetrySettings{Enabled: false}),
 		exporterhelper.WithQueue(exporterhelper.QueueSettings{Enabled: false}),
-		exporterhelper.WithStart(e.Start),
+		exporterhelper.WithStart(exporter.Start),
 	)
 }
 
-func createLogsExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Logs, error) {
+func createLogsExporter(ctx context.Context, set exporter.Settings, config component.Config) (exporter.Logs, error) {
 	cfg := config.(*Config)
 	err := cfg.Validate()
 	if err != nil {
@@ -74,13 +83,12 @@ func createLogsExporter(ctx context.Context, set exporter.CreateSettings, config
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		// Disable Timeout/RetryOnFailure and SendingQueue
 		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),
-		exporterhelper.WithRetry(exporterhelper.RetrySettings{Enabled: false}),
 		exporterhelper.WithQueue(exporterhelper.QueueSettings{Enabled: false}),
 		exporterhelper.WithStart(e.Start),
 	)
 }
 
-func createTracesExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Traces, error) {
+func createTracesExporter(ctx context.Context, set exporter.Settings, config component.Config) (exporter.Traces, error) {
 	cfg := config.(*Config)
 	err := cfg.Validate()
 	if err != nil {
@@ -99,7 +107,6 @@ func createTracesExporter(ctx context.Context, set exporter.CreateSettings, conf
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		// Disable Timeout/RetryOnFailure and SendingQueue
 		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),
-		exporterhelper.WithRetry(exporterhelper.RetrySettings{Enabled: false}),
 		exporterhelper.WithQueue(exporterhelper.QueueSettings{Enabled: false}),
 		exporterhelper.WithStart(e.Start),
 	)

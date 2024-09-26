@@ -2,17 +2,13 @@ package desktopexporter
 
 import (
 	"fmt"
-
-	"go.opentelemetry.io/collector/component"
 )
 
-// Config defines configuration for logging exporter.
+// Config represents the exporter config settings (provided to the collector via command line on launch)
 type Config struct {
-	// Endpoint defines where we serve our frontend app
+	// Endpoint defines the host and port where we serve our frontend app
 	Endpoint string `mapstructure:"endpoint"`
 }
-
-var _ component.Config = (*Config)(nil)
 
 // Validate checks if the exporter configuration is valid
 func (cfg *Config) Validate() error {
