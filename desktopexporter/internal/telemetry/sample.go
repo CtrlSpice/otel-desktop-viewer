@@ -184,7 +184,8 @@ func fillCurrencyScope(scope pcommon.InstrumentationScope) {
 
 // requests scope data
 func fillRequestsScope(scope pcommon.InstrumentationScope) {
-	scope.SetDroppedAttributesCount(0)
+	scope.Attributes().PutStr("pumpkin", "pie")
+	scope.SetDroppedAttributesCount(42)
 	scope.SetName("sample-opentelemetry.instrumentation.requests")
 	scope.SetVersion("0.28b1")
 }

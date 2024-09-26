@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -27,7 +28,7 @@ type Server struct {
 
 func (s *Server) clearDataHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		s.store.ClearTraces(request.Context())
+		s.store.ClearTraces(context.Background())
 		writer.WriteHeader(http.StatusOK)
 	}
 }
@@ -35,7 +36,7 @@ func (s *Server) clearDataHandler() func(http.ResponseWriter, *http.Request) {
 func (s *Server) sampleDataHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		sample := telemetry.NewSampleTelemetry()
-		s.store.AddSpans(request.Context(), sample.Spans)
+		s.store.AddSpans(context.Background(), sample.Spans)
 
 		//TODO: Add sample logs and metrics
 		writer.WriteHeader(http.StatusOK)
@@ -44,6 +45,7 @@ func (s *Server) sampleDataHandler() func(http.ResponseWriter, *http.Request) {
 
 func writeJSON(writer http.ResponseWriter, data any) {
 	jsonTraceData, err := json.Marshal(data)
+
 	if err != nil {
 		fmt.Println(err)
 		writer.WriteHeader(http.StatusInternalServerError)
@@ -57,7 +59,7 @@ func writeJSON(writer http.ResponseWriter, data any) {
 
 func (s *Server) tracesHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		summaries := s.store.GetTraceSummaries(request.Context())
+		summaries := s.store.GetTraceSummaries(context.Background())
 		writeJSON(writer, summaries)
 	}
 }
@@ -66,9 +68,9 @@ func (s *Server) traceIDHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		traceID := mux.Vars(request)["id"]
 
-		traceData, err := s.store.GetTrace(request.Context(), traceID)
+		traceData, err := s.store.GetTrace(context.Background(), traceID)
 		if err != nil {
-			fmt.Printf("error: %s\t traceID: %s\n", telemetry.ErrTraceIDNotFound, traceID)
+			log.Println("traceID:", traceID, "error:", err.Error())
 			writer.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -78,7 +80,7 @@ func (s *Server) traceIDHandler() func(http.ResponseWriter, *http.Request) {
 
 func indexHandler(writer http.ResponseWriter, request *http.Request) {
 	if os.Getenv("SERVE_FROM_FS") == "true" {
-		http.ServeFile(writer, request, "./desktopexporter/static/index.html")
+		http.ServeFile(writer, request, "./desktopexporter/internal/server/static/index.html")
 	} else {
 		indexBytes, err := assets.ReadFile("static/index.html")
 		if err != nil {

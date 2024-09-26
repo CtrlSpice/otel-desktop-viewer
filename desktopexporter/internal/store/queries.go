@@ -33,16 +33,15 @@ const (
 		ORDER BY MAX(startTime) DESC
 	`
 	SELECT_TRACE string = `
-		SELECT * 
+		SELECT *
 		FROM spans 
 		WHERE traceID = ?
 	`
-
 	SELECT_ROOT_SPAN string = `
-		SELECT resourceAttributes.service.name, name, startTime, endTime
+		SELECT resourceAttributes->'service.name', name, startTime, endTime
 		FROM spans
 		WHERE traceID = ?
-		AND parentSpanID IS NULL 
+		AND parentSpanID = '' 
 	`
 	SELECT_SPAN_COUNT string = `
 		SELECT count(*) 

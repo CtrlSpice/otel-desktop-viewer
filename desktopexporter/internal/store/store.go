@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -20,7 +21,7 @@ type Store struct {
 }
 
 func NewStore() *Store {
-	c, err := duckdb.NewConnector("../duck.db", nil)
+	c, err := duckdb.NewConnector("", nil)
 	if err != nil {
 		log.Fatalf("could not initialize new connector: %s", err.Error())
 	}
@@ -112,7 +113,7 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
-	conn, err := s.db.Conn(context.Background())
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		log.Fatalf("could not connect to database: %s", err.Error())
 	}
@@ -132,10 +133,22 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 
 	for rows.Next() {
 		span := telemetry.SpanData{}
-		attributes := []byte{}
-		events := []byte{}
-		resourceAttributes := []byte{}
-		scopeAttributes := []byte{}
+		span.Resource = &telemetry.ResourceData{
+			Attributes:             map[string]interface{}{},
+			DroppedAttributesCount: 0,
+		}
+		span.Scope = &telemetry.ScopeData{
+			Name:                   "",
+			Version:                "",
+			Attributes:             map[string]interface{}{},
+			DroppedAttributesCount: 0,
+		}
+
+		// Placeholders for JSON
+		attrBytes := []byte{}
+		evntBytes := []byte{}
+		rAttrBytes := []byte{}
+		sAttrBytes := []byte{}
 
 		if err = rows.Scan(
 			&span.TraceID,
@@ -146,13 +159,13 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			&span.Kind,
 			&span.StartTime,
 			&span.EndTime,
-			&attributes,
-			&events,
-			&resourceAttributes,
+			&attrBytes,
+			&evntBytes,
+			&rAttrBytes,
 			&span.Resource.DroppedAttributesCount,
 			&span.Scope.Name,
 			&span.Scope.Version,
-			&scopeAttributes,
+			&sAttrBytes,
 			&span.Scope.DroppedAttributesCount,
 			&span.DroppedAttributesCount,
 			&span.DroppedEventsCount,
@@ -160,13 +173,23 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			&span.StatusCode,
 			&span.StatusMessage,
 		); err != nil {
-			log.Fatalf("could not scan spans: %s", err.Error())
+			return trace, fmt.Errorf("could not scan spans: %s", err.Error())
 		}
 
-		json.Unmarshal(attributes, &span.Attributes)
-		json.Unmarshal(events, &span.Events)
-		json.Unmarshal(resourceAttributes, &span.Resource.Attributes)
-		json.Unmarshal(scopeAttributes, &span.Scope.Attributes)
+		if err = json.Unmarshal(attrBytes, &span.Attributes); err != nil {
+			return trace, fmt.Errorf("could not unmarshal span attributes: %s", err.Error())
+		}
+		if err = json.Unmarshal(evntBytes, &span.Events); err != nil {
+			return trace, fmt.Errorf("could not unmarshal span events: %s", err.Error())
+		}
+
+		if err = json.Unmarshal(rAttrBytes, &span.Resource.Attributes); err != nil {
+			return trace, fmt.Errorf("could not unmarshal resource attributes: %s", err.Error())
+		}
+
+		if err = json.Unmarshal(sAttrBytes, &span.Scope.Attributes); err != nil {
+			return trace, fmt.Errorf("could not unmarshal scope attributes: %s", err.Error())
+		}
 
 		trace.Spans = append(trace.Spans, span)
 	}

@@ -57570,7 +57570,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
 
   // main.tsx
   var config2 = {
-    initialColorMode: "dark",
+    initialColorMode: "system",
     useSystemColorMode: false
   };
   var theme2 = extendTheme({ config: config2 });
