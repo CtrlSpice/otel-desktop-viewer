@@ -26,7 +26,7 @@ type desktopExporter struct {
 }
 
 func newDesktopExporter(cfg *Config) *desktopExporter {
-	store := store.NewStore()
+	store := store.NewStore(context.Background())
 	server := server.NewServer(store, cfg.Endpoint)
 	return &desktopExporter{
 		store:  store,

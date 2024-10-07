@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -28,7 +27,7 @@ type Server struct {
 
 func (s *Server) clearDataHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		s.store.ClearTraces(context.Background())
+		s.store.ClearTraces(request.Context())
 		writer.WriteHeader(http.StatusOK)
 	}
 }
@@ -36,7 +35,7 @@ func (s *Server) clearDataHandler() func(http.ResponseWriter, *http.Request) {
 func (s *Server) sampleDataHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		sample := telemetry.NewSampleTelemetry()
-		s.store.AddSpans(context.Background(), sample.Spans)
+		s.store.AddSpans(request.Context(), sample.Spans)
 
 		//TODO: Add sample logs and metrics
 		writer.WriteHeader(http.StatusOK)
@@ -59,7 +58,7 @@ func writeJSON(writer http.ResponseWriter, data any) {
 
 func (s *Server) tracesHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		summaries := s.store.GetTraceSummaries(context.Background())
+		summaries := s.store.GetTraceSummaries(request.Context())
 		writeJSON(writer, summaries)
 	}
 }
@@ -68,7 +67,7 @@ func (s *Server) traceIDHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		traceID := mux.Vars(request)["id"]
 
-		traceData, err := s.store.GetTrace(context.Background(), traceID)
+		traceData, err := s.store.GetTrace(request.Context(), traceID)
 		if err != nil {
 			log.Println("traceID:", traceID, "error:", err.Error())
 			writer.WriteHeader(http.StatusInternalServerError)

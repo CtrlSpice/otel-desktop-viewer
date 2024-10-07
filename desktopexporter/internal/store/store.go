@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,32 +16,36 @@ import (
 )
 
 type Store struct {
-	mut       sync.Mutex
-	db        *sql.DB
-	connector *duckdb.Connector
+	mut  sync.Mutex
+	db   *sql.DB
+	conn driver.Conn
 }
 
-func NewStore() *Store {
-	c, err := duckdb.NewConnector("", nil)
+func NewStore(ctx context.Context) *Store {
+	connector, err := duckdb.NewConnector("", nil)
 	if err != nil {
 		log.Fatalf("could not initialize new connector: %s", err.Error())
 	}
 
-	db := sql.OpenDB(c)
+	conn, err := connector.Connect(ctx)
+	if err != nil {
+		log.Fatalf("could not connect to the database: %s", err.Error())
+	}
+
+	db := sql.OpenDB(connector)
 	_, err = db.Exec(ENABLE_JSON)
 	if err != nil {
 		log.Fatalf("could not enable json: %s", err.Error())
 	}
 
-	_, err = db.Exec(CREATE_SPANS_TABLE)
-	if err != nil {
+	if _, err = db.Exec(CREATE_SPANS_TABLE); err != nil {
 		log.Fatalf("could not create table spans: %s", err.Error())
 	}
 
 	return &Store{
-		mut:       sync.Mutex{},
-		db:        db,
-		connector: c,
+		mut:  sync.Mutex{},
+		db:   db,
+		conn: conn,
 	}
 }
 
@@ -48,13 +53,7 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) {
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
-	con, err := s.connector.Connect(ctx)
-	if err != nil {
-		log.Fatalf("could not connect to database: %s", err.Error())
-	}
-	defer con.Close()
-
-	appender, err := duckdb.NewAppenderFromConn(con, "", "spans")
+	appender, err := duckdb.NewAppenderFromConn(s.conn, "", "spans")
 	if err != nil {
 		log.Fatalf("could not create new appender for spans: %s", err.Error())
 	}
@@ -116,21 +115,12 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) {
 }
 
 func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceData, error) {
-	s.mut.Lock()
-	defer s.mut.Unlock()
-
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		log.Fatalf("could not connect to database: %s", err.Error())
-	}
-	defer conn.Close()
-
 	trace := telemetry.TraceData{
 		TraceID: traceID,
 		Spans:   []telemetry.SpanData{},
 	}
 
-	rows, err := conn.QueryContext(ctx, SELECT_TRACE, traceID)
+	rows, err := s.db.QueryContext(ctx, SELECT_TRACE, traceID)
 	if err == sql.ErrNoRows {
 		return trace, telemetry.ErrTraceIDNotFound
 	} else if err != nil {
@@ -211,20 +201,11 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 }
 
 func (s *Store) GetTraceSummaries(ctx context.Context) telemetry.TraceSummaries {
-	s.mut.Lock()
-	defer s.mut.Unlock()
-
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		log.Fatalf("could not connect to database: %s", err.Error())
-	}
-	defer conn.Close()
-
 	output := telemetry.TraceSummaries{
 		TraceSummaries: []telemetry.TraceSummary{},
 	}
 
-	rows, err := conn.QueryContext(ctx, SELECT_ORDERED_TRACES)
+	rows, err := s.db.QueryContext(ctx, SELECT_ORDERED_TRACES)
 	if err == sql.ErrNoRows {
 		rows.Close()
 		return output
@@ -248,12 +229,12 @@ func (s *Store) GetTraceSummaries(ctx context.Context) telemetry.TraceSummaries 
 			log.Fatalf("could not scan summary traceID: %s", err.Error())
 		}
 
-		spanCountRow := conn.QueryRowContext(ctx, SELECT_SPAN_COUNT, summary.TraceID)
+		spanCountRow := s.db.QueryRowContext(ctx, SELECT_SPAN_COUNT, summary.TraceID)
 		if err = spanCountRow.Scan(&summary.SpanCount); err != nil {
 			log.Fatalf("could not scan summary spanCount: %s", err.Error())
 		}
 
-		rootSpanRow := conn.QueryRowContext(ctx, SELECT_ROOT_SPAN, summary.TraceID)
+		rootSpanRow := s.db.QueryRowContext(ctx, SELECT_ROOT_SPAN, summary.TraceID)
 		err = rootSpanRow.Scan(&summary.RootServiceName, &summary.RootName, &summary.RootStartTime, &summary.RootEndTime)
 		if err == nil {
 			summary.HasRootSpan = true
@@ -271,18 +252,12 @@ func (s *Store) ClearTraces(ctx context.Context) {
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		log.Fatalf("could not connect to database: %s", err.Error())
-	}
-	defer conn.Close()
-
-	_, err = conn.ExecContext(ctx, TRUNCATE_SPANS)
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx, TRUNCATE_SPANS); err != nil {
 		log.Fatalf("could not clear traces: %s", err.Error())
 	}
 }
 
 func (s *Store) Close() error {
+	s.conn.Close()
 	return s.db.Close()
 }
