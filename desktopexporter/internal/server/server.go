@@ -110,7 +110,7 @@ func NewServer(store *store.Store, endpoint string) *Server {
 		if err != nil {
 			log.Fatal(err)
 		}
-		router.Handle("/", http.FileServer(http.FS(staticContent)))
+		router.Handle("/", http.FileServerFS(staticContent))
 	}
 
 	s.server.Handler = router
