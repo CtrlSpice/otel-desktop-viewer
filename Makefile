@@ -8,7 +8,7 @@ build-go:
 
 .PHONY: test-go
 test-go:
-	cd desktopcollector; go test ./...
+	cd desktopexporter; go test ./...
 	
 .PHONY: run-go
 run-go:

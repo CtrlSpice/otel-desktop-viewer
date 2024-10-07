@@ -9,7 +9,7 @@ import TraceView, { traceLoader } from "./routes/trace-view";
 import ErrorPage from "./error-page";
 
 const config: ThemeConfig = {
-  initialColorMode: "dark",
+  initialColorMode: "system",
   useSystemColorMode: false,
 };
 const theme = extendTheme({ config });
