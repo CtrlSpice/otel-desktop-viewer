@@ -10,7 +10,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/pkg/browser"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
@@ -65,7 +64,7 @@ func (s *Server) tracesHandler() func(http.ResponseWriter, *http.Request) {
 
 func (s *Server) traceIDHandler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		traceID := mux.Vars(request)["id"]
+		traceID := request.PathValue("id")
 
 		traceData, err := s.store.GetTrace(request.Context(), traceID)
 		if err != nil {
@@ -98,20 +97,20 @@ func NewServer(store *store.Store, endpoint string) *Server {
 		store: store,
 	}
 
-	router := mux.NewRouter()
+	router := http.NewServeMux()
 	router.HandleFunc("/api/traces", s.tracesHandler())
 	router.HandleFunc("/api/traces/{id}", s.traceIDHandler())
 	router.HandleFunc("/api/sampleData", s.sampleDataHandler())
 	router.HandleFunc("/api/clearData", s.clearDataHandler())
 	router.HandleFunc("/traces/{id}", indexHandler)
 	if os.Getenv("SERVE_FROM_FS") == "true" {
-		router.PathPrefix("/").Handler(http.FileServer(http.Dir("./static/")))
+		router.Handle("/", http.FileServer(http.Dir("./static/")))
 	} else {
 		staticContent, err := fs.Sub(assets, "static")
 		if err != nil {
 			log.Fatal(err)
 		}
-		router.PathPrefix("/").Handler(http.FileServer(http.FS(staticContent)))
+		router.Handle("/", http.FileServer(http.FS(staticContent)))
 	}
 
 	s.server.Handler = router
