@@ -144,7 +144,7 @@ func fillCurrencyLog(log plog.LogRecord) {
 // currencyservice resource data
 func fillCurrencyResource(resource pcommon.Resource) {
 	resource.SetDroppedAttributesCount(0)
-	resource.Attributes().PutStr("service.name", "sample-currencyservice")
+	resource.Attributes().PutStr("service.name", "sample.currencyservice")
 	resource.Attributes().PutStr("telemetry.sdk.language", "cpp")
 	resource.Attributes().PutStr("telemetry.sdk.name", "opentelemetry")
 	resource.Attributes().PutStr("telemetry.sdk.version", "1.5.0")
@@ -177,30 +177,31 @@ func fillFrontEndResource(resource pcommon.Resource) {
 
 // currencyservice scope data
 func fillCurrencyScope(scope pcommon.InstrumentationScope) {
-	scope.SetDroppedAttributesCount(0)
-	scope.SetName("sample-currencyservice")
+	scope.SetDroppedAttributesCount(2)
+	scope.SetName("sample.currencyservice")
 	scope.SetVersion("v1.2.3")
+	scope.Attributes().PutStr("owner.name", "Mila Ardath")
+	scope.Attributes().PutStr("owner.contact", "github.com/CtrlSpice")
 }
 
 // requests scope data
 func fillRequestsScope(scope pcommon.InstrumentationScope) {
-	scope.Attributes().PutStr("pumpkin", "pie")
-	scope.SetDroppedAttributesCount(42)
-	scope.SetName("sample-opentelemetry.instrumentation.requests")
+	scope.SetDroppedAttributesCount(0)
+	scope.SetName("sample.opentelemetry.instrumentation.requests")
 	scope.SetVersion("0.28b1")
 }
 
 // urllib3 scope data
 func fillUrlLib3Scope(scope pcommon.InstrumentationScope) {
 	scope.SetDroppedAttributesCount(0)
-	scope.SetName("sample-opentelemetry.instrumentation.urllib3")
+	scope.SetName("sample.opentelemetry.instrumentation.urllib3")
 	scope.SetVersion("0.28b1")
 }
 
 // http scope data
 func fillHttpScope(scope pcommon.InstrumentationScope) {
 	scope.SetDroppedAttributesCount(0)
-	scope.SetName("sample-@opentelemetry/instrumentation-http")
+	scope.SetName("sample.@opentelemetry/instrumentation-http")
 	scope.SetVersion("0.32.0")
 }
 
@@ -209,7 +210,7 @@ func fillCurrencySpan(span ptrace.Span) {
 	span.SetDroppedAttributesCount(0)
 	span.SetDroppedEventsCount(0)
 	span.SetDroppedLinksCount(0)
-	span.SetName("sample-CurrencyService/Convert")
+	span.SetName("sample.CurrencyService/Convert")
 	span.SetKind(ptrace.SpanKindServer)
 	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 01, 20, 25, 36, 179472007, time.UTC)))
 	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 01, 20, 25, 36, 179498174, time.UTC)))
@@ -224,12 +225,15 @@ func fillCurrencySpan(span ptrace.Span) {
 	conversionRequestEvent := span.Events().AppendEmpty()
 	conversionRequestEvent.SetDroppedAttributesCount(0)
 	conversionRequestEvent.SetTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 01, 20, 25, 36, 179475132, time.UTC)))
-	conversionRequestEvent.SetName("sample-Processing currency conversion request")
+	conversionRequestEvent.SetName("Processing currency conversion request")
+	conversionRequestEvent.Attributes().PutStr("event.class", "sample")
 
 	conversionSuccessEvent := span.Events().AppendEmpty()
-	conversionSuccessEvent.SetDroppedAttributesCount(0)
+	conversionSuccessEvent.SetDroppedAttributesCount(1)
 	conversionSuccessEvent.SetTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 01, 20, 25, 36, 179479924, time.UTC)))
-	conversionSuccessEvent.SetName("sample-Conversion successful. Response sent back.")
+	conversionSuccessEvent.SetName("Conversion successful. Response sent back.")
+	conversionSuccessEvent.Attributes().PutStr("event.class", "sample")
+	conversionSuccessEvent.Attributes().PutInt("event.priority", 1)
 }
 
 // HTTP POST span data (client, root)
@@ -237,7 +241,7 @@ func fillHttpPostSpan1(span ptrace.Span) {
 	span.SetDroppedAttributesCount(0)
 	span.SetDroppedEventsCount(0)
 	span.SetDroppedLinksCount(0)
-	span.SetName("sample-HTTP POST")
+	span.SetName("SAMPLE HTTP POST")
 	span.SetKind(ptrace.SpanKindClient)
 	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 803511676, time.UTC)))
 	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 817351051, time.UTC)))
@@ -254,7 +258,7 @@ func fillHttpPostSpan2(span ptrace.Span) {
 	span.SetDroppedAttributesCount(0)
 	span.SetDroppedEventsCount(0)
 	span.SetDroppedLinksCount(0)
-	span.SetName("sample-HTTP POST")
+	span.SetName("SAMPLE HTTP POST")
 	span.SetKind(ptrace.SpanKindClient)
 	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 804417635, time.UTC)))
 	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 816959885, time.UTC)))
@@ -265,6 +269,12 @@ func fillHttpPostSpan2(span ptrace.Span) {
 	span.Attributes().PutStr("http.method", "POST")
 	span.Attributes().PutInt("http.status_code", 200)
 	span.Attributes().PutStr("http.url", "http://frontend:8080/api/cart")
+
+	link := span.Links().AppendEmpty()
+	link.SetSpanID(encodeSpanID("2c1ae93af4d3f887"))
+	link.SetTraceID(encodeTraceID("7979cec4d1c04222fa9a3c7c97c0a99c"))
+	link.SetDroppedAttributesCount(5)
+	link.Attributes().PutStr("relationship", "in-cart currency conversion")
 }
 
 // HTTP POST span data (server, child)
@@ -272,7 +282,7 @@ func fillHttpPostSpan3(span ptrace.Span) {
 	span.SetDroppedAttributesCount(0)
 	span.SetDroppedEventsCount(0)
 	span.SetDroppedLinksCount(0)
-	span.SetName("sample-HTTP POST")
+	span.SetName("SAMPLE HTTP POST")
 	span.SetKind(ptrace.SpanKindServer)
 	span.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 805039872, time.UTC)))
 	span.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2023, 02, 02, 18, 17, 54, 816274688, time.UTC)))
