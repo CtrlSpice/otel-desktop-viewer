@@ -1,13 +1,14 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/pkg/browser"
@@ -21,103 +22,29 @@ var assets embed.FS
 
 type Server struct {
 	server http.Server
-	store  *store.Store
+	Store  *store.Store
 }
 
-func (s *Server) clearDataHandler() func(http.ResponseWriter, *http.Request) {
-	return func(writer http.ResponseWriter, request *http.Request) {
-		s.store.ClearTraces(request.Context())
-		writer.WriteHeader(http.StatusOK)
-	}
-}
-
-func (s *Server) sampleDataHandler() func(http.ResponseWriter, *http.Request) {
-	return func(writer http.ResponseWriter, request *http.Request) {
-		sample := telemetry.NewSampleTelemetry()
-		s.store.AddSpans(request.Context(), sample.Spans)
-
-		//TODO: Add sample logs and metrics
-		writer.WriteHeader(http.StatusOK)
-	}
-}
-
-func writeJSON(writer http.ResponseWriter, data any) {
-	jsonTraceData, err := json.Marshal(data)
-
-	if err != nil {
-		fmt.Println(err)
-		writer.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	writer.WriteHeader(http.StatusOK)
-	writer.Header().Set("Content-Type", "application/json")
-	writer.Write(jsonTraceData)
-}
-
-func (s *Server) tracesHandler() func(http.ResponseWriter, *http.Request) {
-	return func(writer http.ResponseWriter, request *http.Request) {
-		summaries := s.store.GetTraceSummaries(request.Context())
-		writeJSON(writer, summaries)
-	}
-}
-
-func (s *Server) traceIDHandler() func(http.ResponseWriter, *http.Request) {
-	return func(writer http.ResponseWriter, request *http.Request) {
-		traceID := request.PathValue("id")
-
-		traceData, err := s.store.GetTrace(request.Context(), traceID)
-		if err != nil {
-			log.Println("traceID:", traceID, "error:", err.Error())
-			writer.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		writeJSON(writer, traceData)
-	}
-}
-
-func indexHandler(writer http.ResponseWriter, request *http.Request) {
-	if os.Getenv("SERVE_FROM_FS") == "true" {
-		http.ServeFile(writer, request, "./desktopexporter/internal/server/static/index.html")
-	} else {
-		indexBytes, err := assets.ReadFile("static/index.html")
-		if err != nil {
-			writer.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		writer.Write(indexBytes)
-	}
-}
-
-func NewServer(store *store.Store, endpoint string) *Server {
+func NewServer(endpoint string) *Server {
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
 		},
-		store: store,
+		Store: store.NewStore(context.Background()),
 	}
 
-	router := http.NewServeMux()
-	router.HandleFunc("/api/traces", s.tracesHandler())
-	router.HandleFunc("/api/traces/{id}", s.traceIDHandler())
-	router.HandleFunc("/api/sampleData", s.sampleDataHandler())
-	router.HandleFunc("/api/clearData", s.clearDataHandler())
-	router.HandleFunc("/traces/{id}", indexHandler)
-	if os.Getenv("SERVE_FROM_FS") == "true" {
-		router.Handle("/", http.FileServer(http.Dir("./static/")))
-	} else {
-		staticContent, err := fs.Sub(assets, "static")
-		if err != nil {
-			log.Fatal(err)
-		}
-		router.Handle("/", http.FileServerFS(staticContent))
+	serveFromFS, err := strconv.ParseBool(os.Getenv("SERVE_FROM_FS"))
+	if err != nil {
+		serveFromFS = false
 	}
 
-	s.server.Handler = router
+	s.server.Handler = s.Handler(serveFromFS)
 	return &s
 }
 
 func (s *Server) Start() error {
+	defer s.Store.Close()
+
 	_, isCI := os.LookupEnv("CI")
 	if !isCI {
 		go func() {
@@ -132,4 +59,92 @@ func (s *Server) Start() error {
 
 func (s *Server) Close() error {
 	return s.server.Close()
+}
+
+func (s *Server) Handler(serveFromFS bool) http.Handler {
+	router := http.NewServeMux()
+	router.HandleFunc("/api/traces", s.tracesHandler)
+	router.HandleFunc("/api/traces/{id}", s.traceIDHandler)
+	router.HandleFunc("/api/sampleData", s.sampleDataHandler)
+	router.HandleFunc("/api/clearData", s.clearTracesHandler)
+	router.HandleFunc("/traces/{id}", indexHandler)
+
+	if serveFromFS {
+		router.Handle("/", http.FileServer(http.Dir("./static/")))
+	} else {
+		staticContent, err := fs.Sub(assets, "static")
+		if err != nil {
+			log.Fatal(err)
+		}
+		router.Handle("/", http.FileServerFS(staticContent))
+	}
+	return router
+}
+
+func (s *Server) tracesHandler(writer http.ResponseWriter, request *http.Request) {
+	summaries, err := s.Store.GetTraceSummaries(request.Context())
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Fatal(err)
+	}
+
+	writeJSON(writer, telemetry.TraceSummaries{
+		TraceSummaries: *summaries,
+	})
+}
+
+func (s *Server) clearTracesHandler(writer http.ResponseWriter, request *http.Request) {
+	if err := s.Store.ClearTraces(request.Context()); err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Fatal(err)
+	}
+	writer.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) sampleDataHandler(writer http.ResponseWriter, request *http.Request) {
+	sample := telemetry.NewSampleTelemetry()
+	if err := s.Store.AddSpans(request.Context(), sample.Spans); err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Fatal(err)
+	}
+
+	//TODO: Add sample logs and metrics
+	writer.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Request) {
+	traceID := request.PathValue("id")
+
+	traceData, err := s.Store.GetTrace(request.Context(), traceID)
+	if err != nil {
+		writer.WriteHeader(http.StatusBadRequest)
+		log.Fatalln("traceID:", traceID, "error:", err.Error())
+	}
+	writeJSON(writer, traceData)
+}
+
+func indexHandler(writer http.ResponseWriter, request *http.Request) {
+	if os.Getenv("SERVE_FROM_FS") == "true" {
+		http.ServeFile(writer, request, "./desktopexporter/internal/server/static/index.html")
+	} else {
+		indexBytes, err := assets.ReadFile("static/index.html")
+		if err != nil {
+			writer.WriteHeader(http.StatusInternalServerError)
+			log.Fatalf("could not read static assets: %s", err.Error())
+		}
+		writer.Write(indexBytes)
+	}
+}
+
+func writeJSON(writer http.ResponseWriter, data any) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Fatalf("could not marshal json: %s", err.Error())
+
+	}
+
+	writer.WriteHeader(http.StatusOK)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.Write(jsonData)
 }

@@ -49,40 +49,40 @@ func NewStore(ctx context.Context) *Store {
 	}
 }
 
-func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) {
+func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error {
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
 	appender, err := duckdb.NewAppenderFromConn(s.conn, "", "spans")
 	if err != nil {
-		log.Fatalf("could not create new appender for spans: %s", err.Error())
+		return fmt.Errorf("could not create new appender for spans: %s", err.Error())
 	}
 	defer appender.Close()
 
 	for _, span := range spans {
 		attributes, err := json.Marshal(span.Attributes)
 		if err != nil {
-			log.Fatalf("could not marshal span attributes: %s", err.Error())
+			return fmt.Errorf("could not marshal span attributes: %s", err.Error())
 		}
 
 		events, err := json.Marshal(span.Events)
 		if err != nil {
-			log.Fatalf("could not marshal span events: %s", err.Error())
+			return fmt.Errorf("could not marshal span events: %s", err.Error())
 		}
 
 		links, err := json.Marshal(span.Links)
 		if err != nil {
-			log.Fatalf("could not marshal span links: %s", err.Error())
+			return fmt.Errorf("could not marshal span links: %s", err.Error())
 		}
 
 		resourceAttributes, err := json.Marshal(span.Resource.Attributes)
 		if err != nil {
-			log.Fatalf("could not marshal resource attributes: %s", err.Error())
+			return fmt.Errorf("could not marshal resource attributes: %s", err.Error())
 		}
 
 		scopeAttributes, err := json.Marshal(span.Scope.Attributes)
 		if err != nil {
-			log.Fatalf("could not marshal scope attributes: %s", err.Error())
+			return fmt.Errorf("could not marshal scope attributes: %s", err.Error())
 		}
 
 		if err := appender.AppendRow(
@@ -109,9 +109,10 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) {
 			span.StatusCode,
 			span.StatusMessage,
 		); err != nil {
-			log.Fatalf("could not append row to spans: %s", err.Error())
+			return fmt.Errorf("could not append row to spans: %s", err.Error())
 		}
 	}
+	return nil
 }
 
 func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceData, error) {
@@ -200,17 +201,14 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 	return trace, nil
 }
 
-func (s *Store) GetTraceSummaries(ctx context.Context) telemetry.TraceSummaries {
-	output := telemetry.TraceSummaries{
-		TraceSummaries: []telemetry.TraceSummary{},
-	}
+func (s *Store) GetTraceSummaries(ctx context.Context) (*[]telemetry.TraceSummary, error) {
+	summaries := []telemetry.TraceSummary{}
 
 	rows, err := s.db.QueryContext(ctx, SELECT_ORDERED_TRACES)
 	if err == sql.ErrNoRows {
-		rows.Close()
-		return output
+		return &summaries, nil
 	} else if err != nil {
-		log.Fatalf("could not retrieve trace summaries: %s", err.Error())
+		return nil, fmt.Errorf("could not retrieve trace summaries: %s", err.Error())
 	}
 	defer rows.Close()
 
@@ -226,35 +224,36 @@ func (s *Store) GetTraceSummaries(ctx context.Context) telemetry.TraceSummaries 
 		}
 
 		if err = rows.Scan(&summary.TraceID); err != nil {
-			log.Fatalf("could not scan summary traceID: %s", err.Error())
+			return nil, fmt.Errorf("could not scan summary traceID: %s", err.Error())
 		}
 
 		spanCountRow := s.db.QueryRowContext(ctx, SELECT_SPAN_COUNT, summary.TraceID)
 		if err = spanCountRow.Scan(&summary.SpanCount); err != nil {
-			log.Fatalf("could not scan summary spanCount: %s", err.Error())
+			return nil, fmt.Errorf("could not scan summary spanCount: %s", err.Error())
 		}
 
 		rootSpanRow := s.db.QueryRowContext(ctx, SELECT_ROOT_SPAN, summary.TraceID)
 		err = rootSpanRow.Scan(&summary.RootServiceName, &summary.RootName, &summary.RootStartTime, &summary.RootEndTime)
 		if err == nil {
 			summary.HasRootSpan = true
-			output.TraceSummaries = append(output.TraceSummaries, summary)
+			summaries = append(summaries, summary)
 		} else if err == sql.ErrNoRows {
-			output.TraceSummaries = append(output.TraceSummaries, summary)
+			summaries = append(summaries, summary)
 		} else {
-			log.Fatalf("could not retrieve trace summaries: %s", err.Error())
+			return nil, fmt.Errorf("could not retrieve trace summaries: %s", err.Error())
 		}
 	}
-	return output
+	return &summaries, nil
 }
 
-func (s *Store) ClearTraces(ctx context.Context) {
+func (s *Store) ClearTraces(ctx context.Context) error {
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
 	if _, err := s.db.ExecContext(ctx, TRUNCATE_SPANS); err != nil {
-		log.Fatalf("could not clear traces: %s", err.Error())
+		return fmt.Errorf("could not clear traces: %s", err.Error())
 	}
+	return nil
 }
 
 func (s *Store) Close() error {
