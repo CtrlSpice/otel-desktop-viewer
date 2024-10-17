@@ -39,7 +39,7 @@ const (
 		WHERE traceID = ?
 	`
 	SELECT_ROOT_SPAN string = `
-		SELECT resourceAttributes->'service.name', name, startTime, endTime
+		SELECT ifnull(resourceAttributes->>'service.name', ''), name, startTime, endTime
 		FROM spans
 		WHERE traceID = ?
 		AND parentSpanID = '' 
