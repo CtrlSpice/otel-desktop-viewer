@@ -122,11 +122,10 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 	}
 
 	rows, err := s.db.QueryContext(ctx, SELECT_TRACE, traceID)
-	if err == sql.ErrNoRows {
-		return trace, telemetry.ErrTraceIDNotFound
-	} else if err != nil {
+	if err != nil {
 		log.Fatalf("could not retrieve spans: %s", err.Error())
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		span := telemetry.SpanData{}
@@ -197,7 +196,14 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 
 		trace.Spans = append(trace.Spans, span)
 	}
-	rows.Close()
+
+	// Fun thing: db.QueryContext does not return sql.ErrNoRows,
+	// but the first call to rows.Next() returns false,
+	// so we have to check for traceID not found here.
+	if len(trace.Spans) == 0 {
+		return trace, telemetry.ErrTraceIDNotFound
+	}
+
 	return trace, nil
 }
 

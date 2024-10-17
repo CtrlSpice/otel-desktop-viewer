@@ -114,13 +114,12 @@ func (s *Server) sampleDataHandler(writer http.ResponseWriter, request *http.Req
 
 func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Request) {
 	traceID := request.PathValue("id")
-
 	traceData, err := s.Store.GetTrace(request.Context(), traceID)
 	if err != nil {
 		writer.WriteHeader(http.StatusBadRequest)
-		log.Fatalln("traceID:", traceID, "error:", err.Error())
+	} else {
+		writeJSON(writer, traceData)
 	}
-	writeJSON(writer, traceData)
 }
 
 func indexHandler(writer http.ResponseWriter, request *http.Request) {
