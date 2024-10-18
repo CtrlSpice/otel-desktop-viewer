@@ -16,10 +16,12 @@ sleep 1
 
 # Check that a trace summary has been created, and the rootServiceName is correct
 response=$(curl 'http://localhost:8000/api/traces' -H "Content-Type: application/json")
+echo $response
 
 rootServiceName=$(jq -r '.traceSummaries[0].rootServiceName' <<< $response)
+echo $rootServiceName
 
-if [ $rootServiceName == "\"test-with-curl\"" ]
+if [ $rootServiceName == "test-with-curl" ]
 then
     echo 'Exit status 0: All good.'
     kill -15 $pid
