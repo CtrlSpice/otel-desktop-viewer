@@ -19,7 +19,7 @@ response=$(curl 'http://localhost:8000/api/traces' -H "Content-Type: application
 
 rootServiceName=$(jq '.traceSummaries[0].rootServiceName' <<< $response)
 
-if [ $rootServiceName == 'test-with-curl' ]
+if [ $rootServiceName == "\"test-with-curl\"" ]
 then
     echo 'Exit status 0: All good.'
     kill -15 $pid
