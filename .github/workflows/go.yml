@@ -27,10 +27,10 @@ jobs:
         go-version: 1.23
 
     - name: Build
-      run: go build -v
+      run: cd desktopcollector; go build -o ../otel-desktop-viewer
  
-    - name: Test
-      run: go test -v ./...
+    - name: Exporter Go Tests
+      run: cd desktopexporter; go test ./...
 
     - name: Integration
       run: ./.github/workflows/integration.sh
