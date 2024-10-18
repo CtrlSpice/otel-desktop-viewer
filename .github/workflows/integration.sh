@@ -17,11 +17,7 @@ sleep 1
 # Check that a trace summary has been created, and the rootServiceName is correct
 response=$(curl 'http://localhost:8000/api/traces' -H "Content-Type: application/json")
 
-echo "$response"
-
-rootServiceName=$(jq '.traceSummaries[0].rootServiceName' <<< $response)
-
-echo "$rootServiceName"
+rootServiceName=$(jq -r '.traceSummaries[0].rootServiceName' <<< $response)
 
 if [ $rootServiceName == "\"test-with-curl\"" ]
 then
