@@ -5,9 +5,7 @@
        "attributes": [
          {
            "key": "service.name",
-           "value": {
-             "stringValue": "test-with-curl"
-           }
+           "value":"test-with-curl"
          }
        ]
      },
