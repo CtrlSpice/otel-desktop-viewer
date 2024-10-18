@@ -63,11 +63,11 @@ func (s *Server) Close() error {
 
 func (s *Server) Handler(serveFromFS bool) http.Handler {
 	router := http.NewServeMux()
-	router.HandleFunc("/api/traces", s.tracesHandler)
-	router.HandleFunc("/api/traces/{id}", s.traceIDHandler)
-	router.HandleFunc("/api/sampleData", s.sampleDataHandler)
-	router.HandleFunc("/api/clearData", s.clearTracesHandler)
-	router.HandleFunc("/traces/{id}", indexHandler)
+	router.HandleFunc("GET /api/traces", s.tracesHandler)
+	router.HandleFunc("GET /api/traces/{id}", s.traceIDHandler)
+	router.HandleFunc("GET /api/sampleData", s.sampleDataHandler)
+	router.HandleFunc("GET /api/clearData", s.clearTracesHandler)
+	router.HandleFunc("GET /traces/{id}", indexHandler)
 
 	if serveFromFS {
 		router.Handle("/", http.FileServer(http.Dir("./static/")))

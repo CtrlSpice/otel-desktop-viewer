@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,8 +15,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setupWithTrace(t *testing.T) (*Server, func(*testing.T)) {
-	s := NewServer("localhost:8000")
+func setupEmpty() (*httptest.Server, func()) {
+	server := NewServer("localhost:8000")
+	testServer := httptest.NewServer(server.Handler(false))
+
+	return testServer, func() {
+		testServer.Close()
+		server.Store.Close()
+	}
+}
+
+func setupWithTrace(t *testing.T) (*httptest.Server, func(*testing.T)) {
+	server := NewServer("localhost:8000")
 	testSpanData := telemetry.SpanData{
 		TraceID:      "1234567890",
 		TraceState:   "",
@@ -44,18 +53,31 @@ func setupWithTrace(t *testing.T) (*Server, func(*testing.T)) {
 		StatusMessage:          "",
 	}
 
-	if err := s.Store.AddSpans(context.Background(), []telemetry.SpanData{testSpanData}); err != nil {
-		t.Fatalf("could not create test span: %v", err)
-	}
-	return s, func(t *testing.T) {
-		s.Store.Close()
+	err := server.Store.AddSpans(context.Background(), []telemetry.SpanData{testSpanData})
+	assert.Nilf(t, err, "could not create  test span: %v", err)
+
+	testServer := httptest.NewServer(server.Handler(false))
+
+	return testServer, func(t *testing.T) {
+		testServer.Close()
+		server.Store.Close()
 	}
 }
 func TestTracesHandler(t *testing.T) {
 	t.Run("Traces Handler (Empty)", func(t *testing.T) {
-		s := NewServer("localhost:8000")
-		defer s.Store.Close()
+		testServer, teardown := setupEmpty()
+		defer teardown()
 
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/traces"))
+		assert.Nilf(t, err, "could not send GET request %v", err)
+		defer res.Body.Close()
+
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+
+		b, err := io.ReadAll(res.Body)
+		assert.Nilf(t, err, "could not read response body: %v", err)
+
+		// Init summaries struct with some data to be overwritten
 		testSummaries := telemetry.TraceSummaries{
 			TraceSummaries: []telemetry.TraceSummary{
 				{
@@ -69,62 +91,28 @@ func TestTracesHandler(t *testing.T) {
 				},
 			},
 		}
-
-		req, err := http.NewRequest("GET", "/api/traces", nil)
-		if err != nil {
-			t.Fatalf("could not create request: %v", err)
-		}
-
-		rec := httptest.NewRecorder()
-		s.tracesHandler(rec, req)
-		res := rec.Result()
-		defer res.Body.Close()
-
-		b, err := io.ReadAll(res.Body)
-		if err != nil {
-			t.Fatalf("could not read response: %v", err)
-		}
-
-		if res.StatusCode != http.StatusOK {
-			t.Errorf("expected status OK; got %v", res.Status)
-		}
-
 		err = json.Unmarshal(b, &testSummaries)
-		if err != nil {
-			t.Fatalf("could not unmarshal bytes to trace summaries: %v", err.Error())
-		}
+		assert.Nilf(t, err, "could not unmarshal bytes to trace summaries: %v", err)
 
 		assert.Len(t, testSummaries.TraceSummaries, 0)
 	})
 
 	t.Run("Traces Handler (Not Empty)", func(t *testing.T) {
-		testSummaries := telemetry.TraceSummaries{}
-		s, teardown := setupWithTrace(t)
+		testServer, teardown := setupWithTrace(t)
 		defer teardown(t)
 
-		req, err := http.NewRequest("GET", "/api/traces", nil)
-		if err != nil {
-			t.Fatalf("could not create request: %v", err)
-		}
-
-		rec := httptest.NewRecorder()
-		s.tracesHandler(rec, req)
-		res := rec.Result()
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/traces"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
 		defer res.Body.Close()
 
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+
 		b, err := io.ReadAll(res.Body)
-		if err != nil {
-			t.Fatalf("could not read response: %v", err)
-		}
+		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		if res.StatusCode != http.StatusOK {
-			t.Errorf("expected status OK; got %v", res.Status)
-		}
-
+		testSummaries := telemetry.TraceSummaries{}
 		err = json.Unmarshal(b, &testSummaries)
-		if err != nil {
-			t.Fatalf("could not unmarshal bytes to trace summaries: %v", err.Error())
-		}
+		assert.Nilf(t, err, "could not unmarshal bytes to trace summaries: %v", err)
 
 		assert.Equal(t, "1234567890", testSummaries.TraceSummaries[0].TraceID)
 		assert.Equal(t, true, testSummaries.TraceSummaries[0].HasRootSpan)
@@ -135,45 +123,30 @@ func TestTracesHandler(t *testing.T) {
 }
 
 func TestTraceIDHandler(t *testing.T) {
-	s, teardown := setupWithTrace(t)
+	testServer, teardown := setupWithTrace(t)
 	defer teardown(t)
 
-	srv := httptest.NewServer(s.Handler(false))
-	defer srv.Close()
-
 	t.Run("Trace ID Handler (Not Found)", func(t *testing.T) {
-		res, err := http.Get(fmt.Sprintf("%s%s", srv.URL, "/api/traces/987654321"))
-		if err != nil {
-			t.Fatalf("could not send GET request: %v", err)
-		}
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/traces/987654321"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
 		defer res.Body.Close()
 
-		if res.StatusCode != http.StatusBadRequest {
-			t.Errorf("expected status 400 Bad Request; got %v", res.Status)
-		}
+		assert.Equal(t, http.StatusBadRequest, res.StatusCode)
 	})
 
 	t.Run("Traces ID Handler (ID Found)", func(t *testing.T) {
-		res, err := http.Get(fmt.Sprintf("%s%s", srv.URL, "/api/traces/1234567890"))
-		if err != nil {
-			t.Fatalf("could not send GET request: %v", err)
-		}
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/traces/1234567890"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
 		defer res.Body.Close()
 
-		if res.StatusCode != http.StatusOK {
-			t.Fatalf("expected status OK; got %v", res.Status)
-		}
+		assert.Equal(t, http.StatusOK, res.StatusCode)
 
 		b, err := io.ReadAll(res.Body)
-		if err != nil {
-			t.Fatalf("could not read response: %v", err)
-		}
+		assert.Nilf(t, err, "could not read response body: %v", err)
 
 		testTrace := telemetry.TraceData{}
 		err = json.Unmarshal(b, &testTrace)
-		if err != nil {
-			t.Fatalf("could not unmarshal bytes to trace summaries: %v", err.Error())
-		}
+		assert.Nilf(t, err, "could not unmarshal bytes to trace data: %v", err)
 
 		assert.Equal(t, "1234567890", testTrace.TraceID)
 		assert.Equal(t, "12345", testTrace.Spans[0].SpanID)
@@ -184,91 +157,57 @@ func TestTraceIDHandler(t *testing.T) {
 }
 
 func TestClearTracesHandler(t *testing.T) {
-	s, teardown := setupWithTrace(t)
+	testServer, teardown := setupWithTrace(t)
 	defer teardown(t)
 
-	testSummaries := telemetry.TraceSummaries{}
-
-	// Clear traces
-	req, err := http.NewRequest("GET", "/api/clearData", nil)
-	if err != nil {
-		t.Fatalf("could not create request: %v", err)
-	}
-
-	rec := httptest.NewRecorder()
-	s.clearTracesHandler(rec, req)
-	res := rec.Result()
+	// Clear dat data
+	res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/clearData"))
+	assert.Nilf(t, err, "could not send GET request: %v", err)
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("expected status OK; got %v", res.Status)
-	}
+	assert.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Get trace summaries
-	req, err = http.NewRequest("GET", "/api/traces", nil)
-	if err != nil {
-		t.Fatalf("could not create request: %v", err)
-	}
+	res, err = http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/traces"))
+	assert.Nilf(t, err, "could not send GET request: %v", err)
 
-	rec = httptest.NewRecorder()
-	s.tracesHandler(rec, req)
-	res = rec.Result()
+	assert.Equal(t, http.StatusOK, res.StatusCode)
 
 	b, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Fatalf("could not read response: %v", err)
-	}
+	assert.Nilf(t, err, "could not read response body: %v", err)
 
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("expected status OK; got %v", res.Status)
-	}
-
+	testSummaries := telemetry.TraceSummaries{}
 	err = json.Unmarshal(b, &testSummaries)
-	if err != nil {
-		t.Fatalf("could not unmarshal bytes to trace summaries: %v", err.Error())
-	}
+	assert.Nilf(t, err, "could not unmarshal bytes to trace summaries: %v", err)
 
 	// Check that there are no traces in store
 	assert.Len(t, testSummaries.TraceSummaries, 0)
 }
 
 func TestSampleHandler(t *testing.T) {
-	s := NewServer("localhost:8000")
-	defer s.Store.Close()
+	testServer, teardown := setupEmpty()
+	defer teardown()
 
-	srv := httptest.NewServer(s.Handler(false))
-	defer srv.Close()
+	// Populate sample data
+	res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/sampleData"))
+	assert.Nilf(t, err, "could not send GET request: %v", err)
+	defer res.Body.Close()
+
+	assert.Equal(t, http.StatusOK, res.StatusCode)
 
 	t.Run("Sample Data Handler (Traces)", func(t *testing.T) {
-		res, err := http.Get(fmt.Sprintf("%s%s", srv.URL, "/api/sampleData"))
-		if err != nil {
-			t.Fatalf("could not send GET request: %v", err)
-		}
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/traces/42957c7c2fca940a0d32a0cdd38c06a4"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
 		defer res.Body.Close()
 
-		if res.StatusCode != http.StatusOK {
-			t.Errorf("expected status OK; got %v", res.Status)
-		}
-
-		res, err = http.Get(fmt.Sprintf("%s%s", srv.URL, "/api/traces/42957c7c2fca940a0d32a0cdd38c06a4"))
-		if err != nil {
-			t.Fatalf("could not send GET request: %v", err)
-		}
-
-		if res.StatusCode != http.StatusOK {
-			t.Fatalf("expected status OK; got %v", res.Status)
-		}
+		assert.Equal(t, http.StatusOK, res.StatusCode)
 
 		b, err := io.ReadAll(res.Body)
-		if err != nil {
-			t.Fatalf("could not read response: %v", err)
-		}
+		assert.Nilf(t, err, "could not read response body: %v", err)
 
 		testTrace := telemetry.TraceData{}
 		err = json.Unmarshal(b, &testTrace)
-		if err != nil {
-			t.Fatalf("could not unmarshal bytes to trace summaries: %v", err.Error())
-		}
+		assert.Nilf(t, err, "could not unmarshal bytes to trace data: %v", err)
 
 		assert.Equal(t, "42957c7c2fca940a0d32a0cdd38c06a4", testTrace.TraceID)
 		assert.Equal(t, "37fd1349bf83d330", testTrace.Spans[0].SpanID)
@@ -276,46 +215,4 @@ func TestSampleHandler(t *testing.T) {
 		assert.Equal(t, "sample-loadgenerator", testTrace.Spans[0].Resource.Attributes["service.name"])
 		assert.Equal(t, 3, len(testTrace.Spans))
 	})
-}
-
-func TestRouting(t *testing.T) {
-	// No need to start s, as we only need the Handler method
-	s := NewServer("localhost:8000")
-	defer s.Store.Close()
-
-	testTable := []struct {
-		name     string
-		route    string
-		expected string
-	}{
-		{"Traces Handler", "/api/traces", `{"traceSummaries":[]}`},
-		{"Sample Data Handler", "/api/sampleData", ``},
-		{"Clear Traces Handler", "/api/clearData", ``},
-	}
-
-	srv := httptest.NewServer(s.Handler(false))
-	defer srv.Close()
-
-	for _, tc := range testTable {
-		t.Run(tc.name, func(t *testing.T) {
-			res, err := http.Get(fmt.Sprintf("%s%s", srv.URL, tc.route))
-			if err != nil {
-				t.Fatalf("could not send GET request: %v", err)
-			}
-			defer res.Body.Close()
-
-			if res.StatusCode != http.StatusOK {
-				t.Errorf("expected status OK; got %v", res.Status)
-			}
-
-			b, err := io.ReadAll(res.Body)
-			if err != nil {
-				t.Fatalf("could not read response: %v", err)
-			}
-
-			if val := string(bytes.TrimSpace(b)); val != tc.expected {
-				t.Fatalf("expected %s; got %v", tc.expected, val)
-			}
-		})
-	}
 }
