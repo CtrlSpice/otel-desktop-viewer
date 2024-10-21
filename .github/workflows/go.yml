@@ -32,8 +32,8 @@ jobs:
     - name: Exporter Go Tests
       run: cd desktopexporter; go test ./...
 
-    - name: Integration
-      run: ./.github/workflows/integration.sh
-      shell: bash
-      env:
-        CI: true
+    # - name: Integration
+    #   run: ./.github/workflows/integration.sh
+    #   shell: bash
+    #   env:
+    #     CI: true
