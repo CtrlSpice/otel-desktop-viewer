@@ -12,31 +12,23 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
-const (
-	MAX_QUEUE_LENGTH = 10000
-)
-
 type desktopExporter struct {
-	store  *store.Store
 	server *server.Server
 }
 
 func newDesktopExporter(cfg *Config) *desktopExporter {
-	store := store.NewStore(context.Background())
-	server := server.NewServer(store, cfg.Endpoint)
+	server := server.NewServer(cfg.Endpoint)
 	return &desktopExporter{
-		store:  store,
 		server: server,
 	}
 }
 
 func (exporter *desktopExporter) pushTraces(ctx context.Context, traces ptrace.Traces) error {
 	spanDataSlice := telemetry.NewSpanPayload(traces).ExtractSpans()
-	exporter.store.AddSpans(ctx, spanDataSlice)
+	exporter.server.Store.AddSpans(ctx, spanDataSlice)
 
 	return nil
 }
