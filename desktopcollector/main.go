@@ -64,6 +64,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 				`yaml:receivers::otlp::protocols::http::endpoint: ` + hostFlag + `:` + strconv.Itoa(httpPortFlag),
 				`yaml:receivers::otlp::protocols::grpc::endpoint: ` + hostFlag + `:` + strconv.Itoa(grpcPortFlag),
 				`yaml:exporters::desktop:`,
+				`yaml:exporters::desktop::endpoint: ` + hostFlag + `:` + strconv.Itoa(browserPortFlag),
 				`yaml:service::pipelines::traces::receivers: [otlp]`,
 				`yaml:service::pipelines::traces::exporters: [desktop]`,
 				`yaml:service::pipelines::metrics::receivers: [otlp]`,
@@ -86,3 +87,4 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser)")
 	return rootCmd
 }
+
