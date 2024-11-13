@@ -17,10 +17,10 @@ const (
 )
 
 // Creates a factory for the Desktop Exporter
-func NewFactory() exporter.Factory {
+func NewFactory(dbFilename string) exporter.Factory {
 	return exporter.NewFactory(
 		metadata.Type,
-		createDefaultConfig,
+		createDefaultConfig(dbFilename),
 		exporter.WithTraces(createTracesExporter, metadata.TracesStability),
 		exporter.WithMetrics(createMetricsExporter, metadata.MetricsStability),
 		exporter.WithLogs(createLogsExporter, metadata.LogsStability),
@@ -28,9 +28,12 @@ func NewFactory() exporter.Factory {
 }
 
 // Create default configurations
-func createDefaultConfig() component.Config {
-	return &Config{
-		Endpoint: defaultEndpoint,
+func createDefaultConfig(dbFilename string) func() component.Config {
+	return func() component.Config {
+		return &Config{
+			Endpoint:   defaultEndpoint,
+			DBFilename: dbFilename,
+		}
 	}
 }
 

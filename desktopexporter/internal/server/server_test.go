@@ -16,7 +16,7 @@ import (
 )
 
 func setupEmpty() (*httptest.Server, func()) {
-	server := NewServer("localhost:8000")
+	server := NewServer("localhost:8000", "")
 	testServer := httptest.NewServer(server.Handler(false))
 
 	return testServer, func() {
@@ -26,7 +26,7 @@ func setupEmpty() (*httptest.Server, func()) {
 }
 
 func setupWithTrace(t *testing.T) (*httptest.Server, func(*testing.T)) {
-	server := NewServer("localhost:8000")
+	server := NewServer("localhost:8000", "")
 	testSpanData := telemetry.SpanData{
 		TraceID:      "1234567890",
 		TraceState:   "",

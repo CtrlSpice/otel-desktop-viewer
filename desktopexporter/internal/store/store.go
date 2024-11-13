@@ -21,8 +21,8 @@ type Store struct {
 	conn driver.Conn
 }
 
-func NewStore(ctx context.Context) *Store {
-	connector, err := duckdb.NewConnector("", nil)
+func NewStore(ctx context.Context, dbFilename string) *Store {
+	connector, err := duckdb.NewConnector(dbFilename, nil)
 	if err != nil {
 		log.Fatalf("could not initialize new connector: %s", err.Error())
 	}

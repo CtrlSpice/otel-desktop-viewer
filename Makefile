@@ -14,6 +14,10 @@ test-go:
 run-go:
 	SERVE_FROM_FS=true cd desktopcollector; go run ./...
 
+.PHONY: run-go-db
+run-go-db:
+	SERVE_FROM_FS=true cd desktopcollector; go run ./... --db /tmp/otel.db
+
 .PHONY: build-js
 build-js:
 	cd desktopexporter/internal/app; npx esbuild --bundle main.tsx main.css --outdir=../server/static

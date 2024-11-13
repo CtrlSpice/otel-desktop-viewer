@@ -17,6 +17,8 @@ import (
 	"go.opentelemetry.io/collector/otelcol"
 )
 
+var dbFilenameFlag string
+
 func main() {
 	info := component.BuildInfo{
 		Command:     "otel-desktop-viewer",
@@ -26,7 +28,9 @@ func main() {
 
 	set := otelcol.CollectorSettings{
 		BuildInfo: info,
-		Factories: components,
+		Factories: func() (otelcol.Factories, error){
+			                      return components(dbFilenameFlag)
+			              },
 		ConfigProviderSettings: otelcol.ConfigProviderSettings{
 			ResolverSettings: confmap.ResolverSettings{
 				ProviderFactories: []confmap.ProviderFactory{
@@ -84,5 +88,6 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().IntVar(&grpcPortFlag, "grpc", 4317, "The port number on which we listen for OTLP grpc payloads")
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser", 8000, "The port number where we expose our data")
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser)")
+	rootCmd.Flags().StringVar(&dbFilenameFlag, "db", "", "The filename for persistent data. If unset, no data is persisted")
 	return rootCmd
 }

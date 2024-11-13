@@ -15,7 +15,7 @@ import (
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"
 )
 
-func components() (otelcol.Factories, error) {
+func  components(dbFilename string) (otelcol.Factories, error) {
 	var err error
 	factories := otelcol.Factories{}
 
@@ -36,13 +36,13 @@ func components() (otelcol.Factories, error) {
 	factories.ReceiverModules[otlpreceiver.NewFactory().Type()] = "go.opentelemetry.io/collector/receiver/otlpreceiver v0.107.0"
 
 	factories.Exporters, err = exporter.MakeFactoryMap(
-		desktopexporter.NewFactory(),
+		desktopexporter.NewFactory(dbFilename),
 	)
 	if err != nil {
 		return otelcol.Factories{}, err
 	}
 	factories.ExporterModules = make(map[component.Type]string, len(factories.Exporters))
-	factories.ExporterModules[desktopexporter.NewFactory().Type()] = "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
+	factories.ExporterModules[desktopexporter.NewFactory(dbFilename).Type()] = "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
 
 	factories.Processors, err = processor.MakeFactoryMap(
 		batchprocessor.NewFactory(),
