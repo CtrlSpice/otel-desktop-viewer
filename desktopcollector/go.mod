@@ -20,6 +20,8 @@ require (
 	golang.org/x/sys v0.24.0
 )
 
+replace github.com/CtrlSpice/otel-desktop-viewer/desktopexporter => ../desktopexporter
+
 require (
 	github.com/apache/arrow/go/v17 v17.0.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

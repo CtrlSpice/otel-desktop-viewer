@@ -8,6 +8,9 @@ import (
 type Config struct {
 	// Endpoint defines the host and port where we serve our frontend app
 	Endpoint string `mapstructure:"endpoint"`
+	// DBFilename defines the local filesystem path for persistent database storage.
+	// If set to "", no data will be stored persistently.
+	DBFilename string
 }
 
 // Validate checks if the exporter configuration is valid
