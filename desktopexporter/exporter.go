@@ -20,7 +20,7 @@ type desktopExporter struct {
 }
 
 func newDesktopExporter(cfg *Config) *desktopExporter {
-	server := server.NewServer(cfg.Endpoint)
+	server := server.NewServer(cfg.Endpoint, cfg.DbPath)
 	return &desktopExporter{
 		server: server,
 	}

@@ -53,7 +53,7 @@ func runInteractive(params otelcol.CollectorSettings) error {
 
 func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	var httpPortFlag, grpcPortFlag, browserPortFlag int
-	var hostFlag string
+	var hostFlag, dbFlag string
 
 	rootCmd := &cobra.Command{
 		Use:          set.BuildInfo.Command,
@@ -65,6 +65,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 				`yaml:receivers::otlp::protocols::grpc::endpoint: ` + hostFlag + `:` + strconv.Itoa(grpcPortFlag),
 				`yaml:exporters::desktop:`,
 				`yaml:exporters::desktop::endpoint: ` + hostFlag + `:` + strconv.Itoa(browserPortFlag),
+				`yaml:exporters::desktop::db: ` + dbFlag,
 				`yaml:service::pipelines::traces::receivers: [otlp]`,
 				`yaml:service::pipelines::traces::exporters: [desktop]`,
 				`yaml:service::pipelines::metrics::receivers: [otlp]`,
@@ -85,6 +86,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().IntVar(&grpcPortFlag, "grpc", 4317, "The port number on which we listen for OTLP grpc payloads")
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser", 8000, "The port number where we expose our data")
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser)")
+	rootCmd.Flags().StringVar(&dbFlag, "db", "", "The path of your database file. Omitting this flag opens DuckDB in in-memory mode, with no data persisted to disk.")
 	return rootCmd
 }
 

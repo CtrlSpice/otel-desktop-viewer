@@ -25,12 +25,12 @@ type Server struct {
 	Store  *store.Store
 }
 
-func NewServer(endpoint string) *Server {
+func NewServer(endpoint string, dbPath string) *Server {
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
 		},
-		Store: store.NewStore(context.Background()),
+		Store: store.NewStore(context.Background(), dbPath),
 	}
 
 	serveFromFS, err := strconv.ParseBool(os.Getenv("SERVE_FROM_FS"))

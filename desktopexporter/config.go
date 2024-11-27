@@ -8,6 +8,9 @@ import (
 type Config struct {
 	// Endpoint defines the host and port where we serve our frontend app
 	Endpoint string `mapstructure:"endpoint"`
+
+	// Endpoint defines the path of your database file. Setting an enpty string opens DuckDB in in-memory mode
+	DbPath string `mapstructure:"db"`
 }
 
 // Validate checks if the exporter configuration is valid
