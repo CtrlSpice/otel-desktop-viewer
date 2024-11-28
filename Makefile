@@ -12,11 +12,11 @@ test-go:
 	
 .PHONY: run-go
 run-go:
-	SERVE_FROM_FS=true cd desktopcollector; go run ./...
+	cd desktopcollector; go run ./... --dev
 
 .PHONY: run-db-go
 run-db-go:
-	SERVE_FROM_FS=true cd desktopcollector; go run ./... --db ../duck.db
+	cd desktopcollector; go run ./... --dev --db ../duck.db
 
 .PHONY: build-js
 build-js:
