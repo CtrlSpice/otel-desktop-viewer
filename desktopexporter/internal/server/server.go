@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/pkg/browser"
@@ -23,22 +22,17 @@ var assets embed.FS
 type Server struct {
 	server http.Server
 	Store  *store.Store
+	isDev  bool
 }
 
-func NewServer(endpoint string, dbPath string) *Server {
+func NewServer(endpoint string, dbPath string, isDev bool) *Server {
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
 		},
 		Store: store.NewStore(context.Background(), dbPath),
 	}
-
-	serveFromFS, err := strconv.ParseBool(os.Getenv("SERVE_FROM_FS"))
-	if err != nil {
-		serveFromFS = false
-	}
-
-	s.server.Handler = s.Handler(serveFromFS)
+	s.server.Handler = s.Handler()
 	return &s
 }
 
@@ -46,6 +40,7 @@ func (s *Server) Start() error {
 	defer s.Store.Close()
 
 	_, isCI := os.LookupEnv("CI")
+
 	if !isCI {
 		go func() {
 			// Wait a bit for the server to come up to avoid a 404 as a first experience
@@ -61,17 +56,19 @@ func (s *Server) Close() error {
 	return s.server.Close()
 }
 
-func (s *Server) Handler(serveFromFS bool) http.Handler {
+func (s *Server) Handler() http.Handler {
 	router := http.NewServeMux()
 	router.HandleFunc("GET /api/traces", s.tracesHandler)
 	router.HandleFunc("GET /api/traces/{id}", s.traceIDHandler)
 	router.HandleFunc("GET /api/sampleData", s.sampleDataHandler)
 	router.HandleFunc("GET /api/clearData", s.clearTracesHandler)
-	router.HandleFunc("GET /traces/{id}", indexHandler)
+	router.HandleFunc("GET /traces/{id}", s.indexHandler)
 
-	if serveFromFS {
+	if s.isDev {
+		// Serve front-end from the filesystem
 		router.Handle("/", http.FileServer(http.Dir("./static/")))
 	} else {
+		// Serve front end from embedded static content
 		staticContent, err := fs.Sub(assets, "static")
 		if err != nil {
 			log.Fatal(err)
@@ -122,8 +119,8 @@ func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Reques
 	}
 }
 
-func indexHandler(writer http.ResponseWriter, request *http.Request) {
-	if os.Getenv("SERVE_FROM_FS") == "true" {
+func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request) {
+	if s.isDev {
 		http.ServeFile(writer, request, "./desktopexporter/internal/server/static/index.html")
 	} else {
 		indexBytes, err := assets.ReadFile("static/index.html")
