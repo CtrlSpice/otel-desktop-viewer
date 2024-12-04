@@ -14,6 +14,10 @@ test-go:
 run-go:
 	SERVE_FROM_FS=true cd desktopcollector; go run ./...
 
+.PHONY: run-db-go
+run-db-go:
+	SERVE_FROM_FS=true cd desktopcollector; go run ./... --db ../duck.db
+
 .PHONY: build-js
 build-js:
 	cd desktopexporter/internal/app; npx esbuild --bundle main.tsx main.css --outdir=../server/static
