@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/pkg/browser"
@@ -19,18 +21,25 @@ import (
 //go:embed static/*
 var assets embed.FS
 
+type EnvConfig struct {
+	IsDev     bool
+	IsCI      bool
+	StaticDir string
+}
+
 type Server struct {
 	server http.Server
 	Store  *store.Store
-	isDev  bool
+	Env    EnvConfig
 }
 
-func NewServer(endpoint string, dbPath string, isDev bool) *Server {
+func NewServer(endpoint string, dbPath string) *Server {
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
 		},
 		Store: store.NewStore(context.Background(), dbPath),
+		Env:   GetEnvConfig(),
 	}
 	s.server.Handler = s.Handler()
 	return &s
@@ -39,14 +48,12 @@ func NewServer(endpoint string, dbPath string, isDev bool) *Server {
 func (s *Server) Start() error {
 	defer s.Store.Close()
 
-	_, isCI := os.LookupEnv("CI")
-
-	if !isCI {
+	if !s.Env.IsCI {
 		go func() {
 			// Wait a bit for the server to come up to avoid a 404 as a first experience
 			time.Sleep(250 * time.Millisecond)
 			endpoint := s.server.Addr
-			browser.OpenURL("http://" + endpoint + "/")
+			browser.OpenURL("http://" + endpoint)
 		}()
 	}
 	return s.server.ListenAndServe()
@@ -64,9 +71,10 @@ func (s *Server) Handler() http.Handler {
 	router.HandleFunc("GET /api/clearData", s.clearTracesHandler)
 	router.HandleFunc("GET /traces/{id}", s.indexHandler)
 
-	if s.isDev {
+	if s.Env.IsDev {
+		log.Println(s.Env.StaticDir)
 		// Serve front-end from the filesystem
-		router.Handle("/", http.FileServer(http.Dir("./static/")))
+		router.Handle("/", http.FileServer(http.Dir("/Users/T998182/Workspace/otel-desktop-viewer/desktopexporter/internal/server/static/")))
 	} else {
 		// Serve front end from embedded static content
 		staticContent, err := fs.Sub(assets, "static")
@@ -120,8 +128,10 @@ func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Reques
 }
 
 func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request) {
-	if s.isDev {
-		http.ServeFile(writer, request, "./desktopexporter/internal/server/static/index.html")
+	if s.Env.IsDev {
+		log.Println("IDX HANDLER RAN " + s.Env.StaticDir)
+		//http.ServeFile(writer, request, s.Env.StaticDir)
+		http.ServeFile(writer, request, "/Users/T998182/Workspace/otel-desktop-viewer/desktopexporter/internal/server/static/index.html")
 	} else {
 		indexBytes, err := assets.ReadFile("static/index.html")
 		if err != nil {
@@ -143,4 +153,40 @@ func writeJSON(writer http.ResponseWriter, data any) {
 	writer.WriteHeader(http.StatusOK)
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Write(jsonData)
+}
+
+func GetEnvConfig() EnvConfig {
+	isDev := isSet("DEV")
+	isCI := isSet("CI")
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Fatalln("could not get current directory to set env config")
+	}
+
+	relStaticDir, sdSet := os.LookupEnv("STATIC_DIR")
+	if isDev && !sdSet {
+		log.Fatalln("the STATIC_DIR environment variable must be set when working in DEV")
+	}
+
+	sd := wd + filepath.Clean(relStaticDir)
+
+	return EnvConfig{
+		IsDev:     isDev,
+		IsCI:      isCI,
+		StaticDir: sd,
+	}
+}
+
+func isSet(key string) bool {
+	str, ok := os.LookupEnv(key)
+	if !ok {
+		return false
+	}
+
+	val, err := strconv.ParseBool(str)
+	if err != nil {
+		return false
+	}
+
+	return val
 }

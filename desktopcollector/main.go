@@ -54,7 +54,6 @@ func runInteractive(params otelcol.CollectorSettings) error {
 func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	var httpPortFlag, grpcPortFlag, browserPortFlag int
 	var hostFlag, dbFlag string
-	var devFlag bool
 
 	rootCmd := &cobra.Command{
 		Use:          set.BuildInfo.Command,
@@ -67,7 +66,6 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 				`yaml:exporters::desktop:`,
 				`yaml:exporters::desktop::endpoint: ` + hostFlag + `:` + strconv.Itoa(browserPortFlag),
 				`yaml:exporters::desktop::db: ` + dbFlag,
-				`yaml:exporters::desktop::dev: ` + strconv.FormatBool(devFlag),
 				`yaml:service::pipelines::traces::receivers: [otlp]`,
 				`yaml:service::pipelines::traces::exporters: [desktop]`,
 				`yaml:service::pipelines::metrics::receivers: [otlp]`,
@@ -89,7 +87,6 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser", 8000, "The port number where we expose our data")
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our endpoints (OTLP receivers and browser)")
 	rootCmd.Flags().StringVar(&dbFlag, "db", "", "The path of our database file. Omitting this flag opens DuckDB in in-memory mode, with no data persisted to disk.")
-	rootCmd.Flags().BoolVar(&devFlag, "dev", false, "Avoids recompiling the back-end during front-end development by serving the latter from the filesystem instead of embeddeding it")
 	return rootCmd
 }
 

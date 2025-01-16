@@ -8,15 +8,15 @@ build-go:
 
 .PHONY: test-go
 test-go:
-	cd desktopexporter; go test ./...
+	cd desktopexporter; DEV=false go test ./...
 	
 .PHONY: run-go
 run-go:
-	cd desktopcollector; go run ./... --dev
+	cd desktopcollector; DEV=true STATIC_DIR="/desktopexporter/internal/server/static/" go run ./...
 
 .PHONY: run-db-go
 run-db-go:
-	cd desktopcollector; go run ./... --dev --db ../duck.db
+	cd desktopcollector; DEV=true STATIC_DIR="/desktopexporter/internal/server/static/" go run ./... --db ../duck.db
 
 .PHONY: build-js
 build-js:

@@ -15,14 +15,21 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
+type EnvConfig struct {
+	IsDev     bool
+	IsCI      bool
+	StaticDir string
+}
+
 type desktopExporter struct {
 	server *server.Server
 }
 
 func newDesktopExporter(cfg *Config) *desktopExporter {
-	server := server.NewServer(cfg.Endpoint, cfg.DbPath, cfg.IsDev)
+	s := server.NewServer(cfg.Endpoint, cfg.DbPath)
+
 	return &desktopExporter{
-		server: server,
+		server: s,
 	}
 }
 
@@ -54,7 +61,7 @@ func (exporter *desktopExporter) Start(ctx context.Context, host component.Host)
 		err := exporter.server.Start()
 
 		if errors.Is(err, http.ErrServerClosed) {
-			fmt.Printf("server closed\n")
+			fmt.Println("server closed")
 		} else if err != nil {
 			fmt.Printf("error listening for server: %s\n", err)
 		}

@@ -11,10 +11,6 @@ type Config struct {
 
 	// DbPath defines the path of your database file. Setting an enpty string opens DuckDB in in-memory mode
 	DbPath string `mapstructure:"db"`
-
-	// IsDev launches the app in dev mode, which avoids recompiling the back-end during
-	// front-end development by serving the latter from the filesystem instead of embeddeding it.
-	IsDev bool `mapstructure:"dev"`
 }
 
 // Validate checks if the exporter configuration is valid
