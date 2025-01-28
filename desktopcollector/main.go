@@ -90,7 +90,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser)")
 	rootCmd.Flags().StringVar(&dbFlag, "db", "", "The path of your database file. Omitting this flag opens DuckDB in in-memory mode, with no data persisted to disk.")
 
-	if !openBrowserFlag {
+	if openBrowserFlag {
 		go func() {
 			// Wait a bit for the server to come up to avoid a 404 as a first experience
 			time.Sleep(250 * time.Millisecond)
