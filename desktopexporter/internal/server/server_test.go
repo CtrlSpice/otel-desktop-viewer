@@ -17,7 +17,7 @@ import (
 
 func setupEmpty() (*httptest.Server, func()) {
 	server := NewServer("localhost:8000", "")
-	testServer := httptest.NewServer(server.Handler(false))
+	testServer := httptest.NewServer(server.Handler())
 
 	return testServer, func() {
 		testServer.Close()
@@ -56,7 +56,7 @@ func setupWithTrace(t *testing.T) (*httptest.Server, func(*testing.T)) {
 	err := server.Store.AddSpans(context.Background(), []telemetry.SpanData{testSpanData})
 	assert.Nilf(t, err, "could not create  test span: %v", err)
 
-	testServer := httptest.NewServer(server.Handler(false))
+	testServer := httptest.NewServer(server.Handler())
 
 	return testServer, func(t *testing.T) {
 		testServer.Close()

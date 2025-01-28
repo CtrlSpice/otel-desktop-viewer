@@ -12,11 +12,11 @@ test-go:
 	
 .PHONY: run-go
 run-go:
-	SERVE_FROM_FS=true cd desktopcollector; go run ./...
+	cd desktopcollector; SERVE_FROM_FS=true STATIC_DIR=$(abspath ./desktopexporter/internal/server/static/) go run ./...
 
 .PHONY: run-db-go
 run-db-go:
-	SERVE_FROM_FS=true cd desktopcollector; go run ./... --db ../duck.db
+	cd desktopcollector; SERVE_FROM_FS=true STATIC_DIR=$(abspath ./desktopexporter/internal/server/static/) go run ./... --db ../duck.db
 
 .PHONY: build-js
 build-js:
