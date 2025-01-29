@@ -85,8 +85,8 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 
 	rootCmd.Flags().IntVar(&httpPortFlag, "http", 4318, "The port number on which we listen for OTLP http payloads")
 	rootCmd.Flags().IntVar(&grpcPortFlag, "grpc", 4317, "The port number on which we listen for OTLP grpc payloads")
-	rootCmd.Flags().BoolVar(&openBrowserFlag, "openBrowser", true, "Open the browser automatically on launch")
-	rootCmd.Flags().IntVar(&browserPortFlag, "browserPort", 8000, "The port number where we expose our data")
+	rootCmd.Flags().BoolVar(&openBrowserFlag, "open-browser", true, "Open the browser automatically on launch")
+	rootCmd.Flags().IntVar(&browserPortFlag, "browser-port", 8000, "The port number where we expose our data")
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser)")
 	rootCmd.Flags().StringVar(&dbFlag, "db", "", "The path of your database file. Omitting this flag opens DuckDB in in-memory mode, with no data persisted to disk.")
 
