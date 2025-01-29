@@ -93,7 +93,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	if openBrowserFlag {
 		go func() {
 			// Wait a bit for the server to come up to avoid a 404 as a first experience
-			time.Sleep(250 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 			browser.OpenURL("http://" + hostFlag + `:` + strconv.Itoa(browserPortFlag) + "/")
 		}()
 	}

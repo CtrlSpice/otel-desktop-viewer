@@ -45,7 +45,6 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	go.opentelemetry.io/collector v0.107.0 // indirect
 	go.opentelemetry.io/collector/config/configretry v1.13.0 // indirect
 	go.opentelemetry.io/collector/config/configtelemetry v0.107.0 // indirect

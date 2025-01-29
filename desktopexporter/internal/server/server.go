@@ -8,10 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
-	"time"
-
-	"github.com/pkg/browser"
+	"path/filepath"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
@@ -21,8 +18,9 @@ import (
 var assets embed.FS
 
 type Server struct {
-	server http.Server
-	Store  *store.Store
+	server    http.Server
+	Store     *store.Store
+	staticDir string
 }
 
 func NewServer(endpoint string, dbPath string) *Server {
@@ -30,30 +28,16 @@ func NewServer(endpoint string, dbPath string) *Server {
 		server: http.Server{
 			Addr: endpoint,
 		},
-		Store: store.NewStore(context.Background(), dbPath),
+		Store:     store.NewStore(context.Background(), dbPath),
+		staticDir: getStaticDir(),
 	}
 
-	serveFromFS, err := strconv.ParseBool(os.Getenv("SERVE_FROM_FS"))
-	if err != nil {
-		serveFromFS = false
-	}
-
-	s.server.Handler = s.Handler(serveFromFS)
+	s.server.Handler = s.Handler()
 	return &s
 }
 
 func (s *Server) Start() error {
 	defer s.Store.Close()
-
-	_, isCI := os.LookupEnv("CI")
-	if !isCI {
-		go func() {
-			// Wait a bit for the server to come up to avoid a 404 as a first experience
-			time.Sleep(250 * time.Millisecond)
-			endpoint := s.server.Addr
-			browser.OpenURL("http://" + endpoint + "/")
-		}()
-	}
 	return s.server.ListenAndServe()
 }
 
@@ -61,16 +45,16 @@ func (s *Server) Close() error {
 	return s.server.Close()
 }
 
-func (s *Server) Handler(serveFromFS bool) http.Handler {
+func (s *Server) Handler() http.Handler {
 	router := http.NewServeMux()
 	router.HandleFunc("GET /api/traces", s.tracesHandler)
 	router.HandleFunc("GET /api/traces/{id}", s.traceIDHandler)
 	router.HandleFunc("GET /api/sampleData", s.sampleDataHandler)
 	router.HandleFunc("GET /api/clearData", s.clearTracesHandler)
-	router.HandleFunc("GET /traces/{id}", indexHandler)
+	router.HandleFunc("GET /traces/{id}", s.indexHandler)
 
-	if serveFromFS {
-		router.Handle("/", http.FileServer(http.Dir("./static/")))
+	if s.staticDir != "" {
+		router.Handle("/", http.FileServer(http.Dir(s.staticDir)))
 	} else {
 		staticContent, err := fs.Sub(assets, "static")
 		if err != nil {
@@ -122,9 +106,9 @@ func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Reques
 	}
 }
 
-func indexHandler(writer http.ResponseWriter, request *http.Request) {
-	if os.Getenv("SERVE_FROM_FS") == "true" {
-		http.ServeFile(writer, request, "./desktopexporter/internal/server/static/index.html")
+func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request) {
+	if s.staticDir != "" {
+		http.ServeFile(writer, request, s.staticDir+"/index.html")
 	} else {
 		indexBytes, err := assets.ReadFile("static/index.html")
 		if err != nil {
@@ -146,4 +130,13 @@ func writeJSON(writer http.ResponseWriter, data any) {
 	writer.WriteHeader(http.StatusOK)
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Write(jsonData)
+}
+
+func getStaticDir() string {
+	staticDir, ok := os.LookupEnv("STATIC_ASSETS_DIR")
+	if ok {
+		return filepath.Clean(staticDir)
+	}
+
+	return ""
 }
