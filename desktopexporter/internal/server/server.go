@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
+	"path/filepath"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
@@ -18,24 +18,18 @@ import (
 var assets embed.FS
 
 type Server struct {
-	server http.Server
-	Store  *store.Store
-	Env    ServerEnv
-}
-
-type ServerEnv struct {
-	ServeFromFS bool
-	StaticDir   string
+	server    http.Server
+	Store     *store.Store
+	staticDir string
 }
 
 func NewServer(endpoint string, dbPath string) *Server {
-	env := getServerEnv()
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
 		},
-		Store: store.NewStore(context.Background(), dbPath),
-		Env:   env,
+		Store:     store.NewStore(context.Background(), dbPath),
+		staticDir: getStaticDir(),
 	}
 
 	s.server.Handler = s.Handler()
@@ -59,8 +53,8 @@ func (s *Server) Handler() http.Handler {
 	router.HandleFunc("GET /api/clearData", s.clearTracesHandler)
 	router.HandleFunc("GET /traces/{id}", s.indexHandler)
 
-	if s.Env.ServeFromFS {
-		router.Handle("/", http.FileServer(http.Dir(s.Env.StaticDir)))
+	if s.staticDir != "" {
+		router.Handle("/", http.FileServer(http.Dir(s.staticDir)))
 	} else {
 		staticContent, err := fs.Sub(assets, "static")
 		if err != nil {
@@ -113,8 +107,8 @@ func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Reques
 }
 
 func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request) {
-	if s.Env.ServeFromFS {
-		http.ServeFile(writer, request, s.Env.StaticDir+"/index.html")
+	if s.staticDir != "" {
+		http.ServeFile(writer, request, s.staticDir+"/index.html")
 	} else {
 		indexBytes, err := assets.ReadFile("static/index.html")
 		if err != nil {
@@ -138,19 +132,11 @@ func writeJSON(writer http.ResponseWriter, data any) {
 	writer.Write(jsonData)
 }
 
-func getServerEnv() ServerEnv {
-	serveFromFS, err := strconv.ParseBool(os.Getenv("SERVE_FROM_FS"))
-	if err != nil {
-		serveFromFS = false
+func getStaticDir() string {
+	staticDir, ok := os.LookupEnv("STATIC_ASSETS_DIR")
+	if ok {
+		return filepath.Clean(staticDir)
 	}
 
-	staticDir := os.Getenv("STATIC_DIR")
-	if staticDir == "" {
-		serveFromFS = false
-	}
-
-	return ServerEnv{
-		ServeFromFS: serveFromFS,
-		StaticDir:   staticDir,
-	}
+	return ""
 }
