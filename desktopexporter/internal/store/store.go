@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"encoding/json"
 	"fmt"
 	"log"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,9 @@ type Store struct {
 }
 
 func NewStore(ctx context.Context, dbPath string) *Store {
+	if dbPath != "" {
+		dbPath = filepath.Clean(dbPath)
+	}
 	connector, err := duckdb.NewConnector(dbPath, nil)
 
 	if err != nil {
@@ -34,9 +38,17 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	}
 
 	db := sql.OpenDB(connector)
-	_, err = db.Exec(ENABLE_JSON)
-	if err != nil {
-		log.Fatalf("could not enable json: %s", err.Error())
+
+	if _, err = db.Exec(CREATE_ATTRIBUTE_TYPE); err != nil {
+		log.Printf("could not create attribute type: %s", err.Error())
+	}
+
+	if _, err = db.Exec(CREATE_EVENT_TYPE); err != nil {
+		log.Printf("could not create event type: %s", err.Error())
+	}
+
+	if _, err = db.Exec(CREATE_LINK_TYPE); err != nil {
+		log.Printf("could not create link type: %s", err.Error())
 	}
 
 	if _, err = db.Exec(CREATE_SPANS_TABLE); err != nil {
@@ -54,63 +66,46 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
-	appender, err := duckdb.NewAppenderFromConn(s.conn, "", "spans")
-	if err != nil {
-		return fmt.Errorf("could not create new appender for spans: %s", err.Error())
-	}
-	defer appender.Close()
-
 	for _, span := range spans {
-		attributes, err := json.Marshal(span.Attributes)
-		if err != nil {
-			return fmt.Errorf("could not marshal span attributes: %s", err.Error())
-		}
+		// Convert maps to DuckDB MAP format
+		attributes := mapToString(span.Attributes)
+		resourceAttrs := mapToString(span.Resource.Attributes)
+		scopeAttrs := mapToString(span.Scope.Attributes)
 
-		events, err := json.Marshal(span.Events)
-		if err != nil {
-			return fmt.Errorf("could not marshal span events: %s", err.Error())
-		}
+		// Convert events to DuckDB ARRAY[STRUCT(...)] format
+		events := eventToString(span.Events)
 
-		links, err := json.Marshal(span.Links)
-		if err != nil {
-			return fmt.Errorf("could not marshal span links: %s", err.Error())
-		}
+		// Convert links to DuckDB ARRAY[STRUCT(...)] format
+		links := linkToString(span.Links)
 
-		resourceAttributes, err := json.Marshal(span.Resource.Attributes)
-		if err != nil {
-			return fmt.Errorf("could not marshal resource attributes: %s", err.Error())
-		}
-
-		scopeAttributes, err := json.Marshal(span.Scope.Attributes)
-		if err != nil {
-			return fmt.Errorf("could not marshal scope attributes: %s", err.Error())
-		}
-
-		if err := appender.AppendRow(
-			span.TraceID,
-			span.TraceState,
-			span.SpanID,
-			span.ParentSpanID,
-			span.Name,
-			span.Kind,
-			span.StartTime,
-			span.EndTime,
-			string(attributes),
-			string(events),
-			string(links),
-			string(resourceAttributes),
+		query := fmt.Sprintf(`INSERT INTO spans
+			VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', %s, %s, %s, %s, %d, '%s', '%s', %s, %d, %d, %d, %d, '%s', '%s')`,
+			escapeString(span.TraceID),
+			escapeString(span.TraceState),
+			escapeString(span.SpanID),
+			escapeString(span.ParentSpanID),
+			escapeString(span.Name),
+			escapeString(span.Kind),
+			span.StartTime.Format(time.RFC3339Nano),
+			span.EndTime.Format(time.RFC3339Nano),
+			attributes,
+			events,
+			links,
+			resourceAttrs,
 			span.Resource.DroppedAttributesCount,
-			span.Scope.Name,
-			span.Scope.Version,
-			string(scopeAttributes),
+			escapeString(span.Scope.Name),
+			escapeString(span.Scope.Version),
+			scopeAttrs,
 			span.Scope.DroppedAttributesCount,
 			span.DroppedAttributesCount,
 			span.DroppedEventsCount,
 			span.DroppedLinksCount,
-			span.StatusCode,
-			span.StatusMessage,
-		); err != nil {
-			return fmt.Errorf("could not append row to spans: %s", err.Error())
+			escapeString(span.StatusCode),
+			escapeString(span.StatusMessage),
+		)
+
+		if _, err := s.db.Exec(query); err != nil {
+			return fmt.Errorf("could not append row to spans: %s/n%s", err.Error(), query)
 		}
 	}
 	return nil
@@ -141,13 +136,6 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			DroppedAttributesCount: 0,
 		}
 
-		// Placeholders for JSON
-		attrBytes := []byte{}
-		evntBytes := []byte{}
-		linkBytes := []byte{}
-		rAttrBytes := []byte{}
-		sAttrBytes := []byte{}
-
 		if err = rows.Scan(
 			&span.TraceID,
 			&span.TraceState,
@@ -157,14 +145,14 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			&span.Kind,
 			&span.StartTime,
 			&span.EndTime,
-			&attrBytes,
-			&evntBytes,
-			&linkBytes,
-			&rAttrBytes,
+			&span.Attributes,
+			&span.Events,
+			&span.Links,
+			&span.Resource.Attributes,
 			&span.Resource.DroppedAttributesCount,
 			&span.Scope.Name,
 			&span.Scope.Version,
-			&sAttrBytes,
+			&span.Scope.Attributes,
 			&span.Scope.DroppedAttributesCount,
 			&span.DroppedAttributesCount,
 			&span.DroppedEventsCount,
@@ -173,26 +161,6 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			&span.StatusMessage,
 		); err != nil {
 			return trace, fmt.Errorf("could not scan spans: %s", err.Error())
-		}
-
-		if err = json.Unmarshal(attrBytes, &span.Attributes); err != nil {
-			return trace, fmt.Errorf("could not unmarshal span attributes: %s", err.Error())
-		}
-
-		if err = json.Unmarshal(evntBytes, &span.Events); err != nil {
-			return trace, fmt.Errorf("could not unmarshal span events: %s", err.Error())
-		}
-
-		if err = json.Unmarshal(linkBytes, &span.Links); err != nil {
-			return trace, fmt.Errorf("could not unmarshal span links: %s", err.Error())
-		}
-
-		if err = json.Unmarshal(rAttrBytes, &span.Resource.Attributes); err != nil {
-			return trace, fmt.Errorf("could not unmarshal resource attributes: %s", err.Error())
-		}
-
-		if err = json.Unmarshal(sAttrBytes, &span.Scope.Attributes); err != nil {
-			return trace, fmt.Errorf("could not unmarshal scope attributes: %s", err.Error())
 		}
 
 		trace.Spans = append(trace.Spans, span)
@@ -266,4 +234,95 @@ func (s *Store) ClearTraces(ctx context.Context) error {
 func (s *Store) Close() error {
 	s.conn.Close()
 	return s.db.Close()
+}
+
+// Helper function to convert Events to DuckDB list of STRUCT string format
+func eventToString(events []telemetry.EventData) string {
+	eventStrings := []string{}
+
+	for _, event := range events {
+		attributes := mapToString(event.Attributes)
+		eventStrings = append(eventStrings, fmt.Sprintf("{name: '%s', timestamp: '%v', attributes: %s, droppedAttributesCount: %d}",
+			escapeString(event.Name),
+			event.Timestamp.Format(time.RFC3339Nano),
+			attributes,
+			event.DroppedAttributesCount))
+	}
+	return fmt.Sprintf("[%s]", strings.Join(eventStrings, ", "))
+}
+
+// Helper function to convert Links to DuckDB list of STRUCT string format
+func linkToString(links []telemetry.LinkData) string {
+	linkStrings := []string{}
+
+	for _, link := range links {
+		attributes := mapToString(link.Attributes)
+		linkStrings = append(linkStrings, fmt.Sprintf(
+			"{traceID: '%s', spanID: '%s', traceState: '%s', attributes: %s, droppedAttributesCount: %d}",
+			escapeString(link.TraceID),
+			escapeString(link.SpanID),
+			escapeString(link.TraceState),
+			attributes,
+			link.DroppedAttributesCount))
+	}
+	return fmt.Sprintf("[%s]", strings.Join(linkStrings, ", "))
+}
+
+// Helper function to convert map to DuckDB MAP string format
+func mapToString(m map[string]interface{}) string {
+	var pairs []string
+	for k, v := range m {
+		var valStr string
+		switch v := v.(type) {
+		case string:
+			valStr = fmt.Sprintf("'%s'::attribute", escapeString(v))
+		case int, int32, int64:
+			valStr = fmt.Sprintf("%d::attribute", v)
+		case float32, float64:
+			valStr = fmt.Sprintf("%f::attribute", v)
+		case bool:
+			if v {
+				valStr = "true::attribute"
+			} else {
+				valStr = "false::attribute"
+			}
+		case []string:
+			elements := make([]string, len(v))
+			for i, s := range v {
+				elements[i] = fmt.Sprintf("'%s'::attribute", escapeString(s))
+			}
+			valStr = fmt.Sprintf("[%s]", strings.Join(elements, ", "))
+		case []int64:
+			elements := make([]string, len(v))
+			for i, n := range v {
+				elements[i] = fmt.Sprintf("%d::attribute", n)
+			}
+			valStr = fmt.Sprintf("[%s]", strings.Join(elements, ", "))
+		case []float64:
+			elements := make([]string, len(v))
+			for i, f := range v {
+				elements[i] = fmt.Sprintf("%f::attribute", f)
+			}
+			valStr = fmt.Sprintf("[%s]", strings.Join(elements, ", "))
+		case []bool:
+			elements := make([]string, len(v))
+			for i, b := range v {
+				if b {
+					elements[i] = "true::attribute"
+				} else {
+					elements[i] = "false::attribute"
+				}
+			}
+			valStr = fmt.Sprintf("[%s]", strings.Join(elements, ", "))
+		default:
+			valStr = fmt.Sprintf("union_value(str := '%v')", v)
+		}
+		pairs = append(pairs, fmt.Sprintf("'%s': %v", escapeString(k), valStr))
+	}
+	return fmt.Sprintf("MAP{%s}", strings.Join(pairs, ", "))
+}
+
+// Helper function to escape single quotes in strings for SQL
+func escapeString(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
 }
