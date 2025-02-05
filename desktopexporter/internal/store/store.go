@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,7 +41,7 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	// Create types - ignore "already exists" errors
 	if _, err = db.Exec(CREATE_ATTRIBUTE_TYPE); err != nil {
 		if !strings.Contains(err.Error(), "already exists") {
-			log.Printf("could not create attribute type: %s", err.Error())
+			log.Fatalf("could not create attribute type: %s", err.Error())
 		}
 	}
 
@@ -54,7 +53,7 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 
 	if _, err = db.Exec(CREATE_LINK_TYPE); err != nil {
 		if !strings.Contains(err.Error(), "already exists") {
-			log.Printf("could not create link type: %s", err.Error())
+			log.Fatalf("could not create link type: %s", err.Error())
 		}
 	}
 
@@ -74,18 +73,17 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 	defer s.mut.Unlock()
 
 	for _, span := range spans {
-		// Convert maps to DuckDB MAP format
+		// Convert attributes to DuckDB MAP format
 		attributes := mapToString(span.Attributes)
 		resourceAttrs := mapToString(span.Resource.Attributes)
 		scopeAttrs := mapToString(span.Scope.Attributes)
 
-		// Convert events to DuckDB ARRAY[STRUCT(...)] format
+		// Convert events and links to DuckDB [STRUCT(...)] format
 		events := eventToString(span.Events)
-
-		// Convert links to DuckDB ARRAY[STRUCT(...)] format
 		links := linkToString(span.Links)
 
-		// Print raw structure with field names because Go-DuckDB doesn't support parameterized queries with UNION types
+		// Build raw query structure with field names because
+		// Go-DuckDB doesn't support parameterized queries with UNION types
 		query := fmt.Sprintf(`INSERT INTO spans
 			VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', %s, %s, %s, %s, %d, '%s', '%s', %s, %d, %d, %d, %d, '%s', '%s')`,
 			escapeString(span.TraceID),
@@ -130,29 +128,27 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 		log.Fatalf("could not retrieve spans: %s", err.Error())
 	}
 	defer rows.Close()
-	log.Printf("Successfully executed query for traceID: %s", traceID)
 
 	for rows.Next() {
-		log.Printf("Processing next span for traceID: %s", traceID)
-		span := telemetry.SpanData{}
+		span := telemetry.SpanData{
+			Resource: &telemetry.ResourceData{
+				Attributes:             map[string]interface{}{},
+				DroppedAttributesCount: 0,
+			},
+			Scope: &telemetry.ScopeData{
+				Name:                   "",
+				Version:                "",
+				Attributes:             map[string]interface{}{},
+				DroppedAttributesCount: 0,
+			},
+		}
 
 		// DuckDB's Go bindings have limited support for complex types like UNIONs and STRUCTs
 		// So we need to cast the attributes and structs to VARCHAR and then parse them back into the original type
 		var (
-			rawAttributes, rawResourceAttributes, rawScopeAttributes, rawEvents, rawLinks string
+			rawAttributes, rawResourceAttributes, rawScopeAttributes,
+			rawEvents, rawLinks string
 		)
-
-		span.Resource = &telemetry.ResourceData{
-			Attributes:             map[string]interface{}{},
-			DroppedAttributesCount: 0,
-		}
-
-		span.Scope = &telemetry.ScopeData{
-			Name:                   "",
-			Version:                "",
-			Attributes:             map[string]interface{}{},
-			DroppedAttributesCount: 0,
-		}
 
 		if err = rows.Scan(
 			&span.TraceID,
@@ -180,7 +176,6 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 		); err != nil {
 			return trace, fmt.Errorf("could not scan spans: %s", err.Error())
 		}
-		log.Printf("Successfully scanned span with ID: %s", span.SpanID)
 
 		span.Attributes = parseRawAttributes(rawAttributes)
 		span.Resource.Attributes = parseRawAttributes(rawResourceAttributes)
@@ -200,7 +195,6 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 		return trace, telemetry.ErrTraceIDNotFound
 	}
 
-	log.Printf("Successfully retrieved trace with %d spans for traceID: %s", len(trace.Spans), traceID)
 	return trace, nil
 }
 
@@ -262,239 +256,4 @@ func (s *Store) ClearTraces(ctx context.Context) error {
 func (s *Store) Close() error {
 	s.conn.Close()
 	return s.db.Close()
-}
-
-// Helper function to convert Events to DuckDB list of STRUCT string format
-func eventToString(events []telemetry.EventData) string {
-	eventStrings := []string{}
-
-	for _, event := range events {
-		attributes := mapToString(event.Attributes)
-		eventStrings = append(eventStrings, fmt.Sprintf("{name: '%s', timestamp: '%v', attributes: %s, droppedAttributesCount: %d}",
-			escapeString(event.Name),
-			event.Timestamp.Format(time.RFC3339Nano),
-			attributes,
-			event.DroppedAttributesCount))
-	}
-	return fmt.Sprintf("[%s]", strings.Join(eventStrings, ", "))
-}
-
-// Helper function to convert Links to DuckDB list of STRUCT string format
-func linkToString(links []telemetry.LinkData) string {
-	linkStrings := []string{}
-
-	for _, link := range links {
-		attributes := mapToString(link.Attributes)
-		linkStrings = append(linkStrings, fmt.Sprintf(
-			"{traceID: '%s', spanID: '%s', traceState: '%s', attributes: %s, droppedAttributesCount: %d}",
-			escapeString(link.TraceID),
-			escapeString(link.SpanID),
-			escapeString(link.TraceState),
-			attributes,
-			link.DroppedAttributesCount))
-	}
-	return fmt.Sprintf("[%s]", strings.Join(linkStrings, ", "))
-}
-
-// Helper function to convert map to DuckDB MAP string format
-func mapToString(m map[string]interface{}) string {
-	var pairs []string
-	for k, v := range m {
-		var valStr string
-		switch v := v.(type) {
-		case string:
-			valStr = fmt.Sprintf("'%s'::attribute", escapeString(v))
-		case int, int32, int64:
-			valStr = fmt.Sprintf("%d::attribute", v)
-		case float32, float64:
-			valStr = fmt.Sprintf("%f::attribute", v)
-		case bool:
-			if v {
-				valStr = "true::attribute"
-			} else {
-				valStr = "false::attribute"
-			}
-		case []string:
-			elements := make([]string, len(v))
-			for i, s := range v {
-				elements[i] = fmt.Sprintf("'%s'::attribute", escapeString(s))
-			}
-			valStr = fmt.Sprintf("[%s]", strings.Join(elements, ", "))
-		case []int64:
-			elements := make([]string, len(v))
-			for i, n := range v {
-				elements[i] = fmt.Sprintf("%d::attribute", n)
-			}
-			valStr = fmt.Sprintf("[%s]", strings.Join(elements, ", "))
-		case []float64:
-			elements := make([]string, len(v))
-			for i, f := range v {
-				elements[i] = fmt.Sprintf("%f::attribute", f)
-			}
-			valStr = fmt.Sprintf("[%s]", strings.Join(elements, ", "))
-		case []bool:
-			elements := make([]string, len(v))
-			for i, b := range v {
-				if b {
-					elements[i] = "true::attribute"
-				} else {
-					elements[i] = "false::attribute"
-				}
-			}
-			valStr = fmt.Sprintf("[%s]", strings.Join(elements, ", "))
-		default:
-			valStr = fmt.Sprintf("union_value(str := '%v')", v)
-		}
-		pairs = append(pairs, fmt.Sprintf("'%s': %v", escapeString(k), valStr))
-	}
-	return fmt.Sprintf("MAP{%s}", strings.Join(pairs, ", "))
-}
-
-// Helper function to parse raw attributes from DuckDB MAP string format
-func parseRawAttributes(rawAttributes string) map[string]interface{} {
-	attributes := make(map[string]interface{})
-	if rawAttributes == "" {
-		return attributes
-	}
-
-	log.Printf("Raw attributes: %s", rawAttributes)
-	// Trim the outer braces first
-	rawAttributes = strings.Trim(rawAttributes, "{}")
-
-	pairs := strings.Split(rawAttributes, ", ")
-
-	for _, pair := range pairs {
-		key, value, found := strings.Cut(pair, "=")
-		if !found {
-			continue
-		}
-		key = strings.Trim(key, "'")
-		value = strings.Trim(value, "'")
-		attributes[key] = value
-	}
-
-	log.Printf("Attributes: %v", attributes)
-	return attributes
-}
-
-func parseRawEvents(rawEvents string) []telemetry.EventData {
-	if rawEvents == "" || rawEvents == "[]" {
-		return []telemetry.EventData{}
-	}
-
-	log.Printf("Raw events: %s", rawEvents)
-
-	// Remove outer brackets
-	rawEvents = strings.Trim(rawEvents, "[]")
-	if rawEvents == "" {
-		return []telemetry.EventData{}
-	}
-
-	var events []telemetry.EventData
-	// Split on "}, {" to separate individual events
-	rawEventsList := strings.Split(rawEvents, "}, {")
-
-	for _, rawEvent := range rawEventsList {
-		// Clean up the event string
-		rawEvent = strings.Trim(rawEvent, "{}")
-
-		// Split into fields
-		fields := strings.Split(rawEvent, ", ")
-
-		event := telemetry.EventData{
-			Attributes: make(map[string]interface{}),
-		}
-
-		for _, field := range fields {
-			key, value, found := strings.Cut(field, ": ")
-			if !found {
-				continue
-			}
-
-			key = strings.Trim(key, "'")
-			value = strings.Trim(value, "'")
-
-			switch key {
-			case "name":
-				event.Name = value
-			case "timestamp":
-				// Parse timestamp
-				if t, err := time.Parse("2006-01-02 15:04:05.999999999", value); err == nil {
-					event.Timestamp = t
-				}
-			case "attributes":
-				event.Attributes = parseRawAttributes(value)
-			case "droppedAttributesCount":
-				if count, err := strconv.ParseUint(value, 10, 32); err == nil {
-					event.DroppedAttributesCount = uint32(count)
-				}
-			}
-		}
-
-		events = append(events, event)
-	}
-
-	return events
-}
-
-func parseRawLinks(rawLinks string) []telemetry.LinkData {
-	if rawLinks == "" || rawLinks == "[]" {
-		return []telemetry.LinkData{}
-	}
-
-	// Remove outer brackets
-	rawLinks = strings.Trim(rawLinks, "[]")
-	if rawLinks == "" {
-		return []telemetry.LinkData{}
-	}
-
-	var links []telemetry.LinkData
-	// Split on "}, {" to separate individual links
-	rawLinksList := strings.Split(rawLinks, "}, {")
-
-	for _, rawLink := range rawLinksList {
-		// Clean up the link string
-		rawLink = strings.Trim(rawLink, "{}")
-
-		// Split into fields
-		fields := strings.Split(rawLink, ", ")
-
-		link := telemetry.LinkData{
-			Attributes: make(map[string]interface{}),
-		}
-
-		for _, field := range fields {
-			key, value, found := strings.Cut(field, ": ")
-			if !found {
-				continue
-			}
-
-			key = strings.Trim(key, "'")
-			value = strings.Trim(value, "'")
-
-			switch key {
-			case "traceID":
-				link.TraceID = value
-			case "spanID":
-				link.SpanID = value
-			case "traceState":
-				link.TraceState = value
-			case "attributes":
-				link.Attributes = parseRawAttributes(value)
-			case "droppedAttributesCount":
-				if count, err := strconv.ParseUint(value, 10, 32); err == nil {
-					link.DroppedAttributesCount = uint32(count)
-				}
-			}
-		}
-
-		links = append(links, link)
-	}
-
-	return links
-}
-
-// Helper function to escape single quotes in strings for SQL
-func escapeString(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
 }
