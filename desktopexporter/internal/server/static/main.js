@@ -56386,6 +56386,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         let response = await fetch("/api/traces");
         if (response.ok) {
           let { traceSummaries: traceSummaries2 } = await response.json();
+          console.log("traceSummaries: ", traceSummaries2);
           let newSidebarData = updateSidebarData(sidebarData, traceSummaries2);
           setSidebarData(newSidebarData);
         }
@@ -56415,6 +56416,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     ), /* @__PURE__ */ import_react113.default.createElement(Outlet, null));
   }
   function initSidebarData(traceSummaries) {
+    console.log("traceSummaries: ", traceSummaries);
     return {
       summaries: traceSummaries.map(
         (traceSummary) => generateTraceSummaryWithUIData(traceSummary)

@@ -28,7 +28,7 @@ export type SpanData = {
   startTime: string;
   endTime: string;
 
-  attributes: { [key: string]: number | string | boolean | null };
+  attributes: Attribute[];
   events: EventData[];
   links: LinkData[];
   resource: ResourceData;
@@ -43,21 +43,21 @@ export type SpanData = {
 };
 
 export type ResourceData = {
-  attributes: { [key: string]: number | string | boolean | null };
+  attributes: Attribute[];
   droppedAttributesCount: number;
 };
 
 export type ScopeData = {
   name: string;
   version: string;
-  attributes: { [key: string]: number | string | boolean | null };
+  attributes: Attribute[];
   droppedAttributesCount: number;
 };
 
 export type EventData = {
   name: string;
   timestamp: string;
-  attributes: { [key: string]: number | string | boolean | null };
+  attributes: Attribute[];
   droppedAttributesCount: number;
 };
 
@@ -65,6 +65,16 @@ export type LinkData = {
   traceID: string;
   spanID: string;
   traceState: string;
-  attributes: { [key: string]: number | string | boolean | null };
+  attributes: Attribute[];
   droppedAttributesCount: number;
+};
+
+export type Attribute = {
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | string[]
+    | number[]
+    | boolean[];
 };

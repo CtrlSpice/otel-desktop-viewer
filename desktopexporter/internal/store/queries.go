@@ -68,13 +68,43 @@ const (
 		GROUP BY traceID
 		ORDER BY MAX(startTime) DESC
 	`
+
+	// DuckDB's Go bindings have limited support for complex types like UNIONs and STRUCTs
+	// So we need to cast the attributes to VARCHAR and then parse them back into the original type
 	SELECT_TRACE string = `
-		SELECT *
+		SELECT 
+			traceID, 
+			traceState, 
+			spanID, 
+			parentSpanID, 
+			name, 
+			kind, 
+			startTime, 
+			endTime,
+			attributes::VARCHAR,
+			events::VARCHAR,
+			links::VARCHAR,
+			resourceAttributes::VARCHAR,
+			resourceDroppedAttributesCount,
+			scopeName,
+			scopeVersion,
+			scopeAttributes::VARCHAR,
+			scopeDroppedAttributesCount,
+			droppedAttributesCount,
+			droppedEventsCount,
+			droppedLinksCount,
+			statusCode,
+			statusMessage
 		FROM spans 
 		WHERE traceID = ?
 	`
+
 	SELECT_ROOT_SPAN string = `
-		SELECT ifnull(resourceAttributes['service.name'], ''), name, startTime, endTime
+		SELECT 
+			CAST(UNNEST(resourceAttributes['service.name']) AS VARCHAR),
+			name,
+			startTime,
+			endTime
 		FROM spans
 		WHERE traceID = ?
 		AND parentSpanID = '' 
