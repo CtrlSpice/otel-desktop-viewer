@@ -148,6 +148,11 @@ func fillCurrencyResource(resource pcommon.Resource) {
 	resource.Attributes().PutStr("telemetry.sdk.language", "cpp")
 	resource.Attributes().PutStr("telemetry.sdk.name", "opentelemetry")
 	resource.Attributes().PutStr("telemetry.sdk.version", "1.5.0")
+	attr := resource.Attributes().PutEmptySlice("array.example")
+	attr.EnsureCapacity(3)
+	attr.AppendEmpty().SetStr("example1")
+	attr.AppendEmpty().SetStr("example2")
+	attr.AppendEmpty().SetStr("example3")
 }
 
 // loadgenerator resource data
@@ -305,6 +310,13 @@ func fillHttpPostSpan3(span ptrace.Span) {
 	span.Attributes().PutStr("net.peer.ip", "::ffff:172.24.0.23")
 	span.Attributes().PutInt("net.peer.port", 46054)
 	span.Attributes().PutStr("net.transport", "ip_tcp")
+	// Add array.example attribute to span
+	// I realise this looks funky, but that's how pcommon.Value is implemented
+	attr := span.Attributes().PutEmptySlice("array.example")
+	attr.EnsureCapacity(3)
+	attr.AppendEmpty().SetDouble(1.1)
+	attr.AppendEmpty().SetDouble(1.2)
+	attr.AppendEmpty().SetDouble(1.3)
 }
 
 func encodeTraceID(traceID string) [16]byte {

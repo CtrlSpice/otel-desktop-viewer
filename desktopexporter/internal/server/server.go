@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -68,14 +69,16 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) tracesHandler(writer http.ResponseWriter, request *http.Request) {
 	summaries, err := s.Store.GetTraceSummaries(request.Context())
 	if err != nil {
-		log.Printf("Error getting trace summaries: %v", err)
 		writer.WriteHeader(http.StatusInternalServerError)
-		return
+		log.Fatal(err)
 	}
 
-	writeJSON(writer, telemetry.TraceSummaries{
+	if err := writeJSON(writer, telemetry.TraceSummaries{
 		TraceSummaries: *summaries,
-	})
+	}); err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Fatal(err)
+	}
 }
 
 func (s *Server) clearTracesHandler(writer http.ResponseWriter, request *http.Request) {
@@ -103,7 +106,10 @@ func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Reques
 	if err != nil {
 		writer.WriteHeader(http.StatusBadRequest)
 	} else {
-		writeJSON(writer, traceData)
+		if err := writeJSON(writer, traceData); err != nil {
+			writer.WriteHeader(http.StatusInternalServerError)
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -120,23 +126,21 @@ func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request)
 	}
 }
 
-func writeJSON(writer http.ResponseWriter, data any) {
+func writeJSON(writer http.ResponseWriter, data any) error {
 	writer.Header().Set("Content-Type", "application/json")
 
-	// Marshal once for both logging and writing
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
-		log.Printf("Error marshaling JSON: %v", err)
 		writer.WriteHeader(http.StatusInternalServerError)
-		return
+		return fmt.Errorf("could not marshal JSON: %v", err)
 	}
 
-	// Write the already marshaled bytes
 	if _, err := writer.Write(jsonBytes); err != nil {
-		log.Printf("Error writing JSON response: %v", err)
 		writer.WriteHeader(http.StatusInternalServerError)
-		return
+		return fmt.Errorf("could not write JSON response: %v", err)
 	}
+
+	return nil
 }
 
 func getStaticDir() string {

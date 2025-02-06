@@ -29,7 +29,6 @@ export default function MainView() {
       let response = await fetch("/api/traces");
       if (response.ok) {
         let { traceSummaries } = (await response.json()) as TraceSummaries;
-        console.log("traceSummaries: ", traceSummaries);
         let newSidebarData = updateSidebarData(sidebarData, traceSummaries);
         setSidebarData(newSidebarData);
       }
@@ -68,7 +67,6 @@ export default function MainView() {
 }
 
 function initSidebarData(traceSummaries: TraceSummary[]): SidebarData {
-  console.log("traceSummaries: ", traceSummaries);
   return {
     summaries: traceSummaries.map((traceSummary) =>
       generateTraceSummaryWithUIData(traceSummary),
