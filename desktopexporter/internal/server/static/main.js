@@ -56452,14 +56452,14 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   function generateTraceSummaryWithUIData(traceSummary) {
     if (traceSummary.hasRootSpan) {
       let duration = getDurationNs(
-        traceSummary.rootStartTime,
-        traceSummary.rootEndTime
+        traceSummary.rootSpan.startTime,
+        traceSummary.rootSpan.endTime
       );
       let durationString = getDurationString(duration);
       return {
         hasRootSpan: true,
-        rootServiceName: traceSummary.rootServiceName,
-        rootName: traceSummary.rootName,
+        rootServiceName: traceSummary.rootSpan.serviceName,
+        rootName: traceSummary.rootSpan.name,
         rootDurationString: durationString,
         spanCount: traceSummary.spanCount,
         traceID: traceSummary.traceID

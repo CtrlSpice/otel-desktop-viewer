@@ -106,13 +106,6 @@ const (
         ORDER BY (SELECT MAX(startTime) FROM spans WHERE traceID = t.traceID) DESC
     `
 
-	SELECT_ORDERED_TRACES = `
-		SELECT traceID 
-		FROM spans
-		GROUP BY traceID
-		ORDER BY MAX(startTime) DESC
-	`
-
 	// DuckDB's Go bindings have limited support for complex types like UNIONs and STRUCTs
 	// So we need to cast the attributes to VARCHAR and then parse them back into the original type
 	SELECT_TRACE string = `
@@ -142,23 +135,6 @@ const (
 		FROM spans 
 		WHERE traceID = ?
 	`
-
-	SELECT_ROOT_SPAN string = `
-		SELECT 
-			CAST(UNNEST(resourceAttributes['service.name']) AS VARCHAR),
-			name,
-			startTime,
-			endTime
-		FROM spans
-		WHERE traceID = ?
-		AND parentSpanID = '' 
-	`
-	SELECT_SPAN_COUNT string = `
-		SELECT count(*) 
-		FROM spans
-		WHERE traceID = ?
-	`
-
 	TRUNCATE_SPANS string = `
 		TRUNCATE spans;
 	`
