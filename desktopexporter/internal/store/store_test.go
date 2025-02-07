@@ -24,7 +24,7 @@ func TestPersistence(t *testing.T) {
 	// Get trace summaries and check length
 	summaries, err := store.GetTraceSummaries(ctx)
 	if assert.NoErrorf(t, err, "could not get trace summaries: %v", err) {
-		assert.Len(t, *summaries, 2)
+		assert.Len(t, summaries, 2)
 	}
 
 	// Close store

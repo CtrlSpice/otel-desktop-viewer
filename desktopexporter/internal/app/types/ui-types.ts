@@ -36,9 +36,9 @@ export type TraceSummaryWithUIData =
       traceID: string;
     };
 
-    export type SidebarData = {
-      numNewTraces: number;
-      summaries: TraceSummaryWithUIData[];
-    };
+export type SidebarData = {
+  numNewTraces: number;
+  summaries: TraceSummaryWithUIData[];
+};
 
-    export type ModifierKey = "Alt" | "Control" | "Meta" | "Shift";
+export type ModifierKey = "Alt" | "Control" | "Meta" | "Shift";

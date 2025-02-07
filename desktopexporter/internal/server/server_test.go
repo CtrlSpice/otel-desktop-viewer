@@ -82,13 +82,15 @@ func TestTracesHandler(t *testing.T) {
 		testSummaries := telemetry.TraceSummaries{
 			TraceSummaries: []telemetry.TraceSummary{
 				{
-					HasRootSpan:     true,
-					RootServiceName: "groot",
-					RootName:        "i.am.groot",
-					RootStartTime:   time.Now(),
-					RootEndTime:     time.Now().Add(time.Minute),
-					SpanCount:       2,
-					TraceID:         "12345",
+					TraceID:     "12345",
+					HasRootSpan: true,
+					RootSpan: telemetry.RootSpan{
+						ServiceName: "groot",
+						Name:        "i.am.groot",
+						StartTime:   time.Now(),
+						EndTime:     time.Now().Add(time.Minute),
+					},
+					SpanCount: 2,
 				},
 			},
 		}
@@ -117,8 +119,8 @@ func TestTracesHandler(t *testing.T) {
 
 		assert.Equal(t, "1234567890", testSummaries.TraceSummaries[0].TraceID)
 		assert.Equal(t, true, testSummaries.TraceSummaries[0].HasRootSpan)
-		assert.Equal(t, "test", testSummaries.TraceSummaries[0].RootName)
-		assert.Equal(t, "pumpkin.pie", testSummaries.TraceSummaries[0].RootServiceName)
+		assert.Equal(t, "test", testSummaries.TraceSummaries[0].RootSpan.Name)
+		assert.Equal(t, "pumpkin.pie", testSummaries.TraceSummaries[0].RootSpan.ServiceName)
 		assert.Equal(t, uint32(1), testSummaries.TraceSummaries[0].SpanCount)
 	})
 }

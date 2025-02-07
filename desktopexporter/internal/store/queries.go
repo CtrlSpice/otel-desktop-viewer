@@ -62,6 +62,50 @@ const (
 		statusCode VARCHAR, 
 		statusMessage VARCHAR)
 	`
+	CREATE_ROOT_SPAN_MACRO = `
+        CREATE MACRO get_root_span_field(trace_id, field) AS (
+            SELECT field
+            FROM spans
+            WHERE traceID = trace_id
+            AND parentSpanID = ''
+            LIMIT 1
+        );
+    `
+	CREATE_HAS_ROOT_SPAN_MACRO = `
+		CREATE MACRO has_root_span(trace_id) AS (
+			SELECT EXISTS (
+				SELECT 1
+				FROM spans
+				WHERE traceID = trace_id
+				AND parentSpanID = ''
+			)
+		);
+	`
+	SELECT_TRACE_SUMMARIES = `
+        SELECT 
+            t.traceID,
+            has_root_span(t.traceID) as hasRootSpan,
+            CASE 
+                WHEN has_root_span(t.traceID) THEN get_root_span_field(t.traceID, CAST(UNNEST(resourceAttributes['service.name']) AS VARCHAR))
+                ELSE ''
+            END as serviceName,
+            CASE 
+                WHEN has_root_span(t.traceID) THEN get_root_span_field(t.traceID, name)
+                ELSE ''
+            END as name,
+            CASE 
+                WHEN has_root_span(t.traceID) THEN get_root_span_field(t.traceID, startTime)
+                ELSE 0::TIMESTAMP_NS
+            END as startTime,
+            CASE 
+                WHEN has_root_span(t.traceID) THEN get_root_span_field(t.traceID, endTime)
+                ELSE 0::TIMESTAMP_NS
+            END as endTime,
+            (SELECT count(*) FROM spans WHERE traceID = t.traceID) AS spanCount
+        FROM (SELECT DISTINCT traceID FROM spans) t
+        ORDER BY (SELECT MAX(startTime) FROM spans WHERE traceID = t.traceID) DESC
+    `
+
 	SELECT_ORDERED_TRACES = `
 		SELECT traceID 
 		FROM spans

@@ -67,6 +67,7 @@ export default function MainView() {
 }
 
 function initSidebarData(traceSummaries: TraceSummary[]): SidebarData {
+  console.log("traceSummaries: ", traceSummaries);
   return {
     summaries: traceSummaries.map((traceSummary) =>
       generateTraceSummaryWithUIData(traceSummary),
