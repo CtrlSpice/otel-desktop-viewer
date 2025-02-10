@@ -76,7 +76,6 @@ func (s *Server) tracesHandler(writer http.ResponseWriter, request *http.Request
 	if err := writeJSON(writer, telemetry.TraceSummaries{
 		TraceSummaries: *summaries,
 	}); err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
 		log.Fatal(err)
 	}
 }
@@ -107,7 +106,6 @@ func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Reques
 		writer.WriteHeader(http.StatusBadRequest)
 	} else {
 		if err := writeJSON(writer, traceData); err != nil {
-			writer.WriteHeader(http.StatusInternalServerError)
 			log.Fatal(err)
 		}
 	}

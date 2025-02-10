@@ -149,9 +149,6 @@ func TestTraceIDHandler(t *testing.T) {
 		err = json.Unmarshal(b, &testTrace)
 		assert.Nilf(t, err, "could not unmarshal bytes to trace data: %v", err)
 
-		// Print raw structure with field names
-		t.Logf("testTrace contents:\n%+v", testTrace)
-
 		assert.Equal(t, "1234567890", testTrace.TraceID)
 		assert.Equal(t, "12345", testTrace.Spans[0].SpanID)
 		assert.Equal(t, "test", testTrace.Spans[0].Name)

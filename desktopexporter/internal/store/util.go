@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -145,6 +146,8 @@ func parseRawEvents(rawEvents string) []telemetry.EventData {
 				if count, err := strconv.ParseUint(value, 10, 32); err == nil {
 					event.DroppedAttributesCount = uint32(count)
 				}
+			default:
+				log.Printf("unsupported event field was ignored. key: %s value: %s", key, value)
 			}
 		}
 
@@ -203,6 +206,8 @@ func parseRawLinks(rawLinks string) []telemetry.LinkData {
 				if count, err := strconv.ParseUint(value, 10, 32); err == nil {
 					link.DroppedAttributesCount = uint32(count)
 				}
+			default:
+				log.Printf("unsupported link field was ignored. key: %s value: %s", key, value)
 			}
 		}
 
