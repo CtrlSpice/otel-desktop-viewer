@@ -212,15 +212,15 @@ func parseRawLinks(rawLinks string) []telemetry.LinkData {
 	return links
 }
 
-// Helper function to parse raw attributes from DuckDB MAP string format
+// Helper function to parse raw attributes from DuckDB MAP string format, preserving types
 func parseRawAttributes(rawAttributes string) map[string]interface{} {
 	attributes := make(map[string]interface{})
-	if rawAttributes == "" {
-		return attributes
-	}
 
 	// Trim the outer braces first
 	rawAttributes = strings.Trim(rawAttributes, "{}")
+	if rawAttributes == "" {
+		return attributes
+	}
 
 	pairs := strings.Split(rawAttributes, ", ")
 
@@ -229,11 +229,121 @@ func parseRawAttributes(rawAttributes string) map[string]interface{} {
 		if !found {
 			continue
 		}
-		key = strings.Trim(key, "'")
+
+		// Handle array values
+		if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+			arrayStr := strings.Trim(value, "[]")
+			if arrayStr == "" {
+				attributes[key] = []interface{}{}
+				continue
+			}
+
+			var elements []string
+			var current string
+			inQuotes := false
+
+			// Split preserving quoted strings
+			for _, r := range arrayStr {
+				switch r {
+				case '\'':
+					inQuotes = !inQuotes
+				case ' ':
+					if !inQuotes {
+						if current != "" {
+							elements = append(elements, current)
+							current = ""
+						}
+					} else {
+						current += string(r)
+					}
+				default:
+					current += string(r)
+				}
+			}
+			if current != "" {
+				elements = append(elements, current)
+			}
+
+			if len(elements) > 0 {
+				// Try as integers first
+				ints := make([]int64, len(elements))
+				allInts := true
+				for i, e := range elements {
+					if n, err := strconv.ParseInt(e, 10, 64); err == nil {
+						ints[i] = n
+					} else {
+						allInts = false
+						break
+					}
+				}
+				if allInts {
+					attributes[key] = ints
+					continue
+				}
+
+				// Then try to parse as float array
+				floats := make([]float64, len(elements))
+				allFloats := true
+				for i, e := range elements {
+					if f, err := strconv.ParseFloat(e, 64); err == nil {
+						floats[i] = f
+					} else {
+						allFloats = false
+						break
+					}
+				}
+				if allFloats {
+					attributes[key] = floats
+					continue
+				}
+
+				// Try to parse as boolean array first
+				if elements[0] == "true" || elements[0] == "false" {
+					bools := make([]bool, len(elements))
+					allBools := true
+					for i, e := range elements {
+						if b, err := strconv.ParseBool(e); err == nil {
+							bools[i] = b
+						} else {
+							allBools = false
+							break
+						}
+					}
+					if allBools {
+						attributes[key] = bools
+						continue
+					}
+				}
+
+				// If none of the above, it's a string array
+				strArray := make([]string, len(elements))
+				for i := range elements {
+					strArray[i] = strings.Trim(elements[i], "'")
+				}
+				attributes[key] = strArray
+			}
+			continue
+		}
+
+		// Handle scalar values
 		value = strings.Trim(value, "'")
+		if value == "true" || value == "false" {
+			b, _ := strconv.ParseBool(value)
+			attributes[key] = b
+			continue
+		}
+		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
+			attributes[key] = n
+			continue
+		}
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
+			attributes[key] = f
+			continue
+		}
+
+		// Default to string
 		attributes[key] = value
 	}
-
 	return attributes
 }
 
