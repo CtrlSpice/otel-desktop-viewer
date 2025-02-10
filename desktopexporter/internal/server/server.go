@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -72,9 +73,11 @@ func (s *Server) tracesHandler(writer http.ResponseWriter, request *http.Request
 		log.Fatal(err)
 	}
 
-	writeJSON(writer, telemetry.TraceSummaries{
+	if err := writeJSON(writer, telemetry.TraceSummaries{
 		TraceSummaries: *summaries,
-	})
+	}); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (s *Server) clearTracesHandler(writer http.ResponseWriter, request *http.Request) {
@@ -102,7 +105,9 @@ func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Reques
 	if err != nil {
 		writer.WriteHeader(http.StatusBadRequest)
 	} else {
-		writeJSON(writer, traceData)
+		if err := writeJSON(writer, traceData); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -113,23 +118,27 @@ func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request)
 		indexBytes, err := assets.ReadFile("static/index.html")
 		if err != nil {
 			writer.WriteHeader(http.StatusInternalServerError)
-			log.Fatalf("could not read static assets: %s", err.Error())
+			log.Fatalf("Error reading static assets: %s", err.Error())
 		}
 		writer.Write(indexBytes)
 	}
 }
 
-func writeJSON(writer http.ResponseWriter, data any) {
-	jsonData, err := json.Marshal(data)
+func writeJSON(writer http.ResponseWriter, data any) error {
+	writer.Header().Set("Content-Type", "application/json")
+
+	jsonBytes, err := json.Marshal(data)
 	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
-		log.Fatalf("could not marshal json: %s", err.Error())
-
+		return fmt.Errorf("could not marshal JSON: %v", err)
 	}
 
-	writer.WriteHeader(http.StatusOK)
-	writer.Header().Set("Content-Type", "application/json")
-	writer.Write(jsonData)
+	if _, err := writer.Write(jsonBytes); err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return fmt.Errorf("could not write JSON response: %v", err)
+	}
+
+	return nil
 }
 
 func getStaticDir() string {

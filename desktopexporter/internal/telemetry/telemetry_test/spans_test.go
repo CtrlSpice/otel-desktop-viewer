@@ -1,6 +1,7 @@
 package telemetry_test
 
 import (
+	"log"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ var resourceAttributes = []attributeTest{
 	{"telemetry.sdk.language", "cpp"},
 	{"telemetry.sdk.name", "opentelemetry"},
 	{"telemetry.sdk.version", "1.5.0"},
+	{"array.example", []any{"example1", "example2", "example3"}},
 }
 
 var scopeAttributes = []attributeTest{
@@ -47,6 +49,7 @@ var spanAttributes = []attributeTest{
 	{"net.peer.ip", "::ffff:172.24.0.23"},
 	{"net.peer.port", int64(46054)},
 	{"net.transport", "ip_tcp"},
+	{"array.example", []any{1.1, 1.2, 1.3}},
 }
 
 var spans []telemetry.SpanData
@@ -68,6 +71,9 @@ func TestSpanResource(t *testing.T) {
 
 	// Resource attributes
 	for _, attr := range resourceAttributes {
+		if attr.key == "array.example" {
+			log.Println(resource.Attributes[attr.key])
+		}
 		assert.Equal(t, attr.expectedValue, resource.Attributes[attr.key])
 	}
 }

@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"encoding/json"
 	"fmt"
 	"log"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,8 +23,10 @@ type Store struct {
 }
 
 func NewStore(ctx context.Context, dbPath string) *Store {
+	if dbPath != "" {
+		dbPath = filepath.Clean(dbPath)
+	}
 	connector, err := duckdb.NewConnector(dbPath, nil)
-
 	if err != nil {
 		log.Fatalf("could not initialize new connector: %s", err.Error())
 	}
@@ -34,9 +37,24 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	}
 
 	db := sql.OpenDB(connector)
-	_, err = db.Exec(ENABLE_JSON)
-	if err != nil {
-		log.Fatalf("could not enable json: %s", err.Error())
+
+	// Create types - ignore "already exists" errors
+	if _, err = db.Exec(CREATE_ATTRIBUTE_TYPE); err != nil {
+		if !strings.Contains(err.Error(), "already exists") {
+			log.Fatalf("could not create attribute type: %s", err.Error())
+		}
+	}
+
+	if _, err = db.Exec(CREATE_EVENT_TYPE); err != nil {
+		if !strings.Contains(err.Error(), "already exists") {
+			log.Printf("could not create event type: %s", err.Error())
+		}
+	}
+
+	if _, err = db.Exec(CREATE_LINK_TYPE); err != nil {
+		if !strings.Contains(err.Error(), "already exists") {
+			log.Fatalf("could not create link type: %s", err.Error())
+		}
 	}
 
 	if _, err = db.Exec(CREATE_SPANS_TABLE); err != nil {
@@ -54,63 +72,46 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
-	appender, err := duckdb.NewAppenderFromConn(s.conn, "", "spans")
-	if err != nil {
-		return fmt.Errorf("could not create new appender for spans: %s", err.Error())
-	}
-	defer appender.Close()
-
 	for _, span := range spans {
-		attributes, err := json.Marshal(span.Attributes)
-		if err != nil {
-			return fmt.Errorf("could not marshal span attributes: %s", err.Error())
-		}
+		// Convert attributes to DuckDB MAP format
+		attributes := mapToString(span.Attributes)
+		resourceAttrs := mapToString(span.Resource.Attributes)
+		scopeAttrs := mapToString(span.Scope.Attributes)
 
-		events, err := json.Marshal(span.Events)
-		if err != nil {
-			return fmt.Errorf("could not marshal span events: %s", err.Error())
-		}
+		// Convert events and links to DuckDB [STRUCT(...)] format
+		events := eventToString(span.Events)
+		links := linkToString(span.Links)
 
-		links, err := json.Marshal(span.Links)
-		if err != nil {
-			return fmt.Errorf("could not marshal span links: %s", err.Error())
-		}
-
-		resourceAttributes, err := json.Marshal(span.Resource.Attributes)
-		if err != nil {
-			return fmt.Errorf("could not marshal resource attributes: %s", err.Error())
-		}
-
-		scopeAttributes, err := json.Marshal(span.Scope.Attributes)
-		if err != nil {
-			return fmt.Errorf("could not marshal scope attributes: %s", err.Error())
-		}
-
-		if err := appender.AppendRow(
-			span.TraceID,
-			span.TraceState,
-			span.SpanID,
-			span.ParentSpanID,
-			span.Name,
-			span.Kind,
-			span.StartTime,
-			span.EndTime,
-			string(attributes),
-			string(events),
-			string(links),
-			string(resourceAttributes),
+		// Build raw query structure with field names because
+		// Go-DuckDB doesn't support parameterized queries with UNION types
+		query := fmt.Sprintf(`INSERT INTO spans
+			VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', %s, %s, %s, %s, %d, '%s', '%s', %s, %d, %d, %d, %d, '%s', '%s')`,
+			escapeString(span.TraceID),
+			escapeString(span.TraceState),
+			escapeString(span.SpanID),
+			escapeString(span.ParentSpanID),
+			escapeString(span.Name),
+			escapeString(span.Kind),
+			span.StartTime.Format(time.RFC3339Nano),
+			span.EndTime.Format(time.RFC3339Nano),
+			attributes,
+			events,
+			links,
+			resourceAttrs,
 			span.Resource.DroppedAttributesCount,
-			span.Scope.Name,
-			span.Scope.Version,
-			string(scopeAttributes),
+			escapeString(span.Scope.Name),
+			escapeString(span.Scope.Version),
+			scopeAttrs,
 			span.Scope.DroppedAttributesCount,
 			span.DroppedAttributesCount,
 			span.DroppedEventsCount,
 			span.DroppedLinksCount,
-			span.StatusCode,
-			span.StatusMessage,
-		); err != nil {
-			return fmt.Errorf("could not append row to spans: %s", err.Error())
+			escapeString(span.StatusCode),
+			escapeString(span.StatusMessage),
+		)
+
+		if _, err := s.db.Exec(query); err != nil {
+			return fmt.Errorf("could not append row to spans: %s/n%s", err.Error(), query)
 		}
 	}
 	return nil
@@ -129,24 +130,25 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 	defer rows.Close()
 
 	for rows.Next() {
-		span := telemetry.SpanData{}
-		span.Resource = &telemetry.ResourceData{
-			Attributes:             map[string]interface{}{},
-			DroppedAttributesCount: 0,
-		}
-		span.Scope = &telemetry.ScopeData{
-			Name:                   "",
-			Version:                "",
-			Attributes:             map[string]interface{}{},
-			DroppedAttributesCount: 0,
+		span := telemetry.SpanData{
+			Resource: &telemetry.ResourceData{
+				Attributes:             map[string]interface{}{},
+				DroppedAttributesCount: 0,
+			},
+			Scope: &telemetry.ScopeData{
+				Name:                   "",
+				Version:                "",
+				Attributes:             map[string]interface{}{},
+				DroppedAttributesCount: 0,
+			},
 		}
 
-		// Placeholders for JSON
-		attrBytes := []byte{}
-		evntBytes := []byte{}
-		linkBytes := []byte{}
-		rAttrBytes := []byte{}
-		sAttrBytes := []byte{}
+		// DuckDB's Go bindings have limited support for complex types like UNIONs and STRUCTs
+		// So we need to cast the attributes and structs to VARCHAR and then parse them back into the original type
+		var (
+			rawAttributes, rawResourceAttributes, rawScopeAttributes,
+			rawEvents, rawLinks string
+		)
 
 		if err = rows.Scan(
 			&span.TraceID,
@@ -157,14 +159,14 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			&span.Kind,
 			&span.StartTime,
 			&span.EndTime,
-			&attrBytes,
-			&evntBytes,
-			&linkBytes,
-			&rAttrBytes,
+			&rawAttributes,
+			&rawEvents,
+			&rawLinks,
+			&rawResourceAttributes,
 			&span.Resource.DroppedAttributesCount,
 			&span.Scope.Name,
 			&span.Scope.Version,
-			&sAttrBytes,
+			&rawScopeAttributes,
 			&span.Scope.DroppedAttributesCount,
 			&span.DroppedAttributesCount,
 			&span.DroppedEventsCount,
@@ -175,25 +177,12 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			return trace, fmt.Errorf("could not scan spans: %s", err.Error())
 		}
 
-		if err = json.Unmarshal(attrBytes, &span.Attributes); err != nil {
-			return trace, fmt.Errorf("could not unmarshal span attributes: %s", err.Error())
-		}
+		span.Attributes = parseRawAttributes(rawAttributes)
+		span.Resource.Attributes = parseRawAttributes(rawResourceAttributes)
+		span.Scope.Attributes = parseRawAttributes(rawScopeAttributes)
 
-		if err = json.Unmarshal(evntBytes, &span.Events); err != nil {
-			return trace, fmt.Errorf("could not unmarshal span events: %s", err.Error())
-		}
-
-		if err = json.Unmarshal(linkBytes, &span.Links); err != nil {
-			return trace, fmt.Errorf("could not unmarshal span links: %s", err.Error())
-		}
-
-		if err = json.Unmarshal(rAttrBytes, &span.Resource.Attributes); err != nil {
-			return trace, fmt.Errorf("could not unmarshal resource attributes: %s", err.Error())
-		}
-
-		if err = json.Unmarshal(sAttrBytes, &span.Scope.Attributes); err != nil {
-			return trace, fmt.Errorf("could not unmarshal scope attributes: %s", err.Error())
-		}
+		span.Events = parseRawEvents(rawEvents)
+		span.Links = parseRawLinks(rawLinks)
 
 		trace.Spans = append(trace.Spans, span)
 	}
@@ -202,6 +191,7 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 	// but the first call to rows.Next() returns false,
 	// so we have to check for traceID not found here.
 	if len(trace.Spans) == 0 {
+		log.Printf("No spans found for traceID: %s", traceID)
 		return trace, telemetry.ErrTraceIDNotFound
 	}
 

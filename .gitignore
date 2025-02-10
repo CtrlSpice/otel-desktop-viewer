@@ -3,6 +3,8 @@ otel-desktop-viewer
 desktopexporter/internal/app/node_modules
 .vscode/
 *.db
+*.duckdb*
 *.wal
+*.tmp/
 help
 go.work*
