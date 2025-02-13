@@ -62,19 +62,6 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 		log.Fatalf("could not create table spans: %s", err.Error())
 	}
 
-	// 3) Create macros - ignore "already exists" errors
-	if _, err = db.Exec(CREATE_ROOT_SPAN_MACRO); err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			log.Fatalf("could not create root span macro: %s", err.Error())
-		}
-	}
-
-	if _, err = db.Exec(CREATE_HAS_ROOT_SPAN_MACRO); err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			log.Fatalf("could not create has root span macro: %s", err.Error())
-		}
-	}
-
 	return &Store{
 		mut:  sync.Mutex{},
 		db:   db,
@@ -224,28 +211,40 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary
 	defer rows.Close()
 
 	for rows.Next() {
-		traceID := ""
-		hasRootSpan := false
-		rootSpan := telemetry.RootSpan{}
-		spanCount := 0
+		var (
+			traceID     string
+			serviceName sql.NullString
+			rootName    sql.NullString
+			startTime   sql.NullTime
+			endTime     sql.NullTime
+			spanCount   int
+		)
 
 		if err = rows.Scan(
 			&traceID,
-			&hasRootSpan,
-			&rootSpan.ServiceName,
-			&rootSpan.Name,
-			&rootSpan.StartTime,
-			&rootSpan.EndTime,
+			&serviceName,
+			&rootName,
+			&startTime,
+			&endTime,
 			&spanCount,
 		); err != nil {
 			return nil, fmt.Errorf("could not scan summary: %s", err.Error())
 		}
 
+		var rootSpan *telemetry.RootSpan
+		if serviceName.Valid && rootName.Valid && startTime.Valid && endTime.Valid {
+			rootSpan = &telemetry.RootSpan{
+				ServiceName: serviceName.String,
+				Name:        rootName.String,
+				StartTime:   startTime.Time,
+				EndTime:     endTime.Time,
+			}
+		}
+
 		summaries = append(summaries, telemetry.TraceSummary{
-			TraceID:     traceID,
-			HasRootSpan: hasRootSpan,
-			RootSpan:    rootSpan,
-			SpanCount:   uint32(spanCount),
+			TraceID:   traceID,
+			RootSpan:  rootSpan,
+			SpanCount: uint32(spanCount),
 		})
 	}
 	return summaries, nil

@@ -62,48 +62,23 @@ const (
 		statusCode VARCHAR, 
 		statusMessage VARCHAR)
 	`
-	CREATE_ROOT_SPAN_MACRO = `
-        CREATE MACRO get_root_span_field(trace_id, field) AS (
-            SELECT field
-            FROM spans
-            WHERE traceID = trace_id
-            AND parentSpanID = ''
-            LIMIT 1
-        );
-    `
-	CREATE_HAS_ROOT_SPAN_MACRO = `
-		CREATE MACRO has_root_span(trace_id) AS (
-			SELECT EXISTS (
-				SELECT 1
-				FROM spans
-				WHERE traceID = trace_id
-				AND parentSpanID = ''
-			)
-		);
-	`
+	// SELECT_TRACE_SUMMARIES retrieves all traces, with root spans first.
+	// Uses COALESCE(startTime, far_future_date) in ORDER BY to handle NULL timestamps:
+	// - For traces with root spans: uses actual startTime
+	// - For traces without root spans: uses far future date (9999-12-31)
+	// This ensures traces without root spans appear after those with root spans in DESC order
 	SELECT_TRACE_SUMMARIES = `
         SELECT 
-            t.traceID,
-            has_root_span(t.traceID) as hasRootSpan,
-            CASE 
-                WHEN has_root_span(t.traceID) THEN get_root_span_field(t.traceID, CAST(UNNEST(resourceAttributes['service.name']) AS VARCHAR))
-                ELSE ''
-            END as serviceName,
-            CASE 
-                WHEN has_root_span(t.traceID) THEN get_root_span_field(t.traceID, name)
-                ELSE ''
-            END as name,
-            CASE 
-                WHEN has_root_span(t.traceID) THEN get_root_span_field(t.traceID, startTime)
-                ELSE 0::TIMESTAMP_NS
-            END as startTime,
-            CASE 
-                WHEN has_root_span(t.traceID) THEN get_root_span_field(t.traceID, endTime)
-                ELSE 0::TIMESTAMP_NS
-            END as endTime,
-            (SELECT count(*) FROM spans WHERE traceID = t.traceID) AS spanCount
-        FROM (SELECT DISTINCT traceID FROM spans) t
-        ORDER BY (SELECT MAX(startTime) FROM spans WHERE traceID = t.traceID) DESC
+            s.traceID,
+            CASE WHEN s.parentSpanID = '' THEN CAST(s.resourceAttributes['service.name'][1] AS VARCHAR) END as service_name,
+            CASE WHEN s.parentSpanID = '' THEN s.name END as root_name,
+            CASE WHEN s.parentSpanID = '' THEN s.startTime END as start_time,
+            CASE WHEN s.parentSpanID = '' THEN s.endTime END as end_time,
+            COUNT(*) OVER (PARTITION BY s.traceID) as span_count
+        FROM spans s
+        ORDER BY 
+            s.parentSpanID = '' DESC,
+            COALESCE(s.startTime, '9999-12-31'::timestamp) DESC
     `
 
 	// DuckDB's Go bindings have limited support for complex types like UNIONs and STRUCTs
