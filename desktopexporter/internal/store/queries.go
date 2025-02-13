@@ -68,7 +68,7 @@ const (
 	// - For traces without root spans: uses far future date (9999-12-31)
 	// This ensures traces without root spans appear after those with root spans in DESC order
 	SELECT_TRACE_SUMMARIES = `
-        SELECT 
+        SELECT DISTINCT ON (s.traceID)
             s.traceID,
             CASE WHEN s.parentSpanID = '' THEN CAST(s.resourceAttributes['service.name'][1] AS VARCHAR) END as service_name,
             CASE WHEN s.parentSpanID = '' THEN s.name END as root_name,
@@ -77,6 +77,7 @@ const (
             COUNT(*) OVER (PARTITION BY s.traceID) as span_count
         FROM spans s
         ORDER BY 
+            s.traceID,
             s.parentSpanID = '' DESC,
             COALESCE(s.startTime, '9999-12-31'::timestamp) DESC
     `
