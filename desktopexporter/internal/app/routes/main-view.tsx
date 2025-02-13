@@ -6,7 +6,7 @@ import { useLoaderData } from "react-router-dom";
 import { Sidebar } from "../components/sidebar-view/sidebar";
 import { EmptyStateView } from "../components/empty-state-view/empty-state-view";
 import { TraceSummaries, TraceSummary } from "../types/api-types";
-import { SidebarData, TraceSummaryWithUIData } from "../types/ui-types";
+import { RootSpanWithUIData, SidebarData, TraceSummaryWithUIData } from "../types/ui-types";
 import { getDurationNs, getDurationString } from "../utils/duration";
 
 export async function mainLoader() {
@@ -45,7 +45,7 @@ export default function MainView() {
         <Sidebar
           isFullWidth={isFullWidth}
           toggleSidebarWidth={setFullWidth.toggle}
-          traceSummaries={[]}
+          traceSummaries={new Map()}
           numNewTraces={0}
         />
         <EmptyStateView />
@@ -67,81 +67,67 @@ export default function MainView() {
 }
 
 function initSidebarData(traceSummaries: TraceSummary[]): SidebarData {
+  const summaries = new Map<string, TraceSummaryWithUIData>();
+  traceSummaries.forEach(summary => {
+    summaries.set(summary.traceID, transformSummaryToUIData(summary));
+  });
+
   return {
-    summaries: traceSummaries.map((traceSummary) =>
-      generateTraceSummaryWithUIData(traceSummary),
-    ),
+    summaries,
     numNewTraces: 0,
   };
 }
 
-function updateSidebarData(
-  sidebarData: SidebarData,
-  traceSummaries: TraceSummary[],
-): SidebarData {
+function updateSidebarData(sidebarData: SidebarData, traceSummaries: TraceSummary[]): SidebarData {
   let mergedData: SidebarData = {
     numNewTraces: 0,
-    summaries: [...sidebarData.summaries],
+    summaries: new Map(sidebarData.summaries),
   };
 
-  // Check for new and stale traces
+  // First pass: Process new and updated traces
   for (let summary of traceSummaries) {
     let traceID = summary.traceID;
-    let sidebarSummaryIndex = mergedData.summaries.findIndex(
-      (s) => s.traceID === traceID,
-    );
-
-    if (sidebarSummaryIndex === -1) {
-      // If the traceID of the new summary has no match in the sidebar
-      // increment the number of new traces.
+    let existingSummary = mergedData.summaries.get(traceID);
+    
+    if (!existingSummary) {
+      // New trace
       mergedData.numNewTraces++;
-    } else if (
-      summary.spanCount > mergedData.summaries[sidebarSummaryIndex].spanCount
-    ) {
-      // If the number of spans in an existing trace is greater than what's displayed in the sidebar
-      // generate a whole new summary with ui data
-      mergedData.summaries[sidebarSummaryIndex] =
-        generateTraceSummaryWithUIData(summary);
+      mergedData.summaries.set(traceID, transformSummaryToUIData(summary));
+    } else if (summary.spanCount !== existingSummary.spanCount) {
+      // Trace was updated (spans added or removed)
+      mergedData.summaries.set(traceID, transformSummaryToUIData(summary));
     }
   }
 
-  // Check for deleted/expired traces
-  for (let [i, summary] of mergedData.summaries.entries()) {
-    let traceID = summary.traceID;
-    let counterpartIndex = traceSummaries.findIndex(
-      (s) => s.traceID === traceID,
-    );
-    if (counterpartIndex === -1) {
-      // If a summary present in the sidebar is not present in the list of incoming traces
-      // it is expired and must be removed
-      mergedData.summaries.splice(i, 1);
+  // Second pass: Remove deleted traces
+  const currentTraceIDs = new Set(traceSummaries.map(s => s.traceID));
+  for (let [traceID] of mergedData.summaries) {
+    if (!currentTraceIDs.has(traceID)) {
+      mergedData.summaries.delete(traceID);
     }
   }
+
   return mergedData;
 }
 
-function generateTraceSummaryWithUIData(
-  traceSummary: TraceSummary,
-): TraceSummaryWithUIData {
-  if (traceSummary.hasRootSpan) {
-    let duration = getDurationNs(
+function transformSummaryToUIData(traceSummary: TraceSummary): TraceSummaryWithUIData {
+  let root: RootSpanWithUIData | undefined;
+
+  if (traceSummary.rootSpan) {
+    const duration = getDurationNs(
       traceSummary.rootSpan.startTime,
-      traceSummary.rootSpan.endTime,
+      traceSummary.rootSpan.endTime
     );
 
-    let durationString = getDurationString(duration);
-    return {
-      hasRootSpan: true,
-      rootServiceName: traceSummary.rootSpan.serviceName,
-      rootName: traceSummary.rootSpan.name,
-      rootDurationString: durationString,
-      spanCount: traceSummary.spanCount,
-      traceID: traceSummary.traceID,
+    root = {
+      serviceName: traceSummary.rootSpan.serviceName,
+      name: traceSummary.rootSpan.name,
+      durationString: getDurationString(duration)
     };
   }
+
   return {
-    hasRootSpan: false,
-    spanCount: traceSummary.spanCount,
-    traceID: traceSummary.traceID,
+    root,
+    spanCount: traceSummary.spanCount
   };
 }

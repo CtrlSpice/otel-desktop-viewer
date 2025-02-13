@@ -82,9 +82,8 @@ func TestTracesHandler(t *testing.T) {
 		testSummaries := telemetry.TraceSummaries{
 			TraceSummaries: []telemetry.TraceSummary{
 				{
-					TraceID:     "12345",
-					HasRootSpan: true,
-					RootSpan: telemetry.RootSpan{
+					TraceID: "12345",
+					RootSpan: &telemetry.RootSpan{
 						ServiceName: "groot",
 						Name:        "i.am.groot",
 						StartTime:   time.Now(),
@@ -118,7 +117,6 @@ func TestTracesHandler(t *testing.T) {
 		assert.Nilf(t, err, "could not unmarshal bytes to trace summaries: %v", err)
 
 		assert.Equal(t, "1234567890", testSummaries.TraceSummaries[0].TraceID)
-		assert.Equal(t, true, testSummaries.TraceSummaries[0].HasRootSpan)
 		assert.Equal(t, "test", testSummaries.TraceSummaries[0].RootSpan.Name)
 		assert.Equal(t, "pumpkin.pie", testSummaries.TraceSummaries[0].RootSpan.ServiceName)
 		assert.Equal(t, uint32(1), testSummaries.TraceSummaries[0].SpanCount)

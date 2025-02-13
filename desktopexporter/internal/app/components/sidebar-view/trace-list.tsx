@@ -21,7 +21,7 @@ const dividerHeight = 1;
 
 type SidebarRowData = {
   selectedTraceID: string;
-  traceSummaries: TraceSummaryWithUIData[];
+  traceSummaries: Map<string, TraceSummaryWithUIData>;
 };
 
 type SidebarRowProps = {
@@ -34,22 +34,23 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
   let selectedColor = useColorModeValue("pink.100", "pink.900");
   let dividerColour = useColorModeValue("blackAlpha.300", "whiteAlpha.300");
   let { selectedTraceID, traceSummaries } = data;
-  let traceSummary = traceSummaries[index];
 
-  let isSelected =
-    selectedTraceID && selectedTraceID === traceSummary.traceID ? true : false;
-
+  // Get traceID for this index
+  let traceID = Array.from(traceSummaries.keys())[index];
+  let traceSummary = traceSummaries.get(traceID)!;
+  let isSelected = selectedTraceID === traceID;
   let backgroundColour = isSelected ? selectedColor : "";
 
-  if (traceSummary.hasRootSpan) {
+  console.log(traceSummary);
+  if (traceSummary.root) {
     // Add zero-width space after forward slashes, dashes, and dots
     // to indicate line breaking opportunity
-    let rootNameLabel = traceSummary.rootName
+    let rootNameLabel = traceSummary.root.name
       .replaceAll("/", "/\u200B")
       .replaceAll("-", "-\u200B")
       .replaceAll(".", ".\u200B");
 
-    let rootServiceNameLabel = traceSummary.rootServiceName
+    let rootServiceNameLabel = traceSummary.root.serviceName
       .replaceAll("/", "/\u200B")
       .replaceAll("-", "-\u200B")
       .replaceAll(".", ".\u200B");
@@ -84,7 +85,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
           </Text>
           <Text fontSize="xs">
             {"Root Duration: "}
-            <strong>{traceSummary.rootDurationString}</strong>
+            <strong>{traceSummary.root.durationString}</strong>
           </Text>
           <Text fontSize="xs">
             {"Number of Spans: "}
@@ -92,11 +93,11 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
           </Text>
           <LinkOverlay
             as={NavLink}
-            to={`traces/${traceSummary.traceID}`}
+            to={`traces/${traceID}`}
           >
             <Text fontSize="xs">
               {"Trace ID: "}
-              <strong>{traceSummary.traceID}</strong>
+              <strong>{traceID}</strong>
             </Text>
           </LinkOverlay>
         </LinkBox>
@@ -128,11 +129,11 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
         </Text>
         <LinkOverlay
           as={NavLink}
-          to={`traces/${traceSummary.traceID}`}
+          to={`traces/${traceID}`}
         >
           <Text fontSize="xs">
             {"Trace ID: "}
-            <strong>{traceSummary.traceID}</strong>
+            <strong>{traceID}</strong>
           </Text>
         </LinkOverlay>
       </LinkBox>
@@ -141,7 +142,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
 }
 
 type TraceListProps = {
-  traceSummaries: TraceSummaryWithUIData[];
+  traceSummaries: Map<string, TraceSummaryWithUIData>;
 };
 
 export function TraceList(props: TraceListProps) {
@@ -158,14 +159,15 @@ export function TraceList(props: TraceListProps) {
   let selectedTraceID = "";
   let { traceSummaries } = props;
 
+  // Convert to array only for indexing operations
+  const traceIDs = Array.from(traceSummaries.keys());
+
   // Default to the first trace in the list if none are selected
   if (location.pathname.includes("/traces/")) {
     selectedTraceID = location.pathname.split("/")[2];
-    selectedIndex = traceSummaries.findIndex(
-      (summary) => summary.traceID === selectedTraceID,
-    );
+    selectedIndex = traceIDs.indexOf(selectedTraceID);
   } else {
-    selectedTraceID = traceSummaries[selectedIndex].traceID;
+    selectedTraceID = traceIDs[selectedIndex];
     window.location.href = `/traces/${selectedTraceID}`;
   }
 
@@ -187,7 +189,7 @@ export function TraceList(props: TraceListProps) {
       selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
       summaryListRef.current?.scrollToItem(selectedIndex);
 
-      selectedTraceID = traceSummaries[selectedIndex].traceID;
+      selectedTraceID = traceIDs[selectedIndex];
       navigate(`/traces/${selectedTraceID}`);
     }
   }, [prevTraceKeyPressed]);
@@ -196,12 +198,12 @@ export function TraceList(props: TraceListProps) {
   useEffect(() => {
     if (nextTraceKeyPressed) {
       selectedIndex =
-        selectedIndex < traceSummaries.length - 1
+        selectedIndex < traceIDs.length - 1
           ? selectedIndex + 1
-          : traceSummaries.length - 1;
+          : traceIDs.length - 1;
       summaryListRef.current?.scrollToItem(selectedIndex);
 
-      selectedTraceID = traceSummaries[selectedIndex].traceID;
+      selectedTraceID = traceIDs[selectedIndex];
       navigate(`/traces/${selectedTraceID}`);
     }
   }, [nextTraceKeyPressed]);
@@ -242,7 +244,7 @@ export function TraceList(props: TraceListProps) {
       <FixedSizeList
         height={size ? size.height : 0}
         itemData={itemData}
-        itemCount={props.traceSummaries.length}
+        itemCount={traceSummaries.size}
         itemSize={itemHeight}
         width="100%"
         ref={summaryListRef}

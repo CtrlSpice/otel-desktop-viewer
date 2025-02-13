@@ -14,10 +14,9 @@ type TraceSummaries struct {
 }
 
 type TraceSummary struct {
-	TraceID     string   `json:"traceID"`
-	HasRootSpan bool     `json:"hasRootSpan"`
-	RootSpan    RootSpan `json:"rootSpan"`
-	SpanCount   uint32   `json:"spanCount"`
+	TraceID   string    `json:"traceID"`
+	RootSpan  *RootSpan `json:"rootSpan,omitempty"`
+	SpanCount uint32    `json:"spanCount"`
 }
 
 type RootSpan struct {

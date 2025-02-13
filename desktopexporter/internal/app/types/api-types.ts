@@ -7,8 +7,7 @@ export type RootSpan = {
 
 export type TraceSummary = {
   traceID: string;
-  hasRootSpan: boolean;
-  rootSpan: RootSpan;
+  rootSpan?: RootSpan;
   spanCount: number;
 };
 
