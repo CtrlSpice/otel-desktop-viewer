@@ -14,6 +14,7 @@ import {
 import { LinkData } from "../../types/api-types";
 import { SpanField } from "./span-field";
 import { UnderConstructionAlert } from "../alerts/under-construction";
+import { parseAttributeType } from "../../utils/parse-type";
 
 type LinkItemProps = {
   link: LinkData;
@@ -24,8 +25,9 @@ function LinkItem(props: LinkItemProps) {
   let linkAttributes = Object.entries(link.attributes).map(([key, value]) => (
     <li key={key + value?.toString()}>
       <SpanField
-        fieldName={key}
-        fieldValue={value}
+          fieldName={key}
+          fieldValue={value.toString()}
+          fieldType={parseAttributeType(value)}
       />
     </li>
   ));
@@ -50,11 +52,13 @@ function LinkItem(props: LinkItemProps) {
         <SpanField
           fieldName="trace state"
           fieldValue={link.traceState}
+          fieldType="string"
         />
         <List>{linkAttributes}</List>
         <SpanField
           fieldName="dropped attributes count"
-          fieldValue={link.droppedAttributesCount}
+          fieldValue={link.droppedAttributesCount.toString()}
+          fieldType="uint32"
         />
       </AccordionPanel>
     </AccordionItem>
