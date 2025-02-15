@@ -1,4 +1,4 @@
-import { SpanData, TraceSummary } from "./api-types";
+import { RootSpan, SpanData } from "./api-types";
 
 export enum SpanDataStatus {
   missing = "missing",
@@ -20,15 +20,9 @@ export type SpanWithUIData =
       status: SpanDataStatus.missing;
       metadata: SpanUIData;
     };
-
-export type RootSpanWithUIData = {
-  serviceName: string;
-  name: string;
-  durationString: string;
-};
-
+    
 export type TraceSummaryWithUIData = {
-  root?: RootSpanWithUIData;
+  root?: RootSpan;
   spanCount: number;
 };
 

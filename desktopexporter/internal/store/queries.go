@@ -62,11 +62,18 @@ const (
 		statusCode VARCHAR, 
 		statusMessage VARCHAR)
 	`
-	// SELECT_TRACE_SUMMARIES retrieves all traces, with root spans first.
-	// Uses COALESCE(startTime, far_future_date) in ORDER BY to handle NULL timestamps:
-	// - For traces with root spans: uses actual startTime
-	// - For traces without root spans: uses far future date (9999-12-31)
-	// This ensures traces without root spans appear after those with root spans in DESC order
+	// SELECT_TRACE_SUMMARIES retrieves all traces ordered by:
+	// - Root span start time when available
+	// - Earliest span start time when no root span exists
+	//
+	// The ordering uses:
+	//   COALESCE(
+	//     MIN(CASE WHEN parentSpanID = '' THEN startTime END),  -- First try: root span time (only one per trace)
+	//     MIN(startTime)                                         -- Fallback: earliest span time in trace
+	//   )
+	// Both MIN() are used with OVER (PARTITION BY traceID) to get times within each trace.
+	// We use MIN for both because even though there's only one root span time per trace (when it exists),
+	// we need an aggregate function to match the MIN used in the fallback.
 	SELECT_TRACE_SUMMARIES = `
         SELECT DISTINCT ON (s.traceID)
             s.traceID,
@@ -77,9 +84,11 @@ const (
             COUNT(*) OVER (PARTITION BY s.traceID) as span_count
         FROM spans s
         ORDER BY 
-            s.traceID,
-            s.parentSpanID = '' DESC,
-            COALESCE(s.startTime, '9999-12-31'::timestamp) DESC
+            COALESCE(
+                MIN(CASE WHEN s.parentSpanID = '' THEN s.startTime END) OVER (PARTITION BY s.traceID),
+                MIN(s.startTime) OVER (PARTITION BY s.traceID)
+            ) DESC,
+            s.traceID
     `
 
 	// DuckDB's Go bindings have limited support for complex types like UNIONs and STRUCTs

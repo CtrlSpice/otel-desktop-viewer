@@ -147,3 +147,87 @@ func TestTracesWithoutRootSpans(t *testing.T) {
 	assert.Nil(t, trace2Summary.RootSpan, "trace2 should not have root span")
 	assert.Equal(t, uint32(1), trace2Summary.SpanCount)
 }
+
+func TestTraceSummaryOrdering(t *testing.T) {
+	ctx := context.Background()
+	store := NewStore(ctx, "")
+	defer func() {
+		store.Close()
+	}()
+
+	baseTime := time.Now()
+
+	// Create test spans with different timing scenarios
+	spans := []telemetry.SpanData{
+		{
+			// Trace 1: Middle time
+			TraceID:      "trace1",
+			SpanID:       "span1",
+			ParentSpanID: "", // root span
+			Name:         "root middle",
+			StartTime:    baseTime.Add(time.Second), // t+1
+			EndTime:      baseTime.Add(2 * time.Second),
+			Resource: &telemetry.ResourceData{
+				Attributes: map[string]interface{}{
+					"service.name": "service1",
+				},
+			},
+			Scope: &telemetry.ScopeData{},
+		},
+		{
+			// Trace 2: Oldest time
+			TraceID:      "trace2",
+			SpanID:       "span2",
+			ParentSpanID: "missing_parent",
+			Name:         "earliest no root",
+			StartTime:    baseTime, // t+0
+			EndTime:      baseTime.Add(2 * time.Second),
+			Resource: &telemetry.ResourceData{
+				Attributes: map[string]interface{}{},
+			},
+			Scope: &telemetry.ScopeData{},
+		},
+		{
+			// Trace 3: Newest time
+			TraceID:      "trace3",
+			SpanID:       "span3",
+			ParentSpanID: "", // root span
+			Name:         "root last",
+			StartTime:    baseTime.Add(2 * time.Second), // t+2
+			EndTime:      baseTime.Add(3 * time.Second),
+			Resource: &telemetry.ResourceData{
+				Attributes: map[string]interface{}{
+					"service.name": "service3",
+				},
+			},
+			Scope: &telemetry.ScopeData{},
+		},
+	}
+
+	// Add spans to store
+	err := store.AddSpans(ctx, spans)
+	assert.NoError(t, err, "failed to add spans")
+
+	// Get summaries
+	summaries, err := store.GetTraceSummaries(ctx)
+	assert.NoError(t, err, "failed to get trace summaries")
+
+	// Should have all three traces
+	assert.Len(t, summaries, 3, "expected 3 traces")
+
+	// Log the actual ordering we got
+	t.Logf("Trace order: %s -> %s -> %s",
+		summaries[0].TraceID,
+		summaries[1].TraceID,
+		summaries[2].TraceID)
+
+	// Verify ordering: trace3 (newest) -> trace1 -> trace2 (oldest)
+	assert.Equal(t, "trace3", summaries[0].TraceID, "first trace should be trace3 (latest start)")
+	assert.Equal(t, "trace1", summaries[1].TraceID, "second trace should be trace1")
+	assert.Equal(t, "trace2", summaries[2].TraceID, "last trace should be trace2 (earliest start)")
+
+	// Verify root span presence
+	assert.Nil(t, summaries[2].RootSpan, "trace2 should not have root span")
+	assert.NotNil(t, summaries[1].RootSpan, "trace1 should have root span")
+	assert.NotNil(t, summaries[0].RootSpan, "trace3 should have root span")
+}

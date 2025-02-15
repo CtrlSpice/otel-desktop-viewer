@@ -6,8 +6,7 @@ import { useLoaderData } from "react-router-dom";
 import { Sidebar } from "../components/sidebar-view/sidebar";
 import { EmptyStateView } from "../components/empty-state-view/empty-state-view";
 import { TraceSummaries, TraceSummary } from "../types/api-types";
-import { RootSpanWithUIData, SidebarData, TraceSummaryWithUIData } from "../types/ui-types";
-import { getDurationNs, getDurationString } from "../utils/duration";
+import { SidebarData, TraceSummaryWithUIData } from "../types/ui-types";
 
 export async function mainLoader() {
   const response = await fetch("/api/traces");
@@ -111,23 +110,14 @@ function updateSidebarData(sidebarData: SidebarData, traceSummaries: TraceSummar
 }
 
 function transformSummaryToUIData(traceSummary: TraceSummary): TraceSummaryWithUIData {
-  let root: RootSpanWithUIData | undefined;
-
   if (traceSummary.rootSpan) {
-    const duration = getDurationNs(
-      traceSummary.rootSpan.startTime,
-      traceSummary.rootSpan.endTime
-    );
-
-    root = {
-      serviceName: traceSummary.rootSpan.serviceName,
-      name: traceSummary.rootSpan.name,
-      durationString: getDurationString(duration)
+    return {
+      root: traceSummary.rootSpan,
+      spanCount: traceSummary.spanCount
     };
   }
 
   return {
-    root,
     spanCount: traceSummary.spanCount
   };
 }

@@ -55633,6 +55633,58 @@
     );
   }
 
+  // utils/duration.ts
+  var import_timestamp_nano = __toESM(require_timestamp_min());
+  function calculateTraceTiming(spans) {
+    if (!spans.length) {
+      return {
+        traceStartTimeNS: 0,
+        traceDurationNS: 0
+      };
+    }
+    let earliestStartTime = getNsFromString(spans[0].startTime);
+    let latestEndTime = getNsFromString(spans[0].endTime);
+    spans.forEach((span) => {
+      let spanStart = getNsFromString(span.startTime);
+      if (spanStart < earliestStartTime) {
+        earliestStartTime = spanStart;
+      }
+      let spanEnd = getNsFromString(span.endTime);
+      if (spanEnd > latestEndTime) {
+        latestEndTime = spanEnd;
+      }
+    });
+    return {
+      traceStartTimeNS: earliestStartTime,
+      traceDurationNS: latestEndTime - earliestStartTime
+    };
+  }
+  function getNsFromString(timestampString) {
+    let milliseconds = Date.parse(timestampString.split(".")[0]);
+    let nanoseconds = milliseconds * 1e6 + import_timestamp_nano.default.fromString(timestampString).getNano();
+    return nanoseconds;
+  }
+  function getDurationNs(startTimestamp, endTimestamp) {
+    let startTimeNs = getNsFromString(startTimestamp);
+    let endTimeNs = getNsFromString(endTimestamp);
+    return endTimeNs - startTimeNs;
+  }
+  function getDurationString(durationNs) {
+    if (durationNs === null || durationNs < 0) {
+      return "";
+    }
+    if (durationNs >= 1e9) {
+      return `${(durationNs / 1e9).toFixed(3)} s`;
+    }
+    if (durationNs >= 1e6) {
+      return `${(durationNs / 1e6).toFixed(3)} ms`;
+    }
+    if (durationNs >= 1e3) {
+      return `${(durationNs / 1e3).toFixed(3)} \u03BCs`;
+    }
+    return `${durationNs} ns`;
+  }
+
   // components/sidebar-view/trace-list.tsx
   var sidebarSummaryHeight = 120;
   var dividerHeight = 1;
@@ -55644,10 +55696,13 @@
     let traceSummary = traceSummaries.get(traceID);
     let isSelected = selectedTraceID === traceID;
     let backgroundColour = isSelected ? selectedColor : "";
-    console.log(traceSummary);
     if (traceSummary.root) {
       let rootNameLabel = traceSummary.root.name.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
       let rootServiceNameLabel = traceSummary.root.serviceName.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
+      let rootDuration = getDurationNs(
+        traceSummary.root.startTime,
+        traceSummary.root.endTime
+      );
       return /* @__PURE__ */ import_react105.default.createElement("div", { style }, /* @__PURE__ */ import_react105.default.createElement(
         Divider,
         {
@@ -55682,7 +55737,7 @@
           "Root Name: ",
           /* @__PURE__ */ import_react105.default.createElement("strong", null, rootNameLabel)
         ),
-        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Root Duration: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceSummary.root.durationString)),
+        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Root Duration: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, getDurationString(rootDuration))),
         /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Number of Spans: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceSummary.spanCount)),
         /* @__PURE__ */ import_react105.default.createElement(
           LinkOverlay,
@@ -56320,58 +56375,6 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     );
   }
 
-  // utils/duration.ts
-  var import_timestamp_nano = __toESM(require_timestamp_min());
-  function calculateTraceTiming(spans) {
-    if (!spans.length) {
-      return {
-        traceStartTimeNS: 0,
-        traceDurationNS: 0
-      };
-    }
-    let earliestStartTime = getNsFromString(spans[0].startTime);
-    let latestEndTime = getNsFromString(spans[0].endTime);
-    spans.forEach((span) => {
-      let spanStart = getNsFromString(span.startTime);
-      if (spanStart < earliestStartTime) {
-        earliestStartTime = spanStart;
-      }
-      let spanEnd = getNsFromString(span.endTime);
-      if (spanEnd > latestEndTime) {
-        latestEndTime = spanEnd;
-      }
-    });
-    return {
-      traceStartTimeNS: earliestStartTime,
-      traceDurationNS: latestEndTime - earliestStartTime
-    };
-  }
-  function getNsFromString(timestampString) {
-    let milliseconds = Date.parse(timestampString.split(".")[0]);
-    let nanoseconds = milliseconds * 1e6 + import_timestamp_nano.default.fromString(timestampString).getNano();
-    return nanoseconds;
-  }
-  function getDurationNs(startTimestamp, endTimestamp) {
-    let startTimeNs = getNsFromString(startTimestamp);
-    let endTimeNs = getNsFromString(endTimestamp);
-    return endTimeNs - startTimeNs;
-  }
-  function getDurationString(durationNs) {
-    if (durationNs === null || durationNs < 0) {
-      return "";
-    }
-    if (durationNs >= 1e9) {
-      return `${(durationNs / 1e9).toFixed(3)} s`;
-    }
-    if (durationNs >= 1e6) {
-      return `${(durationNs / 1e6).toFixed(3)} ms`;
-    }
-    if (durationNs >= 1e3) {
-      return `${(durationNs / 1e3).toFixed(3)} \u03BCs`;
-    }
-    return `${durationNs} ns`;
-  }
-
   // routes/main-view.tsx
   async function mainLoader() {
     const response = await fetch("/api/traces");
@@ -56449,20 +56452,13 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     return mergedData;
   }
   function transformSummaryToUIData(traceSummary) {
-    let root;
     if (traceSummary.rootSpan) {
-      const duration = getDurationNs(
-        traceSummary.rootSpan.startTime,
-        traceSummary.rootSpan.endTime
-      );
-      root = {
-        serviceName: traceSummary.rootSpan.serviceName,
-        name: traceSummary.rootSpan.name,
-        durationString: getDurationString(duration)
+      return {
+        root: traceSummary.rootSpan,
+        spanCount: traceSummary.spanCount
       };
     }
     return {
-      root,
       spanCount: traceSummary.spanCount
     };
   }
