@@ -11,14 +11,14 @@ const sidebarCollapsedWidth = 70;
 type SidebarProps = {
   isFullWidth: boolean;
   toggleSidebarWidth: () => void;
-  traceSummaries: TraceSummaryWithUIData[];
+  traceSummaries: Map<string, TraceSummaryWithUIData>;
   numNewTraces: number;
 };
 
 export function Sidebar(props: SidebarProps) {
   let sidebarColour = useColorModeValue("gray.50", "gray.700");
   let { isFullWidth, toggleSidebarWidth, traceSummaries, numNewTraces } = props;
-  let isFullWidthDisabled = traceSummaries.length === 0;
+  let isFullWidthDisabled = traceSummaries.size === 0;
 
   if (isFullWidth) {
     return (

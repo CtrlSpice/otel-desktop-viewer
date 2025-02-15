@@ -1,11 +1,14 @@
+export type RootSpan = {
+  serviceName: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+};
+
 export type TraceSummary = {
-  hasRootSpan: boolean;
-  rootServiceName: string;
-  rootName: string;
-  rootStartTime: string;
-  rootEndTime: string;
-  spanCount: number;
   traceID: string;
+  rootSpan?: RootSpan;
+  spanCount: number;
 };
 
 export type TraceSummaries = {

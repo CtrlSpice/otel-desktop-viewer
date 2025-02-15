@@ -1,4 +1,4 @@
-import { SpanData } from "./api-types";
+import { RootSpan, SpanData } from "./api-types";
 
 export enum SpanDataStatus {
   missing = "missing",
@@ -20,25 +20,15 @@ export type SpanWithUIData =
       status: SpanDataStatus.missing;
       metadata: SpanUIData;
     };
+    
+export type TraceSummaryWithUIData = {
+  root?: RootSpan;
+  spanCount: number;
+};
 
-export type TraceSummaryWithUIData =
-  | {
-      hasRootSpan: true;
-      rootServiceName: string;
-      rootName: string;
-      rootDurationString: string;
-      spanCount: number;
-      traceID: string;
-    }
-  | {
-      hasRootSpan: false;
-      spanCount: number;
-      traceID: string;
-    };
+export type SidebarData = {
+  numNewTraces: number;
+  summaries: Map<string, TraceSummaryWithUIData>;
+};
 
-    export type SidebarData = {
-      numNewTraces: number;
-      summaries: TraceSummaryWithUIData[];
-    };
-
-    export type ModifierKey = "Alt" | "Control" | "Meta" | "Shift";
+export type ModifierKey = "Alt" | "Control" | "Meta" | "Shift";

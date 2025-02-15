@@ -62,12 +62,34 @@ const (
 		statusCode VARCHAR, 
 		statusMessage VARCHAR)
 	`
-	SELECT_ORDERED_TRACES = `
-		SELECT traceID 
-		FROM spans
-		GROUP BY traceID
-		ORDER BY MAX(startTime) DESC
-	`
+	// SELECT_TRACE_SUMMARIES retrieves all traces ordered by:
+	// - Root span start time when available
+	// - Earliest span start time when no root span exists
+	//
+	// The ordering uses:
+	//   COALESCE(
+	//     MIN(CASE WHEN parentSpanID = '' THEN startTime END),  -- First try: root span time (only one per trace)
+	//     MIN(startTime)                                         -- Fallback: earliest span time in trace
+	//   )
+	// Both MIN() are used with OVER (PARTITION BY traceID) to get times within each trace.
+	// We use MIN for both because even though there's only one root span time per trace (when it exists),
+	// we need an aggregate function to match the MIN used in the fallback.
+	SELECT_TRACE_SUMMARIES = `
+        SELECT DISTINCT ON (s.traceID)
+            s.traceID,
+            CASE WHEN s.parentSpanID = '' THEN CAST(s.resourceAttributes['service.name'][1] AS VARCHAR) END as service_name,
+            CASE WHEN s.parentSpanID = '' THEN s.name END as root_name,
+            CASE WHEN s.parentSpanID = '' THEN s.startTime END as start_time,
+            CASE WHEN s.parentSpanID = '' THEN s.endTime END as end_time,
+            COUNT(*) OVER (PARTITION BY s.traceID) as span_count
+        FROM spans s
+        ORDER BY 
+            COALESCE(
+                MIN(CASE WHEN s.parentSpanID = '' THEN s.startTime END) OVER (PARTITION BY s.traceID),
+                MIN(s.startTime) OVER (PARTITION BY s.traceID)
+            ) DESC,
+            s.traceID
+    `
 
 	// DuckDB's Go bindings have limited support for complex types like UNIONs and STRUCTs
 	// So we need to cast the attributes to VARCHAR and then parse them back into the original type
@@ -98,23 +120,6 @@ const (
 		FROM spans 
 		WHERE traceID = ?
 	`
-
-	SELECT_ROOT_SPAN string = `
-		SELECT 
-			CAST(UNNEST(resourceAttributes['service.name']) AS VARCHAR),
-			name,
-			startTime,
-			endTime
-		FROM spans
-		WHERE traceID = ?
-		AND parentSpanID = '' 
-	`
-	SELECT_SPAN_COUNT string = `
-		SELECT count(*) 
-		FROM spans
-		WHERE traceID = ?
-	`
-
 	TRUNCATE_SPANS string = `
 		TRUNCATE spans;
 	`

@@ -55633,6 +55633,58 @@
     );
   }
 
+  // utils/duration.ts
+  var import_timestamp_nano = __toESM(require_timestamp_min());
+  function calculateTraceTiming(spans) {
+    if (!spans.length) {
+      return {
+        traceStartTimeNS: 0,
+        traceDurationNS: 0
+      };
+    }
+    let earliestStartTime = getNsFromString(spans[0].startTime);
+    let latestEndTime = getNsFromString(spans[0].endTime);
+    spans.forEach((span) => {
+      let spanStart = getNsFromString(span.startTime);
+      if (spanStart < earliestStartTime) {
+        earliestStartTime = spanStart;
+      }
+      let spanEnd = getNsFromString(span.endTime);
+      if (spanEnd > latestEndTime) {
+        latestEndTime = spanEnd;
+      }
+    });
+    return {
+      traceStartTimeNS: earliestStartTime,
+      traceDurationNS: latestEndTime - earliestStartTime
+    };
+  }
+  function getNsFromString(timestampString) {
+    let milliseconds = Date.parse(timestampString.split(".")[0]);
+    let nanoseconds = milliseconds * 1e6 + import_timestamp_nano.default.fromString(timestampString).getNano();
+    return nanoseconds;
+  }
+  function getDurationNs(startTimestamp, endTimestamp) {
+    let startTimeNs = getNsFromString(startTimestamp);
+    let endTimeNs = getNsFromString(endTimestamp);
+    return endTimeNs - startTimeNs;
+  }
+  function getDurationString(durationNs) {
+    if (durationNs === null || durationNs < 0) {
+      return "";
+    }
+    if (durationNs >= 1e9) {
+      return `${(durationNs / 1e9).toFixed(3)} s`;
+    }
+    if (durationNs >= 1e6) {
+      return `${(durationNs / 1e6).toFixed(3)} ms`;
+    }
+    if (durationNs >= 1e3) {
+      return `${(durationNs / 1e3).toFixed(3)} \u03BCs`;
+    }
+    return `${durationNs} ns`;
+  }
+
   // components/sidebar-view/trace-list.tsx
   var sidebarSummaryHeight = 120;
   var dividerHeight = 1;
@@ -55640,12 +55692,17 @@
     let selectedColor = useColorModeValue("pink.100", "pink.900");
     let dividerColour = useColorModeValue("blackAlpha.300", "whiteAlpha.300");
     let { selectedTraceID, traceSummaries } = data;
-    let traceSummary = traceSummaries[index];
-    let isSelected = selectedTraceID && selectedTraceID === traceSummary.traceID ? true : false;
+    let traceID = Array.from(traceSummaries.keys())[index];
+    let traceSummary = traceSummaries.get(traceID);
+    let isSelected = selectedTraceID === traceID;
     let backgroundColour = isSelected ? selectedColor : "";
-    if (traceSummary.hasRootSpan) {
-      let rootNameLabel = traceSummary.rootName.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
-      let rootServiceNameLabel = traceSummary.rootServiceName.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
+    if (traceSummary.root) {
+      let rootNameLabel = traceSummary.root.name.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
+      let rootServiceNameLabel = traceSummary.root.serviceName.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
+      let rootDuration = getDurationNs(
+        traceSummary.root.startTime,
+        traceSummary.root.endTime
+      );
       return /* @__PURE__ */ import_react105.default.createElement("div", { style }, /* @__PURE__ */ import_react105.default.createElement(
         Divider,
         {
@@ -55680,15 +55737,15 @@
           "Root Name: ",
           /* @__PURE__ */ import_react105.default.createElement("strong", null, rootNameLabel)
         ),
-        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Root Duration: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceSummary.rootDurationString)),
+        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Root Duration: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, getDurationString(rootDuration))),
         /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Number of Spans: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceSummary.spanCount)),
         /* @__PURE__ */ import_react105.default.createElement(
           LinkOverlay,
           {
             as: NavLink,
-            to: `traces/${traceSummary.traceID}`
+            to: `traces/${traceID}`
           },
-          /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Trace ID: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceSummary.traceID))
+          /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Trace ID: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceID))
         )
       ));
     }
@@ -55714,9 +55771,9 @@
         LinkOverlay,
         {
           as: NavLink,
-          to: `traces/${traceSummary.traceID}`
+          to: `traces/${traceID}`
         },
-        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Trace ID: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceSummary.traceID))
+        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Trace ID: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceID))
       )
     ));
   }
@@ -55730,13 +55787,12 @@
     let selectedIndex = 0;
     let selectedTraceID = "";
     let { traceSummaries } = props;
+    const traceIDs = Array.from(traceSummaries.keys());
     if (location.pathname.includes("/traces/")) {
       selectedTraceID = location.pathname.split("/")[2];
-      selectedIndex = traceSummaries.findIndex(
-        (summary) => summary.traceID === selectedTraceID
-      );
+      selectedIndex = traceIDs.indexOf(selectedTraceID);
     } else {
-      selectedTraceID = traceSummaries[selectedIndex].traceID;
+      selectedTraceID = traceIDs[selectedIndex];
       window.location.href = `/traces/${selectedTraceID}`;
     }
     (0, import_react105.useEffect)(() => {
@@ -55751,15 +55807,15 @@
       if (prevTraceKeyPressed) {
         selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
         summaryListRef.current?.scrollToItem(selectedIndex);
-        selectedTraceID = traceSummaries[selectedIndex].traceID;
+        selectedTraceID = traceIDs[selectedIndex];
         navigate(`/traces/${selectedTraceID}`);
       }
     }, [prevTraceKeyPressed]);
     (0, import_react105.useEffect)(() => {
       if (nextTraceKeyPressed) {
-        selectedIndex = selectedIndex < traceSummaries.length - 1 ? selectedIndex + 1 : traceSummaries.length - 1;
+        selectedIndex = selectedIndex < traceIDs.length - 1 ? selectedIndex + 1 : traceIDs.length - 1;
         summaryListRef.current?.scrollToItem(selectedIndex);
-        selectedTraceID = traceSummaries[selectedIndex].traceID;
+        selectedTraceID = traceIDs[selectedIndex];
         navigate(`/traces/${selectedTraceID}`);
       }
     }, [nextTraceKeyPressed]);
@@ -55794,7 +55850,7 @@
         {
           height: size3 ? size3.height : 0,
           itemData,
-          itemCount: props.traceSummaries.length,
+          itemCount: traceSummaries.size,
           itemSize: itemHeight,
           width: "100%",
           ref: summaryListRef
@@ -56047,7 +56103,7 @@
   function Sidebar(props) {
     let sidebarColour = useColorModeValue("gray.50", "gray.700");
     let { isFullWidth, toggleSidebarWidth, traceSummaries, numNewTraces } = props;
-    let isFullWidthDisabled = traceSummaries.length === 0;
+    let isFullWidthDisabled = traceSummaries.size === 0;
     if (isFullWidth) {
       return /* @__PURE__ */ import_react109.default.createElement(
         Flex,
@@ -56319,58 +56375,6 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     );
   }
 
-  // utils/duration.ts
-  var import_timestamp_nano = __toESM(require_timestamp_min());
-  function calculateTraceTiming(spans) {
-    if (!spans.length) {
-      return {
-        traceStartTimeNS: 0,
-        traceDurationNS: 0
-      };
-    }
-    let earliestStartTime = getNsFromString(spans[0].startTime);
-    let latestEndTime = getNsFromString(spans[0].endTime);
-    spans.forEach((span) => {
-      let spanStart = getNsFromString(span.startTime);
-      if (spanStart < earliestStartTime) {
-        earliestStartTime = spanStart;
-      }
-      let spanEnd = getNsFromString(span.endTime);
-      if (spanEnd > latestEndTime) {
-        latestEndTime = spanEnd;
-      }
-    });
-    return {
-      traceStartTimeNS: earliestStartTime,
-      traceDurationNS: latestEndTime - earliestStartTime
-    };
-  }
-  function getNsFromString(timestampString) {
-    let milliseconds = Date.parse(timestampString.split(".")[0]);
-    let nanoseconds = milliseconds * 1e6 + import_timestamp_nano.default.fromString(timestampString).getNano();
-    return nanoseconds;
-  }
-  function getDurationNs(startTimestamp, endTimestamp) {
-    let startTimeNs = getNsFromString(startTimestamp);
-    let endTimeNs = getNsFromString(endTimestamp);
-    return endTimeNs - startTimeNs;
-  }
-  function getDurationString(durationNs) {
-    if (durationNs === null || durationNs < 0) {
-      return "";
-    }
-    if (durationNs >= 1e9) {
-      return `${(durationNs / 1e9).toFixed(3)} s`;
-    }
-    if (durationNs >= 1e6) {
-      return `${(durationNs / 1e6).toFixed(3)} ms`;
-    }
-    if (durationNs >= 1e3) {
-      return `${(durationNs / 1e3).toFixed(3)} \u03BCs`;
-    }
-    return `${durationNs} ns`;
-  }
-
   // routes/main-view.tsx
   async function mainLoader() {
     const response = await fetch("/api/traces");
@@ -56399,7 +56403,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         {
           isFullWidth,
           toggleSidebarWidth: setFullWidth.toggle,
-          traceSummaries: [],
+          traceSummaries: /* @__PURE__ */ new Map(),
           numNewTraces: 0
         }
       ), /* @__PURE__ */ import_react113.default.createElement(EmptyStateView, null));
@@ -56415,60 +56419,47 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     ), /* @__PURE__ */ import_react113.default.createElement(Outlet, null));
   }
   function initSidebarData(traceSummaries) {
+    const summaries = /* @__PURE__ */ new Map();
+    traceSummaries.forEach((summary) => {
+      summaries.set(summary.traceID, transformSummaryToUIData(summary));
+    });
     return {
-      summaries: traceSummaries.map(
-        (traceSummary) => generateTraceSummaryWithUIData(traceSummary)
-      ),
+      summaries,
       numNewTraces: 0
     };
   }
   function updateSidebarData(sidebarData, traceSummaries) {
     let mergedData = {
       numNewTraces: 0,
-      summaries: [...sidebarData.summaries]
+      summaries: new Map(sidebarData.summaries)
     };
     for (let summary of traceSummaries) {
       let traceID = summary.traceID;
-      let sidebarSummaryIndex = mergedData.summaries.findIndex(
-        (s) => s.traceID === traceID
-      );
-      if (sidebarSummaryIndex === -1) {
+      let existingSummary = mergedData.summaries.get(traceID);
+      if (!existingSummary) {
         mergedData.numNewTraces++;
-      } else if (summary.spanCount > mergedData.summaries[sidebarSummaryIndex].spanCount) {
-        mergedData.summaries[sidebarSummaryIndex] = generateTraceSummaryWithUIData(summary);
+        mergedData.summaries.set(traceID, transformSummaryToUIData(summary));
+      } else if (summary.spanCount !== existingSummary.spanCount) {
+        mergedData.summaries.set(traceID, transformSummaryToUIData(summary));
       }
     }
-    for (let [i, summary] of mergedData.summaries.entries()) {
-      let traceID = summary.traceID;
-      let counterpartIndex = traceSummaries.findIndex(
-        (s) => s.traceID === traceID
-      );
-      if (counterpartIndex === -1) {
-        mergedData.summaries.splice(i, 1);
+    const currentTraceIDs = new Set(traceSummaries.map((s) => s.traceID));
+    for (let [traceID] of mergedData.summaries) {
+      if (!currentTraceIDs.has(traceID)) {
+        mergedData.summaries.delete(traceID);
       }
     }
     return mergedData;
   }
-  function generateTraceSummaryWithUIData(traceSummary) {
-    if (traceSummary.hasRootSpan) {
-      let duration = getDurationNs(
-        traceSummary.rootStartTime,
-        traceSummary.rootEndTime
-      );
-      let durationString = getDurationString(duration);
+  function transformSummaryToUIData(traceSummary) {
+    if (traceSummary.rootSpan) {
       return {
-        hasRootSpan: true,
-        rootServiceName: traceSummary.rootServiceName,
-        rootName: traceSummary.rootName,
-        rootDurationString: durationString,
-        spanCount: traceSummary.spanCount,
-        traceID: traceSummary.traceID
+        root: traceSummary.rootSpan,
+        spanCount: traceSummary.spanCount
       };
     }
     return {
-      hasRootSpan: false,
-      spanCount: traceSummary.spanCount,
-      traceID: traceSummary.traceID
+      spanCount: traceSummary.spanCount
     };
   }
 

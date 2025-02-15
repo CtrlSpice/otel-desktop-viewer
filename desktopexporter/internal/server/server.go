@@ -74,7 +74,7 @@ func (s *Server) tracesHandler(writer http.ResponseWriter, request *http.Request
 	}
 
 	if err := writeJSON(writer, telemetry.TraceSummaries{
-		TraceSummaries: *summaries,
+		TraceSummaries: summaries,
 	}); err != nil {
 		log.Fatal(err)
 	}

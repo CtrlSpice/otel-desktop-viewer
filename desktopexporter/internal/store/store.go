@@ -38,7 +38,7 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 
 	db := sql.OpenDB(connector)
 
-	// Create types - ignore "already exists" errors
+	// 1) Create types - ignore "already exists" errors
 	if _, err = db.Exec(CREATE_ATTRIBUTE_TYPE); err != nil {
 		if !strings.Contains(err.Error(), "already exists") {
 			log.Fatalf("could not create attribute type: %s", err.Error())
@@ -57,6 +57,7 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 		}
 	}
 
+	// 2) Create the spans table
 	if _, err = db.Exec(CREATE_SPANS_TABLE); err != nil {
 		log.Fatalf("could not create table spans: %s", err.Error())
 	}
@@ -198,49 +199,55 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 	return trace, nil
 }
 
-func (s *Store) GetTraceSummaries(ctx context.Context) (*[]telemetry.TraceSummary, error) {
+func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary, error) {
 	summaries := []telemetry.TraceSummary{}
 
-	rows, err := s.db.QueryContext(ctx, SELECT_ORDERED_TRACES)
+	rows, err := s.db.QueryContext(ctx, SELECT_TRACE_SUMMARIES)
 	if err == sql.ErrNoRows {
-		return &summaries, nil
+		return summaries, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("could not retrieve trace summaries: %s", err.Error())
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		summary := telemetry.TraceSummary{
-			HasRootSpan:     false,
-			RootServiceName: "",
-			RootName:        "",
-			RootStartTime:   time.Time{},
-			RootEndTime:     time.Time{},
-			SpanCount:       0,
-			TraceID:         "",
+		var (
+			traceID     string
+			serviceName sql.NullString
+			rootName    sql.NullString
+			startTime   sql.NullTime
+			endTime     sql.NullTime
+			spanCount   int
+		)
+
+		if err = rows.Scan(
+			&traceID,
+			&serviceName,
+			&rootName,
+			&startTime,
+			&endTime,
+			&spanCount,
+		); err != nil {
+			return nil, fmt.Errorf("could not scan summary: %s", err.Error())
 		}
 
-		if err = rows.Scan(&summary.TraceID); err != nil {
-			return nil, fmt.Errorf("could not scan summary traceID: %s", err.Error())
+		var rootSpan *telemetry.RootSpan
+		if serviceName.Valid && rootName.Valid && startTime.Valid && endTime.Valid {
+			rootSpan = &telemetry.RootSpan{
+				ServiceName: serviceName.String,
+				Name:        rootName.String,
+				StartTime:   startTime.Time,
+				EndTime:     endTime.Time,
+			}
 		}
 
-		spanCountRow := s.db.QueryRowContext(ctx, SELECT_SPAN_COUNT, summary.TraceID)
-		if err = spanCountRow.Scan(&summary.SpanCount); err != nil {
-			return nil, fmt.Errorf("could not scan summary spanCount: %s", err.Error())
-		}
-
-		rootSpanRow := s.db.QueryRowContext(ctx, SELECT_ROOT_SPAN, summary.TraceID)
-		err = rootSpanRow.Scan(&summary.RootServiceName, &summary.RootName, &summary.RootStartTime, &summary.RootEndTime)
-		if err == nil {
-			summary.HasRootSpan = true
-			summaries = append(summaries, summary)
-		} else if err == sql.ErrNoRows {
-			summaries = append(summaries, summary)
-		} else {
-			return nil, fmt.Errorf("could not retrieve trace summaries: %s", err.Error())
-		}
+		summaries = append(summaries, telemetry.TraceSummary{
+			TraceID:   traceID,
+			RootSpan:  rootSpan,
+			SpanCount: uint32(spanCount),
+		})
 	}
-	return &summaries, nil
+	return summaries, nil
 }
 
 func (s *Store) ClearTraces(ctx context.Context) error {

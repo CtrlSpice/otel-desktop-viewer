@@ -14,13 +14,14 @@ type TraceSummaries struct {
 }
 
 type TraceSummary struct {
-	HasRootSpan bool `json:"hasRootSpan"`
+	TraceID   string    `json:"traceID"`
+	RootSpan  *RootSpan `json:"rootSpan,omitempty"`
+	SpanCount uint32    `json:"spanCount"`
+}
 
-	RootServiceName string    `json:"rootServiceName"`
-	RootName        string    `json:"rootName"`
-	RootStartTime   time.Time `json:"rootStartTime"`
-	RootEndTime     time.Time `json:"rootEndTime"`
-
-	SpanCount uint32 `json:"spanCount"`
-	TraceID   string `json:"traceID"`
+type RootSpan struct {
+	ServiceName string    `json:"serviceName"`
+	Name        string    `json:"name"`
+	StartTime   time.Time `json:"startTime"`
+	EndTime     time.Time `json:"endTime"`
 }
