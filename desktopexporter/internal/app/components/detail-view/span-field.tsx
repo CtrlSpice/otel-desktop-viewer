@@ -9,36 +9,18 @@ import {
 } from "@chakra-ui/react";
 
 type SpanFieldProps = {
+  fieldType: string;
   fieldName: string;
-  fieldValue: number | string | boolean | null;
+  fieldValue: string;
   hidden?: boolean;
 };
 
 export function SpanField(props: SpanFieldProps) {
-  let { fieldName, fieldValue, hidden } = props;
+  let { fieldType, fieldName, fieldValue, hidden } = props;
   let fieldNameColour = useColorModeValue("gray.600", "gray.400");
 
   if (hidden) {
     return null;
-  }
-  let typeOfFieldValue = typeof fieldValue;
-
-  switch (fieldValue) {
-    case true:
-      fieldValue = "true";
-      break;
-    case false:
-      fieldValue = "false";
-      break;
-    case null:
-      fieldValue = "null";
-      break;
-    case undefined:
-      fieldValue = "undefined";
-      break;
-    case "":
-      fieldValue = '""';
-      break;
   }
 
   return (
@@ -50,11 +32,12 @@ export function SpanField(props: SpanFieldProps) {
             variant="outline"
             colorScheme="cyan"
           >
-            <TagLabel fontSize="xs">{typeOfFieldValue}</TagLabel>
+            <TagLabel fontSize="xs">{fieldType}</TagLabel>
           </Tag>
           <Text
             textColor={fieldNameColour}
             fontSize="sm"
+            marginLeft={2}
           >
             {fieldName}
           </Text>

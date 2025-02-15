@@ -56497,28 +56497,10 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   // components/detail-view/span-field.tsx
   var import_react117 = __toESM(require_react());
   function SpanField(props) {
-    let { fieldName, fieldValue, hidden } = props;
+    let { fieldType, fieldName, fieldValue, hidden } = props;
     let fieldNameColour = useColorModeValue("gray.600", "gray.400");
     if (hidden) {
       return null;
-    }
-    let typeOfFieldValue = typeof fieldValue;
-    switch (fieldValue) {
-      case true:
-        fieldValue = "true";
-        break;
-      case false:
-        fieldValue = "false";
-        break;
-      case null:
-        fieldValue = "null";
-        break;
-      case void 0:
-        fieldValue = "undefined";
-        break;
-      case "":
-        fieldValue = '""';
-        break;
     }
     return /* @__PURE__ */ import_react117.default.createElement(Box, { paddingTop: 2 }, /* @__PURE__ */ import_react117.default.createElement("dt", null, /* @__PURE__ */ import_react117.default.createElement(Flex, { rowGap: 2 }, /* @__PURE__ */ import_react117.default.createElement(
       Tag,
@@ -56527,12 +56509,13 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         variant: "outline",
         colorScheme: "cyan"
       },
-      /* @__PURE__ */ import_react117.default.createElement(TagLabel, { fontSize: "xs" }, typeOfFieldValue)
+      /* @__PURE__ */ import_react117.default.createElement(TagLabel, { fontSize: "xs" }, fieldType)
     ), /* @__PURE__ */ import_react117.default.createElement(
       Text,
       {
         textColor: fieldNameColour,
-        fontSize: "sm"
+        fontSize: "sm",
+        marginLeft: 2
       },
       fieldName
     ))), /* @__PURE__ */ import_react117.default.createElement("dd", null, /* @__PURE__ */ import_react117.default.createElement(
@@ -56543,6 +56526,39 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       },
       fieldValue
     )));
+  }
+
+  // utils/parse-type.ts
+  function parseAttributeType(value) {
+    if (value === null || value === void 0) {
+      return "unknown";
+    }
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return "unknown";
+      }
+      const firstElement = value[0];
+      if (typeof firstElement === "string") {
+        return "string[]";
+      }
+      if (typeof firstElement === "number") {
+        return value.every((num) => Number.isInteger(num)) ? "int64[]" : "float64[]";
+      }
+      if (typeof firstElement === "boolean") {
+        return "boolean[]";
+      }
+      return "unknown[]";
+    }
+    if (typeof value === "string") {
+      return "string";
+    }
+    if (typeof value === "number") {
+      return Number.isInteger(value) ? "int64" : "float64";
+    }
+    if (typeof value === "boolean") {
+      return "boolean";
+    }
+    return "unknown";
   }
 
   // components/detail-view/fields-panel.tsx
@@ -56568,7 +56584,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       SpanField,
       {
         fieldName: key,
-        fieldValue: value
+        fieldValue: value.toString(),
+        fieldType: parseAttributeType(value)
       }
     )));
     let resourceAttributes = Object.entries(span.resource.attributes).map(
@@ -56576,7 +56593,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         SpanField,
         {
           fieldName: key,
-          fieldValue: value
+          fieldValue: value.toString(),
+          fieldType: parseAttributeType(value)
         }
       ))
     );
@@ -56585,7 +56603,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         SpanField,
         {
           fieldName: key,
-          fieldValue: value
+          fieldValue: value.toString(),
+          fieldType: parseAttributeType(value)
         }
       ))
     );
@@ -56614,84 +56633,97 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         SpanField,
         {
           fieldName: "name",
-          fieldValue: span.name
+          fieldValue: span.name,
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "kind",
-          fieldValue: span.kind
+          fieldValue: span.kind,
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "start time",
-          fieldValue: span.startTime
+          fieldValue: span.startTime,
+          fieldType: "timestamp"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "end time",
-          fieldValue: span.endTime
+          fieldValue: span.endTime,
+          fieldType: "timestamp"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "duration",
-          fieldValue: durationString
+          fieldValue: durationString,
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "status code",
-          fieldValue: span.statusCode
+          fieldValue: span.statusCode,
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "status message",
           fieldValue: span.statusMessage,
-          hidden: span.statusCode === "Unset" || span.statusCode === "Ok"
+          hidden: span.statusCode === "Unset" || span.statusCode === "Ok",
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "trace id",
-          fieldValue: span.traceID
+          fieldValue: span.traceID,
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "parent span id",
           fieldValue: span.parentSpanID,
-          hidden: isRoot
+          hidden: isRoot,
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "span id",
-          fieldValue: span.spanID
+          fieldValue: span.spanID,
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(List, null, spanAttributes), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "dropped attributes count",
-          fieldValue: span.droppedAttributesCount,
-          hidden: span.droppedAttributesCount === 0
+          fieldValue: span.droppedAttributesCount.toString(),
+          hidden: span.droppedAttributesCount === 0,
+          fieldType: "uint32"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "dropped events count",
-          fieldValue: span.droppedEventsCount,
-          hidden: span.droppedEventsCount === 0
+          fieldValue: span.droppedEventsCount.toString(),
+          hidden: span.droppedEventsCount === 0,
+          fieldType: "uint32"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "dropped links count",
-          fieldValue: span.droppedLinksCount,
-          hidden: span.droppedLinksCount === 0
+          fieldValue: span.droppedLinksCount.toString(),
+          hidden: span.droppedLinksCount === 0,
+          fieldType: "uint32"
         }
       ))),
       /* @__PURE__ */ import_react119.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react119.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react119.default.createElement(
@@ -56705,8 +56737,9 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         SpanField,
         {
           fieldName: "dropped attributes count",
-          fieldValue: span.resource.droppedAttributesCount,
-          hidden: span.resource.droppedAttributesCount === 0
+          fieldValue: span.resource.droppedAttributesCount.toString(),
+          hidden: span.resource.droppedAttributesCount === 0,
+          fieldType: "uint32"
         }
       ))),
       /* @__PURE__ */ import_react119.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react119.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react119.default.createElement(
@@ -56720,20 +56753,23 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         SpanField,
         {
           fieldName: "scope name",
-          fieldValue: span.scope.name
+          fieldValue: span.scope.name,
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "scope version",
-          fieldValue: span.scope.version
+          fieldValue: span.scope.version,
+          fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(List, null, scopeAttributes), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "dropped attributes count",
-          fieldValue: span.scope.droppedAttributesCount,
-          hidden: span.scope.droppedAttributesCount === 0
+          fieldValue: span.scope.droppedAttributesCount.toString(),
+          hidden: span.scope.droppedAttributesCount === 0,
+          fieldType: "uint32"
         }
       )))
     ));
@@ -56749,7 +56785,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       SpanField,
       {
         fieldName: key,
-        fieldValue: value
+        fieldValue: value.toString(),
+        fieldType: parseAttributeType(value)
       }
     )));
     return /* @__PURE__ */ import_react121.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react121.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react121.default.createElement(
@@ -56764,13 +56801,15 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       SpanField,
       {
         fieldName: "timestamp",
-        fieldValue: event.timestamp
+        fieldValue: event.timestamp,
+        fieldType: "timestamp"
       }
     ), /* @__PURE__ */ import_react121.default.createElement(List, null, eventAttributes), /* @__PURE__ */ import_react121.default.createElement(
       SpanField,
       {
         fieldName: "dropped attributes count",
-        fieldValue: event.droppedAttributesCount,
+        fieldValue: event.droppedAttributesCount.toString(),
+        fieldType: "uint32",
         hidden: !event.droppedAttributesCount
       }
     )));
@@ -56913,7 +56952,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       SpanField,
       {
         fieldName: key,
-        fieldValue: value
+        fieldValue: value.toString(),
+        fieldType: parseAttributeType(value)
       }
     )));
     return /* @__PURE__ */ import_react127.default.createElement(AccordionItem, null, /* @__PURE__ */ import_react127.default.createElement(AccordionButton, null, /* @__PURE__ */ import_react127.default.createElement(
@@ -56928,13 +56968,15 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       SpanField,
       {
         fieldName: "trace state",
-        fieldValue: link.traceState
+        fieldValue: link.traceState,
+        fieldType: "string"
       }
     ), /* @__PURE__ */ import_react127.default.createElement(List, null, linkAttributes), /* @__PURE__ */ import_react127.default.createElement(
       SpanField,
       {
         fieldName: "dropped attributes count",
-        fieldValue: link.droppedAttributesCount
+        fieldValue: link.droppedAttributesCount.toString(),
+        fieldType: "uint32"
       }
     )));
   }

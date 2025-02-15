@@ -15,6 +15,7 @@ import {
 import { EventData } from "../../types/api-types";
 import { SpanField } from "./span-field";
 import { getDurationNs, getDurationString } from "../../utils/duration";
+import { parseAttributeType } from "../../utils/parse-type";
 
 type EventItemProps = {
   event: EventData;
@@ -29,7 +30,8 @@ function EventItem(props: EventItemProps) {
     <li key={key + value?.toString()}>
       <SpanField
         fieldName={key}
-        fieldValue={value}
+        fieldValue={value.toString()}
+        fieldType={parseAttributeType(value)}
       />
     </li>
   ));
@@ -50,11 +52,13 @@ function EventItem(props: EventItemProps) {
         <SpanField
           fieldName="timestamp"
           fieldValue={event.timestamp}
+          fieldType="timestamp"
         />
         <List>{eventAttributes}</List>
         <SpanField
           fieldName="dropped attributes count"
-          fieldValue={event.droppedAttributesCount}
+          fieldValue={event.droppedAttributesCount.toString()}
+          fieldType="uint32"
           hidden={!event.droppedAttributesCount}
         />
       </AccordionPanel>
