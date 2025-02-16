@@ -16,7 +16,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: '1.23'
 
@@ -27,16 +27,27 @@ jobs:
 
     - name: Download DuckDB
       run: |
+        # Get both the Windows library and the header files
         curl -L -o libduckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.10.0/libduckdb-windows-amd64.zip
+        curl -L -o duckdb-headers.zip https://github.com/duckdb/duckdb/releases/download/v0.10.0/libduckdb-src.zip
+        
+        # Extract Windows library
         unzip libduckdb.zip -d duckdb
+        
+        # Extract headers and maintain structure
+        unzip duckdb-headers.zip -d duckdb-src
+        mkdir -p duckdb/include
+        cp -r duckdb-src/src/include/* duckdb/include/
+        
         ls -la duckdb
+        ls -la duckdb/include
 
     - name: Build
       run: |
         cd desktopcollector
         GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc \
         CGO_LDFLAGS="-L$(pwd)/../duckdb -lduckdb_static" \
-        CGO_CFLAGS="-I$(pwd)/../duckdb" \
+        CGO_CFLAGS="-I$(pwd)/../duckdb/include" \
         go build -v -tags=duckdb_use_lib -o ../otel-desktop-viewer.exe
 
     - name: Exporter Go Tests
@@ -44,7 +55,7 @@ jobs:
         cd desktopexporter
         GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc \
         CGO_LDFLAGS="-L$(pwd)/../duckdb -lduckdb_static" \
-        CGO_CFLAGS="-I$(pwd)/../duckdb" \
+        CGO_CFLAGS="-I$(pwd)/../duckdb/include" \
         go test ./...
 
     # - name: Integration
