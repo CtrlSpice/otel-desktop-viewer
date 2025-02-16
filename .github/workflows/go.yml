@@ -40,10 +40,16 @@ jobs:
         unzip duckdb.zip
         # Copy DuckDB files to MinGW directories
         copy duckdb.dll "C:\msys64\mingw64\bin\"
-        copy duckdb.lib "C:\msys64\mingw64\lib\libduckdb.a"
+        # Create import library for MinGW
+        echo "LIBRARY duckdb.dll" > duckdb.def
+        echo "EXPORTS" >> duckdb.def
+        "C:\msys64\mingw64\bin\gendef.exe" "C:\msys64\mingw64\bin\duckdb.dll" >> duckdb.def
+        "C:\msys64\mingw64\bin\dlltool.exe" -d duckdb.def -l "C:\msys64\mingw64\lib\libduckdb.a"
         copy duckdb.h "C:\msys64\mingw64\include\"
         # Set environment variables for CGO
         echo "CGO_ENABLED=1" >> $env:GITHUB_ENV
+        echo "CGO_LDFLAGS=-L C:/msys64/mingw64/lib -lduckdb" >> $env:GITHUB_ENV
+        echo "CGO_CFLAGS=-I C:/msys64/mingw64/include" >> $env:GITHUB_ENV
         # Verify installations
         gcc --version
         dir "C:\msys64\mingw64\bin\duckdb.dll"
