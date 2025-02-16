@@ -19,6 +19,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.23'
+        cache: true
 
     - name: Install MinGW-w64
       run: |
@@ -27,21 +28,22 @@ jobs:
 
     - name: Download DuckDB
       run: |
-        # Get both the Windows library and the header files
+        # Get the Windows library
         curl -L -o libduckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.10.0/libduckdb-windows-amd64.zip
-        curl -L -o duckdb-headers.zip https://github.com/duckdb/duckdb/releases/download/v0.10.0/libduckdb-src.zip
-        
-        # Extract Windows library
         unzip libduckdb.zip -d duckdb
         
-        # Extract headers and maintain structure
-        unzip duckdb-headers.zip -d duckdb-src
+        # Get the full source for headers
+        git clone --depth 1 --branch v0.10.0 https://github.com/duckdb/duckdb.git duckdb-src
+        
+        # Set up headers
         mkdir -p duckdb/include
-        cp duckdb-src/duckdb.h duckdb/include/
-        cp duckdb-src/duckdb.hpp duckdb/include/
+        cp duckdb-src/src/include/duckdb.h duckdb/include/
+        cp duckdb-src/src/include/duckdb.hpp duckdb/include/
+        cp duckdb-src/src/include/duckdb/*.h* duckdb/include/duckdb/
         
         ls -la duckdb
         ls -la duckdb/include
+        ls -la duckdb/include/duckdb
 
     - name: Build
       run: |
@@ -58,6 +60,12 @@ jobs:
         CGO_LDFLAGS="-L$(pwd)/../duckdb -lduckdb_static" \
         CGO_CFLAGS="-I$(pwd)/../duckdb/include" \
         go test ./...
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: otel-desktop-viewer
+        path: otel-desktop-viewer.exe
 
     # - name: Integration
     #   run: ./.github/workflows/integration.sh
