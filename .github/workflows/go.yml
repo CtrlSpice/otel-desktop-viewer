@@ -37,7 +37,8 @@ jobs:
         # Extract headers and maintain structure
         unzip duckdb-headers.zip -d duckdb-src
         mkdir -p duckdb/include
-        cp -r duckdb-src/src/include/* duckdb/include/
+        cp duckdb-src/duckdb.h duckdb/include/
+        cp duckdb-src/duckdb.hpp duckdb/include/
         
         ls -la duckdb
         ls -la duckdb/include
