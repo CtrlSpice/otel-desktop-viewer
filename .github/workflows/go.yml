@@ -12,10 +12,10 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        # include:
-        #   - os: windows-latest
-        #     env:
-        #       NO_WINDOWS_SERVICE: 0
+        include:
+          - os: windows-latest
+            env:
+              NO_WINDOWS_SERVICE: 0
 
 
     steps:

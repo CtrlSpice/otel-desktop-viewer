@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,10 +13,11 @@ import (
 
 func TestPersistence(t *testing.T) {
 	ctx := context.Background()
-	store := NewStore(ctx, "./quack.db")
+	dbPath := filepath.Clean("./quack.db")
+	store := NewStore(ctx, dbPath)
 
 	// Check that db file is created properly
-	_, err := os.Stat("./quack.db")
+	_, err := os.Stat(dbPath)
 	assert.NoErrorf(t, err, "database file does not exist: %v", err)
 
 	// Add sample spans to the store
@@ -33,7 +35,7 @@ func TestPersistence(t *testing.T) {
 	assert.NoErrorf(t, err, "could not close database: %v", err)
 
 	// Reopen store from the database file
-	store = NewStore(ctx, "./quack.db")
+	store = NewStore(ctx, dbPath)
 
 	// Get a trace by ID and check ID of root span
 	trace, err := store.GetTrace(ctx, "42957c7c2fca940a0d32a0cdd38c06a4")
@@ -45,7 +47,7 @@ func TestPersistence(t *testing.T) {
 	err = store.Close()
 	assert.NoErrorf(t, err, "could not close database: %v", err)
 
-	err = os.Remove("./quack.db")
+	err = os.Remove(dbPath)
 	assert.NoError(t, err, "could not remove database file: %v", err)
 }
 
