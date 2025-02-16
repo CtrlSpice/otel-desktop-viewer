@@ -41,8 +41,8 @@ jobs:
       run: |
         curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.9.2/libduckdb-windows-amd64.zip
         unzip duckdb.zip
-        copy libduckdb.dll C:\Windows\System32\
-        copy libduckdb.lib C:\Windows\System32\
+        copy duckdb.dll C:\Windows\System32\
+        copy duckdb.lib C:\Windows\System32\
 
     - name: Build
       run: cd desktopcollector; go build -o ../otel-desktop-viewer
