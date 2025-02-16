@@ -30,34 +30,30 @@ jobs:
       with:
         msystem: mingw64
         update: true
-        install: >-
-          git
-          mingw-w64-x86_64-toolchain
-          mingw-w64-x86_64-cmake
-          mingw-w64-x86_64-ninja
+        install: mingw-w64-x86_64-gcc
 
-    # Build DuckDB from source
-    - name: Build DuckDB
-      shell: msys2 {0}
+    # Download and setup DuckDB for Windows
+    - name: Setup DuckDB (Windows)
+      shell: cmd
       run: |
-        git clone https://github.com/duckdb/duckdb
-        cd duckdb
-        cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_EXTENSIONS="icu;parquet;json"
-        cmake --build . --config Release
-        # Copy the built library files
-        cp build/Release/src/libduckdb.dll /mingw64/bin/
-        cp build/Release/src/libduckdb.a /mingw64/lib/
-        cp src/include/duckdb.h /mingw64/include/
+        curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.9.2/libduckdb-windows-amd64.zip
+        unzip duckdb.zip
+        copy duckdb.dll "C:\msys64\mingw64\bin\duckdb.dll"
+        copy duckdb.lib "C:\msys64\mingw64\lib\libduckdb.a"
+        copy duckdb.h "C:\msys64\mingw64\include\duckdb.h"
+        set CGO_ENABLED=1
+        set CGO_LDFLAGS=-L C:\msys64\mingw64\lib -lduckdb
+        set CGO_CFLAGS=-I C:\msys64\mingw64\include
 
     # Build step
     - name: Build
       run: |
         cd desktopcollector
-        go build -v -o ../otel-desktop-viewer
+        go build -v -o ..\otel-desktop-viewer
       env:
         CGO_ENABLED: 1
-        CGO_LDFLAGS: -L C:/msys64/mingw64/lib -lduckdb
-        CGO_CFLAGS: -I C:/msys64/mingw64/include
+        CGO_LDFLAGS: -L C:\msys64\mingw64\lib -lduckdb
+        CGO_CFLAGS: -I C:\msys64\mingw64\include
 
     - name: Exporter Go Tests
       run: cd desktopexporter; go test ./...
