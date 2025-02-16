@@ -43,10 +43,19 @@ jobs:
         unzip duckdb.zip
         copy duckdb.dll C:\Windows\System32\
         copy duckdb.lib C:\Windows\System32\
+        # Set environment variables for CGO
+        echo "CGO_LDFLAGS=-L. -lduckdb" >> $env:GITHUB_ENV
+        echo "CGO_CFLAGS=-I." >> $env:GITHUB_ENV
+        echo "CGO_ENABLED=1" >> $env:GITHUB_ENV
 
+    # Build step
     - name: Build
-      run: cd desktopcollector; go build -o ../otel-desktop-viewer
- 
+      run: |
+        cd desktopcollector
+        go build -o ../otel-desktop-viewer
+      env:
+        CGO_ENABLED: 1
+
     - name: Exporter Go Tests
       run: cd desktopexporter; go test ./...
 
