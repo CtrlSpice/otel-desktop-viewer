@@ -21,13 +21,14 @@ jobs:
         go-version: '1.23'
 
     - name: Download DuckDB
-      shell: cmd
+      shell: pwsh
       run: |
         curl -L -o libduckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.10.0/libduckdb-windows-amd64.zip
-        unzip libduckdb.zip
-        mkdir C:\duckdb
-        copy duckdb.dll "C:\duckdb\duckdb.dll"
-        set PATH=C:\duckdb;%PATH%
+        Expand-Archive -Path libduckdb.zip -DestinationPath C:\duckdb
+        $env:PATH="C:\duckdb;$env:PATH"
+        $env:CGO_LDFLAGS="-L C:\duckdb -lduckdb_static"
+        $env:CGO_CFLAGS="-I C:\duckdb"
+        dir C:\duckdb
 
     - name: Build
       run: |
@@ -36,10 +37,15 @@ jobs:
         go build -v -tags=duckdb_use_lib -o ..\otel-desktop-viewer
       env:
         CGO_ENABLED: 1
-        CGO_LDFLAGS: -L C:\duckdb -lduckdb
+        CGO_LDFLAGS: "-L C:\\duckdb -lduckdb_static"
+        CGO_CFLAGS: "-I C:\\duckdb"
 
     - name: Exporter Go Tests
       run: cd desktopexporter; go test ./...
+      env:
+        CGO_ENABLED: 1
+        CGO_LDFLAGS: "-L C:\\duckdb -lduckdb_static"
+        CGO_CFLAGS: "-I C:\\duckdb"
 
     # - name: Integration
     #   run: ./.github/workflows/integration.sh
