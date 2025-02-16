@@ -32,6 +32,7 @@ jobs:
       uses: egor-tensin/setup-mingw@v2
       with:
         platform: x64
+        version: 13.2.0
 
     # Download and setup DuckDB for Windows
     - name: Setup DuckDB (Windows)
