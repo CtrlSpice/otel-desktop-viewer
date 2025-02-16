@@ -25,12 +25,9 @@ jobs:
       with:
         go-version: '1.23'
 
-    - name: Set up MinGW
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: mingw64
-        update: true
-        install: mingw-w64-x86_64-gcc
+    # Install Visual C++ build tools
+    - name: Install Visual C++ Build Tools
+      uses: microsoft/setup-msbuild@v1.1
 
     # Download and setup DuckDB for Windows
     - name: Setup DuckDB (Windows)
@@ -38,12 +35,14 @@ jobs:
       run: |
         curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.9.2/libduckdb-windows-amd64.zip
         unzip duckdb.zip
-        copy duckdb.dll "C:\msys64\mingw64\bin\duckdb.dll"
-        copy duckdb.lib "C:\msys64\mingw64\lib\libduckdb.a"
-        copy duckdb.h "C:\msys64\mingw64\include\duckdb.h"
+        mkdir C:\duckdb
+        copy duckdb.dll "C:\duckdb\duckdb.dll"
+        copy duckdb.lib "C:\duckdb\duckdb.lib"
+        copy duckdb.h "C:\duckdb\duckdb.h"
         set CGO_ENABLED=1
-        set CGO_LDFLAGS=-L C:\msys64\mingw64\lib -lduckdb
-        set CGO_CFLAGS=-I C:\msys64\mingw64\include
+        set CGO_LDFLAGS=-L C:\duckdb -lduckdb
+        set CGO_CFLAGS=-I C:\duckdb
+        set PATH=C:\duckdb;%PATH%
 
     # Build step
     - name: Build
@@ -52,8 +51,8 @@ jobs:
         go build -v -o ..\otel-desktop-viewer
       env:
         CGO_ENABLED: 1
-        CGO_LDFLAGS: -L C:\msys64\mingw64\lib -lduckdb
-        CGO_CFLAGS: -I C:\msys64\mingw64\include
+        CGO_LDFLAGS: -L C:\duckdb -lduckdb
+        CGO_CFLAGS: -I C:\duckdb
 
     - name: Exporter Go Tests
       run: cd desktopexporter; go test ./...
