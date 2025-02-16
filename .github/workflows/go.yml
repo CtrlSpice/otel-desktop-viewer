@@ -33,7 +33,7 @@ jobs:
     - name: Setup DuckDB (Windows)
       shell: cmd
       run: |
-        curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.9.2/libduckdb-windows-amd64.zip
+        curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.10.0/libduckdb-windows-amd64.zip
         unzip duckdb.zip
         mkdir C:\duckdb
         copy duckdb.dll "C:\duckdb\duckdb.dll"
@@ -50,8 +50,7 @@ jobs:
       run: |
         cd desktopcollector
         go version
-        go env
-        go build -v -x -o ..\otel-desktop-viewer
+        go build -v -o ..\otel-desktop-viewer
       env:
         CGO_ENABLED: 1
         CGO_LDFLAGS: -L C:\duckdb -lduckdb
