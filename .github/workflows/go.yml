@@ -38,6 +38,8 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: |
         choco install duckdb
+        # Add MinGW to PATH
+        echo "C:\ProgramData\mingw64\mingw64\bin" >> $env:GITHUB_PATH
         # Set environment variables for CGO
         echo "CGO_ENABLED=1" >> $env:GITHUB_ENV
 
