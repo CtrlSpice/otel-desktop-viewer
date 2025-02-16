@@ -41,14 +41,16 @@ jobs:
       run: |
         curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.9.2/libduckdb-windows-amd64.zip
         unzip duckdb.zip
-        # Copy to the current directory where build will happen
-        copy duckdb.dll desktopcollector\
-        copy duckdb.lib desktopcollector\
+        # Copy and rename files to match MinGW expectations
+        copy duckdb.dll desktopcollector\libduckdb.dll
+        copy duckdb.lib desktopcollector\libduckdb.a
         copy duckdb.h desktopcollector\
         # Set environment variables for CGO
-        echo "CGO_LDFLAGS=-L./desktopcollector -lduckdb" >> $env:GITHUB_ENV
-        echo "CGO_CFLAGS=-I./desktopcollector" >> $env:GITHUB_ENV
+        echo "CGO_LDFLAGS=-L${PWD}\desktopcollector -lduckdb" >> $env:GITHUB_ENV
+        echo "CGO_CFLAGS=-I${PWD}\desktopcollector" >> $env:GITHUB_ENV
         echo "CGO_ENABLED=1" >> $env:GITHUB_ENV
+        # Add the directory to PATH
+        echo "${PWD}\desktopcollector" >> $env:GITHUB_PATH
 
     # Build step
     - name: Build
