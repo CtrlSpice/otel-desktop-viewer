@@ -29,10 +29,11 @@ jobs:
     # Add these steps for Windows
     - name: Set up MinGW
       if: matrix.os == 'windows-latest'
-      uses: egor-tensin/setup-mingw@v2
+      uses: msys2/setup-msys2@v2
       with:
-        platform: x64
-        version: 13.2.0
+        msystem: mingw64
+        update: true
+        install: mingw-w64-x86_64-gcc
 
     # Download and setup DuckDB for Windows
     - name: Setup DuckDB (Windows)
