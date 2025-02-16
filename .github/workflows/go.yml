@@ -29,25 +29,16 @@ jobs:
     # Add these steps for Windows
     - name: Set up MinGW
       if: matrix.os == 'windows-latest'
-      uses: msys2/setup-msys2@v2
+      uses: egor-tensin/setup-mingw@v2
       with:
-        msystem: mingw64
-        update: true
-        install: mingw-w64-x86_64-gcc
+        platform: x64
 
     # Download and setup DuckDB for Windows
     - name: Setup DuckDB (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.9.2/duckdb_cli-windows-amd64.zip
-        unzip duckdb.zip
-        # Copy and rename files to match MinGW expectations
-        copy duckdb.dll desktopcollector\libduckdb.dll
-        copy duckdb.lib desktopcollector\libduckdb.a
-        copy duckdb.h desktopcollector\
+        choco install duckdb
         # Set environment variables for CGO
-        echo "CGO_LDFLAGS=-L${PWD}\desktopcollector -lduckdb" >> $env:GITHUB_ENV
-        echo "CGO_CFLAGS=-I${PWD}\desktopcollector" >> $env:GITHUB_ENV
         echo "CGO_ENABLED=1" >> $env:GITHUB_ENV
 
     # Build step
