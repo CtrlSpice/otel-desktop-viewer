@@ -39,18 +39,15 @@ jobs:
     - name: Setup DuckDB (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.9.2/libduckdb-windows-amd64.zip
+        curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.9.2/duckdb-windows-amd64.zip
         unzip duckdb.zip
-        # Create lib directory in MINGW
-        mkdir C:\mingw64\lib
-        mkdir C:\mingw64\include
-        # Copy files to standard locations
-        copy duckdb.dll C:\Windows\System32\libduckdb.dll
-        copy duckdb.lib C:\mingw64\lib\libduckdb.a
-        copy duckdb.h C:\mingw64\include\
+        # Copy files to build directory
+        copy duckdb.dll desktopcollector\
+        copy duckdb.lib desktopcollector\
+        copy duckdb.h desktopcollector\
         # Set environment variables for CGO
-        echo "CGO_LDFLAGS=-LC:/mingw64/lib -lduckdb" >> $env:GITHUB_ENV
-        echo "CGO_CFLAGS=-IC:/mingw64/include" >> $env:GITHUB_ENV
+        echo "CGO_LDFLAGS=-L${PWD}\desktopcollector -lduckdb" >> $env:GITHUB_ENV
+        echo "CGO_CFLAGS=-I${PWD}\desktopcollector" >> $env:GITHUB_ENV
         echo "CGO_ENABLED=1" >> $env:GITHUB_ENV
 
     # Build step
