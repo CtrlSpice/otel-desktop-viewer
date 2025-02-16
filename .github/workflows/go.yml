@@ -8,15 +8,10 @@ on: push
 jobs:
 
   build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        # os: [ubuntu-latest, macos-latest, windows-latest]
-        os: [windows-latest]
-        include:
-          - os: windows-latest
-            env:
-              NO_WINDOWS_SERVICE: 0
+    runs-on: windows-latest
+    # strategy:
+    #   matrix:
+    #     os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
     - uses: actions/checkout@v4
 
@@ -25,36 +20,23 @@ jobs:
       with:
         go-version: '1.23'
 
-    # Install Visual C++ build tools
-    - name: Install Visual C++ Build Tools
-      uses: microsoft/setup-msbuild@v1.1
-
-    # Download and setup DuckDB for Windows
-    - name: Setup DuckDB (Windows)
+    - name: Download DuckDB
       shell: cmd
       run: |
-        curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.10.0/libduckdb-windows-amd64.zip
-        unzip duckdb.zip
+        curl -L -o libduckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.10.0/libduckdb-windows-amd64.zip
+        unzip libduckdb.zip
         mkdir C:\duckdb
         copy duckdb.dll "C:\duckdb\duckdb.dll"
-        copy duckdb.lib "C:\duckdb\duckdb.lib"
-        copy duckdb.h "C:\duckdb\duckdb.h"
-        findstr "duckdb_appender" "C:\duckdb\duckdb.h"
-        set CGO_ENABLED=1
-        set CGO_LDFLAGS=-L C:\duckdb -lduckdb
-        set CGO_CFLAGS=-I C:\duckdb
         set PATH=C:\duckdb;%PATH%
 
-    # Build step
     - name: Build
       run: |
         cd desktopcollector
         go version
-        go build -v -o ..\otel-desktop-viewer
+        go build -v -tags=duckdb_use_lib -o ..\otel-desktop-viewer
       env:
         CGO_ENABLED: 1
         CGO_LDFLAGS: -L C:\duckdb -lduckdb
-        CGO_CFLAGS: -I C:\duckdb
 
     - name: Exporter Go Tests
       run: cd desktopexporter; go test ./...
