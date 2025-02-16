@@ -30,25 +30,24 @@ jobs:
       with:
         msystem: mingw64
         update: true
-        install: mingw-w64-x86_64-gcc
+        install: >-
+          git
+          mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-ninja
 
-    # Download and setup DuckDB for Windows
-    - name: Setup DuckDB (Windows)
-      if: matrix.os == 'windows-latest'
-      shell: cmd
+    # Build DuckDB from source
+    - name: Build DuckDB
+      shell: msys2 {0}
       run: |
-        curl -L -o duckdb.zip https://github.com/duckdb/duckdb/releases/download/v0.9.2/libduckdb-windows-amd64.zip
-        unzip duckdb.zip
-        copy duckdb.dll "C:\msys64\mingw64\bin\"
-        echo LIBRARY duckdb.dll > duckdb.def
-        echo EXPORTS >> duckdb.def
-        C:\msys64\mingw64\bin\gendef.exe C:\msys64\mingw64\bin\duckdb.dll >> duckdb.def
-        C:\msys64\mingw64\bin\dlltool.exe -d duckdb.def -l C:\msys64\mingw64\lib\libduckdb.a
-        copy duckdb.h "C:\msys64\mingw64\include\"
-        set CGO_ENABLED=1
-        set CGO_LDFLAGS=-L C:/msys64/mingw64/lib -lduckdb
-        set CGO_CFLAGS=-I C:/msys64/mingw64/include
-        gcc --version
+        git clone https://github.com/duckdb/duckdb
+        cd duckdb
+        cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_EXTENSIONS="icu;parquet;json"
+        cmake --build . --config Release
+        # Copy the built library files
+        cp build/Release/src/libduckdb.dll /mingw64/bin/
+        cp build/Release/src/libduckdb.a /mingw64/lib/
+        cp src/include/duckdb.h /mingw64/include/
 
     # Build step
     - name: Build
