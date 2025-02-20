@@ -31,6 +31,7 @@ func NewFactory() exporter.Factory {
 func createDefaultConfig() component.Config {
 	return &Config{
 		Endpoint: defaultEndpoint,
+		DbPath:   "", // Default to in-memory mode
 	}
 }
 
