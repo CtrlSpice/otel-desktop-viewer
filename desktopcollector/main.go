@@ -66,7 +66,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 				`yaml:receivers::otlp::protocols::grpc::endpoint: ` + hostFlag + `:` + strconv.Itoa(grpcPortFlag),
 				`yaml:exporters::desktop:`,
 				`yaml:exporters::desktop::endpoint: ` + hostFlag + `:` + strconv.Itoa(browserPortFlag),
-				`yaml:exporters::desktop::db: ` + dbFlag,
+				`yaml:exporters::desktop::dbpath: ` + dbFlag,
 				`yaml:service::pipelines::traces::receivers: [otlp]`,
 				`yaml:service::pipelines::traces::exporters: [desktop]`,
 				`yaml:service::pipelines::metrics::receivers: [otlp]`,
