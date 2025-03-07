@@ -1,11 +1,8 @@
-FROM golang:1.24 AS golang
-
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get -y update
+FROM golang:1.24-alpine AS golang
 
 RUN go install github.com/CtrlSpice/otel-desktop-viewer@latest
 
-FROM ubuntu:24.04
+FROM alpine:3
 
 COPY --from=golang /go/bin/otel-desktop-viewer /root/otel-desktop-viewer
 
