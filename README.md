@@ -42,6 +42,60 @@ Running the CLI will open a browser tab to `localhost:8000` to load the UI,
 and spin up a server listening on `localhost:4318` for OTLP http payloads and
 `localhost:4317` for OTLP grpc payloads.
 
+#### via Docker
+
+The included `Dockerfile` will build a relatively slim image you can use to run otel-desktop-viewer without
+using Homebrew or setting up Go.
+
+To build the image
+
+* [Install Docker](https://docs.docker.com/get-started/)
+  - For Windows or Mac, you likely want Docker Desktop
+  - For Linux, Docker Engine is fine, but do read the [post-install instructions](https://docs.docker.com/engine/install/linux-postinstall/) so that you can run Docker as your user
+* Build the image. You'll need a tag so you can reference it.
+
+  ```
+  > docker build --tag otel-desktop-viewer:alpine-3
+  ```
+
+To use the image, you have a few options:
+
+* **Run it so apps on your computer can access it**:
+
+  ```
+  docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 davetron5000/otel-desktop-viewer:alpine-3
+  ```
+
+  The `-p` arguments map otel-desktop-viewers ports to the same ports on localhost.  When you do this, you would
+  access the web UI via `localhost:8000` and use `localhost:4318` or `localhost:4319` to export to.
+* **Run it in docker compose as part of a devcontainer-based environment**. Here, the app you are working on
+that is sending telemetry is running as a Docker container.  You can use Docker compose to allow that app to
+export to your otel-desktop-viewer, but still access its web UI on your computer. A very simplified
+`docker-compose.yml`:
+
+  ```yaml
+  services:
+    app:
+      image: your-apps-image-tag
+      # probably more config based on the app
+    otel-desktop-viewer:
+      image: otel-desktop-viewer:alpine-3 # or whatever you used for docker build
+      ports:
+        - "8000:8000"
+  ```
+
+  With this setup:
+  - `localhost:8000` is the web UI
+  - `otel-desktop-viewer:4318` and `otel-desktop-viewer:4319` are where your app should export to. The hostname
+  is based on the key in the docker compose YAML file.
+  - Your computer cannot access ports 4318 or 4319 (but, it shouldn't need to)
+
+To update your local copy when this repo changes:
+
+* Update from GitHub
+* Rebuild the image based on instructions above. It will overwrite the previous image
+* Stop and restart all containers using the image
+
 ## Command Line Options
 ```bash
 Flags:
