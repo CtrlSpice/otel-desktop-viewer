@@ -77,7 +77,7 @@ const (
 	SELECT_TRACE_SUMMARIES = `
         SELECT DISTINCT ON (s.traceID)
             s.traceID,
-            CASE WHEN s.parentSpanID = '' THEN CAST(s.resourceAttributes['service.name'][1] AS VARCHAR) END as service_name,
+            CASE WHEN s.parentSpanID = '' THEN CAST(s.resourceAttributes['service.name'] AS VARCHAR) END as service_name,
             CASE WHEN s.parentSpanID = '' THEN s.name END as root_name,
             CASE WHEN s.parentSpanID = '' THEN s.startTime END as start_time,
             CASE WHEN s.parentSpanID = '' THEN s.endTime END as end_time,

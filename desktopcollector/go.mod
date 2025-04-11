@@ -1,6 +1,6 @@
 module github.com/CtrlSpice/otel-desktop-viewer/desktopcollector
 
-go 1.23.0
+go 1.24
 
 require (
 	github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.0.0-20241007201340-685513a8f94c

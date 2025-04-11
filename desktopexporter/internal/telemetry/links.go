@@ -7,17 +7,16 @@ type LinkPayload struct {
 }
 
 type LinkData struct {
-	TraceID                string                 `json:"traceID"`
-	SpanID                 string                 `json:"spanID"`
-	TraceState             string                 `json:"traceState"`
-	Attributes             map[string]interface{} `json:"attributes"`
-	DroppedAttributesCount uint32                 `json:"droppedAttributesCount"`
+	TraceID                string         `json:"traceID"`
+	SpanID                 string         `json:"spanID"` 
+	TraceState             string         `json:"traceState"`
+	Attributes             map[string]any `json:"attributes"`
+	DroppedAttributesCount uint32         `json:"droppedAttributesCount"`
 }
 
 func (payload *LinkPayload) ExtractLinks() []LinkData {
 	linkDataSlice := []LinkData{}
-
-	for i := 0; i < payload.links.Len(); i++ {
+	for i := range payload.links.Len() {
 		linkDataSlice = append(linkDataSlice, aggregateLinkData(payload.links.At(i)))
 	}
 

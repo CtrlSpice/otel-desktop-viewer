@@ -36,10 +36,15 @@ func setupWithTrace(t *testing.T) (*httptest.Server, func(*testing.T)) {
 		Kind:         "",
 		StartTime:    time.Now(),
 		EndTime:      time.Now().Add(time.Second),
-		Attributes:   map[string]interface{}{},
+		Attributes:   map[string]any{},
 		Events:       []telemetry.EventData{},
 		Links:        []telemetry.LinkData{},
-		Resource:     &telemetry.ResourceData{Attributes: map[string]any{"service.name": "pumpkin.pie"}, DroppedAttributesCount: 0},
+		Resource: &telemetry.ResourceData{
+			Attributes: map[string]any{
+				"service.name": "pumpkin.pie",
+			},
+			DroppedAttributesCount: 0,
+		},
 		Scope: &telemetry.ScopeData{
 			Name:                   "test.scope",
 			Version:                "1",

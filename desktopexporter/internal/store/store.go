@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/marcboeker/go-duckdb"
+	"github.com/marcboeker/go-duckdb/v2"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )

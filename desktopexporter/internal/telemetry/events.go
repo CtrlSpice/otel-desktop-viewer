@@ -11,10 +11,10 @@ type EventPayload struct {
 }
 
 type EventData struct {
-	Name                   string                 `json:"name"`
-	Timestamp              time.Time              `json:"timestamp"`
-	Attributes             map[string]interface{} `json:"attributes"`
-	DroppedAttributesCount uint32                 `json:"droppedAttributesCount"`
+	Name                   string         `json:"name"`
+	Timestamp              time.Time      `json:"timestamp"`
+	Attributes             map[string]any `json:"attributes"`
+	DroppedAttributesCount uint32         `json:"droppedAttributesCount"`
 }
 
 func (payload *EventPayload) extractEvents() []EventData {
