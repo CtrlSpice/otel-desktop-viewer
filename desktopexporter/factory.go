@@ -14,6 +14,7 @@ import (
 
 const (
 	defaultEndpoint = "localhost:8000"
+	defaultDbPath   = ""
 )
 
 // Creates a factory for the Desktop Exporter
@@ -31,6 +32,7 @@ func NewFactory() exporter.Factory {
 func createDefaultConfig() component.Config {
 	return &Config{
 		Endpoint: defaultEndpoint,
+		Db:   "",
 	}
 }
 
@@ -109,6 +111,7 @@ func createTracesExporter(ctx context.Context, set exporter.Settings, config com
 		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),
 		exporterhelper.WithQueue(exporterhelper.QueueSettings{Enabled: false}),
 		exporterhelper.WithStart(e.Start),
+		exporterhelper.WithShutdown(e.Shutdown),
 	)
 }
 

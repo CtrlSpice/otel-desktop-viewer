@@ -62,6 +62,34 @@ const (
 		statusCode VARCHAR, 
 		statusMessage VARCHAR)
 	`
+
+	INSERT_SPANS string = `
+		INSERT INTO spans (
+			traceID, 
+			traceState, 
+			spanID, 
+			parentSpanID, 
+			name, 
+			kind, 
+			startTime, 
+			endTime, 
+			attributes, 
+			events, 
+			links, 
+			resourceAttributes, 
+			resourceDroppedAttributesCount, 
+			scopeName, 
+			scopeVersion, 
+			scopeAttributes, 
+			scopeDroppedAttributesCount,
+			droppedAttributesCount, 
+			droppedEventsCount, 
+			droppedLinksCount,
+			statusCode, 
+			statusMessage
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::JSON::MAP(VARCHAR, attribute), ?::JSON::event[], ?::JSON::link[], 
+		 ?::JSON::MAP(VARCHAR, attribute), ?, ?, ?, ?::JSON::MAP(VARCHAR, attribute), ?, ?, ?, ?, ?, ?)	 
+	`
 	// SELECT_TRACE_SUMMARIES retrieves all traces ordered by:
 	// - Root span start time when available
 	// - Earliest span start time when no root span exists
@@ -91,8 +119,8 @@ const (
             s.traceID
     `
 
-	// DuckDB's Go bindings have limited support for complex types like UNIONs and STRUCTs
-	// So we need to cast the attributes to VARCHAR and then parse them back into the original type
+	// DuckDB's Go bindings have limited support for UNIONs
+	// So we need to cast the attributes to JSON and then parse them back into the original type
 	SELECT_TRACE string = `
 		SELECT 
 			traceID, 
@@ -103,14 +131,14 @@ const (
 			kind, 
 			startTime, 
 			endTime,
-			attributes::VARCHAR,
-			events::VARCHAR,
-			links::VARCHAR,
-			resourceAttributes::VARCHAR,
+			attributes::JSON,
+			events::JSON,
+			links::JSON,
+			resourceAttributes::JSON,
 			resourceDroppedAttributesCount,
 			scopeName,
 			scopeVersion,
-			scopeAttributes::VARCHAR,
+			scopeAttributes::JSON,
 			scopeDroppedAttributesCount,
 			droppedAttributesCount,
 			droppedEventsCount,
