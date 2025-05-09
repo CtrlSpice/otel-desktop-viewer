@@ -59,12 +59,11 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:          set.BuildInfo.Command,
 		Version:      set.BuildInfo.Version,
-		SilenceUsage: true,
+		SilenceUsage: false,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set.ConfigProviderSettings.ResolverSettings.URIs = []string{
 				`yaml:receivers::otlp::protocols::http::endpoint: ` + hostFlag + `:` + strconv.Itoa(httpPortFlag),
 				`yaml:receivers::otlp::protocols::grpc::endpoint: ` + hostFlag + `:` + strconv.Itoa(grpcPortFlag),
-				`yaml:exporters::desktop:`,
 				`yaml:exporters::desktop::endpoint: ` + hostFlag + `:` + strconv.Itoa(browserPortFlag),
 				`yaml:exporters::desktop::db: ` + dbFlag,
 				`yaml:service::pipelines::traces::receivers: [otlp]`,

@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultEndpoint = "localhost:8000"
-	defaultDbPath   = ""
+	defaultDb   = ""
 )
 
 // Creates a factory for the Desktop Exporter
@@ -32,7 +32,7 @@ func NewFactory() exporter.Factory {
 func createDefaultConfig() component.Config {
 	return &Config{
 		Endpoint: defaultEndpoint,
-		Db:   "",
+		Db:       defaultDb,
 	}
 }
 
@@ -54,14 +54,12 @@ func createMetricsExporter(ctx context.Context, set exporter.Settings, config co
 		return nil, err
 	}
 
-	return exporterhelper.NewMetricsExporter(
+	return exporterhelper.NewMetrics(
 		ctx,
 		set,
 		desktopCfg,
 		exporter.Unwrap().pushMetrics,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
-		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),
-		exporterhelper.WithQueue(exporterhelper.QueueSettings{Enabled: false}),
 		exporterhelper.WithStart(exporter.Start),
 	)
 }
@@ -80,12 +78,9 @@ func createLogsExporter(ctx context.Context, set exporter.Settings, config compo
 		return nil, err
 	}
 
-	return exporterhelper.NewLogsExporter(ctx, set, cfg,
+	return exporterhelper.NewLogs(ctx, set, cfg,
 		e.Unwrap().pushLogs,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
-		// Disable Timeout/RetryOnFailure and SendingQueue
-		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),
-		exporterhelper.WithQueue(exporterhelper.QueueSettings{Enabled: false}),
 		exporterhelper.WithStart(e.Start),
 	)
 }
@@ -104,12 +99,10 @@ func createTracesExporter(ctx context.Context, set exporter.Settings, config com
 		return nil, err
 	}
 
-	return exporterhelper.NewTracesExporter(ctx, set, cfg,
+	return exporterhelper.NewTraces(ctx, set, cfg,
 		e.Unwrap().pushTraces,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
-		// Disable Timeout/RetryOnFailure and SendingQueue
-		exporterhelper.WithTimeout(exporterhelper.TimeoutSettings{Timeout: 0}),
-		exporterhelper.WithQueue(exporterhelper.QueueSettings{Enabled: false}),
+		exporterhelper.WithTimeout(exporterhelper.TimeoutConfig{Timeout: 0}),
 		exporterhelper.WithStart(e.Start),
 		exporterhelper.WithShutdown(e.Shutdown),
 	)
