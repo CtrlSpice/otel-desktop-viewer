@@ -12,7 +12,7 @@ env:
   - CGO_ENABLED=1
 
 builds:
-  - id: collector
+  - id: macOS
     main: ./desktopcollector/
     binary: otel-desktop-viewer
     goos:
@@ -25,7 +25,7 @@ builds:
       - CC=o64-clang
       - CXX=o64-clang++
 
-  - id: collector-linux
+  - id: linux
     main: ./desktopcollector/
     binary: otel-desktop-viewer
     goos:
