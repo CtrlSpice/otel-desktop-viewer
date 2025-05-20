@@ -1,13 +1,5 @@
 version: 2
 
-before:
-  hooks:
-    - name: Update exporter dependency
-      run: |
-        cd desktopcollector
-        go get github.com/CtrlSpice/otel-desktop-viewer/desktopexporter@latest
-        go mod tidy
-
 env:
   - CGO_ENABLED=1
 
@@ -33,10 +25,8 @@ builds:
       - CGO_ENABLED=1
 
 archives:
-  - builds_info:
-      - id: linux
-      - id: darwin
-    formats: [tar.gz]
+  - id: otel-desktop-viewer-archive
+    format: tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}MacOS
@@ -45,16 +35,16 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
 
-brews:
-  - name: otel-desktop-viewer
-    github:
-      owner: CtrlSpice
-      name: homebrew-tap
-    homepage: https://github.com/CtrlSpice/otel-desktop-viewer
-    description: OpenTelemetry Desktop Viewer
-    license: MIT
-    test: |
-      system "#{bin}/otel-desktop-viewer", "--version"
+# brews:
+#   - name: otel-desktop-viewer
+#     tap:
+#       owner: CtrlSpice
+#       name: homebrew-tap
+#     homepage: https://github.com/CtrlSpice/otel-desktop-viewer
+#     description: OpenTelemetry Desktop Viewer
+#     license: MIT
+#     test: |
+#       system "#{bin}/otel-desktop-viewer", "--version"
 
 changelog:
   sort: asc
