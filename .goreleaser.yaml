@@ -12,45 +12,31 @@ env:
   - CGO_ENABLED=1
 
 builds:
-  - id: linux-amd64
+  - id: linux
     main: ./desktopcollector/
     binary: otel-desktop-viewer
-    goos: linux
-    goarch: amd64
+    goos: [linux]
+    goarch:
+      - amd64
+      - arm64
     env:
       - CGO_ENABLED=1
 
-  - id: linux-arm64
+  - id: darwin
     main: ./desktopcollector/
     binary: otel-desktop-viewer
-    goos: linux
-    goarch: arm64
-    env:
-      - CGO_ENABLED=1
-
-  - id: darwin-amd64
-    main: ./desktopcollector/
-    binary: otel-desktop-viewer
-    goos: darwin
-    goarch: amd64
-    env:
-      - CGO_ENABLED=1
-
-  - id: darwin-arm64
-    main: ./desktopcollector/
-    binary: otel-desktop-viewer
-    goos: darwin
-    goarch: arm64
+    goos: [darwin]
+    goarch:
+      - amd64
+      - arm64
     env:
       - CGO_ENABLED=1
 
 archives:
   - builds_info:
-      - id: linux-amd64
-      - id: linux-arm64
-      - id: darwin-amd64
-      - id: darwin-arm64
-    format: tar.gz
+      - id: linux
+      - id: darwin
+    formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}MacOS
@@ -61,10 +47,9 @@ archives:
 
 brews:
   - name: otel-desktop-viewer
-    tap:
+    github:
       owner: CtrlSpice
       name: homebrew-tap
-    folder: Formula
     homepage: https://github.com/CtrlSpice/otel-desktop-viewer
     description: OpenTelemetry Desktop Viewer
     license: MIT

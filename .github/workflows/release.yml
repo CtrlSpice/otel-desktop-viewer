@@ -37,7 +37,15 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: 1.24.2
+          cache: false
+
+      - name: Generate go.sum
+        run: |
+          cd desktopcollector
+          go mod tidy
+          cd ../desktopexporter
+          go mod tidy
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
