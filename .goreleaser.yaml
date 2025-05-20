@@ -12,27 +12,35 @@ env:
   - CGO_ENABLED=1
 
 builds:
-  - id: macOS
+  - id: linux-amd64
     main: ./desktopcollector/
     binary: otel-desktop-viewer
-    goos:
-      - darwin
-    goarch:
-      - arm64
-      - amd64
+    goos: linux
+    goarch: amd64
     env:
       - CGO_ENABLED=1
-      - CC=o64-clang
-      - CXX=o64-clang++
 
-  - id: linux
+  - id: linux-arm64
     main: ./desktopcollector/
     binary: otel-desktop-viewer
-    goos:
-      - linux
-    goarch:
-      - amd64
-      - arm64
+    goos: linux
+    goarch: arm64
+    env:
+      - CGO_ENABLED=1
+
+  - id: darwin-amd64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos: darwin
+    goarch: amd64
+    env:
+      - CGO_ENABLED=1
+
+  - id: darwin-arm64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos: darwin
+    goarch: arm64
     env:
       - CGO_ENABLED=1
 
@@ -40,7 +48,8 @@ archives:
   - formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_
-      {{- title .Os }}_
+      {{- if eq .Os "darwin" }}MacOS
+      {{- else }}{{ title .Os }}{{ end }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
@@ -55,7 +64,7 @@ brews:
     description: OpenTelemetry Desktop Viewer
     license: MIT
     test: |
-      system "#{bin}/otel-desktop-viewer", "--version" if OS.linux?
+      system "#{bin}/otel-desktop-viewer", "--version"
 
 changelog:
   sort: asc
