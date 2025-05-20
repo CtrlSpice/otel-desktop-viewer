@@ -8,3 +8,5 @@ desktopexporter/internal/app/node_modules
 *.tmp/
 help
 
+# Added by goreleaser init:
+dist/

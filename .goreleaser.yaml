@@ -1,0 +1,72 @@
+version: 2
+
+before:
+  hooks:
+    - name: Update exporter dependency
+      run: |
+        cd desktopcollector
+        go get github.com/CtrlSpice/otel-desktop-viewer/desktopexporter@latest
+        go mod tidy
+
+env:
+  - CGO_ENABLED=1
+
+builds:
+  - id: collector
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos:
+      - darwin
+    goarch:
+      - arm64
+      - amd64
+    env:
+      - CGO_ENABLED=1
+      - CC=o64-clang
+      - CXX=o64-clang++
+
+  - id: collector-linux
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=1
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+
+brews:
+  - name: otel-desktop-viewer
+    tap:
+      owner: CtrlSpice
+      name: homebrew-tap
+    folder: Formula
+    homepage: https://github.com/CtrlSpice/otel-desktop-viewer
+    description: OpenTelemetry Desktop Viewer
+    license: MIT
+    test: |
+      system "#{bin}/otel-desktop-viewer", "--version" if OS.linux?
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  footer: >-
+
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

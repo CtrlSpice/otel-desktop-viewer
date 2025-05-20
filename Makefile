@@ -1,3 +1,6 @@
+PACKAGE_NAME         := github.com/CtrlSpice/otel-desktop-viewer
+GOLANG_CROSS_VERSION ?= v1.24.2
+
 .PHONY: install
 install:
 	cd desktopexporter/internal/app; npm install
