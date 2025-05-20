@@ -13,6 +13,8 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=1
+    ignore:
+      - goos: darwin
 
   - id: darwin
     main: ./desktopcollector/
@@ -23,10 +25,12 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=1
+    ignore:
+      - goos: linux
 
 archives:
   - id: otel-desktop-viewer-archive
-    format: tar.gz
+    formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}MacOS
