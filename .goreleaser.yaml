@@ -45,7 +45,12 @@ builds:
       - CGO_ENABLED=1
 
 archives:
-  - formats: [tar.gz]
+  - builds_info:
+      - id: linux-amd64
+      - id: linux-arm64
+      - id: darwin-amd64
+      - id: darwin-arm64
+    format: tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}MacOS

@@ -43,7 +43,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v5
         with:
           distribution: goreleaser
-          version: v1.24.2
+          version: v2.9.0
           args: release --clean --skip=publish --skip=validate --id=${{ matrix.goos }}-${{ matrix.goarch }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
