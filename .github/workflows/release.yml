@@ -44,7 +44,7 @@ jobs:
         with:
           distribution: goreleaser
           version: v2.9.0
-          args: release --clean --skip=publish --skip=validate --id=${{ matrix.goos }}-${{ matrix.goarch }}
+          args: release --clean --skip=publish --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOS: ${{ matrix.goos }}
