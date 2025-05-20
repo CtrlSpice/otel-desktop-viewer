@@ -2,31 +2,50 @@ version: 2
 
 env:
   - CGO_ENABLED=1
-
 builds:
-  - id: linux
+  - id: otel-desktop-viewer-darwin-amd64
     main: ./desktopcollector/
     binary: otel-desktop-viewer
-    goos: [linux]
+    goos: 
+      - darwin
     goarch:
       - amd64
-      - arm64
     env:
-      - CGO_ENABLED=1
-    ignore:
-      - goos: darwin
+      - CC=o64-clang
+      - CXX=o64-clang++
 
-  - id: darwin
+  - id: otel-desktop-viewer-darwin-arm64
     main: ./desktopcollector/
     binary: otel-desktop-viewer
-    goos: [darwin]
+    goos: 
+      - darwin
     goarch:
-      - amd64
       - arm64
     env:
-      - CGO_ENABLED=1
-    ignore:
-      - goos: linux
+      - CC=oa64-clang
+      - CXX=oa64-clang++
+
+  - id: otel-desktop-viewer-linux-amd64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    env:
+      - CC=x86_64-linux-gnu-gcc
+      - CXX=x86_64-linux-gnu-g++
+    goos:
+      - linux
+    goarch:
+      - amd64
+    
+  - id: otel-desktop-viewer-linux-arm64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos: 
+      - linux
+    goarch:
+      - arm64
+    env:
+      - CC=aarch64-linux-gnu-gcc
+      - CXX=aarch64-linux-gnu-g++
 
 archives:
   - id: otel-desktop-viewer-archive

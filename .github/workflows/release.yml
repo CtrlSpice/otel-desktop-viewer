@@ -11,22 +11,11 @@ permissions:
 
 jobs:
   goreleaser:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - os: ubuntu-latest
-            goos: linux
-            goarch: amd64
-          - os: ubuntu-latest
-            goos: linux
-            goarch: arm64
-          - os: macos-latest
-            goos: darwin
-            goarch: amd64
-          - os: macos-latest
-            goos: darwin
-            goarch: arm64
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
 
     steps:
       - name: Checkout
@@ -40,21 +29,13 @@ jobs:
           go-version: '1.24.2'
           cache: false
 
-      - name: Generate go.sum
-        run: |
-          cd desktopcollector
-          go mod tidy
-          cd ../desktopexporter
-          go mod tidy
-
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
-          distribution: goreleaser
+          distribution: goreleaser-cross
           version: v2.9.0
           args: release --clean --skip=publish --skip=validate
+          image: goreleaser/goreleaser-cross:v1.24.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 1
+
