@@ -50,19 +50,6 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
-    
-  - id: otel-desktop-viewer-linux-arm64
-    main: ./desktopcollector/
-    binary: otel-desktop-viewer
-    goos: 
-      - linux
-    goarch:
-      - arm64
-    mod_timestamp: "{{ .CommitTimestamp }}"
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
 archives:
   - id: otel-desktop-viewer-archive
