@@ -2,6 +2,11 @@ version: 2
 
 env:
   - CGO_ENABLED=1
+
+before:
+  hooks:
+    - cmd: cd desktopcollector && go mod tidy && cd ../desktopexporter && go mod tidy
+
 builds:
   - id: otel-desktop-viewer-darwin-amd64
     main: ./desktopcollector/
@@ -10,9 +15,15 @@ builds:
       - darwin
     goarch:
       - amd64
-    env:
-      - CC=o64-clang
-      - CXX=o64-clang++
+    # Sets binary timestamp to commit time for reproducible builds
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    # Removes file paths from binary for security and portability
+    flags:
+      - -trimpath
+    # -s -w: strips debug info
+    # -X: injects version, commit, and date into binary
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
   - id: otel-desktop-viewer-darwin-arm64
     main: ./desktopcollector/
@@ -21,20 +32,24 @@ builds:
       - darwin
     goarch:
       - arm64
-    env:
-      - CC=oa64-clang
-      - CXX=oa64-clang++
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
   - id: otel-desktop-viewer-linux-amd64
     main: ./desktopcollector/
     binary: otel-desktop-viewer
-    env:
-      - CC=x86_64-linux-gnu-gcc
-      - CXX=x86_64-linux-gnu-g++
     goos:
       - linux
     goarch:
       - amd64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
     
   - id: otel-desktop-viewer-linux-arm64
     main: ./desktopcollector/
@@ -43,9 +58,11 @@ builds:
       - linux
     goarch:
       - arm64
-    env:
-      - CC=aarch64-linux-gnu-gcc
-      - CXX=aarch64-linux-gnu-g++
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
 archives:
   - id: otel-desktop-viewer-archive
@@ -58,16 +75,8 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
 
-# brews:
-#   - name: otel-desktop-viewer
-#     tap:
-#       owner: CtrlSpice
-#       name: homebrew-tap
-#     homepage: https://github.com/CtrlSpice/otel-desktop-viewer
-#     description: OpenTelemetry Desktop Viewer
-#     license: MIT
-#     test: |
-#       system "#{bin}/otel-desktop-viewer", "--version"
+checksum:
+  name_template: "checksums.txt"
 
 changelog:
   sort: asc
@@ -77,8 +86,7 @@ changelog:
       - "^test:"
 
 release:
+  name_template: "v{{ .Version }}"
   footer: >-
-
     ---
-
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
