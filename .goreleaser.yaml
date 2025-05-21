@@ -5,7 +5,7 @@ env:
 
 before:
   hooks:
-    - cmd: cd desktopcollector && go mod tidy && cd ../desktopexporter && go mod tidy
+    - cmd: sh -c "cd desktopcollector && go mod tidy && cd ../desktopexporter && go mod tidy"
 
 builds:
   - id: otel-desktop-viewer-darwin-amd64
