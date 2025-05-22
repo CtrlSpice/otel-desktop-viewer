@@ -1,10 +1,16 @@
 name: Release
 
-on: push
-  # pull_request:
-  # push:
-  #   tags:
-  #     - 'v*'
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Run in test mode (no notifications)'
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -48,7 +54,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: v2.9.0
-          args: release --clean --split --snapshot
+          args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
@@ -57,6 +63,7 @@ jobs:
   release:
     needs: prepare
     runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || !inputs.test_mode
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,7 +92,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: v2.9.0
-          args: continue --merge --snapshot
+          args: continue --merge ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
