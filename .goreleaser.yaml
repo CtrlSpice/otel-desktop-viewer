@@ -5,6 +5,7 @@ env:
 
 before:
   hooks:
+    - cmd: go work sync
     - cmd: sh -c "cd desktopcollector && go mod tidy && cd ../desktopexporter && go mod tidy"
 
 builds:
@@ -60,7 +61,13 @@ archives:
       {{- else }}{{ title .Os }}{{ end }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    builds_info:
+      - id: otel-desktop-viewer-darwin-amd64
+        name: otel-desktop-viewer
+      - id: otel-desktop-viewer-darwin-arm64
+        name: otel-desktop-viewer
+      - id: otel-desktop-viewer-linux-amd64
+        name: otel-desktop-viewer
 
 checksum:
   name_template: "checksums.txt"
