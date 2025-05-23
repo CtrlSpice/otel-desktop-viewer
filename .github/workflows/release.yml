@@ -28,15 +28,15 @@ jobs:
         # ubuntu-24.04-arm -> linux_arm64
         include:
           - os: macos-latest
-            build_ids: [macos]
+            build_id: macos
             goos: darwin
             goarch: [amd64, arm64]
           - os: ubuntu-latest
-            build_ids: [linux_x86_64]
+            build_id: linux_x86_64
             goos: linux
             goarch: amd64
           - os: ubuntu-24.04-arm
-            build_ids: [linux_arm64]
+            build_id: linux_arm64
             goos: linux
             goarch: arm64
     runs-on: ${{ matrix.os }}
@@ -62,7 +62,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: dist/darwin
-          key: darwin-${{ github.sha }}
+          key: darwin-${{ matrix.goarch }}-${{ github.sha }}
         if: matrix.goos == 'darwin'
 
       - name: Cache build artifacts
@@ -77,10 +77,10 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: v2.9.0
-          # The --id flag ensures each runner only builds for its native architecture.
+          # The --id flag ensures each runner only builds for supported architecture.
           # Without it, GoReleaser would try to build for all architectures on each runner, which would
           # cause cross-compilation issues, especially for CGO-enabled builds.
-          args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }} --id ${{ join(matrix.build_ids, ',') }}
+          args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }} --id ${{ matrix.build_id }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
