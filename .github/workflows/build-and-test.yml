@@ -31,12 +31,16 @@ jobs:
       with:
         go-version: 1.24.2
 
+    # MSYS2 provides GCC and build tools needed for CGO compilation on Windows
     - name: Set up MSYS2 (Windows)
       if: matrix.os == 'windows-latest'
       uses: msys2/setup-msys2@v2
       with:
         msystem: UCRT64
         update: true
+        # Required packages:
+        # - mingw-w64-ucrt-x86_64-gcc: GCC compiler for Windows x64 with modern C runtime (UCRT)
+        # - mingw-w64-ucrt-x86_64-toolchain: Complete toolchain including make, binutils, and other build tools
         install: >-
           mingw-w64-ucrt-x86_64-gcc
           mingw-w64-ucrt-x86_64-toolchain
@@ -56,9 +60,4 @@ jobs:
  
     - name: Exporter Go Tests
       run: cd desktopexporter; go test ./...
-
-    # - name: Integration
-    #   run: ./.github/workflows/integration.sh
-    #   shell: bash
-
     

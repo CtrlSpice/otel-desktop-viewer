@@ -55,9 +55,28 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
+  - id: windows_amd64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer.exe
+    goos:
+      - windows
+    goarch:
+      - amd64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+
 archives:
   - id: otel-desktop-viewer-archive
-    formats: [tar.gz]
+    formats: 
+      - tar.gz
+      - zip
+    # Use zip for Windows, tar.gz for others
+    format_overrides:
+      - goos: windows
+        format: zip
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}MacOS
