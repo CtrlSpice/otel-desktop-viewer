@@ -17,6 +17,11 @@ jobs:
             env:
               CGO_ENABLED: 1
               NO_WINDOWS_SERVICE: 0
+          - os: macos-latest
+            env:
+              CGO_ENABLED: 1
+              GOOS: darwin
+              GOARCH: arm64
 
     steps:
     - uses: actions/checkout@v4

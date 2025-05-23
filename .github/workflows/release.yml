@@ -26,6 +26,7 @@ jobs:
         # macos-latest -> macos (both amd64 and arm64)
         # ubuntu-latest -> linux_x86_64
         # ubuntu-24.04-arm -> linux_arm64
+        # windows-latest -> windows_amd64
         include:
           - os: macos-latest
             build_id: macos
@@ -39,6 +40,10 @@ jobs:
             build_id: linux_arm64
             goos: linux
             goarch: arm64
+          - os: windows-latest
+            build_id: windows_amd64
+            goos: windows
+            goarch: amd64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -87,6 +92,28 @@ jobs:
           key: darwin-arm-${{ github.sha }}
         if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
 
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/windows
+          key: windows-${{ github.sha }}
+        if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
+
+      - name: Set up MSYS2 (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-toolchain
+
+      - name: Add MSYS2 to PATH (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -127,6 +154,12 @@ jobs:
         with:
           path: dist/darwin
           key: darwin-${{ github.sha }}
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/windows
+          key: windows-${{ github.sha }}
 
       - name: Complete release
         uses: goreleaser/goreleaser-action@v6
