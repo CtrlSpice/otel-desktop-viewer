@@ -9,9 +9,11 @@ before:
     - cmd: sh -c "cd desktopcollector && go mod tidy && cd ../desktopexporter && go mod tidy"
 
 builds:
-  - id: darwin-amd64
+  - id: macos_intel
     main: ./desktopcollector/
-    binary: "{{ .Os }}/{{ .Arch }}/otel-desktop-viewer"
+    # Using simple binary name as GoReleaser automatically creates unique directories
+    # with build ID and target info (e.g. macos-intel_darwin_amd64)
+    binary: otel-desktop-viewer
     goos: 
       - darwin
     goarch:
@@ -26,9 +28,9 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
-  - id: darwin-arm64
+  - id: macos_silicon
     main: ./desktopcollector/
-    binary: "{{ .Os }}/{{ .Arch }}/otel-desktop-viewer"
+    binary: otel-desktop-viewer
     goos: 
       - darwin
     goarch:
@@ -39,13 +41,26 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
-  - id: linux-amd64
+  - id: linux_x86_64
     main: ./desktopcollector/
-    binary: "{{ .Os }}/{{ .Arch }}/otel-desktop-viewer"
+    binary: otel-desktop-viewer
     goos:
       - linux
     goarch:
       - amd64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+
+  - id: linux_arm64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos:
+      - linux
+    goarch:
+      - arm64
     mod_timestamp: "{{ .CommitTimestamp }}"
     flags:
       - -trimpath
