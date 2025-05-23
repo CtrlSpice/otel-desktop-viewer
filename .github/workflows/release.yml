@@ -62,15 +62,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: dist/darwin
-          key: darwin-${{ matrix.goarch }}-${{ github.sha }}
-        if: matrix.goos == 'darwin'
+          key: darwin-${{ github.sha }}
+        if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
 
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
-          path: dist/linux
-          key: linux-arm-${{ github.sha }}
-        if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
+          path: dist/darwin
+          key: darwin-arm-${{ github.sha }}
+        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -85,8 +85,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
           CGO_ENABLED: 1
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
 
   release:
     needs: prepare
