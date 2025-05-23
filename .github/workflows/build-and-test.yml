@@ -1,0 +1,59 @@
+# This workflow builds and tests the OpenTelemetry Desktop Viewer
+# It ensures the application builds successfully on all supported platforms
+# and runs the test suite for the desktopexporter component.
+
+name: Build and Test
+
+on: push
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: windows-latest
+            env:
+              CGO_ENABLED: 1
+              NO_WINDOWS_SERVICE: 0
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.24.2
+
+    - name: Set up MSYS2 (Windows)
+      if: matrix.os == 'windows-latest'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        install: >-
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-toolchain
+
+    - name: Add MSYS2 to PATH (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
+
+    - name: Build
+      run: cd desktopcollector; go build -o ../otel-desktop-viewer.exe
+      if: matrix.os == 'windows-latest'
+ 
+    - name: Build
+      run: cd desktopcollector; go build -o ../otel-desktop-viewer
+      if: matrix.os != 'windows-latest'
+ 
+    - name: Exporter Go Tests
+      run: cd desktopexporter; go test ./...
+
+    # - name: Integration
+    #   run: ./.github/workflows/integration.sh
+    #   shell: bash
+
+    
