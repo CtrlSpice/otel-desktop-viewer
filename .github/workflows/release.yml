@@ -27,15 +27,12 @@ jobs:
         # macos-latest -> macos_intel, macos_silicon
         # ubuntu-24.04-arm -> linux_arm64
         include:
+          - os: macos-latest
+            goos: darwin
+            goarch: [amd64, arm64]
           - os: ubuntu-latest
             goos: linux
             goarch: amd64
-          - os: macos-latest
-            goos: darwin
-            goarch: amd64
-          - os: macos-latest
-            goos: darwin
-            goarch: arm64
           - os: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
@@ -77,7 +74,14 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: v2.9.0
-          args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
+          # The --target flag is crucial here - it ensures each runner only builds for its native architecture.
+          # Without it, GoReleaser would try to build for all architectures on each runner, which would
+          # cause cross-compilation issues, especially for CGO-enabled builds.
+          args: |
+            release
+            --clean
+            --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
+            --target ${{ matrix.goos }}/${{ matrix.goarch }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
