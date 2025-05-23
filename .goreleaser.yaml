@@ -80,3 +80,28 @@ release:
   footer: >-
     ---
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+
+brews:
+  - name: otel-desktop-viewer
+    # GitHub repository where the formula will be published
+    tap:
+      owner: CtrlSpice
+      name: homebrew-otel-desktop-viewer
+    # Homebrew formula name
+    folder: .
+    # Homebrew formula description
+    description: "OpenTelemetry Desktop Viewer"
+    # Homebrew formula homepage
+    homepage: "https://github.com/CtrlSpice/otel-desktop-viewer"
+    # Homebrew formula license
+    license: "Apache-2.0"
+    # Homebrew formula dependencies
+    dependencies:
+      - go
+    # Homebrew formula test
+    test: |
+      system "#{bin}/otel-desktop-viewer", "--version"
+    # Homebrew formula caveats
+    caveats: |
+      To start the viewer, run:
+        otel-desktop-viewer
