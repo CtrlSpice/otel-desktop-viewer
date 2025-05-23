@@ -26,7 +26,19 @@ jobs:
         # ubuntu-latest -> linux_x86_64
         # macos-latest -> macos_intel, macos_silicon
         # ubuntu-24.04-arm -> linux_arm64
-        os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -44,21 +56,21 @@ jobs:
         with:
           path: dist/linux
           key: linux-${{ github.sha }}
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
 
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
           path: dist/darwin
           key: darwin-${{ github.sha }}
-        if: matrix.os == 'macos-latest'
+        if: matrix.goos == 'darwin'
 
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
           path: dist/linux
           key: linux-arm-${{ github.sha }}
-        if: matrix.os == 'ubuntu-24.04-arm'
+        if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -70,6 +82,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
           CGO_ENABLED: 1
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
 
   release:
     needs: prepare
