@@ -57,7 +57,7 @@ builds:
 
   - id: windows_amd64
     main: ./desktopcollector/
-    binary: otel-desktop-viewer.exe
+    binary: otel-desktop-viewer
     goos:
       - windows
     goarch:
@@ -76,7 +76,7 @@ archives:
     # Use zip for Windows, tar.gz for others
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}MacOS
