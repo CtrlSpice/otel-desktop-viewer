@@ -28,12 +28,19 @@ jobs:
         # ubuntu-24.04-arm -> linux_arm64
         include:
           - os: macos-latest
+            build_id: macos_intel
             goos: darwin
-            goarch: [amd64, arm64]
+            goarch: amd64
+          - os: macos-latest
+            build_id: macos_silicon
+            goos: darwin
+            goarch: arm64
           - os: ubuntu-latest
+            build_id: linux_x86_64
             goos: linux
             goarch: amd64
           - os: ubuntu-24.04-arm
+            build_id: linux_arm64
             goos: linux
             goarch: arm64
     runs-on: ${{ matrix.os }}
@@ -82,6 +89,7 @@ jobs:
             --clean
             --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
             --target ${{ matrix.goos }}/${{ matrix.goarch }}
+            --id ${{ matrix.build_id }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
