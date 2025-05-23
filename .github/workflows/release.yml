@@ -87,7 +87,8 @@ jobs:
           args: |
             release
             --clean
-            --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
+            --split
+            ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
             --target ${{ matrix.goos }}/${{ matrix.goarch }}
             --id ${{ matrix.build_id }}
         env:
