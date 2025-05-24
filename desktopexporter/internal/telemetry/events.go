@@ -11,17 +11,17 @@ type EventPayload struct {
 }
 
 type EventData struct {
-	Name                   string                 `json:"name"`
-	Timestamp              time.Time              `json:"timestamp"`
-	Attributes             map[string]interface{} `json:"attributes"`
-	DroppedAttributesCount uint32                 `json:"droppedAttributesCount"`
+	Name                   string         `json:"name"`
+	Timestamp              time.Time      `json:"timestamp"`
+	Attributes             map[string]any `json:"attributes"`
+	DroppedAttributesCount uint32         `json:"droppedAttributesCount"`
 }
 
 func (payload *EventPayload) extractEvents() []EventData {
 	eventDataSlice := []EventData{}
 
-	for ei := 0; ei < payload.Events.Len(); ei++ {
-		eventDataSlice = append(eventDataSlice, aggregateEventData(payload.Events.At(ei)))
+	for _, event := range payload.Events.All() {
+		eventDataSlice = append(eventDataSlice, aggregateEventData(event))
 	}
 
 	return eventDataSlice

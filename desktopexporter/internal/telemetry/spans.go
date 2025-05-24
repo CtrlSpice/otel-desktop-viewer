@@ -22,11 +22,11 @@ type SpanData struct {
 	StartTime time.Time `json:"startTime"`
 	EndTime   time.Time `json:"endTime"`
 
-	Attributes map[string]interface{} `json:"attributes"`
-	Events     []EventData            `json:"events"`
-	Links      []LinkData             `json:"links"`
-	Resource   *ResourceData          `json:"resource"`
-	Scope      *ScopeData             `json:"scope"`
+	Attributes map[string]any `json:"attributes"`
+	Events     []EventData    `json:"events"`
+	Links      []LinkData     `json:"links"`
+	Resource   *ResourceData  `json:"resource"`
+	Scope      *ScopeData     `json:"scope"`
 
 	DroppedAttributesCount uint32 `json:"droppedAttributesCount"`
 	DroppedEventsCount     uint32 `json:"droppedEventsCount"`
@@ -43,17 +43,13 @@ func NewSpanPayload(t ptrace.Traces) *SpanPayload {
 func (payload *SpanPayload) ExtractSpans() []SpanData {
 	spanSlice := []SpanData{}
 
-	for rsi := 0; rsi < payload.traces.ResourceSpans().Len(); rsi++ {
-		resourceSpan := payload.traces.ResourceSpans().At(rsi)
+	for _, resourceSpan := range payload.traces.ResourceSpans().All() {
 		resourceData := AggregateResourceData(resourceSpan.Resource())
 
-		for ssi := 0; ssi < resourceSpan.ScopeSpans().Len(); ssi++ {
-			scopeSpan := resourceSpan.ScopeSpans().At(ssi)
+		for _, scopeSpan := range resourceSpan.ScopeSpans().All() {
 			scopeData := AggregateScopeData(scopeSpan.Scope())
 
-			for si := 0; si < scopeSpan.Spans().Len(); si++ {
-				span := scopeSpan.Spans().At(si)
-
+			for _, span := range scopeSpan.Spans().All() {
 				eventsPayload := EventPayload{span.Events()}
 				eventData := eventsPayload.extractEvents()
 
@@ -67,7 +63,7 @@ func (payload *SpanPayload) ExtractSpans() []SpanData {
 	return spanSlice
 }
 
-func aggregateSpanData(source ptrace.Span, eventData []EventData, LinkData []LinkData, scopeData *ScopeData, resourceData *ResourceData) SpanData {
+func aggregateSpanData(source ptrace.Span, eventData []EventData, linkData []LinkData, scopeData *ScopeData, resourceData *ResourceData) SpanData {
 	return SpanData{
 		TraceID:    source.TraceID().String(),
 		TraceState: source.TraceState().AsRaw(),
@@ -81,7 +77,7 @@ func aggregateSpanData(source ptrace.Span, eventData []EventData, LinkData []Lin
 		Attributes:   source.Attributes().AsRaw(),
 
 		Events:   eventData,
-		Links:    LinkData,
+		Links:    linkData,
 		Scope:    scopeData,
 		Resource: resourceData,
 
@@ -98,10 +94,10 @@ func aggregateSpanData(source ptrace.Span, eventData []EventData, LinkData []Lin
 // service.name must be a string value having a meaning that helps to distinguish a group of services.
 // Read more here: (https://opentelemetry.io/docs/reference/specification/resource/semantic_conventions/#service)
 func (spanData *SpanData) GetServiceName() string {
-	serviceName, ok := spanData.Resource.Attributes["service.name"].(string)
+	serviceName, ok := spanData.Resource.Attributes["service.name"]
 	if !ok {
 		fmt.Println("traceID:", spanData.TraceID, "spanID:", spanData.SpanID, ErrInvalidServiceName)
 		return ""
 	}
-	return serviceName
+	return serviceName.(string)
 }

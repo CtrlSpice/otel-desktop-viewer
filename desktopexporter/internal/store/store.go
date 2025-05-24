@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/marcboeker/go-duckdb"
+	"github.com/marcboeker/go-duckdb/v2"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
@@ -73,26 +73,29 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
+	// Prepare the statement once for all spans
+	stmt, err := s.db.PrepareContext(ctx, INSERT_SPANS)
+	if err != nil {
+		return fmt.Errorf("could not prepare statement: %v", err)
+	}
+	defer stmt.Close()
+
 	for _, span := range spans {
-		// Convert attributes to DuckDB MAP format
-		attributes := mapToString(span.Attributes)
-		resourceAttrs := mapToString(span.Resource.Attributes)
-		scopeAttrs := mapToString(span.Scope.Attributes)
+		// Convert attributes and Structs that contain attributes 
+		// to JSON format compatible with DUCKDB's UNION type
+		attributes := MarshalAttributes(span.Attributes)
+		resourceAttrs := MarshalAttributes(span.Resource.Attributes)
+		scopeAttrs := MarshalAttributes(span.Scope.Attributes)
+		events := MarshalEvents(span.Events)
+		links := MarshalLinks(span.Links)
 
-		// Convert events and links to DuckDB [STRUCT(...)] format
-		events := eventToString(span.Events)
-		links := linkToString(span.Links)
-
-		// Build raw query structure with field names because
-		// Go-DuckDB doesn't support parameterized queries with UNION types
-		query := fmt.Sprintf(`INSERT INTO spans
-			VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', %s, %s, %s, %s, %d, '%s', '%s', %s, %d, %d, %d, %d, '%s', '%s')`,
-			escapeString(span.TraceID),
-			escapeString(span.TraceState),
-			escapeString(span.SpanID),
-			escapeString(span.ParentSpanID),
-			escapeString(span.Name),
-			escapeString(span.Kind),
+		_, err := stmt.ExecContext(ctx,
+			span.TraceID,
+			span.TraceState,
+			span.SpanID,
+			span.ParentSpanID,
+			span.Name,
+			span.Kind,
 			span.StartTime.Format(time.RFC3339Nano),
 			span.EndTime.Format(time.RFC3339Nano),
 			attributes,
@@ -100,19 +103,18 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 			links,
 			resourceAttrs,
 			span.Resource.DroppedAttributesCount,
-			escapeString(span.Scope.Name),
-			escapeString(span.Scope.Version),
+			span.Scope.Name,
+			span.Scope.Version,
 			scopeAttrs,
 			span.Scope.DroppedAttributesCount,
 			span.DroppedAttributesCount,
 			span.DroppedEventsCount,
 			span.DroppedLinksCount,
-			escapeString(span.StatusCode),
-			escapeString(span.StatusMessage),
+			span.StatusCode,
+			span.StatusMessage,
 		)
-
-		if _, err := s.db.Exec(query); err != nil {
-			return fmt.Errorf("could not append row to spans: %s/n%s", err.Error(), query)
+		if err != nil {
+			return fmt.Errorf("could not append row to spans: %v", err)
 		}
 	}
 	return nil
@@ -126,29 +128,33 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 
 	rows, err := s.db.QueryContext(ctx, SELECT_TRACE, traceID)
 	if err != nil {
-		log.Fatalf("could not retrieve spans: %s", err.Error())
+		return trace, fmt.Errorf("could not retrieve spans: %v", err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
 		span := telemetry.SpanData{
 			Resource: &telemetry.ResourceData{
-				Attributes:             map[string]interface{}{},
+				Attributes:             map[string]any{},
 				DroppedAttributesCount: 0,
 			},
 			Scope: &telemetry.ScopeData{
 				Name:                   "",
 				Version:                "",
-				Attributes:             map[string]interface{}{},
+				Attributes:             map[string]any{},
 				DroppedAttributesCount: 0,
 			},
 		}
 
-		// DuckDB's Go bindings have limited support for complex types like UNIONs and STRUCTs
-		// So we need to cast the attributes and structs to VARCHAR and then parse them back into the original type
+		// DuckDB's Go bindings have no support for UNIONs
+		// So we are leveraging duckdb's json functionality to fool it into doing the right thing
 		var (
-			rawAttributes, rawResourceAttributes, rawScopeAttributes,
-			rawEvents, rawLinks string
+			rawAttributes duckdb.Composite[map[string]any]
+			rawResourceAttributes duckdb.Composite[map[string]any]
+			rawScopeAttributes duckdb.Composite[map[string]any]
+
+			rawEvents duckdb.Composite[[]any]
+			rawLinks duckdb.Composite[[]any]
 		)
 
 		if err = rows.Scan(
@@ -175,15 +181,15 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			&span.StatusCode,
 			&span.StatusMessage,
 		); err != nil {
-			return trace, fmt.Errorf("could not scan spans: %s", err.Error())
+			return trace, fmt.Errorf("could not scan spans: %v", err)
 		}
 
-		span.Attributes = parseRawAttributes(rawAttributes)
-		span.Resource.Attributes = parseRawAttributes(rawResourceAttributes)
-		span.Scope.Attributes = parseRawAttributes(rawScopeAttributes)
+		span.Attributes = parseRawAttributes(rawAttributes.Get())
+		span.Resource.Attributes = parseRawAttributes(rawResourceAttributes.Get())
+		span.Scope.Attributes = parseRawAttributes(rawScopeAttributes.Get())
 
-		span.Events = parseRawEvents(rawEvents)
-		span.Links = parseRawLinks(rawLinks)
+		span.Events = parseRawEvents(rawEvents.Get())
+		span.Links = parseRawLinks(rawLinks.Get())
 
 		trace.Spans = append(trace.Spans, span)
 	}

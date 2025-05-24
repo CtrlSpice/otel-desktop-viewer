@@ -7,4 +7,4 @@ desktopexporter/internal/app/node_modules
 *.wal
 *.tmp/
 help
-go.work*
+
