@@ -32,16 +32,13 @@ func NewLogsPayload(l plog.Logs) *LogsPayload {
 func (payload *LogsPayload) ExtractLogs() []LogData {
 	logData := []LogData{}
 
-	for rli := 0; rli < payload.logs.LogRecordCount(); rli++ {
-		resourceLogs := payload.logs.ResourceLogs().At(rli)
+	for _, resourceLogs := range payload.logs.ResourceLogs().All() {
 		resourceData := AggregateResourceData(resourceLogs.Resource())
 
-		for sli := 0; sli < resourceLogs.ScopeLogs().Len(); sli++ {
-			scopeLogs := resourceLogs.ScopeLogs().At(sli)
+		for _, scopeLogs := range resourceLogs.ScopeLogs().All() {
 			scopeData := AggregateScopeData(scopeLogs.Scope())
 
-			for si := 0; si < scopeLogs.LogRecords().Len(); si++ {
-				logRecord := scopeLogs.LogRecords().At(si)
+			for _, logRecord := range scopeLogs.LogRecords().All() {
 				logData = append(logData, aggregateLogData(logRecord, scopeData, resourceData))
 			}
 		}

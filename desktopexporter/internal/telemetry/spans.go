@@ -43,17 +43,13 @@ func NewSpanPayload(t ptrace.Traces) *SpanPayload {
 func (payload *SpanPayload) ExtractSpans() []SpanData {
 	spanSlice := []SpanData{}
 
-	for rsi := range payload.traces.ResourceSpans().Len() {
-		resourceSpan := payload.traces.ResourceSpans().At(rsi)
+	for _, resourceSpan := range payload.traces.ResourceSpans().All() {
 		resourceData := AggregateResourceData(resourceSpan.Resource())
 
-		for ssi := range resourceSpan.ScopeSpans().Len() {
-			scopeSpan := resourceSpan.ScopeSpans().At(ssi)
+		for _, scopeSpan := range resourceSpan.ScopeSpans().All() {
 			scopeData := AggregateScopeData(scopeSpan.Scope())
 
-			for si := range scopeSpan.Spans().Len() {
-				span := scopeSpan.Spans().At(si)
-
+			for _, span := range scopeSpan.Spans().All() {
 				eventsPayload := EventPayload{span.Events()}
 				eventData := eventsPayload.extractEvents()
 

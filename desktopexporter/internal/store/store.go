@@ -89,10 +89,6 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 		events := MarshalEvents(span.Events)
 		links := MarshalLinks(span.Links)
 
-		// log.Printf("attributes: %v", attributes)
-		// log.Printf("events: %v", events)
-		// log.Printf("links: %v", links)
-
 		_, err := stmt.ExecContext(ctx,
 			span.TraceID,
 			span.TraceState,

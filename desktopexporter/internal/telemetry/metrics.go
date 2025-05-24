@@ -28,16 +28,13 @@ func NewMetricsPayload(m pmetric.Metrics) *MetricsPayload {
 func (payload *MetricsPayload) ExtractMetrics() []MetricsData {
 	metricsDataSlice := []MetricsData{}
 
-	for rmi := 0; rmi < payload.metrics.ResourceMetrics().Len(); rmi++ {
-		resourceMetrics := payload.metrics.ResourceMetrics().At(rmi)
+	for _, resourceMetrics := range payload.metrics.ResourceMetrics().All() {
 		resourceData := AggregateResourceData(resourceMetrics.Resource())
 
-		for smi := 0; smi < resourceMetrics.ScopeMetrics().Len(); smi++ {
-			scopeMetrics := resourceMetrics.ScopeMetrics().At(smi)
+		for _, scopeMetrics := range resourceMetrics.ScopeMetrics().All() {
 			scopeData := AggregateScopeData(scopeMetrics.Scope())
 
-			for si := 0; si < scopeMetrics.Metrics().Len(); si++ {
-				metric := scopeMetrics.Metrics().At(si)
+			for _, metric := range scopeMetrics.Metrics().All() {
 				metricsDataSlice = append(metricsDataSlice, aggregateMetricsData(metric, scopeData, resourceData))
 			}
 		}

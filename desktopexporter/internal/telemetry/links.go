@@ -16,8 +16,8 @@ type LinkData struct {
 
 func (payload *LinkPayload) ExtractLinks() []LinkData {
 	linkDataSlice := []LinkData{}
-	for i := range payload.links.Len() {
-		linkDataSlice = append(linkDataSlice, aggregateLinkData(payload.links.At(i)))
+	for _, link := range payload.links.All() {
+		linkDataSlice = append(linkDataSlice, aggregateLinkData(link))
 	}
 
 	return linkDataSlice

@@ -20,8 +20,8 @@ type EventData struct {
 func (payload *EventPayload) extractEvents() []EventData {
 	eventDataSlice := []EventData{}
 
-	for ei := 0; ei < payload.Events.Len(); ei++ {
-		eventDataSlice = append(eventDataSlice, aggregateEventData(payload.Events.At(ei)))
+	for _, event := range payload.Events.All() {
+		eventDataSlice = append(eventDataSlice, aggregateEventData(event))
 	}
 
 	return eventDataSlice
