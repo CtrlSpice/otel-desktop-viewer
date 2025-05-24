@@ -1,0 +1,126 @@
+version: 2
+
+env:
+  - CGO_ENABLED=1
+
+before:
+  hooks:
+    - cmd: go work sync
+    - cmd: sh -c "cd desktopcollector && go mod tidy && cd ../desktopexporter && go mod tidy"
+
+builds:
+  - id: macos
+    main: ./desktopcollector/
+    # Using simple binary name as GoReleaser automatically creates unique directories
+    # with build ID and target info (e.g. macos_darwin_amd64, macos_darwin_arm64)
+    binary: otel-desktop-viewer
+    goos: 
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # Sets binary timestamp to commit time for reproducible builds
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    # Removes file paths from binary for security and portability
+    flags:
+      - -trimpath
+    # -s -w: strips debug info
+    # -X: injects version, commit, and date into binary
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+
+  - id: linux_x86_64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos:
+      - linux
+    goarch:
+      - amd64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+
+  - id: linux_arm64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos:
+      - linux
+    goarch:
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+
+  - id: windows_amd64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos:
+      - windows
+    goarch:
+      - amd64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+
+archives:
+  - id: otel-desktop-viewer-archive
+    formats: 
+      - tar.gz
+      - zip
+    # Use zip for Windows, tar.gz for others
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- if eq .Os "darwin" }}MacOS
+      {{- else }}{{ title .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  name_template: "v{{ .Version }}"
+  footer: >-
+    ---
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+
+brews:
+  - name: otel-desktop-viewer
+    # GitHub repository where the formula will be published
+    repository:
+      owner: CtrlSpice
+      name: homebrew-otel-desktop-viewer
+    # Homebrew formula name
+    directory: .
+    # Homebrew formula description
+    description: "OpenTelemetry Desktop Viewer"
+    # Homebrew formula homepage
+    homepage: "https://github.com/CtrlSpice/otel-desktop-viewer"
+    # Homebrew formula license
+    license: "Apache-2.0"
+    # Homebrew formula dependencies
+    dependencies:
+      - go
+    # Homebrew formula test
+    test: |
+      system "#{bin}/otel-desktop-viewer", "--version"
+    # Homebrew formula caveats
+    caveats: |
+      To start the viewer, run:
+        otel-desktop-viewer

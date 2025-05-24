@@ -1,0 +1,173 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Run in test mode (no notifications)'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+  packages: write
+  actions: write
+
+jobs:
+  prepare:
+    strategy:
+      matrix:
+        # GoReleaser automatically matches builds to runners based on goos/goarch:
+        # macos-latest -> macos (both amd64 and arm64)
+        # ubuntu-latest -> linux_x86_64
+        # ubuntu-24.04-arm -> linux_arm64
+        # windows-latest -> windows_amd64
+        include:
+          - os: macos-latest
+            build_id: macos
+            goos: darwin
+            goarch: [amd64, arm64]
+          - os: ubuntu-latest
+            build_id: linux_x86_64
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-24.04-arm
+            build_id: linux_arm64
+            goos: linux
+            goarch: arm64
+          - os: windows-latest
+            build_id: windows_amd64
+            goos: windows
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      # Cache Go dependencies to speed up builds.
+      # - ~/go/pkg/mod: Caches downloaded Go modules
+      # - **/go.sum: Used to determine if dependencies have changed
+      # - key: Unique key based on OS and go.sum hash
+      # - restore-keys: Fallback to most recent cache if no exact match
+      - name: Cache Go dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            **/go.sum
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/linux
+          key: linux-${{ github.sha }}
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/darwin
+          key: darwin-${{ github.sha }}
+        if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/darwin
+          key: darwin-arm-${{ github.sha }}
+        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/windows
+          key: windows-${{ github.sha }}
+        if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
+
+      - name: Set up MSYS2 (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-toolchain
+
+      - name: Add MSYS2 to PATH (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser-pro
+          version: v2.9.0
+          # The --id flag ensures each runner only builds for supported architecture.
+          # Without it, GoReleaser would try to build for all architectures on each runner, which would
+          # cause cross-compilation issues, especially for CGO-enabled builds.
+          args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }} --id ${{ matrix.build_id }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+          CGO_ENABLED: 1
+
+  release:
+    needs: prepare
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || !inputs.test_mode
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/linux
+          key: linux-${{ github.sha }}
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/darwin
+          key: darwin-${{ github.sha }}
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/windows
+          key: windows-${{ github.sha }}
+
+      - name: Complete release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser-pro
+          version: v2.9.0
+          args: continue --merge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+

@@ -1,3 +1,5 @@
+PACKAGE_NAME         := github.com/CtrlSpice/otel-desktop-viewer
+
 .PHONY: install
 install:
 	cd desktopexporter/internal/app; npm install
@@ -35,3 +37,7 @@ format-js:
 .PHONY: validate-typescript
 validate-typescript:
 	cd desktopexporter/internal/app; npx tsc --noEmit
+
+.PHONY: release-dry-run
+release-dry-run:
+	gh workflow run "Release" --ref put-back-go-releaser -f test_mode=true

@@ -7,4 +7,7 @@ desktopexporter/internal/app/node_modules
 *.wal
 *.tmp/
 help
+task_list.txt
 
+# Added by goreleaser init:
+dist/
