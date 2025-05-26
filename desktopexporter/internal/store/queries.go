@@ -87,8 +87,8 @@ const (
 			droppedLinksCount,
 			statusCode, 
 			statusMessage
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::JSON::MAP(VARCHAR, attribute), ?::JSON::event[], ?::JSON::link[], 
-		 ?::JSON::MAP(VARCHAR, attribute), ?, ?, ?, ?::JSON::MAP(VARCHAR, attribute), ?, ?, ?, ?, ?, ?)	 
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::MAP(VARCHAR, attribute), ?::event[], ?::link[], 
+		 ?::MAP(VARCHAR, attribute), ?, ?, ?, ?::MAP(VARCHAR, attribute), ?, ?, ?, ?, ?, ?)	 
 	`
 	// SELECT_TRACE_SUMMARIES retrieves all traces ordered by:
 	// - Root span start time when available
@@ -119,8 +119,7 @@ const (
             s.traceID
     `
 
-	// DuckDB's Go bindings have limited support for UNIONs
-	// So we need to cast the attributes to JSON and then parse them back into the original type
+	// DuckDB's Go bindings now have proper support for UNIONs 🎉
 	SELECT_TRACE string = `
 		SELECT 
 			traceID, 
@@ -131,14 +130,14 @@ const (
 			kind, 
 			startTime, 
 			endTime,
-			attributes::JSON,
-			events::JSON,
-			links::JSON,
-			resourceAttributes::JSON,
+			attributes,
+			events,
+			links,
+			resourceAttributes,
 			resourceDroppedAttributesCount,
 			scopeName,
 			scopeVersion,
-			scopeAttributes::JSON,
+			scopeAttributes,
 			scopeDroppedAttributesCount,
 			droppedAttributesCount,
 			droppedEventsCount,
