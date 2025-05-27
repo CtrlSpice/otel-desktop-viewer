@@ -62,34 +62,6 @@ const (
 		statusCode VARCHAR, 
 		statusMessage VARCHAR)
 	`
-
-	INSERT_SPANS string = `
-		INSERT INTO spans (
-			traceID, 
-			traceState, 
-			spanID, 
-			parentSpanID, 
-			name, 
-			kind, 
-			startTime, 
-			endTime, 
-			attributes, 
-			events, 
-			links, 
-			resourceAttributes, 
-			resourceDroppedAttributesCount, 
-			scopeName, 
-			scopeVersion, 
-			scopeAttributes, 
-			scopeDroppedAttributesCount,
-			droppedAttributesCount, 
-			droppedEventsCount, 
-			droppedLinksCount,
-			statusCode, 
-			statusMessage
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::MAP(VARCHAR, attribute), ?::event[], ?::link[], 
-		 ?::MAP(VARCHAR, attribute), ?, ?, ?, ?::MAP(VARCHAR, attribute), ?, ?, ?, ?, ?, ?)	 
-	`
 	// SELECT_TRACE_SUMMARIES retrieves all traces ordered by:
 	// - Root span start time when available
 	// - Earliest span start time when no root span exists
