@@ -150,8 +150,8 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			rawResourceAttributes duckdb.Composite[map[string]duckdb.Union]
 			rawScopeAttributes duckdb.Composite[map[string]duckdb.Union]
 
-			rawEvents duckdb.Composite[[]telemetry.EventData]
-			rawLinks duckdb.Composite[[]telemetry.LinkData]
+			rawEvents duckdb.Composite[[]dbEvent]
+			rawLinks duckdb.Composite[[]duckDBLink]
 		)
 
 		if err = rows.Scan(
@@ -185,8 +185,8 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 		span.Resource.Attributes = fromDuckDBMap(rawResourceAttributes.Get())
 		span.Scope.Attributes = fromDuckDBMap(rawScopeAttributes.Get())
 
-		span.Events = rawEvents.Get()
-		span.Links = rawLinks.Get()
+		span.Events = fromDuckDBEvents(rawEvents.Get())
+		span.Links = fromDuckDBLinks(rawLinks.Get())
 
 		trace.Spans = append(trace.Spans, span)
 	}
