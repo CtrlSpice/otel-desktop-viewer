@@ -119,7 +119,7 @@ jobs:
           # cause cross-compilation issues, especially for CGO-enabled builds.
           args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }} --id ${{ matrix.build_id }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
           CGO_ENABLED: 1
 
@@ -163,5 +163,5 @@ jobs:
           version: v2.9.0
           args: continue --merge
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
