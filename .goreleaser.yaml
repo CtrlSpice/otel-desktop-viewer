@@ -100,6 +100,22 @@ archives:
       {{- else }}{{ title .Os }}{{ end }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else }}{{ .Arch }}{{ end }}
+  
+  # Separate archive for Homebrew (macOS and Linux)
+  - id: homebrew-archive
+    ids:
+      - macos_amd64
+      - macos_arm64
+      - linux_x86_64
+      - linux_arm64
+    formats: 
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- if eq .Os "darwin" }}MacOS
+      {{- else }}{{ title .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
 
 checksum:
   name_template: "checksums.txt"
@@ -121,7 +137,7 @@ release:
 brews:
   - name: otel-desktop-viewer
     ids:
-      - otel-desktop-viewer-archive
+      - homebrew-archive
     # GitHub repository where the formula will be published
     repository:
       owner: CtrlSpice

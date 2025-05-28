@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - fix-ci-release
   workflow_dispatch:
     inputs:
       test_mode:
@@ -24,11 +22,6 @@ jobs:
   prepare:
     strategy:
       matrix:
-        # GoReleaser automatically matches builds to runners based on goos/goarch:
-        # macos-latest -> macos (both amd64 and arm64)
-        # ubuntu-latest -> linux_x86_64
-        # ubuntu-24.04-arm -> linux_arm64
-        # windows-latest -> windows_amd64
         include:
           - os: macos-latest
             build_id: macos_amd64
@@ -69,7 +62,7 @@ jobs:
         with:
           path: |
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('desktopexporter/go.sum', 'desktopcollector/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
