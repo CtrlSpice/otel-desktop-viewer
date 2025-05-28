@@ -55,6 +55,12 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Initialize Go workspace
+        run: |
+          go work sync
+          cd desktopcollector && go mod download
+          cd ../desktopexporter && go mod download
+
       # Cache Go dependencies to speed up builds.
       # Note: Only cache directories in 'path', use go.sum files only in 'key' with hashFiles()
       - name: Cache Go dependencies
