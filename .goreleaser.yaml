@@ -9,7 +9,7 @@ before:
     - cmd: sh -c "cd desktopcollector && go mod tidy && cd ../desktopexporter && go mod tidy"
 
 builds:
-  - id: macos
+  - id: macos_amd64
     main: ./desktopcollector/
     # Using simple binary name as GoReleaser automatically creates unique directories
     # with build ID and target info (e.g. macos_darwin_amd64, macos_darwin_arm64)
@@ -18,7 +18,6 @@ builds:
       - darwin
     goarch:
       - amd64
-      - arm64
     # Sets binary timestamp to commit time for reproducible builds
     mod_timestamp: "{{ .CommitTimestamp }}"
     # Removes file paths from binary for security and portability
@@ -26,6 +25,19 @@ builds:
       - -trimpath
     # -s -w: strips debug info
     # -X: injects version, commit, and date into binary
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+
+  - id: macos_arm64
+    main: ./desktopcollector/
+    binary: otel-desktop-viewer
+    goos: 
+      - darwin
+    goarch:
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
@@ -70,6 +82,12 @@ builds:
 
 archives:
   - id: otel-desktop-viewer-archive
+    builds:
+      - macos_amd64
+      - macos_arm64
+      - linux_x86_64
+      - linux_arm64
+      - windows_amd64
     formats: 
       - tar.gz
       - zip
@@ -102,6 +120,8 @@ release:
 
 brews:
   - name: otel-desktop-viewer
+    ids:
+      - otel-desktop-viewer-archive
     # GitHub repository where the formula will be published
     repository:
       owner: CtrlSpice
