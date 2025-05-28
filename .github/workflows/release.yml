@@ -62,7 +62,10 @@ jobs:
         with:
           path: |
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('desktopexporter/go.sum', 'desktopcollector/go.sum') }}
+            ~/.cache/go-build
+            /home/runner/go/pkg/mod
+            /home/runner/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
