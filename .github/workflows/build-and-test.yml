@@ -6,8 +6,6 @@ name: Build and Test
 
 on: 
   push:
-    branches-ignore:
-      - fix-ci-release
 
 jobs:
   build:
