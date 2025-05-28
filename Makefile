@@ -41,3 +41,8 @@ validate-typescript:
 .PHONY: release-dry-run
 release-dry-run:
 	gh workflow run "Release" --ref put-back-go-releaser -f test_mode=true
+
+.PHONY: kill-port
+kill-port:
+	@echo "Killing process on port 8888..."
+	@lsof -ti:8888 | xargs kill -9 2>/dev/null || echo "No process found on port 8888"

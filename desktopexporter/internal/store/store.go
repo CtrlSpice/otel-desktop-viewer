@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/marcboeker/go-duckdb/v2"
 
@@ -73,39 +72,30 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 	s.mut.Lock()
 	defer s.mut.Unlock()
 
-	// Prepare the statement once for all spans
-	stmt, err := s.db.PrepareContext(ctx, INSERT_SPANS)
+	appender, err := duckdb.NewAppender(s.conn, "", "", "spans")
 	if err != nil {
-		return fmt.Errorf("could not prepare statement: %v", err)
+		return fmt.Errorf("could not create appender: %w", err)
 	}
-	defer stmt.Close()
+	defer appender.Close()
 
 	for _, span := range spans {
-		// Convert attributes and Structs that contain attributes 
-		// to JSON format compatible with DUCKDB's UNION type
-		attributes := MarshalAttributes(span.Attributes)
-		resourceAttrs := MarshalAttributes(span.Resource.Attributes)
-		scopeAttrs := MarshalAttributes(span.Scope.Attributes)
-		events := MarshalEvents(span.Events)
-		links := MarshalLinks(span.Links)
-
-		_, err := stmt.ExecContext(ctx,
+		err := appender.AppendRow(
 			span.TraceID,
 			span.TraceState,
 			span.SpanID,
 			span.ParentSpanID,
 			span.Name,
 			span.Kind,
-			span.StartTime.Format(time.RFC3339Nano),
-			span.EndTime.Format(time.RFC3339Nano),
-			attributes,
-			events,
-			links,
-			resourceAttrs,
+			span.StartTime,
+			span.EndTime,
+			toDbMap(span.Attributes),
+			toDbEvents(span.Events),
+			toDbLinks(span.Links),
+			toDbMap(span.Resource.Attributes),
 			span.Resource.DroppedAttributesCount,
 			span.Scope.Name,
 			span.Scope.Version,
-			scopeAttrs,
+			toDbMap(span.Scope.Attributes),
 			span.Scope.DroppedAttributesCount,
 			span.DroppedAttributesCount,
 			span.DroppedEventsCount,
@@ -114,8 +104,12 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 			span.StatusMessage,
 		)
 		if err != nil {
-			return fmt.Errorf("could not append row to spans: %v", err)
+			return fmt.Errorf("could not append row: %w", err)
 		}
+	}
+	err = appender.Flush()
+	if err != nil {
+		return fmt.Errorf("could not flush appender: %w", err)
 	}
 	return nil
 }
@@ -146,15 +140,13 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			},
 		}
 
-		// DuckDB's Go bindings have no support for UNIONs
-		// So we are leveraging duckdb's json functionality to fool it into doing the right thing
 		var (
-			rawAttributes duckdb.Composite[map[string]any]
-			rawResourceAttributes duckdb.Composite[map[string]any]
-			rawScopeAttributes duckdb.Composite[map[string]any]
+			rawAttributes         duckdb.Composite[map[string]duckdb.Union]
+			rawResourceAttributes duckdb.Composite[map[string]duckdb.Union]
+			rawScopeAttributes    duckdb.Composite[map[string]duckdb.Union]
 
-			rawEvents duckdb.Composite[[]any]
-			rawLinks duckdb.Composite[[]any]
+			rawEvents duckdb.Composite[[]dbEvent]
+			rawLinks  duckdb.Composite[[]dbLink]
 		)
 
 		if err = rows.Scan(
@@ -184,12 +176,12 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			return trace, fmt.Errorf("could not scan spans: %v", err)
 		}
 
-		span.Attributes = parseRawAttributes(rawAttributes.Get())
-		span.Resource.Attributes = parseRawAttributes(rawResourceAttributes.Get())
-		span.Scope.Attributes = parseRawAttributes(rawScopeAttributes.Get())
+		span.Attributes = fromDbMap(rawAttributes.Get())
+		span.Resource.Attributes = fromDbMap(rawResourceAttributes.Get())
+		span.Scope.Attributes = fromDbMap(rawScopeAttributes.Get())
 
-		span.Events = parseRawEvents(rawEvents.Get())
-		span.Links = parseRawLinks(rawLinks.Get())
+		span.Events = fromDbEvents(rawEvents.Get())
+		span.Links = fromDbLinks(rawLinks.Get())
 
 		trace.Spans = append(trace.Spans, span)
 	}

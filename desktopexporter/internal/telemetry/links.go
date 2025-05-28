@@ -8,7 +8,7 @@ type LinkPayload struct {
 
 type LinkData struct {
 	TraceID                string         `json:"traceID"`
-	SpanID                 string         `json:"spanID"` 
+	SpanID                 string         `json:"spanID"`
 	TraceState             string         `json:"traceState"`
 	Attributes             map[string]any `json:"attributes"`
 	DroppedAttributesCount uint32         `json:"droppedAttributesCount"`
