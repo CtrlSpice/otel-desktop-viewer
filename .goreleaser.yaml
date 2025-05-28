@@ -81,6 +81,7 @@ builds:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
 archives:
+  # Main archive with all platforms
   - id: otel-desktop-viewer-archive
     ids:
       - macos_amd64
@@ -90,10 +91,9 @@ archives:
       - windows_amd64
     formats: 
       - tar.gz
-      - zip
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ['zip']
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}MacOS
@@ -111,7 +111,7 @@ archives:
     formats: 
       - tar.gz
     name_template: >-
-      {{ .ProjectName }}_
+      {{ .ProjectName }}_homebrew_
       {{- if eq .Os "darwin" }}MacOS
       {{- else }}{{ title .Os }}{{ end }}_
       {{- if eq .Arch "amd64" }}x86_64
