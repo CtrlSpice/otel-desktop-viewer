@@ -78,11 +78,7 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 	}
 	defer appender.Close()
 
-	for _, span := range spans {		
-		// Pass empty arrays instead of nil
-		events := toDuckDBEvents(span.Events)
-		links := toDuckDBLinks(span.Links)
-
+	for _, span := range spans {
 		err := appender.AppendRow(
 			span.TraceID,
 			span.TraceState,
@@ -92,14 +88,14 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 			span.Kind,
 			span.StartTime,
 			span.EndTime,
-			toDuckDBMap(span.Attributes),
-			events,
-			links,
-			toDuckDBMap(span.Resource.Attributes),
+			toDbMap(span.Attributes),
+			toDbEvents(span.Events),
+			toDbLinks(span.Links),
+			toDbMap(span.Resource.Attributes),
 			span.Resource.DroppedAttributesCount,
 			span.Scope.Name,
 			span.Scope.Version,
-			toDuckDBMap(span.Scope.Attributes),
+			toDbMap(span.Scope.Attributes),
 			span.Scope.DroppedAttributesCount,
 			span.DroppedAttributesCount,
 			span.DroppedEventsCount,
@@ -144,14 +140,13 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			},
 		}
 
-		// DuckDB's Go bindings now have proper support for UNIONs 🎉
 		var (
-			rawAttributes duckdb.Composite[map[string]duckdb.Union]
+			rawAttributes         duckdb.Composite[map[string]duckdb.Union]
 			rawResourceAttributes duckdb.Composite[map[string]duckdb.Union]
-			rawScopeAttributes duckdb.Composite[map[string]duckdb.Union]
+			rawScopeAttributes    duckdb.Composite[map[string]duckdb.Union]
 
 			rawEvents duckdb.Composite[[]dbEvent]
-			rawLinks duckdb.Composite[[]duckDBLink]
+			rawLinks  duckdb.Composite[[]dbLink]
 		)
 
 		if err = rows.Scan(
@@ -181,12 +176,12 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 			return trace, fmt.Errorf("could not scan spans: %v", err)
 		}
 
-		span.Attributes = fromDuckDBMap(rawAttributes.Get())
-		span.Resource.Attributes = fromDuckDBMap(rawResourceAttributes.Get())
-		span.Scope.Attributes = fromDuckDBMap(rawScopeAttributes.Get())
+		span.Attributes = fromDbMap(rawAttributes.Get())
+		span.Resource.Attributes = fromDbMap(rawResourceAttributes.Get())
+		span.Scope.Attributes = fromDbMap(rawScopeAttributes.Get())
 
-		span.Events = fromDuckDBEvents(rawEvents.Get())
-		span.Links = fromDuckDBLinks(rawLinks.Get())
+		span.Events = fromDbEvents(rawEvents.Get())
+		span.Links = fromDbLinks(rawLinks.Get())
 
 		trace.Spans = append(trace.Spans, span)
 	}

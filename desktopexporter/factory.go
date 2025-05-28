@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultEndpoint = "localhost:8000"
-	defaultDb   = ""
+	defaultDb       = ""
 )
 
 // Creates a factory for the Desktop Exporter

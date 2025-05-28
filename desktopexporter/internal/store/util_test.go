@@ -12,66 +12,66 @@ import (
 
 func TestStringifyOnOverflow(t *testing.T) {
 	tests := []struct {
-		name           string
-		attributeName  string
-		values         []uint64
-		expectedValue  any
+		name             string
+		attributeName    string
+		values           []uint64
+		expectedValue    any
 		expectedOverflow bool
 	}{
 		{
-			name:           "single value no overflow",
-			attributeName:  "test_attr",
-			values:         []uint64{100},
-			expectedValue:  uint64(100),
+			name:             "single value no overflow",
+			attributeName:    "test_attr",
+			values:           []uint64{100},
+			expectedValue:    uint64(100),
 			expectedOverflow: false,
 		},
 		{
-			name:           "single value with overflow",
-			attributeName:  "test_attr",
-			values:         []uint64{math.MaxUint64},
-			expectedValue:  "18446744073709551615",
+			name:             "single value with overflow",
+			attributeName:    "test_attr",
+			values:           []uint64{math.MaxUint64},
+			expectedValue:    "18446744073709551615",
 			expectedOverflow: true,
 		},
 		{
-			name:           "single value at boundary (no overflow)",
-			attributeName:  "test_attr",
-			values:         []uint64{math.MaxInt64},
-			expectedValue:  uint64(math.MaxInt64),
+			name:             "single value at boundary (no overflow)",
+			attributeName:    "test_attr",
+			values:           []uint64{math.MaxInt64},
+			expectedValue:    uint64(math.MaxInt64),
 			expectedOverflow: false,
 		},
 		{
-			name:           "single value just over boundary",
-			attributeName:  "test_attr",
-			values:         []uint64{math.MaxInt64 + 1},
-			expectedValue:  "9223372036854775808",
+			name:             "single value just over boundary",
+			attributeName:    "test_attr",
+			values:           []uint64{math.MaxInt64 + 1},
+			expectedValue:    "9223372036854775808",
 			expectedOverflow: true,
 		},
 		{
-			name:           "slice no overflow",
-			attributeName:  "test_attr",
-			values:         []uint64{100, 200, 300},
-			expectedValue:  nil,
+			name:             "slice no overflow",
+			attributeName:    "test_attr",
+			values:           []uint64{100, 200, 300},
+			expectedValue:    nil,
 			expectedOverflow: false,
 		},
 		{
-			name:           "slice with overflow",
-			attributeName:  "test_attr",
-			values:         []uint64{100, math.MaxUint64, 300},
-			expectedValue:  []string{"100", "18446744073709551615", "300"},
+			name:             "slice with overflow",
+			attributeName:    "test_attr",
+			values:           []uint64{100, math.MaxUint64, 300},
+			expectedValue:    []string{"100", "18446744073709551615", "300"},
 			expectedOverflow: true,
 		},
 		{
-			name:           "slice all overflow values",
-			attributeName:  "test_attr",
-			values:         []uint64{math.MaxUint64, math.MaxInt64 + 1},
-			expectedValue:  []string{"18446744073709551615", "9223372036854775808"},
+			name:             "slice all overflow values",
+			attributeName:    "test_attr",
+			values:           []uint64{math.MaxUint64, math.MaxInt64 + 1},
+			expectedValue:    []string{"18446744073709551615", "9223372036854775808"},
 			expectedOverflow: true,
 		},
 		{
-			name:           "empty slice",
-			attributeName:  "test_attr",
-			values:         []uint64{},
-			expectedValue:  nil,
+			name:             "empty slice",
+			attributeName:    "test_attr",
+			values:           []uint64{},
+			expectedValue:    nil,
 			expectedOverflow: false,
 		},
 	}
@@ -85,7 +85,7 @@ func TestStringifyOnOverflow(t *testing.T) {
 	}
 }
 
-func TestFromDuckDBMap(t *testing.T) {
+func TestFromDbMap(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    map[string]duckdb.Union
@@ -140,13 +140,13 @@ func TestFromDuckDBMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := fromDuckDBMap(tt.input)
+			result := fromDbMap(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-func TestToDuckDBMap(t *testing.T) {
+func TestToDbMap(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    map[string]any
@@ -206,19 +206,19 @@ func TestToDuckDBMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := toDuckDBMap(tt.input)
-			
+			result := toDbMap(tt.input)
+
 			// Compare each union separately for better error messages
 			assert.Equal(t, len(tt.expected), len(result), "map length mismatch")
-			
+
 			for key, expectedUnion := range tt.expected {
 				actualValue, exists := result[key]
 				assert.True(t, exists, "key %s not found in result", key)
-				
+
 				// Cast the actual value to duckdb.Union for comparison
 				actualUnion, ok := actualValue.(duckdb.Union)
 				assert.True(t, ok, "value for key %s is not a duckdb.Union", key)
-				
+
 				assert.Equal(t, expectedUnion.Tag, actualUnion.Tag, "tag mismatch for key %s", key)
 				assert.Equal(t, expectedUnion.Value, actualUnion.Value, "value mismatch for key %s", key)
 			}
@@ -226,7 +226,7 @@ func TestToDuckDBMap(t *testing.T) {
 	}
 }
 
-func TestToDuckDBEvents(t *testing.T) {
+func TestToDbEvents(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
 		name     string
@@ -261,9 +261,9 @@ func TestToDuckDBEvents(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := toDuckDBEvents(tt.input)
+			result := toDbEvents(tt.input)
 			assert.Equal(t, len(tt.expected), len(result))
-			
+
 			for i, expected := range tt.expected {
 				assert.Equal(t, expected.Name, result[i].Name)
 				assert.Equal(t, expected.Timestamp, result[i].Timestamp)
@@ -275,16 +275,16 @@ func TestToDuckDBEvents(t *testing.T) {
 	}
 }
 
-func TestToDuckDBLinks(t *testing.T) {
+func TestToDbLinks(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    []telemetry.LinkData
-		expected []duckDBLink
+		expected []dbLink
 	}{
 		{
 			name:     "empty links",
 			input:    []telemetry.LinkData{},
-			expected: []duckDBLink{},
+			expected: []dbLink{},
 		},
 		{
 			name: "single link",
@@ -297,7 +297,7 @@ func TestToDuckDBLinks(t *testing.T) {
 					DroppedAttributesCount: 0,
 				},
 			},
-			expected: []duckDBLink{
+			expected: []dbLink{
 				{
 					TraceID:                "trace1",
 					SpanID:                 "span1",
@@ -311,9 +311,9 @@ func TestToDuckDBLinks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := toDuckDBLinks(tt.input)
+			result := toDbLinks(tt.input)
 			assert.Equal(t, len(tt.expected), len(result))
-			
+
 			for i, expected := range tt.expected {
 				assert.Equal(t, expected.TraceID, result[i].TraceID)
 				assert.Equal(t, expected.SpanID, result[i].SpanID)
@@ -326,7 +326,7 @@ func TestToDuckDBLinks(t *testing.T) {
 	}
 }
 
-func TestFromDuckDBEvents(t *testing.T) {
+func TestFromDbEvents(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
 		name     string
@@ -369,29 +369,29 @@ func TestFromDuckDBEvents(t *testing.T) {
 			name: "multiple events",
 			input: []dbEvent{
 				{
-					Name:       "event1",
-					Timestamp:  now,
-					Attributes: duckdb.Map{"key1": duckdb.Union{Tag: "str", Value: "value1"}},
+					Name:                   "event1",
+					Timestamp:              now,
+					Attributes:             duckdb.Map{"key1": duckdb.Union{Tag: "str", Value: "value1"}},
 					DroppedAttributesCount: 0,
 				},
 				{
-					Name:       "event2",
-					Timestamp:  now.Add(time.Second),
-					Attributes: duckdb.Map{"key2": duckdb.Union{Tag: "bigint", Value: int64(100)}},
+					Name:                   "event2",
+					Timestamp:              now.Add(time.Second),
+					Attributes:             duckdb.Map{"key2": duckdb.Union{Tag: "bigint", Value: int64(100)}},
 					DroppedAttributesCount: 2,
 				},
 			},
 			expected: []telemetry.EventData{
 				{
-					Name:       "event1",
-					Timestamp:  now,
-					Attributes: map[string]any{"key1": "value1"},
+					Name:                   "event1",
+					Timestamp:              now,
+					Attributes:             map[string]any{"key1": "value1"},
 					DroppedAttributesCount: 0,
 				},
 				{
-					Name:       "event2",
-					Timestamp:  now.Add(time.Second),
-					Attributes: map[string]any{"key2": int64(100)},
+					Name:                   "event2",
+					Timestamp:              now.Add(time.Second),
+					Attributes:             map[string]any{"key2": int64(100)},
 					DroppedAttributesCount: 2,
 				},
 			},
@@ -400,26 +400,26 @@ func TestFromDuckDBEvents(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := fromDuckDBEvents(tt.input)
+			result := fromDbEvents(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-func TestFromDuckDBLinks(t *testing.T) {
+func TestFromDbLinks(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    []duckDBLink
+		input    []dbLink
 		expected []telemetry.LinkData
 	}{
 		{
 			name:     "empty links",
-			input:    []duckDBLink{},
+			input:    []dbLink{},
 			expected: []telemetry.LinkData{},
 		},
 		{
 			name: "single link with attributes",
-			input: []duckDBLink{
+			input: []dbLink{
 				{
 					TraceID:    "trace123",
 					SpanID:     "span456",
@@ -446,35 +446,35 @@ func TestFromDuckDBLinks(t *testing.T) {
 		},
 		{
 			name: "multiple links",
-			input: []duckDBLink{
+			input: []dbLink{
 				{
-					TraceID:    "trace1",
-					SpanID:     "span1",
-					TraceState: "state1",
-					Attributes: duckdb.Map{"attr1": duckdb.Union{Tag: "boolean", Value: false}},
+					TraceID:                "trace1",
+					SpanID:                 "span1",
+					TraceState:             "state1",
+					Attributes:             duckdb.Map{"attr1": duckdb.Union{Tag: "boolean", Value: false}},
 					DroppedAttributesCount: 1,
 				},
 				{
-					TraceID:    "trace2",
-					SpanID:     "span2",
-					TraceState: "state2",
-					Attributes: duckdb.Map{"attr2": duckdb.Union{Tag: "str_list", Value: []string{"a", "b"}}},
+					TraceID:                "trace2",
+					SpanID:                 "span2",
+					TraceState:             "state2",
+					Attributes:             duckdb.Map{"attr2": duckdb.Union{Tag: "str_list", Value: []string{"a", "b"}}},
 					DroppedAttributesCount: 3,
 				},
 			},
 			expected: []telemetry.LinkData{
 				{
-					TraceID:    "trace1",
-					SpanID:     "span1",
-					TraceState: "state1",
-					Attributes: map[string]any{"attr1": false},
+					TraceID:                "trace1",
+					SpanID:                 "span1",
+					TraceState:             "state1",
+					Attributes:             map[string]any{"attr1": false},
 					DroppedAttributesCount: 1,
 				},
 				{
-					TraceID:    "trace2",
-					SpanID:     "span2",
-					TraceState: "state2",
-					Attributes: map[string]any{"attr2": []string{"a", "b"}},
+					TraceID:                "trace2",
+					SpanID:                 "span2",
+					TraceState:             "state2",
+					Attributes:             map[string]any{"attr2": []string{"a", "b"}},
 					DroppedAttributesCount: 3,
 				},
 			},
@@ -483,7 +483,7 @@ func TestFromDuckDBLinks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := fromDuckDBLinks(tt.input)
+			result := fromDbLinks(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

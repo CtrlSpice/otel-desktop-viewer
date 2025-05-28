@@ -12,42 +12,35 @@ import (
 
 // Error message constants for attribute type validation
 const (
-	errMixedTypesPrefix = "list attribute contains mixed types: "
-	errNilValue         = errMixedTypesPrefix + "list contains nil value"
-	errIncompatibleType = errMixedTypesPrefix + "incompatible type %T"
-	errIncompatibleIntType = errMixedTypesPrefix + "incompatible type %T in integer list"
+	errMixedTypesPrefix      = "list attribute contains mixed types: "
+	errNilValue              = errMixedTypesPrefix + "list contains nil value"
+	errIncompatibleType      = errMixedTypesPrefix + "incompatible type %T"
+	errIncompatibleIntType   = errMixedTypesPrefix + "incompatible type %T in integer list"
 	errIncompatibleFloatType = errMixedTypesPrefix + "incompatible type %T in float list"
-	errUint64Overflow   = "uint64 value %d exceeds int64 range"
-	errNilFirstElement  = "nil value in list attribute"
-	errUnsupportedListType = "unsupported list attribute type: %T"
+	errUint64Overflow        = "uint64 value %d exceeds int64 range"
+	errNilFirstElement       = "nil value in list attribute"
+	errUnsupportedListType   = "unsupported list attribute type: %T"
 )
 
-// dbEvent represents an event in DuckDB format.
-// NOTE: The `db` struct tags are absolutely required! They map Go struct fields
-// to the correct DuckDB column names. Without them, the database operations will fail.
 type dbEvent struct {
-	Name                   string `db:"name"`
-	Timestamp              time.Time `db:"timestamp"`
+	Name                   string     `db:"name"`
+	Timestamp              time.Time  `db:"timestamp"`
 	Attributes             duckdb.Map `db:"attributes"`
-	DroppedAttributesCount uint32 `db:"droppedAttributesCount"`
+	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
 }
 
-// duckDBLink represents a link in DuckDB format.
-// NOTE: The `db` struct tags are absolutely required! They map Go struct fields
-// to the correct DuckDB column names. Without them, the database operations will fail.
-type duckDBLink struct {
-	TraceID                string `db:"traceID"`
-	SpanID				   string `db:"spanID"`
-	TraceState             string `db:"traceState"`
+
+type dbLink struct {
+	TraceID                string     `db:"traceID"`
+	SpanID                 string     `db:"spanID"`
+	TraceState             string     `db:"traceState"`
 	Attributes             duckdb.Map `db:"attributes"`
-	DroppedAttributesCount uint32 `db:"droppedAttributesCount"`
+	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
 }
 
-// Helper function to convert map[string]any to duckdb.Map for attributes
-// This function creates proper DuckDB union types with correct tags to preserve type information
-func toDuckDBMap(attributes map[string]any) duckdb.Map {
-	duckDBMap := duckdb.Map{}
-	
+func toDbMap(attributes map[string]any) duckdb.Map {
+	dbMap := duckdb.Map{}
+
 	for attributeName, attributeValue := range attributes {
 		tag := ""
 		value := attributeValue
@@ -92,7 +85,7 @@ func toDuckDBMap(attributes map[string]any) duckdb.Map {
 					strList = append(strList, fmt.Sprintf("%v", v))
 				}
 				value = strList
-				log.Printf("unsupported list attribute %s was converted to []string: %v", attributeName, err)	
+				log.Printf("unsupported list attribute %s was converted to []string: %v", attributeName, err)
 			} else {
 				tag = derivedTag
 			}
@@ -102,21 +95,20 @@ func toDuckDBMap(attributes map[string]any) duckdb.Map {
 			log.Printf("unsupported attribute type was unceremoniously cast to string. name: %s type: %T value: %v", attributeName, t, attributeValue)
 		}
 
-		duckDBMap[attributeName] = duckdb.Union{Tag: tag, Value: value}
+		dbMap[attributeName] = duckdb.Union{Tag: tag, Value: value}
 	}
-	
-	return duckDBMap
+
+	return dbMap
 }
 
-// Helper function to convert []telemetry.EventData to []duckDBEvent
-func toDuckDBEvents(events []telemetry.EventData) []dbEvent {
+func toDbEvents(events []telemetry.EventData) []dbEvent {
 	dbEvents := []dbEvent{}
-	
+
 	for _, event := range events {
 		dbe := dbEvent{
 			Name:                   event.Name,
 			Timestamp:              event.Timestamp,
-			Attributes:             toDuckDBMap(event.Attributes),
+			Attributes:             toDbMap(event.Attributes),
 			DroppedAttributesCount: event.DroppedAttributesCount,
 		}
 
@@ -125,43 +117,37 @@ func toDuckDBEvents(events []telemetry.EventData) []dbEvent {
 	return dbEvents
 }
 
-// Helper function to convert []telemetry.LinkData to []duckDBLink
-func toDuckDBLinks(links []telemetry.LinkData) []duckDBLink {
+func toDbLinks(links []telemetry.LinkData) []dbLink {
 	if len(links) == 0 {
-		return []duckDBLink{}
+		return []dbLink{}
 	}
-	duckDBLinks := []duckDBLink{}
+	dbLinks := []dbLink{}
 	for _, link := range links {
-		duckDBLink := duckDBLink{
+		dbLink := dbLink{
 			TraceID:                link.TraceID,
 			SpanID:                 link.SpanID,
 			TraceState:             link.TraceState,
-			Attributes:             toDuckDBMap(link.Attributes),
+			Attributes:             toDbMap(link.Attributes),
 			DroppedAttributesCount: link.DroppedAttributesCount,
 		}
-		duckDBLinks = append(duckDBLinks, duckDBLink)
+		dbLinks = append(dbLinks, dbLink)
 	}
-	return duckDBLinks
+	return dbLinks
 }
 
-// Helper function to parse raw attributes from DuckDB format
-// This function properly extracts values from DuckDB unions while preserving type information
-func fromDuckDBMap(rawAttributes map[string]duckdb.Union) map[string]any {
+func fromDbMap(rawAttributes map[string]duckdb.Union) map[string]any {
 	attributes := map[string]any{}
 
 	for attrName, union := range rawAttributes {
-		// The union.Value already contains the properly typed value
-		// DuckDB's union handling preserves the original types
 		attributes[attrName] = union.Value
 	}
-	
+
 	return attributes
 }
 
-// Helper function to convert events from DuckDB format back to telemetry format
-func fromDuckDBEvents(dbEvents []dbEvent) []telemetry.EventData {
+func fromDbEvents(dbEvents []dbEvent) []telemetry.EventData {
 	events := []telemetry.EventData{}
-	
+
 	for _, dbEvent := range dbEvents {
 		attributes := map[string]any{}
 		for k, v := range dbEvent.Attributes {
@@ -171,7 +157,7 @@ func fromDuckDBEvents(dbEvents []dbEvent) []telemetry.EventData {
 				}
 			}
 		}
-		
+
 		event := telemetry.EventData{
 			Name:                   dbEvent.Name,
 			Timestamp:              dbEvent.Timestamp,
@@ -183,10 +169,9 @@ func fromDuckDBEvents(dbEvents []dbEvent) []telemetry.EventData {
 	return events
 }
 
-// Helper function to convert links from DuckDB format back to telemetry format
-func fromDuckDBLinks(dbLinks []duckDBLink) []telemetry.LinkData {
+func fromDbLinks(dbLinks []dbLink) []telemetry.LinkData {
 	links := []telemetry.LinkData{}
-	
+
 	for _, dbLink := range dbLinks {
 		attributes := map[string]any{}
 		for k, v := range dbLink.Attributes {
@@ -196,7 +181,7 @@ func fromDuckDBLinks(dbLinks []duckDBLink) []telemetry.LinkData {
 				}
 			}
 		}
-		
+
 		link := telemetry.LinkData{
 			TraceID:                dbLink.TraceID,
 			SpanID:                 dbLink.SpanID,
@@ -206,90 +191,87 @@ func fromDuckDBLinks(dbLinks []duckDBLink) []telemetry.LinkData {
 		}
 		links = append(links, link)
 	}
-	
+
 	return links
 }
 
 // getListTypeTag examines the elements of a []any slice and returns the appropriate type tag
+// in order to store our list as a type supported by our attribute UNION in DuckDB.
 func getListTypeTag(list []any) (string, error) {
 	tag := "str_list" // Default fallback for mixed types
-    if len(list) == 0 {	
-        // Empty arrays are valid per OpenTelemetry spec - default to string list
-        return "str_list", nil
-    }
+	if len(list) == 0 {
+		// Empty arrays are valid per OpenTelemetry spec - default to string list for storage.
+		return "str_list", nil
+	}
 
-    if list[0] == nil {
-        return tag, fmt.Errorf(errNilFirstElement)
-    }
+	if list[0] == nil {
+		return tag, fmt.Errorf(errNilFirstElement)
+	}
 
-    switch list[0].(type) {
-		case string:
-			if err := validateUniformList[string](list); err != nil {
-				return tag, err
-			}
-			return "str_list", nil
-		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-			if err := validateUniformList[int64](list); err != nil {
-				return tag, err
-			}
-			return "bigint_list", nil
-		case float32, float64:
-			if err := validateUniformList[float64](list); err != nil {
-				return tag, err
-			}
-			return "double_list", nil
-		case bool:
-			if err := validateUniformList[bool](list); err != nil {
-				return tag, err
-			}
-			return "boolean_list", nil
-		default:
-			return tag, fmt.Errorf(errUnsupportedListType, list[0])
+	switch list[0].(type) {
+	case string:
+		if err := validateUniformList[string](list); err != nil {
+			return tag, err
+		}
+		return "str_list", nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		if err := validateUniformList[int64](list); err != nil {
+			return tag, err
+		}
+		return "bigint_list", nil
+	case float32, float64:
+		if err := validateUniformList[float64](list); err != nil {
+			return tag, err
+		}
+		return "double_list", nil
+	case bool:
+		if err := validateUniformList[bool](list); err != nil {
+			return tag, err
+		}
+		return "boolean_list", nil
+	default:
+		return tag, fmt.Errorf(errUnsupportedListType, list[0])
 	}
 }
 
-// validateUniformList verifies that all elements in the list can be converted to the target type
-// For integers: checks if all elements are integer types and uint64 values don't overflow int64
-// For floats: checks if all elements are float types  
-// For other types: checks if all elements can be type asserted to T
-// Returns an error explaining why the check failed, or nil if all elements are compatible
+// validateUniformList validates the homogeneity of a list attribute to conform with OTel spec.
 func validateUniformList[T any](list []any) error {
-    var zero T
-    
-    for _, item := range list {
-        if item == nil {
-            return fmt.Errorf(errNilValue)
-        }
-        
-        // Handle integer types specially to check for uint64 overflow
-        switch any(zero).(type) {
-        case int64:
-            switch val := item.(type) {
-            case int, int8, int16, int32, int64, uint, uint8, uint16, uint32:
-                // These all fit safely in int64
-            case uint64:
-                // Check for overflow: uint64 values > math.MaxInt64 can't fit in int64
-                if val > math.MaxInt64 {
-                    return fmt.Errorf(errUint64Overflow, val)
-                }
-            default:
-                return fmt.Errorf(errIncompatibleIntType, item)
-            }
-        case float64:
-            switch item.(type) {
-            case float32, float64:
-                // All float types can be converted to float64
-            default:
-                return fmt.Errorf(errIncompatibleFloatType, item)
-            }
-        default:
-            // For all other types, use standard type assertion
-            if _, ok := item.(T); !ok {
-                return fmt.Errorf(errIncompatibleType, item)
-            }
-        }
-    }
-    return nil
+	var zero T
+
+	for _, item := range list {
+		if item == nil {
+			return fmt.Errorf(errNilValue)
+		}
+
+		// Handle integer types specially to check for uint64 overflow
+		switch any(zero).(type) {
+		case int64:
+			switch val := item.(type) {
+			case int, int8, int16, int32, int64, uint, uint8, uint16, uint32:
+				// These all fit safely in int64
+			case uint64:
+				// Check for overflow: uint64 values > math.MaxInt64 can't fit in int64
+				if val > math.MaxInt64 {
+					return fmt.Errorf(errUint64Overflow, val)
+				}
+			default:
+				return fmt.Errorf(errIncompatibleIntType, item)
+			}
+		case float64:
+			switch item.(type) {
+			case float32, float64:
+				// All float types can be converted to float64
+			default:
+				return fmt.Errorf(errIncompatibleFloatType, item)
+			}
+		default:
+			// For all other types, use standard type assertion
+			if _, ok := item.(T); !ok {
+				return fmt.Errorf(errIncompatibleType, item)
+			}
+		}
+	}
+	return nil
 }
 
 // Note: This is very unlikely to happen in practice, but it's a good idea to have a fallback for when it does.
@@ -305,22 +287,22 @@ func stringifyOnOverflow(attributeName string, values ...uint64) (any, bool) {
 			break
 		}
 	}
-	
+
+	// No overflow - return original value for single, nil for slice
 	if !hasOverflow {
-		// No overflow - return original value for single, nil for slice
 		if len(values) == 1 {
 			return values[0], false
 		}
-		return nil, false // For slices, nil means use original
+		return nil, false
 	}
-	
-	// Has overflow - convert to string(s)
+
+	// Has overflow - convert to string
 	if len(values) == 1 {
 		strVal := fmt.Sprintf("%v", values[0])
 		log.Printf("uint64 attribute %s with value %d exceeds int64 range and was converted to string", attributeName, values[0])
 		return strVal, true
 	}
-	
+
 	// Multiple values - convert entire slice to strings
 	strList := make([]string, len(values))
 	for i, val := range values {

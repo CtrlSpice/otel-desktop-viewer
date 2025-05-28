@@ -91,7 +91,6 @@ const (
             s.traceID
     `
 
-	// DuckDB's Go bindings now have proper support for UNIONs 🎉
 	SELECT_TRACE string = `
 		SELECT 
 			traceID, 
