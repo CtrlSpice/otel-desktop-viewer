@@ -63,16 +63,12 @@ jobs:
           go-version: '1.24'
 
       # Cache Go dependencies to speed up builds.
-      # - ~/go/pkg/mod: Caches downloaded Go modules
-      # - **/go.sum: Used to determine if dependencies have changed
-      # - key: Unique key based on OS and go.sum hash
-      # - restore-keys: Fallback to most recent cache if no exact match
+      # Note: Only cache directories in 'path', use go.sum files only in 'key' with hashFiles()
       - name: Cache Go dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/go/pkg/mod
-            **/go.sum
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
@@ -172,8 +168,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: v2.9.0
-          args: continue --merge ${{ github.ref_name == 'fix-ci-release' && '--snapshot' || '' }}
+          args: continue --merge
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
-
