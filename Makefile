@@ -40,7 +40,7 @@ validate-typescript:
 
 .PHONY: release-dry-run
 release-dry-run:
-	gh workflow run "Release" --ref put-back-go-releaser -f test_mode=true
+	gh workflow run "Release" --ref $$(git branch --show-current) -f test_mode=true
 
 .PHONY: kill-port
 kill-port:
