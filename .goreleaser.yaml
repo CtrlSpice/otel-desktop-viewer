@@ -82,7 +82,7 @@ builds:
 
 archives:
   - id: otel-desktop-viewer-archive
-    builds:
+    ids:
       - macos_amd64
       - macos_arm64
       - linux_x86_64
@@ -91,10 +91,9 @@ archives:
     formats: 
       - tar.gz
       - zip
-    # Use zip for Windows, tar.gz for others
     format_overrides:
       - goos: windows
-        formats: [zip]
+        format: zip
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}MacOS
