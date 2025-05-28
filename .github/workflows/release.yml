@@ -31,9 +31,13 @@ jobs:
         # windows-latest -> windows_amd64
         include:
           - os: macos-latest
-            build_id: macos
+            build_id: macos_amd64
             goos: darwin
-            goarch: [amd64, arm64]
+            goarch: amd64
+          - os: macos-latest
+            build_id: macos_arm64
+            goos: darwin
+            goarch: arm64
           - os: ubuntu-latest
             build_id: linux_x86_64
             goos: linux
