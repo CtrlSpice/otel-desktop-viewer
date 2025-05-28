@@ -62,18 +62,17 @@ jobs:
           cd ../desktopexporter && go mod download
 
       # Cache Go dependencies to speed up builds.
-      # Note: Only cache directories in 'path', use go.sum files only in 'key' with hashFiles()
       - name: Cache Go dependencies
         uses: actions/cache@v4
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
-            /home/runner/go/pkg/mod
-            /home/runner/.cache/go-build
+            ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+          enableCrossOsArchive: true
+          mode: recursive
 
       - name: Cache build artifacts
         uses: actions/cache@v4
