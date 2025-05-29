@@ -18,11 +18,13 @@ import (
 	"go.opentelemetry.io/collector/otelcol"
 )
 
+var version = "dev" // This will be set by ldflags during build
+
 func main() {
 	info := component.BuildInfo{
 		Command:     "otel-desktop-viewer",
 		Description: "Collector distribution that allows developers to visualize their OTel data locally",
-		Version:     "0.2.0",
+		Version:     version,
 	}
 
 	set := otelcol.CollectorSettings{
