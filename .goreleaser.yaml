@@ -6,13 +6,10 @@ env:
 before:
   hooks:
     - cmd: go work sync
-    - cmd: sh -c "cd desktopcollector && go mod tidy && cd ../desktopexporter && go mod tidy"
+    - cmd: sh -c "go mod tidy && cd desktopexporter && go mod tidy"
 
 builds:
   - id: macos_amd64
-    main: ./desktopcollector/
-    # Using simple binary name as GoReleaser automatically creates unique directories
-    # with build ID and target info (e.g. macos_darwin_amd64, macos_darwin_arm64)
     binary: otel-desktop-viewer
     goos: 
       - darwin
@@ -29,7 +26,6 @@ builds:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
   - id: macos_arm64
-    main: ./desktopcollector/
     binary: otel-desktop-viewer
     goos: 
       - darwin
@@ -42,7 +38,6 @@ builds:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
   - id: linux_x86_64
-    main: ./desktopcollector/
     binary: otel-desktop-viewer
     goos:
       - linux
@@ -55,7 +50,6 @@ builds:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
   - id: linux_arm64
-    main: ./desktopcollector/
     binary: otel-desktop-viewer
     goos:
       - linux
@@ -68,7 +62,6 @@ builds:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
   - id: windows_amd64
-    main: ./desktopcollector/
     binary: otel-desktop-viewer
     goos:
       - windows

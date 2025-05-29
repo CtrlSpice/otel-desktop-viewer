@@ -6,7 +6,7 @@ install:
 
 .PHONY: build-go
 build-go:
-	cd desktopcollector; go build -o ../otel-desktop-viewer
+	go build -o otel-desktop-viewer
 
 .PHONY: test-go
 test-go:
@@ -14,11 +14,11 @@ test-go:
 	
 .PHONY: run-go
 run-go:
-	cd desktopcollector; STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/server/static/) go run ./...
+	STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/server/static/) go run .
 
 .PHONY: run-db-go
 run-db-go:
-	cd desktopcollector; STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/server/static/) go run ./... --db ../duck.db
+	STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/server/static/) go run . --db duck.db
 
 .PHONY: build-js
 build-js:
