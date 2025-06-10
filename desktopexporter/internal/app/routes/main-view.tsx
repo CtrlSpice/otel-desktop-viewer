@@ -7,11 +7,12 @@ import { Sidebar } from "../components/sidebar-view/sidebar";
 import { EmptyStateView } from "../components/empty-state-view/empty-state-view";
 import { TraceSummaries, TraceSummary } from "../types/api-types";
 import { SidebarData, TraceSummaryWithUIData } from "../types/ui-types";
+import { traceSummariesFromJSON } from "../types/api-types";
 
 export async function mainLoader() {
   const response = await fetch("/api/traces");
-  const traceSummaries = await response.json();
-  return traceSummaries;
+  const json = await response.json();
+  return traceSummariesFromJSON(json);
 }
 
 export default function MainView() {
@@ -27,7 +28,8 @@ export default function MainView() {
     async function checkForNewData() {
       let response = await fetch("/api/traces");
       if (response.ok) {
-        let { traceSummaries } = (await response.json()) as TraceSummaries;
+        let json = await response.json();
+        let { traceSummaries } = traceSummariesFromJSON(json);
         let newSidebarData = updateSidebarData(sidebarData, traceSummaries);
         setSidebarData(newSidebarData);
       }
@@ -112,7 +114,9 @@ function updateSidebarData(sidebarData: SidebarData, traceSummaries: TraceSummar
 function transformSummaryToUIData(traceSummary: TraceSummary): TraceSummaryWithUIData {
   if (traceSummary.rootSpan) {
     return {
-      root: traceSummary.rootSpan,
+      root: {
+        ...traceSummary.rootSpan
+      },
       spanCount: traceSummary.spanCount
     };
   }

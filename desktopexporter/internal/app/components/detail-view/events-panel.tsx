@@ -14,18 +14,19 @@ import {
 
 import { EventData } from "../../types/api-types";
 import { SpanField } from "./span-field";
-import { getDurationNs, getDurationString } from "../../utils/duration";
 import { parseAttributeType } from "../../utils/parse-type";
+import { PreciseTimestamp } from "../../types/precise-timestamp";
+import { getDuration } from "../../utils/duration";
 
 type EventItemProps = {
   event: EventData;
-  spanStartTime: string;
+  spanStartTime: PreciseTimestamp;
 };
 
 function EventItem(props: EventItemProps) {
   let { event, spanStartTime } = props;
-  let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
-  let durationString = getDurationString(timeSinceSpanStart);
+  let timeSinceSpanStart = getDuration(spanStartTime, event.timestamp).label;
+
   let eventAttributes = Object.entries(event.attributes).map(([key, value]) => (
     <li key={key + value?.toString()}>
       <SpanField
@@ -44,14 +45,14 @@ function EventItem(props: EventItemProps) {
           textAlign="left"
         >
           <Heading size="sm">{event.name}</Heading>
-          <Text fontSize="xs">{durationString} since span start</Text>
+          <Text fontSize="xs">{timeSinceSpanStart} since span start</Text>
         </Box>
         <AccordionIcon />
       </AccordionButton>
       <AccordionPanel>
         <SpanField
           fieldName="timestamp"
-          fieldValue={event.timestamp}
+          fieldValue={event.timestamp.toString()}
           fieldType="timestamp"
         />
         <List>{eventAttributes}</List>
@@ -68,7 +69,7 @@ function EventItem(props: EventItemProps) {
 
 type EventsPanelProps = {
   events: EventData[] | undefined;
-  spanStartTime: string;
+  spanStartTime: PreciseTimestamp;
 };
 
 export function EventsPanel(props: EventsPanelProps) {

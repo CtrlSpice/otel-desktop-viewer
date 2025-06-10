@@ -1,9 +1,10 @@
 import React, { useRef } from "react";
 import { useSize } from "@chakra-ui/react-use-size";
 import { Flex, Heading, List, ListItem, Spacer, Text } from "@chakra-ui/react";
+import { Duration } from "../../utils/duration";
 
 type DurationIndicatorProps = {
-  traceDuration: number;
+  traceDuration: Duration;
 };
 
 function DurationIndicator(props: DurationIndicatorProps) {
@@ -26,24 +27,40 @@ function DurationIndicator(props: DurationIndicatorProps) {
   // Determine the time unit we are working in
   let { traceDuration } = props;
   let timeUnit = "ns";
-  if (traceDuration >= 1e9) {
-    traceDuration = traceDuration / 1e9;
+  let totalMs = traceDuration.milliseconds;
+
+  if (totalMs >= 1000) {
     timeUnit = "s";
-  } else if (traceDuration >= 1e6) {
-    traceDuration = traceDuration / 1e6;
+  } else if (totalMs >= 1) {
     timeUnit = "ms";
-  } else if (traceDuration >= 1e3) {
-    traceDuration = traceDuration / 1e3;
+  } else if (traceDuration.nanoseconds >= 1000) {
     timeUnit = "μs";
   }
 
-  let sectionDuration = traceDuration / numSections;
+  // Calculate section duration in milliseconds and nanoseconds
+  let sectionMs = Math.floor(traceDuration.milliseconds / numSections);
+  let sectionNs = Math.floor((traceDuration.milliseconds % numSections) * 1e6 + traceDuration.nanoseconds) / numSections;
   let sectionWidth = availableWidth / numSections;
 
   let durationSections = Array(numSections - 1)
     .fill(null)
     .map((_, i) => {
-      let sectionLabel = `${+(sectionDuration * i).toFixed(3)}${timeUnit}`;
+      // Calculate this section's time
+      let sectionTimeMs = sectionMs * i;
+      let sectionTimeNs = sectionNs * i;
+      
+      // Format the section time
+      let sectionLabel = "";
+      if (sectionTimeMs >= 1000) {
+        sectionLabel = `${(sectionTimeMs / 1000).toFixed(3)} s`;
+      } else if (sectionTimeMs >= 1) {
+        sectionLabel = `${sectionTimeMs}.${sectionTimeNs.toString().padStart(6, '0')} ms`;
+      } else if (sectionTimeNs >= 1000) {
+        sectionLabel = `${(sectionTimeNs / 1000).toFixed(3)} μs`;
+      } else {
+        sectionLabel = `${sectionTimeNs} ns`;
+      }
+
       return (
         <ListItem
           key={i}
@@ -60,7 +77,7 @@ function DurationIndicator(props: DurationIndicatorProps) {
     });
 
   let lastDurationLabel = (
-    <Text fontSize="x-small">{`${+traceDuration.toFixed(3)}${timeUnit}`}</Text>
+    <Text fontSize="x-small">{traceDuration.label}</Text>
   );
 
   return (
@@ -83,7 +100,7 @@ type HeaderRowProps = {
   headerRowHeight: number;
   spanNameColumnWidth: number;
   serviceNameColumnWidth: number;
-  traceDuration: number;
+  traceDuration: Duration;
 };
 
 export function HeaderRow(props: HeaderRowProps) {

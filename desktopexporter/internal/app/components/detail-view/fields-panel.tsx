@@ -14,7 +14,7 @@ import {
 
 import { SpanData } from "../../types/api-types";
 import { SpanField } from "./span-field";
-import { getDurationNs, getDurationString } from "../../utils/duration";
+import { getDuration } from "../../utils/duration";
 import { parseAttributeType } from "../../utils/parse-type";
 
 type FieldsPanelProps = {
@@ -44,9 +44,7 @@ export function FieldsPanel(props: FieldsPanelProps) {
   ) : null;
 
   // Duration: label in appropriate human-readable time unit (s, ms, μs, ns)
-  let durationString = getDurationString(
-    getDurationNs(span.startTime, span.endTime),
-  );
+  let duration = getDuration(span.startTime, span.endTime);
 
   // Attributes:
   let spanAttributes = Object.entries(span.attributes).map(([key, value]) => (
@@ -117,17 +115,17 @@ export function FieldsPanel(props: FieldsPanelProps) {
             />
             <SpanField
               fieldName="start time"
-              fieldValue={span.startTime}
+              fieldValue={span.startTime.toString()}
               fieldType="timestamp"
             />
             <SpanField
               fieldName="end time"
-              fieldValue={span.endTime}
+              fieldValue={span.endTime.toString()}
               fieldType="timestamp"
             />
             <SpanField
               fieldName="duration"
-              fieldValue={durationString}
+              fieldValue={duration.label}
               fieldType="string"
             />
             <SpanField

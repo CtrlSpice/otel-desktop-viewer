@@ -1,34 +1,21 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
-	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 	"github.com/marcboeker/go-duckdb/v2"
 )
 
-// Error message constants for attribute type validation
-const (
-	errMixedTypesPrefix      = "list attribute contains mixed types: "
-	errNilValue              = errMixedTypesPrefix + "list contains nil value"
-	errIncompatibleType      = errMixedTypesPrefix + "incompatible type %T"
-	errIncompatibleIntType   = errMixedTypesPrefix + "incompatible type %T in integer list"
-	errIncompatibleFloatType = errMixedTypesPrefix + "incompatible type %T in float list"
-	errUint64Overflow        = "uint64 value %d exceeds int64 range"
-	errNilFirstElement       = "nil value in list attribute"
-	errUnsupportedListType   = "unsupported list attribute type: %T"
-)
-
 type dbEvent struct {
 	Name                   string     `db:"name"`
-	Timestamp              time.Time  `db:"timestamp"`
+	Timestamp              int64      `db:"timestamp"`
 	Attributes             duckdb.Map `db:"attributes"`
 	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
 }
-
 
 type dbLink struct {
 	TraceID                string     `db:"traceID"`
@@ -38,64 +25,60 @@ type dbLink struct {
 	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
 }
 
+// toDbMap converts a map of attributes to a DuckDB Map type.
+// For uint64 values, if they exceed math.MaxInt64, they are converted to strings.
+// For []uint64 values, if any value exceeds math.MaxInt64, the entire slice is converted to []string.
 func toDbMap(attributes map[string]any) duckdb.Map {
 	dbMap := duckdb.Map{}
 
 	for attributeName, attributeValue := range attributes {
-		tag := ""
-		value := attributeValue
-
 		switch t := attributeValue.(type) {
 		case string:
-			tag = "str"
+			dbMap[attributeName] = duckdb.Union{Tag: "str", Value: t}
 		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32:
-			tag = "bigint"
+			dbMap[attributeName] = duckdb.Union{Tag: "bigint", Value: t}
 		case uint64:
-			if convertedValue, hasOverflow := stringifyOnOverflow(attributeName, t); hasOverflow {
-				tag = "str"
-				value = convertedValue
+			value, hasOverflow := stringifyOnOverflow(attributeName, t)
+			if hasOverflow {
+				dbMap[attributeName] = duckdb.Union{Tag: "str", Value: value}
 			} else {
-				tag = "bigint"
+				dbMap[attributeName] = duckdb.Union{Tag: "bigint", Value: value}
 			}
 		case float32, float64:
-			tag = "double"
+			dbMap[attributeName] = duckdb.Union{Tag: "double", Value: t}
 		case bool:
-			tag = "boolean"
+			dbMap[attributeName] = duckdb.Union{Tag: "boolean", Value: t}
 		case []string:
-			tag = "str_list"
+			dbMap[attributeName] = duckdb.Union{Tag: "str_list", Value: t}
 		case []int, []int8, []int16, []int32, []int64, []uint, []uint8, []uint16, []uint32:
-			tag = "bigint_list"
+			dbMap[attributeName] = duckdb.Union{Tag: "bigint_list", Value: t}
 		case []uint64:
-			if strList, hasOverflow := stringifyOnOverflow(attributeName, t...); hasOverflow {
-				tag = "str_list"
-				value = strList
+			value, hasOverflow := stringifyOnOverflow(attributeName, t...)
+			if hasOverflow {
+				dbMap[attributeName] = duckdb.Union{Tag: "str_list", Value: value}
 			} else {
-				tag = "bigint_list"
+				dbMap[attributeName] = duckdb.Union{Tag: "bigint_list", Value: value}
 			}
 		case []float32, []float64:
-			tag = "double_list"
+			dbMap[attributeName] = duckdb.Union{Tag: "double_list", Value: t}
 		case []bool:
-			tag = "boolean_list"
+			dbMap[attributeName] = duckdb.Union{Tag: "boolean_list", Value: t}
 		case []any:
 			derivedTag, err := getListTypeTag(t)
 			if err != nil {
-				tag = "str_list"
-				strList := []string{}
-				for _, v := range t {
-					strList = append(strList, fmt.Sprintf("%v", v))
+				strList := make([]string, len(t))
+				for i, v := range t {
+					strList[i] = fmt.Sprintf("%v", v)
 				}
-				value = strList
-				log.Printf("unsupported list attribute %s was converted to []string: %v", attributeName, err)
+				dbMap[attributeName] = duckdb.Union{Tag: "str_list", Value: strList}
+				log.Printf(WarnUnsupportedListAttribute, attributeName, err)
 			} else {
-				tag = derivedTag
+				dbMap[attributeName] = duckdb.Union{Tag: derivedTag, Value: t}
 			}
 		default:
-			tag = "str"
-			value = fmt.Sprintf("%v", attributeValue)
-			log.Printf("unsupported attribute type was unceremoniously cast to string. name: %s type: %T value: %v", attributeName, t, attributeValue)
+			dbMap[attributeName] = duckdb.Union{Tag: "str", Value: fmt.Sprintf("%v", attributeValue)}
+			log.Printf(WarnUnsupportedAttributeType, attributeName, t, attributeValue)
 		}
-
-		dbMap[attributeName] = duckdb.Union{Tag: tag, Value: value}
 	}
 
 	return dbMap
@@ -133,6 +116,38 @@ func toDbLinks(links []telemetry.LinkData) []dbLink {
 		dbLinks = append(dbLinks, dbLink)
 	}
 	return dbLinks
+}
+
+// toDbBody converts a value to a DuckDB Union type.
+// For uint64 values, if they exceed math.MaxInt64, they are converted to strings.
+// For complex types (arrays, maps, structs), the value is JSON marshaled.
+func toDbBody(body any) duckdb.Union {
+	switch t := body.(type) {
+	case string:
+		return duckdb.Union{Tag: "str", Value: t}
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32:
+		return duckdb.Union{Tag: "bigint", Value: t}
+	case uint64:
+		value, hasOverflow := stringifyOnOverflow("body", t)
+		if hasOverflow {
+			return duckdb.Union{Tag: "str", Value: value}
+		}
+		return duckdb.Union{Tag: "bigint", Value: value}
+	case float32, float64:
+		return duckdb.Union{Tag: "double", Value: t}
+	case bool:
+		return duckdb.Union{Tag: "boolean", Value: t}
+	case []byte:
+		return duckdb.Union{Tag: "bytes", Value: t}
+	default:
+		// For complex types (arrays, maps, structs), convert to JSON string
+		bodyJson, err := json.Marshal(body)
+		if err != nil {
+			log.Printf(WarnJSONMarshal, t, body)
+			return duckdb.Union{Tag: "str", Value: fmt.Sprintf("%v", body)}
+		}
+		return duckdb.Union{Tag: "json", Value: string(bodyJson)}
+	}
 }
 
 func fromDbMap(rawAttributes map[string]duckdb.Union) map[string]any {
@@ -193,6 +208,25 @@ func fromDbLinks(dbLinks []dbLink) []telemetry.LinkData {
 	}
 
 	return links
+}
+
+func fromDbBody(body duckdb.Union) any {
+	if body.Tag == "json" {
+		var result any
+		strValue, ok := body.Value.(string)
+		if !ok {
+			log.Printf(WarnJSONUnmarshal, fmt.Sprintf(errJSONValueType, body.Value))
+			return body.Value
+		}
+
+		if err := json.Unmarshal([]byte(strValue), &result); err != nil {
+			log.Printf(WarnJSONUnmarshal, err)
+			return body.Value
+		}
+
+		return result
+	}
+	return body.Value
 }
 
 // getListTypeTag examines the elements of a []any slice and returns the appropriate type tag
@@ -274,12 +308,14 @@ func validateUniformList[T any](list []any) error {
 	return nil
 }
 
-// Note: This is very unlikely to happen in practice, but it's a good idea to have a fallback for when it does.
 // stringifyOnOverflow checks uint64 values for overflow beyond math.MaxInt64.
-// For individual values: returns (stringValue, hasOverflow) - if no overflow, returns ("", false)
-// For slices: returns ([]string, hasOverflow) if any value overflows, otherwise (nil, false)
+// If any value exceeds math.MaxInt64:
+//   - For single values: returns the string representation and true
+//   - For slices: converts all values to strings and returns true
+// If no overflow occurs:
+//   - For single values: returns the int64 value and false
+//   - For slices: returns the []int64 values and false
 func stringifyOnOverflow(attributeName string, values ...uint64) (any, bool) {
-	// Check if any uint64 values exceed int64 range
 	hasOverflow := false
 	for _, val := range values {
 		if val > math.MaxInt64 {
@@ -288,26 +324,30 @@ func stringifyOnOverflow(attributeName string, values ...uint64) (any, bool) {
 		}
 	}
 
-	// No overflow - return original value for single, nil for slice
+	// No overflow - convert all values to int64
 	if !hasOverflow {
 		if len(values) == 1 {
-			return values[0], false
+			return int64(values[0]), false
 		}
-		return nil, false
+
+		int64List := make([]int64, len(values))
+		for i, val := range values {
+			int64List[i] = int64(val)
+		}
+		return int64List, false
 	}
 
-	// Has overflow - convert to string
+	// Has overflow - convert all values to string
 	if len(values) == 1 {
 		strVal := fmt.Sprintf("%v", values[0])
-		log.Printf("uint64 attribute %s with value %d exceeds int64 range and was converted to string", attributeName, values[0])
+		log.Printf(WarnUint64Overflow, attributeName, values[0])
 		return strVal, true
 	}
 
-	// Multiple values - convert entire slice to strings
 	strList := make([]string, len(values))
-	for i, val := range values {
-		strList[i] = fmt.Sprintf("%v", val)
+	for i, v := range values {
+		strList[i] = fmt.Sprintf("%v", v)
 	}
-	log.Printf("[]uint64 attribute %s contains values exceeding int64 range and was converted to []string", attributeName)
+	log.Printf(WarnUint64SliceOverflow, attributeName)
 	return strList, true
 }

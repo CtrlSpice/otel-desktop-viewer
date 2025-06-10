@@ -50,8 +50,12 @@ func (s *Server) Handler() http.Handler {
 	router := http.NewServeMux()
 	router.HandleFunc("GET /api/traces", s.tracesHandler)
 	router.HandleFunc("GET /api/traces/{id}", s.traceIDHandler)
+	router.HandleFunc("GET /api/logs", s.logsHandler)
+	router.HandleFunc("GET /api/logs/{id}", s.logIDHandler)
+	router.HandleFunc("GET /api/logs/trace/{id}", s.logsByTraceHandler)
 	router.HandleFunc("GET /api/sampleData", s.sampleDataHandler)
-	router.HandleFunc("GET /api/clearData", s.clearTracesHandler)
+	router.HandleFunc("GET /api/clearTraces", s.clearTracesHandler)
+	router.HandleFunc("GET /api/clearLogs", s.clearLogsHandler)
 	router.HandleFunc("GET /traces/{id}", s.indexHandler)
 
 	if s.staticDir != "" {
@@ -88,6 +92,55 @@ func (s *Server) clearTracesHandler(writer http.ResponseWriter, request *http.Re
 	writer.WriteHeader(http.StatusOK)
 }
 
+func (s *Server) clearLogsHandler(writer http.ResponseWriter, request *http.Request) {
+	if err := s.Store.ClearLogs(request.Context()); err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Fatal(err)
+	}
+	writer.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) logsHandler(writer http.ResponseWriter, request *http.Request) {
+	logs, err := s.Store.GetLogs(request.Context())
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Fatal(err)
+	}
+
+	if err := writeJSON(writer, telemetry.Logs{
+		Logs: logs,
+	}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (s *Server) logIDHandler(writer http.ResponseWriter, request *http.Request) {
+	logID := request.PathValue("id")
+	logData, err := s.Store.GetLog(request.Context(), logID)
+	if err != nil {
+		writer.WriteHeader(http.StatusBadRequest)
+	} else {
+		if err := writeJSON(writer, logData); err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func (s *Server) logsByTraceHandler(writer http.ResponseWriter, request *http.Request) {
+	traceID := request.PathValue("id")
+	logs, err := s.Store.GetLogsByTrace(request.Context(), traceID)
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Fatal(err)
+	}
+
+	if err := writeJSON(writer, telemetry.Logs{
+		Logs: logs,
+	}); err != nil {
+		log.Fatal(err)
+	}
+}
+
 func (s *Server) sampleDataHandler(writer http.ResponseWriter, request *http.Request) {
 	sample := telemetry.NewSampleTelemetry()
 	if err := s.Store.AddSpans(request.Context(), sample.Spans); err != nil {
@@ -95,7 +148,11 @@ func (s *Server) sampleDataHandler(writer http.ResponseWriter, request *http.Req
 		log.Fatal(err)
 	}
 
-	//TODO: Add sample logs and metrics
+	if err := s.Store.AddLogs(request.Context(), sample.Logs); err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		log.Fatal(err)
+	}
+
 	writer.WriteHeader(http.StatusOK)
 }
 
@@ -149,3 +206,4 @@ func getStaticDir() string {
 
 	return ""
 }
+

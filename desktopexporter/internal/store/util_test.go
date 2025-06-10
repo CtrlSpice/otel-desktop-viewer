@@ -1,6 +1,8 @@
 package store
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -9,6 +11,15 @@ import (
 	"github.com/marcboeker/go-duckdb/v2"
 	"github.com/stretchr/testify/assert"
 )
+
+// mustMarshal is a helper function that marshals a value to JSON and panics if there's an error
+func mustMarshal(v any) string{
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal %v: %v", v, err))
+	}
+	return string(b)
+}
 
 func TestStringifyOnOverflow(t *testing.T) {
 	tests := []struct {
@@ -22,7 +33,7 @@ func TestStringifyOnOverflow(t *testing.T) {
 			name:             "single value no overflow",
 			attributeName:    "test_attr",
 			values:           []uint64{100},
-			expectedValue:    uint64(100),
+			expectedValue:    int64(100),
 			expectedOverflow: false,
 		},
 		{
@@ -36,7 +47,7 @@ func TestStringifyOnOverflow(t *testing.T) {
 			name:             "single value at boundary (no overflow)",
 			attributeName:    "test_attr",
 			values:           []uint64{math.MaxInt64},
-			expectedValue:    uint64(math.MaxInt64),
+			expectedValue:    int64(math.MaxInt64),
 			expectedOverflow: false,
 		},
 		{
@@ -50,7 +61,7 @@ func TestStringifyOnOverflow(t *testing.T) {
 			name:             "slice no overflow",
 			attributeName:    "test_attr",
 			values:           []uint64{100, 200, 300},
-			expectedValue:    nil,
+			expectedValue:    []int64{100, 200, 300},
 			expectedOverflow: false,
 		},
 		{
@@ -71,7 +82,7 @@ func TestStringifyOnOverflow(t *testing.T) {
 			name:             "empty slice",
 			attributeName:    "test_attr",
 			values:           []uint64{},
-			expectedValue:    nil,
+			expectedValue:    []int64{},
 			expectedOverflow: false,
 		},
 	}
@@ -183,9 +194,9 @@ func TestToDbMap(t *testing.T) {
 				"overflow_slice":  []uint64{100, math.MaxUint64, 300},
 			},
 			expected: map[string]duckdb.Union{
-				"safe_uint64":     {Tag: "bigint", Value: uint64(100)},
+				"safe_uint64":     {Tag: "bigint", Value: int64(100)},
 				"overflow_uint64": {Tag: "str", Value: "18446744073709551615"},
-				"safe_slice":      {Tag: "bigint_list", Value: []uint64{100, 200, 300}},
+				"safe_slice":      {Tag: "bigint_list", Value: []int64{100, 200, 300}},
 				"overflow_slice":  {Tag: "str_list", Value: []string{"100", "18446744073709551615", "300"}},
 			},
 		},
@@ -227,7 +238,7 @@ func TestToDbMap(t *testing.T) {
 }
 
 func TestToDbEvents(t *testing.T) {
-	now := time.Now()
+	now := time.Now().UnixNano()
 	tests := []struct {
 		name     string
 		input    []telemetry.EventData
@@ -327,7 +338,7 @@ func TestToDbLinks(t *testing.T) {
 }
 
 func TestFromDbEvents(t *testing.T) {
-	now := time.Now()
+	now := time.Now().UnixNano()
 	tests := []struct {
 		name     string
 		input    []dbEvent
@@ -376,7 +387,7 @@ func TestFromDbEvents(t *testing.T) {
 				},
 				{
 					Name:                   "event2",
-					Timestamp:              now.Add(time.Second),
+					Timestamp:              now + time.Second.Nanoseconds(),
 					Attributes:             duckdb.Map{"key2": duckdb.Union{Tag: "bigint", Value: int64(100)}},
 					DroppedAttributesCount: 2,
 				},
@@ -390,7 +401,7 @@ func TestFromDbEvents(t *testing.T) {
 				},
 				{
 					Name:                   "event2",
-					Timestamp:              now.Add(time.Second),
+					Timestamp:              now + time.Second.Nanoseconds(),
 					Attributes:             map[string]any{"key2": int64(100)},
 					DroppedAttributesCount: 2,
 				},
@@ -484,6 +495,159 @@ func TestFromDbLinks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := fromDbLinks(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestToDbBody(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    any
+		expected duckdb.Union
+	}{
+		{
+			name:     "string value",
+			input:    "hello world",
+			expected: duckdb.Union{Tag: "str", Value: "hello world"},
+		},
+		{
+			name:     "integer value",
+			input:    int64(42),
+			expected: duckdb.Union{Tag: "bigint", Value: int64(42)},
+		},
+		{
+			name:     "float value",
+			input:    float64(3.14159),
+			expected: duckdb.Union{Tag: "double", Value: float64(3.14159)},
+		},
+		{
+			name:     "float32 value",
+			input:    float32(3.14),
+			expected: duckdb.Union{Tag: "double", Value: float32(3.14)},
+		},
+		{
+			name:     "boolean value",
+			input:    true,
+			expected: duckdb.Union{Tag: "boolean", Value: true},
+		},
+		{
+			name:     "byte array",
+			input:    []byte("binary data"),
+			expected: duckdb.Union{Tag: "bytes", Value: []byte("binary data")},
+		},
+		{
+			name:     "safe uint64",
+			input:    uint64(100),
+			expected: duckdb.Union{Tag: "bigint", Value: int64(100)},
+		},
+		{
+			name:     "overflow uint64",
+			input:    uint64(math.MaxUint64),
+			expected: duckdb.Union{Tag: "str", Value: "18446744073709551615"},
+		},
+		{
+			name:     "complex struct",
+			input:    struct{ Name string }{Name: "test"},
+			expected: duckdb.Union{Tag: "json", Value: mustMarshal(struct{ Name string }{Name: "test"})},
+		},
+		{
+			name:     "string array",
+			input:    []string{"one", "two", "three"},
+			expected: duckdb.Union{Tag: "json", Value: mustMarshal([]string{"one", "two", "three"})},
+		},
+		{
+			name:     "mixed array",
+			input:    []any{"string", 42, true},
+			expected: duckdb.Union{Tag: "json", Value: mustMarshal([]any{"string", 42, true})},
+		},
+		{
+			name:     "nested map",
+			input:    map[string]any{"key": "value", "nested": map[string]any{"inner": 42}},
+			expected: duckdb.Union{Tag: "json", Value: mustMarshal(map[string]any{"key": "value", "nested": map[string]any{"inner": 42}})},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := toDbBody(tt.input)
+			assert.Equal(t, tt.expected.Tag, result.Tag, "tag mismatch")
+			assert.Equal(t, tt.expected.Value, result.Value, "value mismatch")
+		})
+	}
+}
+
+func TestFromDbBody(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    duckdb.Union
+		expected any
+	}{
+		{
+			name:     "string value",
+			input:    duckdb.Union{Tag: "str", Value: "hello world"},
+			expected: "hello world",
+		},
+		{
+			name:     "integer value",
+			input:    duckdb.Union{Tag: "bigint", Value: int64(42)},
+			expected: int64(42),
+		},
+		{
+			name:     "float value",
+			input:    duckdb.Union{Tag: "double", Value: float64(3.14159)},
+			expected: float64(3.14159),
+		},
+		{
+			name:     "boolean value",
+			input:    duckdb.Union{Tag: "boolean", Value: true},
+			expected: true,
+		},
+		{
+			name:     "byte array",
+			input:    duckdb.Union{Tag: "bytes", Value: []byte("binary data")},
+			expected: []byte("binary data"),
+		},
+		{
+			name:     "safe uint64 as bigint",
+			input:    duckdb.Union{Tag: "bigint", Value: int64(100)},
+			expected: int64(100),
+		},
+		{
+			name:     "overflow uint64 as string",
+			input:    duckdb.Union{Tag: "str", Value: "18446744073709551615"},
+			expected: "18446744073709551615",
+		},
+		{
+			name:     "json object",
+			input:    duckdb.Union{Tag: "json", Value: mustMarshal(struct{ Name string }{Name: "test"})},
+			expected: map[string]any{"Name": "test"},
+		},
+		{
+			name:     "json array",
+			input:    duckdb.Union{Tag: "json", Value: mustMarshal([]string{"one", "two", "three"})},
+			expected: []any{"one", "two", "three"},
+		},
+		{
+			name:     "json mixed array",
+			input:    duckdb.Union{Tag: "json", Value: mustMarshal([]any{"string", 42, true})},
+			expected: []any{"string", float64(42), true},
+		},
+		{
+			name:     "json nested map",
+			input:    duckdb.Union{Tag: "json", Value: mustMarshal(map[string]any{"key": "value", "nested": map[string]any{"inner": 42}})},
+			expected: map[string]any{
+				"key": "value",
+				"nested": map[string]any{
+					"inner": float64(42),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := fromDbBody(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

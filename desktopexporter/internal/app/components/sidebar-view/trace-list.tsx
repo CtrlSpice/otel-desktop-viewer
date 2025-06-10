@@ -15,8 +15,8 @@ import { useSize } from "@chakra-ui/react-use-size";
 import { TraceSummaryWithUIData } from "../../types/ui-types";
 import { useKeyCombo, useKeyPress } from "../../utils/use-key-press";
 import { KeyboardHelp } from "../modals/keyboard-help";
-import { getDurationString } from "../../utils/duration";
-import { getDurationNs } from "../../utils/duration";
+import { getDuration } from "../../utils/duration";
+import { traceSummaryFromJSON } from "../../types/api-types";
 
 const sidebarSummaryHeight = 120;
 const dividerHeight = 1;
@@ -56,10 +56,11 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
       .replaceAll("-", "-\u200B")
       .replaceAll(".", ".\u200B");
 
-    let rootDuration = getDurationNs(
+    let duration = getDuration(
       traceSummary.root.startTime,
       traceSummary.root.endTime
     );
+
     return (
       <div style={style}>
         <Divider
@@ -90,7 +91,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
           </Text>
           <Text fontSize="xs">
             {"Root Duration: "}
-            <strong>{getDurationString(rootDuration)}</strong>
+            <strong>{duration.label}</strong>
           </Text>
           <Text fontSize="xs">
             {"Number of Spans: "}
@@ -265,10 +266,10 @@ export function TraceList(props: TraceListProps) {
 }
 
 export async function clearTraceData() {
-  let response = await fetch("/api/clearData");
+  let response = await fetch("/api/clearTraces");
   if (!response.ok) {
     throw new Error("HTTP status " + response.status);
-  } else {
-    window.location.replace("/");
   }
+  
+  window.location.replace("/");
 }
