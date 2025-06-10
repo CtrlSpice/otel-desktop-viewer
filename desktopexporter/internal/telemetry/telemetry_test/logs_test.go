@@ -87,7 +87,7 @@ func TestLogExtraction(t *testing.T) {
 				assert.Equal(t, "ERROR", currencyLog.SeverityText)
 				assert.Equal(t, int32(17), currencyLog.SeverityNumber)
 				assert.Equal(t, "currency.conversion.failed", currencyLog.EventName)
-				assert.Equal(t, uint32(0), currencyLog.Flags)
+				assert.Equal(t, uint32(1), currencyLog.Flags)
 				
 				expectedAttrs := map[string]any{
 					"currency.from":   "USD",
