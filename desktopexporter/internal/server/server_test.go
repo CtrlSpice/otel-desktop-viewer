@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"net/http"
@@ -16,16 +17,24 @@ import (
 )
 
 func setupEmpty() (*httptest.Server, func()) {
+	// Set environment variable to enable logs endpoints
+	os.Setenv("ENABLE_LOGS", "true")
+	
 	server := NewServer("localhost:8000", "")
 	testServer := httptest.NewServer(server.Handler())
 
 	return testServer, func() {
 		testServer.Close()
 		server.Store.Close()
+		// Clean up environment variable
+		os.Unsetenv("ENABLE_LOGS")
 	}
 }
 
 func setupWithData(t *testing.T) (*httptest.Server, func(*testing.T)) {
+	// Set environment variable to enable logs endpoints
+	os.Setenv("ENABLE_LOGS", "true")
+	
 	baseTime := time.Now().UnixNano()
 	server := NewServer("localhost:8000", "")
 
@@ -99,6 +108,8 @@ func setupWithData(t *testing.T) (*httptest.Server, func(*testing.T)) {
 	return testServer, func(t *testing.T) {
 		testServer.Close()
 		server.Store.Close()
+		// Clean up environment variable
+		os.Unsetenv("ENABLE_LOGS")
 	}
 }
 
