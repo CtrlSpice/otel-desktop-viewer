@@ -6,33 +6,48 @@ import { extendTheme, type ThemeConfig } from "@chakra-ui/react";
 
 import MainView, { mainLoader } from "./routes/main-view";
 import TraceView, { traceLoader } from "./routes/trace-view";
+import LogsView from "./routes/logs-view";
 import ErrorPage from "./error-page";
 
-const config: ThemeConfig = {
+let config: ThemeConfig = {
   initialColorMode: "system",
-  useSystemColorMode: false,
+  useSystemColorMode: true,
 };
-const theme = extendTheme({ config });
+let theme = extendTheme({ config });
 
-const router = createBrowserRouter([
+// Check feature flag for logs
+let enableLogs = localStorage.getItem('enableLogs') === 'true';
+console.log('Debug: enableLogs flag at module load:', enableLogs);
+
+let routeChildren: any[] = [
+  {
+    path: "traces/:traceID",
+    element: <TraceView />,
+    loader: traceLoader,
+  },
+];
+
+// Always add logs route, but we'll conditionally render it
+routeChildren.push({
+  path: "logs",
+  element: <LogsView />,
+});
+
+console.log('Debug: routeChildren:', routeChildren);
+
+let router = createBrowserRouter([
   {
     path: "/",
     element: <MainView />,
     loader: mainLoader,
     errorElement: <ErrorPage />,
-    children: [
-      {
-        path: "traces/:traceID",
-        element: <TraceView />,
-        loader: traceLoader,
-      },
-    ],
+    children: routeChildren,
   },
 ]);
 
-const container = document.getElementById("root");
+let container = document.getElementById("root");
 if (!!container) {
-  const root = createRoot(container);
+  let root = createRoot(container);
 
   root.render(
     <React.StrictMode>

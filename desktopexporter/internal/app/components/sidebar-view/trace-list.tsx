@@ -7,6 +7,7 @@ import {
   LinkOverlay,
   Divider,
   Text,
+  Button,
   useColorModeValue,
   useDisclosure,
 } from "@chakra-ui/react";
@@ -161,6 +162,9 @@ export function TraceList(props: TraceListProps) {
 
   let { isOpen, onOpen, onClose } = useDisclosure();
 
+  // Feature flag check
+  let enableLogs = localStorage.getItem('enableLogs') === 'true';
+
   let selectedIndex = 0;
   let selectedTraceID = "";
   let { traceSummaries } = props;
@@ -172,7 +176,8 @@ export function TraceList(props: TraceListProps) {
   if (location.pathname.includes("/traces/")) {
     selectedTraceID = location.pathname.split("/")[2];
     selectedIndex = traceIDs.indexOf(selectedTraceID);
-  } else {
+  } else if (!location.pathname.includes("/logs") && traceIDs.length > 0) {
+    // Only redirect if we're not on the logs page and have traces
     selectedTraceID = traceIDs[selectedIndex];
     window.location.href = `/traces/${selectedTraceID}`;
   }
@@ -246,9 +251,23 @@ export function TraceList(props: TraceListProps) {
     <Flex
       ref={containerRef}
       height="100%"
+      direction="column"
     >
+      {/* Logs navigation button - feature flagged */}
+      {enableLogs && (
+        <Button
+          as={NavLink}
+          to="/logs"
+          m={2}
+          size="sm"
+          colorScheme="blue"
+          variant="outline"
+        >
+          View Logs
+        </Button>
+      )}
       <FixedSizeList
-        height={size ? size.height : 0}
+        height={size ? size.height - (enableLogs ? 50 : 0) : 0}
         itemData={itemData}
         itemCount={traceSummaries.size}
         itemSize={itemHeight}

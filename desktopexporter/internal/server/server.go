@@ -50,13 +50,18 @@ func (s *Server) Handler() http.Handler {
 	router := http.NewServeMux()
 	router.HandleFunc("GET /api/traces", s.tracesHandler)
 	router.HandleFunc("GET /api/traces/{id}", s.traceIDHandler)
-	router.HandleFunc("GET /api/logs", s.logsHandler)
-	router.HandleFunc("GET /api/logs/{id}", s.logIDHandler)
-	router.HandleFunc("GET /api/logs/trace/{id}", s.logsByTraceHandler)
 	router.HandleFunc("GET /api/sampleData", s.sampleDataHandler)
 	router.HandleFunc("GET /api/clearTraces", s.clearTracesHandler)
-	router.HandleFunc("GET /api/clearLogs", s.clearLogsHandler)
 	router.HandleFunc("GET /traces/{id}", s.indexHandler)
+	
+	// Feature flag for logs frontend route
+	if os.Getenv("ENABLE_LOGS") == "true" {
+		router.HandleFunc("GET /logs", s.indexHandler)
+		router.HandleFunc("GET /api/logs", s.logsHandler)
+		router.HandleFunc("GET /api/logs/{id}", s.logIDHandler)
+		router.HandleFunc("GET /api/logs/trace/{id}", s.logsByTraceHandler)
+		router.HandleFunc("GET /api/clearLogs", s.clearLogsHandler)
+	}
 
 	if s.staticDir != "" {
 		router.Handle("/", http.FileServer(http.Dir(s.staticDir)))

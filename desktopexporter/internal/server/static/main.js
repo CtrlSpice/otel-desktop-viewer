@@ -1001,7 +1001,7 @@
             }
             return dispatcher.useContext(Context);
           }
-          function useState29(initialState2) {
+          function useState30(initialState2) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useState(initialState2);
           }
@@ -1013,7 +1013,7 @@
             var dispatcher = resolveDispatcher();
             return dispatcher.useRef(initialValue);
           }
-          function useEffect45(create, deps) {
+          function useEffect46(create, deps) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useEffect(create, deps);
           }
@@ -1794,7 +1794,7 @@
           exports.useContext = useContext16;
           exports.useDebugValue = useDebugValue;
           exports.useDeferredValue = useDeferredValue;
-          exports.useEffect = useEffect45;
+          exports.useEffect = useEffect46;
           exports.useId = useId10;
           exports.useImperativeHandle = useImperativeHandle;
           exports.useInsertionEffect = useInsertionEffect2;
@@ -1802,7 +1802,7 @@
           exports.useMemo = useMemo25;
           exports.useReducer = useReducer2;
           exports.useRef = useRef32;
-          exports.useState = useState29;
+          exports.useState = useState30;
           exports.useSyncExternalStore = useSyncExternalStore2;
           exports.useTransition = useTransition;
           exports.version = ReactVersion;
@@ -2298,9 +2298,9 @@
           if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ !== "undefined" && typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart === "function") {
             __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(new Error());
           }
-          var React42 = require_react();
+          var React43 = require_react();
           var Scheduler = require_scheduler();
-          var ReactSharedInternals = React42.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+          var ReactSharedInternals = React43.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
           var suppressWarning = false;
           function setSuppressWarning(newSuppressWarning) {
             {
@@ -3821,7 +3821,7 @@
             {
               if (props.value == null) {
                 if (typeof props.children === "object" && props.children !== null) {
-                  React42.Children.forEach(props.children, function(child) {
+                  React43.Children.forEach(props.children, function(child) {
                     if (child == null) {
                       return;
                     }
@@ -24672,7 +24672,7 @@
     "node_modules/@emotion/use-insertion-effect-with-fallbacks/dist/emotion-use-insertion-effect-with-fallbacks.browser.cjs.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      var React42 = require_react();
+      var React43 = require_react();
       function _interopNamespace(e) {
         if (e && e.__esModule)
           return e;
@@ -24693,7 +24693,7 @@
         n["default"] = e;
         return Object.freeze(n);
       }
-      var React__namespace = /* @__PURE__ */ _interopNamespace(React42);
+      var React__namespace = /* @__PURE__ */ _interopNamespace(React43);
       var syncFallback = function syncFallback2(create) {
         return create();
       };
@@ -24709,7 +24709,7 @@
   var require_emotion_element_832b737b_browser_cjs = __commonJS({
     "node_modules/@emotion/react/dist/emotion-element-832b737b.browser.cjs.js"(exports) {
       "use strict";
-      var React42 = require_react();
+      var React43 = require_react();
       var createCache = require_emotion_cache_browser_cjs();
       var _extends5 = require_extends();
       var weakMemoize = require_emotion_weak_memoize_cjs();
@@ -24740,7 +24740,7 @@
         n["default"] = e;
         return Object.freeze(n);
       }
-      var React__namespace = /* @__PURE__ */ _interopNamespace(React42);
+      var React__namespace = /* @__PURE__ */ _interopNamespace(React43);
       var createCache__default = /* @__PURE__ */ _interopDefault(createCache);
       var weakMemoize__default = /* @__PURE__ */ _interopDefault(weakMemoize);
       var isDevelopment = false;
@@ -24751,11 +24751,11 @@
       );
       var CacheProvider2 = EmotionCacheContext.Provider;
       var __unsafe_useEmotionCache2 = function useEmotionCache() {
-        return React42.useContext(EmotionCacheContext);
+        return React43.useContext(EmotionCacheContext);
       };
       var withEmotionCache2 = function withEmotionCache3(func2) {
-        return /* @__PURE__ */ React42.forwardRef(function(props, ref) {
-          var cache = React42.useContext(EmotionCacheContext);
+        return /* @__PURE__ */ React43.forwardRef(function(props, ref) {
+          var cache = React43.useContext(EmotionCacheContext);
           return func2(props, cache, ref);
         });
       };
@@ -24871,7 +24871,7 @@
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       var emotionElement = require_emotion_element_832b737b_browser_cjs();
-      var React42 = require_react();
+      var React43 = require_react();
       var utils = require_emotion_utils_browser_cjs();
       var useInsertionEffectWithFallbacks = require_emotion_use_insertion_effect_with_fallbacks_browser_cjs();
       var serialize = require_emotion_serialize_cjs();
@@ -24900,7 +24900,7 @@
         n["default"] = e;
         return Object.freeze(n);
       }
-      var React__namespace = /* @__PURE__ */ _interopNamespace(React42);
+      var React__namespace = /* @__PURE__ */ _interopNamespace(React43);
       var jsx83 = function jsx84(type, props) {
         var args = arguments;
         if (props == null || !emotionElement.hasOwn.call(props, "css")) {
@@ -25092,7 +25092,7 @@
       if (true) {
         (function() {
           "use strict";
-          var React42 = require_react();
+          var React43 = require_react();
           var REACT_ELEMENT_TYPE = Symbol.for("react.element");
           var REACT_PORTAL_TYPE = Symbol.for("react.portal");
           var REACT_FRAGMENT_TYPE = Symbol.for("react.fragment");
@@ -25118,7 +25118,7 @@
             }
             return null;
           }
-          var ReactSharedInternals = React42.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+          var ReactSharedInternals = React43.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
           function error2(format) {
             {
               {
@@ -26832,7 +26832,7 @@
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       var _extends5 = require_extends();
-      var React42 = require_react();
+      var React43 = require_react();
       var isPropValid = require_emotion_is_prop_valid_cjs();
       var react = require_emotion_react_browser_cjs();
       var utils = require_emotion_utils_browser_cjs();
@@ -26861,7 +26861,7 @@
         n["default"] = e;
         return Object.freeze(n);
       }
-      var React__namespace = /* @__PURE__ */ _interopNamespace(React42);
+      var React__namespace = /* @__PURE__ */ _interopNamespace(React43);
       var isPropValid__default = /* @__PURE__ */ _interopDefault(isPropValid);
       var testOmitPropsOnStringTag = isPropValid__default["default"];
       var testOmitPropsOnComponent = function testOmitPropsOnComponent2(key) {
@@ -27797,7 +27797,7 @@
   });
 
   // main.tsx
-  var import_react142 = __toESM(require_react());
+  var import_react144 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // node_modules/@emotion/react/dist/emotion-react.browser.cjs.mjs
@@ -55705,6 +55705,7 @@
     let location = useLocation();
     let navigate = useNavigate();
     let { isOpen, onOpen, onClose } = useDisclosure();
+    let enableLogs2 = localStorage.getItem("enableLogs") === "true";
     let selectedIndex = 0;
     let selectedTraceID = "";
     let { traceSummaries } = props;
@@ -55712,7 +55713,7 @@
     if (location.pathname.includes("/traces/")) {
       selectedTraceID = location.pathname.split("/")[2];
       selectedIndex = traceIDs.indexOf(selectedTraceID);
-    } else {
+    } else if (!location.pathname.includes("/logs") && traceIDs.length > 0) {
       selectedTraceID = traceIDs[selectedIndex];
       window.location.href = `/traces/${selectedTraceID}`;
     }
@@ -55764,12 +55765,25 @@
       Flex,
       {
         ref: containerRef,
-        height: "100%"
+        height: "100%",
+        direction: "column"
       },
+      enableLogs2 && /* @__PURE__ */ import_react105.default.createElement(
+        Button,
+        {
+          as: NavLink,
+          to: "/logs",
+          m: 2,
+          size: "sm",
+          colorScheme: "blue",
+          variant: "outline"
+        },
+        "View Logs"
+      ),
       /* @__PURE__ */ import_react105.default.createElement(
         FixedSizeList,
         {
-          height: size3 ? size3.height : 0,
+          height: size3 ? size3.height - (enableLogs2 ? 50 : 0) : 0,
           itemData,
           itemCount: traceSummaries.size,
           itemSize: itemHeight,
@@ -57560,40 +57574,94 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     return orderedSpans;
   }
 
-  // error-page.tsx
+  // routes/logs-view.tsx
   var import_react141 = __toESM(require_react());
+  function LogsView() {
+    let [logs, setLogs] = (0, import_react141.useState)(null);
+    let [loading, setLoading] = (0, import_react141.useState)(true);
+    let [error2, setError] = (0, import_react141.useState)(null);
+    let errorBg = useColorModeValue("red.100", "red.900");
+    let errorColor = useColorModeValue("red.800", "red.200");
+    let codeBg = useColorModeValue("gray.50", "gray.700");
+    let codeColor = useColorModeValue("gray.800", "gray.100");
+    let fetchLogs = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        let response = await fetch("/api/logs");
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        let data = await response.json();
+        setLogs(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch logs");
+      } finally {
+        setLoading(false);
+      }
+    };
+    (0, import_react141.useEffect)(() => {
+      fetchLogs();
+    }, []);
+    return /* @__PURE__ */ import_react141.default.createElement(Box, { p: 6, height: "100vh", overflow: "auto" }, /* @__PURE__ */ import_react141.default.createElement(Box, { mb: 4, display: "flex", alignItems: "center", gap: 4 }, /* @__PURE__ */ import_react141.default.createElement(Heading, { size: "lg" }, "Logs"), /* @__PURE__ */ import_react141.default.createElement(Button, { onClick: fetchLogs, isLoading: loading, size: "sm" }, "Refresh")), error2 && /* @__PURE__ */ import_react141.default.createElement(Box, { mb: 4, p: 4, bg: errorBg, color: errorColor, borderRadius: "md" }, /* @__PURE__ */ import_react141.default.createElement(Text, { fontWeight: "bold" }, "Error:"), /* @__PURE__ */ import_react141.default.createElement(Text, null, error2)), loading && /* @__PURE__ */ import_react141.default.createElement(Text, null, "Loading logs..."), !loading && !error2 && logs && /* @__PURE__ */ import_react141.default.createElement(
+      Box,
+      {
+        as: "pre",
+        p: 4,
+        bg: codeBg,
+        color: codeColor,
+        borderRadius: "md",
+        overflow: "auto",
+        fontSize: "sm",
+        fontFamily: "mono",
+        whiteSpace: "pre-wrap"
+      },
+      JSON.stringify(logs, null, 2)
+    ));
+  }
+
+  // error-page.tsx
+  var import_react143 = __toESM(require_react());
   function ErrorPage() {
     const error2 = useRouteError();
     console.error(error2);
-    return /* @__PURE__ */ import_react141.default.createElement("div", { id: "error-page" }, /* @__PURE__ */ import_react141.default.createElement("h1", null, "Oops!"), /* @__PURE__ */ import_react141.default.createElement("p", null, "Sorry, an unexpected error has occurred."), /* @__PURE__ */ import_react141.default.createElement("p", null, /* @__PURE__ */ import_react141.default.createElement("i", null, error2.message)));
+    return /* @__PURE__ */ import_react143.default.createElement("div", { id: "error-page" }, /* @__PURE__ */ import_react143.default.createElement("h1", null, "Oops!"), /* @__PURE__ */ import_react143.default.createElement("p", null, "Sorry, an unexpected error has occurred."), /* @__PURE__ */ import_react143.default.createElement("p", null, /* @__PURE__ */ import_react143.default.createElement("i", null, error2.message)));
   }
 
   // main.tsx
   var config2 = {
     initialColorMode: "system",
-    useSystemColorMode: false
+    useSystemColorMode: true
   };
   var theme2 = extendTheme({ config: config2 });
+  var enableLogs = localStorage.getItem("enableLogs") === "true";
+  console.log("Debug: enableLogs flag at module load:", enableLogs);
+  var routeChildren = [
+    {
+      path: "traces/:traceID",
+      element: /* @__PURE__ */ import_react144.default.createElement(TraceView, null),
+      loader: traceLoader
+    }
+  ];
+  routeChildren.push({
+    path: "logs",
+    element: /* @__PURE__ */ import_react144.default.createElement(LogsView, null)
+  });
+  console.log("Debug: routeChildren:", routeChildren);
   var router = createBrowserRouter([
     {
       path: "/",
-      element: /* @__PURE__ */ import_react142.default.createElement(MainView, null),
+      element: /* @__PURE__ */ import_react144.default.createElement(MainView, null),
       loader: mainLoader,
-      errorElement: /* @__PURE__ */ import_react142.default.createElement(ErrorPage, null),
-      children: [
-        {
-          path: "traces/:traceID",
-          element: /* @__PURE__ */ import_react142.default.createElement(TraceView, null),
-          loader: traceLoader
-        }
-      ]
+      errorElement: /* @__PURE__ */ import_react144.default.createElement(ErrorPage, null),
+      children: routeChildren
     }
   ]);
   var container2 = document.getElementById("root");
   if (!!container2) {
-    const root = (0, import_client.createRoot)(container2);
+    let root = (0, import_client.createRoot)(container2);
     root.render(
-      /* @__PURE__ */ import_react142.default.createElement(import_react142.default.StrictMode, null, /* @__PURE__ */ import_react142.default.createElement(ChakraProvider2, { theme: theme2 }, /* @__PURE__ */ import_react142.default.createElement(RouterProvider, { router })))
+      /* @__PURE__ */ import_react144.default.createElement(import_react144.default.StrictMode, null, /* @__PURE__ */ import_react144.default.createElement(ChakraProvider2, { theme: theme2 }, /* @__PURE__ */ import_react144.default.createElement(RouterProvider, { router })))
     );
   }
 })();

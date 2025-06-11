@@ -128,26 +128,3 @@ export function traceDataFromJSON(json: any): TraceData {
     }))
   };
 }
-
-export function fromJSONTrace(json: any): TraceData {
-  console.log('fromJSONTrace called with:', json);
-  const result = {
-    ...json,
-    spans: json.spans.map((span: any) => {
-      console.log('Processing span:', span.spanID, 'startTime:', span.startTime);
-      const processedSpan = {
-        ...span,
-        startTime: PreciseTimestamp.fromJSON(span.startTime),
-        endTime: PreciseTimestamp.fromJSON(span.endTime),
-        events: span.events?.map((event: any) => ({
-          ...event,
-          timestamp: PreciseTimestamp.fromJSON(event.timestamp)
-        }))
-      };
-      console.log('Processed span startTime:', processedSpan.startTime, 'instanceof PreciseTimestamp:', processedSpan.startTime instanceof PreciseTimestamp);
-      return processedSpan;
-    })
-  };
-  console.log('fromJSONTrace returning:', result);
-  return result;
-}
