@@ -7,6 +7,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/marcboeker/go-duckdb/v2"
 )
@@ -14,6 +15,7 @@ import (
 type Store struct {
 	db   *sql.DB
 	conn driver.Conn
+	mu   sync.Mutex
 }
 
 // NewStore creates a new store for the given database path.

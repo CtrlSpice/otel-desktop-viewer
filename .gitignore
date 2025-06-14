@@ -6,6 +6,7 @@ desktopexporter/internal/app/node_modules
 *.duckdb*
 *.wal
 *.tmp/
+*.log
 help
 task_list.txt
 

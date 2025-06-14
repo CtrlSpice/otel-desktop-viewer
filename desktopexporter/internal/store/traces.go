@@ -16,13 +16,16 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 		return fmt.Errorf(ErrAddSpans, err)
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	appender, err := duckdb.NewAppender(s.conn, "", "", "spans")
 	if err != nil {
 		return fmt.Errorf(ErrCreateAppender, err)
 	}
 	defer appender.Close()
 
-	for _, span := range spans {
+	for i, span := range spans {
 		err := appender.AppendRow(
 			span.TraceID,
 			span.TraceState,
@@ -50,11 +53,22 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 		if err != nil {
 			return fmt.Errorf(ErrAppendRow, err)
 		}
+
+		// Flush every 10 spans to prevent buffer overflow
+		if (i+1)%10 == 0 {
+			err = appender.Flush()
+			if err != nil {
+				return fmt.Errorf(ErrFlushAppender, err)
+			}
+		}
 	}
+	
+	// Final flush for any remaining spans
 	err = appender.Flush()
 	if err != nil {
 		return fmt.Errorf(ErrFlushAppender, err)
 	}
+	
 	return nil
 }
 

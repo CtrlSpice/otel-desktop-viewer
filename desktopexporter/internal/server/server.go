@@ -78,29 +78,34 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) tracesHandler(writer http.ResponseWriter, request *http.Request) {
 	summaries, err := s.Store.GetTraceSummaries(request.Context())
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		log.Fatal(err)
+		log.Printf("Error getting trace summaries: %v", err)
+		http.Error(writer, "Failed to retrieve trace summaries", http.StatusInternalServerError)
+		return
 	}
 
 	if err := writeJSON(writer, telemetry.TraceSummaries{
 		TraceSummaries: summaries,
 	}); err != nil {
-		log.Fatal(err)
+		log.Printf("Error writing JSON response: %v", err)
+		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
 }
 
 func (s *Server) clearTracesHandler(writer http.ResponseWriter, request *http.Request) {
 	if err := s.Store.ClearTraces(request.Context()); err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		log.Fatal(err)
+		log.Printf("Error clearing traces: %v", err)
+		http.Error(writer, "Failed to clear traces", http.StatusInternalServerError)
+		return
 	}
 	writer.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) clearLogsHandler(writer http.ResponseWriter, request *http.Request) {
 	if err := s.Store.ClearLogs(request.Context()); err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		log.Fatal(err)
+		log.Printf("Error clearing logs: %v", err)
+		http.Error(writer, "Failed to clear logs", http.StatusInternalServerError)
+		return
 	}
 	writer.WriteHeader(http.StatusOK)
 }
@@ -108,14 +113,17 @@ func (s *Server) clearLogsHandler(writer http.ResponseWriter, request *http.Requ
 func (s *Server) logsHandler(writer http.ResponseWriter, request *http.Request) {
 	logs, err := s.Store.GetLogs(request.Context())
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		log.Fatal(err)
+		log.Printf("Error getting logs: %v", err)
+		http.Error(writer, "Failed to retrieve logs", http.StatusInternalServerError)
+		return
 	}
 
 	if err := writeJSON(writer, telemetry.Logs{
 		Logs: logs,
 	}); err != nil {
-		log.Fatal(err)
+		log.Printf("Error writing JSON response: %v", err)
+		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -123,11 +131,15 @@ func (s *Server) logIDHandler(writer http.ResponseWriter, request *http.Request)
 	logID := request.PathValue("id")
 	logData, err := s.Store.GetLog(request.Context(), logID)
 	if err != nil {
-		writer.WriteHeader(http.StatusBadRequest)
-	} else {
-		if err := writeJSON(writer, logData); err != nil {
-			log.Fatal(err)
-		}
+		log.Printf("Error getting log %s: %v", logID, err)
+		http.Error(writer, "Log not found", http.StatusNotFound)
+		return
+	}
+	
+	if err := writeJSON(writer, logData); err != nil {
+		log.Printf("Error writing JSON response: %v", err)
+		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -135,27 +147,32 @@ func (s *Server) logsByTraceHandler(writer http.ResponseWriter, request *http.Re
 	traceID := request.PathValue("id")
 	logs, err := s.Store.GetLogsByTrace(request.Context(), traceID)
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		log.Fatal(err)
+		log.Printf("Error getting logs for trace %s: %v", traceID, err)
+		http.Error(writer, "Failed to retrieve logs for trace", http.StatusInternalServerError)
+		return
 	}
 
 	if err := writeJSON(writer, telemetry.Logs{
 		Logs: logs,
 	}); err != nil {
-		log.Fatal(err)
+		log.Printf("Error writing JSON response: %v", err)
+		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
 }
 
 func (s *Server) sampleDataHandler(writer http.ResponseWriter, request *http.Request) {
 	sample := telemetry.NewSampleTelemetry()
 	if err := s.Store.AddSpans(request.Context(), sample.Spans); err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		log.Fatal(err)
+		log.Printf("Error adding sample spans: %v", err)
+		http.Error(writer, "Failed to add sample spans", http.StatusInternalServerError)
+		return
 	}
 
 	if err := s.Store.AddLogs(request.Context(), sample.Logs); err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		log.Fatal(err)
+		log.Printf("Error adding sample logs: %v", err)
+		http.Error(writer, "Failed to add sample logs", http.StatusInternalServerError)
+		return
 	}
 
 	writer.WriteHeader(http.StatusOK)
@@ -165,11 +182,15 @@ func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Reques
 	traceID := request.PathValue("id")
 	traceData, err := s.Store.GetTrace(request.Context(), traceID)
 	if err != nil {
-		writer.WriteHeader(http.StatusBadRequest)
-	} else {
-		if err := writeJSON(writer, traceData); err != nil {
-			log.Fatal(err)
-		}
+		log.Printf("Error getting trace %s: %v", traceID, err)
+		http.Error(writer, "Trace not found", http.StatusNotFound)
+		return
+	}
+	
+	if err := writeJSON(writer, traceData); err != nil {
+		log.Printf("Error writing JSON response: %v", err)
+		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -179,8 +200,9 @@ func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request)
 	} else {
 		indexBytes, err := assets.ReadFile("static/index.html")
 		if err != nil {
-			writer.WriteHeader(http.StatusInternalServerError)
-			log.Fatalf("Error reading static assets: %s", err.Error())
+			log.Printf("Error reading static assets: %v", err)
+			http.Error(writer, "Failed to load page", http.StatusInternalServerError)
+			return
 		}
 		writer.Write(indexBytes)
 	}
@@ -191,12 +213,10 @@ func writeJSON(writer http.ResponseWriter, data any) error {
 
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
 		return fmt.Errorf("could not marshal JSON: %v", err)
 	}
 
 	if _, err := writer.Write(jsonBytes); err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
 		return fmt.Errorf("could not write JSON response: %v", err)
 	}
 

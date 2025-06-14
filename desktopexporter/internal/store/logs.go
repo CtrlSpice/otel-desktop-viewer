@@ -16,41 +16,55 @@ func (s *Store) AddLogs(ctx context.Context, logs []telemetry.LogData) error {
 		return fmt.Errorf(ErrAddLogs, err)
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	appender, err := duckdb.NewAppender(s.conn, "", "", "logs")
 	if err != nil {
 		return fmt.Errorf(ErrCreateAppender, err)
 	}
 	defer appender.Close()
 
-	for _, log := range logs {
+	for i, logData := range logs {
 		err := appender.AppendRow(
-			log.ID(),
-			log.Timestamp,
-			log.ObservedTimestamp,
-			log.TraceID,
-			log.SpanID,
-			log.SeverityText,
-			log.SeverityNumber,
-			toDbBody(log.Body),
-			toDbMap(log.Resource.Attributes),
-			log.Resource.DroppedAttributesCount,
-			log.Scope.Name,
-			log.Scope.Version,
-			toDbMap(log.Scope.Attributes),
-			log.Scope.DroppedAttributesCount,
-			toDbMap(log.Attributes),
-			log.DroppedAttributesCount,
-			log.Flags,
-			log.EventName,
+			logData.ID(),
+			logData.Timestamp,
+			logData.ObservedTimestamp,
+			logData.TraceID,
+			logData.SpanID,
+			logData.SeverityText,
+			logData.SeverityNumber,
+			toDbBody(logData.Body),
+			toDbMap(logData.Resource.Attributes),
+			logData.Resource.DroppedAttributesCount,
+			logData.Scope.Name,
+			logData.Scope.Version,
+			toDbMap(logData.Scope.Attributes),
+			logData.Scope.DroppedAttributesCount,
+			toDbMap(logData.Attributes),
+			logData.DroppedAttributesCount,
+			logData.Flags,
+			logData.EventName,
 		)
 		if err != nil {
 			return fmt.Errorf(ErrAppendRow, err)
 		}
+
+		// Flush every 10 logs to prevent buffer overflow
+		if (i+1)%10 == 0 {
+			err = appender.Flush()
+			if err != nil {
+				return fmt.Errorf(ErrFlushAppender, err)
+			}
+		}
 	}
+	
+	// Final flush for any remaining logs
 	err = appender.Flush()
 	if err != nil {
 		return fmt.Errorf(ErrFlushAppender, err)
 	}
+	
 	return nil
 }
 
@@ -61,11 +75,11 @@ func (s *Store) GetLog(ctx context.Context, logID string) (telemetry.LogData, er
 	}
 
 	row := s.db.QueryRowContext(ctx, SelectLog, logID)
-	log, err := scanLogRow(row)
+	logData, err := scanLogRow(row)
 	if err != nil {
-		return log, fmt.Errorf(ErrGetLog, logID, err)
+		return logData, fmt.Errorf(ErrGetLog, logID, err)
 	}
-	return log, nil
+	return logData, nil
 }
 
 // GetLogs retrieves all logs from the store.
@@ -83,11 +97,11 @@ func (s *Store) GetLogs(ctx context.Context) ([]telemetry.LogData, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		log, err := scanLogRow(rows)
+		logData, err := scanLogRow(rows)
 		if err != nil {
 			return nil, err
 		}
-		logs = append(logs, log)
+		logs = append(logs, logData)
 	}
 
 	return logs, nil
@@ -108,11 +122,11 @@ func (s *Store) GetLogsByTraceSpan(ctx context.Context, traceID string, spanID s
 	defer rows.Close()
 
 	for rows.Next() {
-		log, err := scanLogRow(rows)
+		logData, err := scanLogRow(rows)
 		if err != nil {
 			return nil, err
 		}
-		logs = append(logs, log)
+		logs = append(logs, logData)
 	}
 	return logs, nil
 }
@@ -126,7 +140,7 @@ func scanLogRow(scanner interface{ Scan(dest ...any) error }) (telemetry.LogData
 		rawScopeAttributes    duckdb.Composite[map[string]duckdb.Union]
 	)
 
-	log := telemetry.LogData{
+	logData := telemetry.LogData{
 		Resource: &telemetry.ResourceData{
 			Attributes:             map[string]any{},
 			DroppedAttributesCount: 0,
@@ -140,36 +154,36 @@ func scanLogRow(scanner interface{ Scan(dest ...any) error }) (telemetry.LogData
 	}
 
 	if err := scanner.Scan(
-		&log.Timestamp,
-		&log.ObservedTimestamp,
-		&log.TraceID,
-		&log.SpanID,
-		&log.SeverityText,
-		&log.SeverityNumber,
+		&logData.Timestamp,
+		&logData.ObservedTimestamp,
+		&logData.TraceID,
+		&logData.SpanID,
+		&logData.SeverityText,
+		&logData.SeverityNumber,
 		&rawBody,
 		&rawResourceAttributes,
-		&log.Resource.DroppedAttributesCount,
-		&log.Scope.Name,
-		&log.Scope.Version,
+		&logData.Resource.DroppedAttributesCount,
+		&logData.Scope.Name,
+		&logData.Scope.Version,
 		&rawScopeAttributes,
-		&log.Scope.DroppedAttributesCount,
+		&logData.Scope.DroppedAttributesCount,
 		&rawAttributes,
-		&log.DroppedAttributesCount,
-		&log.Flags,
-		&log.EventName,
+		&logData.DroppedAttributesCount,
+		&logData.Flags,
+		&logData.EventName,
 	); err != nil {
 		if err == sql.ErrNoRows {
-			return log, ErrLogIDNotFound
+			return logData, ErrLogIDNotFound
 		}
-		return log, fmt.Errorf(ErrScanLogRow, err)
+		return logData, fmt.Errorf(ErrScanLogRow, err)
 	}
 
-	log.Body = fromDbBody(rawBody)
-	log.Attributes = fromDbMap(rawAttributes.Get())
-	log.Resource.Attributes = fromDbMap(rawResourceAttributes.Get())
-	log.Scope.Attributes = fromDbMap(rawScopeAttributes.Get())
+	logData.Body = fromDbBody(rawBody)
+	logData.Attributes = fromDbMap(rawAttributes.Get())
+	logData.Resource.Attributes = fromDbMap(rawResourceAttributes.Get())
+	logData.Scope.Attributes = fromDbMap(rawScopeAttributes.Get())
 
-	return log, nil
+	return logData, nil
 }
 
 // ClearLogs truncates the logs table.
@@ -199,11 +213,11 @@ func (s *Store) GetLogsByTrace(ctx context.Context, traceID string) ([]telemetry
 	defer rows.Close()
 
 	for rows.Next() {
-		log, err := scanLogRow(rows)
+		logData, err := scanLogRow(rows)
 		if err != nil {
 			return nil, err
 		}
-		logs = append(logs, log)
+		logs = append(logs, logData)
 	}
 	return logs, nil
 }

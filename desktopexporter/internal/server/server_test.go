@@ -182,7 +182,7 @@ func TestTraceIDHandler(t *testing.T) {
 		assert.Nilf(t, err, "could not send GET request: %v", err)
 		defer res.Body.Close()
 
-		assert.Equal(t, http.StatusBadRequest, res.StatusCode)
+		assert.Equal(t, http.StatusNotFound, res.StatusCode)
 	})
 
 	t.Run("Traces ID Handler (ID Found)", func(t *testing.T) {
