@@ -1,8 +1,8 @@
 package telemetry
 
 import (
+	"encoding/json"
 	"fmt"
-	"time"
 
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
@@ -17,10 +17,10 @@ type SpanData struct {
 	SpanID       string `json:"spanID"`
 	ParentSpanID string `json:"parentSpanID"`
 
-	Name      string    `json:"name"`
-	Kind      string    `json:"kind"`
-	StartTime time.Time `json:"startTime"`
-	EndTime   time.Time `json:"endTime"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	StartTime int64  `json:"-"`
+	EndTime   int64  `json:"-"`
 
 	Attributes map[string]any `json:"attributes"`
 	Events     []EventData    `json:"events"`
@@ -72,8 +72,8 @@ func aggregateSpanData(source ptrace.Span, eventData []EventData, linkData []Lin
 		ParentSpanID: source.ParentSpanID().String(),
 		Name:         source.Name(),
 		Kind:         source.Kind().String(),
-		StartTime:    source.StartTimestamp().AsTime(),
-		EndTime:      source.EndTimestamp().AsTime(),
+		StartTime:    source.StartTimestamp().AsTime().UnixNano(),
+		EndTime:      source.EndTimestamp().AsTime().UnixNano(),
 		Attributes:   source.Attributes().AsRaw(),
 
 		Events:   eventData,
@@ -101,3 +101,17 @@ func (spanData *SpanData) GetServiceName() string {
 	}
 	return serviceName.(string)
 }
+
+// MarshalJSON implements custom JSON marshaling for SpanData
+func (spanData SpanData) MarshalJSON() ([]byte, error) {
+	type Alias SpanData // Avoid recursive MarshalJSON calls
+	return json.Marshal(&struct {
+		Alias
+		StartTime PreciseTimestamp `json:"startTime"`
+		EndTime   PreciseTimestamp `json:"endTime"`
+	}{
+		Alias:     Alias(spanData),
+		StartTime: NewPreciseTimestamp(spanData.StartTime),
+		EndTime:   NewPreciseTimestamp(spanData.EndTime),
+	})
+} 

@@ -1,8 +1,10 @@
+import { PreciseTimestamp } from './precise-timestamp';
+
 export type RootSpan = {
   serviceName: string;
   name: string;
-  startTime: string;
-  endTime: string;
+  startTime: PreciseTimestamp;
+  endTime: PreciseTimestamp;
 };
 
 export type TraceSummary = {
@@ -28,10 +30,10 @@ export type SpanData = {
 
   name: string;
   kind: string;
-  startTime: string;
-  endTime: string;
+  startTime: PreciseTimestamp;
+  endTime: PreciseTimestamp;
 
-  attributes: Attribute[];
+  attributes: Attributes;
   events: EventData[];
   links: LinkData[];
   resource: ResourceData;
@@ -45,22 +47,24 @@ export type SpanData = {
   statusMessage: string;
 };
 
+export type Attributes = Record<string, string | number | boolean | string[] | number[] | boolean[]>;
+
 export type ResourceData = {
-  attributes: Attribute[];
+  attributes: Attributes;
   droppedAttributesCount: number;
 };
 
 export type ScopeData = {
   name: string;
   version: string;
-  attributes: Attribute[];
+  attributes: Attributes;
   droppedAttributesCount: number;
 };
 
 export type EventData = {
   name: string;
-  timestamp: string;
-  attributes: Attribute[];
+  timestamp: PreciseTimestamp;
+  attributes: Attributes;
   droppedAttributesCount: number;
 };
 
@@ -68,16 +72,59 @@ export type LinkData = {
   traceID: string;
   spanID: string;
   traceState: string;
-  attributes: Attribute[];
+  attributes: Attributes;
   droppedAttributesCount: number;
 };
 
-export type Attribute = {
-  [key: string]:
-    | string
-    | number
-    | boolean
-    | string[]
-    | number[]
-    | boolean[];
+export type LogData = {
+  timestamp: PreciseTimestamp;
+  observedTimestamp: PreciseTimestamp;
+  traceID: string;
+  spanID: string;
+  severityText: string;
+  severityNumber: number;
+  body: string | object;
+  resource: ResourceData;
+  scope: ScopeData;
+  attributes: Attributes;
+  droppedAttributesCount: number;
+  flags: number;
+  eventName: string;
 };
+
+export type Logs = {
+  logs: LogData[];
+};
+
+// Helper functions to deserialize timestamps
+export function traceSummaryFromJSON(json: any): TraceSummary {
+  return {
+    ...json,
+    rootSpan: json.rootSpan ? {
+      ...json.rootSpan,
+      startTime: PreciseTimestamp.fromJSON(json.rootSpan.startTime),
+      endTime: PreciseTimestamp.fromJSON(json.rootSpan.endTime)
+    } : undefined
+  };
+}
+
+export function traceSummariesFromJSON(json: any): TraceSummaries {
+  return {
+    traceSummaries: json.traceSummaries.map(traceSummaryFromJSON)
+  };
+}
+
+export function traceDataFromJSON(json: any): TraceData {
+  return {
+    ...json,
+    spans: json.spans.map((span: any) => ({
+      ...span,
+      startTime: PreciseTimestamp.fromJSON(span.startTime),
+      endTime: PreciseTimestamp.fromJSON(span.endTime),
+      events: span.events?.map((event: any) => ({
+        ...event,
+        timestamp: PreciseTimestamp.fromJSON(event.timestamp)
+      }))
+    }))
+  };
+}

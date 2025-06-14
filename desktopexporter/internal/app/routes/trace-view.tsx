@@ -1,25 +1,25 @@
 import React from "react";
 import { useLoaderData } from "react-router-dom";
-import { Grid, GridItem } from "@chakra-ui/react";
+import { Grid, GridItem, Box, Text, VStack, Divider } from "@chakra-ui/react";
 
-import { TraceData } from "../types/api-types";
+import { TraceData, traceDataFromJSON } from "../types/api-types";
 import { SpanDataStatus, SpanWithUIData } from "../types/ui-types";
 
 import { Header } from "../components/header-view/header";
 import { DetailView } from "../components/detail-view/detail-view";
 import { WaterfallView } from "../components/waterfall-view/waterfall-view";
 import { arrayToTree, TreeItem, RootTreeItem } from "../utils/array-to-tree";
-import { getNsFromString, calculateTraceTiming } from "../utils/duration";
+import { getTraceDuration } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
   let response = await fetch(`/api/traces/${params.traceID}`);
   let traceData = await response.json();
-  return traceData;
+  return traceDataFromJSON(traceData);
 }
 
 export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
-  let traceTimeAttributes = calculateTraceTiming(traceData.spans);
+  let traceDuration = getTraceDuration(traceData.spans);
   let spanTree: RootTreeItem[] = arrayToTree(traceData.spans);
   let orderedSpans = orderSpans(spanTree);
   
@@ -71,7 +71,7 @@ export default function TraceView() {
       >
         <WaterfallView
           orderedSpans={orderedSpans}
-          traceTimeAttributes={traceTimeAttributes}
+          traceDuration={traceDuration}
           selectedSpanID={selectedSpanID}
           setSelectedSpanID={setSelectedSpanID}
         />
@@ -130,10 +130,13 @@ function orderSpans(spanTree: RootTreeItem[]): SpanWithUIData[] {
             a.status === SpanDataStatus.present &&
             b.status === SpanDataStatus.present
           ) {
-            return (
-              getNsFromString(b.spanData.startTime) -
-              getNsFromString(a.spanData.startTime)
-            );
+            // Sort by start time, with earlier times first (ascending order)
+            if (a.spanData.startTime.isBefore(b.spanData.startTime)) {
+              return -1;
+            } else if (a.spanData.startTime.isAfter(b.spanData.startTime)) {
+              return 1;
+            }
+            return 0;
           }
           // TODO: Throw a good error. Like, yeet it real good.
           // This doesn't happen- all missing spans are root,

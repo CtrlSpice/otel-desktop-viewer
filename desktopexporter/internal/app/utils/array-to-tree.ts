@@ -1,6 +1,6 @@
 import { SpanData } from "../types/api-types";
 import { SpanDataStatus } from "../types/ui-types";
-import { getNsFromString } from "./duration";
+import { PreciseTimestamp } from "../types/precise-timestamp";
 
 export type TreeItem = {
   status: SpanDataStatus.present;
@@ -84,8 +84,13 @@ export function arrayToTree(spans: SpanData[]): RootTreeItem[] {
     (a: string, b: string) => {
       let earliestStartTimeA = getEarliestStartTime(lookup[a].children);
       let earliestStartTimeB = getEarliestStartTime(lookup[b].children);
-
-      return earliestStartTimeA - earliestStartTimeB;
+      
+      if (earliestStartTimeA.isBefore(earliestStartTimeB)) {
+        return -1;
+      } else if (earliestStartTimeA.isAfter(earliestStartTimeB)) {
+        return 1;
+      }
+      return 0;
     },
   );
 
@@ -96,7 +101,7 @@ export function arrayToTree(spans: SpanData[]): RootTreeItem[] {
   return rootItems;
 }
 
-function getEarliestStartTime(children: TreeItem[]): number {
+function getEarliestStartTime(children: TreeItem[]): PreciseTimestamp {
   if (children.length == 0) {
     // This should logically never happen in this implementation, since a missing span
     // must have at least one child with its spanID as a parentSpanID in order to be created.
@@ -105,9 +110,13 @@ function getEarliestStartTime(children: TreeItem[]): number {
     );
   }
 
-  let startTimes = children.map((treeItem) => {
-    return getNsFromString(treeItem.spanData.startTime);
-  });
+  let earliestStart = children[0].spanData.startTime;
+  for (let i = 1; i < children.length; i++) {
+    let currentStart = children[i].spanData.startTime;
+    if (currentStart.isBefore(earliestStart)) {
+      earliestStart = currentStart;
+    }
+  }
 
-  return Math.min(...startTimes);
+  return earliestStart;
 }

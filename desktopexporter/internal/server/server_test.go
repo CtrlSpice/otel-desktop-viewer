@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"net/http"
@@ -16,17 +17,28 @@ import (
 )
 
 func setupEmpty() (*httptest.Server, func()) {
+	// Set environment variable to enable logs endpoints
+	os.Setenv("ENABLE_LOGS", "true")
+	
 	server := NewServer("localhost:8000", "")
 	testServer := httptest.NewServer(server.Handler())
 
 	return testServer, func() {
 		testServer.Close()
 		server.Store.Close()
+		// Clean up environment variable
+		os.Unsetenv("ENABLE_LOGS")
 	}
 }
 
-func setupWithTrace(t *testing.T) (*httptest.Server, func(*testing.T)) {
+func setupWithData(t *testing.T) (*httptest.Server, func(*testing.T)) {
+	// Set environment variable to enable logs endpoints
+	os.Setenv("ENABLE_LOGS", "true")
+	
+	baseTime := time.Now().UnixNano()
 	server := NewServer("localhost:8000", "")
+
+	// Add test span
 	testSpanData := telemetry.SpanData{
 		TraceID:      "1234567890",
 		TraceState:   "",
@@ -34,8 +46,8 @@ func setupWithTrace(t *testing.T) (*httptest.Server, func(*testing.T)) {
 		ParentSpanID: "",
 		Name:         "test",
 		Kind:         "",
-		StartTime:    time.Now(),
-		EndTime:      time.Now().Add(time.Second),
+		StartTime:    baseTime,
+		EndTime:      baseTime + time.Second.Nanoseconds(),
 		Attributes:   map[string]any{},
 		Events:       []telemetry.EventData{},
 		Links:        []telemetry.LinkData{},
@@ -59,13 +71,45 @@ func setupWithTrace(t *testing.T) (*httptest.Server, func(*testing.T)) {
 	}
 
 	err := server.Store.AddSpans(context.Background(), []telemetry.SpanData{testSpanData})
-	assert.Nilf(t, err, "could not create  test span: %v", err)
+	assert.Nilf(t, err, "could not create test span: %v", err)
+
+	// Add test log
+	testLogData := telemetry.LogData{
+		Timestamp:         baseTime,
+		ObservedTimestamp: baseTime + time.Millisecond.Nanoseconds(),
+		TraceID:          "1234567890",
+		SpanID:           "12345",
+		SeverityText:     "INFO",
+		SeverityNumber:   9,
+		Body:             "test log message",
+		Resource: &telemetry.ResourceData{
+			Attributes: map[string]any{
+				"service.name": "pumpkin.pie",
+			},
+			DroppedAttributesCount: 0,
+		},
+		Scope: &telemetry.ScopeData{
+			Name:                   "test.scope",
+			Version:                "1",
+			Attributes:             map[string]any{},
+			DroppedAttributesCount: 0,
+		},
+		Attributes:             map[string]any{},
+		DroppedAttributesCount: 0,
+		Flags:                  1,
+		EventName:             "test.event",
+	}
+
+	err = server.Store.AddLogs(context.Background(), []telemetry.LogData{testLogData})
+	assert.Nilf(t, err, "could not create test log: %v", err)
 
 	testServer := httptest.NewServer(server.Handler())
 
 	return testServer, func(t *testing.T) {
 		testServer.Close()
 		server.Store.Close()
+		// Clean up environment variable
+		os.Unsetenv("ENABLE_LOGS")
 	}
 }
 
@@ -84,6 +128,7 @@ func TestTracesHandler(t *testing.T) {
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
 		// Init summaries struct with some data to be overwritten
+		baseTime := time.Now().UnixNano()
 		testSummaries := telemetry.TraceSummaries{
 			TraceSummaries: []telemetry.TraceSummary{
 				{
@@ -91,8 +136,8 @@ func TestTracesHandler(t *testing.T) {
 					RootSpan: &telemetry.RootSpan{
 						ServiceName: "groot",
 						Name:        "i.am.groot",
-						StartTime:   time.Now(),
-						EndTime:     time.Now().Add(time.Minute),
+						StartTime:   baseTime,
+						EndTime:     baseTime + time.Minute.Nanoseconds(),
 					},
 					SpanCount: 2,
 				},
@@ -105,7 +150,7 @@ func TestTracesHandler(t *testing.T) {
 	})
 
 	t.Run("Traces Handler (Not Empty)", func(t *testing.T) {
-		testServer, teardown := setupWithTrace(t)
+		testServer, teardown := setupWithData(t)
 		defer teardown(t)
 
 		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/traces"))
@@ -129,7 +174,7 @@ func TestTracesHandler(t *testing.T) {
 }
 
 func TestTraceIDHandler(t *testing.T) {
-	testServer, teardown := setupWithTrace(t)
+	testServer, teardown := setupWithData(t)
 	defer teardown(t)
 
 	t.Run("Trace ID Handler (Not Found)", func(t *testing.T) {
@@ -162,32 +207,159 @@ func TestTraceIDHandler(t *testing.T) {
 	})
 }
 
-func TestClearTracesHandler(t *testing.T) {
-	testServer, teardown := setupWithTrace(t)
+func TestLogsHandler(t *testing.T) {
+	t.Run("Logs Handler (Empty)", func(t *testing.T) {
+		testServer, teardown := setupEmpty()
+		defer teardown()
+
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/logs"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
+
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+
+		b, err := io.ReadAll(res.Body)
+		assert.Nilf(t, err, "could not read response body: %v", err)
+
+		testLogs := telemetry.Logs{}
+		err = json.Unmarshal(b, &testLogs)
+		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
+
+		assert.Len(t, testLogs.Logs, 0)
+	})
+
+	t.Run("Logs Handler (Not Empty)", func(t *testing.T) {
+		testServer, teardown := setupWithData(t)
+		defer teardown(t)
+
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/logs"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
+
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+
+		b, err := io.ReadAll(res.Body)
+		assert.Nilf(t, err, "could not read response body: %v", err)
+
+		testLogs := telemetry.Logs{}
+		err = json.Unmarshal(b, &testLogs)
+		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
+
+		assert.Len(t, testLogs.Logs, 1)
+		assert.Equal(t, "1234567890", testLogs.Logs[0].TraceID)
+		assert.Equal(t, "12345", testLogs.Logs[0].SpanID)
+		assert.Equal(t, "INFO", testLogs.Logs[0].SeverityText)
+		assert.Equal(t, "test log message", testLogs.Logs[0].Body)
+		assert.Equal(t, "pumpkin.pie", testLogs.Logs[0].Resource.Attributes["service.name"])
+	})
+}
+
+func TestLogsByTraceHandler(t *testing.T) {
+	testServer, teardown := setupWithData(t)
 	defer teardown(t)
 
-	// Clear dat data
-	res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/clearData"))
-	assert.Nilf(t, err, "could not send GET request: %v", err)
-	defer res.Body.Close()
+	t.Run("Logs By Trace Handler (Not Found)", func(t *testing.T) {
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/logs/trace/987654321"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
 
-	assert.Equal(t, http.StatusOK, res.StatusCode)
+		assert.Equal(t, http.StatusOK, res.StatusCode)
 
-	// Get trace summaries
-	res, err = http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/traces"))
-	assert.Nilf(t, err, "could not send GET request: %v", err)
+		b, err := io.ReadAll(res.Body)
+		assert.Nilf(t, err, "could not read response body: %v", err)
 
-	assert.Equal(t, http.StatusOK, res.StatusCode)
+		testLogs := telemetry.Logs{}
+		err = json.Unmarshal(b, &testLogs)
+		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
 
-	b, err := io.ReadAll(res.Body)
-	assert.Nilf(t, err, "could not read response body: %v", err)
+		assert.Len(t, testLogs.Logs, 0)
+	})
 
-	testSummaries := telemetry.TraceSummaries{}
-	err = json.Unmarshal(b, &testSummaries)
-	assert.Nilf(t, err, "could not unmarshal bytes to trace summaries: %v", err)
+	t.Run("Logs By Trace Handler (Found)", func(t *testing.T) {
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/logs/trace/1234567890"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
 
-	// Check that there are no traces in store
-	assert.Len(t, testSummaries.TraceSummaries, 0)
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+
+		b, err := io.ReadAll(res.Body)
+		assert.Nilf(t, err, "could not read response body: %v", err)
+
+		testLogs := telemetry.Logs{}
+		err = json.Unmarshal(b, &testLogs)
+		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
+
+		assert.Len(t, testLogs.Logs, 1)
+		assert.Equal(t, "1234567890", testLogs.Logs[0].TraceID)
+		assert.Equal(t, "12345", testLogs.Logs[0].SpanID)
+		assert.Equal(t, "INFO", testLogs.Logs[0].SeverityText)
+		assert.Equal(t, "test log message", testLogs.Logs[0].Body)
+	})
+}
+
+func TestClearHandlers(t *testing.T) {
+	testServer, teardown := setupWithData(t)
+	defer teardown(t)
+
+	t.Run("Clear Traces", func(t *testing.T) {
+		// Clear traces
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/clearTraces"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
+
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+
+		// Verify traces are cleared
+		res, err = http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/traces"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
+
+		b, err := io.ReadAll(res.Body)
+		assert.Nilf(t, err, "could not read response body: %v", err)
+
+		testSummaries := telemetry.TraceSummaries{}
+		err = json.Unmarshal(b, &testSummaries)
+		assert.Nilf(t, err, "could not unmarshal bytes to trace summaries: %v", err)
+
+		assert.Len(t, testSummaries.TraceSummaries, 0)
+
+		// Verify logs still exist
+		res, err = http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/logs"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
+
+		b, err = io.ReadAll(res.Body)
+		assert.Nilf(t, err, "could not read response body: %v", err)
+
+		testLogs := telemetry.Logs{}
+		err = json.Unmarshal(b, &testLogs)
+		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
+
+		assert.Len(t, testLogs.Logs, 1)
+	})
+
+	t.Run("Clear Logs", func(t *testing.T) {
+		// Clear logs
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/clearLogs"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
+
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+
+		// Verify logs are cleared
+		res, err = http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/logs"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
+
+		b, err := io.ReadAll(res.Body)
+		assert.Nilf(t, err, "could not read response body: %v", err)
+
+		testLogs := telemetry.Logs{}
+		err = json.Unmarshal(b, &testLogs)
+		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
+
+		assert.Len(t, testLogs.Logs, 0)
+	})
 }
 
 func TestSampleHandler(t *testing.T) {
@@ -220,5 +392,22 @@ func TestSampleHandler(t *testing.T) {
 		assert.Equal(t, "SAMPLE HTTP POST", testTrace.Spans[0].Name)
 		assert.Equal(t, "sample-loadgenerator", testTrace.Spans[0].Resource.Attributes["service.name"])
 		assert.Equal(t, 3, len(testTrace.Spans))
+	})
+
+	t.Run("Sample Data Handler (Logs)", func(t *testing.T) {
+		res, err := http.Get(fmt.Sprintf("%s%s", testServer.URL, "/api/logs"))
+		assert.Nilf(t, err, "could not send GET request: %v", err)
+		defer res.Body.Close()
+
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+
+		b, err := io.ReadAll(res.Body)
+		assert.Nilf(t, err, "could not read response body: %v", err)
+
+		testLogs := telemetry.Logs{}
+		err = json.Unmarshal(b, &testLogs)
+		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
+
+		assert.Greater(t, len(testLogs.Logs), 0, "should have sample logs")
 	})
 }

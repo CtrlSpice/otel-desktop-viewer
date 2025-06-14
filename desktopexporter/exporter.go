@@ -36,16 +36,15 @@ func (exporter *desktopExporter) pushTraces(ctx context.Context, traces ptrace.T
 func (exporter *desktopExporter) pushMetrics(ctx context.Context, metrics pmetric.Metrics) error {
 	metricsDataSlice := telemetry.NewMetricsPayload(metrics).ExtractMetrics()
 	for _, metricsData := range metricsDataSlice {
-		fmt.Println(metricsData.ID())
+		fmt.Println(metricsData)
 	}
 	return nil
 }
 
 func (exporter *desktopExporter) pushLogs(ctx context.Context, logs plog.Logs) error {
 	logDataSlice := telemetry.NewLogsPayload(logs).ExtractLogs()
-	for _, logData := range logDataSlice {
-		fmt.Println(logData.ID())
-	}
+	exporter.server.Store.AddLogs(ctx, logDataSlice)
+
 	return nil
 }
 

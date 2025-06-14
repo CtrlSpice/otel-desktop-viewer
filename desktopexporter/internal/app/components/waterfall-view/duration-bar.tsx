@@ -10,32 +10,29 @@ import {
 } from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
 
-import {
-  getDurationString,
-  getNsFromString,
-  TraceTiming,
-} from "../../utils/duration";
+import { Duration, getDuration, getOffset } from "../../utils/duration";
 import { EventData, SpanData } from "../../types/api-types";
+import { PreciseTimestamp } from "../../types/precise-timestamp";
 
 type EventDotsListProps = {
   events: EventData[];
-  spanStartTimeNs: number;
-  spanEndTimeNs: number;
+  spanStartTime: PreciseTimestamp;
+  spanEndTime: PreciseTimestamp;
 };
 
 function EventDotsList(props: EventDotsListProps) {
-  let { events, spanStartTimeNs, spanEndTimeNs } = props;
+  let { events, spanStartTime, spanEndTime } = props;
 
   let eventDotsList = events.map((eventData) => {
     let eventName = eventData.name;
-    let eventTimeNs = getNsFromString(eventData.timestamp);
-    let spanDurationNS = spanEndTimeNs - spanStartTimeNs;
-    let eventOffsetPercent = Math.floor(
-      ((eventTimeNs - spanStartTimeNs) / spanDurationNS) * 100,
+    let spanDuration = getDuration(spanStartTime, spanEndTime);
+    let eventOffsetPercent = getOffset(
+      spanDuration,
+      eventData.timestamp
     );
 
     return (
-      <li key={`${eventName}-${eventData.timestamp}`}>
+      <li key={`${eventName}-${eventData.timestamp.toString()}`}>
         <Tooltip
           hasArrow
           label={eventName}
@@ -60,10 +57,8 @@ function EventDotsList(props: EventDotsListProps) {
 }
 
 type DurationBarProps = {
+  traceDuration: Duration
   spanData: SpanData;
-  traceTimeAttributes: TraceTiming;
-  spanStartTimestamp: string;
-  spanEndTimestamp: string;
 };
 
 export function DurationBar(props: DurationBarProps) {
@@ -76,16 +71,10 @@ export function DurationBar(props: DurationBarProps) {
   let durationBarColour = useColorModeValue("cyan.800", "cyan.700");
   let labelTextColour = useColorModeValue("blackAlpha.800", "white");
 
-  let { traceStartTimeNS, traceDurationNS } = props.traceTimeAttributes;
-  let spanStartTimeNs = getNsFromString(props.spanStartTimestamp);
-  let spanEndTimeNs = getNsFromString(props.spanEndTimestamp);
-
-  let barOffsetPercent = Math.floor(
-    ((spanStartTimeNs - traceStartTimeNS) / traceDurationNS) * 100,
-  );
-  let barWidthPercent = Math.round(
-    ((spanEndTimeNs - spanStartTimeNs) / traceDurationNS) * 100,
-  );
+  let { startTime, endTime } = props.spanData;
+  let barOffsetPercent = getOffset(props.traceDuration, startTime);
+  let barEndPercent = getOffset(props.traceDuration, endTime);
+  let barWidthPercent = barEndPercent - barOffsetPercent;
 
   let labelOffset;
   if (size && size.width >= labelWidth) {
@@ -99,8 +88,6 @@ export function DurationBar(props: DurationBarProps) {
     // Label is right of the bar
     labelOffset = `${Math.floor(-labelWidth)}px`;
   }
-
-  let label = getDurationString(spanEndTimeNs - spanStartTimeNs);
 
   return (
     <Flex
@@ -132,13 +119,13 @@ export function DurationBar(props: DurationBarProps) {
             color={labelTextColour}
             whiteSpace="nowrap"
           >
-            {label}
+            {props.traceDuration.label}
           </Text>
         </Flex>
         <EventDotsList
           events={props.spanData.events}
-          spanStartTimeNs={spanStartTimeNs}
-          spanEndTimeNs={spanEndTimeNs}
+          spanStartTime={startTime}
+          spanEndTime={endTime}
         />
       </Box>
     </Flex>

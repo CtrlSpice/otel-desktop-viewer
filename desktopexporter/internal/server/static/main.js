@@ -1001,7 +1001,7 @@
             }
             return dispatcher.useContext(Context);
           }
-          function useState29(initialState2) {
+          function useState30(initialState2) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useState(initialState2);
           }
@@ -1013,7 +1013,7 @@
             var dispatcher = resolveDispatcher();
             return dispatcher.useRef(initialValue);
           }
-          function useEffect45(create, deps) {
+          function useEffect46(create, deps) {
             var dispatcher = resolveDispatcher();
             return dispatcher.useEffect(create, deps);
           }
@@ -1794,7 +1794,7 @@
           exports.useContext = useContext16;
           exports.useDebugValue = useDebugValue;
           exports.useDeferredValue = useDeferredValue;
-          exports.useEffect = useEffect45;
+          exports.useEffect = useEffect46;
           exports.useId = useId10;
           exports.useImperativeHandle = useImperativeHandle;
           exports.useInsertionEffect = useInsertionEffect2;
@@ -1802,7 +1802,7 @@
           exports.useMemo = useMemo25;
           exports.useReducer = useReducer2;
           exports.useRef = useRef32;
-          exports.useState = useState29;
+          exports.useState = useState30;
           exports.useSyncExternalStore = useSyncExternalStore2;
           exports.useTransition = useTransition;
           exports.version = ReactVersion;
@@ -2298,9 +2298,9 @@
           if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ !== "undefined" && typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart === "function") {
             __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(new Error());
           }
-          var React42 = require_react();
+          var React43 = require_react();
           var Scheduler = require_scheduler();
-          var ReactSharedInternals = React42.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+          var ReactSharedInternals = React43.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
           var suppressWarning = false;
           function setSuppressWarning(newSuppressWarning) {
             {
@@ -3821,7 +3821,7 @@
             {
               if (props.value == null) {
                 if (typeof props.children === "object" && props.children !== null) {
-                  React42.Children.forEach(props.children, function(child) {
+                  React43.Children.forEach(props.children, function(child) {
                     if (child == null) {
                       return;
                     }
@@ -24672,7 +24672,7 @@
     "node_modules/@emotion/use-insertion-effect-with-fallbacks/dist/emotion-use-insertion-effect-with-fallbacks.browser.cjs.js"(exports) {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
-      var React42 = require_react();
+      var React43 = require_react();
       function _interopNamespace(e) {
         if (e && e.__esModule)
           return e;
@@ -24693,7 +24693,7 @@
         n["default"] = e;
         return Object.freeze(n);
       }
-      var React__namespace = /* @__PURE__ */ _interopNamespace(React42);
+      var React__namespace = /* @__PURE__ */ _interopNamespace(React43);
       var syncFallback = function syncFallback2(create) {
         return create();
       };
@@ -24709,7 +24709,7 @@
   var require_emotion_element_832b737b_browser_cjs = __commonJS({
     "node_modules/@emotion/react/dist/emotion-element-832b737b.browser.cjs.js"(exports) {
       "use strict";
-      var React42 = require_react();
+      var React43 = require_react();
       var createCache = require_emotion_cache_browser_cjs();
       var _extends5 = require_extends();
       var weakMemoize = require_emotion_weak_memoize_cjs();
@@ -24740,7 +24740,7 @@
         n["default"] = e;
         return Object.freeze(n);
       }
-      var React__namespace = /* @__PURE__ */ _interopNamespace(React42);
+      var React__namespace = /* @__PURE__ */ _interopNamespace(React43);
       var createCache__default = /* @__PURE__ */ _interopDefault(createCache);
       var weakMemoize__default = /* @__PURE__ */ _interopDefault(weakMemoize);
       var isDevelopment = false;
@@ -24751,11 +24751,11 @@
       );
       var CacheProvider2 = EmotionCacheContext.Provider;
       var __unsafe_useEmotionCache2 = function useEmotionCache() {
-        return React42.useContext(EmotionCacheContext);
+        return React43.useContext(EmotionCacheContext);
       };
       var withEmotionCache2 = function withEmotionCache3(func2) {
-        return /* @__PURE__ */ React42.forwardRef(function(props, ref) {
-          var cache = React42.useContext(EmotionCacheContext);
+        return /* @__PURE__ */ React43.forwardRef(function(props, ref) {
+          var cache = React43.useContext(EmotionCacheContext);
           return func2(props, cache, ref);
         });
       };
@@ -24871,7 +24871,7 @@
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       var emotionElement = require_emotion_element_832b737b_browser_cjs();
-      var React42 = require_react();
+      var React43 = require_react();
       var utils = require_emotion_utils_browser_cjs();
       var useInsertionEffectWithFallbacks = require_emotion_use_insertion_effect_with_fallbacks_browser_cjs();
       var serialize = require_emotion_serialize_cjs();
@@ -24900,7 +24900,7 @@
         n["default"] = e;
         return Object.freeze(n);
       }
-      var React__namespace = /* @__PURE__ */ _interopNamespace(React42);
+      var React__namespace = /* @__PURE__ */ _interopNamespace(React43);
       var jsx83 = function jsx84(type, props) {
         var args = arguments;
         if (props == null || !emotionElement.hasOwn.call(props, "css")) {
@@ -25092,7 +25092,7 @@
       if (true) {
         (function() {
           "use strict";
-          var React42 = require_react();
+          var React43 = require_react();
           var REACT_ELEMENT_TYPE = Symbol.for("react.element");
           var REACT_PORTAL_TYPE = Symbol.for("react.portal");
           var REACT_FRAGMENT_TYPE = Symbol.for("react.fragment");
@@ -25118,7 +25118,7 @@
             }
             return null;
           }
-          var ReactSharedInternals = React42.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+          var ReactSharedInternals = React43.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
           function error2(format) {
             {
               {
@@ -26832,7 +26832,7 @@
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       var _extends5 = require_extends();
-      var React42 = require_react();
+      var React43 = require_react();
       var isPropValid = require_emotion_is_prop_valid_cjs();
       var react = require_emotion_react_browser_cjs();
       var utils = require_emotion_utils_browser_cjs();
@@ -26861,7 +26861,7 @@
         n["default"] = e;
         return Object.freeze(n);
       }
-      var React__namespace = /* @__PURE__ */ _interopNamespace(React42);
+      var React__namespace = /* @__PURE__ */ _interopNamespace(React43);
       var isPropValid__default = /* @__PURE__ */ _interopDefault(isPropValid);
       var testOmitPropsOnStringTag = isPropValid__default["default"];
       var testOmitPropsOnComponent = function testOmitPropsOnComponent2(key) {
@@ -27796,142 +27796,8 @@
     }
   });
 
-  // node_modules/timestamp-nano/dist/timestamp.min.js
-  var require_timestamp_min = __commonJS({
-    "node_modules/timestamp-nano/dist/timestamp.min.js"(exports, module) {
-      var Timestamp2 = function() {
-        "undefined" != typeof module && (module.exports = d);
-        var l = 86400, s = 3200, T = 146097 * s / 400, e = l * T, f = 1e3 * e, c = 864e13, g = 4294967296, h = 1e6, u = "000000000", m = Math.trunc || function(n2) {
-          var t3 = n2 - n2 % 1;
-          return 0 == t3 && (n2 < 0 || 0 === n2 && 1 / n2 != 1 / 0) ? -0 : t3;
-        }, n = d.prototype, o = (d.fromDate = function(n2) {
-          return new d(+n2);
-        }, d.fromInt64BE = r2(0, 1, 2, 3, 0, 4), d.fromInt64LE = r2(3, 2, 1, 0, 4, 0), d.fromString = function(n2) {
-          var e2, r3 = new d(), n2 = (n2 += "").replace(/^\s*[+\-]?\d+/, function(n3) {
-            var n3 = +n3, t3 = 1970 + (n3 - 1970) % 400;
-            return r3.year = n3 - t3, t3;
-          }).replace(/(?:Z|([+\-]\d{2}):?(\d{2}))$/, function(n3, t3, r4) {
-            return t3 < 0 && (r4 *= -1), e2 = 6e4 * (60 * +t3 + +r4), "";
-          }).replace(/\.\d+$/, function(n3) {
-            return r3.nano = +(n3 + u).substr(1, 9), "";
-          }).split(/\D+/);
-          1 < n2.length ? n2[1]-- : n2[1] = 0;
-          if (r3.time = e2 = Date.UTC.apply(Date, n2) - (e2 || 0), isNaN(e2))
-            throw new TypeError("Invalid Date");
-          return p(r3);
-        }, d.fromTimeT = function(n2) {
-          return y(n2, 0);
-        }, n.year = 0, n.time = 0, n.nano = 0, n.addNano = function(n2) {
-          return this.nano += +n2 || 0, this;
-        }, n.getNano = function() {
-          var n2 = p(this);
-          return (n2.time % 1e3 * h + +n2.nano + 1e9) % 1e9;
-        }, n.getTimeT = function() {
-          var n2 = p(this), t3 = Math.floor(n2.time / 1e3), n2 = n2.year;
-          n2 && (t3 += n2 * T * l / s);
-          return t3;
-        }, n.getYear = function() {
-          return this.toDate().getUTCFullYear() + this.year;
-        }, n.toDate = function() {
-          return M(p(this).time);
-        }, n.toJSON = function() {
-          return this.toString().replace(/0{1,6}Z$/, "Z");
-        }, n.toString = function(n2) {
-          var t3 = this, r3 = t3.toDate(), u2 = { H: function() {
-            return C(r3.getUTCHours());
-          }, L: function() {
-            return D(r3.getUTCMilliseconds(), 3);
-          }, M: function() {
-            return C(r3.getUTCMinutes());
-          }, N: function() {
-            return D(t3.getNano(), 9);
-          }, S: function() {
-            return C(r3.getUTCSeconds());
-          }, Y: function() {
-            var n3 = t3.getYear();
-            return 999999 < n3 ? "+" + n3 : 9999 < n3 ? "+" + D(n3, 6) : 0 <= n3 ? D(n3, 4) : -999999 <= n3 ? "-" + D(-n3, 6) : n3;
-          }, a: function() {
-            return a[r3.getUTCDay()];
-          }, b: function() {
-            return i[r3.getUTCMonth()];
-          }, d: function() {
-            return C(r3.getUTCDate());
-          }, e: function() {
-            return function(n3) {
-              return (9 < n3 ? "" : " ") + (0 | n3);
-            }(r3.getUTCDate());
-          }, m: function() {
-            return C(r3.getUTCMonth() + 1);
-          } };
-          return function e2(n3) {
-            return n3.replace(/%./g, function(n4) {
-              var t4 = n4[1], r4 = v[t4], t4 = u2[t4];
-              return r4 ? e2(r4) : t4 ? t4() : n4;
-            });
-          }(n2 || o);
-        }, n.writeInt64BE = t2(0, 1, 2, 3, 0, 4), n.writeInt64LE = t2(3, 2, 1, 0, 4, 0), "%Y-%m-%dT%H:%M:%S.%NZ"), i = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], a = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], v = { "%": "%", F: "%Y-%m-%d", n: "\n", R: "%H:%M", T: "%H:%M:%S", t: "	", X: "%T", Z: "GMT", z: "+0000" };
-        return d;
-        function d(n2, t3, r3) {
-          var e2 = this;
-          if (!(e2 instanceof d))
-            return new d(n2, t3, r3);
-          e2.time = +n2 || 0, e2.nano = +t3 || 0, e2.year = +r3 || 0, p(e2);
-        }
-        function p(n2) {
-          var t3, r3, e2, u2 = n2.year, o2 = n2.time, i2 = n2.nano, a2 = ((i2 < 0 || h <= i2) && (i2 -= (r3 = Math.floor(i2 / h)) * h, o2 += r3, r3 = 1), u2 % s);
-          return (o2 < -c || c < o2 || a2) && ((t3 = m(o2 / f)) && (u2 += t3 * s, o2 -= t3 * f), (e2 = M(o2)).setUTCFullYear(a2 + e2.getUTCFullYear()), e2 = (o2 = +e2) + (t3 = m((u2 -= a2) / s)) * f, t3 && -c <= e2 && e2 <= c && (u2 -= t3 * s, o2 = e2), r3 = 1), r3 && (n2.year = u2, n2.time = o2, n2.nano = i2), n2;
-        }
-        function M(n2) {
-          var t3 = new Date(0);
-          return t3.setTime(n2), t3;
-        }
-        function y(n2, t3) {
-          n2 = +n2 || 0;
-          var r3 = m((t3 = (t3 | 0) * g) / e) + m(n2 / e), t3 = t3 % e + n2 % e, n2 = m(t3 / e);
-          return n2 && (r3 += n2, t3 -= n2 * e), new d(1e3 * t3, 0, r3 * s);
-        }
-        function t2(e2, u2, o2, i2, a2, f2) {
-          return function(n2, t3) {
-            var r3 = p(this);
-            n2 = n2 || new Array(8);
-            w(n2, t3 |= 0);
-            var e3 = Math.floor(r3.time / 1e3), r3 = r3.year * (T * l / s), u3 = m(r3 / g) + m(e3 / g), r3 = r3 % g + e3 % g, e3 = Math.floor(r3 / g);
-            e3 && (u3 += e3, r3 -= e3 * g);
-            return c2(n2, t3 + a2, u3), c2(n2, t3 + f2, r3), n2;
-          };
-          function c2(n2, t3, r3) {
-            n2[t3 + e2] = r3 >> 24 & 255, n2[t3 + u2] = r3 >> 16 & 255, n2[t3 + o2] = r3 >> 8 & 255, n2[t3 + i2] = 255 & r3;
-          }
-        }
-        function r2(r3, e2, u2, o2, i2, a2) {
-          return function(n2, t3) {
-            w(n2, t3 |= 0);
-            var r4 = f2(n2, t3 + i2);
-            return y(f2(n2, t3 + a2), r4);
-          };
-          function f2(n2, t3) {
-            return 16777216 * n2[t3 + r3] + (n2[t3 + e2] << 16 | n2[t3 + u2] << 8 | n2[t3 + o2]);
-          }
-        }
-        function w(n2, t3) {
-          n2 = n2 && n2.length;
-          if (null == n2)
-            throw new TypeError("Invalid Buffer");
-          if (n2 < t3 + 8)
-            throw new RangeError("Out of range");
-        }
-        function C(n2) {
-          return (9 < n2 ? "" : "0") + (0 | n2);
-        }
-        function D(n2, t3) {
-          return (u + (0 | n2)).substr(-t3);
-        }
-      }();
-    }
-  });
-
   // main.tsx
-  var import_react142 = __toESM(require_react());
+  var import_react144 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
   // node_modules/@emotion/react/dist/emotion-react.browser.cjs.mjs
@@ -55633,56 +55499,111 @@
     );
   }
 
+  // types/precise-timestamp.ts
+  var PreciseTimestamp = class {
+    constructor(milliseconds, nanoseconds) {
+      this.milliseconds = milliseconds;
+      this.nanoseconds = nanoseconds;
+    }
+    static fromJSON(json2) {
+      if (json2 instanceof PreciseTimestamp) {
+        return json2;
+      }
+      return new PreciseTimestamp(json2.milliseconds, json2.nanoseconds);
+    }
+    isBefore(other) {
+      return this.milliseconds < other.milliseconds || this.milliseconds === other.milliseconds && this.nanoseconds < other.nanoseconds;
+    }
+    isAfter(other) {
+      return this.milliseconds > other.milliseconds || this.milliseconds === other.milliseconds && this.nanoseconds > other.nanoseconds;
+    }
+    isEqual(other) {
+      return this.milliseconds === other.milliseconds && this.nanoseconds === other.nanoseconds;
+    }
+    toString() {
+      const date = new Date(this.milliseconds);
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(date.getUTCDate()).padStart(2, "0");
+      const hours = String(date.getUTCHours()).padStart(2, "0");
+      const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+      const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+      const ms = String(date.getUTCMilliseconds()).padStart(3, "0");
+      const ns = this.nanoseconds.toString().padStart(9, "0");
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}${ns} +0000 UTC`;
+    }
+  };
+
   // utils/duration.ts
-  var import_timestamp_nano = __toESM(require_timestamp_min());
-  function calculateTraceTiming(spans) {
+  function getTraceDuration(spans) {
     if (!spans.length) {
       return {
-        traceStartTimeNS: 0,
-        traceDurationNS: 0
+        startTime: new PreciseTimestamp(0, 0),
+        endTime: new PreciseTimestamp(0, 0),
+        milliseconds: 0,
+        nanoseconds: 0,
+        label: ""
       };
     }
-    let earliestStartTime = getNsFromString(spans[0].startTime);
-    let latestEndTime = getNsFromString(spans[0].endTime);
+    let earliestStartTime = spans[0].startTime;
+    let latestEndTime = spans[0].endTime;
     spans.forEach((span) => {
-      let spanStart = getNsFromString(span.startTime);
-      if (spanStart < earliestStartTime) {
+      let spanStart = span.startTime;
+      if (spanStart.isBefore(earliestStartTime)) {
         earliestStartTime = spanStart;
       }
-      let spanEnd = getNsFromString(span.endTime);
-      if (spanEnd > latestEndTime) {
+      let spanEnd = span.endTime;
+      if (spanEnd.isAfter(latestEndTime)) {
         latestEndTime = spanEnd;
       }
     });
+    return getDuration(earliestStartTime, latestEndTime);
+  }
+  function getDuration(startTime, endTime) {
+    if (startTime === null || endTime === null) {
+      return {
+        startTime,
+        endTime,
+        milliseconds: 0,
+        nanoseconds: 0,
+        label: ""
+      };
+    }
+    let msDiff = endTime.milliseconds - startTime.milliseconds;
+    let nsDiff = endTime.nanoseconds - startTime.nanoseconds;
+    let finalMs = msDiff;
+    let finalNs = nsDiff;
+    if (nsDiff < 0) {
+      finalMs -= 1;
+      finalNs += 1e6;
+    }
+    let label = "";
+    if (finalMs >= 1e3) {
+      let seconds = finalMs / 1e3;
+      label = `${seconds.toFixed(3)} s`;
+    } else if (finalMs >= 1) {
+      label = `${finalMs}.${finalNs.toString().padStart(6, "0")} ms`;
+    } else if (finalNs >= 1e3) {
+      label = `${(finalNs / 1e3).toFixed(3)} \u03BCs`;
+    } else {
+      label = `${finalNs} ns`;
+    }
     return {
-      traceStartTimeNS: earliestStartTime,
-      traceDurationNS: latestEndTime - earliestStartTime
+      startTime,
+      endTime,
+      milliseconds: finalMs,
+      nanoseconds: finalNs,
+      label
     };
   }
-  function getNsFromString(timestampString) {
-    let milliseconds = Date.parse(timestampString.split(".")[0]);
-    let nanoseconds = milliseconds * 1e6 + import_timestamp_nano.default.fromString(timestampString).getNano();
-    return nanoseconds;
-  }
-  function getDurationNs(startTimestamp, endTimestamp) {
-    let startTimeNs = getNsFromString(startTimestamp);
-    let endTimeNs = getNsFromString(endTimestamp);
-    return endTimeNs - startTimeNs;
-  }
-  function getDurationString(durationNs) {
-    if (durationNs === null || durationNs < 0) {
-      return "";
+  function getOffset2(duration, point) {
+    let totalNs = duration.milliseconds * 1e6 + duration.nanoseconds;
+    let offsetNs = (point.milliseconds - duration.startTime.milliseconds) * 1e6 + (point.nanoseconds - duration.startTime.nanoseconds);
+    if (totalNs <= Number.MAX_SAFE_INTEGER && offsetNs <= Number.MAX_SAFE_INTEGER) {
+      return Math.floor(offsetNs / totalNs * 100);
+    } else {
+      return Math.floor((point.milliseconds - duration.startTime.milliseconds) / (duration.endTime.milliseconds - duration.startTime.milliseconds) * 100);
     }
-    if (durationNs >= 1e9) {
-      return `${(durationNs / 1e9).toFixed(3)} s`;
-    }
-    if (durationNs >= 1e6) {
-      return `${(durationNs / 1e6).toFixed(3)} ms`;
-    }
-    if (durationNs >= 1e3) {
-      return `${(durationNs / 1e3).toFixed(3)} \u03BCs`;
-    }
-    return `${durationNs} ns`;
   }
 
   // components/sidebar-view/trace-list.tsx
@@ -55699,7 +55620,7 @@
     if (traceSummary.root) {
       let rootNameLabel = traceSummary.root.name.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
       let rootServiceNameLabel = traceSummary.root.serviceName.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
-      let rootDuration = getDurationNs(
+      let duration = getDuration(
         traceSummary.root.startTime,
         traceSummary.root.endTime
       );
@@ -55737,7 +55658,7 @@
           "Root Name: ",
           /* @__PURE__ */ import_react105.default.createElement("strong", null, rootNameLabel)
         ),
-        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Root Duration: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, getDurationString(rootDuration))),
+        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Root Duration: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, duration.label)),
         /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Number of Spans: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceSummary.spanCount)),
         /* @__PURE__ */ import_react105.default.createElement(
           LinkOverlay,
@@ -55784,6 +55705,7 @@
     let location = useLocation();
     let navigate = useNavigate();
     let { isOpen, onOpen, onClose } = useDisclosure();
+    let enableLogs2 = localStorage.getItem("enableLogs") === "true";
     let selectedIndex = 0;
     let selectedTraceID = "";
     let { traceSummaries } = props;
@@ -55791,7 +55713,7 @@
     if (location.pathname.includes("/traces/")) {
       selectedTraceID = location.pathname.split("/")[2];
       selectedIndex = traceIDs.indexOf(selectedTraceID);
-    } else {
+    } else if (!location.pathname.includes("/logs") && traceIDs.length > 0) {
       selectedTraceID = traceIDs[selectedIndex];
       window.location.href = `/traces/${selectedTraceID}`;
     }
@@ -55843,12 +55765,25 @@
       Flex,
       {
         ref: containerRef,
-        height: "100%"
+        height: "100%",
+        direction: "column"
       },
+      enableLogs2 && /* @__PURE__ */ import_react105.default.createElement(
+        Button,
+        {
+          as: NavLink,
+          to: "/logs",
+          m: 2,
+          size: "sm",
+          colorScheme: "blue",
+          variant: "outline"
+        },
+        "View Logs"
+      ),
       /* @__PURE__ */ import_react105.default.createElement(
         FixedSizeList,
         {
-          height: size3 ? size3.height : 0,
+          height: size3 ? size3.height - (enableLogs2 ? 50 : 0) : 0,
           itemData,
           itemCount: traceSummaries.size,
           itemSize: itemHeight,
@@ -55867,12 +55802,11 @@
     );
   }
   async function clearTraceData() {
-    let response = await fetch("/api/clearData");
+    let response = await fetch("/api/clearTraces");
     if (!response.ok) {
       throw new Error("HTTP status " + response.status);
-    } else {
-      window.location.replace("/");
     }
+    window.location.replace("/");
   }
 
   // components/sidebar-view/sidebar-header.tsx
@@ -56375,11 +56309,42 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     );
   }
 
+  // types/api-types.ts
+  function traceSummaryFromJSON(json2) {
+    return {
+      ...json2,
+      rootSpan: json2.rootSpan ? {
+        ...json2.rootSpan,
+        startTime: PreciseTimestamp.fromJSON(json2.rootSpan.startTime),
+        endTime: PreciseTimestamp.fromJSON(json2.rootSpan.endTime)
+      } : void 0
+    };
+  }
+  function traceSummariesFromJSON(json2) {
+    return {
+      traceSummaries: json2.traceSummaries.map(traceSummaryFromJSON)
+    };
+  }
+  function traceDataFromJSON(json2) {
+    return {
+      ...json2,
+      spans: json2.spans.map((span) => ({
+        ...span,
+        startTime: PreciseTimestamp.fromJSON(span.startTime),
+        endTime: PreciseTimestamp.fromJSON(span.endTime),
+        events: span.events?.map((event) => ({
+          ...event,
+          timestamp: PreciseTimestamp.fromJSON(event.timestamp)
+        }))
+      }))
+    };
+  }
+
   // routes/main-view.tsx
   async function mainLoader() {
     const response = await fetch("/api/traces");
-    const traceSummaries = await response.json();
-    return traceSummaries;
+    const json2 = await response.json();
+    return traceSummariesFromJSON(json2);
   }
   function MainView() {
     let { traceSummaries } = useLoaderData();
@@ -56389,7 +56354,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       async function checkForNewData() {
         let response = await fetch("/api/traces");
         if (response.ok) {
-          let { traceSummaries: traceSummaries2 } = await response.json();
+          let json2 = await response.json();
+          let { traceSummaries: traceSummaries2 } = traceSummariesFromJSON(json2);
           let newSidebarData = updateSidebarData(sidebarData, traceSummaries2);
           setSidebarData(newSidebarData);
         }
@@ -56454,7 +56420,9 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   function transformSummaryToUIData(traceSummary) {
     if (traceSummary.rootSpan) {
       return {
-        root: traceSummary.rootSpan,
+        root: {
+          ...traceSummary.rootSpan
+        },
         spanCount: traceSummary.spanCount
       };
     }
@@ -56577,9 +56545,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       },
       "root"
     ) : null;
-    let durationString = getDurationString(
-      getDurationNs(span.startTime, span.endTime)
-    );
+    let duration = getDuration(span.startTime, span.endTime);
     let spanAttributes = Object.entries(span.attributes).map(([key, value]) => /* @__PURE__ */ import_react119.default.createElement("li", { key }, /* @__PURE__ */ import_react119.default.createElement(
       SpanField,
       {
@@ -56647,21 +56613,21 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         SpanField,
         {
           fieldName: "start time",
-          fieldValue: span.startTime,
+          fieldValue: span.startTime.toString(),
           fieldType: "timestamp"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "end time",
-          fieldValue: span.endTime,
+          fieldValue: span.endTime.toString(),
           fieldType: "timestamp"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
         SpanField,
         {
           fieldName: "duration",
-          fieldValue: durationString,
+          fieldValue: duration.label,
           fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
@@ -56779,8 +56745,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   var import_react121 = __toESM(require_react());
   function EventItem(props) {
     let { event, spanStartTime } = props;
-    let timeSinceSpanStart = getDurationNs(spanStartTime, event.timestamp);
-    let durationString = getDurationString(timeSinceSpanStart);
+    let timeSinceSpanStart = getDuration(spanStartTime, event.timestamp).label;
     let eventAttributes = Object.entries(event.attributes).map(([key, value]) => /* @__PURE__ */ import_react121.default.createElement("li", { key: key + value?.toString() }, /* @__PURE__ */ import_react121.default.createElement(
       SpanField,
       {
@@ -56796,12 +56761,12 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         textAlign: "left"
       },
       /* @__PURE__ */ import_react121.default.createElement(Heading, { size: "sm" }, event.name),
-      /* @__PURE__ */ import_react121.default.createElement(Text, { fontSize: "xs" }, durationString, " since span start")
+      /* @__PURE__ */ import_react121.default.createElement(Text, { fontSize: "xs" }, timeSinceSpanStart, " since span start")
     ), /* @__PURE__ */ import_react121.default.createElement(AccordionIcon, null)), /* @__PURE__ */ import_react121.default.createElement(AccordionPanel, null, /* @__PURE__ */ import_react121.default.createElement(
       SpanField,
       {
         fieldName: "timestamp",
-        fieldValue: event.timestamp,
+        fieldValue: event.timestamp.toString(),
         fieldType: "timestamp"
       }
     ), /* @__PURE__ */ import_react121.default.createElement(List, null, eventAttributes), /* @__PURE__ */ import_react121.default.createElement(
@@ -57037,15 +57002,15 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   // components/waterfall-view/duration-bar.tsx
   var import_react131 = __toESM(require_react());
   function EventDotsList(props) {
-    let { events, spanStartTimeNs, spanEndTimeNs } = props;
+    let { events, spanStartTime, spanEndTime } = props;
     let eventDotsList = events.map((eventData) => {
       let eventName = eventData.name;
-      let eventTimeNs = getNsFromString(eventData.timestamp);
-      let spanDurationNS = spanEndTimeNs - spanStartTimeNs;
-      let eventOffsetPercent = Math.floor(
-        (eventTimeNs - spanStartTimeNs) / spanDurationNS * 100
+      let spanDuration = getDuration(spanStartTime, spanEndTime);
+      let eventOffsetPercent = getOffset2(
+        spanDuration,
+        eventData.timestamp
       );
-      return /* @__PURE__ */ import_react131.default.createElement("li", { key: `${eventName}-${eventData.timestamp}` }, /* @__PURE__ */ import_react131.default.createElement(
+      return /* @__PURE__ */ import_react131.default.createElement("li", { key: `${eventName}-${eventData.timestamp.toString()}` }, /* @__PURE__ */ import_react131.default.createElement(
         Tooltip,
         {
           hasArrow: true,
@@ -57075,15 +57040,10 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     const labelWidth = 80;
     let durationBarColour = useColorModeValue("cyan.800", "cyan.700");
     let labelTextColour = useColorModeValue("blackAlpha.800", "white");
-    let { traceStartTimeNS, traceDurationNS } = props.traceTimeAttributes;
-    let spanStartTimeNs = getNsFromString(props.spanStartTimestamp);
-    let spanEndTimeNs = getNsFromString(props.spanEndTimestamp);
-    let barOffsetPercent = Math.floor(
-      (spanStartTimeNs - traceStartTimeNS) / traceDurationNS * 100
-    );
-    let barWidthPercent = Math.round(
-      (spanEndTimeNs - spanStartTimeNs) / traceDurationNS * 100
-    );
+    let { startTime, endTime } = props.spanData;
+    let barOffsetPercent = getOffset2(props.traceDuration, startTime);
+    let barEndPercent = getOffset2(props.traceDuration, endTime);
+    let barWidthPercent = barEndPercent - barOffsetPercent;
     let labelOffset;
     if (size3 && size3.width >= labelWidth) {
       labelOffset = "0px";
@@ -57093,7 +57053,6 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     } else {
       labelOffset = `${Math.floor(-labelWidth)}px`;
     }
-    let label = getDurationString(spanEndTimeNs - spanStartTimeNs);
     return /* @__PURE__ */ import_react131.default.createElement(
       Flex,
       {
@@ -57131,15 +57090,15 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
               color: labelTextColour,
               whiteSpace: "nowrap"
             },
-            label
+            props.traceDuration.label
           )
         ),
         /* @__PURE__ */ import_react131.default.createElement(
           EventDotsList,
           {
             events: props.spanData.events,
-            spanStartTimeNs,
-            spanEndTimeNs
+            spanStartTime: startTime,
+            spanEndTime: endTime
           }
         )
       )
@@ -57153,7 +57112,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     let backgroundColour = index % 2 ? "" : oddStripeColour;
     let {
       orderedSpans,
-      traceTimeAttributes,
+      traceDuration,
       spanNameColumnWidth,
       serviceNameColumnWidth,
       selectedSpanID,
@@ -57168,7 +57127,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         backgroundColour = selectedColour;
       }
       let nameLabel = spanData.name.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
-      let resourceLabel = spanData.resource.attributes["service.name"];
+      let resourceLabel = spanData.resource?.attributes?.["service.name"] ?? "";
       return /* @__PURE__ */ import_react133.default.createElement(
         Flex,
         {
@@ -57215,10 +57174,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         /* @__PURE__ */ import_react133.default.createElement(
           DurationBar,
           {
-            spanData,
-            traceTimeAttributes,
-            spanStartTimestamp: spanData.startTime,
-            spanEndTimestamp: spanData.endTime
+            traceDuration,
+            spanData
           }
         )
       );
@@ -57255,20 +57212,30 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     }
     let { traceDuration } = props;
     let timeUnit = "ns";
-    if (traceDuration >= 1e9) {
-      traceDuration = traceDuration / 1e9;
+    let totalMs = traceDuration.milliseconds;
+    if (totalMs >= 1e3) {
       timeUnit = "s";
-    } else if (traceDuration >= 1e6) {
-      traceDuration = traceDuration / 1e6;
+    } else if (totalMs >= 1) {
       timeUnit = "ms";
-    } else if (traceDuration >= 1e3) {
-      traceDuration = traceDuration / 1e3;
+    } else if (traceDuration.nanoseconds >= 1e3) {
       timeUnit = "\u03BCs";
     }
-    let sectionDuration = traceDuration / numSections;
+    let sectionMs = Math.floor(traceDuration.milliseconds / numSections);
+    let sectionNs = Math.floor(traceDuration.milliseconds % numSections * 1e6 + traceDuration.nanoseconds) / numSections;
     let sectionWidth = availableWidth / numSections;
     let durationSections = Array(numSections - 1).fill(null).map((_, i) => {
-      let sectionLabel = `${+(sectionDuration * i).toFixed(3)}${timeUnit}`;
+      let sectionTimeMs = sectionMs * i;
+      let sectionTimeNs = sectionNs * i;
+      let sectionLabel = "";
+      if (sectionTimeMs >= 1e3) {
+        sectionLabel = `${(sectionTimeMs / 1e3).toFixed(3)} s`;
+      } else if (sectionTimeMs >= 1) {
+        sectionLabel = `${sectionTimeMs}.${sectionTimeNs.toString().padStart(6, "0")} ms`;
+      } else if (sectionTimeNs >= 1e3) {
+        sectionLabel = `${(sectionTimeNs / 1e3).toFixed(3)} \u03BCs`;
+      } else {
+        sectionLabel = `${sectionTimeNs} ns`;
+      }
       return /* @__PURE__ */ import_react135.default.createElement(
         ListItem,
         {
@@ -57285,7 +57252,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         )
       );
     });
-    let lastDurationLabel = /* @__PURE__ */ import_react135.default.createElement(Text, { fontSize: "x-small" }, `${+traceDuration.toFixed(3)}${timeUnit}`);
+    let lastDurationLabel = /* @__PURE__ */ import_react135.default.createElement(Text, { fontSize: "x-small" }, traceDuration.label);
     return /* @__PURE__ */ import_react135.default.createElement(
       Flex,
       {
@@ -57348,7 +57315,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     const headerRowHeight = 30;
     const spanNameColumnWidth = 300;
     const serviceNameColumnWidth = 200;
-    let { orderedSpans, traceTimeAttributes, selectedSpanID, setSelectedSpanID } = props;
+    let { orderedSpans, traceDuration, selectedSpanID, setSelectedSpanID } = props;
     let prevSpanKeyPressed = useKeyPress(["ArrowUp", "k"]);
     let nextSpanKeyPressed = useKeyPress(["ArrowDown", "j"]);
     let selectedIndex = orderedSpans.findIndex(
@@ -57381,7 +57348,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     }, [nextSpanKeyPressed]);
     let rowData = {
       orderedSpans,
-      traceTimeAttributes,
+      traceDuration,
       spanNameColumnWidth,
       serviceNameColumnWidth,
       selectedSpanID,
@@ -57401,7 +57368,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           headerRowHeight,
           spanNameColumnWidth,
           serviceNameColumnWidth,
-          traceDuration: traceTimeAttributes.traceDurationNS
+          traceDuration
         }
       ),
       /* @__PURE__ */ import_react137.default.createElement(
@@ -57471,7 +57438,12 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       (a, b) => {
         let earliestStartTimeA = getEarliestStartTime(lookup[a].children);
         let earliestStartTimeB = getEarliestStartTime(lookup[b].children);
-        return earliestStartTimeA - earliestStartTimeB;
+        if (earliestStartTimeA.isBefore(earliestStartTimeB)) {
+          return -1;
+        } else if (earliestStartTimeA.isAfter(earliestStartTimeB)) {
+          return 1;
+        }
+        return 0;
       }
     );
     for (let spanID of missingIDsArray) {
@@ -57485,21 +57457,25 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         "Unexpected type: A 'missing' parent span appears to have no children."
       );
     }
-    let startTimes = children.map((treeItem) => {
-      return getNsFromString(treeItem.spanData.startTime);
-    });
-    return Math.min(...startTimes);
+    let earliestStart = children[0].spanData.startTime;
+    for (let i = 1; i < children.length; i++) {
+      let currentStart = children[i].spanData.startTime;
+      if (currentStart.isBefore(earliestStart)) {
+        earliestStart = currentStart;
+      }
+    }
+    return earliestStart;
   }
 
   // routes/trace-view.tsx
   async function traceLoader({ params }) {
     let response = await fetch(`/api/traces/${params.traceID}`);
     let traceData = await response.json();
-    return traceData;
+    return traceDataFromJSON(traceData);
   }
   function TraceView() {
     let traceData = useLoaderData();
-    let traceTimeAttributes = calculateTraceTiming(traceData.spans);
+    let traceDuration = getTraceDuration(traceData.spans);
     let spanTree = arrayToTree(traceData.spans);
     let orderedSpans = orderSpans(spanTree);
     let [selectedSpanID, setSelectedSpanID] = import_react139.default.useState(() => {
@@ -57541,7 +57517,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           WaterfallView,
           {
             orderedSpans,
-            traceTimeAttributes,
+            traceDuration,
             selectedSpanID,
             setSelectedSpanID
           }
@@ -57579,7 +57555,12 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         }
         treeItem.children.sort((a, b) => {
           if (a.status === "present" /* present */ && b.status === "present" /* present */) {
-            return getNsFromString(b.spanData.startTime) - getNsFromString(a.spanData.startTime);
+            if (a.spanData.startTime.isBefore(b.spanData.startTime)) {
+              return -1;
+            } else if (a.spanData.startTime.isAfter(b.spanData.startTime)) {
+              return 1;
+            }
+            return 0;
           }
           return 0;
         }).forEach(
@@ -57593,40 +57574,94 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     return orderedSpans;
   }
 
-  // error-page.tsx
+  // routes/logs-view.tsx
   var import_react141 = __toESM(require_react());
+  function LogsView() {
+    let [logs, setLogs] = (0, import_react141.useState)(null);
+    let [loading, setLoading] = (0, import_react141.useState)(true);
+    let [error2, setError] = (0, import_react141.useState)(null);
+    let errorBg = useColorModeValue("red.100", "red.900");
+    let errorColor = useColorModeValue("red.800", "red.200");
+    let codeBg = useColorModeValue("gray.50", "gray.700");
+    let codeColor = useColorModeValue("gray.800", "gray.100");
+    let fetchLogs = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        let response = await fetch("/api/logs");
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        let data = await response.json();
+        setLogs(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch logs");
+      } finally {
+        setLoading(false);
+      }
+    };
+    (0, import_react141.useEffect)(() => {
+      fetchLogs();
+    }, []);
+    return /* @__PURE__ */ import_react141.default.createElement(Box, { p: 6, height: "100vh", overflow: "auto" }, /* @__PURE__ */ import_react141.default.createElement(Box, { mb: 4, display: "flex", alignItems: "center", gap: 4 }, /* @__PURE__ */ import_react141.default.createElement(Heading, { size: "lg" }, "Logs"), /* @__PURE__ */ import_react141.default.createElement(Button, { onClick: fetchLogs, isLoading: loading, size: "sm" }, "Refresh")), error2 && /* @__PURE__ */ import_react141.default.createElement(Box, { mb: 4, p: 4, bg: errorBg, color: errorColor, borderRadius: "md" }, /* @__PURE__ */ import_react141.default.createElement(Text, { fontWeight: "bold" }, "Error:"), /* @__PURE__ */ import_react141.default.createElement(Text, null, error2)), loading && /* @__PURE__ */ import_react141.default.createElement(Text, null, "Loading logs..."), !loading && !error2 && logs && /* @__PURE__ */ import_react141.default.createElement(
+      Box,
+      {
+        as: "pre",
+        p: 4,
+        bg: codeBg,
+        color: codeColor,
+        borderRadius: "md",
+        overflow: "auto",
+        fontSize: "sm",
+        fontFamily: "mono",
+        whiteSpace: "pre-wrap"
+      },
+      JSON.stringify(logs, null, 2)
+    ));
+  }
+
+  // error-page.tsx
+  var import_react143 = __toESM(require_react());
   function ErrorPage() {
     const error2 = useRouteError();
     console.error(error2);
-    return /* @__PURE__ */ import_react141.default.createElement("div", { id: "error-page" }, /* @__PURE__ */ import_react141.default.createElement("h1", null, "Oops!"), /* @__PURE__ */ import_react141.default.createElement("p", null, "Sorry, an unexpected error has occurred."), /* @__PURE__ */ import_react141.default.createElement("p", null, /* @__PURE__ */ import_react141.default.createElement("i", null, error2.message)));
+    return /* @__PURE__ */ import_react143.default.createElement("div", { id: "error-page" }, /* @__PURE__ */ import_react143.default.createElement("h1", null, "Oops!"), /* @__PURE__ */ import_react143.default.createElement("p", null, "Sorry, an unexpected error has occurred."), /* @__PURE__ */ import_react143.default.createElement("p", null, /* @__PURE__ */ import_react143.default.createElement("i", null, error2.message)));
   }
 
   // main.tsx
   var config2 = {
     initialColorMode: "system",
-    useSystemColorMode: false
+    useSystemColorMode: true
   };
   var theme2 = extendTheme({ config: config2 });
+  var enableLogs = localStorage.getItem("enableLogs") === "true";
+  console.log("Debug: enableLogs flag at module load:", enableLogs);
+  var routeChildren = [
+    {
+      path: "traces/:traceID",
+      element: /* @__PURE__ */ import_react144.default.createElement(TraceView, null),
+      loader: traceLoader
+    }
+  ];
+  routeChildren.push({
+    path: "logs",
+    element: /* @__PURE__ */ import_react144.default.createElement(LogsView, null)
+  });
+  console.log("Debug: routeChildren:", routeChildren);
   var router = createBrowserRouter([
     {
       path: "/",
-      element: /* @__PURE__ */ import_react142.default.createElement(MainView, null),
+      element: /* @__PURE__ */ import_react144.default.createElement(MainView, null),
       loader: mainLoader,
-      errorElement: /* @__PURE__ */ import_react142.default.createElement(ErrorPage, null),
-      children: [
-        {
-          path: "traces/:traceID",
-          element: /* @__PURE__ */ import_react142.default.createElement(TraceView, null),
-          loader: traceLoader
-        }
-      ]
+      errorElement: /* @__PURE__ */ import_react144.default.createElement(ErrorPage, null),
+      children: routeChildren
     }
   ]);
   var container2 = document.getElementById("root");
   if (!!container2) {
-    const root = (0, import_client.createRoot)(container2);
+    let root = (0, import_client.createRoot)(container2);
     root.render(
-      /* @__PURE__ */ import_react142.default.createElement(import_react142.default.StrictMode, null, /* @__PURE__ */ import_react142.default.createElement(ChakraProvider2, { theme: theme2 }, /* @__PURE__ */ import_react142.default.createElement(RouterProvider, { router })))
+      /* @__PURE__ */ import_react144.default.createElement(import_react144.default.StrictMode, null, /* @__PURE__ */ import_react144.default.createElement(ChakraProvider2, { theme: theme2 }, /* @__PURE__ */ import_react144.default.createElement(RouterProvider, { router })))
     );
   }
 })();
