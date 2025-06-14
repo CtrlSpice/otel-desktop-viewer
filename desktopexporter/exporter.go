@@ -43,9 +43,8 @@ func (exporter *desktopExporter) pushMetrics(ctx context.Context, metrics pmetri
 
 func (exporter *desktopExporter) pushLogs(ctx context.Context, logs plog.Logs) error {
 	logDataSlice := telemetry.NewLogsPayload(logs).ExtractLogs()
-	for _, logData := range logDataSlice {
-		fmt.Println(logData)
-	}
+	exporter.server.Store.AddLogs(ctx, logDataSlice)
+
 	return nil
 }
 

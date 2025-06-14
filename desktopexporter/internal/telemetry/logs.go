@@ -14,21 +14,21 @@ type LogsPayload struct {
 }
 
 type LogData struct {
-	Timestamp			   int64 `json:"-"`
-	ObservedTimestamp	   int64 `json:"-"`
+	Timestamp         int64 `json:"-"`
+	ObservedTimestamp int64 `json:"-"`
 
-	TraceID                string `json:"traceID,omitempty"`
-	SpanID                 string `json:"spanID,omitempty"`
-	
-	SeverityText           string `json:"severityText,omitempty"`
-	SeverityNumber         int32  `json:"severityNumber,omitempty"`
-	
+	TraceID string `json:"traceID,omitempty"`
+	SpanID  string `json:"spanID,omitempty"`
+
+	SeverityText   string `json:"severityText,omitempty"`
+	SeverityNumber int32  `json:"severityNumber,omitempty"`
+
 	Body                   any            `json:"body,omitempty"`
 	Resource               *ResourceData  `json:"resource"`
 	Scope                  *ScopeData     `json:"scope"`
 	Attributes             map[string]any `json:"attributes,omitempty"`
 	DroppedAttributesCount uint32         `json:"droppedAttributeCount,omitempty"`
-	Flags             	   uint32         `json:"flags,omitempty"`
+	Flags                  uint32         `json:"flags,omitempty"`
 	EventName              string         `json:"eventName,omitempty"`
 }
 
@@ -60,15 +60,15 @@ func (payload *LogsPayload) ExtractLogs() []LogData {
 
 func aggregateLogData(source plog.LogRecord, scopeData *ScopeData, resourceData *ResourceData) LogData {
 	return LogData{
-		Timestamp:              source.Timestamp().AsTime().UnixNano(),
-		ObservedTimestamp:      source.ObservedTimestamp().AsTime().UnixNano(),
+		Timestamp:         source.Timestamp().AsTime().UnixNano(),
+		ObservedTimestamp: source.ObservedTimestamp().AsTime().UnixNano(),
 
-		TraceID:                source.TraceID().String(),
-		SpanID:                 source.SpanID().String(),
-		
-		SeverityText:           source.SeverityText(),
-		SeverityNumber:         int32(source.SeverityNumber()),
-		
+		TraceID: source.TraceID().String(),
+		SpanID:  source.SpanID().String(),
+
+		SeverityText:   source.SeverityText(),
+		SeverityNumber: int32(source.SeverityNumber()),
+
 		Body:                   source.Body().AsRaw(),
 		Resource:               resourceData,
 		Scope:                  scopeData,
@@ -115,11 +115,11 @@ func (logData LogData) MarshalJSON() ([]byte, error) {
 	type Alias LogData // Avoid recursive MarshalJSON calls
 	return json.Marshal(&struct {
 		Alias
-		Timestamp PreciseTimestamp `json:"timestamp"`
+		Timestamp         PreciseTimestamp `json:"timestamp"`
 		ObservedTimestamp PreciseTimestamp `json:"observedTimestamp"`
 	}{
-		Alias:     Alias(logData),
-		Timestamp: NewPreciseTimestamp(logData.Timestamp),
+		Alias:             Alias(logData),
+		Timestamp:         NewPreciseTimestamp(logData.Timestamp),
 		ObservedTimestamp: NewPreciseTimestamp(logData.ObservedTimestamp),
 	})
 }
