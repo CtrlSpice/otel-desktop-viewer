@@ -85,9 +85,9 @@ export function arrayToTree(spans: SpanData[]): RootTreeItem[] {
       let earliestStartTimeA = getEarliestStartTime(lookup[a].children);
       let earliestStartTimeB = getEarliestStartTime(lookup[b].children);
       
-      if (earliestStartTimeA.isBefore(earliestStartTimeB)) {
+      if (earliestStartTimeA.nanoseconds < earliestStartTimeB.nanoseconds) {
         return -1;
-      } else if (earliestStartTimeA.isAfter(earliestStartTimeB)) {
+      } else if (earliestStartTimeA.nanoseconds > earliestStartTimeB.nanoseconds) {
         return 1;
       }
       return 0;
@@ -113,7 +113,7 @@ function getEarliestStartTime(children: TreeItem[]): PreciseTimestamp {
   let earliestStart = children[0].spanData.startTime;
   for (let i = 1; i < children.length; i++) {
     let currentStart = children[i].spanData.startTime;
-    if (currentStart.isBefore(earliestStart)) {
+    if (currentStart.nanoseconds < earliestStart.nanoseconds) {
       earliestStart = currentStart;
     }
   }

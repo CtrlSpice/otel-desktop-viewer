@@ -16,7 +16,7 @@ import { EventData } from "../../types/api-types";
 import { SpanField } from "./span-field";
 import { parseAttributeType } from "../../utils/parse-type";
 import { PreciseTimestamp } from "../../types/precise-timestamp";
-import { getDuration } from "../../utils/duration";
+import { formatDuration } from "../../utils/duration";
 
 type EventItemProps = {
   event: EventData;
@@ -25,7 +25,7 @@ type EventItemProps = {
 
 function EventItem(props: EventItemProps) {
   let { event, spanStartTime } = props;
-  let timeSinceSpanStart = getDuration(spanStartTime, event.timestamp).label;
+  let timeSinceSpanStart = formatDuration(event.timestamp.nanoseconds - spanStartTime.nanoseconds);
 
   let eventAttributes = Object.entries(event.attributes).map(([key, value]) => (
     <li key={key + value?.toString()}>

@@ -1,40 +1,28 @@
 export class PreciseTimestamp {
-  constructor(
-    public milliseconds: number,
-    public nanoseconds: number
-  ) {}
-
-  static fromJSON(json: any): PreciseTimestamp {
-    if (json instanceof PreciseTimestamp) {
-      return json;
-    }
-    return new PreciseTimestamp(json.milliseconds, json.nanoseconds);
+  constructor(nanoseconds: bigint) {
+    this.nanoseconds = nanoseconds;
   }
 
-  isBefore(other: PreciseTimestamp): boolean {
-    return this.milliseconds < other.milliseconds || 
-           (this.milliseconds === other.milliseconds && this.nanoseconds < other.nanoseconds);
-  }
+  nanoseconds: bigint;
 
-  isAfter(other: PreciseTimestamp): boolean {
-    return this.milliseconds > other.milliseconds || 
-           (this.milliseconds === other.milliseconds && this.nanoseconds > other.nanoseconds);
-  }
-
-  isEqual(other: PreciseTimestamp): boolean {
-    return this.milliseconds === other.milliseconds && this.nanoseconds === other.nanoseconds;
+  static fromJSON(json: { milliseconds: number; nanoseconds: number }): PreciseTimestamp {
+    return new PreciseTimestamp(
+      BigInt(json.milliseconds) * BigInt(1_000_000) + BigInt(json.nanoseconds)
+    );
   }
 
   toString(): string {
-    const date = new Date(this.milliseconds);
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const hours = String(date.getUTCHours()).padStart(2, '0');
-    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
-    const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
-    const ns = this.nanoseconds.toString().padStart(9, '0');
+    let totalMs = this.nanoseconds / BigInt(1_000_000);
+    let remainderNs = this.nanoseconds % BigInt(1_000_000);
+    let date = new Date(Number(totalMs));
+    let year = date.getUTCFullYear();
+    let month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    let day = String(date.getUTCDate()).padStart(2, '0');
+    let hours = String(date.getUTCHours()).padStart(2, '0');
+    let minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    let seconds = String(date.getUTCSeconds()).padStart(2, '0');
+    let ms = String(date.getUTCMilliseconds()).padStart(3, '0');
+    let ns = remainderNs.toString().padStart(9, '0');
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}${ns} +0000 UTC`;
   }
-} 
+}

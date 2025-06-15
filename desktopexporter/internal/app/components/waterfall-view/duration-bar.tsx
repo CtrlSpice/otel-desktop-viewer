@@ -10,7 +10,7 @@ import {
 } from "@chakra-ui/react";
 import { useSize } from "@chakra-ui/react-use-size";
 
-import { Duration, getDuration, getOffset } from "../../utils/duration";
+import { formatDuration, getOffset } from "../../utils/duration";
 import { EventData, SpanData } from "../../types/api-types";
 import { PreciseTimestamp } from "../../types/precise-timestamp";
 
@@ -25,9 +25,9 @@ function EventDotsList(props: EventDotsListProps) {
 
   let eventDotsList = events.map((eventData) => {
     let eventName = eventData.name;
-    let spanDuration = getDuration(spanStartTime, spanEndTime);
     let eventOffsetPercent = getOffset(
-      spanDuration,
+      spanStartTime,
+      spanEndTime,
       eventData.timestamp
     );
 
@@ -57,7 +57,7 @@ function EventDotsList(props: EventDotsListProps) {
 }
 
 type DurationBarProps = {
-  traceDuration: Duration
+  traceBounds: { startTime: PreciseTimestamp; endTime: PreciseTimestamp };
   spanData: SpanData;
 };
 
@@ -71,9 +71,10 @@ export function DurationBar(props: DurationBarProps) {
   let durationBarColour = useColorModeValue("cyan.800", "cyan.700");
   let labelTextColour = useColorModeValue("blackAlpha.800", "white");
 
+  let { traceBounds } = props;
   let { startTime, endTime } = props.spanData;
-  let barOffsetPercent = getOffset(props.traceDuration, startTime);
-  let barEndPercent = getOffset(props.traceDuration, endTime);
+  let barOffsetPercent = getOffset(traceBounds.startTime, traceBounds.endTime, startTime);
+  let barEndPercent = getOffset(traceBounds.startTime, traceBounds.endTime, endTime);
   let barWidthPercent = barEndPercent - barOffsetPercent;
 
   let labelOffset;
@@ -119,7 +120,7 @@ export function DurationBar(props: DurationBarProps) {
             color={labelTextColour}
             whiteSpace="nowrap"
           >
-            {props.traceDuration.label}
+            {formatDuration(traceBounds.endTime.nanoseconds - traceBounds.startTime.nanoseconds)}
           </Text>
         </Flex>
         <EventDotsList

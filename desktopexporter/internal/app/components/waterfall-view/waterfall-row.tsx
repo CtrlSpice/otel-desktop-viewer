@@ -3,12 +3,12 @@ import { Text, Flex, Spacer, useColorModeValue } from "@chakra-ui/react";
 import { WarningTwoIcon } from "@chakra-ui/icons";
 
 import { SpanDataStatus, SpanWithUIData } from "../../types/ui-types";
-import { Duration } from "../../utils/duration";
 import { DurationBar } from "./duration-bar";
+import { PreciseTimestamp } from "../../types/precise-timestamp";
 
 type WaterfallRowData = {
   orderedSpans: SpanWithUIData[];
-  traceDuration: Duration;
+  traceBounds: { startTime: PreciseTimestamp; endTime: PreciseTimestamp };
   spanNameColumnWidth: number;
   serviceNameColumnWidth: number;
   selectedSpanID: string | undefined;
@@ -29,7 +29,7 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
 
   let {
     orderedSpans,
-    traceDuration,
+    traceBounds,
     spanNameColumnWidth,
     serviceNameColumnWidth,
     selectedSpanID,
@@ -93,7 +93,7 @@ export function WaterfallRow({ index, style, data }: WaterfallRowProps) {
           </Text>
         </Flex>
         <DurationBar
-          traceDuration={traceDuration}
+          traceBounds={traceBounds}
           spanData={spanData}
         />
       </Flex>

@@ -16,8 +16,7 @@ import { useSize } from "@chakra-ui/react-use-size";
 import { TraceSummaryWithUIData } from "../../types/ui-types";
 import { useKeyCombo, useKeyPress } from "../../utils/use-key-press";
 import { KeyboardHelp } from "../modals/keyboard-help";
-import { getDuration } from "../../utils/duration";
-import { traceSummaryFromJSON } from "../../types/api-types";
+import { formatDuration } from "../../utils/duration";
 
 const sidebarSummaryHeight = 120;
 const dividerHeight = 1;
@@ -57,10 +56,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
       .replaceAll("-", "-\u200B")
       .replaceAll(".", ".\u200B");
 
-    let duration = getDuration(
-      traceSummary.root.startTime,
-      traceSummary.root.endTime
-    );
+    let duration = traceSummary.root.endTime.nanoseconds - traceSummary.root.startTime.nanoseconds;
 
     return (
       <div style={style}>
@@ -92,7 +88,7 @@ function SidebarRow({ index, style, data }: SidebarRowProps) {
           </Text>
           <Text fontSize="xs">
             {"Root Duration: "}
-            <strong>{duration.label}</strong>
+            <strong>{formatDuration(duration)}</strong>
           </Text>
           <Text fontSize="xs">
             {"Number of Spans: "}
