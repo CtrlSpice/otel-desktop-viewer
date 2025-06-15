@@ -6,12 +6,12 @@ import { useSize } from "@chakra-ui/react-use-size";
 import { SpanDataStatus, SpanWithUIData } from "../../types/ui-types";
 import { WaterfallRow } from "./waterfall-row";
 import { HeaderRow } from "./header-row";
-import { Duration, getDuration } from "../../utils/duration";
 import { useKeyPress } from "../../utils/use-key-press";
+import { PreciseTimestamp } from "../../types/precise-timestamp";
 
 type WaterfallViewProps = {
   orderedSpans: SpanWithUIData[];
-  traceDuration: Duration;
+  traceBounds: { startTime: PreciseTimestamp; endTime: PreciseTimestamp };
   selectedSpanID: string | undefined;
   setSelectedSpanID: (spanID: string) => void;
 };
@@ -26,7 +26,7 @@ export function WaterfallView(props: WaterfallViewProps) {
   const spanNameColumnWidth = 300;
   const serviceNameColumnWidth = 200;
 
-  let { orderedSpans, traceDuration, selectedSpanID, setSelectedSpanID } =
+  let { orderedSpans, traceBounds, selectedSpanID, setSelectedSpanID } =
     props;
 
   // Set up keyboard navigation
@@ -68,7 +68,7 @@ export function WaterfallView(props: WaterfallViewProps) {
 
   let rowData = {
     orderedSpans,
-    traceDuration,
+    traceBounds,
     spanNameColumnWidth,
     serviceNameColumnWidth,
     selectedSpanID,
@@ -86,7 +86,7 @@ export function WaterfallView(props: WaterfallViewProps) {
         headerRowHeight={headerRowHeight}
         spanNameColumnWidth={spanNameColumnWidth}
         serviceNameColumnWidth={serviceNameColumnWidth}
-        traceDuration={traceDuration}
+        traceBounds={traceBounds}
       />
       <FixedSizeList
         className="List"

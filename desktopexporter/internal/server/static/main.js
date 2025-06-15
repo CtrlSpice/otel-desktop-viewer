@@ -55501,109 +55501,68 @@
 
   // types/precise-timestamp.ts
   var PreciseTimestamp = class {
-    constructor(milliseconds, nanoseconds) {
-      this.milliseconds = milliseconds;
+    constructor(nanoseconds) {
       this.nanoseconds = nanoseconds;
     }
+    nanoseconds;
     static fromJSON(json2) {
-      if (json2 instanceof PreciseTimestamp) {
-        return json2;
-      }
-      return new PreciseTimestamp(json2.milliseconds, json2.nanoseconds);
-    }
-    isBefore(other) {
-      return this.milliseconds < other.milliseconds || this.milliseconds === other.milliseconds && this.nanoseconds < other.nanoseconds;
-    }
-    isAfter(other) {
-      return this.milliseconds > other.milliseconds || this.milliseconds === other.milliseconds && this.nanoseconds > other.nanoseconds;
-    }
-    isEqual(other) {
-      return this.milliseconds === other.milliseconds && this.nanoseconds === other.nanoseconds;
+      return new PreciseTimestamp(
+        BigInt(json2.milliseconds) * BigInt(1e6) + BigInt(json2.nanoseconds)
+      );
     }
     toString() {
-      const date = new Date(this.milliseconds);
-      const year = date.getUTCFullYear();
-      const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-      const day = String(date.getUTCDate()).padStart(2, "0");
-      const hours = String(date.getUTCHours()).padStart(2, "0");
-      const minutes = String(date.getUTCMinutes()).padStart(2, "0");
-      const seconds = String(date.getUTCSeconds()).padStart(2, "0");
-      const ms = String(date.getUTCMilliseconds()).padStart(3, "0");
-      const ns = this.nanoseconds.toString().padStart(9, "0");
+      let totalMs = this.nanoseconds / BigInt(1e6);
+      let remainderNs = this.nanoseconds % BigInt(1e6);
+      let date = new Date(Number(totalMs));
+      let year = date.getUTCFullYear();
+      let month = String(date.getUTCMonth() + 1).padStart(2, "0");
+      let day = String(date.getUTCDate()).padStart(2, "0");
+      let hours = String(date.getUTCHours()).padStart(2, "0");
+      let minutes = String(date.getUTCMinutes()).padStart(2, "0");
+      let seconds = String(date.getUTCSeconds()).padStart(2, "0");
+      let ms = String(date.getUTCMilliseconds()).padStart(3, "0");
+      let ns = remainderNs.toString().padStart(9, "0");
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}${ns} +0000 UTC`;
     }
   };
 
   // utils/duration.ts
-  function getTraceDuration(spans) {
+  function getTraceBounds(spans) {
     if (!spans.length) {
-      return {
-        startTime: new PreciseTimestamp(0, 0),
-        endTime: new PreciseTimestamp(0, 0),
-        milliseconds: 0,
-        nanoseconds: 0,
-        label: ""
-      };
+      return { startTime: new PreciseTimestamp(BigInt(0)), endTime: new PreciseTimestamp(BigInt(0)) };
     }
-    let earliestStartTime = spans[0].startTime;
-    let latestEndTime = spans[0].endTime;
+    let earliestStart = spans[0].startTime.nanoseconds;
+    let latestEnd = spans[0].endTime.nanoseconds;
     spans.forEach((span) => {
-      let spanStart = span.startTime;
-      if (spanStart.isBefore(earliestStartTime)) {
-        earliestStartTime = spanStart;
+      let spanStart = span.startTime.nanoseconds;
+      if (spanStart < earliestStart) {
+        earliestStart = spanStart;
       }
-      let spanEnd = span.endTime;
-      if (spanEnd.isAfter(latestEndTime)) {
-        latestEndTime = spanEnd;
+      let spanEnd = span.endTime.nanoseconds;
+      if (spanEnd > latestEnd) {
+        latestEnd = spanEnd;
       }
     });
-    return getDuration(earliestStartTime, latestEndTime);
+    return { startTime: new PreciseTimestamp(earliestStart), endTime: new PreciseTimestamp(latestEnd) };
   }
-  function getDuration(startTime, endTime) {
-    if (startTime === null || endTime === null) {
-      return {
-        startTime,
-        endTime,
-        milliseconds: 0,
-        nanoseconds: 0,
-        label: ""
-      };
-    }
-    let msDiff = endTime.milliseconds - startTime.milliseconds;
-    let nsDiff = endTime.nanoseconds - startTime.nanoseconds;
-    let finalMs = msDiff;
-    let finalNs = nsDiff;
-    if (nsDiff < 0) {
-      finalMs -= 1;
-      finalNs += 1e6;
-    }
-    let label = "";
-    if (finalMs >= 1e3) {
-      let seconds = finalMs / 1e3;
-      label = `${seconds.toFixed(3)} s`;
-    } else if (finalMs >= 1) {
-      label = `${finalMs}.${finalNs.toString().padStart(6, "0")} ms`;
-    } else if (finalNs >= 1e3) {
-      label = `${(finalNs / 1e3).toFixed(3)} \u03BCs`;
+  function formatDuration(nanoseconds) {
+    if (nanoseconds >= BigInt(1e9)) {
+      let seconds = Number(nanoseconds) / 1e9;
+      return `${seconds.toFixed(3)} s`;
+    } else if (nanoseconds >= BigInt(1e6)) {
+      let ms = Number(nanoseconds) / 1e6;
+      return `${ms.toFixed(3)} ms`;
+    } else if (nanoseconds >= BigInt(1e3)) {
+      let \u03BCs = Number(nanoseconds) / 1e3;
+      return `${\u03BCs.toFixed(3)} \u03BCs`;
     } else {
-      label = `${finalNs} ns`;
+      return `${Number(nanoseconds)} ns`;
     }
-    return {
-      startTime,
-      endTime,
-      milliseconds: finalMs,
-      nanoseconds: finalNs,
-      label
-    };
   }
-  function getOffset2(duration, point) {
-    let totalNs = duration.milliseconds * 1e6 + duration.nanoseconds;
-    let offsetNs = (point.milliseconds - duration.startTime.milliseconds) * 1e6 + (point.nanoseconds - duration.startTime.nanoseconds);
-    if (totalNs <= Number.MAX_SAFE_INTEGER && offsetNs <= Number.MAX_SAFE_INTEGER) {
-      return Math.floor(offsetNs / totalNs * 100);
-    } else {
-      return Math.floor((point.milliseconds - duration.startTime.milliseconds) / (duration.endTime.milliseconds - duration.startTime.milliseconds) * 100);
-    }
+  function getOffset2(startTime, endTime, point) {
+    let totalNs = endTime.nanoseconds - startTime.nanoseconds;
+    let offsetNs = point.nanoseconds - startTime.nanoseconds;
+    return Math.floor(Number(offsetNs * BigInt(100) / totalNs));
   }
 
   // components/sidebar-view/trace-list.tsx
@@ -55620,10 +55579,7 @@
     if (traceSummary.root) {
       let rootNameLabel = traceSummary.root.name.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
       let rootServiceNameLabel = traceSummary.root.serviceName.replaceAll("/", "/\u200B").replaceAll("-", "-\u200B").replaceAll(".", ".\u200B");
-      let duration = getDuration(
-        traceSummary.root.startTime,
-        traceSummary.root.endTime
-      );
+      let duration = traceSummary.root.endTime.nanoseconds - traceSummary.root.startTime.nanoseconds;
       return /* @__PURE__ */ import_react105.default.createElement("div", { style }, /* @__PURE__ */ import_react105.default.createElement(
         Divider,
         {
@@ -55658,7 +55614,7 @@
           "Root Name: ",
           /* @__PURE__ */ import_react105.default.createElement("strong", null, rootNameLabel)
         ),
-        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Root Duration: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, duration.label)),
+        /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Root Duration: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, formatDuration(duration))),
         /* @__PURE__ */ import_react105.default.createElement(Text, { fontSize: "xs" }, "Number of Spans: ", /* @__PURE__ */ import_react105.default.createElement("strong", null, traceSummary.spanCount)),
         /* @__PURE__ */ import_react105.default.createElement(
           LinkOverlay,
@@ -56545,7 +56501,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       },
       "root"
     ) : null;
-    let duration = getDuration(span.startTime, span.endTime);
+    let durationLabel = formatDuration(span.endTime.nanoseconds - span.startTime.nanoseconds);
     let spanAttributes = Object.entries(span.attributes).map(([key, value]) => /* @__PURE__ */ import_react119.default.createElement("li", { key }, /* @__PURE__ */ import_react119.default.createElement(
       SpanField,
       {
@@ -56627,7 +56583,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         SpanField,
         {
           fieldName: "duration",
-          fieldValue: duration.label,
+          fieldValue: durationLabel,
           fieldType: "string"
         }
       ), /* @__PURE__ */ import_react119.default.createElement(
@@ -56745,7 +56701,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   var import_react121 = __toESM(require_react());
   function EventItem(props) {
     let { event, spanStartTime } = props;
-    let timeSinceSpanStart = getDuration(spanStartTime, event.timestamp).label;
+    let timeSinceSpanStart = formatDuration(event.timestamp.nanoseconds - spanStartTime.nanoseconds);
     let eventAttributes = Object.entries(event.attributes).map(([key, value]) => /* @__PURE__ */ import_react121.default.createElement("li", { key: key + value?.toString() }, /* @__PURE__ */ import_react121.default.createElement(
       SpanField,
       {
@@ -57005,9 +56961,9 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     let { events, spanStartTime, spanEndTime } = props;
     let eventDotsList = events.map((eventData) => {
       let eventName = eventData.name;
-      let spanDuration = getDuration(spanStartTime, spanEndTime);
       let eventOffsetPercent = getOffset2(
-        spanDuration,
+        spanStartTime,
+        spanEndTime,
         eventData.timestamp
       );
       return /* @__PURE__ */ import_react131.default.createElement("li", { key: `${eventName}-${eventData.timestamp.toString()}` }, /* @__PURE__ */ import_react131.default.createElement(
@@ -57040,9 +56996,10 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     const labelWidth = 80;
     let durationBarColour = useColorModeValue("cyan.800", "cyan.700");
     let labelTextColour = useColorModeValue("blackAlpha.800", "white");
+    let { traceBounds } = props;
     let { startTime, endTime } = props.spanData;
-    let barOffsetPercent = getOffset2(props.traceDuration, startTime);
-    let barEndPercent = getOffset2(props.traceDuration, endTime);
+    let barOffsetPercent = getOffset2(traceBounds.startTime, traceBounds.endTime, startTime);
+    let barEndPercent = getOffset2(traceBounds.startTime, traceBounds.endTime, endTime);
     let barWidthPercent = barEndPercent - barOffsetPercent;
     let labelOffset;
     if (size3 && size3.width >= labelWidth) {
@@ -57090,7 +57047,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
               color: labelTextColour,
               whiteSpace: "nowrap"
             },
-            props.traceDuration.label
+            formatDuration(traceBounds.endTime.nanoseconds - traceBounds.startTime.nanoseconds)
           )
         ),
         /* @__PURE__ */ import_react131.default.createElement(
@@ -57112,7 +57069,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     let backgroundColour = index % 2 ? "" : oddStripeColour;
     let {
       orderedSpans,
-      traceDuration,
+      traceBounds,
       spanNameColumnWidth,
       serviceNameColumnWidth,
       selectedSpanID,
@@ -57174,7 +57131,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         /* @__PURE__ */ import_react133.default.createElement(
           DurationBar,
           {
-            traceDuration,
+            traceBounds,
             spanData
           }
         )
@@ -57210,32 +57167,12 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     } else if (availableWidth >= 100) {
       numSections = 2;
     }
-    let { traceDuration } = props;
-    let timeUnit = "ns";
-    let totalMs = traceDuration.milliseconds;
-    if (totalMs >= 1e3) {
-      timeUnit = "s";
-    } else if (totalMs >= 1) {
-      timeUnit = "ms";
-    } else if (traceDuration.nanoseconds >= 1e3) {
-      timeUnit = "\u03BCs";
-    }
-    let sectionMs = Math.floor(traceDuration.milliseconds / numSections);
-    let sectionNs = Math.floor(traceDuration.milliseconds % numSections * 1e6 + traceDuration.nanoseconds) / numSections;
+    let { traceBounds } = props;
+    let duration = traceBounds.endTime.nanoseconds - traceBounds.startTime.nanoseconds;
+    let sectionNs = duration / BigInt(numSections);
     let sectionWidth = availableWidth / numSections;
     let durationSections = Array(numSections - 1).fill(null).map((_, i) => {
-      let sectionTimeMs = sectionMs * i;
-      let sectionTimeNs = sectionNs * i;
-      let sectionLabel = "";
-      if (sectionTimeMs >= 1e3) {
-        sectionLabel = `${(sectionTimeMs / 1e3).toFixed(3)} s`;
-      } else if (sectionTimeMs >= 1) {
-        sectionLabel = `${sectionTimeMs}.${sectionTimeNs.toString().padStart(6, "0")} ms`;
-      } else if (sectionTimeNs >= 1e3) {
-        sectionLabel = `${(sectionTimeNs / 1e3).toFixed(3)} \u03BCs`;
-      } else {
-        sectionLabel = `${sectionTimeNs} ns`;
-      }
+      let sectionLabel = formatDuration(sectionNs * BigInt(i));
       return /* @__PURE__ */ import_react135.default.createElement(
         ListItem,
         {
@@ -57252,7 +57189,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         )
       );
     });
-    let lastDurationLabel = /* @__PURE__ */ import_react135.default.createElement(Text, { fontSize: "x-small" }, traceDuration.label);
+    let lastDurationLabel = /* @__PURE__ */ import_react135.default.createElement(Text, { fontSize: "x-small" }, formatDuration(duration));
     return /* @__PURE__ */ import_react135.default.createElement(
       Flex,
       {
@@ -57273,7 +57210,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       headerRowHeight,
       spanNameColumnWidth,
       serviceNameColumnWidth,
-      traceDuration
+      traceBounds
     } = props;
     return /* @__PURE__ */ import_react135.default.createElement(Flex, { height: `${headerRowHeight}px` }, /* @__PURE__ */ import_react135.default.createElement(
       Flex,
@@ -57303,7 +57240,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         },
         "service.name"
       )
-    ), /* @__PURE__ */ import_react135.default.createElement(DurationIndicator, { traceDuration }));
+    ), /* @__PURE__ */ import_react135.default.createElement(DurationIndicator, { traceBounds }));
   }
 
   // components/waterfall-view/waterfall-view.tsx
@@ -57315,7 +57252,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     const headerRowHeight = 30;
     const spanNameColumnWidth = 300;
     const serviceNameColumnWidth = 200;
-    let { orderedSpans, traceDuration, selectedSpanID, setSelectedSpanID } = props;
+    let { orderedSpans, traceBounds, selectedSpanID, setSelectedSpanID } = props;
     let prevSpanKeyPressed = useKeyPress(["ArrowUp", "k"]);
     let nextSpanKeyPressed = useKeyPress(["ArrowDown", "j"]);
     let selectedIndex = orderedSpans.findIndex(
@@ -57348,7 +57285,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     }, [nextSpanKeyPressed]);
     let rowData = {
       orderedSpans,
-      traceDuration,
+      traceBounds,
       spanNameColumnWidth,
       serviceNameColumnWidth,
       selectedSpanID,
@@ -57368,7 +57305,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           headerRowHeight,
           spanNameColumnWidth,
           serviceNameColumnWidth,
-          traceDuration
+          traceBounds
         }
       ),
       /* @__PURE__ */ import_react137.default.createElement(
@@ -57438,9 +57375,9 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       (a, b) => {
         let earliestStartTimeA = getEarliestStartTime(lookup[a].children);
         let earliestStartTimeB = getEarliestStartTime(lookup[b].children);
-        if (earliestStartTimeA.isBefore(earliestStartTimeB)) {
+        if (earliestStartTimeA.nanoseconds < earliestStartTimeB.nanoseconds) {
           return -1;
-        } else if (earliestStartTimeA.isAfter(earliestStartTimeB)) {
+        } else if (earliestStartTimeA.nanoseconds > earliestStartTimeB.nanoseconds) {
           return 1;
         }
         return 0;
@@ -57460,7 +57397,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     let earliestStart = children[0].spanData.startTime;
     for (let i = 1; i < children.length; i++) {
       let currentStart = children[i].spanData.startTime;
-      if (currentStart.isBefore(earliestStart)) {
+      if (currentStart.nanoseconds < earliestStart.nanoseconds) {
         earliestStart = currentStart;
       }
     }
@@ -57475,7 +57412,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   }
   function TraceView() {
     let traceData = useLoaderData();
-    let traceDuration = getTraceDuration(traceData.spans);
+    let traceBounds = getTraceBounds(traceData.spans);
     let spanTree = arrayToTree(traceData.spans);
     let orderedSpans = orderSpans(spanTree);
     let [selectedSpanID, setSelectedSpanID] = import_react139.default.useState(() => {
@@ -57517,7 +57454,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           WaterfallView,
           {
             orderedSpans,
-            traceDuration,
+            traceBounds,
             selectedSpanID,
             setSelectedSpanID
           }
@@ -57555,9 +57492,9 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         }
         treeItem.children.sort((a, b) => {
           if (a.status === "present" /* present */ && b.status === "present" /* present */) {
-            if (a.spanData.startTime.isBefore(b.spanData.startTime)) {
+            if (a.spanData.startTime.nanoseconds < b.spanData.startTime.nanoseconds) {
               return -1;
-            } else if (a.spanData.startTime.isAfter(b.spanData.startTime)) {
+            } else if (a.spanData.startTime.nanoseconds > b.spanData.startTime.nanoseconds) {
               return 1;
             }
             return 0;

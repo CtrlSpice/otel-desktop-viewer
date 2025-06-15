@@ -128,3 +128,13 @@ export function traceDataFromJSON(json: any): TraceData {
     }))
   };
 }
+
+export function logsFromJSON(json: any): Logs {
+  return {
+    logs: json.logs.map((log: any) => ({
+      ...log,
+      timestamp: PreciseTimestamp.fromJSON(log.timestamp),
+      observedTimestamp: PreciseTimestamp.fromJSON(log.observedTimestamp)
+    }))
+  };
+}

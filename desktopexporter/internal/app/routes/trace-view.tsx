@@ -9,7 +9,7 @@ import { Header } from "../components/header-view/header";
 import { DetailView } from "../components/detail-view/detail-view";
 import { WaterfallView } from "../components/waterfall-view/waterfall-view";
 import { arrayToTree, TreeItem, RootTreeItem } from "../utils/array-to-tree";
-import { getTraceDuration } from "../utils/duration";
+import { getTraceBounds } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
   let response = await fetch(`/api/traces/${params.traceID}`);
@@ -19,7 +19,7 @@ export async function traceLoader({ params }: any) {
 
 export default function TraceView() {
   let traceData = useLoaderData() as TraceData;
-  let traceDuration = getTraceDuration(traceData.spans);
+  let traceBounds = getTraceBounds(traceData.spans);
   let spanTree: RootTreeItem[] = arrayToTree(traceData.spans);
   let orderedSpans = orderSpans(spanTree);
   
@@ -71,7 +71,7 @@ export default function TraceView() {
       >
         <WaterfallView
           orderedSpans={orderedSpans}
-          traceDuration={traceDuration}
+          traceBounds={traceBounds}
           selectedSpanID={selectedSpanID}
           setSelectedSpanID={setSelectedSpanID}
         />
@@ -131,9 +131,9 @@ function orderSpans(spanTree: RootTreeItem[]): SpanWithUIData[] {
             b.status === SpanDataStatus.present
           ) {
             // Sort by start time, with earlier times first (ascending order)
-            if (a.spanData.startTime.isBefore(b.spanData.startTime)) {
+            if (a.spanData.startTime.nanoseconds < b.spanData.startTime.nanoseconds) {
               return -1;
-            } else if (a.spanData.startTime.isAfter(b.spanData.startTime)) {
+            } else if (a.spanData.startTime.nanoseconds > b.spanData.startTime.nanoseconds) {
               return 1;
             }
             return 0;
