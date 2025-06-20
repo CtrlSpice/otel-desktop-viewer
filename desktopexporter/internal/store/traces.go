@@ -7,11 +7,13 @@ import (
 
 	"github.com/marcboeker/go-duckdb/v2"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 )
 
 // AddSpans appends a list of spans to the store.
-func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error {
+func (s *Store) AddSpans(ctx context.Context, spans []traces.SpanData) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf(ErrAddSpans, err)
 	}
@@ -62,23 +64,23 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 			}
 		}
 	}
-	
+
 	// Final flush for any remaining spans
 	err = appender.Flush()
 	if err != nil {
 		return fmt.Errorf(ErrFlushAppender, err)
 	}
-	
+
 	return nil
 }
 
 // GetTraceSummaries retrieves a summary for each trace from the store.
-func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary, error) {
+func (s *Store) GetTraceSummaries(ctx context.Context) ([]traces.TraceSummary, error) {
 	if err := s.checkConnection(); err != nil {
 		return nil, fmt.Errorf(ErrGetTraceSummaries, err)
 	}
 
-	summaries := []telemetry.TraceSummary{}
+	summaries := []traces.TraceSummary{}
 
 	rows, err := s.db.QueryContext(ctx, SelectTraceSummaries)
 	if err != nil {
@@ -107,9 +109,9 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary
 			return nil, fmt.Errorf(ErrGetTraceSummaries, err)
 		}
 
-		var rootSpan *telemetry.RootSpan
+		var rootSpan *traces.RootSpan
 		if serviceName.Valid && rootName.Valid && startTime.Valid && endTime.Valid {
-			rootSpan = &telemetry.RootSpan{
+			rootSpan = &traces.RootSpan{
 				ServiceName: serviceName.String,
 				Name:        rootName.String,
 				StartTime:   startTime.Int64,
@@ -117,7 +119,7 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary
 			}
 		}
 
-		summaries = append(summaries, telemetry.TraceSummary{
+		summaries = append(summaries, traces.TraceSummary{
 			TraceID:   traceID,
 			RootSpan:  rootSpan,
 			SpanCount: uint32(spanCount),
@@ -127,14 +129,14 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary
 }
 
 // GetTrace retrieves a trace from the store using the traceID.
-func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceData, error) {
+func (s *Store) GetTrace(ctx context.Context, traceID string) (traces.TraceData, error) {
 	if err := s.checkConnection(); err != nil {
-		return telemetry.TraceData{}, fmt.Errorf(ErrGetTrace, traceID, err)
+		return traces.TraceData{}, fmt.Errorf(ErrGetTrace, traceID, err)
 	}
 
-	trace := telemetry.TraceData{
+	trace := traces.TraceData{
 		TraceID: traceID,
-		Spans:   []telemetry.SpanData{},
+		Spans:   []traces.SpanData{},
 	}
 
 	rows, err := s.db.QueryContext(ctx, SelectTrace, traceID)
@@ -144,12 +146,12 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 	defer rows.Close()
 
 	for rows.Next() {
-		span := telemetry.SpanData{
-			Resource: &telemetry.ResourceData{
+		span := traces.SpanData{
+			Resource: &resource.ResourceData{
 				Attributes:             map[string]any{},
 				DroppedAttributesCount: 0,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "",
 				Version:                "",
 				Attributes:             map[string]any{},

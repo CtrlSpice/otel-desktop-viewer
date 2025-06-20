@@ -1,7 +1,8 @@
-package telemetry
+package traces
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
@@ -41,9 +42,9 @@ func (eventData EventData) MarshalJSON() ([]byte, error) {
 	type Alias EventData // Avoid recursive MarshalJSON calls
 	return json.Marshal(&struct {
 		Alias
-		Timestamp PreciseTimestamp `json:"timestamp"`
+		Timestamp string `json:"timestamp"`
 	}{
 		Alias:     Alias(eventData),
-		Timestamp: NewPreciseTimestamp(eventData.Timestamp),
+		Timestamp: strconv.FormatInt(eventData.Timestamp, 10),
 	})
 }
