@@ -1,4 +1,4 @@
-package telemetry
+package scope
 
 import "go.opentelemetry.io/collector/pdata/pcommon"
 

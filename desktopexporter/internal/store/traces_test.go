@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -20,23 +22,23 @@ type testHelper struct {
 func setupTest(t *testing.T) (*testHelper, func()) {
 	ctx := context.Background()
 	store := NewStore(ctx, "")
-	
+
 	assert.NotNil(t, store, "store should not be nil")
 	assert.NotNil(t, store.db, "database connection should not be nil")
 	assert.NotNil(t, store.conn, "duckdb connection should not be nil")
-	
+
 	helper := &testHelper{
 		t:     t,
 		ctx:   ctx,
 		store: store,
 	}
-	
+
 	teardown := func() {
 		if helper.store != nil {
 			helper.store.Close()
 		}
 	}
-	
+
 	return helper, teardown
 }
 
@@ -48,7 +50,7 @@ func TestTraceSummaryOrdering(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 
 	// Create test spans with different timing scenarios
-	spans := []telemetry.SpanData{
+	spans := []traces.SpanData{
 		{
 			// Trace 1: Middle time
 			TraceID:      "trace1",
@@ -56,13 +58,13 @@ func TestTraceSummaryOrdering(t *testing.T) {
 			ParentSpanID: "", // root span
 			Name:         "root middle",
 			StartTime:    baseTime + time.Second.Nanoseconds(), // t+1
-			EndTime:      baseTime + 2 * time.Second.Nanoseconds(),
-			Resource: &telemetry.ResourceData{
+			EndTime:      baseTime + 2*time.Second.Nanoseconds(),
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{
 					"service.name": "service1",
 				},
 			},
-			Scope: &telemetry.ScopeData{},
+			Scope: &scope.ScopeData{},
 		},
 		{
 			// Trace 2: Oldest time
@@ -71,11 +73,11 @@ func TestTraceSummaryOrdering(t *testing.T) {
 			ParentSpanID: "missing_parent",
 			Name:         "earliest no root",
 			StartTime:    baseTime, // t+0
-			EndTime:      baseTime + 2 * time.Second.Nanoseconds(),
-			Resource: &telemetry.ResourceData{
+			EndTime:      baseTime + 2*time.Second.Nanoseconds(),
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{},
 			},
-			Scope: &telemetry.ScopeData{},
+			Scope: &scope.ScopeData{},
 		},
 		{
 			// Trace 3: Newest time
@@ -83,14 +85,14 @@ func TestTraceSummaryOrdering(t *testing.T) {
 			SpanID:       "span3",
 			ParentSpanID: "", // root span
 			Name:         "root last",
-			StartTime:    baseTime + 2 * time.Second.Nanoseconds(), // t+2
-			EndTime:      baseTime + 3 * time.Second.Nanoseconds(),
-			Resource: &telemetry.ResourceData{
+			StartTime:    baseTime + 2*time.Second.Nanoseconds(), // t+2
+			EndTime:      baseTime + 3*time.Second.Nanoseconds(),
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{
 					"service.name": "service3",
 				},
 			},
-			Scope: &telemetry.ScopeData{},
+			Scope: &scope.ScopeData{},
 		},
 	}
 
@@ -138,7 +140,7 @@ func TestEmptySpans(t *testing.T) {
 	defer teardown()
 
 	// Test adding empty span list
-	err := helper.store.AddSpans(helper.ctx, []telemetry.SpanData{})
+	err := helper.store.AddSpans(helper.ctx, []traces.SpanData{})
 	assert.NoError(t, err)
 
 	// Test getting summaries from empty store
@@ -305,15 +307,15 @@ func TestTraceSuite(t *testing.T) {
 		assert.Empty(t, span.Scope.Attributes)
 		assert.Equal(t, uint32(0), span.Scope.DroppedAttributesCount)
 	})
-} 
+}
 
 // createTestTrace creates a comprehensive test trace with multiple spans, events, and links.
-func createTestTrace() []telemetry.SpanData {
+func createTestTrace() []traces.SpanData {
 	baseTime := time.Now().UnixNano()
-	event1Time := baseTime + 100 * time.Millisecond.Nanoseconds()
-	event2Time := baseTime + 200 * time.Millisecond.Nanoseconds()
+	event1Time := baseTime + 100*time.Millisecond.Nanoseconds()
+	event2Time := baseTime + 200*time.Millisecond.Nanoseconds()
 
-	return []telemetry.SpanData{
+	return []traces.SpanData{
 		{
 			// Root span with service name
 			TraceID:      "test-trace",
@@ -330,7 +332,7 @@ func createTestTrace() []telemetry.SpanData {
 				"root.bool":   true,
 				"root.list":   []string{"one", "two", "three"},
 			},
-			Events: []telemetry.EventData{
+			Events: []traces.EventData{
 				{
 					Name:      "root-event-1",
 					Timestamp: event1Time,
@@ -350,7 +352,7 @@ func createTestTrace() []telemetry.SpanData {
 					DroppedAttributesCount: 1,
 				},
 			},
-			Links: []telemetry.LinkData{
+			Links: []traces.LinkData{
 				{
 					TraceID:    "linked-trace-1",
 					SpanID:     "linked-span-1",
@@ -362,14 +364,14 @@ func createTestTrace() []telemetry.SpanData {
 					DroppedAttributesCount: 0,
 				},
 			},
-			Resource: &telemetry.ResourceData{
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{
-					"service.name": "test-service",
+					"service.name":    "test-service",
 					"service.version": "1.0.0",
 				},
 				DroppedAttributesCount: 0,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
 				Attributes:             map[string]any{},
@@ -385,8 +387,8 @@ func createTestTrace() []telemetry.SpanData {
 			ParentSpanID: "root-span",
 			Name:         "child-operation",
 			Kind:         "SPAN_KIND_INTERNAL",
-			StartTime:    baseTime + 50 * time.Millisecond.Nanoseconds(),
-			EndTime:      baseTime + 900 * time.Millisecond.Nanoseconds(),
+			StartTime:    baseTime + 50*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 900*time.Millisecond.Nanoseconds(),
 			Attributes: map[string]any{
 				"child.string": "child-value",
 				"child.int":    int64(24),
@@ -394,10 +396,10 @@ func createTestTrace() []telemetry.SpanData {
 				"child.bool":   false,
 				"child.list":   []int64{1, 2, 3, 4, 5},
 			},
-			Events: []telemetry.EventData{
+			Events: []traces.EventData{
 				{
 					Name:      "child-event",
-					Timestamp: baseTime + 150 * time.Millisecond.Nanoseconds(),
+					Timestamp: baseTime + 150*time.Millisecond.Nanoseconds(),
 					Attributes: map[string]any{
 						"child.event.string": "Child Event",
 						"child.event.int":    int64(50),
@@ -405,7 +407,7 @@ func createTestTrace() []telemetry.SpanData {
 					DroppedAttributesCount: 0,
 				},
 			},
-			Links: []telemetry.LinkData{
+			Links: []traces.LinkData{
 				{
 					TraceID:    "linked-trace-2",
 					SpanID:     "linked-span-2",
@@ -417,14 +419,14 @@ func createTestTrace() []telemetry.SpanData {
 					DroppedAttributesCount: 1,
 				},
 			},
-			Resource: &telemetry.ResourceData{
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{
-					"service.name": "test-service",
+					"service.name":    "test-service",
 					"service.version": "1.0.0",
 				},
 				DroppedAttributesCount: 0,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
 				Attributes:             map[string]any{},
@@ -440,16 +442,16 @@ func createTestTrace() []telemetry.SpanData {
 			ParentSpanID: "non-existent-parent",
 			Name:         "orphaned-operation",
 			Kind:         "SPAN_KIND_INTERNAL",
-			StartTime:    baseTime + 100 * time.Millisecond.Nanoseconds(),
-			EndTime:      baseTime + 800 * time.Millisecond.Nanoseconds(),
+			StartTime:    baseTime + 100*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 800*time.Millisecond.Nanoseconds(),
 			Attributes: map[string]any{
 				"orphaned.string": "orphaned-value",
 			},
-			Resource: &telemetry.ResourceData{
+			Resource: &resource.ResourceData{
 				Attributes:             map[string]any{},
 				DroppedAttributesCount: 0,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
 				Attributes:             map[string]any{},

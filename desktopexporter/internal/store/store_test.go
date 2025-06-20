@@ -7,13 +7,14 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/stretchr/testify/assert"
 )
 
 type storeTest struct {
-	name     string
-	dbPath   string
-	cleanup  func()
+	name    string
+	dbPath  string
+	cleanup func()
 }
 
 func TestStore(t *testing.T) {
@@ -38,7 +39,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			
+
 			// Test store initialization
 			store := NewStore(ctx, tt.dbPath)
 			assert.NotNil(t, store, "store should not be nil")
@@ -58,7 +59,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			// Verify tables exist by inserting sample data
 			err := store.AddSpans(ctx, sample.Spans)
 			assert.NoError(t, err, "spans table should exist and accept sample data")
-			
+
 			err = store.AddLogs(ctx, sample.Logs)
 			assert.NoError(t, err, "logs table should exist and accept sample data")
 
@@ -84,7 +85,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			// Verify data after reopening
 			summaries, err = store.GetTraceSummaries(ctx)
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
-			
+
 			logs, err = store.GetLogs(ctx)
 			assert.NoError(t, err, "should be able to retrieve logs after reopening")
 
@@ -120,10 +121,10 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	assert.NoError(t, err, "first close should succeed")
 
 	// Try to use the store after closing
-	err = store.AddSpans(ctx, []telemetry.SpanData{})
+	err = store.AddSpans(ctx, []traces.SpanData{})
 	assert.Error(t, err, "should get error when using closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
-	
+
 	// Try to close an already closed store - should be a no-op
 	err = store.Close()
 	assert.NoError(t, err, "closing an already closed store should be a no-op")
@@ -137,6 +138,3 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 }
-
-
-

@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/marcboeker/go-duckdb/v2"
 	"github.com/stretchr/testify/assert"
 )
 
 // mustMarshal is a helper function that marshals a value to JSON and panics if there's an error
-func mustMarshal(v any) string{
+func mustMarshal(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {
 		panic(fmt.Sprintf("failed to marshal %v: %v", v, err))
@@ -241,17 +241,17 @@ func TestToDbEvents(t *testing.T) {
 	now := time.Now().UnixNano()
 	tests := []struct {
 		name     string
-		input    []telemetry.EventData
+		input    []traces.EventData
 		expected []dbEvent
 	}{
 		{
 			name:     "empty events",
-			input:    []telemetry.EventData{},
+			input:    []traces.EventData{},
 			expected: []dbEvent{},
 		},
 		{
 			name: "single event",
-			input: []telemetry.EventData{
+			input: []traces.EventData{
 				{
 					Name:                   "test event",
 					Timestamp:              now,
@@ -289,17 +289,17 @@ func TestToDbEvents(t *testing.T) {
 func TestToDbLinks(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    []telemetry.LinkData
+		input    []traces.LinkData
 		expected []dbLink
 	}{
 		{
 			name:     "empty links",
-			input:    []telemetry.LinkData{},
+			input:    []traces.LinkData{},
 			expected: []dbLink{},
 		},
 		{
 			name: "single link",
-			input: []telemetry.LinkData{
+			input: []traces.LinkData{
 				{
 					TraceID:                "trace1",
 					SpanID:                 "span1",
@@ -342,12 +342,12 @@ func TestFromDbEvents(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    []dbEvent
-		expected []telemetry.EventData
+		expected []traces.EventData
 	}{
 		{
 			name:     "empty events",
 			input:    []dbEvent{},
-			expected: []telemetry.EventData{},
+			expected: []traces.EventData{},
 		},
 		{
 			name: "single event with attributes",
@@ -363,7 +363,7 @@ func TestFromDbEvents(t *testing.T) {
 					DroppedAttributesCount: 1,
 				},
 			},
-			expected: []telemetry.EventData{
+			expected: []traces.EventData{
 				{
 					Name:      "test event",
 					Timestamp: now,
@@ -392,7 +392,7 @@ func TestFromDbEvents(t *testing.T) {
 					DroppedAttributesCount: 2,
 				},
 			},
-			expected: []telemetry.EventData{
+			expected: []traces.EventData{
 				{
 					Name:                   "event1",
 					Timestamp:              now,
@@ -421,12 +421,12 @@ func TestFromDbLinks(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    []dbLink
-		expected []telemetry.LinkData
+		expected []traces.LinkData
 	}{
 		{
 			name:     "empty links",
 			input:    []dbLink{},
-			expected: []telemetry.LinkData{},
+			expected: []traces.LinkData{},
 		},
 		{
 			name: "single link with attributes",
@@ -442,7 +442,7 @@ func TestFromDbLinks(t *testing.T) {
 					DroppedAttributesCount: 0,
 				},
 			},
-			expected: []telemetry.LinkData{
+			expected: []traces.LinkData{
 				{
 					TraceID:    "trace123",
 					SpanID:     "span456",
@@ -473,7 +473,7 @@ func TestFromDbLinks(t *testing.T) {
 					DroppedAttributesCount: 3,
 				},
 			},
-			expected: []telemetry.LinkData{
+			expected: []traces.LinkData{
 				{
 					TraceID:                "trace1",
 					SpanID:                 "span1",
@@ -634,8 +634,8 @@ func TestFromDbBody(t *testing.T) {
 			expected: []any{"string", float64(42), true},
 		},
 		{
-			name:     "json nested map",
-			input:    duckdb.Union{Tag: "json", Value: mustMarshal(map[string]any{"key": "value", "nested": map[string]any{"inner": 42}})},
+			name:  "json nested map",
+			input: duckdb.Union{Tag: "json", Value: mustMarshal(map[string]any{"key": "value", "nested": map[string]any{"inner": 42}})},
 			expected: map[string]any{
 				"key": "value",
 				"nested": map[string]any{

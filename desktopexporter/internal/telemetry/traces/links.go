@@ -1,4 +1,4 @@
-package telemetry
+package traces
 
 import "go.opentelemetry.io/collector/pdata/ptrace"
 

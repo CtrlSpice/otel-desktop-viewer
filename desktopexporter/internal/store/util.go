@@ -6,7 +6,7 @@ import (
 	"log"
 	"math"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/marcboeker/go-duckdb/v2"
 )
 
@@ -84,7 +84,7 @@ func toDbMap(attributes map[string]any) duckdb.Map {
 	return dbMap
 }
 
-func toDbEvents(events []telemetry.EventData) []dbEvent {
+func toDbEvents(events []traces.EventData) []dbEvent {
 	dbEvents := []dbEvent{}
 
 	for _, event := range events {
@@ -100,7 +100,7 @@ func toDbEvents(events []telemetry.EventData) []dbEvent {
 	return dbEvents
 }
 
-func toDbLinks(links []telemetry.LinkData) []dbLink {
+func toDbLinks(links []traces.LinkData) []dbLink {
 	if len(links) == 0 {
 		return []dbLink{}
 	}
@@ -160,8 +160,8 @@ func fromDbMap(rawAttributes map[string]duckdb.Union) map[string]any {
 	return attributes
 }
 
-func fromDbEvents(dbEvents []dbEvent) []telemetry.EventData {
-	events := []telemetry.EventData{}
+func fromDbEvents(dbEvents []dbEvent) []traces.EventData {
+	events := []traces.EventData{}
 
 	for _, dbEvent := range dbEvents {
 		attributes := map[string]any{}
@@ -173,7 +173,7 @@ func fromDbEvents(dbEvents []dbEvent) []telemetry.EventData {
 			}
 		}
 
-		event := telemetry.EventData{
+		event := traces.EventData{
 			Name:                   dbEvent.Name,
 			Timestamp:              dbEvent.Timestamp,
 			Attributes:             attributes,
@@ -184,8 +184,8 @@ func fromDbEvents(dbEvents []dbEvent) []telemetry.EventData {
 	return events
 }
 
-func fromDbLinks(dbLinks []dbLink) []telemetry.LinkData {
-	links := []telemetry.LinkData{}
+func fromDbLinks(dbLinks []dbLink) []traces.LinkData {
+	links := []traces.LinkData{}
 
 	for _, dbLink := range dbLinks {
 		attributes := map[string]any{}
@@ -197,7 +197,7 @@ func fromDbLinks(dbLinks []dbLink) []telemetry.LinkData {
 			}
 		}
 
-		link := telemetry.LinkData{
+		link := traces.LinkData{
 			TraceID:                dbLink.TraceID,
 			SpanID:                 dbLink.SpanID,
 			TraceState:             dbLink.TraceState,
@@ -312,6 +312,7 @@ func validateUniformList[T any](list []any) error {
 // If any value exceeds math.MaxInt64:
 //   - For single values: returns the string representation and true
 //   - For slices: converts all values to strings and returns true
+//
 // If no overflow occurs:
 //   - For single values: returns the int64 value and false
 //   - For slices: returns the []int64 values and false

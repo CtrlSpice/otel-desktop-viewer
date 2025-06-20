@@ -1,6 +1,9 @@
-package telemetry
+package traces
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strconv"
+)
 
 type TraceData struct {
 	TraceID string     `json:"traceID"`
@@ -29,11 +32,11 @@ func (rootSpan RootSpan) MarshalJSON() ([]byte, error) {
 	type Alias RootSpan // Avoid recursive MarshalJSON calls
 	return json.Marshal(&struct {
 		Alias
-		StartTime PreciseTimestamp `json:"startTime"`
-		EndTime   PreciseTimestamp `json:"endTime"`
+		StartTime string `json:"startTime"`
+		EndTime   string `json:"endTime"`
 	}{
 		Alias:     Alias(rootSpan),
-		StartTime: NewPreciseTimestamp(rootSpan.StartTime),
-		EndTime:   NewPreciseTimestamp(rootSpan.EndTime),
+		StartTime: strconv.FormatInt(rootSpan.StartTime, 10),
+		EndTime:   strconv.FormatInt(rootSpan.EndTime, 10),
 	})
-} 
+}
