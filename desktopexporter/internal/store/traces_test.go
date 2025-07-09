@@ -8,6 +8,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
+	"github.com/marcboeker/go-duckdb/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -460,5 +461,272 @@ func createTestTrace() []traces.SpanData {
 			StatusCode:    "STATUS_CODE_UNSET",
 			StatusMessage: "",
 		},
+	}
+}
+
+// TestToDbEvents tests the toDbEvents helper function.
+func TestToDbEvents(t *testing.T) {
+	now := time.Now().UnixNano()
+	tests := []struct {
+		name     string
+		input    []traces.EventData
+		expected []dbEvent
+	}{
+		{
+			name:     "empty events",
+			input:    []traces.EventData{},
+			expected: []dbEvent{},
+		},
+		{
+			name: "single event",
+			input: []traces.EventData{
+				{
+					Name:                   "test event",
+					Timestamp:              now,
+					Attributes:             map[string]any{"key": "value"},
+					DroppedAttributesCount: 0,
+				},
+			},
+			expected: []dbEvent{
+				{
+					Name:                   "test event",
+					Timestamp:              now,
+					Attributes:             duckdb.Map{"key": duckdb.Union{Tag: "str", Value: "value"}},
+					DroppedAttributesCount: 0,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := toDbEvents(tt.input)
+			assert.Equal(t, len(tt.expected), len(result))
+
+			for i, expected := range tt.expected {
+				assert.Equal(t, expected.Name, result[i].Name)
+				assert.Equal(t, expected.Timestamp, result[i].Timestamp)
+				assert.Equal(t, expected.DroppedAttributesCount, result[i].DroppedAttributesCount)
+				// Compare attributes separately for better error messages
+				assert.Equal(t, len(expected.Attributes), len(result[i].Attributes))
+			}
+		})
+	}
+}
+
+// TestToDbLinks tests the toDbLinks helper function.
+func TestToDbLinks(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []traces.LinkData
+		expected []dbLink
+	}{
+		{
+			name:     "empty links",
+			input:    []traces.LinkData{},
+			expected: []dbLink{},
+		},
+		{
+			name: "single link",
+			input: []traces.LinkData{
+				{
+					TraceID:                "trace1",
+					SpanID:                 "span1",
+					TraceState:             "state1",
+					Attributes:             map[string]any{"key": "value"},
+					DroppedAttributesCount: 0,
+				},
+			},
+			expected: []dbLink{
+				{
+					TraceID:                "trace1",
+					SpanID:                 "span1",
+					TraceState:             "state1",
+					Attributes:             duckdb.Map{"key": duckdb.Union{Tag: "str", Value: "value"}},
+					DroppedAttributesCount: 0,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := toDbLinks(tt.input)
+			assert.Equal(t, len(tt.expected), len(result))
+
+			for i, expected := range tt.expected {
+				assert.Equal(t, expected.TraceID, result[i].TraceID)
+				assert.Equal(t, expected.SpanID, result[i].SpanID)
+				assert.Equal(t, expected.TraceState, result[i].TraceState)
+				assert.Equal(t, expected.DroppedAttributesCount, result[i].DroppedAttributesCount)
+				// Compare attributes separately for better error messages
+				assert.Equal(t, len(expected.Attributes), len(result[i].Attributes))
+			}
+		})
+	}
+}
+
+// TestFromDbEvents tests the fromDbEvents helper function.
+func TestFromDbEvents(t *testing.T) {
+	now := time.Now().UnixNano()
+	tests := []struct {
+		name     string
+		input    []dbEvent
+		expected []traces.EventData
+	}{
+		{
+			name:     "empty events",
+			input:    []dbEvent{},
+			expected: []traces.EventData{},
+		},
+		{
+			name: "single event with attributes",
+			input: []dbEvent{
+				{
+					Name:      "test event",
+					Timestamp: now,
+					Attributes: duckdb.Map{
+						"string_attr": duckdb.Union{Tag: "str", Value: "hello"},
+						"int_attr":    duckdb.Union{Tag: "bigint", Value: int64(42)},
+						"bool_attr":   duckdb.Union{Tag: "boolean", Value: true},
+					},
+					DroppedAttributesCount: 1,
+				},
+			},
+			expected: []traces.EventData{
+				{
+					Name:      "test event",
+					Timestamp: now,
+					Attributes: map[string]any{
+						"string_attr": "hello",
+						"int_attr":    int64(42),
+						"bool_attr":   true,
+					},
+					DroppedAttributesCount: 1,
+				},
+			},
+		},
+		{
+			name: "multiple events",
+			input: []dbEvent{
+				{
+					Name:                   "event1",
+					Timestamp:              now,
+					Attributes:             duckdb.Map{"key1": duckdb.Union{Tag: "str", Value: "value1"}},
+					DroppedAttributesCount: 0,
+				},
+				{
+					Name:                   "event2",
+					Timestamp:              now + time.Second.Nanoseconds(),
+					Attributes:             duckdb.Map{"key2": duckdb.Union{Tag: "bigint", Value: int64(100)}},
+					DroppedAttributesCount: 2,
+				},
+			},
+			expected: []traces.EventData{
+				{
+					Name:                   "event1",
+					Timestamp:              now,
+					Attributes:             map[string]any{"key1": "value1"},
+					DroppedAttributesCount: 0,
+				},
+				{
+					Name:                   "event2",
+					Timestamp:              now + time.Second.Nanoseconds(),
+					Attributes:             map[string]any{"key2": int64(100)},
+					DroppedAttributesCount: 2,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := fromDbEvents(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestFromDbLinks tests the fromDbLinks helper function.
+func TestFromDbLinks(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []dbLink
+		expected []traces.LinkData
+	}{
+		{
+			name:     "empty links",
+			input:    []dbLink{},
+			expected: []traces.LinkData{},
+		},
+		{
+			name: "single link with attributes",
+			input: []dbLink{
+				{
+					TraceID:    "trace123",
+					SpanID:     "span456",
+					TraceState: "state1",
+					Attributes: duckdb.Map{
+						"link_attr": duckdb.Union{Tag: "str", Value: "link_value"},
+						"num_attr":  duckdb.Union{Tag: "double", Value: float64(3.14)},
+					},
+					DroppedAttributesCount: 0,
+				},
+			},
+			expected: []traces.LinkData{
+				{
+					TraceID:    "trace123",
+					SpanID:     "span456",
+					TraceState: "state1",
+					Attributes: map[string]any{
+						"link_attr": "link_value",
+						"num_attr":  float64(3.14),
+					},
+					DroppedAttributesCount: 0,
+				},
+			},
+		},
+		{
+			name: "multiple links",
+			input: []dbLink{
+				{
+					TraceID:                "trace1",
+					SpanID:                 "span1",
+					TraceState:             "state1",
+					Attributes:             duckdb.Map{"attr1": duckdb.Union{Tag: "boolean", Value: false}},
+					DroppedAttributesCount: 1,
+				},
+				{
+					TraceID:                "trace2",
+					SpanID:                 "span2",
+					TraceState:             "state2",
+					Attributes:             duckdb.Map{"attr2": duckdb.Union{Tag: "str_list", Value: []string{"a", "b"}}},
+					DroppedAttributesCount: 3,
+				},
+			},
+			expected: []traces.LinkData{
+				{
+					TraceID:                "trace1",
+					SpanID:                 "span1",
+					TraceState:             "state1",
+					Attributes:             map[string]any{"attr1": false},
+					DroppedAttributesCount: 1,
+				},
+				{
+					TraceID:                "trace2",
+					SpanID:                 "span2",
+					TraceState:             "state2",
+					Attributes:             map[string]any{"attr2": []string{"a", "b"}},
+					DroppedAttributesCount: 3,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := fromDbLinks(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
 	}
 }

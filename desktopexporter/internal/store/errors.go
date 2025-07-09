@@ -7,8 +7,9 @@ import (
 // Common error messages
 var (
 	// Not found errors
-	ErrLogIDNotFound   = errors.New("log ID not found")
-	ErrTraceIDNotFound = errors.New("trace ID not found")
+	ErrLogIDNotFound    = errors.New("log ID not found")
+	ErrTraceIDNotFound  = errors.New("trace ID not found")
+	ErrMetricIDNotFound = errors.New("metric ID not found")
 
 	// Connection errors
 	ErrStoreConnectionClosed = errors.New("store connection is closed")
@@ -27,8 +28,9 @@ const (
 	ErrInitLogsTable     = "failed to create logs table: %v"
 
 	// Addition errors
-	ErrAddLogs = "failed to add logs: %w"
-	ErrAddSpans = "failed to add spans: %w"
+	ErrAddLogs    = "failed to add logs: %w"
+	ErrAddSpans   = "failed to add spans: %w"
+	ErrAddMetrics = "failed to add metrics: %w"
 
 	// Appender errors
 	ErrCreateAppender = "failed to create appender: %w"
@@ -36,29 +38,37 @@ const (
 	ErrFlushAppender  = "failed to flush appender: %w"
 
 	// Query errors
-	ErrGetTrace          = "failed to get trace %s: %w"
-	ErrGetTraceSummaries = "failed to get trace summaries: %w"
-	ErrGetLog            = "failed to get log %s: %w"
-	ErrGetLogs           = "failed to get logs: %w"
+	ErrGetTrace           = "failed to get trace %s: %w"
+	ErrGetTraceSummaries  = "failed to get trace summaries: %w"
+	ErrGetLog             = "failed to get log %s: %w"
+	ErrGetLogs            = "failed to get logs: %w"
 	ErrGetLogsByTraceSpan = "failed to get logs for trace %s span %s: %w"
-	ErrGetLogsByTrace    = "failed to get logs for trace %s: %w"
+	ErrGetLogsByTrace     = "failed to get logs for trace %s: %w"
+	ErrGetMetric          = "failed to get metric %s: %w"
+	ErrGetMetrics         = "failed to get metrics: %w"
 
 	// Deletion errors
-	ErrClearTraces = "failed to clear traces: %w"
-	ErrClearLogs   = "failed to clear logs: %w"
+	ErrClearTraces  = "failed to clear traces: %w"
+	ErrClearLogs    = "failed to clear logs: %w"
+	ErrClearMetrics = "failed to clear metrics: %w"
 
 	// Scan errors
-	ErrScanLogRow = "failed to scan log row: %w"
+	ErrScanLogRow    = "failed to scan log row: %w"
+	ErrScanMetricRow = "failed to scan metric row: %w"
+
+	// Metric errors
+	ErrUnknownMetricType  = "unknown metric type: %s"
+	ErrMetricTypeMismatch = "expected %s but got %T, skipping data point"
 )
 
 // Warning messages for logging
 const (
 	WarnUnsupportedAttributeType = "unsupported attribute type was converted to string: name=%s type=%T value=%v"
 	WarnUnsupportedListAttribute = "unsupported list attribute was converted to []string: name=%s error=%v"
-	WarnUint64Overflow          = "uint64 attribute exceeds int64 range and was converted to string: name=%s value=%d"
-	WarnUint64SliceOverflow     = "[]uint64 attribute contains values exceeding int64 range and was converted to []string: name=%s"
-	WarnJSONMarshal             = "failed to marshal to JSON, body was converted to string: type=%T value=%v"
-	WarnJSONUnmarshal           = "failed to unmarshal JSON body: %v"
+	WarnUint64Overflow           = "uint64 attribute exceeds int64 range and was converted to string: name=%s value=%d"
+	WarnUint64SliceOverflow      = "[]uint64 attribute contains values exceeding int64 range and was converted to []string: name=%s"
+	WarnJSONMarshal              = "failed to marshal to JSON, body was converted to string: type=%T value=%v"
+	WarnJSONUnmarshal            = "failed to unmarshal JSON body: %v"
 )
 
 // Attribute type validation error messages
@@ -71,5 +81,5 @@ const (
 	errUint64Overflow        = "uint64 value %d exceeds int64 range"
 	errNilFirstElement       = "nil value in list attribute"
 	errUnsupportedListType   = "unsupported list attribute type: %T"
-	errJSONValueType 		 = "expected string for JSON value, got %T"
+	errJSONValueType         = "expected string for JSON value, got %T"
 )

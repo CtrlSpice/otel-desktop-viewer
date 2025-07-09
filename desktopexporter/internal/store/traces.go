@@ -12,6 +12,21 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 )
 
+type dbEvent struct {
+	Name                   string     `db:"name"`
+	Timestamp              int64      `db:"timestamp"`
+	Attributes             duckdb.Map `db:"attributes"`
+	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
+}
+
+type dbLink struct {
+	TraceID                string     `db:"traceID"`
+	SpanID                 string     `db:"spanID"`
+	TraceState             string     `db:"traceState"`
+	Attributes             duckdb.Map `db:"attributes"`
+	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
+}
+
 // AddSpans appends a list of spans to the store.
 func (s *Store) AddSpans(ctx context.Context, spans []traces.SpanData) error {
 	if err := s.checkConnection(); err != nil {
@@ -37,14 +52,14 @@ func (s *Store) AddSpans(ctx context.Context, spans []traces.SpanData) error {
 			span.Kind,
 			span.StartTime,
 			span.EndTime,
-			toDbMap(span.Attributes),
+			toDbAttributes(span.Attributes),
 			toDbEvents(span.Events),
 			toDbLinks(span.Links),
-			toDbMap(span.Resource.Attributes),
+			toDbAttributes(span.Resource.Attributes),
 			span.Resource.DroppedAttributesCount,
 			span.Scope.Name,
 			span.Scope.Version,
-			toDbMap(span.Scope.Attributes),
+			toDbAttributes(span.Scope.Attributes),
 			span.Scope.DroppedAttributesCount,
 			span.DroppedAttributesCount,
 			span.DroppedEventsCount,
@@ -195,9 +210,9 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (traces.TraceData,
 			return trace, fmt.Errorf(ErrGetTrace, traceID, err)
 		}
 
-		span.Attributes = fromDbMap(rawAttributes.Get())
-		span.Resource.Attributes = fromDbMap(rawResourceAttributes.Get())
-		span.Scope.Attributes = fromDbMap(rawScopeAttributes.Get())
+		span.Attributes = fromDbAttributes(rawAttributes.Get())
+		span.Resource.Attributes = fromDbAttributes(rawResourceAttributes.Get())
+		span.Scope.Attributes = fromDbAttributes(rawScopeAttributes.Get())
 
 		span.Events = fromDbEvents(rawEvents.Get())
 		span.Links = fromDbLinks(rawLinks.Get())
@@ -225,4 +240,87 @@ func (s *Store) ClearTraces(ctx context.Context) error {
 		return fmt.Errorf(ErrClearTraces, err)
 	}
 	return nil
+}
+
+// toDbEvents is a helper function that converts a list of EventData
+// to a list of go-duckdb Appender compatible dbEvent structs.
+func toDbEvents(events []traces.EventData) []dbEvent {
+	dbEvents := make([]dbEvent, len(events))
+
+	for i, event := range events {
+		dbEvents[i] = dbEvent{
+			Name:                   event.Name,
+			Timestamp:              event.Timestamp,
+			Attributes:             toDbAttributes(event.Attributes),
+			DroppedAttributesCount: event.DroppedAttributesCount,
+		}
+	}
+	return dbEvents
+}
+
+// toDbLinks is a helper function that converts a list of LinkData
+// to a list of go-duckdb Appender compatible dbLink structs.
+func toDbLinks(links []traces.LinkData) []dbLink {
+	dbLinks := make([]dbLink, len(links))
+
+	for i, link := range links {
+		dbLinks[i] = dbLink{
+			TraceID:                link.TraceID,
+			SpanID:                 link.SpanID,
+			TraceState:             link.TraceState,
+			Attributes:             toDbAttributes(link.Attributes),
+			DroppedAttributesCount: link.DroppedAttributesCount,
+		}
+	}
+	return dbLinks
+}
+
+func fromDbEvents(dbEvents []dbEvent) []traces.EventData {
+	events := []traces.EventData{}
+
+	for _, dbEvent := range dbEvents {
+		attributes := map[string]any{}
+		for k, v := range dbEvent.Attributes {
+			if name, ok := k.(string); ok {
+				if union, ok := v.(duckdb.Union); ok {
+					attributes[name] = union.Value
+				}
+			}
+		}
+
+		event := traces.EventData{
+			Name:                   dbEvent.Name,
+			Timestamp:              dbEvent.Timestamp,
+			Attributes:             attributes,
+			DroppedAttributesCount: dbEvent.DroppedAttributesCount,
+		}
+		events = append(events, event)
+	}
+	return events
+}
+
+func fromDbLinks(dbLinks []dbLink) []traces.LinkData {
+	links := []traces.LinkData{}
+
+	for _, dbLink := range dbLinks {
+		attributes := map[string]any{}
+		for k, v := range dbLink.Attributes {
+			if name, ok := k.(string); ok {
+				if union, ok := v.(duckdb.Union); ok {
+					attributes[name] = union.Value
+				}
+			}
+		}
+
+		link := traces.LinkData{
+			TraceID:                dbLink.TraceID,
+			SpanID:                 dbLink.SpanID,
+			TraceState:             dbLink.TraceState,
+			Attributes:             attributes,
+			DroppedAttributesCount: dbLink.DroppedAttributesCount,
+		}
+		links = append(links, link)
+	}
+
+	return links
 }

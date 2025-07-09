@@ -1,34 +1,24 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/marcboeker/go-duckdb/v2"
 )
 
-type dbEvent struct {
-	Name                   string     `db:"name"`
-	Timestamp              int64      `db:"timestamp"`
-	Attributes             duckdb.Map `db:"attributes"`
-	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
-}
+// An Attribute is a key-value pair, which MUST have the following properties:
+// - The attribute key MUST be a non-null and non-empty string.
+// - Case sensitivity of keys is preserved. Keys that differ in casing are treated as distinct keys.
+// - The attribute value is either:
+//   - A primitive type: string, boolean, double precision floating point (IEEE 754-1985) or signed 64 bit integer.
+//   - An array of primitive type values. The array MUST be homogeneous, i.e., it MUST NOT contain values of different types.
 
-type dbLink struct {
-	TraceID                string     `db:"traceID"`
-	SpanID                 string     `db:"spanID"`
-	TraceState             string     `db:"traceState"`
-	Attributes             duckdb.Map `db:"attributes"`
-	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
-}
-
-// toDbMap converts a map of attributes to a DuckDB Map type.
+// toDbAttributes converts a map of attributes to a DuckDB Map type.
 // For uint64 values, if they exceed math.MaxInt64, they are converted to strings.
 // For []uint64 values, if any value exceeds math.MaxInt64, the entire slice is converted to []string.
-func toDbMap(attributes map[string]any) duckdb.Map {
+func toDbAttributes(attributes map[string]any) duckdb.Map {
 	dbMap := duckdb.Map{}
 
 	for attributeName, attributeValue := range attributes {
@@ -84,73 +74,7 @@ func toDbMap(attributes map[string]any) duckdb.Map {
 	return dbMap
 }
 
-func toDbEvents(events []traces.EventData) []dbEvent {
-	dbEvents := []dbEvent{}
-
-	for _, event := range events {
-		dbe := dbEvent{
-			Name:                   event.Name,
-			Timestamp:              event.Timestamp,
-			Attributes:             toDbMap(event.Attributes),
-			DroppedAttributesCount: event.DroppedAttributesCount,
-		}
-
-		dbEvents = append(dbEvents, dbe)
-	}
-	return dbEvents
-}
-
-func toDbLinks(links []traces.LinkData) []dbLink {
-	if len(links) == 0 {
-		return []dbLink{}
-	}
-	dbLinks := []dbLink{}
-	for _, link := range links {
-		dbLink := dbLink{
-			TraceID:                link.TraceID,
-			SpanID:                 link.SpanID,
-			TraceState:             link.TraceState,
-			Attributes:             toDbMap(link.Attributes),
-			DroppedAttributesCount: link.DroppedAttributesCount,
-		}
-		dbLinks = append(dbLinks, dbLink)
-	}
-	return dbLinks
-}
-
-// toDbBody converts a value to a DuckDB Union type.
-// For uint64 values, if they exceed math.MaxInt64, they are converted to strings.
-// For complex types (arrays, maps, structs), the value is JSON marshaled.
-func toDbBody(body any) duckdb.Union {
-	switch t := body.(type) {
-	case string:
-		return duckdb.Union{Tag: "str", Value: t}
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32:
-		return duckdb.Union{Tag: "bigint", Value: t}
-	case uint64:
-		value, hasOverflow := stringifyOnOverflow("body", t)
-		if hasOverflow {
-			return duckdb.Union{Tag: "str", Value: value}
-		}
-		return duckdb.Union{Tag: "bigint", Value: value}
-	case float32, float64:
-		return duckdb.Union{Tag: "double", Value: t}
-	case bool:
-		return duckdb.Union{Tag: "boolean", Value: t}
-	case []byte:
-		return duckdb.Union{Tag: "bytes", Value: t}
-	default:
-		// For complex types (arrays, maps, structs), convert to JSON string
-		bodyJson, err := json.Marshal(body)
-		if err != nil {
-			log.Printf(WarnJSONMarshal, t, body)
-			return duckdb.Union{Tag: "str", Value: fmt.Sprintf("%v", body)}
-		}
-		return duckdb.Union{Tag: "json", Value: string(bodyJson)}
-	}
-}
-
-func fromDbMap(rawAttributes map[string]duckdb.Union) map[string]any {
+func fromDbAttributes(rawAttributes map[string]duckdb.Union) map[string]any {
 	attributes := map[string]any{}
 
 	for attrName, union := range rawAttributes {
@@ -158,75 +82,6 @@ func fromDbMap(rawAttributes map[string]duckdb.Union) map[string]any {
 	}
 
 	return attributes
-}
-
-func fromDbEvents(dbEvents []dbEvent) []traces.EventData {
-	events := []traces.EventData{}
-
-	for _, dbEvent := range dbEvents {
-		attributes := map[string]any{}
-		for k, v := range dbEvent.Attributes {
-			if name, ok := k.(string); ok {
-				if union, ok := v.(duckdb.Union); ok {
-					attributes[name] = union.Value
-				}
-			}
-		}
-
-		event := traces.EventData{
-			Name:                   dbEvent.Name,
-			Timestamp:              dbEvent.Timestamp,
-			Attributes:             attributes,
-			DroppedAttributesCount: dbEvent.DroppedAttributesCount,
-		}
-		events = append(events, event)
-	}
-	return events
-}
-
-func fromDbLinks(dbLinks []dbLink) []traces.LinkData {
-	links := []traces.LinkData{}
-
-	for _, dbLink := range dbLinks {
-		attributes := map[string]any{}
-		for k, v := range dbLink.Attributes {
-			if name, ok := k.(string); ok {
-				if union, ok := v.(duckdb.Union); ok {
-					attributes[name] = union.Value
-				}
-			}
-		}
-
-		link := traces.LinkData{
-			TraceID:                dbLink.TraceID,
-			SpanID:                 dbLink.SpanID,
-			TraceState:             dbLink.TraceState,
-			Attributes:             attributes,
-			DroppedAttributesCount: dbLink.DroppedAttributesCount,
-		}
-		links = append(links, link)
-	}
-
-	return links
-}
-
-func fromDbBody(body duckdb.Union) any {
-	if body.Tag == "json" {
-		var result any
-		strValue, ok := body.Value.(string)
-		if !ok {
-			log.Printf(WarnJSONUnmarshal, fmt.Sprintf(errJSONValueType, body.Value))
-			return body.Value
-		}
-
-		if err := json.Unmarshal([]byte(strValue), &result); err != nil {
-			log.Printf(WarnJSONUnmarshal, err)
-			return body.Value
-		}
-
-		return result
-	}
-	return body.Value
 }
 
 // getListTypeTag examines the elements of a []any slice and returns the appropriate type tag

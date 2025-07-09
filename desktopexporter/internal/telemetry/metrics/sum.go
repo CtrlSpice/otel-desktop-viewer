@@ -13,6 +13,7 @@ type SumDataPoint struct {
 	StartTime              int64          `json:"-"`
 	Attributes             map[string]any `json:"attributes"`
 	Flags                  uint32         `json:"flags"`
+	ValueType              string         `json:"valueType"`
 	Value                  float64        `json:"value"`
 	IsMonotonic            bool           `json:"isMonotonic"`
 	Exemplars              []Exemplar     `json:"exemplars,omitempty"`
@@ -29,16 +30,11 @@ func extractSumDataPoints(source pmetric.Sum) []MetricDataPoint {
 			StartTime:              sourcePoint.StartTimestamp().AsTime().UnixNano(),
 			Attributes:             sourcePoint.Attributes().AsRaw(),
 			Flags:                  uint32(sourcePoint.Flags()),
+			ValueType:              sourcePoint.ValueType().String(),
+			Value:                  sourcePoint.DoubleValue(),
 			IsMonotonic:            source.IsMonotonic(),
 			Exemplars:              extractExemplars(sourcePoint.Exemplars()),
 			AggregationTemporality: source.AggregationTemporality().String(),
-		}
-
-		switch sourcePoint.ValueType() {
-		case pmetric.NumberDataPointValueTypeDouble:
-			point.Value = sourcePoint.DoubleValue()
-		case pmetric.NumberDataPointValueTypeInt:
-			point.Value = float64(sourcePoint.IntValue())
 		}
 		points[i] = point
 	}

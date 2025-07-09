@@ -37,39 +37,21 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	db := sql.OpenDB(connector)
 
 	// 1) Create types - ignore "already exists" errors
-	if _, err = db.Exec(CreateAttributeType); err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			log.Fatalf(ErrInitAttributeType, err)
-		}
-	}
-
-	if _, err = db.Exec(CreateEventType); err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			log.Printf(ErrInitEventType, err)
-		}
-	}
-
-	if _, err = db.Exec(CreateLinkType); err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			log.Fatalf(ErrInitLinkType, err)
-		}
-	}
-
-	if _, err = db.Exec(CreateBodyType); err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			log.Fatalf(ErrInitBodyType, err)
+	for i, query := range TypeCreationQueries {
+		if _, err = db.Exec(query); err != nil {
+			if !strings.Contains(err.Error(), "already exists") {
+				log.Fatalf("failed to create type %d: %v", i, err)
+			}
 		}
 	}
 
 	// 2) Create the tables for our signals
-	if _, err = db.Exec(CreateSpansTable); err != nil {
-		log.Fatalf(ErrInitSpansTable, err)
+	for i, query := range TableCreationQueries {
+		if _, err = db.Exec(query); err != nil {
+			log.Fatalf("failed to create table %d: %v", i, err)
+		}
 	}
 
-	if _, err = db.Exec(CreateLogsTable); err != nil {
-		log.Fatalf(ErrInitLogsTable, err)
-	}
-	
 	return &Store{
 		db:   db,
 		conn: conn,
@@ -77,8 +59,8 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 }
 
 // Close closes the store and the underlying database connection.
-// Note: 
-// We explicitly set the connection to nil to ensure checkConnection() 
+// Note:
+// We explicitly set the connection to nil to ensure checkConnection()
 // can detect closed state because sql.DB.Close() has a graceful shutdown
 // that can cause a ping to succeed briefly after close while in-progress queries finish.
 func (s *Store) Close() error {
@@ -86,12 +68,12 @@ func (s *Store) Close() error {
 		s.conn.Close()
 		s.conn = nil
 	}
-	
+
 	if s.db != nil {
 		s.db.Close()
 		s.db = nil
 	}
-	
+
 	return nil
 }
 
