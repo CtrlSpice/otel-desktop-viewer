@@ -14,7 +14,7 @@ ENV GOPATH=/go
 # 2) then commit and tag the the Dockerfile change (e.g. 'v0.2.3') and push both, the commit and the tag back
 # for everyone to be able to build the image directly from the git repo like:
 # 'docker build -t otel-desktop-viewer:ubuntu-25.04 git@github.com:CtrlSpice/otel-desktop-viewer.git#v0.2.3'
-RUN go install -v github.com/CtrlSpice/otel-desktop-viewer@latest
+RUN go install -v github.com/CtrlSpice/otel-desktop-viewer@12e8a82
 
 FROM ubuntu:25.04
 
