@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -24,9 +25,9 @@ type SpanData struct {
 	StartTime int64  `json:"-"`
 	EndTime   int64  `json:"-"`
 
-	Attributes map[string]any         `json:"attributes"`
-	Events     []EventData            `json:"events"`
-	Links      []LinkData             `json:"links"`
+	Attributes attributes.Attributes  `json:"attributes"`
+	Events     Events                 `json:"events"`
+	Links      Links                  `json:"links"`
 	Resource   *resource.ResourceData `json:"resource"`
 	Scope      *scope.ScopeData       `json:"scope"`
 
@@ -76,10 +77,10 @@ func aggregateSpanData(source ptrace.Span, eventData []EventData, linkData []Lin
 		Kind:         source.Kind().String(),
 		StartTime:    source.StartTimestamp().AsTime().UnixNano(),
 		EndTime:      source.EndTimestamp().AsTime().UnixNano(),
-		Attributes:   source.Attributes().AsRaw(),
+		Attributes:   attributes.Attributes(source.Attributes().AsRaw()),
 
-		Events:   eventData,
-		Links:    linkData,
+		Events:   Events(eventData),
+		Links:    Links(linkData),
 		Scope:    scopeData,
 		Resource: resourceData,
 

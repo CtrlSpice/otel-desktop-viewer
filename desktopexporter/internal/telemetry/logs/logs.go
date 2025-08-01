@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
+
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
@@ -26,10 +28,10 @@ type LogData struct {
 	SeverityText   string `json:"severityText,omitempty"`
 	SeverityNumber int32  `json:"severityNumber,omitempty"`
 
-	Body                   any                    `json:"body,omitempty"`
+	Body                   Body                   `json:"body,omitempty"`
 	Resource               *resource.ResourceData `json:"resource"`
 	Scope                  *scope.ScopeData       `json:"scope"`
-	Attributes             map[string]any         `json:"attributes,omitempty"`
+	Attributes             attributes.Attributes  `json:"attributes,omitempty"`
 	DroppedAttributesCount uint32                 `json:"droppedAttributeCount,omitempty"`
 	Flags                  uint32                 `json:"flags,omitempty"`
 	EventName              string                 `json:"eventName,omitempty"`
@@ -72,10 +74,10 @@ func aggregateLogData(source plog.LogRecord, scopeData *scope.ScopeData, resourc
 		SeverityText:   source.SeverityText(),
 		SeverityNumber: int32(source.SeverityNumber()),
 
-		Body:                   source.Body().AsRaw(),
+		Body:                   Body{Data: source.Body().AsRaw()},
 		Resource:               resourceData,
 		Scope:                  scopeData,
-		Attributes:             source.Attributes().AsRaw(),
+		Attributes:             attributes.Attributes(source.Attributes().AsRaw()),
 		DroppedAttributesCount: source.DroppedAttributesCount(),
 		Flags:                  uint32(source.Flags()),
 		EventName:              source.EventName(),

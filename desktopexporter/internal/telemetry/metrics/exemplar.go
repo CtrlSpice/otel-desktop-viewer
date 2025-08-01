@@ -4,16 +4,17 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 // Exemplar represents a sample value that contributed to a metric data point
 type Exemplar struct {
-	Timestamp          int64          `json:"-"`
-	Value              float64        `json:"value"`
-	TraceID            string         `json:"traceID,omitempty"`
-	SpanID             string         `json:"spanID,omitempty"`
-	FilteredAttributes map[string]any `json:"filteredAttributes,omitempty"`
+	Timestamp          int64                 `json:"-"`
+	Value              float64               `json:"value"`
+	TraceID            string                `json:"traceID,omitempty"`
+	SpanID             string                `json:"spanID,omitempty"`
+	FilteredAttributes attributes.Attributes `json:"filteredAttributes,omitempty"`
 }
 
 // extractExemplars extracts exemplars from OpenTelemetry exemplar slices
@@ -26,7 +27,7 @@ func extractExemplars(exemplars pmetric.ExemplarSlice) []Exemplar {
 			Value:              exemplar.DoubleValue(),
 			TraceID:            exemplar.TraceID().String(),
 			SpanID:             exemplar.SpanID().String(),
-			FilteredAttributes: exemplar.FilteredAttributes().AsRaw(),
+			FilteredAttributes: attributes.Attributes(exemplar.FilteredAttributes().AsRaw()),
 		}
 	}
 	return result

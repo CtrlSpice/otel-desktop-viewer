@@ -84,7 +84,7 @@ func setupWithData(t *testing.T) (*httptest.Server, func(*testing.T)) {
 		SpanID:            "12345",
 		SeverityText:      "INFO",
 		SeverityNumber:    9,
-		Body:              "test log message",
+		Body:              logs.Body{Data: "test log message"},
 		Resource: &resource.ResourceData{
 			Attributes: map[string]any{
 				"service.name": "pumpkin.pie",

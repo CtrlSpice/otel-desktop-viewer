@@ -4,23 +4,24 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 // HistogramDataPoint represents a histogram metric data point
 type HistogramDataPoint struct {
-	Timestamp              int64          `json:"-"`
-	StartTime              int64          `json:"-"`
-	Attributes             map[string]any `json:"attributes"`
-	Flags                  uint32         `json:"flags"`
-	Count                  uint64         `json:"-"`
-	Sum                    float64        `json:"sum"`
-	Min                    float64        `json:"min"`
-	Max                    float64        `json:"max"`
-	BucketCounts           []uint64       `json:"-"`
-	ExplicitBounds         []float64      `json:"explicitBounds"`
-	Exemplars              []Exemplar     `json:"exemplars,omitempty"`
-	AggregationTemporality string         `json:"aggregationTemporality"`
+	Timestamp              int64                 `json:"-"`
+	StartTime              int64                 `json:"-"`
+	Attributes             attributes.Attributes `json:"attributes"`
+	Flags                  uint32                `json:"flags"`
+	Count                  uint64                `json:"-"`
+	Sum                    float64               `json:"sum"`
+	Min                    float64               `json:"min"`
+	Max                    float64               `json:"max"`
+	BucketCounts           []uint64              `json:"-"`
+	ExplicitBounds         []float64             `json:"explicitBounds"`
+	Exemplars              []Exemplar            `json:"exemplars,omitempty"`
+	AggregationTemporality string                `json:"aggregationTemporality"`
 }
 
 func extractHistogramDataPoints(source pmetric.Histogram) []MetricDataPoint {
@@ -30,7 +31,7 @@ func extractHistogramDataPoints(source pmetric.Histogram) []MetricDataPoint {
 		point := HistogramDataPoint{
 			Timestamp:              sourcePoint.Timestamp().AsTime().UnixNano(),
 			StartTime:              sourcePoint.StartTimestamp().AsTime().UnixNano(),
-			Attributes:             sourcePoint.Attributes().AsRaw(),
+			Attributes:             attributes.Attributes(sourcePoint.Attributes().AsRaw()),
 			Flags:                  uint32(sourcePoint.Flags()),
 			Count:                  sourcePoint.Count(),
 			Sum:                    sourcePoint.Sum(),

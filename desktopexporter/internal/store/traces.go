@@ -5,27 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/marcboeker/go-duckdb/v2"
-
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 )
-
-type dbEvent struct {
-	Name                   string     `db:"name"`
-	Timestamp              int64      `db:"timestamp"`
-	Attributes             duckdb.Map `db:"attributes"`
-	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
-}
-
-type dbLink struct {
-	TraceID                string     `db:"traceID"`
-	SpanID                 string     `db:"spanID"`
-	TraceState             string     `db:"traceState"`
-	Attributes             duckdb.Map `db:"attributes"`
-	DroppedAttributesCount uint32     `db:"droppedAttributesCount"`
-}
 
 // AddSpans appends a list of spans to the store.
 func (s *Store) AddSpans(ctx context.Context, spans []traces.SpanData) error {
@@ -36,7 +19,7 @@ func (s *Store) AddSpans(ctx context.Context, spans []traces.SpanData) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	appender, err := duckdb.NewAppender(s.conn, "", "", "spans")
+	appender, err := NewAppenderWrapper(s.conn, "", "", "spans")
 	if err != nil {
 		return fmt.Errorf(ErrCreateAppender, err)
 	}
@@ -52,14 +35,14 @@ func (s *Store) AddSpans(ctx context.Context, spans []traces.SpanData) error {
 			span.Kind,
 			span.StartTime,
 			span.EndTime,
-			toDbAttributes(span.Attributes),
-			toDbEvents(span.Events),
-			toDbLinks(span.Links),
-			toDbAttributes(span.Resource.Attributes),
+			span.Attributes,
+			span.Events,
+			span.Links,
+			span.Resource.Attributes,
 			span.Resource.DroppedAttributesCount,
 			span.Scope.Name,
 			span.Scope.Version,
-			toDbAttributes(span.Scope.Attributes),
+			span.Scope.Attributes,
 			span.Scope.DroppedAttributesCount,
 			span.DroppedAttributesCount,
 			span.DroppedEventsCount,
@@ -161,62 +144,10 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (traces.TraceData,
 	defer rows.Close()
 
 	for rows.Next() {
-		span := traces.SpanData{
-			Resource: &resource.ResourceData{
-				Attributes:             map[string]any{},
-				DroppedAttributesCount: 0,
-			},
-			Scope: &scope.ScopeData{
-				Name:                   "",
-				Version:                "",
-				Attributes:             map[string]any{},
-				DroppedAttributesCount: 0,
-			},
-		}
-
-		var (
-			rawAttributes         duckdb.Composite[map[string]duckdb.Union]
-			rawResourceAttributes duckdb.Composite[map[string]duckdb.Union]
-			rawScopeAttributes    duckdb.Composite[map[string]duckdb.Union]
-
-			rawEvents duckdb.Composite[[]dbEvent]
-			rawLinks  duckdb.Composite[[]dbLink]
-		)
-
-		if err = rows.Scan(
-			&span.TraceID,
-			&span.TraceState,
-			&span.SpanID,
-			&span.ParentSpanID,
-			&span.Name,
-			&span.Kind,
-			&span.StartTime,
-			&span.EndTime,
-			&rawAttributes,
-			&rawEvents,
-			&rawLinks,
-			&rawResourceAttributes,
-			&span.Resource.DroppedAttributesCount,
-			&span.Scope.Name,
-			&span.Scope.Version,
-			&rawScopeAttributes,
-			&span.Scope.DroppedAttributesCount,
-			&span.DroppedAttributesCount,
-			&span.DroppedEventsCount,
-			&span.DroppedLinksCount,
-			&span.StatusCode,
-			&span.StatusMessage,
-		); err != nil {
+		span, err := scanTraceRow(rows)
+		if err != nil {
 			return trace, fmt.Errorf(ErrGetTrace, traceID, err)
 		}
-
-		span.Attributes = fromDbAttributes(rawAttributes.Get())
-		span.Resource.Attributes = fromDbAttributes(rawResourceAttributes.Get())
-		span.Scope.Attributes = fromDbAttributes(rawScopeAttributes.Get())
-
-		span.Events = fromDbEvents(rawEvents.Get())
-		span.Links = fromDbLinks(rawLinks.Get())
-
 		trace.Spans = append(trace.Spans, span)
 	}
 
@@ -230,6 +161,43 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (traces.TraceData,
 	return trace, nil
 }
 
+// scanTraceRow converts a database row into a SpanData struct
+func scanTraceRow(scanner interface{ Scan(dest ...any) error }) (traces.SpanData, error) {
+	span := traces.SpanData{
+		Resource: &resource.ResourceData{},
+		Scope:    &scope.ScopeData{},
+	}
+
+	if err := scanner.Scan(
+		&span.TraceID,
+		&span.TraceState,
+		&span.SpanID,
+		&span.ParentSpanID,
+		&span.Name,
+		&span.Kind,
+		&span.StartTime,
+		&span.EndTime,
+		&span.Attributes,
+		&span.Events,
+		&span.Links,
+		&span.Resource.Attributes,
+		&span.Resource.DroppedAttributesCount,
+		&span.Scope.Name,
+		&span.Scope.Version,
+		&span.Scope.Attributes,
+		&span.Scope.DroppedAttributesCount,
+		&span.DroppedAttributesCount,
+		&span.DroppedEventsCount,
+		&span.DroppedLinksCount,
+		&span.StatusCode,
+		&span.StatusMessage,
+	); err != nil {
+		return span, fmt.Errorf(ErrScanTraceRow, err)
+	}
+
+	return span, nil
+}
+
 // ClearTraces truncates the spans table.
 func (s *Store) ClearTraces(ctx context.Context) error {
 	if err := s.checkConnection(); err != nil {
@@ -240,87 +208,4 @@ func (s *Store) ClearTraces(ctx context.Context) error {
 		return fmt.Errorf(ErrClearTraces, err)
 	}
 	return nil
-}
-
-// toDbEvents is a helper function that converts a list of EventData
-// to a list of go-duckdb Appender compatible dbEvent structs.
-func toDbEvents(events []traces.EventData) []dbEvent {
-	dbEvents := make([]dbEvent, len(events))
-
-	for i, event := range events {
-		dbEvents[i] = dbEvent{
-			Name:                   event.Name,
-			Timestamp:              event.Timestamp,
-			Attributes:             toDbAttributes(event.Attributes),
-			DroppedAttributesCount: event.DroppedAttributesCount,
-		}
-	}
-	return dbEvents
-}
-
-// toDbLinks is a helper function that converts a list of LinkData
-// to a list of go-duckdb Appender compatible dbLink structs.
-func toDbLinks(links []traces.LinkData) []dbLink {
-	dbLinks := make([]dbLink, len(links))
-
-	for i, link := range links {
-		dbLinks[i] = dbLink{
-			TraceID:                link.TraceID,
-			SpanID:                 link.SpanID,
-			TraceState:             link.TraceState,
-			Attributes:             toDbAttributes(link.Attributes),
-			DroppedAttributesCount: link.DroppedAttributesCount,
-		}
-	}
-	return dbLinks
-}
-
-func fromDbEvents(dbEvents []dbEvent) []traces.EventData {
-	events := []traces.EventData{}
-
-	for _, dbEvent := range dbEvents {
-		attributes := map[string]any{}
-		for k, v := range dbEvent.Attributes {
-			if name, ok := k.(string); ok {
-				if union, ok := v.(duckdb.Union); ok {
-					attributes[name] = union.Value
-				}
-			}
-		}
-
-		event := traces.EventData{
-			Name:                   dbEvent.Name,
-			Timestamp:              dbEvent.Timestamp,
-			Attributes:             attributes,
-			DroppedAttributesCount: dbEvent.DroppedAttributesCount,
-		}
-		events = append(events, event)
-	}
-	return events
-}
-
-func fromDbLinks(dbLinks []dbLink) []traces.LinkData {
-	links := []traces.LinkData{}
-
-	for _, dbLink := range dbLinks {
-		attributes := map[string]any{}
-		for k, v := range dbLink.Attributes {
-			if name, ok := k.(string); ok {
-				if union, ok := v.(duckdb.Union); ok {
-					attributes[name] = union.Value
-				}
-			}
-		}
-
-		link := traces.LinkData{
-			TraceID:                dbLink.TraceID,
-			SpanID:                 dbLink.SpanID,
-			TraceState:             dbLink.TraceState,
-			Attributes:             attributes,
-			DroppedAttributesCount: dbLink.DroppedAttributesCount,
-		}
-		links = append(links, link)
-	}
-
-	return links
 }

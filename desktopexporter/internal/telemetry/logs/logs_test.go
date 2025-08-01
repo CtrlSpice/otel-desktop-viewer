@@ -68,13 +68,13 @@ func TestLogExtraction(t *testing.T) {
 				assert.NotNil(t, systemLog, "should find system log")
 
 				// Validate currency log body
-				assert.Equal(t, "Currency conversion failed: invalid amount", currencyLog.Body)
+				assert.Equal(t, "Currency conversion failed: invalid amount", currencyLog.Body.Data)
 
 				// Validate HTTP log body
-				assert.Equal(t, "HTTP request completed", httpLog.Body)
+				assert.Equal(t, "HTTP request completed", httpLog.Body.Data)
 
 				// Validate system log body
-				assert.Equal(t, "High memory usage detected", systemLog.Body)
+				assert.Equal(t, "High memory usage detected", systemLog.Body.Data)
 			},
 		},
 	}

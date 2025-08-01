@@ -4,31 +4,32 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 // Buckets represents histogram buckets
 type Buckets struct {
-	Offset       int32    `json:"offset"`
-	BucketCounts []uint64 `json:"bucketCounts"`
+	BucketOffset int32    `json:"bucketOffset" db:"bucketOffset"`
+	BucketCounts []uint64 `json:"bucketCounts" db:"bucketCounts"`
 }
 
 // ExponentialHistogramDataPoint represents an exponential histogram metric data point
 type ExponentialHistogramDataPoint struct {
-	Timestamp              int64          `json:"-"`
-	StartTime              int64          `json:"-"`
-	Attributes             map[string]any `json:"attributes"`
-	Flags                  uint32         `json:"flags"`
-	Count                  uint64         `json:"-"`
-	Sum                    float64        `json:"sum"`
-	Min                    float64        `json:"min"`
-	Max                    float64        `json:"max"`
-	Scale                  int32          `json:"scale"`
-	ZeroCount              uint64         `json:"-"`
-	Positive               Buckets        `json:"positive"`
-	Negative               Buckets        `json:"negative"`
-	Exemplars              []Exemplar     `json:"exemplars,omitempty"`
-	AggregationTemporality string         `json:"aggregationTemporality"`
+	Timestamp              int64                 `json:"-"`
+	StartTime              int64                 `json:"-"`
+	Attributes             attributes.Attributes `json:"attributes"`
+	Flags                  uint32                `json:"flags"`
+	Count                  uint64                `json:"-"`
+	Sum                    float64               `json:"sum"`
+	Min                    float64               `json:"min"`
+	Max                    float64               `json:"max"`
+	Scale                  int32                 `json:"scale"`
+	ZeroCount              uint64                `json:"-"`
+	Positive               Buckets               `json:"positive"`
+	Negative               Buckets               `json:"negative"`
+	Exemplars              []Exemplar            `json:"exemplars,omitempty"`
+	AggregationTemporality string                `json:"aggregationTemporality"`
 }
 
 // extractExponentialHistogramDataPoints extracts exponential histogram data points from OpenTelemetry exponential histogram data point slices
@@ -39,7 +40,7 @@ func extractExponentialHistogramDataPoints(source pmetric.ExponentialHistogram) 
 		point := ExponentialHistogramDataPoint{
 			Timestamp:  sourcePoint.Timestamp().AsTime().UnixNano(),
 			StartTime:  sourcePoint.StartTimestamp().AsTime().UnixNano(),
-			Attributes: sourcePoint.Attributes().AsRaw(),
+			Attributes: attributes.Attributes(sourcePoint.Attributes().AsRaw()),
 			Flags:      uint32(sourcePoint.Flags()),
 			Count:      sourcePoint.Count(),
 			Sum:        sourcePoint.Sum(),
@@ -48,11 +49,11 @@ func extractExponentialHistogramDataPoints(source pmetric.ExponentialHistogram) 
 			Scale:      sourcePoint.Scale(),
 			ZeroCount:  sourcePoint.ZeroCount(),
 			Positive: Buckets{
-				Offset:       sourcePoint.Positive().Offset(),
+				BucketOffset: sourcePoint.Positive().Offset(),
 				BucketCounts: sourcePoint.Positive().BucketCounts().AsRaw(),
 			},
 			Negative: Buckets{
-				Offset:       sourcePoint.Negative().Offset(),
+				BucketOffset: sourcePoint.Negative().Offset(),
 				BucketCounts: sourcePoint.Negative().BucketCounts().AsRaw(),
 			},
 			Exemplars:              extractExemplars(sourcePoint.Exemplars()),

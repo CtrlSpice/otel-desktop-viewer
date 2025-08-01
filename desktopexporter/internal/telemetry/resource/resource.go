@@ -3,18 +3,19 @@ package resource
 import (
 	"log"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/errors"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
 type ResourceData struct {
-	Attributes             map[string]any `json:"attributes"`
-	DroppedAttributesCount uint32         `json:"droppedAttributesCount"`
+	Attributes             attributes.Attributes `json:"attributes"`
+	DroppedAttributesCount uint32                `json:"droppedAttributesCount"`
 }
 
 func AggregateResourceData(source pcommon.Resource) *ResourceData {
 	return &ResourceData{
-		Attributes:             source.Attributes().AsRaw(),
+		Attributes:             attributes.Attributes(source.Attributes().AsRaw()),
 		DroppedAttributesCount: source.DroppedAttributesCount(),
 	}
 }

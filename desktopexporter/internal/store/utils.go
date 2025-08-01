@@ -1,6 +1,8 @@
 package store
 
-import "reflect"
+import (
+	"reflect"
+)
 
 // copyAndOverride is a generic helper function that copies most fields from a struct
 // but overrides specified fields with new values/types.
@@ -17,11 +19,16 @@ func copyAndOverride[SourceType any, ResultType any](source SourceType, override
 		resultField := resultValue.FieldByName(fieldName)
 
 		if resultField.IsValid() && resultField.CanSet() {
-			resultField.Set(sourceField) // Direct copy if types match
-		} else if overrideValue, exists := overrides[fieldName]; exists {
-			// Apply override if field exists but types don't match
-			if resultField.IsValid() && resultField.CanSet() {
+			// Check if we have an override for this field
+			if overrideValue, exists := overrides[fieldName]; exists {
 				resultField.Set(reflect.ValueOf(overrideValue))
+			} else {
+				// Try direct copy, but handle type conversion if needed
+				if sourceField.Type().ConvertibleTo(resultField.Type()) {
+					resultField.Set(sourceField.Convert(resultField.Type()))
+				} else {
+					resultField.Set(sourceField) // Direct copy if types match
+				}
 			}
 		}
 	}

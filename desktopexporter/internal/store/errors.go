@@ -54,32 +54,10 @@ const (
 
 	// Scan errors
 	ErrScanLogRow    = "failed to scan log row: %w"
+	ErrScanTraceRow  = "failed to scan trace row: %w"
 	ErrScanMetricRow = "failed to scan metric row: %w"
 
 	// Metric errors
 	ErrUnknownMetricType  = "unknown metric type: %s"
 	ErrMetricTypeMismatch = "expected %s but got %T, skipping data point"
-)
-
-// Warning messages for logging
-const (
-	WarnUnsupportedAttributeType = "unsupported attribute type was converted to string: name=%s type=%T value=%v"
-	WarnUnsupportedListAttribute = "unsupported list attribute was converted to []string: name=%s error=%v"
-	WarnUint64Overflow           = "uint64 attribute exceeds int64 range and was converted to string: name=%s value=%d"
-	WarnUint64SliceOverflow      = "[]uint64 attribute contains values exceeding int64 range and was converted to []string: name=%s"
-	WarnJSONMarshal              = "failed to marshal to JSON, body was converted to string: type=%T value=%v"
-	WarnJSONUnmarshal            = "failed to unmarshal JSON body: %v"
-)
-
-// Attribute type validation error messages
-const (
-	errMixedTypesPrefix      = "list attribute contains mixed types: "
-	errNilValue              = errMixedTypesPrefix + "list contains nil value"
-	errIncompatibleType      = errMixedTypesPrefix + "incompatible type %T"
-	errIncompatibleIntType   = errMixedTypesPrefix + "incompatible type %T in integer list"
-	errIncompatibleFloatType = errMixedTypesPrefix + "incompatible type %T in float list"
-	errUint64Overflow        = "uint64 value %d exceeds int64 range"
-	errNilFirstElement       = "nil value in list attribute"
-	errUnsupportedListType   = "unsupported list attribute type: %T"
-	errJSONValueType         = "expected string for JSON value, got %T"
 )

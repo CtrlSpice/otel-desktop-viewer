@@ -1,51 +1,18 @@
 package store
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
-	"github.com/marcboeker/go-duckdb/v2"
 	"github.com/stretchr/testify/assert"
 )
 
-// testHelper holds common test dependencies
-type testHelper struct {
-	t     *testing.T
-	ctx   context.Context
-	store *Store
-}
-
-// setupTest creates a new test helper and returns a teardown function
-func setupTest(t *testing.T) (*testHelper, func()) {
-	ctx := context.Background()
-	store := NewStore(ctx, "")
-
-	assert.NotNil(t, store, "store should not be nil")
-	assert.NotNil(t, store.db, "database connection should not be nil")
-	assert.NotNil(t, store.conn, "duckdb connection should not be nil")
-
-	helper := &testHelper{
-		t:     t,
-		ctx:   ctx,
-		store: store,
-	}
-
-	teardown := func() {
-		if helper.store != nil {
-			helper.store.Close()
-		}
-	}
-
-	return helper, teardown
-}
-
 // TestTraceSummaryOrdering verifies that trace summaries are ordered by start time (newest first).
 func TestTraceSummaryOrdering(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
@@ -98,11 +65,11 @@ func TestTraceSummaryOrdering(t *testing.T) {
 	}
 
 	// Add spans to store
-	err := helper.store.AddSpans(helper.ctx, spans)
+	err := helper.Store.AddSpans(helper.Ctx, spans)
 	assert.NoError(t, err, "failed to add spans")
 
 	// Get summaries
-	summaries, err := helper.store.GetTraceSummaries(helper.ctx)
+	summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
 	assert.NoError(t, err, "failed to get trace summaries")
 
 	// Should have all three traces
@@ -127,67 +94,67 @@ func TestTraceSummaryOrdering(t *testing.T) {
 
 // TestTraceNotFound verifies error handling for non-existent trace IDs.
 func TestTraceNotFound(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
-	_, err := helper.store.GetTrace(helper.ctx, "non-existent-trace")
+	_, err := helper.Store.GetTrace(helper.Ctx, "non-existent-trace")
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrTraceIDNotFound)
 }
 
 // TestEmptySpans verifies handling of empty span lists and empty stores.
 func TestEmptySpans(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	// Test adding empty span list
-	err := helper.store.AddSpans(helper.ctx, []traces.SpanData{})
+	err := helper.Store.AddSpans(helper.Ctx, []traces.SpanData{})
 	assert.NoError(t, err)
 
 	// Test getting summaries from empty store
-	summaries, err := helper.store.GetTraceSummaries(helper.ctx)
+	summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
 	assert.NoError(t, err)
 	assert.Empty(t, summaries)
 }
 
 // TestClearTraces verifies that all traces can be cleared from the store.
 func TestClearTraces(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	// Add test trace
 	spans := createTestTrace()
-	err := helper.store.AddSpans(helper.ctx, spans)
+	err := helper.Store.AddSpans(helper.Ctx, spans)
 	assert.NoError(t, err)
 
 	// Verify trace exists
-	summaries, err := helper.store.GetTraceSummaries(helper.ctx)
+	summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
 	assert.NoError(t, err)
 	assert.Len(t, summaries, 1)
 
 	// Clear traces
-	err = helper.store.ClearTraces(helper.ctx)
+	err = helper.Store.ClearTraces(helper.Ctx)
 	assert.NoError(t, err)
 
 	// Verify store is empty
-	summaries, err = helper.store.GetTraceSummaries(helper.ctx)
+	summaries, err = helper.Store.GetTraceSummaries(helper.Ctx)
 	assert.NoError(t, err)
 	assert.Empty(t, summaries)
 }
 
 // TestTraceSuite runs a comprehensive suite of tests on a single trace.
 func TestTraceSuite(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	// Add the test trace
 	spans := createTestTrace()
-	err := helper.store.AddSpans(helper.ctx, spans)
+	err := helper.Store.AddSpans(helper.Ctx, spans)
 	assert.NoError(t, err, "failed to add test trace")
 
 	// Run all test cases
 	t.Run("TraceSummary", func(t *testing.T) {
-		summaries, err := helper.store.GetTraceSummaries(helper.ctx)
+		summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
 		assert.NoError(t, err)
 		assert.Len(t, summaries, 1, "should have one trace summary")
 
@@ -200,7 +167,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceContent", func(t *testing.T) {
-		trace, err := helper.store.GetTrace(helper.ctx, "test-trace")
+		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
 		assert.NoError(t, err)
 		assert.Len(t, trace.Spans, 3, "should have three spans")
 
@@ -234,7 +201,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceAttributes", func(t *testing.T) {
-		trace, err := helper.store.GetTrace(helper.ctx, "test-trace")
+		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
 		assert.NoError(t, err)
 
 		// Verify root span attributes
@@ -257,7 +224,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceEventsAndLinks", func(t *testing.T) {
-		trace, err := helper.store.GetTrace(helper.ctx, "test-trace")
+		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
 		assert.NoError(t, err)
 
 		// Verify root span events
@@ -265,11 +232,14 @@ func TestTraceSuite(t *testing.T) {
 		assert.Equal(t, "root-event-1", rootSpan.Events[0].Name)
 		assert.Equal(t, "Hello", rootSpan.Events[0].Attributes["event.string"])
 		assert.Equal(t, int64(42), rootSpan.Events[0].Attributes["event.int"])
+		assert.Equal(t, true, rootSpan.Events[0].Attributes["event.bool"])
+		assert.Equal(t, float64(3.14), rootSpan.Events[0].Attributes["event.float"])
 		assert.Equal(t, uint32(0), rootSpan.Events[0].DroppedAttributesCount)
 
 		assert.Equal(t, "root-event-2", rootSpan.Events[1].Name)
 		assert.Equal(t, "World", rootSpan.Events[1].Attributes["event.string2"])
 		assert.Equal(t, int64(100), rootSpan.Events[1].Attributes["event.int2"])
+		assert.Equal(t, []any{"a", "b", "c"}, rootSpan.Events[1].Attributes["event.list"])
 		assert.Equal(t, uint32(1), rootSpan.Events[1].DroppedAttributesCount)
 
 		// Verify root span links
@@ -278,6 +248,8 @@ func TestTraceSuite(t *testing.T) {
 		assert.Equal(t, "state1", rootSpan.Links[0].TraceState)
 		assert.Equal(t, "Link1", rootSpan.Links[0].Attributes["link.string"])
 		assert.Equal(t, int64(123), rootSpan.Links[0].Attributes["link.int"])
+		assert.Equal(t, float64(2.71), rootSpan.Links[0].Attributes["link.float"])
+		assert.Equal(t, false, rootSpan.Links[0].Attributes["link.bool"])
 		assert.Equal(t, uint32(0), rootSpan.Links[0].DroppedAttributesCount)
 
 		// Verify child span events and links
@@ -285,17 +257,22 @@ func TestTraceSuite(t *testing.T) {
 		assert.Equal(t, "child-event", childSpan.Events[0].Name)
 		assert.Equal(t, "Child Event", childSpan.Events[0].Attributes["child.event.string"])
 		assert.Equal(t, int64(50), childSpan.Events[0].Attributes["child.event.int"])
+		assert.Equal(t, false, childSpan.Events[0].Attributes["child.event.bool"])
+		assert.Equal(t, float64(1.618), childSpan.Events[0].Attributes["child.event.float"])
 
 		assert.Equal(t, "linked-trace-2", childSpan.Links[0].TraceID)
 		assert.Equal(t, "linked-span-2", childSpan.Links[0].SpanID)
 		assert.Equal(t, "state2", childSpan.Links[0].TraceState)
 		assert.Equal(t, "Child Link", childSpan.Links[0].Attributes["child.link.string"])
 		assert.Equal(t, int64(456), childSpan.Links[0].Attributes["child.link.int"])
+		assert.Equal(t, float64(1.414), childSpan.Links[0].Attributes["child.link.float"])
+		assert.Equal(t, true, childSpan.Links[0].Attributes["child.link.bool"])
+		assert.Equal(t, []any{int64(1), int64(2), int64(3), int64(4), int64(5)}, childSpan.Links[0].Attributes["child.link.list"])
 		assert.Equal(t, uint32(1), childSpan.Links[0].DroppedAttributesCount)
 	})
 
 	t.Run("TraceResourceAndScope", func(t *testing.T) {
-		trace, err := helper.store.GetTrace(helper.ctx, "test-trace")
+		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
 		assert.NoError(t, err)
 
 		// Verify resource and scope (should be consistent across all spans)
@@ -340,6 +317,8 @@ func createTestTrace() []traces.SpanData {
 					Attributes: map[string]any{
 						"event.string": "Hello",
 						"event.int":    int64(42),
+						"event.bool":   true,
+						"event.float":  float64(3.14),
 					},
 					DroppedAttributesCount: 0,
 				},
@@ -349,6 +328,7 @@ func createTestTrace() []traces.SpanData {
 					Attributes: map[string]any{
 						"event.string2": "World",
 						"event.int2":    int64(100),
+						"event.list":    []string{"a", "b", "c"},
 					},
 					DroppedAttributesCount: 1,
 				},
@@ -361,6 +341,8 @@ func createTestTrace() []traces.SpanData {
 					Attributes: map[string]any{
 						"link.string": "Link1",
 						"link.int":    int64(123),
+						"link.float":  float64(2.71),
+						"link.bool":   false,
 					},
 					DroppedAttributesCount: 0,
 				},
@@ -404,6 +386,8 @@ func createTestTrace() []traces.SpanData {
 					Attributes: map[string]any{
 						"child.event.string": "Child Event",
 						"child.event.int":    int64(50),
+						"child.event.bool":   false,
+						"child.event.float":  float64(1.618),
 					},
 					DroppedAttributesCount: 0,
 				},
@@ -416,6 +400,9 @@ func createTestTrace() []traces.SpanData {
 					Attributes: map[string]any{
 						"child.link.string": "Child Link",
 						"child.link.int":    int64(456),
+						"child.link.float":  float64(1.414),
+						"child.link.bool":   true,
+						"child.link.list":   []int64{1, 2, 3, 4, 5},
 					},
 					DroppedAttributesCount: 1,
 				},
@@ -461,272 +448,5 @@ func createTestTrace() []traces.SpanData {
 			StatusCode:    "STATUS_CODE_UNSET",
 			StatusMessage: "",
 		},
-	}
-}
-
-// TestToDbEvents tests the toDbEvents helper function.
-func TestToDbEvents(t *testing.T) {
-	now := time.Now().UnixNano()
-	tests := []struct {
-		name     string
-		input    []traces.EventData
-		expected []dbEvent
-	}{
-		{
-			name:     "empty events",
-			input:    []traces.EventData{},
-			expected: []dbEvent{},
-		},
-		{
-			name: "single event",
-			input: []traces.EventData{
-				{
-					Name:                   "test event",
-					Timestamp:              now,
-					Attributes:             map[string]any{"key": "value"},
-					DroppedAttributesCount: 0,
-				},
-			},
-			expected: []dbEvent{
-				{
-					Name:                   "test event",
-					Timestamp:              now,
-					Attributes:             duckdb.Map{"key": duckdb.Union{Tag: "str", Value: "value"}},
-					DroppedAttributesCount: 0,
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := toDbEvents(tt.input)
-			assert.Equal(t, len(tt.expected), len(result))
-
-			for i, expected := range tt.expected {
-				assert.Equal(t, expected.Name, result[i].Name)
-				assert.Equal(t, expected.Timestamp, result[i].Timestamp)
-				assert.Equal(t, expected.DroppedAttributesCount, result[i].DroppedAttributesCount)
-				// Compare attributes separately for better error messages
-				assert.Equal(t, len(expected.Attributes), len(result[i].Attributes))
-			}
-		})
-	}
-}
-
-// TestToDbLinks tests the toDbLinks helper function.
-func TestToDbLinks(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    []traces.LinkData
-		expected []dbLink
-	}{
-		{
-			name:     "empty links",
-			input:    []traces.LinkData{},
-			expected: []dbLink{},
-		},
-		{
-			name: "single link",
-			input: []traces.LinkData{
-				{
-					TraceID:                "trace1",
-					SpanID:                 "span1",
-					TraceState:             "state1",
-					Attributes:             map[string]any{"key": "value"},
-					DroppedAttributesCount: 0,
-				},
-			},
-			expected: []dbLink{
-				{
-					TraceID:                "trace1",
-					SpanID:                 "span1",
-					TraceState:             "state1",
-					Attributes:             duckdb.Map{"key": duckdb.Union{Tag: "str", Value: "value"}},
-					DroppedAttributesCount: 0,
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := toDbLinks(tt.input)
-			assert.Equal(t, len(tt.expected), len(result))
-
-			for i, expected := range tt.expected {
-				assert.Equal(t, expected.TraceID, result[i].TraceID)
-				assert.Equal(t, expected.SpanID, result[i].SpanID)
-				assert.Equal(t, expected.TraceState, result[i].TraceState)
-				assert.Equal(t, expected.DroppedAttributesCount, result[i].DroppedAttributesCount)
-				// Compare attributes separately for better error messages
-				assert.Equal(t, len(expected.Attributes), len(result[i].Attributes))
-			}
-		})
-	}
-}
-
-// TestFromDbEvents tests the fromDbEvents helper function.
-func TestFromDbEvents(t *testing.T) {
-	now := time.Now().UnixNano()
-	tests := []struct {
-		name     string
-		input    []dbEvent
-		expected []traces.EventData
-	}{
-		{
-			name:     "empty events",
-			input:    []dbEvent{},
-			expected: []traces.EventData{},
-		},
-		{
-			name: "single event with attributes",
-			input: []dbEvent{
-				{
-					Name:      "test event",
-					Timestamp: now,
-					Attributes: duckdb.Map{
-						"string_attr": duckdb.Union{Tag: "str", Value: "hello"},
-						"int_attr":    duckdb.Union{Tag: "bigint", Value: int64(42)},
-						"bool_attr":   duckdb.Union{Tag: "boolean", Value: true},
-					},
-					DroppedAttributesCount: 1,
-				},
-			},
-			expected: []traces.EventData{
-				{
-					Name:      "test event",
-					Timestamp: now,
-					Attributes: map[string]any{
-						"string_attr": "hello",
-						"int_attr":    int64(42),
-						"bool_attr":   true,
-					},
-					DroppedAttributesCount: 1,
-				},
-			},
-		},
-		{
-			name: "multiple events",
-			input: []dbEvent{
-				{
-					Name:                   "event1",
-					Timestamp:              now,
-					Attributes:             duckdb.Map{"key1": duckdb.Union{Tag: "str", Value: "value1"}},
-					DroppedAttributesCount: 0,
-				},
-				{
-					Name:                   "event2",
-					Timestamp:              now + time.Second.Nanoseconds(),
-					Attributes:             duckdb.Map{"key2": duckdb.Union{Tag: "bigint", Value: int64(100)}},
-					DroppedAttributesCount: 2,
-				},
-			},
-			expected: []traces.EventData{
-				{
-					Name:                   "event1",
-					Timestamp:              now,
-					Attributes:             map[string]any{"key1": "value1"},
-					DroppedAttributesCount: 0,
-				},
-				{
-					Name:                   "event2",
-					Timestamp:              now + time.Second.Nanoseconds(),
-					Attributes:             map[string]any{"key2": int64(100)},
-					DroppedAttributesCount: 2,
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := fromDbEvents(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-// TestFromDbLinks tests the fromDbLinks helper function.
-func TestFromDbLinks(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    []dbLink
-		expected []traces.LinkData
-	}{
-		{
-			name:     "empty links",
-			input:    []dbLink{},
-			expected: []traces.LinkData{},
-		},
-		{
-			name: "single link with attributes",
-			input: []dbLink{
-				{
-					TraceID:    "trace123",
-					SpanID:     "span456",
-					TraceState: "state1",
-					Attributes: duckdb.Map{
-						"link_attr": duckdb.Union{Tag: "str", Value: "link_value"},
-						"num_attr":  duckdb.Union{Tag: "double", Value: float64(3.14)},
-					},
-					DroppedAttributesCount: 0,
-				},
-			},
-			expected: []traces.LinkData{
-				{
-					TraceID:    "trace123",
-					SpanID:     "span456",
-					TraceState: "state1",
-					Attributes: map[string]any{
-						"link_attr": "link_value",
-						"num_attr":  float64(3.14),
-					},
-					DroppedAttributesCount: 0,
-				},
-			},
-		},
-		{
-			name: "multiple links",
-			input: []dbLink{
-				{
-					TraceID:                "trace1",
-					SpanID:                 "span1",
-					TraceState:             "state1",
-					Attributes:             duckdb.Map{"attr1": duckdb.Union{Tag: "boolean", Value: false}},
-					DroppedAttributesCount: 1,
-				},
-				{
-					TraceID:                "trace2",
-					SpanID:                 "span2",
-					TraceState:             "state2",
-					Attributes:             duckdb.Map{"attr2": duckdb.Union{Tag: "str_list", Value: []string{"a", "b"}}},
-					DroppedAttributesCount: 3,
-				},
-			},
-			expected: []traces.LinkData{
-				{
-					TraceID:                "trace1",
-					SpanID:                 "span1",
-					TraceState:             "state1",
-					Attributes:             map[string]any{"attr1": false},
-					DroppedAttributesCount: 1,
-				},
-				{
-					TraceID:                "trace2",
-					SpanID:                 "span2",
-					TraceState:             "state2",
-					Attributes:             map[string]any{"attr2": []string{"a", "b"}},
-					DroppedAttributesCount: 3,
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := fromDbLinks(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
 	}
 }

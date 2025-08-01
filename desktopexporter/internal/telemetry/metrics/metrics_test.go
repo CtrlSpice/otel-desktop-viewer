@@ -137,12 +137,12 @@ func TestMetricExtraction(t *testing.T) {
 				assert.Equal(t, "Delta", expHistogramDataPoint.AggregationTemporality)
 
 				// Validate positive buckets
-				assert.Equal(t, int32(1), expHistogramDataPoint.Positive.Offset)
+				assert.Equal(t, int32(1), expHistogramDataPoint.Positive.BucketOffset)
 				expectedPositiveBucketCounts := []uint64{5, 10, 15, 10, 5}
 				assert.Equal(t, expectedPositiveBucketCounts, expHistogramDataPoint.Positive.BucketCounts)
 
 				// Validate negative buckets
-				assert.Equal(t, int32(0), expHistogramDataPoint.Negative.Offset)
+				assert.Equal(t, int32(0), expHistogramDataPoint.Negative.BucketOffset)
 				expectedNegativeBucketCounts := []uint64{2, 3}
 				assert.Equal(t, expectedNegativeBucketCounts, expHistogramDataPoint.Negative.BucketCounts)
 

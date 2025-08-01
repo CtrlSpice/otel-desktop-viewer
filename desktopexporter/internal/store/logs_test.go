@@ -3,169 +3,15 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
-	"github.com/marcboeker/go-duckdb/v2"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestFromDbLogBody(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    duckdb.Union
-		expected any
-	}{
-		{
-			name:     "string value",
-			input:    duckdb.Union{Tag: "str", Value: "hello world"},
-			expected: "hello world",
-		},
-		{
-			name:     "integer value",
-			input:    duckdb.Union{Tag: "bigint", Value: int64(42)},
-			expected: int64(42),
-		},
-		{
-			name:     "float value",
-			input:    duckdb.Union{Tag: "double", Value: float64(3.14159)},
-			expected: float64(3.14159),
-		},
-		{
-			name:     "boolean value",
-			input:    duckdb.Union{Tag: "boolean", Value: true},
-			expected: true,
-		},
-		{
-			name:     "byte array",
-			input:    duckdb.Union{Tag: "bytes", Value: []byte("binary data")},
-			expected: []byte("binary data"),
-		},
-		{
-			name:     "safe uint64 as bigint",
-			input:    duckdb.Union{Tag: "bigint", Value: int64(100)},
-			expected: int64(100),
-		},
-		{
-			name:     "overflow uint64 as string",
-			input:    duckdb.Union{Tag: "str", Value: "18446744073709551615"},
-			expected: "18446744073709551615",
-		},
-		{
-			name:     "json object",
-			input:    duckdb.Union{Tag: "json", Value: mustMarshal(struct{ Name string }{Name: "test"})},
-			expected: map[string]any{"Name": "test"},
-		},
-		{
-			name:     "json array",
-			input:    duckdb.Union{Tag: "json", Value: mustMarshal([]string{"one", "two", "three"})},
-			expected: []any{"one", "two", "three"},
-		},
-		{
-			name:     "json mixed array",
-			input:    duckdb.Union{Tag: "json", Value: mustMarshal([]any{"string", 42, true})},
-			expected: []any{"string", float64(42), true},
-		},
-		{
-			name:  "json nested map",
-			input: duckdb.Union{Tag: "json", Value: mustMarshal(map[string]any{"key": "value", "nested": map[string]any{"inner": 42}})},
-			expected: map[string]any{
-				"key": "value",
-				"nested": map[string]any{
-					"inner": float64(42),
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := fromDbLogBody(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestToDbLogBody(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    any
-		expected duckdb.Union
-	}{
-		{
-			name:     "string value",
-			input:    "hello world",
-			expected: duckdb.Union{Tag: "str", Value: "hello world"},
-		},
-		{
-			name:     "integer value",
-			input:    int64(42),
-			expected: duckdb.Union{Tag: "bigint", Value: int64(42)},
-		},
-		{
-			name:     "float value",
-			input:    float64(3.14159),
-			expected: duckdb.Union{Tag: "double", Value: float64(3.14159)},
-		},
-		{
-			name:     "float32 value",
-			input:    float32(3.14),
-			expected: duckdb.Union{Tag: "double", Value: float32(3.14)},
-		},
-		{
-			name:     "boolean value",
-			input:    true,
-			expected: duckdb.Union{Tag: "boolean", Value: true},
-		},
-		{
-			name:     "byte array",
-			input:    []byte("binary data"),
-			expected: duckdb.Union{Tag: "bytes", Value: []byte("binary data")},
-		},
-		{
-			name:     "safe uint64",
-			input:    uint64(100),
-			expected: duckdb.Union{Tag: "bigint", Value: int64(100)},
-		},
-		{
-			name:     "overflow uint64",
-			input:    uint64(math.MaxUint64),
-			expected: duckdb.Union{Tag: "str", Value: "18446744073709551615"},
-		},
-		{
-			name:     "complex struct",
-			input:    struct{ Name string }{Name: "test"},
-			expected: duckdb.Union{Tag: "json", Value: mustMarshal(struct{ Name string }{Name: "test"})},
-		},
-		{
-			name:     "string array",
-			input:    []string{"one", "two", "three"},
-			expected: duckdb.Union{Tag: "json", Value: mustMarshal([]string{"one", "two", "three"})},
-		},
-		{
-			name:     "mixed array",
-			input:    []any{"string", 42, true},
-			expected: duckdb.Union{Tag: "json", Value: mustMarshal([]any{"string", 42, true})},
-		},
-		{
-			name:     "nested map",
-			input:    map[string]any{"key": "value", "nested": map[string]any{"inner": 42}},
-			expected: duckdb.Union{Tag: "json", Value: mustMarshal(map[string]any{"key": "value", "nested": map[string]any{"inner": 42}})},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := toDbLogBody(tt.input)
-			assert.Equal(t, tt.expected.Tag, result.Tag, "tag mismatch")
-			assert.Equal(t, tt.expected.Value, result.Value, "value mismatch")
-		})
-	}
-}
 
 // createTestLogs creates a comprehensive set of test logs
 func createTestLogs(baseTime int64) []logs.LogData {
@@ -177,7 +23,7 @@ func createTestLogs(baseTime int64) []logs.LogData {
 			SpanID:            "root-span",
 			SeverityText:      "INFO",
 			SeverityNumber:    9,
-			Body: map[string]any{
+			Body: logs.Body{Data: map[string]any{
 				"message": "Root operation started",
 				"details": map[string]any{
 					"operation": "root",
@@ -187,9 +33,9 @@ func createTestLogs(baseTime int64) []logs.LogData {
 						"mem": 1024,
 					},
 				},
-			},
+			}},
 			Resource: &resource.ResourceData{
-				Attributes: map[string]any{
+				Attributes: attributes.Attributes{
 					"service.name":    "test-service",
 					"service.version": "1.0.0",
 				},
@@ -198,10 +44,10 @@ func createTestLogs(baseTime int64) []logs.LogData {
 			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
-				Attributes:             map[string]any{},
+				Attributes:             attributes.Attributes{},
 				DroppedAttributesCount: 0,
 			},
-			Attributes: map[string]any{
+			Attributes: attributes.Attributes{
 				"log.string": "root-log",
 				"log.int":    int64(42),
 				"log.float":  float64(3.14),
@@ -220,9 +66,9 @@ func createTestLogs(baseTime int64) []logs.LogData {
 			SpanID:            "child-span",
 			SeverityText:      "ERROR",
 			SeverityNumber:    17,
-			Body:              "Child operation failed",
+			Body:              logs.Body{Data: "Child operation failed"},
 			Resource: &resource.ResourceData{
-				Attributes: map[string]any{
+				Attributes: attributes.Attributes{
 					"service.name":    "test-service",
 					"service.version": "1.0.0",
 				},
@@ -231,10 +77,10 @@ func createTestLogs(baseTime int64) []logs.LogData {
 			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
-				Attributes:             map[string]any{},
+				Attributes:             attributes.Attributes{},
 				DroppedAttributesCount: 0,
 			},
-			Attributes: map[string]any{
+			Attributes: attributes.Attributes{
 				"log.string": "child-log",
 				"log.int":    int64(24),
 				"log.float":  float64(2.71),
@@ -252,18 +98,18 @@ func createTestLogs(baseTime int64) []logs.LogData {
 			SpanID:            "orphaned-span",
 			SeverityText:      "WARN",
 			SeverityNumber:    13,
-			Body:              "Orphaned operation",
+			Body:              logs.Body{Data: "Orphaned operation"},
 			Resource: &resource.ResourceData{
-				Attributes:             map[string]any{},
+				Attributes:             attributes.Attributes{},
 				DroppedAttributesCount: 0,
 			},
 			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
-				Attributes:             map[string]any{},
+				Attributes:             attributes.Attributes{},
 				DroppedAttributesCount: 0,
 			},
-			Attributes: map[string]any{
+			Attributes: attributes.Attributes{
 				"log.string": "orphaned-log",
 			},
 			DroppedAttributesCount: 0,
@@ -275,16 +121,16 @@ func createTestLogs(baseTime int64) []logs.LogData {
 
 // TestLogSuite runs a comprehensive suite of tests on a set of logs
 func TestLogSuite(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
 	logs := createTestLogs(baseTime)
-	err := helper.store.AddLogs(helper.ctx, logs)
+	err := helper.Store.AddLogs(helper.Ctx, logs)
 	assert.NoError(t, err, "failed to add test logs")
 
 	t.Run("LogOrdering", func(t *testing.T) {
-		allLogs, err := helper.store.GetLogs(helper.ctx)
+		allLogs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 		assert.Len(t, allLogs, 3, "should have three logs")
 
@@ -296,7 +142,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogSeverity", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log severity (middle)
@@ -313,17 +159,17 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogBody", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log body
-		assert.Equal(t, "Child operation failed", logs[0].Body, "child log body")
+		assert.Equal(t, "Child operation failed", logs[0].Body.Data, "child log body")
 
 		// Verify orphaned log body
-		assert.Equal(t, "Orphaned operation", logs[1].Body, "orphaned log body")
+		assert.Equal(t, "Orphaned operation", logs[1].Body.Data, "orphaned log body")
 
 		// Verify root log body (nested map)
-		rootBody := logs[2].Body.(map[string]any)
+		rootBody := logs[2].Body.Data.(map[string]any)
 		assert.Equal(t, "Root operation started", rootBody["message"], "root log message")
 		details := rootBody["details"].(map[string]any)
 		assert.Equal(t, "root", details["operation"], "root log operation")
@@ -334,7 +180,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogTimestamp", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log timestamp (should remain zero)
@@ -351,7 +197,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogResource", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log resource (newest)
@@ -370,7 +216,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogScope", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify scope is consistent across all logs
@@ -383,7 +229,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogAttributes", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log attributes (newest)
@@ -407,20 +253,20 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogMetadata", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
-		// Verify child log metadata
+		// Verify child log metadata (newest, t+150ms)
 		assert.Equal(t, uint32(1), logs[0].DroppedAttributesCount, "child log dropped count")
 		assert.Equal(t, uint32(1), logs[0].Flags, "child log flags")
 		assert.Equal(t, "child.event", logs[0].EventName, "child log event name")
 
-		// Verify orphaned log metadata
+		// Verify orphaned log metadata (middle, t+100ms)
 		assert.Equal(t, uint32(0), logs[1].DroppedAttributesCount, "orphaned log dropped count")
 		assert.Equal(t, uint32(0), logs[1].Flags, "orphaned log flags")
 		assert.Equal(t, "orphaned.event", logs[1].EventName, "orphaned log event name")
 
-		// Verify root log metadata
+		// Verify root log metadata (oldest, t+0ms)
 		assert.Equal(t, uint32(0), logs[2].DroppedAttributesCount, "root log dropped count")
 		assert.Equal(t, uint32(0), logs[2].Flags, "root log flags")
 		assert.Equal(t, "root.event", logs[2].EventName, "root log event name")
@@ -428,25 +274,25 @@ func TestLogSuite(t *testing.T) {
 
 	t.Run("LogsByTraceSpan", func(t *testing.T) {
 		// Test getting logs for root span
-		rootLogs, err := helper.store.GetLogsByTraceSpan(helper.ctx, "test-trace", "root-span")
+		rootLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "test-trace", "root-span")
 		assert.NoError(t, err)
 		assert.Len(t, rootLogs, 1, "should have one root span log")
 		assert.Equal(t, "root-span", rootLogs[0].SpanID, "root span log ID")
 
 		// Test getting logs for child span
-		childLogs, err := helper.store.GetLogsByTraceSpan(helper.ctx, "test-trace", "child-span")
+		childLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "test-trace", "child-span")
 		assert.NoError(t, err)
 		assert.Len(t, childLogs, 1, "should have one child span log")
 		assert.Equal(t, "child-span", childLogs[0].SpanID, "child span log ID")
 
 		// Test getting logs for orphaned span
-		orphanedLogs, err := helper.store.GetLogsByTraceSpan(helper.ctx, "test-trace", "orphaned-span")
+		orphanedLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "test-trace", "orphaned-span")
 		assert.NoError(t, err)
 		assert.Len(t, orphanedLogs, 1, "should have one orphaned span log")
 		assert.Equal(t, "orphaned-span", orphanedLogs[0].SpanID, "orphaned span log ID")
 
 		// Test getting logs for non-existent trace/span
-		nonExistentLogs, err := helper.store.GetLogsByTraceSpan(helper.ctx, "non-existent-trace", "non-existent-span")
+		nonExistentLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "non-existent-trace", "non-existent-span")
 		assert.NoError(t, err)
 		assert.Empty(t, nonExistentLogs, "should have no logs for non-existent trace/span")
 	})
@@ -454,25 +300,25 @@ func TestLogSuite(t *testing.T) {
 
 // TestLogNotFound verifies error handling for non-existent log IDs
 func TestLogNotFound(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
-	_, err := helper.store.GetLog(helper.ctx, "non-existent-log")
+	_, err := helper.Store.GetLog(helper.Ctx, "non-existent-log")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), ErrLogIDNotFound.Error())
 }
 
 // TestEmptyLogs verifies handling of empty log lists and empty stores
 func TestEmptyLogs(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	// Test adding empty log list
-	err := helper.store.AddLogs(helper.ctx, []logs.LogData{})
+	err := helper.Store.AddLogs(helper.Ctx, []logs.LogData{})
 	assert.NoError(t, err)
 
 	// Test getting logs from empty store
-	logs, err := helper.store.GetLogs(helper.ctx)
+	logs, err := helper.Store.GetLogs(helper.Ctx)
 	assert.NoError(t, err)
 	assert.Empty(t, logs)
 }

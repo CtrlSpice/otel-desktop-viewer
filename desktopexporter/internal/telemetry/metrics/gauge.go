@@ -4,18 +4,19 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 // GaugeDataPoint represents a gauge metric data point
 type GaugeDataPoint struct {
-	Timestamp  int64          `json:"-"`
-	StartTime  int64          `json:"-"`
-	Attributes map[string]any `json:"attributes"`
-	Flags      uint32         `json:"flags"`
-	ValueType  string         `json:"valueType"`
-	Value      float64        `json:"value"`
-	Exemplars  []Exemplar     `json:"exemplars,omitempty"`
+	Timestamp  int64                 `json:"-"`
+	StartTime  int64                 `json:"-"`
+	Attributes attributes.Attributes `json:"attributes"`
+	Flags      uint32                `json:"flags"`
+	ValueType  string                `json:"valueType"`
+	Value      float64               `json:"value"`
+	Exemplars  []Exemplar            `json:"exemplars,omitempty"`
 }
 
 // extractGaugeDataPoints extracts gauge data points from OpenTelemetry number data point slices
@@ -26,7 +27,7 @@ func extractGaugeDataPoints(source pmetric.Gauge) []MetricDataPoint {
 		point := GaugeDataPoint{
 			Timestamp:  sourcePoint.Timestamp().AsTime().UnixNano(),
 			StartTime:  sourcePoint.StartTimestamp().AsTime().UnixNano(),
-			Attributes: sourcePoint.Attributes().AsRaw(),
+			Attributes: attributes.Attributes(sourcePoint.Attributes().AsRaw()),
 			Flags:      uint32(sourcePoint.Flags()),
 			ValueType:  sourcePoint.ValueType().String(),
 			Value:      sourcePoint.DoubleValue(),
