@@ -2,9 +2,11 @@ package metrics
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
+	"github.com/mitchellh/mapstructure"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
@@ -70,4 +72,24 @@ func (dataPoint HistogramDataPoint) MarshalJSON() ([]byte, error) {
 		Count:             strconv.FormatUint(dataPoint.Count, 10),
 		BucketCounts:      bucketCountsStr,
 	})
+}
+
+func (dataPoint *HistogramDataPoint) Scan(src any) error {
+	if src == nil {
+		return nil
+	}
+
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		DecodeHook: attributes.AttributesDecodeHook,
+		Result:     dataPoint,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create decoder: %w", err)
+	}
+
+	if err := decoder.Decode(src); err != nil {
+		return fmt.Errorf("failed to decode HistogramDataPoint: %w", err)
+	}
+
+	return nil
 }

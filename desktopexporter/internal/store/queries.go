@@ -159,7 +159,6 @@ var TableCreationQueries = []string{
 		Name VARCHAR,
 		Description VARCHAR,
 		Unit VARCHAR,
-		Type MetricType,
 		DataPoints dataPoints,
 		ResourceAttributes MAP(VARCHAR, attribute),
 		ResourceDroppedAttributesCount UINTEGER,
@@ -264,7 +263,7 @@ const (
 // Metrics queries
 const (
 	SelectMetrics = `
-		SELECT Name, Description, Unit, Type, DataPoints, ResourceAttributes, 
+		SELECT Name, Description, Unit, DataPoints, ResourceAttributes, 
 		       ResourceDroppedAttributesCount, ScopeName, ScopeVersion, ScopeAttributes,
 		       ScopeDroppedAttributesCount, Received
 		FROM metrics
@@ -272,7 +271,7 @@ const (
 	`
 
 	SelectMetric = `
-		SELECT Name, Description, Unit, Type, DataPoints, ResourceAttributes, 
+		SELECT Name, Description, Unit, DataPoints, ResourceAttributes, 
 		       ResourceDroppedAttributesCount, ScopeName, ScopeVersion, ScopeAttributes,
 		       ScopeDroppedAttributesCount, Received
 		FROM metrics WHERE MetricID = ?

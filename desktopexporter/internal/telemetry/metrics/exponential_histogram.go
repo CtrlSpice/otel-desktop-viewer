@@ -2,16 +2,18 @@ package metrics
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
+	"github.com/mitchellh/mapstructure"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 // Buckets represents histogram buckets
 type Buckets struct {
-	BucketOffset int32    `json:"bucketOffset" db:"bucketOffset"`
-	BucketCounts []uint64 `json:"bucketCounts" db:"bucketCounts"`
+	BucketOffset int32    `json:"bucketOffset"`
+	BucketCounts []uint64 `json:"bucketCounts"`
 }
 
 // ExponentialHistogramDataPoint represents an exponential histogram metric data point
@@ -95,4 +97,24 @@ func (buckets Buckets) MarshalJSON() ([]byte, error) {
 		Alias:        Alias(buckets),
 		BucketCounts: bucketCountsStr,
 	})
+}
+
+func (dataPoint *ExponentialHistogramDataPoint) Scan(src any) error {
+	if src == nil {
+		return nil
+	}
+
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		DecodeHook: attributes.AttributesDecodeHook,
+		Result:     dataPoint,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create decoder: %w", err)
+	}
+
+	if err := decoder.Decode(src); err != nil {
+		return fmt.Errorf("failed to decode ExponentialHistogramDataPoint: %w", err)
+	}
+
+	return nil
 }

@@ -85,34 +85,6 @@ func (body *Body) Scan(src any) error {
 		}
 		body.Data = v.Value
 		return nil
-	case map[string]interface{}:
-		// Handle case where AppenderWrapper converted duckdb.Union to map[string]interface{}
-		if tag, hasTag := v["tag"].(string); hasTag {
-			if value, hasValue := v["value"]; hasValue {
-				if tag == "json" {
-					strValue, ok := value.(string)
-					if !ok {
-						log.Printf(errors.WarnJSONUnmarshal, fmt.Sprintf(errors.ErrJSONValueType, value))
-						body.Data = value
-						return nil
-					}
-
-					var result any
-					if err := json.Unmarshal([]byte(strValue), &result); err != nil {
-						log.Printf(errors.WarnJSONUnmarshal, err)
-						body.Data = value
-						return nil
-					}
-					body.Data = result
-					return nil
-				}
-				body.Data = value
-				return nil
-			}
-		}
-		// Fallback: treat the whole map as the body data
-		body.Data = v
-		return nil
 	case nil:
 		body.Data = nil
 		return nil

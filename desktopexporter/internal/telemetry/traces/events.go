@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
+	"github.com/mitchellh/mapstructure"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -54,47 +55,22 @@ func (eventData EventData) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// Scan converts a DuckDB struct representation back to EventData
-func (eventData *EventData) Scan(src any) error {
-	switch v := src.(type) {
-	case map[string]any:
-		if name, ok := v["Name"].(string); ok {
-			eventData.Name = name
-		}
-		if timestamp, ok := v["Timestamp"].(int64); ok {
-			eventData.Timestamp = timestamp
-		}
-		if droppedCount, ok := v["DroppedAttributesCount"].(uint32); ok {
-			eventData.DroppedAttributesCount = droppedCount
-		}
-		// Handle Attributes conversion using its Scan method
-		if attrsRaw, ok := v["Attributes"]; ok {
-			if err := eventData.Attributes.Scan(attrsRaw); err != nil {
-				return fmt.Errorf("failed to scan Attributes: %w", err)
-			}
-		}
-		return nil
-	case nil:
-		*eventData = EventData{}
-		return nil
-	default:
-		return fmt.Errorf("EventData: cannot scan from %T", src)
-	}
-}
-
 // Scan converts a DuckDB array representation back to Events
 func (eventDataSlice *Events) Scan(src any) error {
 	switch v := src.(type) {
 	case []any:
-		events := make([]EventData, len(v))
-		for i, item := range v {
-			var event EventData
-			if err := event.Scan(item); err != nil {
-				return fmt.Errorf("failed to scan event %d: %w", i, err)
-			}
-			events[i] = event
+		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+			DecodeHook: attributes.AttributesDecodeHook,
+			Result:     eventDataSlice,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create decoder: %w", err)
 		}
-		*eventDataSlice = Events(events)
+
+		if err := decoder.Decode(v); err != nil {
+			return fmt.Errorf("failed to decode Events: %w", err)
+		}
+
 		return nil
 	case nil:
 		*eventDataSlice = Events{}

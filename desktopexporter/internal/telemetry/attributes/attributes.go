@@ -107,6 +107,18 @@ func (attrs *Attributes) Scan(src any) error {
 	return nil
 }
 
+// AttributesDecodeHook is a mapstructure decode hook that handles attributes.Attributes conversion
+func AttributesDecodeHook(from, to reflect.Type, data any) (any, error) {
+	if to == reflect.TypeOf(Attributes{}) {
+		var attrs Attributes
+		if err := attrs.Scan(data); err != nil {
+			return nil, err
+		}
+		return attrs, nil
+	}
+	return data, nil
+}
+
 // getListTypeTag examines the elements of a []any slice and returns the appropriate type tag
 // in order to store our list as a type supported by our attribute UNION in DuckDB.
 func getListTypeTag(list []any) (string, error) {

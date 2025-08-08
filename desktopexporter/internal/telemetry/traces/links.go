@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
+	"github.com/mitchellh/mapstructure"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -43,50 +44,22 @@ func aggregateLinkData(source ptrace.SpanLink) LinkData {
 	}
 }
 
-// Scan converts a DuckDB struct representation back to LinkData
-func (linkData *LinkData) Scan(src any) error {
-	switch v := src.(type) {
-	case map[string]any:
-		if traceID, ok := v["TraceID"].(string); ok {
-			linkData.TraceID = traceID
-		}
-		if spanID, ok := v["SpanID"].(string); ok {
-			linkData.SpanID = spanID
-		}
-		if traceState, ok := v["TraceState"].(string); ok {
-			linkData.TraceState = traceState
-		}
-		if droppedCount, ok := v["DroppedAttributesCount"].(uint32); ok {
-			linkData.DroppedAttributesCount = droppedCount
-		}
-		// Handle Attributes conversion using its Scan method
-		if attrsRaw, ok := v["Attributes"]; ok {
-			if err := linkData.Attributes.Scan(attrsRaw); err != nil {
-				return fmt.Errorf("failed to scan Attributes: %w", err)
-			}
-		}
-		return nil
-	case nil:
-		*linkData = LinkData{}
-		return nil
-	default:
-		return fmt.Errorf("LinkData: cannot scan from %T", src)
-	}
-}
-
 // Scan converts a DuckDB array representation back to Links
 func (links *Links) Scan(src any) error {
 	switch v := src.(type) {
 	case []any:
-		linkSlice := make([]LinkData, len(v))
-		for i, item := range v {
-			var link LinkData
-			if err := link.Scan(item); err != nil {
-				return fmt.Errorf("failed to scan link %d: %w", i, err)
-			}
-			linkSlice[i] = link
+		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+			DecodeHook: attributes.AttributesDecodeHook,
+			Result:     links,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create decoder: %w", err)
 		}
-		*links = Links(linkSlice)
+
+		if err := decoder.Decode(v); err != nil {
+			return fmt.Errorf("failed to decode Links: %w", err)
+		}
+
 		return nil
 	case nil:
 		*links = Links{}

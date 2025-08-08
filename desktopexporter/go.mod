@@ -10,6 +10,7 @@ require (
 
 require (
 	github.com/marcboeker/go-duckdb/v2 v2.3.0
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/collector/pdata v1.32.0
 )

@@ -33,10 +33,10 @@ func TestMetricExtraction(t *testing.T) {
 				assert.Equal(t, "memory.usage", gaugeMetric.Name)
 				assert.Equal(t, "Current memory usage", gaugeMetric.Description)
 				assert.Equal(t, "bytes", gaugeMetric.Unit)
-				assert.Equal(t, "Gauge", gaugeMetric.Type)
+				assert.Equal(t, MetricTypeGauge, gaugeMetric.DataPoints.Type)
 
 				// Validate gauge data point
-				gaugeDataPoint := gaugeMetric.DataPoints[0].(GaugeDataPoint)
+				gaugeDataPoint := gaugeMetric.DataPoints.Points[0].(GaugeDataPoint)
 				assert.Equal(t, time.Date(2023, 02, 01, 20, 25, 36, 179472007, time.UTC), time.Unix(0, gaugeDataPoint.Timestamp).In(time.UTC))
 				assert.Equal(t, uint32(0), gaugeDataPoint.Flags)
 				assert.Equal(t, "Double", gaugeDataPoint.ValueType)
@@ -59,10 +59,10 @@ func TestMetricExtraction(t *testing.T) {
 				assert.Equal(t, "requests.total", sumMetric.Name)
 				assert.Equal(t, "Total requests processed", sumMetric.Description)
 				assert.Equal(t, "requests", sumMetric.Unit)
-				assert.Equal(t, "Sum", sumMetric.Type)
+				assert.Equal(t, MetricTypeSum, sumMetric.DataPoints.Type)
 
 				// Validate sum data point
-				sumDataPoint := sumMetric.DataPoints[0].(SumDataPoint)
+				sumDataPoint := sumMetric.DataPoints.Points[0].(SumDataPoint)
 				assert.Equal(t, time.Date(2023, 02, 01, 20, 25, 36, 179472007, time.UTC), time.Unix(0, sumDataPoint.Timestamp).In(time.UTC))
 				assert.Equal(t, uint32(0), sumDataPoint.Flags)
 				assert.Equal(t, 1500.0, sumDataPoint.Value)
@@ -86,10 +86,10 @@ func TestMetricExtraction(t *testing.T) {
 				assert.Equal(t, "request.duration", histogramMetric.Name)
 				assert.Equal(t, "Request duration distribution", histogramMetric.Description)
 				assert.Equal(t, "seconds", histogramMetric.Unit)
-				assert.Equal(t, "Histogram", histogramMetric.Type)
+				assert.Equal(t, MetricTypeHistogram, histogramMetric.DataPoints.Type)
 
 				// Validate histogram data point
-				histogramDataPoint := histogramMetric.DataPoints[0].(HistogramDataPoint)
+				histogramDataPoint := histogramMetric.DataPoints.Points[0].(HistogramDataPoint)
 				assert.Equal(t, time.Date(2023, 02, 01, 20, 25, 36, 179472007, time.UTC), time.Unix(0, histogramDataPoint.Timestamp).In(time.UTC))
 				assert.Equal(t, uint32(0), histogramDataPoint.Flags)
 				assert.Equal(t, uint64(100), histogramDataPoint.Count)
@@ -122,10 +122,10 @@ func TestMetricExtraction(t *testing.T) {
 				assert.Equal(t, "response.size", expHistogramMetric.Name)
 				assert.Equal(t, "Response size distribution", expHistogramMetric.Description)
 				assert.Equal(t, "bytes", expHistogramMetric.Unit)
-				assert.Equal(t, "ExponentialHistogram", expHistogramMetric.Type)
+				assert.Equal(t, MetricTypeExponentialHistogram, expHistogramMetric.DataPoints.Type)
 
 				// Validate exponential histogram data point
-				expHistogramDataPoint := expHistogramMetric.DataPoints[0].(ExponentialHistogramDataPoint)
+				expHistogramDataPoint := expHistogramMetric.DataPoints.Points[0].(ExponentialHistogramDataPoint)
 				assert.Equal(t, time.Date(2023, 02, 01, 20, 25, 36, 179472007, time.UTC), time.Unix(0, expHistogramDataPoint.Timestamp).In(time.UTC))
 				assert.Equal(t, uint32(0), expHistogramDataPoint.Flags)
 				assert.Equal(t, uint64(50), expHistogramDataPoint.Count)
@@ -194,17 +194,20 @@ func TestMetricMarshaling(t *testing.T) {
 				assert.Equal(t, metric.Name, result["name"])
 				assert.Equal(t, metric.Description, result["description"])
 				assert.Equal(t, metric.Unit, result["unit"])
-				assert.Equal(t, metric.Type, result["type"])
 			},
 		},
 		{
 			name: "validates data points",
 			validate: func(t *testing.T, result map[string]any) {
-				dataPoints := result["dataPoints"].([]any)
-				assert.Len(t, dataPoints, len(metric.DataPoints))
+				dataPoints := result["dataPoints"].(map[string]any)
+
+				// Check type is nested in dataPoints
+				assert.Equal(t, string(metric.DataPoints.Type), dataPoints["type"])
+
+				assert.Len(t, dataPoints["points"], len(metric.DataPoints.Points))
 
 				// Validate first data point timestamp format
-				firstDataPoint := dataPoints[0].(map[string]any)
+				firstDataPoint := dataPoints["points"].([]any)[0].(map[string]any)
 				timestamp := firstDataPoint["timestamp"].(string)
 				expectedTimestamp := "1675283136179472007"
 				assert.Equal(t, expectedTimestamp, timestamp, "data point timestamp should be encoded as string nanoseconds")
@@ -227,7 +230,7 @@ func TestDataPointMarshaling(t *testing.T) {
 	}{
 		{
 			name:      "validates gauge data point marshaling",
-			dataPoint: metrics[0].DataPoints[0],
+			dataPoint: metrics[0].DataPoints.Points[0],
 			validate: func(t *testing.T, result map[string]any) {
 				// Validate timestamp format
 				timestamp := result["timestamp"].(string)
@@ -246,7 +249,7 @@ func TestDataPointMarshaling(t *testing.T) {
 		},
 		{
 			name:      "validates sum data point marshaling",
-			dataPoint: metrics[1].DataPoints[0],
+			dataPoint: metrics[1].DataPoints.Points[0],
 			validate: func(t *testing.T, result map[string]any) {
 				// Validate timestamp format
 				timestamp := result["timestamp"].(string)
@@ -261,7 +264,7 @@ func TestDataPointMarshaling(t *testing.T) {
 		},
 		{
 			name:      "validates histogram data point marshaling",
-			dataPoint: metrics[2].DataPoints[0],
+			dataPoint: metrics[2].DataPoints.Points[0],
 			validate: func(t *testing.T, result map[string]any) {
 				// Validate timestamp format
 				timestamp := result["timestamp"].(string)
@@ -287,7 +290,7 @@ func TestDataPointMarshaling(t *testing.T) {
 		},
 		{
 			name:      "validates exponential histogram data point marshaling",
-			dataPoint: metrics[3].DataPoints[0],
+			dataPoint: metrics[3].DataPoints.Points[0],
 			validate: func(t *testing.T, result map[string]any) {
 				// Validate timestamp format
 				timestamp := result["timestamp"].(string)
@@ -310,7 +313,7 @@ func TestDataPointMarshaling(t *testing.T) {
 
 				// Validate positive buckets
 				positive := result["positive"].(map[string]any)
-				assert.Equal(t, float64(1), positive["offset"])
+				assert.Equal(t, float64(1), positive["bucketOffset"])
 				positiveBucketCounts := positive["bucketCounts"].([]any)
 				expectedPositiveBucketCounts := []string{"5", "10", "15", "10", "5"}
 				for i, expected := range expectedPositiveBucketCounts {
@@ -319,7 +322,7 @@ func TestDataPointMarshaling(t *testing.T) {
 
 				// Validate negative buckets
 				negative := result["negative"].(map[string]any)
-				assert.Equal(t, float64(0), negative["offset"])
+				assert.Equal(t, float64(0), negative["bucketOffset"])
 				negativeBucketCounts := negative["bucketCounts"].([]any)
 				expectedNegativeBucketCounts := []string{"2", "3"}
 				for i, expected := range expectedNegativeBucketCounts {

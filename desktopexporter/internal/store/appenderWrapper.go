@@ -42,7 +42,7 @@ func convertValue(arg any) (any, error) {
 			return nil, nil
 		}
 		result := make([]any, v.Len())
-		for i := 0; i < v.Len(); i++ {
+		for i := range v.Len() {
 			element := v.Index(i).Interface()
 			// Check if the element implements driver.Valuer
 			if valuer, ok := element.(driver.Valuer); ok {
@@ -63,9 +63,13 @@ func convertValue(arg any) (any, error) {
 		return result, nil
 
 	case reflect.Struct:
-		// Don't process duckdb.Union types - pass them through as-is
-		if _, ok := arg.(duckdb.Union); ok {
-			return arg, nil
+		// Handle duckdb.Union types specially - process Value field recursively
+		if union, ok := arg.(duckdb.Union); ok {
+			convertedValue, err := convertValue(union.Value)
+			if err != nil {
+				return nil, err
+			}
+			return duckdb.Union{Tag: union.Tag, Value: convertedValue}, nil
 		}
 
 		// Create a new struct with the same shape but converted fields
@@ -101,9 +105,10 @@ func convertValue(arg any) (any, error) {
 			}
 
 			// Create struct field with original name and converted type
+			convertedType := reflect.TypeOf(converted)
 			fields = append(fields, reflect.StructField{
 				Name: fieldType.Name,
-				Type: reflect.TypeOf(converted),
+				Type: convertedType,
 				Tag:  fieldType.Tag,
 			})
 			values = append(values, converted)

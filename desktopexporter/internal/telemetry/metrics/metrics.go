@@ -23,8 +23,7 @@ type MetricData struct {
 	Name        string                 `json:"name,omitempty"`
 	Description string                 `json:"description,omitempty"`
 	Unit        string                 `json:"unit,omitempty"`
-	Type        string                 `json:"type,omitempty"`
-	DataPoints  []MetricDataPoint      `json:"dataPoints"`
+	DataPoints  DataPoints             `json:"dataPoints"`
 	Resource    *resource.ResourceData `json:"resource"`
 	Scope       *scope.ScopeData       `json:"scope"`
 	Received    int64                  `json:"-"`
@@ -56,21 +55,22 @@ func aggregateMetricsData(source pmetric.Metric, scopeData *scope.ScopeData, res
 		Name:        source.Name(),
 		Description: source.Description(),
 		Unit:        source.Unit(),
-		Type:        source.Type().String(),
 		Received:    time.Now().UnixNano(),
 		Resource:    resourceData,
 		Scope:       scopeData,
 	}
 
 	switch source.Type() {
+	case pmetric.MetricTypeEmpty:
+		metricsData.DataPoints = DataPoints{Type: MetricTypeEmpty, Points: []MetricDataPoint{}}
 	case pmetric.MetricTypeGauge:
-		metricsData.DataPoints = extractGaugeDataPoints(source.Gauge())
+		metricsData.DataPoints = DataPoints{Type: MetricTypeGauge, Points: extractGaugeDataPoints(source.Gauge())}
 	case pmetric.MetricTypeSum:
-		metricsData.DataPoints = extractSumDataPoints(source.Sum())
+		metricsData.DataPoints = DataPoints{Type: MetricTypeSum, Points: extractSumDataPoints(source.Sum())}
 	case pmetric.MetricTypeHistogram:
-		metricsData.DataPoints = extractHistogramDataPoints(source.Histogram())
+		metricsData.DataPoints = DataPoints{Type: MetricTypeHistogram, Points: extractHistogramDataPoints(source.Histogram())}
 	case pmetric.MetricTypeExponentialHistogram:
-		metricsData.DataPoints = extractExponentialHistogramDataPoints(source.ExponentialHistogram())
+		metricsData.DataPoints = DataPoints{Type: MetricTypeExponentialHistogram, Points: extractExponentialHistogramDataPoints(source.ExponentialHistogram())}
 	case pmetric.MetricTypeSummary:
 		log.Printf("%v", errors.WarnSummaryMetricsDeprecated)
 	default:
@@ -105,7 +105,7 @@ func (metricData MetricData) ID() string {
 	buf = fmt.Appendf(buf, "%s|%s|%s|%s",
 		metricData.Name,
 		resourceName,
-		metricData.Type,
+		metricData.DataPoints.Type,
 		strconv.FormatInt(metricData.Received, 10),
 	)
 	hash.Write(buf)
