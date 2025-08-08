@@ -12,13 +12,6 @@ var TypeCreationQueries = []string{
 		double_list DOUBLE[],
 		boolean_list BOOLEAN[]
 	)`,
-	`CREATE TYPE metricType AS ENUM(
-		'Empty', 
-		'Gauge', 
-		'Sum', 
-		'Histogram', 
-		'ExponentialHistogram'
-	)`,
 	`CREATE TYPE exemplar AS STRUCT(
 		Timestamp BIGINT,
 		Value DOUBLE,
@@ -253,13 +246,6 @@ const (
     `
 )
 
-// Maintenance queries
-const (
-	TruncateSpans   = `TRUNCATE TABLE spans`
-	TruncateLogs    = `TRUNCATE TABLE logs`
-	TruncateMetrics = `TRUNCATE TABLE metrics`
-)
-
 // Metrics queries
 const (
 	SelectMetrics = `
@@ -276,4 +262,11 @@ const (
 		       ScopeDroppedAttributesCount, Received
 		FROM metrics WHERE MetricID = ?
 	`
+)
+
+// Maintenance queries
+const (
+	TruncateSpans   = `TRUNCATE TABLE spans`
+	TruncateLogs    = `TRUNCATE TABLE logs`
+	TruncateMetrics = `TRUNCATE TABLE metrics`
 )

@@ -252,7 +252,7 @@ func TestLogsHandler(t *testing.T) {
 		assert.Equal(t, "1234567890", testLogs.Logs[0].TraceID)
 		assert.Equal(t, "12345", testLogs.Logs[0].SpanID)
 		assert.Equal(t, "INFO", testLogs.Logs[0].SeverityText)
-		assert.Equal(t, "test log message", testLogs.Logs[0].Body)
+		assert.Equal(t, "test log message", testLogs.Logs[0].Body.Data)
 		assert.Equal(t, "pumpkin.pie", testLogs.Logs[0].Resource.Attributes["service.name"])
 	})
 }
@@ -296,7 +296,7 @@ func TestLogsByTraceHandler(t *testing.T) {
 		assert.Equal(t, "1234567890", testLogs.Logs[0].TraceID)
 		assert.Equal(t, "12345", testLogs.Logs[0].SpanID)
 		assert.Equal(t, "INFO", testLogs.Logs[0].SeverityText)
-		assert.Equal(t, "test log message", testLogs.Logs[0].Body)
+		assert.Equal(t, "test log message", testLogs.Logs[0].Body.Data)
 	})
 }
 
