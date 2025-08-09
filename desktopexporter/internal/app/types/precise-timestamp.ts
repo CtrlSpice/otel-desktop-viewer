@@ -5,10 +5,21 @@ export class PreciseTimestamp {
 
   nanoseconds: bigint;
 
-  static fromJSON(json: { milliseconds: number; nanoseconds: number }): PreciseTimestamp {
-    return new PreciseTimestamp(
-      BigInt(json.milliseconds) * BigInt(1_000_000) + BigInt(json.nanoseconds)
-    );
+  static fromJSON(json: { milliseconds: number; nanoseconds: number } | string): PreciseTimestamp {
+    // Handle string format from backend (nanoseconds as string)
+    if (typeof json === 'string') {
+      return new PreciseTimestamp(BigInt(json));
+    }
+    
+    // Handle object format (legacy or alternative format)
+    if (json && typeof json === 'object' && json.milliseconds !== undefined && json.nanoseconds !== undefined) {
+      return new PreciseTimestamp(
+        BigInt(json.milliseconds) * BigInt(1_000_000) + BigInt(json.nanoseconds)
+      );
+    }
+    
+    // Handle undefined/null case
+    throw new Error(`Invalid timestamp format: ${JSON.stringify(json)}`);
   }
 
   toString(): string {

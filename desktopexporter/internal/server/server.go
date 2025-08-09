@@ -65,6 +65,13 @@ func (s *Server) Handler() http.Handler {
 		router.HandleFunc("GET /api/clearLogs", s.clearLogsHandler)
 	}
 
+	// Feature flag for metrics frontend route
+	if os.Getenv("ENABLE_METRICS") == "true" {
+		router.HandleFunc("GET /metrics", s.indexHandler)
+		router.HandleFunc("GET /api/metrics", s.metricsHandler)
+		router.HandleFunc("GET /api/clearMetrics", s.clearMetricsHandler)
+	}
+
 	if s.staticDir != "" {
 		router.Handle("/", http.FileServer(http.Dir(s.staticDir)))
 	} else {
@@ -107,6 +114,15 @@ func (s *Server) clearLogsHandler(writer http.ResponseWriter, request *http.Requ
 	if err := s.Store.ClearLogs(request.Context()); err != nil {
 		log.Printf("Error clearing logs: %v", err)
 		http.Error(writer, "Failed to clear logs", http.StatusInternalServerError)
+		return
+	}
+	writer.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) clearMetricsHandler(writer http.ResponseWriter, request *http.Request) {
+	if err := s.Store.ClearMetrics(request.Context()); err != nil {
+		log.Printf("Error clearing metrics: %v", err)
+		http.Error(writer, "Failed to clear metrics", http.StatusInternalServerError)
 		return
 	}
 	writer.WriteHeader(http.StatusOK)
@@ -163,6 +179,21 @@ func (s *Server) logsByTraceHandler(writer http.ResponseWriter, request *http.Re
 	}
 }
 
+func (s *Server) metricsHandler(writer http.ResponseWriter, request *http.Request) {
+	metricsData, err := s.Store.GetMetrics(request.Context())
+	if err != nil {
+		log.Printf("Error getting metrics: %v", err)
+		http.Error(writer, "Failed to retrieve metrics", http.StatusInternalServerError)
+		return
+	}
+
+	if err := writeJSON(writer, metricsData); err != nil {
+		log.Printf("Error writing JSON response: %v", err)
+		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
 func (s *Server) sampleDataHandler(writer http.ResponseWriter, request *http.Request) {
 	sample := telemetry.NewSampleTelemetry()
 	if err := s.Store.AddSpans(request.Context(), sample.Spans); err != nil {
@@ -174,6 +205,12 @@ func (s *Server) sampleDataHandler(writer http.ResponseWriter, request *http.Req
 	if err := s.Store.AddLogs(request.Context(), sample.Logs); err != nil {
 		log.Printf("Error adding sample logs: %v", err)
 		http.Error(writer, "Failed to add sample logs", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.Store.AddMetrics(request.Context(), sample.Metrics); err != nil {
+		log.Printf("Error adding sample metrics: %v", err)
+		http.Error(writer, "Failed to add sample metrics", http.StatusInternalServerError)
 		return
 	}
 
