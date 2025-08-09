@@ -23,7 +23,7 @@ func TestMetricExtraction(t *testing.T) {
 		{
 			name: "extracts correct number of metrics",
 			validate: func(t *testing.T, metrics []MetricData) {
-				assert.Len(t, metrics, 4)
+				assert.Len(t, metrics, 9)
 			},
 		},
 		{
@@ -31,7 +31,7 @@ func TestMetricExtraction(t *testing.T) {
 			validate: func(t *testing.T, metrics []MetricData) {
 				gaugeMetric := metrics[0]
 				assert.Equal(t, "memory.usage", gaugeMetric.Name)
-				assert.Equal(t, "Current memory usage", gaugeMetric.Description)
+				assert.Equal(t, "Current memory usage across different instances", gaugeMetric.Description)
 				assert.Equal(t, "bytes", gaugeMetric.Unit)
 				assert.Equal(t, MetricTypeGauge, gaugeMetric.DataPoints.Type)
 
@@ -57,7 +57,7 @@ func TestMetricExtraction(t *testing.T) {
 			validate: func(t *testing.T, metrics []MetricData) {
 				sumMetric := metrics[1]
 				assert.Equal(t, "requests.total", sumMetric.Name)
-				assert.Equal(t, "Total requests processed", sumMetric.Description)
+				assert.Equal(t, "Total requests processed by endpoint", sumMetric.Description)
 				assert.Equal(t, "requests", sumMetric.Unit)
 				assert.Equal(t, MetricTypeSum, sumMetric.DataPoints.Type)
 
@@ -84,7 +84,7 @@ func TestMetricExtraction(t *testing.T) {
 			validate: func(t *testing.T, metrics []MetricData) {
 				histogramMetric := metrics[2]
 				assert.Equal(t, "request.duration", histogramMetric.Name)
-				assert.Equal(t, "Request duration distribution", histogramMetric.Description)
+				assert.Equal(t, "Request duration distribution across different endpoints", histogramMetric.Description)
 				assert.Equal(t, "seconds", histogramMetric.Unit)
 				assert.Equal(t, MetricTypeHistogram, histogramMetric.DataPoints.Type)
 
@@ -120,7 +120,7 @@ func TestMetricExtraction(t *testing.T) {
 			validate: func(t *testing.T, metrics []MetricData) {
 				expHistogramMetric := metrics[3]
 				assert.Equal(t, "response.size", expHistogramMetric.Name)
-				assert.Equal(t, "Response size distribution", expHistogramMetric.Description)
+				assert.Equal(t, "Response size distribution for different content types", expHistogramMetric.Description)
 				assert.Equal(t, "bytes", expHistogramMetric.Unit)
 				assert.Equal(t, MetricTypeExponentialHistogram, expHistogramMetric.DataPoints.Type)
 
@@ -153,6 +153,143 @@ func TestMetricExtraction(t *testing.T) {
 
 				for key, expected := range expectedAttrs {
 					assert.Equal(t, expected, expHistogramDataPoint.Attributes[key], "exponential histogram attribute %s", key)
+				}
+			},
+		},
+		{
+			name: "validates frontend page load histogram metric",
+			validate: func(t *testing.T, metrics []MetricData) {
+				pageLoadMetric := metrics[4]
+				assert.Equal(t, "page.load.duration", pageLoadMetric.Name)
+				assert.Equal(t, "Page load time distribution by page type", pageLoadMetric.Description)
+				assert.Equal(t, "milliseconds", pageLoadMetric.Unit)
+				assert.Equal(t, MetricTypeHistogram, pageLoadMetric.DataPoints.Type)
+
+				// Validate histogram data point
+				histogramDataPoint := pageLoadMetric.DataPoints.Points[0].(HistogramDataPoint)
+				assert.Equal(t, uint64(200), histogramDataPoint.Count)
+				assert.Equal(t, 4800.0, histogramDataPoint.Sum)
+				assert.Equal(t, 120.0, histogramDataPoint.Min)
+				assert.Equal(t, 850.0, histogramDataPoint.Max)
+
+				expectedAttrs := map[string]any{
+					"page.type":   "home",
+					"browser":     "chrome",
+					"device.type": "desktop",
+				}
+
+				for key, expected := range expectedAttrs {
+					assert.Equal(t, expected, histogramDataPoint.Attributes[key], "page load attribute %s", key)
+				}
+			},
+		},
+		{
+			name: "validates frontend error rate sum metric",
+			validate: func(t *testing.T, metrics []MetricData) {
+				errorRateMetric := metrics[5]
+				assert.Equal(t, "frontend.errors.total", errorRateMetric.Name)
+				assert.Equal(t, "Frontend error count by error type", errorRateMetric.Description)
+				assert.Equal(t, "errors", errorRateMetric.Unit)
+				assert.Equal(t, MetricTypeSum, errorRateMetric.DataPoints.Type)
+
+				// Validate first error data point (JavaScript errors)
+				sumDataPoint := errorRateMetric.DataPoints.Points[0].(SumDataPoint)
+				assert.Equal(t, 15.0, sumDataPoint.Value)
+				assert.Equal(t, true, sumDataPoint.IsMonotonic)
+				assert.Equal(t, "Cumulative", sumDataPoint.AggregationTemporality)
+
+				expectedAttrs := map[string]any{
+					"error.type": "javascript",
+					"browser":    "chrome",
+					"page.route": "/checkout",
+				}
+
+				for key, expected := range expectedAttrs {
+					assert.Equal(t, expected, sumDataPoint.Attributes[key], "error rate attribute %s", key)
+				}
+			},
+		},
+		{
+			name: "validates frontend active users gauge metric",
+			validate: func(t *testing.T, metrics []MetricData) {
+				activeUsersMetric := metrics[6]
+				assert.Equal(t, "frontend.active_users", activeUsersMetric.Name)
+				assert.Equal(t, "Current active users by session type", activeUsersMetric.Description)
+				assert.Equal(t, "users", activeUsersMetric.Unit)
+				assert.Equal(t, MetricTypeGauge, activeUsersMetric.DataPoints.Type)
+
+				// Validate first gauge data point (authenticated users)
+				gaugeDataPoint := activeUsersMetric.DataPoints.Points[0].(GaugeDataPoint)
+				assert.Equal(t, 1250.0, gaugeDataPoint.Value)
+
+				expectedAttrs := map[string]any{
+					"session.type": "authenticated",
+					"user.tier":    "premium",
+				}
+
+				for key, expected := range expectedAttrs {
+					assert.Equal(t, expected, gaugeDataPoint.Attributes[key], "active users attribute %s", key)
+				}
+			},
+		},
+		{
+			name: "validates payment processing histogram metric",
+			validate: func(t *testing.T, metrics []MetricData) {
+				paymentMetric := metrics[7]
+				assert.Equal(t, "payment.processing.duration", paymentMetric.Name)
+				assert.Equal(t, "Payment processing time by payment method", paymentMetric.Description)
+				assert.Equal(t, "milliseconds", paymentMetric.Unit)
+				assert.Equal(t, MetricTypeHistogram, paymentMetric.DataPoints.Type)
+
+				// Validate histogram data point
+				histogramDataPoint := paymentMetric.DataPoints.Points[0].(HistogramDataPoint)
+				assert.Equal(t, uint64(85), histogramDataPoint.Count)
+				assert.Equal(t, 12750.0, histogramDataPoint.Sum)
+				assert.Equal(t, 80.0, histogramDataPoint.Min)
+				assert.Equal(t, 450.0, histogramDataPoint.Max)
+
+				expectedAttrs := map[string]any{
+					"payment.method":   "credit_card",
+					"payment.provider": "stripe",
+					"currency":         "USD",
+				}
+
+				for key, expected := range expectedAttrs {
+					assert.Equal(t, expected, histogramDataPoint.Attributes[key], "payment processing attribute %s", key)
+				}
+			},
+		},
+		{
+			name: "validates payment transaction amount exponential histogram metric",
+			validate: func(t *testing.T, metrics []MetricData) {
+				transactionMetric := metrics[8]
+				assert.Equal(t, "payment.transaction.amount", transactionMetric.Name)
+				assert.Equal(t, "Transaction amount distribution by currency", transactionMetric.Description)
+				assert.Equal(t, "currency_units", transactionMetric.Unit)
+				assert.Equal(t, MetricTypeExponentialHistogram, transactionMetric.DataPoints.Type)
+
+				// Validate exponential histogram data point
+				expHistogramDataPoint := transactionMetric.DataPoints.Points[0].(ExponentialHistogramDataPoint)
+				assert.Equal(t, uint64(120), expHistogramDataPoint.Count)
+				assert.Equal(t, 24580.5, expHistogramDataPoint.Sum)
+				assert.Equal(t, 5.99, expHistogramDataPoint.Min)
+				assert.Equal(t, 1299.99, expHistogramDataPoint.Max)
+				assert.Equal(t, int32(1), expHistogramDataPoint.Scale)
+				assert.Equal(t, uint64(0), expHistogramDataPoint.ZeroCount)
+
+				// Validate positive buckets
+				assert.Equal(t, int32(3), expHistogramDataPoint.Positive.BucketOffset)
+				expectedPositiveBucketCounts := []uint64{20, 35, 40, 20, 5}
+				assert.Equal(t, expectedPositiveBucketCounts, expHistogramDataPoint.Positive.BucketCounts)
+
+				expectedAttrs := map[string]any{
+					"currency":          "USD",
+					"payment.method":    "credit_card",
+					"merchant.category": "retail",
+				}
+
+				for key, expected := range expectedAttrs {
+					assert.Equal(t, expected, expHistogramDataPoint.Attributes[key], "transaction amount attribute %s", key)
 				}
 			},
 		},
