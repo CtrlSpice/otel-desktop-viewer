@@ -15,6 +15,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
+	"github.com/rs/cors"
 )
 
 //go:embed static/*
@@ -35,53 +36,61 @@ func NewServer(endpoint string, dbPath string) *Server {
 		staticDir: getStaticDir(),
 	}
 
-	s.server.Handler = s.Handler()
+	s.server.Handler = s.GetHandler()
 	return &s
 }
 
 func (s *Server) Start() error {
-	defer s.Store.Close()
 	return s.server.ListenAndServe()
 }
 
 func (s *Server) Close() error {
+	defer s.Store.Close()
 	return s.server.Close()
 }
 
-func (s *Server) Handler() http.Handler {
-	router := http.NewServeMux()
-	router.HandleFunc("GET /api/traces", s.tracesHandler)
-	router.HandleFunc("GET /api/traces/{id}", s.traceIDHandler)
-	router.HandleFunc("GET /api/sampleData", s.sampleDataHandler)
-	router.HandleFunc("GET /api/clearTraces", s.clearTracesHandler)
-	router.HandleFunc("GET /traces/{id}", s.indexHandler)
+func (s *Server) GetHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/traces", s.tracesHandler)
+	mux.HandleFunc("GET /api/traces/{id}", s.traceIDHandler)
+	mux.HandleFunc("GET /api/sampleData", s.sampleDataHandler)
+	mux.HandleFunc("GET /api/clearTraces", s.clearTracesHandler)
+	mux.HandleFunc("GET /traces/{id}", s.indexHandler)
 
 	// Feature flag for logs frontend route
 	if os.Getenv("ENABLE_LOGS") == "true" {
-		router.HandleFunc("GET /logs", s.indexHandler)
-		router.HandleFunc("GET /api/logs", s.logsHandler)
-		router.HandleFunc("GET /api/logs/{id}", s.logIDHandler)
-		router.HandleFunc("GET /api/logs/trace/{id}", s.logsByTraceHandler)
-		router.HandleFunc("GET /api/clearLogs", s.clearLogsHandler)
+		mux.HandleFunc("GET /logs", s.indexHandler)
+		mux.HandleFunc("GET /api/logs", s.logsHandler)
+		mux.HandleFunc("GET /api/logs/{id}", s.logIDHandler)
+		mux.HandleFunc("GET /api/logs/trace/{id}", s.logsByTraceHandler)
+		mux.HandleFunc("GET /api/clearLogs", s.clearLogsHandler)
 	}
 
 	// Feature flag for metrics frontend route
 	if os.Getenv("ENABLE_METRICS") == "true" {
-		router.HandleFunc("GET /metrics", s.indexHandler)
-		router.HandleFunc("GET /api/metrics", s.metricsHandler)
-		router.HandleFunc("GET /api/clearMetrics", s.clearMetricsHandler)
+		mux.HandleFunc("GET /metrics", s.indexHandler)
+		mux.HandleFunc("GET /api/metrics", s.metricsHandler)
+		mux.HandleFunc("GET /api/clearMetrics", s.clearMetricsHandler)
 	}
 
 	if s.staticDir != "" {
-		router.Handle("/", http.FileServer(http.Dir(s.staticDir)))
+		mux.Handle("/", http.FileServer(http.Dir(s.staticDir)))
 	} else {
 		staticContent, err := fs.Sub(assets, "static")
 		if err != nil {
 			log.Fatal(err)
 		}
-		router.Handle("/", http.FileServerFS(staticContent))
+		mux.Handle("/", http.FileServerFS(staticContent))
 	}
-	return router
+
+	// CORS for the Vite frontend
+	c := cors.New(cors.Options{
+		AllowedOrigins: []string{"http://*", "https://*"},
+		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders: []string{"*"},
+	})
+
+	return c.Handler(mux)
 }
 
 func (s *Server) tracesHandler(writer http.ResponseWriter, request *http.Request) {
