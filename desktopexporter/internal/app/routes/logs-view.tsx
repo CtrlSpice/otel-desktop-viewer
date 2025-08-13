@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Box, Heading, Button, Text, useColorModeValue } from "@chakra-ui/react";
+import { telemetryAPI } from "../utils/jsonrpc-client";
 
 export default function LogsView() {
   let [logs, setLogs] = useState<any>(null);
@@ -16,11 +17,7 @@ export default function LogsView() {
     try {
       setLoading(true);
       setError(null);
-      let response = await fetch("/api/logs");
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      let data = await response.json();
+      const data = await telemetryAPI.getLogs();
       setLogs(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch logs");

@@ -13,9 +13,7 @@ export type TraceSummary = {
   spanCount: number;
 };
 
-export type TraceSummaries = {
-  traceSummaries: TraceSummary[];
-};
+
 
 export type TraceData = {
   traceID: string;
@@ -92,9 +90,7 @@ export type LogData = {
   eventName: string;
 };
 
-export type Logs = {
-  logs: LogData[];
-};
+
 
 // Helper functions to deserialize timestamps
 export function traceSummaryFromJSON(json: any): TraceSummary {
@@ -108,10 +104,8 @@ export function traceSummaryFromJSON(json: any): TraceSummary {
   };
 }
 
-export function traceSummariesFromJSON(json: any): TraceSummaries {
-  return {
-    traceSummaries: json.traceSummaries.map(traceSummaryFromJSON)
-  };
+export function traceSummariesFromJSON(json: any): TraceSummary[] {
+  return json.map(traceSummaryFromJSON);
 }
 
 export function traceDataFromJSON(json: any): TraceData {
@@ -129,12 +123,10 @@ export function traceDataFromJSON(json: any): TraceData {
   };
 }
 
-export function logsFromJSON(json: any): Logs {
-  return {
-    logs: json.logs.map((log: any) => ({
-      ...log,
-      timestamp: PreciseTimestamp.fromJSON(log.timestamp),
-      observedTimestamp: PreciseTimestamp.fromJSON(log.observedTimestamp)
-    }))
-  };
+export function logsFromJSON(json: any): LogData[] {
+  return json.map((log: any) => ({
+    ...log,
+    timestamp: PreciseTimestamp.fromJSON(log.timestamp),
+    observedTimestamp: PreciseTimestamp.fromJSON(log.observedTimestamp)
+  }));
 }

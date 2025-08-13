@@ -2,7 +2,8 @@ import React from "react";
 import { useLoaderData } from "react-router-dom";
 import { Grid, GridItem, Box, Text, VStack, Divider } from "@chakra-ui/react";
 
-import { TraceData, traceDataFromJSON } from "../types/api-types";
+import { TraceData } from "../types/api-types";
+import { telemetryAPI } from "../utils/jsonrpc-client";
 import { SpanDataStatus, SpanWithUIData } from "../types/ui-types";
 
 import { Header } from "../components/header-view/header";
@@ -12,9 +13,13 @@ import { arrayToTree, TreeItem, RootTreeItem } from "../utils/array-to-tree";
 import { getTraceBounds } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
-  let response = await fetch(`/api/traces/${params.traceID}`);
-  let traceData = await response.json();
-  return traceDataFromJSON(traceData);
+  try {
+    const traceData = await telemetryAPI.getTraceByID(params.traceID);
+    return traceData;
+  } catch (error) {
+    console.error('Failed to load trace:', error);
+    throw error;
+  }
 }
 
 export default function TraceView() {

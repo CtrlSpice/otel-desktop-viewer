@@ -32,5 +32,8 @@
         "singleQuote": false,
         "tabWidth": 2,
         "trailingComma": "all"
+    },
+    "dependencies": {
+        "jsonrpc-ts": "^0.3.0"
     }
 }
