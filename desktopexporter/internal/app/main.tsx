@@ -24,7 +24,7 @@ console.log('Debug: enableMetrics flag at module load:', enableMetrics);
 
 let routeChildren: any[] = [
   {
-    path: "traces/:traceID",     // /traces/123abc
+    path: "traces",     // /traces
     element: <TraceView />,
     loader: traceLoader,
   },

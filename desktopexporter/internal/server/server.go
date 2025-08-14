@@ -46,6 +46,7 @@ func (s *Server) Start() error {
 func (s *Server) initHandler() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.indexHandler)
+	mux.HandleFunc("GET /traces/{id}", s.indexHandler)
 	mux.HandleFunc("POST /rpc", s.rpcHandler)
 	if s.staticDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(s.staticDir)))
