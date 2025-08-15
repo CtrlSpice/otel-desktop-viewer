@@ -1,4 +1,4 @@
-import { TraceSummary, TraceData, LogData } from './api-types';
+import { TraceSummary, TraceData, LogData, MetricData } from './api-types';
 
 // JSON-RPC Service Interface
 // This maps method names to their parameter types
@@ -31,7 +31,7 @@ export type TelemetryServiceReturns = {
   getLogByID: LogData;
   getLogsByTraceID: LogData[];
   clearLogs: string;
-  getMetrics: any[]; // TODO: Define MetricData type
+  getMetrics: MetricData[];
   clearMetrics: string;
   loadSampleData: string;
 };

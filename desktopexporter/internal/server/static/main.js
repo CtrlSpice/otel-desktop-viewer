@@ -58114,6 +58114,38 @@
     return Math.floor(Number(offsetNs * BigInt(100) / totalNs));
   }
 
+  // services/telemetry-service.ts
+  var import_jsonrpc_ts = __toESM(require_jsonrpc_ts());
+  var rpcClient = new import_jsonrpc_ts.RpcClient({
+    url: "/rpc"
+  });
+  async function callRPC(method, params) {
+    const request = {
+      method,
+      params,
+      id: Math.floor(Math.random() * 1e6),
+      jsonrpc: "2.0"
+    };
+    const response = await rpcClient.makeRequest(request);
+    if (response.data.error) {
+      console.error("Debug: JSON-RPC error:", response.data.error);
+      throw new Error(`JSON-RPC Error: ${response.data.error.message}`);
+    }
+    return response.data.result;
+  }
+  var telemetryAPI = {
+    getTraceSummaries: () => callRPC("getTraceSummaries", void 0),
+    getTraceByID: (traceID) => callRPC("getTraceByID", [traceID]),
+    clearTraces: () => callRPC("clearTraces", void 0),
+    getLogs: () => callRPC("getLogs", void 0),
+    getLogByID: (logID) => callRPC("getLogByID", [logID]),
+    getLogsByTraceID: (traceID) => callRPC("getLogsByTraceID", [traceID]),
+    clearLogs: () => callRPC("clearLogs", void 0),
+    getMetrics: () => callRPC("getMetrics", void 0),
+    clearMetrics: () => callRPC("clearMetrics", void 0),
+    loadSampleData: () => callRPC("loadSampleData", void 0)
+  };
+
   // components/sidebar-view/trace-list.tsx
   var sidebarSummaryHeight = 120;
   var dividerHeight = 1;
@@ -58210,8 +58242,8 @@
     let location = useLocation();
     let navigate = useNavigate();
     let { isOpen, onOpen, onClose } = useDisclosure();
-    let enableLogs2 = localStorage.getItem("enableLogs") === "true";
-    let enableMetrics2 = localStorage.getItem("enableMetrics") === "true";
+    let enableLogs = localStorage.getItem("enableLogs") === "true";
+    let enableMetrics = localStorage.getItem("enableMetrics") === "true";
     let selectedIndex = 0;
     let selectedTraceID = "";
     let { traceSummaries } = props;
@@ -58274,7 +58306,7 @@
         height: "100%",
         direction: "column"
       },
-      enableLogs2 && /* @__PURE__ */ import_react105.default.createElement(
+      enableLogs && /* @__PURE__ */ import_react105.default.createElement(
         Button,
         {
           as: NavLink,
@@ -58286,7 +58318,7 @@
         },
         "View Logs"
       ),
-      enableMetrics2 && /* @__PURE__ */ import_react105.default.createElement(
+      enableMetrics && /* @__PURE__ */ import_react105.default.createElement(
         Button,
         {
           as: NavLink,
@@ -58301,7 +58333,7 @@
       /* @__PURE__ */ import_react105.default.createElement(
         FixedSizeList,
         {
-          height: size3 ? size3.height - (enableLogs2 ? 50 : 0) - (enableMetrics2 ? 50 : 0) : 0,
+          height: size3 ? size3.height - (enableLogs ? 50 : 0) - (enableMetrics ? 50 : 0) : 0,
           itemData,
           itemCount: traceSummaries.size,
           itemSize: itemHeight,
@@ -58320,11 +58352,12 @@
     );
   }
   async function clearTraceData() {
-    let response = await fetch("/api/clearTraces");
-    if (!response.ok) {
-      throw new Error("HTTP status " + response.status);
+    try {
+      await telemetryAPI.clearTraces();
+      window.location.replace("/");
+    } catch (error2) {
+      throw new Error("Failed to clear traces: " + error2);
     }
-    window.location.replace("/");
   }
 
   // components/sidebar-view/sidebar-header.tsx
@@ -58602,12 +58635,118 @@
 
   // components/empty-state-view/empty-state-view.tsx
   var import_react111 = __toESM(require_react());
+
+  // types/api-types.ts
+  function traceSummaryFromJSON(json2) {
+    return {
+      ...json2,
+      rootSpan: json2.rootSpan ? {
+        ...json2.rootSpan,
+        startTime: PreciseTimestamp.fromJSON(json2.rootSpan.startTime),
+        endTime: PreciseTimestamp.fromJSON(json2.rootSpan.endTime)
+      } : void 0
+    };
+  }
+  function traceSummariesFromJSON(json2) {
+    return json2.map(traceSummaryFromJSON);
+  }
+  function traceDataFromJSON(json2) {
+    return {
+      ...json2,
+      spans: json2.spans.map((span) => ({
+        ...span,
+        startTime: PreciseTimestamp.fromJSON(span.startTime),
+        endTime: PreciseTimestamp.fromJSON(span.endTime),
+        events: span.events?.map((event) => ({
+          ...event,
+          timestamp: PreciseTimestamp.fromJSON(event.timestamp)
+        }))
+      }))
+    };
+  }
+  function logsFromJSON(json2) {
+    return json2.map((log) => ({
+      ...log,
+      timestamp: PreciseTimestamp.fromJSON(log.timestamp),
+      observedTimestamp: PreciseTimestamp.fromJSON(log.observedTimestamp)
+    }));
+  }
+  function exemplarFromJSON(json2) {
+    return {
+      ...json2,
+      timestamp: PreciseTimestamp.fromJSON(json2.timestamp)
+    };
+  }
+  function gaugeDataPointFromJSON(json2) {
+    return {
+      ...json2,
+      timestamp: PreciseTimestamp.fromJSON(json2.timestamp),
+      startTime: PreciseTimestamp.fromJSON(json2.startTimeUnixNano),
+      exemplars: json2.exemplars?.map(exemplarFromJSON)
+    };
+  }
+  function sumDataPointFromJSON(json2) {
+    return {
+      ...json2,
+      timestamp: PreciseTimestamp.fromJSON(json2.timestamp),
+      startTime: PreciseTimestamp.fromJSON(json2.startTimeUnixNano),
+      exemplars: json2.exemplars?.map(exemplarFromJSON)
+    };
+  }
+  function histogramDataPointFromJSON(json2) {
+    return {
+      ...json2,
+      timestamp: PreciseTimestamp.fromJSON(json2.timestamp),
+      startTime: PreciseTimestamp.fromJSON(json2.startTimeUnixNano),
+      exemplars: json2.exemplars?.map(exemplarFromJSON)
+    };
+  }
+  function exponentialHistogramDataPointFromJSON(json2) {
+    return {
+      ...json2,
+      timestamp: PreciseTimestamp.fromJSON(json2.timestamp),
+      startTime: PreciseTimestamp.fromJSON(json2.startTimeUnixNano),
+      exemplars: json2.exemplars?.map(exemplarFromJSON)
+    };
+  }
+  function dataPointsFromJSON(json2) {
+    const points = json2.points.map((point) => {
+      switch (json2.type) {
+        case "Gauge":
+          return gaugeDataPointFromJSON(point);
+        case "Sum":
+          return sumDataPointFromJSON(point);
+        case "Histogram":
+          return histogramDataPointFromJSON(point);
+        case "ExponentialHistogram":
+          return exponentialHistogramDataPointFromJSON(point);
+        default:
+          return point;
+      }
+    });
+    return {
+      type: json2.type,
+      points
+    };
+  }
+  function metricDataFromJSON(json2) {
+    return {
+      ...json2,
+      dataPoints: dataPointsFromJSON(json2.dataPoints),
+      received: PreciseTimestamp.fromJSON(json2.received)
+    };
+  }
+  function metricsFromJSON(json2) {
+    return json2.map(metricDataFromJSON);
+  }
+
+  // components/empty-state-view/empty-state-view.tsx
   async function loadSampleData() {
-    let response = await fetch("/api/sampleData");
-    if (!response.ok) {
-      throw new Error("HTTP status " + response.status);
-    } else {
+    try {
+      await telemetryAPI.loadSampleData();
       window.location.reload();
+    } catch (error2) {
+      throw new Error("Failed to load sample data: " + error2);
     }
   }
   function SampleDataButton() {
@@ -58638,16 +58777,16 @@
     );
   }
   async function pollTraceCount() {
-    let response = await fetch("/api/traces");
-    if (!response.ok) {
-      throw new Error("HTTP status " + response.status);
-    } else {
-      let { traceSummaries } = await response.json();
+    try {
+      const rawTraceSummaries = await telemetryAPI.getTraceSummaries();
+      const traceSummaries = traceSummariesFromJSON(rawTraceSummaries);
       if (traceSummaries.length > 0) {
         setTimeout(() => {
           window.location.reload();
         }, 500);
       }
+    } catch (error2) {
+      console.debug("Polling error:", error2);
     }
   }
   function EmptyStateView() {
@@ -58827,40 +58966,11 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     );
   }
 
-  // utils/jsonrpc-client.ts
-  var import_jsonrpc_ts = __toESM(require_jsonrpc_ts());
-  var rpcClient = new import_jsonrpc_ts.RpcClient({
-    url: "/rpc"
-  });
-  async function callRPC(method, params) {
-    const response = await rpcClient.makeRequest({
-      method,
-      params,
-      id: Math.floor(Math.random() * 1e6),
-      jsonrpc: "2.0"
-    });
-    if (response.data.error) {
-      throw new Error(`JSON-RPC Error: ${response.data.error.message}`);
-    }
-    return response.data.result;
-  }
-  var telemetryAPI = {
-    getTraceSummaries: () => callRPC("getTraceSummaries", void 0),
-    getTraceByID: (traceID) => callRPC("getTraceByID", [traceID]),
-    clearTraces: () => callRPC("clearTraces", void 0),
-    getLogs: () => callRPC("getLogs", void 0),
-    getLogByID: (logID) => callRPC("getLogByID", [logID]),
-    getLogsByTraceID: (traceID) => callRPC("getLogsByTraceID", [traceID]),
-    clearLogs: () => callRPC("clearLogs", void 0),
-    getMetrics: () => callRPC("getMetrics", void 0),
-    clearMetrics: () => callRPC("clearMetrics", void 0),
-    loadSampleData: () => callRPC("loadSampleData", void 0)
-  };
-
   // routes/main-view.tsx
   async function mainLoader() {
     try {
-      const traceSummaries = await telemetryAPI.getTraceSummaries();
+      const rawTraceSummaries = await telemetryAPI.getTraceSummaries();
+      const traceSummaries = traceSummariesFromJSON(rawTraceSummaries);
       return traceSummaries;
     } catch (error2) {
       console.error("Failed to load trace summaries:", error2);
@@ -58874,7 +58984,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     (0, import_react113.useEffect)(() => {
       async function checkForNewData() {
         try {
-          const traceSummaries2 = await telemetryAPI.getTraceSummaries();
+          const rawTraceSummaries = await telemetryAPI.getTraceSummaries();
+          const traceSummaries2 = traceSummariesFromJSON(rawTraceSummaries);
           let newSidebarData = updateSidebarData(sidebarData, traceSummaries2);
           setSidebarData(newSidebarData);
         } catch (error2) {
@@ -59972,10 +60083,34 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   // routes/trace-view.tsx
   async function traceLoader({ params }) {
     try {
-      const traceData = await telemetryAPI.getTraceByID(params.traceID);
+      if (!params.traceID) {
+        const traceSummaries = await telemetryAPI.getTraceSummaries();
+        if (traceSummaries.length > 0) {
+          throw new Response("", {
+            status: 302,
+            headers: {
+              Location: `/traces/${traceSummaries[0].traceID}`
+            }
+          });
+        } else {
+          throw new Response("", {
+            status: 302,
+            headers: {
+              Location: "/"
+            }
+          });
+        }
+      }
+      const rawTraceData = await telemetryAPI.getTraceByID(params.traceID);
+      const traceData = traceDataFromJSON(rawTraceData);
       return traceData;
     } catch (error2) {
       console.error("Failed to load trace:", error2);
+      console.error("Error details:", {
+        message: error2 instanceof Error ? error2.message : String(error2),
+        stack: error2 instanceof Error ? error2.stack : void 0,
+        params
+      });
       throw error2;
     }
   }
@@ -60094,7 +60229,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       try {
         setLoading(true);
         setError(null);
-        const data = await telemetryAPI.getLogs();
+        const rawData = await telemetryAPI.getLogs();
+        const data = logsFromJSON(rawData);
         setLogs(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch logs");
@@ -60118,7 +60254,11 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         fontFamily: "mono",
         whiteSpace: "pre-wrap"
       },
-      JSON.stringify(logs, null, 2)
+      JSON.stringify(
+        logs,
+        (key, value) => typeof value === "bigint" ? value.toString() : value,
+        2
+      )
     ));
   }
 
@@ -60136,7 +60276,8 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       try {
         setLoading(true);
         setError(null);
-        const data = await telemetryAPI.getMetrics();
+        const rawData = await telemetryAPI.getMetrics();
+        const data = metricsFromJSON(rawData);
         setMetrics(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch metrics");
@@ -60160,7 +60301,11 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
         fontFamily: "mono",
         whiteSpace: "pre-wrap"
       },
-      JSON.stringify(metrics, null, 2)
+      JSON.stringify(
+        metrics,
+        (key, value) => typeof value === "bigint" ? value.toString() : value,
+        2
+      )
     ));
   }
 
@@ -60178,13 +60323,14 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     useSystemColorMode: true
   };
   var theme2 = extendTheme({ config: config2 });
-  var enableLogs = localStorage.getItem("enableLogs") === "true";
-  var enableMetrics = localStorage.getItem("enableMetrics") === "true";
-  console.log("Debug: enableLogs flag at module load:", enableLogs);
-  console.log("Debug: enableMetrics flag at module load:", enableMetrics);
   var routeChildren = [
     {
       path: "traces",
+      element: /* @__PURE__ */ import_react146.default.createElement(TraceView, null),
+      loader: traceLoader
+    },
+    {
+      path: "traces/:traceID",
       element: /* @__PURE__ */ import_react146.default.createElement(TraceView, null),
       loader: traceLoader
     },
@@ -60197,7 +60343,6 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       element: /* @__PURE__ */ import_react146.default.createElement(MetricsView, null)
     }
   ];
-  console.log("Debug: routeChildren:", routeChildren);
   var router = createBrowserRouter([
     {
       path: "/",

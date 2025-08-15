@@ -141,7 +141,7 @@ func TestGetTraceByID(t *testing.T) {
 	defer teardown()
 
 	t.Run("Found", func(t *testing.T) {
-		req := createRequest("getTraceByID", "1234567890")
+		req := createRequest("getTraceByID", []string{"1234567890"})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.Nil(t, err)
@@ -152,7 +152,7 @@ func TestGetTraceByID(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		req := createRequest("getTraceByID", "nonexistent")
+		req := createRequest("getTraceByID", []string{"nonexistent"})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NotNil(t, err)

@@ -18,14 +18,15 @@ import {
   useInterval,
 } from "@chakra-ui/react";
 
-import { TraceSummaries } from "../../types/api-types";
+import { telemetryAPI } from "../../services/telemetry-service";
+import { traceSummariesFromJSON } from "../../types/api-types";
 
 async function loadSampleData() {
-  let response = await fetch("/api/sampleData");
-  if (!response.ok) {
-    throw new Error("HTTP status " + response.status);
-  } else {
+  try {
+    await telemetryAPI.loadSampleData();
     window.location.reload();
+  } catch (error) {
+    throw new Error("Failed to load sample data: " + error);
   }
 }
 
@@ -59,16 +60,17 @@ function SampleDataButton() {
 }
 
 async function pollTraceCount() {
-  let response = await fetch("/api/traces");
-  if (!response.ok) {
-    throw new Error("HTTP status " + response.status);
-  } else {
-    let { traceSummaries } = (await response.json()) as TraceSummaries;
+  try {
+    const rawTraceSummaries = await telemetryAPI.getTraceSummaries();
+    const traceSummaries = traceSummariesFromJSON(rawTraceSummaries);
     if (traceSummaries.length > 0) {
-     setTimeout(() => {
-       window.location.reload();
-     }, 500);
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
     }
+  } catch (error) {
+    // Silently handle errors - this is just polling
+    console.debug("Polling error:", error);
   }
 }
 

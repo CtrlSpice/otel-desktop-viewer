@@ -21,31 +21,31 @@ func NewJSONRPCHandler(store *store.Store) *JSONRPCHandler {
 func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	switch req.Method {
 	case "getTraceSummaries":
-		return h.getTraceSummaries(ctx, req)
+		return h.getTraceSummaries(ctx)
 	case "getTraceByID":
 		return h.getTraceByID(ctx, req)
 	case "getLogs":
-		return h.getLogs(ctx, req)
+		return h.getLogs(ctx)
 	case "getLogByID":
 		return h.getLogByID(ctx, req)
 	case "getLogsByTraceID":
 		return h.getLogsByTraceID(ctx, req)
 	case "getMetrics":
-		return h.getMetrics(ctx, req)
+		return h.getMetrics(ctx)
 	case "loadSampleData":
-		return h.loadSampleData(ctx, req)
+		return h.loadSampleData(ctx)
 	case "clearTraces":
-		return h.clearTraces(ctx, req)
+		return h.clearTraces(ctx)
 	case "clearLogs":
-		return h.clearLogs(ctx, req)
+		return h.clearLogs(ctx)
 	case "clearMetrics":
-		return h.clearMetrics(ctx, req)
+		return h.clearMetrics(ctx)
 	default:
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
 }
 
-func (h *JSONRPCHandler) getTraceSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getTraceSummaries(ctx context.Context) (any, error) {
 	summaries, err := h.store.GetTraceSummaries(ctx)
 	if err != nil {
 		log.Printf("Error getting trace summaries: %v", err)
@@ -55,11 +55,16 @@ func (h *JSONRPCHandler) getTraceSummaries(ctx context.Context, req *jsonrpc2.Re
 }
 
 func (h *JSONRPCHandler) getTraceByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var traceID string
-	if err := json.Unmarshal(req.Params, &traceID); err != nil {
+	var params []string
+	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
+	if len(params) != 1 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	traceID := params[0]
 	trace, err := h.store.GetTrace(ctx, traceID)
 	if err != nil {
 		log.Printf("Error getting trace by ID: %v", err)
@@ -69,7 +74,7 @@ func (h *JSONRPCHandler) getTraceByID(ctx context.Context, req *jsonrpc2.Request
 	return trace, nil
 }
 
-func (h *JSONRPCHandler) clearTraces(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
 	err := h.store.ClearTraces(ctx)
 	if err != nil {
 		log.Printf("Error clearing traces: %v", err)
@@ -78,7 +83,7 @@ func (h *JSONRPCHandler) clearTraces(ctx context.Context, req *jsonrpc2.Request)
 	return "Traces cleared successfully", nil
 }
 
-func (h *JSONRPCHandler) getLogs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getLogs(ctx context.Context) (any, error) {
 	logs, err := h.store.GetLogs(ctx)
 	if err != nil {
 		log.Printf("Error getting logs: %v", err)
@@ -88,11 +93,16 @@ func (h *JSONRPCHandler) getLogs(ctx context.Context, req *jsonrpc2.Request) (an
 }
 
 func (h *JSONRPCHandler) getLogByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var logID string
-	if err := json.Unmarshal(req.Params, &logID); err != nil {
+	var params []string
+	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
+	if len(params) != 1 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	logID := params[0]
 	logData, err := h.store.GetLog(ctx, logID)
 	if err != nil {
 		log.Printf("Error getting log by ID: %v", err)
@@ -102,11 +112,16 @@ func (h *JSONRPCHandler) getLogByID(ctx context.Context, req *jsonrpc2.Request) 
 }
 
 func (h *JSONRPCHandler) getLogsByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var traceID string
-	if err := json.Unmarshal(req.Params, &traceID); err != nil {
+	var params []string
+	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
+	if len(params) != 1 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	traceID := params[0]
 	logs, err := h.store.GetLogsByTrace(ctx, traceID)
 	if err != nil {
 		log.Printf("Error getting logs by trace ID: %v", err)
@@ -115,7 +130,7 @@ func (h *JSONRPCHandler) getLogsByTraceID(ctx context.Context, req *jsonrpc2.Req
 	return logs, nil
 }
 
-func (h *JSONRPCHandler) clearLogs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 	err := h.store.ClearLogs(ctx)
 	if err != nil {
 		log.Printf("Error clearing logs: %v", err)
@@ -124,7 +139,7 @@ func (h *JSONRPCHandler) clearLogs(ctx context.Context, req *jsonrpc2.Request) (
 	return "Logs cleared successfully", nil
 }
 
-func (h *JSONRPCHandler) getMetrics(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getMetrics(ctx context.Context) (any, error) {
 	metrics, err := h.store.GetMetrics(ctx)
 	if err != nil {
 		log.Printf("Error getting metrics: %v", err)
@@ -133,7 +148,7 @@ func (h *JSONRPCHandler) getMetrics(ctx context.Context, req *jsonrpc2.Request) 
 	return metrics, nil
 }
 
-func (h *JSONRPCHandler) clearMetrics(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 	err := h.store.ClearMetrics(ctx)
 	if err != nil {
 		log.Printf("Error clearing metrics: %v", err)
@@ -142,7 +157,7 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context, req *jsonrpc2.Request
 	return "Metrics cleared successfully", nil
 }
 
-func (h *JSONRPCHandler) loadSampleData(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) loadSampleData(ctx context.Context) (any, error) {
 	sample := telemetry.NewSampleTelemetry()
 
 	if err := h.store.AddSpans(ctx, sample.Spans); err != nil {

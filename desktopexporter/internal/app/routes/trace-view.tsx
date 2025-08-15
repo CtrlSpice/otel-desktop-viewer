@@ -2,8 +2,8 @@ import React from "react";
 import { useLoaderData } from "react-router-dom";
 import { Grid, GridItem, Box, Text, VStack, Divider } from "@chakra-ui/react";
 
-import { TraceData } from "../types/api-types";
-import { telemetryAPI } from "../utils/jsonrpc-client";
+import { TraceData, traceDataFromJSON } from "../types/api-types";
+import { telemetryAPI } from "../services/telemetry-service";
 import { SpanDataStatus, SpanWithUIData } from "../types/ui-types";
 
 import { Header } from "../components/header-view/header";
@@ -14,10 +14,41 @@ import { getTraceBounds } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
   try {
-    const traceData = await telemetryAPI.getTraceByID(params.traceID);
+    // If no traceID is provided, redirect to the first available trace
+    if (!params.traceID) {
+      const traceSummaries = await telemetryAPI.getTraceSummaries();
+      if (traceSummaries.length > 0) {
+        // Redirect to the first trace
+        throw new Response("", {
+          status: 302,
+          headers: {
+            Location: `/traces/${traceSummaries[0].traceID}`,
+          },
+        });
+      } else {
+        // No traces available, redirect to root
+        throw new Response("", {
+          status: 302,
+          headers: {
+            Location: "/",
+          },
+        });
+      }
+    }
+
+    // Load the specific trace
+    const rawTraceData = await telemetryAPI.getTraceByID(params.traceID);
+    
+    // Deserialize the trace data to convert string timestamps to PreciseTimestamp objects
+    const traceData = traceDataFromJSON(rawTraceData);
     return traceData;
   } catch (error) {
     console.error('Failed to load trace:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      params: params
+    });
     throw error;
   }
 }

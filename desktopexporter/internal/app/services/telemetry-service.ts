@@ -8,14 +8,17 @@ const rpcClient = new RpcClient<TelemetryService>({
 
 // Helper function to make typed RPC calls
 async function callRPC(method: string, params?: any): Promise<any> {
-  const response = await rpcClient.makeRequest({
+  const request = {
     method: method as keyof TelemetryService,
     params,
     id: Math.floor(Math.random() * 1000000), // Generate random ID
-    jsonrpc: '2.0',
-  });
+    jsonrpc: '2.0' as const,
+  };
+  
+  const response = await rpcClient.makeRequest(request);
 
   if (response.data.error) {
+    console.error('Debug: JSON-RPC error:', response.data.error);
     throw new Error(`JSON-RPC Error: ${response.data.error.message}`);
   }
 
@@ -36,7 +39,7 @@ export const telemetryAPI = {
   clearLogs: () => callRPC('clearLogs', undefined),
   
   // Metric methods
-  getMetrics: () => callRPC('getMetrics', undefined),
+  getMetrics: () => callRPC('getMetrics', undefined) as Promise<any>,
   clearMetrics: () => callRPC('clearMetrics', undefined),
   
   // Utility methods

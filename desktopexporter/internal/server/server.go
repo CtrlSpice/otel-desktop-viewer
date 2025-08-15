@@ -45,9 +45,12 @@ func (s *Server) Start() error {
 
 func (s *Server) initHandler() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", s.indexHandler)
+
+	// Handle specific routes first (checked before catch-all)
 	mux.HandleFunc("GET /traces/{id}", s.indexHandler)
 	mux.HandleFunc("POST /rpc", s.rpcHandler)
+
+	// Then handle static files (catches everything else)
 	if s.staticDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(s.staticDir)))
 	} else {
@@ -64,7 +67,6 @@ func (s *Server) initHandler() error {
 		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders: []string{"*"},
 	})
-
 	s.server.Handler = c.Handler(mux)
 	return nil
 }

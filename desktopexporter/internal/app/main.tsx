@@ -16,15 +16,14 @@ let config: ThemeConfig = {
 };
 let theme = extendTheme({ config });
 
-// Check feature flags for logs and metrics
-let enableLogs = localStorage.getItem('enableLogs') === 'true';
-let enableMetrics = localStorage.getItem('enableMetrics') === 'true';
-console.log('Debug: enableLogs flag at module load:', enableLogs);
-console.log('Debug: enableMetrics flag at module load:', enableMetrics);
-
 let routeChildren: any[] = [
   {
     path: "traces",     // /traces
+    element: <TraceView />,
+    loader: traceLoader,
+  },
+  {
+    path: "traces/:traceID",     // /traces/{id}
     element: <TraceView />,
     loader: traceLoader,
   },
@@ -37,8 +36,6 @@ let routeChildren: any[] = [
     element: <MetricsView />,
   },
 ];
-
-console.log('Debug: routeChildren:', routeChildren);
 
 let router = createBrowserRouter([
   {
