@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
@@ -19,40 +20,36 @@ import (
 
 type desktopExporter struct {
 	server *server.Server
+	store  *store.Store
 }
 
 func newDesktopExporter(cfg *Config) *desktopExporter {
-	server := server.NewServer(cfg.Endpoint, cfg.Db)
+	store := store.NewStore(context.Background(), cfg.Db)
+	server := server.NewServer(cfg.Endpoint, store)
 	return &desktopExporter{
 		server: server,
+		store:  store,
 	}
 }
 
-func (exporter *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
+func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
 	spanDataSlice := traces.NewSpanPayload(source).ExtractSpans()
-	exporter.server.Store.AddSpans(ctx, spanDataSlice)
-
-	return nil
+	return e.store.AddSpans(ctx, spanDataSlice)
 }
 
-func (exporter *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {
+func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {
 	metricsDataSlice := metrics.NewMetricsPayload(source).ExtractMetrics()
-	for _, metricsData := range metricsDataSlice {
-		fmt.Println(metricsData)
-	}
-	return nil
+	return e.store.AddMetrics(ctx, metricsDataSlice)
 }
 
-func (exporter *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error {
+func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error {
 	logDataSlice := logs.NewLogsPayload(source).ExtractLogs()
-	exporter.server.Store.AddLogs(ctx, logDataSlice)
-
-	return nil
+	return e.store.AddLogs(ctx, logDataSlice)
 }
 
-func (exporter *desktopExporter) Start(ctx context.Context, host component.Host) error {
+func (e *desktopExporter) Start(ctx context.Context, host component.Host) error {
 	go func() {
-		err := exporter.server.Start()
+		err := e.server.Start()
 
 		if errors.Is(err, http.ErrServerClosed) {
 			fmt.Printf("server closed\n")
@@ -64,6 +61,12 @@ func (exporter *desktopExporter) Start(ctx context.Context, host component.Host)
 	return nil
 }
 
-func (exporter *desktopExporter) Shutdown(ctx context.Context) error {
-	return exporter.server.Close()
+func (e *desktopExporter) Shutdown(ctx context.Context) error {
+	// Close server first (stops accepting new requests)
+	if err := e.server.Close(); err != nil {
+		return err
+	}
+
+	// Then close the store
+	return e.store.Close()
 }

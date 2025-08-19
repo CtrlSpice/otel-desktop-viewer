@@ -10,10 +10,6 @@ type TraceData struct {
 	Spans   []SpanData `json:"spans"`
 }
 
-type TraceSummaries struct {
-	TraceSummaries []TraceSummary `json:"traceSummaries"`
-}
-
 type TraceSummary struct {
 	TraceID   string    `json:"traceID"`
 	RootSpan  *RootSpan `json:"rootSpan,omitempty"`

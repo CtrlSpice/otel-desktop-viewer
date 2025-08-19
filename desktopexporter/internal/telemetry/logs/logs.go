@@ -37,11 +37,6 @@ type LogData struct {
 	EventName              string                 `json:"eventName,omitempty"`
 }
 
-// Logs wraps a slice of LogData for JSON marshaling
-type Logs struct {
-	Logs []LogData `json:"logs"`
-}
-
 func NewLogsPayload(l plog.Logs) *LogsPayload {
 	return &LogsPayload{Logs: l}
 }

@@ -2,7 +2,8 @@ import React from "react";
 import { useLoaderData } from "react-router-dom";
 import { Grid, GridItem, Box, Text, VStack, Divider } from "@chakra-ui/react";
 
-import { TraceData, traceDataFromJSON } from "../types/api-types";
+import { TraceData } from "../types/api-types";
+import { telemetryAPI } from "../services/telemetry-service";
 import { SpanDataStatus, SpanWithUIData } from "../types/ui-types";
 
 import { Header } from "../components/header-view/header";
@@ -12,9 +13,41 @@ import { arrayToTree, TreeItem, RootTreeItem } from "../utils/array-to-tree";
 import { getTraceBounds } from "../utils/duration";
 
 export async function traceLoader({ params }: any) {
-  let response = await fetch(`/api/traces/${params.traceID}`);
-  let traceData = await response.json();
-  return traceDataFromJSON(traceData);
+  try {
+    // If no traceID is provided, redirect to the first available trace
+    if (!params.traceID) {
+      const traceSummaries = await telemetryAPI.getTraceSummaries();
+      if (traceSummaries.length > 0) {
+        // Redirect to the first trace
+        throw new Response("", {
+          status: 302,
+          headers: {
+            Location: `/traces/${traceSummaries[0].traceID}`,
+          },
+        });
+      } else {
+        // No traces available, redirect to root
+        throw new Response("", {
+          status: 302,
+          headers: {
+            Location: "/",
+          },
+        });
+      }
+    }
+
+    // Load the specific trace (conversion is now handled in the API wrapper)
+    const traceData = await telemetryAPI.getTraceByID(params.traceID);
+    return traceData;
+  } catch (error) {
+    console.error('Failed to load trace:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      params: params
+    });
+    throw error;
+  }
 }
 
 export default function TraceView() {
