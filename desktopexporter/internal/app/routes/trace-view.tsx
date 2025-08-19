@@ -2,7 +2,7 @@ import React from "react";
 import { useLoaderData } from "react-router-dom";
 import { Grid, GridItem, Box, Text, VStack, Divider } from "@chakra-ui/react";
 
-import { TraceData, traceDataFromJSON } from "../types/api-types";
+import { TraceData } from "../types/api-types";
 import { telemetryAPI } from "../services/telemetry-service";
 import { SpanDataStatus, SpanWithUIData } from "../types/ui-types";
 
@@ -36,11 +36,8 @@ export async function traceLoader({ params }: any) {
       }
     }
 
-    // Load the specific trace
-    const rawTraceData = await telemetryAPI.getTraceByID(params.traceID);
-    
-    // Deserialize the trace data to convert string timestamps to PreciseTimestamp objects
-    const traceData = traceDataFromJSON(rawTraceData);
+    // Load the specific trace (conversion is now handled in the API wrapper)
+    const traceData = await telemetryAPI.getTraceByID(params.traceID);
     return traceData;
   } catch (error) {
     console.error('Failed to load trace:', error);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Heading, Button, Text, useColorModeValue } from "@chakra-ui/react";
 import { telemetryAPI } from "../services/telemetry-service";
-import { logsFromJSON } from "../types/api-types";
+
 
 export default function LogsView() {
   let [logs, setLogs] = useState<any>(null);
@@ -18,8 +18,7 @@ export default function LogsView() {
     try {
       setLoading(true);
       setError(null);
-      const rawData = await telemetryAPI.getLogs();
-      const data = logsFromJSON(rawData);
+      const data = await telemetryAPI.getLogs();
       setLogs(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch logs");

@@ -19,7 +19,7 @@ import {
 } from "@chakra-ui/react";
 
 import { telemetryAPI } from "../../services/telemetry-service";
-import { traceSummariesFromJSON } from "../../types/api-types";
+
 
 async function loadSampleData() {
   try {
@@ -61,8 +61,7 @@ function SampleDataButton() {
 
 async function pollTraceCount() {
   try {
-    const rawTraceSummaries = await telemetryAPI.getTraceSummaries();
-    const traceSummaries = traceSummariesFromJSON(rawTraceSummaries);
+    const traceSummaries = await telemetryAPI.getTraceSummaries();
     if (traceSummaries.length > 0) {
       setTimeout(() => {
         window.location.reload();

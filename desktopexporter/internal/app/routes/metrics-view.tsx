@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Heading, Button, Text, useColorModeValue } from "@chakra-ui/react";
 import { telemetryAPI } from "../services/telemetry-service";
-import { metricsFromJSON, MetricData } from "../types/api-types";
+import { MetricData } from "../types/api-types";
 
 export default function MetricsView() {
   let [metrics, setMetrics] = useState<MetricData[] | null>(null);
@@ -18,8 +18,7 @@ export default function MetricsView() {
     try {
       setLoading(true);
       setError(null);
-      const rawData = await telemetryAPI.getMetrics();
-      const data = metricsFromJSON(rawData);
+      const data = await telemetryAPI.getMetrics();
       setMetrics(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch metrics");

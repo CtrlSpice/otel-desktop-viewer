@@ -5,14 +5,13 @@ import { useLoaderData } from "react-router-dom";
 
 import { Sidebar } from "../components/sidebar-view/sidebar";
 import { EmptyStateView } from "../components/empty-state-view/empty-state-view";
-import { TraceSummary, traceSummariesFromJSON } from "../types/api-types";
+import { TraceSummary } from "../types/api-types";
 import { SidebarData, TraceSummaryWithUIData } from "../types/ui-types";
 import { telemetryAPI } from "../services/telemetry-service";
 
 export async function mainLoader() {
   try {
-    const rawTraceSummaries = await telemetryAPI.getTraceSummaries();
-    const traceSummaries = traceSummariesFromJSON(rawTraceSummaries);
+    const traceSummaries = await telemetryAPI.getTraceSummaries();
     return traceSummaries;
   } catch (error) {
     console.error('Failed to load trace summaries:', error);
@@ -32,8 +31,7 @@ export default function MainView() {
   useEffect(() => {
     async function checkForNewData() {
       try {
-        const rawTraceSummaries = await telemetryAPI.getTraceSummaries();
-        const traceSummaries = traceSummariesFromJSON(rawTraceSummaries);
+        let traceSummaries = await telemetryAPI.getTraceSummaries();
         let newSidebarData = updateSidebarData(sidebarData, traceSummaries);
         setSidebarData(newSidebarData);
       } catch (error) {
