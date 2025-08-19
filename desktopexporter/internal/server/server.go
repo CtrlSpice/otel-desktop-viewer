@@ -13,6 +13,8 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 )
 
 //go:embed static/*
@@ -53,7 +55,7 @@ func (s *Server) Handler() http.Handler {
 	router.HandleFunc("GET /api/sampleData", s.sampleDataHandler)
 	router.HandleFunc("GET /api/clearTraces", s.clearTracesHandler)
 	router.HandleFunc("GET /traces/{id}", s.indexHandler)
-	
+
 	// Feature flag for logs frontend route
 	if os.Getenv("ENABLE_LOGS") == "true" {
 		router.HandleFunc("GET /logs", s.indexHandler)
@@ -61,6 +63,13 @@ func (s *Server) Handler() http.Handler {
 		router.HandleFunc("GET /api/logs/{id}", s.logIDHandler)
 		router.HandleFunc("GET /api/logs/trace/{id}", s.logsByTraceHandler)
 		router.HandleFunc("GET /api/clearLogs", s.clearLogsHandler)
+	}
+
+	// Feature flag for metrics frontend route
+	if os.Getenv("ENABLE_METRICS") == "true" {
+		router.HandleFunc("GET /metrics", s.indexHandler)
+		router.HandleFunc("GET /api/metrics", s.metricsHandler)
+		router.HandleFunc("GET /api/clearMetrics", s.clearMetricsHandler)
 	}
 
 	if s.staticDir != "" {
@@ -83,7 +92,7 @@ func (s *Server) tracesHandler(writer http.ResponseWriter, request *http.Request
 		return
 	}
 
-	if err := writeJSON(writer, telemetry.TraceSummaries{
+	if err := writeJSON(writer, traces.TraceSummaries{
 		TraceSummaries: summaries,
 	}); err != nil {
 		log.Printf("Error writing JSON response: %v", err)
@@ -110,16 +119,25 @@ func (s *Server) clearLogsHandler(writer http.ResponseWriter, request *http.Requ
 	writer.WriteHeader(http.StatusOK)
 }
 
+func (s *Server) clearMetricsHandler(writer http.ResponseWriter, request *http.Request) {
+	if err := s.Store.ClearMetrics(request.Context()); err != nil {
+		log.Printf("Error clearing metrics: %v", err)
+		http.Error(writer, "Failed to clear metrics", http.StatusInternalServerError)
+		return
+	}
+	writer.WriteHeader(http.StatusOK)
+}
+
 func (s *Server) logsHandler(writer http.ResponseWriter, request *http.Request) {
-	logs, err := s.Store.GetLogs(request.Context())
+	logData, err := s.Store.GetLogs(request.Context())
 	if err != nil {
 		log.Printf("Error getting logs: %v", err)
 		http.Error(writer, "Failed to retrieve logs", http.StatusInternalServerError)
 		return
 	}
 
-	if err := writeJSON(writer, telemetry.Logs{
-		Logs: logs,
+	if err := writeJSON(writer, logs.Logs{
+		Logs: logData,
 	}); err != nil {
 		log.Printf("Error writing JSON response: %v", err)
 		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
@@ -135,7 +153,7 @@ func (s *Server) logIDHandler(writer http.ResponseWriter, request *http.Request)
 		http.Error(writer, "Log not found", http.StatusNotFound)
 		return
 	}
-	
+
 	if err := writeJSON(writer, logData); err != nil {
 		log.Printf("Error writing JSON response: %v", err)
 		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
@@ -145,16 +163,31 @@ func (s *Server) logIDHandler(writer http.ResponseWriter, request *http.Request)
 
 func (s *Server) logsByTraceHandler(writer http.ResponseWriter, request *http.Request) {
 	traceID := request.PathValue("id")
-	logs, err := s.Store.GetLogsByTrace(request.Context(), traceID)
+	logData, err := s.Store.GetLogsByTrace(request.Context(), traceID)
 	if err != nil {
 		log.Printf("Error getting logs for trace %s: %v", traceID, err)
 		http.Error(writer, "Failed to retrieve logs for trace", http.StatusInternalServerError)
 		return
 	}
 
-	if err := writeJSON(writer, telemetry.Logs{
-		Logs: logs,
+	if err := writeJSON(writer, logs.Logs{
+		Logs: logData,
 	}); err != nil {
+		log.Printf("Error writing JSON response: %v", err)
+		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Server) metricsHandler(writer http.ResponseWriter, request *http.Request) {
+	metricsData, err := s.Store.GetMetrics(request.Context())
+	if err != nil {
+		log.Printf("Error getting metrics: %v", err)
+		http.Error(writer, "Failed to retrieve metrics", http.StatusInternalServerError)
+		return
+	}
+
+	if err := writeJSON(writer, metricsData); err != nil {
 		log.Printf("Error writing JSON response: %v", err)
 		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
 		return
@@ -175,6 +208,12 @@ func (s *Server) sampleDataHandler(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
+	if err := s.Store.AddMetrics(request.Context(), sample.Metrics); err != nil {
+		log.Printf("Error adding sample metrics: %v", err)
+		http.Error(writer, "Failed to add sample metrics", http.StatusInternalServerError)
+		return
+	}
+
 	writer.WriteHeader(http.StatusOK)
 }
 
@@ -186,7 +225,7 @@ func (s *Server) traceIDHandler(writer http.ResponseWriter, request *http.Reques
 		http.Error(writer, "Trace not found", http.StatusNotFound)
 		return
 	}
-	
+
 	if err := writeJSON(writer, traceData); err != nil {
 		log.Printf("Error writing JSON response: %v", err)
 		http.Error(writer, "Failed to encode response", http.StatusInternalServerError)
@@ -231,4 +270,3 @@ func getStaticDir() string {
 
 	return ""
 }
-

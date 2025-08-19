@@ -158,8 +158,9 @@ export function TraceList(props: TraceListProps) {
 
   let { isOpen, onOpen, onClose } = useDisclosure();
 
-  // Feature flag check
+  // Feature flag checks
   let enableLogs = localStorage.getItem('enableLogs') === 'true';
+  let enableMetrics = localStorage.getItem('enableMetrics') === 'true';
 
   let selectedIndex = 0;
   let selectedTraceID = "";
@@ -172,8 +173,8 @@ export function TraceList(props: TraceListProps) {
   if (location.pathname.includes("/traces/")) {
     selectedTraceID = location.pathname.split("/")[2];
     selectedIndex = traceIDs.indexOf(selectedTraceID);
-  } else if (!location.pathname.includes("/logs") && traceIDs.length > 0) {
-    // Only redirect if we're not on the logs page and have traces
+  } else if (!location.pathname.includes("/logs") && !location.pathname.includes("/metrics") && traceIDs.length > 0) {
+    // Only redirect if we're not on the logs or metrics page and have traces
     selectedTraceID = traceIDs[selectedIndex];
     window.location.href = `/traces/${selectedTraceID}`;
   }
@@ -262,8 +263,22 @@ export function TraceList(props: TraceListProps) {
           View Logs
         </Button>
       )}
+      
+      {/* Metrics navigation button - feature flagged */}
+      {enableMetrics && (
+        <Button
+          as={NavLink}
+          to="/metrics"
+          m={2}
+          size="sm"
+          colorScheme="green"
+          variant="outline"
+        >
+          View Metrics
+        </Button>
+      )}
       <FixedSizeList
-        height={size ? size.height - (enableLogs ? 50 : 0) : 0}
+        height={size ? size.height - (enableLogs ? 50 : 0) - (enableMetrics ? 50 : 0) : 0}
         itemData={itemData}
         itemCount={traceSummaries.size}
         itemSize={itemHeight}

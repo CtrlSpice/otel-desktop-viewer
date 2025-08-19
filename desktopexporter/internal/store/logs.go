@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/marcboeker/go-duckdb/v2"
-
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
 )
 
 // AddLogs appends a list of logs to the store.
-func (s *Store) AddLogs(ctx context.Context, logs []telemetry.LogData) error {
+func (s *Store) AddLogs(ctx context.Context, logs []logs.LogData) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf(ErrAddLogs, err)
 	}
@@ -19,14 +19,14 @@ func (s *Store) AddLogs(ctx context.Context, logs []telemetry.LogData) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	appender, err := duckdb.NewAppender(s.conn, "", "", "logs")
+	appender, err := NewAppenderWrapper(s.conn, "", "", "logs")
 	if err != nil {
 		return fmt.Errorf(ErrCreateAppender, err)
 	}
 	defer appender.Close()
 
 	for i, logData := range logs {
-		err := appender.AppendRow(
+		err = appender.AppendRow(
 			logData.ID(),
 			logData.Timestamp,
 			logData.ObservedTimestamp,
@@ -34,14 +34,14 @@ func (s *Store) AddLogs(ctx context.Context, logs []telemetry.LogData) error {
 			logData.SpanID,
 			logData.SeverityText,
 			logData.SeverityNumber,
-			toDbBody(logData.Body),
-			toDbMap(logData.Resource.Attributes),
+			logData.Body,
+			logData.Resource.Attributes,
 			logData.Resource.DroppedAttributesCount,
 			logData.Scope.Name,
 			logData.Scope.Version,
-			toDbMap(logData.Scope.Attributes),
+			logData.Scope.Attributes,
 			logData.Scope.DroppedAttributesCount,
-			toDbMap(logData.Attributes),
+			logData.Attributes,
 			logData.DroppedAttributesCount,
 			logData.Flags,
 			logData.EventName,
@@ -58,20 +58,13 @@ func (s *Store) AddLogs(ctx context.Context, logs []telemetry.LogData) error {
 			}
 		}
 	}
-	
-	// Final flush for any remaining logs
-	err = appender.Flush()
-	if err != nil {
-		return fmt.Errorf(ErrFlushAppender, err)
-	}
-	
 	return nil
 }
 
 // GetLog retrieves a log by its ID.
-func (s *Store) GetLog(ctx context.Context, logID string) (telemetry.LogData, error) {
+func (s *Store) GetLog(ctx context.Context, logID string) (logs.LogData, error) {
 	if err := s.checkConnection(); err != nil {
-		return telemetry.LogData{}, fmt.Errorf(ErrGetLog, logID, err)
+		return logs.LogData{}, fmt.Errorf(ErrGetLog, logID, err)
 	}
 
 	row := s.db.QueryRowContext(ctx, SelectLog, logID)
@@ -83,12 +76,12 @@ func (s *Store) GetLog(ctx context.Context, logID string) (telemetry.LogData, er
 }
 
 // GetLogs retrieves all logs from the store.
-func (s *Store) GetLogs(ctx context.Context) ([]telemetry.LogData, error) {
+func (s *Store) GetLogs(ctx context.Context) ([]logs.LogData, error) {
 	if err := s.checkConnection(); err != nil {
 		return nil, fmt.Errorf(ErrGetLogs, err)
 	}
 
-	logs := []telemetry.LogData{}
+	logs := []logs.LogData{}
 
 	rows, err := s.db.QueryContext(ctx, SelectLogs)
 	if err != nil {
@@ -108,12 +101,12 @@ func (s *Store) GetLogs(ctx context.Context) ([]telemetry.LogData, error) {
 }
 
 // GetLogsByTraceSpan retrieves all logs for a given trace and span.
-func (s *Store) GetLogsByTraceSpan(ctx context.Context, traceID string, spanID string) ([]telemetry.LogData, error) {
+func (s *Store) GetLogsByTraceSpan(ctx context.Context, traceID string, spanID string) ([]logs.LogData, error) {
 	if err := s.checkConnection(); err != nil {
 		return nil, fmt.Errorf(ErrGetLogsByTraceSpan, traceID, spanID, err)
 	}
 
-	logs := []telemetry.LogData{}
+	logs := []logs.LogData{}
 
 	rows, err := s.db.QueryContext(ctx, SelectLogsByTraceSpan, traceID, spanID)
 	if err != nil {
@@ -132,25 +125,10 @@ func (s *Store) GetLogsByTraceSpan(ctx context.Context, traceID string, spanID s
 }
 
 // scanLogRow converts a database row into a LogData struct
-func scanLogRow(scanner interface{ Scan(dest ...any) error }) (telemetry.LogData, error) {
-	var (
-		rawBody               duckdb.Union
-		rawAttributes         duckdb.Composite[map[string]duckdb.Union]
-		rawResourceAttributes duckdb.Composite[map[string]duckdb.Union]
-		rawScopeAttributes    duckdb.Composite[map[string]duckdb.Union]
-	)
-
-	logData := telemetry.LogData{
-		Resource: &telemetry.ResourceData{
-			Attributes:             map[string]any{},
-			DroppedAttributesCount: 0,
-		},
-		Scope: &telemetry.ScopeData{
-			Name:                   "",
-			Version:                "",
-			Attributes:             map[string]any{},
-			DroppedAttributesCount: 0,
-		},
+func scanLogRow(scanner interface{ Scan(dest ...any) error }) (logs.LogData, error) {
+	logData := logs.LogData{
+		Resource: &resource.ResourceData{},
+		Scope:    &scope.ScopeData{},
 	}
 
 	if err := scanner.Scan(
@@ -160,14 +138,14 @@ func scanLogRow(scanner interface{ Scan(dest ...any) error }) (telemetry.LogData
 		&logData.SpanID,
 		&logData.SeverityText,
 		&logData.SeverityNumber,
-		&rawBody,
-		&rawResourceAttributes,
+		&logData.Body,
+		&logData.Resource.Attributes,
 		&logData.Resource.DroppedAttributesCount,
 		&logData.Scope.Name,
 		&logData.Scope.Version,
-		&rawScopeAttributes,
+		&logData.Scope.Attributes,
 		&logData.Scope.DroppedAttributesCount,
-		&rawAttributes,
+		&logData.Attributes,
 		&logData.DroppedAttributesCount,
 		&logData.Flags,
 		&logData.EventName,
@@ -177,11 +155,6 @@ func scanLogRow(scanner interface{ Scan(dest ...any) error }) (telemetry.LogData
 		}
 		return logData, fmt.Errorf(ErrScanLogRow, err)
 	}
-
-	logData.Body = fromDbBody(rawBody)
-	logData.Attributes = fromDbMap(rawAttributes.Get())
-	logData.Resource.Attributes = fromDbMap(rawResourceAttributes.Get())
-	logData.Scope.Attributes = fromDbMap(rawScopeAttributes.Get())
 
 	return logData, nil
 }
@@ -199,12 +172,12 @@ func (s *Store) ClearLogs(ctx context.Context) error {
 }
 
 // GetLogsByTrace retrieves all logs for a given trace.
-func (s *Store) GetLogsByTrace(ctx context.Context, traceID string) ([]telemetry.LogData, error) {
+func (s *Store) GetLogsByTrace(ctx context.Context, traceID string) ([]logs.LogData, error) {
 	if err := s.checkConnection(); err != nil {
 		return nil, fmt.Errorf(ErrGetLogsByTrace, traceID, err)
 	}
 
-	logs := []telemetry.LogData{}
+	logs := []logs.LogData{}
 
 	rows, err := s.db.QueryContext(ctx, SelectLogsByTrace, traceID)
 	if err != nil {
@@ -221,4 +194,3 @@ func (s *Store) GetLogsByTrace(ctx context.Context, traceID string) ([]telemetry
 	}
 	return logs, nil
 }
-

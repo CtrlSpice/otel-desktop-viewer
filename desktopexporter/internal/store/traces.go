@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/marcboeker/go-duckdb/v2"
-
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 )
 
 // AddSpans appends a list of spans to the store.
-func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error {
+func (s *Store) AddSpans(ctx context.Context, spans []traces.SpanData) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf(ErrAddSpans, err)
 	}
@@ -19,7 +19,7 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	appender, err := duckdb.NewAppender(s.conn, "", "", "spans")
+	appender, err := NewAppenderWrapper(s.conn, "", "", "spans")
 	if err != nil {
 		return fmt.Errorf(ErrCreateAppender, err)
 	}
@@ -35,14 +35,14 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 			span.Kind,
 			span.StartTime,
 			span.EndTime,
-			toDbMap(span.Attributes),
-			toDbEvents(span.Events),
-			toDbLinks(span.Links),
-			toDbMap(span.Resource.Attributes),
+			span.Attributes,
+			span.Events,
+			span.Links,
+			span.Resource.Attributes,
 			span.Resource.DroppedAttributesCount,
 			span.Scope.Name,
 			span.Scope.Version,
-			toDbMap(span.Scope.Attributes),
+			span.Scope.Attributes,
 			span.Scope.DroppedAttributesCount,
 			span.DroppedAttributesCount,
 			span.DroppedEventsCount,
@@ -62,23 +62,23 @@ func (s *Store) AddSpans(ctx context.Context, spans []telemetry.SpanData) error 
 			}
 		}
 	}
-	
+
 	// Final flush for any remaining spans
 	err = appender.Flush()
 	if err != nil {
 		return fmt.Errorf(ErrFlushAppender, err)
 	}
-	
+
 	return nil
 }
 
 // GetTraceSummaries retrieves a summary for each trace from the store.
-func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary, error) {
+func (s *Store) GetTraceSummaries(ctx context.Context) ([]traces.TraceSummary, error) {
 	if err := s.checkConnection(); err != nil {
 		return nil, fmt.Errorf(ErrGetTraceSummaries, err)
 	}
 
-	summaries := []telemetry.TraceSummary{}
+	summaries := []traces.TraceSummary{}
 
 	rows, err := s.db.QueryContext(ctx, SelectTraceSummaries)
 	if err != nil {
@@ -107,9 +107,9 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary
 			return nil, fmt.Errorf(ErrGetTraceSummaries, err)
 		}
 
-		var rootSpan *telemetry.RootSpan
+		var rootSpan *traces.RootSpan
 		if serviceName.Valid && rootName.Valid && startTime.Valid && endTime.Valid {
-			rootSpan = &telemetry.RootSpan{
+			rootSpan = &traces.RootSpan{
 				ServiceName: serviceName.String,
 				Name:        rootName.String,
 				StartTime:   startTime.Int64,
@@ -117,7 +117,7 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary
 			}
 		}
 
-		summaries = append(summaries, telemetry.TraceSummary{
+		summaries = append(summaries, traces.TraceSummary{
 			TraceID:   traceID,
 			RootSpan:  rootSpan,
 			SpanCount: uint32(spanCount),
@@ -127,14 +127,14 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]telemetry.TraceSummary
 }
 
 // GetTrace retrieves a trace from the store using the traceID.
-func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceData, error) {
+func (s *Store) GetTrace(ctx context.Context, traceID string) (traces.TraceData, error) {
 	if err := s.checkConnection(); err != nil {
-		return telemetry.TraceData{}, fmt.Errorf(ErrGetTrace, traceID, err)
+		return traces.TraceData{}, fmt.Errorf(ErrGetTrace, traceID, err)
 	}
 
-	trace := telemetry.TraceData{
+	trace := traces.TraceData{
 		TraceID: traceID,
-		Spans:   []telemetry.SpanData{},
+		Spans:   []traces.SpanData{},
 	}
 
 	rows, err := s.db.QueryContext(ctx, SelectTrace, traceID)
@@ -144,62 +144,10 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 	defer rows.Close()
 
 	for rows.Next() {
-		span := telemetry.SpanData{
-			Resource: &telemetry.ResourceData{
-				Attributes:             map[string]any{},
-				DroppedAttributesCount: 0,
-			},
-			Scope: &telemetry.ScopeData{
-				Name:                   "",
-				Version:                "",
-				Attributes:             map[string]any{},
-				DroppedAttributesCount: 0,
-			},
-		}
-
-		var (
-			rawAttributes         duckdb.Composite[map[string]duckdb.Union]
-			rawResourceAttributes duckdb.Composite[map[string]duckdb.Union]
-			rawScopeAttributes    duckdb.Composite[map[string]duckdb.Union]
-
-			rawEvents duckdb.Composite[[]dbEvent]
-			rawLinks  duckdb.Composite[[]dbLink]
-		)
-
-		if err = rows.Scan(
-			&span.TraceID,
-			&span.TraceState,
-			&span.SpanID,
-			&span.ParentSpanID,
-			&span.Name,
-			&span.Kind,
-			&span.StartTime,
-			&span.EndTime,
-			&rawAttributes,
-			&rawEvents,
-			&rawLinks,
-			&rawResourceAttributes,
-			&span.Resource.DroppedAttributesCount,
-			&span.Scope.Name,
-			&span.Scope.Version,
-			&rawScopeAttributes,
-			&span.Scope.DroppedAttributesCount,
-			&span.DroppedAttributesCount,
-			&span.DroppedEventsCount,
-			&span.DroppedLinksCount,
-			&span.StatusCode,
-			&span.StatusMessage,
-		); err != nil {
+		span, err := scanTraceRow(rows)
+		if err != nil {
 			return trace, fmt.Errorf(ErrGetTrace, traceID, err)
 		}
-
-		span.Attributes = fromDbMap(rawAttributes.Get())
-		span.Resource.Attributes = fromDbMap(rawResourceAttributes.Get())
-		span.Scope.Attributes = fromDbMap(rawScopeAttributes.Get())
-
-		span.Events = fromDbEvents(rawEvents.Get())
-		span.Links = fromDbLinks(rawLinks.Get())
-
 		trace.Spans = append(trace.Spans, span)
 	}
 
@@ -211,6 +159,43 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (telemetry.TraceDa
 	}
 
 	return trace, nil
+}
+
+// scanTraceRow converts a database row into a SpanData struct
+func scanTraceRow(scanner interface{ Scan(dest ...any) error }) (traces.SpanData, error) {
+	span := traces.SpanData{
+		Resource: &resource.ResourceData{},
+		Scope:    &scope.ScopeData{},
+	}
+
+	if err := scanner.Scan(
+		&span.TraceID,
+		&span.TraceState,
+		&span.SpanID,
+		&span.ParentSpanID,
+		&span.Name,
+		&span.Kind,
+		&span.StartTime,
+		&span.EndTime,
+		&span.Attributes,
+		&span.Events,
+		&span.Links,
+		&span.Resource.Attributes,
+		&span.Resource.DroppedAttributesCount,
+		&span.Scope.Name,
+		&span.Scope.Version,
+		&span.Scope.Attributes,
+		&span.Scope.DroppedAttributesCount,
+		&span.DroppedAttributesCount,
+		&span.DroppedEventsCount,
+		&span.DroppedLinksCount,
+		&span.StatusCode,
+		&span.StatusMessage,
+	); err != nil {
+		return span, fmt.Errorf(ErrScanTraceRow, err)
+	}
+
+	return span, nil
 }
 
 // ClearTraces truncates the spans table.

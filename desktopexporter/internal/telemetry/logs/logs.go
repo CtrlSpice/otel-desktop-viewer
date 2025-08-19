@@ -1,16 +1,21 @@
-package telemetry
+package logs
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
+
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
 
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
 type LogsPayload struct {
-	logs plog.Logs
+	Logs plog.Logs
 }
 
 type LogData struct {
@@ -23,13 +28,13 @@ type LogData struct {
 	SeverityText   string `json:"severityText,omitempty"`
 	SeverityNumber int32  `json:"severityNumber,omitempty"`
 
-	Body                   any            `json:"body,omitempty"`
-	Resource               *ResourceData  `json:"resource"`
-	Scope                  *ScopeData     `json:"scope"`
-	Attributes             map[string]any `json:"attributes,omitempty"`
-	DroppedAttributesCount uint32         `json:"droppedAttributeCount,omitempty"`
-	Flags                  uint32         `json:"flags,omitempty"`
-	EventName              string         `json:"eventName,omitempty"`
+	Body                   Body                   `json:"body,omitempty"`
+	Resource               *resource.ResourceData `json:"resource"`
+	Scope                  *scope.ScopeData       `json:"scope"`
+	Attributes             attributes.Attributes  `json:"attributes,omitempty"`
+	DroppedAttributesCount uint32                 `json:"droppedAttributeCount,omitempty"`
+	Flags                  uint32                 `json:"flags,omitempty"`
+	EventName              string                 `json:"eventName,omitempty"`
 }
 
 // Logs wraps a slice of LogData for JSON marshaling
@@ -38,17 +43,17 @@ type Logs struct {
 }
 
 func NewLogsPayload(l plog.Logs) *LogsPayload {
-	return &LogsPayload{logs: l}
+	return &LogsPayload{Logs: l}
 }
 
 func (payload *LogsPayload) ExtractLogs() []LogData {
 	logData := []LogData{}
 
-	for _, resourceLogs := range payload.logs.ResourceLogs().All() {
-		resourceData := AggregateResourceData(resourceLogs.Resource())
+	for _, resourceLogs := range payload.Logs.ResourceLogs().All() {
+		resourceData := resource.AggregateResourceData(resourceLogs.Resource())
 
 		for _, scopeLogs := range resourceLogs.ScopeLogs().All() {
-			scopeData := AggregateScopeData(scopeLogs.Scope())
+			scopeData := scope.AggregateScopeData(scopeLogs.Scope())
 
 			for _, logRecord := range scopeLogs.LogRecords().All() {
 				logData = append(logData, aggregateLogData(logRecord, scopeData, resourceData))
@@ -58,7 +63,7 @@ func (payload *LogsPayload) ExtractLogs() []LogData {
 	return logData
 }
 
-func aggregateLogData(source plog.LogRecord, scopeData *ScopeData, resourceData *ResourceData) LogData {
+func aggregateLogData(source plog.LogRecord, scopeData *scope.ScopeData, resourceData *resource.ResourceData) LogData {
 	return LogData{
 		Timestamp:         source.Timestamp().AsTime().UnixNano(),
 		ObservedTimestamp: source.ObservedTimestamp().AsTime().UnixNano(),
@@ -69,10 +74,10 @@ func aggregateLogData(source plog.LogRecord, scopeData *ScopeData, resourceData 
 		SeverityText:   source.SeverityText(),
 		SeverityNumber: int32(source.SeverityNumber()),
 
-		Body:                   source.Body().AsRaw(),
+		Body:                   Body{Data: source.Body().AsRaw()},
 		Resource:               resourceData,
 		Scope:                  scopeData,
-		Attributes:             source.Attributes().AsRaw(),
+		Attributes:             attributes.Attributes(source.Attributes().AsRaw()),
 		DroppedAttributesCount: source.DroppedAttributesCount(),
 		Flags:                  uint32(source.Flags()),
 		EventName:              source.EventName(),
@@ -115,11 +120,11 @@ func (logData LogData) MarshalJSON() ([]byte, error) {
 	type Alias LogData // Avoid recursive MarshalJSON calls
 	return json.Marshal(&struct {
 		Alias
-		Timestamp         PreciseTimestamp `json:"timestamp"`
-		ObservedTimestamp PreciseTimestamp `json:"observedTimestamp"`
+		Timestamp         string `json:"timestamp"`
+		ObservedTimestamp string `json:"observedTimestamp"`
 	}{
 		Alias:             Alias(logData),
-		Timestamp:         NewPreciseTimestamp(logData.Timestamp),
-		ObservedTimestamp: NewPreciseTimestamp(logData.ObservedTimestamp),
+		Timestamp:         strconv.FormatInt(logData.Timestamp, 10),
+		ObservedTimestamp: strconv.FormatInt(logData.ObservedTimestamp, 10),
 	})
 }

@@ -7,6 +7,7 @@ import { extendTheme, type ThemeConfig } from "@chakra-ui/react";
 import MainView, { mainLoader } from "./routes/main-view";
 import TraceView, { traceLoader } from "./routes/trace-view";
 import LogsView from "./routes/logs-view";
+import MetricsView from "./routes/metrics-view";
 import ErrorPage from "./error-page";
 
 let config: ThemeConfig = {
@@ -15,33 +16,37 @@ let config: ThemeConfig = {
 };
 let theme = extendTheme({ config });
 
-// Check feature flag for logs
+// Check feature flags for logs and metrics
 let enableLogs = localStorage.getItem('enableLogs') === 'true';
+let enableMetrics = localStorage.getItem('enableMetrics') === 'true';
 console.log('Debug: enableLogs flag at module load:', enableLogs);
+console.log('Debug: enableMetrics flag at module load:', enableMetrics);
 
 let routeChildren: any[] = [
   {
-    path: "traces/:traceID",
+    path: "traces/:traceID",     // /traces/123abc
     element: <TraceView />,
     loader: traceLoader,
   },
+  {
+    path: "logs",               // /logs
+    element: <LogsView />,
+  },
+  {
+    path: "metrics",            // /metrics
+    element: <MetricsView />,
+  },
 ];
-
-// Always add logs route, but we'll conditionally render it
-routeChildren.push({
-  path: "logs",
-  element: <LogsView />,
-});
 
 console.log('Debug: routeChildren:', routeChildren);
 
 let router = createBrowserRouter([
   {
-    path: "/",
-    element: <MainView />,
-    loader: mainLoader,
-    errorElement: <ErrorPage />,
-    children: routeChildren,
+    path: "/",                    // Root path
+    element: <MainView />,        // Main layout component
+    loader: mainLoader,           // Data loader for traces
+    errorElement: <ErrorPage />,  // Error boundary
+    children: routeChildren,      // Child routes (traces, logs, metrics)
   },
 ]);
 
@@ -52,7 +57,7 @@ if (!!container) {
   root.render(
     <React.StrictMode>
       <ChakraProvider theme={theme}>
-        <RouterProvider router={router} />
+        <RouterProvider router={router} />  // ← Router injected here
       </ChakraProvider>
     </React.StrictMode>,
   );

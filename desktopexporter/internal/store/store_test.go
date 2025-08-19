@@ -7,15 +7,46 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/stretchr/testify/assert"
 )
 
 type storeTest struct {
-	name     string
-	dbPath   string
-	cleanup  func()
+	name    string
+	dbPath  string
+	cleanup func()
 }
 
+// TestHelper holds common test dependencies
+type TestHelper struct {
+	T     *testing.T
+	Ctx   context.Context
+	Store *Store
+}
+
+// SetupTest creates a new test helper and returns a teardown function
+func SetupTest(t *testing.T) (*TestHelper, func()) {
+	ctx := context.Background()
+	store := NewStore(ctx, "")
+
+	assert.NotNil(t, store, "store should not be nil")
+
+	helper := &TestHelper{
+		T:     t,
+		Ctx:   ctx,
+		Store: store,
+	}
+
+	teardown := func() {
+		if helper.Store != nil {
+			helper.Store.Close()
+		}
+	}
+
+	return helper, teardown
+}
+
+// TestStore runs a comprehensive suite of tests on the store.
 func TestStore(t *testing.T) {
 	tests := []storeTest{
 		{
@@ -38,12 +69,12 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			
+
 			// Test store initialization
-			store := NewStore(ctx, tt.dbPath)
-			assert.NotNil(t, store, "store should not be nil")
-			assert.NotNil(t, store.db, "database connection should not be nil")
-			assert.NotNil(t, store.conn, "duckdb connection should not be nil")
+			s := NewStore(ctx, tt.dbPath)
+			assert.NotNil(t, s, "store should not be nil")
+			assert.NotNil(t, s.db, "database connection should not be nil")
+			assert.NotNil(t, s.conn, "duckdb connection should not be nil")
 
 			// For file-based stores, verify file creation
 			if tt.dbPath != "" {
@@ -56,36 +87,36 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			sample := telemetry.NewSampleTelemetry()
 
 			// Verify tables exist by inserting sample data
-			err := store.AddSpans(ctx, sample.Spans)
+			err := s.AddSpans(ctx, sample.Spans)
 			assert.NoError(t, err, "spans table should exist and accept sample data")
-			
-			err = store.AddLogs(ctx, sample.Logs)
+
+			err = s.AddLogs(ctx, sample.Logs)
 			assert.NoError(t, err, "logs table should exist and accept sample data")
 
 			// Verify data was inserted correctly
-			summaries, err := store.GetTraceSummaries(ctx)
+			summaries, err := s.GetTraceSummaries(ctx)
 			assert.NoError(t, err, "should be able to retrieve trace summaries")
 			assert.Len(t, summaries, 2, "should have two traces from sample data")
 
-			logs, err := store.GetLogs(ctx)
+			logs, err := s.GetLogs(ctx)
 			assert.NoError(t, err, "should be able to retrieve logs")
 			assert.Len(t, logs, 3, "should have three logs from sample data")
 
 			// Test store closure
-			err = store.Close()
+			err = s.Close()
 			assert.NoError(t, err, "store should close without error")
 
 			// Test store reopening
-			store = NewStore(ctx, tt.dbPath)
-			assert.NotNil(t, store, "store should be reopened successfully")
-			assert.NotNil(t, store.db, "database connection should be reestablished")
-			assert.NotNil(t, store.conn, "duckdb connection should be reestablished")
+			s = NewStore(ctx, tt.dbPath)
+			assert.NotNil(t, s, "store should be reopened successfully")
+			assert.NotNil(t, s.db, "database connection should be reestablished")
+			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
 
 			// Verify data after reopening
-			summaries, err = store.GetTraceSummaries(ctx)
+			summaries, err = s.GetTraceSummaries(ctx)
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
-			
-			logs, err = store.GetLogs(ctx)
+
+			logs, err = s.GetLogs(ctx)
 			assert.NoError(t, err, "should be able to retrieve logs after reopening")
 
 			// Verify persistence behavior
@@ -100,7 +131,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			}
 
 			// Clean up
-			err = store.Close()
+			err = s.Close()
 			assert.NoErrorf(t, err, "could not close database: %v", err)
 
 			if tt.cleanup != nil {
@@ -112,31 +143,28 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 
 func TestStoreLifecycleErrors(t *testing.T) {
 	ctx := context.Background()
-	store := NewStore(ctx, "")
-	assert.NotNil(t, store)
+	s := NewStore(ctx, "")
+	assert.NotNil(t, s)
 
 	// Test using store after close
-	err := store.Close()
+	err := s.Close()
 	assert.NoError(t, err, "first close should succeed")
 
 	// Try to use the store after closing
-	err = store.AddSpans(ctx, []telemetry.SpanData{})
+	err = s.AddSpans(ctx, []traces.SpanData{})
 	assert.Error(t, err, "should get error when using closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
-	
+
 	// Try to close an already closed store - should be a no-op
-	err = store.Close()
+	err = s.Close()
 	assert.NoError(t, err, "closing an already closed store should be a no-op")
 
 	// Try some other operations on closed store
-	_, err = store.GetTraceSummaries(ctx)
+	_, err = s.GetTraceSummaries(ctx)
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
-	_, err = store.GetLogs(ctx)
+	_, err = s.GetLogs(ctx)
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 }
-
-
-

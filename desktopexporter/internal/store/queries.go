@@ -1,147 +1,211 @@
 package store
 
-// Table creation queries
-const (
-	// An Attribute is a key-value pair, which MUST have the following properties:
-	// - The attribute key MUST be a non-null and non-empty string.
-	// - Case sensitivity of keys is preserved. Keys that differ in casing are treated as distinct keys.
-	// - The attribute value is either:
-	//   - A primitive type: string, boolean, double precision floating point (IEEE 754-1985) or signed 64 bit integer.
-	//   - An array of primitive type values. The array MUST be homogeneous, i.e., it MUST NOT contain values of different types.
-	CreateAttributeType = `
-		CREATE TYPE attribute AS UNION(
-			str VARCHAR,
-			bigint BIGINT,
-			double DOUBLE,
-			boolean BOOLEAN,
-			str_list VARCHAR[],
-			bigint_list BIGINT[],
-			double_list DOUBLE[],
-			boolean_list BOOLEAN[]
-		)
-	`
-	// BodyType supports all value types according to semantic conventions:
-	// - Scalar values: string, boolean, signed 64-bit integer, double
-	// - Byte array
-	// - Everything else (arrays, maps, etc.) as JSON
-	CreateBodyType = `
-		CREATE TYPE body AS UNION(
-			str VARCHAR,
-			bigint BIGINT,
-			double DOUBLE,
-			boolean BOOLEAN,
-			bytes BLOB,
-			json JSON
-		)
-	`
-	CreateEventType = `
-		CREATE TYPE event AS STRUCT(
-			name VARCHAR,
-			timestamp BIGINT,
-			attributes MAP(VARCHAR, attribute),
-			droppedAttributesCount UINTEGER
-		)
-	`
-	CreateLinkType = `
-		CREATE TYPE link AS STRUCT(
-			traceID VARCHAR,
-			spanID VARCHAR,
-			traceState VARCHAR,
-			attributes MAP(VARCHAR, attribute),
-			droppedAttributesCount UINTEGER
-		)
-	`
-	CreateSpansTable = `
-		CREATE TABLE IF NOT EXISTS spans 
-		(traceID VARCHAR, 
-		traceState VARCHAR, 
-		spanID VARCHAR, 
-		parentSpanID VARCHAR,
-		name VARCHAR, 
-		kind VARCHAR, 
-		startTime BIGINT, 
-		endTime BIGINT,
-		attributes MAP(VARCHAR, attribute), 
-		events event[],
-		links link[],
-		resourceAttributes MAP(VARCHAR, attribute),
-		resourceDroppedAttributesCount UINTEGER,
-		scopeName VARCHAR,
-		scopeVersion VARCHAR,
-		scopeAttributes MAP(VARCHAR, attribute),
-		scopeDroppedAttributesCount UINTEGER, 
-		droppedAttributesCount UINTEGER, 
-		droppedEventsCount UINTEGER, 
-		droppedLinksCount UINTEGER,
-		statusCode VARCHAR, 
-		statusMessage VARCHAR)
-	`
-	CreateLogsTable = `
-		CREATE TABLE IF NOT EXISTS logs (
-			logID VARCHAR,
-			timestamp BIGINT,
-			observedTimestamp BIGINT,
-			traceID VARCHAR,
-			spanID VARCHAR,
-			severityText VARCHAR,
-			severityNumber INTEGER,
-			body body,
-			resourceAttributes MAP(VARCHAR, attribute),
-			resourceDroppedAttributesCount UINTEGER,
-			scopeName VARCHAR,
-			scopeVersion VARCHAR,
-			scopeAttributes MAP(VARCHAR, attribute),
-			scopeDroppedAttributesCount UINTEGER,
-			attributes MAP(VARCHAR, attribute),
-			droppedAttributesCount UINTEGER,
-			flags UINTEGER,
-			eventName VARCHAR
-		)	`
-)
+// Type creation queries that must be run in order
+var TypeCreationQueries = []string{
+	`CREATE TYPE attribute AS UNION(
+		str VARCHAR,
+		bigint BIGINT,
+		double DOUBLE,
+		boolean BOOLEAN,
+		str_list VARCHAR[],
+		bigint_list BIGINT[],
+		double_list DOUBLE[],
+		boolean_list BOOLEAN[]
+	)`,
+	`CREATE TYPE exemplar AS STRUCT(
+		Timestamp BIGINT,
+		Value DOUBLE,
+		TraceID VARCHAR,
+		SpanID VARCHAR,
+		FilteredAttributes MAP(VARCHAR, attribute)
+	)`,
+	`CREATE TYPE buckets AS STRUCT(
+		BucketOffset INTEGER,
+		BucketCounts UBIGINT[]
+	)`,
+	`CREATE TYPE body AS UNION(
+		str VARCHAR,
+		bigint BIGINT,
+		double DOUBLE,
+		boolean BOOLEAN,
+		bytes BLOB,
+		json JSON
+	)`,
+	`CREATE TYPE gauge AS STRUCT(
+		Timestamp BIGINT,
+		StartTime BIGINT,
+		Attributes MAP(VARCHAR, attribute),
+		Flags UINTEGER,
+		ValueType VARCHAR,
+		Value DOUBLE,
+		Exemplars exemplar[]
+	)`,
+	`CREATE TYPE sum AS STRUCT(
+		Timestamp BIGINT,
+		StartTime BIGINT,
+		Attributes MAP(VARCHAR, attribute),
+		Flags UINTEGER,
+		ValueType VARCHAR,
+		Value DOUBLE,
+		IsMonotonic BOOLEAN,
+		Exemplars exemplar[],
+		AggregationTemporality VARCHAR
+	)`,
+	`CREATE TYPE histogram AS STRUCT(
+		Timestamp BIGINT,
+		StartTime BIGINT,
+		Attributes MAP(VARCHAR, attribute),
+		Flags UINTEGER,
+		Count UBIGINT,
+		Sum DOUBLE,
+		Min DOUBLE,
+		Max DOUBLE,
+		BucketCounts UBIGINT[],
+		ExplicitBounds DOUBLE[],
+		Exemplars exemplar[],
+		AggregationTemporality VARCHAR
+	)`,
+	`CREATE TYPE exponentialHistogram AS STRUCT(
+		Timestamp BIGINT,
+		StartTime BIGINT,
+		Attributes MAP(VARCHAR, attribute),
+		Flags UINTEGER,
+		Count UBIGINT,
+		Sum DOUBLE,
+		Min DOUBLE,
+		Max DOUBLE,
+		Scale INTEGER,
+		ZeroCount UBIGINT,
+		Positive buckets,
+		Negative buckets,
+		Exemplars exemplar[],
+		AggregationTemporality VARCHAR
+	)`,
+	`CREATE TYPE dataPoints AS UNION(
+		Gauge gauge[],
+		Sum sum[],
+		Histogram histogram[],
+		ExponentialHistogram exponentialHistogram[]
+	)`,
+	`CREATE TYPE event AS STRUCT(
+		Name VARCHAR,
+		Timestamp BIGINT,
+		Attributes MAP(VARCHAR, attribute),
+		DroppedAttributesCount UINTEGER
+	)`,
+	`CREATE TYPE link AS STRUCT(
+		TraceID VARCHAR,
+		SpanID VARCHAR,
+		TraceState VARCHAR,
+		Attributes MAP(VARCHAR, attribute),
+		DroppedAttributesCount UINTEGER
+	)`,
+}
+
+// Table creation queries that can be run in any order
+var TableCreationQueries = []string{
+	`CREATE TABLE IF NOT EXISTS spans 
+	(TraceID VARCHAR, 
+	TraceState VARCHAR, 
+	SpanID VARCHAR, 
+	ParentSpanID VARCHAR,
+	Name VARCHAR, 
+	Kind VARCHAR, 
+	StartTime BIGINT, 
+	EndTime BIGINT,
+	Attributes MAP(VARCHAR, attribute), 
+	Events event[],
+	Links link[],
+	ResourceAttributes MAP(VARCHAR, attribute),
+	ResourceDroppedAttributesCount UINTEGER,
+	ScopeName VARCHAR,
+	ScopeVersion VARCHAR,
+	ScopeAttributes MAP(VARCHAR, attribute),
+	ScopeDroppedAttributesCount UINTEGER, 
+	DroppedAttributesCount UINTEGER, 
+	DroppedEventsCount UINTEGER, 
+	DroppedLinksCount UINTEGER,
+	StatusCode VARCHAR, 
+	StatusMessage VARCHAR)`,
+	`CREATE TABLE IF NOT EXISTS logs (
+		LogID VARCHAR,
+		Timestamp BIGINT,
+		ObservedTimestamp BIGINT,
+		TraceID VARCHAR,
+		SpanID VARCHAR,
+		SeverityText VARCHAR,
+		SeverityNumber INTEGER,
+		Body body,
+		ResourceAttributes MAP(VARCHAR, attribute),
+		ResourceDroppedAttributesCount UINTEGER,
+		ScopeName VARCHAR,
+		ScopeVersion VARCHAR,
+		ScopeAttributes MAP(VARCHAR, attribute),
+		ScopeDroppedAttributesCount UINTEGER,
+		Attributes MAP(VARCHAR, attribute),
+		DroppedAttributesCount UINTEGER,
+		Flags UINTEGER,
+		EventName VARCHAR
+	)`,
+	`CREATE TABLE IF NOT EXISTS metrics (
+		MetricID VARCHAR,
+		Name VARCHAR,
+		Description VARCHAR,
+		Unit VARCHAR,
+		DataPoints dataPoints,
+		ResourceAttributes MAP(VARCHAR, attribute),
+		ResourceDroppedAttributesCount UINTEGER,
+		ScopeName VARCHAR,
+		ScopeVersion VARCHAR,
+		ScopeAttributes MAP(VARCHAR, attribute),
+		ScopeDroppedAttributesCount UINTEGER,
+		Received BIGINT
+	)`,
+}
 
 // Log queries
 const (
-	// To order, use Timestamp if present, 
+	// To order, use Timestamp if present,
 	// otherwise fall back to ObservedTimestamp per OpenTelemetry spec
 	SelectLogs = `
-		SELECT timestamp, observedTimestamp, traceID, spanID, severityText, severityNumber,
-		       body, resourceAttributes, resourceDroppedAttributesCount, scopeName, scopeVersion,
-		       scopeAttributes, scopeDroppedAttributesCount, attributes, droppedAttributesCount,
-		       flags, eventName
+		SELECT Timestamp, ObservedTimestamp, TraceID, SpanID, SeverityText, SeverityNumber,
+		       Body, ResourceAttributes, ResourceDroppedAttributesCount, ScopeName, ScopeVersion,
+		       ScopeAttributes, ScopeDroppedAttributesCount, Attributes, DroppedAttributesCount,
+		       Flags, EventName
 		FROM logs
 		ORDER BY CASE 
-			WHEN timestamp IS NULL THEN observedTimestamp
-			WHEN timestamp = 0 THEN observedTimestamp
-			ELSE timestamp
+			WHEN Timestamp IS NULL THEN ObservedTimestamp
+			WHEN Timestamp = 0 THEN ObservedTimestamp
+			ELSE Timestamp
 		END DESC
 	`
 
 	SelectLog = `
-		SELECT timestamp, observedTimestamp, traceID, spanID, severityText, severityNumber,
-		       body, resourceAttributes, resourceDroppedAttributesCount, scopeName, scopeVersion,
-		       scopeAttributes, scopeDroppedAttributesCount, attributes, droppedAttributesCount,
-		       flags, eventName
-		FROM logs WHERE logID = ?
+		SELECT Timestamp, ObservedTimestamp, TraceID, SpanID, SeverityText, SeverityNumber,
+		       Body, ResourceAttributes, ResourceDroppedAttributesCount, ScopeName, ScopeVersion,
+		       ScopeAttributes, ScopeDroppedAttributesCount, Attributes, DroppedAttributesCount,
+		       Flags, EventName
+		FROM logs WHERE LogID = ?
 	`
 
 	SelectLogsByTraceSpan = `
-		SELECT timestamp, observedTimestamp, traceID, spanID, severityText, severityNumber,
-		       body, resourceAttributes, resourceDroppedAttributesCount, scopeName, scopeVersion,
-		       scopeAttributes, scopeDroppedAttributesCount, attributes, droppedAttributesCount,
-		       flags, eventName
-		FROM logs WHERE traceID = ? AND spanID = ?
+		SELECT Timestamp, ObservedTimestamp, TraceID, SpanID, SeverityText, SeverityNumber,
+		       Body, ResourceAttributes, ResourceDroppedAttributesCount, ScopeName, ScopeVersion,
+		       ScopeAttributes, ScopeDroppedAttributesCount, Attributes, DroppedAttributesCount,
+		       Flags, EventName
+		FROM logs WHERE TraceID = ? AND SpanID = ?
 	`
 
 	SelectLogsByTrace = `
-		SELECT timestamp, observedTimestamp, traceID, spanID, severityText, severityNumber,
-		       body, resourceAttributes, resourceDroppedAttributesCount, scopeName, scopeVersion,
-		       scopeAttributes, scopeDroppedAttributesCount, attributes, droppedAttributesCount,
-		       flags, eventName
-		FROM logs WHERE traceID = ?
+		SELECT Timestamp, ObservedTimestamp, TraceID, SpanID, SeverityText, SeverityNumber,
+		       Body, ResourceAttributes, ResourceDroppedAttributesCount, ScopeName, ScopeVersion,
+		       ScopeAttributes, ScopeDroppedAttributesCount, Attributes, DroppedAttributesCount,
+		       Flags, EventName
+		FROM logs WHERE TraceID = ?
 		ORDER BY CASE 
-			WHEN timestamp IS NULL THEN observedTimestamp
-			WHEN timestamp = 0 THEN observedTimestamp
-			ELSE timestamp
+			WHEN Timestamp IS NULL THEN ObservedTimestamp
+			WHEN Timestamp = 0 THEN ObservedTimestamp
+			ELSE Timestamp
 		END DESC
 	`
 )
@@ -149,7 +213,7 @@ const (
 // Trace queries
 const (
 	SelectTrace = `
-		SELECT * FROM spans WHERE traceID = ?
+		SELECT * FROM spans WHERE TraceID = ?
 	`
 
 	// SelectTraceSummaries retrieves all traces ordered by:
@@ -165,25 +229,44 @@ const (
 	// We use MIN for both because even though there's only one root span time per trace (when it exists),
 	// we need an aggregate function to match the MIN used in the fallback.
 	SelectTraceSummaries = `
-        SELECT DISTINCT ON (s.traceID)
-            s.traceID,
-            CASE WHEN s.parentSpanID = '' THEN CAST(s.resourceAttributes['service.name'] AS VARCHAR) END as service_name,
-            CASE WHEN s.parentSpanID = '' THEN s.name END as root_name,
-            CASE WHEN s.parentSpanID = '' THEN s.startTime END as start_time,
-            CASE WHEN s.parentSpanID = '' THEN s.endTime END as end_time,
-            COUNT(*) OVER (PARTITION BY s.traceID) as span_count
+        SELECT DISTINCT ON (s.TraceID)
+            s.TraceID,
+            CASE WHEN s.ParentSpanID = '' THEN CAST(s.ResourceAttributes['service.name'] AS VARCHAR) END as service_name,
+            CASE WHEN s.ParentSpanID = '' THEN s.Name END as root_name,
+            CASE WHEN s.ParentSpanID = '' THEN s.StartTime END as start_time,
+            CASE WHEN s.ParentSpanID = '' THEN s.EndTime END as end_time,
+            COUNT(*) OVER (PARTITION BY s.TraceID) as span_count
         FROM spans s
         ORDER BY 
             COALESCE(
-                MIN(CASE WHEN s.parentSpanID = '' THEN s.startTime END) OVER (PARTITION BY s.traceID),
-                MIN(s.startTime) OVER (PARTITION BY s.traceID)
+                MIN(CASE WHEN s.ParentSpanID = '' THEN s.StartTime END) OVER (PARTITION BY s.TraceID),
+                MIN(s.StartTime) OVER (PARTITION BY s.TraceID)
             ) DESC,
-            s.traceID
+            s.TraceID
     `
+)
+
+// Metrics queries
+const (
+	SelectMetrics = `
+		SELECT Name, Description, Unit, DataPoints, ResourceAttributes, 
+		       ResourceDroppedAttributesCount, ScopeName, ScopeVersion, ScopeAttributes,
+		       ScopeDroppedAttributesCount, Received
+		FROM metrics
+		ORDER BY Received DESC
+	`
+
+	SelectMetric = `
+		SELECT Name, Description, Unit, DataPoints, ResourceAttributes, 
+		       ResourceDroppedAttributesCount, ScopeName, ScopeVersion, ScopeAttributes,
+		       ScopeDroppedAttributesCount, Received
+		FROM metrics WHERE MetricID = ?
+	`
 )
 
 // Maintenance queries
 const (
-	TruncateSpans = `TRUNCATE TABLE spans`
-	TruncateLogs = `TRUNCATE TABLE logs`
+	TruncateSpans   = `TRUNCATE TABLE spans`
+	TruncateLogs    = `TRUNCATE TABLE logs`
+	TruncateMetrics = `TRUNCATE TABLE metrics`
 )

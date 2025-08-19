@@ -1,14 +1,17 @@
-package telemetry
+package traces
 
 import (
 	"encoding/json"
-	"fmt"
+	"strconv"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
 type SpanPayload struct {
-	traces ptrace.Traces
+	Traces ptrace.Traces
 }
 
 type SpanData struct {
@@ -22,11 +25,11 @@ type SpanData struct {
 	StartTime int64  `json:"-"`
 	EndTime   int64  `json:"-"`
 
-	Attributes map[string]any `json:"attributes"`
-	Events     []EventData    `json:"events"`
-	Links      []LinkData     `json:"links"`
-	Resource   *ResourceData  `json:"resource"`
-	Scope      *ScopeData     `json:"scope"`
+	Attributes attributes.Attributes  `json:"attributes"`
+	Events     Events                 `json:"events"`
+	Links      Links                  `json:"links"`
+	Resource   *resource.ResourceData `json:"resource"`
+	Scope      *scope.ScopeData       `json:"scope"`
 
 	DroppedAttributesCount uint32 `json:"droppedAttributesCount"`
 	DroppedEventsCount     uint32 `json:"droppedEventsCount"`
@@ -37,17 +40,17 @@ type SpanData struct {
 }
 
 func NewSpanPayload(t ptrace.Traces) *SpanPayload {
-	return &SpanPayload{traces: t}
+	return &SpanPayload{Traces: t}
 }
 
 func (payload *SpanPayload) ExtractSpans() []SpanData {
 	spanSlice := []SpanData{}
 
-	for _, resourceSpan := range payload.traces.ResourceSpans().All() {
-		resourceData := AggregateResourceData(resourceSpan.Resource())
+	for _, resourceSpan := range payload.Traces.ResourceSpans().All() {
+		resourceData := resource.AggregateResourceData(resourceSpan.Resource())
 
 		for _, scopeSpan := range resourceSpan.ScopeSpans().All() {
-			scopeData := AggregateScopeData(scopeSpan.Scope())
+			scopeData := scope.AggregateScopeData(scopeSpan.Scope())
 
 			for _, span := range scopeSpan.Spans().All() {
 				eventsPayload := EventPayload{span.Events()}
@@ -63,7 +66,7 @@ func (payload *SpanPayload) ExtractSpans() []SpanData {
 	return spanSlice
 }
 
-func aggregateSpanData(source ptrace.Span, eventData []EventData, linkData []LinkData, scopeData *ScopeData, resourceData *ResourceData) SpanData {
+func aggregateSpanData(source ptrace.Span, eventData []EventData, linkData []LinkData, scopeData *scope.ScopeData, resourceData *resource.ResourceData) SpanData {
 	return SpanData{
 		TraceID:    source.TraceID().String(),
 		TraceState: source.TraceState().AsRaw(),
@@ -74,10 +77,10 @@ func aggregateSpanData(source ptrace.Span, eventData []EventData, linkData []Lin
 		Kind:         source.Kind().String(),
 		StartTime:    source.StartTimestamp().AsTime().UnixNano(),
 		EndTime:      source.EndTimestamp().AsTime().UnixNano(),
-		Attributes:   source.Attributes().AsRaw(),
+		Attributes:   attributes.Attributes(source.Attributes().AsRaw()),
 
-		Events:   eventData,
-		Links:    linkData,
+		Events:   Events(eventData),
+		Links:    Links(linkData),
 		Scope:    scopeData,
 		Resource: resourceData,
 
@@ -90,28 +93,16 @@ func aggregateSpanData(source ptrace.Span, eventData []EventData, linkData []Lin
 	}
 }
 
-// Get the service name of a span with respect to OTEL semanic conventions:
-// service.name must be a string value having a meaning that helps to distinguish a group of services.
-// Read more here: (https://opentelemetry.io/docs/reference/specification/resource/semantic_conventions/#service)
-func (spanData *SpanData) GetServiceName() string {
-	serviceName, ok := spanData.Resource.Attributes["service.name"]
-	if !ok {
-		fmt.Println("traceID:", spanData.TraceID, "spanID:", spanData.SpanID, ErrInvalidServiceName)
-		return ""
-	}
-	return serviceName.(string)
-}
-
 // MarshalJSON implements custom JSON marshaling for SpanData
 func (spanData SpanData) MarshalJSON() ([]byte, error) {
 	type Alias SpanData // Avoid recursive MarshalJSON calls
 	return json.Marshal(&struct {
 		Alias
-		StartTime PreciseTimestamp `json:"startTime"`
-		EndTime   PreciseTimestamp `json:"endTime"`
+		StartTime string `json:"startTime"`
+		EndTime   string `json:"endTime"`
 	}{
 		Alias:     Alias(spanData),
-		StartTime: NewPreciseTimestamp(spanData.StartTime),
-		EndTime:   NewPreciseTimestamp(spanData.EndTime),
+		StartTime: strconv.FormatInt(spanData.StartTime, 10),
+		EndTime:   strconv.FormatInt(spanData.EndTime, 10),
 	})
-} 
+}

@@ -12,14 +12,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/stretchr/testify/assert"
 )
 
 func setupEmpty() (*httptest.Server, func()) {
 	// Set environment variable to enable logs endpoints
 	os.Setenv("ENABLE_LOGS", "true")
-	
+
 	server := NewServer("localhost:8000", "")
 	testServer := httptest.NewServer(server.Handler())
 
@@ -34,12 +37,12 @@ func setupEmpty() (*httptest.Server, func()) {
 func setupWithData(t *testing.T) (*httptest.Server, func(*testing.T)) {
 	// Set environment variable to enable logs endpoints
 	os.Setenv("ENABLE_LOGS", "true")
-	
+
 	baseTime := time.Now().UnixNano()
 	server := NewServer("localhost:8000", "")
 
 	// Add test span
-	testSpanData := telemetry.SpanData{
+	testSpanData := traces.SpanData{
 		TraceID:      "1234567890",
 		TraceState:   "",
 		SpanID:       "12345",
@@ -49,15 +52,15 @@ func setupWithData(t *testing.T) (*httptest.Server, func(*testing.T)) {
 		StartTime:    baseTime,
 		EndTime:      baseTime + time.Second.Nanoseconds(),
 		Attributes:   map[string]any{},
-		Events:       []telemetry.EventData{},
-		Links:        []telemetry.LinkData{},
-		Resource: &telemetry.ResourceData{
+		Events:       []traces.EventData{},
+		Links:        []traces.LinkData{},
+		Resource: &resource.ResourceData{
 			Attributes: map[string]any{
 				"service.name": "pumpkin.pie",
 			},
 			DroppedAttributesCount: 0,
 		},
-		Scope: &telemetry.ScopeData{
+		Scope: &scope.ScopeData{
 			Name:                   "test.scope",
 			Version:                "1",
 			Attributes:             map[string]any{},
@@ -70,25 +73,25 @@ func setupWithData(t *testing.T) (*httptest.Server, func(*testing.T)) {
 		StatusMessage:          "",
 	}
 
-	err := server.Store.AddSpans(context.Background(), []telemetry.SpanData{testSpanData})
+	err := server.Store.AddSpans(context.Background(), []traces.SpanData{testSpanData})
 	assert.Nilf(t, err, "could not create test span: %v", err)
 
 	// Add test log
-	testLogData := telemetry.LogData{
+	testLogData := logs.LogData{
 		Timestamp:         baseTime,
 		ObservedTimestamp: baseTime + time.Millisecond.Nanoseconds(),
-		TraceID:          "1234567890",
-		SpanID:           "12345",
-		SeverityText:     "INFO",
-		SeverityNumber:   9,
-		Body:             "test log message",
-		Resource: &telemetry.ResourceData{
+		TraceID:           "1234567890",
+		SpanID:            "12345",
+		SeverityText:      "INFO",
+		SeverityNumber:    9,
+		Body:              logs.Body{Data: "test log message"},
+		Resource: &resource.ResourceData{
 			Attributes: map[string]any{
 				"service.name": "pumpkin.pie",
 			},
 			DroppedAttributesCount: 0,
 		},
-		Scope: &telemetry.ScopeData{
+		Scope: &scope.ScopeData{
 			Name:                   "test.scope",
 			Version:                "1",
 			Attributes:             map[string]any{},
@@ -97,10 +100,10 @@ func setupWithData(t *testing.T) (*httptest.Server, func(*testing.T)) {
 		Attributes:             map[string]any{},
 		DroppedAttributesCount: 0,
 		Flags:                  1,
-		EventName:             "test.event",
+		EventName:              "test.event",
 	}
 
-	err = server.Store.AddLogs(context.Background(), []telemetry.LogData{testLogData})
+	err = server.Store.AddLogs(context.Background(), []logs.LogData{testLogData})
 	assert.Nilf(t, err, "could not create test log: %v", err)
 
 	testServer := httptest.NewServer(server.Handler())
@@ -129,11 +132,11 @@ func TestTracesHandler(t *testing.T) {
 
 		// Init summaries struct with some data to be overwritten
 		baseTime := time.Now().UnixNano()
-		testSummaries := telemetry.TraceSummaries{
-			TraceSummaries: []telemetry.TraceSummary{
+		testSummaries := traces.TraceSummaries{
+			TraceSummaries: []traces.TraceSummary{
 				{
 					TraceID: "12345",
-					RootSpan: &telemetry.RootSpan{
+					RootSpan: &traces.RootSpan{
 						ServiceName: "groot",
 						Name:        "i.am.groot",
 						StartTime:   baseTime,
@@ -162,7 +165,7 @@ func TestTracesHandler(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testSummaries := telemetry.TraceSummaries{}
+		testSummaries := traces.TraceSummaries{}
 		err = json.Unmarshal(b, &testSummaries)
 		assert.Nilf(t, err, "could not unmarshal bytes to trace summaries: %v", err)
 
@@ -195,7 +198,7 @@ func TestTraceIDHandler(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testTrace := telemetry.TraceData{}
+		testTrace := traces.TraceData{}
 		err = json.Unmarshal(b, &testTrace)
 		assert.Nilf(t, err, "could not unmarshal bytes to trace data: %v", err)
 
@@ -221,7 +224,7 @@ func TestLogsHandler(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testLogs := telemetry.Logs{}
+		testLogs := logs.Logs{}
 		err = json.Unmarshal(b, &testLogs)
 		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
 
@@ -241,7 +244,7 @@ func TestLogsHandler(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testLogs := telemetry.Logs{}
+		testLogs := logs.Logs{}
 		err = json.Unmarshal(b, &testLogs)
 		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
 
@@ -249,7 +252,7 @@ func TestLogsHandler(t *testing.T) {
 		assert.Equal(t, "1234567890", testLogs.Logs[0].TraceID)
 		assert.Equal(t, "12345", testLogs.Logs[0].SpanID)
 		assert.Equal(t, "INFO", testLogs.Logs[0].SeverityText)
-		assert.Equal(t, "test log message", testLogs.Logs[0].Body)
+		assert.Equal(t, "test log message", testLogs.Logs[0].Body.Data)
 		assert.Equal(t, "pumpkin.pie", testLogs.Logs[0].Resource.Attributes["service.name"])
 	})
 }
@@ -268,7 +271,7 @@ func TestLogsByTraceHandler(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testLogs := telemetry.Logs{}
+		testLogs := logs.Logs{}
 		err = json.Unmarshal(b, &testLogs)
 		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
 
@@ -285,7 +288,7 @@ func TestLogsByTraceHandler(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testLogs := telemetry.Logs{}
+		testLogs := logs.Logs{}
 		err = json.Unmarshal(b, &testLogs)
 		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
 
@@ -293,7 +296,7 @@ func TestLogsByTraceHandler(t *testing.T) {
 		assert.Equal(t, "1234567890", testLogs.Logs[0].TraceID)
 		assert.Equal(t, "12345", testLogs.Logs[0].SpanID)
 		assert.Equal(t, "INFO", testLogs.Logs[0].SeverityText)
-		assert.Equal(t, "test log message", testLogs.Logs[0].Body)
+		assert.Equal(t, "test log message", testLogs.Logs[0].Body.Data)
 	})
 }
 
@@ -317,7 +320,7 @@ func TestClearHandlers(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testSummaries := telemetry.TraceSummaries{}
+		testSummaries := traces.TraceSummaries{}
 		err = json.Unmarshal(b, &testSummaries)
 		assert.Nilf(t, err, "could not unmarshal bytes to trace summaries: %v", err)
 
@@ -331,7 +334,7 @@ func TestClearHandlers(t *testing.T) {
 		b, err = io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testLogs := telemetry.Logs{}
+		testLogs := logs.Logs{}
 		err = json.Unmarshal(b, &testLogs)
 		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
 
@@ -354,7 +357,7 @@ func TestClearHandlers(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testLogs := telemetry.Logs{}
+		testLogs := logs.Logs{}
 		err = json.Unmarshal(b, &testLogs)
 		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
 
@@ -383,7 +386,7 @@ func TestSampleHandler(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testTrace := telemetry.TraceData{}
+		testTrace := traces.TraceData{}
 		err = json.Unmarshal(b, &testTrace)
 		assert.Nilf(t, err, "could not unmarshal bytes to trace data: %v", err)
 
@@ -404,7 +407,7 @@ func TestSampleHandler(t *testing.T) {
 		b, err := io.ReadAll(res.Body)
 		assert.Nilf(t, err, "could not read response body: %v", err)
 
-		testLogs := telemetry.Logs{}
+		testLogs := logs.Logs{}
 		err = json.Unmarshal(b, &testLogs)
 		assert.Nilf(t, err, "could not unmarshal bytes to logs: %v", err)
 

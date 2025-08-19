@@ -1,54 +1,24 @@
 package store
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/stretchr/testify/assert"
 )
 
-// testHelper holds common test dependencies
-type testHelper struct {
-	t     *testing.T
-	ctx   context.Context
-	store *Store
-}
-
-// setupTest creates a new test helper and returns a teardown function
-func setupTest(t *testing.T) (*testHelper, func()) {
-	ctx := context.Background()
-	store := NewStore(ctx, "")
-	
-	assert.NotNil(t, store, "store should not be nil")
-	assert.NotNil(t, store.db, "database connection should not be nil")
-	assert.NotNil(t, store.conn, "duckdb connection should not be nil")
-	
-	helper := &testHelper{
-		t:     t,
-		ctx:   ctx,
-		store: store,
-	}
-	
-	teardown := func() {
-		if helper.store != nil {
-			helper.store.Close()
-		}
-	}
-	
-	return helper, teardown
-}
-
 // TestTraceSummaryOrdering verifies that trace summaries are ordered by start time (newest first).
 func TestTraceSummaryOrdering(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
 
 	// Create test spans with different timing scenarios
-	spans := []telemetry.SpanData{
+	spans := []traces.SpanData{
 		{
 			// Trace 1: Middle time
 			TraceID:      "trace1",
@@ -56,13 +26,13 @@ func TestTraceSummaryOrdering(t *testing.T) {
 			ParentSpanID: "", // root span
 			Name:         "root middle",
 			StartTime:    baseTime + time.Second.Nanoseconds(), // t+1
-			EndTime:      baseTime + 2 * time.Second.Nanoseconds(),
-			Resource: &telemetry.ResourceData{
+			EndTime:      baseTime + 2*time.Second.Nanoseconds(),
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{
 					"service.name": "service1",
 				},
 			},
-			Scope: &telemetry.ScopeData{},
+			Scope: &scope.ScopeData{},
 		},
 		{
 			// Trace 2: Oldest time
@@ -71,11 +41,11 @@ func TestTraceSummaryOrdering(t *testing.T) {
 			ParentSpanID: "missing_parent",
 			Name:         "earliest no root",
 			StartTime:    baseTime, // t+0
-			EndTime:      baseTime + 2 * time.Second.Nanoseconds(),
-			Resource: &telemetry.ResourceData{
+			EndTime:      baseTime + 2*time.Second.Nanoseconds(),
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{},
 			},
-			Scope: &telemetry.ScopeData{},
+			Scope: &scope.ScopeData{},
 		},
 		{
 			// Trace 3: Newest time
@@ -83,23 +53,23 @@ func TestTraceSummaryOrdering(t *testing.T) {
 			SpanID:       "span3",
 			ParentSpanID: "", // root span
 			Name:         "root last",
-			StartTime:    baseTime + 2 * time.Second.Nanoseconds(), // t+2
-			EndTime:      baseTime + 3 * time.Second.Nanoseconds(),
-			Resource: &telemetry.ResourceData{
+			StartTime:    baseTime + 2*time.Second.Nanoseconds(), // t+2
+			EndTime:      baseTime + 3*time.Second.Nanoseconds(),
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{
 					"service.name": "service3",
 				},
 			},
-			Scope: &telemetry.ScopeData{},
+			Scope: &scope.ScopeData{},
 		},
 	}
 
 	// Add spans to store
-	err := helper.store.AddSpans(helper.ctx, spans)
+	err := helper.Store.AddSpans(helper.Ctx, spans)
 	assert.NoError(t, err, "failed to add spans")
 
 	// Get summaries
-	summaries, err := helper.store.GetTraceSummaries(helper.ctx)
+	summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
 	assert.NoError(t, err, "failed to get trace summaries")
 
 	// Should have all three traces
@@ -124,67 +94,67 @@ func TestTraceSummaryOrdering(t *testing.T) {
 
 // TestTraceNotFound verifies error handling for non-existent trace IDs.
 func TestTraceNotFound(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
-	_, err := helper.store.GetTrace(helper.ctx, "non-existent-trace")
+	_, err := helper.Store.GetTrace(helper.Ctx, "non-existent-trace")
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrTraceIDNotFound)
 }
 
 // TestEmptySpans verifies handling of empty span lists and empty stores.
 func TestEmptySpans(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	// Test adding empty span list
-	err := helper.store.AddSpans(helper.ctx, []telemetry.SpanData{})
+	err := helper.Store.AddSpans(helper.Ctx, []traces.SpanData{})
 	assert.NoError(t, err)
 
 	// Test getting summaries from empty store
-	summaries, err := helper.store.GetTraceSummaries(helper.ctx)
+	summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
 	assert.NoError(t, err)
 	assert.Empty(t, summaries)
 }
 
 // TestClearTraces verifies that all traces can be cleared from the store.
 func TestClearTraces(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	// Add test trace
 	spans := createTestTrace()
-	err := helper.store.AddSpans(helper.ctx, spans)
+	err := helper.Store.AddSpans(helper.Ctx, spans)
 	assert.NoError(t, err)
 
 	// Verify trace exists
-	summaries, err := helper.store.GetTraceSummaries(helper.ctx)
+	summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
 	assert.NoError(t, err)
 	assert.Len(t, summaries, 1)
 
 	// Clear traces
-	err = helper.store.ClearTraces(helper.ctx)
+	err = helper.Store.ClearTraces(helper.Ctx)
 	assert.NoError(t, err)
 
 	// Verify store is empty
-	summaries, err = helper.store.GetTraceSummaries(helper.ctx)
+	summaries, err = helper.Store.GetTraceSummaries(helper.Ctx)
 	assert.NoError(t, err)
 	assert.Empty(t, summaries)
 }
 
 // TestTraceSuite runs a comprehensive suite of tests on a single trace.
 func TestTraceSuite(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	// Add the test trace
 	spans := createTestTrace()
-	err := helper.store.AddSpans(helper.ctx, spans)
+	err := helper.Store.AddSpans(helper.Ctx, spans)
 	assert.NoError(t, err, "failed to add test trace")
 
 	// Run all test cases
 	t.Run("TraceSummary", func(t *testing.T) {
-		summaries, err := helper.store.GetTraceSummaries(helper.ctx)
+		summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
 		assert.NoError(t, err)
 		assert.Len(t, summaries, 1, "should have one trace summary")
 
@@ -197,7 +167,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceContent", func(t *testing.T) {
-		trace, err := helper.store.GetTrace(helper.ctx, "test-trace")
+		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
 		assert.NoError(t, err)
 		assert.Len(t, trace.Spans, 3, "should have three spans")
 
@@ -231,7 +201,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceAttributes", func(t *testing.T) {
-		trace, err := helper.store.GetTrace(helper.ctx, "test-trace")
+		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
 		assert.NoError(t, err)
 
 		// Verify root span attributes
@@ -254,7 +224,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceEventsAndLinks", func(t *testing.T) {
-		trace, err := helper.store.GetTrace(helper.ctx, "test-trace")
+		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
 		assert.NoError(t, err)
 
 		// Verify root span events
@@ -262,11 +232,14 @@ func TestTraceSuite(t *testing.T) {
 		assert.Equal(t, "root-event-1", rootSpan.Events[0].Name)
 		assert.Equal(t, "Hello", rootSpan.Events[0].Attributes["event.string"])
 		assert.Equal(t, int64(42), rootSpan.Events[0].Attributes["event.int"])
+		assert.Equal(t, true, rootSpan.Events[0].Attributes["event.bool"])
+		assert.Equal(t, float64(3.14), rootSpan.Events[0].Attributes["event.float"])
 		assert.Equal(t, uint32(0), rootSpan.Events[0].DroppedAttributesCount)
 
 		assert.Equal(t, "root-event-2", rootSpan.Events[1].Name)
 		assert.Equal(t, "World", rootSpan.Events[1].Attributes["event.string2"])
 		assert.Equal(t, int64(100), rootSpan.Events[1].Attributes["event.int2"])
+		assert.Equal(t, []any{"a", "b", "c"}, rootSpan.Events[1].Attributes["event.list"])
 		assert.Equal(t, uint32(1), rootSpan.Events[1].DroppedAttributesCount)
 
 		// Verify root span links
@@ -275,6 +248,8 @@ func TestTraceSuite(t *testing.T) {
 		assert.Equal(t, "state1", rootSpan.Links[0].TraceState)
 		assert.Equal(t, "Link1", rootSpan.Links[0].Attributes["link.string"])
 		assert.Equal(t, int64(123), rootSpan.Links[0].Attributes["link.int"])
+		assert.Equal(t, float64(2.71), rootSpan.Links[0].Attributes["link.float"])
+		assert.Equal(t, false, rootSpan.Links[0].Attributes["link.bool"])
 		assert.Equal(t, uint32(0), rootSpan.Links[0].DroppedAttributesCount)
 
 		// Verify child span events and links
@@ -282,17 +257,22 @@ func TestTraceSuite(t *testing.T) {
 		assert.Equal(t, "child-event", childSpan.Events[0].Name)
 		assert.Equal(t, "Child Event", childSpan.Events[0].Attributes["child.event.string"])
 		assert.Equal(t, int64(50), childSpan.Events[0].Attributes["child.event.int"])
+		assert.Equal(t, false, childSpan.Events[0].Attributes["child.event.bool"])
+		assert.Equal(t, float64(1.618), childSpan.Events[0].Attributes["child.event.float"])
 
 		assert.Equal(t, "linked-trace-2", childSpan.Links[0].TraceID)
 		assert.Equal(t, "linked-span-2", childSpan.Links[0].SpanID)
 		assert.Equal(t, "state2", childSpan.Links[0].TraceState)
 		assert.Equal(t, "Child Link", childSpan.Links[0].Attributes["child.link.string"])
 		assert.Equal(t, int64(456), childSpan.Links[0].Attributes["child.link.int"])
+		assert.Equal(t, float64(1.414), childSpan.Links[0].Attributes["child.link.float"])
+		assert.Equal(t, true, childSpan.Links[0].Attributes["child.link.bool"])
+		assert.Equal(t, []any{int64(1), int64(2), int64(3), int64(4), int64(5)}, childSpan.Links[0].Attributes["child.link.list"])
 		assert.Equal(t, uint32(1), childSpan.Links[0].DroppedAttributesCount)
 	})
 
 	t.Run("TraceResourceAndScope", func(t *testing.T) {
-		trace, err := helper.store.GetTrace(helper.ctx, "test-trace")
+		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
 		assert.NoError(t, err)
 
 		// Verify resource and scope (should be consistent across all spans)
@@ -305,15 +285,15 @@ func TestTraceSuite(t *testing.T) {
 		assert.Empty(t, span.Scope.Attributes)
 		assert.Equal(t, uint32(0), span.Scope.DroppedAttributesCount)
 	})
-} 
+}
 
 // createTestTrace creates a comprehensive test trace with multiple spans, events, and links.
-func createTestTrace() []telemetry.SpanData {
+func createTestTrace() []traces.SpanData {
 	baseTime := time.Now().UnixNano()
-	event1Time := baseTime + 100 * time.Millisecond.Nanoseconds()
-	event2Time := baseTime + 200 * time.Millisecond.Nanoseconds()
+	event1Time := baseTime + 100*time.Millisecond.Nanoseconds()
+	event2Time := baseTime + 200*time.Millisecond.Nanoseconds()
 
-	return []telemetry.SpanData{
+	return []traces.SpanData{
 		{
 			// Root span with service name
 			TraceID:      "test-trace",
@@ -330,13 +310,15 @@ func createTestTrace() []telemetry.SpanData {
 				"root.bool":   true,
 				"root.list":   []string{"one", "two", "three"},
 			},
-			Events: []telemetry.EventData{
+			Events: []traces.EventData{
 				{
 					Name:      "root-event-1",
 					Timestamp: event1Time,
 					Attributes: map[string]any{
 						"event.string": "Hello",
 						"event.int":    int64(42),
+						"event.bool":   true,
+						"event.float":  float64(3.14),
 					},
 					DroppedAttributesCount: 0,
 				},
@@ -346,11 +328,12 @@ func createTestTrace() []telemetry.SpanData {
 					Attributes: map[string]any{
 						"event.string2": "World",
 						"event.int2":    int64(100),
+						"event.list":    []string{"a", "b", "c"},
 					},
 					DroppedAttributesCount: 1,
 				},
 			},
-			Links: []telemetry.LinkData{
+			Links: []traces.LinkData{
 				{
 					TraceID:    "linked-trace-1",
 					SpanID:     "linked-span-1",
@@ -358,18 +341,20 @@ func createTestTrace() []telemetry.SpanData {
 					Attributes: map[string]any{
 						"link.string": "Link1",
 						"link.int":    int64(123),
+						"link.float":  float64(2.71),
+						"link.bool":   false,
 					},
 					DroppedAttributesCount: 0,
 				},
 			},
-			Resource: &telemetry.ResourceData{
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{
-					"service.name": "test-service",
+					"service.name":    "test-service",
 					"service.version": "1.0.0",
 				},
 				DroppedAttributesCount: 0,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
 				Attributes:             map[string]any{},
@@ -385,8 +370,8 @@ func createTestTrace() []telemetry.SpanData {
 			ParentSpanID: "root-span",
 			Name:         "child-operation",
 			Kind:         "SPAN_KIND_INTERNAL",
-			StartTime:    baseTime + 50 * time.Millisecond.Nanoseconds(),
-			EndTime:      baseTime + 900 * time.Millisecond.Nanoseconds(),
+			StartTime:    baseTime + 50*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 900*time.Millisecond.Nanoseconds(),
 			Attributes: map[string]any{
 				"child.string": "child-value",
 				"child.int":    int64(24),
@@ -394,18 +379,20 @@ func createTestTrace() []telemetry.SpanData {
 				"child.bool":   false,
 				"child.list":   []int64{1, 2, 3, 4, 5},
 			},
-			Events: []telemetry.EventData{
+			Events: []traces.EventData{
 				{
 					Name:      "child-event",
-					Timestamp: baseTime + 150 * time.Millisecond.Nanoseconds(),
+					Timestamp: baseTime + 150*time.Millisecond.Nanoseconds(),
 					Attributes: map[string]any{
 						"child.event.string": "Child Event",
 						"child.event.int":    int64(50),
+						"child.event.bool":   false,
+						"child.event.float":  float64(1.618),
 					},
 					DroppedAttributesCount: 0,
 				},
 			},
-			Links: []telemetry.LinkData{
+			Links: []traces.LinkData{
 				{
 					TraceID:    "linked-trace-2",
 					SpanID:     "linked-span-2",
@@ -413,18 +400,21 @@ func createTestTrace() []telemetry.SpanData {
 					Attributes: map[string]any{
 						"child.link.string": "Child Link",
 						"child.link.int":    int64(456),
+						"child.link.float":  float64(1.414),
+						"child.link.bool":   true,
+						"child.link.list":   []int64{1, 2, 3, 4, 5},
 					},
 					DroppedAttributesCount: 1,
 				},
 			},
-			Resource: &telemetry.ResourceData{
+			Resource: &resource.ResourceData{
 				Attributes: map[string]any{
-					"service.name": "test-service",
+					"service.name":    "test-service",
 					"service.version": "1.0.0",
 				},
 				DroppedAttributesCount: 0,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
 				Attributes:             map[string]any{},
@@ -440,16 +430,16 @@ func createTestTrace() []telemetry.SpanData {
 			ParentSpanID: "non-existent-parent",
 			Name:         "orphaned-operation",
 			Kind:         "SPAN_KIND_INTERNAL",
-			StartTime:    baseTime + 100 * time.Millisecond.Nanoseconds(),
-			EndTime:      baseTime + 800 * time.Millisecond.Nanoseconds(),
+			StartTime:    baseTime + 100*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 800*time.Millisecond.Nanoseconds(),
 			Attributes: map[string]any{
 				"orphaned.string": "orphaned-value",
 			},
-			Resource: &telemetry.ResourceData{
+			Resource: &resource.ResourceData{
 				Attributes:             map[string]any{},
 				DroppedAttributesCount: 0,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
 				Attributes:             map[string]any{},

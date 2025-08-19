@@ -1,48 +1,53 @@
 package store
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
 	"github.com/stretchr/testify/assert"
 )
 
 // createTestLogs creates a comprehensive set of test logs
-func createTestLogs(baseTime int64) []telemetry.LogData {
-	return []telemetry.LogData{
+func createTestLogs(baseTime int64) []logs.LogData {
+	return []logs.LogData{
 		{
 			Timestamp:         baseTime,
-			ObservedTimestamp: baseTime + 100 * time.Millisecond.Nanoseconds(),
-			TraceID:          "test-trace",
-			SpanID:           "root-span",
-			SeverityText:     "INFO",
-			SeverityNumber:   9,
-			Body: map[string]any{
+			ObservedTimestamp: baseTime + 100*time.Millisecond.Nanoseconds(),
+			TraceID:           "test-trace",
+			SpanID:            "root-span",
+			SeverityText:      "INFO",
+			SeverityNumber:    9,
+			Body: logs.Body{Data: map[string]any{
 				"message": "Root operation started",
 				"details": map[string]any{
 					"operation": "root",
-					"status": "starting",
+					"status":    "starting",
 					"metrics": map[string]any{
 						"cpu": 42.5,
 						"mem": 1024,
 					},
 				},
-			},
-			Resource: &telemetry.ResourceData{
-				Attributes: map[string]any{
+			}},
+			Resource: &resource.ResourceData{
+				Attributes: attributes.Attributes{
 					"service.name":    "test-service",
 					"service.version": "1.0.0",
 				},
 				DroppedAttributesCount: 0,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
-				Attributes:             map[string]any{},
+				Attributes:             attributes.Attributes{},
 				DroppedAttributesCount: 0,
 			},
-			Attributes: map[string]any{
+			Attributes: attributes.Attributes{
 				"log.string": "root-log",
 				"log.int":    int64(42),
 				"log.float":  float64(3.14),
@@ -55,27 +60,27 @@ func createTestLogs(baseTime int64) []telemetry.LogData {
 		},
 		{
 			// This log has zero timestamp, should fall back to observed timestamp
-			Timestamp:             0, // Explicitly set to zero time
-			ObservedTimestamp:     baseTime + 150 * time.Millisecond.Nanoseconds(),
-			TraceID:               "test-trace",
-			SpanID:                "child-span",
-			SeverityText:          "ERROR",
-			SeverityNumber:        17,
-			Body:                  "Child operation failed",
-			Resource: &telemetry.ResourceData{
-				Attributes: map[string]any{
+			Timestamp:         0, // Explicitly set to zero time
+			ObservedTimestamp: baseTime + 150*time.Millisecond.Nanoseconds(),
+			TraceID:           "test-trace",
+			SpanID:            "child-span",
+			SeverityText:      "ERROR",
+			SeverityNumber:    17,
+			Body:              logs.Body{Data: "Child operation failed"},
+			Resource: &resource.ResourceData{
+				Attributes: attributes.Attributes{
 					"service.name":    "test-service",
 					"service.version": "1.0.0",
 				},
 				DroppedAttributesCount: 1,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
-				Attributes:             map[string]any{},
+				Attributes:             attributes.Attributes{},
 				DroppedAttributesCount: 0,
 			},
-			Attributes: map[string]any{
+			Attributes: attributes.Attributes{
 				"log.string": "child-log",
 				"log.int":    int64(24),
 				"log.float":  float64(2.71),
@@ -87,24 +92,24 @@ func createTestLogs(baseTime int64) []telemetry.LogData {
 			EventName:              "child.event",
 		},
 		{
-			Timestamp:         baseTime + 100 * time.Millisecond.Nanoseconds(),
-			ObservedTimestamp: baseTime + 200 * time.Millisecond.Nanoseconds(),
-			TraceID:          "test-trace",
-			SpanID:           "orphaned-span",
-			SeverityText:     "WARN",
-			SeverityNumber:   13,
-			Body:            "Orphaned operation",
-			Resource: &telemetry.ResourceData{
-				Attributes:             map[string]any{},
+			Timestamp:         baseTime + 100*time.Millisecond.Nanoseconds(),
+			ObservedTimestamp: baseTime + 200*time.Millisecond.Nanoseconds(),
+			TraceID:           "test-trace",
+			SpanID:            "orphaned-span",
+			SeverityText:      "WARN",
+			SeverityNumber:    13,
+			Body:              logs.Body{Data: "Orphaned operation"},
+			Resource: &resource.ResourceData{
+				Attributes:             attributes.Attributes{},
 				DroppedAttributesCount: 0,
 			},
-			Scope: &telemetry.ScopeData{
+			Scope: &scope.ScopeData{
 				Name:                   "test-scope",
 				Version:                "v1.0.0",
-				Attributes:             map[string]any{},
+				Attributes:             attributes.Attributes{},
 				DroppedAttributesCount: 0,
 			},
-			Attributes: map[string]any{
+			Attributes: attributes.Attributes{
 				"log.string": "orphaned-log",
 			},
 			DroppedAttributesCount: 0,
@@ -116,16 +121,16 @@ func createTestLogs(baseTime int64) []telemetry.LogData {
 
 // TestLogSuite runs a comprehensive suite of tests on a set of logs
 func TestLogSuite(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
 	logs := createTestLogs(baseTime)
-	err := helper.store.AddLogs(helper.ctx, logs)
+	err := helper.Store.AddLogs(helper.Ctx, logs)
 	assert.NoError(t, err, "failed to add test logs")
 
 	t.Run("LogOrdering", func(t *testing.T) {
-		allLogs, err := helper.store.GetLogs(helper.ctx)
+		allLogs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 		assert.Len(t, allLogs, 3, "should have three logs")
 
@@ -137,7 +142,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogSeverity", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log severity (middle)
@@ -148,24 +153,23 @@ func TestLogSuite(t *testing.T) {
 		assert.Equal(t, "WARN", logs[1].SeverityText, "orphaned log severity text")
 		assert.Equal(t, int32(13), logs[1].SeverityNumber, "orphaned log severity number")
 
-
 		// Verify root log severity (oldest)
 		assert.Equal(t, "INFO", logs[2].SeverityText, "root log severity text")
 		assert.Equal(t, int32(9), logs[2].SeverityNumber, "root log severity number")
 	})
 
 	t.Run("LogBody", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log body
-		assert.Equal(t, "Child operation failed", logs[0].Body, "child log body")
+		assert.Equal(t, "Child operation failed", logs[0].Body.Data, "child log body")
 
 		// Verify orphaned log body
-		assert.Equal(t, "Orphaned operation", logs[1].Body, "orphaned log body")
+		assert.Equal(t, "Orphaned operation", logs[1].Body.Data, "orphaned log body")
 
 		// Verify root log body (nested map)
-		rootBody := logs[2].Body.(map[string]any)
+		rootBody := logs[2].Body.Data.(map[string]any)
 		assert.Equal(t, "Root operation started", rootBody["message"], "root log message")
 		details := rootBody["details"].(map[string]any)
 		assert.Equal(t, "root", details["operation"], "root log operation")
@@ -176,24 +180,24 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogTimestamp", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log timestamp (should remain zero)
 		assert.Zero(t, logs[0].Timestamp, "child log should have zero timestamp")
-		assert.Equal(t, baseTime + 150 * time.Millisecond.Nanoseconds(), logs[0].ObservedTimestamp, "child log should have correct observed timestamp")
-		
+		assert.Equal(t, baseTime+150*time.Millisecond.Nanoseconds(), logs[0].ObservedTimestamp, "child log should have correct observed timestamp")
+
 		// Verify orphaned log timestamp
 		assert.NotZero(t, logs[1].Timestamp, "orphaned log should have timestamp")
 		assert.NotZero(t, logs[1].ObservedTimestamp, "orphaned log should have observed timestamp")
-		
+
 		// Verify root log timestamp
 		assert.NotZero(t, logs[2].Timestamp, "root log should have timestamp")
 		assert.NotZero(t, logs[2].ObservedTimestamp, "root log should have observed timestamp")
 	})
 
 	t.Run("LogResource", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log resource (newest)
@@ -212,7 +216,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogScope", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify scope is consistent across all logs
@@ -225,7 +229,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogAttributes", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
 		// Verify child log attributes (newest)
@@ -235,7 +239,7 @@ func TestLogSuite(t *testing.T) {
 		assert.Equal(t, false, logs[0].Attributes["log.bool"], "child log bool attribute")
 		childList := logs[0].Attributes["log.list"].([]any)
 		assert.Equal(t, []any{int64(1), int64(2), int64(3), int64(4), int64(5)}, childList, "child log list attribute")
-		
+
 		// Verify orphaned log attributes (middle)
 		assert.Equal(t, "orphaned-log", logs[1].Attributes["log.string"], "orphaned log string attribute")
 
@@ -249,20 +253,20 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogMetadata", func(t *testing.T) {
-		logs, err := helper.store.GetLogs(helper.ctx)
+		logs, err := helper.Store.GetLogs(helper.Ctx)
 		assert.NoError(t, err)
 
-		// Verify child log metadata
+		// Verify child log metadata (newest, t+150ms)
 		assert.Equal(t, uint32(1), logs[0].DroppedAttributesCount, "child log dropped count")
 		assert.Equal(t, uint32(1), logs[0].Flags, "child log flags")
 		assert.Equal(t, "child.event", logs[0].EventName, "child log event name")
-		
-		// Verify orphaned log metadata
+
+		// Verify orphaned log metadata (middle, t+100ms)
 		assert.Equal(t, uint32(0), logs[1].DroppedAttributesCount, "orphaned log dropped count")
 		assert.Equal(t, uint32(0), logs[1].Flags, "orphaned log flags")
 		assert.Equal(t, "orphaned.event", logs[1].EventName, "orphaned log event name")
 
-		// Verify root log metadata
+		// Verify root log metadata (oldest, t+0ms)
 		assert.Equal(t, uint32(0), logs[2].DroppedAttributesCount, "root log dropped count")
 		assert.Equal(t, uint32(0), logs[2].Flags, "root log flags")
 		assert.Equal(t, "root.event", logs[2].EventName, "root log event name")
@@ -270,25 +274,25 @@ func TestLogSuite(t *testing.T) {
 
 	t.Run("LogsByTraceSpan", func(t *testing.T) {
 		// Test getting logs for root span
-		rootLogs, err := helper.store.GetLogsByTraceSpan(helper.ctx, "test-trace", "root-span")
+		rootLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "test-trace", "root-span")
 		assert.NoError(t, err)
 		assert.Len(t, rootLogs, 1, "should have one root span log")
 		assert.Equal(t, "root-span", rootLogs[0].SpanID, "root span log ID")
 
 		// Test getting logs for child span
-		childLogs, err := helper.store.GetLogsByTraceSpan(helper.ctx, "test-trace", "child-span")
+		childLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "test-trace", "child-span")
 		assert.NoError(t, err)
 		assert.Len(t, childLogs, 1, "should have one child span log")
 		assert.Equal(t, "child-span", childLogs[0].SpanID, "child span log ID")
 
 		// Test getting logs for orphaned span
-		orphanedLogs, err := helper.store.GetLogsByTraceSpan(helper.ctx, "test-trace", "orphaned-span")
+		orphanedLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "test-trace", "orphaned-span")
 		assert.NoError(t, err)
 		assert.Len(t, orphanedLogs, 1, "should have one orphaned span log")
 		assert.Equal(t, "orphaned-span", orphanedLogs[0].SpanID, "orphaned span log ID")
 
 		// Test getting logs for non-existent trace/span
-		nonExistentLogs, err := helper.store.GetLogsByTraceSpan(helper.ctx, "non-existent-trace", "non-existent-span")
+		nonExistentLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "non-existent-trace", "non-existent-span")
 		assert.NoError(t, err)
 		assert.Empty(t, nonExistentLogs, "should have no logs for non-existent trace/span")
 	})
@@ -296,25 +300,34 @@ func TestLogSuite(t *testing.T) {
 
 // TestLogNotFound verifies error handling for non-existent log IDs
 func TestLogNotFound(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
-	_, err := helper.store.GetLog(helper.ctx, "non-existent-log")
+	_, err := helper.Store.GetLog(helper.Ctx, "non-existent-log")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), ErrLogIDNotFound.Error())
 }
 
 // TestEmptyLogs verifies handling of empty log lists and empty stores
 func TestEmptyLogs(t *testing.T) {
-	helper, teardown := setupTest(t)
+	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	// Test adding empty log list
-	err := helper.store.AddLogs(helper.ctx, []telemetry.LogData{})
+	err := helper.Store.AddLogs(helper.Ctx, []logs.LogData{})
 	assert.NoError(t, err)
 
 	// Test getting logs from empty store
-	logs, err := helper.store.GetLogs(helper.ctx)
+	logs, err := helper.Store.GetLogs(helper.Ctx)
 	assert.NoError(t, err)
 	assert.Empty(t, logs)
-} 
+}
+
+// mustMarshal is a helper function that marshals a value to JSON and panics if there's an error
+func mustMarshal(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal %v: %v", v, err))
+	}
+	return string(b)
+}
