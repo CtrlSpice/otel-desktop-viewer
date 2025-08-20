@@ -9,10 +9,12 @@ require (
 )
 
 require (
+	github.com/go-viper/mapstructure/v2 v2.2.1
 	github.com/marcboeker/go-duckdb/v2 v2.3.0
-	github.com/mitchellh/mapstructure v1.5.0
+	github.com/rs/cors v1.11.1
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/collector/pdata v1.32.0
+	golang.org/x/exp/jsonrpc2 v0.0.0-20250808145144-a408d31f581a
 )
 
 require (
@@ -45,7 +47,6 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
@@ -77,7 +78,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp/event v0.0.0-20250718183923-645b1fa84792 // indirect
-	golang.org/x/exp/jsonrpc2 v0.0.0-20250808145144-a408d31f581a // indirect
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
