@@ -17,6 +17,7 @@ import { TraceSummaryWithUIData } from "../../types/ui-types";
 import { useKeyCombo, useKeyPress } from "../../utils/use-key-press";
 import { KeyboardHelp } from "../modals/keyboard-help";
 import { formatDuration } from "../../utils/duration";
+import { telemetryAPI } from "../../services/telemetry-service";
 
 const sidebarSummaryHeight = 120;
 const dividerHeight = 1;
@@ -296,10 +297,10 @@ export function TraceList(props: TraceListProps) {
 }
 
 export async function clearTraceData() {
-  let response = await fetch("/api/clearTraces");
-  if (!response.ok) {
-    throw new Error("HTTP status " + response.status);
+  try {
+    await telemetryAPI.clearTraces();
+    window.location.replace("/");
+  } catch (error) {
+    throw new Error("Failed to clear traces: " + error);
   }
-  
-  window.location.replace("/");
 }

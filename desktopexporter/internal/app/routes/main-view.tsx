@@ -5,33 +5,37 @@ import { useLoaderData } from "react-router-dom";
 
 import { Sidebar } from "../components/sidebar-view/sidebar";
 import { EmptyStateView } from "../components/empty-state-view/empty-state-view";
-import { TraceSummaries, TraceSummary } from "../types/api-types";
+import { TraceSummary } from "../types/api-types";
 import { SidebarData, TraceSummaryWithUIData } from "../types/ui-types";
-import { traceSummariesFromJSON } from "../types/api-types";
+import { telemetryAPI } from "../services/telemetry-service";
 
 export async function mainLoader() {
-  const response = await fetch("/api/traces");
-  const json = await response.json();
-  return traceSummariesFromJSON(json);
+  try {
+    const traceSummaries = await telemetryAPI.getTraceSummaries();
+    return traceSummaries;
+  } catch (error) {
+    console.error('Failed to load trace summaries:', error);
+    return [];
+  }
 }
 
 export default function MainView() {
-  let { traceSummaries } = useLoaderData() as TraceSummaries;
+  let traceSummaries = useLoaderData() as TraceSummary[];
   let [isFullWidth, setFullWidth] = useBoolean(traceSummaries.length > 0);
 
   // initialize the sidebar summaries at mount time
   let [sidebarData, setSidebarData] = useState(initSidebarData(traceSummaries));
 
   // check every second to see if we have new data
-  // and upsate sidebar summaries accordingly
+  // and update sidebar summaries accordingly
   useEffect(() => {
     async function checkForNewData() {
-      let response = await fetch("/api/traces");
-      if (response.ok) {
-        let json = await response.json();
-        let { traceSummaries } = traceSummariesFromJSON(json);
+      try {
+        let traceSummaries = await telemetryAPI.getTraceSummaries();
         let newSidebarData = updateSidebarData(sidebarData, traceSummaries);
         setSidebarData(newSidebarData);
+      } catch (error) {
+        console.error('Failed to check for new data:', error);
       }
     }
 

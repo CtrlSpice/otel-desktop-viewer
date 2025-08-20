@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { Box, Heading, Button, Text, useColorModeValue } from "@chakra-ui/react";
+import { telemetryAPI } from "../services/telemetry-service";
+import { MetricData } from "../types/api-types";
 
 export default function MetricsView() {
-  let [metrics, setMetrics] = useState<any>(null);
+  let [metrics, setMetrics] = useState<MetricData[] | null>(null);
   let [loading, setLoading] = useState(true);
   let [error, setError] = useState<string | null>(null);
 
@@ -16,11 +18,7 @@ export default function MetricsView() {
     try {
       setLoading(true);
       setError(null);
-      let response = await fetch("/api/metrics");
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      let data = await response.json();
+      const data = await telemetryAPI.getMetrics();
       setMetrics(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch metrics");
@@ -63,7 +61,9 @@ export default function MetricsView() {
           fontFamily="mono"
           whiteSpace="pre-wrap"
         >
-          {JSON.stringify(metrics, null, 2)}
+          {JSON.stringify(metrics, (key, value) => 
+            typeof value === 'bigint' ? value.toString() : value, 2
+          )}
         </Box>
       )}
     </Box>

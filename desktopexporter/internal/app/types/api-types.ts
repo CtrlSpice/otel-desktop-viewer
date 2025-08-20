@@ -13,9 +13,7 @@ export type TraceSummary = {
   spanCount: number;
 };
 
-export type TraceSummaries = {
-  traceSummaries: TraceSummary[];
-};
+
 
 export type TraceData = {
   traceID: string;
@@ -92,49 +90,96 @@ export type LogData = {
   eventName: string;
 };
 
-export type Logs = {
-  logs: LogData[];
+
+
+
+
+// Metrics types
+export type MetricType = 'Empty' | 'Gauge' | 'Sum' | 'Histogram' | 'ExponentialHistogram';
+
+export type Exemplar = {
+  timestamp: PreciseTimestamp;
+  value: number;
+  filteredAttributes: Attributes;
+  traceID: string;
+  spanID: string;
 };
 
-// Helper functions to deserialize timestamps
-export function traceSummaryFromJSON(json: any): TraceSummary {
-  return {
-    ...json,
-    rootSpan: json.rootSpan ? {
-      ...json.rootSpan,
-      startTime: PreciseTimestamp.fromJSON(json.rootSpan.startTime),
-      endTime: PreciseTimestamp.fromJSON(json.rootSpan.endTime)
-    } : undefined
-  };
-}
+export type MetricDataPoint = GaugeDataPoint | SumDataPoint | HistogramDataPoint | ExponentialHistogramDataPoint;
 
-export function traceSummariesFromJSON(json: any): TraceSummaries {
-  return {
-    traceSummaries: json.traceSummaries.map(traceSummaryFromJSON)
-  };
-}
+export type GaugeDataPoint = {
+  timestamp: PreciseTimestamp;
+  startTime: PreciseTimestamp;
+  attributes: Attributes;
+  flags: number;
+  valueType: string;
+  value: number;
+  exemplars?: Exemplar[];
+};
 
-export function traceDataFromJSON(json: any): TraceData {
-  return {
-    ...json,
-    spans: json.spans.map((span: any) => ({
-      ...span,
-      startTime: PreciseTimestamp.fromJSON(span.startTime),
-      endTime: PreciseTimestamp.fromJSON(span.endTime),
-      events: span.events?.map((event: any) => ({
-        ...event,
-        timestamp: PreciseTimestamp.fromJSON(event.timestamp)
-      }))
-    }))
-  };
-}
+export type SumDataPoint = {
+  timestamp: PreciseTimestamp;
+  startTime: PreciseTimestamp;
+  attributes: Attributes;
+  flags: number;
+  valueType: string;
+  value: number;
+  exemplars?: Exemplar[];
+  isMonotonic: boolean;
+  aggregationTemporality: string;
+};
 
-export function logsFromJSON(json: any): Logs {
-  return {
-    logs: json.logs.map((log: any) => ({
-      ...log,
-      timestamp: PreciseTimestamp.fromJSON(log.timestamp),
-      observedTimestamp: PreciseTimestamp.fromJSON(log.observedTimestamp)
-    }))
+export type HistogramDataPoint = {
+  timestamp: PreciseTimestamp;
+  startTime: PreciseTimestamp;
+  attributes: Attributes;
+  flags: number;
+  count: number;
+  sum: number;
+  min: number;
+  max: number;
+  bounds: number[];
+  counts: number[];
+  exemplars?: Exemplar[];
+  aggregationTemporality: string;
+};
+
+export type ExponentialHistogramDataPoint = {
+  timestamp: PreciseTimestamp;
+  startTime: PreciseTimestamp;
+  attributes: Attributes;
+  flags: number;
+  count: number;
+  sum: number;
+  min: number;
+  max: number;
+  scale: number;
+  zeroCount: number;
+  positive: {
+    offset: number;
+    bucketCounts: number[];
   };
-}
+  negative: {
+    offset: number;
+    bucketCounts: number[];
+  };
+  exemplars?: Exemplar[];
+  aggregationTemporality: string;
+};
+
+export type DataPoints = {
+  type: MetricType;
+  points: MetricDataPoint[];
+};
+
+export type MetricData = {
+  name: string;
+  description: string;
+  unit: string;
+  dataPoints: DataPoints;
+  resource: ResourceData;
+  scope: ScopeData;
+  received: PreciseTimestamp;
+};
+
+
