@@ -127,7 +127,7 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]traces.TraceSummary, e
 }
 
 func (s *Store) GetTrace(ctx context.Context, traceID string) ([]traces.SpanData, error) {
-	rows, err := s.db.QueryContext(ctx, SelectTrace, traceID, traceID, traceID, traceID, traceID, traceID, traceID, traceID)
+	rows, err := s.db.QueryContext(ctx, SelectTrace, traceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trace: %w", err)
 	}

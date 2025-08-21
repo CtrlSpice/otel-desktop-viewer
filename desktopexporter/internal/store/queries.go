@@ -245,38 +245,13 @@ const (
 	// This mimics a tree structure that can be easily converted to a tree on the frontend
 	SelectTrace = `
 		WITH RECURSIVE
-		-- Get the single root span (if it exists)
-		root_span AS (
-			SELECT 
-				TraceID,
-				TraceState,
-				SpanID,
-				ParentSpanID,
-				Name,
-				Kind,
-				StartTime,
-				EndTime,
-				Attributes,
-				Events,
-				Links,
-				ResourceAttributes,
-				ResourceDroppedAttributesCount,
-				ScopeName,
-				ScopeVersion,
-				ScopeAttributes,
-				ScopeDroppedAttributesCount,
-				DroppedAttributesCount,
-				DroppedEventsCount,
-				DroppedLinksCount,
-				StatusCode,
-				StatusMessage,
-				0 as depth
-			FROM spans 
-			WHERE TraceID = ? AND (ParentSpanID = '' OR ParentSpanID IS NULL)
+		-- Define the trace parameter
+		param(traceID) AS (
+			VALUES (?)
 		),
-		-- Recursively find all children of the root span
-		root_children AS (
-			-- Anchor: Direct children of root span
+		-- Get all spans in hierarchical order
+		spans_tree AS (
+			-- Anchor: Get all top-level spans (root + orphans)
 			SELECT 
 				s.TraceID,
 				s.TraceState,
@@ -300,14 +275,14 @@ const (
 				s.DroppedLinksCount,
 				s.StatusCode,
 				s.StatusMessage,
-				1 as depth
-			FROM spans s
-			JOIN root_span r ON s.ParentSpanID = r.SpanID AND s.TraceID = r.TraceID
-			WHERE s.TraceID = ?
+				0 as depth
+			FROM spans s, param p
+			WHERE s.TraceID = p.traceID 
+				AND s.ParentSpanID NOT IN (SELECT SpanID FROM spans WHERE TraceID = p.traceID)
 			
 			UNION ALL
 			
-			-- Recursive: Find children of children
+			-- Recursive: Find children of any span in the result set
 			SELECT 
 				s.TraceID,
 				s.TraceState,
@@ -331,168 +306,19 @@ const (
 				s.DroppedLinksCount,
 				s.StatusCode,
 				s.StatusMessage,
-				rc.depth + 1
-			FROM spans s
-			JOIN root_children rc ON s.ParentSpanID = rc.SpanID AND s.TraceID = rc.TraceID
-			WHERE s.TraceID = ?
-		),
-		-- Find orphan spans (have parent but parent not in our data)
-		orphan_spans AS (
-			SELECT DISTINCT s.ParentSpanID as spanID
-			FROM spans s
-			WHERE s.TraceID = ? 
-				AND s.ParentSpanID != ''
-				AND s.ParentSpanID NOT IN (SELECT SpanID FROM spans WHERE TraceID = ?)
-		),
-		-- Build orphan tree with their children recursively
-		orphan_tree AS (
-			-- Anchor: Start with orphan spans (spans whose parents don't exist)
-			SELECT 
-				TraceID,
-				TraceState,
-				SpanID,
-				ParentSpanID,
-				Name,
-				Kind,
-				StartTime,
-				EndTime,
-				Attributes,
-				Events,
-				Links,
-				ResourceAttributes,
-				ResourceDroppedAttributesCount,
-				ScopeName,
-				ScopeVersion,
-				ScopeAttributes,
-				ScopeDroppedAttributesCount,
-				DroppedAttributesCount,
-				DroppedEventsCount,
-				DroppedLinksCount,
-				StatusCode,
-				StatusMessage,
-				0 as depth
-			FROM spans 
-			WHERE TraceID = ?
-				AND ParentSpanID != ''
-				AND ParentSpanID NOT IN (SELECT SpanID FROM spans WHERE TraceID = ?)
-			
-			UNION ALL
-			
-			-- Recursive: Find children of orphan spans
-			SELECT 
-				s.TraceID,
-				s.TraceState,
-				s.SpanID,
-				s.ParentSpanID,
-				s.Name,
-				s.Kind,
-				s.StartTime,
-				s.EndTime,
-				s.Attributes,
-				s.Events,
-				s.Links,
-				s.ResourceAttributes,
-				s.ResourceDroppedAttributesCount,
-				s.ScopeName,
-				s.ScopeVersion,
-				s.ScopeAttributes,
-				s.ScopeDroppedAttributesCount,
-				s.DroppedAttributesCount,
-				s.DroppedEventsCount,
-				s.DroppedLinksCount,
-				s.StatusCode,
-				s.StatusMessage,
-				ot.depth + 1
-			FROM spans s
-			JOIN orphan_tree ot ON s.ParentSpanID = ot.SpanID AND s.TraceID = ot.TraceID
-			WHERE s.TraceID = ?
+				st.depth + 1
+			FROM spans s, param p
+			JOIN spans_tree st ON s.ParentSpanID = st.SpanID AND s.TraceID = st.TraceID
+			WHERE s.TraceID = p.traceID
 		)
 		-- Return all spans in hierarchical order
-		SELECT 
-			TraceID,
-			TraceState,
-			SpanID,
-			ParentSpanID,
-			Name,
-			Kind,
-			StartTime,
-			EndTime,
-			Attributes,
-			Events,
-			Links,
-			ResourceAttributes,
-			ResourceDroppedAttributesCount,
-			ScopeName,
-			ScopeVersion,
-			ScopeAttributes,
-			ScopeDroppedAttributesCount,
-			DroppedAttributesCount,
-			DroppedEventsCount,
-			DroppedLinksCount,
-			StatusCode,
-			StatusMessage,
-			depth
-		FROM root_span
-		
-		UNION ALL
-		
-		-- Add children of root span
-		SELECT 
-			TraceID,
-			TraceState,
-			SpanID,
-			ParentSpanID,
-			Name,
-			Kind,
-			StartTime,
-			EndTime,
-			Attributes,
-			Events,
-			Links,
-			ResourceAttributes,
-			ResourceDroppedAttributesCount,
-			ScopeName,
-			ScopeVersion,
-			ScopeAttributes,
-			ScopeDroppedAttributesCount,
-			DroppedAttributesCount,
-			DroppedEventsCount,
-			DroppedLinksCount,
-			StatusCode,
-			StatusMessage,
-			depth
-		FROM root_children
-		
-		UNION ALL
-		
-		-- Add orphan spans with their children
-		SELECT 
-			TraceID,
-			TraceState,
-			SpanID,
-			ParentSpanID,
-			Name,
-			Kind,
-			StartTime,
-			EndTime,
-			Attributes,
-			Events,
-			Links,
-			ResourceAttributes,
-			ResourceDroppedAttributesCount,
-			ScopeName,
-			ScopeVersion,
-			ScopeAttributes,
-			ScopeDroppedAttributesCount,
-			DroppedAttributesCount,
-			DroppedEventsCount,
-			DroppedLinksCount,
-			StatusCode,
-			StatusMessage,
-			depth
-		FROM orphan_tree
-		
-		ORDER BY depth, StartTime
+		SELECT * FROM spans_tree
+		ORDER BY 
+			depth,
+			CASE WHEN depth = 0 THEN 
+				CASE WHEN ParentSpanID IS NULL OR ParentSpanID = '' THEN 0 ELSE 1 END
+			ELSE 0 END,
+			StartTime
 	`
 )
 
