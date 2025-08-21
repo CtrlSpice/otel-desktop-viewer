@@ -126,37 +126,39 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]traces.TraceSummary, e
 	return summaries, nil
 }
 
-func (s *Store) GetTrace(ctx context.Context, traceID string) ([]traces.SpanData, error) {
+func (s *Store) GetTrace(ctx context.Context, traceID string) (*traces.Trace, error) {
 	rows, err := s.db.QueryContext(ctx, SelectTrace, traceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trace: %w", err)
 	}
 	defer rows.Close()
 
-	var spans []traces.SpanData
+	var spanNodes []traces.SpanNode
 	for rows.Next() {
-		span, err := scanTraceRow(rows)
+		spanNode, err := scanTraceRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan trace row: %w", err)
 		}
-		spans = append(spans, span)
+		spanNodes = append(spanNodes, spanNode)
 	}
 
-	if len(spans) == 0 {
+	if len(spanNodes) == 0 {
 		return nil, fmt.Errorf(ErrGetTrace, traceID, ErrTraceIDNotFound)
 	}
 
-	return spans, nil
+	return &traces.Trace{
+		TraceID: traceID,
+		Spans:   spanNodes,
+	}, nil
 }
 
-// scanTraceRow converts a database row into a SpanData struct
-func scanTraceRow(scanner interface{ Scan(dest ...any) error }) (traces.SpanData, error) {
+// scanTraceRow converts a database row into a SpanNode struct
+func scanTraceRow(scanner interface{ Scan(dest ...any) error }) (traces.SpanNode, error) {
 	span := traces.SpanData{
 		Resource: &resource.ResourceData{},
 		Scope:    &scope.ScopeData{},
 	}
 
-	// Variable to capture the additional depth column
 	var depth int
 
 	if err := scanner.Scan(
@@ -184,10 +186,13 @@ func scanTraceRow(scanner interface{ Scan(dest ...any) error }) (traces.SpanData
 		&span.StatusMessage,
 		&depth,
 	); err != nil {
-		return span, fmt.Errorf(ErrScanTraceRow, err)
+		return traces.SpanNode{}, fmt.Errorf(ErrScanTraceRow, err)
 	}
 
-	return span, nil
+	return traces.SpanNode{
+		SpanData: span,
+		Depth:    depth,
+	}, nil
 }
 
 // ClearTraces truncates the spans table.

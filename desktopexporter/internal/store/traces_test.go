@@ -164,7 +164,7 @@ func TestTraceSuite(t *testing.T) {
 		}
 
 		// Try to get the trace
-		spans, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
+		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
 		if err != nil {
 			t.Logf("Error getting trace: %v", err)
 			t.Logf("Error type: %T", err)
@@ -179,15 +179,15 @@ func TestTraceSuite(t *testing.T) {
 			t.FailNow()
 		}
 
-		assert.NotEmpty(t, spans)
-		t.Logf("Found %d spans in hierarchical order", len(spans))
+		assert.NotEmpty(t, trace.Spans)
+		t.Logf("Found %d spans in hierarchical order", len(trace.Spans))
 		t.Logf("")
 		t.Logf("=== HIERARCHICAL SPAN ORDER ===")
 
 		// Log all spans with detailed structure
-		for i, span := range spans {
-			depth := getDepthFromParent(spans, span, 0)
-			indent := strings.Repeat("  ", depth)
+		for i, spanNode := range trace.Spans {
+			span := spanNode.SpanData
+			indent := strings.Repeat("  ", spanNode.Depth)
 			t.Logf("%s[%d] %s%s (parent: %s)", indent, i, span.SpanID,
 				getSpanTypeInfo(span), span.ParentSpanID)
 		}
@@ -196,7 +196,8 @@ func TestTraceSuite(t *testing.T) {
 
 		// Detailed span info
 		t.Logf("=== DETAILED SPAN INFO ===")
-		for i, span := range spans {
+		for i, spanNode := range trace.Spans {
+			span := spanNode.SpanData
 			t.Logf("Span %d:", i)
 			t.Logf("  TraceID: %s", span.TraceID)
 			t.Logf("  SpanID: %s", span.SpanID)
@@ -205,9 +206,10 @@ func TestTraceSuite(t *testing.T) {
 			t.Logf("  Kind: %s", span.Kind)
 			t.Logf("  StartTime: %d", span.StartTime)
 			t.Logf("  EndTime: %d", span.EndTime)
+			t.Logf("  Depth: %d", spanNode.Depth)
 			if span.ParentSpanID == "" {
 				t.Logf("  → ROOT SPAN")
-			} else if !hasParentInSpans(spans, span.ParentSpanID) {
+			} else if !hasParentInSpans(trace.Spans, span.ParentSpanID) {
 				t.Logf("  → ORPHAN SPAN (parent '%s' not found)", span.ParentSpanID)
 			} else {
 				t.Logf("  → CHILD SPAN")
@@ -218,21 +220,22 @@ func TestTraceSuite(t *testing.T) {
 		t.Logf("")
 
 		// Basic validation that we have the expected spans
-		assert.Equal(t, "test-trace", spans[0].TraceID)
-		assert.Equal(t, "root-span", spans[0].SpanID)
-		assert.Len(t, spans, 9) // Should have 9 spans
+		assert.Equal(t, "test-trace", trace.TraceID)
+		assert.Equal(t, "test-trace", trace.Spans[0].SpanData.TraceID)
+		assert.Equal(t, "root-span", trace.Spans[0].SpanData.SpanID)
+		assert.Len(t, trace.Spans, 9) // Should have 9 spans
 
 		// Validate depth-first order: root first, then its earliest child, then that child's earliest child, etc.
 		// Expected order: root-span -> child-span -> grandchild-span -> great-grandchild-span -> child-span-2 -> child2-child-span -> orphaned-span -> orphaned-child-span -> orphaned-grandchild-span
-		assert.Equal(t, "root-span", spans[0].SpanID)
-		assert.Equal(t, "child-span", spans[1].SpanID)               // root's earliest child
-		assert.Equal(t, "grandchild-span", spans[2].SpanID)          // child-span's earliest child
-		assert.Equal(t, "great-grandchild-span", spans[3].SpanID)    // grandchild-span's child
-		assert.Equal(t, "child-span-2", spans[4].SpanID)             // root's later child
-		assert.Equal(t, "child2-child-span", spans[5].SpanID)        // child-span-2's child
-		assert.Equal(t, "orphaned-span", spans[6].SpanID)            // orphan span
-		assert.Equal(t, "orphaned-child-span", spans[7].SpanID)      // orphaned-span's child
-		assert.Equal(t, "orphaned-grandchild-span", spans[8].SpanID) // orphaned-child-span's child
+		assert.Equal(t, "root-span", trace.Spans[0].SpanData.SpanID)
+		assert.Equal(t, "child-span", trace.Spans[1].SpanData.SpanID)               // root's earliest child
+		assert.Equal(t, "grandchild-span", trace.Spans[2].SpanData.SpanID)          // child-span's earliest child
+		assert.Equal(t, "great-grandchild-span", trace.Spans[3].SpanData.SpanID)    // grandchild-span's child
+		assert.Equal(t, "child-span-2", trace.Spans[4].SpanData.SpanID)             // root's later child
+		assert.Equal(t, "child2-child-span", trace.Spans[5].SpanData.SpanID)        // child-span-2's child
+		assert.Equal(t, "orphaned-span", trace.Spans[6].SpanData.SpanID)            // orphan span
+		assert.Equal(t, "orphaned-child-span", trace.Spans[7].SpanData.SpanID)      // orphaned-span's child
+		assert.Equal(t, "orphaned-grandchild-span", trace.Spans[8].SpanData.SpanID) // orphaned-child-span's child
 	})
 
 	t.Run("TraceSummary", func(t *testing.T) {
@@ -622,9 +625,9 @@ func getSpanTypeInfo(span traces.SpanData) string {
 }
 
 // hasParentInSpans checks if a parentSpanID exists in the spans list
-func hasParentInSpans(spans []traces.SpanData, parentSpanID string) bool {
-	for _, span := range spans {
-		if span.SpanID == parentSpanID {
+func hasParentInSpans(spans []traces.SpanNode, parentSpanID string) bool {
+	for _, spanNode := range spans {
+		if spanNode.SpanData.SpanID == parentSpanID {
 			return true
 		}
 	}
