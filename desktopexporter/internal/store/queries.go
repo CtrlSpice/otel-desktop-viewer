@@ -249,9 +249,9 @@ const (
 		param(traceID) AS (
 			VALUES (?)
 		),
-		-- Get all spans in hierarchical order
+		-- Get all spans in depth-first order
 		spans_tree AS (
-			-- Anchor: Get all top-level spans (root + orphans)
+			-- Anchor: Start with root spans first, then orphan spans
 			SELECT 
 				s.TraceID,
 				s.TraceState,
@@ -275,14 +275,18 @@ const (
 				s.DroppedLinksCount,
 				s.StatusCode,
 				s.StatusMessage,
-				0 as depth
+				0 as depth,
+				ARRAY[ROW_NUMBER() OVER (ORDER BY 
+					CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN 0 ELSE 1 END,
+					s.StartTime
+				)] as sort_path
 			FROM spans s, param p
 			WHERE s.TraceID = p.traceID 
 				AND s.ParentSpanID NOT IN (SELECT SpanID FROM spans WHERE TraceID = p.traceID)
 			
 			UNION ALL
 			
-			-- Recursive: Find children of any span in the result set
+			-- Recursive: Find children of the current span, sorted by StartTime
 			SELECT 
 				s.TraceID,
 				s.TraceState,
@@ -306,19 +310,25 @@ const (
 				s.DroppedLinksCount,
 				s.StatusCode,
 				s.StatusMessage,
-				st.depth + 1
+				st.depth + 1,
+				st.sort_path || ARRAY[ROW_NUMBER() OVER (
+					PARTITION BY st.SpanID 
+					ORDER BY s.StartTime
+				)] as sort_path
 			FROM spans s, param p
 			JOIN spans_tree st ON s.ParentSpanID = st.SpanID AND s.TraceID = st.TraceID
 			WHERE s.TraceID = p.traceID
 		)
-		-- Return all spans in hierarchical order
-		SELECT * FROM spans_tree
-		ORDER BY 
-			depth,
-			CASE WHEN depth = 0 THEN 
-				CASE WHEN ParentSpanID IS NULL OR ParentSpanID = '' THEN 0 ELSE 1 END
-			ELSE 0 END,
-			StartTime
+		-- Return all spans in depth-first order
+		SELECT 
+			TraceID, TraceState, SpanID, ParentSpanID, Name, Kind, 
+			StartTime, EndTime, Attributes, Events, Links, 
+			ResourceAttributes, ResourceDroppedAttributesCount,
+			ScopeName, ScopeVersion, ScopeAttributes, ScopeDroppedAttributesCount,
+			DroppedAttributesCount, DroppedEventsCount, DroppedLinksCount,
+			StatusCode, StatusMessage, depth
+		FROM spans_tree
+		ORDER BY sort_path
 	`
 )
 

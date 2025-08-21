@@ -221,6 +221,18 @@ func TestTraceSuite(t *testing.T) {
 		assert.Equal(t, "test-trace", spans[0].TraceID)
 		assert.Equal(t, "root-span", spans[0].SpanID)
 		assert.Len(t, spans, 9) // Should have 9 spans
+
+		// Validate depth-first order: root first, then its earliest child, then that child's earliest child, etc.
+		// Expected order: root-span -> child-span -> grandchild-span -> great-grandchild-span -> child-span-2 -> child2-child-span -> orphaned-span -> orphaned-child-span -> orphaned-grandchild-span
+		assert.Equal(t, "root-span", spans[0].SpanID)
+		assert.Equal(t, "child-span", spans[1].SpanID)               // root's earliest child
+		assert.Equal(t, "grandchild-span", spans[2].SpanID)          // child-span's earliest child
+		assert.Equal(t, "great-grandchild-span", spans[3].SpanID)    // grandchild-span's child
+		assert.Equal(t, "child-span-2", spans[4].SpanID)             // root's later child
+		assert.Equal(t, "child2-child-span", spans[5].SpanID)        // child-span-2's child
+		assert.Equal(t, "orphaned-span", spans[6].SpanID)            // orphan span
+		assert.Equal(t, "orphaned-child-span", spans[7].SpanID)      // orphaned-span's child
+		assert.Equal(t, "orphaned-grandchild-span", spans[8].SpanID) // orphaned-child-span's child
 	})
 
 	t.Run("TraceSummary", func(t *testing.T) {
