@@ -126,39 +126,27 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]traces.TraceSummary, e
 	return summaries, nil
 }
 
-// GetTrace retrieves a trace from the store using the traceID.
-func (s *Store) GetTrace(ctx context.Context, traceID string) (traces.TraceData, error) {
-	if err := s.checkConnection(); err != nil {
-		return traces.TraceData{}, fmt.Errorf(ErrGetTrace, traceID, err)
-	}
-
-	trace := traces.TraceData{
-		TraceID: traceID,
-		Spans:   []traces.SpanData{},
-	}
-
-	rows, err := s.db.QueryContext(ctx, SelectTrace, traceID)
+func (s *Store) GetTrace(ctx context.Context, traceID string) ([]traces.SpanData, error) {
+	rows, err := s.db.QueryContext(ctx, SelectTrace, traceID, traceID, traceID, traceID, traceID, traceID, traceID, traceID)
 	if err != nil {
-		return trace, fmt.Errorf(ErrGetTrace, traceID, err)
+		return nil, fmt.Errorf("failed to get trace: %w", err)
 	}
 	defer rows.Close()
 
+	var spans []traces.SpanData
 	for rows.Next() {
 		span, err := scanTraceRow(rows)
 		if err != nil {
-			return trace, fmt.Errorf(ErrGetTrace, traceID, err)
+			return nil, fmt.Errorf("failed to scan trace row: %w", err)
 		}
-		trace.Spans = append(trace.Spans, span)
+		spans = append(spans, span)
 	}
 
-	// Fun thing: db.QueryContext does not return sql.ErrNoRows,
-	// but the first call to rows.Next() returns false,
-	// so we have to check for traceID not found here.
-	if len(trace.Spans) == 0 {
-		return trace, fmt.Errorf(ErrGetTrace, traceID, ErrTraceIDNotFound)
+	if len(spans) == 0 {
+		return nil, fmt.Errorf(ErrGetTrace, traceID, ErrTraceIDNotFound)
 	}
 
-	return trace, nil
+	return spans, nil
 }
 
 // scanTraceRow converts a database row into a SpanData struct
@@ -167,6 +155,9 @@ func scanTraceRow(scanner interface{ Scan(dest ...any) error }) (traces.SpanData
 		Resource: &resource.ResourceData{},
 		Scope:    &scope.ScopeData{},
 	}
+
+	// Variable to capture the additional depth column
+	var depth int
 
 	if err := scanner.Scan(
 		&span.TraceID,
@@ -191,6 +182,7 @@ func scanTraceRow(scanner interface{ Scan(dest ...any) error }) (traces.SpanData
 		&span.DroppedLinksCount,
 		&span.StatusCode,
 		&span.StatusMessage,
+		&depth,
 	); err != nil {
 		return span, fmt.Errorf(ErrScanTraceRow, err)
 	}

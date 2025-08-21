@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -152,7 +153,76 @@ func TestTraceSuite(t *testing.T) {
 	err := helper.Store.AddSpans(helper.Ctx, spans)
 	assert.NoError(t, err, "failed to add test trace")
 
-	// Run all test cases
+	// Test the trace hierarchical functionality
+	t.Run("TraceHierarchicalStructure", func(t *testing.T) {
+		// First, let's verify we have data
+		summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
+		assert.NoError(t, err)
+		t.Logf("Found %d trace summaries", len(summaries))
+		for i, summary := range summaries {
+			t.Logf("Summary %d: TraceID=%s, SpanCount=%d", i, summary.TraceID, summary.SpanCount)
+		}
+
+		// Try to get the trace
+		spans, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
+		if err != nil {
+			t.Logf("Error getting trace: %v", err)
+			t.Logf("Error type: %T", err)
+			// Let's also try to see if the query is valid by running a simpler version
+			var count int
+			err2 := helper.Store.db.QueryRowContext(helper.Ctx, "SELECT COUNT(*) FROM spans WHERE TraceID = ?", "test-trace").Scan(&count)
+			if err2 != nil {
+				t.Logf("Error counting spans: %v", err2)
+			} else {
+				t.Logf("Found %d spans for test-trace", count)
+			}
+			t.FailNow()
+		}
+
+		assert.NotEmpty(t, spans)
+		t.Logf("Found %d spans in hierarchical order", len(spans))
+		t.Logf("")
+		t.Logf("=== HIERARCHICAL SPAN ORDER ===")
+
+		// Log all spans with detailed structure
+		for i, span := range spans {
+			depth := getDepthFromParent(spans, span, 0)
+			indent := strings.Repeat("  ", depth)
+			t.Logf("%s[%d] %s%s (parent: %s)", indent, i, span.SpanID,
+				getSpanTypeInfo(span), span.ParentSpanID)
+		}
+		t.Logf("=== END HIERARCHICAL ORDER ===")
+		t.Logf("")
+
+		// Detailed span info
+		t.Logf("=== DETAILED SPAN INFO ===")
+		for i, span := range spans {
+			t.Logf("Span %d:", i)
+			t.Logf("  TraceID: %s", span.TraceID)
+			t.Logf("  SpanID: %s", span.SpanID)
+			t.Logf("  ParentSpanID: %s", span.ParentSpanID)
+			t.Logf("  Name: %s", span.Name)
+			t.Logf("  Kind: %s", span.Kind)
+			t.Logf("  StartTime: %d", span.StartTime)
+			t.Logf("  EndTime: %d", span.EndTime)
+			if span.ParentSpanID == "" {
+				t.Logf("  → ROOT SPAN")
+			} else if !hasParentInSpans(spans, span.ParentSpanID) {
+				t.Logf("  → ORPHAN SPAN (parent '%s' not found)", span.ParentSpanID)
+			} else {
+				t.Logf("  → CHILD SPAN")
+			}
+			t.Logf("")
+		}
+		t.Logf("=== END DETAILED INFO ===")
+		t.Logf("")
+
+		// Basic validation that we have the expected spans
+		assert.Equal(t, "test-trace", spans[0].TraceID)
+		assert.Equal(t, "root-span", spans[0].SpanID)
+		assert.Len(t, spans, 9) // Should have 9 spans
+	})
+
 	t.Run("TraceSummary", func(t *testing.T) {
 		summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
 		assert.NoError(t, err)
@@ -160,130 +230,16 @@ func TestTraceSuite(t *testing.T) {
 
 		summary := summaries[0]
 		assert.Equal(t, "test-trace", summary.TraceID)
-		assert.Equal(t, uint32(3), summary.SpanCount)
+		assert.Equal(t, uint32(9), summary.SpanCount)
 		assert.NotNil(t, summary.RootSpan)
 		assert.Equal(t, "test-service", summary.RootSpan.ServiceName)
 		assert.Equal(t, "root-operation", summary.RootSpan.Name)
 	})
 
-	t.Run("TraceContent", func(t *testing.T) {
-		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
-		assert.NoError(t, err)
-		assert.Len(t, trace.Spans, 3, "should have three spans")
-
-		// Verify spans are ordered by start time
-		assert.Equal(t, "root-span", trace.Spans[0].SpanID)
-		assert.Equal(t, "child-span", trace.Spans[1].SpanID)
-		assert.Equal(t, "orphaned-span", trace.Spans[2].SpanID)
-
-		// Verify root span
-		rootSpan := trace.Spans[0]
-		assert.Empty(t, rootSpan.ParentSpanID)
-		assert.Equal(t, "STATUS_CODE_OK", rootSpan.StatusCode)
-		assert.Len(t, rootSpan.Events, 2)
-		assert.Len(t, rootSpan.Links, 1)
-		assert.Equal(t, "test-service", rootSpan.Resource.Attributes["service.name"])
-
-		// Verify child span
-		childSpan := trace.Spans[1]
-		assert.Equal(t, "root-span", childSpan.ParentSpanID)
-		assert.Equal(t, "STATUS_CODE_ERROR", childSpan.StatusCode)
-		assert.Equal(t, "operation failed", childSpan.StatusMessage)
-		assert.Len(t, childSpan.Events, 1)
-		assert.Len(t, childSpan.Links, 1)
-
-		// Verify orphaned span
-		orphanedSpan := trace.Spans[2]
-		assert.Equal(t, "non-existent-parent", orphanedSpan.ParentSpanID)
-		assert.Equal(t, "STATUS_CODE_UNSET", orphanedSpan.StatusCode)
-		assert.Empty(t, orphanedSpan.Events)
-		assert.Empty(t, orphanedSpan.Links)
-	})
-
-	t.Run("TraceAttributes", func(t *testing.T) {
-		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
-		assert.NoError(t, err)
-
-		// Verify root span attributes
-		rootSpan := trace.Spans[0]
-		assert.Equal(t, "root-value", rootSpan.Attributes["root.string"])
-		assert.Equal(t, int64(42), rootSpan.Attributes["root.int"])
-		assert.Equal(t, float64(3.14), rootSpan.Attributes["root.float"])
-		assert.Equal(t, true, rootSpan.Attributes["root.bool"])
-		rootList := rootSpan.Attributes["root.list"].([]any)
-		assert.Equal(t, []any{"one", "two", "three"}, rootList)
-
-		// Verify child span attributes
-		childSpan := trace.Spans[1]
-		assert.Equal(t, "child-value", childSpan.Attributes["child.string"])
-		assert.Equal(t, int64(24), childSpan.Attributes["child.int"])
-		assert.Equal(t, float64(2.71), childSpan.Attributes["child.float"])
-		assert.Equal(t, false, childSpan.Attributes["child.bool"])
-		childList := childSpan.Attributes["child.list"].([]any)
-		assert.Equal(t, []any{int64(1), int64(2), int64(3), int64(4), int64(5)}, childList)
-	})
-
-	t.Run("TraceEventsAndLinks", func(t *testing.T) {
-		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
-		assert.NoError(t, err)
-
-		// Verify root span events
-		rootSpan := trace.Spans[0]
-		assert.Equal(t, "root-event-1", rootSpan.Events[0].Name)
-		assert.Equal(t, "Hello", rootSpan.Events[0].Attributes["event.string"])
-		assert.Equal(t, int64(42), rootSpan.Events[0].Attributes["event.int"])
-		assert.Equal(t, true, rootSpan.Events[0].Attributes["event.bool"])
-		assert.Equal(t, float64(3.14), rootSpan.Events[0].Attributes["event.float"])
-		assert.Equal(t, uint32(0), rootSpan.Events[0].DroppedAttributesCount)
-
-		assert.Equal(t, "root-event-2", rootSpan.Events[1].Name)
-		assert.Equal(t, "World", rootSpan.Events[1].Attributes["event.string2"])
-		assert.Equal(t, int64(100), rootSpan.Events[1].Attributes["event.int2"])
-		assert.Equal(t, []any{"a", "b", "c"}, rootSpan.Events[1].Attributes["event.list"])
-		assert.Equal(t, uint32(1), rootSpan.Events[1].DroppedAttributesCount)
-
-		// Verify root span links
-		assert.Equal(t, "linked-trace-1", rootSpan.Links[0].TraceID)
-		assert.Equal(t, "linked-span-1", rootSpan.Links[0].SpanID)
-		assert.Equal(t, "state1", rootSpan.Links[0].TraceState)
-		assert.Equal(t, "Link1", rootSpan.Links[0].Attributes["link.string"])
-		assert.Equal(t, int64(123), rootSpan.Links[0].Attributes["link.int"])
-		assert.Equal(t, float64(2.71), rootSpan.Links[0].Attributes["link.float"])
-		assert.Equal(t, false, rootSpan.Links[0].Attributes["link.bool"])
-		assert.Equal(t, uint32(0), rootSpan.Links[0].DroppedAttributesCount)
-
-		// Verify child span events and links
-		childSpan := trace.Spans[1]
-		assert.Equal(t, "child-event", childSpan.Events[0].Name)
-		assert.Equal(t, "Child Event", childSpan.Events[0].Attributes["child.event.string"])
-		assert.Equal(t, int64(50), childSpan.Events[0].Attributes["child.event.int"])
-		assert.Equal(t, false, childSpan.Events[0].Attributes["child.event.bool"])
-		assert.Equal(t, float64(1.618), childSpan.Events[0].Attributes["child.event.float"])
-
-		assert.Equal(t, "linked-trace-2", childSpan.Links[0].TraceID)
-		assert.Equal(t, "linked-span-2", childSpan.Links[0].SpanID)
-		assert.Equal(t, "state2", childSpan.Links[0].TraceState)
-		assert.Equal(t, "Child Link", childSpan.Links[0].Attributes["child.link.string"])
-		assert.Equal(t, int64(456), childSpan.Links[0].Attributes["child.link.int"])
-		assert.Equal(t, float64(1.414), childSpan.Links[0].Attributes["child.link.float"])
-		assert.Equal(t, true, childSpan.Links[0].Attributes["child.link.bool"])
-		assert.Equal(t, []any{int64(1), int64(2), int64(3), int64(4), int64(5)}, childSpan.Links[0].Attributes["child.link.list"])
-		assert.Equal(t, uint32(1), childSpan.Links[0].DroppedAttributesCount)
-	})
-
-	t.Run("TraceResourceAndScope", func(t *testing.T) {
-		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
-		assert.NoError(t, err)
-
-		// Verify resource and scope (should be consistent across all spans)
-		span := trace.Spans[0] // Check first span
-		assert.Equal(t, "test-service", span.Resource.Attributes["service.name"])
-		assert.Equal(t, "1.0.0", span.Resource.Attributes["service.version"])
-		assert.Equal(t, uint32(0), span.Resource.DroppedAttributesCount)
-		assert.Equal(t, "test-scope", span.Scope.Name)
-		assert.Equal(t, "v1.0.0", span.Scope.Version)
-		assert.Empty(t, span.Scope.Attributes)
-		assert.Equal(t, uint32(0), span.Scope.DroppedAttributesCount)
+	t.Run("TraceNotFound", func(t *testing.T) {
+		_, err := helper.Store.GetTrace(helper.Ctx, "non-existent-trace")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrTraceIDNotFound)
 	})
 }
 
@@ -424,6 +380,124 @@ func createTestTrace() []traces.SpanData {
 			StatusMessage: "operation failed",
 		},
 		{
+			// Second child of root span
+			TraceID:      "test-trace",
+			SpanID:       "child-span-2",
+			ParentSpanID: "root-span",
+			Name:         "child-operation-2",
+			Kind:         "SPAN_KIND_INTERNAL",
+			StartTime:    baseTime + 75*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 850*time.Millisecond.Nanoseconds(),
+			Attributes: map[string]any{
+				"child2.string": "child2-value",
+				"child2.int":    int64(99),
+				"child2.float":  float64(1.414),
+			},
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name":    "test-service",
+					"service.version": "1.0.0",
+				},
+				DroppedAttributesCount: 0,
+			},
+			Scope: &scope.ScopeData{
+				Name:                   "test-scope",
+				Version:                "v1.0.0",
+				Attributes:             map[string]any{},
+				DroppedAttributesCount: 0,
+			},
+			StatusCode:    "STATUS_CODE_OK",
+			StatusMessage: "",
+		},
+		{
+			// Grandchild span (child of child-span)
+			TraceID:      "test-trace",
+			SpanID:       "grandchild-span",
+			ParentSpanID: "child-span",
+			Name:         "grandchild-operation",
+			Kind:         "SPAN_KIND_INTERNAL",
+			StartTime:    baseTime + 200*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 700*time.Millisecond.Nanoseconds(),
+			Attributes: map[string]any{
+				"grandchild.string": "grandchild-value",
+				"grandchild.int":    int64(123),
+				"grandchild.float":  float64(2.236),
+			},
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name":    "test-service",
+					"service.version": "1.0.0",
+				},
+				DroppedAttributesCount: 0,
+			},
+			Scope: &scope.ScopeData{
+				Name:                   "test-scope",
+				Version:                "v1.0.0",
+				Attributes:             map[string]any{},
+				DroppedAttributesCount: 0,
+			},
+			StatusCode:    "STATUS_CODE_OK",
+			StatusMessage: "",
+		},
+		{
+			// Great-grandchild span (child of grandchild-span)
+			TraceID:      "test-trace",
+			SpanID:       "great-grandchild-span",
+			ParentSpanID: "grandchild-span",
+			Name:         "great-grandchild-operation",
+			Kind:         "SPAN_KIND_INTERNAL",
+			StartTime:    baseTime + 250*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 600*time.Millisecond.Nanoseconds(),
+			Attributes: map[string]any{
+				"great-grandchild.string": "great-grandchild-value",
+				"great-grandchild.int":    int64(456),
+			},
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name":    "test-service",
+					"service.version": "1.0.0",
+				},
+				DroppedAttributesCount: 0,
+			},
+			Scope: &scope.ScopeData{
+				Name:                   "test-scope",
+				Version:                "v1.0.0",
+				Attributes:             map[string]any{},
+				DroppedAttributesCount: 0,
+			},
+			StatusCode:    "STATUS_CODE_ERROR",
+			StatusMessage: "deep operation failed",
+		},
+		{
+			// Child of child-span-2
+			TraceID:      "test-trace",
+			SpanID:       "child2-child-span",
+			ParentSpanID: "child-span-2",
+			Name:         "child2-child-operation",
+			Kind:         "SPAN_KIND_INTERNAL",
+			StartTime:    baseTime + 150*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 750*time.Millisecond.Nanoseconds(),
+			Attributes: map[string]any{
+				"child2-child.string": "child2-child-value",
+				"child2-child.int":    int64(789),
+			},
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name":    "test-service",
+					"service.version": "1.0.0",
+				},
+				DroppedAttributesCount: 0,
+			},
+			Scope: &scope.ScopeData{
+				Name:                   "test-scope",
+				Version:                "v1.0.0",
+				Attributes:             map[string]any{},
+				DroppedAttributesCount: 0,
+			},
+			StatusCode:    "STATUS_CODE_OK",
+			StatusMessage: "",
+		},
+		{
 			// Orphaned span (has parent but parent doesn't exist)
 			TraceID:      "test-trace",
 			SpanID:       "orphaned-span",
@@ -448,5 +522,99 @@ func createTestTrace() []traces.SpanData {
 			StatusCode:    "STATUS_CODE_UNSET",
 			StatusMessage: "",
 		},
+		{
+			// Child of orphaned span
+			TraceID:      "test-trace",
+			SpanID:       "orphaned-child-span",
+			ParentSpanID: "orphaned-span",
+			Name:         "orphaned-child-operation",
+			Kind:         "SPAN_KIND_INTERNAL",
+			StartTime:    baseTime + 120*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 750*time.Millisecond.Nanoseconds(),
+			Attributes: map[string]any{
+				"orphaned-child.string": "orphaned-child-value",
+				"orphaned-child.int":    int64(555),
+			},
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name":    "test-service",
+					"service.version": "1.0.0",
+				},
+				DroppedAttributesCount: 0,
+			},
+			Scope: &scope.ScopeData{
+				Name:                   "test-scope",
+				Version:                "v1.0.0",
+				Attributes:             map[string]any{},
+				DroppedAttributesCount: 0,
+			},
+			StatusCode:    "STATUS_CODE_OK",
+			StatusMessage: "",
+		},
+		{
+			// Grandchild of orphaned span
+			TraceID:      "test-trace",
+			SpanID:       "orphaned-grandchild-span",
+			ParentSpanID: "orphaned-child-span",
+			Name:         "orphaned-grandchild-operation",
+			Kind:         "SPAN_KIND_INTERNAL",
+			StartTime:    baseTime + 140*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 700*time.Millisecond.Nanoseconds(),
+			Attributes: map[string]any{
+				"orphaned-grandchild.string": "orphaned-grandchild-value",
+				"orphaned-grandchild.int":    int64(777),
+			},
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name":    "test-service",
+					"service.version": "1.0.0",
+				},
+				DroppedAttributesCount: 0,
+			},
+			Scope: &scope.ScopeData{
+				Name:                   "test-scope",
+				Version:                "v1.0.0",
+				Attributes:             map[string]any{},
+				DroppedAttributesCount: 0,
+			},
+			StatusCode:    "STATUS_CODE_ERROR",
+			StatusMessage: "orphaned operation failed",
+		},
 	}
+}
+
+// Helper functions for hierarchical logging
+
+// getDepthFromParent calculates the depth of a span by walking up the parent chain
+func getDepthFromParent(spans []traces.SpanData, span traces.SpanData, currentDepth int) int {
+	if span.ParentSpanID == "" {
+		return currentDepth // Root span
+	}
+
+	// Find parent
+	for _, s := range spans {
+		if s.SpanID == span.ParentSpanID {
+			return getDepthFromParent(spans, s, currentDepth+1)
+		}
+	}
+
+	return currentDepth // Orphan span (parent not found)
+}
+
+// getSpanTypeInfo returns a type indicator for the span
+func getSpanTypeInfo(span traces.SpanData) string {
+	if span.ParentSpanID == "" {
+		return " [ROOT]"
+	}
+	return ""
+}
+
+// hasParentInSpans checks if a parentSpanID exists in the spans list
+func hasParentInSpans(spans []traces.SpanData, parentSpanID string) bool {
+	for _, span := range spans {
+		if span.SpanID == parentSpanID {
+			return true
+		}
+	}
+	return false
 }

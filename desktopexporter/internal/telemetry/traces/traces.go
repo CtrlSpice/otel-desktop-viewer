@@ -5,9 +5,14 @@ import (
 	"strconv"
 )
 
-type TraceData struct {
-	TraceID string     `json:"traceID"`
-	Spans   []SpanData `json:"spans"`
+type TraceTree struct {
+	TraceID   string
+	SpanNodes []SpanNode
+}
+
+type SpanNode struct {
+	SpanData SpanData
+	Children []SpanNode
 }
 
 type TraceSummary struct {
