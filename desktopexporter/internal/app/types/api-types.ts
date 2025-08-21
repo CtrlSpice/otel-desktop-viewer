@@ -13,11 +13,14 @@ export type TraceSummary = {
   spanCount: number;
 };
 
-
-
 export type TraceData = {
   traceID: string;
-  spans: SpanData[];
+  spans: SpanNode[];
+};
+
+export type SpanNode = {
+  spanData: SpanData;
+  depth: number;
 };
 
 export type SpanData = {

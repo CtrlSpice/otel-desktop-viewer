@@ -54,7 +54,7 @@ if (!!container) {
   root.render(
     <React.StrictMode>
       <ChakraProvider theme={theme}>
-        <RouterProvider router={router} />  // ← Router injected here
+        <RouterProvider router={router} />
       </ChakraProvider>
     </React.StrictMode>,
   );

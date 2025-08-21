@@ -1,7 +1,6 @@
 package store
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -76,12 +75,6 @@ func TestTraceSummaryOrdering(t *testing.T) {
 	// Should have all three traces
 	assert.Len(t, summaries, 3, "expected 3 traces")
 
-	// Log the actual ordering we got
-	t.Logf("Trace order: %s -> %s -> %s",
-		summaries[0].TraceID,
-		summaries[1].TraceID,
-		summaries[2].TraceID)
-
 	// Verify ordering: trace3 (newest) -> trace1 -> trace2 (oldest)
 	assert.Equal(t, "trace3", summaries[0].TraceID, "first trace should be trace3 (latest start)")
 	assert.Equal(t, "trace1", summaries[1].TraceID, "second trace should be trace1")
@@ -155,69 +148,10 @@ func TestTraceSuite(t *testing.T) {
 
 	// Test the trace hierarchical functionality
 	t.Run("TraceHierarchicalStructure", func(t *testing.T) {
-		// First, let's verify we have data
-		summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
-		assert.NoError(t, err)
-		t.Logf("Found %d trace summaries", len(summaries))
-		for i, summary := range summaries {
-			t.Logf("Summary %d: TraceID=%s, SpanCount=%d", i, summary.TraceID, summary.SpanCount)
-		}
-
-		// Try to get the trace
+		// Get the trace
 		trace, err := helper.Store.GetTrace(helper.Ctx, "test-trace")
-		if err != nil {
-			t.Logf("Error getting trace: %v", err)
-			t.Logf("Error type: %T", err)
-			// Let's also try to see if the query is valid by running a simpler version
-			var count int
-			err2 := helper.Store.db.QueryRowContext(helper.Ctx, "SELECT COUNT(*) FROM spans WHERE TraceID = ?", "test-trace").Scan(&count)
-			if err2 != nil {
-				t.Logf("Error counting spans: %v", err2)
-			} else {
-				t.Logf("Found %d spans for test-trace", count)
-			}
-			t.FailNow()
-		}
-
+		assert.NoError(t, err, "failed to get trace")
 		assert.NotEmpty(t, trace.Spans)
-		t.Logf("Found %d spans in hierarchical order", len(trace.Spans))
-		t.Logf("")
-		t.Logf("=== HIERARCHICAL SPAN ORDER ===")
-
-		// Log all spans with detailed structure
-		for i, spanNode := range trace.Spans {
-			span := spanNode.SpanData
-			indent := strings.Repeat("  ", spanNode.Depth)
-			t.Logf("%s[%d] %s%s (parent: %s)", indent, i, span.SpanID,
-				getSpanTypeInfo(span), span.ParentSpanID)
-		}
-		t.Logf("=== END HIERARCHICAL ORDER ===")
-		t.Logf("")
-
-		// Detailed span info
-		t.Logf("=== DETAILED SPAN INFO ===")
-		for i, spanNode := range trace.Spans {
-			span := spanNode.SpanData
-			t.Logf("Span %d:", i)
-			t.Logf("  TraceID: %s", span.TraceID)
-			t.Logf("  SpanID: %s", span.SpanID)
-			t.Logf("  ParentSpanID: %s", span.ParentSpanID)
-			t.Logf("  Name: %s", span.Name)
-			t.Logf("  Kind: %s", span.Kind)
-			t.Logf("  StartTime: %d", span.StartTime)
-			t.Logf("  EndTime: %d", span.EndTime)
-			t.Logf("  Depth: %d", spanNode.Depth)
-			if span.ParentSpanID == "" {
-				t.Logf("  → ROOT SPAN")
-			} else if !hasParentInSpans(trace.Spans, span.ParentSpanID) {
-				t.Logf("  → ORPHAN SPAN (parent '%s' not found)", span.ParentSpanID)
-			} else {
-				t.Logf("  → CHILD SPAN")
-			}
-			t.Logf("")
-		}
-		t.Logf("=== END DETAILED INFO ===")
-		t.Logf("")
 
 		// Basic validation that we have the expected spans
 		assert.Equal(t, "test-trace", trace.TraceID)
@@ -596,40 +530,4 @@ func createTestTrace() []traces.SpanData {
 			StatusMessage: "orphaned operation failed",
 		},
 	}
-}
-
-// Helper functions for hierarchical logging
-
-// getDepthFromParent calculates the depth of a span by walking up the parent chain
-func getDepthFromParent(spans []traces.SpanData, span traces.SpanData, currentDepth int) int {
-	if span.ParentSpanID == "" {
-		return currentDepth // Root span
-	}
-
-	// Find parent
-	for _, s := range spans {
-		if s.SpanID == span.ParentSpanID {
-			return getDepthFromParent(spans, s, currentDepth+1)
-		}
-	}
-
-	return currentDepth // Orphan span (parent not found)
-}
-
-// getSpanTypeInfo returns a type indicator for the span
-func getSpanTypeInfo(span traces.SpanData) string {
-	if span.ParentSpanID == "" {
-		return " [ROOT]"
-	}
-	return ""
-}
-
-// hasParentInSpans checks if a parentSpanID exists in the spans list
-func hasParentInSpans(spans []traces.SpanNode, parentSpanID string) bool {
-	for _, spanNode := range spans {
-		if spanNode.SpanData.SpanID == parentSpanID {
-			return true
-		}
-	}
-	return false
 }
