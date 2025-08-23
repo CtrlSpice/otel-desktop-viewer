@@ -60,9 +60,17 @@ and spin up a server listening on `localhost:4318` for OTLP http payloads and
 You can run otel-desktop-viewer using Docker without installing Go or building locally.
 
 Pull from GitHub Container Registry:
+
 ```bash
-docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest
-docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest
+# For AMD64 (most common)
+docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64
+docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64
+```
+
+```bash
+# For ARM64 (Apple Silicon, etc.)
+docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64
+docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64
 ```
 
 Or build locally:
@@ -82,7 +90,7 @@ services:
     # Add your app configuration here
   
   otel-desktop-viewer:
-    image: ghcr.io/ctrlspice/otel-desktop-viewer:latest
+    image: ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64  # Use latest-arm64 for ARM64 systems
     ports:
       - "8000:8000"
 ```

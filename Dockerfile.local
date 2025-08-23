@@ -1,10 +1,14 @@
 FROM golang:1.24 AS golang
 
-# Install build dependencies for CGO
+# Install build dependencies for CGO and use same Debian version
 RUN apt-get update && apt-get install -y gcc g++ git
 
-# Install the application
-RUN go install github.com/CtrlSpice/otel-desktop-viewer@latest
+# Copy source code
+WORKDIR /app
+COPY . .
+
+# Build the application
+RUN go build -o otel-desktop-viewer .
 
 FROM debian:latest
 
@@ -14,7 +18,7 @@ RUN apt-get update && apt-get install -y \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=golang /go/bin/otel-desktop-viewer /root/otel-desktop-viewer
+COPY --from=golang /app/otel-desktop-viewer /root/otel-desktop-viewer
 
 EXPOSE 8000
 EXPOSE 4317
