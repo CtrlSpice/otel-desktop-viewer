@@ -105,9 +105,11 @@ jobs:
           echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
 
       - name: Set up Docker Buildx
+        if: matrix.goos == 'linux'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Container Registry
+        if: matrix.goos == 'linux'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
