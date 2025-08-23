@@ -69,7 +69,6 @@ async function pollTraceCount() {
     }
   } catch (error) {
     // Silently handle errors - this is just polling
-    console.debug("Polling error:", error);
   }
 }
 

@@ -120,7 +120,7 @@ export function DurationBar(props: DurationBarProps) {
             color={labelTextColour}
             whiteSpace="nowrap"
           >
-            {formatDuration(traceBounds.endTime.nanoseconds - traceBounds.startTime.nanoseconds)}
+            {formatDuration(endTime.nanoseconds - startTime.nanoseconds)}
           </Text>
         </Flex>
         <EventDotsList

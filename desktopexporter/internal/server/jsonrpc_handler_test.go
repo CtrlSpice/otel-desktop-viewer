@@ -145,7 +145,7 @@ func TestGetTraceByID(t *testing.T) {
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.Nil(t, err)
-		trace, ok := result.(traces.TraceData)
+		trace, ok := result.(*traces.Trace)
 		assert.True(t, ok)
 		assert.Equal(t, "1234567890", trace.TraceID)
 		assert.Len(t, trace.Spans, 1)

@@ -58017,7 +58017,6 @@
     };
     const response = await rpcClient.makeRequest(request);
     if (response.data.error) {
-      console.error("Debug: JSON-RPC error:", response.data.error);
       throw new Error(`JSON-RPC Error: ${response.data.error.message}`);
     }
     return response.data.result;
@@ -58038,14 +58037,18 @@
   function traceDataFromJSON(json2) {
     return {
       ...json2,
-      spans: json2.spans.map((span) => ({
-        ...span,
-        startTime: PreciseTimestamp.fromJSON(span.startTime),
-        endTime: PreciseTimestamp.fromJSON(span.endTime),
-        events: span.events?.map((event) => ({
-          ...event,
-          timestamp: PreciseTimestamp.fromJSON(event.timestamp)
-        }))
+      spans: json2.spans.map((spanNode) => ({
+        spanData: {
+          ...spanNode.spanData,
+          startTime: PreciseTimestamp.fromJSON(spanNode.spanData.startTime),
+          endTime: PreciseTimestamp.fromJSON(spanNode.spanData.endTime),
+          events: spanNode.spanData.events ? spanNode.spanData.events.map((event) => ({
+            ...event,
+            timestamp: event.timestamp && event.timestamp !== void 0 ? PreciseTimestamp.fromJSON(event.timestamp) : void 0
+          })) : [],
+          links: spanNode.spanData.links || []
+        },
+        depth: spanNode.depth
       }))
     };
   }
@@ -58672,7 +58675,6 @@
         }, 500);
       }
     } catch (error) {
-      console.debug("Polling error:", error);
     }
   }
   function EmptyStateView() {
@@ -59607,7 +59609,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
               color: labelTextColour,
               whiteSpace: "nowrap"
             },
-            formatDuration(traceBounds.endTime.nanoseconds - traceBounds.startTime.nanoseconds)
+            formatDuration(endTime.nanoseconds - startTime.nanoseconds)
           )
         ),
         /* @__PURE__ */ import_react137.default.createElement(
@@ -59893,82 +59895,11 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     e.preventDefault();
   }
 
-  // utils/array-to-tree.ts
-  function arrayToTree(spans) {
-    let rootItems = [];
-    let lookup = {};
-    let missingSpanIDs = /* @__PURE__ */ new Set();
-    for (let spanData of spans) {
-      let { spanID, parentSpanID } = spanData;
-      if (!lookup[spanID]) {
-        lookup[spanID] = {
-          status: "present" /* present */,
-          spanData,
-          children: []
-        };
-      }
-      let treeItem = lookup[spanID];
-      if (treeItem.status === "missing" /* missing */) {
-        treeItem = {
-          status: "present" /* present */,
-          spanData,
-          children: treeItem.children
-        };
-        lookup[spanID] = treeItem;
-        missingSpanIDs.delete(spanID);
-      }
-      if (!parentSpanID) {
-        rootItems.push(treeItem);
-      } else {
-        if (!lookup[parentSpanID]) {
-          lookup[parentSpanID] = {
-            status: "missing" /* missing */,
-            spanID: parentSpanID,
-            children: []
-          };
-          missingSpanIDs.add(parentSpanID);
-        }
-        lookup[parentSpanID].children.push(treeItem);
-      }
-    }
-    let missingIDsArray = Array.from(missingSpanIDs).sort(
-      (a, b) => {
-        let earliestStartTimeA = getEarliestStartTime(lookup[a].children);
-        let earliestStartTimeB = getEarliestStartTime(lookup[b].children);
-        if (earliestStartTimeA.nanoseconds < earliestStartTimeB.nanoseconds) {
-          return -1;
-        } else if (earliestStartTimeA.nanoseconds > earliestStartTimeB.nanoseconds) {
-          return 1;
-        }
-        return 0;
-      }
-    );
-    for (let spanID of missingIDsArray) {
-      rootItems.push(lookup[spanID]);
-    }
-    return rootItems;
-  }
-  function getEarliestStartTime(children) {
-    if (children.length == 0) {
-      throw new Error(
-        "Unexpected type: A 'missing' parent span appears to have no children."
-      );
-    }
-    let earliestStart = children[0].spanData.startTime;
-    for (let i = 1; i < children.length; i++) {
-      let currentStart = children[i].spanData.startTime;
-      if (currentStart.nanoseconds < earliestStart.nanoseconds) {
-        earliestStart = currentStart;
-      }
-    }
-    return earliestStart;
-  }
-
   // routes/trace-view.tsx
   async function traceLoader({ params }) {
     try {
       if (!params.traceID) {
-        const traceSummaries = await telemetryAPI.getTraceSummaries();
+        let traceSummaries = await telemetryAPI.getTraceSummaries();
         if (traceSummaries.length > 0) {
           throw new Response("", {
             status: 302,
@@ -59985,7 +59916,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
           });
         }
       }
-      const traceData = await telemetryAPI.getTraceByID(params.traceID);
+      let traceData = await telemetryAPI.getTraceByID(params.traceID);
       return traceData;
     } catch (error) {
       console.error("Failed to load trace:", error);
@@ -59999,26 +59930,27 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   }
   function TraceView() {
     let traceData = useLoaderData();
-    let traceBounds = getTraceBounds(traceData.spans);
-    let spanTree = arrayToTree(traceData.spans);
-    let orderedSpans = orderSpans(spanTree);
-    let [selectedSpanID, setSelectedSpanID] = import_react145.default.useState(() => {
-      if (!orderedSpans.length || orderedSpans[0].status === "missing" /* missing */ && orderedSpans.length < 2) {
-        throw new Error("Number of spans cannot be zero");
+    let traceBounds = getTraceBounds(traceData.spans.map((spanNode) => spanNode.spanData));
+    let orderedSpans = traceData.spans.map((spanNode) => ({
+      status: "present" /* present */,
+      spanData: spanNode.spanData,
+      metadata: {
+        depth: spanNode.depth,
+        spanID: spanNode.spanData.spanID
       }
-      if (orderedSpans[0].status === "missing" /* missing */) {
-        return orderedSpans[1].metadata.spanID;
+    }));
+    let [selectedSpanID, setSelectedSpanID] = import_react145.default.useState(() => {
+      if (!orderedSpans.length) {
+        throw new Error("Number of spans cannot be zero");
       }
       return orderedSpans[0].metadata.spanID;
     });
     import_react145.default.useEffect(() => {
-      setSelectedSpanID(
-        orderedSpans[0].status === "present" /* present */ ? orderedSpans[0].metadata.spanID : orderedSpans[1].metadata.spanID
-      );
+      setSelectedSpanID(orderedSpans[0].metadata.spanID);
     }, [traceData]);
     let selectedSpan = traceData.spans.find(
-      (span) => span.spanID === selectedSpanID
-    );
+      (spanNode) => spanNode.spanData.spanID === selectedSpanID
+    )?.spanData;
     return /* @__PURE__ */ import_react145.default.createElement(
       Grid,
       {
@@ -60049,53 +59981,6 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
       ),
       /* @__PURE__ */ import_react145.default.createElement(GridItem, { area: "detail" }, /* @__PURE__ */ import_react145.default.createElement(DetailView, { span: selectedSpan }))
     );
-  }
-  function orderSpans(spanTree) {
-    let orderedSpans = [];
-    for (let root of spanTree) {
-      let stack = [
-        {
-          treeItem: root,
-          depth: 0
-        }
-      ];
-      while (stack.length) {
-        let node2 = stack.pop();
-        if (!node2) {
-          break;
-        }
-        let { treeItem, depth } = node2;
-        if (treeItem.status === "present" /* present */) {
-          orderedSpans.push({
-            status: "present" /* present */,
-            spanData: treeItem.spanData,
-            metadata: { depth, spanID: treeItem.spanData.spanID }
-          });
-        } else {
-          orderedSpans.push({
-            status: "missing" /* missing */,
-            metadata: { depth, spanID: treeItem.spanID }
-          });
-        }
-        treeItem.children.sort((a, b) => {
-          if (a.status === "present" /* present */ && b.status === "present" /* present */) {
-            if (a.spanData.startTime.nanoseconds < b.spanData.startTime.nanoseconds) {
-              return -1;
-            } else if (a.spanData.startTime.nanoseconds > b.spanData.startTime.nanoseconds) {
-              return 1;
-            }
-            return 0;
-          }
-          return 0;
-        }).forEach(
-          (child) => stack.push({
-            treeItem: child,
-            depth: depth + 1
-          })
-        );
-      }
-    }
-    return orderedSpans;
   }
 
   // routes/logs-view.tsx
@@ -60237,7 +60122,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
   if (!!container2) {
     let root = (0, import_client.createRoot)(container2);
     root.render(
-      /* @__PURE__ */ import_react152.default.createElement(import_react152.default.StrictMode, null, /* @__PURE__ */ import_react152.default.createElement(ChakraProvider, { theme: theme2 }, /* @__PURE__ */ import_react152.default.createElement(RouterProvider, { router }), "  // \u2190 Router injected here"))
+      /* @__PURE__ */ import_react152.default.createElement(import_react152.default.StrictMode, null, /* @__PURE__ */ import_react152.default.createElement(ChakraProvider, { theme: theme2 }, /* @__PURE__ */ import_react152.default.createElement(RouterProvider, { router })))
     );
   }
 })();

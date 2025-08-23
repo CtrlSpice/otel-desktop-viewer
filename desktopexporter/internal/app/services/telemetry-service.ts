@@ -52,7 +52,6 @@ async function callRPC(method: string, params?: any): Promise<any> {
   const response = await rpcClient.makeRequest(request);
 
   if (response.data.error) {
-    console.error('Debug: JSON-RPC error:', response.data.error);
     throw new Error(`JSON-RPC Error: ${response.data.error.message}`);
   }
 
@@ -78,14 +77,18 @@ function traceSummariesFromJSON(json: any): TraceSummary[] {
 function traceDataFromJSON(json: any): TraceData {
   return {
     ...json,
-    spans: json.spans.map((span: any) => ({
-      ...span,
-      startTime: PreciseTimestamp.fromJSON(span.startTime),
-      endTime: PreciseTimestamp.fromJSON(span.endTime),
-      events: span.events?.map((event: any) => ({
-        ...event,
-        timestamp: PreciseTimestamp.fromJSON(event.timestamp)
-      }))
+    spans: json.spans.map((spanNode: any) => ({
+      spanData: {
+        ...spanNode.spanData,
+        startTime: PreciseTimestamp.fromJSON(spanNode.spanData.startTime),
+        endTime: PreciseTimestamp.fromJSON(spanNode.spanData.endTime),
+        events: spanNode.spanData.events ? spanNode.spanData.events.map((event: any) => ({
+          ...event,
+          timestamp: event.timestamp && event.timestamp !== undefined ? PreciseTimestamp.fromJSON(event.timestamp) : undefined
+        })) : [],
+        links: spanNode.spanData.links || []
+      },
+      depth: spanNode.depth
     }))
   };
 }

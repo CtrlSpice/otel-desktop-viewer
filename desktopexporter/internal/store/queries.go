@@ -212,10 +212,6 @@ const (
 
 // Trace queries
 const (
-	SelectTrace = `
-		SELECT * FROM spans WHERE TraceID = ?
-	`
-
 	// SelectTraceSummaries retrieves all traces ordered by:
 	// - Root span start time when available
 	// - Earliest span start time when no root span exists
@@ -244,6 +240,96 @@ const (
             ) DESC,
             s.TraceID
     `
+
+	// SelectTrace retrieves spans in hierarchical order with depth information
+	// This mimics a tree structure that can be easily converted to a tree on the frontend
+	SelectTrace = `
+		WITH RECURSIVE
+		-- Define the trace parameter
+		param(traceID) AS (
+			VALUES (?)
+		),
+		-- Get all spans in depth-first order
+		spans_tree AS (
+			-- Anchor: Start with root spans first, then orphan spans
+			SELECT 
+				s.TraceID,
+				s.TraceState,
+				s.SpanID,
+				s.ParentSpanID,
+				s.Name,
+				s.Kind,
+				s.StartTime,
+				s.EndTime,
+				s.Attributes,
+				s.Events,
+				s.Links,
+				s.ResourceAttributes,
+				s.ResourceDroppedAttributesCount,
+				s.ScopeName,
+				s.ScopeVersion,
+				s.ScopeAttributes,
+				s.ScopeDroppedAttributesCount,
+				s.DroppedAttributesCount,
+				s.DroppedEventsCount,
+				s.DroppedLinksCount,
+				s.StatusCode,
+				s.StatusMessage,
+				0 as depth,
+				ARRAY[ROW_NUMBER() OVER (ORDER BY 
+					CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN 0 ELSE 1 END,
+					s.StartTime
+				)] as sort_path
+			FROM spans s, param p
+			WHERE s.TraceID = p.traceID 
+				AND s.ParentSpanID NOT IN (SELECT SpanID FROM spans WHERE TraceID = p.traceID)
+			
+			UNION ALL
+			
+			-- Recursive: Find children of the current span, sorted by StartTime
+			SELECT 
+				s.TraceID,
+				s.TraceState,
+				s.SpanID,
+				s.ParentSpanID,
+				s.Name,
+				s.Kind,
+				s.StartTime,
+				s.EndTime,
+				s.Attributes,
+				s.Events,
+				s.Links,
+				s.ResourceAttributes,
+				s.ResourceDroppedAttributesCount,
+				s.ScopeName,
+				s.ScopeVersion,
+				s.ScopeAttributes,
+				s.ScopeDroppedAttributesCount,
+				s.DroppedAttributesCount,
+				s.DroppedEventsCount,
+				s.DroppedLinksCount,
+				s.StatusCode,
+				s.StatusMessage,
+				st.depth + 1,
+				st.sort_path || ARRAY[ROW_NUMBER() OVER (
+					PARTITION BY st.SpanID 
+					ORDER BY s.StartTime
+				)] as sort_path
+			FROM spans s, param p
+			JOIN spans_tree st ON s.ParentSpanID = st.SpanID AND s.TraceID = st.TraceID
+			WHERE s.TraceID = p.traceID
+		)
+		-- Return all spans in depth-first order
+		SELECT 
+			TraceID, TraceState, SpanID, ParentSpanID, Name, Kind, 
+			StartTime, EndTime, Attributes, Events, Links, 
+			ResourceAttributes, ResourceDroppedAttributesCount,
+			ScopeName, ScopeVersion, ScopeAttributes, ScopeDroppedAttributesCount,
+			DroppedAttributesCount, DroppedEventsCount, DroppedLinksCount,
+			StatusCode, StatusMessage, depth
+		FROM spans_tree
+		ORDER BY sort_path
+	`
 )
 
 // Metrics queries
