@@ -2,11 +2,7 @@
 
 `otel-desktop-viewer` is a CLI tool for receiving OpenTelemetry traces while working
 on your local machine that helps you visualize and explore your trace data without
-needing to send it on to a telemetry vendor.
-
-![otel-desktop-viewer demo 3 LQ](https://user-images.githubusercontent.com/56372758/218345612-381fe2ff-8245-429f-ba2f-ca6431585a16.gif)
-
-Its goals are to be easy-to-install with minimal dependencies and fast. It is written in Go
+needing to send it on to a telemetry vendor. Its goals are to be easy-to-install with minimal dependencies and fast. It is written in Go
 as a custom exporter on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector).
 Also, it has a dark mode.
 
@@ -22,6 +18,23 @@ brew install otel-desktop-viewer
 
 #### via `go install`
 Make sure you have [go](https://go.dev/) installed.
+
+**Note**: This requires CGO compilation due to DuckDB dependencies.
+
+**On Windows**: You'll need MSYS2 for CGO compilation:
+1. Install MSYS2: https://www.msys2.org/
+2. Add MSYS2 to your PATH:
+   ```cmd
+   setx PATH "%PATH%;C:\msys64\ucrt64\bin"
+   ```
+   Or in PowerShell:
+   ```powershell
+   $env:PATH += ";C:\msys64\ucrt64\bin"
+   ```
+   **Note**: The `setx` command makes the change permanent. The PowerShell command is for the current session only.
+3. Restart your terminal
+
+**On Linux/macOS**: CGO should work out of the box.
 
 ```bash
 # install the CLI tool
@@ -44,8 +57,7 @@ and spin up a server listening on `localhost:4318` for OTLP http payloads and
 
 #### via Docker
 
-The included `Dockerfile` will build a relatively slim image you can use to run otel-desktop-viewer without
-using Homebrew or setting up Go.
+The included `Dockerfile` will build an image you can use to run otel-desktop-viewer without using Homebrew or setting up Go.
 
 To build the image
 
@@ -54,47 +66,50 @@ To build the image
   - For Linux, Docker Engine is fine, but do read the [post-install instructions](https://docs.docker.com/engine/install/linux-postinstall/) so that you can run Docker as your user
 * Build the image. You'll need a tag so you can reference it.
 
-  ```
-  > docker build --tag otel-desktop-viewer:alpine-3
-  ```
-
-To use the image, you have a few options:
-
-* **Run it so apps on your computer can access it**:
-
-  ```
-  docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 davetron5000/otel-desktop-viewer:alpine-3
+  ```bash
+  docker build --tag otel-desktop-viewer:latest .
   ```
 
-  The `-p` arguments map otel-desktop-viewers ports to the same ports on localhost.  When you do this, you would
-  access the web UI via `localhost:8000` and use `localhost:4318` or `localhost:4319` to export to.
-* **Run it in docker compose as part of a devcontainer-based environment**. Here, the app you are working on
-that is sending telemetry is running as a Docker container.  You can use Docker compose to allow that app to
-export to your otel-desktop-viewer, but still access its web UI on your computer. A very simplified
-`docker-compose.yml`:
+## Running the Container
 
-  ```yaml
-  services:
-    app:
-      image: your-apps-image-tag
-      # probably more config based on the app
-    otel-desktop-viewer:
-      image: otel-desktop-viewer:alpine-3 # or whatever you used for docker build
-      ports:
-        - "8000:8000"
-  ```
+### Option 1: Standalone (Apps on your computer)
+
+```bash
+docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 otel-desktop-viewer:latest
+```
+
+This maps the container ports to your localhost:
+- **Web UI**: `localhost:8000`
+- **OTLP HTTP**: `localhost:4318` 
+- **OTLP gRPC**: `localhost:4317`
+
+### Option 2: With Docker Compose (Apps in containers)
+
+If your application is also running in Docker, create a `docker-compose.yml`:
+
+```yaml
+services:
+  app:
+    image: your-apps-image-tag
+    # Add your app configuration here
+  
+  otel-desktop-viewer:
+    image: otel-desktop-viewer:latest
+    ports:
+      - "8000:8000"
+```
+
+With this setup:
+- **Web UI**: `localhost:8000` (accessible from your computer)
+- **OTLP endpoints**: `otel-desktop-viewer:4318` and `otel-desktop-viewer:4317` (accessible from other containers)
 
   With this setup:
   - `localhost:8000` is the web UI
-  - `otel-desktop-viewer:4318` and `otel-desktop-viewer:4319` are where your app should export to. The hostname
+  - `otel-desktop-viewer:4318` and `otel-desktop-viewer:4317` are where your app should export to. The hostname
   is based on the key in the docker compose YAML file.
-  - Your computer cannot access ports 4318 or 4319 (but, it shouldn't need to)
+  - Your computer cannot access ports 4318 or 4317 (but, it shouldn't need to)
 
-To update your local copy when this repo changes:
 
-* Update from GitHub
-* Rebuild the image based on instructions above. It will overwrite the previous image
-* Stop and restart all containers using the image
 
 ## Command Line Options
 ```bash
@@ -117,7 +132,7 @@ variables](https://opentelemetry.io/docs/concepts/sdk-configuration/otlp-exporte
 then you should be able to send to `otel-desktop-viewer` with the following environment
 variables set
 
-```
+```bash
 # For HTTP:
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 export OTEL_TRACES_EXPORTER="otlp"
@@ -219,8 +234,8 @@ at all levels of experience.
 The CLI is implemented in Go building on top of the OpenTelemetry Collector. A custom
 `desktop` exporter is registered that:
 
-- collects trace data in memory
-- exposes this trace data via an HTTP API
+- collects trace data in memory or on disk using DuckDB for efficient storage and querying
+- exposes this trace data via a JSON-RPC API for real-time communication
 - serves a static React app that renders the collected traces
 
 All of the static web assets are built into the final binary using the [go:embed](https://blog.jetbrains.com/go/2021/06/09/how-to-use-go-embed-in-go-1-16/)
