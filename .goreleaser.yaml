@@ -132,8 +132,8 @@ release:
 # Docker images
 dockers:
   - image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Version }}"
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:latest"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Version }}"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest"
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
