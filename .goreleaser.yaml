@@ -8,6 +8,8 @@ before:
     - cmd: go work sync
     - cmd: sh -c "go mod tidy && cd desktopexporter && go mod tidy"
 
+
+
 builds:
   - id: macos_amd64
     binary: otel-desktop-viewer
@@ -126,6 +128,38 @@ release:
     ---
     Released by [GoReleaser](https://github.com/goreleaser/goreleas
     er).
+
+# Docker images
+dockers:
+  - image_templates:
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Version }}-amd64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .Commit }}"
+      - "--build-arg=DATE={{ .CommitDate }}"
+    extra_files:
+      - Dockerfile
+    ids:
+      - linux_x86_64
+
+  - image_templates:
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Version }}-arm64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .Commit }}"
+      - "--build-arg=DATE={{ .CommitDate }}"
+    extra_files:
+      - Dockerfile
+    ids:
+      - linux_arm64
 
 brews:
   - name: otel-desktop-viewer
