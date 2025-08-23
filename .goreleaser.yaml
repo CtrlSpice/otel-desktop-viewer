@@ -11,33 +11,33 @@ before:
 
 
 builds:
-  - id: macos_amd64
-    binary: otel-desktop-viewer
-    goos: 
-      - darwin
-    goarch:
-      - amd64
-    # Sets binary timestamp to commit time for reproducible builds
-    mod_timestamp: "{{ .CommitTimestamp }}"
-    # Removes file paths from binary for security and portability
-    flags:
-      - -trimpath
-    # -s -w: strips debug info
-    # -X: injects version, commit, and date into binary
-    ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+  # - id: macos_amd64
+  #   binary: otel-desktop-viewer
+  #   goos: 
+  #     - darwin
+  #   goarch:
+  #     - amd64
+  #   # Sets binary timestamp to commit time for reproducible builds
+  #   mod_timestamp: "{{ .CommitTimestamp }}"
+  #   # Removes file paths from binary for security and portability
+  #   flags:
+  #     - -trimpath
+  #   # -s -w: strips debug info
+  #   # -X: injects version, commit, and date into binary
+  #   ldflags:
+  #     - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
-  - id: macos_arm64
-    binary: otel-desktop-viewer
-    goos: 
-      - darwin
-    goarch:
-      - arm64
-    mod_timestamp: "{{ .CommitTimestamp }}"
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+  # - id: macos_arm64
+  #   binary: otel-desktop-viewer
+  #   goos: 
+  #     - darwin
+  #   goarch:
+  #     - arm64
+  #   mod_timestamp: "{{ .CommitTimestamp }}"
+  #   flags:
+  #     - -trimpath
+  #   ldflags:
+  #     - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
   - id: linux_x86_64
     binary: otel-desktop-viewer
@@ -63,17 +63,17 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
-  - id: windows_amd64
-    binary: otel-desktop-viewer
-    goos:
-      - windows
-    goarch:
-      - amd64
-    mod_timestamp: "{{ .CommitTimestamp }}"
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+  # - id: windows_amd64
+  #   binary: otel-desktop-viewer
+  #   goos:
+  #     - windows
+  #   goarch:
+  #     - amd64
+  #   mod_timestamp: "{{ .CommitTimestamp }}"
+  #   flags:
+  #     - -trimpath
+  #   ldflags:
+  #     - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
 archives:
   # Main archive with all platforms
