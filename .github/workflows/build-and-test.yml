@@ -6,6 +6,12 @@ name: Build and Test
 
 on: 
   push:
+    branches:
+      - main
+      - 'fix/**'
+      - 'feat/**'
+    tags-ignore:
+      - 'v*'
 
 jobs:
   build:

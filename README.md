@@ -57,35 +57,23 @@ and spin up a server listening on `localhost:4318` for OTLP http payloads and
 
 #### via Docker
 
-The included `Dockerfile` will build an image you can use to run otel-desktop-viewer without using Homebrew or setting up Go.
+You can run otel-desktop-viewer using Docker without installing Go or building locally.
 
-To build the image
-
-* [Install Docker](https://docs.docker.com/get-started/)
-  - For Windows or Mac, you likely want Docker Desktop
-  - For Linux, Docker Engine is fine, but do read the [post-install instructions](https://docs.docker.com/engine/install/linux-postinstall/) so that you can run Docker as your user
-* Build the image. You'll need a tag so you can reference it.
-
-  ```bash
-  docker build --tag otel-desktop-viewer:latest .
-  ```
-
-## Running the Container
-
-### Option 1: Standalone (Apps on your computer)
-
+Pull from GitHub Container Registry:
 ```bash
+docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest
+docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest
+```
+
+Or build locally:
+```bash
+docker build --tag otel-desktop-viewer:latest .
 docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 otel-desktop-viewer:latest
 ```
 
-This maps the container ports to your localhost:
-- **Web UI**: `localhost:8000`
-- **OTLP HTTP**: `localhost:4318` 
-- **OTLP gRPC**: `localhost:4317`
+## Docker Compose
 
-### Option 2: With Docker Compose (Apps in containers)
-
-If your application is also running in Docker, create a `docker-compose.yml`:
+If your application is also running in Docker:
 
 ```yaml
 services:
@@ -94,20 +82,12 @@ services:
     # Add your app configuration here
   
   otel-desktop-viewer:
-    image: otel-desktop-viewer:latest
+    image: ghcr.io/ctrlspice/otel-desktop-viewer:latest
     ports:
       - "8000:8000"
 ```
 
-With this setup:
-- **Web UI**: `localhost:8000` (accessible from your computer)
-- **OTLP endpoints**: `otel-desktop-viewer:4318` and `otel-desktop-viewer:4317` (accessible from other containers)
-
-  With this setup:
-  - `localhost:8000` is the web UI
-  - `otel-desktop-viewer:4318` and `otel-desktop-viewer:4317` are where your app should export to. The hostname
-  is based on the key in the docker compose YAML file.
-  - Your computer cannot access ports 4318 or 4317 (but, it shouldn't need to)
+Your app can export to `otel-desktop-viewer:4318` (HTTP) or `otel-desktop-viewer:4317` (gRPC).
 
 
 
@@ -234,8 +214,8 @@ at all levels of experience.
 The CLI is implemented in Go building on top of the OpenTelemetry Collector. A custom
 `desktop` exporter is registered that:
 
-- collects trace data in memory or on disk using DuckDB for efficient storage and querying
-- exposes this trace data via a JSON-RPC API for real-time communication
+- collects trace data using DuckDB for efficient storage and querying (in-memory by default, with optional on-disk persistence)
+- exposes this trace data via a JSON-RPC API for real-time communication between the frontend and backend
 - serves a static React app that renders the collected traces
 
 All of the static web assets are built into the final binary using the [go:embed](https://blog.jetbrains.com/go/2021/06/09/how-to-use-go-embed-in-go-1-16/)

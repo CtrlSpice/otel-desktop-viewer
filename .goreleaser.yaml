@@ -132,8 +132,8 @@ release:
 # Docker images
 dockers:
   - image_templates:
-      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Version }}-linux-amd64"
-      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-linux-amd64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Version }}-amd64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64"
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
@@ -147,8 +147,8 @@ dockers:
       - linux_x86_64
 
   - image_templates:
-      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Version }}-linux-arm64"
-      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-linux-arm64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Version }}-arm64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64"
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
