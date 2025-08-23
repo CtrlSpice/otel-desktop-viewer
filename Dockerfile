@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=golang /go/otel-desktop-viewer /root/otel-desktop-viewer
+COPY --from=golang /go/bin/otel-desktop-viewer /root/otel-desktop-viewer
 
 EXPOSE 8000
 EXPOSE 4317
