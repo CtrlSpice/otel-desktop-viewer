@@ -22,8 +22,22 @@ Make sure you have [go](https://go.dev/) installed.
 **Note**: This requires CGO compilation due to DuckDB dependencies.
 
 **On Windows**: You'll need MSYS2 for CGO compilation:
+
+**Option 1: Automated Setup (Recommended)**
 1. Install MSYS2: https://www.msys2.org/
-2. Add MSYS2 to your PATH:
+2. Run the setup script:
+   ```powershell
+   .\scripts\setup-windows.ps1
+   ```
+3. Restart your terminal
+
+**Option 2: Manual Setup**
+1. Install MSYS2: https://www.msys2.org/
+2. Open MSYS2 UCRT64 terminal and install required packages:
+   ```bash
+   pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-toolchain
+   ```
+3. Add MSYS2 to your PATH:
    ```cmd
    setx PATH "%PATH%;C:\msys64\ucrt64\bin"
    ```
@@ -32,7 +46,7 @@ Make sure you have [go](https://go.dev/) installed.
    $env:PATH += ";C:\msys64\ucrt64\bin"
    ```
    **Note**: The `setx` command makes the change permanent. The PowerShell command is for the current session only.
-3. Restart your terminal
+4. Restart your terminal
 
 **On Linux/macOS**: CGO should work out of the box.
 

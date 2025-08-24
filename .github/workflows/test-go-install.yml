@@ -1,0 +1,35 @@
+name: Test Go Install
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'fix/**'
+      - 'feat/**'
+
+jobs:
+  test-go-install-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+
+    # Test our Windows setup script and go install process
+    - name: Run Windows Setup Script
+      run: |
+        # Test our setup script in CI
+        .\scripts\setup-windows.ps1
+
+    - name: Test go install
+      run: |
+        # Test that the module can be installed via go install
+        go install github.com/CtrlSpice/otel-desktop-viewer@latest
+        # Verify the binary was installed and works
+        otel-desktop-viewer.exe --version
+        # Test running the app (without browser)
+        timeout /t 20 otel-desktop-viewer.exe --open-browser=false
