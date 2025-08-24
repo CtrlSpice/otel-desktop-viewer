@@ -79,4 +79,6 @@ jobs:
         go install github.com/CtrlSpice/otel-desktop-viewer@latest
         # Verify the binary was installed and works
         otel-desktop-viewer.exe --version
+        # Test running the app (without browser)
+        timeout 20s otel-desktop-viewer.exe --open-browser=false
     
