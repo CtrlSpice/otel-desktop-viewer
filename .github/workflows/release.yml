@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch:
     inputs:
       test_mode:
@@ -138,7 +139,7 @@ jobs:
   release:
     needs: prepare
     runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_dispatch' || !inputs.test_mode
+    if: (github.event_name != 'workflow_dispatch' || !inputs.test_mode) && github.event_name != 'pull_request'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

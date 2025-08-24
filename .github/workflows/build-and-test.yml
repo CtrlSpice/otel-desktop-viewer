@@ -12,6 +12,7 @@ on:
       - 'feat/**'
     tags-ignore:
       - 'v*'
+  pull_request:
 
 jobs:
   build:
@@ -70,4 +71,12 @@ jobs:
 
     - name: Exporter Go Tests
       run: cd desktopexporter; go test ./...
+
+    - name: Test go install (Windows only)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Test that the module can be installed via go install
+        go install github.com/CtrlSpice/otel-desktop-viewer@latest
+        # Verify the binary was installed and works
+        otel-desktop-viewer.exe --version
     
