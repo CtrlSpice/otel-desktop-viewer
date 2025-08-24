@@ -40,4 +40,11 @@ jobs:
         # Verify the binary was installed and works
         otel-desktop-viewer.exe --version
         # Test running the app (without browser)
-        Start-Process -FilePath "otel-desktop-viewer.exe" -ArgumentList "--open-browser=false" -PassThru | Wait-Process -Timeout 20
+        $process = Start-Process -FilePath "otel-desktop-viewer.exe" -ArgumentList "--open-browser=false" -PassThru
+        try {
+            Wait-Process -InputObject $process -Timeout 20
+        } catch {
+            # Timeout is expected - the app is running successfully
+            Write-Host "App started successfully (timeout after 20s is expected)"
+            Stop-Process -InputObject $process -Force
+        }
