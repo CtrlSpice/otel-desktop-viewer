@@ -23,30 +23,37 @@ Make sure you have [go](https://go.dev/) installed.
 
 **On Windows**: You'll need MSYS2 for CGO compilation:
 
-**Option 1: Automated Setup (Recommended)**
-1. Install MSYS2: https://www.msys2.org/
-2. Run the setup script:
-   ```powershell
-   .\scripts\setup-windows.ps1
-   ```
-3. Restart your terminal
-
-**Option 2: Manual Setup**
-1. Install MSYS2: https://www.msys2.org/
-2. Open MSYS2 UCRT64 terminal and install required packages:
+1. **Install MSYS2**: Download and install from https://www.msys2.org/
+2. **Open MSYS2 UCRT64 terminal**:
+   - After installing MSYS2, you'll see multiple terminal options in the Start Menu
+   - Choose **"MSYS2 UCRT64"** (not "MSYS2 MinGW 64-bit" or "MSYS2 MSYS")
+   - Or run: `C:\msys64\ucrt64.exe`
+3. **Install required packages**:
    ```bash
    pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-toolchain
    ```
-3. Add MSYS2 to your PATH:
+4. **Add MSYS2 to your PATH** (choose one):
+   
+   **Command Prompt (permanent)**:
    ```cmd
    setx PATH "%PATH%;C:\msys64\ucrt64\bin"
    ```
-   Or in PowerShell:
+   
+   **PowerShell (permanent)**:
+   ```powershell
+   [Environment]::SetEnvironmentVariable("PATH", [Environment]::GetEnvironmentVariable("PATH", "User") + ";C:\msys64\ucrt64\bin", "User")
+   ```
+   
+   **PowerShell (current session only)**:
    ```powershell
    $env:PATH += ";C:\msys64\ucrt64\bin"
    ```
-   **Note**: The `setx` command makes the change permanent. The PowerShell command is for the current session only.
-4. Restart your terminal
+5. **Restart your terminal** for PATH changes to take effect
+6. **Test the setup**:
+   ```cmd
+   gcc --version
+   g++ --version
+   ```
 
 **On Linux/macOS**: CGO should work out of the box.
 

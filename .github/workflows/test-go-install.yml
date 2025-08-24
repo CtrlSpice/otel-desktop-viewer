@@ -19,11 +19,19 @@ jobs:
       with:
         go-version: '1.24'
 
-    # Test our Windows setup script and go install process
-    - name: Run Windows Setup Script
+    # MSYS2 provides GCC and build tools needed for CGO compilation on Windows
+    - name: Set up MSYS2 (Windows)
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        install: >-
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-toolchain
+
+    - name: Add MSYS2 to PATH (Windows)
       run: |
-        # Test our setup script in CI
-        .\scripts\setup-windows.ps1
+        echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
 
     - name: Test go install
       run: |
