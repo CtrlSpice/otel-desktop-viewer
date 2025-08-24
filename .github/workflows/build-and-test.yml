@@ -12,6 +12,7 @@ on:
       - 'feat/**'
     tags-ignore:
       - 'v*'
+  pull_request:
 
 jobs:
   build:
