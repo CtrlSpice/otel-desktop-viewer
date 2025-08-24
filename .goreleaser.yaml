@@ -145,8 +145,6 @@ dockers:
       - Dockerfile
     ids:
       - linux_x86_64
-    # Make images publicly visible
-    publish: true
 
   - image_templates:
       - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Version }}-arm64"
@@ -162,8 +160,6 @@ dockers:
       - Dockerfile
     ids:
       - linux_arm64
-    # Make images publicly visible
-    publish: true
 
 brews:
   - name: otel-desktop-viewer

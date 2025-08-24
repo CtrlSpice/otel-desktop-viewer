@@ -1,12 +1,7 @@
 name: Test Go Install
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
-      - 'fix/**'
-      - 'feat/**'
+  workflow_dispatch:
 
 jobs:
   test-go-install-windows:
