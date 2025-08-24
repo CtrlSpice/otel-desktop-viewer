@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/rs/cors"
@@ -17,10 +18,14 @@ import (
 //go:embed static/*
 var assets embed.FS
 
+//go:embed static-v2/*
+var assetsV2 embed.FS
+
 type Server struct {
 	server         http.Server
 	jsonrpcHandler *JSONRPCHandler
 	staticDir      string
+	useV2Frontend  bool // Feature flag for v2 frontend
 }
 
 func NewServer(endpoint string, store *store.Store) *Server {
@@ -30,6 +35,7 @@ func NewServer(endpoint string, store *store.Store) *Server {
 		},
 		jsonrpcHandler: NewJSONRPCHandler(store),
 		staticDir:      getStaticDir(),
+		useV2Frontend:  getFeatureFlag(),
 	}
 
 	if err := s.initHandler(); err != nil {
@@ -54,6 +60,7 @@ func (s *Server) initHandler() error {
 	if s.staticDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(s.staticDir)))
 	} else {
+		// Serve v1 static assets by default
 		staticContent, err := fs.Sub(assets, "static")
 		if err != nil {
 			log.Fatal(err)
@@ -73,7 +80,18 @@ func (s *Server) initHandler() error {
 
 // indexHandler serves the frontend application
 // It handles both development (staticDir) and production (embedded assets) scenarios
+// Uses environment variable USE_V2_FRONTEND to switch between v1 and v2 frontends
 func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request) {
+	// Use the configured feature flag from environment variable
+	if s.useV2Frontend {
+		s.serveV2Frontend(writer, request)
+	} else {
+		s.serveV1Frontend(writer, request)
+	}
+}
+
+// serveV1Frontend serves the current (v1) frontend
+func (s *Server) serveV1Frontend(writer http.ResponseWriter, request *http.Request) {
 	if s.staticDir != "" {
 		http.ServeFile(writer, request, s.staticDir+"/index.html")
 	} else {
@@ -81,6 +99,24 @@ func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request)
 		if err != nil {
 			log.Printf("Error reading static assets: %v", err)
 			http.Error(writer, "Failed to load page", http.StatusInternalServerError)
+			return
+		}
+		writer.Write(bytes)
+	}
+}
+
+// serveV2Frontend serves the new (v2) frontend
+func (s *Server) serveV2Frontend(writer http.ResponseWriter, request *http.Request) {
+	v2StaticDir := getV2StaticDir()
+	if v2StaticDir != "" {
+		http.ServeFile(writer, request, v2StaticDir+"/index.html")
+	} else {
+		// Serve embedded v2 assets
+		bytes, err := assetsV2.ReadFile("static-v2/index.html")
+		if err != nil {
+			log.Printf("Error reading v2 static assets: %v", err)
+			// Fallback to v1 if v2 assets not available
+			s.serveV1Frontend(writer, request)
 			return
 		}
 		writer.Write(bytes)
@@ -146,6 +182,27 @@ func getStaticDir() string {
 	}
 
 	return ""
+}
+
+// getV2StaticDir returns the path to the v2 static assets directory
+func getV2StaticDir() string {
+	v2StaticDir, ok := os.LookupEnv("V2_STATIC_ASSETS_DIR")
+	if ok {
+		return filepath.Clean(v2StaticDir)
+	}
+
+	return ""
+}
+
+// getFeatureFlag checks environment variables and configuration for the frontend version
+func getFeatureFlag() bool {
+	// Check environment variable first
+	if v2Flag := os.Getenv("USE_V2_FRONTEND"); v2Flag != "" {
+		return strings.ToLower(v2Flag) == "true" || v2Flag == "1"
+	}
+
+	// Default to v1 (false)
+	return false
 }
 
 func (s *Server) Close() error {

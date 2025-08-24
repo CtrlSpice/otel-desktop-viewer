@@ -1,0 +1,29 @@
+{
+  "name": "desktopexporter-v2",
+  "version": "2.0.0",
+  "description": "OpenTelemetry Desktop Viewer Frontend v2",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch"
+  },
+  "dependencies": {
+    "daisyui": "^4.7.2",
+    "svelte": "^5.0.0",
+    "svelte-routing": "^2.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.1.3",
+    "@tsconfig/svelte": "^5.0.0",
+    "@types/node": "^24.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "svelte-check": "^3.7.0",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^7.1.3"
+  }
+}
