@@ -62,12 +62,32 @@ jobs:
       - name: Sync Go workspace
         run: go work sync
 
+      - name: Debug cache keys
+        run: |
+          echo "GitHub SHA: ${{ github.sha }}"
+          echo "Matrix OS: ${{ matrix.goos }}"
+          echo "Matrix Arch: ${{ matrix.goarch }}"
+          echo "Matrix Build ID: ${{ matrix.build_id }}"
+          echo "Expected cache keys:"
+          echo "  linux: linux-${{ github.sha }}"
+          echo "  linux-arm: linux-arm-${{ github.sha }}"
+          echo "  darwin: darwin-${{ github.sha }}"
+          echo "  darwin-arm: darwin-arm-${{ github.sha }}"
+          echo "  windows: windows-${{ github.sha }}"
+
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
           path: dist/linux
           key: linux-${{ github.sha }}
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/linux
+          key: linux-arm-${{ github.sha }}
+        if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
 
       - name: Cache build artifacts
         uses: actions/cache@v4
@@ -161,6 +181,22 @@ jobs:
             go.sum
             desktopexporter/go.sum
 
+      - name: Debug cache keys and available artifacts
+        run: |
+          echo "GitHub SHA: ${{ github.sha }}"
+          echo "Expected cache keys:"
+          echo "  linux: linux-${{ github.sha }}"
+          echo "  linux-arm: linux-arm-${{ github.sha }}"
+          echo "  darwin: darwin-${{ github.sha }}"
+          echo "  darwin-arm: darwin-arm-${{ github.sha }}"
+          echo "  windows: windows-${{ github.sha }}"
+          echo ""
+          echo "Checking if dist directories exist:"
+          ls -la dist/ || echo "dist/ directory does not exist"
+          ls -la dist/linux/ || echo "dist/linux/ directory does not exist"
+          ls -la dist/darwin/ || echo "dist/darwin/ directory does not exist"
+          ls -la dist/windows/ || echo "dist/windows/ directory does not exist"
+
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
@@ -170,8 +206,20 @@ jobs:
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
+          path: dist/linux
+          key: linux-arm-${{ github.sha }}
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
           path: dist/darwin
           key: darwin-${{ github.sha }}
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: dist/darwin
+          key: darwin-arm-${{ github.sha }}
 
       - name: Cache build artifacts
         uses: actions/cache@v4
