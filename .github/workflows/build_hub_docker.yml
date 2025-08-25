@@ -1,0 +1,41 @@
+name: Docker Multi-Platform Build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  # schedule:
+  #   - cron: '0 2 * * 1'  # Run weekly to check for Alpine updates
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    needs: check-alpine
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push multi-platform image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            gromr1/otel-desktop-viewer:latest
+            gromr1/otel-desktop-viewer:${{ github.sha }}
