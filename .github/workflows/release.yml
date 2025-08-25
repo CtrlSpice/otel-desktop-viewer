@@ -94,6 +94,7 @@ jobs:
         with:
           path: dist/darwin
           key: darwin-${{ github.sha }}
+          enableCrossOsArchive: true
         if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
 
       - name: Cache build artifacts
@@ -101,6 +102,7 @@ jobs:
         with:
           path: dist/darwin
           key: darwin-arm-${{ github.sha }}
+          enableCrossOsArchive: true
         if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
 
       - name: Cache build artifacts
@@ -108,6 +110,7 @@ jobs:
         with:
           path: dist/windows
           key: windows-${{ github.sha }}
+          enableCrossOsArchive: true
         if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
 
       - name: Set up MSYS2 (Windows)
@@ -214,18 +217,21 @@ jobs:
         with:
           path: dist/darwin
           key: darwin-${{ github.sha }}
+          enableCrossOsArchive: true
 
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
           path: dist/darwin
           key: darwin-arm-${{ github.sha }}
+          enableCrossOsArchive: true
 
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
           path: dist/windows
           key: windows-${{ github.sha }}
+          enableCrossOsArchive: true
 
       - name: Complete release
         uses: goreleaser/goreleaser-action@v6
