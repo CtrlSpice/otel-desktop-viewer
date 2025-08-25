@@ -1,20 +1,27 @@
 FROM golang:1.24 AS golang
 
-# Install build dependencies for CGO
-RUN apt-get update && apt-get install -y gcc g++ git
-
-# Install the application
-RUN go install github.com/CtrlSpice/otel-desktop-viewer@latest
-
-FROM debian:latest
-
-# Install runtime dependencies for DuckDB and C++ libraries
+# Install build and runtime dependencies for CGO
 RUN apt-get update && apt-get install -y \
+    gcc g++ git \
     ca-certificates \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=golang /go/bin/otel-desktop-viewer /root/otel-desktop-viewer
+# Copy source code
+WORKDIR /app
+COPY . .
+
+# Build the application from source
+RUN go build -o otel-desktop-viewer .
+
+FROM debian:latest
+
+# Copy runtime dependencies from build stage
+COPY --from=golang /usr/lib/*/libstdc++.so.6* /usr/lib/
+COPY --from=golang /etc/ssl/certs /etc/ssl/certs
+
+# Copy the built application
+COPY --from=golang /app/otel-desktop-viewer /root/otel-desktop-viewer
 
 EXPOSE 8000
 EXPOSE 4317
