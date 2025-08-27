@@ -1,5 +1,5 @@
-name: Release
 
+name: Release
 on:
   push:
     tags:
@@ -11,13 +11,11 @@ on:
         required: true
         default: true
         type: boolean
-
 permissions:
   contents: write
   id-token: write
   packages: write
   actions: write
-
 jobs:
   prepare:
     strategy:
@@ -32,7 +30,7 @@ jobs:
             goos: darwin
             goarch: arm64
           - os: ubuntu-latest
-            build_id: linux_x86_64
+            build_id: linux_amd64
             goos: linux
             goarch: amd64
           - os: ubuntu-24.04-arm
@@ -49,7 +47,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -57,38 +54,8 @@ jobs:
           cache-dependency-path: |
             go.sum
             desktopexporter/go.sum
-
       - name: Sync Go workspace
         run: go work sync
-
-      - name: Cache build artifacts
-        uses: actions/cache@v4
-        with:
-          path: dist/linux
-          key: linux-${{ github.sha }}
-        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
-
-      - name: Cache build artifacts
-        uses: actions/cache@v4
-        with:
-          path: dist/darwin
-          key: darwin-${{ github.sha }}
-        if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
-
-      - name: Cache build artifacts
-        uses: actions/cache@v4
-        with:
-          path: dist/darwin
-          key: darwin-arm-${{ github.sha }}
-        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
-
-      - name: Cache build artifacts
-        uses: actions/cache@v4
-        with:
-          path: dist/windows
-          key: windows-${{ github.sha }}
-        if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
-
       - name: Set up MSYS2 (Windows)
         if: matrix.os == 'windows-latest'
         uses: msys2/setup-msys2@v2
@@ -98,36 +65,47 @@ jobs:
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-toolchain
-
       - name: Add MSYS2 to PATH (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
-
       - name: Run GoReleaser
+        id: goreleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: v2.9.0
-          # The --id flag ensures each runner only builds for supported architecture.
-          # Without it, GoReleaser would try to build for all architectures on each runner, which would
-          # cause cross-compilation issues, especially for CGO-enabled builds.
-          args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }} --id ${{ matrix.build_id }}
+          version: v2.11.2
+          # Use GGOOS/GGOARCH to filter targets with partial.by: target
+          args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
+          # GitHub Personal Access Token for repository access
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          # GoReleaser Pro license key for module publishing
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+          # Container Registry PAT for Docker image publishing
+          CR_PAT: ${{ secrets.CR_PAT }}
+          # Enable CGO for DuckDB bindings
           CGO_ENABLED: 1
+          # Filter targets by OS and architecture
+          GGOOS: ${{ matrix.goos }}
+          GGOARCH: ${{ matrix.goarch }}
+      - name: Cache GoReleaser contexts
+        uses: actions/cache@v4
+        with:
+          path: dist/${{ matrix.goos }}_${{ matrix.goarch }}
+          key: ${{ matrix.goos }}-${{ matrix.goarch }}-${{ github.sha }}
+          enableCrossOsArchive: ${{ matrix.os == 'windows-latest' }}
+
+
 
   release:
     needs: prepare
     runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_dispatch' || !inputs.test_mode
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -135,31 +113,42 @@ jobs:
           cache-dependency-path: |
             go.sum
             desktopexporter/go.sum
-
-      - name: Cache build artifacts
+      - name: Restore GoReleaser build artifacts (darwin-amd64)
         uses: actions/cache@v4
         with:
-          path: dist/linux
-          key: linux-${{ github.sha }}
-
-      - name: Cache build artifacts
+          path: dist/darwin_amd64
+          key: darwin-amd64-${{ github.sha }}
+      - name: Restore GoReleaser build artifacts (darwin-arm64)
         uses: actions/cache@v4
         with:
-          path: dist/darwin
-          key: darwin-${{ github.sha }}
-
-      - name: Cache build artifacts
+          path: dist/darwin_arm64
+          key: darwin-arm64-${{ github.sha }}
+      - name: Restore GoReleaser build artifacts (linux-amd64)
         uses: actions/cache@v4
         with:
-          path: dist/windows
-          key: windows-${{ github.sha }}
-
+          path: dist/linux_amd64
+          key: linux-amd64-${{ github.sha }}
+      - name: Restore GoReleaser build artifacts (linux-arm64)
+        uses: actions/cache@v4
+        with:
+          path: dist/linux_arm64
+          key: linux-arm64-${{ github.sha }}
+      - name: Restore GoReleaser build artifacts (windows-amd64)
+        uses: actions/cache@v4
+        with:
+          path: dist/windows_amd64
+          key: windows-amd64-${{ github.sha }}
+          enableCrossOsArchive: true
       - name: Complete release
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: v2.9.0
+          version: v2.11.2
           args: continue --merge
         env:
+          # GitHub Personal Access Token for repository access
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          # GoReleaser Pro license key for module publishing
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+          # Container Registry PAT for Docker image publishing
+          CR_PAT: ${{ secrets.CR_PAT }}

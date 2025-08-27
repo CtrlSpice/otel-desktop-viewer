@@ -3,7 +3,7 @@ module github.com/CtrlSpice/otel-desktop-viewer
 go 1.24
 
 require (
-	github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.2.0
+	github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.2.2
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.9.1
 	go.opentelemetry.io/collector/component v1.32.0
@@ -18,7 +18,7 @@ require (
 	go.opentelemetry.io/collector/processor/batchprocessor v0.126.0
 	go.opentelemetry.io/collector/receiver v1.32.0
 	go.opentelemetry.io/collector/receiver/otlpreceiver v0.126.0
-	golang.org/x/sys v0.33.0
+	golang.org/x/sys v0.34.0
 )
 
 require (
@@ -155,6 +155,8 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6 // indirect
+	golang.org/x/exp/event v0.0.0-20250718183923-645b1fa84792 // indirect
+	golang.org/x/exp/jsonrpc2 v0.0.0-20250808145144-a408d31f581a // indirect
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sync v0.14.0 // indirect
