@@ -126,7 +126,7 @@ homebrew_casks:
     repository:
       owner: CtrlSpice
       name: homebrew-otel-desktop-viewer
-    directory: .
+    directory: Casks
     description: "otel-desktop-viewer is a CLI tool for receiving OpenTelemetry traces while working on your local machine. Logs and metrics coming soon!"
     homepage: "https://github.com/CtrlSpice/otel-desktop-viewer"
     license: "Apache-2.0"
