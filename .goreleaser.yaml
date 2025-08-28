@@ -1,5 +1,8 @@
 version: 2
 
+partial:
+  by: target
+
 env:
   - CGO_ENABLED=1
 
@@ -37,7 +40,7 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
-  - id: linux_x86_64
+  - id: linux_amd64
     binary: otel-desktop-viewer
     goos:
       - linux
@@ -79,7 +82,7 @@ archives:
     ids:
       - macos_amd64
       - macos_arm64
-      - linux_x86_64
+      - linux_amd64
       - linux_arm64
       - windows_amd64
     formats: 
@@ -87,28 +90,18 @@ archives:
     format_overrides:
       - goos: windows
         formats: ['zip']
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- if eq .Os "darwin" }}MacOS
-      {{- else }}{{ title .Os }}{{ end }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else }}{{ .Arch }}{{ end }}
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
   
   # Separate archive for Homebrew (macOS and Linux)
   - id: homebrew-archive
     ids:
       - macos_amd64
       - macos_arm64
-      - linux_x86_64
+      - linux_amd64
       - linux_arm64
     formats: 
       - tar.gz
-    name_template: >-
-      {{ .ProjectName }}_homebrew_
-      {{- if eq .Os "darwin" }}MacOS
-      {{- else }}{{ title .Os }}{{ end }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else }}{{ .Arch }}{{ end }}
+    name_template: "{{ .ProjectName }}_homebrew_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"
@@ -124,32 +117,21 @@ release:
   name_template: "v{{ .Version }}"
   footer: >-
     ---
-    Released by [GoReleaser](https://github.com/goreleaser/goreleas
-    er).
+    Released by [CtrlSpice](https://github.com/CtrlSpice) using [GoReleaser](https://github.com/goreleaser/goreleaser).
 
-brews:
+homebrew_casks:
   - name: otel-desktop-viewer
     ids:
       - homebrew-archive
-    # GitHub repository where the formula will be published
     repository:
       owner: CtrlSpice
       name: homebrew-otel-desktop-viewer
-    # Homebrew formula name
-    directory: .
-    # Homebrew formula description
-    description: "OpenTelemetry Desktop Viewer"
-    # Homebrew formula homepage
+    directory: Casks
+    description: "otel-desktop-viewer is a CLI tool for receiving OpenTelemetry traces while working on your local machine. Logs and metrics coming soon!"
     homepage: "https://github.com/CtrlSpice/otel-desktop-viewer"
-    # Homebrew formula license
     license: "Apache-2.0"
-    # Homebrew formula dependencies
-    dependencies:
-      - go
-    # Homebrew formula test
-    test: |
-      system "#{bin}/otel-desktop-viewer", "--version"
-    # Homebrew formula caveats
     caveats: |
       To start the viewer, run:
         otel-desktop-viewer
+
+
