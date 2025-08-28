@@ -225,8 +225,7 @@ end
 
 - serves a static React app that renders the collected traces
 
-All of the static web assets are built into the final binary using the [go:embed](https://blog.jetbrai
-ns.com/go/2021/06/09/how-to-use-go-embed-in-go-1-16/)
+All of the static web assets are built into the final binary using the [go:embed](https://blog.jetbrains.com/go/2021/06/09/how-to-use-go-embed-in-go-1-16/)
 
 directive so that the binary is self-contained and relocatable.
 
