@@ -12,3 +12,9 @@ task_list.txt
 
 # Added by goreleaser init:
 dist/
+
+# V2 Frontend
+desktopexporter/internal/app-v2/node_modules/
+desktopexporter/internal/app-v2/dist/
+desktopexporter/internal/app-v2/.vite/
+desktopexporter/internal/app-v2/*.local
