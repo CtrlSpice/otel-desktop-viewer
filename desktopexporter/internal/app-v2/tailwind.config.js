@@ -8,7 +8,7 @@ export default {
   daisyui: {
     themes: [
       {
-        "default-dark": {
+        dark: {
           primary: "#ad1457",
           "primary-content": "#ffffff",
           secondary: "#06b6d4",
@@ -32,7 +32,7 @@ export default {
         },
       },
       {
-        "default-light": {
+        light: {
           primary: "#ad1457",
           "primary-content": "#ffffff",
           secondary: "#06b6d4",

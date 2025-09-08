@@ -11,6 +11,8 @@
     "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch"
   },
   "dependencies": {
+    "@hugeicons/core-free-icons": "^1.0.16",
+    "@hugeicons/svelte": "^1.0.2",
     "daisyui": "^4.7.2",
     "svelte": "^5.0.0",
     "svelte-routing": "^2.0.0"
