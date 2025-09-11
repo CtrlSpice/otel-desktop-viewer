@@ -5,8 +5,7 @@ on your local machine that helps you visualize and explore your trace data witho
 needing to send it on to a telemetry vendor. Its goals are to be easy-to-install with minimal dependen
 cies and fast. It is written in Go
 
-as a custom exporter on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentel
-emetry-collector).
+as a custom exporter on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector).
 
 Also, it has a dark mode.
 
@@ -17,7 +16,8 @@ Also, it has a dark mode.
 
 #### via Homebrew Cask
 ```bash
-brew install --cask ctrlspice/tap/otel-desktop-viewer
+brew tap CtrlSpice/homebrew-otel-desktop-viewer
+brew install --cask otel-desktop-viewer
 ```
 
 #### via `go install`
