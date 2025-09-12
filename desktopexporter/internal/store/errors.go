@@ -9,6 +9,7 @@ var (
 	// Not found errors
 	ErrLogIDNotFound    = errors.New("log ID not found")
 	ErrTraceIDNotFound  = errors.New("trace ID not found")
+	ErrSpanIDNotFound   = errors.New("span ID not found")
 	ErrMetricIDNotFound = errors.New("metric ID not found")
 
 	// Connection errors
@@ -51,6 +52,12 @@ const (
 	ErrClearTraces  = "failed to clear traces: %w"
 	ErrClearLogs    = "failed to clear logs: %w"
 	ErrClearMetrics = "failed to clear metrics: %w"
+
+	// Targeted deletion errors
+	ErrDeleteSpansByTraceID = "failed to delete spans by trace ID: %w"
+	ErrDeleteSpanByID       = "failed to delete span by ID: %w"
+	ErrDeleteLogByID        = "failed to delete log by ID: %w"
+	ErrDeleteMetricByID     = "failed to delete metric by ID: %w"
 
 	// Scan errors
 	ErrScanLogRow    = "failed to scan log row: %w"

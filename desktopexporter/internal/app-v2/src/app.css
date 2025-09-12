@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global button styles */
+.btn {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Global card styles */
+.card {
+  backdrop-filter: blur(10px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+/* Code block styling */
+.code-block {
+  @apply bg-base-200 p-4 rounded-lg;
+}
+
+.code-block pre {
+  @apply text-sm font-mono;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.code-block .prompt {
+  @apply text-primary;
+  user-select: none;
+}
+
+.code-block .comment {
+  @apply text-base-content/60;
+}

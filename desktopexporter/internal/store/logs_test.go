@@ -1,8 +1,6 @@
 package store
 
 import (
-	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -321,13 +319,4 @@ func TestEmptyLogs(t *testing.T) {
 	logs, err := helper.Store.GetLogs(helper.Ctx)
 	assert.NoError(t, err)
 	assert.Empty(t, logs)
-}
-
-// mustMarshal is a helper function that marshals a value to JSON and panics if there's an error
-func mustMarshal(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(fmt.Sprintf("failed to marshal %v: %v", v, err))
-	}
-	return string(b)
 }

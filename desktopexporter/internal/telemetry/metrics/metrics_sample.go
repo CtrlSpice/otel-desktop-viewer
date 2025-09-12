@@ -292,6 +292,7 @@ func fillFrontendResource(resource pcommon.Resource) {
 	resource.Attributes().PutStr("host.name", "frontend-pod-1")
 	resource.Attributes().PutStr("host.arch", "amd64")
 	resource.Attributes().PutStr("os.type", "linux")
+	resource.Attributes().PutBool("telemetry.sample", true)
 }
 
 func fillFrontendScope(scope pcommon.InstrumentationScope) {
@@ -312,6 +313,7 @@ func fillPaymentResource(resource pcommon.Resource) {
 	resource.Attributes().PutStr("host.name", "payment-pod-1")
 	resource.Attributes().PutStr("host.arch", "amd64")
 	resource.Attributes().PutStr("os.type", "linux")
+	resource.Attributes().PutBool("telemetry.sample", true)
 }
 
 func fillPaymentScope(scope pcommon.InstrumentationScope) {
