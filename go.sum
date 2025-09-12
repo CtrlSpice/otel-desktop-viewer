@@ -1,9 +1,11 @@
 github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.2.2 h1:mtoAneV0Ukfyob5243lJoqkJh8+hWmxibmspLTPRdmo=
 github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.2.2/go.mod h1:bjCD3lX7e99RzT3SAzWPY518rLtJp72rjUr87VN1DTE=
 github.com/andybalholm/brotli v1.1.1 h1:PR2pgnyFznKEugtsUo0xLdDop5SKXd5Qf5ysW+7XdTA=
+github.com/andybalholm/brotli v1.1.1/go.mod h1:05ib4cKhjx3OQYUY22hTVd34Bc8upXjOLL2rKwwZBoA=
 github.com/apache/arrow-go/v18 v18.3.0 h1:Xq4A6dZj9Nu33sqZibzn012LNnewkTUlfKVUFD/RX/I=
 github.com/apache/arrow-go/v18 v18.3.0/go.mod h1:eEM1DnUTHhgGAjf/ChvOAQbUQ+EPohtDrArffvUjPg8=
 github.com/apache/thrift v0.21.0 h1:tdPmh/ptjE1IJnhbhrcl2++TauVjy242rkV/UzJChnE=
+github.com/apache/thrift v0.21.0/go.mod h1:W1H8aR/QRtYNvrPeFXBtobyRkd0/YVhTc6i07XIAgDw=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cenkalti/backoff/v5 v5.0.2 h1:rIfFVxEf1QsI7E1ZHfp/B4DF/6QBAUhmgkxc0H7Zss8=
@@ -33,6 +35,7 @@ github.com/felixge/httpsnoop v1.0.4/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSw
 github.com/foxboron/go-tpm-keyfiles v0.0.0-20250520203025-c3c3a4ec1653 h1:QpQsORx5N2EwomFMgeeY2Vzjf4h3nS2XtD8ETonNJVY=
 github.com/foxboron/go-tpm-keyfiles v0.0.0-20250520203025-c3c3a4ec1653/go.mod h1:uAyTlAUxchYuiFjTHmuIEJ4nGSm7iOPaGcAyA81fJ80=
 github.com/foxboron/swtpm_test v0.0.0-20230726224112-46aaafdf7006 h1:50sW4r0PcvlpG4PV8tYh2RVCapszJgaOLRCS2subvV4=
+github.com/foxboron/swtpm_test v0.0.0-20230726224112-46aaafdf7006/go.mod h1:eIXCMsMYCaqq9m1KSSxXwQG11krpuNPGP3k0uaWrbas=
 github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
@@ -52,15 +55,18 @@ github.com/goccy/go-json v0.10.5/go.mod h1:oq7eo15ShAhp70Anwd5lgX2pLfOS3QCiwU/PU
 github.com/gogo/protobuf v1.3.2 h1:Ov1cvc58UF3b5XjBnZv7+opcTcQFZebYjWzi34vdm4Q=
 github.com/gogo/protobuf v1.3.2/go.mod h1:P1XiOD3dCwIKUDQYPy72D8LYyHL2YPYrpS2s69NZV8Q=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
+github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/golang/snappy v1.0.0 h1:Oy607GVXHs7RtbggtPBnr2RmDArIsAefDwvrdWvRhGs=
 github.com/golang/snappy v1.0.0/go.mod h1:/XxbfmMg8lxefKM7IXC3fBNl/7bRcc72aCRzEWrmP2Q=
 github.com/google/flatbuffers v25.2.10+incompatible h1:F3vclr7C3HpB1k9mxCGRMXq6FdUalZ6H/pNX4FP1v0Q=
 github.com/google/flatbuffers v25.2.10+incompatible/go.mod h1:1AeVuKshWv4vARoZatz6mlQ0JxURH0Kv5+zNeJKJCa8=
 github.com/google/go-cmp v0.5.9/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
+github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 github.com/google/go-tpm v0.9.5 h1:ocUmnDebX54dnW+MQWGQRbdaAcJELsa6PqZhJ48KwVU=
 github.com/google/go-tpm v0.9.5/go.mod h1:h9jEsEECg7gtLis0upRBQU+GhYVH6jMjrFxI8u6bVUY=
 github.com/google/go-tpm-tools v0.4.4 h1:oiQfAIkc6xTy9Fl5NKTeTJkBTlXdHsxAofmQyxBKY98=
+github.com/google/go-tpm-tools v0.4.4/go.mod h1:T8jXkp2s+eltnCDIsXR84/MTcVU9Ja7bh3Mit0pa4AY=
 github.com/google/gofuzz v1.0.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
@@ -75,6 +81,7 @@ github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHm
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/asmfmt v1.3.2 h1:4Ri7ox3EwapiOjCki+hw14RyKk201CN4rzyCJRFLpK4=
+github.com/klauspost/asmfmt v1.3.2/go.mod h1:AG8TuvYojzulgDAMCnYn50l/5QV3Bs/tp6j0HLHbNSE=
 github.com/klauspost/compress v1.18.0 h1:c/Cqfb0r+Yi+JtIEq73FWXVkRonBlf0CRNYc8Zttxdo=
 github.com/klauspost/compress v1.18.0/go.mod h1:2Pp+KzxcywXVXMr50+X0Q/Lsb43OQHYWRCY2AiWywWQ=
 github.com/klauspost/cpuid/v2 v2.2.10 h1:tBs3QSyvjDyFTq3uoc/9xFpCuOsJQFNPiAhYdw2skhE=
@@ -86,8 +93,11 @@ github.com/knadh/koanf/providers/confmap v1.0.0/go.mod h1:txHYHiI2hAtF0/0sCmcuol
 github.com/knadh/koanf/v2 v2.2.0 h1:FZFwd9bUjpb8DyCWARUBy5ovuhDs1lI87dOEn2K8UVU=
 github.com/knadh/koanf/v2 v2.2.0/go.mod h1:PSFru3ufQgTsI7IF+95rf9s8XA1+aHxKuO/W+dPoHEY=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
+github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
+github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
+github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35 h1:PpXWgLPs+Fqr325bN2FD2ISlRRztXibcX6e8f5FR5Dc=
 github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35/go.mod h1:autxFIvghDt3jPTLoqZ9OZ7s9qTGNAWmYCjVFWPX/zg=
 github.com/marcboeker/go-duckdb/arrowmapping v0.0.8 h1:pWlMggEBUYLARhOSp8bwP1WgEI/D4wwDMDYj2QCLNMA=
@@ -97,7 +107,9 @@ github.com/marcboeker/go-duckdb/mapping v0.0.9/go.mod h1:d4zwkzYK3ruLKqVKAIfrZM8
 github.com/marcboeker/go-duckdb/v2 v2.3.0 h1:9d0hD8M3zMC66/krQlKGbw8vmUKlTaPYzGJFZPmcBQg=
 github.com/marcboeker/go-duckdb/v2 v2.3.0/go.mod h1:cz7TuiXkRXt/sit0XnthgFzMgmNips5wUPQQsgTPzco=
 github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 h1:AMFGa4R4MiIpspGNG7Z948v4n35fFGB3RR3G/ry4FWs=
+github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8/go.mod h1:mC1jAcsrzbxHt8iiaC+zU4b1ylILSosueou12R++wfY=
 github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 h1:+n/aFZefKZp7spd8DFdX7uMikMLXX4oubIzJF4kv/wI=
+github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3/go.mod h1:RagcQ7I8IeTMnF8JTXieKnO4Z6JCsikNEzj0DwauVzE=
 github.com/mitchellh/copystructure v1.2.0 h1:vpKXTN4ewci03Vljg/q9QvCGUDttBOGBIa15WveJJGw=
 github.com/mitchellh/copystructure v1.2.0/go.mod h1:qLl+cE2AmVv+CoeAwDPye/v+N2HKCj9FbZEVFJRxO9s=
 github.com/mitchellh/reflectwalk v1.0.2 h1:G2LzWKi524PWgd3mLHV8Y5k7s6XUvT0Gef6zxSIeXaQ=
@@ -128,6 +140,7 @@ github.com/prometheus/common v0.64.0/go.mod h1:0gZns+BLRQ3V6NdaerOhMbwwRbNh9hkGI
 github.com/prometheus/procfs v0.16.1 h1:hZ15bTNuirocR6u0JZ6BAHHmwS1p8B4P6MRqxtzMyRg=
 github.com/prometheus/procfs v0.16.1/go.mod h1:teAbpZRB1iIAJYREa1LsoWUXykVXA1KlTmWl8x/U+Is=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
+github.com/rogpeppe/go-internal v1.13.1/go.mod h1:uMEvuHeurkdAXX61udpOXGD/AzZDWNMNyH2VO9fmH0o=
 github.com/rs/cors v1.11.1 h1:eU3gRzXLRK57F5rKMGMZURNdIG4EoAmX8k94r9wXWHA=
 github.com/rs/cors v1.11.1/go.mod h1:XyqrcTp5zjWr1wsJ8PIRZssZ8b/WMcMf71DJnit4EMU=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
@@ -150,6 +163,7 @@ github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9dec
 github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo0=
 github.com/yusufpapurcu/wmi v1.2.4/go.mod h1:SBZ9tNy3G9/m5Oi98Zks0QjeHVDvuK0qfxQmPyzfmi0=
 github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=
+github.com/zeebo/assert v1.3.0/go.mod h1:Pq9JiuJQpG8JLJdtkwrJESF0Foym2/D9XMU5ciN/wJ0=
 github.com/zeebo/xxh3 v1.0.2 h1:xZmwmqxHZA8AI603jOQ0tMqmBr9lPeFwGg6d+xy9DC0=
 github.com/zeebo/xxh3 v1.0.2/go.mod h1:5NWz9Sef7zIDm2JHfFlcQvNekmcEl9ekUZQQKCYaDcA=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
@@ -189,6 +203,7 @@ go.opentelemetry.io/collector/confmap v1.32.0/go.mod h1:fJC2ZOmFz2nClyhyGRYB92Fl
 go.opentelemetry.io/collector/confmap/provider/envprovider v1.32.0 h1:Fjy77UKpcRQL8nxZQR50lq8q7AQWgYyYvXEh8zecX0U=
 go.opentelemetry.io/collector/confmap/provider/envprovider v1.32.0/go.mod h1:wKiwW7mZO+mQ6LSUKuNKQ1UA6aLWk0r7cJn+OwcVmOE=
 go.opentelemetry.io/collector/confmap/provider/fileprovider v1.32.0 h1:33M/JutbzMhCchWqvYqIPoyWvNbY5Ys3nRVjMGrQLyQ=
+go.opentelemetry.io/collector/confmap/provider/fileprovider v1.32.0/go.mod h1:oUcFmq3Sc7gKmNWxXbAHzsSQnybcYjmzKMDL6PRRLT8=
 go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.32.0 h1:56taZ7Jdz7EkVKsofRuYox23hR52ZLSQgpnQLveZ9uw=
 go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.32.0/go.mod h1:i/DQbT0e+2VtzSRY3G21bgNXPMr7vL9je45gIRcx9yw=
 go.opentelemetry.io/collector/confmap/xconfmap v0.126.0 h1:rfVQP2DkW/5zETjcJL67Hq7O1fLOCnihJ6HygBBqTMY=
@@ -218,16 +233,19 @@ go.opentelemetry.io/collector/extension v1.32.0/go.mod h1:p55BPwDkYmjxZgAp4UiR6h
 go.opentelemetry.io/collector/extension/extensionauth v1.32.0 h1:y30nikjrmfNZ1beP4B8wsLa76Gy6D+RLmhr54vFbvnE=
 go.opentelemetry.io/collector/extension/extensionauth v1.32.0/go.mod h1:qaGbjJ+33Xv8sx4cPv/OXmc/LcQORSVbzcAE6O1n31o=
 go.opentelemetry.io/collector/extension/extensionauth/extensionauthtest v0.126.0 h1:rcWDWbDQDW+OE0L8nsGnrtSwm8vnPoyKy+vcL93jQyk=
+go.opentelemetry.io/collector/extension/extensionauth/extensionauthtest v0.126.0/go.mod h1:uKjum2GACQWKUsJv7q30ygcwmAuVVdj58WFxVsZm2is=
 go.opentelemetry.io/collector/extension/extensioncapabilities v0.126.0 h1:heCqfsQ00PYFX8VdFrfxgee7SHZZzL/s7msv5e/M0lI=
 go.opentelemetry.io/collector/extension/extensioncapabilities v0.126.0/go.mod h1:K51CEQByue77bnghuDXjfscK3tfP0iOyBRhOYpcMwJ4=
 go.opentelemetry.io/collector/extension/extensionmiddleware v0.126.0 h1:7QwG8/opD2TzuBUrj8bvCN7pIx5QUnhwRHOwABRmQG8=
 go.opentelemetry.io/collector/extension/extensionmiddleware v0.126.0/go.mod h1:yZYfdaxnDOCNWruM0GrF5lBBmFoBorAXqXtCeLrcllU=
 go.opentelemetry.io/collector/extension/extensionmiddleware/extensionmiddlewaretest v0.126.0 h1:3jgdq3HnNVEznOabzEp8cv6YgzVeak+lgX0mC3uwyK4=
+go.opentelemetry.io/collector/extension/extensionmiddleware/extensionmiddlewaretest v0.126.0/go.mod h1:qi7wSIB9GJCqzdfoVMF+yamgblFggUe4JEEzAhPuqqs=
 go.opentelemetry.io/collector/extension/extensiontest v0.126.0 h1:BZueZvfbJmlmx62J17o6P8aNyPS32iFSmDYDfajQkew=
 go.opentelemetry.io/collector/extension/extensiontest v0.126.0/go.mod h1:9Vg70EOtd28TMdHjRECGu2jdEXnFhSCyvh+/oUGnTfA=
 go.opentelemetry.io/collector/extension/xextension v0.126.0 h1:DnqpEtLNK8Ui6ibv6mikoJFTsO2px0oykBDl6Jo0sPg=
 go.opentelemetry.io/collector/extension/xextension v0.126.0/go.mod h1:pcNxReFDd7+LG3YHP3oWNEM86kctqUac6kj9772usY4=
 go.opentelemetry.io/collector/extension/zpagesextension v0.126.0 h1:6qeo94bqz6guPMAP6eaBqkoMQbu4LTZbJYhEP/YLRwQ=
+go.opentelemetry.io/collector/extension/zpagesextension v0.126.0/go.mod h1:L076y7ByG/zCtK/ye1xJm5I43rb2ms3IbSvmYbgXTx8=
 go.opentelemetry.io/collector/featuregate v1.32.0 h1:ArSnZF3hxXC09aO7v2Ff9XSCA8oI/hkWSv+lYnpSCac=
 go.opentelemetry.io/collector/featuregate v1.32.0/go.mod h1:Y/KsHbvREENKvvN9RlpiWk/IGBK+CATBYzIIpU7nccc=
 go.opentelemetry.io/collector/internal/fanoutconsumer v0.126.0 h1:s8HAKgb08jXupUYeSvjsqu3C4lnp3wOBDpT9Q5zd+hU=
@@ -281,6 +299,7 @@ go.opentelemetry.io/contrib/otelconf v0.16.0/go.mod h1:gnsljuyDyVDg39vUvXKj0BVCi
 go.opentelemetry.io/contrib/propagators/b3 v1.36.0 h1:xrAb/G80z/l5JL6XlmUMSD1i6W8vXkWrLfmkD3w/zZo=
 go.opentelemetry.io/contrib/propagators/b3 v1.36.0/go.mod h1:UREJtqioFu5awNaCR8aEx7MfJROFlAWb6lPaJFbHaG0=
 go.opentelemetry.io/contrib/zpages v0.60.0 h1:wOM9ie1Hz4H88L9KE6GrGbKJhfm+8F1NfW/Y3q9Xt+8=
+go.opentelemetry.io/contrib/zpages v0.60.0/go.mod h1:xqfToSRGh2MYUsfyErNz8jnNDPlnpZqWM/y6Z2Cx7xw=
 go.opentelemetry.io/otel v1.36.0 h1:UumtzIklRBY6cI/lllNZlALOF5nNIzJVb16APdvgTXg=
 go.opentelemetry.io/otel v1.36.0/go.mod h1:/TcFMXYjyRNh8khOAO9ybYkqaDBb/70aVwkNML4pP8E=
 go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.12.2 h1:06ZeJRe5BnYXceSM9Vya83XXVaNGe3H1QqsvqRANQq8=
@@ -308,6 +327,7 @@ go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.36.0/go.mod h1:PD57idA/
 go.opentelemetry.io/otel/log v0.12.2 h1:yob9JVHn2ZY24byZeaXpTVoPS6l+UrrxmxmPKohXTwc=
 go.opentelemetry.io/otel/log v0.12.2/go.mod h1:ShIItIxSYxufUMt+1H5a2wbckGli3/iCfuEbVZi/98E=
 go.opentelemetry.io/otel/log/logtest v0.0.0-20250521073539-a85ae98dcedc h1:TU7eU/nib68C+4ZMQ5t4em5Jhf50kRorSCV4w+v65vo=
+go.opentelemetry.io/otel/log/logtest v0.0.0-20250521073539-a85ae98dcedc/go.mod h1:4AsFc5k1BDLWm5jt0yagrodTEA9xS9McwcnYm+Jf73A=
 go.opentelemetry.io/otel/metric v1.36.0 h1:MoWPKVhQvJ+eeXWHFBOPoBOi20jh6Iq2CcCREuTYufE=
 go.opentelemetry.io/otel/metric v1.36.0/go.mod h1:zC7Ks+yeyJt4xig9DEw9kuUFe5C3zLbVjV2PzT6qzbs=
 go.opentelemetry.io/otel/sdk v1.36.0 h1:b6SYIuLRs88ztox4EyrvRti80uXIFy+Sqzoh9kFULbs=
@@ -315,6 +335,7 @@ go.opentelemetry.io/otel/sdk v1.36.0/go.mod h1:+lC+mTgD+MUWfjJubi2vvXWcVxyr9rmls
 go.opentelemetry.io/otel/sdk/log v0.12.2 h1:yNoETvTByVKi7wHvYS6HMcZrN5hFLD7I++1xIZ/k6W0=
 go.opentelemetry.io/otel/sdk/log v0.12.2/go.mod h1:DcpdmUXHJgSqN/dh+XMWa7Vf89u9ap0/AAk/XGLnEzY=
 go.opentelemetry.io/otel/sdk/log/logtest v0.0.0-20250521073539-a85ae98dcedc h1:uqxdywfHqqCl6LmZzI3pUnXT1RGFYyUgxj0AkWPFxi0=
+go.opentelemetry.io/otel/sdk/log/logtest v0.0.0-20250521073539-a85ae98dcedc/go.mod h1:TY/N/FT7dmFrP/r5ym3g0yysP1DefqGpAZr4f82P0dE=
 go.opentelemetry.io/otel/sdk/metric v1.36.0 h1:r0ntwwGosWGaa0CrSt8cuNuTcccMXERFwHX4dThiPis=
 go.opentelemetry.io/otel/sdk/metric v1.36.0/go.mod h1:qTNOhFDfKRwX0yXOqJYegL5WRaW376QbB7P4Pb0qva4=
 go.opentelemetry.io/otel/trace v1.36.0 h1:ahxWNuqZjpdiFAyrIoQ4GIiAIhxAunQR6MUoKrsNd4w=
@@ -322,6 +343,7 @@ go.opentelemetry.io/otel/trace v1.36.0/go.mod h1:gQ+OnDZzrybY4k4seLzPAWNwVBBVlF2
 go.opentelemetry.io/proto/otlp v1.6.0 h1:jQjP+AQyTf+Fe7OKj/MfkDrmK4MNVtw2NpXsf9fefDI=
 go.opentelemetry.io/proto/otlp v1.6.0/go.mod h1:cicgGehlFuNdgZkcALOCh3VE6K/u2tAjzlRhDwmVpZc=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
+go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.uber.org/multierr v1.11.0 h1:blXXJkSxSSfBVBlC76pxqeO+LN3aDfLQo+309xJstO0=
 go.uber.org/multierr v1.11.0/go.mod h1:20+QtiLqy0Nd6FdQB9TLXag12DsQkrbs3htMFfDN80Y=
 go.uber.org/zap v1.27.0 h1:aJMhYGrd5QSmlpLMr2MftRKl7t8J8PTZPA732ud/XR8=
@@ -388,6 +410,7 @@ google.golang.org/protobuf v1.36.6 h1:z1NpPI8ku2WgiWnf+t9wTPsn6eP1L7ksHUlkfLvd9x
 google.golang.org/protobuf v1.36.6/go.mod h1:jduwjTPXsFjZGTmRluh+L6NjiWu7pchiJ2/5YcXBHnY=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c h1:Hei/4ADfdWqJk1ZMxUNpqntNwaWcugrBjAiHlqqRiVk=
+gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EVd6muEfDQjcINNoR0C8j2r3qZ4Q=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 sigs.k8s.io/yaml v1.4.0 h1:Mk1wCc2gy/F0THH0TAp1QYyJNzRm2KCLy3o5ASXVI5E=

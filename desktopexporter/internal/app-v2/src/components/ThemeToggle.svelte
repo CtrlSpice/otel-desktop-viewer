@@ -45,8 +45,10 @@
 <!-- Theme Toggle -->
 <div class="flex items-center gap-2">
   <HugeiconsIcon icon={Sun03Icon} size={16} />
-  <label title="Toggle theme" class="flex items-center">
+  <label title="Toggle theme" class="flex items-center" for="theme-toggle">
     <input
+      id="theme-toggle"
+      name="theme-toggle"
       type="checkbox"
       class="toggle"
       checked={currentTheme === "dark"}

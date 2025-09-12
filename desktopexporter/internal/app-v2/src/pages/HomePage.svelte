@@ -1,160 +1,245 @@
+<script lang="ts">
+  import { telemetryAPI } from "../services/telemetry-service"
+  import { HugeiconsIcon } from "@hugeicons/svelte"
+  import {
+    BarChartHorizontalIcon,
+    Chart03Icon,
+    File01Icon,
+  } from "@hugeicons/core-free-icons"
+
+  let loadingSampleData = false
+  let sampleDataError: string | null = null
+  let sampleDataSuccess = false
+
+  async function loadSampleData() {
+    try {
+      loadingSampleData = true
+      sampleDataError = null
+      sampleDataSuccess = false
+      
+      await telemetryAPI.loadSampleData()
+      sampleDataSuccess = true
+    } catch (error) {
+      sampleDataError = error instanceof Error ? error.message : "Failed to load sample data"
+      console.error("Error loading sample data:", error)
+    } finally {
+      loadingSampleData = false
+    }
+  }
+</script>
+
 <!-- HomePage.svelte - The welcome/landing page -->
-<div class="flex flex-col items-center justify-center w-full overflow-y-auto">
-  <div class="card bg-base-100 shadow-2xl my-16 min-w-[960px] p-8 w-4/5">
-    <!-- Header with Lulu and Welcome -->
-    <div class="card-header pb-0">
-      <div class="flex w-full">
-        <img
-          src="/src/assets/images/lulu.png"
-          alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen."
-          class="max-h-96 max-w-96 rounded-lg"
-        />
-        <div class="ml-6 flex flex-col justify-end">
-          <div class="space-y-3">
-            <h1 class="text-2xl font-bold">
-              Welcome to the OpenTelemetry Desktop Viewer.
-            </h1>
-            <div class="divider"></div>
-            <p class="text-base-content/80">
-              This CLI tool allows you to receive OpenTelemetry traces while
-              working on your local machine, helping you visualize and explore
-              your trace data without needing to send it on to a telemetry
-              vendor.
-            </p>
-          </div>
-          <div class="space-y-3 mt-6">
-            <h2 class="text-xl font-semibold">Explore with Sample Data</h2>
-            <div class="divider"></div>
-            <p class="text-base-content/80">
-              If you would like to explore the application without sending it
-              anything, you can do so by loading some sample data.
-            </p>
-            <button class="btn btn-primary w-fit"> Load Sample Data </button>
-          </div>
+<div class="max-w-6xl mx-auto px-6 py-12">
+  <!-- Header Section -->
+  <div>
+    <div class="flex items-center gap-6">
+      <img
+        src="/src/assets/images/lulu.png"
+        alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen."
+        class="w-64 h-64 object-contain"
+      />
+      <div>
+        <h1 class="text-2xl font-bold">OpenTelemetry Desktop Viewer</h1>
+        <p class="text-base-content/70">
+          Collect, visualize, and query your OpenTelemetry data locally.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Sections -->
+  <div class="grid md:grid-cols-3 gap-6 mb-8">
+    <!-- Traces Summary -->
+    <div class="bg-base-200 border border-base-300 rounded-lg p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-8 h-8 bg-secondary/20 rounded-lg flex items-center justify-center">
+          <HugeiconsIcon icon={BarChartHorizontalIcon} size={16} color="hsl(var(--s))" />
         </div>
+        <h3 class="text-lg font-semibold">Traces</h3>
+      </div>
+      <div class="space-y-2">
+        <div class="flex justify-between text-sm">
+          <span class="text-base-content/70">Total Traces</span>
+          <span class="font-medium">0</span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-base-content/70">Services</span>
+          <span class="font-medium">0</span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-base-content/70">Avg Duration</span>
+          <span class="font-medium">-</span>
+        </div>
+      </div>
+      <div class="mt-4 pt-4 border-t border-base-300">
+        <a href="/traces" class="text-primary text-sm hover:underline">View all traces →</a>
       </div>
     </div>
 
-    <!-- Configuration Instructions -->
-    <div class="card-body">
-      <div class="space-y-3">
-        <h2 class="text-xl font-semibold">
-          Configuring your OpenTelemetry SDK
-        </h2>
-        <div class="divider"></div>
-        <p class="text-base-content/80">
-          To send telemetry to OpenTelemetry Desktop Viewer from your
-          application, you need to configure an OTLP exporter to send via grpc
-          to <code class="bg-base-200 px-2 py-1 rounded"
-            >http://localhost:4317</code
-          >
-          or via http to
-          <code class="bg-base-200 px-2 py-1 rounded"
-            >http://localhost:4318</code
-          >.
-        </p>
-        <p class="text-base-content/80">
-          If your OpenTelemetry SDK OTLP exporter supports
-          <a
-            href="https://opentelemetry.io/docs/concepts/sdk-configuration/otlp-exporter-configuration/"
-            class="link link-primary"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            configuration via environment variables
-          </a>
-          then you should be able to send to
-          <code class="bg-base-200 px-2 py-1 rounded">otel-desktop-viewer</code>
-          with the following environment variables set.
-        </p>
-
-        <h3 class="text-lg font-medium">For HTTP:</h3>
-        <div class="code-block">
-          <pre><code
-              ><span class="prompt">$</span
-              > export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
-<span class="prompt">$</span> export OTEL_TRACES_EXPORTER="otlp"
-<span class="prompt">$</span
-              > export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"</code
-            ></pre>
+    <!-- Metrics Summary -->
+    <div class="bg-base-200 border border-base-300 rounded-lg p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-8 h-8 bg-secondary/20 rounded-lg flex items-center justify-center">
+          <HugeiconsIcon icon={Chart03Icon} size={16} color="hsl(var(--s))" />
         </div>
-
-        <h3 class="text-lg font-medium">For GRPC:</h3>
-        <div class="code-block">
-          <pre><code
-              ><span class="prompt">$</span
-              > export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-<span class="prompt">$</span> export OTEL_TRACES_EXPORTER="otlp"
-<span class="prompt">$</span> export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"</code
-            ></pre>
+        <h3 class="text-lg font-semibold">Metrics</h3>
+      </div>
+      <div class="space-y-2">
+        <div class="flex justify-between text-sm">
+          <span class="text-base-content/70">Metric Types</span>
+          <span class="font-medium">0</span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-base-content/70">Data Points</span>
+          <span class="font-medium">0</span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-base-content/70">Last Updated</span>
+          <span class="font-medium">-</span>
         </div>
       </div>
+      <div class="mt-4 pt-4 border-t border-base-300">
+        <a href="/metrics" class="text-primary text-sm hover:underline">View all metrics →</a>
+      </div>
+    </div>
 
-      <!-- otel-cli Example -->
-      <div class="space-y-3 mt-8">
-        <h2 class="text-xl font-semibold">Example with otel-cli</h2>
-        <div class="divider"></div>
-        <p class="text-base-content/80">
-          If you have
-          <a
-            href="https://github.com/equinix-labs/otel-cli"
-            class="link link-primary"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            otel-cli
-          </a>
-          installed, you can send some example data with the following script.
-        </p>
-        <div class="code-block">
-          <pre><code
-              ><span class="comment"
-                ># start the desktop viewer (best to do this in a separate terminal)</span
-              >
+    <!-- Logs Summary -->
+    <div class="bg-base-200 border border-base-300 rounded-lg p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-8 h-8 bg-secondary/20 rounded-lg flex items-center justify-center">
+          <HugeiconsIcon icon={File01Icon} size={16} color="hsl(var(--s))" />
+        </div>
+        <h3 class="text-lg font-semibold">Logs</h3>
+      </div>
+      <div class="space-y-2">
+        <div class="flex justify-between text-sm">
+          <span class="text-base-content/70">Total Logs</span>
+          <span class="font-medium">0</span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-base-content/70">Error Level</span>
+          <span class="font-medium">0</span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-base-content/70">Last Log</span>
+          <span class="font-medium">-</span>
+        </div>
+      </div>
+      <div class="mt-4 pt-4 border-t border-base-300">
+        <a href="/logs" class="text-primary text-sm hover:underline">View all logs →</a>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Configuration Section -->
+  <div class="mb-8">
+    <h2 class="text-2xl font-semibold mb-6">Configure your OTLP exporter</h2>
+    
+    <!-- HTTP Configuration -->
+    <div class="space-y-4 mb-8">
+      <h3 class="text-lg font-medium">HTTP Endpoint</h3>
+      <div class="code-block">
+        <pre><code><span class="prompt">$</span> export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+<span class="prompt">$</span> export OTEL_TRACES_EXPORTER="otlp"
+<span class="prompt">$</span> export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"</code></pre>
+      </div>
+    </div>
+
+    <!-- GRPC Configuration -->
+    <div class="space-y-4">
+      <h3 class="text-lg font-medium">GRPC Endpoint</h3>
+      <div class="code-block">
+        <pre><code><span class="prompt">$</span> export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+<span class="prompt">$</span> export OTEL_TRACES_EXPORTER="otlp"
+<span class="prompt">$</span> export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"</code></pre>
+      </div>
+    </div>
+    
+  </div>
+
+  <!-- Example Section -->
+  <div class="mb-8">
+    <h2 class="text-2xl font-semibold mb-6">Example with otel-cli</h2>
+    <p class="text-base-content/70 mb-4">
+      If you have 
+      <a href="https://github.com/equinix-labs/otel-cli" 
+         class="link link-primary" 
+         target="_blank" 
+         rel="noopener noreferrer">
+        otel-cli
+      </a> 
+      installed, you can send example data:
+    </p>
+    <div class="code-block">
+      <pre><code><span class="comment"># start the desktop viewer</span>
 <span class="prompt">$</span> otel-desktop-viewer
 
-<span class="comment"
-                ># configure otel-cli to send to our desktop viewer endpoint</span
-              >
-<span class="prompt">$</span
-              > export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+<span class="comment"># configure otel-cli</span>
+<span class="prompt">$</span> export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
-<span class="comment"># use otel-cli to generate spans!</span>
-<span class="prompt">$</span
-              > otel-cli exec --service my-service --name "curl google" curl https://google.com</code
-            ></pre>
-        </div>
-      </div>
+<span class="comment"># generate spans!</span>
+<span class="prompt">$</span> otel-cli exec --service my-service --name "curl google" curl https://google.com</code></pre>
     </div>
+  </div>
 
-    <!-- Footer -->
-    <div class="card-footer justify-center pt-4">
-      <p class="text-sm text-base-content/60 text-center">
-        Made with
-        <img
-          src="/src/assets/images/axolotl.svg"
-          alt="axolotl emoji"
-          class="inline w-5 h-5 mx-1"
-        />
-        by
-        <a
-          href="https://github.com/CtrlSpice"
-          class="link link-primary"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Mila Ardath
-        </a>
-        , with Artwork by
-        <a
-          href="https://cbatesonart.artstation.com/"
-          class="link link-primary"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Chelsey Bateson
-        </a>
-      </p>
+  <!-- Sample Data Section -->
+  <div class="mb-8">
+    <h2 class="text-2xl font-semibold mb-6">Try with sample data</h2>
+    <p class="text-base-content/70 mb-6">
+      Want to see it in action? Load some sample telemetry data to explore the application immediately.
+    </p>
+    
+    <div class="flex items-center gap-4">
+      <button 
+        class="btn btn-neutral hover:btn-primary" 
+        onclick={loadSampleData}
+        disabled={loadingSampleData}
+      >
+        {#if loadingSampleData}
+          <span class="loading loading-spinner loading-sm"></span>
+          Loading sample data...
+        {:else}
+          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+          </svg>
+          Load sample data
+        {/if}
+      </button>
+      
+      <!-- Status message -->
+      {#if sampleDataError}
+        <span class="text-error text-sm">Error: {sampleDataError}</span>
+      {/if}
+      {#if sampleDataSuccess}
+        <span class="text-success text-sm">✓ Sample data loaded successfully</span>
+      {/if}
     </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="border-t border-base-300 pt-8">
+    <p class="text-sm text-base-content/60 text-center">
+      Made with 
+      <img
+        src="/src/assets/images/axolotl.svg"
+        alt="axolotl emoji"
+        class="inline w-5 h-5 mx-1"
+      /> 
+      by 
+      <a href="https://github.com/CtrlSpice" 
+         class="link link-primary" 
+         target="_blank" 
+         rel="noopener noreferrer">
+        Mila Ardath
+      </a>
+      , with Artwork by 
+      <a href="https://cbatesonart.artstation.com/" 
+         class="link link-primary" 
+         target="_blank" 
+         rel="noopener noreferrer">
+        Chelsey Bateson
+      </a>
+    </p>
   </div>
 </div>

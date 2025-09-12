@@ -7,21 +7,21 @@ export default defineConfig({
   plugins: [svelte()],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   server: {
     port: 3001, // Fixed port for v2 frontend
     strictPort: true, // Fail if port is in use instead of trying another
     proxy: {
-      '/rpc': {
-        target: 'http://localhost:8080',
+      "/rpc": {
+        target: "http://localhost:8000",
         changeOrigin: true,
       },
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: "dist",
     emptyOutDir: true,
   },
 })

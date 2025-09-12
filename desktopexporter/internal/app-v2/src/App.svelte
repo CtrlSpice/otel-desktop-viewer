@@ -7,7 +7,7 @@
   import { currentRoute } from './stores/router';
 </script>
 
-<main class="min-h-screen bg-base-300 transition-colors duration-300">
+<main class="min-h-screen bg-base-100 transition-colors duration-300">
   <HorizontalNav />
   <div class="container mx-auto p-8 pt-20">
     <!-- Router: Show different pages based on current route -->

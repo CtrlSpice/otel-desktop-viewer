@@ -30,7 +30,7 @@ run-go-v1:
 
 .PHONY: run-db-go
 run-db-go:
-	STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/server/static/) go run . --db duck.db
+	V2_STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/app-v2/dist/) USE_V2_FRONTEND=true go run . --db duck.db
 
 .PHONY: build-js
 build-js:
@@ -105,8 +105,8 @@ help:
 	@echo "  build-js         - Build v1 frontend"
 	@echo "  watch-js         - Watch and rebuild v1 frontend"
 	@echo "  validate-typescript - Type check v1 frontend"
-	@echo "  run-go           - Run Go server with v1 frontend"
-	@echo "  run-db-go        - Run Go server with v1 frontend and database"
+	@echo "  run-go           - Run Go server with v2 frontend"
+	@echo "  run-db-go        - Run Go server with v2 frontend and database"
 	@echo ""
 	@echo "V2 Frontend (Svelte + DaisyUI):"
 	@echo "  install-v2       - Install v2 frontend dependencies"

@@ -1,43 +1,48 @@
 import { writable } from "svelte/store"
 
-// Check if we're in the browser
-let browser = typeof window !== "undefined"
-
-// Define the possible routes in our app
+// Types
 export type Route =
   | { page: "home" }
   | { page: "metrics" }
   | { page: "logs" }
   | { page: "traces" }
 
-// Helper function to get route from URL path
+// Configuration
+let browser = typeof window !== "undefined"
+
+// Route Parsing
 function getRouteFromPath(path: string): Route {
-  if (path === "/metrics") return { page: "metrics" }
-  if (path === "/logs") return { page: "logs" }
-  if (path === "/traces") return { page: "traces" }
+  switch (path) {
+    case "/metrics":
+      return { page: "metrics" }
+    case "/logs":
+      return { page: "logs" }
+    case "/traces":
+      return { page: "traces" }
+    default:
+      return { page: "home" }
+  }
+}
+
+function getPathFromRoute(route: Route): string {
+  return route.page === "home" ? "/" : `/${route.page}`
+}
+
+// Store
+function getInitialRoute(): Route {
+  if (browser) {
+    return getRouteFromPath(window.location.pathname)
+  }
   return { page: "home" }
 }
 
-// Helper function to get path from route
-function getPathFromRoute(route: Route): string {
-  if (route.page === "home") return "/"
-  return `/${route.page}`
-}
+export let currentRoute = writable<Route>(getInitialRoute())
 
-// Create the routing store with initial route from URL or default to home
-let initialRoute: Route = { page: "home" }
-if (browser) {
-  initialRoute = getRouteFromPath(window.location.pathname)
-}
-
-export let currentRoute = writable<Route>(initialRoute)
-
-// Helper function to navigate to a specific route
+// Navigation
 export function navigateTo(route: Route) {
   currentRoute.set(route)
 }
 
-// Helper functions for common navigation
 export let navigate = {
   home: () => navigateTo({ page: "home" }),
   metrics: () => navigateTo({ page: "metrics" }),
@@ -45,9 +50,9 @@ export let navigate = {
   traces: () => navigateTo({ page: "traces" }),
 }
 
-// URL synchronization (only in browser)
+// URL Synchronization
 if (browser) {
-  // Listen for browser back/forward buttons
+  // Handle browser back/forward buttons
   window.addEventListener("popstate", () => {
     let route = getRouteFromPath(window.location.pathname)
     currentRoute.set(route)
