@@ -77,6 +77,38 @@ func (s *Store) Close() error {
 	return nil
 }
 
+// SampleDataExists checks if sample data exists by looking for the telemetry.sample attribute.
+func (s *Store) SampleDataExists(ctx context.Context) (bool, error) {
+	if err := s.checkConnection(); err != nil {
+		return false, err
+	}
+
+	// Check if any spans have the telemetry.sample attribute set to true
+	var count int
+	err := s.db.QueryRowContext(ctx, CheckSampleDataExists).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+
+	// If we found sample traces, sample data exists
+	return count > 0, nil
+}
+
+// ClearSampleData deletes only the sample data by targeting the telemetry.sample attribute.
+func (s *Store) ClearSampleData(ctx context.Context) error {
+	if err := s.checkConnection(); err != nil {
+		return err
+	}
+
+	// Delete sample data from all tables in a single query
+	_, err := s.db.ExecContext(ctx, ClearSampleData)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // checkConnection verifies that the store's connection is valid.
 // Returns an error if the connection is nil.
 func (s *Store) checkConnection() error {

@@ -54,6 +54,7 @@ func (s *Store) AddMetrics(ctx context.Context, metricsData []metrics.MetricData
 	}
 
 	return nil
+
 }
 
 func (s *Store) GetMetrics(ctx context.Context) ([]metrics.MetricData, error) {
@@ -89,6 +90,41 @@ func (s *Store) ClearMetrics(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, TruncateMetrics); err != nil {
 		return fmt.Errorf(ErrClearMetrics, err)
 	}
+	return nil
+}
+
+// DeleteMetricByID deletes a specific metric by its ID.
+func (s *Store) DeleteMetricByID(ctx context.Context, metricID string) error {
+	if err := s.checkConnection(); err != nil {
+		return fmt.Errorf(ErrDeleteMetricByID, err)
+	}
+
+	_, err := s.db.ExecContext(ctx, DeleteMetricByID, metricID)
+	if err != nil {
+		return fmt.Errorf(ErrDeleteMetricByID, err)
+	}
+
+	return nil
+}
+
+// DeleteMetricsByIDs deletes multiple metrics by their IDs.
+func (s *Store) DeleteMetricsByIDs(ctx context.Context, metricIDs []any) error {
+	if err := s.checkConnection(); err != nil {
+		return fmt.Errorf(ErrDeleteMetricByID, err)
+	}
+
+	if len(metricIDs) == 0 {
+		return nil // Nothing to delete
+	}
+
+	placeholders := buildPlaceholders(len(metricIDs))
+	query := fmt.Sprintf(DeleteMetricsByIDs, placeholders)
+
+	_, err := s.db.ExecContext(ctx, query, metricIDs...)
+	if err != nil {
+		return fmt.Errorf(ErrDeleteMetricByID, err)
+	}
+
 	return nil
 }
 

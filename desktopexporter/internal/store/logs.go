@@ -171,6 +171,41 @@ func (s *Store) ClearLogs(ctx context.Context) error {
 	return nil
 }
 
+// DeleteLogByID deletes a specific log by its ID.
+func (s *Store) DeleteLogByID(ctx context.Context, logID string) error {
+	if err := s.checkConnection(); err != nil {
+		return fmt.Errorf(ErrDeleteLogByID, err)
+	}
+
+	_, err := s.db.ExecContext(ctx, DeleteLogByID, logID)
+	if err != nil {
+		return fmt.Errorf(ErrDeleteLogByID, err)
+	}
+
+	return nil
+}
+
+// DeleteLogsByIDs deletes multiple logs by their IDs.
+func (s *Store) DeleteLogsByIDs(ctx context.Context, logIDs []any) error {
+	if err := s.checkConnection(); err != nil {
+		return fmt.Errorf(ErrDeleteLogByID, err)
+	}
+
+	if len(logIDs) == 0 {
+		return nil // Nothing to delete
+	}
+
+	placeholders := buildPlaceholders(len(logIDs))
+	query := fmt.Sprintf(DeleteLogsByIDs, placeholders)
+
+	_, err := s.db.ExecContext(ctx, query, logIDs...)
+	if err != nil {
+		return fmt.Errorf(ErrDeleteLogByID, err)
+	}
+
+	return nil
+}
+
 // GetLogsByTrace retrieves all logs for a given trace.
 func (s *Store) GetLogsByTrace(ctx context.Context, traceID string) ([]logs.LogData, error) {
 	if err := s.checkConnection(); err != nil {

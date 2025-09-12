@@ -233,6 +233,8 @@ export let telemetryAPI = {
 
   clearMetrics: () => callRPC("clearMetrics", undefined),
 
-  // Utility methods
+  // Sample data management
   loadSampleData: () => callRPC("loadSampleData", undefined),
+  checkSampleDataExists: () => callRPC("checkSampleDataExists", undefined),
+  clearSampleData: () => callRPC("clearSampleData", undefined),
 }

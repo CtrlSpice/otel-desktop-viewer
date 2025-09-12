@@ -1,5 +1,7 @@
 package store
 
+import "strings"
+
 // Type creation queries that must be run in order
 var TypeCreationQueries = []string{
 	`CREATE TYPE attribute AS UNION(
@@ -356,3 +358,44 @@ const (
 	TruncateLogs    = `TRUNCATE TABLE logs`
 	TruncateMetrics = `TRUNCATE TABLE metrics`
 )
+
+// Targeted deletion queries
+const (
+	DeleteSpansByTraceID = `DELETE FROM spans WHERE TraceID = ?`
+	DeleteSpanByID       = `DELETE FROM spans WHERE SpanID = ?`
+	DeleteLogByID        = `DELETE FROM logs WHERE LogID = ?`
+	DeleteMetricByID     = `DELETE FROM metrics WHERE MetricID = ?`
+)
+
+// Batch deletion queries using IN clause
+const (
+	DeleteSpansByTraceIDs = `DELETE FROM spans WHERE TraceID IN (%s)`
+	DeleteSpansByIDs      = `DELETE FROM spans WHERE SpanID IN (%s)`
+	DeleteLogsByIDs       = `DELETE FROM logs WHERE LogID IN (%s)`
+	DeleteMetricsByIDs    = `DELETE FROM metrics WHERE MetricID IN (%s)`
+)
+
+// Sample data detection and deletion queries
+const (
+	CheckSampleDataExists = `
+		SELECT COUNT(*) FROM spans WHERE ResourceAttributes['telemetry.sample'] = true
+	`
+	ClearSampleData = `
+		DELETE FROM spans WHERE ResourceAttributes['telemetry.sample'] = true;
+		DELETE FROM logs WHERE ResourceAttributes['telemetry.sample'] = true;
+		DELETE FROM metrics WHERE ResourceAttributes['telemetry.sample'] = true;
+	`
+)
+
+// Helper function to build placeholders for IN clause
+func buildPlaceholders(count int) string {
+	if count == 0 {
+		return ""
+	}
+
+	placeholders := make([]string, count)
+	for i := range count {
+		placeholders[i] = "?"
+	}
+	return strings.Join(placeholders, ",")
+}

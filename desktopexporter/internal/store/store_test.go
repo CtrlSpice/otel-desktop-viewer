@@ -168,3 +168,59 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 }
+
+// TestSampleDataWorkflow tests the complete sample data workflow
+func TestSampleDataWorkflow(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	ctx := helper.Ctx
+	s := helper.Store
+
+	// Step 1: Check that no sample data exists initially
+	exists, err := s.SampleDataExists(ctx)
+	assert.NoError(t, err, "SampleDataExists should not return error")
+	assert.False(t, exists, "Sample data should not exist initially")
+
+	// Step 2: Load sample data
+	sample := telemetry.NewSampleTelemetry()
+	err = s.AddSpans(ctx, sample.Spans)
+	assert.NoError(t, err, "AddSpans should not return error")
+
+	err = s.AddLogs(ctx, sample.Logs)
+	assert.NoError(t, err, "AddLogs should not return error")
+
+	err = s.AddMetrics(ctx, sample.Metrics)
+	assert.NoError(t, err, "AddMetrics should not return error")
+
+	// Step 3: Check that sample data now exists
+	exists, err = s.SampleDataExists(ctx)
+	assert.NoError(t, err, "SampleDataExists should not return error")
+	assert.True(t, exists, "Sample data should exist after loading")
+
+	// Step 4: Clear sample data
+	err = s.ClearSampleData(ctx)
+	assert.NoError(t, err, "ClearSampleData should not return error")
+
+	// Step 5: Check that sample data no longer exists
+	exists, err = s.SampleDataExists(ctx)
+	assert.NoError(t, err, "SampleDataExists should not return error")
+	assert.False(t, exists, "Sample data should not exist after clearing")
+
+	// Step 6: Verify all tables are empty
+	spans, err := s.GetTraceSummaries(ctx)
+	assert.NoError(t, err, "GetTraceSummaries should not return error")
+	assert.Empty(t, spans, "Spans table should be empty after clearing sample data")
+
+	logs, err := s.GetLogs(ctx)
+	assert.NoError(t, err, "GetLogs should not return error")
+	assert.Empty(t, logs, "Logs table should be empty after clearing sample data")
+
+	metrics, err := s.GetMetrics(ctx)
+	assert.NoError(t, err, "GetMetrics should not return error")
+	assert.Empty(t, metrics, "Metrics table should be empty after clearing sample data")
+
+	// Step 7: Try to clear sample data again (should be idempotent)
+	err = s.ClearSampleData(ctx)
+	assert.NoError(t, err, "ClearSampleData should be idempotent")
+}
