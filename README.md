@@ -1,14 +1,11 @@
 # otel-desktop-viewer
 
-`otel-desktop-viewer` is a CLI tool for receiving OpenTelemetry traces while working
-on your local machine that helps you visualize and explore your trace data without
-needing to send it on to a telemetry vendor. Its goals are to be easy-to-install with minimal dependen
-cies and fast. It is written in Go
+`otel-desktop-viewer` is a CLI tool for receiving OpenTelemetry traces while working on your local machine 
+that helps you visualize and explore your trace data without needing to send it on to a telemetry vendor. 
+Its goals are to be easy-to-install with minimal dependencies and fast. It is written in Go as a custom 
+exporter on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector).
 
-as a custom exporter on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentel
-emetry-collector).
-
-Also, it has a dark mode.
+It supports a dark mode.
 
 ![OpenTelemetryDesktopViewer](https://user-images.githubusercontent.com/56372758/217080670-3001cb67-ab20-4ae2-ac55-82ca04bad815.png)
 
