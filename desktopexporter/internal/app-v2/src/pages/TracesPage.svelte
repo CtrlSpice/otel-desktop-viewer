@@ -2,10 +2,39 @@
   import { onMount } from "svelte"
   import { telemetryAPI } from "../services/telemetry-service"
   import type { TraceSummary } from "../types/api-types"
+  import type { TraceFilters } from "../types/filter-types"
+  import PageHeader from "../components/PageHeader.svelte"
 
   let traceSummaries: TraceSummary[] = []
   let loading = true
   let error: string | null = null
+
+  // Filter state
+  let filters: TraceFilters = {
+    search: "",
+    serviceName: [],
+    timeRange: {
+      start: "",
+      end: ""
+    },
+    attributes: []
+  }
+  let timezone = 'UTC'
+
+  // Handle filter changes from PageHeader
+  function handleFiltersChange(newFilters: TraceFilters) {
+    filters = newFilters
+    // TODO: Apply filters to API call
+  }
+
+  function handleTimezoneChange(newTimezone: string) {
+    timezone = newTimezone
+  }
+
+  function handleRefresh() {
+    // TODO: Implement refresh logic
+    console.log('Refresh clicked')
+  }
 
   onMount(async () => {
     try {
@@ -21,14 +50,15 @@
 </script>
 
 <!-- TracesPage.svelte - Traces list and visualization page -->
-<div class="flex flex-col items-center justify-center w-full overflow-y-auto">
-  <div class="card bg-base-100 shadow-2xl my-16 min-w-[960px] p-8 w-4/5">
-    <div class="card-header pb-0">
-      <h1 class="text-2xl font-bold">Traces</h1>
-      <div class="divider"></div>
-    </div>
-    
-    <div class="card-body">
+<div class="flex flex-col w-full overflow-y-auto p-8">
+  <!-- Page Header -->
+  <PageHeader 
+    title="Traces"
+    {filters}
+    onRefresh={handleRefresh}
+    onFiltersChange={handleFiltersChange}
+    onTimezoneChange={handleTimezoneChange}
+  />
       {#if loading}
         <div class="flex justify-center items-center py-8">
           <span class="loading loading-spinner loading-lg"></span>
@@ -80,6 +110,4 @@
           </details>
         </div>
       {/if}
-    </div>
-  </div>
 </div>

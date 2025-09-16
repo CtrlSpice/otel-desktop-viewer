@@ -9,6 +9,7 @@
     Delete01Icon,
   } from "@hugeicons/core-free-icons"
   import { onMount } from "svelte"
+  import CodeBlock from "../components/CodeBlock.svelte"
 
   let sampleDataExists = false
   let loading = false
@@ -159,21 +160,17 @@
     <!-- HTTP Configuration -->
     <div class="config-group">
       <h3 class="config-subtitle">HTTP Endpoint</h3>
-      <div class="code-block">
-        <pre><code><span class="prompt">$</span> export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
-<span class="prompt">$</span> export OTEL_TRACES_EXPORTER="otlp"
-<span class="prompt">$</span> export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"</code></pre>
-      </div>
+      <CodeBlock code={`$ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+$ export OTEL_TRACES_EXPORTER="otlp"
+$ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"`} />
     </div>
 
     <!-- GRPC Configuration -->
     <div class="config-group">
       <h3 class="config-subtitle">GRPC Endpoint</h3>
-      <div class="code-block">
-        <pre><code><span class="prompt">$</span> export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-<span class="prompt">$</span> export OTEL_TRACES_EXPORTER="otlp"
-<span class="prompt">$</span> export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"</code></pre>
-      </div>
+      <CodeBlock code={`$ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+$ export OTEL_TRACES_EXPORTER="otlp"
+$ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`} />
     </div>
   </div>
 
@@ -190,16 +187,14 @@
       </a> 
       installed, you can send example data:
     </p>
-    <div class="code-block">
-      <pre><code><span class="comment"># start the desktop viewer</span>
-<span class="prompt">$</span> otel-desktop-viewer
+    <CodeBlock code={`# start the desktop viewer
+$ otel-desktop-viewer
 
-<span class="comment"># configure otel-cli</span>
-<span class="prompt">$</span> export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+# configure otel-cli
+$ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
-<span class="comment"># generate spans!</span>
-<span class="prompt">$</span> otel-cli exec --service my-service --name "curl google" curl https://google.com</code></pre>
-    </div>
+# generate spans!
+$ otel-cli exec --service my-service --name "curl google" curl https://google.com`} />
   </div>
 
   <!-- Sample Data Section -->
