@@ -221,3 +221,49 @@ func TestMethodNotFound(t *testing.T) {
 	assert.Nil(t, result)
 	assert.Equal(t, jsonrpc2.ErrMethodNotFound, err)
 }
+
+func TestSampleDataWorkflow(t *testing.T) {
+	handler, teardown := setupHandler()
+	defer teardown()
+
+	// Step 1: Check that no sample data exists initially
+	req := createRequest("checkSampleDataExists", nil)
+	result, err := handler.Handle(context.Background(), req)
+	assert.Nil(t, err)
+	resultMap, ok := result.(map[string]any)
+	assert.True(t, ok, "Expected map[string]any, got %T", result)
+	assert.False(t, resultMap["exists"].(bool), "Sample data should not exist initially")
+
+	// Step 2: Load sample data
+	req = createRequest("loadSampleData", nil)
+	_, err = handler.Handle(context.Background(), req)
+	assert.Nil(t, err, "loadSampleData should not return error")
+
+	// Step 3: Check that sample data now exists
+	req = createRequest("checkSampleDataExists", nil)
+	result, err = handler.Handle(context.Background(), req)
+	assert.Nil(t, err)
+	resultMap, ok = result.(map[string]any)
+	assert.True(t, ok, "Expected map[string]any, got %T", result)
+	assert.True(t, resultMap["exists"].(bool), "Sample data should exist after loading")
+
+	// Step 4: Clear sample data
+	req = createRequest("clearSampleData", nil)
+	result, err = handler.Handle(context.Background(), req)
+	assert.Nil(t, err)
+	assert.Equal(t, "Sample data cleared successfully", result)
+
+	// Step 5: Check that sample data no longer exists
+	req = createRequest("checkSampleDataExists", nil)
+	result, err = handler.Handle(context.Background(), req)
+	assert.Nil(t, err)
+	resultMap, ok = result.(map[string]any)
+	assert.True(t, ok, "Expected map[string]any, got %T", result)
+	assert.False(t, resultMap["exists"].(bool), "Sample data should not exist after clearing")
+
+	// Step 6: Try to clear sample data again (should be idempotent)
+	req = createRequest("clearSampleData", nil)
+	result, err = handler.Handle(context.Background(), req)
+	assert.Nil(t, err)
+	assert.Equal(t, "Sample data cleared successfully", result)
+}

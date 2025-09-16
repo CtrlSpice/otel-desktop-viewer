@@ -40,6 +40,18 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.clearLogs(ctx)
 	case "clearMetrics":
 		return h.clearMetrics(ctx)
+	case "deleteSpansByTraceID":
+		return h.deleteSpansByTraceID(ctx, req)
+	case "deleteSpanByID":
+		return h.deleteSpanByID(ctx, req)
+	case "deleteLogByID":
+		return h.deleteLogByID(ctx, req)
+	case "deleteMetricByID":
+		return h.deleteMetricByID(ctx, req)
+	case "checkSampleDataExists":
+		return h.checkSampleDataExists(ctx)
+	case "clearSampleData":
+		return h.clearSampleData(ctx)
 	default:
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
@@ -176,4 +188,118 @@ func (h *JSONRPCHandler) loadSampleData(ctx context.Context) (any, error) {
 	}
 
 	return "Sample data loaded successfully", nil
+}
+
+// deleteSpansByTraceID deletes all spans for one or more traces.
+func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) == 0 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	err := h.store.DeleteSpansByTraceIDs(ctx, params)
+	if err != nil {
+		log.Printf("Error deleting spans by trace IDs: %v", err)
+		return nil, jsonrpc2.ErrInternal
+	}
+
+	return map[string]any{
+		"message": "Spans deleted successfully",
+		"count":   len(params),
+	}, nil
+}
+
+// deleteSpanByID deletes one or more specific spans by their IDs.
+func (h *JSONRPCHandler) deleteSpanByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) == 0 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	err := h.store.DeleteSpansByIDs(ctx, params)
+	if err != nil {
+		log.Printf("Error deleting spans by IDs: %v", err)
+		return nil, jsonrpc2.ErrInternal
+	}
+
+	return map[string]any{
+		"message": "Spans deleted successfully",
+		"count":   len(params),
+	}, nil
+}
+
+// deleteLogByID deletes one or more specific logs by their IDs.
+func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) == 0 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	err := h.store.DeleteLogsByIDs(ctx, params)
+	if err != nil {
+		log.Printf("Error deleting logs by IDs: %v", err)
+		return nil, jsonrpc2.ErrInternal
+	}
+
+	return map[string]any{
+		"message": "Logs deleted successfully",
+		"count":   len(params),
+	}, nil
+}
+
+// deleteMetricByID deletes one or more specific metrics by their IDs.
+func (h *JSONRPCHandler) deleteMetricByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) == 0 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	err := h.store.DeleteMetricsByIDs(ctx, params)
+	if err != nil {
+		log.Printf("Error deleting metrics by IDs: %v", err)
+		return nil, jsonrpc2.ErrInternal
+	}
+
+	return map[string]any{
+		"message": "Metrics deleted successfully",
+		"count":   len(params),
+	}, nil
+}
+
+func (h *JSONRPCHandler) checkSampleDataExists(ctx context.Context) (any, error) {
+	exists, err := h.store.SampleDataExists(ctx)
+	if err != nil {
+		log.Printf("Error checking if sample data exists: %v", err)
+		return nil, jsonrpc2.ErrInternal
+	}
+
+	return map[string]any{
+		"exists": exists,
+	}, nil
+}
+
+func (h *JSONRPCHandler) clearSampleData(ctx context.Context) (any, error) {
+	err := h.store.ClearSampleData(ctx)
+	if err != nil {
+		log.Printf("Error clearing sample data: %v", err)
+		return nil, jsonrpc2.ErrInternal
+	}
+
+	return "Sample data cleared successfully", nil
 }

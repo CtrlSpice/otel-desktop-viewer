@@ -206,3 +206,73 @@ func (s *Store) ClearTraces(ctx context.Context) error {
 	}
 	return nil
 }
+
+// DeleteSpansByTraceID deletes all spans for a specific trace.
+func (s *Store) DeleteSpansByTraceID(ctx context.Context, traceID string) error {
+	if err := s.checkConnection(); err != nil {
+		return fmt.Errorf(ErrDeleteSpansByTraceID, err)
+	}
+
+	_, err := s.db.ExecContext(ctx, DeleteSpansByTraceID, traceID)
+	if err != nil {
+		return fmt.Errorf(ErrDeleteSpansByTraceID, err)
+	}
+
+	return nil
+}
+
+// DeleteSpanByID deletes a specific span by its ID.
+func (s *Store) DeleteSpanByID(ctx context.Context, spanID string) error {
+	if err := s.checkConnection(); err != nil {
+		return fmt.Errorf(ErrDeleteSpanByID, err)
+	}
+
+	_, err := s.db.ExecContext(ctx, DeleteSpanByID, spanID)
+	if err != nil {
+		return fmt.Errorf(ErrDeleteSpanByID, err)
+	}
+
+	return nil
+}
+
+// DeleteSpansByTraceIDs deletes all spans for multiple traces.
+func (s *Store) DeleteSpansByTraceIDs(ctx context.Context, traceIDs []any) error {
+	if err := s.checkConnection(); err != nil {
+		return fmt.Errorf(ErrDeleteSpansByTraceID, err)
+	}
+
+	if len(traceIDs) == 0 {
+		return nil // Nothing to delete
+	}
+
+	placeholders := buildPlaceholders(len(traceIDs))
+	query := fmt.Sprintf(DeleteSpansByTraceIDs, placeholders)
+
+	_, err := s.db.ExecContext(ctx, query, traceIDs...)
+	if err != nil {
+		return fmt.Errorf(ErrDeleteSpansByTraceID, err)
+	}
+
+	return nil
+}
+
+// DeleteSpansByIDs deletes multiple spans by their IDs.
+func (s *Store) DeleteSpansByIDs(ctx context.Context, spanIDs []any) error {
+	if err := s.checkConnection(); err != nil {
+		return fmt.Errorf(ErrDeleteSpanByID, err)
+	}
+
+	if len(spanIDs) == 0 {
+		return nil // Nothing to delete
+	}
+
+	placeholders := buildPlaceholders(len(spanIDs))
+	query := fmt.Sprintf(DeleteSpansByIDs, placeholders)
+
+	_, err := s.db.ExecContext(ctx, query, spanIDs...)
+	if err != nil {
+		return fmt.Errorf(ErrDeleteSpanByID, err)
+	}
+
+	return nil
+}

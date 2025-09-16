@@ -11,6 +11,7 @@ func FillCurrencyResource(resource pcommon.Resource) {
 	resource.Attributes().PutStr("telemetry.sdk.language", "cpp")
 	resource.Attributes().PutStr("telemetry.sdk.name", "opentelemetry")
 	resource.Attributes().PutStr("telemetry.sdk.version", "1.5.0")
+	resource.Attributes().PutBool("telemetry.sample", true)
 	attr := resource.Attributes().PutEmptySlice("array.example")
 	attr.EnsureCapacity(3)
 	attr.AppendEmpty().SetStr("example1")
@@ -25,6 +26,7 @@ func FillLoadGeneratorResource(resource pcommon.Resource) {
 	resource.Attributes().PutStr("telemetry.sdk.language", "python")
 	resource.Attributes().PutStr("telemetry.sdk.name", "opentelemetry")
 	resource.Attributes().PutStr("telemetry.sdk.version", "1.9.1")
+	resource.Attributes().PutBool("telemetry.sample", true)
 }
 
 // frontend resource data
@@ -41,4 +43,5 @@ func FillFrontEndResource(resource pcommon.Resource) {
 	resource.Attributes().PutStr("telemetry.sdk.language", "nodejs")
 	resource.Attributes().PutStr("telemetry.sdk.name", "opentelemetry")
 	resource.Attributes().PutStr("telemetry.sdk.version", "1.7.0")
+	resource.Attributes().PutBool("telemetry.sample", true)
 }
