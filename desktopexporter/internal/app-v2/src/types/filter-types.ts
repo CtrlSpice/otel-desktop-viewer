@@ -14,7 +14,6 @@ export interface TimeRange {
 export interface TelemetryFilters {
   search?: string;
   serviceName?: string[];
-  timeRange: TimeRange;
   attributes?: AttributeFilter[];
   limit?: number;
   offset?: number;

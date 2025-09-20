@@ -1,373 +1,471 @@
 <script lang="ts">
   import * as chrono from 'chrono-node';
-
-  export let value: { start?: string; end?: string } = { start: '', end: '' };
-  export let timezone: string = 'UTC';
-
-  let isOpen = false;
-  let customStart = '';
-  let customEnd = '';
-  let customStartText = '';
-  let customEndText = '';
-
-  // Preset time ranges
-  const presets = [
-    { label: 'Show all', special: 'all' },
-    { label: 'Last 5 minutes', minutes: 5 },
-    { label: 'Last 15 minutes', minutes: 15 },
-    { label: 'Last 30 minutes', minutes: 30 },
-    { label: 'Last hour', hours: 1 },
-    { label: 'Last 6 hours', hours: 6 },
-    { label: 'Last day', days: 1 },
-    { label: 'Last 3 days', days: 3 },
-    { label: 'Last week', days: 7 },
-  ];
+  import { onMount } from 'svelte';
+  import { getTimeContext } from '../contexts/time-context.svelte';
 
   // Timezone options
-  const timezones = [
+  const TIMEZONES = [
     { value: 'UTC', label: 'UTC' },
     { value: 'local', label: 'Local' },
-  ];
+  ] as const;
 
-  // Default to last 15 minutes
-  $: if (!value.start && !value.end) {
-    const now = new Date();
-    const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
-    value = {
-      start: fifteenMinutesAgo.toISOString(),
-      end: now.toISOString(),
-    };
+  // Get time context
+  let timeContext = getTimeContext();
+  if (!timeContext) {
+    throw new Error(
+      'Time context not found. Make sure createTimeContext() is called at the root level.'
+    );
   }
 
-  // Get display text for current selection
-  $: displayText = getDisplayText();
+  // Timezone
+  let timezone = $state<string>('local');
 
-  function getDisplayText(): string {
-    if (!value.start && !value.end) return 'Last 15 minutes';
+  onMount(() => {
+    switch (timeContext.selection.type) {
+      case 'preset':
+        presetIndex = timeContext.selection.presetIndex;
+        break;
+      case 'custom':
+        customStartText = formatDateTimeForInput(
+          new Date(timeContext.selection.start),
+          timeContext.selection.timezone
+        );
+        customEndText = formatDateTimeForInput(
+          new Date(timeContext.selection.end),
+          timeContext.selection.timezone
+        );
+        break;
+      case 'recent':
+        let saved = localStorage.getItem('datetime-filter-recent');
+        if (saved) {
+          recentTimeRanges = JSON.parse(saved);
+        } else {
+          recentTimeRanges = [];
+        }
+        break;
+    }
+    timezone = timeContext.selection.timezone;
+  });
 
-    const start = value.start ? new Date(value.start) : null;
-    const end = value.end ? new Date(value.end) : null;
+  // ===== PRESET TIME RANGES =====
+  const PRESETS = [
+    { label: 'Last 5 minutes', duration: 300000 }, // 5 * 60 * 1000
+    { label: 'Last 15 minutes', duration: 900000 }, // 15 * 60 * 1000
+    { label: 'Last 30 minutes', duration: 1800000 }, // 30 * 60 * 1000
+    { label: 'Last hour', duration: 3600000 }, // 60 * 60 * 1000
+    { label: 'Last 6 hours', duration: 21600000 }, // 6 * 60 * 60 * 1000
+    { label: 'Last day', duration: 86400000 }, // 24 * 60 * 60 * 1000
+    { label: 'Last 3 days', duration: 259200000 }, // 3 * 24 * 60 * 60 * 1000
+    { label: 'Last week', duration: 604800000 }, // 7 * 24 * 60 * 60 * 1000
+    { label: 'Show all', duration: undefined },
+  ] as const;
 
-    if (start && end) {
-      const diffMs = end.getTime() - start.getTime();
-      const diffMinutes = Math.round(diffMs / (1000 * 60));
+  // Preset time range index
+  let presetIndex = $state<number | null>(null);
 
-      if (diffMinutes <= 5) return 'Last 5 minutes';
-      if (diffMinutes <= 15) return 'Last 15 minutes';
-      if (diffMinutes <= 30) return 'Last 30 minutes';
-      if (diffMinutes <= 60) return 'Last hour';
-      if (diffMinutes <= 360) return 'Last 6 hours';
-      if (diffMinutes <= 1440) return 'Last day';
-      if (diffMinutes <= 4320) return 'Last 3 days';
-      if (diffMinutes <= 10080) return 'Last week';
+  function applyPreset(index: number) {
+    let start = 0;
+    let now = Date.now();
+    let preset = PRESETS[index];
+
+    // Handle "Show all" case
+    if (preset.duration !== undefined) {
+      start = now - preset.duration;
     }
 
-    // Show actual time range for custom ranges
-    if (start && end) {
-      const formatTime = (date: Date) => {
-        return date.toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        });
+    timeContext.setSelection(start, now, timezone, 'preset', index);
+  }
+
+  // ===== CUSTOM TIME RANGE =====
+  let customStartText = $state('');
+  let customEndText = $state('');
+  let customError = $state<string | null>(null);
+
+  type ValidationResult =
+    | { isValid: true; start: number; end: number }
+    | { isValid: false; error: string };
+
+  type ParseResult =
+    | { success: true; timestamp: number }
+    | { success: false; error: string };
+
+  function validateCustomRange(): ValidationResult {
+    // Make sure neither start nor end is empty
+    if (!customStartText.trim() || !customEndText.trim()) {
+      return {
+        isValid: false,
+        error: 'Please enter both start and end times',
       };
-      return `${formatTime(start)} - ${formatTime(end)}`;
     }
 
-    return 'Custom range';
-  }
-
-  function applyPreset(preset: (typeof presets)[0]) {
-    const now = new Date();
-    let start: Date;
-
-    if (preset.special === 'all') {
-      // Dispatch change event
-      const changeEvent = new CustomEvent('change', {
-        detail: { start: undefined, end: undefined },
-      });
-      document.dispatchEvent(changeEvent);
-      isOpen = false;
-      return;
+    // Parse start and end times
+    let startResult = parseNaturalLanguage(customStartText);
+    if (!startResult.success) {
+      return {
+        isValid: false,
+        error: startResult.error,
+      };
     }
 
-    if (preset.minutes) {
-      start = new Date(now.getTime() - preset.minutes * 60 * 1000);
-    } else if (preset.hours) {
-      start = new Date(now.getTime() - preset.hours * 60 * 60 * 1000);
-    } else if (preset.days) {
-      start = new Date(now.getTime() - preset.days * 24 * 60 * 60 * 1000);
-    } else {
-      return;
+    let endResult = parseNaturalLanguage(customEndText);
+    if (!endResult.success) {
+      return {
+        isValid: false,
+        error: endResult.error,
+      };
     }
 
-    // Dispatch change event
-    const changeEvent = new CustomEvent('change', {
-      detail: {
-        start: start.toISOString(),
-        end: now.toISOString(),
-      },
-    });
-    document.dispatchEvent(changeEvent);
-    isOpen = false;
+    let startTime = startResult.timestamp;
+    let endTime = endResult.timestamp;
+
+    // Validate start is before end
+    if (startTime >= endTime) {
+      return {
+        isValid: false,
+        error: 'Start time must be before end time',
+      };
+    }
+
+    // Validate not in the future
+    if (endTime > Date.now()) {
+      return {
+        isValid: false,
+        error: 'End time cannot be in the future',
+      };
+    }
+
+    return { isValid: true, start: startTime, end: endTime };
   }
 
   function applyCustom() {
-    if (!customStart && !customEnd) {
-      const changeEvent = new CustomEvent('change', {
-        detail: { start: undefined, end: undefined },
-      });
-      document.dispatchEvent(changeEvent);
-      isOpen = false;
-      return;
+    let now = Date.now();
+    customError = null;
+    let validation = validateCustomRange();
+
+    if (!validation.isValid) {
+      customError = validation.error;
+      return; // Don't change the application state
     }
 
-    const changeEvent = new CustomEvent('change', {
-      detail: {
-        start: customStart || undefined,
-        end: customEnd || undefined,
-      },
-    });
-    document.dispatchEvent(changeEvent);
-    isOpen = false;
+    // Add to recent entries
+    updateRecentRanges(validation.start, validation.end, now);
+
+    // Set selection in time context
+    timeContext.setSelection(
+      validation.start,
+      validation.end,
+      timezone,
+      'custom'
+    );
   }
 
-  function handleTimezoneChange(event: Event) {
-    const target = event.target as HTMLSelectElement;
-    timezone = target.value;
-    const timezoneEvent = new CustomEvent('timezoneChange', {
-      detail: timezone,
-    });
-    document.dispatchEvent(timezoneEvent);
+  // ===== RECENT TIME RANGES =====
+  interface RecentTimeRange {
+    start: number;
+    end: number;
+    usedAt: number;
   }
 
-  function formatDateTimeForInput(date: Date): string {
-    // Format as YYYY-MM-DDTHH:MM for datetime-local input
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
+  // Recently used time ranges
+  let recentTimeRanges = $state<RecentTimeRange[]>([]);
+  // Recently used time range index (removed - not needed)
 
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-  }
+  function updateRecentRanges(start: number, end: number, usedAt: number) {
+    // Check if this time range already exists
+    let existingIndex = recentTimeRanges.findIndex(
+      entry => entry.start === start && entry.end === end
+    );
 
-  function isCurrentPreset(preset: (typeof presets)[0]): boolean {
-    if (preset.special === 'all') {
-      return !value.start && !value.end;
+    if (existingIndex !== -1) {
+      // Update existing entry
+      let updated = [...recentTimeRanges];
+      updated[existingIndex] = { ...updated[existingIndex], usedAt };
+      let sorted = updated.sort((a, b) => b.usedAt - a.usedAt)
+      recentTimeRanges = sorted;
+    } else {
+      // Add new entry
+      let updated = [
+        { start, end, usedAt },
+        ...recentTimeRanges
+      ].sort((a, b) => b.usedAt - a.usedAt).slice(0, 10);
+      recentTimeRanges = updated;
     }
 
-    if (!value.start || !value.end) return false;
+  // Save to localStorage
+  localStorage.setItem('datetime-filter-recent', JSON.stringify(recentTimeRanges));
+}
 
-    const start = new Date(value.start);
-    const end = new Date(value.end);
-    const now = new Date();
-
-    if (preset.minutes) {
-      const expectedStart = new Date(
-        now.getTime() - preset.minutes * 60 * 1000
-      );
-      return Math.abs(start.getTime() - expectedStart.getTime()) < 60000; // Within 1 minute
-    } else if (preset.hours) {
-      const expectedStart = new Date(
-        now.getTime() - preset.hours * 60 * 60 * 1000
-      );
-      return Math.abs(start.getTime() - expectedStart.getTime()) < 300000; // Within 5 minutes
-    } else if (preset.days) {
-      const expectedStart = new Date(
-        now.getTime() - preset.days * 24 * 60 * 60 * 1000
-      );
-      return Math.abs(start.getTime() - expectedStart.getTime()) < 3600000; // Within 1 hour
-    }
-
-    return false;
+  function applyRecentTimeRange(index: number) {
+    let entry = recentTimeRanges[index];
+    if (!entry) return;
+    
+    let now = Date.now();
+    
+    // First: Update the recent ranges (move to top)
+    updateRecentRanges(entry.start, entry.end, now);
+    
+    // Then: Update the time context
+    timeContext.setSelection(entry.start, entry.end, timezone, 'recent');
   }
-
-  function parseNaturalLanguage(text: string): string | null {
-    if (!text.trim()) return null;
+  // ===== FORMATTING AND UTILITY FUNCTIONS =====
+  function parseNaturalLanguage(text: string): ParseResult {
+    if (!text.trim()) {
+      return { success: false, error: 'Please enter a time' };
+    }
 
     try {
-      const parsed = chrono.parseDate(text);
+      let parsed = chrono.parseDate(text);
       if (parsed) {
-        return parsed.toISOString();
+        return { success: true, timestamp: parsed.getTime() };
+      } else {
+        return {
+          success: false,
+          error: 'Could not understand this time format',
+        };
       }
     } catch (error) {
-      console.warn('Failed to parse natural language:', text, error);
-    }
-    return null;
-  }
-
-  function handleCustomStartChange() {
-    const parsed = parseNaturalLanguage(customStartText);
-    if (parsed) {
-      customStart = formatDateTimeForInput(new Date(parsed));
+      return { success: false, error: 'Invalid time format' };
     }
   }
 
-  function handleCustomEndChange() {
-    const parsed = parseNaturalLanguage(customEndText);
-    if (parsed) {
-      customEnd = formatDateTimeForInput(new Date(parsed));
+  function formatDate(date: Date): string {
+    return date.toLocaleDateString('en-CA', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+    });
+  }
+
+  function formatTime(date: Date): string {
+    return date.toLocaleTimeString('en-CA', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+
+  function formatDateTime(date: Date): string {
+    return date.toLocaleString('en-CA', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+
+  function formatTimeRange(start: number, end: number): string {
+    let startDate = new Date(start);
+    let endDate = new Date(end);
+
+    let isSameDay = startDate.toDateString() === endDate.toDateString();
+
+    if (isSameDay) {
+      // Same day format: "Jan 04, 2025 hh:mm -- hh:mm"
+      return `${formatDate(startDate)} ${formatTime(startDate)} -- ${formatTime(endDate)}`;
+    } else {
+      // Different days format: "Jan 04, 2025 hh:mm - Jan 05, 2025 hh:mm"
+      return `${formatDateTime(startDate)} - ${formatDateTime(endDate)}`;
     }
+  }
+
+  function formatDateTimeForInput(date: Date, timezone: string): string {
+    let formattedDate: string;
+
+    if (timezone === 'UTC') {
+      // Display in UTC using en-CA locale
+      formattedDate = date.toLocaleString('en-CA', { timeZone: 'UTC' });
+      return `${formattedDate} UTC`;
+    } else {
+      // Display in local timezone using en-CA locale
+      formattedDate = date.toLocaleString('en-CA');
+
+      // Get local timezone abbreviation
+      let tzAbbr =
+        new Intl.DateTimeFormat('en', {
+          timeZoneName: 'short',
+        })
+          .formatToParts(date)
+          .find(part => part.type === 'timeZoneName')?.value || '';
+
+      return `${formattedDate} ${tzAbbr}`;
+    }
+  }
+  // Export function to get display text for current selection
+  export function getDisplayText(): string {
+    let selection = timeContext.selection;
+
+    // If it's a preset, show the preset name
+    if (selection.type === 'preset') {
+      return PRESETS[selection.presetIndex].label;
+    }
+
+    // For custom ranges, show the actual time range
+    return formatTimeRange(selection.start, selection.end);
   }
 </script>
 
 <div class="relative">
-  <!-- Dropdown Button -->
-  <button
-    class="input input-bordered input-sm flex items-center gap-2"
-    on:click={() => (isOpen = !isOpen)}
-  >
-    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="2"
-        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-      ></path>
-    </svg>
-    <span>{displayText}</span>
-    <svg
-      class="w-3 h-3 transition-transform duration-200 {isOpen
-        ? 'rotate-180'
-        : ''}"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="2"
-        d="M19 9l-7 7-7-7"
-      ></path>
-    </svg>
-  </button>
-
-  <!-- Drawer -->
-  {#if isOpen}
-    <div
-      class="absolute top-full left-0 mt-1 w-full bg-base-100 border border-base-300 rounded shadow-lg z-50"
-    >
-      <div class="p-4">
-        <div class="flex gap-6">
-          <!-- Left Side - Absolute Time Range -->
-          <div class="w-80 space-y-4">
-            <div class="text-sm font-medium text-base-content">
-              Absolute time range
-            </div>
-
-            <!-- From Date/Time -->
-            <div class="form-control">
-              <label class="label" for="custom-start">
-                <span class="label-text text-sm">From</span>
-              </label>
-              <input
-                id="custom-start"
-                type="text"
-                placeholder="e.g., 2 hours ago, yesterday, 2024-01-01"
-                class="input input-bordered input-sm w-full"
-                bind:value={customStartText}
-                on:input={handleCustomStartChange}
-              />
-            </div>
-
-            <!-- To Date/Time -->
-            <div class="form-control">
-              <label class="label" for="custom-end">
-                <span class="label-text text-sm">To</span>
-              </label>
-              <input
-                id="custom-end"
-                type="text"
-                placeholder="e.g., now, 1 hour ago, 2024-01-02"
-                class="input input-bordered input-sm w-full"
-                bind:value={customEndText}
-                on:input={handleCustomEndChange}
-              />
-            </div>
-
-            <!-- Apply Button -->
+  <!-- Drawer Content -->
+  <div class="w-full">
+    <div class="flex gap-3">
+      <!-- Left Side - Preset Time Ranges -->
+      <div class="space-y-4">
+        <!-- Preset Options -->
+        <div class="space-y-0">
+          {#each PRESETS as preset, index}
             <button
-              class="btn btn-primary btn-sm w-full"
-              on:click={applyCustom}
+              class="w-full text-left px-2 py-1 text-sm hover:bg-base-200 transition-colors flex items-center gap-2"
+              onclick={() => applyPreset(index)}
             >
-              Apply time range
-            </button>
-
-            <!-- Recently Used (placeholder) -->
-            <div class="text-sm text-base-content/60">
-              <div class="font-medium mb-2">Recently used time ranges</div>
-              <div class="text-xs text-base-content/40">
-                No recent time ranges
-              </div>
-            </div>
-          </div>
-
-          <!-- Right Side - Preset Time Ranges -->
-          <div class="w-80 space-y-4">
-            <div class="text-sm font-medium text-base-content">
-              Preset time ranges
-            </div>
-
-            <!-- Preset Options -->
-            <div class="space-y-1">
-              {#each presets as preset}
-                <button
-                  class="w-full text-left px-3 py-2 text-sm hover:bg-base-200 transition-colors flex items-center justify-between"
-                  on:click={() => applyPreset(preset)}
+              {#if presetIndex === index}
+                <svg
+                  class="w-4 h-4 text-primary"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
                 >
-                  <span>{preset.label}</span>
-                  {#if isCurrentPreset(preset)}
-                    <svg
-                      class="w-4 h-4 text-primary"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clip-rule="evenodd"
-                      ></path>
-                    </svg>
-                  {/if}
-                </button>
-              {/each}
-            </div>
-          </div>
+                  <path
+                    fill-rule="evenodd"
+                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                    clip-rule="evenodd"
+                  ></path>
+                </svg>
+              {:else}
+                <div class="w-4 h-4"></div>
+              {/if}
+              <span>{preset.label}</span>
+              <div class="w-4 h-4"></div>
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      <!-- Vertical separator -->
+      <div class="w-px bg-base-300"></div>
+
+      <!-- Middle Section - Custom Time Range -->
+      <div class="flex-1 space-y-4">
+        <div class="text-sm font-medium text-base-content">
+          Custom time range
         </div>
 
-        <!-- Bottom - Timezone Selector -->
-        <div class="mt-6 pt-4 border-t border-base-300">
-          <div class="flex items-center justify-between">
-            <div class="text-sm text-base-content/80">
-              {timezone === 'UTC'
-                ? 'Coordinated Universal Time UTC'
-                : 'Local Time'}
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-sm text-base-content/60">
-                {timezone === 'UTC' ? 'UTC+0' : 'Local'}
-              </span>
-              <svg
-                class="w-4 h-4 text-base-content/60"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M8 9l4-4 4 4m0 6l-4 4-4-4"
-                ></path>
-              </svg>
-            </div>
+        <!-- From Date/Time -->
+        <div class="form-control">
+          <label class="label" for="custom-start">
+            <span class="label-text text-sm">Start time</span>
+          </label>
+          <input
+            id="custom-start"
+            type="text"
+            placeholder="e.g., 2 hours ago, yesterday, 2024-01-01"
+            class="input input-bordered input-sm w-full"
+            bind:value={customStartText}
+          />
+        </div>
+
+        <!-- To Date/Time -->
+        <div class="form-control">
+          <label class="label" for="custom-end">
+            <span class="label-text text-sm">End time</span>
+          </label>
+          <input
+            id="custom-end"
+            type="text"
+            placeholder="e.g., now, 1 hour ago, 2024-01-02"
+            class="input input-bordered input-sm w-full"
+            bind:value={customEndText}
+          />
+        </div>
+
+        <!-- Error Display -->
+        {#if customError}
+          <div class="alert alert-error alert-sm">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fill-rule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                clip-rule="evenodd"
+              ></path>
+            </svg>
+            <span class="text-sm">{customError}</span>
           </div>
+        {/if}
+
+        <!-- Apply Button -->
+        <button class="btn btn-primary btn-sm w-full" onclick={applyCustom}>
+          Apply time range
+        </button>
+      </div>
+
+      <!-- Vertical separator -->
+      <div class="w-px bg-base-300"></div>
+
+      <!-- Right Section - Recently Used -->
+      <div class="space-y-4">
+        <div class="text-sm font-medium text-base-content">Recently used</div>
+        <div class="space-y-0">
+          {#if recentTimeRanges.length === 0}
+            <div
+              class="w-full text-left px-2 py-1 text-sm text-base-content/60"
+            >
+              No recent time ranges
+            </div>
+          {:else}
+            {#each recentTimeRanges as entry, index}
+              <button
+                class="w-full text-left px-2 py-1 text-sm hover:bg-base-200 transition-colors flex items-center gap-2"
+                onclick={() => applyRecentTimeRange(index)}
+              >
+                {#if index === 0 && timeContext.selection.type === 'recent'}
+                  <svg
+                    class="w-4 h-4 text-primary"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clip-rule="evenodd"
+                    ></path>
+                  </svg>
+                {:else}
+                  <div class="w-4 h-4"></div>
+                {/if}
+                <span>{formatTimeRange(entry.start, entry.end)}</span>
+                <div class="w-4 h-4"></div>
+              </button>
+            {/each}
+          {/if}
         </div>
       </div>
     </div>
-  {/if}
+
+    <!-- Bottom - Timezone Selector -->
+    <div class="mt-3 pt-4 border-t border-base-300">
+      <div class="flex items-center justify-between">
+        <div class="text-sm text-base-content/80">
+          {timezone === 'UTC' ? 'Coordinated Universal Time UTC' : 'Local Time'}
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-base-content/60">
+            {timezone === 'UTC' ? 'UTC+0' : 'Local'}
+          </span>
+          <svg
+            class="w-4 h-4 text-base-content/60"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M8 9l4-4 4 4m0 6l-4 4-4-4"
+            ></path>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>

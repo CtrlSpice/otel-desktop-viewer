@@ -7,23 +7,27 @@
     File01Icon,
   } from "@hugeicons/core-free-icons"
   import ThemeToggle from "./ThemeToggle.svelte"
-  import { currentRoute, navigate } from "../stores/router"
+  import { router } from "tinro5"
 
   // Navigation items
   // prettier-ignore
   let navItems = [
-    { id: "home", icon: HomeIcon, label: "Home", route: { page: "home" as const } },
-    { id: "traces", icon: BarChartHorizontalIcon, label: "Traces", route: { page: "traces" as const } },
-    { id: "metrics", icon: Chart03Icon, label: "Metrics", route: { page: "metrics" as const } },
-    { id: "logs", icon: File01Icon, label: "Logs", route: { page: "logs" as const } },
+    { id: "home", icon: HomeIcon, label: "Home", path: "/" },
+    { id: "traces", icon: BarChartHorizontalIcon, label: "Traces", path: "/traces" },
+    { id: "metrics", icon: Chart03Icon, label: "Metrics", path: "/metrics" },
+    { id: "logs", icon: File01Icon, label: "Logs", path: "/logs" },
   ]
 
-  function handleNavClick(route: { page: string }) {
-    // Use the routing store to navigate
-    if (route.page === "home") navigate.home()
-    else if (route.page === "metrics") navigate.metrics()
-    else if (route.page === "logs") navigate.logs()
-    else if (route.page === "traces") navigate.traces()
+  // Current path state
+  let currentPath = $state(router.path);
+
+  // Subscribe to router changes
+  router.subscribe((route) => {
+    currentPath = route.path;
+  });
+
+  function handleNavClick(path: string) {
+    router.goto(path);
   }
 </script>
 
@@ -35,10 +39,10 @@
   <div class="flex items-end h-full pt-2">
     {#each navItems as item}
       <button
-        class="nav-button {$currentRoute.page === item.route.page
+        class="nav-button {currentPath === item.path
           ? 'nav-button-active'
           : 'nav-button-inactive'}"
-        onclick={() => handleNavClick(item.route)}
+        onclick={() => handleNavClick(item.path)}
       >
         <HugeiconsIcon icon={item.icon} size={16} />
         <span class="text-xs font-medium">{item.label}</span>

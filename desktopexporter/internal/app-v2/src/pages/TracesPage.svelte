@@ -1,9 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte"
   import { telemetryAPI } from "../services/telemetry-service"
+  import { createTimeContext } from "../contexts/time-context.svelte"
   import type { TraceSummary } from "../types/api-types"
   import type { TraceFilters } from "../types/filter-types"
   import PageHeader from "../components/PageHeader.svelte"
+
+  // Create time context for this page
+  let timeContext = createTimeContext();
 
   let traceSummaries: TraceSummary[] = []
   let loading = true
@@ -13,22 +17,13 @@
   let filters: TraceFilters = {
     search: "",
     serviceName: [],
-    timeRange: {
-      start: "",
-      end: ""
-    },
     attributes: []
   }
-  let timezone = 'UTC'
 
   // Handle filter changes from PageHeader
   function handleFiltersChange(newFilters: TraceFilters) {
     filters = newFilters
     // TODO: Apply filters to API call
-  }
-
-  function handleTimezoneChange(newTimezone: string) {
-    timezone = newTimezone
   }
 
   function handleRefresh() {
@@ -57,7 +52,6 @@
     {filters}
     onRefresh={handleRefresh}
     onFiltersChange={handleFiltersChange}
-    onTimezoneChange={handleTimezoneChange}
   />
       {#if loading}
         <div class="flex justify-center items-center py-8">

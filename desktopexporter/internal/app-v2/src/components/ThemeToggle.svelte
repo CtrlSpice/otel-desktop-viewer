@@ -52,7 +52,7 @@
       type="checkbox"
       class="toggle"
       checked={currentTheme === "dark"}
-      on:change={() => setTheme(currentTheme === "light" ? "dark" : "light")}
+      onchange={() => setTheme(currentTheme === "light" ? "dark" : "light")}
     />
   </label>
   <HugeiconsIcon icon={Moon02Icon} size={16} />

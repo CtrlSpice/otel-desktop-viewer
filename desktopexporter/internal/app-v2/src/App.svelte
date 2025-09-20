@@ -4,22 +4,32 @@
   import MetricsPage from './pages/MetricsPage.svelte';
   import LogsPage from './pages/LogsPage.svelte';
   import TracesPage from './pages/TracesPage.svelte';
-  import { currentRoute } from './stores/router';
+  import { Route, router } from 'tinro5';
+  import { createTimeContext } from './contexts/time-context.svelte';
+  
+  // Create the time context at the root level
+  createTimeContext();
+  
+  // Configure router for history mode
+  router.mode.history();
 </script>
 
 <main class="min-h-screen bg-base-100 transition-colors duration-300">
   <HorizontalNav />
   <div class="container mx-auto p-8 pt-20">
     <!-- Router: Show different pages based on current route -->
-    {#if $currentRoute.page === 'home'}
+    <Route path="/">
       <HomePage />
-    {:else if $currentRoute.page === 'metrics'}
+    </Route>
+    <Route path="/metrics">
       <MetricsPage />
-    {:else if $currentRoute.page === 'logs'}
+    </Route>
+    <Route path="/logs">
       <LogsPage />
-    {:else if $currentRoute.page === 'traces'}
+    </Route>
+    <Route path="/traces">
       <TracesPage />
-    {/if}
+    </Route>
   </div>
 </main>
 

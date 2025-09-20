@@ -19,7 +19,8 @@
     "chrono-node": "^2.8.4",
     "daisyui": "^4.7.2",
     "svelte": "^5.0.0",
-    "svelte-routing": "^2.0.0"
+    "svelte-routing": "^2.0.0",
+    "tinro5": "^0.0.10"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.1.3",
