@@ -1,10 +1,10 @@
 import { setContext, getContext } from 'svelte';
+import type { Timezone } from '../utils/time';
 
 // Base interface with common fields
 interface BaseTimeSelection {
   start: number; // Unix timestamp (ms)
   end: number; // Unix timestamp (ms)
-  timezone: string;
 }
 
 // Type-specific extensions using discriminated unions
@@ -17,31 +17,33 @@ type TimeSelection = BaseTimeSelection &
 
 interface TimeContext {
   selection: TimeSelection;
+  timezone: Timezone;
   setSelection: (
     start: number,
     end: number,
-    timezone: string,
     type: 'preset' | 'custom' | 'recent',
     presetIndex?: number
   ) => void;
+  setTimezone: (timezone: Timezone) => void;
 }
 
 // Create the time context with Svelte 5 runes
 function createTimeContext(): TimeContext {
-  // In time-context.svelte.ts, change the initial selection:
+  // Time selection state
   let selection = $state<TimeSelection>({
     start: 0, // Beginning of time
     end: Date.now(),
-    timezone: 'local',
     type: 'preset',
     presetIndex: 8, // "Show all" is index 8 in the PRESETS array
   });
+
+  // Timezone state
+  let timezone = $state<Timezone>('local');
 
   // Set time selection
   function setSelection(
     start: number,
     end: number,
-    timezone: string,
     type: 'preset' | 'custom' | 'recent',
     presetIndex?: number
   ) {
@@ -53,19 +55,17 @@ function createTimeContext(): TimeContext {
         selection = {
           start,
           end,
-          timezone,
           type: 'preset',
           presetIndex: presetIndex,
         };
         break;
       case 'custom':
-        selection = { start, end, timezone, type: 'custom' };
+        selection = { start, end, type: 'custom' };
         break;
       case 'recent':
         selection = {
           start,
           end,
-          timezone,
           type: 'recent',
         };
         break;
@@ -75,9 +75,16 @@ function createTimeContext(): TimeContext {
     console.log('Selection updated to:', selection);
   }
 
+  // Set timezone
+  function setTimezone(newTimezone: Timezone) {
+    timezone = newTimezone;
+    // Save timezone separately
+    localStorage.setItem('time-timezone', newTimezone);
+  }
+
   // Set context for child components
-  setContext('time', { selection, setSelection });
-  return { selection, setSelection };
+  setContext('time', { selection, timezone, setSelection, setTimezone });
+  return { selection, timezone, setSelection, setTimezone };
 }
 
 // Get context in child components

@@ -20,15 +20,17 @@
   // Get time context
   let timeContext = getTimeContext();
 
-  // State for drawers
-  let showDateTimeDrawer = $state(false);
   let showFiltersDrawer = $state(false);
   let showFieldsDrawer = $state(false);
   
-  // References to filter components
+  let showDateTimeDrawer = $state(false);
   let dateTimeFilterRef: any = $state();
-  let filtersRef: any = $state();
-  let fieldsRef: any = $state();
+
+  $effect(() => {
+  if (showDateTimeDrawer && dateTimeFilterRef) {
+    dateTimeFilterRef.onOpen();
+  }
+});
 
   // Handle attribute filter changes
   function handleAttributesChange(attributes: any[]) {
@@ -48,6 +50,14 @@
       search: target.value,
     };
     onFiltersChange?.(newFilters);
+  }
+
+  // Handle datetime drawer opening
+  function handleDateTimeDrawerToggle() {
+    showDateTimeDrawer = !showDateTimeDrawer;
+    if (showDateTimeDrawer && dateTimeFilterRef) {
+      dateTimeFilterRef.onOpen();
+    }
   }
 
 </script>
@@ -85,7 +95,7 @@
     <!-- Time Filter Button -->
     <button
       class="input input-bordered input-sm flex items-center gap-2"
-      onclick={() => (showDateTimeDrawer = !showDateTimeDrawer)}
+      onclick={handleDateTimeDrawerToggle}
     >
       <svg
         class="w-4 h-4"

@@ -1,13 +1,12 @@
 <script lang="ts">
   import * as chrono from 'chrono-node';
-  import { onMount } from 'svelte';
   import { getTimeContext } from '../contexts/time-context.svelte';
-
-  // Timezone options
-  const TIMEZONES = [
-    { value: 'UTC', label: 'UTC' },
-    { value: 'local', label: 'Local' },
-  ] as const;
+  import { 
+    formatDateTime, 
+    formatDateTimeRange, 
+    getLocalTimezoneName,
+    type Timezone
+  } from '../utils/time';
 
   // Get time context
   let timeContext = getTimeContext();
@@ -17,35 +16,43 @@
     );
   }
 
-  // Timezone
-  let timezone = $state<string>('local');
-
-  onMount(() => {
+  export function onOpen() {
+    // Get fresh time context
+    let timeContext = getTimeContext();
+    if (!timeContext) {
+      throw new Error('Time context not found');
+    }
+    
+    let saved = localStorage.getItem('datetime-filter-recent');
+    if (saved) {
+      recentTimeRanges = JSON.parse(saved);
+    } else {
+      recentTimeRanges = [];
+    }
+    
     switch (timeContext.selection.type) {
       case 'preset':
         presetIndex = timeContext.selection.presetIndex;
         break;
       case 'custom':
-        customStartText = formatDateTimeForInput(
-          new Date(timeContext.selection.start),
-          timeContext.selection.timezone
+        customStartText = formatDateTime(
+          timeContext.selection.start,
+          timeContext.timezone,
+          'seconds'
         );
-        customEndText = formatDateTimeForInput(
-          new Date(timeContext.selection.end),
-          timeContext.selection.timezone
+        customEndText = formatDateTime(
+          timeContext.selection.end,
+          timeContext.timezone,
+          'seconds'
         );
+        customError = null;
         break;
       case 'recent':
-        let saved = localStorage.getItem('datetime-filter-recent');
-        if (saved) {
-          recentTimeRanges = JSON.parse(saved);
-        } else {
-          recentTimeRanges = [];
-        }
+        // No additional setup needed here
         break;
     }
-    timezone = timeContext.selection.timezone;
-  });
+    timezone = timeContext.timezone;
+  }
 
   // ===== PRESET TIME RANGES =====
   const PRESETS = [
@@ -73,7 +80,7 @@
       start = now - preset.duration;
     }
 
-    timeContext.setSelection(start, now, timezone, 'preset', index);
+    timeContext.setSelection(start, now, 'preset', index);
   }
 
   // ===== CUSTOM TIME RANGE =====
@@ -151,12 +158,7 @@
     updateRecentRanges(validation.start, validation.end, now);
 
     // Set selection in time context
-    timeContext.setSelection(
-      validation.start,
-      validation.end,
-      timezone,
-      'custom'
-    );
+    timeContext.setSelection(validation.start, validation.end, 'custom');
   }
 
   // ===== RECENT TIME RANGES =====
@@ -168,7 +170,6 @@
 
   // Recently used time ranges
   let recentTimeRanges = $state<RecentTimeRange[]>([]);
-  // Recently used time range index (removed - not needed)
 
   function updateRecentRanges(start: number, end: number, usedAt: number) {
     // Check if this time range already exists
@@ -180,33 +181,39 @@
       // Update existing entry
       let updated = [...recentTimeRanges];
       updated[existingIndex] = { ...updated[existingIndex], usedAt };
-      let sorted = updated.sort((a, b) => b.usedAt - a.usedAt)
+      let sorted = updated.sort((a, b) => b.usedAt - a.usedAt);
       recentTimeRanges = sorted;
     } else {
       // Add new entry
-      let updated = [
-        { start, end, usedAt },
-        ...recentTimeRanges
-      ].sort((a, b) => b.usedAt - a.usedAt).slice(0, 10);
+      let updated = [{ start, end, usedAt }, ...recentTimeRanges]
+        .sort((a, b) => b.usedAt - a.usedAt)
+        .slice(0, 10);
       recentTimeRanges = updated;
     }
 
-  // Save to localStorage
-  localStorage.setItem('datetime-filter-recent', JSON.stringify(recentTimeRanges));
-}
+    // Save to localStorage
+    localStorage.setItem(
+      'datetime-filter-recent',
+      JSON.stringify(recentTimeRanges)
+    );
+  }
 
   function applyRecentTimeRange(index: number) {
     let entry = recentTimeRanges[index];
     if (!entry) return;
-    
+
     let now = Date.now();
-    
+
     // First: Update the recent ranges (move to top)
     updateRecentRanges(entry.start, entry.end, now);
-    
+
     // Then: Update the time context
-    timeContext.setSelection(entry.start, entry.end, timezone, 'recent');
+    timeContext.setSelection(entry.start, entry.end, 'recent');
   }
+
+  // ===== TIMEZONE =====
+  let timezone = $state<Timezone>('local');
+
   // ===== FORMATTING AND UTILITY FUNCTIONS =====
   function parseNaturalLanguage(text: string): ParseResult {
     if (!text.trim()) {
@@ -228,70 +235,7 @@
     }
   }
 
-  function formatDate(date: Date): string {
-    return date.toLocaleDateString('en-CA', {
-      month: 'short',
-      day: '2-digit',
-      year: 'numeric',
-    });
-  }
 
-  function formatTime(date: Date): string {
-    return date.toLocaleTimeString('en-CA', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-  }
-
-  function formatDateTime(date: Date): string {
-    return date.toLocaleString('en-CA', {
-      month: 'short',
-      day: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-  }
-
-  function formatTimeRange(start: number, end: number): string {
-    let startDate = new Date(start);
-    let endDate = new Date(end);
-
-    let isSameDay = startDate.toDateString() === endDate.toDateString();
-
-    if (isSameDay) {
-      // Same day format: "Jan 04, 2025 hh:mm -- hh:mm"
-      return `${formatDate(startDate)} ${formatTime(startDate)} -- ${formatTime(endDate)}`;
-    } else {
-      // Different days format: "Jan 04, 2025 hh:mm - Jan 05, 2025 hh:mm"
-      return `${formatDateTime(startDate)} - ${formatDateTime(endDate)}`;
-    }
-  }
-
-  function formatDateTimeForInput(date: Date, timezone: string): string {
-    let formattedDate: string;
-
-    if (timezone === 'UTC') {
-      // Display in UTC using en-CA locale
-      formattedDate = date.toLocaleString('en-CA', { timeZone: 'UTC' });
-      return `${formattedDate} UTC`;
-    } else {
-      // Display in local timezone using en-CA locale
-      formattedDate = date.toLocaleString('en-CA');
-
-      // Get local timezone abbreviation
-      let tzAbbr =
-        new Intl.DateTimeFormat('en', {
-          timeZoneName: 'short',
-        })
-          .formatToParts(date)
-          .find(part => part.type === 'timeZoneName')?.value || '';
-
-      return `${formattedDate} ${tzAbbr}`;
-    }
-  }
   // Export function to get display text for current selection
   export function getDisplayText(): string {
     let selection = timeContext.selection;
@@ -302,7 +246,7 @@
     }
 
     // For custom ranges, show the actual time range
-    return formatTimeRange(selection.start, selection.end);
+    return formatDateTimeRange(selection.start, selection.end, timezone);
   }
 </script>
 
@@ -432,7 +376,7 @@
                 {:else}
                   <div class="w-4 h-4"></div>
                 {/if}
-                <span>{formatTimeRange(entry.start, entry.end)}</span>
+                <span>{formatDateTimeRange(entry.start, entry.end, timezone)}</span>
                 <div class="w-4 h-4"></div>
               </button>
             {/each}
@@ -443,9 +387,15 @@
 
     <!-- Bottom - Timezone Selector -->
     <div class="mt-3 pt-4 border-t border-base-300">
-      <div class="flex items-center justify-between">
+      <button
+        class="w-full flex items-center justify-between hover:bg-base-200 transition-colors rounded p-2"
+        onclick={() =>
+          timeContext.setTimezone(timezone === 'UTC' ? 'local' : 'UTC')}
+      >
         <div class="text-sm text-base-content/80">
-          {timezone === 'UTC' ? 'Coordinated Universal Time UTC' : 'Local Time'}
+          {timezone === 'UTC'
+            ? 'Coordinated Universal Time UTC'
+            : getLocalTimezoneName()}
         </div>
         <div class="flex items-center gap-2">
           <span class="text-sm text-base-content/60">
@@ -465,7 +415,7 @@
             ></path>
           </svg>
         </div>
-      </div>
+      </button>
     </div>
   </div>
 </div>
