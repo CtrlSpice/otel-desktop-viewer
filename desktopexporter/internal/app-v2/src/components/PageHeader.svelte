@@ -17,20 +17,30 @@
     onFiltersChange?: ((filters: TelemetryFilters) => void) | null;
   } = $props();
 
-  // Get time context
-  let timeContext = getTimeContext();
-
+  let showDateTimeDrawer = $state(false);
   let showFiltersDrawer = $state(false);
   let showFieldsDrawer = $state(false);
-  
-  let showDateTimeDrawer = $state(false);
+
   let dateTimeFilterRef: any = $state();
 
+  // Get time context to listen for changes
+  let timeContext = getTimeContext();
+  
+  // Track selection changes with derived rune
+  let currentSelection = $derived(timeContext.selection);
+  let previousSelection = $state<string | null>(null);
+  
   $effect(() => {
-  if (showDateTimeDrawer && dateTimeFilterRef) {
-    dateTimeFilterRef.onOpen();
-  }
-});
+    let currentSelectionString = JSON.stringify($state.snapshot(currentSelection));
+    console.log('Selection changed:', $state.snapshot(currentSelection));
+    
+    // Close drawer if selection actually changed and drawer is open
+    if (previousSelection && previousSelection !== currentSelectionString && showDateTimeDrawer) {
+      showDateTimeDrawer = false;
+    }
+    
+    previousSelection = currentSelectionString;
+  });
 
   // Handle attribute filter changes
   function handleAttributesChange(attributes: any[]) {
@@ -52,13 +62,6 @@
     onFiltersChange?.(newFilters);
   }
 
-  // Handle datetime drawer opening
-  function handleDateTimeDrawerToggle() {
-    showDateTimeDrawer = !showDateTimeDrawer;
-    if (showDateTimeDrawer && dateTimeFilterRef) {
-      dateTimeFilterRef.onOpen();
-    }
-  }
 
 </script>
 
@@ -95,7 +98,7 @@
     <!-- Time Filter Button -->
     <button
       class="input input-bordered input-sm flex items-center gap-2"
-      onclick={handleDateTimeDrawerToggle}
+      onclick={() => (showDateTimeDrawer = !showDateTimeDrawer)}
     >
       <svg
         class="w-4 h-4"

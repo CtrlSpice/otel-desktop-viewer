@@ -182,6 +182,32 @@ type TimeSelection =
 
 - **Status**: Pending discussion
 
+## 6. Desktop Layout Considerations for DateTimeFilter
+
+### Current Layout
+- **Desktop Application**: Three-column horizontal layout optimized for desktop use
+  - Left: Preset time ranges (Last 5 minutes, Last hour, etc.)
+  - Middle: Custom time range inputs (start/end text fields)
+  - Right: Recently used time ranges
+  - Bottom: Timezone selector
+
+### Desktop-Specific Considerations
+- **Window Resizing**: Handle different desktop window sizes gracefully
+- **Keyboard Navigation**: Ensure full keyboard accessibility for desktop users
+- **Mouse Interactions**: Optimize hover states and click targets for mouse use
+- **Screen Real Estate**: Make efficient use of available desktop space
+
+### Layout Optimization
+- **Minimum Width**: Ensure component works well in smaller desktop windows
+- **Flexible Sizing**: Allow sections to resize proportionally
+- **Overflow Handling**: Gracefully handle content that exceeds available space
+- **Focus Management**: Proper focus handling for keyboard users
+
+### Implementation Notes
+- Focus on desktop-appropriate responsive breakpoints (e.g., `lg:`, `xl:`)
+- Ensure adequate spacing and touch targets for desktop interaction
+- Consider multi-monitor setups and various desktop resolutions
+
 ## Next Steps
 
 Continue discussing remaining aspects before implementation.

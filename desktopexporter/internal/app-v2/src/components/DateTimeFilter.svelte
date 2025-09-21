@@ -1,58 +1,48 @@
 <script lang="ts">
   import * as chrono from 'chrono-node';
   import { getTimeContext } from '../contexts/time-context.svelte';
-  import { 
-    formatDateTime, 
-    formatDateTimeRange, 
+  import {
+    formatDateTime,
+    formatDateTimeRange,
     getLocalTimezoneName,
-    type Timezone
   } from '../utils/time';
 
   // Get time context
-  let timeContext = getTimeContext();
-  if (!timeContext) {
+  let ctx = getTimeContext();
+  if (!ctx) {
     throw new Error(
       'Time context not found. Make sure createTimeContext() is called at the root level.'
     );
   }
 
-  export function onOpen() {
-    // Get fresh time context
-    let timeContext = getTimeContext();
-    if (!timeContext) {
+  $effect(() => {
+    if (!ctx) {
       throw new Error('Time context not found');
     }
-    
+
+    // Load recent ranges
     let saved = localStorage.getItem('datetime-filter-recent');
     if (saved) {
       recentTimeRanges = JSON.parse(saved);
     } else {
       recentTimeRanges = [];
     }
-    
-    switch (timeContext.selection.type) {
-      case 'preset':
-        presetIndex = timeContext.selection.presetIndex;
-        break;
-      case 'custom':
-        customStartText = formatDateTime(
-          timeContext.selection.start,
-          timeContext.timezone,
-          'seconds'
-        );
-        customEndText = formatDateTime(
-          timeContext.selection.end,
-          timeContext.timezone,
-          'seconds'
-        );
-        customError = null;
-        break;
-      case 'recent':
-        // No additional setup needed here
-        break;
+
+    // Only populate draft text fields for custom mode
+    if (ctx.selection.type === 'custom') {
+      customStartText = formatDateTime(
+        ctx.selection.start,
+        ctx.timezone,
+        'seconds'
+      );
+      customEndText = formatDateTime(
+        ctx.selection.end,
+        ctx.timezone,
+        'seconds'
+      );
+      customError = null;
     }
-    timezone = timeContext.timezone;
-  }
+  });
 
   // ===== PRESET TIME RANGES =====
   const PRESETS = [
@@ -67,9 +57,6 @@
     { label: 'Show all', duration: undefined },
   ] as const;
 
-  // Preset time range index
-  let presetIndex = $state<number | null>(null);
-
   function applyPreset(index: number) {
     let start = 0;
     let now = Date.now();
@@ -80,12 +67,13 @@
       start = now - preset.duration;
     }
 
-    timeContext.setSelection(start, now, 'preset', index);
+    ctx.setSelection(start, now, 'preset', index);
   }
+
 
   // ===== CUSTOM TIME RANGE =====
   let customStartText = $state('');
-  let customEndText = $state('');
+  let customEndText = $state('now');
   let customError = $state<string | null>(null);
 
   type ValidationResult =
@@ -158,9 +146,9 @@
     updateRecentRanges(validation.start, validation.end, now);
 
     // Set selection in time context
-    timeContext.setSelection(validation.start, validation.end, 'custom');
+    ctx.setSelection(validation.start, validation.end, 'custom');
   }
-
+  
   // ===== RECENT TIME RANGES =====
   interface RecentTimeRange {
     start: number;
@@ -208,11 +196,8 @@
     updateRecentRanges(entry.start, entry.end, now);
 
     // Then: Update the time context
-    timeContext.setSelection(entry.start, entry.end, 'recent');
+    ctx.setSelection(entry.start, entry.end, 'recent');
   }
-
-  // ===== TIMEZONE =====
-  let timezone = $state<Timezone>('local');
 
   // ===== FORMATTING AND UTILITY FUNCTIONS =====
   function parseNaturalLanguage(text: string): ParseResult {
@@ -235,18 +220,16 @@
     }
   }
 
-
   // Export function to get display text for current selection
   export function getDisplayText(): string {
-    let selection = timeContext.selection;
 
     // If it's a preset, show the preset name
-    if (selection.type === 'preset') {
-      return PRESETS[selection.presetIndex].label;
+    if (ctx.selection.type === 'preset') {
+      return PRESETS[ctx.selection.presetIndex].label;
     }
 
     // For custom ranges, show the actual time range
-    return formatDateTimeRange(selection.start, selection.end, timezone);
+    return formatDateTimeRange(ctx.selection.start, ctx.selection.end, ctx.timezone);
   }
 </script>
 
@@ -263,7 +246,7 @@
               class="w-full text-left px-2 py-1 text-sm hover:bg-base-200 transition-colors flex items-center gap-2"
               onclick={() => applyPreset(index)}
             >
-              {#if presetIndex === index}
+              {#if ctx.selection.type === 'preset' && ctx.selection.presetIndex === index}
                 <svg
                   class="w-4 h-4 text-primary"
                   fill="currentColor"
@@ -361,7 +344,7 @@
                 class="w-full text-left px-2 py-1 text-sm hover:bg-base-200 transition-colors flex items-center gap-2"
                 onclick={() => applyRecentTimeRange(index)}
               >
-                {#if index === 0 && timeContext.selection.type === 'recent'}
+               {#if ctx.selection.type === 'recent' && index === 0}
                   <svg
                     class="w-4 h-4 text-primary"
                     fill="currentColor"
@@ -376,7 +359,9 @@
                 {:else}
                   <div class="w-4 h-4"></div>
                 {/if}
-                <span>{formatDateTimeRange(entry.start, entry.end, timezone)}</span>
+                <span
+                  >{formatDateTimeRange(entry.start, entry.end, ctx.timezone)}</span
+                >
                 <div class="w-4 h-4"></div>
               </button>
             {/each}
@@ -389,17 +374,18 @@
     <div class="mt-3 pt-4 border-t border-base-300">
       <button
         class="w-full flex items-center justify-between hover:bg-base-200 transition-colors rounded p-2"
-        onclick={() =>
-          timeContext.setTimezone(timezone === 'UTC' ? 'local' : 'UTC')}
+        onclick={() => {
+          ctx.setTimezone(ctx.timezone === 'UTC' ? 'local' : 'UTC');
+        }}
       >
         <div class="text-sm text-base-content/80">
-          {timezone === 'UTC'
+          {ctx.timezone === 'UTC'
             ? 'Coordinated Universal Time UTC'
             : getLocalTimezoneName()}
         </div>
         <div class="flex items-center gap-2">
           <span class="text-sm text-base-content/60">
-            {timezone === 'UTC' ? 'UTC+0' : 'Local'}
+            {ctx.timezone === 'UTC' ? 'UTC+0' : 'Local'}
           </span>
           <svg
             class="w-4 h-4 text-base-content/60"

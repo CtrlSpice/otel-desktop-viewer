@@ -29,16 +29,24 @@ interface TimeContext {
 
 // Create the time context with Svelte 5 runes
 function createTimeContext(): TimeContext {
+  // Load from localStorage
+  let savedSelection = localStorage.getItem('time-selection');
+  let savedTimezone = localStorage.getItem('time-timezone') as Timezone | null;
+
   // Time selection state
-  let selection = $state<TimeSelection>({
-    start: 0, // Beginning of time
-    end: Date.now(),
-    type: 'preset',
-    presetIndex: 8, // "Show all" is index 8 in the PRESETS array
-  });
+  let selection = $state<TimeSelection>(
+    savedSelection
+      ? JSON.parse(savedSelection)
+      : {
+          start: 0, // Beginning of time
+          end: Date.now(),
+          type: 'preset',
+          presetIndex: 8, // "Show all" is index 8 in the PRESETS array
+        }
+  );
 
   // Timezone state
-  let timezone = $state<Timezone>('local');
+  let timezone = $state<Timezone>(savedTimezone || 'local');
 
   // Set time selection
   function setSelection(
@@ -72,7 +80,6 @@ function createTimeContext(): TimeContext {
     }
     // Save after updating
     localStorage.setItem('time-selection', JSON.stringify(selection));
-    console.log('Selection updated to:', selection);
   }
 
   // Set timezone
@@ -82,9 +89,21 @@ function createTimeContext(): TimeContext {
     localStorage.setItem('time-timezone', newTimezone);
   }
 
+  // Create reactive context object
+  let contextObject = {
+    get selection() {
+      return selection;
+    },
+    get timezone() {
+      return timezone;
+    },
+    setSelection,
+    setTimezone,
+  };
+
   // Set context for child components
-  setContext('time', { selection, timezone, setSelection, setTimezone });
-  return { selection, timezone, setSelection, setTimezone };
+  setContext('time', contextObject);
+  return contextObject;
 }
 
 // Get context in child components

@@ -135,10 +135,10 @@ export function formatDateTimeRange(
 
   if (isSameDay) {
     // Same day: "2024-01-15 14:30:45 - 15:45:30 UTC"
-    return `${startStr} - ${endParts[1]}${timezoneSuffix}`;
+    return `${startStr} - ${endParts[1]} ${timezoneSuffix}`;
   } else {
     // Different days: "2024-01-15 14:30:45 - 2024-01-16 09:15:30 UTC"
-    return `${startStr} - ${endStr}${timezoneSuffix}`;
+    return `${startStr} - ${endStr} ${timezoneSuffix}`;
   }
 }
 
