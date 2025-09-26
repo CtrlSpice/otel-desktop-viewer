@@ -121,6 +121,11 @@ export function formatDateTimeRange(
   end: number,
   timezone: Timezone
 ): string {
+  // Handle "Show all" case where start is 0 (beginning of time)
+  if (start === 0) {
+    return `Before ${formatDateTime(end, timezone, 'seconds')}`;
+  }
+
   let startStr = formatDateTime(start, timezone, 'seconds');
   let endStr = formatDateTime(end, timezone, 'seconds');
 

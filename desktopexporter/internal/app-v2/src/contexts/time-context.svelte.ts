@@ -29,7 +29,6 @@ interface TimeContext {
 
 // Create the time context with Svelte 5 runes
 function createTimeContext(): TimeContext {
-  // Load from localStorage
   let savedSelection = localStorage.getItem('time-selection');
   let savedTimezone = localStorage.getItem('time-timezone') as Timezone | null;
 
@@ -38,10 +37,10 @@ function createTimeContext(): TimeContext {
     savedSelection
       ? JSON.parse(savedSelection)
       : {
-          start: 0, // Beginning of time
+          start: 0,
           end: Date.now(),
           type: 'preset',
-          presetIndex: 8, // "Show all" is index 8 in the PRESETS array
+          presetIndex: 9, // "Show all" is index 9 in the PRESETS array
         }
   );
 
@@ -78,14 +77,12 @@ function createTimeContext(): TimeContext {
         };
         break;
     }
-    // Save after updating
     localStorage.setItem('time-selection', JSON.stringify(selection));
   }
 
   // Set timezone
   function setTimezone(newTimezone: Timezone) {
     timezone = newTimezone;
-    // Save timezone separately
     localStorage.setItem('time-timezone', newTimezone);
   }
 

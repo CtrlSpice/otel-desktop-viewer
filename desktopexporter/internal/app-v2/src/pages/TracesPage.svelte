@@ -45,7 +45,7 @@
 </script>
 
 <!-- TracesPage.svelte - Traces list and visualization page -->
-<div class="flex flex-col w-full overflow-y-auto p-8">
+<div class="flex flex-col w-full overflow-y-auto p-4">
   <!-- Page Header -->
   <PageHeader 
     title="Traces"

@@ -23,39 +23,51 @@
 - **Storage Format**: Normalize to Unix timestamps (milliseconds) for consistency
 - **Benefits**: Avoids timezone confusion, easier calculations, universal format
 
-## Implementation Plan
+## Implementation Plan ✅ COMPLETED
 
-### Step 1: Create Time Store
+### ✅ Step 1: Create Reactive Context (Replaced Time Store)
 
-- Create `src/stores/time-store.ts` with Svelte store
-- Store current time selection as Unix timestamps
-- Store recent entries array (max 10, sorted by most recent)
-- Persist to localStorage with debounced writes
+- Created `src/contexts/time-context.svelte.ts` with Svelte 5 runes
+- Uses `$state` for reactive time selection and timezone
+- Stores current selection as Unix timestamps with discriminated union types
+- Persists to localStorage on every change
+- **Key Innovation**: Context object uses getters to maintain reactivity across components
 
-### Step 2: Update DateTimeFilter
+### ✅ Step 2: Update DateTimeFilter
 
-- Remove internal state management
-- Use time store for current selection
-- Dispatch events for preset/custom/recent selections
-- Update display text to use store data
+- Replaced `onOpen()` function with reactive `$effect()`
+- Uses context as single source of truth for display
+- Maintains local draft state only for custom input fields
+- Automatically syncs with context changes via reactive updates
+- Eliminates intermediate state variables
 
-### Step 3: Update PageHeader
+### ✅ Step 3: Update PageHeader
 
-- Listen to time store changes
-- Update button text reactively
-- Handle timezone changes
+- Uses `$derived(timeContext.selection)` to track context changes
+- Auto-closes drawer when meaningful selections are made
+- Updates button text reactively based on context
+- Proper timezone change handling
 
-### Step 4: Update Pages
+### ✅ Step 4: Recently Used Implementation
 
-- TracesPage, MetricsPage, LogsPage use time store
-- Remove individual time state management
-- Coordinate time across all signals
+- Integrated with DateTimeFilter component
+- Stores in localStorage with 10-item limit
+- Automatic deduplication and sorting by most recent
+- Shows checkmark for current recent selection
 
-### Step 5: Recently Used Implementation
+### ✅ Step 5: Context Reactivity Solution
 
-- Add recent entries to time store
-- Populate "Recently used" section
-- Handle deduplication and limits
+- **Problem**: Context object wasn't reactive across component boundaries
+- **Solution**: Used getter functions in context object:
+  ```typescript
+  let contextObject = {
+    get selection() { return selection; },
+    get timezone() { return timezone; },
+    setSelection,
+    setTimezone,
+  };
+  ```
+- **Result**: Components can use `$derived(timeContext.selection)` for proper reactivity
 
 ## TypeScript Syntax Explanation
 

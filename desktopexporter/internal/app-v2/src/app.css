@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global minimum width for the app */
+body {
+  min-width: 500px;
+}
+
 /* Global button styles */
 .btn {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

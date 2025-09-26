@@ -1,9 +1,10 @@
 <script lang="ts">
-  import DateTimeFilter from './DateTimeFilter.svelte';
+  import DateTimeFilter from './filters/datetime/DateTimeFilter.svelte';
   import AttributeFilter from './AttributeFilter.svelte';
   import FieldsFilter from './FieldsFilter.svelte';
-  import { getTimeContext } from '../contexts/time-context.svelte';
-  import type { TelemetryFilters } from '../types/filter-types';
+  import { getTimeContext } from '@/contexts/time-context.svelte';
+  import type { TelemetryFilters } from '@/types/filter-types';
+  import { formatDateTimeRange } from '@/utils/time';
 
   let { 
     title, 
@@ -20,8 +21,6 @@
   let showDateTimeDrawer = $state(false);
   let showFiltersDrawer = $state(false);
   let showFieldsDrawer = $state(false);
-
-  let dateTimeFilterRef: any = $state();
 
   // Get time context to listen for changes
   let timeContext = getTimeContext();
@@ -41,6 +40,15 @@
     
     previousSelection = currentSelectionString;
   });
+
+  // Get display text for current time selection - always show absolute time range
+  function getDisplayText(ctx: any): string {
+    if (!ctx?.selection) {
+      return 'Select time range';
+    }
+
+    return formatDateTimeRange(ctx.selection.start, ctx.selection.end, ctx.timezone);
+  }
 
   // Handle attribute filter changes
   function handleAttributesChange(attributes: any[]) {
@@ -96,8 +104,30 @@
   <!-- Control Row -->
   <div class="flex items-center gap-4">
     <!-- Time Filter Button -->
+    <div class="tooltip tooltip-bottom tooltip-bottom-right md:hidden" data-tip="{getDisplayText(timeContext)}">
+      <button
+        class="btn btn-circle btn-sm md:hidden"
+        onclick={() => (showDateTimeDrawer = !showDateTimeDrawer)}
+        aria-label="Time Filter"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+          ></path>
+        </svg>
+      </button>
+    </div>
+    
     <button
-      class="input input-bordered input-sm flex items-center gap-2"
+      class="input input-bordered input-sm items-center gap-2 hidden md:inline-flex"
       onclick={() => (showDateTimeDrawer = !showDateTimeDrawer)}
     >
       <svg
@@ -113,7 +143,7 @@
           d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
         ></path>
       </svg>
-      <span>{dateTimeFilterRef?.getDisplayText() || 'Select time range'}</span>
+      <span>{getDisplayText(timeContext)}</span>
       <svg
         class="w-3 h-3 transition-transform duration-200 {showDateTimeDrawer
           ? 'rotate-180'
@@ -159,8 +189,30 @@
     </div>
 
     <!-- Filters Button -->
+    <div class="tooltip tooltip-bottom md:hidden" data-tip="Filters">
+      <button
+        class="btn btn-circle btn-sm md:hidden"
+        onclick={() => (showFiltersDrawer = !showFiltersDrawer)}
+        aria-label="Filters"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+          ></path>
+        </svg>
+      </button>
+    </div>
+    
     <button
-      class="input input-bordered input-sm flex items-center gap-2"
+      class="input input-bordered input-sm items-center gap-2 hidden md:inline-flex"
       onclick={() => (showFiltersDrawer = !showFiltersDrawer)}
     >
       <svg
@@ -195,8 +247,30 @@
     </button>
 
     <!-- Fields View Button -->
+    <div class="tooltip tooltip-bottom md:hidden" data-tip="Fields">
+      <button
+        class="btn btn-circle btn-sm md:hidden"
+        onclick={() => (showFieldsDrawer = !showFieldsDrawer)}
+        aria-label="Fields"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"
+          ></path>
+        </svg>
+      </button>
+    </div>
+    
     <button
-      class="input input-bordered input-sm flex items-center gap-2"
+      class="input input-bordered input-sm items-center gap-2 hidden md:inline-flex"
       onclick={() => (showFieldsDrawer = !showFieldsDrawer)}
     >
       <svg
@@ -233,14 +307,14 @@
 
   <!-- DateTime Drawer -->
   {#if showDateTimeDrawer}
-    <div class="bg-base-100 border border-base-300 rounded p-4">
-      <DateTimeFilter bind:this={dateTimeFilterRef} />
+    <div class="bg-base-100 border border-base-300 py-2 rounded">
+      <DateTimeFilter />
     </div>
   {/if}
 
   <!-- Filters Drawer -->
   {#if showFiltersDrawer}
-    <div class="bg-base-100 border border-base-300 rounded p-4">
+    <div class="bg-base-100 border border-base-300 py-2 rounded">
       <AttributeFilter
         attributes={filters.attributes || []}
         onAttributesChange={handleAttributesChange}
@@ -248,10 +322,21 @@
     </div>
   {/if}
 
-  <!-- Fields Drawer -->
-  {#if showFieldsDrawer}
-    <div class="bg-base-100 border border-base-300 rounded p-4">
-      <FieldsFilter />
-    </div>
-  {/if}
+    <!-- Fields Drawer -->
+    {#if showFieldsDrawer}
+      <div class="bg-base-100 border border-base-300 py-2 rounded">
+        <FieldsFilter />
+      </div>
+    {/if}
 </div>
+
+<style>
+  /* Custom tooltip positioning for bottom-right */
+.tooltip-bottom-right {
+  position: relative;
+}
+
+.tooltip-bottom-right::before {
+  transform: translateX(-10px) !important;
+}
+</style>

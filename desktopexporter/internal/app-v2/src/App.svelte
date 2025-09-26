@@ -16,7 +16,7 @@
 
 <main class="min-h-screen bg-base-100 transition-colors duration-300">
   <HorizontalNav />
-  <div class="container mx-auto p-8 pt-20">
+  <div class="container mx-auto p-4 pt-20">
     <!-- Router: Show different pages based on current route -->
     <Route path="/">
       <HomePage />
