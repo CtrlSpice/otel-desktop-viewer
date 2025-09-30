@@ -233,12 +233,13 @@ const (
             CASE WHEN s.ParentSpanID = '' THEN s.EndTime END as end_time,
             COUNT(*) OVER (PARTITION BY s.TraceID) as span_count
         FROM spans s
-        ORDER BY 
+        ORDER BY
             COALESCE(
                 MIN(CASE WHEN s.ParentSpanID = '' THEN s.StartTime END) OVER (PARTITION BY s.TraceID),
                 MIN(s.StartTime) OVER (PARTITION BY s.TraceID)
             ) DESC,
-            s.TraceID
+            s.TraceID,
+            CASE WHEN s.ParentSpanID = '' THEN 0 ELSE 1 END
     `
 
 	// SelectTrace retrieves spans in hierarchical order with depth information
