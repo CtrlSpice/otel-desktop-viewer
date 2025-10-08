@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getTimeContext } from '@/contexts/time-context.svelte';
-  import '@/components/filters/filters.css';
+  import '@/components/PageHeader/PageHeader.css';
 
   // Get time context
   let ctx = getTimeContext();

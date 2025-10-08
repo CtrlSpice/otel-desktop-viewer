@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte"
-  import { telemetryAPI } from "../services/telemetry-service"
-  import type { LogData } from "../types/api-types"
+  import { telemetryAPI } from "@/services/telemetry-service"
+  import type { LogData } from "@/types/api-types"
 
   let logs: LogData[] = []
   let loading = true

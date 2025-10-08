@@ -1,5 +1,5 @@
 import { setContext, getContext } from 'svelte';
-import type { Timezone } from '../utils/time';
+import type { Timezone } from '@/utils/time';
 
 // Base interface with common fields
 interface BaseTimeSelection {

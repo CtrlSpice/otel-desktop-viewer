@@ -6,7 +6,7 @@
     Chart03Icon,
     File01Icon,
   } from "@hugeicons/core-free-icons"
-  import ThemeToggle from "./ThemeToggle.svelte"
+  import ThemeToggle from "@/components/ThemeToggle.svelte"
   import { router } from "tinro5"
 
   // Navigation items

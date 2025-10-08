@@ -1,11 +1,11 @@
 <script lang="ts">
-  import HorizontalNav from './components/HorizontalNav.svelte';
-  import HomePage from './pages/HomePage.svelte';
-  import MetricsPage from './pages/MetricsPage.svelte';
-  import LogsPage from './pages/LogsPage.svelte';
-  import TracesPage from './pages/TracesPage.svelte';
+  import HorizontalNav from '@/components/HorizontalNav.svelte';
+  import HomePage from '@/pages/HomePage.svelte';
+  import MetricsPage from '@/pages/MetricsPage.svelte';
+  import LogsPage from '@/pages/LogsPage.svelte';
+  import TracesPage from '@/pages/TracesPage.svelte';
   import { Route, router } from 'tinro5';
-  import { createTimeContext } from './contexts/time-context.svelte';
+  import { createTimeContext } from '@/contexts/time-context.svelte';
   
   // Create the time context at the root level
   createTimeContext();

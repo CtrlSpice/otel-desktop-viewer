@@ -1,4 +1,4 @@
-import { PreciseTimestamp } from './precise-timestamp';
+import { PreciseTimestamp } from '@/types/precise-timestamp';
 
 export type RootSpan = {
   serviceName: string;

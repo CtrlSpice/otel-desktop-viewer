@@ -135,6 +135,21 @@
       ? 'selection-indicator--active'
       : ''}"
   >
+    <svg
+      class="w-4 h-4 mr-2"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <g stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5">
+        <path
+          d="M16 2v4M8 2v4m13 6c0-3.771 0-5.657-1.172-6.828S16.771 4 13 4h-2C7.229 4 5.343 4 4.172 5.172S3 8.229 3 12v2c0 3.771 0 5.657 1.172 6.828S7.229 22 11 22M3 10h18"
+        />
+        <path
+          d="M18.267 18.701L17 18v-1.733M21 18a4 4 0 1 1-8 0a4 4 0 0 1 8 0"
+        />
+      </g>
+    </svg>
     Custom Time Range
   </div>
 

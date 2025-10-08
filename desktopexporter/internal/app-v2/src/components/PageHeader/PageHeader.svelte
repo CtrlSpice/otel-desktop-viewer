@@ -1,9 +1,7 @@
 <script lang="ts">
   import DateTimeFilter from './filters/datetime/DateTimeFilter.svelte';
-  import FieldsFilter from './FieldsFilter.svelte';
-  import SearchInput from './filters/search/SearchInput.svelte';
-  import { getTimeContext } from '@/contexts/time-context.svelte';
-  import { formatDateTimeRange } from '@/utils/time';
+  import FieldsFilter from './filters/fields/FieldsFilter.svelte';
+  import SearchInput from './search/SearchInput.svelte';
 
   let {
     signal,
@@ -15,45 +13,7 @@
     onRefresh?: (() => void) | null;
   } = $props();
 
-  let showDateTimeDrawer = $state(false);
   let showFieldsDrawer = $state(false);
-
-  // Get time context to listen for changes
-  let timeContext = getTimeContext();
-
-  // Track selection changes with derived rune
-  let currentSelection = $derived(timeContext.selection);
-  let previousSelection = $state<string | null>(null);
-
-  $effect(() => {
-    let currentSelectionString = JSON.stringify(
-      $state.snapshot(currentSelection)
-    );
-
-    // Close drawer if selection actually changed and drawer is open
-    if (
-      previousSelection &&
-      previousSelection !== currentSelectionString &&
-      showDateTimeDrawer
-    ) {
-      showDateTimeDrawer = false;
-    }
-
-    previousSelection = currentSelectionString;
-  });
-
-  // Get display text for current time selection - always show absolute time range
-  function getDisplayText(ctx: any): string {
-    if (!ctx?.selection) {
-      return 'Select time range';
-    }
-
-    return formatDateTimeRange(
-      ctx.selection.start,
-      ctx.selection.end,
-      ctx.timezone
-    );
-  }
 </script>
 
 <!-- Page Header Component -->
@@ -88,66 +48,8 @@
 
   <!-- Control Row -->
   <div class="flex items-center gap-4">
-    <!-- Time Filter Button -->
-    <div
-      class="tooltip tooltip-bottom tooltip-bottom-right md:hidden"
-      data-tip={getDisplayText(timeContext)}
-    >
-      <button
-        class="btn btn-circle btn-sm md:hidden"
-        onclick={() => (showDateTimeDrawer = !showDateTimeDrawer)}
-        aria-label="Time Filter"
-      >
-        <svg
-          class="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-          ></path>
-        </svg>
-      </button>
-    </div>
-
-    <button
-      class="input input-bordered input-sm items-center gap-2 hidden md:inline-flex text-xs"
-      onclick={() => (showDateTimeDrawer = !showDateTimeDrawer)}
-    >
-      <svg
-        class="w-4 h-4"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-        ></path>
-      </svg>
-      <span>{getDisplayText(timeContext)}</span>
-      <svg
-        class="w-3 h-3 transition-transform duration-200 {showDateTimeDrawer
-          ? 'rotate-180'
-          : ''}"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M19 9l-7 7-7-7"
-        ></path>
-      </svg>
-    </button>
+    <!-- DateTime Filter -->
+    <DateTimeFilter />
 
     <!-- Search Bar -->
     <SearchInput {signal} {view} />
@@ -211,13 +113,6 @@
     </button>
   </div>
 
-  <!-- DateTime Drawer -->
-  {#if showDateTimeDrawer}
-    <div class="bg-base-100 border border-base-300 py-2 rounded">
-      <DateTimeFilter />
-    </div>
-  {/if}
-
   <!-- Fields Drawer -->
   {#if showFieldsDrawer}
     <div class="bg-base-100 border border-base-300 py-2 rounded">
@@ -225,14 +120,3 @@
     </div>
   {/if}
 </div>
-
-<style>
-  /* Custom tooltip positioning for bottom-right */
-  .tooltip-bottom-right {
-    position: relative;
-  }
-
-  .tooltip-bottom-right::before {
-    transform: translateX(-10px) !important;
-  }
-</style>

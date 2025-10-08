@@ -1,10 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte"
-  import { telemetryAPI } from "../services/telemetry-service"
-  import { createTimeContext } from "../contexts/time-context.svelte"
-  import type { TraceSummary } from "../types/api-types"
-  import type { TraceFilters } from "../types/filter-types"
-  import PageHeader from "../components/PageHeader.svelte"
+  import { telemetryAPI } from "@/services/telemetry-service"
+  import { createTimeContext } from "@/contexts/time-context.svelte"
+  import type { TraceSummary } from "@/types/api-types"
+  import PageHeader from "@/components/PageHeader/PageHeader.svelte"
 
   // Create time context for this page
   let timeContext = createTimeContext();
@@ -12,19 +11,6 @@
   let traceSummaries: TraceSummary[] = []
   let loading = true
   let error: string | null = null
-
-  // Filter state
-  let filters: TraceFilters = {
-    search: "",
-    serviceName: [],
-    attributes: []
-  }
-
-  // Handle filter changes from PageHeader
-  function handleFiltersChange(newFilters: TraceFilters) {
-    filters = newFilters
-    // TODO: Apply filters to API call
-  }
 
   function handleRefresh() {
     // TODO: Implement refresh logic
@@ -48,10 +34,9 @@
 <div class="flex flex-col w-full overflow-y-auto p-4">
   <!-- Page Header -->
   <PageHeader 
-    title="Traces"
-    {filters}
+    signal="traces"
+    view="list"
     onRefresh={handleRefresh}
-    onFiltersChange={handleFiltersChange}
   />
       {#if loading}
         <div class="flex justify-center items-center py-8">

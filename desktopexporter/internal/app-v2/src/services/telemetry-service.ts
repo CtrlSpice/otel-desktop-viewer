@@ -11,8 +11,8 @@ import type {
   HistogramDataPoint,
   ExponentialHistogramDataPoint,
   DataPoints,
-} from '../types/api-types';
-import { PreciseTimestamp } from '../types/precise-timestamp';
+} from '@/types/api-types';
+import { PreciseTimestamp } from '@/types/precise-timestamp';
 
 // JSON-RPC Client
 interface JsonRpcRequest {

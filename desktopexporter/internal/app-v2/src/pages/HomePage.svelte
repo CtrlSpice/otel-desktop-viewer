@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { telemetryAPI } from "../services/telemetry-service"
+  import { telemetryAPI } from "@/services/telemetry-service"
   import { HugeiconsIcon } from "@hugeicons/svelte"
   import {
     BarChartHorizontalIcon,
@@ -9,7 +9,7 @@
     Delete01Icon,
   } from "@hugeicons/core-free-icons"
   import { onMount } from "svelte"
-  import CodeBlock from "../components/CodeBlock.svelte"
+  import CodeBlock from "@/components/CodeBlock.svelte"
 
   let sampleDataExists = false
   let loading = false
