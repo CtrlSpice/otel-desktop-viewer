@@ -46,13 +46,17 @@
     </h1>
   </div>
 
-  <!-- Control Row -->
+  <!-- Search Row -->
+  <div>
+    <SearchInput {signal} {view} />
+  </div>
+
+  <!-- Control Row: Hints, Time, Fields -->
   <div class="flex items-center gap-4">
     <!-- DateTime Filter -->
     <DateTimeFilter />
 
-    <!-- Search Bar -->
-    <SearchInput {signal} {view} />
+    
 
     <!-- Fields View Button -->
     <div class="tooltip tooltip-bottom md:hidden" data-tip="Fields">
@@ -75,6 +79,11 @@
           ></path>
         </svg>
       </button>
+
+      <!-- Hints (Empty for now) -->
+    <div class="flex-1">
+      <!-- TODO: Add hints here -->
+    </div>
     </div>
 
     <button

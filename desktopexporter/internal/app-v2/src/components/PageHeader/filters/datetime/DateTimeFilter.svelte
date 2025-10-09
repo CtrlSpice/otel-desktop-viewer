@@ -325,7 +325,6 @@
     position-anchor: --datetime-anchor;
     top: anchor(--datetime-anchor bottom);
     left: anchor(--datetime-anchor left);
-    width: anchor(--datetime-anchor width);
 
     /* Visual Styling */
     @apply min-w-96 text-base-content;
