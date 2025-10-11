@@ -4,7 +4,6 @@
   import PresetTimeRanges from './PresetTimeRanges.svelte';
   import CustomTimeRange from './CustomTimeRange.svelte';
   import RecentTimeRanges from './RecentTimeRanges.svelte';
-  import '@/components/PageHeader/PageHeader.css';
 
   // Get time context
   let ctx = getTimeContext();
@@ -146,7 +145,7 @@
 {/if}
 
 <!-- Popover Content -->
-<div id="datetime-popover" class="datetime-popover" popover="auto">
+<div id="datetime-popover" class="popover datetime-popover" popover="auto">
   {#if !isNarrow}
     <!-- Wide Layout: Three columns -->
     <div class="flex">
@@ -320,14 +319,16 @@
 <style>
   .datetime-popover {
     /* Layout & Positioning */
-    @apply bg-base-100 border border-base-300 rounded-md shadow-lg;
+    @apply dropdown-content;
     @apply px-0 py-2 mx-0 my-2;
     position-anchor: --datetime-anchor;
     top: anchor(--datetime-anchor bottom);
     left: anchor(--datetime-anchor left);
 
     /* Visual Styling */
-    @apply min-w-96 text-base-content;
+    @apply bg-base-100 rounded-md shadow-lg;
+    @apply border border-base-300 text-base-content;
+    @apply min-w-96;
   }
 
   .timezone-toggle {

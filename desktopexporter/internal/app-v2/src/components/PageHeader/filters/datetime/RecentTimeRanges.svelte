@@ -1,7 +1,6 @@
 <script lang="ts">
   import { getTimeContext } from '@/contexts/time-context.svelte';
   import { formatDateTimeRange } from '@/utils/time';
-  import '@/components/PageHeader/PageHeader.css';
 
   // Get time context
   let ctx = getTimeContext();
