@@ -17,7 +17,7 @@ Also, it has a dark mode.
 
 #### via Homebrew Cask
 ```bash
-brew install --cask ctrlspice/tap/otel-desktop-viewer
+brew install --cask ctrlspice/otel-desktop-viewer/otel-desktop-viewer
 ```
 
 #### via `go install`
