@@ -133,5 +133,10 @@ homebrew_casks:
     caveats: |
       To start the viewer, run:
         otel-desktop-viewer
-
-
+    # https://goreleaser.com/customization/homebrew_casks/#signing-and-notarizing
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/otel-desktop-viewer"]
+          end
