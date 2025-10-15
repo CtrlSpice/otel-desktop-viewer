@@ -11,11 +11,16 @@ export type Query = {
 
 export type LogicalOperator = 'AND' | 'OR';
 
+export const LOGICAL_OPERATORS = [
+  { operator: 'AND' as LogicalOperator, label: 'Add AND condition' },
+  { operator: 'OR' as LogicalOperator, label: 'Add OR condition' },
+] as const;
+
 export type QueryNode =
   | {
       id: string;
       type: 'condition';
-      condition: Query;
+      query: Query;
     }
   | {
       id: string;
@@ -32,22 +37,33 @@ export function generateId(): string {
   return `query-${++nextId}`;
 }
 
-// Add a new condition with logical operator
+// Add a new condition with optional logical operator
 export function addConditionToTree(
   queryTree: QueryNode | null,
   newCondition: Query,
-  operator: LogicalOperator
+  operator?: LogicalOperator
 ): QueryNode {
+  // Validate the new condition
+  // Note: We can have a condition without a predicate, but we need a value
+  if (!newCondition.value.trim()) {
+    throw new Error('Condition must have a value');
+  }
+
+  // First condition: We create a single condition node (no logical operator)
   if (!queryTree) {
     return {
       id: generateId(),
       type: 'condition',
-      condition: newCondition,
+      query: newCondition,
     };
   }
 
+  // Subsequent condition: We convert the single condition to a group
+  // and add the new condition to this group with the logical operator
   if (queryTree.type === 'condition') {
-    // Convert single condition to group
+    if (!operator) {
+      throw new Error('Use AND/OR to add conditions');
+    }
     return {
       id: generateId(),
       type: 'group',
@@ -55,19 +71,34 @@ export function addConditionToTree(
         operator,
         children: [
           queryTree,
-          { id: generateId(), type: 'condition', condition: newCondition },
+          { id: generateId(), type: 'condition', query: newCondition },
         ],
       },
     };
   } else {
-    // Add to existing group
-    queryTree.group!.children.push({
-      id: generateId(),
-      type: 'condition',
-      condition: newCondition,
-    });
-    queryTree.group!.operator = operator;
-    return queryTree;
+    // Adding a condition to an existing group
+    if (operator && operator !== queryTree.group!.operator) {
+      // Different operator: create new group structure
+      return {
+        id: generateId(),
+        type: 'group',
+        group: {
+          operator,
+          children: [
+            queryTree, // Wrap existing group
+            { id: generateId(), type: 'condition', query: newCondition },
+          ],
+        },
+      };
+    } else {
+      // Same operator or no operator: add to existing group
+      queryTree.group!.children.push({
+        id: generateId(),
+        type: 'condition',
+        query: newCondition,
+      });
+      return queryTree;
+    }
   }
 }
 
@@ -105,7 +136,9 @@ export function removeConditionFromTree(
 }
 
 // Get all condition nodes from a tree (for rendering)
-export function getAllConditions(queryTree: QueryNode | null): QueryNode[] {
+export function getAllConditions(
+  queryTree: QueryNode | null
+): Array<QueryNode & { type: 'condition' }> {
   if (!queryTree) return [];
 
   if (queryTree.type === 'condition') {

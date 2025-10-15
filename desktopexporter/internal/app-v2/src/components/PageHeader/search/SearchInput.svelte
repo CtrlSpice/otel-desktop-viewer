@@ -1,12 +1,14 @@
 <script lang="ts">
   import { getFieldsBySignal, type FieldDefinition } from '@/constants/fields';
-  import { type Operator } from '@/constants/operators';
-  import { 
-    type Query, 
-    type LogicalOperator, 
+  import {
+    type Query,
     type QueryNode,
+    type LogicalOperator,
     addConditionToTree,
     removeConditionFromTree,
+    getAllConditions,
+    getLogicalOperators,
+    LOGICAL_OPERATORS,
   } from './query-tree';
 
   let {
@@ -19,22 +21,97 @@
     placeholder?: string;
   } = $props();
 
-  // Multi-Query Building State
+  // Core search state
   let inputValue = $state(''); // The main input value
   let query = $state<Query | null>(null);
   let queryTree = $state<QueryNode | null>(null);
+  let pendingLogicalOperator = $state<LogicalOperator | null>(null);
 
-  // UI State
-  let showSuggestions = $state(false);
+  // Field suggestions state
   let fieldSuggestions = $state<FieldDefinition[]>([]);
+  let showSuggestions = $state(false);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Get available fields once at component creation
   const availableFields = getFieldsBySignal(signal, view);
 
-  // Effect to show/hide suggestions popover
+  //#region INPUT HANDLING
+  function handleInput(event: Event) {
+    const target = event.target as HTMLInputElement;
+    inputValue = target.value;
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      onSearch();
+    } else if (event.key === 'Backspace' && inputValue === '') {
+      // Delete in order: input → predicate → pending operator → conditions (right to left)
+      
+      // 1. If we have a predicate (field selected), remove it first
+      if (query?.predicate) {
+        resetPredicate();
+        return;
+      }
+      
+      // 2. If we have a pending logical operator, clear it
+      if (pendingLogicalOperator) {
+        pendingLogicalOperator = null;
+        return;
+      }
+      
+      // 3. If we have conditions in the tree, remove the last one
+      if (queryTree) {
+        const allConditions = getAllConditions(queryTree);
+        if (allConditions.length > 0) {
+          const lastCondition = allConditions[allConditions.length - 1];
+          queryTree = removeConditionFromTree(queryTree, lastCondition.id);
+        } else {
+          // No conditions left, reset the query
+          resetQuery();
+        }
+      } else {
+        // No tree, just reset the current query
+        resetQuery();
+      }
+    }
+  }
+
+  // React to inputValue changes with debounce
   $effect(() => {
-    const popover = document.getElementById('suggestions-popover');
+    // Clear existing debounce timer
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+
+    // Early exit for very short queries
+    if (inputValue.length < 2) {
+      fieldSuggestions = [];
+      showSuggestions = false;
+      return;
+    }
+    
+    // Debounce the suggestion logic
+    debounceTimer = setTimeout(() => {
+      // Check if input matches a known pattern (trace ID, span ID)
+      const patternFields = detectPatternFields(inputValue);
+      if (patternFields.length > 0) {
+        fieldSuggestions = patternFields;
+        showSuggestions = true;
+      } else if (!query?.predicate?.field) {
+        // No field selected yet: show field name suggestions
+        const fuzzyFields = fuzzyMatchFields(inputValue);
+        fieldSuggestions = fuzzyFields;
+        showSuggestions = fuzzyFields.length > 0;
+      } else {
+        // Field is selected: treat input as value
+        showSuggestions = false;
+      }
+    }, 150);
+  });
+
+  // Effect to show/hide field suggestions popover
+  $effect(() => {
+    const popover = document.getElementById('field-suggestions-popover');
     if (popover) {
       if (showSuggestions && fieldSuggestions.length > 0) {
         popover.showPopover();
@@ -43,80 +120,29 @@
       }
     }
   });
+  //#endregion
 
-  // Generate placeholder text based on signal
-  function getPlaceholderText(): string {
-    if (placeholder) return placeholder;
-    if (signal) return `Search ${signal}...`;
-    return 'Search...';
-  }
+  //#region PREDICATE MANAGEMENT
 
-  function handleInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    inputValue = target.value;
-
-    // Clear existing debounce timer
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
-
-    // Debounce the suggestion logic
-    debounceTimer = setTimeout(() => {
-      // Early exit for very short queries
-      if (inputValue.length < 2) {
-        showSuggestions = false;
-        fieldSuggestions = [];
-        return;
-      }
-
-      // 1. We check if input matches a known pattern (trace ID, span ID)
-      fieldSuggestions = detectPatternFields(inputValue);
-      if (fieldSuggestions.length > 0) {
-        // If no query yet, create one, otherwise update the existing one
-        // Note to Mila: the spread operator preserves an existing fieldOperator
-        // so things don't get wonky if the user types a field name first,
-        // then pastes a patterned value
-        query = !query
-          ? { value: inputValue }
-          : { ...query, value: inputValue };
-        showSuggestions = fieldSuggestions.length > 0;
-      } else if (!query?.predicate?.field) {
-        // No field selected yet: show field name suggestions
-        fieldSuggestions = fuzzyMatchFields(inputValue);
-        showSuggestions = fieldSuggestions.length > 0;
-      } else {
-        // Field is selected: treat input as value
-        query.value = inputValue;
-        showSuggestions = false;
-      }
-    }, 150);
-  }
-
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter') {
-      if (query) {
-        onSearch();
-      }
-    } else if (event.key === 'Backspace' && inputValue === '') {
-      // Reset on backspace when empty
-      resetQuery();
-    }
-  }
-
-  function acceptFieldSuggestion(field: FieldDefinition) {
-    showSuggestions = false;
+  // Select field for predicate
+  function selectField(field: FieldDefinition) {
+    // Update the current query with the selected field
     query = !query
       ? { predicate: { field, operator: field.operators[0] }, value: '' }
       : { ...query, predicate: { field, operator: field.operators[0] } };
 
+    // Update input value to show the field selection
     inputValue = query.value as string;
-    const popover = document.getElementById('suggestions-popover');
+
+    // Close the popover after selection
+    const popover = document.getElementById('field-suggestions-popover');
     if (popover) {
       popover.hidePopover();
     }
   }
 
-  function selectOperator(operator: Operator) {
+  // Select operator for predicate
+  function selectOperator(operator: any) {
     if (!query?.predicate) {
       return;
     }
@@ -131,27 +157,106 @@
     }
   }
 
-  function resetFieldOperator() {
+  // Reset predicate
+  function resetPredicate() {
     query = query ? { ...query, predicate: undefined } : null;
+  }
+  //#endregion
+
+  //#region LOGICAL OPERATORS
+
+  // Handle logical operator selection
+  function selectLogicalOperator(operator: LogicalOperator) {
+    if (!query) {
+      return;
+    }
+    try {
+      // Sync query.value with inputValue before adding to tree
+      syncQueryValue();
+      
+      queryTree = addConditionToTree(queryTree, query, pendingLogicalOperator || undefined);
+    } catch (error) {
+      console.error('Failed to add condition to tree:', error);
+      return;
+    }
+    
+    resetQuery();
+    pendingLogicalOperator = operator;
+
+    // Close the popover after selection
+    const popover = document.getElementById('logical-operator-popover');
+    if (popover) {
+      popover.hidePopover();
+    }
+  }
+  //#endregion
+
+  //#region QUERY MANAGEMENT
+
+  // Sync query.value with current inputValue
+  function syncQueryValue() {
+    if (!inputValue.trim()) {
+      return;
+    }
+    query = query ? { ...query, value: inputValue.trim() } : { value: inputValue.trim() };
+
+  }
+
+  function onSearch() {
+    syncQueryValue();
+    if (query && query.value.trim()) {
+      try {
+        // Add condition to tree with pending logical operator if it exists
+        queryTree = addConditionToTree(
+          queryTree,
+          query,
+          pendingLogicalOperator || undefined
+        );
+      } catch (error) {
+        console.error('Failed to add condition to tree:', error);
+        return;
+      }
+    }
+    resetQuery();
+
+    console.log('QueryTree:', $state.snapshot(queryTree));
+    //reset the tree
+    queryTree = null;
   }
 
   function resetQuery() {
     query = null;
     inputValue = '';
-    showSuggestions = false;
-    fieldSuggestions = [];
+    pendingLogicalOperator = null;
   }
 
-  // Get field suggestions for detected patterns
+  // Remove a condition by ID
+  function removeCondition(id: string) {
+    queryTree = removeConditionFromTree(queryTree, id);
+  }
+  //#endregion
+
+  //#region UTILITY FUNCTIONS
+
+  // Generate placeholder text based on signal
+  function getPlaceholderText(): string {
+    if (placeholder) return placeholder;
+    if (signal) return `Search ${signal}...`;
+    return 'Search...';
+  }
+
+  // Detect pattern fields (trace ID, span ID)
   function detectPatternFields(input: string): FieldDefinition[] {
     const traceIdPattern = /^[a-f0-9]{32}$/i;
     const spanIdPattern = /^[a-f0-9]{16}$/i;
 
     if (traceIdPattern.test(input)) {
+      syncQueryValue();
       return fuzzyMatchFields('traceId');
     }
 
     if (spanIdPattern.test(input)) {
+      syncQueryValue();
       return fuzzyMatchFields('spanId');
     }
 
@@ -159,19 +264,19 @@
   }
 
   // Fuzzy match field names
-  function fuzzyMatchFields(query: string): FieldDefinition[] {
+  function fuzzyMatchFields(input: string): FieldDefinition[] {
     const matches = availableFields
       .map(field => ({
         field,
         score: (() => {
-          const lowerQuery = query.toLowerCase();
+          const lowerInput = input.toLowerCase();
           const lowerFieldName = field.name.toLowerCase();
           const lowerDescription = field.description.toLowerCase();
 
-          if (lowerFieldName === lowerQuery) return 4;
-          if (lowerFieldName.startsWith(lowerQuery)) return 3;
-          if (lowerFieldName.includes(lowerQuery)) return 2;
-          if (lowerDescription.includes(lowerQuery)) return 1;
+          if (lowerFieldName === lowerInput) return 4;
+          if (lowerFieldName.startsWith(lowerInput)) return 3;
+          if (lowerFieldName.includes(lowerInput)) return 2;
+          if (lowerDescription.includes(lowerInput)) return 1;
           return 0;
         })(),
       }))
@@ -181,42 +286,7 @@
 
     return matches.map(match => match.field);
   }
-
-  // Check if we should show AND/OR buttons
-  function shouldShowLogicalOperators(): boolean {
-    return inputValue.trim() !== '';
-  }
-
-  // Add a new condition with logical operator
-  function addCondition(logicalOperator: LogicalOperator) {
-    if (!query) return;
-
-    const newCondition: Query = {
-      predicate: query.predicate,
-      value: query.value
-    };
-
-    queryTree = addConditionToTree(queryTree, newCondition, logicalOperator);
-
-    // Reset current query for next condition
-    query = null;
-    inputValue = '';
-
-    // Close the popover
-    const popover = document.getElementById('condition-popover');
-    if (popover) {
-      popover.hidePopover();
-    }
-  }
-
-  // Remove a condition by ID
-  function removeCondition(id: string) {
-    queryTree = removeConditionFromTree(queryTree, id);
-  }
-
-  function onSearch() {
-    console.log('QueryTree:', $state.snapshot(queryTree));
-  }
+  //#endregion
 </script>
 
 <div class="form-control flex-1">
@@ -235,17 +305,83 @@
         stroke-linejoin="round"
         stroke-width="1.5"
       >
-        <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0"/>
+        <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
       </svg>
+
+      <!-- Existing Conditions (completed pills) -->
+      {#if queryTree}
+        {#each getAllConditions(queryTree) as condition, index}
+          <div class="completed-condition-token">
+            <button
+              class="token-close"
+              onclick={() => removeCondition(condition.id)}
+              aria-label="Remove condition"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.5"
+                  d="M18 6L6 18m12 0L6 6"
+                />
+              </svg>
+            </button>
+            <span class="field-name"
+              >{condition.query.predicate?.field.name}</span
+            >
+            <span class="operator-symbol"
+              >{condition.query?.predicate?.operator.symbol}</span
+            >
+            <span class="value-text">{condition.query?.value}</span>
+          </div>
+
+          <!-- Logical Operator between conditions -->
+          {#if index < getAllConditions(queryTree).length - 1}
+            <span class="logical-operator-token">
+              {getLogicalOperators(queryTree)[index]}
+            </span>
+          {/if}
+        {/each}
+      {/if}
+
+      <!-- Pending Logical Operator (dashed) -->
+      {#if pendingLogicalOperator}
+        <span class="logical-operator-token pending">
+          {pendingLogicalOperator}
+        </span>
+      {/if}
 
       <!-- Field + Operator Token (shown when field is selected) -->
       {#if query?.predicate}
         <div class="field-token">
           <button
             class="token-close"
-            onclick={resetFieldOperator}
-            aria-label="Clear search">×</button
+            onclick={resetPredicate}
+            aria-label="Clear search"
           >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+            >
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M18 6L6 18m12 0L6 6"
+              />
+            </svg>
+          </button>
           <span class="field-name">{query.predicate.field.name}</span>
           <button
             id="operator-token"
@@ -270,24 +406,22 @@
         onkeydown={handleKeydown}
       />
 
-      <!-- Add Condition Button (shown when there's content) -->
-      {#if shouldShowLogicalOperators()}
+      <!-- Logical Operator Selector -->
+      {#if inputValue.trim() !== ''}
+        <!-- Logical Operator Button -->
         <button
           class="add-condition-btn"
-          popovertarget="condition-popover"
+          popovertarget="logical-operator-popover"
           aria-label="Add condition"
         >
-          <svg
-            class="w-3 h-3"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
             <path
+              fill="none"
+              stroke="currentColor"
               stroke-linecap="round"
               stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+              stroke-width="1.5"
+              d="M12 4v16m8-8H4"
             />
           </svg>
         </button>
@@ -295,13 +429,14 @@
     </div>
 
     <!-- Field Suggestions Popover -->
-    <ul id="suggestions-popover" class="suggestions-popover" popover="hint">
+    <ul
+      id="field-suggestions-popover"
+      class="suggestions-popover"
+      popover="auto"
+    >
       {#each fieldSuggestions as field, index}
         <li>
-          <button
-            class="list-button group"
-            onclick={() => acceptFieldSuggestion(field)}
-          >
+          <button class="list-button group" onclick={() => selectField(field)}>
             <div class="flex-1 min-w-0">
               <div class="text-base-content/90 font-medium">
                 {field.name}
@@ -322,7 +457,7 @@
 
     <!-- Operator Selection Popover -->
     {#if query?.predicate}
-      <ul id="operator-popover" class="operator-popover" popover="hint">
+      <ul id="operator-popover" class="operator-popover" popover="auto">
         {#each query.predicate.field.operators as operator}
           <li>
             <button
@@ -336,20 +471,20 @@
       </ul>
     {/if}
 
-    <!-- Condition Popover -->
-    <div id="condition-popover" class="popover condition-popover" popover="hint">
-      <button
-        class="list-button group"
-        onclick={() => addCondition('AND')}
-      >
-        AND
-      </button>
-      <button
-        class="list-button group"
-        onclick={() => addCondition('OR')}
-      >
-        OR
-      </button>
+    <!-- Logical Operator Popover -->
+    <div
+      id="logical-operator-popover"
+      class="popover logical-operator-popover"
+      popover="hint"
+    >
+      {#each LOGICAL_OPERATORS as { operator, label }}
+        <button
+          class="list-button group"
+          onclick={() => selectLogicalOperator(operator)}
+        >
+          {label}
+        </button>
+      {/each}
     </div>
   </div>
 </div>
@@ -369,6 +504,44 @@
   .search-icon {
     @apply w-4 h-4 flex-shrink-0;
     @apply text-base-content;
+  }
+
+  /* Completed Condition Token - Full pill with field, operator, and value */
+  .completed-condition-token {
+    @apply flex items-center gap-1.5;
+    @apply border border-secondary;
+    @apply bg-base-100;
+    @apply pl-1.5 pr-1.5;
+    @apply h-6;
+    @apply rounded-full;
+    @apply text-xs font-medium;
+    @apply flex-shrink-0;
+  }
+
+  .operator-symbol {
+    @apply text-secondary-content;
+    @apply font-mono font-semibold;
+  }
+
+  .value-text {
+    @apply text-base-content;
+  }
+
+  /* Logical Operator Token */
+  .logical-operator-token {
+    @apply flex items-center justify-center;
+    @apply bg-base-200 text-base-content/70;
+    @apply px-2 py-1;
+    @apply rounded-full;
+    @apply text-xs font-medium;
+    @apply flex-shrink-0;
+  }
+
+  /* Pending Logical Operator Token (dashed) */
+  .logical-operator-token.pending {
+    @apply bg-transparent;
+    @apply border border-dashed border-base-content/50;
+    @apply text-base-content/60;
   }
 
   /* Field Token - Pill with primary border, operator closes it off */
@@ -395,6 +568,10 @@
     @apply hover:text-base-content/80 hover:bg-base-200;
   }
 
+  .token-close svg {
+    @apply w-3 h-3;
+  }
+
   .field-name {
     @apply text-base-content;
   }
@@ -410,16 +587,6 @@
     @apply hover:bg-secondary;
   }
 
-  /* Value Input */
-  .value-input {
-    @apply flex-1;
-    @apply bg-transparent;
-    @apply border-none outline-none;
-    @apply text-sm;
-    @apply min-w-0;
-    @apply placeholder:text-base-content/40;
-  }
-
   .suggestions-popover {
     /* Layout & Positioning */
     @apply dropdown-content;
@@ -428,19 +595,6 @@
     top: anchor(--search-anchor bottom);
     left: anchor(--search-anchor left);
     width: anchor(--search-anchor width);
-
-    /* Visual Styling */
-    @apply bg-base-100 rounded-md shadow-lg;
-    @apply border border-base-300 text-base-content;
-    @apply p-0 mx-0 my-2;
-  }
-
-  .operator-popover {
-    /* Layout & Positioning */
-    @apply min-w-10;
-    position-anchor: --operator-anchor;
-    top: anchor(--operator-anchor bottom);
-    justify-self: anchor-center;
 
     /* Visual Styling */
     @apply bg-base-100 rounded-md shadow-lg;
@@ -461,6 +615,19 @@
     @apply group-hover:opacity-100 group-hover:max-h-8;
   }
 
+  .operator-popover {
+    /* Layout & Positioning */
+    @apply min-w-10;
+    position-anchor: --operator-anchor;
+    top: anchor(--operator-anchor bottom);
+    justify-self: anchor-center;
+
+    /* Visual Styling */
+    @apply bg-base-100 rounded-md shadow-lg;
+    @apply border border-base-300 text-base-content;
+    @apply p-0 mx-0 my-2;
+  }
+
   /* Add Condition Button */
   .add-condition-btn {
     @apply flex items-center justify-center;
@@ -474,10 +641,14 @@
     @apply active:scale-95;
   }
 
-  /* Condition Popover */
-  .condition-popover {
+  .add-condition-btn svg {
+    @apply w-3 h-3;
+  }
+
+  /* Logical Operator Popover */
+  .logical-operator-popover {
     @apply dropdown-content;
-    @apply min-w-20;
+    @apply min-w-40;
     position-anchor: --search-anchor;
     top: anchor(--search-anchor bottom);
     left: anchor(--search-anchor right);
@@ -485,6 +656,16 @@
     @apply bg-base-100 rounded-md shadow-lg;
     @apply border border-base-300 text-base-content;
     @apply p-0 mx-0 my-2;
+  }
+
+  /* Value Input */
+  .value-input {
+    @apply flex-1;
+    @apply bg-transparent;
+    @apply border-none outline-none;
+    @apply text-sm;
+    @apply min-w-0;
+    @apply placeholder:text-base-content/40;
   }
 
   /* Disabled input state */
