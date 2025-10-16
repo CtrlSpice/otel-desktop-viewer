@@ -311,7 +311,7 @@
       <!-- Existing Conditions (completed pills) -->
       {#if queryTree}
         {#each getAllConditions(queryTree) as condition, index}
-          <div class="completed-condition-token">
+          <div class="token-base completed-condition-token">
             <button
               class="token-close"
               onclick={() => removeCondition(condition.id)}
@@ -333,13 +333,13 @@
                 />
               </svg>
             </button>
-            <span class="field-name"
+            <span class="field-name text-base-content"
               >{condition.query.predicate?.field.name}</span
             >
             <span class="operator-symbol"
               >{condition.query?.predicate?.operator.symbol}</span
             >
-            <span class="value-text">{condition.query?.value}</span>
+            <span class="text-base-content">{condition.query?.value}</span>
           </div>
 
           <!-- Logical Operator between conditions -->
@@ -360,7 +360,7 @@
 
       <!-- Field + Operator Token (shown when field is selected) -->
       {#if query?.predicate}
-        <div class="field-token">
+        <div class="token-base field-token">
           <button
             class="token-close"
             onclick={resetPredicate}
@@ -382,7 +382,7 @@
               />
             </svg>
           </button>
-          <span class="field-name">{query.predicate.field.name}</span>
+          <span class="field-name text-base-content">{query.predicate.field.name}</span>
           <button
             id="operator-token"
             class="operator-token"
@@ -431,40 +431,29 @@
     <!-- Field Suggestions Popover -->
     <ul
       id="field-suggestions-popover"
-      class="suggestions-popover"
+      class="popover-base suggestions-popover"
       popover="auto"
     >
       {#each fieldSuggestions as field, index}
         <li>
           <button class="list-button group" onclick={() => selectField(field)}>
-            <div class="flex-1 min-w-0">
-              <div class="text-base-content/90 font-medium">
-                {field.name}
-              </div>
-              {#if field.description}
-                <div class="description-slide">
-                  {field.description}
-                </div>
-              {/if}
-            </div>
+             <span>{field.name}</span>
           </button>
         </li>
-        {#if index < fieldSuggestions.length - 1}
-          <div class="border-t border-base-300"></div>
-        {/if}
       {/each}
     </ul>
 
     <!-- Operator Selection Popover -->
     {#if query?.predicate}
-      <ul id="operator-popover" class="operator-popover" popover="auto">
+      <ul id="operator-popover" class="popover-base operator-popover" popover="auto">
         {#each query.predicate.field.operators as operator}
           <li>
             <button
               class="list-button group"
               onclick={() => selectOperator(operator)}
             >
-              {operator.label}
+              <span class="font-mono w-8">{operator.symbol}</span>
+              <span>{operator.label}</span>
             </button>
           </li>
         {/each}
@@ -474,7 +463,7 @@
     <!-- Logical Operator Popover -->
     <div
       id="logical-operator-popover"
-      class="popover logical-operator-popover"
+      class="popover-base popover logical-operator-popover"
       popover="hint"
     >
       {#each LOGICAL_OPERATORS as { operator, label }}
@@ -490,41 +479,36 @@
 </div>
 
 <style>
-  /* Token-based Search Container */
+  /* Main Search Container */
   .search-container {
-    /* Layout */
     @apply flex items-center gap-2;
     @apply input input-bordered input-sm;
-    @apply w-full;
-
-    /* Override input padding to accommodate tokens */
-    @apply px-2 py-1;
+    @apply w-full px-2 py-1;
   }
 
   .search-icon {
-    @apply w-4 h-4 flex-shrink-0;
-    @apply text-base-content;
+    @apply w-4 h-4 flex-shrink-0 text-base-content;
   }
 
-  /* Completed Condition Token - Full pill with field, operator, and value */
-  .completed-condition-token {
+  /* Token Elements */
+  .token-base {
     @apply flex items-center gap-1.5;
     @apply border border-secondary;
     @apply bg-base-100;
-    @apply pl-1.5 pr-1.5;
     @apply h-6;
     @apply rounded-full;
     @apply text-xs font-medium;
     @apply flex-shrink-0;
   }
 
-  .operator-symbol {
-    @apply text-secondary-content;
-    @apply font-mono font-semibold;
+  /* Completed Condition Token */
+  .token-base.completed-condition-token {
+    @apply px-1;
   }
 
-  .value-text {
-    @apply text-base-content;
+  /* Field Token */
+  .token-base.field-token {
+    @apply pl-1.5 pr-0;
   }
 
   /* Logical Operator Token */
@@ -537,33 +521,22 @@
     @apply flex-shrink-0;
   }
 
-  /* Pending Logical Operator Token (dashed) */
   .logical-operator-token.pending {
     @apply bg-transparent;
     @apply border border-dashed border-base-content/50;
     @apply text-base-content/60;
   }
 
-  /* Field Token - Pill with primary border, operator closes it off */
-  .field-token {
-    @apply flex items-center gap-1.5;
-    @apply border border-secondary;
-    @apply bg-base-100;
-    @apply pl-1.5 pr-0;
-    @apply h-6;
-    @apply rounded-full;
-    @apply text-xs font-medium;
-    @apply flex-shrink-0;
+  /* Token Content & Buttons */
+  .operator-symbol {
+    @apply text-secondary-content font-mono font-semibold;
   }
 
   .token-close {
     @apply flex items-center justify-center;
-    @apply w-4 h-4;
-    @apply text-xs;
-    @apply text-base-content/50;
-    @apply bg-transparent;
-    @apply rounded-full;
-    @apply cursor-pointer;
+    @apply w-4 h-4 text-xs;
+    @apply text-base-content/50 bg-transparent;
+    @apply rounded-full cursor-pointer;
     @apply transition-all duration-150;
     @apply hover:text-base-content/80 hover:bg-base-200;
   }
@@ -572,67 +545,19 @@
     @apply w-3 h-3;
   }
 
-  .field-name {
-    @apply text-base-content;
-  }
-
-  /* Operator Token - Circle that closes off the pill */
   .operator-token {
     @apply flex items-center justify-center;
     @apply bg-secondary/40 text-secondary-content;
-    @apply w-6 h-6;
-    @apply rounded-full;
+    @apply w-6 h-6 rounded-full;
     @apply text-xs font-mono font-semibold;
     @apply transition-all duration-150;
     @apply hover:bg-secondary;
   }
 
-  .suggestions-popover {
-    /* Layout & Positioning */
-    @apply dropdown-content;
-    @apply min-w-20;
-    position-anchor: --search-anchor;
-    top: anchor(--search-anchor bottom);
-    left: anchor(--search-anchor left);
-    width: anchor(--search-anchor width);
-
-    /* Visual Styling */
-    @apply bg-base-100 rounded-md shadow-lg;
-    @apply border border-base-300 text-base-content;
-    @apply p-0 mx-0 my-2;
-  }
-
-  .description-slide {
-    /* Layout & Spacing */
-    @apply text-xs mt-1;
-    @apply opacity-0 max-h-0 overflow-hidden;
-
-    /* Visual Styling */
-    @apply text-base-content/60;
-
-    /* Animation */
-    @apply transform transition-all duration-200 ease-out;
-    @apply group-hover:opacity-100 group-hover:max-h-8;
-  }
-
-  .operator-popover {
-    /* Layout & Positioning */
-    @apply min-w-10;
-    position-anchor: --operator-anchor;
-    top: anchor(--operator-anchor bottom);
-    justify-self: anchor-center;
-
-    /* Visual Styling */
-    @apply bg-base-100 rounded-md shadow-lg;
-    @apply border border-base-300 text-base-content;
-    @apply p-0 mx-0 my-2;
-  }
-
-  /* Add Condition Button */
+  /* Action Buttons */
   .add-condition-btn {
     @apply flex items-center justify-center;
-    @apply w-6 h-6;
-    @apply bg-base-100;
+    @apply w-6 h-6 bg-base-100;
     @apply border border-dashed border-secondary;
     @apply rounded-full;
     @apply text-base-content/50;
@@ -645,31 +570,39 @@
     @apply w-3 h-3;
   }
 
-  /* Logical Operator Popover */
-  .logical-operator-popover {
-    @apply dropdown-content;
+  /* Popovers */
+  .popover-base {
+    @apply bg-base-100 rounded-md shadow-lg;
+    @apply border border-base-300 text-base-content;
+    @apply p-0 mx-0 my-2;
     @apply min-w-40;
+  }
+
+  .popover-base.suggestions-popover {
+    position-anchor: --search-anchor;
+    top: anchor(--search-anchor bottom);
+    left: anchor(--search-anchor left);
+  }
+
+  .popover-base.operator-popover {
+    position-anchor: --operator-anchor;
+    top: anchor(--operator-anchor bottom);
+    justify-self: anchor-center;
+  }
+
+  .popover-base.logical-operator-popover {    
     position-anchor: --search-anchor;
     top: anchor(--search-anchor bottom);
     left: anchor(--search-anchor right);
     transform: translateX(-100%);
-    @apply bg-base-100 rounded-md shadow-lg;
-    @apply border border-base-300 text-base-content;
-    @apply p-0 mx-0 my-2;
   }
 
-  /* Value Input */
+
+  /* Input Elements */
   .value-input {
-    @apply flex-1;
-    @apply bg-transparent;
+    @apply flex-1 bg-transparent;
     @apply border-none outline-none;
-    @apply text-sm;
-    @apply min-w-0;
+    @apply text-sm min-w-0;
     @apply placeholder:text-base-content/40;
-  }
-
-  /* Disabled input state */
-  input:disabled {
-    @apply cursor-not-allowed opacity-0;
   }
 </style>

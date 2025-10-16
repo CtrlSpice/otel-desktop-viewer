@@ -12,8 +12,8 @@ export type Query = {
 export type LogicalOperator = 'AND' | 'OR';
 
 export const LOGICAL_OPERATORS = [
-  { operator: 'AND' as LogicalOperator, label: 'Add AND condition' },
-  { operator: 'OR' as LogicalOperator, label: 'Add OR condition' },
+  { operator: 'AND' as LogicalOperator, label: 'AND condition' },
+  { operator: 'OR' as LogicalOperator, label: 'OR condition' },
 ] as const;
 
 export type QueryNode =
