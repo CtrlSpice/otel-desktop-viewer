@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte"
   import { telemetryAPI } from "@/services/telemetry-service"
-  import { createTimeContext } from "@/contexts/time-context.svelte"
+  import { getTimeContext } from "@/contexts/time-context.svelte"
   import type { TraceSummary } from "@/types/api-types"
   import PageHeader from "@/components/PageHeader/PageHeader.svelte"
 
   // Create time context for this page
-  let timeContext = createTimeContext();
+  let timeContext = getTimeContext();
 
   let traceSummaries: TraceSummary[] = []
   let loading = true
@@ -20,7 +20,7 @@
   onMount(async () => {
     try {
       loading = true
-      traceSummaries = await telemetryAPI.getTraceSummaries()
+      traceSummaries = await telemetryAPI.searchTraces(0, Date.now())
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to fetch traces"
       console.error("Error fetching trace summaries:", err)

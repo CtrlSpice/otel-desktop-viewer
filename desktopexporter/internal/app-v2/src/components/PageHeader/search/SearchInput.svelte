@@ -7,15 +7,27 @@
   } from '@/constants/fields';
   import { type QueryNode } from './queryTree';
   import { parseQuery } from './queryParser';
+  import { telemetryAPI } from '@/services/telemetry-service';
+  import { getTimeContext } from '@/contexts/time-context.svelte';
 
   // Component Props
   let {
     signal,
+    view,
     placeholder,
   }: {
     signal: 'traces' | 'logs' | 'metrics';
+    view: 'list' | 'detail';
     placeholder?: string;
   } = $props();
+
+  // Get time context during component initialization
+  let timeContext: any = null;
+  try {
+    timeContext = getTimeContext();
+  } catch (error) {
+    console.warn('Could not get time context during initialization:', error);
+  }
 
   // Core State
   let inputValue = $state(''); // Text input value
@@ -37,7 +49,6 @@
 
   // Get Attribute Groups For Prefix-Aware Matching
   const attributeGroups = getAttributePrefixesBySignal(signal);
-
 
   // Handle Text Input Changes
   function handleInput(event: Event) {
@@ -92,8 +103,6 @@
     }
   }
 
-
-
   // Update Field Suggestions With Debounce
   function updateSuggestionsDebounced() {
     if (suggestionsDebounceTimer) {
@@ -111,6 +120,7 @@
     if (inputValue.length < 2) {
       fieldSuggestions = [];
       showSuggestions = false;
+      detectedPatternValue = null; // Clear pattern when input is too short
       return;
     }
 
@@ -121,6 +131,11 @@
       showSuggestions = true;
       selectedSuggestionIndex = 0;
       return;
+    }
+
+    // No pattern detected - clear any stored pattern value
+    if (detectedPatternValue) {
+      detectedPatternValue = null;
     }
 
     // Determine if user is typing a field name
@@ -172,12 +187,12 @@
     const lastWordMatch = input.match(/([\w.]+)$/);
     if (lastWordMatch) {
       const lastWord = lastWordMatch[1];
-      
+
       // Don't treat logical operators as field names
       if (lastWord.toUpperCase() === 'AND' || lastWord.toUpperCase() === 'OR') {
         return { expectingField: false, partial: '' };
       }
-      
+
       const beforeWord = input.substring(0, input.length - lastWord.length);
 
       // Check if there's an operator immediately before this word
@@ -194,7 +209,17 @@
     return { expectingField: false, partial: '' };
   }
 
+  // Clear all suggestion state
+  function clearSuggestions() {
+    showSuggestions = false;
+    fieldSuggestions = [];
+    selectedSuggestionIndex = 0;
+    detectedPatternValue = null;
+  }
+
   // Detect Pattern Fields (Trace ID, Span ID)
+  let detectedPatternValue = $state<string | null>(null);
+
   function detectPatternFields(input: string): FieldDefinition[] {
     const traceIdPattern = /\b([a-f0-9]{32})\b/i;
     const spanIdPattern = /\b([a-f0-9]{16})\b/i;
@@ -202,15 +227,19 @@
     // Check for trace ID
     const traceIdMatch = input.match(traceIdPattern);
     if (traceIdMatch) {
+      detectedPatternValue = traceIdMatch[1];
       return fuzzyMatchFields('traceId');
     }
 
     // Check for span ID
     const spanIdMatch = input.match(spanIdPattern);
     if (spanIdMatch) {
+      detectedPatternValue = spanIdMatch[1];
       return fuzzyMatchFields('spanId');
     }
 
+    // No pattern detected
+    detectedPatternValue = null;
     return [];
   }
 
@@ -274,23 +303,36 @@
 
   // Select A Field From Suggestions
   function selectField(field: FieldDefinition) {
-    // Find where to insert the field name
-    const context = analyzeTypingContext(inputValue);
+    let newValue: string;
 
-    if (context.partial) {
-      // Replace the partial field name
-      const beforePartial = inputValue.substring(
-        0,
-        inputValue.length - context.partial.length
+    if (detectedPatternValue) {
+      // Pattern mode: replace the specific detected value with field=value
+      newValue = inputValue.replace(
+        detectedPatternValue,
+        field.name + '=' + detectedPatternValue
       );
-      inputValue = beforePartial + field.name + '=';
     } else {
-      // Append field name
-      inputValue = inputValue + field.name + '=';
+      // Normal mode: standard field insertion
+      const context = analyzeTypingContext(inputValue);
+
+      if (context.partial) {
+        // Replace the partial field name
+        const beforePartial = inputValue.substring(
+          0,
+          inputValue.length - context.partial.length
+        );
+        newValue = beforePartial + field.name + '=';
+      } else {
+        // Append field name
+        newValue = inputValue + field.name + '=';
+      }
     }
 
-    // Close suggestions
-    showSuggestions = false;
+    // Update input value
+    inputValue = newValue;
+
+    // Clear all suggestion state
+    clearSuggestions(); // Clear the stored pattern value
 
     // Focus input
     const input = document.getElementById('search-input') as HTMLInputElement;
@@ -298,8 +340,6 @@
       input.focus();
     }
   }
-
-
 
   // Submit Search Query
   function onSearch() {
@@ -310,31 +350,81 @@
 
       if (queryTree) {
         console.log('Submitting query:', $state.snapshot(queryTree));
-        // TODO: Send to backend via JSON-RPC
+
+        // Get time context for filtering by time range, with fallback
+        let startTime = 0;
+        let endTime = Date.now();
+
+        if (timeContext) {
+          if (timeContext.selection.type === 'preset') {
+            // For presets, calculate fresh time range based on current time
+            const duration =
+              timeContext.selection.end - timeContext.selection.start;
+            startTime = endTime - duration;
+          } else {
+            // For custom/recent selections, use the stored values as-is
+            startTime = timeContext.selection.start;
+            endTime = timeContext.selection.end;
+          }
+        } else {
+          console.warn(
+            'No time context available, using fallback range (0 to now)'
+          );
+          // Fallback to all traces (0 to now)
+        }
+
+        // Call the appropriate API method based on signal type
+        let searchPromise: Promise<any>;
+
+        switch (signal) {
+          case 'traces':
+            if (view === 'list') {
+              searchPromise = telemetryAPI.searchTraces(
+                startTime,
+                endTime,
+                queryTree
+              );
+            } else {
+              // TODO: For detail view, we'll need a traceID prop to search within a specific trace
+              // searchPromise = telemetryAPI.searchSpansInTrace(traceID, startTime, endTime, queryTree);
+              console.warn('Detail view search not yet implemented');
+              return;
+            }
+            break;
+          case 'logs':
+            // TODO: Implement logs search
+            console.warn('Logs search not yet implemented');
+            return;
+          case 'metrics':
+            // TODO: Implement metrics search
+            console.warn('Metrics search not yet implemented');
+            return;
+          default:
+            throw new Error(`Unknown signal type: ${signal}`);
+        }
+
+        searchPromise
+          .then(results => {
+            console.log('Search results:', results);
+            // TODO: Handle results - emit event or update parent state
+            // This depends on how you want to integrate with the rest of your app
+          })
+          .catch(error => {
+            console.error('Search failed:', error);
+            parseError = 'Search failed: ' + error.message;
+          });
       }
     } catch (error) {
       parseError = error instanceof Error ? error.message : 'Parse error';
     }
   }
 
-
-
   // Generate Placeholder Text
   function getPlaceholderText(): string {
     if (placeholder) return placeholder;
-
-    switch (signal) {
-      case 'traces':
-        return 'status:200 AND name~error';
-      case 'logs':
-        return 'level:error AND body~timeout';
-      case 'metrics':
-        return 'name:cpu.usage AND type:Gauge';
-      default:
-        return 'Search...';
-    }
+    if (signal) return `Search ${signal}...`;
+    return 'Search...';
   }
-
 
   // Effect: Show/Hide Suggestions Popover
   $effect(() => {

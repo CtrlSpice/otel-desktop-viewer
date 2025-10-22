@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
@@ -72,6 +73,97 @@ func (s *Store) AddSpans(ctx context.Context, spans []traces.SpanData) error {
 	return nil
 }
 
+func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64, query any) ([]traces.TraceSummary, error) {
+	if err := s.checkConnection(); err != nil {
+		return nil, fmt.Errorf(ErrSearchTraces, err)
+	}
+
+	// 1. Parse query tree and build WHERE clause if provided
+	var whereClause string
+	var args []any
+	if query != nil {
+		queryTree, err := ParseQueryTree(query)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse query tree: %w", err)
+		}
+
+		whereClause, args, err = BuildSQLWhereClause(queryTree, "traces")
+		if err != nil {
+			return nil, fmt.Errorf("failed to build WHERE clause: %w", err)
+		}
+	}
+
+	// 3. Add time filtering
+	timeFilter := "StartTime >= ? AND StartTime <= ?"
+	timeArgs := []any{startTime, endTime}
+
+	if whereClause != "" {
+		whereClause = fmt.Sprintf("(%s) AND (%s)", whereClause, timeFilter)
+		args = append(args, timeArgs...)
+	} else {
+		whereClause = timeFilter
+		args = timeArgs
+	}
+
+	// 4. Build and execute final query
+	baseQuery := SelectTraceSummaries
+	finalQuery := strings.Replace(baseQuery, "ORDER BY", fmt.Sprintf("WHERE %s ORDER BY", whereClause), 1)
+
+	rows, err := s.db.QueryContext(ctx, finalQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf(ErrSearchTraces, err)
+	}
+	defer rows.Close()
+
+	// 5. Process results (same as GetTraceSummaries)
+	summaries := []traces.TraceSummary{}
+
+	for rows.Next() {
+		var (
+			traceID        string
+			serviceName    sql.NullString
+			rootName       sql.NullString
+			startTime      sql.NullInt64
+			endTime        sql.NullInt64
+			spanCount      int
+			errorCount     int
+			exceptionCount int
+		)
+
+		if err = rows.Scan(
+			&traceID,
+			&serviceName,
+			&rootName,
+			&startTime,
+			&endTime,
+			&spanCount,
+			&errorCount,
+			&exceptionCount,
+		); err != nil {
+			return nil, fmt.Errorf(ErrSearchTraces, err)
+		}
+
+		var rootSpan *traces.RootSpan
+		if serviceName.Valid && rootName.Valid && startTime.Valid && endTime.Valid {
+			rootSpan = &traces.RootSpan{
+				ServiceName: serviceName.String,
+				Name:        rootName.String,
+				StartTime:   startTime.Int64,
+				EndTime:     endTime.Int64,
+			}
+		}
+
+		summaries = append(summaries, traces.TraceSummary{
+			TraceID:        traceID,
+			RootSpan:       rootSpan,
+			SpanCount:      uint32(spanCount),
+			ErrorCount:     uint32(errorCount),
+			ExceptionCount: uint32(exceptionCount),
+		})
+	}
+	return summaries, nil
+}
+
 // GetTraceSummaries retrieves a summary for each trace from the store.
 func (s *Store) GetTraceSummaries(ctx context.Context) ([]traces.TraceSummary, error) {
 	if err := s.checkConnection(); err != nil {
@@ -88,12 +180,14 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]traces.TraceSummary, e
 
 	for rows.Next() {
 		var (
-			traceID     string
-			serviceName sql.NullString
-			rootName    sql.NullString
-			startTime   sql.NullInt64
-			endTime     sql.NullInt64
-			spanCount   int
+			traceID        string
+			serviceName    sql.NullString
+			rootName       sql.NullString
+			startTime      sql.NullInt64
+			endTime        sql.NullInt64
+			spanCount      int
+			errorCount     int
+			exceptionCount int
 		)
 
 		if err = rows.Scan(
@@ -103,6 +197,8 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]traces.TraceSummary, e
 			&startTime,
 			&endTime,
 			&spanCount,
+			&errorCount,
+			&exceptionCount,
 		); err != nil {
 			return nil, fmt.Errorf(ErrGetTraceSummaries, err)
 		}
@@ -118,9 +214,11 @@ func (s *Store) GetTraceSummaries(ctx context.Context) ([]traces.TraceSummary, e
 		}
 
 		summaries = append(summaries, traces.TraceSummary{
-			TraceID:   traceID,
-			RootSpan:  rootSpan,
-			SpanCount: uint32(spanCount),
+			TraceID:        traceID,
+			RootSpan:       rootSpan,
+			SpanCount:      uint32(spanCount),
+			ErrorCount:     uint32(errorCount),
+			ExceptionCount: uint32(exceptionCount),
 		})
 	}
 	return summaries, nil

@@ -2,10 +2,8 @@ import { type FieldDefinition } from '@/constants/fields';
 import { type Operator as FieldOperator } from '@/constants/operators';
 
 export type Query = {
-  predicate?: {
-    field: FieldDefinition;
-    operator: FieldOperator;
-  };
+  field: FieldDefinition;
+  operator: FieldOperator;
   value: string;
 };
 
@@ -44,7 +42,6 @@ export function addConditionToTree(
   operator?: LogicalOperator
 ): QueryNode {
   // Validate the new condition
-  // Note: We can have a condition without a predicate, but we need a value
   if (!newCondition.value.trim()) {
     throw new Error('Condition must have a value');
   }

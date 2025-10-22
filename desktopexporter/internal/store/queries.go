@@ -233,7 +233,9 @@ const (
             CASE WHEN s.ParentSpanID = '' THEN s.Name END as root_name,
             CASE WHEN s.ParentSpanID = '' THEN s.StartTime END as start_time,
             CASE WHEN s.ParentSpanID = '' THEN s.EndTime END as end_time,
-            COUNT(*) OVER (PARTITION BY s.TraceID) as span_count
+            COUNT(*) OVER (PARTITION BY s.TraceID) as span_count,
+            COUNT(CASE WHEN s.StatusCode = 'ERROR' THEN 1 END) OVER (PARTITION BY s.TraceID) as error_count,
+            COUNT(CASE WHEN s.Attributes['exception.type'] IS NOT NULL THEN 1 END) OVER (PARTITION BY s.TraceID) as exception_count
         FROM spans s
         ORDER BY 
             COALESCE(

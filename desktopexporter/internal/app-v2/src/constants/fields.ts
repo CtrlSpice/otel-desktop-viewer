@@ -27,7 +27,7 @@ export type FieldDefinition =
       name: string;
       type: FieldType;
       searchScope: 'attribute';
-      attributeScope: 'resource' | 'scope' | 'span' | 'event' | 'general';
+      attributeScope: 'resource' | 'span' | 'log' | 'metric' | 'general';
       operators: Operator[];
       description: string;
     };
@@ -122,7 +122,7 @@ function getGeneralAttributeGroups(): Record<string, FieldDefinition[]> {
 // Span/Trace fields
 export const SPAN_FIELDS: FieldDefinition[] = [
   {
-    name: 'traceId',
+    name: 'traceID',
     type: 'string',
     searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
@@ -132,26 +132,21 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     name: 'traceState',
     type: 'string',
     searchScope: 'field',
-    operators: [
-      OPERATORS.EQUALS,
-      OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.EXISTS,
-    ],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.LIKE],
     description: 'W3C trace state',
   },
   {
-    name: 'spanId',
+    name: 'spanID',
     type: 'string',
     searchScope: 'field',
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Unique identifier for the span',
   },
   {
-    name: 'parentSpanId',
+    name: 'parentSpanID',
     type: 'string',
     searchScope: 'field',
-    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.EXISTS],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'ID of the parent span',
   },
   {
@@ -161,8 +156,8 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.DOES_NOT_CONTAIN,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.STARTS_WITH,
       OPERATORS.ENDS_WITH,
       OPERATORS.REGEX,
@@ -265,10 +260,9 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.DOES_NOT_CONTAIN,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.REGEX,
-      OPERATORS.EXISTS,
     ],
     description: 'Human-readable status message',
   },
@@ -279,12 +273,11 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.DOES_NOT_CONTAIN,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.STARTS_WITH,
       OPERATORS.ENDS_WITH,
       OPERATORS.REGEX,
-      OPERATORS.EXISTS,
     ],
     description: 'Name of span events',
   },
@@ -315,29 +308,24 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     description: 'Number of event attributes dropped due to limits',
   },
   {
-    name: 'link.traceId',
+    name: 'link.traceID',
     type: 'string',
     searchScope: 'field',
-    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.EXISTS],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Trace ID of linked spans',
   },
   {
-    name: 'link.spanId',
+    name: 'link.spanID',
     type: 'string',
     searchScope: 'field',
-    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.EXISTS],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Span ID of linked spans',
   },
   {
     name: 'link.traceState',
     type: 'string',
     searchScope: 'field',
-    operators: [
-      OPERATORS.EQUALS,
-      OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.EXISTS,
-    ],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.LIKE],
     description: 'W3C trace state of linked spans',
   },
   {
@@ -385,17 +373,17 @@ export const LOG_FIELDS: FieldDefinition[] = [
     description: 'Timestamp when the log was observed in nanoseconds',
   },
   {
-    name: 'traceId',
+    name: 'traceID',
     type: 'string',
     searchScope: 'field',
-    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.EXISTS],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Trace ID associated with this log',
   },
   {
-    name: 'spanId',
+    name: 'spanID',
     type: 'string',
     searchScope: 'field',
-    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.EXISTS],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Span ID associated with this log',
   },
   {
@@ -434,8 +422,8 @@ export const LOG_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.DOES_NOT_CONTAIN,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.STARTS_WITH,
       OPERATORS.ENDS_WITH,
       OPERATORS.REGEX,
@@ -468,12 +456,11 @@ export const LOG_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.DOES_NOT_CONTAIN,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.STARTS_WITH,
       OPERATORS.ENDS_WITH,
       OPERATORS.REGEX,
-      OPERATORS.EXISTS,
     ],
     description: 'Name of the event associated with this log',
   },
@@ -488,8 +475,8 @@ export const METRIC_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.DOES_NOT_CONTAIN,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.STARTS_WITH,
       OPERATORS.ENDS_WITH,
       OPERATORS.REGEX,
@@ -503,10 +490,9 @@ export const METRIC_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.DOES_NOT_CONTAIN,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.REGEX,
-      OPERATORS.EXISTS,
     ],
     description: 'Description of what the metric measures',
   },
@@ -519,7 +505,7 @@ export const METRIC_FIELDS: FieldDefinition[] = [
       OPERATORS.NOT_EQUALS,
       OPERATORS.IN,
       OPERATORS.NOT_IN,
-      OPERATORS.CONTAINS,
+      OPERATORS.LIKE,
     ],
     description: 'Unit of measurement for the metric',
   },
@@ -561,8 +547,8 @@ export const SCOPE_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
-      OPERATORS.DOES_NOT_CONTAIN,
+      OPERATORS.LIKE,
+      OPERATORS.NOT_LIKE,
       OPERATORS.STARTS_WITH,
       OPERATORS.ENDS_WITH,
       OPERATORS.REGEX,
@@ -576,9 +562,8 @@ export const SCOPE_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.CONTAINS,
+      OPERATORS.LIKE,
       OPERATORS.STARTS_WITH,
-      OPERATORS.EXISTS,
     ],
     description: 'Version of the instrumentation scope',
   },
@@ -611,3 +596,12 @@ export const RESOURCE_FIELDS: FieldDefinition[] = [
     description: 'Number of resource attributes dropped due to limits',
   },
 ];
+
+// Global search field
+export const GLOBAL_FIELD: FieldDefinition = {
+  name: '_global',
+  type: 'string',
+  searchScope: 'global',
+  operators: [OPERATORS.LIKE],
+  description: 'Search all fields and attributes',
+};

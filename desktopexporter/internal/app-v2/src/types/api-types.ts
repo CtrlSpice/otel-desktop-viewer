@@ -11,6 +11,8 @@ export type TraceSummary = {
   traceID: string;
   rootSpan?: RootSpan;
   spanCount: number;
+  errorCount: number;
+  exceptionCount: number;
 };
 
 export type TraceData = {

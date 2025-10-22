@@ -1,4 +1,4 @@
-import { type FieldDefinition } from '@/constants/fields';
+import { type FieldDefinition, GLOBAL_FIELD } from '@/constants/fields';
 import { OPERATORS, type Operator } from '@/constants/operators';
 import { type QueryNode, generateId } from './queryTree';
 
@@ -202,12 +202,12 @@ class Lexer {
       return { type: 'LOGICAL', value: upperWord, position };
     }
 
-    // Check if it's a keyword operator (case-insensitive: IN, NOT IN, EXISTS)
-    if (upperWord === 'IN' || upperWord === 'EXISTS') {
+    // Check if it's a keyword operator (case-insensitive: IN, LIKE, NOT IN, NOT LIKE)
+    if (upperWord === 'IN' || upperWord === 'LIKE') {
       return { type: 'OPERATOR', value: upperWord, position };
     }
 
-    // Handle "NOT IN" as a special case (case-insensitive)
+    // Handle "NOT IN" and "NOT LIKE" as special cases (case-insensitive)
     if (upperWord === 'NOT') {
       this.skipWhitespace();
       const next = this.readKeywordOrIdentifier();
@@ -215,7 +215,15 @@ class Lexer {
       if (upperNext === 'IN') {
         return { type: 'OPERATOR', value: 'NOT IN', position };
       }
+      if (upperNext === 'LIKE') {
+        return { type: 'OPERATOR', value: 'NOT LIKE', position };
+      }
       throw new Error(`Unexpected token: NOT ${next}`);
+    }
+
+    // Check for null values (case-insensitive)
+    if (upperWord === 'NULL' || upperWord === 'NIL') {
+      return { type: 'VALUE', value: 'NULL', position };
     }
 
     // Otherwise it's a field or value
@@ -291,8 +299,8 @@ class Parser {
       operators: [
         OPERATORS.EQUALS,
         OPERATORS.NOT_EQUALS,
-        OPERATORS.CONTAINS,
-        OPERATORS.DOES_NOT_CONTAIN,
+        OPERATORS.LIKE,
+        OPERATORS.NOT_LIKE,
       ],
       description: `User-defined attribute: ${name}`,
     };
@@ -301,7 +309,7 @@ class Parser {
   // Find Operator By Symbol
   private findOperator(symbol: string): Operator | undefined {
     for (let op of Object.values(OPERATORS)) {
-      if ((op.symbols as readonly string[]).includes(symbol)) {
+      if (op.symbol === symbol) {
         return op;
       }
     }
@@ -376,27 +384,31 @@ class Parser {
     // Validate operator is allowed for this field
     if (!field.operators.includes(operator)) {
       throw new Error(
-        `Operator '${operator.symbols[0]}' is not valid for field '${field.name}'`
+        `Operator '${operator.symbol}' is not valid for field '${field.name}'`
       );
     }
 
-    // Parse value (for EXISTS, no value needed)
+    // Parse value
     let value: string = '';
-    if (operator !== OPERATORS.EXISTS) {
-      // Check for array value (IN, NOT IN)
-      if (this.check('LBRACKET')) {
-        value = this.parseArray();
-      } else {
-        const valueToken = this.current();
-        if (
-          !valueToken ||
-          (valueToken.type !== 'VALUE' && valueToken.type !== 'FIELD')
-        ) {
-          throw new Error('Expected value');
-        }
-        value = valueToken.value;
-        this.advance();
+
+    // Check for array value (IN, NOT IN)
+    if (this.check('LBRACKET')) {
+      value = this.parseArray();
+    } else {
+      const valueToken = this.current();
+      if (
+        !valueToken ||
+        (valueToken.type !== 'VALUE' && valueToken.type !== 'FIELD')
+      ) {
+        throw new Error('Expected value');
       }
+      value = valueToken.value;
+      this.advance();
+    }
+
+    // Normalize null values
+    if (value.toUpperCase() === 'NULL' || value.toUpperCase() === 'NIL') {
+      value = 'NULL';
     }
 
     // Create condition node
@@ -404,7 +416,8 @@ class Parser {
       id: generateId(),
       type: 'condition',
       query: {
-        predicate: { field, operator },
+        field,
+        operator,
         value,
       },
     };
@@ -451,23 +464,12 @@ class Parser {
 
 // Create Global Text Search Query
 function createGlobalTextSearch(input: string): QueryNode {
-  // Create a special global field that the backend will recognize
-  const globalField = {
-    name: '_global',
-    type: 'string' as const,
-    searchScope: 'global' as const,
-    operators: [OPERATORS.CONTAINS],
-    description: 'Search all fields and attributes',
-  };
-
   return {
     id: generateId(),
     type: 'condition',
     query: {
-      predicate: {
-        field: globalField,
-        operator: OPERATORS.CONTAINS,
-      },
+      field: GLOBAL_FIELD,
+      operator: OPERATORS.LIKE,
       value: input.trim(),
     },
   };
@@ -502,7 +504,7 @@ export function parseQuery(
       !trimmedInput.includes('!') &&
       !trimmedInput.includes('[') &&
       !trimmedInput.includes('(') &&
-      !trimmedInput.match(/\b(AND|OR|IN|EXISTS|NOT)\b/i)
+      !trimmedInput.match(/\b(AND|OR|IN|NOT)\b/i)
     ) {
       return createGlobalTextSearch(trimmedInput);
     }

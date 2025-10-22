@@ -16,9 +16,11 @@ type SpanNode struct {
 }
 
 type TraceSummary struct {
-	TraceID   string    `json:"traceID"`
-	RootSpan  *RootSpan `json:"rootSpan,omitempty"`
-	SpanCount uint32    `json:"spanCount"`
+	TraceID        string    `json:"traceID"`
+	RootSpan       *RootSpan `json:"rootSpan,omitempty"`
+	SpanCount      uint32    `json:"spanCount"`
+	ErrorCount     uint32    `json:"errorCount"`
+	ExceptionCount uint32    `json:"exceptionCount"`
 }
 
 type RootSpan struct {

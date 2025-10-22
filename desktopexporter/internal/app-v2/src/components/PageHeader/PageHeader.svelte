@@ -48,7 +48,7 @@
 
   <!-- Search Row -->
   <div>
-    <SearchInput {signal} />
+    <SearchInput {signal} {view} />
   </div>
 
   <!-- Control Row: Hints, Time, Fields -->

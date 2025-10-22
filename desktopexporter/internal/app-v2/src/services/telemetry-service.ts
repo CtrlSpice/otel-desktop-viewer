@@ -13,6 +13,7 @@ import type {
   DataPoints,
 } from '@/types/api-types';
 import { PreciseTimestamp } from '@/types/precise-timestamp';
+import type { QueryNode } from '@/components/PageHeader/search/queryTree';
 
 // JSON-RPC Client
 interface JsonRpcRequest {
@@ -203,21 +204,47 @@ function metricsFromJSON(json: any): MetricData[] {
 // Export typed methods for each RPC call with built-in conversion
 export let telemetryAPI = {
   // Trace methods
-  getTraceSummaries: async (): Promise<TraceSummary[]> => {
-    const rawData = await callRPC('getTraceSummaries', undefined);
+  searchTraces: async (
+    startTime: number,
+    endTime: number,
+    queryTree?: QueryNode
+  ): Promise<TraceSummary[]> => {
+    // Convert milliseconds to nanoseconds (add 6 zeros to the string)
+    const startTimeNs = startTime === 0 ? '0' : startTime.toString() + '000000';
+    const endTimeNs = endTime === 0 ? '0' : endTime.toString() + '000000';
+
+    const params = queryTree
+      ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
+      : [startTimeNs, endTimeNs];
+    const rawData = await callRPC('searchTraces', params);
     return traceSummariesFromJSON(rawData);
   },
 
-  getTraceByID: async (traceID: string): Promise<TraceData> => {
-    const rawData = await callRPC('getTraceByID', [traceID]);
+  getTraceByID: async (
+    traceID: string,
+    startTime: number,
+    endTime: number,
+    queryTree?: QueryNode
+  ): Promise<TraceData> => {
+    const params = queryTree
+      ? [traceID, startTime, endTime, convertQueryTreeForBackend(queryTree)]
+      : [traceID, startTime, endTime];
+    const rawData = await callRPC('getTraceByID', params);
     return traceDataFromJSON(rawData);
   },
 
   clearTraces: () => callRPC('clearTraces', undefined),
 
   // Log methods
-  getLogs: async (): Promise<LogData[]> => {
-    const rawData = await callRPC('getLogs', undefined);
+  getLogs: async (
+    startTime: number,
+    endTime: number,
+    queryTree?: QueryNode
+  ): Promise<LogData[]> => {
+    const params = queryTree
+      ? [startTime, endTime, convertQueryTreeForBackend(queryTree)]
+      : [startTime, endTime];
+    const rawData = await callRPC('getLogs', params);
     return logsFromJSON(rawData);
   },
 
@@ -226,8 +253,15 @@ export let telemetryAPI = {
   clearLogs: () => callRPC('clearLogs', undefined),
 
   // Metric methods
-  getMetrics: async (): Promise<MetricData[]> => {
-    const rawData = await callRPC('getMetrics', undefined);
+  getMetrics: async (
+    startTime: number,
+    endTime: number,
+    queryTree?: QueryNode
+  ): Promise<MetricData[]> => {
+    const params = queryTree
+      ? [startTime, endTime, convertQueryTreeForBackend(queryTree)]
+      : [startTime, endTime];
+    const rawData = await callRPC('getMetrics', params);
     return metricsFromJSON(rawData);
   },
 
@@ -238,3 +272,33 @@ export let telemetryAPI = {
   checkSampleDataExists: () => callRPC('checkSampleDataExists', undefined),
   clearSampleData: () => callRPC('clearSampleData', undefined),
 };
+
+// Helper function to convert frontend query tree to minimal backend format
+function convertQueryTreeForBackend(queryTree: QueryNode): any {
+  if (queryTree.type === 'condition') {
+    return {
+      id: queryTree.id,
+      type: 'condition',
+      query: {
+        field: {
+          name: queryTree.query.field.name,
+          searchScope: queryTree.query.field.searchScope,
+          ...(queryTree.query.field.searchScope === 'attribute' && {
+            attributeScope: queryTree.query.field.attributeScope,
+          }),
+        },
+        fieldOperator: queryTree.query.operator.symbol,
+        value: queryTree.query.value,
+      },
+    };
+  } else {
+    return {
+      id: queryTree.id,
+      type: 'group',
+      group: {
+        logicalOperator: queryTree.group.operator,
+        children: queryTree.group.children.map(convertQueryTreeForBackend),
+      },
+    };
+  }
+}

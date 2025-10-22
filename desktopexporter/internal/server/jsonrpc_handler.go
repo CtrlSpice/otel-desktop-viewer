@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
@@ -22,6 +23,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	switch req.Method {
 	case "getTraceSummaries":
 		return h.getTraceSummaries(ctx)
+	case "searchTraces":
+		return h.searchTraces(ctx, req)
 	case "getTraceByID":
 		return h.getTraceByID(ctx, req)
 	case "getLogs":
@@ -56,11 +59,64 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
 }
-
 func (h *JSONRPCHandler) getTraceSummaries(ctx context.Context) (any, error) {
 	summaries, err := h.store.GetTraceSummaries(ctx)
 	if err != nil {
 		log.Printf("Error getting trace summaries: %v", err)
+		return nil, jsonrpc2.ErrInternal
+	}
+	return summaries, nil
+}
+
+func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	log.Printf("searchTraces received %d parameters: %+v", len(params), params)
+
+	if len(params) < 2 || len(params) > 3 {
+		log.Printf("Invalid parameter count: %d (expected 2-3)", len(params))
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	var startTime, endTime int64
+
+	// Parse timestamp strings (nanoseconds are too large for JSON numbers)
+	if startTimeStr, ok := params[0].(string); ok {
+		if parsed, err := strconv.ParseInt(startTimeStr, 10, 64); err != nil {
+			log.Printf("Invalid startTime string: %v", err)
+			return nil, jsonrpc2.ErrInvalidParams
+		} else {
+			startTime = parsed
+		}
+	} else {
+		log.Printf("Invalid startTime type: %T, value: %v", params[0], params[0])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if endTimeStr, ok := params[1].(string); ok {
+		if parsed, err := strconv.ParseInt(endTimeStr, 10, 64); err != nil {
+			log.Printf("Invalid endTime string: %v", err)
+			return nil, jsonrpc2.ErrInvalidParams
+		} else {
+			endTime = parsed
+		}
+	} else {
+		log.Printf("Invalid endTime type: %T, value: %v", params[1], params[1])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	var query any
+	if len(params) == 3 {
+		query = params[2]
+	}
+
+	summaries, err := h.store.SearchTraces(ctx, startTime, endTime, query)
+	if err != nil {
+		log.Printf("Error searching traces: %v", err)
 		return nil, jsonrpc2.ErrInternal
 	}
 	return summaries, nil
