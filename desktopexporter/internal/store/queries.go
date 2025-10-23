@@ -5,13 +5,13 @@ import "strings"
 // Type creation queries that must be run in order
 var TypeCreationQueries = []string{
 	`CREATE TYPE attribute AS UNION(
-		str VARCHAR,
-		bigint BIGINT,
-		double DOUBLE,
+		string VARCHAR,
+		int64 BIGINT,
+		float64 DOUBLE,
 		boolean BOOLEAN,
-		str_list VARCHAR[],
-		bigint_list BIGINT[],
-		double_list DOUBLE[],
+		string_list VARCHAR[],
+		int64_list BIGINT[],
+		float64_list DOUBLE[],
 		boolean_list BOOLEAN[]
 	)`,
 	`CREATE TYPE exemplar AS STRUCT(
@@ -26,9 +26,9 @@ var TypeCreationQueries = []string{
 		BucketCounts UBIGINT[]
 	)`,
 	`CREATE TYPE body AS UNION(
-		str VARCHAR,
-		bigint BIGINT,
-		double DOUBLE,
+		string VARCHAR,
+		int64 BIGINT,
+		float64 DOUBLE,
 		boolean BOOLEAN,
 		bytes BLOB,
 		json JSON

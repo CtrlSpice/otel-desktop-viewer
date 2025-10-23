@@ -8,11 +8,11 @@ import { GENERAL_ATTRIBUTES } from './generalAttributes';
 export type FieldType =
   | 'string'
   | 'int64'
-  | 'double'
+  | 'float64'
   | 'boolean'
   | 'string[]'
   | 'int64[]'
-  | 'double[]'
+  | 'float64[]'
   | 'boolean[]';
 
 export type FieldDefinition =

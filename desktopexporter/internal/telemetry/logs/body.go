@@ -37,17 +37,17 @@ func (body *Body) UnmarshalJSON(data []byte) error {
 func (body Body) Value() (driver.Value, error) {
 	switch t := body.Data.(type) {
 	case string:
-		return duckdb.Union{Tag: "str", Value: t}, nil
+		return duckdb.Union{Tag: "string", Value: t}, nil
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32:
-		return duckdb.Union{Tag: "bigint", Value: t}, nil
+		return duckdb.Union{Tag: "int64", Value: t}, nil
 	case uint64:
 		value, hasOverflow := util.StringifyOnOverflow("body", t)
 		if hasOverflow {
-			return duckdb.Union{Tag: "str", Value: value}, nil
+			return duckdb.Union{Tag: "string", Value: value}, nil
 		}
-		return duckdb.Union{Tag: "bigint", Value: value}, nil
+		return duckdb.Union{Tag: "int64", Value: value}, nil
 	case float32, float64:
-		return duckdb.Union{Tag: "double", Value: t}, nil
+		return duckdb.Union{Tag: "float64", Value: t}, nil
 	case bool:
 		return duckdb.Union{Tag: "boolean", Value: t}, nil
 	case []byte:
@@ -57,7 +57,7 @@ func (body Body) Value() (driver.Value, error) {
 		bodyJson, err := json.Marshal(body)
 		if err != nil {
 			log.Printf(errors.WarnJSONMarshal, t, body.Data)
-			return duckdb.Union{Tag: "str", Value: fmt.Sprintf("%v", body)}, nil
+			return duckdb.Union{Tag: "string", Value: fmt.Sprintf("%v", body)}, nil
 		}
 		return duckdb.Union{Tag: "json", Value: string(bodyJson)}, nil
 	}

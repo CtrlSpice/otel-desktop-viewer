@@ -19,22 +19,22 @@ func TestBodyValue(t *testing.T) {
 		{
 			name:     "string value",
 			input:    "hello world",
-			expected: duckdb.Union{Tag: "str", Value: "hello world"},
+			expected: duckdb.Union{Tag: "string", Value: "hello world"},
 		},
 		{
 			name:     "integer value",
 			input:    int64(42),
-			expected: duckdb.Union{Tag: "bigint", Value: int64(42)},
+			expected: duckdb.Union{Tag: "int64", Value: int64(42)},
 		},
 		{
 			name:     "float value",
 			input:    float64(3.14159),
-			expected: duckdb.Union{Tag: "double", Value: float64(3.14159)},
+			expected: duckdb.Union{Tag: "float64", Value: float64(3.14159)},
 		},
 		{
 			name:     "float32 value",
 			input:    float32(3.14),
-			expected: duckdb.Union{Tag: "double", Value: float32(3.14)},
+			expected: duckdb.Union{Tag: "float64", Value: float32(3.14)},
 		},
 		{
 			name:     "boolean value",
@@ -49,12 +49,12 @@ func TestBodyValue(t *testing.T) {
 		{
 			name:     "safe uint64",
 			input:    uint64(100),
-			expected: duckdb.Union{Tag: "bigint", Value: int64(100)},
+			expected: duckdb.Union{Tag: "int64", Value: int64(100)},
 		},
 		{
 			name:     "overflow uint64",
 			input:    uint64(math.MaxUint64),
-			expected: duckdb.Union{Tag: "str", Value: "18446744073709551615"},
+			expected: duckdb.Union{Tag: "string", Value: "18446744073709551615"},
 		},
 		{
 			name:     "complex struct",
@@ -100,17 +100,17 @@ func TestBodyScan(t *testing.T) {
 	}{
 		{
 			name:     "string value",
-			input:    duckdb.Union{Tag: "str", Value: "hello world"},
+			input:    duckdb.Union{Tag: "string", Value: "hello world"},
 			expected: "hello world",
 		},
 		{
 			name:     "integer value",
-			input:    duckdb.Union{Tag: "bigint", Value: int64(42)},
+			input:    duckdb.Union{Tag: "int64", Value: int64(42)},
 			expected: int64(42),
 		},
 		{
 			name:     "float value",
-			input:    duckdb.Union{Tag: "double", Value: float64(3.14159)},
+			input:    duckdb.Union{Tag: "float64", Value: float64(3.14159)},
 			expected: float64(3.14159),
 		},
 		{
@@ -124,13 +124,13 @@ func TestBodyScan(t *testing.T) {
 			expected: []byte("binary data"),
 		},
 		{
-			name:     "safe uint64 as bigint",
-			input:    duckdb.Union{Tag: "bigint", Value: int64(100)},
+			name:     "safe uint64 as int64",
+			input:    duckdb.Union{Tag: "int64", Value: int64(100)},
 			expected: int64(100),
 		},
 		{
 			name:     "overflow uint64 as string",
-			input:    duckdb.Union{Tag: "str", Value: "18446744073709551615"},
+			input:    duckdb.Union{Tag: "string", Value: "18446744073709551615"},
 			expected: "18446744073709551615",
 		},
 		{

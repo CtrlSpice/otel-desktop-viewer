@@ -31,33 +31,33 @@ func (attrs Attributes) Value() (driver.Value, error) {
 	for attributeName, attributeValue := range attrs {
 		switch t := attributeValue.(type) {
 		case string:
-			dbMap[attributeName] = duckdb.Union{Tag: "str", Value: t}
+			dbMap[attributeName] = duckdb.Union{Tag: "string", Value: t}
 		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32:
-			dbMap[attributeName] = duckdb.Union{Tag: "bigint", Value: t}
+			dbMap[attributeName] = duckdb.Union{Tag: "int64", Value: t}
 		case uint64:
 			value, hasOverflow := util.StringifyOnOverflow(attributeName, t)
 			if hasOverflow {
-				dbMap[attributeName] = duckdb.Union{Tag: "str", Value: value}
+				dbMap[attributeName] = duckdb.Union{Tag: "string", Value: value}
 			} else {
-				dbMap[attributeName] = duckdb.Union{Tag: "bigint", Value: value}
+				dbMap[attributeName] = duckdb.Union{Tag: "int64", Value: value}
 			}
 		case float32, float64:
-			dbMap[attributeName] = duckdb.Union{Tag: "double", Value: t}
+			dbMap[attributeName] = duckdb.Union{Tag: "float64", Value: t}
 		case bool:
 			dbMap[attributeName] = duckdb.Union{Tag: "boolean", Value: t}
 		case []string:
-			dbMap[attributeName] = duckdb.Union{Tag: "str_list", Value: t}
+			dbMap[attributeName] = duckdb.Union{Tag: "string_list", Value: t}
 		case []int, []int8, []int16, []int32, []int64, []uint, []uint8, []uint16, []uint32:
-			dbMap[attributeName] = duckdb.Union{Tag: "bigint_list", Value: t}
+			dbMap[attributeName] = duckdb.Union{Tag: "int64_list", Value: t}
 		case []uint64:
 			value, hasOverflow := util.StringifySliceOnOverflow(attributeName, t)
 			if hasOverflow {
-				dbMap[attributeName] = duckdb.Union{Tag: "str_list", Value: value}
+				dbMap[attributeName] = duckdb.Union{Tag: "string_list", Value: value}
 			} else {
-				dbMap[attributeName] = duckdb.Union{Tag: "bigint_list", Value: value}
+				dbMap[attributeName] = duckdb.Union{Tag: "int64_list", Value: value}
 			}
 		case []float32, []float64:
-			dbMap[attributeName] = duckdb.Union{Tag: "double_list", Value: t}
+			dbMap[attributeName] = duckdb.Union{Tag: "float64_list", Value: t}
 		case []bool:
 			dbMap[attributeName] = duckdb.Union{Tag: "boolean_list", Value: t}
 		case []any:
@@ -67,13 +67,13 @@ func (attrs Attributes) Value() (driver.Value, error) {
 				for i, v := range t {
 					strList[i] = fmt.Sprintf("%v", v)
 				}
-				dbMap[attributeName] = duckdb.Union{Tag: "str_list", Value: strList}
+				dbMap[attributeName] = duckdb.Union{Tag: "string_list", Value: strList}
 				log.Printf(errors.WarnUnsupportedListAttribute, attributeName, err)
 			} else {
 				dbMap[attributeName] = duckdb.Union{Tag: derivedTag, Value: t}
 			}
 		default:
-			dbMap[attributeName] = duckdb.Union{Tag: "str", Value: fmt.Sprintf("%v", attributeValue)}
+			dbMap[attributeName] = duckdb.Union{Tag: "string", Value: fmt.Sprintf("%v", attributeValue)}
 			log.Printf(errors.WarnUnsupportedAttributeType, attributeName, t, attributeValue)
 		}
 	}
@@ -122,10 +122,10 @@ func AttributesDecodeHook(from, to reflect.Type, data any) (any, error) {
 // getListTypeTag examines the elements of a []any slice and returns the appropriate type tag
 // in order to store our list as a type supported by our attribute UNION in DuckDB.
 func getListTypeTag(list []any) (string, error) {
-	tag := "str_list" // Default fallback for mixed types
+	tag := "string_list" // Default fallback for mixed types
 	if len(list) == 0 {
 		// Empty arrays are valid per OpenTelemetry spec - default to string list for storage.
-		return "str_list", nil
+		return "string_list", nil
 	}
 
 	if list[0] == nil {
@@ -137,17 +137,17 @@ func getListTypeTag(list []any) (string, error) {
 		if err := validateUniformList[string](list); err != nil {
 			return tag, err
 		}
-		return "str_list", nil
+		return "string_list", nil
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		if err := validateUniformList[int64](list); err != nil {
 			return tag, err
 		}
-		return "bigint_list", nil
+		return "int64_list", nil
 	case float32, float64:
 		if err := validateUniformList[float64](list); err != nil {
 			return tag, err
 		}
-		return "double_list", nil
+		return "float64_list", nil
 	case bool:
 		if err := validateUniformList[bool](list); err != nil {
 			return tag, err
