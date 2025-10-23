@@ -48,6 +48,7 @@ const (
 	ErrGetLogsByTrace     = "failed to get logs for trace %s: %w"
 	ErrGetMetric          = "failed to get metric %s: %w"
 	ErrGetMetrics         = "failed to get metrics: %w"
+	ErrGetTraceAttributes = "failed to get trace attributes: %w"
 
 	// Query tree errors
 	ErrParseQueryTree          = "failed to parse query tree: %w"
@@ -86,6 +87,7 @@ const (
 	ErrScanLogRow    = "failed to scan log row: %w"
 	ErrScanTraceRow  = "failed to scan trace row: %w"
 	ErrScanMetricRow = "failed to scan metric row: %w"
+	ErrScanAttribute = "failed to scan attribute: %w"
 
 	// Metric errors
 	ErrUnknownMetricType  = "unknown metric type: %s"

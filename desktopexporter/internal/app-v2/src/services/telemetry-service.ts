@@ -14,6 +14,12 @@ import type {
 } from '@/types/api-types';
 import { PreciseTimestamp } from '@/types/precise-timestamp';
 import type { QueryNode } from '@/components/PageHeader/search/queryTree';
+import type {
+  AttributeScope,
+  FieldDefinition,
+  FieldType,
+} from '@/constants/fields';
+import { getOperatorsForFieldType } from '@/constants/operators';
 
 // JSON-RPC Client
 interface JsonRpcRequest {
@@ -31,6 +37,11 @@ interface JsonRpcResponse {
     message: string;
   };
   id: number;
+}
+
+// Helper function to convert milliseconds to nanoseconds
+function toNanoseconds(milliseconds: number): string {
+  return milliseconds === 0 ? '0' : milliseconds.toString() + '000000';
 }
 
 // Helper function to make typed RPC calls
@@ -204,14 +215,40 @@ function metricsFromJSON(json: any): MetricData[] {
 // Export typed methods for each RPC call with built-in conversion
 export let telemetryAPI = {
   // Trace methods
+  getTraceAttributes: async (
+    startTime: number,
+    endTime: number
+  ): Promise<FieldDefinition[]> => {
+    const startTimeNs = toNanoseconds(startTime);
+    const endTimeNs = toNanoseconds(endTime);
+    const params = [startTimeNs, endTimeNs];
+    console.log('getTraceAttributes: calling with params:', params);
+    const rawData = await callRPC('getTraceAttributes', params);
+    console.log('getTraceAttributes: received rawData:', rawData);
+
+    // Validate that we received an array
+    if (!Array.isArray(rawData)) {
+      console.warn(
+        'getTraceAttributes: Expected array, got:',
+        typeof rawData,
+        rawData
+      );
+      return [];
+    }
+
+    // Convert backend attribute data to FieldDefinition objects
+    const converted = convertAttributesToFieldDefinitions(rawData);
+    console.log('getTraceAttributes: converted to:', converted);
+    return converted;
+  },
+
   searchTraces: async (
     startTime: number,
     endTime: number,
     queryTree?: QueryNode
   ): Promise<TraceSummary[]> => {
-    // Convert milliseconds to nanoseconds (add 6 zeros to the string)
-    const startTimeNs = startTime === 0 ? '0' : startTime.toString() + '000000';
-    const endTimeNs = endTime === 0 ? '0' : endTime.toString() + '000000';
+    const startTimeNs = toNanoseconds(startTime);
+    const endTimeNs = toNanoseconds(endTime);
 
     const params = queryTree
       ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
@@ -301,4 +338,19 @@ function convertQueryTreeForBackend(queryTree: QueryNode): any {
       },
     };
   }
+}
+
+// Helper function to convert backend attribute data to FieldDefinition objects
+function convertAttributesToFieldDefinitions(
+  attributes: { name: string; type: string; attributeScope: string }[]
+): FieldDefinition[] {
+  return attributes
+    .filter(attr => attr && attr.name && attr.type && attr.attributeScope) // Filter out invalid entries
+    .map(attr => ({
+      name: attr.name,
+      type: attr.type as FieldType,
+      searchScope: 'attribute' as const,
+      attributeScope: attr.attributeScope as AttributeScope,
+      operators: getOperatorsForFieldType(attr.type as FieldType),
+    }));
 }

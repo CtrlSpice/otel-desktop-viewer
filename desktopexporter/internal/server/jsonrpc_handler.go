@@ -55,6 +55,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.checkSampleDataExists(ctx)
 	case "clearSampleData":
 		return h.clearSampleData(ctx)
+	case "getTraceAttributes":
+		return h.getTraceAttributes(ctx, req)
 	default:
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
@@ -82,31 +84,14 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	var startTime, endTime int64
-
-	// Parse timestamp strings (nanoseconds are too large for JSON numbers)
-	if startTimeStr, ok := params[0].(string); ok {
-		if parsed, err := strconv.ParseInt(startTimeStr, 10, 64); err != nil {
-			log.Printf("Invalid startTime string: %v", err)
-			return nil, jsonrpc2.ErrInvalidParams
-		} else {
-			startTime = parsed
-		}
-	} else {
-		log.Printf("Invalid startTime type: %T, value: %v", params[0], params[0])
-		return nil, jsonrpc2.ErrInvalidParams
+	startTime, err := parseTimestampParam(params[0], "startTime")
+	if err != nil {
+		return nil, err
 	}
 
-	if endTimeStr, ok := params[1].(string); ok {
-		if parsed, err := strconv.ParseInt(endTimeStr, 10, 64); err != nil {
-			log.Printf("Invalid endTime string: %v", err)
-			return nil, jsonrpc2.ErrInvalidParams
-		} else {
-			endTime = parsed
-		}
-	} else {
-		log.Printf("Invalid endTime type: %T, value: %v", params[1], params[1])
-		return nil, jsonrpc2.ErrInvalidParams
+	endTime, err := parseTimestampParam(params[1], "endTime")
+	if err != nil {
+		return nil, err
 	}
 
 	var query any
@@ -358,4 +343,50 @@ func (h *JSONRPCHandler) clearSampleData(ctx context.Context) (any, error) {
 	}
 
 	return "Sample data cleared successfully", nil
+}
+
+func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) != 2 {
+		log.Printf("Invalid parameter count: %d (expected 2)", len(params))
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	startTime, err := parseTimestampParam(params[0], "startTime")
+	if err != nil {
+		return nil, err
+	}
+
+	endTime, err := parseTimestampParam(params[1], "endTime")
+	if err != nil {
+		return nil, err
+	}
+
+	attributes, err := h.store.GetTraceAttributes(ctx, startTime, endTime)
+	if err != nil {
+		log.Printf("Error getting trace attributes: %v", err)
+		return nil, jsonrpc2.ErrInternal
+	}
+
+	return attributes, nil
+}
+
+// Helper function to parse timestamp string parameters
+func parseTimestampParam(param any, paramName string) (int64, error) {
+	if timeStr, ok := param.(string); ok {
+		if parsed, err := strconv.ParseInt(timeStr, 10, 64); err != nil {
+			log.Printf("Invalid %s string: %v", paramName, err)
+			return 0, jsonrpc2.ErrInvalidParams
+		} else {
+			return parsed, nil
+		}
+	} else {
+		log.Printf("Invalid %s type: %T, value: %v", paramName, param, param)
+		return 0, jsonrpc2.ErrInvalidParams
+	}
 }

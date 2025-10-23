@@ -1,8 +1,7 @@
 <script lang="ts">
   import {
     getFieldsBySignal,
-    getAttributesBySignal,
-    getAttributePrefixesBySignal,
+    getDynamicAttributes,
     type FieldDefinition,
   } from '@/constants/fields';
   import { type QueryNode } from './queryTree';
@@ -29,6 +28,25 @@
     console.warn('Could not get time context during initialization:', error);
   }
 
+  const fields = [
+    ...getFieldsBySignal(signal),
+  ];
+  let availableFields = $state<FieldDefinition[]>([...fields]);
+
+  // Load dynamic attributes
+  async function loadDynamicAttributes() {
+    if (timeContext) {
+      let dynamicAttrs: FieldDefinition[] = await getDynamicAttributes(
+        timeContext.selection.start, 
+        timeContext.selection.end, 
+        signal
+      );
+      availableFields = [...fields, ...dynamicAttrs];
+    }
+  }
+
+  // Load on mount
+  loadDynamicAttributes();
   // Core State
   let inputValue = $state(''); // Text input value
   let queryTree = $state<QueryNode | null>(null); // Parsed query tree
@@ -40,15 +58,10 @@
   let selectedSuggestionIndex = $state(0);
   let suggestionsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Get Available Fields For This Signal Type
-  // Get Available Fields For This Signal Type
-  const availableFields = [
-    ...getFieldsBySignal(signal),
-    ...getAttributesBySignal(signal),
-  ];
 
-  // Get Attribute Groups For Prefix-Aware Matching
-  const attributeGroups = getAttributePrefixesBySignal(signal);
+  
+
+
 
   // Handle Text Input Changes
   function handleInput(event: Event) {
@@ -243,32 +256,9 @@
     return [];
   }
 
-  // Fuzzy Match Field Names with Prefix-Aware Matching
+  // Fuzzy Match Field Names
   function fuzzyMatchFields(input: string): FieldDefinition[] {
-    const lowerInput = input.toLowerCase();
-
-    // If input starts with a known prefix, prioritize that group
-    const knownPrefixes = Object.keys(attributeGroups);
-    const matchingPrefix = knownPrefixes.find(prefix =>
-      lowerInput.startsWith(prefix + '.')
-    );
-
-    if (matchingPrefix) {
-      // User is typing a specific prefix, focus on that group
-      const groupFields = attributeGroups[matchingPrefix];
-      return fuzzyMatchWithinFields(groupFields, input);
-    }
-
-    // Otherwise, search across all fields and attributes
-    return fuzzyMatchWithinFields(availableFields, input);
-  }
-
-  // Helper function to do the actual fuzzy matching
-  function fuzzyMatchWithinFields(
-    fields: FieldDefinition[],
-    input: string
-  ): FieldDefinition[] {
-    const matches = fields
+    const matches = availableFields
       .map(field => ({
         field,
         score: calculateMatchScore(field, input),
@@ -284,7 +274,6 @@
   function calculateMatchScore(field: FieldDefinition, input: string): number {
     const lowerInput = input.toLowerCase();
     const lowerFieldName = field.name.toLowerCase();
-    const lowerDescription = field.description.toLowerCase();
 
     // Exact match gets highest score
     if (lowerFieldName === lowerInput) return 10;
@@ -294,9 +283,6 @@
 
     // Contains match gets medium score
     if (lowerFieldName.includes(lowerInput)) return 5;
-
-    // Description match gets low score
-    if (lowerDescription.includes(lowerInput)) return 2;
 
     return 0;
   }

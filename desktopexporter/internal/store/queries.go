@@ -389,6 +389,96 @@ const (
 	`
 )
 
+// Attribute discovery queries
+const (
+	// GetTraceAttributes discovers all attributes in trace data
+	GetTraceAttributes = `
+		WITH trace_attributes AS (
+			SELECT ResourceAttributes, Attributes, ScopeAttributes, Events, Links
+			FROM spans
+			WHERE StartTime >= ? AND StartTime <= ?
+		),
+		events_unnested AS (
+			SELECT 
+				unnest(Events) AS event_data
+			FROM trace_attributes
+			WHERE Events IS NOT NULL
+		),
+		links_unnested AS (
+			SELECT 
+				unnest(Links) AS link_data
+			FROM trace_attributes
+			WHERE Links IS NOT NULL
+		),
+		all_attributes AS (
+			-- Resource attributes
+			SELECT 
+				unnest.key as attribute_name,
+				'resource' as attribute_scope,
+				union_tag(unnest.value) as attribute_type
+			FROM trace_attributes,
+			UNNEST(map_entries(ResourceAttributes))
+			WHERE ResourceAttributes IS NOT NULL
+			
+			UNION ALL
+			
+			-- Span attributes
+			SELECT 
+				unnest.key as attribute_name,
+				'span' as attribute_scope,
+				union_tag(unnest.value) as attribute_type
+			FROM trace_attributes,
+			UNNEST(map_entries(Attributes))
+			WHERE Attributes IS NOT NULL
+			
+			UNION ALL
+			
+			-- Scope attributes
+			SELECT 
+				unnest.key as attribute_name,
+				'scope' as attribute_scope,
+				union_tag(unnest.value) as attribute_type
+			FROM trace_attributes,
+			UNNEST(map_entries(ScopeAttributes))
+			WHERE ScopeAttributes IS NOT NULL
+			
+			UNION ALL
+			
+			-- Event attributes
+			SELECT 
+				unnest.key as attribute_name,
+				'event' as attribute_scope,
+				union_tag(unnest.value) as attribute_type
+			FROM events_unnested,
+			unnest(map_entries(event_data.Attributes))
+			WHERE event_data.Attributes IS NOT NULL
+			
+			UNION ALL
+			
+			-- Link attributes
+			SELECT 
+				unnest.key as attribute_name,
+				'link' as attribute_scope,
+				union_tag(unnest.value) as attribute_type
+			FROM links_unnested,
+			unnest(map_entries(link_data.Attributes))
+			WHERE link_data.Attributes IS NOT NULL
+		)
+		SELECT DISTINCT 
+			attribute_name,
+			attribute_scope,
+			CASE 
+				WHEN attribute_type = 'string_list' THEN 'string[]'
+				WHEN attribute_type = 'int64_list' THEN 'int64[]'
+				WHEN attribute_type = 'float64_list' THEN 'float64[]'
+				WHEN attribute_type = 'boolean_list' THEN 'boolean[]'
+				ELSE attribute_type
+			END as attribute_type
+		FROM all_attributes
+		ORDER BY attribute_name, attribute_scope
+	`
+)
+
 // Helper function to build placeholders for IN clause
 func buildPlaceholders(count int) string {
 	if count == 0 {

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -207,6 +208,73 @@ func TestGetLogs(t *testing.T) {
 		assert.Len(t, logsData, 1)
 		assert.Equal(t, "1234567890", logsData[0].TraceID)
 		assert.Equal(t, "test log message", logsData[0].Body.Data)
+	})
+}
+
+func TestGetTraceAttributes(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		handler, teardown := setupHandler()
+		defer teardown()
+
+		now := time.Now().UnixNano()
+		req := createRequest("getTraceAttributes", []string{strconv.FormatInt(now-24*time.Hour.Nanoseconds(), 10), strconv.FormatInt(now+24*time.Hour.Nanoseconds(), 10)})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.Nil(t, err)
+		attributes, ok := result.([]store.AttributeSuggestion)
+		assert.True(t, ok, "Expected []store.AttributeSuggestion, got %T", result)
+		assert.Len(t, attributes, 0)
+	})
+
+	t.Run("With Data", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		now := time.Now().UnixNano()
+		req := createRequest("getTraceAttributes", []string{strconv.FormatInt(now-24*time.Hour.Nanoseconds(), 10), strconv.FormatInt(now+24*time.Hour.Nanoseconds(), 10)})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.Nil(t, err)
+		attributes, ok := result.([]store.AttributeSuggestion)
+		assert.True(t, ok, "Expected []store.AttributeSuggestion, got %T", result)
+		assert.NotEmpty(t, attributes, "Should have discovered attributes")
+
+		// Check that we have the expected service.name resource attribute
+		foundServiceName := false
+		for _, attr := range attributes {
+			if attr.Name == "service.name" && attr.AttributeScope == "resource" {
+				foundServiceName = true
+				assert.Equal(t, "string", attr.Type)
+				break
+			}
+		}
+		assert.True(t, foundServiceName, "Should have found service.name resource attribute")
+	})
+
+	t.Run("Invalid Parameters", func(t *testing.T) {
+		handler, teardown := setupHandler()
+		defer teardown()
+
+		// Test with wrong number of parameters
+		req := createRequest("getTraceAttributes", []string{"123"}) // Only 1 parameter instead of 2
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NotNil(t, err)
+		assert.Nil(t, result)
+		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+	})
+
+	t.Run("Invalid Parameter Types", func(t *testing.T) {
+		handler, teardown := setupHandler()
+		defer teardown()
+
+		// Test with string parameters instead of numbers
+		req := createRequest("getTraceAttributes", []string{"pumpkin", "pie"})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NotNil(t, err)
+		assert.Nil(t, result)
+		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 	})
 }
 

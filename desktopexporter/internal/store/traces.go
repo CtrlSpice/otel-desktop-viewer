@@ -319,6 +319,43 @@ func (s *Store) DeleteSpansByTraceID(ctx context.Context, traceID string) error 
 	return nil
 }
 
+// AttributeSuggestion represents a discovered attribute with its scope and type
+type AttributeSuggestion struct {
+	Name           string `json:"name"`
+	AttributeScope string `json:"attributeScope"`
+	Type           string `json:"type"`
+}
+
+// GetTraceAttributes discovers all attributes in trace data within the specified time range
+func (s *Store) GetTraceAttributes(ctx context.Context, startTime, endTime int64) ([]AttributeSuggestion, error) {
+	if err := s.checkConnection(); err != nil {
+		return nil, fmt.Errorf(ErrGetTraceAttributes, err)
+	}
+
+	// The query has 2 parameter placeholders (startTime and endTime for the filtered_spans CTE)
+	rows, err := s.db.QueryContext(ctx, GetTraceAttributes, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf(ErrGetTraceAttributes, err)
+	}
+	defer rows.Close()
+
+	var attributes []AttributeSuggestion
+
+	for rows.Next() {
+		var attribute AttributeSuggestion
+		if err := rows.Scan(&attribute.Name, &attribute.AttributeScope, &attribute.Type); err != nil {
+			return nil, fmt.Errorf(ErrScanAttribute, err)
+		}
+		attributes = append(attributes, attribute)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf(ErrGetTraceAttributes, err)
+	}
+
+	return attributes, nil
+}
+
 // DeleteSpanByID deletes a specific span by its ID.
 func (s *Store) DeleteSpanByID(ctx context.Context, spanID string) error {
 	if err := s.checkConnection(); err != nil {

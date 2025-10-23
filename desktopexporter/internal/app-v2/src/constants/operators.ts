@@ -1,4 +1,6 @@
 // Search operators with labels and symbols
+import type { FieldType } from './fields';
+
 export const OPERATORS = {
   EQUALS: { label: 'equals', symbol: '=' },
   NOT_EQUALS: { label: 'does not equal', symbol: '!=' },
@@ -20,3 +22,77 @@ export const OPERATORS = {
 } as const;
 
 export type Operator = (typeof OPERATORS)[keyof typeof OPERATORS];
+
+// Get appropriate operators based on field type
+export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
+  switch (fieldType) {
+    case 'string':
+      return [
+        OPERATORS.EQUALS,
+        OPERATORS.NOT_EQUALS,
+        OPERATORS.CONTAINS,
+        OPERATORS.NOT_CONTAINS,
+        OPERATORS.STARTS_WITH,
+        OPERATORS.ENDS_WITH,
+        OPERATORS.REGEX,
+        OPERATORS.IN,
+        OPERATORS.NOT_IN,
+      ];
+
+    case 'int64':
+    case 'float64':
+      return [
+        OPERATORS.EQUALS,
+        OPERATORS.NOT_EQUALS,
+        OPERATORS.GREATER_THAN,
+        OPERATORS.LESS_THAN,
+        OPERATORS.GREATER_THAN_OR_EQUAL,
+        OPERATORS.LESS_THAN_OR_EQUAL,
+        OPERATORS.IN,
+        OPERATORS.NOT_IN,
+      ];
+
+    case 'boolean':
+      return [
+        OPERATORS.EQUALS,
+        OPERATORS.NOT_EQUALS,
+        OPERATORS.IN,
+        OPERATORS.NOT_IN,
+      ];
+
+    case 'string[]':
+      return [
+        OPERATORS.EQUALS,
+        OPERATORS.NOT_EQUALS,
+        OPERATORS.CONTAINS,
+        OPERATORS.NOT_CONTAINS,
+        OPERATORS.IN,
+        OPERATORS.NOT_IN,
+      ];
+
+    case 'int64[]':
+    case 'float64[]':
+      return [
+        OPERATORS.EQUALS,
+        OPERATORS.NOT_EQUALS,
+        OPERATORS.GREATER_THAN,
+        OPERATORS.LESS_THAN,
+        OPERATORS.GREATER_THAN_OR_EQUAL,
+        OPERATORS.LESS_THAN_OR_EQUAL,
+        OPERATORS.IN,
+        OPERATORS.NOT_IN,
+      ];
+
+    case 'boolean[]':
+      return [
+        OPERATORS.EQUALS,
+        OPERATORS.NOT_EQUALS,
+        OPERATORS.IN,
+        OPERATORS.NOT_IN,
+      ];
+
+    default:
+      // Fallback to basic operators for unknown types
+      return [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS];
+  }
+}

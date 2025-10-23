@@ -1,4 +1,4 @@
-import { type FieldDefinition, GLOBAL_FIELD } from '@/constants/fields';
+import { type FieldDefinition } from '@/constants/fields';
 import { OPERATORS, type Operator } from '@/constants/operators';
 import { type QueryNode, generateId } from './queryTree';
 
@@ -290,29 +290,9 @@ class Parser {
 
   // Find Field By Name
   private findField(name: string): FieldDefinition | undefined {
-    // First, check if it's a known field or attribute
-    let field = this.availableFields.find(
+    return this.availableFields.find(
       f => f.name.toLowerCase() === name.toLowerCase()
     );
-    if (field) return field;
-
-    // If not found, create a user-defined attribute for general scope
-    return {
-      name,
-      type: 'string', // Default to string for user-defined
-      searchScope: 'attribute',
-      attributeScope: 'general',
-      operators: [
-        OPERATORS.EQUALS,
-        OPERATORS.NOT_EQUALS,
-        OPERATORS.CONTAINS,
-        OPERATORS.NOT_CONTAINS,
-        OPERATORS.STARTS_WITH,
-        OPERATORS.ENDS_WITH,
-        OPERATORS.REGEX,
-      ],
-      description: `User-defined attribute: ${name}`,
-    };
   }
 
   // Find Operator By Symbol
@@ -391,7 +371,7 @@ class Parser {
     }
 
     // Validate operator is allowed for this field
-    if (!field.operators.includes(operator)) {
+    if (!field.operators.some(op => op.symbol === operator.symbol)) {
       throw new Error(
         `Operator '${operator.symbol}' is not valid for field '${field.name}'`
       );
@@ -471,19 +451,6 @@ class Parser {
   }
 }
 
-// Create Global Text Search Query
-function createGlobalTextSearch(input: string): QueryNode {
-  return {
-    id: generateId(),
-    type: 'condition',
-    query: {
-      field: GLOBAL_FIELD,
-      operator: OPERATORS.CONTAINS,
-      value: input.trim(),
-    },
-  };
-}
-
 // Main Parse Function
 export function parseQuery(
   input: string,
@@ -523,4 +490,22 @@ export function parseQuery(
       error instanceof Error ? error.message : 'Failed to parse query'
     );
   }
+}
+
+// Create Global Text Search Query
+function createGlobalTextSearch(input: string): QueryNode {
+  return {
+    id: generateId(),
+    type: 'condition',
+    query: {
+      field: {
+        name: '_global',
+        type: 'string',
+        searchScope: 'global',
+        operators: [OPERATORS.CONTAINS],
+      },
+      operator: OPERATORS.CONTAINS,
+      value: input.trim(),
+    },
+  };
 }

@@ -1,8 +1,6 @@
 // Search field definitions for different signal types
+import { telemetryAPI } from '@/services/telemetry-service';
 import { OPERATORS, type Operator } from './operators';
-import { resourceAttributes } from './resourceAttributes';
-import { traceAttributes } from './traceAttributes';
-import { GENERAL_ATTRIBUTES } from './generalAttributes';
 
 // OpenTelemetry attribute value types
 export type FieldType =
@@ -15,11 +13,13 @@ export type FieldType =
   | 'float64[]'
   | 'boolean[]';
 
+export type AttributeScope = 'resource' | 'scope' | 'span' | 'event' | 'link';
+
 export type FieldDefinition =
   | {
       name: string;
       type: FieldType;
-      searchScope: 'field' | 'global';
+      searchScope: 'field';
       operators: Operator[];
       description: string;
     }
@@ -27,9 +27,16 @@ export type FieldDefinition =
       name: string;
       type: FieldType;
       searchScope: 'attribute';
-      attributeScope: 'resource' | 'span' | 'log' | 'metric' | 'general';
+      attributeScope: AttributeScope;
       operators: Operator[];
-      description: string;
+      description?: string;
+    }
+  | {
+      name: string;
+      type: FieldType;
+      searchScope: 'global';
+      operators: Operator[];
+      description?: string;
     };
 
 // Field suggestions based on signal
@@ -50,73 +57,36 @@ export function getFieldsBySignal(
   }
 }
 
-// Attribute suggestions based on signal
-export function getAttributesBySignal(
+// Function to get dynamic attributes
+export async function getDynamicAttributes(
+  startTime: number,
+  endTime: number,
   signal: 'traces' | 'logs' | 'metrics'
-): FieldDefinition[] {
-  const baseAttributes = [
-    ...getResourceAttributes(),
-    ...getGeneralAttributes(),
-  ];
-
+): Promise<FieldDefinition[]> {
   switch (signal) {
     case 'traces':
-      return [...baseAttributes, ...getTraceAttributes()];
+      try {
+        const attributes = await telemetryAPI.getTraceAttributes(
+          startTime,
+          endTime
+        );
+        return attributes;
+      } catch (error) {
+        console.warn('Failed to load dynamic attributes:', error);
+        return [];
+      }
 
     case 'logs':
-      return baseAttributes;
+      console.log('Not implemented yet');
+      return [];
 
     case 'metrics':
-      return baseAttributes;
+      console.log('Not implemented yet');
+      return [];
+    default:
+      console.log('Unknown signal type: ', signal);
+      return [];
   }
-}
-
-// Helper functions to get attributes
-function getResourceAttributes(): FieldDefinition[] {
-  return Object.values(resourceAttributes).flat();
-}
-
-function getTraceAttributes(): FieldDefinition[] {
-  return Object.values(traceAttributes).flat();
-}
-
-function getGeneralAttributes(): FieldDefinition[] {
-  return Object.values(GENERAL_ATTRIBUTES).flat();
-}
-
-// Get attribute prefixes grouped by signal for prefix-aware matching
-export function getAttributePrefixesBySignal(
-  signal: 'traces' | 'logs' | 'metrics'
-): Record<string, FieldDefinition[]> {
-  const baseAttributeGroups = {
-    ...getResourceAttributeGroups(),
-    ...getGeneralAttributeGroups(),
-  };
-
-  switch (signal) {
-    case 'traces':
-      return {
-        ...baseAttributeGroups,
-        ...getTraceAttributeGroups(),
-      };
-    case 'logs':
-      return baseAttributeGroups;
-    case 'metrics':
-      return baseAttributeGroups;
-  }
-}
-
-// Helper functions to get grouped attributes
-function getResourceAttributeGroups(): Record<string, FieldDefinition[]> {
-  return resourceAttributes;
-}
-
-function getTraceAttributeGroups(): Record<string, FieldDefinition[]> {
-  return traceAttributes;
-}
-
-function getGeneralAttributeGroups(): Record<string, FieldDefinition[]> {
-  return GENERAL_ATTRIBUTES;
 }
 
 // Span/Trace fields
@@ -603,12 +573,3 @@ export const RESOURCE_FIELDS: FieldDefinition[] = [
     description: 'Number of resource attributes dropped due to limits',
   },
 ];
-
-// Global search field
-export const GLOBAL_FIELD: FieldDefinition = {
-  name: '_global',
-  type: 'string',
-  searchScope: 'global',
-  operators: [OPERATORS.CONTAINS, OPERATORS.NOT_CONTAINS],
-  description: 'Search all fields and attributes',
-};

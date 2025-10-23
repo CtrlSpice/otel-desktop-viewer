@@ -190,6 +190,87 @@ func TestTraceSuite(t *testing.T) {
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrTraceIDNotFound)
 	})
+
+	t.Run("AttributeDiscovery", func(t *testing.T) {
+		// Get available attributes from the test trace (use a wide time range to include all test data)
+		// Test data uses time.Now().UnixNano(), so we need a range that includes current time
+		now := time.Now().UnixNano()
+		attributes, err := helper.Store.GetTraceAttributes(helper.Ctx, now-24*time.Hour.Nanoseconds(), now+24*time.Hour.Nanoseconds())
+		assert.NoError(t, err, "failed to get available trace attributes")
+
+		assert.NotEmpty(t, attributes, "should have discovered attributes")
+
+		// Group attributes by scope for easier verification
+		attributesByScope := make(map[string][]AttributeSuggestion)
+		for _, attr := range attributes {
+			attributesByScope[attr.AttributeScope] = append(attributesByScope[attr.AttributeScope], attr)
+		}
+
+		// Verify we have attributes from all expected scopes
+		expectedScopes := []string{"resource", "span", "event", "link"}
+		for _, scope := range expectedScopes {
+			assert.Contains(t, attributesByScope, scope, "should have %s attributes", scope)
+		}
+
+		// Verify specific resource attributes
+		resourceAttrs := attributesByScope["resource"]
+		resourceNames := make([]string, len(resourceAttrs))
+		for i, attr := range resourceAttrs {
+			resourceNames[i] = attr.Name
+		}
+		assert.Contains(t, resourceNames, "service.name", "should have service.name resource attribute")
+		assert.Contains(t, resourceNames, "service.version", "should have service.version resource attribute")
+
+		// Verify specific span attributes
+		spanAttrs := attributesByScope["span"]
+		spanNames := make([]string, len(spanAttrs))
+		for i, attr := range spanAttrs {
+			spanNames[i] = attr.Name
+		}
+		assert.Contains(t, spanNames, "root.string", "should have root.string span attribute")
+		assert.Contains(t, spanNames, "root.int", "should have root.int span attribute")
+		assert.Contains(t, spanNames, "root.float", "should have root.float span attribute")
+		assert.Contains(t, spanNames, "root.bool", "should have root.bool span attribute")
+		assert.Contains(t, spanNames, "root.list", "should have root.list span attribute")
+
+		// Verify specific event attributes
+		eventAttrs := attributesByScope["event"]
+		eventNames := make([]string, len(eventAttrs))
+		for i, attr := range eventAttrs {
+			eventNames[i] = attr.Name
+		}
+		assert.Contains(t, eventNames, "event.string", "should have event.string event attribute")
+		assert.Contains(t, eventNames, "event.int", "should have event.int event attribute")
+		assert.Contains(t, eventNames, "event.bool", "should have event.bool event attribute")
+		assert.Contains(t, eventNames, "event.float", "should have event.float event attribute")
+
+		// Verify specific link attributes
+		linkAttrs := attributesByScope["link"]
+		linkNames := make([]string, len(linkAttrs))
+		for i, attr := range linkAttrs {
+			linkNames[i] = attr.Name
+		}
+		assert.Contains(t, linkNames, "link.string", "should have link.string link attribute")
+		assert.Contains(t, linkNames, "link.int", "should have link.int link attribute")
+		assert.Contains(t, linkNames, "link.float", "should have link.float link attribute")
+		assert.Contains(t, linkNames, "link.bool", "should have link.bool link attribute")
+
+		// Verify attribute types are correctly detected (converted to frontend format)
+		for _, attr := range attributes {
+			switch attr.Name {
+			case "service.name", "root.string", "event.string", "link.string":
+				assert.Equal(t, "string", attr.Type, "string attributes should have 'string' type")
+			case "root.int", "event.int", "link.int":
+				assert.Equal(t, "int64", attr.Type, "int attributes should have 'int64' type")
+			case "root.float", "event.float", "link.float":
+				assert.Equal(t, "float64", attr.Type, "float attributes should have 'float64' type")
+			case "root.bool", "event.bool", "link.bool":
+				assert.Equal(t, "boolean", attr.Type, "bool attributes should have 'boolean' type")
+			case "root.list", "event.list":
+				assert.Equal(t, "string[]", attr.Type, "string list attributes should have 'string[]' type (converted from 'string_list')")
+			}
+		}
+	})
 }
 
 // createTestTrace creates a comprehensive test trace with multiple spans, events, and links.
