@@ -182,8 +182,25 @@ func buildOperatorCondition(expression, operator, value string) (string, []any, 
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=", "REGEXP":
 		return expression + " " + operator + " ?", []any{value}, nil
-	case "LIKE", "NOT LIKE":
-		return expression + " " + operator + " ?", []any{"%" + value + "%"}, nil
+	case "CONTAINS", "NOT CONTAINS", "^", "$":
+		// Map user-friendly operators to SQL LIKE patterns
+		var sqlOperator, likeValue string
+		switch operator {
+		case "CONTAINS":
+			sqlOperator = "LIKE"
+			likeValue = "%" + value + "%"
+		case "NOT CONTAINS":
+			sqlOperator = "NOT LIKE"
+			likeValue = "%" + value + "%"
+		case "^":
+			sqlOperator = "LIKE"
+			likeValue = value + "%"
+		case "$":
+			sqlOperator = "LIKE"
+			likeValue = "%" + value
+		}
+
+		return expression + " " + sqlOperator + " ?", []any{likeValue}, nil
 	case "IN", "NOT IN":
 		values := parseArrayValue(value)
 		placeholders := strings.Repeat("?,", len(values))

@@ -112,6 +112,8 @@ class Lexer {
       this.current === '>' ||
       this.current === '<' ||
       this.current === '~' ||
+      this.current === '^' ||
+      this.current === '$' ||
       twoChar === '^=' ||
       twoChar === '$='
     );
@@ -202,12 +204,16 @@ class Lexer {
       return { type: 'LOGICAL', value: upperWord, position };
     }
 
-    // Check if it's a keyword operator (case-insensitive: IN, LIKE, NOT IN, NOT LIKE)
-    if (upperWord === 'IN' || upperWord === 'LIKE') {
+    // Check if it's a keyword operator (case-insensitive: IN, CONTAINS, REGEXP, NOT IN, NOT CONTAINS)
+    if (
+      upperWord === 'IN' ||
+      upperWord === 'CONTAINS' ||
+      upperWord === 'REGEXP'
+    ) {
       return { type: 'OPERATOR', value: upperWord, position };
     }
 
-    // Handle "NOT IN" and "NOT LIKE" as special cases (case-insensitive)
+    // Handle "NOT IN" and "NOT CONTAINS" as special cases (case-insensitive)
     if (upperWord === 'NOT') {
       this.skipWhitespace();
       const next = this.readKeywordOrIdentifier();
@@ -215,8 +221,8 @@ class Lexer {
       if (upperNext === 'IN') {
         return { type: 'OPERATOR', value: 'NOT IN', position };
       }
-      if (upperNext === 'LIKE') {
-        return { type: 'OPERATOR', value: 'NOT LIKE', position };
+      if (upperNext === 'CONTAINS') {
+        return { type: 'OPERATOR', value: 'NOT CONTAINS', position };
       }
       throw new Error(`Unexpected token: NOT ${next}`);
     }
@@ -299,8 +305,11 @@ class Parser {
       operators: [
         OPERATORS.EQUALS,
         OPERATORS.NOT_EQUALS,
-        OPERATORS.LIKE,
-        OPERATORS.NOT_LIKE,
+        OPERATORS.CONTAINS,
+        OPERATORS.NOT_CONTAINS,
+        OPERATORS.STARTS_WITH,
+        OPERATORS.ENDS_WITH,
+        OPERATORS.REGEX,
       ],
       description: `User-defined attribute: ${name}`,
     };
@@ -469,7 +478,7 @@ function createGlobalTextSearch(input: string): QueryNode {
     type: 'condition',
     query: {
       field: GLOBAL_FIELD,
-      operator: OPERATORS.LIKE,
+      operator: OPERATORS.CONTAINS,
       value: input.trim(),
     },
   };
