@@ -245,6 +245,27 @@ const (
             s.TraceID
     `
 
+	// SearchTraces is the V2 query template for CTE-based parameter handling
+	// The WHERE clause is dynamically added by BuildSQL
+	SearchTraces = `
+        SELECT DISTINCT ON (s.TraceID)
+            s.TraceID,
+            CASE WHEN s.ParentSpanID = '' THEN CAST(s.ResourceAttributes['service.name'] AS VARCHAR) END as service_name,
+            CASE WHEN s.ParentSpanID = '' THEN s.Name END as root_name,
+            CASE WHEN s.ParentSpanID = '' THEN s.StartTime END as root_start_time,
+            CASE WHEN s.ParentSpanID = '' THEN s.EndTime END as root_end_time,
+            COUNT(*) OVER (PARTITION BY s.TraceID) as span_count,
+            COUNT(CASE WHEN s.StatusCode = 'ERROR' THEN 1 END) OVER (PARTITION BY s.TraceID) as error_count,
+            COUNT(CASE WHEN s.Attributes['exception.type'] IS NOT NULL THEN 1 END) OVER (PARTITION BY s.TraceID) as exception_count
+        FROM spans s
+        ORDER BY 
+            COALESCE(
+                MIN(CASE WHEN s.ParentSpanID = '' THEN s.StartTime END) OVER (PARTITION BY s.TraceID),
+                MIN(s.StartTime) OVER (PARTITION BY s.TraceID)
+            ) DESC,
+            s.TraceID
+    `
+
 	// SelectTrace retrieves spans in hierarchical order with depth information
 	// This mimics a tree structure that can be easily converted to a tree on the frontend
 	SelectTrace = `

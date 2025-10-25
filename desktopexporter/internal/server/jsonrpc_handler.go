@@ -77,8 +77,6 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	log.Printf("searchTraces received %d parameters: %+v", len(params), params)
-
 	if len(params) < 2 || len(params) > 3 {
 		log.Printf("Invalid parameter count: %d (expected 2-3)", len(params))
 		return nil, jsonrpc2.ErrInvalidParams
@@ -99,6 +97,7 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 		query = params[2]
 	}
 
+	log.Printf("searchTraces query parameter: %+v", query)
 	summaries, err := h.store.SearchTraces(ctx, startTime, endTime, query)
 	if err != nil {
 		log.Printf("Error searching traces: %v", err)

@@ -48,41 +48,80 @@ func ParseQueryTree(jsonData any) (*QueryNode, error) {
 	return &queryNode, nil
 }
 
-// BuildSQLWhereClause converts QueryNode to SQL WHERE clause
-func BuildSQLWhereClause(queryNode *QueryNode, signalType string) (string, []any, error) {
-	if queryNode == nil {
-		return "", nil, nil
-	}
+// BuildSQL converts QueryNode to SQL WHERE clause with time filtering
+func BuildSQL(queryNode *QueryNode, signalType string, startTime, endTime int64) (string, string, []any, error) {
 
 	var conditions []string
-	var args []any
+	namedArgs := make(map[string]any)
 
-	err := buildConditions(queryNode, &conditions, &args, signalType)
-	if err != nil {
-		return "", nil, err
+	// Always add time parameters to CTE
+	namedArgs["time_start"] = startTime
+	namedArgs["time_end"] = endTime
+
+	// Add user query conditions if present
+	if queryNode != nil {
+		err := buildConditions(queryNode, &conditions, &namedArgs, signalType)
+		if err != nil {
+			return "", "", nil, err
+		}
 	}
 
-	if len(conditions) == 0 {
-		return "", nil, nil
+	// Build WHERE clause with time conditions appended
+	var whereSQL string
+	if len(conditions) > 0 {
+		whereSQL = "(" + strings.Join(conditions, " ") + ") AND StartTime >= time_start AND StartTime <= time_end"
+	} else {
+		whereSQL = "StartTime >= time_start AND StartTime <= time_end"
 	}
 
-	return strings.Join(conditions, " "), args, nil
+	// Convert namedArgs to args slice for return
+	args := make([]any, len(namedArgs))
+	paramNames := make([]string, len(namedArgs))
+
+	// Fill in time parameters first
+	if timeStart, ok := namedArgs["time_start"]; ok {
+		args[0] = timeStart
+		paramNames[0] = "time_start"
+	}
+	if timeEnd, ok := namedArgs["time_end"]; ok {
+		args[1] = timeEnd
+		paramNames[1] = "time_end"
+	}
+
+	// Fill in user parameters
+	userParamIndex := 2
+	for paramName, value := range namedArgs {
+		if paramName != "time_start" && paramName != "time_end" {
+			args[userParamIndex] = value
+			paramNames[userParamIndex] = paramName
+			userParamIndex++
+		}
+	}
+
+	// Build CTE using the ordered parameter names
+	var cteParams []string
+	for _, paramName := range paramNames {
+		cteParams = append(cteParams, fmt.Sprintf("? as %s", paramName))
+	}
+	cteSQL := fmt.Sprintf("WITH search_params AS (SELECT %s)", strings.Join(cteParams, ", "))
+
+	return cteSQL, whereSQL, args, nil
 }
 
 // buildConditions recursively builds SQL conditions from QueryNode
-func buildConditions(node *QueryNode, conditions *[]string, args *[]any, signalType string) error {
+func buildConditions(node *QueryNode, conditions *[]string, namedArgs *map[string]any, signalType string) error {
 	switch node.Type {
 	case "condition":
-		return buildCondition(node.Query, conditions, args, signalType)
+		return buildCondition(node.Query, conditions, namedArgs, signalType)
 	case "group":
-		return buildGroup(node.Group, conditions, args, signalType)
+		return buildGroup(node.Group, conditions, namedArgs, signalType)
 	default:
 		return fmt.Errorf("unknown node type: %s", node.Type)
 	}
 }
 
 // buildCondition builds SQL for a single condition
-func buildCondition(query *Query, conditions *[]string, args *[]any, signalType string) error {
+func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]any, signalType string) error {
 	if query == nil || query.Field == nil || query.FieldOperator == "" {
 		return fmt.Errorf("invalid condition: missing field or operator")
 	}
@@ -100,51 +139,47 @@ func buildCondition(query *Query, conditions *[]string, args *[]any, signalType 
 	// Build SQL condition for each expression
 	for _, dbExpression := range dbExpressions {
 		var sqlCondition string
-		var sqlArgs []any
 		var err error
 
-		// Check if this is an EXISTS expression (array field access)
-		if strings.HasPrefix(dbExpression, "EXISTS(") {
-			// For EXISTS expressions, we don't need additional operators
-			// The EXISTS already returns a boolean
-			sqlCondition = dbExpression
-			sqlArgs = []any{value}
-		} else {
-			// For regular field expressions, use the normal operator logic
-			sqlCondition, sqlArgs, err = buildOperatorCondition(dbExpression, operator, value)
-			if err != nil {
-				return fmt.Errorf("failed to build operator condition: %w", err)
+		// For regular field expressions, use the normal operator logic
+		sqlCondition, err = buildOperatorCondition(dbExpression, operator, value, namedArgs)
+		if err != nil {
+			return fmt.Errorf("failed to build operator condition: %w", err)
+		}
+
+		// Process attribute queries to add type casting for proper Union type access
+		if field.SearchScope == "attribute" {
+			sqlCondition = wrapWithTypeCasting(dbExpression, sqlCondition)
+			// Post-process event and link attributes to wrap in EXISTS to search attributes inside arrays
+			if field.AttributeScope == "event" || field.AttributeScope == "link" {
+				sqlCondition = wrapWithExists(sqlCondition, field.AttributeScope)
 			}
 		}
 
 		*conditions = append(*conditions, sqlCondition)
-		*args = append(*args, sqlArgs...)
 	}
 
 	return nil
 }
 
 // buildGroup builds SQL for a logical group (AND/OR)
-func buildGroup(group *QueryGroup, conditions *[]string, args *[]any, signalType string) error {
+func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]any, signalType string) error {
 	if group == nil {
 		return fmt.Errorf("invalid group: missing group data")
 	}
 
 	var childConditions []string
-	var childArgs []any
 
 	for _, child := range group.Children {
 		var childCondition []string
-		var childArg []any
 
-		err := buildConditions(&child, &childCondition, &childArg, signalType)
+		err := buildConditions(&child, &childCondition, namedArgs, signalType)
 		if err != nil {
 			return err
 		}
 
 		if len(childCondition) > 0 {
 			childConditions = append(childConditions, childCondition...)
-			childArgs = append(childArgs, childArg...)
 		}
 	}
 
@@ -160,54 +195,56 @@ func buildGroup(group *QueryGroup, conditions *[]string, args *[]any, signalType
 
 	joinedConditions := strings.Join(childConditions, " "+operator+" ")
 	*conditions = append(*conditions, "("+joinedConditions+")")
-	*args = append(*args, childArgs...)
 
 	return nil
 }
 
+// buildCTE generates the Common Table Expression for parameter aliasing
+
 // buildOperatorCondition builds SQL condition for specific operator
-func buildOperatorCondition(expression, operator, value string) (string, []any, error) {
+func buildOperatorCondition(expression, operator, value string, namedArgs *map[string]any) (string, error) {
 	// Handle null values with standard equality operators
 	if value == "NULL" {
 		switch operator {
 		case "=":
-			return expression + " IS NULL", []any{}, nil
+			return expression + " IS NULL", nil
 		case "!=":
-			return expression + " IS NOT NULL", []any{}, nil
+			return expression + " IS NOT NULL", nil
 		default:
-			return "", nil, fmt.Errorf("operator %s not supported with NULL value", operator)
+			return "", fmt.Errorf("operator %s not supported with NULL value", operator)
 		}
 	}
 
+	// Generate parameter name and populate namedArgs
+	paramName := fmt.Sprintf("value_%d", len(*namedArgs)-2)
+
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=", "REGEXP":
-		return expression + " " + operator + " ?", []any{value}, nil
-	case "CONTAINS", "NOT CONTAINS", "^", "$":
-		// Map user-friendly operators to SQL LIKE patterns
-		var sqlOperator, likeValue string
-		switch operator {
-		case "CONTAINS":
-			sqlOperator = "LIKE"
-			likeValue = "%" + value + "%"
-		case "NOT CONTAINS":
-			sqlOperator = "NOT LIKE"
-			likeValue = "%" + value + "%"
-		case "^":
-			sqlOperator = "LIKE"
-			likeValue = value + "%"
-		case "$":
-			sqlOperator = "LIKE"
-			likeValue = "%" + value
-		}
-
-		return expression + " " + sqlOperator + " ?", []any{likeValue}, nil
+		(*namedArgs)[paramName] = value
+		return expression + " " + operator + " " + paramName, nil
+	case "CONTAINS":
+		(*namedArgs)[paramName] = "%" + value + "%"
+		return expression + " LIKE " + paramName, nil
+	case "NOT CONTAINS":
+		(*namedArgs)[paramName] = "%" + value + "%"
+		return expression + " NOT LIKE " + paramName, nil
+	case "^":
+		(*namedArgs)[paramName] = value + "%"
+		return expression + " LIKE " + paramName, nil
+	case "$":
+		(*namedArgs)[paramName] = "%" + value
+		return expression + " LIKE " + paramName, nil
 	case "IN", "NOT IN":
 		values := parseArrayValue(value)
-		placeholders := strings.Repeat("?,", len(values))
-		placeholders = placeholders[:len(placeholders)-1] // Remove trailing comma
-		return expression + " " + operator + " (" + placeholders + ")", values, nil
+		if len(values) == 0 {
+			return "", fmt.Errorf("IN/NOT IN requires at least one value")
+		}
+
+		// Store the array as a single parameter
+		(*namedArgs)[paramName] = values
+		return expression + " " + operator + " " + paramName, nil
 	default:
-		return "", nil, fmt.Errorf("unsupported operator: %s", operator)
+		return "", fmt.Errorf("unsupported operator: %s", operator)
 	}
 }
 
@@ -268,8 +305,39 @@ func mapFieldExpressions(field *FieldDefinition, signalType string) (string, err
 
 // mapAttributeExpressions handles attribute scope mapping
 func mapAttributeExpressions(field *FieldDefinition, signalType string) ([]string, error) {
-	// TODO: Implement attribute mapping
-	return nil, fmt.Errorf("attribute search not implemented yet")
+	switch signalType {
+	case "traces":
+		return mapTraceAttributeExpressions(field)
+	case "logs":
+		return nil, fmt.Errorf("logs attribute search not implemented yet")
+	case "metrics":
+		return nil, fmt.Errorf("metrics attribute search not implemented yet")
+	default:
+		return nil, fmt.Errorf("unknown signal type: %s", signalType)
+	}
+}
+
+// mapTraceAttributeExpressions maps trace attributes to SQL expressions
+func mapTraceAttributeExpressions(field *FieldDefinition) ([]string, error) {
+	switch field.AttributeScope {
+	case "resource":
+		// Resource attributes: ResourceAttributes['attribute_name']
+		return []string{fmt.Sprintf("ResourceAttributes['%s']", field.Name)}, nil
+	case "scope":
+		// Scope attributes: ScopeAttributes['attribute_name']
+		return []string{fmt.Sprintf("ScopeAttributes['%s']", field.Name)}, nil
+	case "span":
+		// Span attributes: Attributes['attribute_name']
+		return []string{fmt.Sprintf("Attributes['%s']", field.Name)}, nil
+	case "event":
+		// Event attributes: event.Attributes['attribute_name']
+		return []string{fmt.Sprintf("event.Attributes['%s']", field.Name)}, nil
+	case "link":
+		// Link attributes: link.Attributes['attribute_name']
+		return []string{fmt.Sprintf("link.Attributes['%s']", field.Name)}, nil
+	default:
+		return nil, fmt.Errorf("unknown attribute scope: %s", field.AttributeScope)
+	}
 }
 
 // mapGlobalExpressions handles global scope mapping
@@ -324,4 +392,41 @@ func parseArrayValue(value string) []any {
 	}
 
 	return result
+}
+
+// wrapWithTypeCasting wraps attribute expressions with type casting
+func wrapWithTypeCasting(expression string, condition string) string {
+	// Extract the operator part from the condition
+	operatorPart, found := strings.CutPrefix(condition, expression)
+	if !found {
+		// Fallback if prefix doesn't match
+		operatorPart = " = ?"
+	}
+
+	return fmt.Sprintf(`CASE 
+		WHEN union_tag(%s) = 'string' THEN %s::VARCHAR%s
+		WHEN union_tag(%s) = 'int64' THEN %s::BIGINT%s
+		WHEN union_tag(%s) = 'float64' THEN %s::DOUBLE%s
+		WHEN union_tag(%s) = 'boolean' THEN %s::BOOLEAN%s
+		WHEN union_tag(%s) = 'string_list' THEN %s::VARCHAR[]%s
+		WHEN union_tag(%s) = 'int64_list' THEN %s::BIGINT[]%s
+		WHEN union_tag(%s) = 'float64_list' THEN %s::DOUBLE[]%s
+		WHEN union_tag(%s) = 'boolean_list' THEN %s::BOOLEAN[]%s
+		ELSE FALSE
+	END`, expression, expression, operatorPart, expression, expression, operatorPart,
+		expression, expression, operatorPart, expression, expression, operatorPart,
+		expression, expression, operatorPart, expression, expression, operatorPart,
+		expression, expression, operatorPart, expression, expression, operatorPart)
+}
+
+// wrapWithExists wraps event and link attribute expressions in EXISTS clauses
+func wrapWithExists(sqlCondition, attributeScope string) string {
+	switch attributeScope {
+	case "event":
+		return fmt.Sprintf("EXISTS(SELECT 1 FROM UNNEST(Events) AS event WHERE %s)", sqlCondition)
+	case "link":
+		return fmt.Sprintf("EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE %s)", sqlCondition)
+	default:
+		return sqlCondition
+	}
 }

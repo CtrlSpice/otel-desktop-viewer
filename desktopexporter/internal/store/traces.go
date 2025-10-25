@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
@@ -78,36 +79,44 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 		return nil, fmt.Errorf(ErrSearchTraces, err)
 	}
 
-	// 1. Parse query tree and build WHERE clause if provided
+	// 1. Parse query tree
 	var whereClause string
+	var cteSQL string
 	var args []any
+
+	var queryTree *QueryNode
 	if query != nil {
-		queryTree, err := ParseQueryTree(query)
+		var err error
+		queryTree, err = ParseQueryTree(query)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse query tree: %w", err)
 		}
-
-		whereClause, args, err = BuildSQLWhereClause(queryTree, "traces")
-		if err != nil {
-			return nil, fmt.Errorf("failed to build WHERE clause: %w", err)
-		}
+	}
+	// 2. Build WHERE clause and CTE
+	cteSQL, whereClause, args, err := BuildSQL(queryTree, "traces", startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build WHERE clause and CTE: %w", err)
 	}
 
-	// 3. Add time filtering
-	timeFilter := "StartTime >= ? AND StartTime <= ?"
-	timeArgs := []any{startTime, endTime}
+	// 3. Build final query: CTE + SearchTraces + WHERE
+	baseQuery := SearchTraces
+	var finalQuery string
 
-	if whereClause != "" {
-		whereClause = fmt.Sprintf("(%s) AND (%s)", whereClause, timeFilter)
-		args = append(args, timeArgs...)
-	} else {
-		whereClause = timeFilter
-		args = timeArgs
+	// CTE should always be present (contains time parameters)
+	if cteSQL == "" {
+		return nil, fmt.Errorf("CTE is empty - time parameters not properly generated")
+	}
+	finalQuery = cteSQL + " " + baseQuery
+
+	// WHERE clause should always be present (contains time conditions)
+	if whereClause == "" {
+		return nil, fmt.Errorf("WHERE clause is empty - time conditions not properly generated")
 	}
 
-	// 4. Build and execute final query
-	baseQuery := SelectTraceSummaries
-	finalQuery := strings.Replace(baseQuery, "ORDER BY", fmt.Sprintf("WHERE %s ORDER BY", whereClause), 1)
+	finalQuery = strings.Replace(finalQuery, "ORDER BY", fmt.Sprintf("WHERE %s ORDER BY", whereClause), 1)
+
+	log.Printf("SearchTraces final query: %s", finalQuery)
+	log.Printf("SearchTraces query args: %+v", args)
 
 	rows, err := s.db.QueryContext(ctx, finalQuery, args...)
 	if err != nil {
