@@ -566,6 +566,10 @@ func TestBuildOperatorCondition(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			namedArgs := make(map[string]any)
+			// Initialize with time parameters as BuildSQL does
+			namedArgs["time_start"] = int64(1000)
+			namedArgs["time_end"] = int64(2000)
+
 			sql, err := buildOperatorCondition(tt.expression, tt.operator, tt.value, &namedArgs)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -573,7 +577,15 @@ func TestBuildOperatorCondition(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedSQL, sql)
-			assert.Equal(t, tt.expectedArgs, namedArgs)
+
+			// Build expected map with time parameters included
+			expectedMap := make(map[string]any)
+			expectedMap["time_start"] = int64(1000)
+			expectedMap["time_end"] = int64(2000)
+			for k, v := range tt.expectedArgs {
+				expectedMap[k] = v
+			}
+			assert.Equal(t, expectedMap, namedArgs)
 		})
 	}
 }
