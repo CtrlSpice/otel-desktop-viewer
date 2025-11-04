@@ -318,7 +318,9 @@ function convertQueryTreeForBackend(queryTree: QueryNode): any {
       type: 'condition',
       query: {
         field: {
-          name: queryTree.query.field.name,
+          ...(queryTree.query.field.searchScope !== 'global' && {
+            name: queryTree.query.field.name,
+          }),
           searchScope: queryTree.query.field.searchScope,
           ...(queryTree.query.field.searchScope === 'attribute' && {
             attributeScope: queryTree.query.field.attributeScope,

@@ -32,11 +32,7 @@ export type FieldDefinition =
       description?: string;
     }
   | {
-      name: string;
-      type: FieldType;
       searchScope: 'global';
-      operators: Operator[];
-      description?: string;
     };
 
 // Field suggestions based on signal

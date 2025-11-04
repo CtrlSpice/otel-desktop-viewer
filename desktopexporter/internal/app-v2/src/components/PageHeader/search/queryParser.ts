@@ -289,9 +289,12 @@ class Parser {
   }
 
   // Find Field By Name
+  // Note: Fields searched by name will always have a name property (not global scope)
   private findField(name: string): FieldDefinition | undefined {
     return this.availableFields.find(
-      f => f.name.toLowerCase() === name.toLowerCase()
+      f =>
+        f.searchScope !== 'global' &&
+        f.name.toLowerCase() === name.toLowerCase()
     );
   }
 
@@ -360,6 +363,14 @@ class Parser {
 
     if (!field) {
       throw new Error(`Unknown field: ${fieldToken.value}`);
+    }
+
+    // At this point, field cannot be global (findField excludes them)
+    // TypeScript needs explicit narrowing for union types
+    if (field.searchScope === 'global') {
+      throw new Error(
+        'Internal error: unexpected global field in operator query'
+      );
     }
 
     // Parse operator
@@ -499,10 +510,7 @@ function createGlobalTextSearch(input: string): QueryNode {
     type: 'condition',
     query: {
       field: {
-        name: '_global',
-        type: 'string',
         searchScope: 'global',
-        operators: [OPERATORS.CONTAINS],
       },
       operator: OPERATORS.CONTAINS,
       value: input.trim(),
