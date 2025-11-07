@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -21,7 +22,7 @@ type Query struct {
 }
 
 type FieldDefinition struct {
-	Name           string `json:"name"`
+	Name           string `json:"name,omitempty"`
 	SearchScope    string `json:"searchScope"`
 	AttributeScope string `json:"attributeScope,omitempty"`
 }
@@ -88,14 +89,19 @@ func BuildSQL(queryNode *QueryNode, signalType string, startTime, endTime int64)
 		paramNames[1] = "time_end"
 	}
 
-	// Fill in user parameters
+	// Fill in user parameters (sort for deterministic order)
 	userParamIndex := 2
-	for paramName, value := range namedArgs {
+	var userParamNames []string
+	for paramName := range namedArgs {
 		if paramName != "time_start" && paramName != "time_end" {
-			args[userParamIndex] = value
-			paramNames[userParamIndex] = paramName
-			userParamIndex++
+			userParamNames = append(userParamNames, paramName)
 		}
+	}
+	sort.Strings(userParamNames)
+	for _, paramName := range userParamNames {
+		args[userParamIndex] = namedArgs[paramName]
+		paramNames[userParamIndex] = paramName
+		userParamIndex++
 	}
 
 	// Build CTE using the ordered parameter names
@@ -203,49 +209,65 @@ func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]a
 
 // buildOperatorCondition builds SQL condition for specific operator
 func buildOperatorCondition(expression, operator, value string, namedArgs *map[string]any) (string, error) {
+	// Check if expression contains a placeholder that needs to be replaced
+	hasPlaceholder := strings.Contains(expression, "?")
+	var operatorString string
+
 	// Handle null values with standard equality operators
 	if value == "NULL" {
-		switch operator {
-		case "=":
-			return expression + " IS NULL", nil
-		case "!=":
-			return expression + " IS NOT NULL", nil
-		default:
+		if operator == "=" {
+			operatorString = "IS NULL"
+		} else if operator == "!=" {
+			operatorString = "IS NOT NULL"
+		} else {
 			return "", fmt.Errorf("operator %s not supported with NULL value", operator)
 		}
+
+		if hasPlaceholder {
+			return strings.Replace(expression, "= ?", " "+operatorString, 1), nil
+		}
+
+		return expression + " " + operatorString, nil
 	}
 
 	// Generate parameter name and populate namedArgs
 	paramName := fmt.Sprintf("value_%d", len(*namedArgs)-2)
 
+	// Build operator part based on operator type
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=", "REGEXP":
 		(*namedArgs)[paramName] = value
-		return expression + " " + operator + " " + paramName, nil
+		operatorString = operator + " " + paramName
 	case "CONTAINS":
 		(*namedArgs)[paramName] = "%" + value + "%"
-		return expression + " LIKE " + paramName, nil
+		operatorString = "LIKE " + paramName
 	case "NOT CONTAINS":
 		(*namedArgs)[paramName] = "%" + value + "%"
-		return expression + " NOT LIKE " + paramName, nil
+		operatorString = "NOT LIKE " + paramName
 	case "^":
 		(*namedArgs)[paramName] = value + "%"
-		return expression + " LIKE " + paramName, nil
+		operatorString = "LIKE " + paramName
 	case "$":
 		(*namedArgs)[paramName] = "%" + value
-		return expression + " LIKE " + paramName, nil
+		operatorString = "LIKE " + paramName
 	case "IN", "NOT IN":
 		values := parseArrayValue(value)
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN/NOT IN requires at least one value")
 		}
-
-		// Store the array as a single parameter
 		(*namedArgs)[paramName] = values
-		return expression + " " + operator + " " + paramName, nil
+		operatorString = operator + " " + paramName
 	default:
 		return "", fmt.Errorf("unsupported operator: %s", operator)
 	}
+
+	// Apply operator part to expression
+	if hasPlaceholder {
+		// Replace "= ?" with operator part
+		return strings.Replace(expression, "= ?", operatorString, 1), nil
+	}
+	// No placeholder, append operator part
+	return expression + " " + operatorString, nil
 }
 
 // mapFieldToExpressions maps frontend field to database expressions
@@ -260,7 +282,7 @@ func mapFieldToExpressions(field *FieldDefinition, signalType string) ([]string,
 	case "attribute":
 		return mapAttributeExpressions(field, signalType)
 	case "global":
-		return mapGlobalExpressions(field, signalType)
+		return mapGlobalExpressions(signalType)
 	default:
 		return nil, fmt.Errorf("unknown search scope: %s", field.SearchScope)
 	}
@@ -341,9 +363,40 @@ func mapTraceAttributeExpressions(field *FieldDefinition) ([]string, error) {
 }
 
 // mapGlobalExpressions handles global scope mapping
-func mapGlobalExpressions(field *FieldDefinition, signalType string) ([]string, error) {
-	// TODO: Implement global search
-	return nil, fmt.Errorf("global search not implemented yet")
+func mapGlobalExpressions(signalType string) ([]string, error) {
+	searchConditions := []string{}
+	switch signalType {
+	case "traces":
+		// Regular fields (cast to string for CONTAINS)
+		spanFields := []string{"Name", "TraceID", "SpanID", "ParentSpanID", "Kind", "StartTime", "EndTime", "DroppedAttributesCount", "DroppedEventsCount", "DroppedLinksCount", "StatusCode", "StatusMessage"}
+		for _, field := range spanFields {
+			searchConditions = append(searchConditions, fmt.Sprintf("CAST(%s AS VARCHAR)", field))
+		}
+
+		// Event fields in Events array (cast to string for CONTAINS)
+		searchConditions = append(searchConditions,
+			"EXISTS(SELECT 1 FROM UNNEST(Events) AS event WHERE CAST(event.Name AS VARCHAR))",
+			"EXISTS(SELECT 1 FROM UNNEST(Events) AS event WHERE CAST(event.Timestamp AS VARCHAR))",
+			"EXISTS(SELECT 1 FROM UNNEST(Events) AS event WHERE CAST(event.DroppedAttributesCount AS VARCHAR))",
+		)
+
+		// Link fields in Links array (cast to string for CONTAINS)
+		searchConditions = append(searchConditions,
+			"EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE CAST(link.TraceID AS VARCHAR))",
+			"EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE CAST(link.SpanID AS VARCHAR))",
+			"EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE CAST(link.TraceState AS VARCHAR))",
+			"EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE CAST(link.DroppedAttributesCount AS VARCHAR))",
+		)
+
+	case "logs":
+		searchConditions = append(searchConditions, "LogID", "Timestamp", "ObservedTimestamp", "TraceID", "SpanID", "SeverityText", "SeverityNumber", "Body")
+	case "metrics":
+		searchConditions = append(searchConditions, "MetricID", "Name", "Description", "Unit")
+	default:
+		return nil, fmt.Errorf("unknown signal type: %s", signalType)
+	}
+
+	return searchConditions, nil
 }
 
 // mapCommonFields handles resource and scope field mapping

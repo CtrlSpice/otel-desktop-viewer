@@ -456,6 +456,90 @@ func TestBuildSQL(t *testing.T) {
 			endTime:    2000,
 			wantErr:    true,
 		},
+		{
+			name: "event field equality",
+			queryNode: &QueryNode{
+				ID:   "query-event-field",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						Name:        "event.name",
+						SearchScope: "field",
+					},
+					FieldOperator: "=",
+					Value:         "click",
+				},
+			},
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
+			expectedSQL:  "(EXISTS(SELECT 1 FROM UNNEST(Events) AS item WHERE item.'Name' = value_0)) AND StartTime >= time_start AND StartTime <= time_end",
+			expectedArgs: []any{int64(1000), int64(2000), "click"},
+		},
+		{
+			name: "event field contains",
+			queryNode: &QueryNode{
+				ID:   "query-event-contains",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						Name:        "event.name",
+						SearchScope: "field",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "click",
+				},
+			},
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
+			expectedSQL:  "(EXISTS(SELECT 1 FROM UNNEST(Events) AS item WHERE item.'Name' LIKE value_0)) AND StartTime >= time_start AND StartTime <= time_end",
+			expectedArgs: []any{int64(1000), int64(2000), "%click%"},
+		},
+		{
+			name: "link field equality",
+			queryNode: &QueryNode{
+				ID:   "query-link-field",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						Name:        "link.traceID",
+						SearchScope: "field",
+					},
+					FieldOperator: "=",
+					Value:         "abc123",
+				},
+			},
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
+			expectedSQL:  "(EXISTS(SELECT 1 FROM UNNEST(Links) AS item WHERE item.'TraceID' = value_0)) AND StartTime >= time_start AND StartTime <= time_end",
+			expectedArgs: []any{int64(1000), int64(2000), "abc123"},
+		},
+		{
+			name: "link field contains",
+			queryNode: &QueryNode{
+				ID:   "query-link-contains",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						Name:        "link.spanID",
+						SearchScope: "field",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "span",
+				},
+			},
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
+			expectedSQL:  "(EXISTS(SELECT 1 FROM UNNEST(Links) AS item WHERE item.'SpanID' LIKE value_0)) AND StartTime >= time_start AND StartTime <= time_end",
+			expectedArgs: []any{int64(1000), int64(2000), "%span%"},
+		},
 	}
 
 	for _, tt := range tests {
