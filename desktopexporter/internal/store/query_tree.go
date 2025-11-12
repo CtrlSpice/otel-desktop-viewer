@@ -70,9 +70,9 @@ func BuildSQL(queryNode *QueryNode, signalType string, startTime, endTime int64)
 	// Build WHERE clause with time conditions appended
 	var whereSQL string
 	if len(conditions) > 0 {
-		whereSQL = "(" + strings.Join(conditions, " ") + ") AND StartTime >= search_params.time_start AND StartTime <= search_params.time_end"
+		whereSQL = "(" + strings.Join(conditions, " ") + ") AND StartTime >= time_start AND StartTime <= time_end"
 	} else {
-		whereSQL = "StartTime >= search_params.time_start AND StartTime <= search_params.time_end"
+		whereSQL = "StartTime >= time_start AND StartTime <= time_end"
 	}
 
 	// Convert namedArgs to args slice for return
@@ -242,33 +242,31 @@ func buildOperatorCondition(expression, operator, value string, namedArgs *map[s
 
 	// Generate parameter name and populate namedArgs
 	paramName := fmt.Sprintf("value_%d", len(*namedArgs)-2)
-	// Qualify with search_params to reference the CTE column
-	qualifiedParamName := "search_params." + paramName
 
 	// Build operator part based on operator type
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=", "REGEXP":
 		(*namedArgs)[paramName] = value
-		operatorString = operator + " " + qualifiedParamName
+		operatorString = operator + " " + paramName
 	case "CONTAINS":
 		(*namedArgs)[paramName] = "%" + value + "%"
-		operatorString = "LIKE " + qualifiedParamName
+		operatorString = "LIKE " + paramName
 	case "NOT CONTAINS":
 		(*namedArgs)[paramName] = "%" + value + "%"
-		operatorString = "NOT LIKE " + qualifiedParamName
+		operatorString = "NOT LIKE " + paramName
 	case "^":
 		(*namedArgs)[paramName] = value + "%"
-		operatorString = "LIKE " + qualifiedParamName
+		operatorString = "LIKE " + paramName
 	case "$":
 		(*namedArgs)[paramName] = "%" + value
-		operatorString = "LIKE " + qualifiedParamName
+		operatorString = "LIKE " + paramName
 	case "IN", "NOT IN":
 		values := parseArrayValue(value)
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN/NOT IN requires at least one value")
 		}
 		(*namedArgs)[paramName] = values
-		operatorString = operator + " " + qualifiedParamName
+		operatorString = operator + " " + paramName
 	default:
 		return "", fmt.Errorf("unsupported operator: %s", operator)
 	}
