@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
@@ -113,10 +112,9 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 		return nil, fmt.Errorf("WHERE clause is empty - time conditions not properly generated")
 	}
 
+	// Add CTE to FROM clause so time_start and time_end are accessible
+	finalQuery = strings.Replace(finalQuery, "FROM spans s", "FROM spans s, search_params", 1)
 	finalQuery = strings.Replace(finalQuery, "ORDER BY", fmt.Sprintf("WHERE %s ORDER BY", whereClause), 1)
-
-	log.Printf("SearchTraces final query: %s", finalQuery)
-	log.Printf("SearchTraces query args: %+v", args)
 
 	rows, err := s.db.QueryContext(ctx, finalQuery, args...)
 	if err != nil {

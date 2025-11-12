@@ -74,7 +74,6 @@ async function callRPC(method: string, params?: any): Promise<any> {
 
     return data.result;
   } catch (error) {
-    console.error(`RPC call failed for method ${method}:`, error);
     throw error;
   }
 }
@@ -222,9 +221,7 @@ export let telemetryAPI = {
     const startTimeNs = toNanoseconds(startTime);
     const endTimeNs = toNanoseconds(endTime);
     const params = [startTimeNs, endTimeNs];
-    console.log('getTraceAttributes: calling with params:', params);
     const rawData = await callRPC('getTraceAttributes', params);
-    console.log('getTraceAttributes: received rawData:', rawData);
 
     // Validate that we received an array
     if (!Array.isArray(rawData)) {
@@ -238,7 +235,6 @@ export let telemetryAPI = {
 
     // Convert backend attribute data to FieldDefinition objects
     const converted = convertAttributesToFieldDefinitions(rawData);
-    console.log('getTraceAttributes: converted to:', converted);
     return converted;
   },
 

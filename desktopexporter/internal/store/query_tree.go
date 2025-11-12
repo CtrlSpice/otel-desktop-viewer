@@ -70,9 +70,9 @@ func BuildSQL(queryNode *QueryNode, signalType string, startTime, endTime int64)
 	// Build WHERE clause with time conditions appended
 	var whereSQL string
 	if len(conditions) > 0 {
-		whereSQL = "(" + strings.Join(conditions, " ") + ") AND StartTime >= time_start AND StartTime <= time_end"
+		whereSQL = "(" + strings.Join(conditions, " ") + ") AND StartTime >= search_params.time_start AND StartTime <= search_params.time_end"
 	} else {
-		whereSQL = "StartTime >= time_start AND StartTime <= time_end"
+		whereSQL = "StartTime >= search_params.time_start AND StartTime <= search_params.time_end"
 	}
 
 	// Convert namedArgs to args slice for return
@@ -143,6 +143,7 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 	}
 
 	// Build SQL condition for each expression
+	var sqlConditions []string
 	for _, dbExpression := range dbExpressions {
 		var sqlCondition string
 		var err error
@@ -162,7 +163,15 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 			}
 		}
 
-		*conditions = append(*conditions, sqlCondition)
+		sqlConditions = append(sqlConditions, sqlCondition)
+	}
+
+	// For global search, OR all expressions together
+	if field.SearchScope == "global" && len(sqlConditions) > 1 {
+		joinedConditions := strings.Join(sqlConditions, " OR ")
+		*conditions = append(*conditions, "("+joinedConditions+")")
+	} else {
+		*conditions = append(*conditions, sqlConditions...)
 	}
 
 	return nil
@@ -215,16 +224,17 @@ func buildOperatorCondition(expression, operator, value string, namedArgs *map[s
 
 	// Handle null values with standard equality operators
 	if value == "NULL" {
-		if operator == "=" {
+		switch operator {
+		case "=":
 			operatorString = "IS NULL"
-		} else if operator == "!=" {
+		case "!=":
 			operatorString = "IS NOT NULL"
-		} else {
+		default:
 			return "", fmt.Errorf("operator %s not supported with NULL value", operator)
 		}
 
 		if hasPlaceholder {
-			return strings.Replace(expression, "= ?", " "+operatorString, 1), nil
+			return strings.ReplaceAll(expression, "= ?", operatorString), nil
 		}
 
 		return expression + " " + operatorString, nil
@@ -232,39 +242,41 @@ func buildOperatorCondition(expression, operator, value string, namedArgs *map[s
 
 	// Generate parameter name and populate namedArgs
 	paramName := fmt.Sprintf("value_%d", len(*namedArgs)-2)
+	// Qualify with search_params to reference the CTE column
+	qualifiedParamName := "search_params." + paramName
 
 	// Build operator part based on operator type
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=", "REGEXP":
 		(*namedArgs)[paramName] = value
-		operatorString = operator + " " + paramName
+		operatorString = operator + " " + qualifiedParamName
 	case "CONTAINS":
 		(*namedArgs)[paramName] = "%" + value + "%"
-		operatorString = "LIKE " + paramName
+		operatorString = "LIKE " + qualifiedParamName
 	case "NOT CONTAINS":
 		(*namedArgs)[paramName] = "%" + value + "%"
-		operatorString = "NOT LIKE " + paramName
+		operatorString = "NOT LIKE " + qualifiedParamName
 	case "^":
 		(*namedArgs)[paramName] = value + "%"
-		operatorString = "LIKE " + paramName
+		operatorString = "LIKE " + qualifiedParamName
 	case "$":
 		(*namedArgs)[paramName] = "%" + value
-		operatorString = "LIKE " + paramName
+		operatorString = "LIKE " + qualifiedParamName
 	case "IN", "NOT IN":
 		values := parseArrayValue(value)
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN/NOT IN requires at least one value")
 		}
 		(*namedArgs)[paramName] = values
-		operatorString = operator + " " + paramName
+		operatorString = operator + " " + qualifiedParamName
 	default:
 		return "", fmt.Errorf("unsupported operator: %s", operator)
 	}
 
 	// Apply operator part to expression
 	if hasPlaceholder {
-		// Replace "= ?" with operator part
-		return strings.Replace(expression, "= ?", operatorString, 1), nil
+		// Replace all "= ?" with operator part (needed for OR conditions with multiple placeholders)
+		return strings.ReplaceAll(expression, "= ?", operatorString), nil
 	}
 	// No placeholder, append operator part
 	return expression + " " + operatorString, nil
@@ -364,39 +376,57 @@ func mapTraceAttributeExpressions(field *FieldDefinition) ([]string, error) {
 
 // mapGlobalExpressions handles global scope mapping
 func mapGlobalExpressions(signalType string) ([]string, error) {
-	searchConditions := []string{}
+	var searchFields []string
+
+	// Resource and scope attributes (apply to all signal types)
+	searchFields = append(searchFields,
+		"EXISTS(SELECT 1 FROM UNNEST(map_entries(s.ResourceAttributes)) WHERE unnest.key = ? OR CAST(unnest.value AS VARCHAR) = ?)",
+		"EXISTS(SELECT 1 FROM UNNEST(map_entries(s.ScopeAttributes)) WHERE unnest.key = ? OR CAST(unnest.value AS VARCHAR) = ?)",
+	)
+
 	switch signalType {
 	case "traces":
-		// Regular fields (cast to string for CONTAINS)
-		spanFields := []string{"Name", "TraceID", "SpanID", "ParentSpanID", "Kind", "StartTime", "EndTime", "DroppedAttributesCount", "DroppedEventsCount", "DroppedLinksCount", "StatusCode", "StatusMessage"}
-		for _, field := range spanFields {
-			searchConditions = append(searchConditions, fmt.Sprintf("CAST(%s AS VARCHAR)", field))
-		}
-
-		// Event fields in Events array (cast to string for CONTAINS)
-		searchConditions = append(searchConditions,
-			"EXISTS(SELECT 1 FROM UNNEST(Events) AS event WHERE CAST(event.Name AS VARCHAR))",
-			"EXISTS(SELECT 1 FROM UNNEST(Events) AS event WHERE CAST(event.Timestamp AS VARCHAR))",
-			"EXISTS(SELECT 1 FROM UNNEST(Events) AS event WHERE CAST(event.DroppedAttributesCount AS VARCHAR))",
-		)
-
-		// Link fields in Links array (cast to string for CONTAINS)
-		searchConditions = append(searchConditions,
-			"EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE CAST(link.TraceID AS VARCHAR))",
-			"EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE CAST(link.SpanID AS VARCHAR))",
-			"EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE CAST(link.TraceState AS VARCHAR))",
-			"EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE CAST(link.DroppedAttributesCount AS VARCHAR))",
+		searchFields = append(searchFields,
+			"s.TraceID",
+			"s.TraceState",
+			"s.SpanID",
+			"s.ParentSpanID",
+			"s.Name",
+			"s.Kind",
+			"CAST(s.StartTime AS VARCHAR)",
+			"CAST(s.EndTime AS VARCHAR)",
+			"CAST(s.ResourceDroppedAttributesCount AS VARCHAR)",
+			"s.ScopeName",
+			"s.ScopeVersion",
+			"CAST(s.ScopeDroppedAttributesCount AS VARCHAR)",
+			"CAST(s.DroppedAttributesCount AS VARCHAR)",
+			"CAST(s.DroppedEventsCount AS VARCHAR)",
+			"CAST(s.DroppedLinksCount AS VARCHAR)",
+			"s.StatusCode",
+			"s.StatusMessage",
+			"EXISTS(SELECT 1 FROM UNNEST(s.Events) WHERE unnest.Name = ?)",
+			"EXISTS(SELECT 1 FROM UNNEST(s.Events) WHERE CAST(unnest.Timestamp AS VARCHAR) = ?)",
+			"EXISTS(SELECT 1 FROM UNNEST(s.Events) WHERE CAST(unnest.DroppedAttributesCount AS VARCHAR) = ?)",
+			"EXISTS(SELECT 1 FROM UNNEST(s.Links) WHERE unnest.TraceID = ?)",
+			"EXISTS(SELECT 1 FROM UNNEST(s.Links) WHERE unnest.SpanID = ?)",
+			"EXISTS(SELECT 1 FROM UNNEST(s.Links) WHERE unnest.TraceState = ?)",
+			"EXISTS(SELECT 1 FROM UNNEST(s.Links) WHERE CAST(unnest.DroppedAttributesCount AS VARCHAR) = ?)",
+			// Span attributes (keys and values)
+			"EXISTS(SELECT 1 FROM UNNEST(map_entries(s.Attributes)) WHERE unnest.key = ? OR CAST(unnest.value AS VARCHAR) = ?)",
+			// Event and link attributes (keys and values) - using derived table to avoid double UNNEST
+			"EXISTS(SELECT 1 FROM (SELECT UNNEST(s.Events) AS event_data) WHERE EXISTS(SELECT 1 FROM UNNEST(map_entries(event_data.Attributes)) WHERE unnest.key = ? OR CAST(unnest.value AS VARCHAR) = ?))",
+			"EXISTS(SELECT 1 FROM (SELECT UNNEST(s.Links) AS link_data) WHERE EXISTS(SELECT 1 FROM UNNEST(map_entries(link_data.Attributes)) WHERE unnest.key = ? OR CAST(unnest.value AS VARCHAR) = ?))",
 		)
 
 	case "logs":
-		searchConditions = append(searchConditions, "LogID", "Timestamp", "ObservedTimestamp", "TraceID", "SpanID", "SeverityText", "SeverityNumber", "Body")
+		searchFields = append(searchFields, "LogID", "Timestamp", "ObservedTimestamp", "TraceID", "SpanID", "SeverityText", "SeverityNumber", "Body")
 	case "metrics":
-		searchConditions = append(searchConditions, "MetricID", "Name", "Description", "Unit")
+		searchFields = append(searchFields, "MetricID", "Name", "Description", "Unit")
 	default:
 		return nil, fmt.Errorf("unknown signal type: %s", signalType)
 	}
 
-	return searchConditions, nil
+	return searchFields, nil
 }
 
 // mapCommonFields handles resource and scope field mapping

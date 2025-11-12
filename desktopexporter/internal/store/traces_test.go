@@ -273,6 +273,271 @@ func TestTraceSuite(t *testing.T) {
 	})
 }
 
+// TestSearchTraces tests the SearchTraces functionality with various query types
+func TestSearchTraces(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	// Add test trace
+	spans := createTestTrace()
+	err := helper.Store.AddSpans(helper.Ctx, spans)
+	assert.NoError(t, err, "failed to add test trace")
+
+	baseTime := time.Now().UnixNano()
+	startTime := baseTime - 24*time.Hour.Nanoseconds()
+	endTime := baseTime + 24*time.Hour.Nanoseconds()
+
+	t.Run("GlobalSearch_ResourceAttribute", func(t *testing.T) {
+		// Search for "test-service" in resource attributes via global search
+		query := &QueryNode{
+			ID:   "query-1",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					SearchScope: "global",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "test-service",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "global search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with test-service")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_SpanAttribute", func(t *testing.T) {
+		// Search for "root-value" in span attributes via global search
+		query := &QueryNode{
+			ID:   "query-2",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					SearchScope: "global",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "root-value",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "global search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with root-value")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_EventField", func(t *testing.T) {
+		// Search for "root-event" in event names via global search
+		query := &QueryNode{
+			ID:   "query-3",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					SearchScope: "global",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "root-event",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "global search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with root-event")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_EventAttribute", func(t *testing.T) {
+		// Search for "Hello" in event attributes via global search
+		query := &QueryNode{
+			ID:   "query-4",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					SearchScope: "global",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "Hello",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "global search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with Hello in event attributes")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_LinkAttribute", func(t *testing.T) {
+		// Search for "Link1" in link attributes via global search
+		query := &QueryNode{
+			ID:   "query-5",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					SearchScope: "global",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "Link1",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "global search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with Link1 in link attributes")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
+		// Search for something that doesn't exist
+		query := &QueryNode{
+			ID:   "query-6",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					SearchScope: "global",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "nonexistent-value-12345",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "global search should not error")
+		assert.Empty(t, summaries, "should not find any traces")
+	})
+
+	t.Run("GlobalSearch_WithFieldCondition", func(t *testing.T) {
+		// Global search combined with field condition (AND)
+		query := &QueryNode{
+			ID:   "query-7",
+			Type: "group",
+			Group: &QueryGroup{
+				LogicalOperator: "AND",
+				Children: []QueryNode{
+					{
+						ID:   "query-7a",
+						Type: "condition",
+						Query: &Query{
+							Field: &FieldDefinition{
+								SearchScope: "global",
+							},
+							FieldOperator: "CONTAINS",
+							Value:         "test-service",
+						},
+					},
+					{
+						ID:   "query-7b",
+						Type: "condition",
+						Query: &Query{
+							Field: &FieldDefinition{
+								Name:        "Name",
+								SearchScope: "field",
+							},
+							FieldOperator: "=",
+							Value:         "root-operation",
+						},
+					},
+				},
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "combined search should not error")
+		assert.NotEmpty(t, summaries, "should find trace matching both conditions")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_UnionValueExtraction", func(t *testing.T) {
+		// Test that union type values are correctly extracted using CAST to VARCHAR
+		// Search for "42" which exists as int64 in span attributes (root.int: 42)
+		// This verifies that CAST(unnest.value AS VARCHAR) correctly extracts
+		// the value from the union type structure {tag: "int64", value: 42}
+		query := &QueryNode{
+			ID:   "query-8",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					SearchScope: "global",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "42",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "global search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with 42 in attributes (union value extraction)")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_PumpkinPie", func(t *testing.T) {
+		// Add a trace with "pumpkin.pie" as service.name to test union value extraction
+		// Note: trace ID, span ID, and name do NOT contain "pumpkin" to ensure
+		// the search only matches on attribute values
+		pumpkinTrace := []traces.SpanData{
+			{
+				TraceID:      "test-trace-2",
+				SpanID:       "test-span-2",
+				ParentSpanID: "",
+				Name:         "test-operation",
+				Kind:         "SPAN_KIND_SERVER",
+				StartTime:    baseTime,
+				EndTime:      baseTime + time.Second.Nanoseconds(),
+				Attributes:   map[string]any{},
+				Events:       []traces.EventData{},
+				Links:        []traces.LinkData{},
+				Resource: &resource.ResourceData{
+					Attributes: map[string]any{
+						"service.name": "pumpkin.pie",
+					},
+					DroppedAttributesCount: 0,
+				},
+				Scope: &scope.ScopeData{
+					Name:                   "test-scope",
+					Version:                "v1.0.0",
+					Attributes:             map[string]any{},
+					DroppedAttributesCount: 0,
+				},
+				DroppedAttributesCount: 0,
+				DroppedEventsCount:     0,
+				DroppedLinksCount:      0,
+				StatusCode:             "",
+				StatusMessage:          "",
+			},
+		}
+		err := helper.Store.AddSpans(helper.Ctx, pumpkinTrace)
+		assert.NoError(t, err, "failed to add pumpkin trace")
+
+		// Search for "pumpkin" - should find "pumpkin.pie" in resource attributes
+		// This verifies that CAST(unnest.value AS VARCHAR) correctly extracts
+		// union type values for searching
+		query := &QueryNode{
+			ID:   "query-9",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					SearchScope: "global",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "pumpkin",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "global search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with pumpkin.pie")
+		// Should find test-trace-2 which has pumpkin.pie in resource attributes
+		foundPumpkin := false
+		for _, summary := range summaries {
+			if summary.TraceID == "test-trace-2" {
+				foundPumpkin = true
+				break
+			}
+		}
+		assert.True(t, foundPumpkin, "should find test-trace-2 with pumpkin.pie in resource attributes")
+	})
+}
+
 // createTestTrace creates a comprehensive test trace with multiple spans, events, and links.
 func createTestTrace() []traces.SpanData {
 	baseTime := time.Now().UnixNano()

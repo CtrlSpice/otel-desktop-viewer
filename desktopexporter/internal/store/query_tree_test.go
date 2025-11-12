@@ -714,3 +714,281 @@ func TestParseArrayValue(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildSQL_GlobalSearch(t *testing.T) {
+	tests := []struct {
+		name            string
+		queryNode       *QueryNode
+		signalType      string
+		startTime       int64
+		endTime         int64
+		expectedSQLPart string // Part of SQL to verify
+		expectedValue   string // Expected search value (with operator formatting)
+		wantErr         bool
+	}{
+		{
+			name: "global search with CONTAINS",
+			queryNode: &QueryNode{
+				ID:   "query-global-1",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "test",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "TraceID LIKE value_",
+			expectedValue:   "%test%",
+		},
+		{
+			name: "global search with equality",
+			queryNode: &QueryNode{
+				ID:   "query-global-2",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "=",
+					Value:         "exact-match",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "TraceID = value_",
+			expectedValue:   "exact-match",
+		},
+		{
+			name: "global search with starts with",
+			queryNode: &QueryNode{
+				ID:   "query-global-3",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "^",
+					Value:         "prefix",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "TraceID LIKE value_",
+			expectedValue:   "prefix%",
+		},
+		{
+			name: "global search combined with field condition (AND)",
+			queryNode: &QueryNode{
+				ID:   "query-global-4",
+				Type: "group",
+				Group: &QueryGroup{
+					LogicalOperator: "AND",
+					Children: []QueryNode{
+						{
+							ID:   "query-global-4a",
+							Type: "condition",
+							Query: &Query{
+								Field: &FieldDefinition{
+									SearchScope: "global",
+								},
+								FieldOperator: "CONTAINS",
+								Value:         "test",
+							},
+						},
+						{
+							ID:   "query-global-4b",
+							Type: "condition",
+							Query: &Query{
+								Field: &FieldDefinition{
+									Name:        "Name",
+									SearchScope: "field",
+								},
+								FieldOperator: "=",
+								Value:         "specific-span",
+							},
+						},
+					},
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "Name = value_",
+			expectedValue:   "%test%",
+		},
+		{
+			name: "global search includes resource attributes",
+			queryNode: &QueryNode{
+				ID:   "query-global-5",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "service",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "map_entries(s.ResourceAttributes)",
+			expectedValue:   "%service%",
+		},
+		{
+			name: "global search includes scope attributes",
+			queryNode: &QueryNode{
+				ID:   "query-global-6",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "scope-value",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "map_entries(s.ScopeAttributes)",
+			expectedValue:   "%scope-value%",
+		},
+		{
+			name: "global search includes span attributes",
+			queryNode: &QueryNode{
+				ID:   "query-global-7",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "span-attr",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "map_entries(s.Attributes)",
+			expectedValue:   "%span-attr%",
+		},
+		{
+			name: "global search includes event fields (array fields)",
+			queryNode: &QueryNode{
+				ID:   "query-global-8",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "click",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "UNNEST(s.Events) WHERE unnest.Name",
+			expectedValue:   "%click%",
+		},
+		{
+			name: "global search includes link fields (array fields)",
+			queryNode: &QueryNode{
+				ID:   "query-global-9",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "trace-id-value",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "UNNEST(s.Links) WHERE unnest.TraceID",
+			expectedValue:   "%trace-id-value%",
+		},
+		{
+			name: "global search includes event attributes (attributes in array fields)",
+			queryNode: &QueryNode{
+				ID:   "query-global-10",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "event-attr",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "(SELECT UNNEST(s.Events) AS event_data) WHERE EXISTS(SELECT 1 FROM UNNEST(map_entries(event_data.Attributes))",
+			expectedValue:   "%event-attr%",
+		},
+		{
+			name: "global search includes link attributes (attributes in array fields)",
+			queryNode: &QueryNode{
+				ID:   "query-global-11",
+				Type: "condition",
+				Query: &Query{
+					Field: &FieldDefinition{
+						SearchScope: "global",
+					},
+					FieldOperator: "CONTAINS",
+					Value:         "link-attr",
+				},
+			},
+			signalType:      "traces",
+			startTime:       1000,
+			endTime:         2000,
+			expectedSQLPart: "(SELECT UNNEST(s.Links) AS link_data) WHERE EXISTS(SELECT 1 FROM UNNEST(map_entries(link_data.Attributes))",
+			expectedValue:   "%link-attr%",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cte, sql, args, err := BuildSQL(tt.queryNode, tt.signalType, tt.startTime, tt.endTime)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			// Verify CTE contains time parameters
+			assert.Contains(t, cte, "time_start")
+			assert.Contains(t, cte, "time_end")
+			// Verify SQL contains expected parts
+			assert.Contains(t, sql, tt.expectedSQLPart)
+			assert.Contains(t, sql, "StartTime >= time_start")
+			assert.Contains(t, sql, "StartTime <= time_end")
+			// Verify time args
+			assert.Equal(t, int64(1000), args[0])
+			assert.Equal(t, int64(2000), args[1])
+			// Verify global search expressions are ORed together
+			if tt.queryNode.Query != nil && tt.queryNode.Query.Field != nil && tt.queryNode.Query.Field.SearchScope == "global" {
+				assert.Contains(t, sql, " OR ", "Global search should have OR conditions")
+				// Verify all user args have the expected value (for global search)
+				for i := 2; i < len(args); i++ {
+					assert.Equal(t, tt.expectedValue, args[i], "All global search args should have the same value")
+				}
+			} else if tt.queryNode.Group != nil {
+				// For group with global search, verify it's present
+				assert.Contains(t, sql, " OR ", "Group with global search should have OR conditions")
+			}
+		})
+	}
+}

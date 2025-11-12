@@ -233,6 +233,17 @@
   // Detect Pattern Fields (Trace ID, Span ID)
   let detectedPatternValue = $state<string | null>(null);
 
+  // Check If Pattern Is Already Part Of A Field Expression
+  function isPatternInFieldExpression(input: string, matchIndex: number): boolean {
+    // Get text before the match
+    const beforeMatch = input.substring(0, matchIndex);
+    
+    // Check if there's a field name and = operator before the pattern
+    // Look for pattern: fieldName= or fieldName = (with optional spaces)
+    const fieldExpressionPattern = /([\w.]+)\s*=\s*$/;
+    return fieldExpressionPattern.test(beforeMatch);
+  }
+
   function detectPatternFields(input: string): FieldDefinition[] {
     const traceIdPattern = /\b([a-f0-9]{32})\b/i;
     const spanIdPattern = /\b([a-f0-9]{16})\b/i;
@@ -240,15 +251,23 @@
     // Check for trace ID
     const traceIdMatch = input.match(traceIdPattern);
     if (traceIdMatch) {
-      detectedPatternValue = traceIdMatch[1];
-      return fuzzyMatchFields('traceId');
+      const matchIndex = traceIdMatch.index!;
+      // Don't suggest if pattern is already part of a field expression
+      if (!isPatternInFieldExpression(input, matchIndex)) {
+        detectedPatternValue = traceIdMatch[1];
+        return fuzzyMatchFields('traceId');
+      }
     }
 
     // Check for span ID
     const spanIdMatch = input.match(spanIdPattern);
     if (spanIdMatch) {
-      detectedPatternValue = spanIdMatch[1];
-      return fuzzyMatchFields('spanId');
+      const matchIndex = spanIdMatch.index!;
+      // Don't suggest if pattern is already part of a field expression
+      if (!isPatternInFieldExpression(input, matchIndex)) {
+        detectedPatternValue = spanIdMatch[1];
+        return fuzzyMatchFields('spanId');
+      }
     }
 
     // No pattern detected
@@ -259,6 +278,7 @@
   // Fuzzy Match Field Names
   function fuzzyMatchFields(input: string): FieldDefinition[] {
     const matches = availableFields
+      .filter(field => field.searchScope !== 'global')
       .map(field => ({
         field,
         score: calculateMatchScore(field, input),
@@ -272,6 +292,7 @@
 
   // Enhanced scoring for better attribute matching
   function calculateMatchScore(field: FieldDefinition, input: string): number {
+    if (field.searchScope === 'global') return 0;
     const lowerInput = input.toLowerCase();
     const lowerFieldName = field.name.toLowerCase();
 
@@ -289,6 +310,7 @@
 
   // Select A Field From Suggestions
   function selectField(field: FieldDefinition) {
+    if (field.searchScope === 'global') return;
     let newValue: string;
 
     if (detectedPatternValue) {
@@ -396,7 +418,6 @@
             // This depends on how you want to integrate with the rest of your app
           })
           .catch(error => {
-            console.error('Search failed:', error);
             parseError = 'Search failed: ' + error.message;
           });
       }
@@ -500,8 +521,7 @@
             class:selected={index === selectedSuggestionIndex}
             onclick={() => selectField(field)}
           >
-            <span class="field-name">{field.name}</span>
-            <span class="field-description">{field.description}</span>
+            <span class="field-name">{'name' in field ? field.name : ''}</span>
           </button>
         </li>
       {/each}
@@ -581,19 +601,11 @@
     @apply text-sm font-medium text-base-content;
   }
 
-  .field-description {
-    @apply text-xs text-base-content/60;
-  }
-
   .list-button.selected {
     @apply bg-primary text-primary-content;
   }
 
   .list-button.selected .field-name {
     @apply text-primary-content;
-  }
-
-  .list-button.selected .field-description {
-    @apply text-primary-content/80;
   }
 </style>
