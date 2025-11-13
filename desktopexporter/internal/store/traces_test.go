@@ -469,6 +469,191 @@ func TestSearchTraces(t *testing.T) {
 		assert.NotEmpty(t, summaries, "should find trace with 42 in attributes (union value extraction)")
 		assert.Equal(t, "test-trace", summaries[0].TraceID)
 	})
+
+	t.Run("ResourceAttribute_ServiceName", func(t *testing.T) {
+		// Test searching for service.name as a resource attribute using union_extract
+		// This verifies that union_extract correctly extracts string values from union types
+		query := &QueryNode{
+			ID:   "query-9",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "service.name",
+					SearchScope:    "attribute",
+					AttributeScope: "resource",
+					Type:           "string",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "test-service",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "resource attribute search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with service.name containing test-service")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("SpanAttribute_Int64", func(t *testing.T) {
+		// Test searching for int64 span attribute
+		query := &QueryNode{
+			ID:   "query-10",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "root.int",
+					SearchScope:    "attribute",
+					AttributeScope: "span",
+					Type:           "int64",
+				},
+				FieldOperator: "=",
+				Value:         "42",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "int64 span attribute search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with root.int = 42")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("SpanAttribute_Float64", func(t *testing.T) {
+		// Test searching for float64 span attribute
+		query := &QueryNode{
+			ID:   "query-11",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "root.float",
+					SearchScope:    "attribute",
+					AttributeScope: "span",
+					Type:           "float64",
+				},
+				FieldOperator: "=",
+				Value:         "3.14",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "float64 span attribute search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with root.float = 3.14")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("SpanAttribute_Boolean", func(t *testing.T) {
+		// Test searching for boolean span attribute
+		query := &QueryNode{
+			ID:   "query-12",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "root.bool",
+					SearchScope:    "attribute",
+					AttributeScope: "span",
+					Type:           "boolean",
+				},
+				FieldOperator: "=",
+				Value:         "true",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "boolean span attribute search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with root.bool = true")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("SpanAttribute_StringArray", func(t *testing.T) {
+		// Test searching for string array span attribute
+		query := &QueryNode{
+			ID:   "query-13",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "root.list",
+					SearchScope:    "attribute",
+					AttributeScope: "span",
+					Type:           "string[]",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "two",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "string array span attribute search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with root.list containing 'two'")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("SpanAttribute_Int64Array", func(t *testing.T) {
+		// Test searching for int64 array span attribute
+		query := &QueryNode{
+			ID:   "query-14",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "child.list",
+					SearchScope:    "attribute",
+					AttributeScope: "span",
+					Type:           "int64[]",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "3",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "int64 array span attribute search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with child.list containing 3")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("EventAttribute_String", func(t *testing.T) {
+		// Test searching for string event attribute
+		query := &QueryNode{
+			ID:   "query-15",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "event.string",
+					SearchScope:    "attribute",
+					AttributeScope: "event",
+					Type:           "string",
+				},
+				FieldOperator: "=",
+				Value:         "Hello",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "string event attribute search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with event.string = 'Hello'")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
+
+	t.Run("LinkAttribute_String", func(t *testing.T) {
+		// Test searching for string link attribute
+		query := &QueryNode{
+			ID:   "query-16",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "link.string",
+					SearchScope:    "attribute",
+					AttributeScope: "link",
+					Type:           "string",
+				},
+				FieldOperator: "=",
+				Value:         "Link1",
+			},
+		}
+
+		summaries, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err, "string link attribute search should not error")
+		assert.NotEmpty(t, summaries, "should find trace with link.string = 'Link1'")
+		assert.Equal(t, "test-trace", summaries[0].TraceID)
+	})
 }
 
 // createTestTrace creates a comprehensive test trace with multiple spans, events, and links.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -25,6 +26,7 @@ type FieldDefinition struct {
 	Name           string `json:"name,omitempty"`
 	SearchScope    string `json:"searchScope"`
 	AttributeScope string `json:"attributeScope,omitempty"`
+	Type           string `json:"type,omitempty"`
 }
 
 type QueryGroup struct {
@@ -133,8 +135,6 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 	}
 
 	field := query.Field
-	operator := query.FieldOperator
-	value := query.Value
 
 	// Map field to database expressions
 	dbExpressions, err := mapFieldToExpressions(field, signalType)
@@ -148,19 +148,34 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 		var sqlCondition string
 		var err error
 
-		// For regular field expressions, use the normal operator logic
-		sqlCondition, err = buildOperatorCondition(dbExpression, operator, value, namedArgs)
+		// For attribute queries, build union_extract expression first, then apply operator
+		// For regular field expressions, use the expression directly
+		expression := dbExpression
+		if field.SearchScope == "attribute" {
+			// This should never happen, but just in case
+			if field.Type == "" {
+				return fmt.Errorf("attribute field %s missing type", field.Name)
+			}
+
+			// Map frontend type format to DuckDB union tag format
+			duckDBType := field.Type
+			if strings.HasSuffix(field.Type, "[]") {
+				duckDBType = strings.TrimSuffix(field.Type, "[]") + "_list"
+			}
+
+			// Build union_extract expression - buildOperatorCondition will handle array operators
+			expression = fmt.Sprintf("union_extract(%s, '%s')", dbExpression, duckDBType)
+		}
+
+		// Build operator condition - this will handle arrays if the type is an array
+		sqlCondition, err = buildOperatorCondition(expression, query, namedArgs)
 		if err != nil {
 			return fmt.Errorf("failed to build operator condition: %w", err)
 		}
 
-		// Process attribute queries to add type casting for proper Union type access
-		if field.SearchScope == "attribute" {
-			sqlCondition = wrapWithTypeCasting(dbExpression, sqlCondition)
-			// Post-process event and link attributes to wrap in EXISTS to search attributes inside arrays
-			if field.AttributeScope == "event" || field.AttributeScope == "link" {
-				sqlCondition = wrapWithExists(sqlCondition, field.AttributeScope)
-			}
+		// Post-process event and link attributes to wrap in EXISTS to search attributes inside arrays
+		if field.SearchScope == "attribute" && (field.AttributeScope == "event" || field.AttributeScope == "link") {
+			sqlCondition = wrapWithExists(sqlCondition, field.AttributeScope)
 		}
 
 		sqlConditions = append(sqlConditions, sqlCondition)
@@ -217,7 +232,14 @@ func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]a
 // buildCTE generates the Common Table Expression for parameter aliasing
 
 // buildOperatorCondition builds SQL condition for specific operator
-func buildOperatorCondition(expression, operator, value string, namedArgs *map[string]any) (string, error) {
+func buildOperatorCondition(expression string, query *Query, namedArgs *map[string]any) (string, error) {
+	if query == nil {
+		return "", fmt.Errorf("query cannot be nil")
+	}
+
+	operator := query.FieldOperator
+	value := query.Value
+
 	// Check if expression contains a placeholder that needs to be replaced
 	hasPlaceholder := strings.Contains(expression, "?")
 	var operatorString string
@@ -238,6 +260,11 @@ func buildOperatorCondition(expression, operator, value string, namedArgs *map[s
 		}
 
 		return expression + " " + operatorString, nil
+	}
+
+	// Handle array types - check if field type is an array
+	if query.Field != nil && strings.HasSuffix(query.Field.Type, "[]") {
+		return handleArrayOperatorInBuildOperator(expression, query, namedArgs)
 	}
 
 	// Generate parameter name and populate namedArgs
@@ -278,6 +305,80 @@ func buildOperatorCondition(expression, operator, value string, namedArgs *map[s
 	}
 	// No placeholder, append operator part
 	return expression + " " + operatorString, nil
+}
+
+// handleArrayOperatorInBuildOperator handles array operators within buildOperatorCondition
+func handleArrayOperatorInBuildOperator(expression string, query *Query, namedArgs *map[string]any) (string, error) {
+	operator := query.FieldOperator
+	value := query.Value
+
+	// Generate parameter name
+	paramName := fmt.Sprintf("value_%d", len(*namedArgs)-2)
+
+	switch operator {
+	case "=", "!=":
+		// Direct array equality comparison - DuckDB supports this natively
+		// If value looks like an array, parse it
+		if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+			(*namedArgs)[paramName] = parseArrayValue(value)
+		} else {
+			(*namedArgs)[paramName] = value
+		}
+		return fmt.Sprintf("%s %s %s", expression, operator, paramName), nil
+
+	case "CONTAINS":
+		// Check if array contains a single value
+		// Convert value to appropriate type based on array element type
+		convertedValue := convertValueForArrayType(value, query.Field.Type)
+		(*namedArgs)[paramName] = convertedValue
+		return fmt.Sprintf("list_contains(%s, %s)", expression, paramName), nil
+
+	case "NOT CONTAINS":
+		// Check if array does not contain a single value
+		// Convert value to appropriate type based on array element type
+		convertedValue := convertValueForArrayType(value, query.Field.Type)
+		(*namedArgs)[paramName] = convertedValue
+		return fmt.Sprintf("NOT list_contains(%s, %s)", expression, paramName), nil
+
+	case "IN":
+		// Check if array contains all of the values in the set using list_has_all
+		values := parseArrayValue(value)
+		if len(values) == 0 {
+			return "", fmt.Errorf("IN requires at least one value")
+		}
+		// Convert all values to appropriate type based on array element type
+		convertedValues := make([]any, len(values))
+		for i, val := range values {
+			if strVal, ok := val.(string); ok {
+				convertedValues[i] = convertValueForArrayType(strVal, query.Field.Type)
+			} else {
+				convertedValues[i] = val
+			}
+		}
+		(*namedArgs)[paramName] = convertedValues
+		return fmt.Sprintf("list_has_all(%s, %s)", expression, paramName), nil
+
+	case "NOT IN":
+		// Check if array does not contain all of the values in the set using list_has_all
+		values := parseArrayValue(value)
+		if len(values) == 0 {
+			return "", fmt.Errorf("NOT IN requires at least one value")
+		}
+		// Convert all values to appropriate type based on array element type
+		convertedValues := make([]any, len(values))
+		for i, val := range values {
+			if strVal, ok := val.(string); ok {
+				convertedValues[i] = convertValueForArrayType(strVal, query.Field.Type)
+			} else {
+				convertedValues[i] = val
+			}
+		}
+		(*namedArgs)[paramName] = convertedValues
+		return fmt.Sprintf("NOT list_has_all(%s, %s)", expression, paramName), nil
+
+	default:
+		return "", fmt.Errorf("unsupported operator %s for array type", operator)
+	}
 }
 
 // mapFieldToExpressions maps frontend field to database expressions
@@ -362,11 +463,11 @@ func mapTraceAttributeExpressions(field *FieldDefinition) ([]string, error) {
 		// Span attributes: Attributes['attribute_name']
 		return []string{fmt.Sprintf("Attributes['%s']", field.Name)}, nil
 	case "event":
-		// Event attributes: event.Attributes['attribute_name']
-		return []string{fmt.Sprintf("event.Attributes['%s']", field.Name)}, nil
+		// Event attributes: unnest.Attributes['attribute_name']
+		return []string{fmt.Sprintf("unnest.Attributes['%s']", field.Name)}, nil
 	case "link":
-		// Link attributes: link.Attributes['attribute_name']
-		return []string{fmt.Sprintf("link.Attributes['%s']", field.Name)}, nil
+		// Link attributes: unnest.Attributes['attribute_name']
+		return []string{fmt.Sprintf("unnest.Attributes['%s']", field.Name)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope: %s", field.AttributeScope)
 	}
@@ -475,38 +576,43 @@ func parseArrayValue(value string) []any {
 	return result
 }
 
-// wrapWithTypeCasting wraps attribute expressions with type casting
-func wrapWithTypeCasting(expression string, condition string) string {
-	// Extract the operator part from the condition
-	operatorPart, found := strings.CutPrefix(condition, expression)
-	if !found {
-		// Fallback if prefix doesn't match
-		operatorPart = " = ?"
+// convertValueForArrayType converts a string value to the appropriate type for array operations
+func convertValueForArrayType(value, arrayType string) any {
+	switch arrayType {
+	case "int64[]":
+		// Try to parse as int64
+		if intVal, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return intVal
+		}
+		// If parsing fails, return as string (will cause error but that's better than silent failure)
+		return value
+	case "float64[]":
+		// Try to parse as float64
+		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatVal
+		}
+		// If parsing fails, return as string (will cause error but that's better than silent failure)
+		return value
+	case "boolean[]":
+		// Try to parse as boolean
+		if boolVal, err := strconv.ParseBool(value); err == nil {
+			return boolVal
+		}
+		// If parsing fails, return as string (will cause error but that's better than silent failure)
+		return value
+	default:
+		// For string[] and unknown types, return as string
+		return value
 	}
-
-	return fmt.Sprintf(`CASE 
-		WHEN union_tag(%s) = 'string' THEN %s::VARCHAR%s
-		WHEN union_tag(%s) = 'int64' THEN %s::BIGINT%s
-		WHEN union_tag(%s) = 'float64' THEN %s::DOUBLE%s
-		WHEN union_tag(%s) = 'boolean' THEN %s::BOOLEAN%s
-		WHEN union_tag(%s) = 'string_list' THEN %s::VARCHAR[]%s
-		WHEN union_tag(%s) = 'int64_list' THEN %s::BIGINT[]%s
-		WHEN union_tag(%s) = 'float64_list' THEN %s::DOUBLE[]%s
-		WHEN union_tag(%s) = 'boolean_list' THEN %s::BOOLEAN[]%s
-		ELSE FALSE
-	END`, expression, expression, operatorPart, expression, expression, operatorPart,
-		expression, expression, operatorPart, expression, expression, operatorPart,
-		expression, expression, operatorPart, expression, expression, operatorPart,
-		expression, expression, operatorPart, expression, expression, operatorPart)
 }
 
 // wrapWithExists wraps event and link attribute expressions in EXISTS clauses
 func wrapWithExists(sqlCondition, attributeScope string) string {
 	switch attributeScope {
 	case "event":
-		return fmt.Sprintf("EXISTS(SELECT 1 FROM UNNEST(Events) AS event WHERE %s)", sqlCondition)
+		return fmt.Sprintf("EXISTS(SELECT 1 FROM UNNEST(Events) WHERE %s)", sqlCondition)
 	case "link":
-		return fmt.Sprintf("EXISTS(SELECT 1 FROM UNNEST(Links) AS link WHERE %s)", sqlCondition)
+		return fmt.Sprintf("EXISTS(SELECT 1 FROM UNNEST(Links) WHERE %s)", sqlCondition)
 	default:
 		return sqlCondition
 	}

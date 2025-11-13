@@ -132,26 +132,17 @@ func TestBuildSQL(t *testing.T) {
 						Name:           "service.name",
 						SearchScope:    "attribute",
 						AttributeScope: "resource",
+						Type:           "string",
 					},
 					FieldOperator: "CONTAINS",
 					Value:         "sample",
 				},
 			},
-			signalType:  "traces",
-			startTime:   1000,
-			endTime:     2000,
-			expectedCTE: "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
-			expectedSQL: `(CASE 
-		WHEN union_tag(ResourceAttributes['service.name']) = 'string' THEN ResourceAttributes['service.name']::VARCHAR LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'int64' THEN ResourceAttributes['service.name']::BIGINT LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'float64' THEN ResourceAttributes['service.name']::DOUBLE LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'boolean' THEN ResourceAttributes['service.name']::BOOLEAN LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'string_list' THEN ResourceAttributes['service.name']::VARCHAR[] LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'int64_list' THEN ResourceAttributes['service.name']::BIGINT[] LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'float64_list' THEN ResourceAttributes['service.name']::DOUBLE[] LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'boolean_list' THEN ResourceAttributes['service.name']::BOOLEAN[] LIKE value_0
-		ELSE FALSE
-	END) AND StartTime >= time_start AND StartTime <= time_end`,
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
+			expectedSQL:  `(union_extract(ResourceAttributes['service.name'], 'string') LIKE value_0) AND StartTime >= time_start AND StartTime <= time_end`,
 			expectedArgs: []any{int64(1000), int64(2000), "%sample%"},
 		},
 		{
@@ -164,26 +155,17 @@ func TestBuildSQL(t *testing.T) {
 						Name:           "currency.conversion.from",
 						SearchScope:    "attribute",
 						AttributeScope: "span",
+						Type:           "string",
 					},
 					FieldOperator: "=",
 					Value:         "USD",
 				},
 			},
-			signalType:  "traces",
-			startTime:   1000,
-			endTime:     2000,
-			expectedCTE: "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
-			expectedSQL: `(CASE 
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'string' THEN Attributes['currency.conversion.from']::VARCHAR = value_0
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'int64' THEN Attributes['currency.conversion.from']::BIGINT = value_0
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'float64' THEN Attributes['currency.conversion.from']::DOUBLE = value_0
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'boolean' THEN Attributes['currency.conversion.from']::BOOLEAN = value_0
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'string_list' THEN Attributes['currency.conversion.from']::VARCHAR[] = value_0
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'int64_list' THEN Attributes['currency.conversion.from']::BIGINT[] = value_0
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'float64_list' THEN Attributes['currency.conversion.from']::DOUBLE[] = value_0
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'boolean_list' THEN Attributes['currency.conversion.from']::BOOLEAN[] = value_0
-		ELSE FALSE
-	END) AND StartTime >= time_start AND StartTime <= time_end`,
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
+			expectedSQL:  `(union_extract(Attributes['currency.conversion.from'], 'string') = value_0) AND StartTime >= time_start AND StartTime <= time_end`,
 			expectedArgs: []any{int64(1000), int64(2000), "USD"},
 		},
 		{
@@ -202,6 +184,7 @@ func TestBuildSQL(t *testing.T) {
 									Name:           "service.name",
 									SearchScope:    "attribute",
 									AttributeScope: "resource",
+									Type:           "string",
 								},
 								FieldOperator: "CONTAINS",
 								Value:         "sample",
@@ -215,6 +198,7 @@ func TestBuildSQL(t *testing.T) {
 									Name:           "currency.conversion.from",
 									SearchScope:    "attribute",
 									AttributeScope: "span",
+									Type:           "string",
 								},
 								FieldOperator: "=",
 								Value:         "USD",
@@ -223,31 +207,11 @@ func TestBuildSQL(t *testing.T) {
 					},
 				},
 			},
-			signalType:  "traces",
-			startTime:   1000,
-			endTime:     2000,
-			expectedCTE: "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0, ? as value_1)",
-			expectedSQL: `((CASE 
-		WHEN union_tag(ResourceAttributes['service.name']) = 'string' THEN ResourceAttributes['service.name']::VARCHAR LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'int64' THEN ResourceAttributes['service.name']::BIGINT LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'float64' THEN ResourceAttributes['service.name']::DOUBLE LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'boolean' THEN ResourceAttributes['service.name']::BOOLEAN LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'string_list' THEN ResourceAttributes['service.name']::VARCHAR[] LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'int64_list' THEN ResourceAttributes['service.name']::BIGINT[] LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'float64_list' THEN ResourceAttributes['service.name']::DOUBLE[] LIKE value_0
-		WHEN union_tag(ResourceAttributes['service.name']) = 'boolean_list' THEN ResourceAttributes['service.name']::BOOLEAN[] LIKE value_0
-		ELSE FALSE
-	END AND CASE 
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'string' THEN Attributes['currency.conversion.from']::VARCHAR = value_1
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'int64' THEN Attributes['currency.conversion.from']::BIGINT = value_1
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'float64' THEN Attributes['currency.conversion.from']::DOUBLE = value_1
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'boolean' THEN Attributes['currency.conversion.from']::BOOLEAN = value_1
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'string_list' THEN Attributes['currency.conversion.from']::VARCHAR[] = value_1
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'int64_list' THEN Attributes['currency.conversion.from']::BIGINT[] = value_1
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'float64_list' THEN Attributes['currency.conversion.from']::DOUBLE[] = value_1
-		WHEN union_tag(Attributes['currency.conversion.from']) = 'boolean_list' THEN Attributes['currency.conversion.from']::BOOLEAN[] = value_1
-		ELSE FALSE
-	END)) AND StartTime >= time_start AND StartTime <= time_end`,
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0, ? as value_1)",
+			expectedSQL:  `((union_extract(ResourceAttributes['service.name'], 'string') LIKE value_0 AND union_extract(Attributes['currency.conversion.from'], 'string') = value_1)) AND StartTime >= time_start AND StartTime <= time_end`,
 			expectedArgs: []any{int64(1000), int64(2000), "%sample%", "USD"},
 		},
 		{
@@ -281,26 +245,17 @@ func TestBuildSQL(t *testing.T) {
 						Name:           "event.name",
 						SearchScope:    "attribute",
 						AttributeScope: "event",
+						Type:           "string",
 					},
 					FieldOperator: "=",
 					Value:         "click",
 				},
 			},
-			signalType:  "traces",
-			startTime:   1000,
-			endTime:     2000,
-			expectedCTE: "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
-			expectedSQL: `(EXISTS(SELECT 1 FROM UNNEST(Events) AS event WHERE CASE 
-		WHEN union_tag(event.Attributes['event.name']) = 'string' THEN event.Attributes['event.name']::VARCHAR = value_0
-		WHEN union_tag(event.Attributes['event.name']) = 'int64' THEN event.Attributes['event.name']::BIGINT = value_0
-		WHEN union_tag(event.Attributes['event.name']) = 'float64' THEN event.Attributes['event.name']::DOUBLE = value_0
-		WHEN union_tag(event.Attributes['event.name']) = 'boolean' THEN event.Attributes['event.name']::BOOLEAN = value_0
-		WHEN union_tag(event.Attributes['event.name']) = 'string_list' THEN event.Attributes['event.name']::VARCHAR[] = value_0
-		WHEN union_tag(event.Attributes['event.name']) = 'int64_list' THEN event.Attributes['event.name']::BIGINT[] = value_0
-		WHEN union_tag(event.Attributes['event.name']) = 'float64_list' THEN event.Attributes['event.name']::DOUBLE[] = value_0
-		WHEN union_tag(event.Attributes['event.name']) = 'boolean_list' THEN event.Attributes['event.name']::BOOLEAN[] = value_0
-		ELSE FALSE
-	END)) AND StartTime >= time_start AND StartTime <= time_end`,
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
+			expectedSQL:  `(EXISTS(SELECT 1 FROM UNNEST(Events) WHERE union_extract(unnest.Attributes['event.name'], 'string') = value_0)) AND StartTime >= time_start AND StartTime <= time_end`,
 			expectedArgs: []any{int64(1000), int64(2000), "click"},
 		},
 		{
@@ -313,26 +268,17 @@ func TestBuildSQL(t *testing.T) {
 						Name:           "service.name",
 						SearchScope:    "attribute",
 						AttributeScope: "resource",
+						Type:           "string",
 					},
 					FieldOperator: "=",
 					Value:         "NULL",
 				},
 			},
-			signalType:  "traces",
-			startTime:   1000,
-			endTime:     2000,
-			expectedCTE: "WITH search_params AS (SELECT ? as time_start, ? as time_end)",
-			expectedSQL: `(CASE 
-		WHEN union_tag(ResourceAttributes['service.name']) = 'string' THEN ResourceAttributes['service.name']::VARCHAR IS NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'int64' THEN ResourceAttributes['service.name']::BIGINT IS NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'float64' THEN ResourceAttributes['service.name']::DOUBLE IS NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'boolean' THEN ResourceAttributes['service.name']::BOOLEAN IS NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'string_list' THEN ResourceAttributes['service.name']::VARCHAR[] IS NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'int64_list' THEN ResourceAttributes['service.name']::BIGINT[] IS NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'float64_list' THEN ResourceAttributes['service.name']::DOUBLE[] IS NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'boolean_list' THEN ResourceAttributes['service.name']::BOOLEAN[] IS NULL
-		ELSE FALSE
-	END) AND StartTime >= time_start AND StartTime <= time_end`,
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end)",
+			expectedSQL:  `(union_extract(ResourceAttributes['service.name'], 'string') IS NULL) AND StartTime >= time_start AND StartTime <= time_end`,
 			expectedArgs: []any{int64(1000), int64(2000)},
 		},
 		{
@@ -345,26 +291,17 @@ func TestBuildSQL(t *testing.T) {
 						Name:           "service.name",
 						SearchScope:    "attribute",
 						AttributeScope: "resource",
+						Type:           "string",
 					},
 					FieldOperator: "!=",
 					Value:         "NULL",
 				},
 			},
-			signalType:  "traces",
-			startTime:   1000,
-			endTime:     2000,
-			expectedCTE: "WITH search_params AS (SELECT ? as time_start, ? as time_end)",
-			expectedSQL: `(CASE 
-		WHEN union_tag(ResourceAttributes['service.name']) = 'string' THEN ResourceAttributes['service.name']::VARCHAR IS NOT NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'int64' THEN ResourceAttributes['service.name']::BIGINT IS NOT NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'float64' THEN ResourceAttributes['service.name']::DOUBLE IS NOT NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'boolean' THEN ResourceAttributes['service.name']::BOOLEAN IS NOT NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'string_list' THEN ResourceAttributes['service.name']::VARCHAR[] IS NOT NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'int64_list' THEN ResourceAttributes['service.name']::BIGINT[] IS NOT NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'float64_list' THEN ResourceAttributes['service.name']::DOUBLE[] IS NOT NULL
-		WHEN union_tag(ResourceAttributes['service.name']) = 'boolean_list' THEN ResourceAttributes['service.name']::BOOLEAN[] IS NOT NULL
-		ELSE FALSE
-	END) AND StartTime >= time_start AND StartTime <= time_end`,
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end)",
+			expectedSQL:  `(union_extract(ResourceAttributes['service.name'], 'string') IS NOT NULL) AND StartTime >= time_start AND StartTime <= time_end`,
 			expectedArgs: []any{int64(1000), int64(2000)},
 		},
 		{
@@ -377,26 +314,17 @@ func TestBuildSQL(t *testing.T) {
 						Name:           "array.example",
 						SearchScope:    "attribute",
 						AttributeScope: "resource",
+						Type:           "string[]",
 					},
 					FieldOperator: "IN",
 					Value:         "[example1,example2,example3]",
 				},
 			},
-			signalType:  "traces",
-			startTime:   1000,
-			endTime:     2000,
-			expectedCTE: "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
-			expectedSQL: `(CASE 
-		WHEN union_tag(ResourceAttributes['array.example']) = 'string' THEN ResourceAttributes['array.example']::VARCHAR IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'int64' THEN ResourceAttributes['array.example']::BIGINT IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'float64' THEN ResourceAttributes['array.example']::DOUBLE IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'boolean' THEN ResourceAttributes['array.example']::BOOLEAN IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'string_list' THEN ResourceAttributes['array.example']::VARCHAR[] IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'int64_list' THEN ResourceAttributes['array.example']::BIGINT[] IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'float64_list' THEN ResourceAttributes['array.example']::DOUBLE[] IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'boolean_list' THEN ResourceAttributes['array.example']::BOOLEAN[] IN value_0
-		ELSE FALSE
-	END) AND StartTime >= time_start AND StartTime <= time_end`,
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
+			expectedSQL:  `(list_has_all(union_extract(ResourceAttributes['array.example'], 'string_list'), value_0)) AND StartTime >= time_start AND StartTime <= time_end`,
 			expectedArgs: []any{int64(1000), int64(2000), []any{"example1", "example2", "example3"}},
 		},
 		{
@@ -409,26 +337,17 @@ func TestBuildSQL(t *testing.T) {
 						Name:           "array.example",
 						SearchScope:    "attribute",
 						AttributeScope: "resource",
+						Type:           "string[]",
 					},
 					FieldOperator: "NOT IN",
 					Value:         "[bad1,bad2]",
 				},
 			},
-			signalType:  "traces",
-			startTime:   1000,
-			endTime:     2000,
-			expectedCTE: "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
-			expectedSQL: `(CASE 
-		WHEN union_tag(ResourceAttributes['array.example']) = 'string' THEN ResourceAttributes['array.example']::VARCHAR NOT IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'int64' THEN ResourceAttributes['array.example']::BIGINT NOT IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'float64' THEN ResourceAttributes['array.example']::DOUBLE NOT IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'boolean' THEN ResourceAttributes['array.example']::BOOLEAN NOT IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'string_list' THEN ResourceAttributes['array.example']::VARCHAR[] NOT IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'int64_list' THEN ResourceAttributes['array.example']::BIGINT[] NOT IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'float64_list' THEN ResourceAttributes['array.example']::DOUBLE[] NOT IN value_0
-		WHEN union_tag(ResourceAttributes['array.example']) = 'boolean_list' THEN ResourceAttributes['array.example']::BOOLEAN[] NOT IN value_0
-		ELSE FALSE
-	END) AND StartTime >= time_start AND StartTime <= time_end`,
+			signalType:   "traces",
+			startTime:    1000,
+			endTime:      2000,
+			expectedCTE:  "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)",
+			expectedSQL:  `(NOT list_has_all(union_extract(ResourceAttributes['array.example'], 'string_list'), value_0)) AND StartTime >= time_start AND StartTime <= time_end`,
 			expectedArgs: []any{int64(1000), int64(2000), []any{"bad1", "bad2"}},
 		},
 		{
@@ -654,7 +573,14 @@ func TestBuildOperatorCondition(t *testing.T) {
 			namedArgs["time_start"] = int64(1000)
 			namedArgs["time_end"] = int64(2000)
 
-			sql, err := buildOperatorCondition(tt.expression, tt.operator, tt.value, &namedArgs)
+			// Create Query object for the test
+			query := &Query{
+				Field:         &FieldDefinition{Type: ""}, // Empty type means non-array
+				FieldOperator: tt.operator,
+				Value:         tt.value,
+			}
+
+			sql, err := buildOperatorCondition(tt.expression, query, &namedArgs)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return

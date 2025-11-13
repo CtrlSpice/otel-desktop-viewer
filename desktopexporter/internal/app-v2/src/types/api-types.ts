@@ -194,3 +194,9 @@ export type MetricData = {
   scope: ScopeData;
   received: PreciseTimestamp;
 };
+
+// Discriminated union for search results
+// TODO: Add logs and metrics when implemented
+export type SearchResultEvent =
+  | { signal: 'traces'; view: 'list'; results: TraceSummary[] }
+  | { signal: 'traces'; view: 'detail'; results: SpanData[] };

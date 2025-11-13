@@ -320,6 +320,7 @@ function convertQueryTreeForBackend(queryTree: QueryNode): any {
           searchScope: queryTree.query.field.searchScope,
           ...(queryTree.query.field.searchScope === 'attribute' && {
             attributeScope: queryTree.query.field.attributeScope,
+            type: queryTree.query.field.type,
           }),
         },
         fieldOperator: queryTree.query.operator.symbol,

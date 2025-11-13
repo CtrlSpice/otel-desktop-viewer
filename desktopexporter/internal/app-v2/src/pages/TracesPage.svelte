@@ -2,7 +2,7 @@
   import { onMount } from "svelte"
   import { telemetryAPI } from "@/services/telemetry-service"
   import { getTimeContext } from "@/contexts/time-context.svelte"
-  import type { TraceSummary } from "@/types/api-types"
+  import type { TraceSummary, SearchResultEvent } from "@/types/api-types"
   import PageHeader from "@/components/PageHeader/PageHeader.svelte"
 
   // Create time context for this page
@@ -17,10 +17,30 @@
     console.log('Refresh clicked')
   }
 
+  function handleSearchResults(event: SearchResultEvent) {
+    // Type narrowing with discriminated union
+    if (event.signal === 'traces' && event.view === 'list') {
+      loading = false
+      error = null
+      traceSummaries = event.results
+    }
+  }
+
   onMount(async () => {
     try {
       loading = true
-      traceSummaries = await telemetryAPI.searchTraces(0, Date.now())
+      // Use time context for initial load
+      let startTime = timeContext.selection.start;
+      let endTime = timeContext.selection.end;
+      
+      // For presets, calculate fresh time range based on current time
+      if (timeContext.selection.type === 'preset') {
+        const duration = timeContext.selection.end - timeContext.selection.start;
+        endTime = Date.now();
+        startTime = endTime - duration;
+      }
+      
+      traceSummaries = await telemetryAPI.searchTraces(startTime, endTime)
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to fetch traces"
       console.error("Error fetching trace summaries:", err)
@@ -37,6 +57,7 @@
     signal="traces"
     view="list"
     onRefresh={handleRefresh}
+    onSearchResults={handleSearchResults}
   />
       {#if loading}
         <div class="flex justify-center items-center py-8">

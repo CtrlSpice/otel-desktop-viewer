@@ -8,16 +8,19 @@
   import { parseQuery } from './queryParser';
   import { telemetryAPI } from '@/services/telemetry-service';
   import { getTimeContext } from '@/contexts/time-context.svelte';
+  import type { SearchResultEvent } from '@/types/api-types';
 
   // Component Props
   let {
     signal,
     view,
     placeholder,
+    onSearchResults,
   }: {
     signal: 'traces' | 'logs' | 'metrics';
     view: 'list' | 'detail';
     placeholder?: string;
+    onSearchResults?: (event: SearchResultEvent) => void;
   } = $props();
 
   // Get time context during component initialization
@@ -411,11 +414,11 @@
             throw new Error(`Unknown signal type: ${signal}`);
         }
 
+        // Handle promise resolution and emit discriminated union event
         searchPromise
           .then(results => {
-            console.log('Search results:', results);
-            // TODO: Handle results - emit event or update parent state
-            // This depends on how you want to integrate with the rest of your app
+            let resultEvent: SearchResultEvent = { signal, view, results };
+            onSearchResults?.(resultEvent);
           })
           .catch(error => {
             parseError = 'Search failed: ' + error.message;

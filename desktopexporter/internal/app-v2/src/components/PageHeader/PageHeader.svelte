@@ -2,15 +2,18 @@
   import DateTimeFilter from './filters/datetime/DateTimeFilter.svelte';
   import FieldsFilter from './filters/fields/FieldsFilter.svelte';
   import SearchInput from './search/SearchInput.svelte';
+  import type { SearchResultEvent } from '@/types/api-types';
 
   let {
     signal,
     view,
     onRefresh = null,
+    onSearchResults = null,
   }: {
     signal: 'traces' | 'logs' | 'metrics';
     view: 'list' | 'detail';
     onRefresh?: (() => void) | null;
+    onSearchResults?: ((event: SearchResultEvent) => void) | null;
   } = $props();
 
   let showFieldsDrawer = $state(false);
@@ -48,7 +51,7 @@
 
   <!-- Search Row -->
   <div>
-    <SearchInput {signal} {view} />
+    <SearchInput {signal} {view} onSearchResults={onSearchResults || undefined} />
   </div>
 
   <!-- Control Row: Hints, Time, Fields -->

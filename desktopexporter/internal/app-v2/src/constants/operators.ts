@@ -61,32 +61,15 @@ export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
       ];
 
     case 'string[]':
+    case 'int64[]':
+    case 'float64[]':
+    case 'boolean[]':
+      // Arrays support equality, membership checks, and contains
       return [
         OPERATORS.EQUALS,
         OPERATORS.NOT_EQUALS,
         OPERATORS.CONTAINS,
         OPERATORS.NOT_CONTAINS,
-        OPERATORS.IN,
-        OPERATORS.NOT_IN,
-      ];
-
-    case 'int64[]':
-    case 'float64[]':
-      return [
-        OPERATORS.EQUALS,
-        OPERATORS.NOT_EQUALS,
-        OPERATORS.GREATER_THAN,
-        OPERATORS.LESS_THAN,
-        OPERATORS.GREATER_THAN_OR_EQUAL,
-        OPERATORS.LESS_THAN_OR_EQUAL,
-        OPERATORS.IN,
-        OPERATORS.NOT_IN,
-      ];
-
-    case 'boolean[]':
-      return [
-        OPERATORS.EQUALS,
-        OPERATORS.NOT_EQUALS,
         OPERATORS.IN,
         OPERATORS.NOT_IN,
       ];
