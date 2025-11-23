@@ -29,7 +29,7 @@ export class PreciseTimestamp {
     throw new Error(`Invalid timestamp format: ${JSON.stringify(json)}`);
   }
 
-  toUTC(): string {
+  toUTC(precision: 'nanoseconds' | 'ms' | 's' = 'nanoseconds'): string {
     let totalMs = this.nanoseconds / BigInt(1_000_000);
     let remainderNs = this.nanoseconds % BigInt(1_000_000);
     let date = new Date(Number(totalMs));
@@ -39,12 +39,26 @@ export class PreciseTimestamp {
     let hours = String(date.getUTCHours()).padStart(2, '0');
     let minutes = String(date.getUTCMinutes()).padStart(2, '0');
     let seconds = String(date.getUTCSeconds()).padStart(2, '0');
+
+    let timePart = `${hours}:${minutes}:${seconds}`;
+    if (precision === 's') {
+      return `${year}-${month}-${day} ${timePart} +0000 UTC`;
+    }
+
     let ms = String(date.getUTCMilliseconds()).padStart(3, '0');
+    timePart += `.${ms}`;
+    if (precision === 'ms') {
+      return `${year}-${month}-${day} ${timePart} +0000 UTC`;
+    }
+
+    // Default: nanoseconds
     let ns = remainderNs.toString().padStart(9, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}${ns} +0000 UTC`;
+    return `${year}-${month}-${day} ${timePart}${ns} +0000 UTC`;
   }
 
-  toLocal(): string {
+  toLocal(
+    precision: 'nanoseconds' | 'milliseconds' | 'seconds' = 'nanoseconds'
+  ): string {
     let totalMs = this.nanoseconds / BigInt(1_000_000);
     let remainderNs = this.nanoseconds % BigInt(1_000_000);
     let date = new Date(Number(totalMs));
@@ -54,10 +68,22 @@ export class PreciseTimestamp {
     let hours = String(date.getHours()).padStart(2, '0');
     let minutes = String(date.getMinutes()).padStart(2, '0');
     let seconds = String(date.getSeconds()).padStart(2, '0');
+
+    let timePart = `${hours}:${minutes}:${seconds}`;
+    if (precision === 'seconds') {
+      return `${year}-${month}-${day} ${timePart}`;
+    }
+
     let ms = String(date.getMilliseconds()).padStart(3, '0');
+    timePart += `.${ms}`;
+    if (precision === 'milliseconds') {
+      return `${year}-${month}-${day} ${timePart}`;
+    }
+
+    // Default: nanoseconds
     let ns = remainderNs.toString().padStart(9, '0');
     let timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}${ns} ${timezone}`;
+    return `${year}-${month}-${day} ${timePart}${ns} ${timezone}`;
   }
 
   toString(): string {
