@@ -8,51 +8,53 @@ export default {
   daisyui: {
     themes: [
       {
-        dark: {
-          primary: '#ad1457',
-          'primary-content': '#ffffff',
-          secondary: '#06b6d4',
-          'secondary-content': '#ffffff',
-          accent: '#0d9488',
-          'accent-content': '#ffffff',
-          neutral: '#403e41',
-          'neutral-content': '#fcfcfa',
-          'base-100': '#2d2a2e',
-          'base-200': '#403e41',
-          'base-300': '#5b595c',
-          'base-content': '#fcfcfa',
-          info: '#7dd3fc',
-          'info-content': '#0c4a6e',
-          success: '#86efac',
-          'success-content': '#064e3b',
-          warning: '#fcd34d',
-          'warning-content': '#78350f',
-          error: '#fca5a5',
-          'error-content': '#7f1d1d',
+        'rose-pine-moon': {
+          // Rosé Pine Moon - Dark theme (muted)
+          primary: '#c4a7e7', // Iris
+          'primary-content': '#232136', // Base
+          secondary: '#9ccfd8', // Foam
+          'secondary-content': '#232136', // Base
+          accent: '#ea9a97', // Rose
+          'accent-content': '#232136', // Base
+          neutral: '#6e6a86', // Muted
+          'neutral-content': '#e0def4', // Text
+          'base-100': '#232136', // Base
+          'base-200': '#2a273f', // Surface
+          'base-300': '#393552', // Overlay
+          'base-content': '#e0def4', // Text
+          info: '#9ccfd8', // Foam
+          'info-content': '#232136', // Base
+          success: '#3e8fb0', // Pine
+          'success-content': '#e0def4', // Text
+          warning: '#f6c177', // Gold
+          'warning-content': '#232136', // Base
+          error: '#eb6f92', // Love
+          'error-content': '#e0def4', // Text
         },
       },
       {
-        light: {
-          primary: '#ad1457',
-          'primary-content': '#ffffff',
-          secondary: '#06b6d4',
-          'secondary-content': '#ffffff',
-          accent: '#0d9488',
-          'accent-content': '#ffffff',
-          neutral: '#f8fafc',
-          'neutral-content': '#1e293b',
-          'base-100': '#f1f5f9',
-          'base-200': '#fcfcfd',
-          'base-300': '#d1dae6',
-          'base-content': '#1e293b',
-          info: '#0c4a6e',
-          'info-content': '#bae6fd',
-          success: '#0F642EFF',
-          'success-content': '#bbf7d0',
-          warning: '#78350f',
-          'warning-content': '#fef3c7',
-          error: '#7f1d1d',
-          'error-content': '#fecaca',
+        'rose-pine-dawn': {
+          // Rosé Pine Dawn - Light theme
+          primary: '#907aa9', // Iris
+          'primary-content': '#faf4ed', // Base
+          secondary: '#56949f', // Foam
+          'secondary-content': '#faf4ed', // Base
+          accent: '#d7827e', // Rose
+          'accent-content': '#faf4ed', // Base
+          neutral: '#9893a5', // Muted
+          'neutral-content': '#575279', // Text
+          'base-100': '#faf4ed', // Base
+          'base-200': '#fffaf3', // Surface
+          'base-300': '#f2e9e1', // Overlay
+          'base-content': '#575279', // Text
+          info: '#56949f', // Foam
+          'info-content': '#faf4ed', // Base
+          success: '#286983', // Pine
+          'success-content': '#faf4ed', // Base
+          warning: '#ea9d34', // Gold
+          'warning-content': '#faf4ed', // Base
+          error: '#b4637a', // Love
+          'error-content': '#faf4ed', // Base
         },
       },
     ],

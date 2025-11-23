@@ -3,10 +3,10 @@
   import { HugeiconsIcon } from "@hugeicons/svelte"
   import { Sun03Icon, Moon02Icon } from "@hugeicons/core-free-icons"
 
-  type ThemeMode = "light" | "dark"
-  let currentTheme: ThemeMode = "dark"
+  type ThemeName = "rose-pine-dawn" | "rose-pine-moon"
+  let currentTheme: ThemeName = "rose-pine-moon"
 
-  function setTheme(theme: ThemeMode) {
+  function setTheme(theme: ThemeName) {
     currentTheme = theme
     localStorage.setItem("theme", currentTheme)
     document.documentElement.setAttribute("data-theme", currentTheme)
@@ -14,17 +14,15 @@
 
   function syncToSystem() {
     window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? setTheme("dark")
-      : setTheme("light")
+      ? setTheme("rose-pine-moon")
+      : setTheme("rose-pine-dawn")
   }
 
   onMount(() => {
     // User has made a choice before, use their preference
-    if (localStorage.getItem("theme") !== null) {
-      let savedTheme = localStorage.getItem("theme")
-      if (savedTheme && ["light", "dark"].includes(savedTheme)) {
-        setTheme(savedTheme as ThemeMode)
-      }
+    let savedTheme = localStorage.getItem("theme")
+    if (savedTheme && ["rose-pine-dawn", "rose-pine-moon"].includes(savedTheme)) {
+      setTheme(savedTheme as ThemeName)
     } else {
       // First time user, respect system preference
       syncToSystem()
@@ -51,8 +49,8 @@
       name="theme-toggle"
       type="checkbox"
       class="toggle"
-      checked={currentTheme === "dark"}
-      onchange={() => setTheme(currentTheme === "light" ? "dark" : "light")}
+      checked={currentTheme === "rose-pine-moon"}
+      onchange={() => setTheme(currentTheme === "rose-pine-dawn" ? "rose-pine-moon" : "rose-pine-dawn")}
     />
   </label>
   <HugeiconsIcon icon={Moon02Icon} size={16} />
