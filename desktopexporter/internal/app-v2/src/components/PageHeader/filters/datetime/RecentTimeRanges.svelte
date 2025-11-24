@@ -74,15 +74,13 @@
   export { updateRecentRanges };
 </script>
 
-<div class="space-y-3">
-  <div class="section-header--hide-narrow">
+<div>
+  <div class="section-header">
     <svg
       class="w-4 h-4 mr-2"
-      fill="none"
-      stroke="currentColor"
       viewBox="0 0 24 24"
     >
-      <g stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5">
+      <g>
         <path
           d="M19 10.5V10c0-3.771 0-5.657-1.172-6.828S14.771 2 11 2S5.343 2 4.172 3.172S3 6.229 3 10v4.5c0 3.287 0 4.931.908 6.038q.25.304.554.554C5.57 22 7.212 22 10.5 22M7 7h8m-8 4h4"
         />
@@ -93,7 +91,7 @@
     </svg>
     Recently Used
   </div>
-  <div class="space-y-0">
+  <div class="space-y-0 max-h-[84px] overflow-y-auto">
     {#if recentTimeRanges.length === 0}
       <div class="w-full text-left px-2 py-1 text-sm text-base-content/60">
         No recent time ranges
@@ -101,11 +99,16 @@
     {:else}
       {#each recentTimeRanges as entry, index}
         <button
-          class="list-button {ctx.selection.type === 'recent' && index === 0
-            ? 'selection-indicator--active'
-            : ''}"
+          class="list-button"
           onclick={() => applyRecentTimeRange(index)}
         >
+          {#if ctx.selection.type === 'recent' && index === 0}
+            <svg class="w-4 h-4 mr-2 text-primary" viewBox="0 0 24 24">
+              <path d="m5 14l3.5 3.5L19 6.5" />
+            </svg>
+          {:else}
+            <span class="w-4 h-4 mr-2"></span>
+          {/if}
           <span
             >{formatDateTimeRange(entry.start, entry.end, ctx.timezone)}</span
           >

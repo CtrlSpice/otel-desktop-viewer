@@ -18,6 +18,25 @@
   let sortColumn = $state<SortColumn>('startTime')
   let sortDirection = $state<SortDirection>('desc')
 
+  // Pagination state
+  let currentPage = $state(1)
+  let rowsPerPage = $state(25)
+  let rowsPerPageOptions = [10, 25, 50, 100]
+  let rowsPerPagePopoverOpen = $state(false)
+
+  // Track rows per page popover state
+  $effect(() => {
+    const popover = document.getElementById('rows-per-page-popover')
+    if (popover) {
+      const handleToggle = () => {
+        rowsPerPagePopoverOpen = popover.matches(':popover-open')
+      }
+
+      popover.addEventListener('toggle', handleToggle)
+      return () => popover.removeEventListener('toggle', handleToggle)
+    }
+  })
+
   // Sorted traces
   let sortedTraces = $derived([...traceSummaries].sort((a, b) => {
         let comparison = 0
@@ -55,6 +74,18 @@
       })
   )
 
+  // Paginated traces
+  let paginatedTraces = $derived.by(() => {
+    let start = (currentPage - 1) * rowsPerPage
+    let end = start + rowsPerPage
+    return sortedTraces.slice(start, end)
+  })
+
+  // Pagination calculations
+  let totalPages = $derived(Math.ceil(sortedTraces.length / rowsPerPage))
+  let startRow = $derived((currentPage - 1) * rowsPerPage + 1)
+  let endRow = $derived(Math.min(currentPage * rowsPerPage, sortedTraces.length))
+
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
       // Toggle direction if clicking the same column
@@ -63,6 +94,19 @@
       // New column, start with ascending
       sortColumn = column
       sortDirection = 'asc'
+    }
+    // Reset to first page when sorting changes
+    currentPage = 1
+  }
+
+  function handleRowsPerPageChange(newRowsPerPage: number) {
+    rowsPerPage = newRowsPerPage
+    currentPage = 1
+  }
+
+  function goToPage(page: number) {
+    if (page >= 1 && page <= totalPages) {
+      currentPage = page
     }
   }
 
@@ -136,8 +180,9 @@
           </p>
           
           <!-- Material Design 2 Data Table -->
-          <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
-            <table class="w-full">
+          <div class="rounded-lg border border-base-300 bg-base-100 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full">
               <!-- Table Header -->
               <thead>
                 <tr class="border-b border-base-300 bg-base-200">
@@ -151,21 +196,16 @@
                     <div class="flex items-center gap-2">
                       <span>Service Name</span>
                       <span class="w-4 h-4 flex items-center justify-center">
-                        {#if sortColumn === 'serviceName'}
-                          {#if sortDirection === 'asc'}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {:else}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {/if}
-                        {:else}
-                          <svg class="w-4 h-4 text-base-content/40 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                          </svg>
-                        {/if}
+                        <svg
+                          class="sort-indicator {sortColumn === 'serviceName'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn === 'serviceName' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                        </svg>
                       </span>
                     </div>
                   </th>
@@ -179,21 +219,16 @@
                     <div class="flex items-center gap-2">
                       <span>Root Span Name</span>
                       <span class="w-4 h-4 flex items-center justify-center">
-                        {#if sortColumn === 'rootSpanName'}
-                          {#if sortDirection === 'asc'}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {:else}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {/if}
-                        {:else}
-                          <svg class="w-4 h-4 text-base-content/40 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                          </svg>
-                        {/if}
+                        <svg
+                          class="sort-indicator {sortColumn === 'rootSpanName'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn === 'rootSpanName' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                        </svg>
                       </span>
                     </div>
                   </th>
@@ -207,21 +242,16 @@
                     <div class="flex items-center gap-2">
                       <span>Start Time</span>
                       <span class="w-4 h-4 flex items-center justify-center">
-                        {#if sortColumn === 'startTime'}
-                          {#if sortDirection === 'asc'}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {:else}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {/if}
-                        {:else}
-                          <svg class="w-4 h-4 text-base-content/40 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                          </svg>
-                        {/if}
+                        <svg
+                          class="sort-indicator {sortColumn === 'startTime'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn === 'startTime' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                        </svg>
                       </span>
                     </div>
                   </th>
@@ -240,21 +270,16 @@
                   >
                     <div class="flex items-center justify-end gap-2">
                       <span class="w-4 h-4 flex items-center justify-center">
-                        {#if sortColumn === 'spanCount'}
-                          {#if sortDirection === 'asc'}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {:else}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {/if}
-                        {:else}
-                          <svg class="w-4 h-4 text-base-content/40 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                          </svg>
-                        {/if}
+                        <svg
+                          class="sort-indicator {sortColumn === 'spanCount'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn === 'spanCount' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                        </svg>
                       </span>
                       <span>Spans</span>
                     </div>
@@ -268,21 +293,16 @@
                   >
                     <div class="flex items-center justify-end gap-2">
                       <span class="w-4 h-4 flex items-center justify-center">
-                        {#if sortColumn === 'errorCount'}
-                          {#if sortDirection === 'asc'}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {:else}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {/if}
-                        {:else}
-                          <svg class="w-4 h-4 text-base-content/40 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                          </svg>
-                        {/if}
+                        <svg
+                          class="sort-indicator {sortColumn === 'errorCount'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn === 'errorCount' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                        </svg>
                       </span>
                       <span>Errors</span>
                     </div>
@@ -296,21 +316,16 @@
                   >
                     <div class="flex items-center justify-end gap-2">
                       <span class="w-4 h-4 flex items-center justify-center">
-                        {#if sortColumn === 'exceptionCount'}
-                          {#if sortDirection === 'asc'}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {:else}
-                            <svg class="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                            </svg>
-                          {/if}
-                        {:else}
-                          <svg class="w-4 h-4 text-base-content/40 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                          </svg>
-                        {/if}
+                        <svg
+                          class="sort-indicator {sortColumn === 'exceptionCount'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn === 'exceptionCount' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                        </svg>
                       </span>
                       <span>Exceptions</span>
                     </div>
@@ -319,7 +334,7 @@
               </thead>
               <!-- Table Body -->
               <tbody class="divide-y divide-base-300">
-                {#each sortedTraces as trace}
+                {#each paginatedTraces as trace}
                   <tr class="hover:bg-base-200 transition-colors duration-150">
                     <td class="px-4 py-4 text-sm text-base-content">
                       {#if trace.rootSpan?.serviceName}
@@ -348,14 +363,14 @@
                     <td class="px-4 py-4 text-center">
                       {#if trace.rootSpan}
                         <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-success/20 text-success">
-                          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                          <svg class="w-4 h-4" viewBox="0 0 24 24">
+                            <path d="m5 14l3.5 3.5L19 6.5" />
                           </svg>
                         </span>
                       {:else}
-                        <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-base-300 text-base-content/50">
-                          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-error/20 text-error">
+                          <svg class="w-4 h-4" viewBox="0 0 24 24">
+                            <path d="M18 6L6 18m12 0L6 6" />
                           </svg>
                         </span>
                       {/if}
@@ -384,8 +399,101 @@
                   </tr>
                 {/each}
               </tbody>
-            </table>
+              </table>
+            </div>
+
+            <!-- Pagination Controls -->
+            {#if sortedTraces.length > 0}
+              <div class="flex items-center justify-between px-4 py-3 bg-base-100 border-t border-base-300">
+              <!-- Rows per page selector -->
+              <div class="flex items-center gap-3">
+                <span class="text-sm text-base-content/70">Rows per page:</span>
+                <button
+                  class="btn btn-sm btn-ghost min-w-16 justify-between bg-base-100 border border-base-300 hover:bg-base-200"
+                  popovertarget="rows-per-page-popover"
+                  style="anchor-name: --rows-per-page-anchor"
+                >
+                  <span>{rowsPerPage}</span>
+                  <svg
+                    class="w-3 h-3 popover-indicator {rowsPerPagePopoverOpen
+                      ? 'popover-indicator--open'
+                      : ''}"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M18 9s-4.419 6-6 6s-6-6-6-6" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Current range and total -->
+              <div class="text-sm text-base-content/70">
+                {startRow}–{endRow} of {sortedTraces.length}
+              </div>
+
+              <!-- Navigation arrows -->
+              <div class="flex items-center gap-1">
+                <button
+                  class="btn btn-sm btn-ghost btn-square disabled:opacity-30 disabled:cursor-not-allowed hover:bg-base-200"
+                  disabled={currentPage === 1}
+                  onclick={() => goToPage(currentPage - 1)}
+                  aria-label="Previous page"
+                >
+                  <svg class="w-5 h-5" viewBox="0 0 24 24">
+                    <path d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <button
+                  class="btn btn-sm btn-ghost btn-square disabled:opacity-30 disabled:cursor-not-allowed hover:bg-base-200"
+                  disabled={currentPage === totalPages}
+                  onclick={() => goToPage(currentPage + 1)}
+                  aria-label="Next page"
+                >
+                  <svg class="w-5 h-5" viewBox="0 0 24 24">
+                    <path d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+              </div>
+            {/if}
           </div>
+        </div>
+
+        <!-- Rows per page popover -->
+        <div id="rows-per-page-popover" class="popover rows-per-page-popover" popover="auto">
+          {#each rowsPerPageOptions as option}
+            <button
+              class="w-full text-left px-3 py-2 text-sm hover:bg-base-200 flex items-center gap-2 {option === rowsPerPage ? 'bg-base-200' : ''}"
+              onclick={() => {
+                handleRowsPerPageChange(option)
+                document.getElementById('rows-per-page-popover')?.hidePopover()
+              }}
+            >
+              {#if option === rowsPerPage}
+                <svg class="w-4 h-4 text-primary" viewBox="0 0 24 24">
+                  <path d="m5 14l3.5 3.5L19 6.5" />
+                </svg>
+              {:else}
+                <span class="w-4 h-4"></span>
+              {/if}
+              <span>{option}</span>
+            </button>
+          {/each}
         </div>
       {/if}
 </div>
+
+<style>
+  .rows-per-page-popover {
+    /* Layout & Positioning */
+    @apply dropdown-content;
+    @apply px-0 py-1 mx-0 my-2;
+    position-anchor: --rows-per-page-anchor;
+    top: anchor(--rows-per-page-anchor bottom);
+    left: anchor(--rows-per-page-anchor left);
+
+    /* Visual Styling */
+    @apply bg-base-100 rounded-md shadow-lg;
+    @apply border border-base-300 text-base-content;
+    @apply min-w-16;
+  }
+</style>

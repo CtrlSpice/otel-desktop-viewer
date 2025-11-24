@@ -36,6 +36,9 @@
         'seconds'
       );
       customError = null;
+    } else {
+      // Clear error when selection changes to non-custom type
+      customError = null;
     }
   });
 
@@ -125,66 +128,64 @@
     }
   }
 
-  // Props for different layouts
-  let { isNarrow = false } = $props();
 </script>
 
 <div class="relative">
-  <div
-    class="section-header--hide-narrow {ctx.selection.type === 'custom'
-      ? 'selection-indicator--active'
-      : ''}"
-  >
-    <svg
-      class="w-4 h-4 mr-2"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <g stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5">
-        <path
-          d="M16 2v4M8 2v4m13 6c0-3.771 0-5.657-1.172-6.828S16.771 4 13 4h-2C7.229 4 5.343 4 4.172 5.172S3 8.229 3 12v2c0 3.771 0 5.657 1.172 6.828S7.229 22 11 22M3 10h18"
-        />
-        <path
-          d="M18.267 18.701L17 18v-1.733M21 18a4 4 0 1 1-8 0a4 4 0 0 1 8 0"
-        />
-      </g>
-    </svg>
+  <div class="section-header mb-2">
+    {#if ctx.selection.type === 'custom'}
+      <svg class="w-4 h-4 mr-2 text-primary" viewBox="0 0 24 24">
+        <path d="m5 14l3.5 3.5L19 6.5" />
+      </svg>
+    {:else}
+      <svg
+        class="w-4 h-4 mr-2"
+        viewBox="0 0 24 24"
+      >
+        <g>
+          <path
+            d="M16 2v4M8 2v4m13 6c0-3.771 0-5.657-1.172-6.828S16.771 4 13 4h-2C7.229 4 5.343 4 4.172 5.172S3 8.229 3 12v2c0 3.771 0 5.657 1.172 6.828S7.229 22 11 22M3 10h18"
+          />
+          <path
+            d="M18.267 18.701L17 18v-1.733M21 18a4 4 0 1 1-8 0a4 4 0 0 1 8 0"
+          />
+        </g>
+      </svg>
+    {/if}
     Custom Time Range
   </div>
 
-  <div class="p-3">
+  <div class="pl-4 pr-4 pb-3">
     <!-- From Date/Time -->
-    <div class="form-control mx-3">
-      <label class="label" for="custom-start{isNarrow ? '-narrow' : ''}">
-        <span class="label-text text-sm">Start time:</span>
+    <div class="flex items-center gap-2 mb-3">
+      <label class="label py-0" for="custom-start">
+        <span class="label-text text-sm whitespace-nowrap">Start time:</span>
       </label>
       <input
-        id="custom-start{isNarrow ? '-narrow' : ''}"
+        id="custom-start"
         type="text"
         placeholder="e.g., 2 hours ago, yesterday, 2024-01-01"
-        class="input input-bordered input-sm w-full"
+        class="input input-bordered input-sm flex-1"
         bind:value={customStartText}
       />
     </div>
 
     <!-- To Date/Time -->
-    <div class="form-control mx-3">
-      <label class="label" for="custom-end{isNarrow ? '-narrow' : ''}">
-        <span class="label-text text-sm">End time:</span>
+    <div class="flex items-center gap-2 mb-3">
+      <label class="label py-0" for="custom-end">
+        <span class="label-text text-sm whitespace-nowrap">End time:</span>
       </label>
       <input
-        id="custom-end{isNarrow ? '-narrow' : ''}"
+        id="custom-end"
         type="text"
         placeholder="e.g., now, 1 hour ago, 2024-01-02"
-        class="input input-bordered input-sm w-full"
+        class="input input-bordered input-sm flex-1"
         bind:value={customEndText}
       />
     </div>
 
     <!-- Error Display -->
     {#if customError}
-      <div class="m-3">
+      <div class="mb-3">
         <div class="alert alert-error alert-sm rounded-md">
           <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
             <path
@@ -199,9 +200,9 @@
     {/if}
 
     <!-- Apply Button -->
-    <div class="m-3">
+    <div class="mt-3">
       <button class="btn btn-primary btn-sm w-full" onclick={applyCustom}>
-        Apply Custom Time Range
+        Apply
       </button>
     </div>
   </div>

@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Default SVG styles */
+svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Global minimum width for the app */
 body {
   min-width: 500px;
@@ -10,10 +19,6 @@ body {
 /* Global button styles */
 .btn {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.btn:hover {
-  transform: translateY(-1px);
 }
 
 /* Global card styles */
@@ -51,18 +56,8 @@ body {
   @apply w-full text-left px-4 py-1 text-sm hover:bg-base-200 focus:bg-base-200 transition-colors flex items-center;
 }
 
-.selection-indicator--active {
-  @apply bg-neutral border-l-2 border-primary;
-}
-
-.section-header--hide-narrow {
+.section-header {
   @apply text-sm font-semibold text-base-content py-1 px-4 flex items-center;
-}
-
-@media (max-width: 767px) {
-  .section-header--hide-narrow {
-    @apply hidden;
-  }
 }
 
 .filter-separator {
@@ -87,5 +82,36 @@ body {
 .tabs input[type='radio'].tab:checked {
   @apply bg-primary text-primary-content;
   @apply border-b-2 border-b-primary-content;
+}
+
+/* Sort indicator styles */
+.sort-indicator {
+  @apply w-4 h-4;
+  @apply transition-[transform,opacity] duration-200;
+}
+
+.sort-indicator--active {
+  @apply text-primary opacity-100;
+}
+
+.sort-indicator--inactive {
+  @apply text-base-content/40 opacity-0;
+}
+
+.group:hover .sort-indicator--inactive {
+  @apply opacity-100;
+}
+
+.sort-indicator--asc {
+  @apply rotate-180;
+}
+
+/* Popover indicator styles (curved chevron) */
+.popover-indicator {
+  @apply transition-transform duration-200;
+}
+
+.popover-indicator--open {
+  @apply rotate-180;
 }
 

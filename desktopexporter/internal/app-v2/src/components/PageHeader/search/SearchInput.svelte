@@ -460,11 +460,6 @@
         width="16"
         height="16"
         viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="1.5"
       >
         <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
       </svg>
@@ -497,7 +492,6 @@
           stroke="currentColor"
           stroke-linecap="round"
           stroke-linejoin="round"
-          stroke-width="1.5"
         >
           <path d="m9 18l6-6l-6-6" />
         </svg>

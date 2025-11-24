@@ -11,16 +11,16 @@
 
   // ===== PRESET TIME RANGES =====
   const PRESETS = [
-    { label: 'Last 5 minutes', duration: 300000 }, // 5 * 60 * 1000
-    { label: 'Last 15 minutes', duration: 900000 }, // 15 * 60 * 1000
-    { label: 'Last 30 minutes', duration: 1800000 }, // 30 * 60 * 1000
-    { label: 'Last hour', duration: 3600000 }, // 60 * 60 * 1000
-    { label: 'Last 3 hours', duration: 10800000 }, // 3 * 60 * 60 * 1000
-    { label: 'Last 6 hours', duration: 21600000 }, // 6 * 60 * 60 * 1000
-    { label: 'Last day', duration: 86400000 }, // 24 * 60 * 60 * 1000
-    { label: 'Last 3 days', duration: 259200000 }, // 3 * 24 * 60 * 60 * 1000
-    { label: 'Last week', duration: 604800000 }, // 7 * 24 * 60 * 60 * 1000
-    { label: 'Show all', duration: undefined },
+    { label: '5m', duration: 300000 }, // 5 * 60 * 1000
+    { label: '15m', duration: 900000 }, // 15 * 60 * 1000
+    { label: '30m', duration: 1800000 }, // 30 * 60 * 1000
+    { label: '1h', duration: 3600000 }, // 60 * 60 * 1000
+    { label: '3h', duration: 10800000 }, // 3 * 60 * 60 * 1000
+    { label: '6h', duration: 21600000 }, // 6 * 60 * 60 * 1000
+    { label: '24h', duration: 86400000 }, // 24 * 60 * 60 * 1000
+    { label: '3d', duration: 259200000 }, // 3 * 24 * 60 * 60 * 1000
+    { label: '7d', duration: 604800000 }, // 7 * 24 * 60 * 60 * 1000
+    { label: 'All', duration: undefined },
   ] as const;
 
   function applyPreset(index: number) {
@@ -37,16 +37,16 @@
   }
 </script>
 
-<div class="space-y-0">
+<div class="flex items-center gap-2 px-2 py-2 bg-base-200">
   {#each PRESETS as preset, index}
     <button
-      class="list-button {ctx.selection.type === 'preset' &&
+      class="w-10 h-10 rounded-full text-sm font-medium transition-colors flex items-center justify-center {ctx.selection.type === 'preset' &&
       ctx.selection.presetIndex === index
-        ? 'selection-indicator--active'
-        : ''}"
+        ? 'bg-primary text-primary-content'
+        : 'text-base-content hover:bg-base-300'}"
       onclick={() => applyPreset(index)}
     >
-      <span>{preset.label}</span>
+      {preset.label}
     </button>
   {/each}
 </div>
