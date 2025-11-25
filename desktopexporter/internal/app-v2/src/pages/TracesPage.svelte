@@ -11,6 +11,7 @@
   let traceSummaries = $state<TraceSummary[]>([])
   let loading = $state(true)
   let error = $state<string | null>(null)
+  let mounted = $state(false)
 
   // Sorting state
   type SortColumn = 'serviceName' | 'rootSpanName' | 'startTime' | 'spanCount' | 'errorCount' | 'exceptionCount'
@@ -110,24 +111,13 @@
     }
   }
 
-  function handleRefresh() {
-    // TODO: Implement refresh logic
-    console.log('Refresh clicked')
-  }
-
-  function handleSearchResults(event: SearchResultEvent) {
-    // Type narrowing with discriminated union
-    if (event.signal === 'traces' && event.view === 'list') {
-      loading = false
-      error = null
-      traceSummaries = event.results
-    }
-  }
-
-  onMount(async () => {
+  // Shared function to fetch traces based on current time context
+  async function fetchTraces() {
     try {
       loading = true
-      // Use time context for initial load
+      error = null
+      
+      // Use time context for time range
       let startTime = timeContext.selection.start;
       let endTime = timeContext.selection.end;
       
@@ -145,6 +135,30 @@
     } finally {
       loading = false
     }
+  }
+
+  function handleSearchResults(event: SearchResultEvent) {
+    // Type narrowing with discriminated union
+    if (event.signal === 'traces' && event.view === 'list') {
+      loading = false
+      error = null
+      traceSummaries = event.results
+    }
+  }
+
+  // Watch for time context changes and refresh automatically
+  $effect(() => {
+    // Access timeContext.selection to create a reactive dependency
+    let _ = timeContext.selection
+    // Only refresh after initial mount to avoid double fetch
+    if (mounted) {
+      fetchTraces()
+    }
+  })
+
+  onMount(async () => {
+    await fetchTraces()
+    mounted = true
   })
 </script>
 
@@ -154,7 +168,7 @@
   <PageHeader 
     signal="traces"
     view="list"
-    onRefresh={handleRefresh}
+    onRefresh={fetchTraces}
     onSearchResults={handleSearchResults}
   />
       {#if loading}
