@@ -37,7 +37,9 @@
       );
       customError = null;
     } else {
-      // Clear error when selection changes to non-custom type
+      // Reset fields when selection changes to non-custom type
+      customStartText = '';
+      customEndText = 'now';
       customError = null;
     }
   });
@@ -157,7 +159,7 @@
   <div class="pl-4 pr-4 pb-3">
     <!-- From Date/Time -->
     <div class="flex items-center gap-2 mb-3">
-      <label class="label py-0" for="custom-start">
+      <label class="label py-0 w-18" for="custom-start">
         <span class="label-text text-sm whitespace-nowrap">Start time:</span>
       </label>
       <input
@@ -171,7 +173,7 @@
 
     <!-- To Date/Time -->
     <div class="flex items-center gap-2 mb-3">
-      <label class="label py-0" for="custom-end">
+      <label class="label py-0 w-18" for="custom-end">
         <span class="label-text text-sm whitespace-nowrap">End time:</span>
       </label>
       <input

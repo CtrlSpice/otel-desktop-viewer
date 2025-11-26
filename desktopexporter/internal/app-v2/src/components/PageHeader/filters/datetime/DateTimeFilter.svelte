@@ -13,18 +13,59 @@
     );
   }
 
-  let popoverOpen = $state(false);
+  let dialogOpen = $state(false);
+  let dialogElement: HTMLDialogElement | null = null;
 
-  // Listen for popover open/close events
+  // Check if closedby attribute is supported (static check, done once)
+  const supportsClosedBy = 'closedBy' in HTMLDialogElement.prototype;
+
+  // Get dialog element reference and listen for open/close events
   $effect(() => {
-    const popover = document.getElementById('datetime-popover');
-    if (popover) {
-      const handleToggle = () => {
-        popoverOpen = popover.matches(':popover-open');
+    dialogElement = document.getElementById('datetime-dialog') as HTMLDialogElement | null;
+    if (dialogElement) {
+      const handleClose = () => {
+        dialogOpen = dialogElement?.open ?? false;
       };
 
-      popover.addEventListener('toggle', handleToggle);
-      return () => popover.removeEventListener('toggle', handleToggle);
+      const handleCancel = () => {
+        dialogOpen = false;
+      };
+
+      // Fallback for browsers without closedby support (e.g., Safari)
+      const handleClickOutside = (event: MouseEvent) => {
+        if (!supportsClosedBy && dialogElement) {
+          const rect = dialogElement.getBoundingClientRect();
+          const isInDialog = (
+            rect.top <= event.clientY &&
+            event.clientY <= rect.top + rect.height &&
+            rect.left <= event.clientX &&
+            event.clientX <= rect.left + rect.width
+          );
+
+          if (!isInDialog) {
+            dialogElement.close();
+          }
+        }
+      };
+
+      dialogElement.addEventListener('close', handleClose);
+      dialogElement.addEventListener('cancel', handleCancel);
+      
+      // Only add click listener if closedby is not supported
+      if (!supportsClosedBy) {
+        dialogElement.addEventListener('click', handleClickOutside);
+      }
+      
+      // Update initial state
+      dialogOpen = dialogElement.open;
+
+      return () => {
+        dialogElement?.removeEventListener('close', handleClose);
+        dialogElement?.removeEventListener('cancel', handleCancel);
+        if (!supportsClosedBy) {
+          dialogElement?.removeEventListener('click', handleClickOutside);
+        }
+      };
     }
   });
 
@@ -32,7 +73,7 @@
   let previousStartTime = $state(ctx.selection?.start);
   let previousEndTime = $state(ctx.selection?.end);
 
-  // Close popover when time selection changes
+  // Close dialog when time selection changes
   $effect(() => {
     const currentStartTime = ctx.selection?.start;
     const currentEndTime = ctx.selection?.end;
@@ -42,7 +83,7 @@
     const endTimeChanged = currentEndTime !== previousEndTime;
 
     if (startTimeChanged || endTimeChanged) {
-      document.getElementById('datetime-popover')?.hidePopover();
+      dialogElement?.close();
     }
 
     previousStartTime = currentStartTime;
@@ -66,7 +107,10 @@
 <!-- Time Filter Button -->
 <button
   class="input input-bordered input-sm inline-flex items-center gap-2 text-xs"
-  popovertarget="datetime-popover"
+  onclick={() => {
+    dialogElement?.showModal();
+    dialogOpen = true;
+  }}
   style="anchor-name: --datetime-anchor"
 >
   <svg class="w-4 h-4" viewBox="0 0 24 24">
@@ -77,7 +121,7 @@
   </svg>
   <span>{getDisplayText()}</span>
   <svg
-    class="w-3 h-3 popover-indicator {popoverOpen
+    class="w-3 h-3 popover-indicator {dialogOpen
       ? 'popover-indicator--open'
       : ''}"
     viewBox="0 0 24 24"
@@ -86,8 +130,8 @@
   </svg>
 </button>
 
-<!-- Popover Content -->
-<div id="datetime-popover" class="popover datetime-popover" popover="auto">
+<!-- Dialog Content -->
+<dialog id="datetime-dialog" class="datetime-dialog" closedby="any">
   <!-- Vertical stacked layout -->
   <div>
     <!-- Preset Time Ranges -->
@@ -150,10 +194,10 @@
       <RecentTimeRanges />
     </div>
   </div>
-</div>
+</dialog>
 
 <style>
-  .datetime-popover {
+  .datetime-dialog {
     /* Layout & Positioning */
     @apply dropdown-content;
     @apply px-0 pb-2 pt-0 mx-0 my-2;
@@ -165,6 +209,12 @@
     @apply bg-base-100 rounded-md shadow-lg;
     @apply border border-base-300 text-base-content;
     @apply min-w-96;
+  }
+
+  .datetime-dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(1px);
+    transition: opacity 0.4s ease-in-out, backdrop-filter 0.4s ease-in-out;
   }
 
   .timezone-toggle {

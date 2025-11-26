@@ -115,3 +115,85 @@ body {
   @apply rotate-180;
 }
 
+/* Data Table Styles */
+.table-header-row {
+  @apply border-b border-base-300 bg-base-200;
+}
+
+.table-header-cell {
+  @apply px-4 py-3 text-xs font-semibold uppercase tracking-wider text-base-content/70;
+}
+
+.table-header-cell--sortable {
+  @apply cursor-pointer select-none;
+}
+
+.table-header-cell--left {
+  @apply text-left;
+}
+
+.table-header-cell--center {
+  @apply text-center;
+}
+
+.table-header-cell--right {
+  @apply text-right pl-2 pr-4;
+}
+
+.table-row {
+  @apply hover:bg-base-200 transition-colors duration-150;
+}
+
+.table-cell {
+  @apply px-4 py-4 text-sm text-base-content;
+}
+
+.table-cell--right {
+  @apply pl-2 pr-4 py-4 text-sm text-right text-base-content;
+}
+
+.table-cell--center {
+  @apply px-4 py-4 text-center;
+}
+
+/* Pagination Styles */
+.pagination-controls {
+  @apply flex items-center justify-between px-4 py-3 bg-base-100 border-t border-base-300;
+}
+
+.pagination-rows-selector {
+  @apply flex items-center gap-3;
+}
+
+.pagination-label {
+  @apply text-sm text-base-content/70;
+}
+
+.pagination-rows-button {
+  @apply btn btn-sm btn-ghost min-w-16 justify-between;
+  @apply bg-base-100 border border-base-300 hover:bg-base-200;
+}
+
+.pagination-range {
+  @apply text-sm text-base-content/70;
+}
+
+.pagination-nav {
+  @apply flex items-center gap-1;
+}
+
+.pagination-nav-button {
+  @apply btn btn-sm btn-ghost btn-square;
+  @apply disabled:opacity-30 disabled:cursor-not-allowed;
+  @apply hover:bg-base-200;
+}
+
+.pagination-popover-option {
+  @apply w-full text-left px-3 py-2 text-sm hover:bg-base-200 flex items-center gap-2;
+}
+
+.pagination-popover-option--selected {
+  @apply bg-base-200;
+}
+
+

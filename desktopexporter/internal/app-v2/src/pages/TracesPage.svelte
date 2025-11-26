@@ -171,37 +171,29 @@
     onRefresh={fetchTraces}
     onSearchResults={handleSearchResults}
   />
-      {#if loading}
-        <div class="flex justify-center items-center py-8">
-          <span class="loading loading-spinner loading-lg"></span>
-          <span class="ml-4">Loading traces...</span>
-        </div>
-      {:else if error}
-        <div class="alert alert-error">
-          <span>Error: {error}</span>
-        </div>
-      {:else if traceSummaries.length === 0}
-        <div class="text-center py-8">
-          <p class="text-base-content/60">No traces found</p>
-          <p class="text-sm text-base-content/50 mt-2">
-            Send some telemetry data to see traces here
-          </p>
-        </div>
-      {:else}
-        <div class="space-y-4">
-          <p class="text-base-content/80">
-            Found {traceSummaries.length} trace(s):
-          </p>
-          
-          <!-- Material Design 2 Data Table -->
-          <div class="rounded-lg border border-base-300 bg-base-100 overflow-hidden">
-            <div class="overflow-x-auto">
-              <table class="w-full">
-              <!-- Table Header -->
-              <thead>
-                <tr class="border-b border-base-300 bg-base-200">
+  
+  {#if error}
+    <div class="alert alert-error mb-4">
+      <span>Error: {error}</span>
+    </div>
+  {/if}
+
+  <div class="space-y-4">
+    {#if traceSummaries.length > 0}
+      <p class="text-base-content/80">
+        Found {traceSummaries.length} trace(s):
+      </p>
+    {/if}
+    
+    <!-- Material Design 2 Data Table -->
+    <div class="rounded-lg border border-base-300 bg-base-100 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full">
+        <!-- Table Header -->
+        <thead>
+                <tr class="table-header-row">
                   <th
-                    class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-base-content/70 cursor-pointer select-none group"
+                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
                     onclick={() => handleSort('serviceName')}
                     role="button"
                     tabindex="0"
@@ -224,7 +216,7 @@
                     </div>
                   </th>
                   <th
-                    class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-base-content/70 cursor-pointer select-none group"
+                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
                     onclick={() => handleSort('rootSpanName')}
                     role="button"
                     tabindex="0"
@@ -247,7 +239,7 @@
                     </div>
                   </th>
                   <th
-                    class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-base-content/70 cursor-pointer select-none group"
+                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
                     onclick={() => handleSort('startTime')}
                     role="button"
                     tabindex="0"
@@ -269,14 +261,14 @@
                       </span>
                     </div>
                   </th>
-                  <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-base-content/70">
-                    Trace ID
+                  <th class="table-header-cell table-header-cell--left">
+                  Trace ID
                   </th>
-                  <th class="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-base-content/70">
+                  <th class="table-header-cell table-header-cell--center">
                     Has Root Span
                   </th>
                   <th
-                    class="pl-2 pr-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-base-content/70 cursor-pointer select-none group"
+                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
                     onclick={() => handleSort('spanCount')}
                     role="button"
                     tabindex="0"
@@ -299,7 +291,7 @@
                     </div>
                   </th>
                   <th
-                    class="pl-2 pr-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-base-content/70 cursor-pointer select-none group"
+                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
                     onclick={() => handleSort('errorCount')}
                     role="button"
                     tabindex="0"
@@ -322,7 +314,7 @@
                     </div>
                   </th>
                   <th
-                    class="pl-2 pr-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-base-content/70 cursor-pointer select-none group"
+                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
                     onclick={() => handleSort('exceptionCount')}
                     role="button"
                     tabindex="0"
@@ -348,33 +340,52 @@
               </thead>
               <!-- Table Body -->
               <tbody class="divide-y divide-base-300">
-                {#each paginatedTraces as trace}
-                  <tr class="hover:bg-base-200 transition-colors duration-150">
-                    <td class="px-4 py-4 text-sm text-base-content">
+                {#if loading && traceSummaries.length === 0}
+                  <!-- Initial loading state -->
+                  <tr>
+                    <td colspan="8" class="px-4 py-12 text-center">
+                      <span class="text-base-content/60">Loading traces...</span>
+                    </td>
+                  </tr>
+                {:else if traceSummaries.length === 0}
+                  <!-- Empty state -->
+                  <tr>
+                    <td colspan="8" class="px-4 py-12 text-center">
+                      <p class="text-base-content/60">No traces found</p>
+                      <p class="text-sm text-base-content/50 mt-2">
+                        Send some telemetry data to see traces here
+                      </p>
+                    </td>
+                  </tr>
+                {:else}
+                  <!-- Data rows (shown even during refresh) -->
+                  {#each paginatedTraces as trace}
+                  <tr class="table-row">
+                    <td class="table-cell">
                       {#if trace.rootSpan?.serviceName}
                         {trace.rootSpan.serviceName}
                       {:else}
                         <span class="text-base-content/50 italic">—</span>
                       {/if}
                     </td>
-                    <td class="px-4 py-4 text-sm text-base-content">
+                    <td class="table-cell">
                       {#if trace.rootSpan?.name}
                         {trace.rootSpan.name}
                       {:else}
                         <span class="text-base-content/50 italic">—</span>
                       {/if}
                     </td>
-                    <td class="px-4 py-4 text-sm text-base-content/80">
+                    <td class="table-cell text-base-content/80">
                       {#if trace.rootSpan}
                         {trace.rootSpan.startTime.toLocal('milliseconds')}
                       {:else}
                         <span class="text-base-content/50 italic">—</span>
                       {/if}
                     </td>
-                    <td class="px-4 py-4 text-sm font-mono text-base-content">
+                    <td class="table-cell font-mono">
                       {trace.traceID}
                     </td>
-                    <td class="px-4 py-4 text-center">
+                    <td class="table-cell--center">
                       {#if trace.rootSpan}
                         <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-success/20 text-success">
                           <svg class="w-4 h-4" viewBox="0 0 24 24">
@@ -389,10 +400,10 @@
                         </span>
                       {/if}
                     </td>
-                    <td class="pl-2 pr-4 py-4 text-sm text-right text-base-content">
+                    <td class="table-cell--right">
                       {trace.spanCount}
                     </td>
-                    <td class="pl-2 pr-4 py-4 text-sm text-right">
+                    <td class="table-cell--right">
                       {#if trace.errorCount > 0}
                         <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-error/20 text-error">
                           {trace.errorCount}
@@ -401,7 +412,7 @@
                         <span class="text-base-content/50">0</span>
                       {/if}
                     </td>
-                    <td class="pl-2 pr-4 py-4 text-sm text-right">
+                    <td class="table-cell--right">
                       {#if trace.exceptionCount > 0}
                         <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-warning/20 text-warning">
                           {trace.exceptionCount}
@@ -411,19 +422,20 @@
                       {/if}
                     </td>
                   </tr>
-                {/each}
+                  {/each}
+                {/if}
               </tbody>
               </table>
             </div>
 
             <!-- Pagination Controls -->
             {#if sortedTraces.length > 0}
-              <div class="flex items-center justify-between px-4 py-3 bg-base-100 border-t border-base-300">
+              <div class="pagination-controls">
               <!-- Rows per page selector -->
-              <div class="flex items-center gap-3">
-                <span class="text-sm text-base-content/70">Rows per page:</span>
+              <div class="pagination-rows-selector">
+                <span class="pagination-label">Rows per page:</span>
                 <button
-                  class="btn btn-sm btn-ghost min-w-16 justify-between bg-base-100 border border-base-300 hover:bg-base-200"
+                  class="pagination-rows-button"
                   popovertarget="rows-per-page-popover"
                   style="anchor-name: --rows-per-page-anchor"
                 >
@@ -440,14 +452,14 @@
               </div>
 
               <!-- Current range and total -->
-              <div class="text-sm text-base-content/70">
+              <div class="pagination-range">
                 {startRow}–{endRow} of {sortedTraces.length}
               </div>
 
               <!-- Navigation arrows -->
-              <div class="flex items-center gap-1">
+              <div class="pagination-nav">
                 <button
-                  class="btn btn-sm btn-ghost btn-square disabled:opacity-30 disabled:cursor-not-allowed hover:bg-base-200"
+                  class="pagination-nav-button"
                   disabled={currentPage === 1}
                   onclick={() => goToPage(currentPage - 1)}
                   aria-label="Previous page"
@@ -457,7 +469,7 @@
                   </svg>
                 </button>
                 <button
-                  class="btn btn-sm btn-ghost btn-square disabled:opacity-30 disabled:cursor-not-allowed hover:bg-base-200"
+                  class="pagination-nav-button"
                   disabled={currentPage === totalPages}
                   onclick={() => goToPage(currentPage + 1)}
                   aria-label="Next page"
@@ -476,7 +488,7 @@
         <div id="rows-per-page-popover" class="popover rows-per-page-popover" popover="auto">
           {#each rowsPerPageOptions as option}
             <button
-              class="w-full text-left px-3 py-2 text-sm hover:bg-base-200 flex items-center gap-2 {option === rowsPerPage ? 'bg-base-200' : ''}"
+              class="pagination-popover-option {option === rowsPerPage ? 'pagination-popover-option--selected' : ''}"
               onclick={() => {
                 handleRowsPerPageChange(option)
                 document.getElementById('rows-per-page-popover')?.hidePopover()
@@ -493,7 +505,6 @@
             </button>
           {/each}
         </div>
-      {/if}
 </div>
 
 <style>

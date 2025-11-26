@@ -12,8 +12,8 @@ export default {
           // Rosé Pine Moon - Dark theme (muted)
           primary: '#c4a7e7', // Iris
           'primary-content': '#232136', // Base
-          secondary: '#9ccfd8', // Foam
-          'secondary-content': '#232136', // Base
+          secondary: '#3e8fb0', // Pine
+          'secondary-content': '#e0def4', // Text
           accent: '#ea9a97', // Rose
           'accent-content': '#232136', // Base
           neutral: '#6e6a86', // Muted
@@ -37,7 +37,7 @@ export default {
           // Rosé Pine Dawn - Light theme
           primary: '#907aa9', // Iris
           'primary-content': '#faf4ed', // Base
-          secondary: '#56949f', // Foam
+          secondary: '#286983', // Pine
           'secondary-content': '#faf4ed', // Base
           accent: '#d7827e', // Rose
           'accent-content': '#faf4ed', // Base
