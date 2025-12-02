@@ -192,6 +192,145 @@ func TestTraceSuite(t *testing.T) {
 	})
 }
 
+// TestMultiSpanTraceRootDetection verifies that root spans are correctly identified in multi-span traces.
+// This is a regression test for a bug where DISTINCT ON would pick arbitrary spans when ORDER BY
+// didn't have sufficient tie-breakers, causing root span detection to fail in multi-span traces.
+func TestMultiSpanTraceRootDetection(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+
+	spans := []traces.SpanData{
+		{
+			TraceID:      "trace1",
+			SpanID:       "root1",
+			ParentSpanID: "",
+			Name:         "root operation",
+			StartTime:    baseTime,
+			EndTime:      baseTime + 300*time.Millisecond.Nanoseconds(),
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name": "service1",
+				},
+			},
+			Scope: &scope.ScopeData{},
+		},
+		{
+			TraceID:      "trace1",
+			SpanID:       "child1",
+			ParentSpanID: "root1",
+			Name:         "child operation",
+			StartTime:    baseTime + 50*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 150*time.Millisecond.Nanoseconds(),
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name": "service1",
+				},
+			},
+			Scope: &scope.ScopeData{},
+		},
+		{
+			TraceID:      "trace1",
+			SpanID:       "child2",
+			ParentSpanID: "root1",
+			Name:         "child operation 2",
+			StartTime:    baseTime + 100*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 200*time.Millisecond.Nanoseconds(),
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name": "service1",
+				},
+			},
+			Scope: &scope.ScopeData{},
+		},
+		{
+			TraceID:      "trace1",
+			SpanID:       "grandchild1",
+			ParentSpanID: "child1",
+			Name:         "grandchild operation",
+			StartTime:    baseTime + 75*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 125*time.Millisecond.Nanoseconds(),
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name": "service1",
+				},
+			},
+			Scope: &scope.ScopeData{},
+		},
+		{
+			TraceID:      "trace2",
+			SpanID:       "child3",
+			ParentSpanID: "root2",
+			Name:         "child operation",
+			StartTime:    baseTime + 50*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 100*time.Millisecond.Nanoseconds(),
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name": "service2",
+				},
+			},
+			Scope: &scope.ScopeData{},
+		},
+		{
+			TraceID:      "trace2",
+			SpanID:       "child4",
+			ParentSpanID: "root2",
+			Name:         "child operation 2",
+			StartTime:    baseTime + 75*time.Millisecond.Nanoseconds(),
+			EndTime:      baseTime + 125*time.Millisecond.Nanoseconds(),
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name": "service2",
+				},
+			},
+			Scope: &scope.ScopeData{},
+		},
+		{
+			// Root span inserted after children to verify ORDER BY prioritizes roots
+			TraceID:      "trace2",
+			SpanID:       "root2",
+			ParentSpanID: "",
+			Name:         "root operation 2",
+			StartTime:    baseTime,
+			EndTime:      baseTime + 200*time.Millisecond.Nanoseconds(),
+			Resource: &resource.ResourceData{
+				Attributes: map[string]any{
+					"service.name": "service2",
+				},
+			},
+			Scope: &scope.ScopeData{},
+		},
+	}
+
+	// Add spans to store
+	err := helper.Store.AddSpans(helper.Ctx, spans)
+	assert.NoError(t, err, "failed to add spans")
+
+	// Get trace summaries
+	summaries, err := helper.Store.GetTraceSummaries(helper.Ctx)
+	assert.NoError(t, err, "failed to get trace summaries")
+
+	// Should have two traces
+	assert.Len(t, summaries, 2, "expected 2 traces")
+
+	// Both traces must have their root spans detected
+	for _, summary := range summaries {
+		assert.NotNil(t, summary.RootSpan, "root span should be detected for trace %s", summary.TraceID)
+
+		switch summary.TraceID {
+		case "trace1":
+			assert.Equal(t, uint32(4), summary.SpanCount, "trace1 should have 4 spans")
+			assert.Equal(t, "root operation", summary.RootSpan.Name)
+			assert.Equal(t, "service1", summary.RootSpan.ServiceName)
+		case "trace2":
+			assert.Equal(t, uint32(3), summary.SpanCount, "trace2 should have 3 spans")
+			assert.Equal(t, "root operation 2", summary.RootSpan.Name)
+			assert.Equal(t, "service2", summary.RootSpan.ServiceName)
+		}
+	}
+}
+
 // createTestTrace creates a comprehensive test trace with multiple spans, events, and links.
 func createTestTrace() []traces.SpanData {
 	baseTime := time.Now().UnixNano()
