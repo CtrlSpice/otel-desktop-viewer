@@ -14,7 +14,7 @@ export default {
           'primary-content': '#232136', // Base
           secondary: '#3e8fb0', // Pine
           'secondary-content': '#e0def4', // Text
-          accent: '#ea9a97', // Rose
+          accent: '#9ccfd8', // Foam
           'accent-content': '#232136', // Base
           neutral: '#6e6a86', // Muted
           'neutral-content': '#e0def4', // Text
@@ -39,7 +39,7 @@ export default {
           'primary-content': '#faf4ed', // Base
           secondary: '#286983', // Pine
           'secondary-content': '#faf4ed', // Base
-          accent: '#d7827e', // Rose
+          accent: '#56949f', // Foam
           'accent-content': '#faf4ed', // Base
           neutral: '#9893a5', // Muted
           'neutral-content': '#575279', // Text

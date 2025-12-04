@@ -56,10 +56,6 @@ body {
   @apply w-full text-left px-4 py-1 text-sm hover:bg-base-200 focus:bg-base-200 transition-colors flex items-center;
 }
 
-.section-header {
-  @apply text-sm font-semibold text-base-content py-1 px-4 flex items-center;
-}
-
 .filter-separator {
   @apply w-px bg-base-300;
 }
@@ -195,5 +191,3 @@ body {
 .pagination-popover-option--selected {
   @apply bg-base-200;
 }
-
-

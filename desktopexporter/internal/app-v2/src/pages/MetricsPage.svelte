@@ -1,21 +1,21 @@
 <script lang="ts">
-  import { onMount } from "svelte"
-  import { telemetryAPI } from "@/services/telemetry-service"
-  import type { MetricData } from "@/types/api-types"
+  import { onMount } from 'svelte';
+  import { telemetryAPI } from '@/services/telemetry-service';
+  import type { MetricData } from '@/types/api-types';
 
-  let metrics: MetricData[] = []
-  let loading = true
-  let error: string | null = null
+  let metrics: MetricData[] = [];
+  let loading = true;
+  let error: string | null = null;
 
   onMount(async () => {
     try {
-      metrics = await telemetryAPI.getMetrics()
+      metrics = await telemetryAPI.getMetrics();
     } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to load metrics"
+      error = err instanceof Error ? err.message : 'Failed to load metrics';
     } finally {
-      loading = false
+      loading = false;
     }
-  })
+  });
 </script>
 
 <!-- MetricsPage.svelte - Metrics visualization page -->
@@ -48,22 +48,28 @@
         <div class="bg-base-200 border border-base-300 rounded-lg p-6">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold">{metric.name}</h3>
-            <span class="badge badge-outline">{metric.dataPoints.type}</span>
+            <span class="badge badge-secondary badge-outline"
+              >{metric.dataPoints.type}</span
+            >
           </div>
-          
+
           <div class="grid md:grid-cols-2 gap-4 mb-4">
             <div>
               <p class="text-sm text-base-content/70">Description</p>
-              <p class="text-sm">{metric.description || "No description"}</p>
+              <p class="text-sm">{metric.description || 'No description'}</p>
             </div>
             <div>
               <p class="text-sm text-base-content/70">Unit</p>
-              <p class="text-sm">{metric.unit || "No unit"}</p>
+              <p class="text-sm">{metric.unit || 'No unit'}</p>
             </div>
           </div>
 
           <div class="mb-4">
-            <p class="text-sm text-base-content/70 mb-2">Data Points ({Array.isArray(metric.dataPoints) ? metric.dataPoints.length : 0})</p>
+            <p class="text-sm text-base-content/70 mb-2">
+              Data Points ({Array.isArray(metric.dataPoints)
+                ? metric.dataPoints.length
+                : 0})
+            </p>
             <div class="max-h-32 overflow-y-auto">
               {#if Array.isArray(metric.dataPoints)}
                 {#each metric.dataPoints.slice(0, 5) as dataPoint}
@@ -80,7 +86,9 @@
                   </p>
                 {/if}
               {:else}
-                <p class="text-xs text-base-content/50">No data points available</p>
+                <p class="text-xs text-base-content/50">
+                  No data points available
+                </p>
               {/if}
             </div>
           </div>
@@ -90,8 +98,18 @@
 
     <!-- Raw JSON for debugging -->
     <details class="mt-8">
-      <summary class="cursor-pointer text-sm text-base-content/60">Show raw JSON</summary>
-      <pre class="mt-2 p-4 bg-base-100 border border-base-300 rounded text-xs overflow-auto max-h-64"><code>{JSON.stringify(metrics, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2)}</code></pre>
+      <summary class="cursor-pointer text-sm text-base-content/60"
+        >Show raw JSON</summary
+      >
+      <pre
+        class="mt-2 p-4 bg-base-100 border border-base-300 rounded text-xs overflow-auto max-h-64"><code
+          >{JSON.stringify(
+            metrics,
+            (key, value) =>
+              typeof value === 'bigint' ? value.toString() : value,
+            2
+          )}</code
+        ></pre>
     </details>
   {/if}
 </div>

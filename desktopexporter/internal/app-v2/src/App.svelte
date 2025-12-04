@@ -4,6 +4,7 @@
   import MetricsPage from '@/pages/MetricsPage.svelte';
   import LogsPage from '@/pages/LogsPage.svelte';
   import TracesPage from '@/pages/TracesPage.svelte';
+  import TraceDetailPage from '@/pages/TraceDetailPage.svelte';
   import { Route, router } from 'tinro5';
   import { createTimeContext } from '@/contexts/time-context.svelte';
   
@@ -29,6 +30,9 @@
     </Route>
     <Route path="/traces">
       <TracesPage />
+    </Route>
+    <Route path="/trace/:traceID">
+      <TraceDetailPage />
     </Route>
   </div>
 </main>

@@ -242,7 +242,8 @@ const (
                 MIN(CASE WHEN s.ParentSpanID = '' THEN s.StartTime END) OVER (PARTITION BY s.TraceID),
                 MIN(s.StartTime) OVER (PARTITION BY s.TraceID)
             ) DESC,
-            s.TraceID
+            s.TraceID,
+			CASE WHEN s.ParentSpanID = '' THEN 0 ELSE 1 END
     `
 
 	// SearchTraces is the V2 query template for CTE-based parameter handling
@@ -263,7 +264,8 @@ const (
                 MIN(CASE WHEN s.ParentSpanID = '' THEN s.StartTime END) OVER (PARTITION BY s.TraceID),
                 MIN(s.StartTime) OVER (PARTITION BY s.TraceID)
             ) DESC,
-            s.TraceID
+            s.TraceID,
+			CASE WHEN s.ParentSpanID = '' THEN 0 ELSE 1 END
     `
 
 	// SelectTrace retrieves spans in hierarchical order with depth information

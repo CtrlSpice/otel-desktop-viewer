@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte"
+  import { router } from "tinro5"
   import { telemetryAPI } from "@/services/telemetry-service"
   import { getTimeContext } from "@/contexts/time-context.svelte"
   import type { TraceSummary, SearchResultEvent } from "@/types/api-types"
@@ -360,7 +361,13 @@
                 {:else}
                   <!-- Data rows (shown even during refresh) -->
                   {#each paginatedTraces as trace}
-                  <tr class="table-row">
+                  <tr 
+                    class="table-row cursor-pointer hover:bg-base-200 transition-colors"
+                    onclick={() => router.goto(`/trace/${trace.traceID}`)}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={(e) => e.key === 'Enter' && router.goto(`/trace/${trace.traceID}`)}
+                  >
                     <td class="table-cell">
                       {#if trace.rootSpan?.serviceName}
                         {trace.rootSpan.serviceName}
