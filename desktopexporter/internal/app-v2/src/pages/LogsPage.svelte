@@ -9,7 +9,7 @@
 
   onMount(async () => {
     try {
-      logs = await telemetryAPI.getLogs();
+      logs = await telemetryAPI.getLogs(0, Date.now(), undefined);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load logs';
     } finally {

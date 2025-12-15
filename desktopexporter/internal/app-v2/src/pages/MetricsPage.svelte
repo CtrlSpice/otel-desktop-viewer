@@ -9,7 +9,7 @@
 
   onMount(async () => {
     try {
-      metrics = await telemetryAPI.getMetrics();
+      metrics = await telemetryAPI.getMetrics(0, Date.now(), undefined);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load metrics';
     } finally {

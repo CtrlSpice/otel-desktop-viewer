@@ -3,6 +3,7 @@
   import { telemetryAPI } from '@/services/telemetry-service';
   import type { TraceData } from '@/types/api-types';
   import DetailView from '@/components/TraceDetails/DetailView.svelte';
+  import ResizablePanels from '@/components/ResizablePanels.svelte';
 
   let traceID = $state<string>('');
   let traceData = $state<TraceData | null>(null);
@@ -74,23 +75,39 @@
       <span>Error: {error}</span>
     </div>
   {:else if traceData}
+    {@const data = traceData}
     <!-- Waterfall + detail view -->
-    <div class="flex gap-4 h-[calc(100vh-12rem)]">
-      <div class="flex-1 border border-base-300 rounded-lg p-4">
-        <h2 class="text-lg font-semibold mb-4">Waterfall View</h2>
-        <p class="text-base-content/60">Trace ID: {traceData.traceID}</p>
-        <p class="text-base-content/60">Spans: {traceData.spans.length}</p>
-        <p class="text-base-content/60 mt-2">Waterfall view coming soon...</p>
-      </div>
-      <div class="overflow-hidden">
-        {#if traceData.spans.length > 0}
-          <DetailView span={traceData.spans[0].spanData} />
-        {:else}
-          <div class="p-4">
-            <p class="text-base-content/60">No spans available</p>
+    <div class="h-[calc(100vh-12rem)]">
+      <ResizablePanels
+        defaultLeftWidth={0.6}
+        minLeftWidth={0.3}
+        minRightWidth={0.3}
+        storageKey="trace-detail-panels"
+      >
+        {#snippet leftPanel()}
+          <div
+            class="h-full border border-base-300 rounded-lg p-4 overflow-auto"
+          >
+            <h2 class="text-lg font-semibold mb-4">Waterfall View</h2>
+            <p class="text-base-content/60">Trace ID: {data.traceID}</p>
+            <p class="text-base-content/60">Spans: {data.spans.length}</p>
+            <p class="text-base-content/60 mt-2">
+              Waterfall view coming soon...
+            </p>
           </div>
-        {/if}
-      </div>
+        {/snippet}
+        {#snippet rightPanel()}
+          <div class="h-full overflow-hidden">
+            {#if data.spans.length > 0}
+              <DetailView span={data.spans[0].spanData} />
+            {:else}
+              <div class="p-4">
+                <p class="text-base-content/60">No spans available</p>
+              </div>
+            {/if}
+          </div>
+        {/snippet}
+      </ResizablePanels>
     </div>
   {/if}
 </div>

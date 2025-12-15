@@ -132,46 +132,50 @@
         {#if numEvents > 0}
           <EventsPanel events={span.events} spanStartTime={span.startTime} />
         {:else}
-          <div class="flex flex-col items-center justify-center h-full p-8">
-            <svg
-              class="w-12 h-12 text-base-content/30 mb-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M18.01 7.49L19.5 6m1 7.5a8.5 8.5 0 1 1-17 0a8.5 8.5 0 0 1 17 0M14.5 2h-5M12 13.5l3.5-3.5"
-              />
-            </svg>
-            <p class="text-base-content/60 text-sm">
-              No events recorded for this span
-            </p>
+          <div class="border border-base-300 rounded-lg p-8">
+            <div class="flex flex-col items-center justify-center">
+              <svg
+                class="w-12 h-12 text-base-content/30 mb-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M18.01 7.49L19.5 6m1 7.5a8.5 8.5 0 1 1-17 0a8.5 8.5 0 0 1 17 0M14.5 2h-5M12 13.5l3.5-3.5"
+                />
+              </svg>
+              <p class="text-base-content/60 text-sm">
+                No events recorded for this span
+              </p>
+            </div>
           </div>
         {/if}
       {:else if activeSection === 'links'}
         {#if numLinks > 0}
           <LinksPanel links={span.links} />
         {:else}
-          <div class="flex flex-col items-center justify-center h-full p-8">
-            <svg
-              class="w-12 h-12 text-base-content/30 mb-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-linecap="round"
-            >
-              <path
-                d="M10 13.229q.213.349.504.654a3.56 3.56 0 0 0 4.454.59q.391-.24.73-.59l3.239-3.372c1.43-1.49 1.43-3.904 0-5.394a3.564 3.564 0 0 0-5.183 0l-.714.743"
-              />
-              <path
-                d="m10.97 18.14l-.713.743a3.564 3.564 0 0 1-5.184 0c-1.43-1.49-1.43-3.905 0-5.394l3.24-3.372a3.564 3.564 0 0 1 5.183 0q.291.305.504.654"
-              />
-            </svg>
-            <p class="text-base-content/60 text-sm">
-              No links recorded for this span
-            </p>
+          <div class="border border-base-300 rounded-lg p-8">
+            <div class="flex flex-col items-center justify-center">
+              <svg
+                class="w-12 h-12 text-base-content/30 mb-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+              >
+                <path
+                  d="M10 13.229q.213.349.504.654a3.56 3.56 0 0 0 4.454.59q.391-.24.73-.59l3.239-3.372c1.43-1.49 1.43-3.904 0-5.394a3.564 3.564 0 0 0-5.183 0l-.714.743"
+                />
+                <path
+                  d="m10.97 18.14l-.713.743a3.564 3.564 0 0 1-5.184 0c-1.43-1.49-1.43-3.905 0-5.394l3.24-3.372a3.564 3.564 0 0 1 5.183 0q.291.305.504.654"
+                />
+              </svg>
+              <p class="text-base-content/60 text-sm">
+                No links recorded for this span
+              </p>
+            </div>
           </div>
         {/if}
       {/if}
