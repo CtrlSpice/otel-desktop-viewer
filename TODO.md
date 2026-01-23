@@ -2,42 +2,60 @@
 
 ## Phase 1: Database Schema Rework
 
-- [ ] Create `attr_type` ENUM type: `ENUM('string', 'int64', 'float64', 'bool', 'string[]', 'int64[]', 'float64[]', 'boolean[]')`
-- [ ] Create new `attr_value` type: `STRUCT(v VARCHAR, t attr_type)`
-- [ ] Update `event`, `link`, `exemplar` types to remove Attributes fields (attributes normalized)
-- [ ] Update spans table schema:
-  - [ ] Remove `Attributes MAP(VARCHAR, attribute)` column
-  - [ ] Remove `ResourceAttributes MAP(VARCHAR, attribute)` column
-  - [ ] Remove `ScopeAttributes MAP(VARCHAR, attribute)` column
-  - [ ] Add `Depth` column (pre-compute span depth)
-- [ ] Update logs table schema:
-  - [ ] Remove `Attributes MAP(VARCHAR, attribute)` column
-  - [ ] Remove `ResourceAttributes MAP(VARCHAR, attribute)` column
-  - [ ] Remove `ScopeAttributes MAP(VARCHAR, attribute)` column
-  - [ ] Simplify Body to VARCHAR + BodyType (was UNION)
-- [ ] Normalize metrics: create `metric_data_points` table (one row per data point)
-- [ ] Update metrics table:
-  - [ ] Add `MetricType VARCHAR` column
-  - [ ] Remove `DataPoints` column (moved to normalized table)
-  - [ ] Remove `ResourceAttributes MAP(VARCHAR, attribute)` column
-  - [ ] Remove `ScopeAttributes MAP(VARCHAR, attribute)` column
-- [ ] Create normalized `attributes` table:
-  - [ ] EntityType, EntityID, AttributeScope, Key, Value, Type columns
-  - [ ] Primary key on (EntityType, EntityID, AttributeScope, Key)
-  - [ ] Index on (Key, Value)
-  - [ ] Index on (EntityType, EntityID)
-  - [ ] Index on (AttributeScope, Key)
-  - [ ] Composite index on (EntityType, EntityID, AttributeScope, Key)
-- [ ] Remove `dataPoints` UNION type (no longer needed)
-- [ ] Remove `attribute` UNION type (replaced with `attr_value` STRUCT)
-- [ ] Add indexes for spans (TraceID, StartTime, ParentSpanID)
-- [ ] Add indexes for logs (Timestamp, TraceID, SeverityNumber)
-- [ ] Add indexes for metrics (Name, Received, MetricType)
-- [ ] Add indexes for metric_data_points (MetricID, Timestamp)
-- [ ] Optional: Create trace_summaries table
+**Architectural Decisions Made:**
+- [x] Full normalization: Events, links, exemplars, attributes, and data points normalized into separate tables
+- [x] Single table for metric data points: All metric types in one table with NULLs (optimized for columnar storage)
+- [x] Attributes table: `SignalType` + `SignalID` + `Scope` + `OwnerID` structure
+- [x] Depth calculation: Query-time calculation (not stored)
+- See [ARCHITECTURE.md - Database Architectural Decisions](ARCHITECTURE.md#database-architectural-decisions) for details
+
+**Schema Implementation:**
+- [x] Create `attr_type` ENUM type: `ENUM('string', 'int64', 'float64', 'bool', 'string[]', 'int64[]', 'float64[]', 'boolean[]')`
+- [x] Create new `attr_value` type: `STRUCT(v VARCHAR, t attr_type)`
+- [x] Create `signal_type` ENUM: `ENUM('traces', 'logs', 'metrics')`
+- [x] Create `attribute_scope` ENUM: `ENUM('span', 'resource', 'scope', 'event', 'link', 'log', 'metric', 'data_point', 'exemplar')`
+- [x] Remove old UNION types: `attribute`, `dataPoints` (no longer needed)
+- [x] Update spans table schema:
+  - [x] Remove `Attributes MAP(VARCHAR, attribute)` column
+  - [x] Remove `ResourceAttributes MAP(VARCHAR, attribute)` column
+  - [x] Remove `ScopeAttributes MAP(VARCHAR, attribute)` column
+  - [x] Remove `Events event[]` column (normalized to `events` table)
+  - [x] Remove `Links link[]` column (normalized to `links` table)
+  - [x] ~~Add `Depth` column~~ (not needed - calculate on query time)
+- [x] Update logs table schema:
+  - [x] Remove `Attributes MAP(VARCHAR, attribute)` column
+  - [x] Remove `ResourceAttributes MAP(VARCHAR, attribute)` column
+  - [x] Remove `ScopeAttributes MAP(VARCHAR, attribute)` column
+  - [x] Simplify `Body` to `VARCHAR` + `BodyType` (was UNION)
+- [x] Update metrics table:
+  - [x] Add `MetricType VARCHAR` column
+  - [x] Remove `DataPoints` column (moved to normalized table)
+  - [x] Remove `ResourceAttributes MAP(VARCHAR, attribute)` column
+  - [x] Remove `ScopeAttributes MAP(VARCHAR, attribute)` column
+- [x] Create normalized `events` table (`ID`, `SpanID`, `Name`, `Timestamp`, `DroppedAttributesCount`)
+- [x] Create normalized `links` table (`ID`, `SpanID`, `TraceID`, `LinkedSpanID`, `TraceState`, `DroppedAttributesCount`)
+- [x] Create normalized `exemplars` table (`ID`, `DataPointID`, `Index`, `Timestamp`, `Value`, `TraceID`, `SpanID`)
+- [x] Create normalized `metric_data_points` table (single table for all metric types with `MetricType` column)
+- [x] Create normalized `attributes` table:
+  - [x] `SignalType`, `SignalID`, `Scope`, `OwnerID`, `Key`, `Value`, `Type` columns
+  - [x] Primary key on (`SignalType`, `SignalID`, `Scope`, `OwnerID`, `Key`)
+  - [x] Index on (`SignalType`, `SignalID`)
+  - [x] Index on (`OwnerID`)
+  - [x] Index on (`Key`, `Value`)
+- [x] Add indexes for spans (`TraceID`, `StartTime`, `ParentSpanID`)
+- [x] Add indexes for events (`SpanID`, `Timestamp`)
+- [x] Add indexes for links (`SpanID`, `TraceID`, `LinkedSpanID`)
+- [x] Add indexes for logs (`Timestamp`, `TraceID`, `SeverityNumber`)
+- [x] Add indexes for metrics (`Name`, `Received`, `MetricType`)
+- [x] Add indexes for `metric_data_points` (`MetricType`, `MetricID`, `Timestamp`) and (`MetricID`, `Timestamp`)
+- [x] Add indexes for exemplars (`DataPointID`, `Index`) and (`TraceID`, `SpanID`)
+
+**Remaining Tasks:**
+- [ ] Update all queries to use new schema (remove references to old columns)
 - [ ] Write migration for existing data
 - [ ] Test flush interval with new simple types
 - [ ] Simplify AppenderWrapper (remove UNION reflection code)
+- [ ] Optional: Create trace_summaries table
 
 ## Phase 2: Server Rework
 
@@ -48,18 +66,21 @@ The core architectural decision: have DuckDB output each query row as a JSON obj
 - [ ] **FIRST**: Update one query (e.g., `getTraceSummaries`) to output JSON rows using `json_object()`
 - [ ] **FIRST**: Update handler to scan JSON strings into `[]json.RawMessage` instead of structs
 - [ ] Create `store/ingest.go` with direct OTLP → DuckDB translation
-- [ ] Create `convertAttributes()` helper for new format (returns map for attributes table)
+- [ ] Create `convertAttributes()` helper for new format (returns map for `attributes` table)
 - [ ] Create `convertEvents()` and `convertLinks()` helpers (no attributes in structs)
 - [ ] Implement `IngestTraces()`:
-  - [ ] Direct pdata to appender (insert into spans table)
+  - [ ] Direct pdata to appender (insert into `spans` table)
+  - [ ] Insert events into `events` table
+  - [ ] Insert links into `links` table
   - [ ] Insert all attributes into `attributes` table (resource, scope, span, event, link attributes)
 - [ ] Implement `IngestLogs()`:
-  - [ ] Direct pdata to appender (insert into logs table)
+  - [ ] Direct pdata to appender (insert into `logs` table)
   - [ ] Insert all attributes into `attributes` table
 - [ ] Implement `IngestMetrics()`:
-  - [ ] Insert into metrics table (metadata only)
+  - [ ] Insert into `metrics` table (metadata only)
   - [ ] Insert all data points into `metric_data_points` table
-  - [ ] Insert all attributes into `attributes` table (resource, scope, metric data point attributes)
+  - [ ] Insert exemplars into `exemplars` table
+  - [ ] Insert all attributes into `attributes` table (resource, scope, metric, data point, exemplar attributes)
 - [ ] Update all remaining queries to output rows as JSON objects using `json_object()`
 - [ ] Update all handlers to scan JSON strings into `[]json.RawMessage`
 - [ ] Update queries to join `attributes` table when building JSON responses

@@ -126,32 +126,7 @@ CREATE TYPE attr_value AS STRUCT(v VARCHAR, t attr_type);
 -- t = type enum (one of the above values)
 ```
 
-Keep events, links, and exemplars as arrays of structs. Attributes are normalized into a separate table (see below), so these structs don't need attribute fields:
-
-```sql
-CREATE TYPE event AS STRUCT(
-    Name VARCHAR,
-    Timestamp BIGINT,
-    DroppedAttributesCount UINTEGER
-    -- Attributes stored in normalized attributes table
-);
-
-CREATE TYPE link AS STRUCT(
-    TraceID VARCHAR,
-    SpanID VARCHAR,
-    TraceState VARCHAR,
-    DroppedAttributesCount UINTEGER
-    -- Attributes stored in normalized attributes table
-);
-
-CREATE TYPE exemplar AS STRUCT(
-    Timestamp BIGINT,
-    Value DOUBLE,
-    TraceID VARCHAR,
-    SpanID VARCHAR
-    -- FilteredAttributes stored in normalized attributes table
-);
-```
+Normalize events, links, and exemplars into separate tables for better queryability. Attributes are normalized into a separate table (see below).
 
 ### Notes
 
@@ -218,80 +193,84 @@ CREATE TABLE metrics (
     -- ResourceAttributes and ScopeAttributes stored in normalized attributes table
 );
 
--- Data points table (one row per data point)
+-- Data points table (single table for all metric types)
+-- Columnar storage compresses NULLs efficiently, and MetricType filters restrict the set
 CREATE TABLE metric_data_points (
-    MetricID VARCHAR,
+    ID VARCHAR PRIMARY KEY,
+    MetricID VARCHAR NOT NULL,
+    MetricType VARCHAR NOT NULL,  -- 'Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'
+    Index INTEGER NOT NULL,
     Timestamp BIGINT,
     StartTime BIGINT,
     Flags UINTEGER,
-    -- Attributes stored in normalized attributes table
-    
-    -- Common fields (one will be populated based on MetricType)
-    Value DOUBLE,              -- for Gauge/Sum
-    ValueType VARCHAR,         -- 'int' or 'double'
-    
-    -- Sum-specific
+    -- Gauge/Sum fields (NULL for Histogram types)
+    Value DOUBLE,
+    ValueType VARCHAR,
+    -- Sum-specific (NULL for Gauge/Histogram types)
     IsMonotonic BOOLEAN,
     AggregationTemporality VARCHAR,
-    
-    -- Histogram-specific
+    -- Histogram/ExponentialHistogram fields (NULL for Gauge/Sum)
     Count UBIGINT,
     Sum DOUBLE,
     Min DOUBLE,
     Max DOUBLE,
     BucketCounts UBIGINT[],
     ExplicitBounds DOUBLE[],
-    
-    -- ExponentialHistogram-specific
+    -- ExponentialHistogram-specific (NULL for other types)
     Scale INTEGER,
     ZeroCount UBIGINT,
     PositiveBucketOffset INTEGER,
     PositiveBucketCounts UBIGINT[],
     NegativeBucketOffset INTEGER,
     NegativeBucketCounts UBIGINT[],
-    
-    -- Exemplars (stored as JSON array for simplicity)
-    Exemplars JSON,
-    
-    FOREIGN KEY (MetricID) REFERENCES metrics(MetricID)
+    FOREIGN KEY (MetricID) REFERENCES metrics(MetricID) ON DELETE CASCADE
 );
 
+CREATE INDEX idx_metric_data_points_type_metric_time ON metric_data_points(MetricType, MetricID, Timestamp DESC);
 CREATE INDEX idx_metric_data_points_metric_time ON metric_data_points(MetricID, Timestamp DESC);
 CREATE INDEX idx_metric_data_points_time ON metric_data_points(Timestamp DESC);
+
+CREATE INDEX idx_gauge_data_points_metric_time ON gauge_data_points(MetricID, Timestamp DESC);
+CREATE INDEX idx_sum_data_points_metric_time ON sum_data_points(MetricID, Timestamp DESC);
+CREATE INDEX idx_histogram_data_points_metric_time ON histogram_data_points(MetricID, Timestamp DESC);
+CREATE INDEX idx_exponential_histogram_data_points_metric_time ON exponential_histogram_data_points(MetricID, Timestamp DESC);
 ```
 
 **Why this works:**
-- **Efficient aggregation**: `SELECT AVG(Value), time_bucket(Timestamp) FROM metric_data_points WHERE MetricID = ? GROUP BY time_bucket`
-- **Time range queries**: `WHERE Timestamp BETWEEN ? AND ?`
-- **Attribute filtering**: Join with normalized `attributes` table (no MAP access needed)
+- **Columnar compression**: NULLs compress extremely well with run-length encoding
+- **Low cardinality filter**: MetricType has only 4-5 values, compresses and filters efficiently
+- **Filter-first pattern**: DuckDB filters by MetricType first, then only scans relevant columns
+- **Efficient aggregation**: After filtering by MetricType, NULLs are already excluded
+- **Attribute filtering**: Join with normalized `attributes` table using ID as OwnerID
 - **No UNION type** - eliminates reflection complexity
-- **Normalized structure** - DuckDB can optimize queries on structured columns
+- **Simpler schema**: One table instead of four tables + view
 
 **Query examples for visualization:**
 
 ```sql
--- Get time series for a gauge metric
+-- Get time series for a gauge metric (DuckDB filters by MetricType first)
 SELECT Timestamp, Value
 FROM metric_data_points
-WHERE MetricID = ? AND Timestamp BETWEEN ? AND ?
+WHERE MetricType = 'Gauge' AND MetricID = ? AND Timestamp BETWEEN ? AND ?
 ORDER BY Timestamp;
 
--- Aggregate by time buckets (1 minute)
+-- Aggregate histogram data (after MetricType filter, only relevant columns scanned)
 SELECT 
     date_trunc('minute', to_timestamp(Timestamp / 1000000000)) as bucket,
-    AVG(Value) as avg_value,
-    MIN(Value) as min_value,
-    MAX(Value) as max_value
+    AVG(Sum) as avg_sum,
+    AVG(Count) as avg_count
 FROM metric_data_points
-WHERE MetricID = ? AND Timestamp BETWEEN ? AND ?
+WHERE MetricType = 'Histogram' AND MetricID = ? AND Timestamp BETWEEN ? AND ?
 GROUP BY bucket
 ORDER BY bucket;
 
--- Filter by attributes (using normalized attributes table)
+-- Filter by attributes (using normalized attributes table with ID as OwnerID)
 SELECT dp.Timestamp, dp.Value
 FROM metric_data_points dp
-JOIN attributes a ON dp.MetricID = a.EntityID 
-  AND a.EntityType = 'metric'
+JOIN attributes a ON dp.ID = a.OwnerID 
+  AND a.SignalType = 'metrics'
+  AND a.Scope = 'data_point'
+  WHERE dp.MetricType = 'Gauge'
   AND a.AttributeScope = 'span'
 WHERE dp.MetricID = ?
   AND EXISTS(SELECT 1 FROM attributes WHERE EntityID = dp.MetricID AND Key = 'service' AND Value = 'api')
@@ -319,6 +298,157 @@ WHERE m.MetricID = ?
 GROUP BY m.MetricID, m.Name, m.MetricType
 ```
 
+### Database Architectural Decisions
+
+This section documents the key architectural decisions made during the schema redesign, including tradeoffs and rationale.
+
+#### Decision 1: Full Normalization
+
+**What we normalized:**
+- **Attributes**: Moved from MAP columns to separate `attributes` table
+- **Events**: Moved from `event[]` arrays to separate `events` table
+- **Links**: Moved from `link[]` arrays to separate `links` table
+- **Exemplars**: Moved from nested arrays to separate `exemplars` table
+- **Metric Data Points**: Moved from UNION type to separate `metric_data_points` table
+
+**Why normalize:**
+1. **Queryability**: Can query events/links/data points independently
+   - "Find all error events across all spans" → direct query on `events` table
+   - "Get time series for metric" → direct query on `metric_data_points` table
+2. **Indexing**: Better indexing for analytical workloads
+   - Index on event timestamps, link trace IDs, data point timestamps
+   - Enables efficient time-series queries and aggregations
+3. **Consistency**: Everything normalized, not just attributes
+   - Consistent pattern across all nested entities
+   - Easier to reason about and maintain
+4. **Analytical workloads**: Built for OpenTelemetry viewer use case
+   - Need to filter/search events, links, data points independently
+   - Time-series aggregations for metrics visualization
+
+**Tradeoffs:**
+- **Insertion complexity**: More inserts per entity (span + events + links + attributes)
+  - **Mitigation**: Batch inserts in transactions, collectors already batch data
+- **Join overhead**: Reconstructing entities requires joins
+  - **Mitigation**: DuckDB optimizes joins efficiently, and we build JSON with joins anyway
+- **More tables**: More schema to manage
+  - **Mitigation**: Cascading deletes simplify cleanup, consistent patterns
+
+**Verdict**: Normalization is worth it for our use case (viewer + analytical queries).
+
+#### Decision 2: Single Table for Metric Data Points
+
+**What we considered:**
+- **Option A**: Separate tables (`gauge_data_points`, `sum_data_points`, etc.) + view
+- **Option B**: Single table (`metric_data_points`) with NULLs for type-specific fields
+
+**Why single table:**
+1. **Columnar storage optimization**: 
+   - NULLs compress extremely well with run-length encoding
+   - Low cardinality `MetricType` column (4-5 values) compresses and filters efficiently
+2. **Filter-first pattern**: 
+   - DuckDB filters by `MetricType` first (very fast, low cardinality)
+   - Then only scans relevant columns for that type
+   - No need to handle NULLs - they're already excluded by the filter
+3. **Simpler schema**: 
+   - One table instead of four tables + view
+   - No view maintenance or UNION complexity
+4. **Better for aggregations**:
+   - After filtering by `MetricType`, aggregations work on non-NULL values
+   - Index on `(MetricType, MetricID, Timestamp)` is very efficient
+
+**Why not separate tables:**
+- **More complexity**: Four tables + view to maintain
+- **View overhead**: UNION ALL in view adds query complexity
+- **No real benefit**: Columnar storage handles NULLs so well that separate tables don't provide significant advantage
+
+**Tradeoffs:**
+- **Type safety**: Can't enforce which fields should be populated at database level
+  - **Mitigation**: Application-level validation based on `MetricType`
+- **Some NULLs**: Each row has many NULL columns
+  - **Mitigation**: Columnar compression makes this negligible
+
+**Verdict**: Single table is better for columnar storage. DuckDB's columnar engine handles sparse data efficiently.
+
+#### Decision 3: Attributes Table Design
+
+**Final structure:**
+```sql
+CREATE TABLE attributes (
+    SignalType signal_type NOT NULL,      -- ENUM('traces', 'logs', 'metrics')
+    SignalID VARCHAR NOT NULL,            -- TraceID, LogID, MetricID (top-level)
+    Scope attribute_scope NOT NULL,       -- ENUM('span', 'resource', 'scope', 'event', 'link', ...)
+    OwnerID VARCHAR NOT NULL,             -- SpanID, EventID, LinkID, DataPointID, etc.
+    Key VARCHAR NOT NULL,
+    Value VARCHAR NOT NULL,
+    Type attr_type NOT NULL,
+    PRIMARY KEY (SignalType, SignalID, Scope, OwnerID, Key)
+);
+```
+
+**Why this design:**
+1. **SignalType + SignalID**: Enables queries like "all attributes for this trace"
+   - `WHERE SignalType='traces' AND SignalID=TraceID` gets everything for a trace
+2. **Scope**: Distinguishes attribute location (resource, scope, entity, nested entity)
+   - Single column instead of separate EntityType + AttributeScope
+3. **OwnerID**: Direct reference to the specific entity
+   - No need for Index/NestedIndex since entities are normalized
+   - Simpler than composite keys
+4. **ENUMs for low cardinality**: 
+   - `SignalType` (3 values) and `Scope` (9 values) compress extremely well
+   - Better than VARCHAR for these columns
+
+**Why not other approaches:**
+- **Path strings** (e.g., `"span.resource"`, `"metric.data_point[2].exemplar[0]"`):
+  - More flexible but harder to index and query
+  - String parsing needed for queries
+- **Separate EntityType + AttributeScope**:
+  - More columns, some redundancy
+  - Current design is cleaner
+
+**Tradeoffs:**
+- **No foreign keys**: Can't enforce referential integrity for OwnerID
+  - **Mitigation**: Application-level validation, cascading deletes handle cleanup
+- **String IDs**: Using VARCHAR for all IDs
+  - **Mitigation**: Simple and flexible, works well with columnar storage
+
+**Verdict**: This design balances simplicity, queryability, and columnar optimization.
+
+#### Decision 4: Depth Calculation
+
+**What we considered:**
+- **Option A**: Pre-compute and store `Depth` column in spans table
+- **Option B**: Calculate depth on query time using recursive CTE
+
+**Why query-time calculation:**
+1. **Dynamic depth**: Orphan spans can find parents in later batches
+   - Stored depth would become stale
+   - Would need to recalculate anyway
+2. **Database efficiency**: DuckDB's recursive CTE is optimized
+   - More efficient than Go traversals
+   - Database is better at tree operations
+3. **Simpler inserts**: No need to calculate depth during ingestion
+   - Avoids per-insert lookups and complexity
+4. **Always needed**: Depth is only needed when querying traces
+   - No point storing it if we calculate it on query anyway
+
+**Tradeoffs:**
+- **Query overhead**: Recursive CTE on every trace query
+  - **Mitigation**: Only calculated when fetching full trace (not summaries)
+  - DuckDB optimizes recursive CTEs well
+
+**Verdict**: Query-time calculation is better for our use case.
+
+#### Summary of Tradeoffs
+
+| Decision | Chose | Tradeoff |
+|----------|-------|----------|
+| Normalization | Full normalization | More inserts, but better queryability |
+| Metric data points | Single table | Some NULLs, but columnar compression handles it |
+| Attributes design | SignalType + SignalID + Scope + OwnerID | No foreign keys, but simpler queries |
+| Depth | Query-time calculation | CTE overhead, but handles dynamic relationships |
+
+**Overall philosophy**: Optimize for queryability and analytical workloads, accept insertion complexity (which is manageable with batching).
+
 ### How JSON Rows Affect Schema
 
 **Storage schema doesn't change** - we still store data the same way. But JSON output affects query design:
@@ -328,39 +458,82 @@ GROUP BY m.MetricID, m.Name, m.MetricType
 - No new columns needed - these are computed when building JSON
 - Example: `COUNT(*) OVER (PARTITION BY TraceID) as span_count`
 
-**Nested structures:**
-- Events, Links, Exemplars are stored as arrays of structs: `event[]`, `link[]`, `exemplar[]`
-- DuckDB can convert these to JSON arrays directly: `json(Events)` or `json_array_agg(...)`
-- No schema change needed - DuckDB handles the conversion
+**Nested structures normalized:**
+- Events, Links, Exemplars are normalized into separate tables for better queryability
+- Can query events/links/data points independently
+- Better indexing for analytical workloads
+
+**Normalized tables:**
+
+```sql
+-- Events table
+CREATE TABLE events (
+    EventID VARCHAR PRIMARY KEY,
+    SpanID VARCHAR NOT NULL,
+    Name VARCHAR,
+    Timestamp BIGINT,
+    DroppedAttributesCount UINTEGER,
+    FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
+);
+
+-- Links table
+CREATE TABLE links (
+    LinkID VARCHAR PRIMARY KEY,
+    SpanID VARCHAR NOT NULL,
+    TraceID VARCHAR,
+    LinkedSpanID VARCHAR,
+    TraceState VARCHAR,
+    DroppedAttributesCount UINTEGER,
+    FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
+);
+
+-- Exemplars table
+CREATE TABLE exemplars (
+    ExemplarID VARCHAR PRIMARY KEY,
+    DataPointID VARCHAR NOT NULL,
+    Index INTEGER NOT NULL,
+    Timestamp BIGINT,
+    Value DOUBLE,
+    TraceID VARCHAR,
+    SpanID VARCHAR,
+    FOREIGN KEY (DataPointID) REFERENCES metric_data_points(DataPointID) ON DELETE CASCADE
+);
+```
 
 **Attributes are normalized into a separate table:**
 
 Normalize attributes for efficient querying and discovery:
 
 ```sql
-CREATE TABLE attributes (
-    EntityType VARCHAR,      -- 'span', 'log', 'metric', 'event', 'link', 'exemplar'
-    EntityID VARCHAR,        -- SpanID, LogID, MetricID, Event index, Link index, etc.
-    AttributeScope VARCHAR,  -- 'resource', 'span', 'scope', 'event', 'link', 'exemplar'
-    Key VARCHAR,
-    Value VARCHAR,           -- stored as string (same as attr_value.v)
-    Type attr_type,          -- enum type (same as attr_value.t)
-    
-    PRIMARY KEY (EntityType, EntityID, AttributeScope, Key)
+CREATE TYPE signal_type AS ENUM('traces', 'logs', 'metrics');
+
+CREATE TYPE attribute_scope AS ENUM(
+    'span', 'resource', 'scope', 'event', 'link', 
+    'log', 'metric', 'data_point', 'exemplar'
 );
 
+CREATE TABLE attributes (
+    SignalType signal_type NOT NULL,
+    SignalID VARCHAR NOT NULL,      -- TraceID, LogID, MetricID (top-level signal)
+    Scope attribute_scope NOT NULL,
+    OwnerID VARCHAR NOT NULL,        -- SpanID, EventID, LinkID, DataPointID, ExemplarID (specific entity)
+    Key VARCHAR NOT NULL,
+    Value VARCHAR NOT NULL,
+    Type attr_type NOT NULL,
+    
+    PRIMARY KEY (SignalType, SignalID, Scope, OwnerID, Key)
+);
+
+CREATE INDEX idx_attributes_signal ON attributes(SignalType, SignalID);
+CREATE INDEX idx_attributes_owner ON attributes(OwnerID);
 CREATE INDEX idx_attributes_key_value ON attributes(Key, Value);
-CREATE INDEX idx_attributes_entity ON attributes(EntityType, EntityID);
-CREATE INDEX idx_attributes_scope_key ON attributes(AttributeScope, Key);
-CREATE INDEX idx_attributes_entity_scope_key ON attributes(EntityType, EntityID, AttributeScope, Key);
--- Composite index for common query patterns: entity lookups, key-based filters
 ```
 
 **Why normalize attributes:**
-- **Efficient attribute discovery**: `SELECT DISTINCT Key, Type FROM attributes WHERE EntityType = 'span'` (no UNNEST needed)
-- **Simple searching**: `SELECT EntityID FROM attributes WHERE Key = 'service' AND Value = 'api'` (no UNNEST needed)
+- **Efficient attribute discovery**: `SELECT DISTINCT Key, Type FROM attributes WHERE SignalType = 'traces' AND Scope = 'span'` (no UNNEST needed)
+- **Simple searching**: `SELECT OwnerID FROM attributes WHERE Key = 'service' AND Value = 'api'` (no UNNEST needed)
 - **No complex UNNEST operations** - current attribute discovery uses expensive `UNNEST(map_entries(Attributes))` on all spans
-- **Event/link attributes**: No double UNNEST - just query the attributes table
+- **Event/link attributes**: Direct query on attributes table with `Scope='event'` or `Scope='link'`
 - **Global search**: Simple join instead of `UNNEST(map_entries(s.Attributes))`
 - **Consistent structure** across all entity types
 - **Query builder friendly**: With a query builder, joins are much simpler to compose than complex UNNEST expressions. Instead of building `EXISTS(SELECT 1 FROM UNNEST(map_entries(s.Attributes)) WHERE ...)`, we can simply add `JOIN attributes ON ... WHERE attributes.Key = ? AND attributes.Value = ?`
@@ -369,36 +542,37 @@ CREATE INDEX idx_attributes_entity_scope_key ON attributes(EntityType, EntityID,
 
 ```sql
 -- Attribute discovery (simple, no UNNEST)
-SELECT DISTINCT Key, Type, AttributeScope
+SELECT DISTINCT Key, Type, Scope
 FROM attributes
-WHERE EntityType = 'span'
-ORDER BY Key, AttributeScope;
+WHERE SignalType = 'traces' AND Scope = 'span'
+ORDER BY Key, Scope;
 
 -- Search by attribute (simple join, easy for query builder)
 SELECT DISTINCT s.*
 FROM spans s
-JOIN attributes a ON s.SpanID = a.EntityID 
-WHERE a.EntityType = 'span'
-  AND a.AttributeScope = 'span'
+JOIN attributes a ON s.SpanID = a.OwnerID 
+WHERE a.SignalType = 'traces'
+  AND a.Scope = 'span'
   AND a.Key = 'service'
   AND a.Value = 'api';
 
--- Search event attributes (no double UNNEST, simple join)
+-- Search event attributes (direct query on events table)
 SELECT DISTINCT s.*
 FROM spans s
-JOIN attributes a ON s.SpanID = a.EntityID
-WHERE a.EntityType = 'span'
-  AND a.AttributeScope = 'event'
+JOIN events e ON s.SpanID = e.SpanID
+JOIN attributes a ON e.EventID = a.OwnerID
+WHERE a.SignalType = 'traces'
+  AND a.Scope = 'event'
   AND a.Key = 'event.name'
   AND a.Value = 'error';
 
 -- Multiple attribute filters (easy to compose in query builder)
 SELECT DISTINCT s.*
 FROM spans s
-JOIN attributes a1 ON s.SpanID = a1.EntityID AND a1.Key = 'service' AND a1.Value = 'api'
-JOIN attributes a2 ON s.SpanID = a2.EntityID AND a2.Key = 'env' AND a2.Value = 'prod'
-WHERE a1.EntityType = 'span' AND a1.AttributeScope = 'span'
-  AND a2.EntityType = 'span' AND a2.AttributeScope = 'span';
+JOIN attributes a1 ON s.SpanID = a1.OwnerID AND a1.Key = 'service' AND a1.Value = 'api'
+JOIN attributes a2 ON s.SpanID = a2.OwnerID AND a2.Key = 'env' AND a2.Value = 'prod'
+WHERE a1.SignalType = 'traces' AND a1.Scope = 'span'
+  AND a2.SignalType = 'traces' AND a2.Scope = 'span';
 ```
 
 **Query builder benefits:**
@@ -442,7 +616,7 @@ Yes - with proper indexes, normalized attributes are actually MORE flexible than
 - **Core structured data**: TraceID, SpanID, Name, StartTime, EndTime, StatusCode, etc.
 - **Fixed schema fields**: These are always present and have specific types
 - **Primary identifiers**: EntityID, relationships (ParentSpanID), timestamps
-- **Arrays of structs**: Events[], Links[] (not normalized - stored as arrays)
+- **No nested arrays**: Events, Links normalized into separate tables
 - **Counts**: DroppedAttributesCount, etc.
 
 **Attributes table stores:**
@@ -462,18 +636,23 @@ Yes - with proper indexes, normalized attributes are actually MORE flexible than
 - **Search**: Need to query by attribute key/value efficiently
 - **Cross-entity queries**: "Find all spans with service='api'" requires scanning attributes
 
-**Ingestion:** When ingesting entities, insert into both tables:
+**Ingestion:** When ingesting entities, insert into multiple tables:
 1. Insert entity into main table (spans, logs, metrics, etc.) - stores core structured data
-2. Insert all attributes into `attributes` table - stores variable key-value metadata
+2. Insert events/links/exemplars into normalized tables
+3. Insert all attributes into `attributes` table - stores variable key-value metadata
 
-**JSON rows:** When building JSON responses, join attributes back:
+**JSON rows:** When building JSON responses, join normalized tables and attributes back:
 ```sql
 SELECT json_object(
     'spanID', s.SpanID,
+    'events', json_array_agg(json_object('eventID', e.EventID, 'name', e.Name, ...)),
+    'links', json_array_agg(json_object('linkID', l.LinkID, ...)),
     'attributes', json_object_agg(a.Key, json_object('v', a.Value, 't', a.Type))
 )
 FROM spans s
-LEFT JOIN attributes a ON s.SpanID = a.EntityID AND a.EntityType = 'span' AND a.AttributeScope = 'span'
+LEFT JOIN events e ON s.SpanID = e.SpanID
+LEFT JOIN links l ON s.SpanID = l.SpanID
+LEFT JOIN attributes a ON s.SpanID = a.OwnerID AND a.SignalType = 'traces' AND a.Scope = 'span'
 WHERE s.SpanID = ?
 GROUP BY s.SpanID
 ```

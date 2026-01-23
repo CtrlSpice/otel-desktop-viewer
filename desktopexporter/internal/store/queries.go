@@ -4,165 +4,206 @@ import "strings"
 
 // Type creation queries that must be run in order
 var TypeCreationQueries = []string{
-	`CREATE TYPE attribute AS UNION(
-		string VARCHAR,
-		int64 BIGINT,
-		float64 DOUBLE,
-		boolean BOOLEAN,
-		string_list VARCHAR[],
-		int64_list BIGINT[],
-		float64_list DOUBLE[],
-		boolean_list BOOLEAN[]
-	)`,
-	`CREATE TYPE exemplar AS STRUCT(
-		Timestamp BIGINT,
-		Value DOUBLE,
-		TraceID VARCHAR,
-		SpanID VARCHAR,
-		FilteredAttributes MAP(VARCHAR, attribute)
-	)`,
-	`CREATE TYPE buckets AS STRUCT(
-		BucketOffset INTEGER,
-		BucketCounts UBIGINT[]
-	)`,
-	`CREATE TYPE body AS UNION(
-		string VARCHAR,
-		int64 BIGINT,
-		float64 DOUBLE,
-		boolean BOOLEAN,
-		bytes BLOB,
-		json JSON
-	)`,
-	`CREATE TYPE gauge AS STRUCT(
-		Timestamp BIGINT,
-		StartTime BIGINT,
-		Attributes MAP(VARCHAR, attribute),
-		Flags UINTEGER,
-		ValueType VARCHAR,
-		Value DOUBLE,
-		Exemplars exemplar[]
-	)`,
-	`CREATE TYPE sum AS STRUCT(
-		Timestamp BIGINT,
-		StartTime BIGINT,
-		Attributes MAP(VARCHAR, attribute),
-		Flags UINTEGER,
-		ValueType VARCHAR,
-		Value DOUBLE,
-		IsMonotonic BOOLEAN,
-		Exemplars exemplar[],
-		AggregationTemporality VARCHAR
-	)`,
-	`CREATE TYPE histogram AS STRUCT(
-		Timestamp BIGINT,
-		StartTime BIGINT,
-		Attributes MAP(VARCHAR, attribute),
-		Flags UINTEGER,
-		Count UBIGINT,
-		Sum DOUBLE,
-		Min DOUBLE,
-		Max DOUBLE,
-		BucketCounts UBIGINT[],
-		ExplicitBounds DOUBLE[],
-		Exemplars exemplar[],
-		AggregationTemporality VARCHAR
-	)`,
-	`CREATE TYPE exponentialHistogram AS STRUCT(
-		Timestamp BIGINT,
-		StartTime BIGINT,
-		Attributes MAP(VARCHAR, attribute),
-		Flags UINTEGER,
-		Count UBIGINT,
-		Sum DOUBLE,
-		Min DOUBLE,
-		Max DOUBLE,
-		Scale INTEGER,
-		ZeroCount UBIGINT,
-		Positive buckets,
-		Negative buckets,
-		Exemplars exemplar[],
-		AggregationTemporality VARCHAR
-	)`,
-	`CREATE TYPE dataPoints AS UNION(
-		Gauge gauge[],
-		Sum sum[],
-		Histogram histogram[],
-		ExponentialHistogram exponentialHistogram[]
-	)`,
-	`CREATE TYPE event AS STRUCT(
-		Name VARCHAR,
-		Timestamp BIGINT,
-		Attributes MAP(VARCHAR, attribute),
-		DroppedAttributesCount UINTEGER
-	)`,
-	`CREATE TYPE link AS STRUCT(
-		TraceID VARCHAR,
-		SpanID VARCHAR,
-		TraceState VARCHAR,
-		Attributes MAP(VARCHAR, attribute),
-		DroppedAttributesCount UINTEGER
-	)`,
+	`CREATE TYPE attr_type AS ENUM('string', 'int64', 'float64', 'bool', 'string[]', 'int64[]', 'float64[]', 'boolean[]')`,
+	`CREATE TYPE attr_value AS STRUCT(v VARCHAR, t attr_type)`,
+	`CREATE TYPE signal_type AS ENUM('traces', 'logs', 'metrics')`,
+	`CREATE TYPE attribute_scope AS ENUM('span', 'resource', 'scope', 'event', 'link', 'log', 'metric', 'data_point', 'exemplar')`,
 }
 
 // Table creation queries that can be run in any order
 var TableCreationQueries = []string{
-	`CREATE TABLE IF NOT EXISTS spans 
-	(TraceID VARCHAR, 
-	TraceState VARCHAR, 
-	SpanID VARCHAR, 
-	ParentSpanID VARCHAR,
-	Name VARCHAR, 
-	Kind VARCHAR, 
-	StartTime BIGINT, 
-	EndTime BIGINT,
-	Attributes MAP(VARCHAR, attribute), 
-	Events event[],
-	Links link[],
-	ResourceAttributes MAP(VARCHAR, attribute),
-	ResourceDroppedAttributesCount UINTEGER,
-	ScopeName VARCHAR,
-	ScopeVersion VARCHAR,
-	ScopeAttributes MAP(VARCHAR, attribute),
-	ScopeDroppedAttributesCount UINTEGER, 
-	DroppedAttributesCount UINTEGER, 
-	DroppedEventsCount UINTEGER, 
-	DroppedLinksCount UINTEGER,
-	StatusCode VARCHAR, 
-	StatusMessage VARCHAR)`,
+	`CREATE TABLE IF NOT EXISTS spans (
+		TraceID VARCHAR,
+		TraceState VARCHAR,
+		SpanID VARCHAR PRIMARY KEY,
+		ParentSpanID VARCHAR,
+		Name VARCHAR,
+		Kind VARCHAR,
+		StartTime BIGINT,
+		EndTime BIGINT,
+		ResourceDroppedAttributesCount UINTEGER,
+		ScopeName VARCHAR,
+		ScopeVersion VARCHAR,
+		ScopeDroppedAttributesCount UINTEGER,
+		DroppedAttributesCount UINTEGER,
+		DroppedEventsCount UINTEGER,
+		DroppedLinksCount UINTEGER,
+		StatusCode VARCHAR,
+		StatusMessage VARCHAR
+	)`,
+	`CREATE TABLE IF NOT EXISTS events (
+		EventID VARCHAR PRIMARY KEY,
+		SpanID VARCHAR NOT NULL,
+		Name VARCHAR,
+		Timestamp BIGINT,
+		DroppedAttributesCount UINTEGER,
+		FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
+	)`,
+	`CREATE TABLE IF NOT EXISTS links (
+		LinkID VARCHAR PRIMARY KEY,
+		SpanID VARCHAR NOT NULL,
+		TraceID VARCHAR,
+		LinkedSpanID VARCHAR,
+		TraceState VARCHAR,
+		DroppedAttributesCount UINTEGER,
+		FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
+	)`,
 	`CREATE TABLE IF NOT EXISTS logs (
-		LogID VARCHAR,
+		LogID VARCHAR PRIMARY KEY,
 		Timestamp BIGINT,
 		ObservedTimestamp BIGINT,
 		TraceID VARCHAR,
 		SpanID VARCHAR,
 		SeverityText VARCHAR,
 		SeverityNumber INTEGER,
-		Body body,
-		ResourceAttributes MAP(VARCHAR, attribute),
+		Body VARCHAR,
+		BodyType VARCHAR,
 		ResourceDroppedAttributesCount UINTEGER,
 		ScopeName VARCHAR,
 		ScopeVersion VARCHAR,
-		ScopeAttributes MAP(VARCHAR, attribute),
 		ScopeDroppedAttributesCount UINTEGER,
-		Attributes MAP(VARCHAR, attribute),
 		DroppedAttributesCount UINTEGER,
 		Flags UINTEGER,
 		EventName VARCHAR
 	)`,
 	`CREATE TABLE IF NOT EXISTS metrics (
-		MetricID VARCHAR,
+		MetricID VARCHAR PRIMARY KEY,
 		Name VARCHAR,
 		Description VARCHAR,
 		Unit VARCHAR,
-		DataPoints dataPoints,
-		ResourceAttributes MAP(VARCHAR, attribute),
+		MetricType VARCHAR,
 		ResourceDroppedAttributesCount UINTEGER,
 		ScopeName VARCHAR,
 		ScopeVersion VARCHAR,
-		ScopeAttributes MAP(VARCHAR, attribute),
 		ScopeDroppedAttributesCount UINTEGER,
 		Received BIGINT
 	)`,
+	`CREATE TABLE IF NOT EXISTS metric_data_points (
+		ID VARCHAR PRIMARY KEY,
+		MetricID VARCHAR NOT NULL,
+		MetricType VARCHAR NOT NULL,
+		Index INTEGER NOT NULL,
+		Timestamp BIGINT,
+		StartTime BIGINT,
+		Flags UINTEGER,
+		Value DOUBLE,
+		ValueType VARCHAR,
+		IsMonotonic BOOLEAN,
+		AggregationTemporality VARCHAR,
+		Count UBIGINT,
+		Sum DOUBLE,
+		Min DOUBLE,
+		Max DOUBLE,
+		BucketCounts UBIGINT[],
+		ExplicitBounds DOUBLE[],
+		Scale INTEGER,
+		ZeroCount UBIGINT,
+		PositiveBucketOffset INTEGER,
+		PositiveBucketCounts UBIGINT[],
+		NegativeBucketOffset INTEGER,
+		NegativeBucketCounts UBIGINT[],
+		FOREIGN KEY (MetricID) REFERENCES metrics(MetricID) ON DELETE CASCADE
+	)`,
+	`CREATE TABLE IF NOT EXISTS exemplars (
+		ID VARCHAR PRIMARY KEY,
+		DataPointID VARCHAR NOT NULL,
+		Index INTEGER NOT NULL,
+		Timestamp BIGINT,
+		Value DOUBLE,
+		TraceID VARCHAR,
+		SpanID VARCHAR,
+		-- Note: DataPointID references metric_data_points.ID
+		-- DuckDB doesn't support foreign keys to views, so we rely on application-level integrity
+	)`,
+	`CREATE TABLE IF NOT EXISTS attributes (
+		SignalType signal_type NOT NULL,
+		SignalID VARCHAR NOT NULL,
+		Scope attribute_scope NOT NULL,
+		OwnerID VARCHAR NOT NULL,
+		Key VARCHAR NOT NULL,
+		Value VARCHAR NOT NULL,
+		Type attr_type NOT NULL,
+		PRIMARY KEY (SignalType, SignalID, Scope, OwnerID, Key)
+	)`,
+}
+
+// Constraint creation queries for discriminated union enforcement
+var ConstraintCreationQueries = []string{
+	// Enforce Gauge type: Value and ValueType must be NOT NULL, histogram fields must be NULL
+	`ALTER TABLE metric_data_points ADD CONSTRAINT chk_gauge_fields CHECK (
+		(MetricType != 'Gauge') OR (
+			Value IS NOT NULL AND ValueType IS NOT NULL AND
+			Count IS NULL AND Sum IS NULL AND Min IS NULL AND Max IS NULL AND
+			BucketCounts IS NULL AND ExplicitBounds IS NULL AND
+			Scale IS NULL AND ZeroCount IS NULL AND
+			PositiveBucketOffset IS NULL AND PositiveBucketCounts IS NULL AND
+			NegativeBucketOffset IS NULL AND NegativeBucketCounts IS NULL AND
+			AggregationTemporality IS NULL
+		)
+	)`,
+	// Enforce Sum type: Value, ValueType, IsMonotonic, AggregationTemporality must be NOT NULL, histogram fields must be NULL
+	`ALTER TABLE metric_data_points ADD CONSTRAINT chk_sum_fields CHECK (
+		(MetricType != 'Sum') OR (
+			Value IS NOT NULL AND ValueType IS NOT NULL AND
+			IsMonotonic IS NOT NULL AND AggregationTemporality IS NOT NULL AND
+			Count IS NULL AND Sum IS NULL AND Min IS NULL AND Max IS NULL AND
+			BucketCounts IS NULL AND ExplicitBounds IS NULL AND
+			Scale IS NULL AND ZeroCount IS NULL AND
+			PositiveBucketOffset IS NULL AND PositiveBucketCounts IS NULL AND
+			NegativeBucketOffset IS NULL AND NegativeBucketCounts IS NULL
+		)
+	)`,
+	// Enforce Histogram type: Count, Sum, BucketCounts, ExplicitBounds, AggregationTemporality must be NOT NULL, gauge/sum fields must be NULL
+	// Note: Min and Max are optional in OpenTelemetry, so they can be NULL
+	`ALTER TABLE metric_data_points ADD CONSTRAINT chk_histogram_fields CHECK (
+		(MetricType != 'Histogram') OR (
+			Count IS NOT NULL AND Sum IS NOT NULL AND
+			BucketCounts IS NOT NULL AND ExplicitBounds IS NOT NULL AND
+			AggregationTemporality IS NOT NULL AND
+			Value IS NULL AND ValueType IS NULL AND IsMonotonic IS NULL AND
+			Scale IS NULL AND ZeroCount IS NULL AND
+			PositiveBucketOffset IS NULL AND PositiveBucketCounts IS NULL AND
+			NegativeBucketOffset IS NULL AND NegativeBucketCounts IS NULL
+		)
+	)`,
+	// Enforce ExponentialHistogram type: Count, Sum, Scale, ZeroCount, bucket fields, AggregationTemporality must be NOT NULL, other fields must be NULL
+	// Note: Min and Max are optional in OpenTelemetry, so they can be NULL
+	`ALTER TABLE metric_data_points ADD CONSTRAINT chk_exponential_histogram_fields CHECK (
+		(MetricType != 'ExponentialHistogram') OR (
+			Count IS NOT NULL AND Sum IS NOT NULL AND
+			Scale IS NOT NULL AND ZeroCount IS NOT NULL AND
+			PositiveBucketOffset IS NOT NULL AND PositiveBucketCounts IS NOT NULL AND
+			NegativeBucketOffset IS NOT NULL AND NegativeBucketCounts IS NOT NULL AND
+			AggregationTemporality IS NOT NULL AND
+			Value IS NULL AND ValueType IS NULL AND IsMonotonic IS NULL AND
+			BucketCounts IS NULL AND ExplicitBounds IS NULL
+		)
+	)`,
+}
+
+// Index creation queries
+var IndexCreationQueries = []string{
+	`CREATE INDEX IF NOT EXISTS idx_spans_traceid ON spans(TraceID)`,
+	`CREATE INDEX IF NOT EXISTS idx_spans_starttime ON spans(StartTime)`,
+	`CREATE INDEX IF NOT EXISTS idx_spans_parentspanid ON spans(ParentSpanID)`,
+	`CREATE INDEX IF NOT EXISTS idx_events_span ON events(SpanID)`,
+	`CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(Timestamp)`,
+	`CREATE INDEX IF NOT EXISTS idx_links_span ON links(SpanID)`,
+	`CREATE INDEX IF NOT EXISTS idx_links_trace ON links(TraceID, LinkedSpanID)`,
+	`CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(Timestamp)`,
+	`CREATE INDEX IF NOT EXISTS idx_logs_traceid ON logs(TraceID)`,
+	`CREATE INDEX IF NOT EXISTS idx_logs_severitynumber ON logs(SeverityNumber)`,
+	`CREATE INDEX IF NOT EXISTS idx_metrics_name ON metrics(Name)`,
+	`CREATE INDEX IF NOT EXISTS idx_metrics_received ON metrics(Received)`,
+	`CREATE INDEX IF NOT EXISTS idx_metrics_metrictype ON metrics(MetricType)`,
+	`CREATE INDEX IF NOT EXISTS idx_metric_data_points_type_metric_time ON metric_data_points(MetricType, MetricID, Timestamp DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_metric_data_points_metric_time ON metric_data_points(MetricID, Timestamp DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_metric_data_points_time ON metric_data_points(Timestamp DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_exemplars_datapoint ON exemplars(DataPointID, Index)`,
+	`CREATE INDEX IF NOT EXISTS idx_exemplars_trace ON exemplars(TraceID, SpanID)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_signal ON attributes(SignalType, SignalID)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_owner ON attributes(OwnerID)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_key_value ON attributes(Key, Value)`,
 }
 
 // Log queries
