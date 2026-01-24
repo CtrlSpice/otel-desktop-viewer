@@ -374,44 +374,97 @@ This section documents the key architectural decisions made during the schema re
 **Final structure:**
 ```sql
 CREATE TABLE attributes (
-    SignalType signal_type NOT NULL,      -- ENUM('traces', 'logs', 'metrics')
-    SignalID VARCHAR NOT NULL,            -- TraceID, LogID, MetricID (top-level)
-    Scope attribute_scope NOT NULL,       -- ENUM('span', 'resource', 'scope', 'event', 'link', ...)
-    OwnerID VARCHAR NOT NULL,             -- SpanID, EventID, LinkID, DataPointID, etc.
+    -- ID columns (only relevant ones populated per row based on attribute scope)
+    -- For span/resource/scope attributes: SpanID only
+    -- For event attributes: EventID (direct), SpanID (parent)
+    -- For link attributes: LinkID (direct), SpanID (parent)
+    -- For log/resource/scope attributes: LogID only
+    -- For metric/resource/scope attributes: MetricID only
+    -- For data_point attributes: DataPointID (direct), MetricID (parent)
+    -- For exemplar attributes: ExemplarID (direct), DataPointID (parent), MetricID (grandparent)
+    SpanID VARCHAR,
+    EventID VARCHAR,
+    LinkID VARCHAR,
+    LogID VARCHAR,
+    MetricID VARCHAR,
+    DataPointID VARCHAR,
+    ExemplarID VARCHAR,
+    -- Attribute data
     Key VARCHAR NOT NULL,
     Value VARCHAR NOT NULL,
     Type attr_type NOT NULL,
-    PRIMARY KEY (SignalType, SignalID, Scope, OwnerID, Key)
+    -- Foreign keys (all with CASCADE deletes)
+    FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE,
+    FOREIGN KEY (EventID) REFERENCES events(EventID) ON DELETE CASCADE,
+    FOREIGN KEY (LinkID) REFERENCES links(LinkID) ON DELETE CASCADE,
+    FOREIGN KEY (LogID) REFERENCES logs(LogID) ON DELETE CASCADE,
+    FOREIGN KEY (MetricID) REFERENCES metrics(MetricID) ON DELETE CASCADE,
+    FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE,
+    FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID) ON DELETE CASCADE,
+    -- Unique constraint: combination of all ID columns + Key ensures uniqueness
+    UNIQUE (SpanID, EventID, LinkID, LogID, MetricID, DataPointID, ExemplarID, Key)
 );
+
+-- CHECK constraint ensures exactly one direct owner ID is populated and parent IDs are correct
+ALTER TABLE attributes ADD CONSTRAINT chk_attributes_one_owner CHECK (
+    (SpanID IS NOT NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (EventID IS NOT NULL AND SpanID IS NOT NULL AND LinkID IS NULL AND LogID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (LinkID IS NOT NULL AND SpanID IS NOT NULL AND EventID IS NULL AND LogID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (LogID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (MetricID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (DataPointID IS NOT NULL AND MetricID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL AND ExemplarID IS NULL) OR
+    (ExemplarID IS NOT NULL AND DataPointID IS NOT NULL AND MetricID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL)
+);
+
+-- Covering indexes for efficient queries
+CREATE INDEX idx_attributes_span ON attributes(SpanID, Key, Value, Type);
+CREATE INDEX idx_attributes_event ON attributes(EventID, Key, Value, Type);
+CREATE INDEX idx_attributes_link ON attributes(LinkID, Key, Value, Type);
+CREATE INDEX idx_attributes_log ON attributes(LogID, Key, Value, Type);
+CREATE INDEX idx_attributes_metric ON attributes(MetricID, Key, Value, Type);
+CREATE INDEX idx_attributes_datapoint ON attributes(DataPointID, Key, Value, Type);
+CREATE INDEX idx_attributes_exemplar ON attributes(ExemplarID, Key, Value, Type);
+CREATE INDEX idx_attributes_span_hierarchy ON attributes(SpanID, EventID, LinkID);
+CREATE INDEX idx_attributes_metric_hierarchy ON attributes(MetricID, DataPointID, ExemplarID);
+CREATE INDEX idx_attributes_key_value ON attributes(Key, Value, Type);
 ```
 
 **Why this design:**
-1. **SignalType + SignalID**: Enables queries like "all attributes for this trace"
-   - `WHERE SignalType='traces' AND SignalID=TraceID` gets everything for a trace
-2. **Scope**: Distinguishes attribute location (resource, scope, entity, nested entity)
-   - Single column instead of separate EntityType + AttributeScope
-3. **OwnerID**: Direct reference to the specific entity
-   - No need for Index/NestedIndex since entities are normalized
-   - Simpler than composite keys
-4. **ENUMs for low cardinality**: 
-   - `SignalType` (3 values) and `Scope` (9 values) compress extremely well
-   - Better than VARCHAR for these columns
+1. **Separate ID columns**: Each entity type has its own column
+   - Leverages columnar storage: most columns are NULL per row, compresses extremely well
+   - Type can be inferred from which ID columns are populated (no SignalType/Scope needed)
+2. **Foreign key integrity**: All ID columns have foreign keys with CASCADE deletes
+   - Database-enforced referential integrity
+   - Automatic cleanup when parent entities are deleted
+3. **CHECK constraints**: Enforce correct ID combinations
+   - Exactly one direct owner ID must be populated
+   - Parent IDs must be populated when required (e.g., EventID requires SpanID)
+4. **Covering indexes**: Include Key, Value, Type for index-only queries
+   - Avoids table lookups for common queries
+   - Hierarchical indexes for parent-child queries
 
 **Why not other approaches:**
+- **SignalType + SignalID + Scope + OwnerID** (previous design):
+  - Simpler structure but no foreign key support
+  - Required application-level validation
 - **Path strings** (e.g., `"span.resource"`, `"metric.data_point[2].exemplar[0]"`):
   - More flexible but harder to index and query
   - String parsing needed for queries
-- **Separate EntityType + AttributeScope**:
-  - More columns, some redundancy
-  - Current design is cleaner
+- **Single OwnerID with conditional FKs**:
+  - SQL doesn't support conditional foreign keys
+  - Would require application-level validation
 
 **Tradeoffs:**
-- **No foreign keys**: Can't enforce referential integrity for OwnerID
-  - **Mitigation**: Application-level validation, cascading deletes handle cleanup
-- **String IDs**: Using VARCHAR for all IDs
-  - **Mitigation**: Simple and flexible, works well with columnar storage
+- **More columns**: 7 ID columns instead of 2-3
+  - **Mitigation**: Columnar storage compresses NULLs extremely well (run-length encoding)
+  - Most rows have only 1-2 columns populated
+- **Wider indexes**: Composite indexes include all ID columns
+  - **Mitigation**: NULLs are excluded from uniqueness checks
+  - Indexes are optimized for columnar storage
+- **CHECK constraint complexity**: Long constraint expression
+  - **Mitigation**: Validated at insert time, ensures data integrity
 
-**Verdict**: This design balances simplicity, queryability, and columnar optimization.
+**Verdict**: This design provides foreign key integrity, leverages columnar storage efficiently, and enables direct queries on specific entity types without needing SignalType/Scope columns.
 
 #### Decision 4: Depth Calculation
 
@@ -444,7 +497,7 @@ CREATE TABLE attributes (
 |----------|-------|----------|
 | Normalization | Full normalization | More inserts, but better queryability |
 | Metric data points | Single table | Some NULLs, but columnar compression handles it |
-| Attributes design | SignalType + SignalID + Scope + OwnerID | No foreign keys, but simpler queries |
+| Attributes design | Separate ID columns with FKs | More columns, but foreign key integrity and columnar optimization |
 | Depth | Query-time calculation | CTE overhead, but handles dynamic relationships |
 
 **Overall philosophy**: Optimize for queryability and analytical workloads, accept insertion complexity (which is manageable with batching).
@@ -489,81 +542,115 @@ CREATE TABLE links (
 
 -- Exemplars table
 CREATE TABLE exemplars (
-    ExemplarID VARCHAR PRIMARY KEY,
+    ID VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
     DataPointID VARCHAR NOT NULL,
-    Index INTEGER NOT NULL,
     Timestamp BIGINT,
     Value DOUBLE,
     TraceID VARCHAR,
     SpanID VARCHAR,
-    FOREIGN KEY (DataPointID) REFERENCES metric_data_points(DataPointID) ON DELETE CASCADE
+    FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE
 );
 ```
 
-**Attributes are normalized into a separate table:**
+**Attributes are normalized into a separate table with separate ID columns:**
 
-Normalize attributes for efficient querying and discovery:
+Normalize attributes for efficient querying and discovery, using separate ID columns to enable foreign key integrity:
 
 ```sql
-CREATE TYPE signal_type AS ENUM('traces', 'logs', 'metrics');
-
-CREATE TYPE attribute_scope AS ENUM(
-    'span', 'resource', 'scope', 'event', 'link', 
-    'log', 'metric', 'data_point', 'exemplar'
-);
-
 CREATE TABLE attributes (
-    SignalType signal_type NOT NULL,
-    SignalID VARCHAR NOT NULL,      -- TraceID, LogID, MetricID (top-level signal)
-    Scope attribute_scope NOT NULL,
-    OwnerID VARCHAR NOT NULL,        -- SpanID, EventID, LinkID, DataPointID, ExemplarID (specific entity)
+    -- ID columns (only relevant ones populated per row)
+    SpanID VARCHAR,
+    EventID VARCHAR,
+    LinkID VARCHAR,
+    LogID VARCHAR,
+    MetricID VARCHAR,
+    DataPointID VARCHAR,
+    ExemplarID VARCHAR,
+    -- Attribute data
     Key VARCHAR NOT NULL,
     Value VARCHAR NOT NULL,
     Type attr_type NOT NULL,
-    
-    PRIMARY KEY (SignalType, SignalID, Scope, OwnerID, Key)
+    -- Foreign keys (all with CASCADE deletes)
+    FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE,
+    FOREIGN KEY (EventID) REFERENCES events(EventID) ON DELETE CASCADE,
+    FOREIGN KEY (LinkID) REFERENCES links(LinkID) ON DELETE CASCADE,
+    FOREIGN KEY (LogID) REFERENCES logs(LogID) ON DELETE CASCADE,
+    FOREIGN KEY (MetricID) REFERENCES metrics(MetricID) ON DELETE CASCADE,
+    FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE,
+    FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID) ON DELETE CASCADE,
+    -- Unique constraint ensures one attribute per entity+key combination
+    UNIQUE (SpanID, EventID, LinkID, LogID, MetricID, DataPointID, ExemplarID, Key)
 );
 
-CREATE INDEX idx_attributes_signal ON attributes(SignalType, SignalID);
-CREATE INDEX idx_attributes_owner ON attributes(OwnerID);
-CREATE INDEX idx_attributes_key_value ON attributes(Key, Value);
+-- CHECK constraint ensures exactly one direct owner ID is populated
+ALTER TABLE attributes ADD CONSTRAINT chk_attributes_one_owner CHECK (
+    (SpanID IS NOT NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (EventID IS NOT NULL AND SpanID IS NOT NULL AND LinkID IS NULL AND LogID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (LinkID IS NOT NULL AND SpanID IS NOT NULL AND EventID IS NULL AND LogID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (LogID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (MetricID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+    (DataPointID IS NOT NULL AND MetricID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL AND ExemplarID IS NULL) OR
+    (ExemplarID IS NOT NULL AND DataPointID IS NOT NULL AND MetricID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL)
+);
+
+-- Covering indexes for efficient queries
+CREATE INDEX idx_attributes_span ON attributes(SpanID, Key, Value, Type);
+CREATE INDEX idx_attributes_event ON attributes(EventID, Key, Value, Type);
+CREATE INDEX idx_attributes_link ON attributes(LinkID, Key, Value, Type);
+CREATE INDEX idx_attributes_log ON attributes(LogID, Key, Value, Type);
+CREATE INDEX idx_attributes_metric ON attributes(MetricID, Key, Value, Type);
+CREATE INDEX idx_attributes_datapoint ON attributes(DataPointID, Key, Value, Type);
+CREATE INDEX idx_attributes_exemplar ON attributes(ExemplarID, Key, Value, Type);
+CREATE INDEX idx_attributes_span_hierarchy ON attributes(SpanID, EventID, LinkID);
+CREATE INDEX idx_attributes_metric_hierarchy ON attributes(MetricID, DataPointID, ExemplarID);
+CREATE INDEX idx_attributes_key_value ON attributes(Key, Value, Type);
 ```
 
 **Why normalize attributes:**
-- **Efficient attribute discovery**: `SELECT DISTINCT Key, Type FROM attributes WHERE SignalType = 'traces' AND Scope = 'span'` (no UNNEST needed)
-- **Simple searching**: `SELECT OwnerID FROM attributes WHERE Key = 'service' AND Value = 'api'` (no UNNEST needed)
+- **Efficient attribute discovery**: `SELECT DISTINCT Key, Type FROM attributes WHERE SpanID IS NOT NULL` (no UNNEST needed)
+- **Simple searching**: `SELECT SpanID FROM attributes WHERE Key = 'service' AND Value = 'api'` (no UNNEST needed)
 - **No complex UNNEST operations** - current attribute discovery uses expensive `UNNEST(map_entries(Attributes))` on all spans
-- **Event/link attributes**: Direct query on attributes table with `Scope='event'` or `Scope='link'`
+- **Event/link attributes**: Direct query on attributes table with `EventID IS NOT NULL` or `LinkID IS NOT NULL`
 - **Global search**: Simple join instead of `UNNEST(map_entries(s.Attributes))`
 - **Consistent structure** across all entity types
 - **Query builder friendly**: With a query builder, joins are much simpler to compose than complex UNNEST expressions. Instead of building `EXISTS(SELECT 1 FROM UNNEST(map_entries(s.Attributes)) WHERE ...)`, we can simply add `JOIN attributes ON ... WHERE attributes.Key = ? AND attributes.Value = ?`
+- **Foreign key integrity**: Database-enforced referential integrity with CASCADE deletes
 
 **Query examples:**
 
 ```sql
--- Attribute discovery (simple, no UNNEST)
-SELECT DISTINCT Key, Type, Scope
+-- Attribute discovery for spans (simple, no UNNEST)
+SELECT DISTINCT Key, Type
 FROM attributes
-WHERE SignalType = 'traces' AND Scope = 'span'
-ORDER BY Key, Scope;
+WHERE SpanID IS NOT NULL AND EventID IS NULL AND LinkID IS NULL
+ORDER BY Key;
 
--- Search by attribute (simple join, easy for query builder)
+-- Search spans by attribute (simple join, easy for query builder)
 SELECT DISTINCT s.*
 FROM spans s
-JOIN attributes a ON s.SpanID = a.OwnerID 
-WHERE a.SignalType = 'traces'
-  AND a.Scope = 'span'
+JOIN attributes a ON s.SpanID = a.SpanID
+WHERE a.SpanID IS NOT NULL 
+  AND a.EventID IS NULL 
+  AND a.LinkID IS NULL
   AND a.Key = 'service'
   AND a.Value = 'api';
 
--- Search event attributes (direct query on events table)
+-- Get all attributes for a span (including events and links)
+SELECT a.*
+FROM attributes a
+WHERE a.SpanID = ?;
+
+-- Get attributes for a specific event
+SELECT a.*
+FROM attributes a
+WHERE a.EventID = ?;
+
+-- Search spans by event attributes (direct query on events table)
 SELECT DISTINCT s.*
 FROM spans s
 JOIN events e ON s.SpanID = e.SpanID
-JOIN attributes a ON e.EventID = a.OwnerID
-WHERE a.SignalType = 'traces'
-  AND a.Scope = 'event'
-  AND a.Key = 'event.name'
+JOIN attributes a ON e.EventID = a.EventID
+WHERE a.Key = 'event.name'
   AND a.Value = 'error';
 
 -- Multiple attribute filters (easy to compose in query builder)

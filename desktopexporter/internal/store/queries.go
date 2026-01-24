@@ -2,15 +2,13 @@ package store
 
 import "strings"
 
-// Type creation queries that must be run in order
+// Type creation queries
 var TypeCreationQueries = []string{
 	`CREATE TYPE attr_type AS ENUM('string', 'int64', 'float64', 'bool', 'string[]', 'int64[]', 'float64[]', 'boolean[]')`,
-	`CREATE TYPE attr_value AS STRUCT(v VARCHAR, t attr_type)`,
-	`CREATE TYPE signal_type AS ENUM('traces', 'logs', 'metrics')`,
-	`CREATE TYPE attribute_scope AS ENUM('span', 'resource', 'scope', 'event', 'link', 'log', 'metric', 'data_point', 'exemplar')`,
 }
 
-// Table creation queries that can be run in any order
+// Table creation queries
+// Order matters: spans before events/links, metrics before datapoints, datapoints before exemplars (FK dependencies)
 var TableCreationQueries = []string{
 	`CREATE TABLE IF NOT EXISTS spans (
 		TraceID VARCHAR,
@@ -32,7 +30,7 @@ var TableCreationQueries = []string{
 		StatusMessage VARCHAR
 	)`,
 	`CREATE TABLE IF NOT EXISTS events (
-		EventID VARCHAR PRIMARY KEY,
+		EventID VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
 		SpanID VARCHAR NOT NULL,
 		Name VARCHAR,
 		Timestamp BIGINT,
@@ -40,7 +38,7 @@ var TableCreationQueries = []string{
 		FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
 	)`,
 	`CREATE TABLE IF NOT EXISTS links (
-		LinkID VARCHAR PRIMARY KEY,
+		LinkID VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
 		SpanID VARCHAR NOT NULL,
 		TraceID VARCHAR,
 		LinkedSpanID VARCHAR,
@@ -49,7 +47,7 @@ var TableCreationQueries = []string{
 		FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
 	)`,
 	`CREATE TABLE IF NOT EXISTS logs (
-		LogID VARCHAR PRIMARY KEY,
+		ID VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
 		Timestamp BIGINT,
 		ObservedTimestamp BIGINT,
 		TraceID VARCHAR,
@@ -67,22 +65,20 @@ var TableCreationQueries = []string{
 		EventName VARCHAR
 	)`,
 	`CREATE TABLE IF NOT EXISTS metrics (
-		MetricID VARCHAR PRIMARY KEY,
+		ID VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
 		Name VARCHAR,
 		Description VARCHAR,
 		Unit VARCHAR,
-		MetricType VARCHAR,
 		ResourceDroppedAttributesCount UINTEGER,
 		ScopeName VARCHAR,
 		ScopeVersion VARCHAR,
 		ScopeDroppedAttributesCount UINTEGER,
 		Received BIGINT
 	)`,
-	`CREATE TABLE IF NOT EXISTS metric_data_points (
-		ID VARCHAR PRIMARY KEY,
+	`CREATE TABLE IF NOT EXISTS datapoints (
+		ID VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
 		MetricID VARCHAR NOT NULL,
 		MetricType VARCHAR NOT NULL,
-		Index INTEGER NOT NULL,
 		Timestamp BIGINT,
 		StartTime BIGINT,
 		Flags UINTEGER,
@@ -102,35 +98,77 @@ var TableCreationQueries = []string{
 		PositiveBucketCounts UBIGINT[],
 		NegativeBucketOffset INTEGER,
 		NegativeBucketCounts UBIGINT[],
-		FOREIGN KEY (MetricID) REFERENCES metrics(MetricID) ON DELETE CASCADE
+		FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE
 	)`,
 	`CREATE TABLE IF NOT EXISTS exemplars (
-		ID VARCHAR PRIMARY KEY,
+		ID VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
 		DataPointID VARCHAR NOT NULL,
-		Index INTEGER NOT NULL,
 		Timestamp BIGINT,
 		Value DOUBLE,
 		TraceID VARCHAR,
 		SpanID VARCHAR,
-		-- Note: DataPointID references metric_data_points.ID
-		-- DuckDB doesn't support foreign keys to views, so we rely on application-level integrity
+		FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE
 	)`,
 	`CREATE TABLE IF NOT EXISTS attributes (
-		SignalType signal_type NOT NULL,
-		SignalID VARCHAR NOT NULL,
-		Scope attribute_scope NOT NULL,
-		OwnerID VARCHAR NOT NULL,
+		-- ID columns (only relevant ones populated per row based on attribute scope)
+		-- For span/resource/scope attributes: SpanID only
+		-- For event attributes: EventID (direct), SpanID (parent)
+		-- For link attributes: LinkID (direct), SpanID (parent)
+		-- For log/resource/scope attributes: LogID only (references logs.ID)
+		-- For metric/resource/scope attributes: MetricID only (references metrics.ID)
+		-- For data_point attributes: DataPointID (direct), MetricID (parent)
+		-- For exemplar attributes: ExemplarID (direct), DataPointID (parent), MetricID (grandparent)
+		SpanID VARCHAR,
+		EventID VARCHAR,
+		LinkID VARCHAR,
+		LogID VARCHAR,
+		MetricID VARCHAR,
+		DataPointID VARCHAR,
+		ExemplarID VARCHAR,
+		-- Attribute data
 		Key VARCHAR NOT NULL,
 		Value VARCHAR NOT NULL,
 		Type attr_type NOT NULL,
-		PRIMARY KEY (SignalType, SignalID, Scope, OwnerID, Key)
+		-- Foreign keys
+		FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE,
+		FOREIGN KEY (EventID) REFERENCES events(EventID) ON DELETE CASCADE,
+		FOREIGN KEY (LinkID) REFERENCES links(LinkID) ON DELETE CASCADE,
+		FOREIGN KEY (LogID) REFERENCES logs(ID) ON DELETE CASCADE,
+		FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE,
+		FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE,
+		FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID) ON DELETE CASCADE,
+		-- Unique constraint: combination of all ID columns + Key ensures uniqueness
+		-- (NULLs are excluded from uniqueness checks, so only populated IDs matter)
+		UNIQUE (SpanID, EventID, LinkID, LogID, MetricID, DataPointID, ExemplarID, Key)
 	)`,
 }
 
 // Constraint creation queries for discriminated union enforcement
+// Note: All datapoints for a given MetricID must have the same MetricType (enforced at application level)
 var ConstraintCreationQueries = []string{
+	// Attributes table: Ensure exactly one direct owner ID is populated and parent IDs are correct
+	`ALTER TABLE attributes ADD CONSTRAINT chk_attributes_one_owner CHECK (
+		-- Span attributes: SpanID only
+		(SpanID IS NOT NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+		-- Event attributes: EventID (direct) and SpanID (parent)
+		(EventID IS NOT NULL AND SpanID IS NOT NULL AND LinkID IS NULL AND LogID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+		-- Link attributes: LinkID (direct) and SpanID (parent)
+		(LinkID IS NOT NULL AND SpanID IS NOT NULL AND EventID IS NULL AND LogID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+		-- Log attributes: LogID only
+		(LogID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND MetricID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+		-- Metric attributes: MetricID only
+		(MetricID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL AND DataPointID IS NULL AND ExemplarID IS NULL) OR
+		-- Data point attributes: DataPointID (direct) and MetricID (parent)
+		(DataPointID IS NOT NULL AND MetricID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL AND ExemplarID IS NULL) OR
+		-- Exemplar attributes: ExemplarID (direct), DataPointID (parent), MetricID (grandparent)
+		(ExemplarID IS NOT NULL AND DataPointID IS NOT NULL AND MetricID IS NOT NULL AND SpanID IS NULL AND EventID IS NULL AND LinkID IS NULL AND LogID IS NULL)
+	)`,
+	// Ensure MetricType is one of the valid values
+	`ALTER TABLE datapoints ADD CONSTRAINT chk_metric_type_valid CHECK (
+		MetricType IN ('Gauge', 'Sum', 'Histogram', 'ExponentialHistogram')
+	)`,
 	// Enforce Gauge type: Value and ValueType must be NOT NULL, histogram fields must be NULL
-	`ALTER TABLE metric_data_points ADD CONSTRAINT chk_gauge_fields CHECK (
+	`ALTER TABLE datapoints ADD CONSTRAINT chk_gauge_fields CHECK (
 		(MetricType != 'Gauge') OR (
 			Value IS NOT NULL AND ValueType IS NOT NULL AND
 			Count IS NULL AND Sum IS NULL AND Min IS NULL AND Max IS NULL AND
@@ -142,7 +180,7 @@ var ConstraintCreationQueries = []string{
 		)
 	)`,
 	// Enforce Sum type: Value, ValueType, IsMonotonic, AggregationTemporality must be NOT NULL, histogram fields must be NULL
-	`ALTER TABLE metric_data_points ADD CONSTRAINT chk_sum_fields CHECK (
+	`ALTER TABLE datapoints ADD CONSTRAINT chk_sum_fields CHECK (
 		(MetricType != 'Sum') OR (
 			Value IS NOT NULL AND ValueType IS NOT NULL AND
 			IsMonotonic IS NOT NULL AND AggregationTemporality IS NOT NULL AND
@@ -155,7 +193,7 @@ var ConstraintCreationQueries = []string{
 	)`,
 	// Enforce Histogram type: Count, Sum, BucketCounts, ExplicitBounds, AggregationTemporality must be NOT NULL, gauge/sum fields must be NULL
 	// Note: Min and Max are optional in OpenTelemetry, so they can be NULL
-	`ALTER TABLE metric_data_points ADD CONSTRAINT chk_histogram_fields CHECK (
+	`ALTER TABLE datapoints ADD CONSTRAINT chk_histogram_fields CHECK (
 		(MetricType != 'Histogram') OR (
 			Count IS NOT NULL AND Sum IS NOT NULL AND
 			BucketCounts IS NOT NULL AND ExplicitBounds IS NOT NULL AND
@@ -168,7 +206,7 @@ var ConstraintCreationQueries = []string{
 	)`,
 	// Enforce ExponentialHistogram type: Count, Sum, Scale, ZeroCount, bucket fields, AggregationTemporality must be NOT NULL, other fields must be NULL
 	// Note: Min and Max are optional in OpenTelemetry, so they can be NULL
-	`ALTER TABLE metric_data_points ADD CONSTRAINT chk_exponential_histogram_fields CHECK (
+	`ALTER TABLE datapoints ADD CONSTRAINT chk_exponential_histogram_fields CHECK (
 		(MetricType != 'ExponentialHistogram') OR (
 			Count IS NOT NULL AND Sum IS NOT NULL AND
 			Scale IS NOT NULL AND ZeroCount IS NOT NULL AND
@@ -195,15 +233,24 @@ var IndexCreationQueries = []string{
 	`CREATE INDEX IF NOT EXISTS idx_logs_severitynumber ON logs(SeverityNumber)`,
 	`CREATE INDEX IF NOT EXISTS idx_metrics_name ON metrics(Name)`,
 	`CREATE INDEX IF NOT EXISTS idx_metrics_received ON metrics(Received)`,
-	`CREATE INDEX IF NOT EXISTS idx_metrics_metrictype ON metrics(MetricType)`,
-	`CREATE INDEX IF NOT EXISTS idx_metric_data_points_type_metric_time ON metric_data_points(MetricType, MetricID, Timestamp DESC)`,
-	`CREATE INDEX IF NOT EXISTS idx_metric_data_points_metric_time ON metric_data_points(MetricID, Timestamp DESC)`,
-	`CREATE INDEX IF NOT EXISTS idx_metric_data_points_time ON metric_data_points(Timestamp DESC)`,
-	`CREATE INDEX IF NOT EXISTS idx_exemplars_datapoint ON exemplars(DataPointID, Index)`,
+	`CREATE INDEX IF NOT EXISTS idx_datapoints_type_metric_time ON datapoints(MetricType, MetricID, Timestamp DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_datapoints_metric_time ON datapoints(MetricID, Timestamp DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_datapoints_time ON datapoints(Timestamp DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_exemplars_datapoint ON exemplars(DataPointID)`,
 	`CREATE INDEX IF NOT EXISTS idx_exemplars_trace ON exemplars(TraceID, SpanID)`,
-	`CREATE INDEX IF NOT EXISTS idx_attributes_signal ON attributes(SignalType, SignalID)`,
-	`CREATE INDEX IF NOT EXISTS idx_attributes_owner ON attributes(OwnerID)`,
-	`CREATE INDEX IF NOT EXISTS idx_attributes_key_value ON attributes(Key, Value)`,
+	-- Direct entity lookups (covering Key, Value, Type for common queries)
+	`CREATE INDEX IF NOT EXISTS idx_attributes_span ON attributes(SpanID, Key, Value, Type)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_event ON attributes(EventID, Key, Value, Type)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_link ON attributes(LinkID, Key, Value, Type)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_log ON attributes(LogID, Key, Value, Type)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_metric ON attributes(MetricID, Key, Value, Type)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_datapoint ON attributes(DataPointID, Key, Value, Type)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_exemplar ON attributes(ExemplarID, Key, Value, Type)`,
+	-- Parent entity lookups (for hierarchical queries - e.g., all attributes for a span including events/links)
+	`CREATE INDEX IF NOT EXISTS idx_attributes_span_hierarchy ON attributes(SpanID, EventID, LinkID)`,
+	`CREATE INDEX IF NOT EXISTS idx_attributes_metric_hierarchy ON attributes(MetricID, DataPointID, ExemplarID)`,
+	-- Key/value search (covering Type for filtering)
+	`CREATE INDEX IF NOT EXISTS idx_attributes_key_value ON attributes(Key, Value, Type)`,
 }
 
 // Log queries
@@ -228,7 +275,7 @@ const (
 		       Body, ResourceAttributes, ResourceDroppedAttributesCount, ScopeName, ScopeVersion,
 		       ScopeAttributes, ScopeDroppedAttributesCount, Attributes, DroppedAttributesCount,
 		       Flags, EventName
-		FROM logs WHERE LogID = ?
+		FROM logs WHERE ID = ?
 	`
 
 	SelectLogsByTraceSpan = `
@@ -414,7 +461,7 @@ const (
 		SELECT Name, Description, Unit, DataPoints, ResourceAttributes, 
 		       ResourceDroppedAttributesCount, ScopeName, ScopeVersion, ScopeAttributes,
 		       ScopeDroppedAttributesCount, Received
-		FROM metrics WHERE MetricID = ?
+		FROM metrics WHERE ID = ?
 	`
 )
 
@@ -429,16 +476,16 @@ const (
 const (
 	DeleteSpansByTraceID = `DELETE FROM spans WHERE TraceID = ?`
 	DeleteSpanByID       = `DELETE FROM spans WHERE SpanID = ?`
-	DeleteLogByID        = `DELETE FROM logs WHERE LogID = ?`
-	DeleteMetricByID     = `DELETE FROM metrics WHERE MetricID = ?`
+	DeleteLogByID        = `DELETE FROM logs WHERE ID = ?`
+	DeleteMetricByID     = `DELETE FROM metrics WHERE ID = ?`
 )
 
 // Batch deletion queries using IN clause
 const (
 	DeleteSpansByTraceIDs = `DELETE FROM spans WHERE TraceID IN (%s)`
 	DeleteSpansByIDs      = `DELETE FROM spans WHERE SpanID IN (%s)`
-	DeleteLogsByIDs       = `DELETE FROM logs WHERE LogID IN (%s)`
-	DeleteMetricsByIDs    = `DELETE FROM metrics WHERE MetricID IN (%s)`
+	DeleteLogsByIDs       = `DELETE FROM logs WHERE ID IN (%s)`
+	DeleteMetricsByIDs    = `DELETE FROM metrics WHERE ID IN (%s)`
 )
 
 // Sample data detection and deletion queries
