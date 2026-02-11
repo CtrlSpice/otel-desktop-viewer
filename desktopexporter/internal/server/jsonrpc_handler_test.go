@@ -221,9 +221,9 @@ func TestGetTraceAttributes(t *testing.T) {
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.Nil(t, err)
-		attributes, ok := result.([]store.AttributeSuggestion)
-		assert.True(t, ok, "Expected []store.AttributeSuggestion, got %T", result)
-		assert.Len(t, attributes, 0)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		assert.Equal(t, []byte("[]"), []byte(raw), "empty range should return []")
 	})
 
 	t.Run("With Data", func(t *testing.T) {
@@ -235,9 +235,9 @@ func TestGetTraceAttributes(t *testing.T) {
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.Nil(t, err)
-		attributes, ok := result.([]store.AttributeSuggestion)
-		assert.True(t, ok, "Expected []store.AttributeSuggestion, got %T", result)
-		assert.NotEmpty(t, attributes, "Should have discovered attributes")
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		assert.NotEmpty(t, raw, "Should have discovered attributes")
 
 		// Check that we have the expected service.name resource attribute
 		foundServiceName := false

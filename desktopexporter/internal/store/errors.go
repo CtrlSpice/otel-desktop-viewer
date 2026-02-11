@@ -36,6 +36,8 @@ const (
 	// Appender errors
 	ErrCreateAppender = "failed to create appender: %w"
 	ErrAppendRow      = "failed to append row: %w"
+	ErrAppendEvent    = "failed to append event: %w"
+	ErrAppendLink     = "failed to append link: %w"
 	ErrFlushAppender  = "failed to flush appender: %w"
 
 	// Query errors

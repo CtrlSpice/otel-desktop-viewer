@@ -15,7 +15,6 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/metrics"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 )
 
 type desktopExporter struct {
@@ -33,8 +32,7 @@ func newDesktopExporter(cfg *Config) *desktopExporter {
 }
 
 func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
-	spanDataSlice := traces.NewSpanPayload(source).ExtractSpans()
-	return e.store.AddSpans(ctx, spanDataSlice)
+	return e.store.IngestSpans(ctx, source)
 }
 
 func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {

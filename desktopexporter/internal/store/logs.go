@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
@@ -26,25 +27,37 @@ func (s *Store) AddLogs(ctx context.Context, logs []logs.LogData) error {
 	defer appender.Close()
 
 	for i, logData := range logs {
+		// Convert hex strings to BLOB (binary)
+		var traceIDBytes []byte
+		if logData.TraceID != "" {
+			traceIDBytes, _ = hex.DecodeString(logData.TraceID)
+		}
+		var spanIDBytes []byte
+		if logData.SpanID != "" {
+			spanIDBytes, _ = hex.DecodeString(logData.SpanID)
+		}
+
+		// Convert Body to string and determine BodyType
+		bodyStr := fmt.Sprintf("%v", logData.Body)
+		bodyType := "string" // Default, could be enhanced to detect actual type
+
 		err = appender.AppendRow(
-			logData.ID(),
-			logData.Timestamp,
-			logData.ObservedTimestamp,
-			logData.TraceID,
-			logData.SpanID,
-			logData.SeverityText,
-			logData.SeverityNumber,
-			logData.Body,
-			logData.Resource.Attributes,
-			logData.Resource.DroppedAttributesCount,
-			logData.Scope.Name,
-			logData.Scope.Version,
-			logData.Scope.Attributes,
-			logData.Scope.DroppedAttributesCount,
-			logData.Attributes,
-			logData.DroppedAttributesCount,
-			logData.Flags,
-			logData.EventName,
+			// ID is self-generating (UUID), so we don't pass it
+			logData.Timestamp,                      // Timestamp BIGINT
+			logData.ObservedTimestamp,               // ObservedTimestamp BIGINT
+			traceIDBytes,                           // TraceID BLOB
+			spanIDBytes,                            // SpanID BLOB
+			logData.SeverityText,                   // SeverityText VARCHAR
+			logData.SeverityNumber,                 // SeverityNumber INTEGER
+			bodyStr,                                // Body VARCHAR
+			bodyType,                               // BodyType VARCHAR
+			logData.Resource.DroppedAttributesCount, // ResourceDroppedAttributesCount UINTEGER
+			logData.Scope.Name,                     // ScopeName VARCHAR
+			logData.Scope.Version,                  // ScopeVersion VARCHAR
+			logData.Scope.DroppedAttributesCount,   // ScopeDroppedAttributesCount UINTEGER
+			logData.DroppedAttributesCount,        // DroppedAttributesCount UINTEGER
+			logData.Flags,                          // Flags UINTEGER
+			logData.EventName,                      // EventName VARCHAR
 		)
 		if err != nil {
 			return fmt.Errorf(ErrAppendRow, err)

@@ -18,26 +18,30 @@
   - [x] Remove `ScopeAttributes MAP(VARCHAR, attribute)` column
   - [x] Remove `Events event[]` column (normalized to `events` table)
   - [x] Remove `Links link[]` column (normalized to `links` table)
+  - [x] Update `TraceID`, `SpanID`, `ParentSpanID` to BLOB type (16 bytes, 8 bytes, 8 bytes respectively)
   - [x] ~~Add `Depth` column~~ (not needed - calculate on query time)
 - [x] Update logs table schema:
   - [x] Remove `Attributes MAP(VARCHAR, attribute)` column
   - [x] Remove `ResourceAttributes MAP(VARCHAR, attribute)` column
   - [x] Remove `ScopeAttributes MAP(VARCHAR, attribute)` column
   - [x] Simplify `Body` to `VARCHAR` + `BodyType` (was UNION)
+  - [x] Update primary key to `ID UUID` (self-generating, was `LogID` removed)
+  - [x] Update `TraceID`, `SpanID` to BLOB type (16 bytes, 8 bytes respectively)
 - [x] Update metrics table:
   - [x] Remove `DataPoints` column (moved to normalized `datapoints` table)
   - [x] Remove `ResourceAttributes MAP(VARCHAR, attribute)` column
   - [x] Remove `ScopeAttributes MAP(VARCHAR, attribute)` column
   - [x] Remove `MetricType` column (moved to `datapoints` table only)
-- [x] Create normalized `events` table (`ID`, `SpanID`, `Name`, `Timestamp`, `DroppedAttributesCount`)
-- [x] Create normalized `links` table (`ID`, `SpanID`, `TraceID`, `LinkedSpanID`, `TraceState`, `DroppedAttributesCount`)
-- [x] Create normalized `exemplars` table (`ID`, `DataPointID`, `Timestamp`, `Value`, `TraceID`, `SpanID`)
-- [x] Create normalized `datapoints` table (renamed from `metric_data_points`, single table for all metric types with `MetricType` column)
+  - [x] Update primary key to `ID UUID` (self-generating, was `MetricID VARCHAR`)
+- [x] Create normalized `events` table (`ID UUID`, `SpanID BLOB`, `Name`, `Timestamp`, `DroppedAttributesCount`)
+- [x] Create normalized `links` table (`ID UUID`, `SpanID BLOB`, `TraceID BLOB`, `LinkedSpanID BLOB`, `TraceState`, `DroppedAttributesCount`)
+- [x] Create normalized `exemplars` table (`ID UUID`, `DataPointID UUID`, `Timestamp`, `Value`, `TraceID BLOB`, `SpanID BLOB`)
+- [x] Create normalized `datapoints` table (renamed from `metric_data_points`, single table for all metric types with `MetricType` column, `ID UUID`, `MetricID UUID`)
 - [x] Create normalized `attributes` table:
-  - [x] Separate ID columns: `SpanID`, `EventID`, `LinkID`, `LogID`, `MetricID`, `DataPointID`, `ExemplarID`
+  - [x] Separate ID columns: `SpanID BLOB`, `EventID UUID`, `LinkID UUID`, `LogID UUID`, `MetricID UUID`, `DataPointID UUID`, `ExemplarID UUID`
   - [x] `Key`, `Value`, `Type` columns
   - [x] Foreign keys on all ID columns with CASCADE deletes
-  - [x] CHECK constraint to ensure exactly one direct owner ID is populated
+  - [x] CHECK constraint to ensure exactly one direct owner ID is populated (discriminated union pattern)
   - [x] UNIQUE constraint on all ID columns + `Key`
   - [x] Covering indexes on each ID column (`ID`, `Key`, `Value`, `Type`)
   - [x] Hierarchical indexes for parent-child queries
@@ -49,14 +53,20 @@
 - [x] Add indexes for metrics (`Name`, `Received`)
 - [x] Remove `MetricType` from `metrics` table (kept in `datapoints` only)
 - [x] Add indexes for `datapoints` (`MetricType`, `MetricID`, `Timestamp`) and (`MetricID`, `Timestamp`)
-- [x] Add CHECK constraints for `MetricType` validation and discriminated union enforcement
-- [x] Add indexes for exemplars (`DataPointID`, `Index`) and (`TraceID`, `SpanID`)
+- [x] Add CHECK constraints for `MetricType` validation and discriminated union enforcement (enforces which fields must be populated based on `MetricType`)
+- [x] Add indexes for exemplars (`DataPointID`) and (`TraceID`, `SpanID`)
+- [x] Remove `Index` column from `datapoints` and `exemplars` tables (not needed)
+- [x] Use UUID type for self-generating IDs: `events.ID`, `links.ID`, `logs.ID`, `metrics.ID`, `datapoints.ID`, `exemplars.ID` (all use `UUID PRIMARY KEY DEFAULT gen_random_uuid()`)
+- [x] Use BLOB type for TraceID (16 bytes) and SpanID (8 bytes) - native binary format from OpenTelemetry
+- [x] Add CHECK constraints to enforce fixed-size binary: TraceID = 16 bytes, SpanID = 8 bytes
+- [x] Update insert statements in `traces.go`, `logs.go`, `metrics.go` to match new schema (BLOB for IDs, remove nested data, UUID self-generating)
+- [x] Update ARCHITECTURE.md to reflect current schema design
 
 **Remaining Tasks:**
 - [ ] Update all queries to use new schema (remove references to old columns)
 - [ ] Test flush interval with new simple types
 - [ ] Simplify AppenderWrapper (remove UNION reflection code)
-- [ ] Optional: Create trace_summaries table
+- [ ] Optional: Create trace_summaries view
 
 ## Phase 2: Server Rework
 
@@ -145,7 +155,7 @@ The core architectural decision: have DuckDB output each query row as a JSON obj
 - [ ] Wire up WebSocket for live metric updates
 - [ ] Add `searchMetrics` JSON-RPC method
 - [ ] Add exemplar drill-down (link to traces)
-- [ ] Implement time-series queries using normalized `metric_data_points` table
+  - [ ] Implement time-series queries using normalized `datapoints` table
 
 ## Phase 8: Landing Page
 

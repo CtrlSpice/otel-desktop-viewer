@@ -27,18 +27,15 @@ func (s *Store) AddMetrics(ctx context.Context, metricsData []metrics.MetricData
 
 	for i, metricData := range metricsData {
 		err := appender.AppendRow(
-			metricData.ID(),
-			metricData.Name,
-			metricData.Description,
-			metricData.Unit,
-			metricData.DataPoints,
-			metricData.Resource.Attributes,
-			metricData.Resource.DroppedAttributesCount,
-			metricData.Scope.Name,
-			metricData.Scope.Version,
-			metricData.Scope.Attributes,
-			metricData.Scope.DroppedAttributesCount,
-			metricData.Received,
+			// ID is self-generating (UUID), so we don't pass it
+			metricData.Name,                         // Name VARCHAR
+			metricData.Description,                   // Description VARCHAR
+			metricData.Unit,                         // Unit VARCHAR
+			metricData.Resource.DroppedAttributesCount, // ResourceDroppedAttributesCount UINTEGER
+			metricData.Scope.Name,                   // ScopeName VARCHAR
+			metricData.Scope.Version,                 // ScopeVersion VARCHAR
+			metricData.Scope.DroppedAttributesCount,  // ScopeDroppedAttributesCount UINTEGER
+			metricData.Received,                     // Received BIGINT
 		)
 		if err != nil {
 			return fmt.Errorf(ErrAppendRow, err)

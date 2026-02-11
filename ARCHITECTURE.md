@@ -75,6 +75,27 @@ This becomes the pattern for all JSON-RPC methods.
 
 Related: [TODO.md - Phase 1](TODO.md#phase-1-database-schema-rework)
 
+### Summary of Current Schema
+
+**Key Design Decisions:**
+- **TraceID/SpanID**: Stored as BLOB (binary) - TraceID is 16 bytes (128-bit), SpanID is 8 bytes (64-bit)
+- **Self-generating IDs**: Use DuckDB's native UUID type for `events.ID`, `links.ID`, `logs.ID`, `metrics.ID`, `datapoints.ID`, `exemplars.ID`
+- **Normalized tables**: Events, links, exemplars, datapoints, and attributes are in separate tables
+- **Single datapoints table**: All metric types in one table with NULLs (optimized for columnar storage)
+- **Attributes table**: Separate ID columns (`SpanID BLOB`, `EventID UUID`, `LinkID UUID`, etc.) with foreign keys and CHECK constraints
+- **Depth calculation**: Query-time using recursive CTEs (not stored)
+- **CHECK constraints**: Enforce discriminated union patterns for `datapoints` (based on `MetricType`) and `attributes` (based on ID column combinations)
+
+**Schema Highlights:**
+- `spans`: TraceID/SpanID/ParentSpanID as BLOB, no nested arrays (events/links normalized)
+- `events`: ID as UUID (self-generating), SpanID as BLOB
+- `links`: ID as UUID (self-generating), SpanID/TraceID/LinkedSpanID as BLOB
+- `logs`: ID as UUID (self-generating), TraceID/SpanID as BLOB, Body as VARCHAR + BodyType
+- `metrics`: ID as UUID (self-generating), no MetricType (moved to datapoints)
+- `datapoints`: ID as UUID (self-generating), MetricID as UUID, MetricType with CHECK constraints
+- `exemplars`: ID as UUID (self-generating), DataPointID as UUID, TraceID/SpanID as BLOB
+- `attributes`: Separate ID columns with foreign keys, CHECK constraint for discriminated union, covering indexes
+
 ### Problem
 
 The current schema uses DuckDB UNION types for attributes:
@@ -107,7 +128,7 @@ WHERE EXISTS(SELECT 1 FROM attributes
 
 ### Decision
 
-Replace UNION with a simple struct with an enum for the type:
+Replace UNION with a simple enum for the type. Attributes are stored in a normalized table with separate `Key`, `Value`, and `Type` columns:
 
 ```sql
 CREATE TYPE attr_type AS ENUM(
@@ -120,10 +141,6 @@ CREATE TYPE attr_type AS ENUM(
     'float64[]',
     'boolean[]'
 );
-
-CREATE TYPE attr_value AS STRUCT(v VARCHAR, t attr_type);
--- v = value as string
--- t = type enum (one of the above values)
 ```
 
 Normalize events, links, and exemplars into separate tables for better queryability. Attributes are normalized into a separate table (see below).
@@ -137,21 +154,22 @@ Normalize events, links, and exemplars into separate tables for better queryabil
 
 ### Additional Changes
 
-Add indexes (currently none exist):
+**TraceID and SpanID storage:**
+- Store as BLOB (binary) instead of VARCHAR for efficiency
+- TraceID: 16 bytes (128-bit)
+- SpanID: 8 bytes (64-bit)
+- CHECK constraints enforce fixed sizes
 
-```sql
-CREATE INDEX idx_spans_trace_id ON spans(TraceID);
-CREATE INDEX idx_spans_start_time ON spans(StartTime DESC);
-CREATE INDEX idx_logs_timestamp ON logs(Timestamp DESC);
-```
+**Self-generating IDs:**
+- Use DuckDB's native UUID type for self-generating primary keys
+- `events.ID`, `links.ID`, `logs.ID`, `metrics.ID`, `datapoints.ID`, `exemplars.ID` all use `UUID PRIMARY KEY DEFAULT gen_random_uuid()`
+- Only `spans.SpanID` remains as BLOB (comes from OpenTelemetry)
 
-Pre-compute span depth:
+**Depth calculation:**
+- Calculated at query time using recursive CTEs (not stored)
+- More efficient than pre-computing, especially when orphan spans find parents in later batches
 
-```sql
-ALTER TABLE spans ADD COLUMN Depth INTEGER DEFAULT 0;
-```
-
-Simplify log body:
+**Simplify log body:**
 
 ```sql
 Body VARCHAR,      -- store as string (was UNION)
@@ -180,26 +198,25 @@ This has two issues:
 ```sql
 -- Metrics table (metadata only)
 CREATE TABLE metrics (
-    MetricID VARCHAR PRIMARY KEY,
+    ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     Name VARCHAR,
     Description VARCHAR,
     Unit VARCHAR,
-    MetricType VARCHAR,  -- 'Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'
     ResourceDroppedAttributesCount UINTEGER,
     ScopeName VARCHAR,
     ScopeVersion VARCHAR,
     ScopeDroppedAttributesCount UINTEGER,
     Received BIGINT
     -- ResourceAttributes and ScopeAttributes stored in normalized attributes table
+    -- MetricType removed (stored in datapoints table only)
 );
 
--- Data points table (single table for all metric types)
+-- Data points table (single table for all metric types, renamed from metric_data_points)
 -- Columnar storage compresses NULLs efficiently, and MetricType filters restrict the set
-CREATE TABLE metric_data_points (
-    ID VARCHAR PRIMARY KEY,
-    MetricID VARCHAR NOT NULL,
+CREATE TABLE datapoints (
+    ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    MetricID UUID NOT NULL,
     MetricType VARCHAR NOT NULL,  -- 'Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'
-    Index INTEGER NOT NULL,
     Timestamp BIGINT,
     StartTime BIGINT,
     Flags UINTEGER,
@@ -223,17 +240,18 @@ CREATE TABLE metric_data_points (
     PositiveBucketCounts UBIGINT[],
     NegativeBucketOffset INTEGER,
     NegativeBucketCounts UBIGINT[],
-    FOREIGN KEY (MetricID) REFERENCES metrics(MetricID) ON DELETE CASCADE
+    FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_metric_data_points_type_metric_time ON metric_data_points(MetricType, MetricID, Timestamp DESC);
-CREATE INDEX idx_metric_data_points_metric_time ON metric_data_points(MetricID, Timestamp DESC);
-CREATE INDEX idx_metric_data_points_time ON metric_data_points(Timestamp DESC);
+-- CHECK constraints enforce discriminated union pattern based on MetricType
+ALTER TABLE datapoints ADD CONSTRAINT chk_metric_type_valid CHECK (
+    MetricType IN ('Gauge', 'Sum', 'Histogram', 'ExponentialHistogram')
+);
+-- Additional CHECK constraints ensure correct fields are populated for each type
 
-CREATE INDEX idx_gauge_data_points_metric_time ON gauge_data_points(MetricID, Timestamp DESC);
-CREATE INDEX idx_sum_data_points_metric_time ON sum_data_points(MetricID, Timestamp DESC);
-CREATE INDEX idx_histogram_data_points_metric_time ON histogram_data_points(MetricID, Timestamp DESC);
-CREATE INDEX idx_exponential_histogram_data_points_metric_time ON exponential_histogram_data_points(MetricID, Timestamp DESC);
+CREATE INDEX idx_datapoints_type_metric_time ON datapoints(MetricType, MetricID, Timestamp DESC);
+CREATE INDEX idx_datapoints_metric_time ON datapoints(MetricID, Timestamp DESC);
+CREATE INDEX idx_datapoints_time ON datapoints(Timestamp DESC);
 ```
 
 **Why this works:**
@@ -264,38 +282,35 @@ WHERE MetricType = 'Histogram' AND MetricID = ? AND Timestamp BETWEEN ? AND ?
 GROUP BY bucket
 ORDER BY bucket;
 
--- Filter by attributes (using normalized attributes table with ID as OwnerID)
+-- Filter by attributes (using normalized attributes table with DataPointID)
 SELECT dp.Timestamp, dp.Value
-FROM metric_data_points dp
-JOIN attributes a ON dp.ID = a.OwnerID 
-  AND a.SignalType = 'metrics'
-  AND a.Scope = 'data_point'
-  WHERE dp.MetricType = 'Gauge'
-  AND a.AttributeScope = 'span'
-WHERE dp.MetricID = ?
-  AND EXISTS(SELECT 1 FROM attributes WHERE EntityID = dp.MetricID AND Key = 'service' AND Value = 'api')
-  AND EXISTS(SELECT 1 FROM attributes WHERE EntityID = dp.MetricID AND Key = 'env' AND Value = 'prod')
+FROM datapoints dp
+JOIN attributes a ON dp.ID = a.DataPointID
+WHERE dp.MetricType = 'Gauge'
+  AND dp.MetricID = ?
+  AND EXISTS(SELECT 1 FROM attributes WHERE MetricID = dp.MetricID AND Key = 'service' AND Value = 'api')
+  AND EXISTS(SELECT 1 FROM attributes WHERE MetricID = dp.MetricID AND Key = 'env' AND Value = 'prod')
 ORDER BY dp.Timestamp;
 ```
 
 **Ingestion:** When ingesting metrics, insert into both tables:
-1. Insert/update `metrics` table with metadata
-2. Insert all data points into `metric_data_points` table
+1. Insert/update `metrics` table with metadata (ID is self-generating UUID)
+2. Insert all data points into `datapoints` table (ID is self-generating UUID, MetricID references metrics.ID)
 
 **JSON rows:** When building JSON responses, join and aggregate:
 ```sql
 SELECT json_object(
-    'metricID', m.MetricID,
+    'metricID', m.ID,
     'name', m.Name,
-    'type', m.MetricType,
+    'type', dp.MetricType,  -- Get type from datapoints
     'dataPoints', json_array_agg(
         json_object('timestamp', dp.Timestamp, 'value', dp.Value)
     )
 )
 FROM metrics m
-JOIN metric_data_points dp ON m.MetricID = dp.MetricID
-WHERE m.MetricID = ?
-GROUP BY m.MetricID, m.Name, m.MetricType
+JOIN datapoints dp ON m.ID = dp.MetricID
+WHERE m.ID = ?
+GROUP BY m.ID, m.Name, dp.MetricType
 ```
 
 ### Database Architectural Decisions
@@ -339,7 +354,7 @@ This section documents the key architectural decisions made during the schema re
 
 **What we considered:**
 - **Option A**: Separate tables (`gauge_data_points`, `sum_data_points`, etc.) + view
-- **Option B**: Single table (`metric_data_points`) with NULLs for type-specific fields
+- **Option B**: Single table (`datapoints`) with NULLs for type-specific fields
 
 **Why single table:**
 1. **Columnar storage optimization**: 
@@ -355,6 +370,9 @@ This section documents the key architectural decisions made during the schema re
 4. **Better for aggregations**:
    - After filtering by `MetricType`, aggregations work on non-NULL values
    - Index on `(MetricType, MetricID, Timestamp)` is very efficient
+5. **CHECK constraints enforce discriminated union**:
+   - Database-level validation ensures correct fields are populated based on `MetricType`
+   - Mimics TypeScript discriminated unions in SQL
 
 **Why not separate tables:**
 - **More complexity**: Four tables + view to maintain
@@ -362,12 +380,104 @@ This section documents the key architectural decisions made during the schema re
 - **No real benefit**: Columnar storage handles NULLs so well that separate tables don't provide significant advantage
 
 **Tradeoffs:**
-- **Type safety**: Can't enforce which fields should be populated at database level
-  - **Mitigation**: Application-level validation based on `MetricType`
+- **Type safety**: CHECK constraints enforce discriminated union (better than separate tables for validation)
 - **Some NULLs**: Each row has many NULL columns
-  - **Mitigation**: Columnar compression makes this negligible
+  - **Mitigation**: Columnar compression makes this negligible (see Decision 2.5 for details)
 
-**Verdict**: Single table is better for columnar storage. DuckDB's columnar engine handles sparse data efficiently.
+**Verdict**: Single table is better for columnar storage. DuckDB's columnar engine handles sparse data efficiently, and CHECK constraints provide type safety. See Decision 2.5 for the broader discussion on normalization vs NULL compression tradeoffs.
+
+#### Decision 2.5: Normalization vs NULL Compression Tradeoff
+
+**The Core Insight:**
+
+We made a key architectural tradeoff: instead of fully normalizing into separate tables for each type (e.g., `gauge_datapoints`, `sum_datapoints`, `span_attributes`, `event_attributes`), we leverage DuckDB's columnar storage to compress NULLs efficiently. This allows us to use **single tables** that store all variants, with the "type" determined by which columns are populated.
+
+**How NULL Compression Enables Single Tables:**
+
+1. **Columnar Run-Length Encoding**: 
+   - DuckDB compresses consecutive NULLs extremely efficiently
+   - A column that's NULL for 90% of rows compresses to almost nothing
+   - Example: In `datapoints`, a Gauge row has NULLs for all Histogram fields - these compress to minimal space
+
+2. **Filter-First Query Pattern**:
+   - Low-cardinality discriminator columns (`MetricType` in datapoints, ID pattern in attributes) filter first
+   - After filtering, only relevant columns are scanned
+   - NULLs are effectively "skipped" by the filter, not scanned
+
+3. **Sparse Data is Cheap**:
+   - Each row has many NULL columns, but columnar storage makes this negligible
+   - The storage cost of NULLs is far less than the complexity of managing multiple tables
+
+**Single Table for Datapoints (All Metric Types):**
+
+Instead of separate tables (`gauge_datapoints`, `sum_datapoints`, `histogram_datapoints`, `exponential_histogram_datapoints`), we use one `datapoints` table:
+
+```sql
+CREATE TABLE datapoints (
+    ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    MetricID UUID NOT NULL,
+    MetricType VARCHAR NOT NULL,  -- Discriminator: 'Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'
+    -- Gauge/Sum fields (NULL for Histogram types)
+    Value DOUBLE,
+    ValueType VARCHAR,
+    -- Histogram fields (NULL for Gauge/Sum)
+    Count UBIGINT,
+    Sum DOUBLE,
+    BucketCounts UBIGINT[],
+    -- ... more fields
+);
+```
+
+**How it works:**
+- **Discriminator**: `MetricType` column identifies which variant this row represents
+- **CHECK constraints**: Enforce discriminated union - ensure correct fields are populated based on `MetricType`
+- **Query pattern**: `WHERE MetricType = 'Gauge'` filters first, then only `Value`/`ValueType` columns are scanned
+- **NULL compression**: Histogram fields are NULL for Gauge rows - compressed away by columnar storage
+
+**Single Table for Attributes (All Entity Types):**
+
+Instead of separate tables (`span_attributes`, `event_attributes`, `log_attributes`, etc.), we use one `attributes` table with multiple ID columns:
+
+```sql
+CREATE TABLE attributes (
+    -- Only relevant ID columns populated per row
+    SpanID BLOB,      -- Populated for span/resource/scope attributes
+    EventID UUID,     -- Populated for event attributes (with SpanID as parent)
+    LinkID UUID,      -- Populated for link attributes (with SpanID as parent)
+    LogID UUID,       -- Populated for log attributes
+    MetricID UUID,    -- Populated for metric attributes
+    DataPointID UUID, -- Populated for data point attributes (with MetricID as parent)
+    ExemplarID UUID,   -- Populated for exemplar attributes (with DataPointID + MetricID as parents)
+    Key VARCHAR NOT NULL,
+    Value VARCHAR NOT NULL,
+    Type attr_type NOT NULL
+);
+```
+
+**How it works:**
+- **ID Pattern**: The combination of which ID columns are populated identifies the owner
+  - `SpanID IS NOT NULL, EventID IS NULL, LinkID IS NULL, ...` → span attribute
+  - `EventID IS NOT NULL, SpanID IS NOT NULL, ...` → event attribute (SpanID is parent)
+  - `DataPointID IS NOT NULL, MetricID IS NOT NULL, ...` → data point attribute (MetricID is parent)
+- **CHECK constraint**: Enforces discriminated union - exactly one direct owner ID must be populated, with correct parent IDs
+- **Query pattern**: `WHERE SpanID IS NOT NULL AND EventID IS NULL` filters for span attributes
+- **NULL compression**: Most ID columns are NULL per row - compressed away by columnar storage
+
+**Why This Works Better Than Full Normalization:**
+
+1. **Simpler Schema**: One table instead of 4+ tables (for datapoints) or 7+ tables (for attributes)
+2. **No View Complexity**: Don't need UNION ALL views to query across types
+3. **Better Indexing**: Single index on discriminator + common columns works for all types
+4. **Easier Queries**: No need to UNION multiple tables or use complex views
+5. **Type Safety**: CHECK constraints enforce discriminated union at database level
+
+**The Tradeoff:**
+
+- **Storage**: Slightly more NULLs stored (but compressed efficiently)
+- **Type Safety**: CHECK constraints instead of separate table schemas
+- **Query Complexity**: Need to filter by discriminator (but this is fast with indexes)
+
+**Verdict**: For columnar databases like DuckDB, single tables with NULLs and CHECK constraints provide the best balance of simplicity, queryability, and storage efficiency. The NULL compression makes the storage cost negligible, while the single table simplifies queries and schema management.
 
 #### Decision 3: Attributes Table Design
 
@@ -375,30 +485,30 @@ This section documents the key architectural decisions made during the schema re
 ```sql
 CREATE TABLE attributes (
     -- ID columns (only relevant ones populated per row based on attribute scope)
-    -- For span/resource/scope attributes: SpanID only
-    -- For event attributes: EventID (direct), SpanID (parent)
-    -- For link attributes: LinkID (direct), SpanID (parent)
-    -- For log/resource/scope attributes: LogID only
-    -- For metric/resource/scope attributes: MetricID only
-    -- For data_point attributes: DataPointID (direct), MetricID (parent)
-    -- For exemplar attributes: ExemplarID (direct), DataPointID (parent), MetricID (grandparent)
-    SpanID VARCHAR,
-    EventID VARCHAR,
-    LinkID VARCHAR,
-    LogID VARCHAR,
-    MetricID VARCHAR,
-    DataPointID VARCHAR,
-    ExemplarID VARCHAR,
+    -- For span/resource/scope attributes: SpanID only (BLOB, 8 bytes from OpenTelemetry)
+    -- For event attributes: EventID (direct, UUID), SpanID (parent, BLOB, 8 bytes)
+    -- For link attributes: LinkID (direct, UUID), SpanID (parent, BLOB, 8 bytes)
+    -- For log/resource/scope attributes: LogID only (UUID, references logs.ID)
+    -- For metric/resource/scope attributes: MetricID only (UUID, references metrics.ID)
+    -- For data_point attributes: DataPointID (direct, UUID), MetricID (parent, UUID)
+    -- For exemplar attributes: ExemplarID (direct, UUID), DataPointID (parent, UUID), MetricID (grandparent, UUID)
+    SpanID BLOB,      -- 8 bytes (from OpenTelemetry)
+    EventID UUID,     -- Self-generating UUID
+    LinkID UUID,      -- Self-generating UUID
+    LogID UUID,       -- Self-generating UUID
+    MetricID UUID,    -- Self-generating UUID
+    DataPointID UUID, -- Self-generating UUID
+    ExemplarID UUID,  -- Self-generating UUID
     -- Attribute data
     Key VARCHAR NOT NULL,
     Value VARCHAR NOT NULL,
     Type attr_type NOT NULL,
     -- Foreign keys (all with CASCADE deletes)
     FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE,
-    FOREIGN KEY (EventID) REFERENCES events(EventID) ON DELETE CASCADE,
-    FOREIGN KEY (LinkID) REFERENCES links(LinkID) ON DELETE CASCADE,
-    FOREIGN KEY (LogID) REFERENCES logs(LogID) ON DELETE CASCADE,
-    FOREIGN KEY (MetricID) REFERENCES metrics(MetricID) ON DELETE CASCADE,
+    FOREIGN KEY (EventID) REFERENCES events(ID) ON DELETE CASCADE,
+    FOREIGN KEY (LinkID) REFERENCES links(ID) ON DELETE CASCADE,
+    FOREIGN KEY (LogID) REFERENCES logs(ID) ON DELETE CASCADE,
+    FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE,
     FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE,
     FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID) ON DELETE CASCADE,
     -- Unique constraint: combination of all ID columns + Key ensures uniqueness
@@ -431,14 +541,20 @@ CREATE INDEX idx_attributes_key_value ON attributes(Key, Value, Type);
 
 **Why this design:**
 1. **Separate ID columns**: Each entity type has its own column
-   - Leverages columnar storage: most columns are NULL per row, compresses extremely well
-   - Type can be inferred from which ID columns are populated (no SignalType/Scope needed)
+   - Leverages columnar storage: most columns are NULL per row, compresses extremely well (see Decision 2.5)
+   - **Owner inference from ID pattern**: The combination of which ID columns are populated identifies the owner
+     - `SpanID IS NOT NULL, others NULL` → span attribute
+     - `EventID IS NOT NULL, SpanID IS NOT NULL, others NULL` → event attribute (SpanID is parent)
+     - `DataPointID IS NOT NULL, MetricID IS NOT NULL, others NULL` → data point attribute (MetricID is parent)
+   - No SignalType/Scope columns needed - the ID pattern is the discriminator
 2. **Foreign key integrity**: All ID columns have foreign keys with CASCADE deletes
    - Database-enforced referential integrity
    - Automatic cleanup when parent entities are deleted
-3. **CHECK constraints**: Enforce correct ID combinations
+3. **CHECK constraints enforce discriminated union**: 
    - Exactly one direct owner ID must be populated
    - Parent IDs must be populated when required (e.g., EventID requires SpanID)
+   - Mimics TypeScript discriminated unions in SQL
+   - Database-level validation ensures data integrity
 4. **Covering indexes**: Include Key, Value, Type for index-only queries
    - Avoids table lookups for common queries
    - Hierarchical indexes for parent-child queries
@@ -456,15 +572,16 @@ CREATE INDEX idx_attributes_key_value ON attributes(Key, Value, Type);
 
 **Tradeoffs:**
 - **More columns**: 7 ID columns instead of 2-3
-  - **Mitigation**: Columnar storage compresses NULLs extremely well (run-length encoding)
-  - Most rows have only 1-2 columns populated
+  - **Mitigation**: Columnar storage compresses NULLs extremely well (run-length encoding) - see Decision 2.5
+  - Most rows have only 1-2 columns populated, rest are NULL and compress away
 - **Wider indexes**: Composite indexes include all ID columns
   - **Mitigation**: NULLs are excluded from uniqueness checks
   - Indexes are optimized for columnar storage
 - **CHECK constraint complexity**: Long constraint expression
   - **Mitigation**: Validated at insert time, ensures data integrity
+  - Enforces discriminated union pattern at database level
 
-**Verdict**: This design provides foreign key integrity, leverages columnar storage efficiently, and enables direct queries on specific entity types without needing SignalType/Scope columns.
+**Verdict**: This design provides foreign key integrity, leverages columnar storage efficiently (see Decision 2.5 for NULL compression details), and enables direct queries on specific entity types without needing SignalType/Scope columns. The ID pattern acts as the discriminator, and CHECK constraints enforce the discriminated union.
 
 #### Decision 4: Depth Calculation
 
@@ -521,8 +638,8 @@ CREATE INDEX idx_attributes_key_value ON attributes(Key, Value, Type);
 ```sql
 -- Events table
 CREATE TABLE events (
-    EventID VARCHAR PRIMARY KEY,
-    SpanID VARCHAR NOT NULL,
+    ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    SpanID BLOB NOT NULL,  -- 8 bytes (from OpenTelemetry)
     Name VARCHAR,
     Timestamp BIGINT,
     DroppedAttributesCount UINTEGER,
@@ -531,10 +648,10 @@ CREATE TABLE events (
 
 -- Links table
 CREATE TABLE links (
-    LinkID VARCHAR PRIMARY KEY,
-    SpanID VARCHAR NOT NULL,
-    TraceID VARCHAR,
-    LinkedSpanID VARCHAR,
+    ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    SpanID BLOB NOT NULL,      -- 8 bytes (from OpenTelemetry)
+    TraceID BLOB,              -- 16 bytes (from OpenTelemetry)
+    LinkedSpanID BLOB,         -- 8 bytes (from OpenTelemetry)
     TraceState VARCHAR,
     DroppedAttributesCount UINTEGER,
     FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
@@ -542,12 +659,12 @@ CREATE TABLE links (
 
 -- Exemplars table
 CREATE TABLE exemplars (
-    ID VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::VARCHAR,
-    DataPointID VARCHAR NOT NULL,
+    ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    DataPointID UUID NOT NULL,
     Timestamp BIGINT,
     Value DOUBLE,
-    TraceID VARCHAR,
-    SpanID VARCHAR,
+    TraceID BLOB,  -- 16 bytes (from OpenTelemetry)
+    SpanID BLOB,   -- 8 bytes (from OpenTelemetry)
     FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE
 );
 ```
@@ -559,23 +676,24 @@ Normalize attributes for efficient querying and discovery, using separate ID col
 ```sql
 CREATE TABLE attributes (
     -- ID columns (only relevant ones populated per row)
-    SpanID VARCHAR,
-    EventID VARCHAR,
-    LinkID VARCHAR,
-    LogID VARCHAR,
-    MetricID VARCHAR,
-    DataPointID VARCHAR,
-    ExemplarID VARCHAR,
+    -- SpanID is BLOB (8 bytes), others are UUID (self-generating)
+    SpanID BLOB,      -- 8 bytes (from OpenTelemetry)
+    EventID UUID,     -- Self-generating UUID
+    LinkID UUID,      -- Self-generating UUID
+    LogID UUID,       -- Self-generating UUID
+    MetricID UUID,    -- Self-generating UUID
+    DataPointID UUID, -- Self-generating UUID
+    ExemplarID UUID,  -- Self-generating UUID
     -- Attribute data
     Key VARCHAR NOT NULL,
     Value VARCHAR NOT NULL,
     Type attr_type NOT NULL,
     -- Foreign keys (all with CASCADE deletes)
     FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE,
-    FOREIGN KEY (EventID) REFERENCES events(EventID) ON DELETE CASCADE,
-    FOREIGN KEY (LinkID) REFERENCES links(LinkID) ON DELETE CASCADE,
-    FOREIGN KEY (LogID) REFERENCES logs(LogID) ON DELETE CASCADE,
-    FOREIGN KEY (MetricID) REFERENCES metrics(MetricID) ON DELETE CASCADE,
+    FOREIGN KEY (EventID) REFERENCES events(ID) ON DELETE CASCADE,
+    FOREIGN KEY (LinkID) REFERENCES links(ID) ON DELETE CASCADE,
+    FOREIGN KEY (LogID) REFERENCES logs(ID) ON DELETE CASCADE,
+    FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE,
     FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE,
     FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID) ON DELETE CASCADE,
     -- Unique constraint ensures one attribute per entity+key combination
@@ -656,10 +774,10 @@ WHERE a.Key = 'event.name'
 -- Multiple attribute filters (easy to compose in query builder)
 SELECT DISTINCT s.*
 FROM spans s
-JOIN attributes a1 ON s.SpanID = a1.OwnerID AND a1.Key = 'service' AND a1.Value = 'api'
-JOIN attributes a2 ON s.SpanID = a2.OwnerID AND a2.Key = 'env' AND a2.Value = 'prod'
-WHERE a1.SignalType = 'traces' AND a1.Scope = 'span'
-  AND a2.SignalType = 'traces' AND a2.Scope = 'span';
+JOIN attributes a1 ON s.SpanID = a1.SpanID AND a1.Key = 'service' AND a1.Value = 'api'
+JOIN attributes a2 ON s.SpanID = a2.SpanID AND a2.Key = 'env' AND a2.Value = 'prod'
+WHERE a1.EventID IS NULL AND a1.LinkID IS NULL  -- Ensure span attributes only
+  AND a2.EventID IS NULL AND a2.LinkID IS NULL;  -- Ensure span attributes only
 ```
 
 **Query builder benefits:**
