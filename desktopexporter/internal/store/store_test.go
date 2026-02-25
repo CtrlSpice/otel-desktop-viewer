@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -94,6 +96,32 @@ func buildStoreTestTraces() ptrace.Traces {
 	return tr
 }
 
+func buildStoreTestLogs() plog.Logs {
+	logs := plog.NewLogs()
+	rl := logs.ResourceLogs().AppendEmpty()
+	sl := rl.ScopeLogs().AppendEmpty()
+	for i := 0; i < 3; i++ {
+		rec := sl.LogRecords().AppendEmpty()
+		rec.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		rec.Body().SetStr("log body")
+	}
+	return logs
+}
+
+func buildStoreTestMetrics() pmetric.Metrics {
+	metrics := pmetric.NewMetrics()
+	rm := metrics.ResourceMetrics().AppendEmpty()
+	sm := rm.ScopeMetrics().AppendEmpty()
+	m := sm.Metrics().AppendEmpty()
+	m.SetName("store_test_metric")
+	m.SetUnit("1")
+	gauge := m.SetEmptyGauge()
+	dp := gauge.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	dp.SetDoubleValue(42.0)
+	return metrics
+}
+
 func runStoreTests(t *testing.T, tests []storeTest) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -112,25 +140,37 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 				assert.Greater(t, fileInfo.Size(), int64(0), "database file should not be empty")
 			}
 
-			// Create sample telemetry: two traces via pdata, logs/metrics from telemetry sample
-			sample := telemetry.NewSampleTelemetry()
+			// Ingest two traces, three logs, and one metric via pdata
 			traces := buildStoreTestTraces()
 			err := s.IngestSpans(ctx, traces)
-			assert.NoError(t, err, "spans table should exist and accept sample data")
+			assert.NoError(t, err, "spans table should exist and accept data")
 
-			err = s.AddLogs(ctx, sample.Logs)
-			assert.NoError(t, err, "logs table should exist and accept sample data")
+			logs := buildStoreTestLogs()
+			err = s.IngestLogs(ctx, logs)
+			assert.NoError(t, err, "logs table should exist and accept data")
 
-			// Verify data was inserted correctly (SearchTraces replaces GetTraceSummaries)
+			metrics := buildStoreTestMetrics()
+			err = s.IngestMetrics(ctx, metrics)
+			assert.NoError(t, err, "metrics table should exist and accept data")
+
+			// Verify data was inserted correctly
 			summariesRaw, err := s.SearchTraces(ctx, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries")
 			var summaries []traceSummaryJSON
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
-			assert.Len(t, summaries, 2, "should have two traces from sample data")
+			assert.Len(t, summaries, 2, "should have two traces")
 
-			logs, err := s.GetLogs(ctx)
+			logsRaw, err := s.SearchLogs(ctx, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve logs")
-			assert.Len(t, logs, 3, "should have three logs from sample data")
+			var logEntries []any
+			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
+			assert.Len(t, logEntries, 3, "should have three logs")
+
+			metricsRaw, err := s.SearchMetrics(ctx, 0, 1<<63-1, nil)
+			assert.NoError(t, err, "should be able to retrieve metrics")
+			var metricEntries []any
+			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
+			assert.Len(t, metricEntries, 1, "should have one metric")
 
 			// Test store closure
 			err = s.Close()
@@ -147,18 +187,25 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 
-			logs, err = s.GetLogs(ctx)
+			logsRaw, err = s.SearchLogs(ctx, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve logs after reopening")
+			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
+
+			metricsRaw, err = s.SearchMetrics(ctx, 0, 1<<63-1, nil)
+			assert.NoError(t, err, "should be able to retrieve metrics after reopening")
+			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
 
 			// Verify persistence behavior
 			if tt.dbPath == "" {
 				// In-memory store should be empty after reopening
 				assert.Len(t, summaries, 0, "in-memory store should be empty after reopening")
-				assert.Len(t, logs, 0, "in-memory store should be empty after reopening")
+				assert.Len(t, logEntries, 0, "in-memory store should be empty after reopening")
+				assert.Len(t, metricEntries, 0, "in-memory store should be empty after reopening")
 			} else {
 				// Persistent store should retain data
 				assert.Len(t, summaries, 2, "persistent store should retain traces after reopening")
-				assert.Len(t, logs, 3, "persistent store should retain logs after reopening")
+				assert.Len(t, logEntries, 3, "persistent store should retain logs after reopening")
+				assert.Len(t, metricEntries, 1, "persistent store should retain metrics after reopening")
 			}
 
 			// Clean up
@@ -195,69 +242,7 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
-	_, err = s.GetLogs(ctx)
+	_, err = s.SearchLogs(ctx, 0, 1<<63-1, nil)
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
-}
-
-// TestSampleDataWorkflow tests the complete sample data workflow
-func TestSampleDataWorkflow(t *testing.T) {
-	helper, teardown := SetupTest(t)
-	defer teardown()
-
-	ctx := helper.Ctx
-	s := helper.Store
-
-	// Step 1: Check that no sample data exists initially
-	exists, err := s.SampleDataExists(ctx)
-	assert.NoError(t, err, "SampleDataExists should not return error")
-	assert.False(t, exists, "Sample data should not exist initially")
-
-	// Step 2: Load sample data (spans via pdata; logs/metrics from telemetry sample)
-	sample := telemetry.NewSampleTelemetry()
-	traces := buildStoreTestTraces()
-	// Add telemetry.sample to resource so SampleDataExists can find it
-	rs := traces.ResourceSpans().At(0)
-	rs.Resource().Attributes().PutBool("telemetry.sample", true)
-	err = s.IngestSpans(ctx, traces)
-	assert.NoError(t, err, "IngestSpans should not return error")
-
-	err = s.AddLogs(ctx, sample.Logs)
-	assert.NoError(t, err, "AddLogs should not return error")
-
-	err = s.AddMetrics(ctx, sample.Metrics)
-	assert.NoError(t, err, "AddMetrics should not return error")
-
-	// Step 3: Check that sample data now exists
-	exists, err = s.SampleDataExists(ctx)
-	assert.NoError(t, err, "SampleDataExists should not return error")
-	assert.True(t, exists, "Sample data should exist after loading")
-
-	// Step 4: Clear sample data
-	err = s.ClearSampleData(ctx)
-	assert.NoError(t, err, "ClearSampleData should not return error")
-
-	// Step 5: Check that sample data no longer exists
-	exists, err = s.SampleDataExists(ctx)
-	assert.NoError(t, err, "SampleDataExists should not return error")
-	assert.False(t, exists, "Sample data should not exist after clearing")
-
-	// Step 6: Verify all tables are empty
-	summariesRaw, err := s.SearchTraces(ctx, 0, 1<<63-1, nil)
-	assert.NoError(t, err, "SearchTraces should not return error")
-	var summaries []traceSummaryJSON
-	assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
-	assert.Empty(t, summaries, "Spans table should be empty after clearing sample data")
-
-	logs, err := s.GetLogs(ctx)
-	assert.NoError(t, err, "GetLogs should not return error")
-	assert.Empty(t, logs, "Logs table should be empty after clearing sample data")
-
-	metrics, err := s.GetMetrics(ctx)
-	assert.NoError(t, err, "GetMetrics should not return error")
-	assert.Empty(t, metrics, "Metrics table should be empty after clearing sample data")
-
-	// Step 7: Try to clear sample data again (should be idempotent)
-	err = s.ClearSampleData(ctx)
-	assert.NoError(t, err, "ClearSampleData should be idempotent")
 }

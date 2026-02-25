@@ -562,6 +562,110 @@ func TestSearchTraces(t *testing.T) {
 	})
 }
 
+// TestDeleteSpanByID verifies that a single span can be deleted by its SpanID.
+func TestDeleteSpanByID(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	traces := createTestTracePdata()
+	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	assert.NoError(t, err)
+
+	raw, err := helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000099")
+	assert.NoError(t, err)
+	assert.Equal(t, 9, getTraceSpansCount(t, raw))
+
+	err = helper.Store.DeleteSpanByID(helper.Ctx, "0000000000000001")
+	assert.NoError(t, err)
+
+	raw, err = helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000099")
+	assert.NoError(t, err)
+	assert.Equal(t, 8, getTraceSpansCount(t, raw))
+}
+
+// TestDeleteSpansByIDs verifies that multiple spans can be deleted by their SpanIDs.
+func TestDeleteSpansByIDs(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	traces := createTestTracePdata()
+	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	assert.NoError(t, err)
+
+	raw, err := helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000099")
+	assert.NoError(t, err)
+	assert.Equal(t, 9, getTraceSpansCount(t, raw))
+
+	err = helper.Store.DeleteSpansByIDs(helper.Ctx, []any{"0000000000000001", "0000000000000002", "0000000000000003"})
+	assert.NoError(t, err)
+
+	raw, err = helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000099")
+	assert.NoError(t, err)
+	assert.Equal(t, 6, getTraceSpansCount(t, raw))
+}
+
+// TestDeleteSpansByIDs_Empty verifies that deleting with an empty list is a no-op.
+func TestDeleteSpansByIDs_Empty(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	err := helper.Store.DeleteSpansByIDs(helper.Ctx, []any{})
+	assert.NoError(t, err)
+}
+
+// TestDeleteSpansByTraceID verifies that all spans for a trace are deleted.
+func TestDeleteSpansByTraceID(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	traces, trace1Hex, _, _ := buildTracesForSummaryOrdering(baseTime)
+	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	assert.NoError(t, err)
+
+	summaries := searchTracesAll(t, helper)
+	assert.Len(t, summaries, 3)
+
+	err = helper.Store.DeleteSpansByTraceID(helper.Ctx, trace1Hex)
+	assert.NoError(t, err)
+
+	summaries = searchTracesAll(t, helper)
+	assert.Len(t, summaries, 2)
+	for _, s := range summaries {
+		assert.NotEqual(t, trace1Hex, s.TraceID)
+	}
+}
+
+// TestDeleteSpansByTraceIDs verifies that spans for multiple traces are deleted.
+func TestDeleteSpansByTraceIDs(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	traces, trace1Hex, trace2Hex, trace3Hex := buildTracesForSummaryOrdering(baseTime)
+	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	assert.NoError(t, err)
+
+	summaries := searchTracesAll(t, helper)
+	assert.Len(t, summaries, 3)
+
+	err = helper.Store.DeleteSpansByTraceIDs(helper.Ctx, []any{trace1Hex, trace2Hex})
+	assert.NoError(t, err)
+
+	summaries = searchTracesAll(t, helper)
+	assert.Len(t, summaries, 1)
+	assert.Equal(t, trace3Hex, summaries[0].TraceID)
+}
+
+// TestDeleteSpansByTraceIDs_Empty verifies that deleting with an empty list is a no-op.
+func TestDeleteSpansByTraceIDs_Empty(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	err := helper.Store.DeleteSpansByTraceIDs(helper.Ctx, []any{})
+	assert.NoError(t, err)
+}
+
 // createTestTracePdata builds the full 9-span test trace with events, links, and attributes (pdata).
 func createTestTracePdata() ptrace.Traces {
 	baseTime := time.Now().UnixNano()

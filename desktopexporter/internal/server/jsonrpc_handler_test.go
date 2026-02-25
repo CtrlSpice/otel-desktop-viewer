@@ -3,99 +3,68 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"golang.org/x/exp/jsonrpc2"
 )
 
 func setupHandler() (*JSONRPCHandler, func()) {
-	store := store.NewStore(context.Background(), "")
-	handler := NewJSONRPCHandler(store)
+	s := store.NewStore(context.Background(), "")
+	handler := NewJSONRPCHandler(s)
 	return handler, func() {
-		store.Close()
+		s.Close()
 	}
 }
 
+// buildTestTraces returns ptrace.Traces with one span (trace ID 00...01) for handler tests.
+func buildTestTraces() ptrace.Traces {
+	tr := ptrace.NewTraces()
+	base := time.Now().UnixNano()
+	rs := tr.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "pumpkin.pie")
+	ss := rs.ScopeSpans().AppendEmpty()
+	span := ss.Spans().AppendEmpty()
+	span.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	span.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 1})
+	span.SetName("test")
+	span.SetStartTimestamp(pcommon.Timestamp(base))
+	span.SetEndTimestamp(pcommon.Timestamp(base + time.Second.Nanoseconds()))
+	return tr
+}
+
+// buildTestLogs returns plog.Logs with one log for handler tests.
+func buildTestLogs() plog.Logs {
+	logs := plog.NewLogs()
+	rl := logs.ResourceLogs().AppendEmpty()
+	rl.Resource().Attributes().PutStr("service.name", "pumpkin.pie")
+	sl := rl.ScopeLogs().AppendEmpty()
+	rec := sl.LogRecords().AppendEmpty()
+	rec.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	rec.Body().SetStr("test log message")
+	rec.SetSeverityText("INFO")
+	rec.SetSeverityNumber(plog.SeverityNumberInfo)
+	return logs
+}
+
 func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
-	store := store.NewStore(context.Background(), "")
-	handler := NewJSONRPCHandler(store)
+	s := store.NewStore(context.Background(), "")
+	handler := NewJSONRPCHandler(s)
+	ctx := context.Background()
 
-	// Add test span
-	baseTime := time.Now().UnixNano()
-	testSpanData := traces.SpanData{
-		TraceID:      "1234567890",
-		TraceState:   "",
-		SpanID:       "12345",
-		ParentSpanID: "",
-		Name:         "test",
-		Kind:         "",
-		StartTime:    baseTime,
-		EndTime:      baseTime + time.Second.Nanoseconds(),
-		Attributes:   map[string]any{},
-		Events:       []traces.EventData{},
-		Links:        []traces.LinkData{},
-		Resource: &resource.ResourceData{
-			Attributes: map[string]any{
-				"service.name": "pumpkin.pie",
-			},
-			DroppedAttributesCount: 0,
-		},
-		Scope: &scope.ScopeData{
-			Name:                   "test.scope",
-			Version:                "1",
-			Attributes:             map[string]any{},
-			DroppedAttributesCount: 0,
-		},
-		DroppedAttributesCount: 0,
-		DroppedEventsCount:     0,
-		DroppedLinksCount:      0,
-		StatusCode:             "",
-		StatusMessage:          "",
-	}
+	err := s.IngestSpans(ctx, buildTestTraces())
+	assert.NoError(t, err, "ingest spans")
 
-	err := handler.store.AddSpans(context.Background(), []traces.SpanData{testSpanData})
-	assert.Nilf(t, err, "could not create test span: %v", err)
-
-	// Add test log
-	testLogData := logs.LogData{
-		Timestamp:         baseTime,
-		ObservedTimestamp: baseTime + time.Millisecond.Nanoseconds(),
-		TraceID:           "1234567890",
-		SpanID:            "12345",
-		SeverityText:      "INFO",
-		SeverityNumber:    9,
-		Body:              logs.Body{Data: "test log message"},
-		Resource: &resource.ResourceData{
-			Attributes: map[string]any{
-				"service.name": "pumpkin.pie",
-			},
-			DroppedAttributesCount: 0,
-		},
-		Scope: &scope.ScopeData{
-			Name:                   "test.scope",
-			Version:                "1",
-			Attributes:             map[string]any{},
-			DroppedAttributesCount: 0,
-		},
-		Attributes:             map[string]any{},
-		DroppedAttributesCount: 0,
-		Flags:                  1,
-		EventName:              "test.event",
-	}
-
-	err = handler.store.AddLogs(context.Background(), []logs.LogData{testLogData})
-	assert.Nilf(t, err, "could not create test log: %v", err)
+	err = s.IngestLogs(ctx, buildTestLogs())
+	assert.NoError(t, err, "ingest logs")
 
 	return handler, func() {
-		store.Close()
+		s.Close()
 	}
 }
 
@@ -108,17 +77,21 @@ func createRequest(method string, params any) *jsonrpc2.Request {
 	}
 }
 
-func TestGetTraceSummaries(t *testing.T) {
+const testTraceIDHex = "00000000000000000000000000000001"
+
+func TestSearchTraces(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		handler, teardown := setupHandler()
 		defer teardown()
 
-		req := createRequest("getTraceSummaries", nil)
+		req := createRequest("searchTraces", []any{0, 1<<63 - 1})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.Nil(t, err)
-		summaries, ok := result.([]traces.TraceSummary)
-		assert.True(t, ok, "Expected []traces.TraceSummary, got %T", result)
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var summaries []map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &summaries))
 		assert.Len(t, summaries, 0)
 	})
 
@@ -126,14 +99,16 @@ func TestGetTraceSummaries(t *testing.T) {
 		handler, teardown := setupHandlerWithData(t)
 		defer teardown()
 
-		req := createRequest("getTraceSummaries", nil)
+		req := createRequest("searchTraces", []any{0, 1<<63 - 1})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.Nil(t, err)
-		summaries, ok := result.([]traces.TraceSummary)
-		assert.True(t, ok, "Expected []traces.TraceSummary, got %T", result)
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var summaries []map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &summaries))
 		assert.Len(t, summaries, 1)
-		assert.Equal(t, "1234567890", summaries[0].TraceID)
+		assert.Equal(t, testTraceIDHex, summaries[0]["traceID"])
 	})
 }
 
@@ -142,21 +117,24 @@ func TestGetTraceByID(t *testing.T) {
 	defer teardown()
 
 	t.Run("Found", func(t *testing.T) {
-		req := createRequest("getTraceByID", []string{"1234567890"})
+		req := createRequest("getTraceByID", []string{testTraceIDHex})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.Nil(t, err)
-		trace, ok := result.(*traces.Trace)
-		assert.True(t, ok)
-		assert.Equal(t, "1234567890", trace.TraceID)
-		assert.Len(t, trace.Spans, 1)
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var trace map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &trace))
+		assert.Equal(t, testTraceIDHex, trace["traceID"])
+		spans, _ := trace["spans"].([]any)
+		assert.Len(t, spans, 1)
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
 		req := createRequest("getTraceByID", []string{"nonexistent"})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.NotNil(t, err)
+		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Equal(t, ErrTraceNotFound, err)
 	})
@@ -169,45 +147,49 @@ func TestClearTraces(t *testing.T) {
 	req := createRequest("clearTraces", nil)
 	result, err := handler.Handle(context.Background(), req)
 
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "Traces cleared successfully", result)
 
-	// Verify traces are cleared
-	getReq := createRequest("getTraceSummaries", nil)
-	getResult, getErr := handler.Handle(context.Background(), getReq)
-	assert.Nil(t, getErr)
-	summaries, ok := getResult.([]traces.TraceSummary)
-	assert.True(t, ok, "Expected []traces.TraceSummary, got %T", getResult)
+	searchReq := createRequest("searchTraces", []any{0, 1<<63 - 1})
+	searchResult, searchErr := handler.Handle(context.Background(), searchReq)
+	assert.NoError(t, searchErr)
+	raw, ok := searchResult.(json.RawMessage)
+	assert.True(t, ok)
+	var summaries []map[string]any
+	assert.NoError(t, json.Unmarshal(raw, &summaries))
 	assert.Len(t, summaries, 0)
 }
 
-func TestGetLogs(t *testing.T) {
+func TestSearchLogs(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		handler, teardown := setupHandler()
 		defer teardown()
 
-		req := createRequest("getLogs", nil)
+		req := createRequest("searchLogs", []any{0, 1<<63 - 1})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.Nil(t, err)
-		logsData, ok := result.([]logs.LogData)
-		assert.True(t, ok, "Expected []logs.LogData, got %T", result)
-		assert.Len(t, logsData, 0)
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var entries []map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &entries))
+		assert.Len(t, entries, 0)
 	})
 
 	t.Run("With Data", func(t *testing.T) {
 		handler, teardown := setupHandlerWithData(t)
 		defer teardown()
 
-		req := createRequest("getLogs", nil)
+		req := createRequest("searchLogs", []any{0, 1<<63 - 1})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.Nil(t, err)
-		logsData, ok := result.([]logs.LogData)
-		assert.True(t, ok, "Expected []logs.LogData, got %T", result)
-		assert.Len(t, logsData, 1)
-		assert.Equal(t, "1234567890", logsData[0].TraceID)
-		assert.Equal(t, "test log message", logsData[0].Body.Data)
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var entries []map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &entries))
+		assert.Len(t, entries, 1)
+		assert.Equal(t, "test log message", entries[0]["body"])
 	})
 }
 
@@ -217,10 +199,10 @@ func TestGetTraceAttributes(t *testing.T) {
 		defer teardown()
 
 		now := time.Now().UnixNano()
-		req := createRequest("getTraceAttributes", []string{strconv.FormatInt(now-24*time.Hour.Nanoseconds(), 10), strconv.FormatInt(now+24*time.Hour.Nanoseconds(), 10)})
+		req := createRequest("getTraceAttributes", []any{now - 24*time.Hour.Nanoseconds(), now + 24*time.Hour.Nanoseconds()})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		raw, ok := result.(json.RawMessage)
 		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
 		assert.Equal(t, []byte("[]"), []byte(raw), "empty range should return []")
@@ -231,35 +213,39 @@ func TestGetTraceAttributes(t *testing.T) {
 		defer teardown()
 
 		now := time.Now().UnixNano()
-		req := createRequest("getTraceAttributes", []string{strconv.FormatInt(now-24*time.Hour.Nanoseconds(), 10), strconv.FormatInt(now+24*time.Hour.Nanoseconds(), 10)})
+		req := createRequest("getTraceAttributes", []any{now - 24*time.Hour.Nanoseconds(), now + 24*time.Hour.Nanoseconds()})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		raw, ok := result.(json.RawMessage)
 		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
 		assert.NotEmpty(t, raw, "Should have discovered attributes")
 
-		// Check that we have the expected service.name resource attribute
-		foundServiceName := false
-		for _, attr := range attributes {
-			if attr.Name == "service.name" && attr.AttributeScope == "resource" {
-				foundServiceName = true
-				assert.Equal(t, "string", attr.Type)
+		var attrs []struct {
+			Name           string `json:"name"`
+			AttributeScope string `json:"attributeScope"`
+			Type           string `json:"type"`
+		}
+		assert.NoError(t, json.Unmarshal(raw, &attrs))
+		found := false
+		for _, a := range attrs {
+			if a.Name == "service.name" && a.AttributeScope == "resource" {
+				found = true
+				assert.Equal(t, "string", a.Type)
 				break
 			}
 		}
-		assert.True(t, foundServiceName, "Should have found service.name resource attribute")
+		assert.True(t, found, "Should have found service.name resource attribute")
 	})
 
 	t.Run("Invalid Parameters", func(t *testing.T) {
 		handler, teardown := setupHandler()
 		defer teardown()
 
-		// Test with wrong number of parameters
-		req := createRequest("getTraceAttributes", []string{"123"}) // Only 1 parameter instead of 2
+		req := createRequest("getTraceAttributes", []string{"123"})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.NotNil(t, err)
+		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 	})
@@ -268,11 +254,10 @@ func TestGetTraceAttributes(t *testing.T) {
 		handler, teardown := setupHandler()
 		defer teardown()
 
-		// Test with string parameters instead of numbers
 		req := createRequest("getTraceAttributes", []string{"pumpkin", "pie"})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.NotNil(t, err)
+		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 	})
@@ -285,53 +270,31 @@ func TestMethodNotFound(t *testing.T) {
 	req := createRequest("nonexistentMethod", nil)
 	result, err := handler.Handle(context.Background(), req)
 
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Equal(t, jsonrpc2.ErrMethodNotFound, err)
 }
 
-func TestSampleDataWorkflow(t *testing.T) {
+// TestSearchLogsInvalidParams ensures searchLogs with wrong param count returns ErrInvalidParams.
+func TestSearchLogsInvalidParams(t *testing.T) {
 	handler, teardown := setupHandler()
 	defer teardown()
 
-	// Step 1: Check that no sample data exists initially
-	req := createRequest("checkSampleDataExists", nil)
+	req := createRequest("searchLogs", []any{0}) // only one param
 	result, err := handler.Handle(context.Background(), req)
-	assert.Nil(t, err)
-	resultMap, ok := result.(map[string]any)
-	assert.True(t, ok, "Expected map[string]any, got %T", result)
-	assert.False(t, resultMap["exists"].(bool), "Sample data should not exist initially")
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+}
 
-	// Step 2: Load sample data
-	req = createRequest("loadSampleData", nil)
-	_, err = handler.Handle(context.Background(), req)
-	assert.Nil(t, err, "loadSampleData should not return error")
+// TestSearchMetricsInvalidParams ensures searchMetrics with wrong param count returns ErrInvalidParams.
+func TestSearchMetricsInvalidParams(t *testing.T) {
+	handler, teardown := setupHandler()
+	defer teardown()
 
-	// Step 3: Check that sample data now exists
-	req = createRequest("checkSampleDataExists", nil)
-	result, err = handler.Handle(context.Background(), req)
-	assert.Nil(t, err)
-	resultMap, ok = result.(map[string]any)
-	assert.True(t, ok, "Expected map[string]any, got %T", result)
-	assert.True(t, resultMap["exists"].(bool), "Sample data should exist after loading")
-
-	// Step 4: Clear sample data
-	req = createRequest("clearSampleData", nil)
-	result, err = handler.Handle(context.Background(), req)
-	assert.Nil(t, err)
-	assert.Equal(t, "Sample data cleared successfully", result)
-
-	// Step 5: Check that sample data no longer exists
-	req = createRequest("checkSampleDataExists", nil)
-	result, err = handler.Handle(context.Background(), req)
-	assert.Nil(t, err)
-	resultMap, ok = result.(map[string]any)
-	assert.True(t, ok, "Expected map[string]any, got %T", result)
-	assert.False(t, resultMap["exists"].(bool), "Sample data should not exist after clearing")
-
-	// Step 6: Try to clear sample data again (should be idempotent)
-	req = createRequest("clearSampleData", nil)
-	result, err = handler.Handle(context.Background(), req)
-	assert.Nil(t, err)
-	assert.Equal(t, "Sample data cleared successfully", result)
+	req := createRequest("searchMetrics", []any{0}) // only one param
+	result, err := handler.Handle(context.Background(), req)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 }

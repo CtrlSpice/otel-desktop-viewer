@@ -1,7 +1,5 @@
 package store
 
-import "strings"
-
 // Type creation queries
 var TypeCreationQueries = []string{
 	`CREATE TYPE attr_type AS ENUM('string', 'int64', 'float64', 'bool', 'string[]', 'int64[]', 'float64[]', 'boolean[]')`,
@@ -263,29 +261,4 @@ var IndexCreationQueries = []string{
 	`CREATE INDEX IF NOT EXISTS idx_attributes_metric_hierarchy ON attributes(MetricID, DataPointID, ExemplarID)`,
 	// Key/value search (covering Type for filtering)
 	`CREATE INDEX IF NOT EXISTS idx_attributes_key_value ON attributes(Key, Value, Type)`,
-}
-
-// Sample data detection and deletion queries
-const (
-	CheckSampleDataExists = `
-		SELECT COUNT(*) FROM spans WHERE ResourceAttributes['telemetry.sample'] = true
-	`
-	ClearSampleData = `
-		DELETE FROM spans WHERE ResourceAttributes['telemetry.sample'] = true;
-		DELETE FROM logs WHERE ResourceAttributes['telemetry.sample'] = true;
-		DELETE FROM metrics WHERE ResourceAttributes['telemetry.sample'] = true;
-	`
-)
-
-// Helper function to build placeholders for IN clause
-func buildPlaceholders(count int) string {
-	if count == 0 {
-		return ""
-	}
-
-	placeholders := make([]string, count)
-	for i := range count {
-		placeholders[i] = "?"
-	}
-	return strings.Join(placeholders, ",")
 }

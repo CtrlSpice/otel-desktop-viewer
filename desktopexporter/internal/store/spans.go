@@ -583,12 +583,6 @@ func mapTraceGlobalExpressions() ([]string, error) {
 	}, nil
 }
 
-// mapCommonFields handles resource and scope field mapping (shared across signals)
-func mapCommonFields(fieldName string) (string, bool) {
-
-	return "", false
-}
-
 // BuildTraceSQL converts a QueryNode into a parameterized CTE, WHERE clause, and args slice
 // for trace queries.
 func BuildTraceSQL(queryNode *QueryNode, startTime, endTime int64) (cteSQL string, whereSQL string, args []any, err error) {

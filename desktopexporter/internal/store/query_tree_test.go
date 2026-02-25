@@ -463,7 +463,19 @@ func TestBuildSQL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cteSQL, whereSQL, args, err := BuildSQL(tt.queryNode, tt.signalType, tt.startTime, tt.endTime)
+			var cteSQL, whereSQL string
+			var args []any
+			var err error
+			switch tt.signalType {
+			case "traces":
+				cteSQL, whereSQL, args, err = BuildTraceSQL(tt.queryNode, tt.startTime, tt.endTime)
+			case "logs":
+				cteSQL, whereSQL, args, err = BuildLogSQL(tt.queryNode, tt.startTime, tt.endTime)
+			case "metrics":
+				cteSQL, whereSQL, args, err = BuildMetricSQL(tt.queryNode, tt.startTime, tt.endTime)
+			default:
+				t.Fatalf("unsupported signalType: %s", tt.signalType)
+			}
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
@@ -580,7 +592,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 				Value:         tt.value,
 			}
 
-			sql, err := buildOperatorCondition(tt.expression, query, &namedArgs)
+			sql, err := BuildOperatorCondition(tt.expression, query, &namedArgs)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
@@ -635,7 +647,7 @@ func TestParseArrayValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := parseArrayValue(tt.input)
+			result := ParseArrayValue(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -886,7 +898,19 @@ func TestBuildSQL_GlobalSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cte, sql, args, err := BuildSQL(tt.queryNode, tt.signalType, tt.startTime, tt.endTime)
+			var cte, sql string
+			var args []any
+			var err error
+			switch tt.signalType {
+			case "traces":
+				cte, sql, args, err = BuildTraceSQL(tt.queryNode, tt.startTime, tt.endTime)
+			case "logs":
+				cte, sql, args, err = BuildLogSQL(tt.queryNode, tt.startTime, tt.endTime)
+			case "metrics":
+				cte, sql, args, err = BuildMetricSQL(tt.queryNode, tt.startTime, tt.endTime)
+			default:
+				t.Fatalf("unsupported signalType: %s", tt.signalType)
+			}
 
 			if tt.wantErr {
 				require.Error(t, err)

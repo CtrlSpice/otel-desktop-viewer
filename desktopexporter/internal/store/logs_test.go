@@ -294,6 +294,62 @@ func TestLogSuite(t *testing.T) {
 	})
 }
 
+// TestDeleteLogByID verifies that a single log can be deleted by its ID.
+func TestDeleteLogByID(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	logs := createTestLogsPdata(baseTime)
+	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	assert.NoError(t, err)
+
+	entries := searchLogsAll(t, helper)
+	assert.Len(t, entries, 3)
+
+	targetID := entries[0].ID
+	assert.NotEmpty(t, targetID)
+
+	err = helper.Store.DeleteLogByID(helper.Ctx, targetID)
+	assert.NoError(t, err)
+
+	entries = searchLogsAll(t, helper)
+	assert.Len(t, entries, 2)
+	for _, e := range entries {
+		assert.NotEqual(t, targetID, e.ID)
+	}
+}
+
+// TestDeleteLogsByIDs verifies that multiple logs can be deleted by their IDs.
+func TestDeleteLogsByIDs(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	logs := createTestLogsPdata(baseTime)
+	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	assert.NoError(t, err)
+
+	entries := searchLogsAll(t, helper)
+	assert.Len(t, entries, 3)
+
+	idsToDelete := []any{entries[0].ID, entries[1].ID}
+	err = helper.Store.DeleteLogsByIDs(helper.Ctx, idsToDelete)
+	assert.NoError(t, err)
+
+	entries = searchLogsAll(t, helper)
+	assert.Len(t, entries, 1)
+}
+
+// TestDeleteLogsByIDs_Empty verifies that deleting with an empty list is a no-op.
+func TestDeleteLogsByIDs_Empty(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	err := helper.Store.DeleteLogsByIDs(helper.Ctx, []any{})
+	assert.NoError(t, err)
+}
+
 // TestSearchLogs tests SearchLogs with various query types.
 func TestSearchLogs(t *testing.T) {
 	helper, teardown := SetupTest(t)
