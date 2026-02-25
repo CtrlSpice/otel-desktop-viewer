@@ -1,11 +1,6 @@
 package store
 
 import (
-	"encoding/hex"
-	"fmt"
-	"strconv"
-	"strings"
-
 	"github.com/google/uuid"
 	"github.com/marcboeker/go-duckdb/v2"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -43,88 +38,23 @@ func IngestAttributes(appender *duckdb.Appender, items []AttributeBatchItem) err
 		ids := item.IDs
 		scope := item.Scope
 		for k, v := range item.Attrs.All() {
-			valueStr, attrType := convertAttributeValue(v)
+			valueStr, attrType := ValueToStringAndType(v)
 			if err := appender.AppendRow(
-				ids.SpanID,
-				ids.EventID,
-				ids.LinkID,
-				ids.LogID,
-				ids.MetricID,
-				ids.DataPointID,
-				ids.ExemplarID,
-				scope,
-				k,
-				valueStr,
-				attrType,
+				ids.SpanID,      // SpanID VARCHAR
+				ids.EventID,     // EventID UUID
+				ids.LinkID,      // LinkID UUID
+				ids.LogID,       // LogID UUID
+				ids.MetricID,    // MetricID UUID
+				ids.DataPointID, // DataPointID UUID
+				ids.ExemplarID,  // ExemplarID UUID
+				scope,          // Scope VARCHAR
+				k,              // Key VARCHAR
+				valueStr,       // Value VARCHAR
+				attrType,       // Type attr_type
 			); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
-}
-
-// convertAttributeValue converts a pcommon.Value to (value string, type string) for normalized attributes table.
-// Reuses type detection logic from attributes package, adapted for normalized schema.
-func convertAttributeValue(v pcommon.Value) (valueStr string, attrType string) {
-	switch v.Type() {
-	case pcommon.ValueTypeStr:
-		return v.Str(), "string"
-	case pcommon.ValueTypeInt:
-		return strconv.FormatInt(v.Int(), 10), "int64"
-	case pcommon.ValueTypeDouble:
-		return strconv.FormatFloat(v.Double(), 'f', -1, 64), "float64"
-	case pcommon.ValueTypeBool:
-		return strconv.FormatBool(v.Bool()), "bool"
-	case pcommon.ValueTypeBytes:
-		// Convert bytes to hex string
-		bytes := v.Bytes()
-		return hex.EncodeToString(bytes.AsRaw()), "string"
-	case pcommon.ValueTypeSlice:
-		return convertSliceValue(v)
-	default:
-		// Fallback to string representation
-		return fmt.Sprintf("%v", v.AsRaw()), "string"
-	}
-}
-
-// convertSliceValue converts a pcommon.Value slice to (value string, attr_type string).
-// Uses JSON array format for the value; attr_type is derived from the first element (or "string[]" for empty).
-func convertSliceValue(v pcommon.Value) (valueStr string, attrType string) {
-	slice := v.Slice()
-	if slice.Len() == 0 {
-		return "[]", "string[]"
-	}
-
-	firstItem := slice.At(0)
-	switch firstItem.Type() {
-	case pcommon.ValueTypeStr:
-		attrType = "string[]"
-	case pcommon.ValueTypeInt:
-		attrType = "int64[]"
-	case pcommon.ValueTypeDouble:
-		attrType = "float64[]"
-	case pcommon.ValueTypeBool:
-		attrType = "boolean[]"
-	default:
-		attrType = "string[]"
-	}
-
-	var parts []string
-	for i := 0; i < slice.Len(); i++ {
-		item := slice.At(i)
-		switch item.Type() {
-		case pcommon.ValueTypeStr:
-			parts = append(parts, `"`+strings.ReplaceAll(item.Str(), `"`, `\"`)+`"`)
-		case pcommon.ValueTypeInt:
-			parts = append(parts, strconv.FormatInt(item.Int(), 10))
-		case pcommon.ValueTypeDouble:
-			parts = append(parts, strconv.FormatFloat(item.Double(), 'f', -1, 64))
-		case pcommon.ValueTypeBool:
-			parts = append(parts, strconv.FormatBool(item.Bool()))
-		default:
-			parts = append(parts, fmt.Sprintf("%v", item.AsRaw()))
-		}
-	}
-	return "[" + strings.Join(parts, ",") + "]", attrType
 }

@@ -65,7 +65,8 @@ var TableCreationQueries = []string{
 		ScopeDroppedAttributesCount UINTEGER,
 		DroppedAttributesCount UINTEGER,
 		Flags UINTEGER,
-		EventName VARCHAR
+		EventName VARCHAR,
+		SearchText VARCHAR
 	)`,
 	`CREATE TABLE IF NOT EXISTS metrics (
 		ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -76,7 +77,8 @@ var TableCreationQueries = []string{
 		ScopeName VARCHAR,
 		ScopeVersion VARCHAR,
 		ScopeDroppedAttributesCount UINTEGER,
-		Received BIGINT
+		Received BIGINT,
+		SearchText VARCHAR
 	)`,
 	`CREATE TABLE IF NOT EXISTS datapoints (
 		ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -85,7 +87,8 @@ var TableCreationQueries = []string{
 		Timestamp BIGINT,
 		StartTime BIGINT,
 		Flags UINTEGER,
-		Value DOUBLE,
+		DoubleValue DOUBLE,
+		IntValue BIGINT,
 		ValueType VARCHAR,
 		IsMonotonic BOOLEAN,
 		AggregationTemporality VARCHAR,
@@ -160,12 +163,24 @@ var ConstraintCreationQueries = []string{
 	)`,
 	// Ensure MetricType is one of the valid values
 	`ALTER TABLE datapoints ADD CONSTRAINT chk_metric_type_valid CHECK (
-		MetricType IN ('Gauge', 'Sum', 'Histogram', 'ExponentialHistogram')
+		MetricType IN ('Gauge', 'Sum', 'Histogram', 'ExponentialHistogram', 'Empty')
 	)`,
-	// Enforce Gauge type: Value and ValueType must be NOT NULL, histogram fields must be NULL
+	// Enforce Empty type: all value/distribution columns must be NULL
+	`ALTER TABLE datapoints ADD CONSTRAINT chk_empty_fields CHECK (
+		(MetricType != 'Empty') OR (
+			DoubleValue IS NULL AND IntValue IS NULL AND ValueType IS NULL AND
+			IsMonotonic IS NULL AND AggregationTemporality IS NULL AND
+			Count IS NULL AND Sum IS NULL AND Min IS NULL AND Max IS NULL AND
+			BucketCounts IS NULL AND ExplicitBounds IS NULL AND
+			Scale IS NULL AND ZeroCount IS NULL AND
+			PositiveBucketOffset IS NULL AND PositiveBucketCounts IS NULL AND
+			NegativeBucketOffset IS NULL AND NegativeBucketCounts IS NULL
+		)
+	)`,
+	// Enforce Gauge type: one of DoubleValue/IntValue and ValueType must be NOT NULL, histogram fields must be NULL
 	`ALTER TABLE datapoints ADD CONSTRAINT chk_gauge_fields CHECK (
 		(MetricType != 'Gauge') OR (
-			Value IS NOT NULL AND ValueType IS NOT NULL AND
+			ValueType IS NOT NULL AND (DoubleValue IS NOT NULL OR IntValue IS NOT NULL) AND
 			Count IS NULL AND Sum IS NULL AND Min IS NULL AND Max IS NULL AND
 			BucketCounts IS NULL AND ExplicitBounds IS NULL AND
 			Scale IS NULL AND ZeroCount IS NULL AND
@@ -174,10 +189,10 @@ var ConstraintCreationQueries = []string{
 			AggregationTemporality IS NULL
 		)
 	)`,
-	// Enforce Sum type: Value, ValueType, IsMonotonic, AggregationTemporality must be NOT NULL, histogram fields must be NULL
+	// Enforce Sum type: one of DoubleValue/IntValue, ValueType, IsMonotonic, AggregationTemporality must be NOT NULL, histogram fields must be NULL
 	`ALTER TABLE datapoints ADD CONSTRAINT chk_sum_fields CHECK (
 		(MetricType != 'Sum') OR (
-			Value IS NOT NULL AND ValueType IS NOT NULL AND
+			ValueType IS NOT NULL AND (DoubleValue IS NOT NULL OR IntValue IS NOT NULL) AND
 			IsMonotonic IS NOT NULL AND AggregationTemporality IS NOT NULL AND
 			Count IS NULL AND Sum IS NULL AND Min IS NULL AND Max IS NULL AND
 			BucketCounts IS NULL AND ExplicitBounds IS NULL AND
@@ -193,7 +208,7 @@ var ConstraintCreationQueries = []string{
 			Count IS NOT NULL AND Sum IS NOT NULL AND
 			BucketCounts IS NOT NULL AND ExplicitBounds IS NOT NULL AND
 			AggregationTemporality IS NOT NULL AND
-			Value IS NULL AND ValueType IS NULL AND IsMonotonic IS NULL AND
+			DoubleValue IS NULL AND IntValue IS NULL AND ValueType IS NULL AND IsMonotonic IS NULL AND
 			Scale IS NULL AND ZeroCount IS NULL AND
 			PositiveBucketOffset IS NULL AND PositiveBucketCounts IS NULL AND
 			NegativeBucketOffset IS NULL AND NegativeBucketCounts IS NULL
@@ -208,7 +223,7 @@ var ConstraintCreationQueries = []string{
 			PositiveBucketOffset IS NOT NULL AND PositiveBucketCounts IS NOT NULL AND
 			NegativeBucketOffset IS NOT NULL AND NegativeBucketCounts IS NOT NULL AND
 			AggregationTemporality IS NOT NULL AND
-			Value IS NULL AND ValueType IS NULL AND IsMonotonic IS NULL AND
+			DoubleValue IS NULL AND IntValue IS NULL AND ValueType IS NULL AND IsMonotonic IS NULL AND
 			BucketCounts IS NULL AND ExplicitBounds IS NULL
 		)
 	)`,
@@ -226,8 +241,10 @@ var IndexCreationQueries = []string{
 	`CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(Timestamp)`,
 	`CREATE INDEX IF NOT EXISTS idx_logs_traceid ON logs(TraceID)`,
 	`CREATE INDEX IF NOT EXISTS idx_logs_severitynumber ON logs(SeverityNumber)`,
+	`CREATE INDEX IF NOT EXISTS idx_logs_searchtext ON logs(SearchText)`,
 	`CREATE INDEX IF NOT EXISTS idx_metrics_name ON metrics(Name)`,
 	`CREATE INDEX IF NOT EXISTS idx_metrics_received ON metrics(Received)`,
+	`CREATE INDEX IF NOT EXISTS idx_metrics_searchtext ON metrics(SearchText)`,
 	`CREATE INDEX IF NOT EXISTS idx_datapoints_type_metric_time ON datapoints(MetricType, MetricID, Timestamp DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_datapoints_metric_time ON datapoints(MetricID, Timestamp DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_datapoints_time ON datapoints(Timestamp DESC)`,
@@ -247,91 +264,6 @@ var IndexCreationQueries = []string{
 	// Key/value search (covering Type for filtering)
 	`CREATE INDEX IF NOT EXISTS idx_attributes_key_value ON attributes(Key, Value, Type)`,
 }
-
-// Log queries
-const (
-	// To order, use Timestamp if present,
-	// otherwise fall back to ObservedTimestamp per OpenTelemetry spec
-	SelectLogs = `
-		SELECT Timestamp, ObservedTimestamp, TraceID, SpanID, SeverityText, SeverityNumber,
-		       Body, ResourceAttributes, ResourceDroppedAttributesCount, ScopeName, ScopeVersion,
-		       ScopeAttributes, ScopeDroppedAttributesCount, Attributes, DroppedAttributesCount,
-		       Flags, EventName
-		FROM logs
-		ORDER BY CASE 
-			WHEN Timestamp IS NULL THEN ObservedTimestamp
-			WHEN Timestamp = 0 THEN ObservedTimestamp
-			ELSE Timestamp
-		END DESC
-	`
-
-	SelectLog = `
-		SELECT Timestamp, ObservedTimestamp, TraceID, SpanID, SeverityText, SeverityNumber,
-		       Body, ResourceAttributes, ResourceDroppedAttributesCount, ScopeName, ScopeVersion,
-		       ScopeAttributes, ScopeDroppedAttributesCount, Attributes, DroppedAttributesCount,
-		       Flags, EventName
-		FROM logs WHERE ID = ?
-	`
-
-	SelectLogsByTraceSpan = `
-		SELECT Timestamp, ObservedTimestamp, TraceID, SpanID, SeverityText, SeverityNumber,
-		       Body, ResourceAttributes, ResourceDroppedAttributesCount, ScopeName, ScopeVersion,
-		       ScopeAttributes, ScopeDroppedAttributesCount, Attributes, DroppedAttributesCount,
-		       Flags, EventName
-		FROM logs WHERE TraceID = ? AND SpanID = ?
-	`
-
-	SelectLogsByTrace = `
-		SELECT Timestamp, ObservedTimestamp, TraceID, SpanID, SeverityText, SeverityNumber,
-		       Body, ResourceAttributes, ResourceDroppedAttributesCount, ScopeName, ScopeVersion,
-		       ScopeAttributes, ScopeDroppedAttributesCount, Attributes, DroppedAttributesCount,
-		       Flags, EventName
-		FROM logs WHERE TraceID = ?
-		ORDER BY CASE 
-			WHEN Timestamp IS NULL THEN ObservedTimestamp
-			WHEN Timestamp = 0 THEN ObservedTimestamp
-			ELSE Timestamp
-		END DESC
-	`
-)
-
-// Metrics queries
-const (
-	SelectMetrics = `
-		SELECT Name, Description, Unit, DataPoints, ResourceAttributes, 
-		       ResourceDroppedAttributesCount, ScopeName, ScopeVersion, ScopeAttributes,
-		       ScopeDroppedAttributesCount, Received
-		FROM metrics
-		ORDER BY Received DESC
-	`
-
-	SelectMetric = `
-		SELECT Name, Description, Unit, DataPoints, ResourceAttributes, 
-		       ResourceDroppedAttributesCount, ScopeName, ScopeVersion, ScopeAttributes,
-		       ScopeDroppedAttributesCount, Received
-		FROM metrics WHERE ID = ?
-	`
-)
-
-// Maintenance queries
-const (
-	TruncateSpans   = `TRUNCATE TABLE spans`
-	TruncateLogs    = `TRUNCATE TABLE logs`
-	TruncateMetrics = `TRUNCATE TABLE metrics`
-)
-
-// Targeted deletion queries
-const (
-	DeleteSpansByTraceID = `DELETE FROM spans WHERE TraceID = ?`
-	DeleteLogByID        = `DELETE FROM logs WHERE ID = ?`
-	DeleteMetricByID     = `DELETE FROM metrics WHERE ID = ?`
-)
-
-// Batch deletion queries using IN clause
-const (
-	DeleteLogsByIDs    = `DELETE FROM logs WHERE ID IN (%s)`
-	DeleteMetricsByIDs = `DELETE FROM metrics WHERE ID IN (%s)`
-)
 
 // Sample data detection and deletion queries
 const (

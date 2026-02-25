@@ -4,12 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"log"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/marcboeker/go-duckdb/v2"
+)
+
+// Sentinel errors for use with errors.Is.
+var (
+	ErrLogIDNotFound          = errors.New("log ID not found")
+	ErrTraceIDNotFound        = errors.New("trace ID not found")
+	ErrSpanIDNotFound         = errors.New("span ID not found")
+	ErrMetricIDNotFound       = errors.New("metric ID not found")
+	ErrStoreConnectionClosed  = errors.New("store connection is closed")
 )
 
 type Store struct {
@@ -26,12 +36,12 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	}
 	connector, err := duckdb.NewConnector(dbPath, nil)
 	if err != nil {
-		log.Fatalf(ErrInitConnector, err)
+		log.Fatalf("failed to initialize connector: %v", err)
 	}
 
 	conn, err := connector.Connect(ctx)
 	if err != nil {
-		log.Fatalf(ErrInitConnection, err)
+		log.Fatalf("failed to connect to database: %v", err)
 	}
 
 	db := sql.OpenDB(connector)

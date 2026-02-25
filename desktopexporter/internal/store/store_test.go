@@ -2,13 +2,15 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
+	"time"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
 type storeTest struct {
@@ -65,6 +67,33 @@ func TestStore(t *testing.T) {
 	runStoreTests(t, tests)
 }
 
+// buildStoreTestTraces returns ptrace.Traces with two traces for store tests.
+func buildStoreTestTraces() ptrace.Traces {
+	tr := ptrace.NewTraces()
+	base := time.Now().UnixNano()
+	// Trace 1
+	rs1 := tr.ResourceSpans().AppendEmpty()
+	rs1.Resource().Attributes().PutStr("service.name", "svc1")
+	ss1 := rs1.ScopeSpans().AppendEmpty()
+	s1 := ss1.Spans().AppendEmpty()
+	s1.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	s1.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 1})
+	s1.SetName("span1")
+	s1.SetStartTimestamp(pcommon.Timestamp(base))
+	s1.SetEndTimestamp(pcommon.Timestamp(base + 1))
+	// Trace 2
+	rs2 := tr.ResourceSpans().AppendEmpty()
+	rs2.Resource().Attributes().PutStr("service.name", "svc2")
+	ss2 := rs2.ScopeSpans().AppendEmpty()
+	s2 := ss2.Spans().AppendEmpty()
+	s2.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
+	s2.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 2})
+	s2.SetName("span2")
+	s2.SetStartTimestamp(pcommon.Timestamp(base + 100))
+	s2.SetEndTimestamp(pcommon.Timestamp(base + 101))
+	return tr
+}
+
 func runStoreTests(t *testing.T, tests []storeTest) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,19 +112,20 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 				assert.Greater(t, fileInfo.Size(), int64(0), "database file should not be empty")
 			}
 
-			// Create sample telemetry
+			// Create sample telemetry: two traces via pdata, logs/metrics from telemetry sample
 			sample := telemetry.NewSampleTelemetry()
-
-			// Verify tables exist by inserting sample data
-			err := s.AddSpans(ctx, sample.Spans)
+			traces := buildStoreTestTraces()
+			err := s.IngestSpans(ctx, traces)
 			assert.NoError(t, err, "spans table should exist and accept sample data")
 
 			err = s.AddLogs(ctx, sample.Logs)
 			assert.NoError(t, err, "logs table should exist and accept sample data")
 
-			// Verify data was inserted correctly
-			summaries, err := s.GetTraceSummaries(ctx)
+			// Verify data was inserted correctly (SearchTraces replaces GetTraceSummaries)
+			summariesRaw, err := s.SearchTraces(ctx, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries")
+			var summaries []traceSummaryJSON
+			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 			assert.Len(t, summaries, 2, "should have two traces from sample data")
 
 			logs, err := s.GetLogs(ctx)
@@ -113,8 +143,9 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
 
 			// Verify data after reopening
-			summaries, err = s.GetTraceSummaries(ctx)
+			summariesRaw, err = s.SearchTraces(ctx, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
+			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 
 			logs, err = s.GetLogs(ctx)
 			assert.NoError(t, err, "should be able to retrieve logs after reopening")
@@ -151,7 +182,7 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	assert.NoError(t, err, "first close should succeed")
 
 	// Try to use the store after closing
-	err = s.AddSpans(ctx, []traces.SpanData{})
+	err = s.IngestSpans(ctx, ptrace.NewTraces())
 	assert.Error(t, err, "should get error when using closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
@@ -160,7 +191,7 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	assert.NoError(t, err, "closing an already closed store should be a no-op")
 
 	// Try some other operations on closed store
-	_, err = s.GetTraceSummaries(ctx)
+	_, err = s.SearchTraces(ctx, 0, 1<<63-1, nil)
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
@@ -182,10 +213,14 @@ func TestSampleDataWorkflow(t *testing.T) {
 	assert.NoError(t, err, "SampleDataExists should not return error")
 	assert.False(t, exists, "Sample data should not exist initially")
 
-	// Step 2: Load sample data
+	// Step 2: Load sample data (spans via pdata; logs/metrics from telemetry sample)
 	sample := telemetry.NewSampleTelemetry()
-	err = s.AddSpans(ctx, sample.Spans)
-	assert.NoError(t, err, "AddSpans should not return error")
+	traces := buildStoreTestTraces()
+	// Add telemetry.sample to resource so SampleDataExists can find it
+	rs := traces.ResourceSpans().At(0)
+	rs.Resource().Attributes().PutBool("telemetry.sample", true)
+	err = s.IngestSpans(ctx, traces)
+	assert.NoError(t, err, "IngestSpans should not return error")
 
 	err = s.AddLogs(ctx, sample.Logs)
 	assert.NoError(t, err, "AddLogs should not return error")
@@ -208,9 +243,11 @@ func TestSampleDataWorkflow(t *testing.T) {
 	assert.False(t, exists, "Sample data should not exist after clearing")
 
 	// Step 6: Verify all tables are empty
-	spans, err := s.GetTraceSummaries(ctx)
-	assert.NoError(t, err, "GetTraceSummaries should not return error")
-	assert.Empty(t, spans, "Spans table should be empty after clearing sample data")
+	summariesRaw, err := s.SearchTraces(ctx, 0, 1<<63-1, nil)
+	assert.NoError(t, err, "SearchTraces should not return error")
+	var summaries []traceSummaryJSON
+	assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
+	assert.Empty(t, summaries, "Spans table should be empty after clearing sample data")
 
 	logs, err := s.GetLogs(ctx)
 	assert.NoError(t, err, "GetLogs should not return error")

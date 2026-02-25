@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -322,4 +323,52 @@ func ConvertValueForArrayType(value, arrayType string) any {
 	default:
 		return value
 	}
+}
+
+// BuildSearchSQL builds the search_params CTE, WHERE clause, and args for any signal.
+// timeCondition must reference time_start and time_end (e.g. "StartTime >= time_start AND StartTime <= time_end"
+// or "l.log_time >= time_start AND l.log_time <= time_end"). It is appended after any query-tree conditions.
+func BuildSearchSQL(queryNode *QueryNode, startTime, endTime int64, mapper FieldMapper, timeCondition string) (cteSQL, whereSQL string, args []any, err error) {
+	namedArgs := make(map[string]any)
+	namedArgs["time_start"] = startTime
+	namedArgs["time_end"] = endTime
+
+	var conditions []string
+	if queryNode != nil {
+		if err := BuildConditions(queryNode, &conditions, &namedArgs, mapper); err != nil {
+			return "", "", nil, err
+		}
+	}
+
+	if len(conditions) > 0 {
+		whereSQL = "(" + strings.Join(conditions, " ") + ") AND " + timeCondition
+	} else {
+		whereSQL = timeCondition
+	}
+
+	args = make([]any, len(namedArgs))
+	paramNames := make([]string, len(namedArgs))
+	args[0] = namedArgs["time_start"]
+	paramNames[0] = "time_start"
+	args[1] = namedArgs["time_end"]
+	paramNames[1] = "time_end"
+	userParamIndex := 2
+	var userParamNames []string
+	for name := range namedArgs {
+		if name != "time_start" && name != "time_end" {
+			userParamNames = append(userParamNames, name)
+		}
+	}
+	sort.Strings(userParamNames)
+	for _, name := range userParamNames {
+		args[userParamIndex] = namedArgs[name]
+		paramNames[userParamIndex] = name
+		userParamIndex++
+	}
+	var cteParams []string
+	for _, name := range paramNames {
+		cteParams = append(cteParams, fmt.Sprintf("? as %s", name))
+	}
+	cteSQL = fmt.Sprintf("WITH search_params AS (SELECT %s)", strings.Join(cteParams, ", "))
+	return cteSQL, whereSQL, args, nil
 }

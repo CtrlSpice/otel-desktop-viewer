@@ -34,7 +34,7 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	case "getLogsByTraceID":
 		return h.getLogsByTraceID(ctx, req)
 	case "getMetrics":
-		return h.getMetrics(ctx)
+		return h.searchMetrics(ctx, req)
 	case "loadSampleData":
 		return h.loadSampleData(ctx)
 	case "clearTraces":
@@ -191,10 +191,31 @@ func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 	return "Logs cleared successfully", nil
 }
 
-func (h *JSONRPCHandler) getMetrics(ctx context.Context) (any, error) {
-	metrics, err := h.store.GetMetrics(ctx)
+func (h *JSONRPCHandler) searchMetrics(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if len(params) < 2 || len(params) > 3 {
+		log.Printf("Invalid parameter count: %d (expected 2-3)", len(params))
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	startTime, err := parseTimestampParam(params[0], "startTime")
 	if err != nil {
-		log.Printf("Error getting metrics: %v", err)
+		return nil, err
+	}
+	endTime, err := parseTimestampParam(params[1], "endTime")
+	if err != nil {
+		return nil, err
+	}
+	var query any
+	if len(params) == 3 {
+		query = params[2]
+	}
+	metrics, err := h.store.SearchMetrics(ctx, startTime, endTime, query)
+	if err != nil {
+		log.Printf("Error searching metrics: %v", err)
 		return nil, jsonrpc2.ErrInternal
 	}
 	return metrics, nil
@@ -375,16 +396,19 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 	return attributes, nil
 }
 
-// Helper function to parse timestamp string parameters
+// Helper function to parse timestamp parameters (string or numeric from JSON).
 func parseTimestampParam(param any, paramName string) (int64, error) {
-	if timeStr, ok := param.(string); ok {
-		if parsed, err := strconv.ParseInt(timeStr, 10, 64); err != nil {
+	switch v := param.(type) {
+	case string:
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
 			log.Printf("Invalid %s string: %v", paramName, err)
 			return 0, jsonrpc2.ErrInvalidParams
-		} else {
-			return parsed, nil
 		}
-	} else {
+		return parsed, nil
+	case float64:
+		return int64(v), nil
+	default:
 		log.Printf("Invalid %s type: %T, value: %v", paramName, param, param)
 		return 0, jsonrpc2.ErrInvalidParams
 	}

@@ -2,47 +2,33 @@ package store
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
-	"encoding/hex"
-
 	"github.com/google/uuid"
-	"github.com/marcboeker/go-duckdb/v2"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
 // flushIntervalSpans is how many spans to buffer before flushing appenders. Normalized schema keeps row size predictable.
-const flushIntervalSpans = 100
+const flushIntervalSpans = 50
 
 // IngestSpans ingests trace spans from pdata into the spans, events, links, and attributes tables
 func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf(ErrAddSpans, err)
+		return fmt.Errorf("failed to add spans: %w", err)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	appenders := struct {
-		attributes *duckdb.Appender
-		events     *duckdb.Appender
-		links      *duckdb.Appender
-		spans      *duckdb.Appender
-	}{}
-
 	tables := []string{"attributes", "events", "links", "spans"}
-	dests := []**duckdb.Appender{&appenders.attributes, &appenders.events, &appenders.links, &appenders.spans}
-	for i, table := range tables {
-		a, err := duckdb.NewAppender(s.conn, "", "", table)
-		if err != nil {
-			return fmt.Errorf(ErrCreateAppender, err)
-		}
-		*dests[i] = a
-		defer a.Close()
+	appenders, err := NewAppenders(s.conn, tables)
+	if err != nil {
+		return err
 	}
+	defer CloseAppenders(appenders, tables)
 
 	spanCount := 0
 	for _, resourceSpan := range traces.ResourceSpans().All() {
@@ -73,7 +59,7 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 					scope.Version(),
 				}, " ")
 
-				err := appenders.spans.AppendRow(
+				err := appenders["spans"].AppendRow(
 					traceIDStr,                        // TraceID VARCHAR
 					span.TraceState().AsRaw(),         // TraceState VARCHAR
 					spanIDStr,                         // SpanID VARCHAR
@@ -94,13 +80,13 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 					spanSearchText,                    // SearchText VARCHAR
 				)
 				if err != nil {
-					return fmt.Errorf(ErrAppendRow, err)
+					return fmt.Errorf("failed to append row: %w", err)
 				}
 
 				// Insert events into events table (generate UUID in Go so we can set event attributes)
 				for _, event := range span.Events().All() {
 					eventID := uuid.New()
-					err = appenders.events.AppendRow(
+					err = appenders["events"].AppendRow(
 						eventID.String(),               // ID UUID
 						spanIDStr,                      // SpanID VARCHAR
 						event.Name(),                   // Name VARCHAR
@@ -109,9 +95,9 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 						event.Name(),                   // SearchText VARCHAR
 					)
 					if err != nil {
-						return fmt.Errorf(ErrAppendRow, err)
+						return fmt.Errorf("failed to append row: %w", err)
 					}
-					if err := IngestAttributes(appenders.attributes,
+					if err := IngestAttributes(appenders["attributes"],
 						[]AttributeBatchItem{{Attrs: event.Attributes(), IDs: AttributeOwnerIDs{SpanID: spanIDStr, EventID: &eventID}, Scope: "event"}}); err != nil {
 						return err
 					}
@@ -131,7 +117,7 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 						link.TraceState().AsRaw(),
 					}, " ")
 
-					err = appenders.links.AppendRow(
+					err = appenders["links"].AppendRow(
 						linkID.String(),               // ID UUID
 						spanIDStr,                     // SpanID VARCHAR
 						linkTraceIDStr,                // TraceID VARCHAR
@@ -141,16 +127,16 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 						linkSearchText,                // SearchText VARCHAR
 					)
 					if err != nil {
-						return fmt.Errorf(ErrAppendRow, err)
+						return fmt.Errorf("failed to append row: %w", err)
 					}
-					if err := IngestAttributes(appenders.attributes, []AttributeBatchItem{{Attrs: link.Attributes(), IDs: AttributeOwnerIDs{SpanID: spanIDStr, LinkID: &linkID}, Scope: "link"}}); err != nil {
+					if err := IngestAttributes(appenders["attributes"], []AttributeBatchItem{{Attrs: link.Attributes(), IDs: AttributeOwnerIDs{SpanID: spanIDStr, LinkID: &linkID}, Scope: "link"}}); err != nil {
 						return err
 					}
 				}
 
 				// Insert attributes: span + resource + scope (same SpanID, distinct Scope)
 				spanIDs := AttributeOwnerIDs{SpanID: spanIDStr}
-				if err := IngestAttributes(appenders.attributes, []AttributeBatchItem{
+				if err := IngestAttributes(appenders["attributes"], []AttributeBatchItem{
 					{Attrs: span.Attributes(), IDs: spanIDs, Scope: "span"},
 					{Attrs: resource.Attributes(), IDs: spanIDs, Scope: "resource"},
 					{Attrs: scope.Attributes(), IDs: spanIDs, Scope: "scope"},
@@ -161,17 +147,8 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 				spanCount++
 				// Flush periodically so appender buffers don't grow unbounded. Normalized schema keeps row size predictable.
 				if spanCount%flushIntervalSpans == 0 {
-					if err := appenders.spans.Flush(); err != nil {
-						return fmt.Errorf(ErrFlushAppender, err)
-					}
-					if err := appenders.events.Flush(); err != nil {
-						return fmt.Errorf(ErrFlushAppender, err)
-					}
-					if err := appenders.links.Flush(); err != nil {
-						return fmt.Errorf(ErrFlushAppender, err)
-					}
-					if err := appenders.attributes.Flush(); err != nil {
-						return fmt.Errorf(ErrFlushAppender, err)
+					if err := FlushAppenders(appenders, tables); err != nil {
+						return fmt.Errorf("failed to flush appender: %w", err)
 					}
 				}
 			}
@@ -183,7 +160,7 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 
 func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64, query any) (json.RawMessage, error) {
 	if err := s.checkConnection(); err != nil {
-		return nil, fmt.Errorf(ErrSearchTraces, err)
+		return nil, fmt.Errorf("failed to search traces: %w", err)
 	}
 
 	// 1. Parse query tree
@@ -246,7 +223,7 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 
 	var raw []byte
 	if err := s.db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf(ErrSearchTraces, err)
+		return nil, fmt.Errorf("failed to search traces: %w", err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -410,7 +387,7 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, 
 		return nil, fmt.Errorf("failed to get trace: %w", err)
 	}
 	if raw == nil {
-		return nil, fmt.Errorf(ErrGetTrace, traceID, ErrTraceIDNotFound)
+		return nil, fmt.Errorf("failed to get trace %s: %w", traceID, ErrTraceIDNotFound)
 	}
 	return json.RawMessage(raw), nil
 }
@@ -418,11 +395,12 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, 
 // ClearTraces truncates the spans table.
 func (s *Store) ClearTraces(ctx context.Context) error {
 	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf(ErrClearTraces, err)
+		return fmt.Errorf("failed to clear traces: %w", err)
 	}
 
-	if _, err := s.db.ExecContext(ctx, TruncateSpans); err != nil {
-		return fmt.Errorf(ErrClearTraces, err)
+	query := `TRUNCATE TABLE spans`
+	if _, err := s.db.ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("failed to clear traces: %w", err)
 	}
 	return nil
 }
@@ -430,12 +408,13 @@ func (s *Store) ClearTraces(ctx context.Context) error {
 // DeleteSpansByTraceID deletes all spans for a specific trace.
 func (s *Store) DeleteSpansByTraceID(ctx context.Context, traceID string) error {
 	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf(ErrDeleteSpansByTraceID, err)
+		return fmt.Errorf("failed to delete spans by trace ID: %w", err)
 	}
 
-	_, err := s.db.ExecContext(ctx, DeleteSpansByTraceID, traceID)
+	query := `DELETE FROM spans WHERE TraceID = ?`
+	_, err := s.db.ExecContext(ctx, query, traceID)
 	if err != nil {
-		return fmt.Errorf(ErrDeleteSpansByTraceID, err)
+		return fmt.Errorf("failed to delete spans by trace ID: %w", err)
 	}
 
 	return nil
@@ -445,7 +424,7 @@ func (s *Store) DeleteSpansByTraceID(ctx context.Context, traceID string) error 
 // Returns a JSON array of objects { "name", "attributeScope", "type" } built by DuckDB.
 func (s *Store) GetTraceAttributes(ctx context.Context, startTime, endTime int64) (json.RawMessage, error) {
 	if err := s.checkConnection(); err != nil {
-		return nil, fmt.Errorf(ErrGetTraceAttributes, err)
+		return nil, fmt.Errorf("failed to get trace attributes: %w", err)
 	}
 
 	query := `
@@ -460,7 +439,7 @@ func (s *Store) GetTraceAttributes(ctx context.Context, startTime, endTime int64
 	`
 	var raw []byte
 	if err := s.db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
-		return nil, fmt.Errorf(ErrGetTraceAttributes, err)
+		return nil, fmt.Errorf("failed to get trace attributes: %w", err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -471,12 +450,12 @@ func (s *Store) GetTraceAttributes(ctx context.Context, startTime, endTime int64
 // DeleteSpanByID deletes a specific span by its ID.
 func (s *Store) DeleteSpanByID(ctx context.Context, spanID string) error {
 	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf(ErrDeleteSpanByID, err)
+		return fmt.Errorf("failed to delete span by ID: %w", err)
 	}
 
 	_, err := s.db.ExecContext(ctx, `DELETE FROM spans WHERE SpanID = ?`, spanID)
 	if err != nil {
-		return fmt.Errorf(ErrDeleteSpanByID, err)
+		return fmt.Errorf("failed to delete span by ID: %w", err)
 	}
 
 	return nil
@@ -485,7 +464,7 @@ func (s *Store) DeleteSpanByID(ctx context.Context, spanID string) error {
 // DeleteSpansByIDs deletes multiple spans by their IDs.
 func (s *Store) DeleteSpansByIDs(ctx context.Context, spanIDs []any) error {
 	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf(ErrDeleteSpanByID, err)
+		return fmt.Errorf("failed to delete span by ID: %w", err)
 	}
 
 	if len(spanIDs) == 0 {
@@ -497,7 +476,7 @@ func (s *Store) DeleteSpansByIDs(ctx context.Context, spanIDs []any) error {
 
 	_, err := s.db.ExecContext(ctx, query, spanIDs...)
 	if err != nil {
-		return fmt.Errorf(ErrDeleteSpanByID, err)
+		return fmt.Errorf("failed to delete span by ID: %w", err)
 	}
 
 	return nil
@@ -506,7 +485,7 @@ func (s *Store) DeleteSpansByIDs(ctx context.Context, spanIDs []any) error {
 // DeleteSpansByTraceIDs deletes all spans for multiple traces.
 func (s *Store) DeleteSpansByTraceIDs(ctx context.Context, traceIDs []any) error {
 	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf(ErrDeleteSpansByTraceID, err)
+		return fmt.Errorf("failed to delete spans by trace ID: %w", err)
 	}
 
 	if len(traceIDs) == 0 {
@@ -518,7 +497,7 @@ func (s *Store) DeleteSpansByTraceIDs(ctx context.Context, traceIDs []any) error
 
 	_, err := s.db.ExecContext(ctx, query, traceIDs...)
 	if err != nil {
-		return fmt.Errorf(ErrDeleteSpansByTraceID, err)
+		return fmt.Errorf("failed to delete spans by trace ID: %w", err)
 	}
 
 	return nil
@@ -611,61 +590,7 @@ func mapCommonFields(fieldName string) (string, bool) {
 }
 
 // BuildTraceSQL converts a QueryNode into a parameterized CTE, WHERE clause, and args slice
-// for trace queries. This is the trace-specific entry point that provides schema knowledge
-// to the generic query tree walker.
+// for trace queries.
 func BuildTraceSQL(queryNode *QueryNode, startTime, endTime int64) (cteSQL string, whereSQL string, args []any, err error) {
-	namedArgs := make(map[string]any)
-
-	// Always add time parameters
-	namedArgs["time_start"] = startTime
-	namedArgs["time_end"] = endTime
-
-	// Walk the query tree with the trace field mapper
-	var conditions []string
-	if queryNode != nil {
-		if err := BuildConditions(queryNode, &conditions, &namedArgs, traceFieldMapper()); err != nil {
-			return "", "", nil, err
-		}
-	}
-
-	// Build WHERE clause
-	if len(conditions) > 0 {
-		whereSQL = "(" + strings.Join(conditions, " ") + ") AND StartTime >= time_start AND StartTime <= time_end"
-	} else {
-		whereSQL = "StartTime >= time_start AND StartTime <= time_end"
-	}
-
-	// Convert namedArgs to ordered args slice
-	args = make([]any, len(namedArgs))
-	paramNames := make([]string, len(namedArgs))
-
-	// Time parameters first (deterministic order)
-	args[0] = namedArgs["time_start"]
-	paramNames[0] = "time_start"
-	args[1] = namedArgs["time_end"]
-	paramNames[1] = "time_end"
-
-	// User parameters sorted alphabetically
-	userParamIndex := 2
-	var userParamNames []string
-	for name := range namedArgs {
-		if name != "time_start" && name != "time_end" {
-			userParamNames = append(userParamNames, name)
-		}
-	}
-	sort.Strings(userParamNames)
-	for _, name := range userParamNames {
-		args[userParamIndex] = namedArgs[name]
-		paramNames[userParamIndex] = name
-		userParamIndex++
-	}
-
-	// Build CTE
-	var cteParams []string
-	for _, name := range paramNames {
-		cteParams = append(cteParams, fmt.Sprintf("? as %s", name))
-	}
-	cteSQL = fmt.Sprintf("WITH search_params AS (SELECT %s)", strings.Join(cteParams, ", "))
-
-	return cteSQL, whereSQL, args, nil
+	return BuildSearchSQL(queryNode, startTime, endTime, traceFieldMapper(), "StartTime >= time_start AND StartTime <= time_end")
 }

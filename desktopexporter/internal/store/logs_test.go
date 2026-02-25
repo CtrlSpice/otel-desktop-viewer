@@ -1,322 +1,443 @@
 package store
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"testing"
 	"time"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/attributes"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/resource"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/scope"
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-// createTestLogs creates a comprehensive set of test logs
-func createTestLogs(baseTime int64) []logs.LogData {
-	return []logs.LogData{
-		{
-			Timestamp:         baseTime,
-			ObservedTimestamp: baseTime + 100*time.Millisecond.Nanoseconds(),
-			TraceID:           "test-trace",
-			SpanID:            "root-span",
-			SeverityText:      "INFO",
-			SeverityNumber:    9,
-			Body: logs.Body{Data: map[string]any{
-				"message": "Root operation started",
-				"details": map[string]any{
-					"operation": "root",
-					"status":    "starting",
-					"metrics": map[string]any{
-						"cpu": 42.5,
-						"mem": 1024,
-					},
-				},
-			}},
-			Resource: &resource.ResourceData{
-				Attributes: attributes.Attributes{
-					"service.name":    "test-service",
-					"service.version": "1.0.0",
-				},
-				DroppedAttributesCount: 0,
-			},
-			Scope: &scope.ScopeData{
-				Name:                   "test-scope",
-				Version:                "v1.0.0",
-				Attributes:             attributes.Attributes{},
-				DroppedAttributesCount: 0,
-			},
-			Attributes: attributes.Attributes{
-				"log.string": "root-log",
-				"log.int":    int64(42),
-				"log.float":  float64(3.14),
-				"log.bool":   true,
-				"log.list":   []string{"one", "two", "three"},
-			},
-			DroppedAttributesCount: 0,
-			Flags:                  0,
-			EventName:              "root.event",
-		},
-		{
-			// This log has zero timestamp, should fall back to observed timestamp
-			Timestamp:         0, // Explicitly set to zero time
-			ObservedTimestamp: baseTime + 150*time.Millisecond.Nanoseconds(),
-			TraceID:           "test-trace",
-			SpanID:            "child-span",
-			SeverityText:      "ERROR",
-			SeverityNumber:    17,
-			Body:              logs.Body{Data: "Child operation failed"},
-			Resource: &resource.ResourceData{
-				Attributes: attributes.Attributes{
-					"service.name":    "test-service",
-					"service.version": "1.0.0",
-				},
-				DroppedAttributesCount: 1,
-			},
-			Scope: &scope.ScopeData{
-				Name:                   "test-scope",
-				Version:                "v1.0.0",
-				Attributes:             attributes.Attributes{},
-				DroppedAttributesCount: 0,
-			},
-			Attributes: attributes.Attributes{
-				"log.string": "child-log",
-				"log.int":    int64(24),
-				"log.float":  float64(2.71),
-				"log.bool":   false,
-				"log.list":   []int64{1, 2, 3, 4, 5},
-			},
-			DroppedAttributesCount: 1,
-			Flags:                  1,
-			EventName:              "child.event",
-		},
-		{
-			Timestamp:         baseTime + 100*time.Millisecond.Nanoseconds(),
-			ObservedTimestamp: baseTime + 200*time.Millisecond.Nanoseconds(),
-			TraceID:           "test-trace",
-			SpanID:            "orphaned-span",
-			SeverityText:      "WARN",
-			SeverityNumber:    13,
-			Body:              logs.Body{Data: "Orphaned operation"},
-			Resource: &resource.ResourceData{
-				Attributes:             attributes.Attributes{},
-				DroppedAttributesCount: 0,
-			},
-			Scope: &scope.ScopeData{
-				Name:                   "test-scope",
-				Version:                "v1.0.0",
-				Attributes:             attributes.Attributes{},
-				DroppedAttributesCount: 0,
-			},
-			Attributes: attributes.Attributes{
-				"log.string": "orphaned-log",
-			},
-			DroppedAttributesCount: 0,
-			Flags:                  0,
-			EventName:              "orphaned.event",
-		},
+// mustDecodeTraceID decodes a 32-char hex string to 16 bytes (trace ID).
+func mustDecodeTraceIDLogs(s string) [16]byte {
+	b, err := hex.DecodeString(s)
+	if err != nil || len(b) != 16 {
+		panic("invalid trace ID hex: " + s)
 	}
+	var out [16]byte
+	copy(out[:], b)
+	return out
 }
 
-// TestLogSuite runs a comprehensive suite of tests on a set of logs
+// mustDecodeSpanID decodes a 16-char hex string to 8 bytes (span ID).
+func mustDecodeSpanIDLogs(s string) [8]byte {
+	b, err := hex.DecodeString(s)
+	if err != nil || len(b) != 8 {
+		panic("invalid span ID hex: " + s)
+	}
+	var out [8]byte
+	copy(out[:], b)
+	return out
+}
+
+// createTestLogsPdata builds plog.Logs with three log records: span 0001 (INFO, body map), span 0002 (ERROR, body string, timestamp 0), span 0007 (WARN).
+func createTestLogsPdata(baseTime int64) plog.Logs {
+	logs := plog.NewLogs()
+	rl := logs.ResourceLogs().AppendEmpty()
+	rl.Resource().Attributes().PutStr("service.name", "test-service")
+	rl.Resource().Attributes().PutStr("service.version", "1.0.0")
+	sl := rl.ScopeLogs().AppendEmpty()
+	sl.Scope().SetName("test-scope")
+	sl.Scope().SetVersion("v1.0.0")
+
+	// Span 0001: INFO, body as map, full timestamp
+	rec0 := sl.LogRecords().AppendEmpty()
+	rec0.SetTimestamp(pcommon.Timestamp(baseTime))
+	rec0.SetObservedTimestamp(pcommon.Timestamp(baseTime + 100*int64(time.Millisecond)))
+	rec0.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
+	rec0.SetSpanID(mustDecodeSpanIDLogs("0000000000000001"))
+	rec0.SetSeverityText("INFO")
+	rec0.SetSeverityNumber(plog.SeverityNumberInfo)
+	rec0.Body().SetEmptyMap()
+	rec0.Body().Map().PutStr("message", "Operation started")
+	details := rec0.Body().Map().PutEmptyMap("details")
+	details.PutStr("operation", "op-a")
+	details.PutStr("status", "starting")
+	rec0.Attributes().PutStr("log.string", "log-a")
+	rec0.Attributes().PutInt("log.int", 42)
+	rec0.Attributes().PutDouble("log.float", 3.14)
+	rec0.Attributes().PutBool("log.bool", true)
+	arr := rec0.Attributes().PutEmptySlice("log.list")
+	arr.AppendEmpty().SetStr("one")
+	arr.AppendEmpty().SetStr("two")
+	arr.AppendEmpty().SetStr("three")
+	rec0.SetEventName("event.a")
+
+	// Span 0002: ERROR, body string, timestamp 0 (fallback to observed)
+	rec1 := sl.LogRecords().AppendEmpty()
+	rec1.SetTimestamp(0)
+	rec1.SetObservedTimestamp(pcommon.Timestamp(baseTime + 150*int64(time.Millisecond)))
+	rec1.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
+	rec1.SetSpanID(mustDecodeSpanIDLogs("0000000000000002"))
+	rec1.SetSeverityText("ERROR")
+	rec1.SetSeverityNumber(plog.SeverityNumberError)
+	rec1.Body().SetStr("Operation failed")
+	rec1.Attributes().PutStr("log.string", "log-b")
+	rec1.Attributes().PutInt("log.int", 24)
+	rec1.Attributes().PutDouble("log.float", 2.71)
+	rec1.Attributes().PutBool("log.bool", false)
+	arr1 := rec1.Attributes().PutEmptySlice("log.list")
+	arr1.AppendEmpty().SetInt(1)
+	arr1.AppendEmpty().SetInt(2)
+	arr1.AppendEmpty().SetInt(3)
+	arr1.AppendEmpty().SetInt(4)
+	arr1.AppendEmpty().SetInt(5)
+	rec1.SetDroppedAttributesCount(1)
+	rec1.SetFlags(plog.LogRecordFlags(1))
+	rec1.SetEventName("event.b")
+
+	// Span 0007: WARN
+	rec2 := sl.LogRecords().AppendEmpty()
+	rec2.SetTimestamp(pcommon.Timestamp(baseTime + 100*int64(time.Millisecond)))
+	rec2.SetObservedTimestamp(pcommon.Timestamp(baseTime + 200*int64(time.Millisecond)))
+	rec2.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
+	rec2.SetSpanID(mustDecodeSpanIDLogs("0000000000000007"))
+	rec2.SetSeverityText("WARN")
+	rec2.SetSeverityNumber(plog.SeverityNumberWarn)
+	rec2.Body().SetStr("Operation warning")
+	rec2.Attributes().PutStr("log.string", "log-c")
+	rec2.SetEventName("event.c")
+
+	return logs
+}
+
+// searchLogsAll returns SearchLogs with a wide time range and nil query to get all logs.
+func searchLogsAll(t *testing.T, helper *TestHelper) []logEntryJSON {
+	t.Helper()
+	const maxNano = 1<<63 - 1
+	raw, err := helper.Store.SearchLogs(helper.Ctx, 0, maxNano, nil)
+	assert.NoError(t, err)
+	var entries []logEntryJSON
+	assert.NoError(t, json.Unmarshal(raw, &entries))
+	return entries
+}
+
+type logEntryJSON struct {
+	ID                     string          `json:"id"`
+	Timestamp              int64           `json:"timestamp"`
+	ObservedTimestamp      int64           `json:"observedTimestamp"`
+	TraceID                string          `json:"traceID"`
+	SpanID                 string          `json:"spanID"`
+	SeverityText           string          `json:"severityText"`
+	SeverityNumber         int32           `json:"severityNumber"`
+	Body                   string          `json:"body"`
+	BodyType               string          `json:"bodyType"`
+	Resource               resourceLogJSON `json:"resource"`
+	Scope                  scopeLogJSON    `json:"scope"`
+	DroppedAttributesCount  uint32          `json:"droppedAttributesCount"`
+	Flags                  uint32          `json:"flags"`
+	EventName              string          `json:"eventName"`
+	Attributes             []attrKeyValue  `json:"attributes"`
+}
+
+type resourceLogJSON struct {
+	Attributes             []attrKeyValue `json:"attributes"`
+	DroppedAttributesCount uint32         `json:"droppedAttributesCount"`
+}
+
+type scopeLogJSON struct {
+	Name                   string        `json:"name"`
+	Version                string        `json:"version"`
+	Attributes             []attrKeyValue `json:"attributes"`
+	DroppedAttributesCount uint32        `json:"droppedAttributesCount"`
+}
+
+type attrKeyValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Type  string `json:"type"`
+}
+
+// attrMap returns a map key -> value for easier assertions.
+func attrMap(attrs []attrKeyValue) map[string]string {
+	m := make(map[string]string)
+	for _, a := range attrs {
+		m[a.Key] = a.Value
+	}
+	return m
+}
+
+// TestLogOrdering verifies that logs are returned newest-first by effective time (timestamp or observedTimestamp).
+func TestLogOrdering(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	logs := createTestLogsPdata(baseTime)
+	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	assert.NoError(t, err)
+
+	entries := searchLogsAll(t, helper)
+	assert.Len(t, entries, 3)
+
+	// Order: newest first by effective time — 0002 (t+150ms), 0007 (t+100ms), 0001 (t+0)
+	assert.Equal(t, "0000000000000002", entries[0].SpanID)
+	assert.Equal(t, "0000000000000007", entries[1].SpanID)
+	assert.Equal(t, "0000000000000001", entries[2].SpanID)
+}
+
+// TestEmptyLogs verifies handling of empty log lists and empty store.
+func TestEmptyLogs(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	err := helper.Store.IngestLogs(helper.Ctx, plog.NewLogs())
+	assert.NoError(t, err)
+
+	entries := searchLogsAll(t, helper)
+	assert.Empty(t, entries)
+}
+
+// TestClearLogs verifies that all logs can be cleared from the store.
+func TestClearLogs(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	logs := createTestLogsPdata(baseTime)
+	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	assert.NoError(t, err)
+
+	entries := searchLogsAll(t, helper)
+	assert.Len(t, entries, 3)
+
+	err = helper.Store.ClearLogs(helper.Ctx)
+	assert.NoError(t, err)
+
+	entries = searchLogsAll(t, helper)
+	assert.Empty(t, entries)
+}
+
+// TestLogSuite runs a comprehensive suite on the same three-log dataset.
 func TestLogSuite(t *testing.T) {
 	helper, teardown := SetupTest(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
-	logs := createTestLogs(baseTime)
-	err := helper.Store.AddLogs(helper.Ctx, logs)
-	assert.NoError(t, err, "failed to add test logs")
+	logs := createTestLogsPdata(baseTime)
+	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	assert.NoError(t, err, "failed to ingest test logs")
 
 	t.Run("LogOrdering", func(t *testing.T) {
-		allLogs, err := helper.Store.GetLogs(helper.Ctx)
-		assert.NoError(t, err)
-		assert.Len(t, allLogs, 3, "should have three logs")
-
-		// Verify logs are ordered by timestamp (newest first)
-		// Note: Child log with no timestamp uses observed timestamp (t+150ms) for ordering
-		assert.Equal(t, "child-span", allLogs[0].SpanID, "first log should be child (newest, t+150ms)")
-		assert.Equal(t, "orphaned-span", allLogs[1].SpanID, "second log should be orphaned (middle, t+100ms)")
-		assert.Equal(t, "root-span", allLogs[2].SpanID, "third log should be root (oldest, t+0ms)")
+		entries := searchLogsAll(t, helper)
+		assert.Len(t, entries, 3)
+		assert.Equal(t, "0000000000000002", entries[0].SpanID)
+		assert.Equal(t, "0000000000000007", entries[1].SpanID)
+		assert.Equal(t, "0000000000000001", entries[2].SpanID)
 	})
 
 	t.Run("LogSeverity", func(t *testing.T) {
-		logs, err := helper.Store.GetLogs(helper.Ctx)
-		assert.NoError(t, err)
-
-		// Verify child log severity (middle)
-		assert.Equal(t, "ERROR", logs[0].SeverityText, "child log severity text")
-		assert.Equal(t, int32(17), logs[0].SeverityNumber, "child log severity number")
-
-		// Verify orphaned log severity (newest)
-		assert.Equal(t, "WARN", logs[1].SeverityText, "orphaned log severity text")
-		assert.Equal(t, int32(13), logs[1].SeverityNumber, "orphaned log severity number")
-
-		// Verify root log severity (oldest)
-		assert.Equal(t, "INFO", logs[2].SeverityText, "root log severity text")
-		assert.Equal(t, int32(9), logs[2].SeverityNumber, "root log severity number")
+		entries := searchLogsAll(t, helper)
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
+		assert.Equal(t, int32(plog.SeverityNumberError), entries[0].SeverityNumber)
+		assert.Equal(t, "WARN", entries[1].SeverityText)
+		assert.Equal(t, "INFO", entries[2].SeverityText)
+		assert.Equal(t, int32(plog.SeverityNumberInfo), entries[2].SeverityNumber)
 	})
 
 	t.Run("LogBody", func(t *testing.T) {
-		logs, err := helper.Store.GetLogs(helper.Ctx)
-		assert.NoError(t, err)
-
-		// Verify child log body
-		assert.Equal(t, "Child operation failed", logs[0].Body.Data, "child log body")
-
-		// Verify orphaned log body
-		assert.Equal(t, "Orphaned operation", logs[1].Body.Data, "orphaned log body")
-
-		// Verify root log body (nested map)
-		rootBody := logs[2].Body.Data.(map[string]any)
-		assert.Equal(t, "Root operation started", rootBody["message"], "root log message")
-		details := rootBody["details"].(map[string]any)
-		assert.Equal(t, "root", details["operation"], "root log operation")
-		assert.Equal(t, "starting", details["status"], "root log status")
-		metrics := details["metrics"].(map[string]any)
-		assert.Equal(t, float64(42.5), metrics["cpu"], "root log cpu metric")
-		assert.Equal(t, float64(1024), metrics["mem"], "root log mem metric")
+		entries := searchLogsAll(t, helper)
+		assert.Equal(t, "Operation failed", entries[0].Body)
+		assert.Equal(t, "Operation warning", entries[1].Body)
+		assert.Contains(t, entries[2].Body, "Operation started")
 	})
 
 	t.Run("LogTimestamp", func(t *testing.T) {
-		logs, err := helper.Store.GetLogs(helper.Ctx)
-		assert.NoError(t, err)
-
-		// Verify child log timestamp (should remain zero)
-		assert.Zero(t, logs[0].Timestamp, "child log should have zero timestamp")
-		assert.Equal(t, baseTime+150*time.Millisecond.Nanoseconds(), logs[0].ObservedTimestamp, "child log should have correct observed timestamp")
-
-		// Verify orphaned log timestamp
-		assert.NotZero(t, logs[1].Timestamp, "orphaned log should have timestamp")
-		assert.NotZero(t, logs[1].ObservedTimestamp, "orphaned log should have observed timestamp")
-
-		// Verify root log timestamp
-		assert.NotZero(t, logs[2].Timestamp, "root log should have timestamp")
-		assert.NotZero(t, logs[2].ObservedTimestamp, "root log should have observed timestamp")
+		entries := searchLogsAll(t, helper)
+		assert.Equal(t, int64(0), entries[0].Timestamp)
+		assert.Equal(t, baseTime+150*int64(time.Millisecond), entries[0].ObservedTimestamp)
+		assert.NotZero(t, entries[1].Timestamp)
+		assert.NotZero(t, entries[2].Timestamp)
 	})
 
 	t.Run("LogResource", func(t *testing.T) {
-		logs, err := helper.Store.GetLogs(helper.Ctx)
-		assert.NoError(t, err)
-
-		// Verify child log resource (newest)
-		assert.Equal(t, "test-service", logs[0].Resource.Attributes["service.name"], "child log service name")
-		assert.Equal(t, "1.0.0", logs[0].Resource.Attributes["service.version"], "child log service version")
-		assert.Equal(t, uint32(1), logs[0].Resource.DroppedAttributesCount, "child log resource dropped count")
-
-		// Verify orphaned log resource (middle)
-		assert.Empty(t, logs[1].Resource.Attributes, "orphaned log should have empty resource attributes")
-		assert.Equal(t, uint32(0), logs[1].Resource.DroppedAttributesCount, "orphaned log resource dropped count")
-
-		// Verify root log resource (oldest)
-		assert.Equal(t, "test-service", logs[2].Resource.Attributes["service.name"], "root log service name")
-		assert.Equal(t, "1.0.0", logs[2].Resource.Attributes["service.version"], "root log service version")
-		assert.Equal(t, uint32(0), logs[2].Resource.DroppedAttributesCount, "root log resource dropped count")
+		entries := searchLogsAll(t, helper)
+		resMap := attrMap(entries[0].Resource.Attributes)
+		assert.Equal(t, "test-service", resMap["service.name"])
+		assert.Equal(t, "1.0.0", resMap["service.version"])
+		assert.Equal(t, uint32(0), entries[2].Resource.DroppedAttributesCount)
 	})
 
 	t.Run("LogScope", func(t *testing.T) {
-		logs, err := helper.Store.GetLogs(helper.Ctx)
-		assert.NoError(t, err)
-
-		// Verify scope is consistent across all logs
-		for i, log := range logs {
-			assert.Equal(t, "test-scope", log.Scope.Name, "log %d scope name", i)
-			assert.Equal(t, "v1.0.0", log.Scope.Version, "log %d scope version", i)
-			assert.Empty(t, log.Scope.Attributes, "log %d scope attributes", i)
-			assert.Equal(t, uint32(0), log.Scope.DroppedAttributesCount, "log %d scope dropped count", i)
+		entries := searchLogsAll(t, helper)
+		for i := range entries {
+			assert.Equal(t, "test-scope", entries[i].Scope.Name)
+			assert.Equal(t, "v1.0.0", entries[i].Scope.Version)
 		}
 	})
 
 	t.Run("LogAttributes", func(t *testing.T) {
-		logs, err := helper.Store.GetLogs(helper.Ctx)
-		assert.NoError(t, err)
+		entries := searchLogsAll(t, helper)
+		attrs0 := attrMap(entries[0].Attributes)
+		assert.Equal(t, "log-b", attrs0["log.string"])
+		assert.Equal(t, "24", attrs0["log.int"])
+		assert.Equal(t, "2.71", attrs0["log.float"])
+		assert.Equal(t, "false", attrs0["log.bool"])
 
-		// Verify child log attributes (newest)
-		assert.Equal(t, "child-log", logs[0].Attributes["log.string"], "child log string attribute")
-		assert.Equal(t, int64(24), logs[0].Attributes["log.int"], "child log int attribute")
-		assert.Equal(t, float64(2.71), logs[0].Attributes["log.float"], "child log float attribute")
-		assert.Equal(t, false, logs[0].Attributes["log.bool"], "child log bool attribute")
-		childList := logs[0].Attributes["log.list"].([]any)
-		assert.Equal(t, []any{int64(1), int64(2), int64(3), int64(4), int64(5)}, childList, "child log list attribute")
-
-		// Verify orphaned log attributes (middle)
-		assert.Equal(t, "orphaned-log", logs[1].Attributes["log.string"], "orphaned log string attribute")
-
-		// Verify root log attributes (oldest)
-		assert.Equal(t, "root-log", logs[2].Attributes["log.string"], "root log string attribute")
-		assert.Equal(t, int64(42), logs[2].Attributes["log.int"], "root log int attribute")
-		assert.Equal(t, float64(3.14), logs[2].Attributes["log.float"], "root log float attribute")
-		assert.Equal(t, true, logs[2].Attributes["log.bool"], "root log bool attribute")
-		rootList := logs[2].Attributes["log.list"].([]any)
-		assert.Equal(t, []any{"one", "two", "three"}, rootList, "root log list attribute")
+		attrs2 := attrMap(entries[2].Attributes)
+		assert.Equal(t, "log-a", attrs2["log.string"])
+		assert.Equal(t, "42", attrs2["log.int"])
+		assert.Equal(t, "3.14", attrs2["log.float"])
+		assert.Equal(t, "true", attrs2["log.bool"])
 	})
 
 	t.Run("LogMetadata", func(t *testing.T) {
-		logs, err := helper.Store.GetLogs(helper.Ctx)
-		assert.NoError(t, err)
-
-		// Verify child log metadata (newest, t+150ms)
-		assert.Equal(t, uint32(1), logs[0].DroppedAttributesCount, "child log dropped count")
-		assert.Equal(t, uint32(1), logs[0].Flags, "child log flags")
-		assert.Equal(t, "child.event", logs[0].EventName, "child log event name")
-
-		// Verify orphaned log metadata (middle, t+100ms)
-		assert.Equal(t, uint32(0), logs[1].DroppedAttributesCount, "orphaned log dropped count")
-		assert.Equal(t, uint32(0), logs[1].Flags, "orphaned log flags")
-		assert.Equal(t, "orphaned.event", logs[1].EventName, "orphaned log event name")
-
-		// Verify root log metadata (oldest, t+0ms)
-		assert.Equal(t, uint32(0), logs[2].DroppedAttributesCount, "root log dropped count")
-		assert.Equal(t, uint32(0), logs[2].Flags, "root log flags")
-		assert.Equal(t, "root.event", logs[2].EventName, "root log event name")
-	})
-
-	t.Run("LogsByTraceSpan", func(t *testing.T) {
-		// Test getting logs for root span
-		rootLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "test-trace", "root-span")
-		assert.NoError(t, err)
-		assert.Len(t, rootLogs, 1, "should have one root span log")
-		assert.Equal(t, "root-span", rootLogs[0].SpanID, "root span log ID")
-
-		// Test getting logs for child span
-		childLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "test-trace", "child-span")
-		assert.NoError(t, err)
-		assert.Len(t, childLogs, 1, "should have one child span log")
-		assert.Equal(t, "child-span", childLogs[0].SpanID, "child span log ID")
-
-		// Test getting logs for orphaned span
-		orphanedLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "test-trace", "orphaned-span")
-		assert.NoError(t, err)
-		assert.Len(t, orphanedLogs, 1, "should have one orphaned span log")
-		assert.Equal(t, "orphaned-span", orphanedLogs[0].SpanID, "orphaned span log ID")
-
-		// Test getting logs for non-existent trace/span
-		nonExistentLogs, err := helper.Store.GetLogsByTraceSpan(helper.Ctx, "non-existent-trace", "non-existent-span")
-		assert.NoError(t, err)
-		assert.Empty(t, nonExistentLogs, "should have no logs for non-existent trace/span")
+		entries := searchLogsAll(t, helper)
+		assert.Equal(t, uint32(1), entries[0].DroppedAttributesCount)
+		assert.Equal(t, uint32(1), entries[0].Flags)
+		assert.Equal(t, "event.b", entries[0].EventName)
+		assert.Equal(t, "event.c", entries[1].EventName)
+		assert.Equal(t, "event.a", entries[2].EventName)
 	})
 }
 
-// TestLogNotFound verifies error handling for non-existent log IDs
-func TestLogNotFound(t *testing.T) {
+// TestSearchLogs tests SearchLogs with various query types.
+func TestSearchLogs(t *testing.T) {
 	helper, teardown := SetupTest(t)
 	defer teardown()
 
-	_, err := helper.Store.GetLog(helper.Ctx, "non-existent-log")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), ErrLogIDNotFound.Error())
-}
-
-// TestEmptyLogs verifies handling of empty log lists and empty stores
-func TestEmptyLogs(t *testing.T) {
-	helper, teardown := SetupTest(t)
-	defer teardown()
-
-	// Test adding empty log list
-	err := helper.Store.AddLogs(helper.Ctx, []logs.LogData{})
+	baseTime := time.Now().UnixNano()
+	logs := createTestLogsPdata(baseTime)
+	err := helper.Store.IngestLogs(helper.Ctx, logs)
 	assert.NoError(t, err)
 
-	// Test getting logs from empty store
-	logs, err := helper.Store.GetLogs(helper.Ctx)
-	assert.NoError(t, err)
-	assert.Empty(t, logs)
+	startTime := baseTime - 24*int64(time.Hour)
+	endTime := baseTime + 24*int64(time.Hour)
+
+	parseEntries := func(raw json.RawMessage) []logEntryJSON {
+		var e []logEntryJSON
+		assert.NoError(t, json.Unmarshal(raw, &e))
+		return e
+	}
+
+	t.Run("GlobalSearch_Body", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q1",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "Operation failed",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 1)
+		assert.Equal(t, "0000000000000002", entries[0].SpanID)
+	})
+
+	t.Run("GlobalSearch_EventName", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q2",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "event.a",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.NotEmpty(t, entries)
+		assert.Equal(t, "event.a", entries[0].EventName)
+	})
+
+	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q3",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "nonexistent-log-text-xyz",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Empty(t, entries)
+	})
+
+	t.Run("Field_SeverityText", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q4",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{Name: "severityText", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "ERROR",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 1)
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
+	})
+
+	t.Run("Field_SpanID", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q5",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{Name: "spanID", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "0000000000000001",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 1)
+		assert.Equal(t, "0000000000000001", entries[0].SpanID)
+	})
+
+	t.Run("Attribute_LogString", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q6",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "log.string",
+					SearchScope:    "attribute",
+					AttributeScope: "log",
+					Type:           "string",
+				},
+				FieldOperator: "=",
+				Value:         "log-b",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 1)
+		assert.Equal(t, "log-b", attrMap(entries[0].Attributes)["log.string"])
+	})
+
+	t.Run("Attribute_Resource", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q7",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "service.name",
+					SearchScope:    "attribute",
+					AttributeScope: "resource",
+					Type:           "string",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "test-service",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.NotEmpty(t, entries)
+		assert.Equal(t, "test-service", attrMap(entries[0].Resource.Attributes)["service.name"])
+	})
 }
