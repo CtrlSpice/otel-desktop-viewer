@@ -49,8 +49,8 @@ func (s *Store) IngestMetrics(ctx context.Context, metrics pmetric.Metrics) erro
 					scope.Version(),
 				}, " ")
 
-			err = appenders["metrics"].AppendRow(
-				metricID,                         // ID UUID
+				err = appenders["metrics"].AppendRow(
+					metricID,                          // ID UUID
 					metric.Name(),                     // Name VARCHAR
 					metric.Description(),              // Description VARCHAR
 					metric.Unit(),                     // Unit VARCHAR
@@ -119,8 +119,8 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, metricID, datapointI
 			spanIDStr = hex.EncodeToString(sid[:])
 		}
 		if err := appenders["exemplars"].AppendRow(
-			exemplarID,   // ID UUID
-			datapointID,  // DataPointID UUID
+			exemplarID,            // ID UUID
+			datapointID,           // DataPointID UUID
 			int64(ex.Timestamp()), // Timestamp BIGINT
 			ex.DoubleValue(),      // Value DOUBLE
 			traceIDStr,            // TraceID VARCHAR
@@ -142,7 +142,7 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, metricID, datapointI
 func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.UUID, dps pmetric.NumberDataPointSlice) error {
 	for i := 0; i < dps.Len(); i++ {
 		gp := dps.At(i)
-		val, valType := numberDataPointValue(gp)
+		doubleVal, intVal, valType := numberDataPointValue(gp)
 		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
 			datapointID,                // ID UUID
@@ -151,7 +151,8 @@ func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID duckd
 			int64(gp.Timestamp()),      // Timestamp BIGINT
 			int64(gp.StartTimestamp()), // StartTime BIGINT
 			uint32(gp.Flags()),         // Flags UINTEGER
-			val,                        // DoubleValue DOUBLE / IntValue BIGINT
+			doubleVal,                  // DoubleValue DOUBLE
+			intVal,                     // IntValue BIGINT
 			valType,                    // ValueType VARCHAR
 			nil,                        // IsMonotonic BOOLEAN
 			nil,                        // AggregationTemporality VARCHAR
@@ -182,7 +183,7 @@ func ingestSumDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.
 	dps := sum.DataPoints()
 	for i := 0; i < dps.Len(); i++ {
 		dp := dps.At(i)
-		val, valType := numberDataPointValue(dp)
+		doubleVal, intVal, valType := numberDataPointValue(dp)
 		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
 			datapointID,                           // ID UUID
@@ -191,7 +192,8 @@ func ingestSumDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.
 			int64(dp.Timestamp()),                 // Timestamp BIGINT
 			int64(dp.StartTimestamp()),            // StartTime BIGINT
 			uint32(dp.Flags()),                    // Flags UINTEGER
-			val,                                   // DoubleValue DOUBLE / IntValue BIGINT
+			doubleVal,                             // DoubleValue DOUBLE
+			intVal,                                // IntValue BIGINT
 			valType,                               // ValueType VARCHAR
 			sum.IsMonotonic(),                     // IsMonotonic BOOLEAN
 			sum.AggregationTemporality().String(), // AggregationTemporality VARCHAR
@@ -301,15 +303,15 @@ func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender,
 	return nil
 }
 
-func numberDataPointValue(dp pmetric.NumberDataPoint) (any, string) {
-	typeStr := dp.ValueType().String()
+func numberDataPointValue(dp pmetric.NumberDataPoint) (doubleVal any, intVal any, typeStr string) {
+	typeStr = dp.ValueType().String()
 	switch dp.ValueType() {
 	case pmetric.NumberDataPointValueTypeDouble:
-		return dp.DoubleValue(), typeStr
+		return dp.DoubleValue(), nil, typeStr
 	case pmetric.NumberDataPointValueTypeInt:
-		return dp.IntValue(), typeStr
+		return nil, dp.IntValue(), typeStr
 	default:
-		return nil, typeStr
+		return nil, nil, typeStr
 	}
 }
 
