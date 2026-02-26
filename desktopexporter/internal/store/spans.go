@@ -86,9 +86,9 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 
 				// Insert events into events table (generate UUID in Go so we can set event attributes)
 				for _, event := range span.Events().All() {
-				eventID := duckdb.UUID(uuid.New())
-				err = appenders["events"].AppendRow(
-					eventID,                        // ID UUID
+					eventID := duckdb.UUID(uuid.New())
+					err = appenders["events"].AppendRow(
+						eventID,                        // ID UUID
 						spanIDStr,                      // SpanID VARCHAR
 						event.Name(),                   // Name VARCHAR
 						int64(event.Timestamp()),       // Timestamp BIGINT
@@ -98,8 +98,8 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 					if err != nil {
 						return fmt.Errorf("failed to append row: %w", err)
 					}
-				if err := IngestAttributes(appenders["attributes"],
-					[]AttributeBatchItem{{Attrs: event.Attributes(), IDs: AttributeOwnerIDs{SpanID: spanIDStr, EventID: &eventID}, Scope: "event"}}); err != nil {
+					if err := IngestAttributes(appenders["attributes"],
+						[]AttributeBatchItem{{Attrs: event.Attributes(), IDs: AttributeOwnerIDs{SpanID: spanIDStr, EventID: &eventID}, Scope: "event"}}); err != nil {
 						return err
 					}
 				}
@@ -197,14 +197,14 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 		FROM (
 			SELECT DISTINCT ON (s.TraceID)
 				s.TraceID,
-				CASE WHEN s.ParentSpanID = '' THEN (
-					SELECT a.Value FROM attributes a
-					WHERE a.SpanID = s.SpanID AND a.Scope = 'resource' AND a.Key = 'service.name'
-					LIMIT 1
-				) END as service_name,
-				CASE WHEN s.ParentSpanID = '' THEN s.Name END as root_name,
-				CASE WHEN s.ParentSpanID = '' THEN s.StartTime END as root_start_time,
-				CASE WHEN s.ParentSpanID = '' THEN s.EndTime END as root_end_time,
+			CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN (
+				SELECT a.Value FROM attributes a
+				WHERE a.SpanID = s.SpanID AND a.Scope = 'resource' AND a.Key = 'service.name'
+				LIMIT 1
+			) END as service_name,
+			CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.Name END as root_name,
+			CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.StartTime END as root_start_time,
+			CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.EndTime END as root_end_time,
 				COUNT(*) OVER (PARTITION BY s.TraceID) as span_count,
 				COUNT(CASE WHEN s.StatusCode = 'ERROR' THEN 1 END) OVER (PARTITION BY s.TraceID) as error_count,
 				COUNT(CASE WHEN EXISTS(
@@ -215,11 +215,11 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 			WHERE %s
 			ORDER BY
 				COALESCE(
-					MIN(CASE WHEN s.ParentSpanID = '' THEN s.StartTime END) OVER (PARTITION BY s.TraceID),
+					MIN(CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.StartTime END) OVER (PARTITION BY s.TraceID),
 					MIN(s.StartTime) OVER (PARTITION BY s.TraceID)
 				) DESC,
 				s.TraceID,
-				CASE WHEN s.ParentSpanID = '' THEN 0 ELSE 1 END
+				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN 0 ELSE 1 END
 		) sub`, cteSQL, whereClause)
 
 	var raw []byte

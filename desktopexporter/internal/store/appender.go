@@ -38,8 +38,8 @@ func FlushAppenders(appenders map[string]*duckdb.Appender, tables []string) erro
 // CloseAppenders closes appenders in the order of tables, so close order is deterministic.
 // Safe to call with nil map or nil/empty tables.
 func CloseAppenders(appenders map[string]*duckdb.Appender, tables []string) {
-	for _, table := range tables {
-		if a := appenders[table]; a != nil {
+	for i := len(tables) - 1; i >= 0; i-- {
+		if a := appenders[tables[i]]; a != nil {
 			a.Close()
 		}
 	}

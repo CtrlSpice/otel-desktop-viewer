@@ -107,6 +107,29 @@ func TestTraceSummaryOrdering(t *testing.T) {
 	err := helper.Store.IngestSpans(helper.Ctx, traces)
 	assert.NoError(t, err, "failed to ingest spans")
 
+	rows, _ := helper.Store.db.QueryContext(helper.Ctx, "SELECT SpanID, ParentSpanID, ParentSpanID IS NULL as is_null, ParentSpanID = '' as is_empty, length(ParentSpanID) as len FROM spans")
+	defer rows.Close()
+	for rows.Next() {
+		var spanID, parent string
+		var isNull, isEmpty bool
+		var pLen int
+		rows.Scan(&spanID, &parent, &isNull, &isEmpty, &pLen)
+		t.Logf("span=%s parent=%q isNull=%v isEmpty=%v len=%d", spanID, parent, isNull, isEmpty, pLen)
+	}
+
+	aRows, _ := helper.Store.db.QueryContext(helper.Ctx, "SELECT SpanID, Scope, Key, Value FROM attributes WHERE Scope = 'resource'")
+	defer aRows.Close()
+	for aRows.Next() {
+		var spanID, scope, key, value string
+		aRows.Scan(&spanID, &scope, &key, &value)
+		t.Logf("attr: span=%s scope=%s key=%s value=%s", spanID, scope, key, value)
+	}
+
+	const maxNano = 1<<63 - 1
+	raw, err2 := helper.Store.SearchTraces(helper.Ctx, 0, maxNano, nil)
+	t.Logf("raw JSON: %s", string(raw))
+	assert.NoError(t, err2)
+
 	summaries := searchTracesAll(t, helper)
 	assert.Len(t, summaries, 3, "expected 3 traces")
 
