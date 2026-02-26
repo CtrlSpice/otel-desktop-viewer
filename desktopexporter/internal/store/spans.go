@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -39,16 +38,19 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 			scope := scopeSpan.Scope()
 
 			for _, span := range scopeSpan.Spans().All() {
-				traceID := span.TraceID()
-				traceIDStr := hex.EncodeToString(traceID[:])
+				traceUUID := duckdb.UUID(span.TraceID())
 
 				spanID := span.SpanID()
-				spanIDStr := hex.EncodeToString(spanID[:])
+				var spanPadded [16]byte
+				copy(spanPadded[8:], spanID[:])
+				spanUUID := duckdb.UUID(spanPadded)
 
-				parentSpanID := span.ParentSpanID()
-				parentSpanIDStr := ""
-				if !parentSpanID.IsEmpty() {
-					parentSpanIDStr = hex.EncodeToString(parentSpanID[:])
+				var parentSpanUUID *duckdb.UUID
+				if pid := span.ParentSpanID(); !pid.IsEmpty() {
+					var parentPadded [16]byte
+					copy(parentPadded[8:], pid[:])
+					u := duckdb.UUID(parentPadded)
+					parentSpanUUID = &u
 				}
 				spanSearchText := strings.Join([]string{
 					span.Name(),
@@ -61,10 +63,10 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 				}, " ")
 
 				err := appenders["spans"].AppendRow(
-					traceIDStr,                        // TraceID VARCHAR
+					traceUUID,                         // TraceID UUID
 					span.TraceState().AsRaw(),         // TraceState VARCHAR
-					spanIDStr,                         // SpanID VARCHAR
-					parentSpanIDStr,                   // ParentSpanID VARCHAR
+					spanUUID,                          // SpanID UUID
+					parentSpanUUID,                    // ParentSpanID UUID
 					span.Name(),                       // Name VARCHAR
 					span.Kind().String(),              // Kind VARCHAR
 					int64(span.StartTimestamp()),      // StartTime BIGINT
@@ -89,7 +91,7 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 					eventID := duckdb.UUID(uuid.New())
 					err = appenders["events"].AppendRow(
 						eventID,                        // ID UUID
-						spanIDStr,                      // SpanID VARCHAR
+						spanUUID,                       // SpanID UUID
 						event.Name(),                   // Name VARCHAR
 						int64(event.Timestamp()),       // Timestamp BIGINT
 						event.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
@@ -99,7 +101,7 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 						return fmt.Errorf("failed to append row: %w", err)
 					}
 					if err := IngestAttributes(appenders["attributes"],
-						[]AttributeBatchItem{{Attrs: event.Attributes(), IDs: AttributeOwnerIDs{SpanID: spanIDStr, EventID: &eventID}, Scope: "event"}}); err != nil {
+						[]AttributeBatchItem{{Attrs: event.Attributes(), IDs: AttributeOwnerIDs{SpanID: &spanUUID, EventID: &eventID}, Scope: "event"}}); err != nil {
 						return err
 					}
 				}
@@ -107,22 +109,23 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 				// Insert links into links table (generate UUID in Go so we can set link attributes)
 				for _, link := range span.Links().All() {
 					linkID := duckdb.UUID(uuid.New())
-					linkTraceID := link.TraceID()
-					linkTraceIDStr := hex.EncodeToString(linkTraceID[:])
+					linkTraceUUID := duckdb.UUID(link.TraceID())
 					linkSpanID := link.SpanID()
-					linkSpanIDStr := hex.EncodeToString(linkSpanID[:])
+					var linkSpanPadded [16]byte
+					copy(linkSpanPadded[8:], linkSpanID[:])
+					linkSpanUUID := duckdb.UUID(linkSpanPadded)
 
 					linkSearchText := strings.Join([]string{
-						linkTraceIDStr,
-						linkSpanIDStr,
+						link.TraceID().String(),
+						link.SpanID().String(),
 						link.TraceState().AsRaw(),
 					}, " ")
 
 					err = appenders["links"].AppendRow(
 						linkID,                        // ID UUID
-						spanIDStr,                     // SpanID VARCHAR
-						linkTraceIDStr,                // TraceID VARCHAR
-						linkSpanIDStr,                 // LinkedSpanID VARCHAR
+						spanUUID,                      // SpanID UUID
+						linkTraceUUID,                 // TraceID UUID
+						linkSpanUUID,                  // LinkedSpanID UUID
 						link.TraceState().AsRaw(),     // TraceState VARCHAR
 						link.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
 						linkSearchText,                // SearchText VARCHAR
@@ -130,13 +133,13 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 					if err != nil {
 						return fmt.Errorf("failed to append row: %w", err)
 					}
-					if err := IngestAttributes(appenders["attributes"], []AttributeBatchItem{{Attrs: link.Attributes(), IDs: AttributeOwnerIDs{SpanID: spanIDStr, LinkID: &linkID}, Scope: "link"}}); err != nil {
+					if err := IngestAttributes(appenders["attributes"], []AttributeBatchItem{{Attrs: link.Attributes(), IDs: AttributeOwnerIDs{SpanID: &spanUUID, LinkID: &linkID}, Scope: "link"}}); err != nil {
 						return err
 					}
 				}
 
 				// Insert attributes: span + resource + scope (same SpanID, distinct Scope)
-				spanIDs := AttributeOwnerIDs{SpanID: spanIDStr}
+				spanIDs := AttributeOwnerIDs{SpanID: &spanUUID}
 				if err := IngestAttributes(appenders["attributes"], []AttributeBatchItem{
 					{Attrs: span.Attributes(), IDs: spanIDs, Scope: "span"},
 					{Attrs: resource.Attributes(), IDs: spanIDs, Scope: "resource"},
@@ -199,14 +202,14 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 		FROM (
 			SELECT DISTINCT ON (s.TraceID)
 				s.TraceID,
-				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN (
+				CASE WHEN s.ParentSpanID IS NULL THEN (
 					SELECT a.Value FROM attributes a
 					WHERE a.SpanID = s.SpanID AND a.Scope = 'resource' AND a.Key = 'service.name'
 					LIMIT 1
 				) END as service_name,
-				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.Name END as root_name,
-				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.StartTime END as root_start_time,
-				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.EndTime END as root_end_time,
+				CASE WHEN s.ParentSpanID IS NULL THEN s.Name END as root_name,
+				CASE WHEN s.ParentSpanID IS NULL THEN s.StartTime END as root_start_time,
+				CASE WHEN s.ParentSpanID IS NULL THEN s.EndTime END as root_end_time,
 				COUNT(*) OVER (PARTITION BY s.TraceID) as span_count,
 				COUNT(CASE WHEN s.StatusCode = 'ERROR' THEN 1 END) OVER (PARTITION BY s.TraceID) as error_count,
 				COUNT(CASE WHEN EXISTS(
@@ -217,7 +220,7 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 			WHERE %s
 			ORDER BY
 				s.TraceID,
-				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN 0 ELSE 1 END
+				CASE WHEN s.ParentSpanID IS NULL THEN 0 ELSE 1 END
 		) sub`, cteSQL, whereClause)
 
 	var raw []byte
@@ -246,12 +249,12 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, 
 				s.StatusCode, s.StatusMessage,
 				0 AS depth,
 				ARRAY[ROW_NUMBER() OVER (ORDER BY
-					CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN 0 ELSE 1 END,
+					CASE WHEN s.ParentSpanID IS NULL THEN 0 ELSE 1 END,
 					s.StartTime
 				)] AS sort_path
 			FROM spans s, param p
 			WHERE s.TraceID = p.traceID
-			AND s.ParentSpanID NOT IN (SELECT SpanID FROM spans WHERE TraceID = p.traceID)
+			AND (s.ParentSpanID IS NULL OR s.ParentSpanID NOT IN (SELECT SpanID FROM spans WHERE TraceID = p.traceID))
 
 			UNION ALL
 

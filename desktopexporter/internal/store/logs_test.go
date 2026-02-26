@@ -174,9 +174,9 @@ func TestLogOrdering(t *testing.T) {
 	assert.Len(t, entries, 3)
 
 	// Order: newest first by effective time — 0002 (t+150ms), 0007 (t+100ms), 0001 (t+0)
-	assert.Equal(t, "0000000000000002", entries[0].SpanID)
-	assert.Equal(t, "0000000000000007", entries[1].SpanID)
-	assert.Equal(t, "0000000000000001", entries[2].SpanID)
+	assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
+	assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[1].SpanID)
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[2].SpanID)
 }
 
 // TestEmptyLogs verifies handling of empty log lists and empty store.
@@ -226,9 +226,9 @@ func TestLogSuite(t *testing.T) {
 	t.Run("LogOrdering", func(t *testing.T) {
 		entries := searchLogsAll(t, helper)
 		assert.Len(t, entries, 3)
-		assert.Equal(t, "0000000000000002", entries[0].SpanID)
-		assert.Equal(t, "0000000000000007", entries[1].SpanID)
-		assert.Equal(t, "0000000000000001", entries[2].SpanID)
+		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
+		assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[1].SpanID)
+		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[2].SpanID)
 	})
 
 	t.Run("LogSeverity", func(t *testing.T) {
@@ -390,7 +390,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "0000000000000002", entries[0].SpanID)
+		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
 	})
 
 	t.Run("GlobalSearch_EventName", func(t *testing.T) {
@@ -450,14 +450,14 @@ func TestSearchLogs(t *testing.T) {
 			Query: &Query{
 				Field:         &FieldDefinition{Name: "spanID", SearchScope: "field"},
 				FieldOperator: "=",
-				Value:         "0000000000000001",
+				Value:         "00000000-0000-0000-0000-000000000001",
 			},
 		}
 		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "0000000000000001", entries[0].SpanID)
+		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[0].SpanID)
 	})
 
 	t.Run("Attribute_LogString", func(t *testing.T) {

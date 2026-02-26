@@ -67,7 +67,10 @@ func buildTracesForSummaryOrdering(baseTime int64) (ptrace.Traces, string, strin
 	// Trace 3: newest (t+2)
 	addOneSpan(traces, trace3Hex, span3Hex, "", "root last", baseTime+2*time.Second.Nanoseconds(), baseTime+3*time.Second.Nanoseconds(), "service3")
 
-	return traces, trace1Hex, trace2Hex, trace3Hex
+	return traces,
+		"00000000-0000-0000-0000-000000000001",
+		"00000000-0000-0000-0000-000000000002",
+		"00000000-0000-0000-0000-000000000003"
 }
 
 // searchTracesAll returns SearchTraces with a wide time range and nil query to get "all" summaries.
@@ -125,7 +128,7 @@ func TestTraceNotFound(t *testing.T) {
 	helper, teardown := SetupTest(t)
 	defer teardown()
 
-	_, err := helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000000")
+	_, err := helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000000")
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrTraceIDNotFound)
 }
@@ -209,16 +212,16 @@ func TestTraceSuite(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	testTraceIDHex := "00000000000000000000000000000099"
+	testTraceID := "00000000-0000-0000-0000-000000000099"
 	err := helper.Store.IngestSpans(helper.Ctx, traces)
 	assert.NoError(t, err, "failed to ingest test trace")
 
 	t.Run("TraceHierarchicalStructure", func(t *testing.T) {
-		raw, err := helper.Store.GetTrace(helper.Ctx, testTraceIDHex)
+		raw, err := helper.Store.GetTrace(helper.Ctx, testTraceID)
 		assert.NoError(t, err, "failed to get trace")
 		assert.NotEmpty(t, raw)
 
-		assert.Equal(t, testTraceIDHex, getTraceTraceID(t, raw))
+		assert.Equal(t, testTraceID, getTraceTraceID(t, raw))
 		assert.Equal(t, 9, getTraceSpansCount(t, raw), "should have 9 spans")
 
 		// Depth-first order: root -> child -> grandchild -> great-grandchild -> child-span-2 -> child2-child -> orphaned -> orphaned-child -> orphaned-grandchild
@@ -234,7 +237,7 @@ func TestTraceSuite(t *testing.T) {
 		assert.Len(t, summaries, 1, "should have one trace summary")
 
 		summary := summaries[0]
-		assert.Equal(t, testTraceIDHex, summary.TraceID)
+		assert.Equal(t, testTraceID, summary.TraceID)
 		assert.Equal(t, float64(9), summary.SpanCount)
 		assert.NotNil(t, summary.RootSpan)
 		assert.Equal(t, "test-service", summary.RootSpan.ServiceName)
@@ -242,7 +245,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceNotFound", func(t *testing.T) {
-		_, err := helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000000")
+		_, err := helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000000")
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrTraceIDNotFound)
 	})
@@ -298,7 +301,7 @@ func TestSearchTraces(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	testTraceIDHex := "00000000000000000000000000000099"
+	testTraceID := "00000000-0000-0000-0000-000000000099"
 	err := helper.Store.IngestSpans(helper.Ctx, traces)
 	assert.NoError(t, err, "failed to ingest test trace")
 
@@ -326,7 +329,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("GlobalSearch_SpanAttribute", func(t *testing.T) {
@@ -343,7 +346,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("GlobalSearch_EventField", func(t *testing.T) {
@@ -360,7 +363,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("GlobalSearch_EventAttribute", func(t *testing.T) {
@@ -377,7 +380,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("GlobalSearch_LinkAttribute", func(t *testing.T) {
@@ -394,7 +397,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
@@ -432,7 +435,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("SpanAttribute_Int64", func(t *testing.T) {
@@ -454,7 +457,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("SpanAttribute_Float64", func(t *testing.T) {
@@ -476,7 +479,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("SpanAttribute_Boolean", func(t *testing.T) {
@@ -498,7 +501,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("SpanAttribute_StringArray", func(t *testing.T) {
@@ -520,7 +523,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("SpanAttribute_Int64Array", func(t *testing.T) {
@@ -542,7 +545,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("SpanAttribute_Float64Array", func(t *testing.T) {
@@ -564,7 +567,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("SpanAttribute_BooleanArray", func(t *testing.T) {
@@ -586,7 +589,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("EventAttribute_String", func(t *testing.T) {
@@ -608,7 +611,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
 	t.Run("LinkAttribute_String", func(t *testing.T) {
@@ -630,7 +633,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
-		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 }
 
@@ -643,25 +646,26 @@ func TestDeleteSpanByID(t *testing.T) {
 	err := helper.Store.IngestSpans(helper.Ctx, traces)
 	assert.NoError(t, err)
 
-	raw, err := helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000099")
+	raw, err := helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000099")
 	assert.NoError(t, err)
 	assert.Equal(t, 9, getTraceSpansCount(t, raw))
 
-	eventsBefore := countRows(t, helper, "SELECT COUNT(*) FROM events WHERE SpanID = ?", "0000000000000001")
-	linksBefore := countRows(t, helper, "SELECT COUNT(*) FROM links WHERE SpanID = ?", "0000000000000001")
-	attrsBefore := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ?", "0000000000000001")
+	spanUUID := "00000000-0000-0000-0000-000000000001"
+	eventsBefore := countRows(t, helper, "SELECT COUNT(*) FROM events WHERE SpanID = ?", spanUUID)
+	linksBefore := countRows(t, helper, "SELECT COUNT(*) FROM links WHERE SpanID = ?", spanUUID)
+	attrsBefore := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ?", spanUUID)
 	assert.Greater(t, eventsBefore+linksBefore+attrsBefore, 0, "root span should have child rows")
 
-	err = helper.Store.DeleteSpanByID(helper.Ctx, "0000000000000001")
+	err = helper.Store.DeleteSpanByID(helper.Ctx, spanUUID)
 	assert.NoError(t, err)
 
-	raw, err = helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000099")
+	raw, err = helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000099")
 	assert.NoError(t, err)
 	assert.Equal(t, 8, getTraceSpansCount(t, raw))
 
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM events WHERE SpanID = ?", "0000000000000001"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM links WHERE SpanID = ?", "0000000000000001"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ?", "0000000000000001"))
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM events WHERE SpanID = ?", spanUUID))
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM links WHERE SpanID = ?", spanUUID))
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ?", spanUUID))
 }
 
 // TestDeleteSpansByIDs verifies that multiple spans can be deleted by their SpanIDs, including child rows.
@@ -673,18 +677,22 @@ func TestDeleteSpansByIDs(t *testing.T) {
 	err := helper.Store.IngestSpans(helper.Ctx, traces)
 	assert.NoError(t, err)
 
-	raw, err := helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000099")
+	raw, err := helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000099")
 	assert.NoError(t, err)
 	assert.Equal(t, 9, getTraceSpansCount(t, raw))
 
-	deletedIDs := []any{"0000000000000001", "0000000000000002", "0000000000000003"}
+	deletedIDs := []any{
+		"00000000-0000-0000-0000-000000000001",
+		"00000000-0000-0000-0000-000000000002",
+		"00000000-0000-0000-0000-000000000003",
+	}
 	attrsBefore := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID IN (?, ?, ?)", deletedIDs...)
 	assert.Greater(t, attrsBefore, 0, "deleted spans should have attributes")
 
 	err = helper.Store.DeleteSpansByIDs(helper.Ctx, deletedIDs)
 	assert.NoError(t, err)
 
-	raw, err = helper.Store.GetTrace(helper.Ctx, "00000000000000000000000000000099")
+	raw, err = helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000099")
 	assert.NoError(t, err)
 	assert.Equal(t, 6, getTraceSpansCount(t, raw))
 
@@ -708,7 +716,7 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	testTraceID := "00000000000000000000000000000099"
+	testTraceID := "00000000-0000-0000-0000-000000000099"
 	err := helper.Store.IngestSpans(helper.Ctx, traces)
 	assert.NoError(t, err)
 
@@ -734,7 +742,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	testTraceID := "00000000000000000000000000000099"
+	testTraceID := "00000000-0000-0000-0000-000000000099"
 	err := helper.Store.IngestSpans(helper.Ctx, traces)
 	assert.NoError(t, err)
 

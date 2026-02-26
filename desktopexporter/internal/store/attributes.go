@@ -8,7 +8,7 @@ import (
 // AttributeOwnerIDs specifies which entity owns the attributes.
 // Populate only the IDs that apply; leave others nil.
 type AttributeOwnerIDs struct {
-	SpanID      string
+	SpanID      *duckdb.UUID
 	EventID     *duckdb.UUID
 	LinkID      *duckdb.UUID
 	LogID       *duckdb.UUID

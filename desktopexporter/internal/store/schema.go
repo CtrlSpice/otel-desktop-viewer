@@ -9,10 +9,10 @@ var TypeCreationQueries = []string{
 // Order matters: spans before events/links, metrics before datapoints, datapoints before exemplars (FK dependencies)
 var TableCreationQueries = []string{
 	`CREATE TABLE IF NOT EXISTS spans (
-		TraceID VARCHAR,
+		TraceID UUID,
 		TraceState VARCHAR,
-		SpanID VARCHAR PRIMARY KEY,
-		ParentSpanID VARCHAR,
+		SpanID UUID PRIMARY KEY,
+		ParentSpanID UUID,
 		Name VARCHAR,
 		Kind VARCHAR,
 		StartTime BIGINT,
@@ -30,7 +30,7 @@ var TableCreationQueries = []string{
 	)`,
 	`CREATE TABLE IF NOT EXISTS events (
 		ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		SpanID VARCHAR NOT NULL,
+		SpanID UUID NOT NULL,
 		Name VARCHAR,
 		Timestamp BIGINT,
 		DroppedAttributesCount UINTEGER,
@@ -39,9 +39,9 @@ var TableCreationQueries = []string{
 	)`,
 	`CREATE TABLE IF NOT EXISTS links (
 		ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		SpanID VARCHAR NOT NULL,
-		TraceID VARCHAR,
-		LinkedSpanID VARCHAR,
+		SpanID UUID NOT NULL,
+		TraceID UUID,
+		LinkedSpanID UUID,
 		TraceState VARCHAR,
 		DroppedAttributesCount UINTEGER,
 		SearchText VARCHAR,
@@ -51,8 +51,8 @@ var TableCreationQueries = []string{
 		ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		Timestamp BIGINT,
 		ObservedTimestamp BIGINT,
-		TraceID VARCHAR,
-		SpanID VARCHAR,
+		TraceID UUID,
+		SpanID UUID,
 		SeverityText VARCHAR,
 		SeverityNumber INTEGER,
 		Body VARCHAR,
@@ -109,12 +109,12 @@ var TableCreationQueries = []string{
 		DataPointID UUID NOT NULL,
 		Timestamp BIGINT,
 		Value DOUBLE,
-		TraceID VARCHAR,
-		SpanID VARCHAR,
+		TraceID UUID,
+		SpanID UUID,
 		FOREIGN KEY (DataPointID) REFERENCES datapoints(ID)
 	)`,
 	`CREATE TABLE IF NOT EXISTS attributes (
-		SpanID VARCHAR,
+		SpanID UUID,
 		EventID UUID,
 		LinkID UUID,
 		LogID UUID,

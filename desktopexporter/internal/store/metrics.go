@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -107,24 +106,27 @@ func (s *Store) IngestMetrics(ctx context.Context, metrics pmetric.Metrics) erro
 
 // ingestExemplars appends exemplar rows and their filtered attributes for a datapoint.
 func ingestExemplars(appenders map[string]*duckdb.Appender, metricID, datapointID duckdb.UUID, exemplars pmetric.ExemplarSlice) error {
-	for i := 0; i < exemplars.Len(); i++ {
-		ex := exemplars.At(i)
+	for _, ex := range exemplars.All() {
 		exemplarID := duckdb.UUID(uuid.New())
-		traceIDStr := ""
+		var traceUUID *duckdb.UUID
 		if tid := ex.TraceID(); !tid.IsEmpty() {
-			traceIDStr = hex.EncodeToString(tid[:])
+			u := duckdb.UUID(tid)
+			traceUUID = &u
 		}
-		spanIDStr := ""
+		var spanUUID *duckdb.UUID
 		if sid := ex.SpanID(); !sid.IsEmpty() {
-			spanIDStr = hex.EncodeToString(sid[:])
+			var padded [16]byte
+			copy(padded[8:], sid[:])
+			u := duckdb.UUID(padded)
+			spanUUID = &u
 		}
 		if err := appenders["exemplars"].AppendRow(
 			exemplarID,            // ID UUID
 			datapointID,           // DataPointID UUID
 			int64(ex.Timestamp()), // Timestamp BIGINT
 			ex.DoubleValue(),      // Value DOUBLE
-			traceIDStr,            // TraceID VARCHAR
-			spanIDStr,             // SpanID VARCHAR
+			traceUUID,             // TraceID UUID
+			spanUUID,              // SpanID UUID
 		); err != nil {
 			return fmt.Errorf("failed to append exemplar row: %w", err)
 		}
@@ -140,17 +142,16 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, metricID, datapointI
 
 // ingestGaugeDatapoints appends Gauge datapoint rows and their attributes/exemplars.
 func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.UUID, dps pmetric.NumberDataPointSlice) error {
-	for i := 0; i < dps.Len(); i++ {
-		gp := dps.At(i)
-		doubleVal, intVal, valType := numberDataPointValue(gp)
+	for _, dp := range dps.All() {
+		doubleVal, intVal, valType := numberDataPointValue(dp)
 		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
 			datapointID,                // ID UUID
 			metricID,                   // MetricID UUID
 			"Gauge",                    // MetricType VARCHAR
-			int64(gp.Timestamp()),      // Timestamp BIGINT
-			int64(gp.StartTimestamp()), // StartTime BIGINT
-			uint32(gp.Flags()),         // Flags UINTEGER
+			int64(dp.Timestamp()),      // Timestamp BIGINT
+			int64(dp.StartTimestamp()), // StartTime BIGINT
+			uint32(dp.Flags()),         // Flags UINTEGER
 			doubleVal,                  // DoubleValue DOUBLE
 			intVal,                     // IntValue BIGINT
 			valType,                    // ValueType VARCHAR
@@ -167,11 +168,11 @@ func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID duckd
 		}
 		dpOwnerIDs := AttributeOwnerIDs{MetricID: &metricID, DataPointID: &datapointID}
 		if err := IngestAttributes(appenders["attributes"], []AttributeBatchItem{
-			{Attrs: gp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
+			{Attrs: dp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
 		}); err != nil {
 			return err
 		}
-		if err := ingestExemplars(appenders, metricID, datapointID, gp.Exemplars()); err != nil {
+		if err := ingestExemplars(appenders, metricID, datapointID, dp.Exemplars()); err != nil {
 			return err
 		}
 	}
@@ -181,8 +182,7 @@ func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID duckd
 // ingestSumDatapoints appends Sum datapoint rows and their attributes/exemplars.
 func ingestSumDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.UUID, sum pmetric.Sum) error {
 	dps := sum.DataPoints()
-	for i := 0; i < dps.Len(); i++ {
-		dp := dps.At(i)
+	for _, dp := range dps.All() {
 		doubleVal, intVal, valType := numberDataPointValue(dp)
 		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
@@ -220,8 +220,7 @@ func ingestSumDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.
 
 // ingestHistogramDatapoints appends Histogram datapoint rows and their attributes/exemplars.
 func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.UUID, hist pmetric.Histogram) error {
-	for i := 0; i < hist.DataPoints().Len(); i++ {
-		dp := hist.DataPoints().At(i)
+	for _, dp := range hist.DataPoints().All() {
 		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
 			datapointID,                // ID UUID
@@ -261,8 +260,7 @@ func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID d
 
 // ingestExponentialHistogramDatapoints appends ExponentialHistogram datapoint rows and their attributes/exemplars.
 func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.UUID, exp pmetric.ExponentialHistogram) error {
-	for i := 0; i < exp.DataPoints().Len(); i++ {
-		dp := exp.DataPoints().At(i)
+	for _, dp := range exp.DataPoints().All() {
 		pos, neg := dp.Positive(), dp.Negative()
 		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(

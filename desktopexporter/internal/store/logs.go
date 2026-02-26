@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -38,13 +37,17 @@ func (s *Store) IngestLogs(ctx context.Context, logs plog.Logs) error {
 
 			for _, log := range scopeLogs.LogRecords().All() {
 				logID := duckdb.UUID(uuid.New())
-				traceIDStr := ""
+				var traceUUID *duckdb.UUID
 				if tid := log.TraceID(); !tid.IsEmpty() {
-					traceIDStr = hex.EncodeToString(tid[:])
+					u := duckdb.UUID(tid)
+					traceUUID = &u
 				}
-				spanIDStr := ""
+				var spanUUID *duckdb.UUID
 				if sid := log.SpanID(); !sid.IsEmpty() {
-					spanIDStr = hex.EncodeToString(sid[:])
+					var padded [16]byte
+					copy(padded[8:], sid[:])
+					u := duckdb.UUID(padded)
+					spanUUID = &u
 				}
 
 				bodyValue, bodyType := ValueToStringAndType(log.Body())
@@ -60,8 +63,8 @@ func (s *Store) IngestLogs(ctx context.Context, logs plog.Logs) error {
 					logID,                             // ID UUID
 					int64(log.Timestamp()),            // Timestamp BIGINT
 					int64(log.ObservedTimestamp()),    // ObservedTimestamp BIGINT
-					traceIDStr,                        // TraceID VARCHAR
-					spanIDStr,                         // SpanID VARCHAR
+					traceUUID,                         // TraceID UUID
+					spanUUID,                          // SpanID UUID
 					log.SeverityText(),                // SeverityText VARCHAR
 					int32(log.SeverityNumber()),       // SeverityNumber INTEGER
 					bodyValue,                         // Body VARCHAR
