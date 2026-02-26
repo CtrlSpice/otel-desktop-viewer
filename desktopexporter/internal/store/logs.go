@@ -150,7 +150,7 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 			'flags', l.Flags,
 			'eventName', l.EventName,
 			'attributes', COALESCE(log_attrs.attrs, json('[]'))
-		) ORDER BY COALESCE(l.Timestamp, l.ObservedTimestamp) DESC)), '[]') AS VARCHAR) AS logs
+		) ORDER BY COALESCE(NULLIF(l.Timestamp, 0), l.ObservedTimestamp) DESC)), '[]') AS VARCHAR) AS logs
 		FROM filtered l
 		LEFT JOIN log_attrs res ON res.LogID = l.ID AND res.Scope = 'resource'
 		LEFT JOIN log_attrs scope_attrs ON scope_attrs.LogID = l.ID AND scope_attrs.Scope = 'scope'
