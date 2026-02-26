@@ -123,7 +123,7 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 	// Log time: prefer Timestamp, fall back to ObservedTimestamp per OTLP
 	logTimeExpr := `(CASE WHEN l.Timestamp IS NULL OR l.Timestamp = 0 THEN l.ObservedTimestamp ELSE l.Timestamp END)`
 	whereWithTime := strings.ReplaceAll(whereClause, "l.log_time", logTimeExpr)
-	finalQuery := fmt.Sprintf(`%s
+	finalQuery := fmt.Sprintf(`%s,
 		filtered AS (
 			SELECT l.* FROM logs l, search_params
 			WHERE %s
@@ -134,7 +134,7 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 			WHERE a.LogID IN (SELECT ID FROM filtered)
 			GROUP BY a.LogID, a.Scope
 		)
-		SELECT COALESCE(json_group_array(json_object(
+		SELECT CAST(COALESCE(json_group_array(json_object(
 			'id', l.ID,
 			'timestamp', l.Timestamp,
 			'observedTimestamp', l.ObservedTimestamp,
@@ -150,7 +150,7 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 			'flags', l.Flags,
 			'eventName', l.EventName,
 			'attributes', COALESCE(log_attrs.attrs, json('[]'))
-		)), '[]') AS logs
+		)), '[]') AS VARCHAR) AS logs
 		FROM (SELECT * FROM filtered ORDER BY COALESCE(Timestamp, ObservedTimestamp) DESC) l
 		LEFT JOIN log_attrs res ON res.LogID = l.ID AND res.Scope = 'resource'
 		LEFT JOIN log_attrs scope_attrs ON scope_attrs.LogID = l.ID AND scope_attrs.Scope = 'scope'

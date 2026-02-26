@@ -336,7 +336,7 @@ func (s *Store) SearchMetrics(ctx context.Context, startTime, endTime int64, que
 		return nil, fmt.Errorf("failed to build metric SQL: %w", err)
 	}
 
-	finalQuery := fmt.Sprintf(`%s
+	finalQuery := fmt.Sprintf(`%s,
 		filtered_metrics AS (
 			SELECT m.* FROM metrics m, search_params
 			WHERE %s
@@ -386,7 +386,7 @@ func (s *Store) SearchMetrics(ctx context.Context, startTime, endTime int64, que
 			FROM filtered_dps d
 			GROUP BY d.MetricID
 		)
-		SELECT COALESCE(json_group_array(json_object(
+		SELECT CAST(COALESCE(json_group_array(json_object(
 			'id', m.ID, 'name', m.Name, 'description', m.Description, 'unit', m.Unit,
 			'resourceDroppedAttributesCount', m.ResourceDroppedAttributesCount,
 			'resource', json_object('attributes', COALESCE(res.attrs, json('[]')), 'droppedAttributesCount', m.ResourceDroppedAttributesCount),
@@ -394,12 +394,13 @@ func (s *Store) SearchMetrics(ctx context.Context, startTime, endTime int64, que
 			'scope', json_object('name', m.ScopeName, 'version', m.ScopeVersion, 'attributes', COALESCE(scope_attrs.attrs, json('[]')), 'droppedAttributesCount', m.ScopeDroppedAttributesCount),
 			'received', m.Received,
 			'datapoints', COALESCE(dp_agg.datapoints, json('[]'))
-		)), '[]') AS metrics
-		FROM filtered_metrics m
+		)), '[]') AS VARCHAR) AS metrics
+		FROM (
+			SELECT * FROM filtered_metrics ORDER BY Received DESC
+		) m
 		LEFT JOIN metric_res_attrs res ON res.MetricID = m.ID
 		LEFT JOIN metric_scope_attrs scope_attrs ON scope_attrs.MetricID = m.ID
-		LEFT JOIN datapoints_agg dp_agg ON dp_agg.MetricID = m.ID
-		ORDER BY m.Received DESC`,
+		LEFT JOIN datapoints_agg dp_agg ON dp_agg.MetricID = m.ID`,
 		cteSQL,
 		whereClause,
 	)

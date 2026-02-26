@@ -182,7 +182,7 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 
 	// 3. Compose the full query from parts
 	finalQuery := fmt.Sprintf(`%s
-		SELECT COALESCE(json_group_array(json_object(
+		SELECT CAST(COALESCE(json_group_array(json_object(
 			'traceID',        sub.TraceID,
 			'rootSpan',       CASE WHEN sub.service_name IS NOT NULL THEN json_object(
 				'serviceName', sub.service_name,
@@ -193,7 +193,7 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 			'spanCount',      sub.span_count,
 			'errorCount',     sub.error_count,
 			'exceptionCount', sub.exception_count
-		)), '[]') AS summaries
+		)), '[]') AS VARCHAR) AS summaries
 		FROM (
 			SELECT DISTINCT ON (s.TraceID)
 				s.TraceID,
@@ -377,10 +377,10 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, 
 		)
 
 		-- 8. Wrap everything in {traceID, spans: [...]}
-		SELECT json_object(
+		SELECT CAST(json_object(
 			'traceID', (SELECT encode(traceID, 'hex') FROM param),
 			'spans',   COALESCE(json_group_array(span_json), json('[]'))
-		) AS trace
+		) AS VARCHAR) AS trace
 		FROM ordered_spans
 	`
 	var raw []byte
@@ -442,7 +442,7 @@ func (s *Store) GetTraceAttributes(ctx context.Context, startTime, endTime int64
 	}
 
 	query := `
-		SELECT json_group_array(json_object('name', sub.Key, 'attributeScope', sub.Scope, 'type', sub.Type::VARCHAR)) AS attributes
+		SELECT CAST(json_group_array(json_object('name', sub.Key, 'attributeScope', sub.Scope, 'type', sub.Type::VARCHAR)) AS VARCHAR) AS attributes
 		FROM (
 			SELECT DISTINCT a.Key, a.Scope, a.Type
 			FROM attributes a
