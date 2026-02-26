@@ -371,7 +371,7 @@ func (s *Store) SearchMetrics(ctx context.Context, startTime, endTime int64, que
 			GROUP BY a.MetricID
 		),
 		datapoints_agg AS (
-			SELECT d.MetricID, json_group_array(json_object(
+			SELECT d.MetricID, to_json(list(json_object(
 				'id', d.ID, 'metricType', d.MetricType, 'timestamp', d.Timestamp, 'startTime', d.StartTime, 'flags', d.Flags,
 				'doubleValue', d.DoubleValue, 'intValue', d.IntValue, 'valueType', d.ValueType,
 				'isMonotonic', d.IsMonotonic, 'aggregationTemporality', d.AggregationTemporality,
@@ -382,11 +382,11 @@ func (s *Store) SearchMetrics(ctx context.Context, startTime, endTime int64, que
 				'negativeBucketOffset', d.NegativeBucketOffset, 'negativeBucketCounts', d.NegativeBucketCounts,
 				'attributes', COALESCE((SELECT attrs FROM dp_attrs_agg WHERE dp_attrs_agg.DataPointID = d.ID), json('[]')),
 				'exemplars', COALESCE((SELECT exemplars FROM exemplars_agg WHERE exemplars_agg.DataPointID = d.ID), json('[]'))
-			)) AS datapoints
+			) ORDER BY d.Timestamp DESC)) AS datapoints
 			FROM filtered_dps d
 			GROUP BY d.MetricID
 		)
-		SELECT CAST(COALESCE(json_group_array(json_object(
+		SELECT CAST(COALESCE(to_json(list(json_object(
 			'id', m.ID, 'name', m.Name, 'description', m.Description, 'unit', m.Unit,
 			'resourceDroppedAttributesCount', m.ResourceDroppedAttributesCount,
 			'resource', json_object('attributes', COALESCE(res.attrs, json('[]')), 'droppedAttributesCount', m.ResourceDroppedAttributesCount),
@@ -394,10 +394,8 @@ func (s *Store) SearchMetrics(ctx context.Context, startTime, endTime int64, que
 			'scope', json_object('name', m.ScopeName, 'version', m.ScopeVersion, 'attributes', COALESCE(scope_attrs.attrs, json('[]')), 'droppedAttributesCount', m.ScopeDroppedAttributesCount),
 			'received', m.Received,
 			'datapoints', COALESCE(dp_agg.datapoints, json('[]'))
-		)), '[]') AS VARCHAR) AS metrics
-		FROM (
-			SELECT * FROM filtered_metrics ORDER BY Received DESC
-		) m
+		) ORDER BY m.Received DESC)), '[]') AS VARCHAR) AS metrics
+		FROM filtered_metrics m
 		LEFT JOIN metric_res_attrs res ON res.MetricID = m.ID
 		LEFT JOIN metric_scope_attrs scope_attrs ON scope_attrs.MetricID = m.ID
 		LEFT JOIN datapoints_agg dp_agg ON dp_agg.MetricID = m.ID`,

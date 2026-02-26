@@ -182,7 +182,7 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 
 	// 3. Compose the full query from parts
 	finalQuery := fmt.Sprintf(`%s
-		SELECT CAST(COALESCE(json_group_array(json_object(
+		SELECT CAST(COALESCE(to_json(list(json_object(
 			'traceID',        sub.TraceID,
 			'rootSpan',       CASE WHEN sub.service_name IS NOT NULL THEN json_object(
 				'serviceName', sub.service_name,
@@ -193,18 +193,20 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 			'spanCount',      sub.span_count,
 			'errorCount',     sub.error_count,
 			'exceptionCount', sub.exception_count
+		) ORDER BY
+			COALESCE(sub.root_start_time, (SELECT MIN(s2.StartTime) FROM spans s2 WHERE s2.TraceID = sub.TraceID)) DESC
 		)), '[]') AS VARCHAR) AS summaries
 		FROM (
 			SELECT DISTINCT ON (s.TraceID)
 				s.TraceID,
-			CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN (
-				SELECT a.Value FROM attributes a
-				WHERE a.SpanID = s.SpanID AND a.Scope = 'resource' AND a.Key = 'service.name'
-				LIMIT 1
-			) END as service_name,
-			CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.Name END as root_name,
-			CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.StartTime END as root_start_time,
-			CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.EndTime END as root_end_time,
+				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN (
+					SELECT a.Value FROM attributes a
+					WHERE a.SpanID = s.SpanID AND a.Scope = 'resource' AND a.Key = 'service.name'
+					LIMIT 1
+				) END as service_name,
+				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.Name END as root_name,
+				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.StartTime END as root_start_time,
+				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.EndTime END as root_end_time,
 				COUNT(*) OVER (PARTITION BY s.TraceID) as span_count,
 				COUNT(CASE WHEN s.StatusCode = 'ERROR' THEN 1 END) OVER (PARTITION BY s.TraceID) as error_count,
 				COUNT(CASE WHEN EXISTS(
@@ -214,10 +216,6 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 			FROM spans s, search_params
 			WHERE %s
 			ORDER BY
-				COALESCE(
-					MIN(CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN s.StartTime END) OVER (PARTITION BY s.TraceID),
-					MIN(s.StartTime) OVER (PARTITION BY s.TraceID)
-				) DESC,
 				s.TraceID,
 				CASE WHEN s.ParentSpanID IS NULL OR s.ParentSpanID = '' THEN 0 ELSE 1 END
 		) sub`, cteSQL, whereClause)
@@ -296,12 +294,12 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, 
 		-- 4. Events with their attributes → one JSON array per SpanID
 		event_data AS (
 			SELECT e.SpanID,
-				json_group_array(json_object(
+				to_json(list(json_object(
 					'name', e.Name,
 					'timestamp', e.Timestamp,
 					'droppedAttributesCount', e.DroppedAttributesCount,
 					'attributes', COALESCE(ea.attributes, json('[]'))
-				)) AS events
+				) ORDER BY e.Timestamp)) AS events
 			FROM events e
 			LEFT JOIN event_attributes ea ON e.ID = ea.EventID
 			WHERE e.SpanID IN (SELECT SpanID FROM spans_tree)
@@ -322,8 +320,8 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, 
 		link_data AS (
 			SELECT l.SpanID,
 				json_group_array(json_object(
-					'traceID', encode(l.TraceID, 'hex'),
-					'spanID', encode(l.LinkedSpanID, 'hex'),
+				'traceID', l.TraceID,
+				'spanID', l.LinkedSpanID,
 					'traceState', l.TraceState,
 					'droppedAttributesCount', l.DroppedAttributesCount,
 					'attributes', COALESCE(la.attributes, json('[]'))
@@ -338,10 +336,10 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, 
 		ordered_spans AS (
 			SELECT json_object(
 				'spanData', json_object(
-					'traceID',       encode(st.TraceID, 'hex'),
-					'traceState',    st.TraceState,
-					'spanID',        encode(st.SpanID, 'hex'),
-					'parentSpanID',  encode(st.ParentSpanID, 'hex'),
+				'traceID',       st.TraceID,
+				'traceState',    st.TraceState,
+				'spanID',        st.SpanID,
+				'parentSpanID',  st.ParentSpanID,
 					'name',          st.Name,
 					'kind',          st.Kind,
 					'startTime',     st.StartTime,
@@ -366,21 +364,26 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, 
 					'statusMessage',          st.StatusMessage
 				),
 				'depth', st.depth
-			) AS span_json
+			) AS span_json,
+			st.sort_path
 			FROM spans_tree st
 			LEFT JOIN span_attributes sa_span  ON st.SpanID = sa_span.SpanID  AND sa_span.Scope  = 'span'
 			LEFT JOIN span_attributes sa_res   ON st.SpanID = sa_res.SpanID   AND sa_res.Scope   = 'resource'
 			LEFT JOIN span_attributes sa_scope ON st.SpanID = sa_scope.SpanID AND sa_scope.Scope  = 'scope'
 			LEFT JOIN event_data ed       ON st.SpanID = ed.SpanID
 			LEFT JOIN link_data  ld       ON st.SpanID = ld.SpanID
-			ORDER BY st.sort_path
 		)
 
-		-- 8. Wrap everything in {traceID, spans: [...]}
-		SELECT CAST(json_object(
-			'traceID', (SELECT encode(traceID, 'hex') FROM param),
-			'spans',   COALESCE(json_group_array(span_json), json('[]'))
-		) AS VARCHAR) AS trace
+		-- 8. Guard: return NULL if the trace doesn't exist
+		-- 9. Wrap everything in {traceID, spans: [...]}
+		SELECT CASE
+			WHEN NOT EXISTS (SELECT 1 FROM spans WHERE TraceID = (SELECT traceID FROM param))
+			THEN NULL
+			ELSE CAST(json_object(
+				'traceID', (SELECT traceID FROM param),
+				'spans',   COALESCE(to_json(list(span_json ORDER BY sort_path)), json('[]'))
+			) AS VARCHAR)
+		END AS trace
 		FROM ordered_spans
 	`
 	var raw []byte
@@ -442,13 +445,13 @@ func (s *Store) GetTraceAttributes(ctx context.Context, startTime, endTime int64
 	}
 
 	query := `
-		SELECT CAST(json_group_array(json_object('name', sub.Key, 'attributeScope', sub.Scope, 'type', sub.Type::VARCHAR)) AS VARCHAR) AS attributes
+		SELECT CAST(to_json(list(json_object('name', sub.Key, 'attributeScope', sub.Scope, 'type', sub.Type::VARCHAR)
+			ORDER BY sub.Key, sub.Scope)) AS VARCHAR) AS attributes
 		FROM (
 			SELECT DISTINCT a.Key, a.Scope, a.Type
 			FROM attributes a
 			INNER JOIN spans s ON a.SpanID = s.SpanID
 			WHERE s.StartTime >= ? AND s.StartTime <= ?
-			ORDER BY a.Key, a.Scope
 		) sub
 	`
 	var raw []byte

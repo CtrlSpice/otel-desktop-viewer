@@ -82,11 +82,11 @@ func searchTracesAll(t *testing.T, helper *TestHelper) []traceSummaryJSON {
 }
 
 type traceSummaryJSON struct {
-	TraceID   string          `json:"traceID"`
-	RootSpan  *rootSpanJSON   `json:"rootSpan"`
-	SpanCount float64         `json:"spanCount"` // JSON number
-	ErrorCount float64        `json:"errorCount"`
-	ExceptionCount float64    `json:"exceptionCount"`
+	TraceID        string        `json:"traceID"`
+	RootSpan       *rootSpanJSON `json:"rootSpan"`
+	SpanCount      float64       `json:"spanCount"` // JSON number
+	ErrorCount     float64       `json:"errorCount"`
+	ExceptionCount float64       `json:"exceptionCount"`
 }
 
 type rootSpanJSON struct {
@@ -106,29 +106,6 @@ func TestTraceSummaryOrdering(t *testing.T) {
 
 	err := helper.Store.IngestSpans(helper.Ctx, traces)
 	assert.NoError(t, err, "failed to ingest spans")
-
-	rows, _ := helper.Store.db.QueryContext(helper.Ctx, "SELECT SpanID, ParentSpanID, ParentSpanID IS NULL as is_null, ParentSpanID = '' as is_empty, length(ParentSpanID) as len FROM spans")
-	defer rows.Close()
-	for rows.Next() {
-		var spanID, parent string
-		var isNull, isEmpty bool
-		var pLen int
-		rows.Scan(&spanID, &parent, &isNull, &isEmpty, &pLen)
-		t.Logf("span=%s parent=%q isNull=%v isEmpty=%v len=%d", spanID, parent, isNull, isEmpty, pLen)
-	}
-
-	aRows, _ := helper.Store.db.QueryContext(helper.Ctx, "SELECT SpanID, Scope, Key, Value FROM attributes WHERE Scope = 'resource'")
-	defer aRows.Close()
-	for aRows.Next() {
-		var spanID, scope, key, value string
-		aRows.Scan(&spanID, &scope, &key, &value)
-		t.Logf("attr: span=%s scope=%s key=%s value=%s", spanID, scope, key, value)
-	}
-
-	const maxNano = 1<<63 - 1
-	raw, err2 := helper.Store.SearchTraces(helper.Ctx, 0, maxNano, nil)
-	t.Logf("raw JSON: %s", string(raw))
-	assert.NoError(t, err2)
 
 	summaries := searchTracesAll(t, helper)
 	assert.Len(t, summaries, 3, "expected 3 traces")
@@ -216,7 +193,7 @@ func spanDataFromGetTrace(t *testing.T, raw json.RawMessage, i int) (name, spanI
 	var out struct {
 		Spans []struct {
 			SpanData struct {
-				Name string `json:"name"`
+				Name   string `json:"name"`
 				SpanID string `json:"spanID"`
 			} `json:"spanData"`
 		} `json:"spans"`
@@ -278,9 +255,9 @@ func TestTraceSuite(t *testing.T) {
 		assert.NoError(t, err, "failed to get trace attributes")
 
 		var attributes []struct {
-			Name            string `json:"name"`
-			AttributeScope  string `json:"attributeScope"`
-			Type            string `json:"type"`
+			Name           string `json:"name"`
+			AttributeScope string `json:"attributeScope"`
+			Type           string `json:"type"`
 		}
 		assert.NoError(t, json.Unmarshal(raw, &attributes))
 		assert.NotEmpty(t, attributes, "should have discovered attributes")
@@ -310,7 +287,7 @@ func TestTraceSuite(t *testing.T) {
 		assert.Equal(t, "string", byScopeType["service.name"])
 		assert.Equal(t, "int64", byScopeType["root.int"])
 		assert.Equal(t, "float64", byScopeType["root.float"])
-		assert.Equal(t, "boolean", byScopeType["root.bool"])
+		assert.Equal(t, "bool", byScopeType["root.bool"])
 		assert.Equal(t, "string[]", byScopeType["root.list"])
 	})
 }
@@ -340,9 +317,9 @@ func TestSearchTraces(t *testing.T) {
 			ID:   "q1",
 			Type: "condition",
 			Query: &Query{
-				Field:          &FieldDefinition{SearchScope: "global"},
-				FieldOperator:  "CONTAINS",
-				Value:          "test-service",
+				Field:         &FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "test-service",
 			},
 		}
 		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
@@ -357,9 +334,9 @@ func TestSearchTraces(t *testing.T) {
 			ID:   "q2",
 			Type: "condition",
 			Query: &Query{
-				Field:          &FieldDefinition{SearchScope: "global"},
-				FieldOperator:  "CONTAINS",
-				Value:          "root-value",
+				Field:         &FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "root-value",
 			},
 		}
 		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
@@ -374,9 +351,9 @@ func TestSearchTraces(t *testing.T) {
 			ID:   "q3",
 			Type: "condition",
 			Query: &Query{
-				Field:          &FieldDefinition{SearchScope: "global"},
-				FieldOperator:  "CONTAINS",
-				Value:          "root-event",
+				Field:         &FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "root-event",
 			},
 		}
 		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
@@ -391,9 +368,9 @@ func TestSearchTraces(t *testing.T) {
 			ID:   "q4",
 			Type: "condition",
 			Query: &Query{
-				Field:          &FieldDefinition{SearchScope: "global"},
-				FieldOperator:  "CONTAINS",
-				Value:          "Hello",
+				Field:         &FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "Hello",
 			},
 		}
 		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
@@ -408,9 +385,9 @@ func TestSearchTraces(t *testing.T) {
 			ID:   "q5",
 			Type: "condition",
 			Query: &Query{
-				Field:          &FieldDefinition{SearchScope: "global"},
-				FieldOperator:  "CONTAINS",
-				Value:          "Link1",
+				Field:         &FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "Link1",
 			},
 		}
 		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
@@ -425,9 +402,9 @@ func TestSearchTraces(t *testing.T) {
 			ID:   "q6",
 			Type: "condition",
 			Query: &Query{
-				Field:          &FieldDefinition{SearchScope: "global"},
-				FieldOperator:  "CONTAINS",
-				Value:          "nonexistent-value-12345",
+				Field:         &FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "nonexistent-value-12345",
 			},
 		}
 		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)

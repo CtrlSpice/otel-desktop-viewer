@@ -134,7 +134,7 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 			WHERE a.LogID IN (SELECT ID FROM filtered)
 			GROUP BY a.LogID, a.Scope
 		)
-		SELECT CAST(COALESCE(json_group_array(json_object(
+		SELECT CAST(COALESCE(to_json(list(json_object(
 			'id', l.ID,
 			'timestamp', l.Timestamp,
 			'observedTimestamp', l.ObservedTimestamp,
@@ -150,8 +150,8 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 			'flags', l.Flags,
 			'eventName', l.EventName,
 			'attributes', COALESCE(log_attrs.attrs, json('[]'))
-		)), '[]') AS VARCHAR) AS logs
-		FROM (SELECT * FROM filtered ORDER BY COALESCE(Timestamp, ObservedTimestamp) DESC) l
+		) ORDER BY COALESCE(l.Timestamp, l.ObservedTimestamp) DESC)), '[]') AS VARCHAR) AS logs
+		FROM filtered l
 		LEFT JOIN log_attrs res ON res.LogID = l.ID AND res.Scope = 'resource'
 		LEFT JOIN log_attrs scope_attrs ON scope_attrs.LogID = l.ID AND scope_attrs.Scope = 'scope'
 		LEFT JOIN log_attrs log_attrs ON log_attrs.LogID = l.ID AND log_attrs.Scope = 'log'`,
