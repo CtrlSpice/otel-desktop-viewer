@@ -35,7 +35,7 @@ var TableCreationQueries = []string{
 		Timestamp BIGINT,
 		DroppedAttributesCount UINTEGER,
 		SearchText VARCHAR,
-		FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
+		FOREIGN KEY (SpanID) REFERENCES spans(SpanID)
 	)`,
 	`CREATE TABLE IF NOT EXISTS links (
 		ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -45,7 +45,7 @@ var TableCreationQueries = []string{
 		TraceState VARCHAR,
 		DroppedAttributesCount UINTEGER,
 		SearchText VARCHAR,
-		FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
+		FOREIGN KEY (SpanID) REFERENCES spans(SpanID)
 	)`,
 	`CREATE TABLE IF NOT EXISTS logs (
 		ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -102,7 +102,7 @@ var TableCreationQueries = []string{
 		PositiveBucketCounts UBIGINT[],
 		NegativeBucketOffset INTEGER,
 		NegativeBucketCounts UBIGINT[],
-		FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE
+		FOREIGN KEY (MetricID) REFERENCES metrics(ID)
 	)`,
 	`CREATE TABLE IF NOT EXISTS exemplars (
 		ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -111,7 +111,7 @@ var TableCreationQueries = []string{
 		Value DOUBLE,
 		TraceID VARCHAR,
 		SpanID VARCHAR,
-		FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE
+		FOREIGN KEY (DataPointID) REFERENCES datapoints(ID)
 	)`,
 	`CREATE TABLE IF NOT EXISTS attributes (
 		SpanID VARCHAR,
@@ -127,13 +127,13 @@ var TableCreationQueries = []string{
 		Value VARCHAR NOT NULL,
 		Type attr_type NOT NULL,
 		-- Foreign keys
-		FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE,
-		FOREIGN KEY (EventID) REFERENCES events(ID) ON DELETE CASCADE,
-		FOREIGN KEY (LinkID) REFERENCES links(ID) ON DELETE CASCADE,
-		FOREIGN KEY (LogID) REFERENCES logs(ID) ON DELETE CASCADE,
-		FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE,
-		FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE,
-		FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID) ON DELETE CASCADE,
+		FOREIGN KEY (SpanID) REFERENCES spans(SpanID),
+		FOREIGN KEY (EventID) REFERENCES events(ID),
+		FOREIGN KEY (LinkID) REFERENCES links(ID),
+		FOREIGN KEY (LogID) REFERENCES logs(ID),
+		FOREIGN KEY (MetricID) REFERENCES metrics(ID),
+		FOREIGN KEY (DataPointID) REFERENCES datapoints(ID),
+		FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID),
 		-- Unique constraint: IDs + Scope + Key (same key can exist per scope per entity)
 		UNIQUE (SpanID, EventID, LinkID, LogID, MetricID, DataPointID, ExemplarID, Scope, Key)
 	)`,

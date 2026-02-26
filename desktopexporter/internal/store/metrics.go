@@ -412,48 +412,68 @@ func (s *Store) SearchMetrics(ctx context.Context, startTime, endTime int64, que
 	return json.RawMessage(raw), nil
 }
 
-// ClearMetrics truncates the metrics table.
+// ClearMetrics truncates the metrics table and all child tables (datapoints, exemplars, and their attributes).
 func (s *Store) ClearMetrics(ctx context.Context) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf("failed to clear metrics: %w", err)
 	}
 
-	if _, err := s.db.ExecContext(ctx, `TRUNCATE TABLE
-		metrics`); err != nil {
-		return fmt.Errorf("failed to clear metrics: %w", err)
+	childQueries := []string{
+		`DELETE FROM attributes WHERE MetricID IS NOT NULL`,
+		`TRUNCATE TABLE exemplars`,
+		`TRUNCATE TABLE datapoints`,
+		`TRUNCATE TABLE metrics`,
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query); err != nil {
+			return fmt.Errorf("failed to clear metrics: %w", err)
+		}
 	}
 	return nil
 }
 
-// DeleteMetricByID deletes a specific metric by its ID.
+// DeleteMetricByID deletes a specific metric by its ID, including child datapoints, exemplars, and attributes.
 func (s *Store) DeleteMetricByID(ctx context.Context, metricID string) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf("failed to delete metric by ID: %w", err)
 	}
 
-	_, err := s.db.ExecContext(ctx, `DELETE FROM metrics WHERE ID = ?`, metricID)
-	if err != nil {
-		return fmt.Errorf("failed to delete metric by ID: %w", err)
+	childQueries := []string{
+		`DELETE FROM attributes WHERE MetricID = ?`,
+		`DELETE FROM exemplars WHERE DataPointID IN (SELECT ID FROM datapoints WHERE MetricID = ?)`,
+		`DELETE FROM datapoints WHERE MetricID = ?`,
+		`DELETE FROM metrics WHERE ID = ?`,
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query, metricID); err != nil {
+			return fmt.Errorf("failed to delete metric by ID: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// DeleteMetricsByIDs deletes multiple metrics by their IDs.
+// DeleteMetricsByIDs deletes multiple metrics by their IDs, including child datapoints, exemplars, and attributes.
 func (s *Store) DeleteMetricsByIDs(ctx context.Context, metricIDs []any) error {
 	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf("failed to delete metric by ID: %w", err)
+		return fmt.Errorf("failed to delete metrics by ID: %w", err)
 	}
 
 	if len(metricIDs) == 0 {
-		return nil // Nothing to delete
+		return nil
 	}
 
 	placeholders := buildPlaceholders(len(metricIDs))
-	query := fmt.Sprintf(`DELETE FROM metrics WHERE ID IN (%s)`, placeholders)
-	_, err := s.db.ExecContext(ctx, query, metricIDs...)
-	if err != nil {
-		return fmt.Errorf("failed to delete metric by ID: %w", err)
+	childQueries := []string{
+		fmt.Sprintf(`DELETE FROM attributes WHERE MetricID IN (%s)`, placeholders),
+		fmt.Sprintf(`DELETE FROM exemplars WHERE DataPointID IN (SELECT ID FROM datapoints WHERE MetricID IN (%s))`, placeholders),
+		fmt.Sprintf(`DELETE FROM datapoints WHERE MetricID IN (%s)`, placeholders),
+		fmt.Sprintf(`DELETE FROM metrics WHERE ID IN (%s)`, placeholders),
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query, metricIDs...); err != nil {
+			return fmt.Errorf("failed to delete metrics by ID: %w", err)
+		}
 	}
 
 	return nil

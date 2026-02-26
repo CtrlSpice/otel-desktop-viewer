@@ -213,7 +213,7 @@ func requireMetric(t *testing.T, m map[string]any, name string) {
 	}
 }
 
-// TestDeleteMetricByID verifies that a single metric can be deleted by its ID.
+// TestDeleteMetricByID verifies that a single metric can be deleted by its ID, including child rows.
 func TestDeleteMetricByID(t *testing.T) {
 	helper, teardown := SetupTest(t)
 	defer teardown()
@@ -228,6 +228,10 @@ func TestDeleteMetricByID(t *testing.T) {
 	assert.True(t, ok, "metric ID should be a string")
 	assert.NotEmpty(t, targetID)
 
+	dpBefore := countRows(t, helper, "SELECT COUNT(*) FROM datapoints WHERE MetricID = ?", targetID)
+	attrsBefore := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID = ?", targetID)
+	assert.Greater(t, dpBefore+attrsBefore, 0, "target metric should have child rows")
+
 	err = helper.Store.DeleteMetricByID(helper.Ctx, targetID)
 	assert.NoError(t, err)
 
@@ -236,9 +240,12 @@ func TestDeleteMetricByID(t *testing.T) {
 	for _, m := range metrics {
 		assert.NotEqual(t, targetID, m["id"])
 	}
+
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM datapoints WHERE MetricID = ?", targetID))
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID = ?", targetID))
 }
 
-// TestDeleteMetricsByIDs verifies that multiple metrics can be deleted by their IDs.
+// TestDeleteMetricsByIDs verifies that multiple metrics can be deleted by their IDs, including child rows.
 func TestDeleteMetricsByIDs(t *testing.T) {
 	helper, teardown := SetupTest(t)
 	defer teardown()
@@ -250,11 +257,17 @@ func TestDeleteMetricsByIDs(t *testing.T) {
 	assert.Len(t, metrics, 4)
 
 	idsToDelete := []any{metrics[0]["id"], metrics[1]["id"]}
+	dpBefore := countRows(t, helper, "SELECT COUNT(*) FROM datapoints WHERE MetricID IN (?, ?)", idsToDelete...)
+	assert.Greater(t, dpBefore, 0, "deleted metrics should have datapoints")
+
 	err = helper.Store.DeleteMetricsByIDs(helper.Ctx, idsToDelete)
 	assert.NoError(t, err)
 
 	metrics = searchMetricsAll(t, helper)
 	assert.Len(t, metrics, 2)
+
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM datapoints WHERE MetricID IN (?, ?)", idsToDelete...))
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID IN (?, ?)", idsToDelete...))
 }
 
 // TestDeleteMetricsByIDs_Empty verifies that deleting with an empty list is a no-op.
@@ -278,7 +291,7 @@ func TestEmptyMetrics(t *testing.T) {
 	assert.Empty(t, metrics)
 }
 
-// TestClearMetrics verifies that all metrics can be cleared.
+// TestClearMetrics verifies that all metrics can be cleared, including child rows.
 func TestClearMetrics(t *testing.T) {
 	helper, teardown := SetupTest(t)
 	defer teardown()
@@ -288,10 +301,15 @@ func TestClearMetrics(t *testing.T) {
 
 	metrics := searchMetricsAll(t, helper)
 	assert.Len(t, metrics, 4)
+	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM datapoints"), 0)
+	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID IS NOT NULL"), 0)
 
 	err = helper.Store.ClearMetrics(helper.Ctx)
 	assert.NoError(t, err)
 
 	metrics = searchMetricsAll(t, helper)
 	assert.Empty(t, metrics)
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM datapoints"))
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM exemplars"))
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID IS NOT NULL"))
 }

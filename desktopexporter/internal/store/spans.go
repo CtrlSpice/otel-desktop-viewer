@@ -392,29 +392,42 @@ func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, 
 	return json.RawMessage(raw), nil
 }
 
-// ClearTraces truncates the spans table.
+// ClearTraces truncates the spans table and all child tables (events, links, and their attributes).
 func (s *Store) ClearTraces(ctx context.Context) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf("failed to clear traces: %w", err)
 	}
 
-	query := `TRUNCATE TABLE spans`
-	if _, err := s.db.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("failed to clear traces: %w", err)
+	childQueries := []string{
+		`DELETE FROM attributes WHERE SpanID IS NOT NULL`,
+		`TRUNCATE TABLE links`,
+		`TRUNCATE TABLE events`,
+		`TRUNCATE TABLE spans`,
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query); err != nil {
+			return fmt.Errorf("failed to clear traces: %w", err)
+		}
 	}
 	return nil
 }
 
-// DeleteSpansByTraceID deletes all spans for a specific trace.
+// DeleteSpansByTraceID deletes all spans for a specific trace, including child events, links, and attributes.
 func (s *Store) DeleteSpansByTraceID(ctx context.Context, traceID string) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf("failed to delete spans by trace ID: %w", err)
 	}
 
-	query := `DELETE FROM spans WHERE TraceID = ?`
-	_, err := s.db.ExecContext(ctx, query, traceID)
-	if err != nil {
-		return fmt.Errorf("failed to delete spans by trace ID: %w", err)
+	childQueries := []string{
+		`DELETE FROM attributes WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID = ?)`,
+		`DELETE FROM links WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID = ?)`,
+		`DELETE FROM events WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID = ?)`,
+		`DELETE FROM spans WHERE TraceID = ?`,
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query, traceID); err != nil {
+			return fmt.Errorf("failed to delete spans by trace ID: %w", err)
+		}
 	}
 
 	return nil
@@ -447,57 +460,74 @@ func (s *Store) GetTraceAttributes(ctx context.Context, startTime, endTime int64
 	return json.RawMessage(raw), nil
 }
 
-// DeleteSpanByID deletes a specific span by its ID.
+// DeleteSpanByID deletes a specific span by its ID, including child events, links, and attributes.
 func (s *Store) DeleteSpanByID(ctx context.Context, spanID string) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf("failed to delete span by ID: %w", err)
 	}
 
-	_, err := s.db.ExecContext(ctx, `DELETE FROM spans WHERE SpanID = ?`, spanID)
-	if err != nil {
-		return fmt.Errorf("failed to delete span by ID: %w", err)
+	childQueries := []string{
+		`DELETE FROM attributes WHERE SpanID = ?`,
+		`DELETE FROM links WHERE SpanID = ?`,
+		`DELETE FROM events WHERE SpanID = ?`,
+		`DELETE FROM spans WHERE SpanID = ?`,
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query, spanID); err != nil {
+			return fmt.Errorf("failed to delete span by ID: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// DeleteSpansByIDs deletes multiple spans by their IDs.
+// DeleteSpansByIDs deletes multiple spans by their IDs, including child events, links, and attributes.
 func (s *Store) DeleteSpansByIDs(ctx context.Context, spanIDs []any) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf("failed to delete span by ID: %w", err)
 	}
 
 	if len(spanIDs) == 0 {
-		return nil // Nothing to delete
+		return nil
 	}
 
 	placeholders := buildPlaceholders(len(spanIDs))
-	query := fmt.Sprintf(`DELETE FROM spans WHERE SpanID IN (%s)`, placeholders)
-
-	_, err := s.db.ExecContext(ctx, query, spanIDs...)
-	if err != nil {
-		return fmt.Errorf("failed to delete span by ID: %w", err)
+	childQueries := []string{
+		fmt.Sprintf(`DELETE FROM attributes WHERE SpanID IN (%s)`, placeholders),
+		fmt.Sprintf(`DELETE FROM links WHERE SpanID IN (%s)`, placeholders),
+		fmt.Sprintf(`DELETE FROM events WHERE SpanID IN (%s)`, placeholders),
+		fmt.Sprintf(`DELETE FROM spans WHERE SpanID IN (%s)`, placeholders),
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query, spanIDs...); err != nil {
+			return fmt.Errorf("failed to delete spans by ID: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// DeleteSpansByTraceIDs deletes all spans for multiple traces.
+// DeleteSpansByTraceIDs deletes all spans for multiple traces, including child events, links, and attributes.
 func (s *Store) DeleteSpansByTraceIDs(ctx context.Context, traceIDs []any) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf("failed to delete spans by trace ID: %w", err)
 	}
 
 	if len(traceIDs) == 0 {
-		return nil // Nothing to delete
+		return nil
 	}
 
 	placeholders := buildPlaceholders(len(traceIDs))
-	query := fmt.Sprintf(`DELETE FROM spans WHERE TraceID IN (%s)`, placeholders)
-
-	_, err := s.db.ExecContext(ctx, query, traceIDs...)
-	if err != nil {
-		return fmt.Errorf("failed to delete spans by trace ID: %w", err)
+	childQueries := []string{
+		fmt.Sprintf(`DELETE FROM attributes WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID IN (%s))`, placeholders),
+		fmt.Sprintf(`DELETE FROM links WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID IN (%s))`, placeholders),
+		fmt.Sprintf(`DELETE FROM events WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID IN (%s))`, placeholders),
+		fmt.Sprintf(`DELETE FROM spans WHERE TraceID IN (%s)`, placeholders),
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query, traceIDs...); err != nil {
+			return fmt.Errorf("failed to delete spans by trace ID: %w", err)
+		}
 	}
 
 	return nil

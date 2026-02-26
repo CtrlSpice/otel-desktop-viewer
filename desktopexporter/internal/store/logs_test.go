@@ -127,7 +127,7 @@ type logEntryJSON struct {
 	BodyType               string          `json:"bodyType"`
 	Resource               resourceLogJSON `json:"resource"`
 	Scope                  scopeLogJSON    `json:"scope"`
-	DroppedAttributesCount  uint32          `json:"droppedAttributesCount"`
+	DroppedAttributesCount uint32          `json:"droppedAttributesCount"`
 	Flags                  uint32          `json:"flags"`
 	EventName              string          `json:"eventName"`
 	Attributes             []attrKeyValue  `json:"attributes"`
@@ -139,10 +139,10 @@ type resourceLogJSON struct {
 }
 
 type scopeLogJSON struct {
-	Name                   string        `json:"name"`
-	Version                string        `json:"version"`
+	Name                   string         `json:"name"`
+	Version                string         `json:"version"`
 	Attributes             []attrKeyValue `json:"attributes"`
-	DroppedAttributesCount uint32        `json:"droppedAttributesCount"`
+	DroppedAttributesCount uint32         `json:"droppedAttributesCount"`
 }
 
 type attrKeyValue struct {
@@ -191,7 +191,7 @@ func TestEmptyLogs(t *testing.T) {
 	assert.Empty(t, entries)
 }
 
-// TestClearLogs verifies that all logs can be cleared from the store.
+// TestClearLogs verifies that all logs can be cleared from the store, including child attributes.
 func TestClearLogs(t *testing.T) {
 	helper, teardown := SetupTest(t)
 	defer teardown()
@@ -203,12 +203,14 @@ func TestClearLogs(t *testing.T) {
 
 	entries := searchLogsAll(t, helper)
 	assert.Len(t, entries, 3)
+	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE LogID IS NOT NULL"), 0)
 
 	err = helper.Store.ClearLogs(helper.Ctx)
 	assert.NoError(t, err)
 
 	entries = searchLogsAll(t, helper)
 	assert.Empty(t, entries)
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE LogID IS NOT NULL"))
 }
 
 // TestLogSuite runs a comprehensive suite on the same three-log dataset.
@@ -294,7 +296,7 @@ func TestLogSuite(t *testing.T) {
 	})
 }
 
-// TestDeleteLogByID verifies that a single log can be deleted by its ID.
+// TestDeleteLogByID verifies that a single log can be deleted by its ID, including child attributes.
 func TestDeleteLogByID(t *testing.T) {
 	helper, teardown := SetupTest(t)
 	defer teardown()
@@ -310,6 +312,9 @@ func TestDeleteLogByID(t *testing.T) {
 	targetID := entries[0].ID
 	assert.NotEmpty(t, targetID)
 
+	attrsBefore := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE LogID = ?", targetID)
+	assert.Greater(t, attrsBefore, 0, "target log should have attributes")
+
 	err = helper.Store.DeleteLogByID(helper.Ctx, targetID)
 	assert.NoError(t, err)
 
@@ -318,6 +323,8 @@ func TestDeleteLogByID(t *testing.T) {
 	for _, e := range entries {
 		assert.NotEqual(t, targetID, e.ID)
 	}
+
+	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE LogID = ?", targetID))
 }
 
 // TestDeleteLogsByIDs verifies that multiple logs can be deleted by their IDs.

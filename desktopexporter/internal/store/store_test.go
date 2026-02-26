@@ -219,6 +219,16 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 	}
 }
 
+// countRows returns the number of rows matching a query like "SELECT COUNT(*) FROM table WHERE ...".
+// Use the full query so callers can add WHERE clauses for filtered counts.
+func countRows(t *testing.T, helper *TestHelper, query string, args ...any) int {
+	t.Helper()
+	var count int
+	err := helper.Store.db.QueryRowContext(helper.Ctx, query, args...).Scan(&count)
+	assert.NoError(t, err, "countRows: %s", query)
+	return count
+}
+
 func TestStoreLifecycleErrors(t *testing.T) {
 	ctx := context.Background()
 	s := NewStore(ctx, "")

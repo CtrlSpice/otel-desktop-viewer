@@ -168,50 +168,62 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 	return json.RawMessage(raw), nil
 }
 
-// ClearLogs truncates the logs table.
+// ClearLogs truncates the logs table and all child attributes.
 func (s *Store) ClearLogs(ctx context.Context) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf("failed to clear logs: %w", err)
 	}
 
-	query := `TRUNCATE TABLE logs`
-	if _, err := s.db.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("failed to clear logs: %w", err)
+	childQueries := []string{
+		`DELETE FROM attributes WHERE LogID IS NOT NULL`,
+		`TRUNCATE TABLE logs`,
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query); err != nil {
+			return fmt.Errorf("failed to clear logs: %w", err)
+		}
 	}
 	return nil
 }
 
-// DeleteLogByID deletes a specific log by its ID.
+// DeleteLogByID deletes a specific log by its ID, including child attributes.
 func (s *Store) DeleteLogByID(ctx context.Context, logID string) error {
 	if err := s.checkConnection(); err != nil {
 		return fmt.Errorf("failed to delete log by ID: %w", err)
 	}
 
-	query := `DELETE FROM logs WHERE ID = ?`
-	_, err := s.db.ExecContext(ctx, query, logID)
-	if err != nil {
-		return fmt.Errorf("failed to delete log by ID: %w", err)
+	childQueries := []string{
+		`DELETE FROM attributes WHERE LogID = ?`,
+		`DELETE FROM logs WHERE ID = ?`,
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query, logID); err != nil {
+			return fmt.Errorf("failed to delete log by ID: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// DeleteLogsByIDs deletes multiple logs by their IDs.
+// DeleteLogsByIDs deletes multiple logs by their IDs, including child attributes.
 func (s *Store) DeleteLogsByIDs(ctx context.Context, logIDs []any) error {
 	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf("failed to delete log by ID: %w", err)
+		return fmt.Errorf("failed to delete logs by ID: %w", err)
 	}
 
 	if len(logIDs) == 0 {
-		return nil // Nothing to delete
+		return nil
 	}
 
 	placeholders := buildPlaceholders(len(logIDs))
-	query := fmt.Sprintf(`DELETE FROM logs WHERE ID IN (%s)`, placeholders)
-
-	_, err := s.db.ExecContext(ctx, query, logIDs...)
-	if err != nil {
-		return fmt.Errorf("failed to delete log by ID: %w", err)
+	childQueries := []string{
+		fmt.Sprintf(`DELETE FROM attributes WHERE LogID IN (%s)`, placeholders),
+		fmt.Sprintf(`DELETE FROM logs WHERE ID IN (%s)`, placeholders),
+	}
+	for _, query := range childQueries {
+		if _, err := s.db.ExecContext(ctx, query, logIDs...); err != nil {
+			return fmt.Errorf("failed to delete logs by ID: %w", err)
+		}
 	}
 
 	return nil

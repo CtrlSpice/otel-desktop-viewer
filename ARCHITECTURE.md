@@ -240,7 +240,7 @@ CREATE TABLE datapoints (
     PositiveBucketCounts UBIGINT[],
     NegativeBucketOffset INTEGER,
     NegativeBucketCounts UBIGINT[],
-    FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE
+    FOREIGN KEY (MetricID) REFERENCES metrics(ID)
 );
 
 -- CHECK constraints enforce discriminated union pattern based on MetricType
@@ -503,14 +503,14 @@ CREATE TABLE attributes (
     Key VARCHAR NOT NULL,
     Value VARCHAR NOT NULL,
     Type attr_type NOT NULL,
-    -- Foreign keys (all with CASCADE deletes)
-    FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE,
-    FOREIGN KEY (EventID) REFERENCES events(ID) ON DELETE CASCADE,
-    FOREIGN KEY (LinkID) REFERENCES links(ID) ON DELETE CASCADE,
-    FOREIGN KEY (LogID) REFERENCES logs(ID) ON DELETE CASCADE,
-    FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE,
-    FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE,
-    FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID) ON DELETE CASCADE,
+    -- Foreign keys (cascade deletes handled in application code)
+    FOREIGN KEY (SpanID) REFERENCES spans(SpanID),
+    FOREIGN KEY (EventID) REFERENCES events(ID),
+    FOREIGN KEY (LinkID) REFERENCES links(ID),
+    FOREIGN KEY (LogID) REFERENCES logs(ID),
+    FOREIGN KEY (MetricID) REFERENCES metrics(ID),
+    FOREIGN KEY (DataPointID) REFERENCES datapoints(ID),
+    FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID),
     -- Unique constraint: combination of all ID columns + Key ensures uniqueness
     UNIQUE (SpanID, EventID, LinkID, LogID, MetricID, DataPointID, ExemplarID, Key)
 );
@@ -547,9 +547,9 @@ CREATE INDEX idx_attributes_key_value ON attributes(Key, Value, Type);
      - `EventID IS NOT NULL, SpanID IS NOT NULL, others NULL` → event attribute (SpanID is parent)
      - `DataPointID IS NOT NULL, MetricID IS NOT NULL, others NULL` → data point attribute (MetricID is parent)
    - No SignalType/Scope columns needed - the ID pattern is the discriminator
-2. **Foreign key integrity**: All ID columns have foreign keys with CASCADE deletes
+2. **Foreign key integrity**: All ID columns have foreign keys for referential integrity
    - Database-enforced referential integrity
-   - Automatic cleanup when parent entities are deleted
+   - Cascade deletes handled in application code (DuckDB does not support ON DELETE CASCADE)
 3. **CHECK constraints enforce discriminated union**: 
    - Exactly one direct owner ID must be populated
    - Parent IDs must be populated when required (e.g., EventID requires SpanID)
@@ -643,7 +643,7 @@ CREATE TABLE events (
     Name VARCHAR,
     Timestamp BIGINT,
     DroppedAttributesCount UINTEGER,
-    FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
+    FOREIGN KEY (SpanID) REFERENCES spans(SpanID)
 );
 
 -- Links table
@@ -654,7 +654,7 @@ CREATE TABLE links (
     LinkedSpanID BLOB,         -- 8 bytes (from OpenTelemetry)
     TraceState VARCHAR,
     DroppedAttributesCount UINTEGER,
-    FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE
+    FOREIGN KEY (SpanID) REFERENCES spans(SpanID)
 );
 
 -- Exemplars table
@@ -665,7 +665,7 @@ CREATE TABLE exemplars (
     Value DOUBLE,
     TraceID BLOB,  -- 16 bytes (from OpenTelemetry)
     SpanID BLOB,   -- 8 bytes (from OpenTelemetry)
-    FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE
+    FOREIGN KEY (DataPointID) REFERENCES datapoints(ID)
 );
 ```
 
@@ -688,14 +688,14 @@ CREATE TABLE attributes (
     Key VARCHAR NOT NULL,
     Value VARCHAR NOT NULL,
     Type attr_type NOT NULL,
-    -- Foreign keys (all with CASCADE deletes)
-    FOREIGN KEY (SpanID) REFERENCES spans(SpanID) ON DELETE CASCADE,
-    FOREIGN KEY (EventID) REFERENCES events(ID) ON DELETE CASCADE,
-    FOREIGN KEY (LinkID) REFERENCES links(ID) ON DELETE CASCADE,
-    FOREIGN KEY (LogID) REFERENCES logs(ID) ON DELETE CASCADE,
-    FOREIGN KEY (MetricID) REFERENCES metrics(ID) ON DELETE CASCADE,
-    FOREIGN KEY (DataPointID) REFERENCES datapoints(ID) ON DELETE CASCADE,
-    FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID) ON DELETE CASCADE,
+    -- Foreign keys (cascade deletes handled in application code)
+    FOREIGN KEY (SpanID) REFERENCES spans(SpanID),
+    FOREIGN KEY (EventID) REFERENCES events(ID),
+    FOREIGN KEY (LinkID) REFERENCES links(ID),
+    FOREIGN KEY (LogID) REFERENCES logs(ID),
+    FOREIGN KEY (MetricID) REFERENCES metrics(ID),
+    FOREIGN KEY (DataPointID) REFERENCES datapoints(ID),
+    FOREIGN KEY (ExemplarID) REFERENCES exemplars(ID),
     -- Unique constraint ensures one attribute per entity+key combination
     UNIQUE (SpanID, EventID, LinkID, LogID, MetricID, DataPointID, ExemplarID, Key)
 );
