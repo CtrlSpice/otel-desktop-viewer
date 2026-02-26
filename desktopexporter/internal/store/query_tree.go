@@ -85,19 +85,6 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 	var sqlConditions []string
 	for _, dbExpression := range dbExpressions {
 		expression := dbExpression
-		if field.SearchScope == "attribute" {
-			if field.Type == "" {
-				return fmt.Errorf("attribute field %s missing type", field.Name)
-			}
-
-			// Map frontend type format to DuckDB union tag format
-			duckDBType := field.Type
-			if strings.HasSuffix(field.Type, "[]") {
-				duckDBType = strings.TrimSuffix(field.Type, "[]") + "_list"
-			}
-
-			expression = fmt.Sprintf("union_extract(%s, '%s')", dbExpression, duckDBType)
-		}
 
 		sqlCondition, err := BuildOperatorCondition(expression, query, namedArgs)
 		if err != nil {
@@ -224,11 +211,35 @@ func BuildOperatorCondition(expression string, query *Query, namedArgs *map[stri
 	return expression + " " + operatorString, nil
 }
 
-// handleArrayOperator handles array operators within BuildOperatorCondition
+// mapArrayTypeToDuckDB maps frontend array type names to DuckDB list types for use with from_json.
+func mapArrayTypeToDuckDB(frontendType string) (string, error) {
+	switch frontendType {
+	case "string[]":
+		return "VARCHAR[]", nil
+	case "int64[]":
+		return "BIGINT[]", nil
+	case "float64[]":
+		return "DOUBLE[]", nil
+	case "boolean[]":
+		return "BOOLEAN[]", nil
+	default:
+		return "", fmt.Errorf("unsupported array type: %s", frontendType)
+	}
+}
+
+// handleArrayOperator handles array operators within BuildOperatorCondition.
+// Attribute values are stored as VARCHAR (JSON-serialized for arrays), so we use
+// from_json to parse them back into a DuckDB list at query time.
 func handleArrayOperator(expression string, query *Query, namedArgs *map[string]any) (string, error) {
 	operator := query.FieldOperator
 	value := query.Value
 	paramName := fmt.Sprintf("value_%d", len(*namedArgs)-2)
+
+	duckDBType, err := mapArrayTypeToDuckDB(query.Field.Type)
+	if err != nil {
+		return "", err
+	}
+	expression = fmt.Sprintf("CAST(%s AS %s)", expression, duckDBType)
 
 	switch operator {
 	case "=", "!=":

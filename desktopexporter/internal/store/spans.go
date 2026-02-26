@@ -608,12 +608,18 @@ func mapTraceAttributeExpressions(field *FieldDefinition) ([]string, error) {
 
 // mapTraceGlobalExpressions returns all SQL expressions for a global search across traces.
 // Each table has a SearchText column populated at ingest time; attributes are searched directly via Key/Value.
+//
+// The "= ?" placeholders are conventions: BuildOperatorCondition replaces "= ?" with the
+// actual operator and a named CTE parameter (e.g. "LIKE value_0") based on the query's
+// FieldOperator.
+//
+// See BuildOperatorCondition in query_tree.go.
 func mapTraceGlobalExpressions() ([]string, error) {
 	return []string{
-		"s.SearchText LIKE ?",
-		"EXISTS(SELECT 1 FROM events e WHERE e.SpanID = s.SpanID AND e.SearchText LIKE ?)",
-		"EXISTS(SELECT 1 FROM links l WHERE l.SpanID = s.SpanID AND l.SearchText LIKE ?)",
-		"EXISTS(SELECT 1 FROM attributes a WHERE a.SpanID = s.SpanID AND (a.Key LIKE ? OR a.Value LIKE ?))",
+		"s.SearchText = ?",
+		"EXISTS(SELECT 1 FROM events e WHERE e.SpanID = s.SpanID AND e.SearchText = ?)",
+		"EXISTS(SELECT 1 FROM links l WHERE l.SpanID = s.SpanID AND l.SearchText = ?)",
+		"EXISTS(SELECT 1 FROM attributes a WHERE a.SpanID = s.SpanID AND (a.Key = ? OR a.Value = ?))",
 	}, nil
 }
 

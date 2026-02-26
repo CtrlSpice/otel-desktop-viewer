@@ -523,6 +523,72 @@ func TestSearchTraces(t *testing.T) {
 		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
 	})
 
+	t.Run("SpanAttribute_Int64Array", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q13b",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "root.int_list",
+					SearchScope:    "attribute",
+					AttributeScope: "span",
+					Type:           "int64[]",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "20",
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+	})
+
+	t.Run("SpanAttribute_Float64Array", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q13c",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "root.float_list",
+					SearchScope:    "attribute",
+					AttributeScope: "span",
+					Type:           "float64[]",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "2.2",
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+	})
+
+	t.Run("SpanAttribute_BooleanArray", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q13d",
+			Type: "condition",
+			Query: &Query{
+				Field: &FieldDefinition{
+					Name:           "root.bool_list",
+					SearchScope:    "attribute",
+					AttributeScope: "span",
+					Type:           "boolean[]",
+				},
+				FieldOperator: "CONTAINS",
+				Value:         "true",
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceIDHex, summaries[0].TraceID)
+	})
+
 	t.Run("EventAttribute_String", func(t *testing.T) {
 		query := &QueryNode{
 			ID:   "q15",
@@ -746,6 +812,17 @@ func createTestTracePdata() ptrace.Traces {
 	arr.AppendEmpty().SetStr("one")
 	arr.AppendEmpty().SetStr("two")
 	arr.AppendEmpty().SetStr("three")
+	intArr := s0.Attributes().PutEmptySlice("root.int_list")
+	intArr.AppendEmpty().SetInt(10)
+	intArr.AppendEmpty().SetInt(20)
+	intArr.AppendEmpty().SetInt(30)
+	floatArr := s0.Attributes().PutEmptySlice("root.float_list")
+	floatArr.AppendEmpty().SetDouble(1.1)
+	floatArr.AppendEmpty().SetDouble(2.2)
+	floatArr.AppendEmpty().SetDouble(3.3)
+	boolArr := s0.Attributes().PutEmptySlice("root.bool_list")
+	boolArr.AppendEmpty().SetBool(true)
+	boolArr.AppendEmpty().SetBool(false)
 	e0 := s0.Events().AppendEmpty()
 	e0.SetName("root-event-1")
 	e0.SetTimestamp(pcommon.Timestamp(event1Time))

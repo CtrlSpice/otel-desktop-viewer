@@ -290,10 +290,17 @@ func mapLogAttributeExpressions(field *FieldDefinition) ([]string, error) {
 	}
 }
 
+// mapLogGlobalExpressions returns all SQL expressions for a global search across logs.
+//
+// The "= ?" placeholders are conventions: BuildOperatorCondition replaces "= ?" with the
+// actual operator and a named CTE parameter (e.g. "LIKE value_0") based on the query's
+// FieldOperator.
+//
+// See BuildOperatorCondition in query_tree.go.
 func mapLogGlobalExpressions() ([]string, error) {
 	return []string{
-		"l.SearchText LIKE ?",
-		"EXISTS(SELECT 1 FROM attributes a WHERE a.LogID = l.ID AND (a.Key LIKE ? OR a.Value LIKE ?))",
+		"l.SearchText = ?",
+		"EXISTS(SELECT 1 FROM attributes a WHERE a.LogID = l.ID AND (a.Key = ? OR a.Value = ?))",
 	}, nil
 }
 

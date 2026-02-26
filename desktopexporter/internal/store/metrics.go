@@ -538,9 +538,16 @@ func mapMetricAttributeExpressions(field *FieldDefinition) ([]string, error) {
 	}
 }
 
+// mapMetricGlobalExpressions returns all SQL expressions for a global search across metrics.
+//
+// The "= ?" placeholders are conventions: BuildOperatorCondition replaces "= ?" with the
+// actual operator and a named CTE parameter (e.g. "LIKE value_0") based on the query's
+// FieldOperator.
+//
+// See BuildOperatorCondition in query_tree.go.
 func mapMetricGlobalExpressions() ([]string, error) {
 	return []string{
-		"m.SearchText LIKE ?",
-		"EXISTS(SELECT 1 FROM attributes a WHERE a.MetricID = m.ID AND (a.Key LIKE ? OR a.Value LIKE ?))",
+		"m.SearchText = ?",
+		"EXISTS(SELECT 1 FROM attributes a WHERE a.MetricID = m.ID AND (a.Key = ? OR a.Value = ?))",
 	}, nil
 }
