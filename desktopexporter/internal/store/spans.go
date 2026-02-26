@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/marcboeker/go-duckdb/v2"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -85,9 +86,9 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 
 				// Insert events into events table (generate UUID in Go so we can set event attributes)
 				for _, event := range span.Events().All() {
-					eventID := uuid.New()
-					err = appenders["events"].AppendRow(
-						eventID.String(),               // ID UUID
+				eventID := duckdb.UUID(uuid.New())
+				err = appenders["events"].AppendRow(
+					eventID,                        // ID UUID
 						spanIDStr,                      // SpanID VARCHAR
 						event.Name(),                   // Name VARCHAR
 						int64(event.Timestamp()),       // Timestamp BIGINT
@@ -97,15 +98,15 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 					if err != nil {
 						return fmt.Errorf("failed to append row: %w", err)
 					}
-					if err := IngestAttributes(appenders["attributes"],
-						[]AttributeBatchItem{{Attrs: event.Attributes(), IDs: AttributeOwnerIDs{SpanID: spanIDStr, EventID: &eventID}, Scope: "event"}}); err != nil {
+				if err := IngestAttributes(appenders["attributes"],
+					[]AttributeBatchItem{{Attrs: event.Attributes(), IDs: AttributeOwnerIDs{SpanID: spanIDStr, EventID: &eventID}, Scope: "event"}}); err != nil {
 						return err
 					}
 				}
 
 				// Insert links into links table (generate UUID in Go so we can set link attributes)
 				for _, link := range span.Links().All() {
-					linkID := uuid.New()
+					linkID := duckdb.UUID(uuid.New())
 					linkTraceID := link.TraceID()
 					linkTraceIDStr := hex.EncodeToString(linkTraceID[:])
 					linkSpanID := link.SpanID()
@@ -118,7 +119,7 @@ func (s *Store) IngestSpans(ctx context.Context, traces ptrace.Traces) error {
 					}, " ")
 
 					err = appenders["links"].AppendRow(
-						linkID.String(),               // ID UUID
+						linkID,                        // ID UUID
 						spanIDStr,                     // SpanID VARCHAR
 						linkTraceIDStr,                // TraceID VARCHAR
 						linkSpanIDStr,                 // LinkedSpanID VARCHAR

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/marcboeker/go-duckdb/v2"
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
@@ -36,7 +37,7 @@ func (s *Store) IngestLogs(ctx context.Context, logs plog.Logs) error {
 			scope := scopeLogs.Scope()
 
 			for _, log := range scopeLogs.LogRecords().All() {
-				logID := uuid.New()
+				logID := duckdb.UUID(uuid.New())
 				traceIDStr := ""
 				if tid := log.TraceID(); !tid.IsEmpty() {
 					traceIDStr = hex.EncodeToString(tid[:])
@@ -56,7 +57,7 @@ func (s *Store) IngestLogs(ctx context.Context, logs plog.Logs) error {
 				}, " ")
 
 				err := appenders["logs"].AppendRow(
-					logID.String(),                    // ID UUID
+					logID,                             // ID UUID
 					int64(log.Timestamp()),            // Timestamp BIGINT
 					int64(log.ObservedTimestamp()),    // ObservedTimestamp BIGINT
 					traceIDStr,                        // TraceID VARCHAR

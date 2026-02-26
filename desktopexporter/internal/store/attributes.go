@@ -1,22 +1,20 @@
 package store
 
 import (
-	"github.com/google/uuid"
 	"github.com/marcboeker/go-duckdb/v2"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
 // AttributeOwnerIDs specifies which entity owns the attributes.
-// Populate only the IDs that apply; leave others nil. Used by IngestAttributes
-// to build the correct row (SpanID VARCHAR, EventID UUID, ..., Key, Value, Type).
+// Populate only the IDs that apply; leave others nil.
 type AttributeOwnerIDs struct {
 	SpanID      string
-	EventID     *uuid.UUID
-	LinkID      *uuid.UUID
-	LogID       *uuid.UUID
-	MetricID    *uuid.UUID
-	DataPointID *uuid.UUID
-	ExemplarID  *uuid.UUID
+	EventID     *duckdb.UUID
+	LinkID      *duckdb.UUID
+	LogID       *duckdb.UUID
+	MetricID    *duckdb.UUID
+	DataPointID *duckdb.UUID
+	ExemplarID  *duckdb.UUID
 }
 
 // AttributeBatchItem pairs an attribute map with the entity IDs and scope that own it.
@@ -47,10 +45,10 @@ func IngestAttributes(appender *duckdb.Appender, items []AttributeBatchItem) err
 				ids.MetricID,    // MetricID UUID
 				ids.DataPointID, // DataPointID UUID
 				ids.ExemplarID,  // ExemplarID UUID
-				scope,          // Scope VARCHAR
-				k,              // Key VARCHAR
-				valueStr,       // Value VARCHAR
-				attrType,       // Type attr_type
+				scope,           // Scope VARCHAR
+				k,               // Key VARCHAR
+				valueStr,        // Value VARCHAR
+				attrType,        // Type attr_type
 			); err != nil {
 				return err
 			}

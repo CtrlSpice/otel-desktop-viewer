@@ -39,7 +39,7 @@ func (s *Store) IngestMetrics(ctx context.Context, metrics pmetric.Metrics) erro
 			scope := scopeMetric.Scope()
 
 			for _, metric := range scopeMetric.Metrics().All() {
-				metricID := uuid.New()
+				metricID := duckdb.UUID(uuid.New())
 				received := time.Now().UnixNano()
 				metricSearchText := strings.Join([]string{
 					metric.Name(),
@@ -49,8 +49,8 @@ func (s *Store) IngestMetrics(ctx context.Context, metrics pmetric.Metrics) erro
 					scope.Version(),
 				}, " ")
 
-				err = appenders["metrics"].AppendRow(
-					metricID.String(),                 // ID UUID
+			err = appenders["metrics"].AppendRow(
+				metricID,                         // ID UUID
 					metric.Name(),                     // Name VARCHAR
 					metric.Description(),              // Description VARCHAR
 					metric.Unit(),                     // Unit VARCHAR
@@ -106,10 +106,10 @@ func (s *Store) IngestMetrics(ctx context.Context, metrics pmetric.Metrics) erro
 }
 
 // ingestExemplars appends exemplar rows and their filtered attributes for a datapoint.
-func ingestExemplars(appenders map[string]*duckdb.Appender, metricID, datapointID uuid.UUID, exemplars pmetric.ExemplarSlice) error {
+func ingestExemplars(appenders map[string]*duckdb.Appender, metricID, datapointID duckdb.UUID, exemplars pmetric.ExemplarSlice) error {
 	for i := 0; i < exemplars.Len(); i++ {
 		ex := exemplars.At(i)
-		exemplarID := uuid.New()
+		exemplarID := duckdb.UUID(uuid.New())
 		traceIDStr := ""
 		if tid := ex.TraceID(); !tid.IsEmpty() {
 			traceIDStr = hex.EncodeToString(tid[:])
@@ -119,8 +119,8 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, metricID, datapointI
 			spanIDStr = hex.EncodeToString(sid[:])
 		}
 		if err := appenders["exemplars"].AppendRow(
-			exemplarID.String(),   // ID UUID
-			datapointID.String(),  // DataPointID UUID
+			exemplarID,   // ID UUID
+			datapointID,  // DataPointID UUID
 			int64(ex.Timestamp()), // Timestamp BIGINT
 			ex.DoubleValue(),      // Value DOUBLE
 			traceIDStr,            // TraceID VARCHAR
@@ -139,14 +139,14 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, metricID, datapointI
 }
 
 // ingestGaugeDatapoints appends Gauge datapoint rows and their attributes/exemplars.
-func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID uuid.UUID, dps pmetric.NumberDataPointSlice) error {
+func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.UUID, dps pmetric.NumberDataPointSlice) error {
 	for i := 0; i < dps.Len(); i++ {
 		gp := dps.At(i)
 		val, valType := numberDataPointValue(gp)
-		datapointID := uuid.New()
+		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
-			datapointID.String(),       // ID UUID
-			metricID.String(),          // MetricID UUID
+			datapointID,                // ID UUID
+			metricID,                   // MetricID UUID
 			"Gauge",                    // MetricType VARCHAR
 			int64(gp.Timestamp()),      // Timestamp BIGINT
 			int64(gp.StartTimestamp()), // StartTime BIGINT
@@ -178,15 +178,15 @@ func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID uuid.
 }
 
 // ingestSumDatapoints appends Sum datapoint rows and their attributes/exemplars.
-func ingestSumDatapoints(appenders map[string]*duckdb.Appender, metricID uuid.UUID, sum pmetric.Sum) error {
+func ingestSumDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.UUID, sum pmetric.Sum) error {
 	dps := sum.DataPoints()
 	for i := 0; i < dps.Len(); i++ {
 		dp := dps.At(i)
 		val, valType := numberDataPointValue(dp)
-		datapointID := uuid.New()
+		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
-			datapointID.String(),                  // ID UUID
-			metricID.String(),                     // MetricID UUID
+			datapointID,                           // ID UUID
+			metricID,                              // MetricID UUID
 			"Sum",                                 // MetricType VARCHAR
 			int64(dp.Timestamp()),                 // Timestamp BIGINT
 			int64(dp.StartTimestamp()),            // StartTime BIGINT
@@ -217,13 +217,13 @@ func ingestSumDatapoints(appenders map[string]*duckdb.Appender, metricID uuid.UU
 }
 
 // ingestHistogramDatapoints appends Histogram datapoint rows and their attributes/exemplars.
-func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID uuid.UUID, hist pmetric.Histogram) error {
+func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.UUID, hist pmetric.Histogram) error {
 	for i := 0; i < hist.DataPoints().Len(); i++ {
 		dp := hist.DataPoints().At(i)
-		datapointID := uuid.New()
+		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
-			datapointID.String(),       // ID UUID
-			metricID.String(),          // MetricID UUID
+			datapointID,                // ID UUID
+			metricID,                   // MetricID UUID
 			"Histogram",                // MetricType VARCHAR
 			int64(dp.Timestamp()),      // Timestamp BIGINT
 			int64(dp.StartTimestamp()), // StartTime BIGINT
@@ -258,14 +258,14 @@ func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID u
 }
 
 // ingestExponentialHistogramDatapoints appends ExponentialHistogram datapoint rows and their attributes/exemplars.
-func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID uuid.UUID, exp pmetric.ExponentialHistogram) error {
+func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.UUID, exp pmetric.ExponentialHistogram) error {
 	for i := 0; i < exp.DataPoints().Len(); i++ {
 		dp := exp.DataPoints().At(i)
 		pos, neg := dp.Positive(), dp.Negative()
-		datapointID := uuid.New()
+		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
-			datapointID.String(),       // ID UUID
-			metricID.String(),          // MetricID UUID
+			datapointID,                // ID UUID
+			metricID,                   // MetricID UUID
 			"ExponentialHistogram",     // MetricType VARCHAR
 			int64(dp.Timestamp()),      // Timestamp BIGINT
 			int64(dp.StartTimestamp()), // StartTime BIGINT
