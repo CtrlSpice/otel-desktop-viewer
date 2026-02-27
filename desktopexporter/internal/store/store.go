@@ -4,12 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"log"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/marcboeker/go-duckdb/v2"
+)
+
+// Sentinel errors for use with errors.Is.
+var (
+	ErrLogIDNotFound          = errors.New("log ID not found")
+	ErrTraceIDNotFound        = errors.New("trace ID not found")
+	ErrSpanIDNotFound         = errors.New("span ID not found")
+	ErrMetricIDNotFound       = errors.New("metric ID not found")
+	ErrStoreConnectionClosed  = errors.New("store connection is closed")
 )
 
 type Store struct {
@@ -26,12 +36,12 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	}
 	connector, err := duckdb.NewConnector(dbPath, nil)
 	if err != nil {
-		log.Fatalf(ErrInitConnector, err)
+		log.Fatalf("failed to initialize connector: %v", err)
 	}
 
 	conn, err := connector.Connect(ctx)
 	if err != nil {
-		log.Fatalf(ErrInitConnection, err)
+		log.Fatalf("failed to connect to database: %v", err)
 	}
 
 	db := sql.OpenDB(connector)
@@ -72,38 +82,6 @@ func (s *Store) Close() error {
 	if s.db != nil {
 		s.db.Close()
 		s.db = nil
-	}
-
-	return nil
-}
-
-// SampleDataExists checks if sample data exists by looking for the telemetry.sample attribute.
-func (s *Store) SampleDataExists(ctx context.Context) (bool, error) {
-	if err := s.checkConnection(); err != nil {
-		return false, err
-	}
-
-	// Check if any spans have the telemetry.sample attribute set to true
-	var count int
-	err := s.db.QueryRowContext(ctx, CheckSampleDataExists).Scan(&count)
-	if err != nil {
-		return false, err
-	}
-
-	// If we found sample traces, sample data exists
-	return count > 0, nil
-}
-
-// ClearSampleData deletes only the sample data by targeting the telemetry.sample attribute.
-func (s *Store) ClearSampleData(ctx context.Context) error {
-	if err := s.checkConnection(); err != nil {
-		return err
-	}
-
-	// Delete sample data from all tables in a single query
-	_, err := s.db.ExecContext(ctx, ClearSampleData)
-	if err != nil {
-		return err
 	}
 
 	return nil

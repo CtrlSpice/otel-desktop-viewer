@@ -13,9 +13,6 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/logs"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/metrics"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry/traces"
 )
 
 type desktopExporter struct {
@@ -33,18 +30,15 @@ func newDesktopExporter(cfg *Config) *desktopExporter {
 }
 
 func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
-	spanDataSlice := traces.NewSpanPayload(source).ExtractSpans()
-	return e.store.AddSpans(ctx, spanDataSlice)
+	return e.store.IngestSpans(ctx, source)
 }
 
 func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {
-	metricsDataSlice := metrics.NewMetricsPayload(source).ExtractMetrics()
-	return e.store.AddMetrics(ctx, metricsDataSlice)
+	return e.store.IngestMetrics(ctx, source)
 }
 
 func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error {
-	logDataSlice := logs.NewLogsPayload(source).ExtractLogs()
-	return e.store.AddLogs(ctx, logDataSlice)
+	return e.store.IngestLogs(ctx, source)
 }
 
 func (e *desktopExporter) Start(ctx context.Context, host component.Host) error {
