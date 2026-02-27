@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -101,6 +102,31 @@ func createTestLogsPdata(baseTime int64) plog.Logs {
 	rec2.Attributes().PutStr("log.string", "log-c")
 	rec2.SetEventName("event.c")
 
+	return logs
+}
+
+// createTestLogsPdataN builds plog.Logs with n log records (one resource/scope), each with
+// resource, scope, and log attributes. Used to exercise the flushIntervalLogs codepath
+// and attribute flushing by ingesting >= 100 logs in one call.
+func createTestLogsPdataN(baseTime int64, n int) plog.Logs {
+	logs := plog.NewLogs()
+	rl := logs.ResourceLogs().AppendEmpty()
+	rl.Resource().Attributes().PutStr("service.name", "test-service")
+	rl.Resource().Attributes().PutStr("resource.key", "resource.val")
+	sl := rl.ScopeLogs().AppendEmpty()
+	sl.Scope().SetName("test-scope")
+	sl.Scope().SetVersion("v1.0.0")
+	sl.Scope().Attributes().PutStr("scope.key", "scope.val")
+	for i := 0; i < n; i++ {
+		rec := sl.LogRecords().AppendEmpty()
+		rec.SetTimestamp(pcommon.Timestamp(baseTime + int64(i)))
+		rec.SetObservedTimestamp(pcommon.Timestamp(baseTime + int64(i)))
+		rec.SetSeverityText("INFO")
+		rec.SetSeverityNumber(plog.SeverityNumberInfo)
+		rec.Body().SetStr("log message")
+		rec.Attributes().PutStr("log.index", fmt.Sprintf("%d", i))
+		rec.Attributes().PutStr("flush_test", "ok")
+	}
 	return logs
 }
 
@@ -357,6 +383,46 @@ func TestDeleteLogsByIDs_Empty(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestIngestLogs_FlushInterval exercises the flushIntervalLogs codepath by ingesting
+// a few hundred logs in one call (flush runs when logCount % 100 == 0). All logs
+// have resource, scope, and log attributes; we assert they were flushed correctly.
+func TestIngestLogs_FlushInterval(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	const batchSize = 250
+	logs := createTestLogsPdataN(baseTime, batchSize)
+	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	assert.NoError(t, err)
+
+	entries := searchLogsAll(t, helper)
+	assert.Len(t, entries, batchSize)
+
+	// Find entries by log.index so we don't depend on result order.
+	byIndex := make(map[string]*logEntryJSON)
+	for i := range entries {
+		e := &entries[i]
+		m := attrMap(e.Attributes)
+		idx := m["log.index"]
+		byIndex[idx] = e
+	}
+
+	// Assert attributes on first (before any flush), 99th (before flush at 100), 100th (at flush), 249th (after multiple flushes).
+	for _, idx := range []string{"0", "99", "100", "249"} {
+		e, ok := byIndex[idx]
+		assert.True(t, ok, "entry with log.index %s", idx)
+		resourceAttrs := attrMap(e.Resource.Attributes)
+		assert.Equal(t, "test-service", resourceAttrs["service.name"], "resource.service.name for index %s", idx)
+		assert.Equal(t, "resource.val", resourceAttrs["resource.key"], "resource.key for index %s", idx)
+		scopeAttrs := attrMap(e.Scope.Attributes)
+		assert.Equal(t, "scope.val", scopeAttrs["scope.key"], "scope.key for index %s", idx)
+		logAttrs := attrMap(e.Attributes)
+		assert.Equal(t, idx, logAttrs["log.index"], "log.index for index %s", idx)
+		assert.Equal(t, "ok", logAttrs["flush_test"], "flush_test for index %s", idx)
+	}
+}
+
 // TestSearchLogs tests SearchLogs with various query types.
 func TestSearchLogs(t *testing.T) {
 	helper, teardown := SetupTest(t)
@@ -458,6 +524,117 @@ func TestSearchLogs(t *testing.T) {
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
 		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[0].SpanID)
+	})
+
+	t.Run("Field_TraceID", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q5b",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{Name: "traceID", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "00000000-0000-0000-0000-000000000099",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 3, "all three logs share the same trace")
+		for _, e := range entries {
+			assert.Equal(t, "00000000-0000-0000-0000-000000000099", e.TraceID)
+		}
+	})
+
+	t.Run("Field_SeverityNumber", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q5c",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{Name: "severityNumber", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "17", // plog.SeverityNumberError
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 1)
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
+		assert.Equal(t, int32(17), entries[0].SeverityNumber)
+	})
+
+	t.Run("Field_Body", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q5d",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{Name: "body", SearchScope: "field"},
+				FieldOperator: "CONTAINS",
+				Value:         "Operation warning",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 1)
+		assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[0].SpanID)
+		assert.Contains(t, entries[0].Body, "Operation warning")
+	})
+
+	t.Run("Field_EventName", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q5e",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{Name: "eventName", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "event.a",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 1)
+		assert.Equal(t, "event.a", entries[0].EventName)
+		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[0].SpanID)
+	})
+
+	t.Run("Field_ScopeName", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q5f",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{Name: "scope.name", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "test-scope",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 3)
+		for _, e := range entries {
+			assert.Equal(t, "test-scope", e.Scope.Name)
+		}
+	})
+
+	t.Run("Field_ScopeVersion", func(t *testing.T) {
+		query := &QueryNode{
+			ID:   "q5g",
+			Type: "condition",
+			Query: &Query{
+				Field:         &FieldDefinition{Name: "scope.version", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "v1.0.0",
+			},
+		}
+		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 3)
+		for _, e := range entries {
+			assert.Equal(t, "v1.0.0", e.Scope.Version)
+		}
 	})
 
 	t.Run("Attribute_LogString", func(t *testing.T) {

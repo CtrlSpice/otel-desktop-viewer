@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -635,6 +636,167 @@ func TestSearchTraces(t *testing.T) {
 		assert.NotEmpty(t, summaries)
 		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
+
+	// QueryByServiceName: exercise ParseQueryTree(query) with map input and BuildTraceSQL (resource attribute).
+	t.Run("QueryByServiceName", func(t *testing.T) {
+		query := map[string]any{
+			"id":   "qs1",
+			"type": "condition",
+			"query": map[string]any{
+				"field": map[string]any{
+					"name":           "service.name",
+					"searchScope":    "attribute",
+					"attributeScope": "resource",
+				},
+				"fieldOperator": "=",
+				"value":         "test-service",
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	// Field expression tests (mapTraceFieldExpression cases)
+	t.Run("Field_Name", func(t *testing.T) {
+		query := map[string]any{
+			"id":   "f1",
+			"type": "condition",
+			"query": map[string]any{
+				"field":          map[string]any{"name": "name", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "root-operation",
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.Len(t, summaries, 1)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+		assert.NotNil(t, summaries[0].RootSpan)
+		assert.Equal(t, "root-operation", summaries[0].RootSpan.Name)
+	})
+
+	t.Run("Field_TraceID", func(t *testing.T) {
+		query := map[string]any{
+			"id":   "f2",
+			"type": "condition",
+			"query": map[string]any{
+				"field":          map[string]any{"name": "traceID", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         testTraceID,
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.Len(t, summaries, 1)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	t.Run("Field_scope.name", func(t *testing.T) {
+		query := map[string]any{
+			"id":   "f3",
+			"type": "condition",
+			"query": map[string]any{
+				"field":          map[string]any{"name": "scope.name", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "test-scope",
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	t.Run("Field_scope.version", func(t *testing.T) {
+		query := map[string]any{
+			"id":   "f4",
+			"type": "condition",
+			"query": map[string]any{
+				"field":          map[string]any{"name": "scope.version", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "v1.0.0",
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	t.Run("Field_event.name", func(t *testing.T) {
+		query := map[string]any{
+			"id":   "f5",
+			"type": "condition",
+			"query": map[string]any{
+				"field":          map[string]any{"name": "event.name", "searchScope": "field"},
+				"fieldOperator": "CONTAINS",
+				"value":         "root-event",
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	t.Run("Field_link.traceID", func(t *testing.T) {
+		// Link from root span: linkedTraceID = 0000000000000000000000000000000a -> UUID 00000000-0000-0000-0000-00000000000a
+		query := map[string]any{
+			"id":   "f6",
+			"type": "condition",
+			"query": map[string]any{
+				"field":          map[string]any{"name": "link.traceID", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "00000000-0000-0000-0000-00000000000a",
+			},
+		}
+		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+}
+
+// TestIngestSpans_FlushInterval exercises the flushIntervalSpans codepath by ingesting
+// more than 50 spans in one call (flush runs when spanCount % 50 == 0). All spans have
+// resource, scope, and span attributes; we assert they were flushed correctly.
+func TestIngestSpans_FlushInterval(t *testing.T) {
+	helper, teardown := SetupTest(t)
+	defer teardown()
+
+	const batchSize = 51 // > flushIntervalSpans (50)
+	traces := createTestTracesPdataN(batchSize)
+	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	assert.NoError(t, err)
+
+	testTraceID := "00000000-0000-0000-0000-000000000099"
+	raw, err := helper.Store.GetTrace(helper.Ctx, testTraceID)
+	assert.NoError(t, err)
+	assert.Equal(t, batchSize, getTraceSpansCount(t, raw))
+
+	// Assert attributes flushed: span 1 (index 0), span 50 (index 49), span 51 (index 50)
+	// SpanID for index i is (i+1) as 16-char hex; UUID format is 8-4-4-4-12.
+	for _, spanIndex := range []int{0, 49, 50} {
+		spanIDHex := fmt.Sprintf("%016x", spanIndex+1)
+		spanUUID := "00000000-0000-0000-0000-" + spanIDHex[4:]
+		attrCount := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ? AND Scope = 'span' AND Key IN ('span.index', 'flush_test')", spanUUID)
+		assert.GreaterOrEqual(t, attrCount, 2, "span %d should have span.index and flush_test attributes", spanIndex)
+	}
+	// Resource/scope attributes on first span
+	span1UUID := "00000000-0000-0000-0000-000000000001"
+	resAttr := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ? AND Scope = 'resource'", span1UUID)
+	scopeAttr := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ? AND Scope = 'scope'", span1UUID)
+	assert.GreaterOrEqual(t, resAttr, 1)
+	assert.GreaterOrEqual(t, scopeAttr, 1)
 }
 
 // TestDeleteSpanByID verifies that a single span can be deleted by its SpanID, including child rows.
@@ -769,6 +931,34 @@ func TestDeleteSpansByTraceIDs_Empty(t *testing.T) {
 
 	err := helper.Store.DeleteSpansByTraceIDs(helper.Ctx, []any{})
 	assert.NoError(t, err)
+}
+
+// createTestTracesPdataN builds one trace with n spans (one resource/scope). Each span has
+// resource, scope, and span attributes. Used to exercise flushIntervalSpans by ingesting >= 50 spans.
+func createTestTracesPdataN(n int) ptrace.Traces {
+	baseTime := time.Now().UnixNano()
+	tr := ptrace.NewTraces()
+	rs := tr.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "test-service")
+	rs.Resource().Attributes().PutStr("resource.key", "resource.val")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("test-scope")
+	ss.Scope().SetVersion("v1.0.0")
+	ss.Scope().Attributes().PutStr("scope.key", "scope.val")
+	traceID := mustDecodeTraceID("00000000000000000000000000000099")
+	for i := 0; i < n; i++ {
+		s := ss.Spans().AppendEmpty()
+		s.SetTraceID(traceID)
+		s.SetSpanID(mustDecodeSpanID(fmt.Sprintf("%016x", i+1)))
+		s.SetParentSpanID([8]byte{})
+		s.SetName("span-" + fmt.Sprintf("%d", i))
+		s.SetKind(ptrace.SpanKindInternal)
+		s.SetStartTimestamp(pcommon.Timestamp(baseTime + int64(i)))
+		s.SetEndTimestamp(pcommon.Timestamp(baseTime + int64(i) + int64(time.Second)))
+		s.Attributes().PutStr("span.index", fmt.Sprintf("%d", i))
+		s.Attributes().PutStr("flush_test", "ok")
+	}
+	return tr
 }
 
 // createTestTracePdata builds the full 9-span test trace with events, links, and attributes (pdata).

@@ -89,13 +89,13 @@ func (s *Store) IngestMetrics(ctx context.Context, metrics pmetric.Metrics) erro
 				}); err != nil {
 					return err
 				}
-			}
-		}
 
-		// Flush every 10 metrics to prevent buffer overflow
-		if metricCount%flushIntervalMetrics == 0 {
-			if err := FlushAppenders(appenders, tables); err != nil {
-				return fmt.Errorf("failed to flush appender: %w", err)
+				metricCount++
+				if metricCount%flushIntervalMetrics == 0 {
+					if err := FlushAppenders(appenders, tables); err != nil {
+						return fmt.Errorf("failed to flush appender: %w", err)
+					}
+				}
 			}
 		}
 	}
