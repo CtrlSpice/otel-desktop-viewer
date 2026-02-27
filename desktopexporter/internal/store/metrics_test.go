@@ -296,7 +296,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
-		assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM exemplars"), 0, "exemplars should be ingested")
+		assert.Greater(t, countRows(t, helper, "select count(*) from exemplars"), 0, "exemplars should be ingested")
 		metrics := searchMetricsAll(t, helper)
 		var gauge map[string]any
 		for _, m := range metrics {
@@ -589,8 +589,8 @@ func TestDeleteMetricByID(t *testing.T) {
 	assert.True(t, ok, "metric ID should be a string")
 	assert.NotEmpty(t, targetID)
 
-	dpBefore := countRows(t, helper, "SELECT COUNT(*) FROM datapoints WHERE MetricID = ?", targetID)
-	attrsBefore := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID = ?", targetID)
+	dpBefore := countRows(t, helper, "select count(*) from datapoints where metric_id = ?", targetID)
+	attrsBefore := countRows(t, helper, "select count(*) from attributes where metric_id = ?", targetID)
 	assert.Greater(t, dpBefore+attrsBefore, 0, "target metric should have child rows")
 
 	err = helper.Store.DeleteMetricByID(helper.Ctx, targetID)
@@ -602,8 +602,8 @@ func TestDeleteMetricByID(t *testing.T) {
 		assert.NotEqual(t, targetID, m["id"])
 	}
 
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM datapoints WHERE MetricID = ?", targetID))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID = ?", targetID))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from datapoints where metric_id = ?", targetID))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where metric_id = ?", targetID))
 }
 
 // TestDeleteMetricsByIDs verifies that multiple metrics can be deleted by their IDs, including child rows.
@@ -618,7 +618,7 @@ func TestDeleteMetricsByIDs(t *testing.T) {
 	assert.Len(t, metrics, 5)
 
 	idsToDelete := []any{metrics[0]["id"], metrics[1]["id"]}
-	dpBefore := countRows(t, helper, "SELECT COUNT(*) FROM datapoints WHERE MetricID IN (?, ?)", idsToDelete...)
+	dpBefore := countRows(t, helper, "select count(*) from datapoints where metric_id in (?, ?)", idsToDelete...)
 	assert.Greater(t, dpBefore, 0, "deleted metrics should have datapoints")
 
 	err = helper.Store.DeleteMetricsByIDs(helper.Ctx, idsToDelete)
@@ -627,8 +627,8 @@ func TestDeleteMetricsByIDs(t *testing.T) {
 	metrics = searchMetricsAll(t, helper)
 	assert.Len(t, metrics, 3)
 
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM datapoints WHERE MetricID IN (?, ?)", idsToDelete...))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID IN (?, ?)", idsToDelete...))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from datapoints where metric_id in (?, ?)", idsToDelete...))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where metric_id in (?, ?)", idsToDelete...))
 }
 
 // TestDeleteMetricsByIDs_Empty verifies that deleting with an empty list is a no-op.
@@ -662,17 +662,17 @@ func TestClearMetrics(t *testing.T) {
 
 	metrics := searchMetricsAll(t, helper)
 	assert.Len(t, metrics, 5)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM datapoints"), 0)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID IS NOT NULL"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from datapoints"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where metric_id is not null"), 0)
 
 	err = helper.Store.ClearMetrics(helper.Ctx)
 	assert.NoError(t, err)
 
 	metrics = searchMetricsAll(t, helper)
 	assert.Empty(t, metrics)
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM datapoints"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM exemplars"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE MetricID IS NOT NULL"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from datapoints"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from exemplars"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where metric_id is not null"))
 }
 
 // TestIngestMetrics_FlushInterval exercises the flushIntervalMetrics codepath by ingesting

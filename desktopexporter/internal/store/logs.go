@@ -123,41 +123,41 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 		return nil, fmt.Errorf("failed to build log SQL: %w", err)
 	}
 
-	// Log time: prefer Timestamp, fall back to ObservedTimestamp per OTLP
-	logTimeExpr := `(CASE WHEN l.Timestamp IS NULL OR l.Timestamp = 0 THEN l.ObservedTimestamp ELSE l.Timestamp END)`
+	// Log time: prefer timestamp, fall back to observed_timestamp per OTLP
+	logTimeExpr := `(case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end)`
 	whereWithTime := strings.ReplaceAll(whereClause, "l.log_time", logTimeExpr)
 	finalQuery := fmt.Sprintf(`%s,
-		filtered AS (
-			SELECT l.* FROM logs l, search_params
-			WHERE %s
+		filtered as (
+			select l.* from logs l, search_params
+			where %s
 		),
-		log_attrs AS (
-			SELECT a.LogID, a.Scope, json_group_array(json_object('key', a.Key, 'value', a.Value, 'type', a.Type::VARCHAR)) AS attrs
-			FROM attributes a
-			WHERE a.LogID IN (SELECT ID FROM filtered)
-			GROUP BY a.LogID, a.Scope
+		log_attrs as (
+			select a.log_id, a.scope, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.log_id in (select id from filtered)
+			group by a.log_id, a.scope
 		)
-		SELECT CAST(COALESCE(to_json(list(json_object(
-			'id', l.ID,
-			'timestamp', l.Timestamp,
-			'observedTimestamp', l.ObservedTimestamp,
-			'traceID', l.TraceID,
-			'spanID', l.SpanID,
-			'severityText', l.SeverityText,
-			'severityNumber', l.SeverityNumber,
-			'body', l.Body,
-			'bodyType', l.BodyType,
-			'resource', json_object('attributes', COALESCE(res.attrs, json('[]')), 'droppedAttributesCount', l.ResourceDroppedAttributesCount),
-			'scope', json_object('name', l.ScopeName, 'version', l.ScopeVersion, 'attributes', COALESCE(scope_attrs.attrs, json('[]')), 'droppedAttributesCount', l.ScopeDroppedAttributesCount),
-			'droppedAttributesCount', l.DroppedAttributesCount,
-			'flags', l.Flags,
-			'eventName', l.EventName,
-			'attributes', COALESCE(log_attrs.attrs, json('[]'))
-		) ORDER BY COALESCE(NULLIF(l.Timestamp, 0), l.ObservedTimestamp) DESC)), '[]') AS VARCHAR) AS logs
-		FROM filtered l
-		LEFT JOIN log_attrs res ON res.LogID = l.ID AND res.Scope = 'resource'
-		LEFT JOIN log_attrs scope_attrs ON scope_attrs.LogID = l.ID AND scope_attrs.Scope = 'scope'
-		LEFT JOIN log_attrs log_attrs ON log_attrs.LogID = l.ID AND log_attrs.Scope = 'log'`,
+		select cast(coalesce(to_json(list(json_object(
+			'id', l.id,
+			'timestamp', l.timestamp,
+			'observedTimestamp', l.observed_timestamp,
+			'traceID', l.trace_id,
+			'spanID', l.span_id,
+			'severityText', l.severity_text,
+			'severityNumber', l.severity_number,
+			'body', l.body,
+			'bodyType', l.body_type,
+			'resource', json_object('attributes', coalesce(res.attrs, json('[]')), 'droppedAttributesCount', l.resource_dropped_attributes_count),
+			'scope', json_object('name', l.scope_name, 'version', l.scope_version, 'attributes', coalesce(scope_attrs.attrs, json('[]')), 'droppedAttributesCount', l.scope_dropped_attributes_count),
+			'droppedAttributesCount', l.dropped_attributes_count,
+			'flags', l.flags,
+			'eventName', l.event_name,
+			'attributes', coalesce(log_attrs.attrs, json('[]'))
+		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc)), '[]') as varchar) as logs
+		from filtered l
+		left join log_attrs res on res.log_id = l.id and res.scope = 'resource'
+		left join log_attrs scope_attrs on scope_attrs.log_id = l.id and scope_attrs.scope = 'scope'
+		left join log_attrs log_attrs on log_attrs.log_id = l.id and log_attrs.scope = 'log'`,
 		cteSQL,
 		whereWithTime,
 	)
@@ -179,8 +179,8 @@ func (s *Store) ClearLogs(ctx context.Context) error {
 	}
 
 	childQueries := []string{
-		`DELETE FROM attributes WHERE LogID IS NOT NULL`,
-		`TRUNCATE TABLE logs`,
+		`delete from attributes where log_id is not null`,
+		`truncate table logs`,
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query); err != nil {
@@ -197,8 +197,8 @@ func (s *Store) DeleteLogByID(ctx context.Context, logID string) error {
 	}
 
 	childQueries := []string{
-		`DELETE FROM attributes WHERE LogID = ?`,
-		`DELETE FROM logs WHERE ID = ?`,
+		`delete from attributes where log_id = ?`,
+		`delete from logs where id = ?`,
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query, logID); err != nil {
@@ -221,8 +221,8 @@ func (s *Store) DeleteLogsByIDs(ctx context.Context, logIDs []any) error {
 
 	placeholders := buildPlaceholders(len(logIDs))
 	childQueries := []string{
-		fmt.Sprintf(`DELETE FROM attributes WHERE LogID IN (%s)`, placeholders),
-		fmt.Sprintf(`DELETE FROM logs WHERE ID IN (%s)`, placeholders),
+		fmt.Sprintf(`delete from attributes where log_id in (%s)`, placeholders),
+		fmt.Sprintf(`delete from logs where id in (%s)`, placeholders),
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query, logIDs...); err != nil {
@@ -254,39 +254,37 @@ func logFieldMapper() FieldMapper {
 }
 
 func mapLogFieldExpression(field *FieldDefinition) (string, error) {
-	// Direct log columns: TraceID, SpanID, SeverityText, SeverityNumber, Body, EventName, ScopeName, ScopeVersion, etc.
+	// Direct log columns (snake_case in schema)
 	name := field.Name
 	if name == "" {
 		return "", fmt.Errorf("empty field name")
 	}
-	// Map common names to column names (logs table uses PascalCase in schema)
 	switch name {
 	case "traceID", "traceId":
-		return "l.TraceID", nil
+		return "l.trace_id", nil
 	case "spanID", "spanId":
-		return "l.SpanID", nil
+		return "l.span_id", nil
 	case "severityText":
-		return "l.SeverityText", nil
+		return "l.severity_text", nil
 	case "severityNumber":
-		return "l.SeverityNumber", nil
+		return "l.severity_number", nil
 	case "body":
-		return "l.Body", nil
+		return "l.body", nil
 	case "eventName":
-		return "l.EventName", nil
+		return "l.event_name", nil
 	case "scope.name":
-		return "l.ScopeName", nil
+		return "l.scope_name", nil
 	case "scope.version":
-		return "l.ScopeVersion", nil
+		return "l.scope_version", nil
 	default:
-		cap := strings.ToUpper(name[:1]) + name[1:]
-		return "l." + cap, nil
+		return "l." + camelToSnake(name), nil
 	}
 }
 
 func mapLogAttributeExpressions(field *FieldDefinition) ([]string, error) {
 	switch field.AttributeScope {
 	case "resource", "scope", "log":
-		expr := fmt.Sprintf("(SELECT a.Value FROM attributes a WHERE a.LogID = l.ID AND a.Scope = '%s' AND a.Key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
+		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.log_id = l.id AND a.scope = '%s' AND a.key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
 		return []string{expr}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope: %s", field.AttributeScope)
@@ -302,8 +300,8 @@ func mapLogAttributeExpressions(field *FieldDefinition) ([]string, error) {
 // See BuildOperatorCondition in query_tree.go.
 func mapLogGlobalExpressions() ([]string, error) {
 	return []string{
-		"l.SearchText = ?",
-		"EXISTS(SELECT 1 FROM attributes a WHERE a.LogID = l.ID AND (a.Key = ? OR a.Value = ?))",
+		"l.search_text = ?",
+		"EXISTS(SELECT 1 FROM attributes a WHERE a.log_id = l.id AND (a.key = ? OR a.value = ?))",
 	}, nil
 }
 

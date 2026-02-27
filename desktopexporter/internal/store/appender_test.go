@@ -66,18 +66,18 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	// Do not close yet — query with the store's db. In DuckDB, flush makes data visible
 	// to other connections using the same (in-memory) database.
 	var logCount int
-	err = helper.Store.db.QueryRowContext(helper.Ctx, "SELECT COUNT(*) FROM logs").Scan(&logCount)
+	err = helper.Store.db.QueryRowContext(helper.Ctx, "select count(*) from logs").Scan(&logCount)
 	require.NoError(t, err)
 	assert.Equal(t, 1, logCount, "log row must be visible after Flush without Close")
 
 	logIDStr := uuid.UUID(logID).String()
-	attrCount := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE LogID = ?", logIDStr)
+	attrCount := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE log_id = ?", logIDStr)
 	assert.Equal(t, 2, attrCount, "attribute rows must be visible after Flush without Close")
 
 	// Assert the specific attribute key/values are present
 	var key, value, scope string
 	err = helper.Store.db.QueryRowContext(helper.Ctx,
-		"SELECT Key, Value, Scope FROM attributes WHERE LogID = ? AND Key = ?",
+		"select key, value, scope from attributes where log_id = ? and key = ?",
 		logIDStr, "flush_attr").Scan(&key, &value, &scope)
 	require.NoError(t, err)
 	assert.Equal(t, "flush_attr", key)

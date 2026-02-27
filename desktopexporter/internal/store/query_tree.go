@@ -380,6 +380,6 @@ func BuildSearchSQL(queryNode *QueryNode, startTime, endTime int64, mapper Field
 	for _, name := range paramNames {
 		cteParams = append(cteParams, fmt.Sprintf("? as %s", name))
 	}
-	cteSQL = fmt.Sprintf("WITH search_params AS (SELECT %s)", strings.Join(cteParams, ", "))
+	cteSQL = fmt.Sprintf("with search_params as (select %s)", strings.Join(cteParams, ", "))
 	return cteSQL, whereSQL, args, nil
 }

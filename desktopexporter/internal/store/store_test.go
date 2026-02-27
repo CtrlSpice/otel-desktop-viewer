@@ -219,7 +219,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 	}
 }
 
-// countRows returns the number of rows matching a query like "SELECT COUNT(*) FROM table WHERE ...".
+// countRows returns the number of rows matching a query like "select count(*) from table where ...".
 // Use the full query so callers can add WHERE clauses for filtered counts.
 func countRows(t *testing.T, helper *TestHelper, query string, args ...any) int {
 	t.Helper()

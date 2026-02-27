@@ -157,18 +157,18 @@ func TestClearTraces(t *testing.T) {
 
 	summaries := searchTracesAll(t, helper)
 	assert.Len(t, summaries, 1)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM events"), 0)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM links"), 0)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID IS NOT NULL"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from events"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from links"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where span_id is not null"), 0)
 
 	err = helper.Store.ClearTraces(helper.Ctx)
 	assert.NoError(t, err)
 
 	summaries = searchTracesAll(t, helper)
 	assert.Empty(t, summaries)
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM events"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM links"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID IS NOT NULL"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id is not null"))
 }
 
 // getTraceTraceID returns the trace ID from GetTrace JSON (traceID in response is hex string).
@@ -788,13 +788,13 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 	for _, spanIndex := range []int{0, 49, 50} {
 		spanIDHex := fmt.Sprintf("%016x", spanIndex+1)
 		spanUUID := "00000000-0000-0000-0000-" + spanIDHex[4:]
-		attrCount := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ? AND Scope = 'span' AND Key IN ('span.index', 'flush_test')", spanUUID)
+		attrCount := countRows(t, helper, "select count(*) from attributes where span_id = ? and scope = 'span' and key in ('span.index', 'flush_test')", spanUUID)
 		assert.GreaterOrEqual(t, attrCount, 2, "span %d should have span.index and flush_test attributes", spanIndex)
 	}
 	// Resource/scope attributes on first span
 	span1UUID := "00000000-0000-0000-0000-000000000001"
-	resAttr := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ? AND Scope = 'resource'", span1UUID)
-	scopeAttr := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ? AND Scope = 'scope'", span1UUID)
+	resAttr := countRows(t, helper, "select count(*) from attributes where span_id = ? and scope = 'resource'", span1UUID)
+	scopeAttr := countRows(t, helper, "select count(*) from attributes where span_id = ? and scope = 'scope'", span1UUID)
 	assert.GreaterOrEqual(t, resAttr, 1)
 	assert.GreaterOrEqual(t, scopeAttr, 1)
 }
@@ -813,9 +813,9 @@ func TestDeleteSpanByID(t *testing.T) {
 	assert.Equal(t, 9, getTraceSpansCount(t, raw))
 
 	spanUUID := "00000000-0000-0000-0000-000000000001"
-	eventsBefore := countRows(t, helper, "SELECT COUNT(*) FROM events WHERE SpanID = ?", spanUUID)
-	linksBefore := countRows(t, helper, "SELECT COUNT(*) FROM links WHERE SpanID = ?", spanUUID)
-	attrsBefore := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ?", spanUUID)
+	eventsBefore := countRows(t, helper, "select count(*) from events where span_id = ?", spanUUID)
+	linksBefore := countRows(t, helper, "select count(*) from links where span_id = ?", spanUUID)
+	attrsBefore := countRows(t, helper, "select count(*) from attributes where span_id = ?", spanUUID)
 	assert.Greater(t, eventsBefore+linksBefore+attrsBefore, 0, "root span should have child rows")
 
 	err = helper.Store.DeleteSpanByID(helper.Ctx, spanUUID)
@@ -825,9 +825,9 @@ func TestDeleteSpanByID(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 8, getTraceSpansCount(t, raw))
 
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM events WHERE SpanID = ?", spanUUID))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM links WHERE SpanID = ?", spanUUID))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID = ?", spanUUID))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events where span_id = ?", spanUUID))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links where span_id = ?", spanUUID))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id = ?", spanUUID))
 }
 
 // TestDeleteSpansByIDs verifies that multiple spans can be deleted by their SpanIDs, including child rows.
@@ -848,7 +848,7 @@ func TestDeleteSpansByIDs(t *testing.T) {
 		"00000000-0000-0000-0000-000000000002",
 		"00000000-0000-0000-0000-000000000003",
 	}
-	attrsBefore := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID IN (?, ?, ?)", deletedIDs...)
+	attrsBefore := countRows(t, helper, "select count(*) from attributes where span_id in (?, ?, ?)", deletedIDs...)
 	assert.Greater(t, attrsBefore, 0, "deleted spans should have attributes")
 
 	err = helper.Store.DeleteSpansByIDs(helper.Ctx, deletedIDs)
@@ -858,9 +858,9 @@ func TestDeleteSpansByIDs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 6, getTraceSpansCount(t, raw))
 
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM events WHERE SpanID IN (?, ?, ?)", deletedIDs...))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM links WHERE SpanID IN (?, ?, ?)", deletedIDs...))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID IN (?, ?, ?)", deletedIDs...))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events where span_id in (?, ?, ?)", deletedIDs...))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links where span_id in (?, ?, ?)", deletedIDs...))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id in (?, ?, ?)", deletedIDs...))
 }
 
 // TestDeleteSpansByIDs_Empty verifies that deleting with an empty list is a no-op.
@@ -884,18 +884,18 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 
 	summaries := searchTracesAll(t, helper)
 	assert.Len(t, summaries, 1)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM events"), 0)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM links"), 0)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID IS NOT NULL"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from events"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from links"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where span_id is not null"), 0)
 
 	err = helper.Store.DeleteSpansByTraceID(helper.Ctx, testTraceID)
 	assert.NoError(t, err)
 
 	summaries = searchTracesAll(t, helper)
 	assert.Empty(t, summaries)
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM events"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM links"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID IS NOT NULL"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id is not null"))
 }
 
 // TestDeleteSpansByTraceIDs verifies that spans for multiple traces are deleted, including child rows.
@@ -910,18 +910,18 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 
 	summaries := searchTracesAll(t, helper)
 	assert.Len(t, summaries, 1)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM events"), 0)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM links"), 0)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID IS NOT NULL"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from events"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from links"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where span_id is not null"), 0)
 
 	err = helper.Store.DeleteSpansByTraceIDs(helper.Ctx, []any{testTraceID})
 	assert.NoError(t, err)
 
 	summaries = searchTracesAll(t, helper)
 	assert.Empty(t, summaries)
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM events"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM links"))
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE SpanID IS NOT NULL"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id is not null"))
 }
 
 // TestDeleteSpansByTraceIDs_Empty verifies that deleting with an empty list is a no-op.

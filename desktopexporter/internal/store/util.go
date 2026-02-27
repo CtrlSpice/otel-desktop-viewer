@@ -9,6 +9,26 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
+// camelToSnake converts camelCase or PascalCase to snake_case (e.g. traceID -> trace_id).
+func camelToSnake(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			prevLower := i > 0 && (s[i-1] >= 'a' && s[i-1] <= 'z' || s[i-1] >= '0' && s[i-1] <= '9')
+			if i > 0 && prevLower {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r + ('a' - 'A'))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // buildPlaceholders returns a comma-separated list of ? placeholders for SQL IN clauses.
 func buildPlaceholders(count int) string {
 	if count == 0 {

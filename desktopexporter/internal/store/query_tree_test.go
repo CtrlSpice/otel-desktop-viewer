@@ -443,7 +443,7 @@ func TestBuildSearchSQL_NilQuery(t *testing.T) {
 
 	cte, where, args, err := BuildSearchSQL(nil, 1000, 2000, mapper, "StartTime >= time_start AND StartTime <= time_end")
 	require.NoError(t, err)
-	assert.Equal(t, "WITH search_params AS (SELECT ? as time_start, ? as time_end)", cte)
+	assert.Equal(t, "with search_params as (select ? as time_start, ? as time_end)", cte)
 	assert.Equal(t, "StartTime >= time_start AND StartTime <= time_end", where)
 	assert.Equal(t, []any{int64(1000), int64(2000)}, args)
 }
@@ -465,7 +465,7 @@ func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
 
 	cte, where, args, err := BuildSearchSQL(query, 1000, 2000, mapper, "StartTime >= time_start AND StartTime <= time_end")
 	require.NoError(t, err)
-	assert.Equal(t, "WITH search_params AS (SELECT ? as time_start, ? as time_end, ? as value_0)", cte)
+	assert.Equal(t, "with search_params as (select ? as time_start, ? as time_end, ? as value_0)", cte)
 	assert.Equal(t, "(Name = value_0) AND StartTime >= time_start AND StartTime <= time_end", where)
 	assert.Equal(t, []any{int64(1000), int64(2000), "test-span"}, args)
 }

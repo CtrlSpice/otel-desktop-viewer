@@ -335,68 +335,68 @@ func (s *Store) SearchMetrics(ctx context.Context, startTime, endTime int64, que
 	}
 
 	finalQuery := fmt.Sprintf(`%s,
-		filtered_metrics AS (
-			SELECT m.* FROM metrics m, search_params
-			WHERE %s
+		filtered_metrics as (
+			select m.* from metrics m, search_params
+			where %s
 		),
-		filtered_dps AS (
-			SELECT d.* FROM datapoints d
-			INNER JOIN filtered_metrics fm ON d.MetricID = fm.ID, search_params
-			WHERE d.Timestamp >= time_start AND d.Timestamp <= time_end
+		filtered_dps as (
+			select d.* from datapoints d
+			inner join filtered_metrics fm on d.metric_id = fm.id, search_params
+			where d.timestamp >= time_start and d.timestamp <= time_end
 		),
-		dp_attrs_agg AS (
-			SELECT a.DataPointID, json_group_array(json_object('key', a.Key, 'value', a.Value, 'type', a.Type::VARCHAR)) AS attrs
-			FROM attributes a
-			WHERE a.DataPointID IN (SELECT ID FROM filtered_dps) AND a.Scope = 'datapoint'
-			GROUP BY a.DataPointID
+		dp_attrs_agg as (
+			select a.datapoint_id, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.datapoint_id in (select id from filtered_dps) and a.scope = 'datapoint'
+			group by a.datapoint_id
 		),
-		exemplars_agg AS (
-			SELECT e.DataPointID, json_group_array(json_object('timestamp', e.Timestamp, 'value', e.Value, 'traceID', e.TraceID, 'spanID', e.SpanID)) AS exemplars
-			FROM exemplars e
-			WHERE e.DataPointID IN (SELECT ID FROM filtered_dps)
-			GROUP BY e.DataPointID
+		exemplars_agg as (
+			select e.datapoint_id, json_group_array(json_object('timestamp', e.timestamp, 'value', e.value, 'traceID', e.trace_id, 'spanID', e.span_id)) as exemplars
+			from exemplars e
+			where e.datapoint_id in (select id from filtered_dps)
+			group by e.datapoint_id
 		),
-		metric_res_attrs AS (
-			SELECT a.MetricID, json_group_array(json_object('key', a.Key, 'value', a.Value, 'type', a.Type::VARCHAR)) AS attrs
-			FROM attributes a
-			WHERE a.MetricID IN (SELECT ID FROM filtered_metrics) AND a.Scope = 'resource' AND a.DataPointID IS NULL AND a.ExemplarID IS NULL
-			GROUP BY a.MetricID
+		metric_res_attrs as (
+			select a.metric_id, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.metric_id in (select id from filtered_metrics) and a.scope = 'resource' and a.datapoint_id is null and a.exemplar_id is null
+			group by a.metric_id
 		),
-		metric_scope_attrs AS (
-			SELECT a.MetricID, json_group_array(json_object('key', a.Key, 'value', a.Value, 'type', a.Type::VARCHAR)) AS attrs
-			FROM attributes a
-			WHERE a.MetricID IN (SELECT ID FROM filtered_metrics) AND a.Scope = 'scope' AND a.DataPointID IS NULL AND a.ExemplarID IS NULL
-			GROUP BY a.MetricID
+		metric_scope_attrs as (
+			select a.metric_id, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.metric_id in (select id from filtered_metrics) and a.scope = 'scope' and a.datapoint_id is null and a.exemplar_id is null
+			group by a.metric_id
 		),
-		datapoints_agg AS (
-			SELECT d.MetricID, to_json(list(json_object(
-				'id', d.ID, 'metricType', d.MetricType, 'timestamp', d.Timestamp, 'startTime', d.StartTime, 'flags', d.Flags,
-				'doubleValue', d.DoubleValue, 'intValue', d.IntValue, 'valueType', d.ValueType,
-				'isMonotonic', d.IsMonotonic, 'aggregationTemporality', d.AggregationTemporality,
-				'count', d.Count, 'sum', d.Sum, 'min', d.Min, 'max', d.Max,
-				'bucketCounts', d.BucketCounts, 'explicitBounds', d.ExplicitBounds,
-				'scale', d.Scale, 'zeroCount', d.ZeroCount,
-				'positiveBucketOffset', d.PositiveBucketOffset, 'positiveBucketCounts', d.PositiveBucketCounts,
-				'negativeBucketOffset', d.NegativeBucketOffset, 'negativeBucketCounts', d.NegativeBucketCounts,
-				'attributes', COALESCE((SELECT attrs FROM dp_attrs_agg WHERE dp_attrs_agg.DataPointID = d.ID), json('[]')),
-				'exemplars', COALESCE((SELECT exemplars FROM exemplars_agg WHERE exemplars_agg.DataPointID = d.ID), json('[]'))
-			) ORDER BY d.Timestamp DESC)) AS datapoints
-			FROM filtered_dps d
-			GROUP BY d.MetricID
+		datapoints_agg as (
+			select d.metric_id, to_json(list(json_object(
+				'id', d.id, 'metricType', d.metric_type, 'timestamp', d.timestamp, 'startTime', d.start_time, 'flags', d.flags,
+				'doubleValue', d.double_value, 'intValue', d.int_value, 'valueType', d.value_type,
+				'isMonotonic', d.is_monotonic, 'aggregationTemporality', d.aggregation_temporality,
+				'count', d.count, 'sum', d.sum, 'min', d.min, 'max', d.max,
+				'bucketCounts', d.bucket_counts, 'explicitBounds', d.explicit_bounds,
+				'scale', d.scale, 'zeroCount', d.zero_count,
+				'positiveBucketOffset', d.positive_bucket_offset, 'positiveBucketCounts', d.positive_bucket_counts,
+				'negativeBucketOffset', d.negative_bucket_offset, 'negativeBucketCounts', d.negative_bucket_counts,
+				'attributes', coalesce((select attrs from dp_attrs_agg where dp_attrs_agg.datapoint_id = d.id), json('[]')),
+				'exemplars', coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]'))
+			) order by d.timestamp desc)) as datapoints
+			from filtered_dps d
+			group by d.metric_id
 		)
-		SELECT CAST(COALESCE(to_json(list(json_object(
-			'id', m.ID, 'name', m.Name, 'description', m.Description, 'unit', m.Unit,
-			'resourceDroppedAttributesCount', m.ResourceDroppedAttributesCount,
-			'resource', json_object('attributes', COALESCE(res.attrs, json('[]')), 'droppedAttributesCount', m.ResourceDroppedAttributesCount),
-			'scopeName', m.ScopeName, 'scopeVersion', m.ScopeVersion, 'scopeDroppedAttributesCount', m.ScopeDroppedAttributesCount,
-			'scope', json_object('name', m.ScopeName, 'version', m.ScopeVersion, 'attributes', COALESCE(scope_attrs.attrs, json('[]')), 'droppedAttributesCount', m.ScopeDroppedAttributesCount),
-			'received', m.Received,
-			'datapoints', COALESCE(dp_agg.datapoints, json('[]'))
-		) ORDER BY m.Received DESC)), '[]') AS VARCHAR) AS metrics
-		FROM filtered_metrics m
-		LEFT JOIN metric_res_attrs res ON res.MetricID = m.ID
-		LEFT JOIN metric_scope_attrs scope_attrs ON scope_attrs.MetricID = m.ID
-		LEFT JOIN datapoints_agg dp_agg ON dp_agg.MetricID = m.ID`,
+		select cast(coalesce(to_json(list(json_object(
+			'id', m.id, 'name', m.name, 'description', m.description, 'unit', m.unit,
+			'resourceDroppedAttributesCount', m.resource_dropped_attributes_count,
+			'resource', json_object('attributes', coalesce(res.attrs, json('[]')), 'droppedAttributesCount', m.resource_dropped_attributes_count),
+			'scopeName', m.scope_name, 'scopeVersion', m.scope_version, 'scopeDroppedAttributesCount', m.scope_dropped_attributes_count,
+			'scope', json_object('name', m.scope_name, 'version', m.scope_version, 'attributes', coalesce(scope_attrs.attrs, json('[]')), 'droppedAttributesCount', m.scope_dropped_attributes_count),
+			'received', m.received,
+			'datapoints', coalesce(dp_agg.datapoints, json('[]'))
+		) order by m.received desc)), '[]') as varchar) as metrics
+		from filtered_metrics m
+		left join metric_res_attrs res on res.metric_id = m.id
+		left join metric_scope_attrs scope_attrs on scope_attrs.metric_id = m.id
+		left join datapoints_agg dp_agg on dp_agg.metric_id = m.id`,
 		cteSQL,
 		whereClause,
 	)
@@ -418,10 +418,10 @@ func (s *Store) ClearMetrics(ctx context.Context) error {
 	}
 
 	childQueries := []string{
-		`DELETE FROM attributes WHERE MetricID IS NOT NULL`,
-		`TRUNCATE TABLE exemplars`,
-		`TRUNCATE TABLE datapoints`,
-		`TRUNCATE TABLE metrics`,
+		`delete from attributes where metric_id is not null`,
+		`truncate table exemplars`,
+		`truncate table datapoints`,
+		`truncate table metrics`,
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query); err != nil {
@@ -438,10 +438,10 @@ func (s *Store) DeleteMetricByID(ctx context.Context, metricID string) error {
 	}
 
 	childQueries := []string{
-		`DELETE FROM attributes WHERE MetricID = ?`,
-		`DELETE FROM exemplars WHERE DataPointID IN (SELECT ID FROM datapoints WHERE MetricID = ?)`,
-		`DELETE FROM datapoints WHERE MetricID = ?`,
-		`DELETE FROM metrics WHERE ID = ?`,
+		`delete from attributes where metric_id = ?`,
+		`delete from exemplars where datapoint_id in (select id from datapoints where metric_id = ?)`,
+		`delete from datapoints where metric_id = ?`,
+		`delete from metrics where id = ?`,
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query, metricID); err != nil {
@@ -464,10 +464,10 @@ func (s *Store) DeleteMetricsByIDs(ctx context.Context, metricIDs []any) error {
 
 	placeholders := buildPlaceholders(len(metricIDs))
 	childQueries := []string{
-		fmt.Sprintf(`DELETE FROM attributes WHERE MetricID IN (%s)`, placeholders),
-		fmt.Sprintf(`DELETE FROM exemplars WHERE DataPointID IN (SELECT ID FROM datapoints WHERE MetricID IN (%s))`, placeholders),
-		fmt.Sprintf(`DELETE FROM datapoints WHERE MetricID IN (%s)`, placeholders),
-		fmt.Sprintf(`DELETE FROM metrics WHERE ID IN (%s)`, placeholders),
+		fmt.Sprintf(`delete from attributes where metric_id in (%s)`, placeholders),
+		fmt.Sprintf(`delete from exemplars where datapoint_id in (select id from datapoints where metric_id in (%s))`, placeholders),
+		fmt.Sprintf(`delete from datapoints where metric_id in (%s)`, placeholders),
+		fmt.Sprintf(`delete from metrics where id in (%s)`, placeholders),
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query, metricIDs...); err != nil {
@@ -481,7 +481,7 @@ func (s *Store) DeleteMetricsByIDs(ctx context.Context, metricIDs []any) error {
 // BuildMetricSQL converts a QueryNode into a parameterized CTE, WHERE clause, and args for metric search.
 // Metrics are filtered by those that have at least one datapoint in [startTime, endTime]; conditions apply to metric columns.
 func BuildMetricSQL(queryNode *QueryNode, startTime, endTime int64) (cteSQL string, whereSQL string, args []any, err error) {
-	timeCondition := "EXISTS (SELECT 1 FROM datapoints d WHERE d.MetricID = m.ID AND d.Timestamp >= time_start AND d.Timestamp <= time_end)"
+	timeCondition := "exists (select 1 from datapoints d where d.metric_id = m.id and d.timestamp >= time_start and d.timestamp <= time_end)"
 	return BuildSearchSQL(queryNode, startTime, endTime, metricFieldMapper(), timeCondition)
 }
 
@@ -511,25 +511,24 @@ func mapMetricFieldExpression(field *FieldDefinition) (string, error) {
 	}
 	switch name {
 	case "name":
-		return "m.Name", nil
+		return "m.name", nil
 	case "description":
-		return "m.Description", nil
+		return "m.description", nil
 	case "unit":
-		return "m.Unit", nil
+		return "m.unit", nil
 	case "scope.name", "scopeName":
-		return "m.ScopeName", nil
+		return "m.scope_name", nil
 	case "scope.version", "scopeVersion":
-		return "m.ScopeVersion", nil
+		return "m.scope_version", nil
 	default:
-		cap := strings.ToUpper(name[:1]) + name[1:]
-		return "m." + cap, nil
+		return "m." + camelToSnake(name), nil
 	}
 }
 
 func mapMetricAttributeExpressions(field *FieldDefinition) ([]string, error) {
 	switch field.AttributeScope {
 	case "resource", "scope", "metric":
-		expr := fmt.Sprintf("(SELECT a.Value FROM attributes a WHERE a.MetricID = m.ID AND a.DataPointID IS NULL AND a.ExemplarID IS NULL AND a.Scope = '%s' AND a.Key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
+		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.metric_id = m.id AND a.datapoint_id IS NULL AND a.exemplar_id IS NULL AND a.scope = '%s' AND a.key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
 		return []string{expr}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope: %s", field.AttributeScope)
@@ -545,7 +544,7 @@ func mapMetricAttributeExpressions(field *FieldDefinition) ([]string, error) {
 // See BuildOperatorCondition in query_tree.go.
 func mapMetricGlobalExpressions() ([]string, error) {
 	return []string{
-		"m.SearchText = ?",
-		"EXISTS(SELECT 1 FROM attributes a WHERE a.MetricID = m.ID AND (a.Key = ? OR a.Value = ?))",
+		"m.search_text = ?",
+		"EXISTS(SELECT 1 FROM attributes a WHERE a.metric_id = m.id AND (a.key = ? OR a.value = ?))",
 	}, nil
 }

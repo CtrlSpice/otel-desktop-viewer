@@ -177,7 +177,7 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 		}
 	}
 
-	// 2. Build CTE, WHERE clause, and args using trace-specific SQL builder
+	// 2. Build CTE, where clause, and args using trace-specific SQL builder
 	cteSQL, whereClause, args, err := BuildTraceSQL(queryTree, startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build trace SQL: %w", err)
@@ -185,42 +185,42 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 
 	// 3. Compose the full query from parts
 	finalQuery := fmt.Sprintf(`%s
-		SELECT CAST(COALESCE(to_json(list(json_object(
-			'traceID',        sub.TraceID,
-			'rootSpan',       CASE WHEN sub.service_name IS NOT NULL THEN json_object(
+		select cast(coalesce(to_json(list(json_object(
+			'traceID',        sub.trace_id,
+			'rootSpan',       case when sub.service_name is not null then json_object(
 				'serviceName', sub.service_name,
 				'name',        sub.root_name,
 				'startTime',   sub.root_start_time,
 				'endTime',     sub.root_end_time
-			) END,
+			) end,
 			'spanCount',      sub.span_count,
 			'errorCount',     sub.error_count,
 			'exceptionCount', sub.exception_count
-		) ORDER BY
-			COALESCE(sub.root_start_time, (SELECT MIN(s2.StartTime) FROM spans s2 WHERE s2.TraceID = sub.TraceID)) DESC
-		)), '[]') AS VARCHAR) AS summaries
-		FROM (
-			SELECT DISTINCT ON (s.TraceID)
-				s.TraceID,
-				CASE WHEN s.ParentSpanID IS NULL THEN (
-					SELECT a.Value FROM attributes a
-					WHERE a.SpanID = s.SpanID AND a.Scope = 'resource' AND a.Key = 'service.name'
-					LIMIT 1
-				) END as service_name,
-				CASE WHEN s.ParentSpanID IS NULL THEN s.Name END as root_name,
-				CASE WHEN s.ParentSpanID IS NULL THEN s.StartTime END as root_start_time,
-				CASE WHEN s.ParentSpanID IS NULL THEN s.EndTime END as root_end_time,
-				COUNT(*) OVER (PARTITION BY s.TraceID) as span_count,
-				COUNT(CASE WHEN s.StatusCode = 'ERROR' THEN 1 END) OVER (PARTITION BY s.TraceID) as error_count,
-				COUNT(CASE WHEN EXISTS(
-					SELECT 1 FROM attributes a
-					WHERE a.SpanID = s.SpanID AND a.Scope = 'span' AND a.Key = 'exception.type'
-				) THEN 1 END) OVER (PARTITION BY s.TraceID) as exception_count
-			FROM spans s, search_params
-			WHERE %s
-			ORDER BY
-				s.TraceID,
-				CASE WHEN s.ParentSpanID IS NULL THEN 0 ELSE 1 END
+		) order by
+			coalesce(sub.root_start_time, (select min(s2.start_time) from spans s2 where s2.trace_id = sub.trace_id)) desc
+		)), '[]') as varchar) as summaries
+		from (
+			select distinct on (s.trace_id)
+				s.trace_id,
+				case when s.parent_span_id is null then (
+					select a.value from attributes a
+					where a.span_id = s.span_id and a.scope = 'resource' and a.key = 'service.name'
+ limit 1
+				) end as service_name,
+				case when s.parent_span_id is null then s.name end as root_name,
+				case when s.parent_span_id is null then s.start_time end as root_start_time,
+				case when s.parent_span_id is null then s.end_time end as root_end_time,
+				count(*) over (partition by s.trace_id) as span_count,
+				count(case when s.status_code = 'ERROR' then 1 end) over (partition by s.trace_id) as error_count,
+				count(case when exists(
+					select 1 from attributes a
+					where a.span_id = s.span_id and a.scope = 'span' and a.key = 'exception.type'
+				) then 1 end) over (partition by s.trace_id) as exception_count
+			from spans s, search_params
+			where %s
+			order by
+				s.trace_id,
+				case when s.parent_span_id is null then 0 else 1 END
 		) sub`, cteSQL, whereClause)
 
 	var raw []byte
@@ -235,159 +235,159 @@ func (s *Store) SearchTraces(ctx context.Context, startTime int64, endTime int64
 
 func (s *Store) GetTrace(ctx context.Context, traceID string) (json.RawMessage, error) {
 	query := `
-		WITH RECURSIVE
-		param(traceID) AS (VALUES (?)),
+		with recursive
+		param(trace_id) as (values (?)),
 
 		-- 1. Depth-first span tree (only span-table columns)
-		spans_tree AS (
-			SELECT
-				s.TraceID, s.TraceState, s.SpanID, s.ParentSpanID,
-				s.Name, s.Kind, s.StartTime, s.EndTime,
-				s.ResourceDroppedAttributesCount, s.ScopeName, s.ScopeVersion,
-				s.ScopeDroppedAttributesCount, s.DroppedAttributesCount,
-				s.DroppedEventsCount, s.DroppedLinksCount,
-				s.StatusCode, s.StatusMessage,
-				0 AS depth,
-				ARRAY[ROW_NUMBER() OVER (ORDER BY
-					CASE WHEN s.ParentSpanID IS NULL THEN 0 ELSE 1 END,
-					s.StartTime
-				)] AS sort_path
-			FROM spans s, param p
-			WHERE s.TraceID = p.traceID
-			AND (s.ParentSpanID IS NULL OR s.ParentSpanID NOT IN (SELECT SpanID FROM spans WHERE TraceID = p.traceID))
+		spans_tree as (
+			select
+				s.trace_id, s.trace_state, s.span_id, s.parent_span_id,
+				s.name, s.kind, s.start_time, s.end_time,
+				s.resource_dropped_attributes_count, s.scope_name, s.scope_version,
+				s.scope_dropped_attributes_count, s.dropped_attributes_count,
+				s.dropped_events_count, s.dropped_links_count,
+				s.status_code, s.status_message,
+				0 as depth,
+				array[row_number() over (order by
+					case when s.parent_span_id is null then 0 else 1 END,
+					s.start_time
+				)] as sort_path
+			from spans s, param p
+			where s.trace_id = p.trace_id
+			and (s.parent_span_id is null or s.parent_span_id not in (select span_id from spans where trace_id = p.trace_id))
 
-			UNION ALL
+			union all
 
-			SELECT
-				s.TraceID, s.TraceState, s.SpanID, s.ParentSpanID,
-				s.Name, s.Kind, s.StartTime, s.EndTime,
-				s.ResourceDroppedAttributesCount, s.ScopeName, s.ScopeVersion,
-				s.ScopeDroppedAttributesCount, s.DroppedAttributesCount,
-				s.DroppedEventsCount, s.DroppedLinksCount,
-				s.StatusCode, s.StatusMessage,
+			select
+				s.trace_id, s.trace_state, s.span_id, s.parent_span_id,
+				s.name, s.kind, s.start_time, s.end_time,
+				s.resource_dropped_attributes_count, s.scope_name, s.scope_version,
+				s.scope_dropped_attributes_count, s.dropped_attributes_count,
+				s.dropped_events_count, s.dropped_links_count,
+				s.status_code, s.status_message,
 				st.depth + 1,
-				st.sort_path || ARRAY[ROW_NUMBER() OVER (
-					PARTITION BY st.SpanID ORDER BY s.StartTime
-				)] AS sort_path
-			FROM spans s, param p
-			JOIN spans_tree st ON s.ParentSpanID = st.SpanID AND s.TraceID = st.TraceID
-			WHERE s.TraceID = p.traceID
+				st.sort_path || array[row_number() over (
+					partition by st.span_id order by s.start_time
+				)] as sort_path
+			from spans s, param p
+			join spans_tree st on s.parent_span_id = st.span_id and s.trace_id = st.trace_id
+			where s.trace_id = p.trace_id
 		),
 
-		-- 2. Attributes grouped by (SpanID, Scope) → one JSON object per group
-		--    Covers scope = 'resource', 'scope', 'span' (EventID/LinkID are NULL)
-		span_attributes AS (
-			SELECT a.SpanID, a.Scope, json_group_array(json_object('key', a.Key, 'value', a.Value, 'type', a.Type::VARCHAR)) AS attributes
-			FROM attributes a
-			WHERE a.SpanID IN (SELECT SpanID FROM spans_tree)
-				AND a.EventID IS NULL AND a.LinkID IS NULL
-			GROUP BY a.SpanID, a.Scope
+		-- 2. Attributes grouped by (span_id, scope) → one JSON object per group
+		--    Covers scope = 'resource', 'scope', 'span' (event_id/link_id are NULL)
+		span_attributes as (
+			select a.span_id, a.scope, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attributes
+			from attributes a
+			where a.span_id in (select span_id from spans_tree)
+				and a.event_id is null and a.link_id is null
+ group by  a.span_id, a.scope
 		),
 
-		-- 3. Event attributes → one JSON object per EventID
-		event_attributes AS (
-			SELECT a.EventID,
-				json_group_array(json_object('key', a.Key, 'value', a.Value, 'type', a.Type::VARCHAR)) AS attributes
-			FROM attributes a
-			WHERE a.EventID IS NOT NULL
-				AND a.SpanID IN (SELECT SpanID FROM spans_tree)
-			GROUP BY a.EventID
+		-- 3. Event attributes → one JSON object per event_id
+		event_attributes as (
+			select a.event_id,
+				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attributes
+			from attributes a
+			where a.event_id is not null
+				and a.span_id in (select span_id from spans_tree)
+ group by  a.event_id
 		),
 
-		-- 4. Events with their attributes → one JSON array per SpanID
-		event_data AS (
-			SELECT e.SpanID,
+		-- 4. Events with their attributes → one JSON array per span_id
+		event_data as (
+			select e.span_id,
 				to_json(list(json_object(
-					'name', e.Name,
-					'timestamp', e.Timestamp,
-					'droppedAttributesCount', e.DroppedAttributesCount,
-					'attributes', COALESCE(ea.attributes, json('[]'))
-				) ORDER BY e.Timestamp)) AS events
-			FROM events e
-			LEFT JOIN event_attributes ea ON e.ID = ea.EventID
-			WHERE e.SpanID IN (SELECT SpanID FROM spans_tree)
-			GROUP BY e.SpanID
+					'name', e.name,
+					'timestamp', e.timestamp,
+					'droppedAttributesCount', e.dropped_attributes_count,
+					'attributes', coalesce(ea.attributes, json('[]'))
+				) order by e.timestamp)) as events
+			from events e
+ left join  event_attributes ea on e.id = ea.event_id
+			where e.span_id in (select span_id from spans_tree)
+ group by  e.span_id
 		),
 
-		-- 5. Link attributes → one JSON object per LinkID
-		link_attributes AS (
-			SELECT a.LinkID,
-				json_group_array(json_object('key', a.Key, 'value', a.Value, 'type', a.Type::VARCHAR)) AS attributes
-			FROM attributes a
-			WHERE a.LinkID IS NOT NULL
-				AND a.SpanID IN (SELECT SpanID FROM spans_tree)
-			GROUP BY a.LinkID
+		-- 5. Link attributes → one JSON object per link_id
+		link_attributes as (
+			select a.link_id,
+				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attributes
+			from attributes a
+			where a.link_id is not null
+				and a.span_id in (select span_id from spans_tree)
+ group by  a.link_id
 		),
 
-		-- 6. Links with their attributes → one JSON array per SpanID
-		link_data AS (
-			SELECT l.SpanID,
+		-- 6. Links with their attributes → one JSON array per span_id
+		link_data as (
+			select l.span_id,
 				json_group_array(json_object(
-				'traceID', l.TraceID,
-				'spanID', l.LinkedSpanID,
-					'traceState', l.TraceState,
-					'droppedAttributesCount', l.DroppedAttributesCount,
-					'attributes', COALESCE(la.attributes, json('[]'))
-				)) AS links
-			FROM links l
-			LEFT JOIN link_attributes la ON l.ID = la.LinkID
-			WHERE l.SpanID IN (SELECT SpanID FROM spans_tree)
-			GROUP BY l.SpanID
+				'traceID', l.trace_id,
+				'spanID', l.linked_span_id,
+					'traceState', l.trace_state,
+					'droppedAttributesCount', l.dropped_attributes_count,
+					'attributes', coalesce(la.attributes, json('[]'))
+				)) as links
+			from links l
+ left join  link_attributes la on l.id = la.link_id
+			where l.span_id in (select span_id from spans_tree)
+ group by  l.span_id
 		),
 
 		-- 7. Assemble each span as a JSON object (with depth), ordered depth-first
-		ordered_spans AS (
-			SELECT json_object(
+		ordered_spans as (
+			select json_object(
 				'spanData', json_object(
-				'traceID',       st.TraceID,
-				'traceState',    st.TraceState,
-				'spanID',        st.SpanID,
-				'parentSpanID',  st.ParentSpanID,
-					'name',          st.Name,
-					'kind',          st.Kind,
-					'startTime',     st.StartTime,
-					'endTime',       st.EndTime,
-					'attributes',    COALESCE(sa_span.attributes, json('[]')),
-					'events',        COALESCE(ed.events, json('[]')),
-					'links',         COALESCE(ld.links, json('[]')),
+				'traceID',       st.trace_id,
+				'traceState',    st.trace_state,
+				'spanID',        st.span_id,
+				'parentSpanID',  st.parent_span_id,
+					'name',          st.name,
+					'kind',          st.kind,
+					'startTime',     st.start_time,
+					'endTime',       st.end_time,
+					'attributes',    coalesce(sa_span.attributes, json('[]')),
+					'events',        coalesce(ed.events, json('[]')),
+					'links',         coalesce(ld.links, json('[]')),
 					'resource', json_object(
-						'attributes',             COALESCE(sa_res.attributes, json('[]')),
-						'droppedAttributesCount', st.ResourceDroppedAttributesCount
+						'attributes',             coalesce(sa_res.attributes, json('[]')),
+						'droppedAttributesCount', st.resource_dropped_attributes_count
 					),
 					'scope', json_object(
-						'name',                   st.ScopeName,
-						'version',                st.ScopeVersion,
-						'attributes',             COALESCE(sa_scope.attributes, json('[]')),
-						'droppedAttributesCount', st.ScopeDroppedAttributesCount
+						'name',                   st.scope_name,
+						'version',                st.scope_version,
+						'attributes',             coalesce(sa_scope.attributes, json('[]')),
+						'droppedAttributesCount', st.scope_dropped_attributes_count
 					),
-					'droppedAttributesCount', st.DroppedAttributesCount,
-					'droppedEventsCount',     st.DroppedEventsCount,
-					'droppedLinksCount',      st.DroppedLinksCount,
-					'statusCode',             st.StatusCode,
-					'statusMessage',          st.StatusMessage
+					'droppedAttributesCount', st.dropped_attributes_count,
+					'droppedEventsCount',     st.dropped_events_count,
+					'droppedLinksCount',      st.dropped_links_count,
+					'statusCode',             st.status_code,
+					'statusMessage',          st.status_message
 				),
 				'depth', st.depth
-			) AS span_json,
+			) as span_json,
 			st.sort_path
-			FROM spans_tree st
-			LEFT JOIN span_attributes sa_span  ON st.SpanID = sa_span.SpanID  AND sa_span.Scope  = 'span'
-			LEFT JOIN span_attributes sa_res   ON st.SpanID = sa_res.SpanID   AND sa_res.Scope   = 'resource'
-			LEFT JOIN span_attributes sa_scope ON st.SpanID = sa_scope.SpanID AND sa_scope.Scope  = 'scope'
-			LEFT JOIN event_data ed       ON st.SpanID = ed.SpanID
-			LEFT JOIN link_data  ld       ON st.SpanID = ld.SpanID
+			from spans_tree st
+ left join  span_attributes sa_span  on st.span_id = sa_span.span_id  and sa_span.scope  = 'span'
+ left join  span_attributes sa_res   on st.span_id = sa_res.span_id   and sa_res.scope   = 'resource'
+ left join  span_attributes sa_scope on st.span_id = sa_scope.span_id and sa_scope.scope  = 'scope'
+ left join  event_data ed       on st.span_id = ed.span_id
+ left join  link_data  ld       on st.span_id = ld.span_id
 		)
 
 		-- 8. Guard: return NULL if the trace doesn't exist
 		-- 9. Wrap everything in {traceID, spans: [...]}
-		SELECT CASE
-			WHEN NOT EXISTS (SELECT 1 FROM spans WHERE TraceID = (SELECT traceID FROM param))
-			THEN NULL
-			ELSE CAST(json_object(
-				'traceID', (SELECT traceID FROM param),
-				'spans',   COALESCE(to_json(list(span_json ORDER BY sort_path)), json('[]'))
-			) AS VARCHAR)
-		END AS trace
-		FROM ordered_spans
+		select case
+			when not exists (select 1 from spans where trace_id = (select trace_id from param))
+			then null
+			else cast(json_object(
+				'traceID', (select trace_id from param),
+				'spans',   coalesce(to_json(list(span_json order by sort_path)), json('[]'))
+			) as varchar)
+		end as trace
+		from ordered_spans
 	`
 	var raw []byte
 	if err := s.db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
@@ -406,10 +406,10 @@ func (s *Store) ClearTraces(ctx context.Context) error {
 	}
 
 	childQueries := []string{
-		`DELETE FROM attributes WHERE SpanID IS NOT NULL`,
-		`TRUNCATE TABLE links`,
-		`TRUNCATE TABLE events`,
-		`TRUNCATE TABLE spans`,
+		`delete from attributes where span_id is not null`,
+		`truncate table links`,
+		`truncate table events`,
+		`truncate table spans`,
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query); err != nil {
@@ -426,10 +426,10 @@ func (s *Store) DeleteSpansByTraceID(ctx context.Context, traceID string) error 
 	}
 
 	childQueries := []string{
-		`DELETE FROM attributes WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID = ?)`,
-		`DELETE FROM links WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID = ?)`,
-		`DELETE FROM events WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID = ?)`,
-		`DELETE FROM spans WHERE TraceID = ?`,
+		`delete from attributes where span_id in (select span_id from spans where trace_id = ?)`,
+		`delete from links where span_id in (select span_id from spans where trace_id = ?)`,
+		`delete from events where span_id in (select span_id from spans where trace_id = ?)`,
+		`delete from spans where trace_id = ?`,
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query, traceID); err != nil {
@@ -448,13 +448,13 @@ func (s *Store) GetTraceAttributes(ctx context.Context, startTime, endTime int64
 	}
 
 	query := `
-		SELECT CAST(to_json(list(json_object('name', sub.Key, 'attributeScope', sub.Scope, 'type', sub.Type::VARCHAR)
-			ORDER BY sub.Key, sub.Scope)) AS VARCHAR) AS attributes
-		FROM (
-			SELECT DISTINCT a.Key, a.Scope, a.Type
-			FROM attributes a
-			INNER JOIN spans s ON a.SpanID = s.SpanID
-			WHERE s.StartTime >= ? AND s.StartTime <= ?
+		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope, 'type', sub.type::varchar)
+			order by sub.key, sub.scope)) as varchar) as attributes
+		from (
+			select distinct a.key, a.scope, a.type
+			from attributes a
+			inner join spans s on a.span_id = s.span_id
+			where s.start_time >= ? and s.start_time <= ?
 		) sub
 	`
 	var raw []byte
@@ -474,10 +474,10 @@ func (s *Store) DeleteSpanByID(ctx context.Context, spanID string) error {
 	}
 
 	childQueries := []string{
-		`DELETE FROM attributes WHERE SpanID = ?`,
-		`DELETE FROM links WHERE SpanID = ?`,
-		`DELETE FROM events WHERE SpanID = ?`,
-		`DELETE FROM spans WHERE SpanID = ?`,
+		`delete from attributes where span_id = ?`,
+		`delete from links where span_id = ?`,
+		`delete from events where span_id = ?`,
+		`delete from spans where span_id = ?`,
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query, spanID); err != nil {
@@ -500,10 +500,10 @@ func (s *Store) DeleteSpansByIDs(ctx context.Context, spanIDs []any) error {
 
 	placeholders := buildPlaceholders(len(spanIDs))
 	childQueries := []string{
-		fmt.Sprintf(`DELETE FROM attributes WHERE SpanID IN (%s)`, placeholders),
-		fmt.Sprintf(`DELETE FROM links WHERE SpanID IN (%s)`, placeholders),
-		fmt.Sprintf(`DELETE FROM events WHERE SpanID IN (%s)`, placeholders),
-		fmt.Sprintf(`DELETE FROM spans WHERE SpanID IN (%s)`, placeholders),
+		fmt.Sprintf(`delete from attributes where span_id in (%s)`, placeholders),
+		fmt.Sprintf(`delete from links where span_id in (%s)`, placeholders),
+		fmt.Sprintf(`delete from events where span_id in (%s)`, placeholders),
+		fmt.Sprintf(`delete from spans where span_id in (%s)`, placeholders),
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query, spanIDs...); err != nil {
@@ -526,10 +526,10 @@ func (s *Store) DeleteSpansByTraceIDs(ctx context.Context, traceIDs []any) error
 
 	placeholders := buildPlaceholders(len(traceIDs))
 	childQueries := []string{
-		fmt.Sprintf(`DELETE FROM attributes WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID IN (%s))`, placeholders),
-		fmt.Sprintf(`DELETE FROM links WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID IN (%s))`, placeholders),
-		fmt.Sprintf(`DELETE FROM events WHERE SpanID IN (SELECT SpanID FROM spans WHERE TraceID IN (%s))`, placeholders),
-		fmt.Sprintf(`DELETE FROM spans WHERE TraceID IN (%s)`, placeholders),
+		fmt.Sprintf(`delete from attributes where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
+		fmt.Sprintf(`delete from links where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
+		fmt.Sprintf(`delete from events where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
+		fmt.Sprintf(`delete from spans where trace_id in (%s)`, placeholders),
 	}
 	for _, query := range childQueries {
 		if _, err := s.db.ExecContext(ctx, query, traceIDs...); err != nil {
@@ -561,48 +561,50 @@ func traceFieldMapper() FieldMapper {
 	}
 }
 
-// mapTraceFieldExpression maps a trace field-scope field to a SQL expression
+// mapTraceFieldExpression maps a trace field-scope field to a SQL expression (snake_case columns).
 func mapTraceFieldExpression(field *FieldDefinition) (string, error) {
-	// Resource fields
+	// Resource fields (span table columns only)
 	if resourceField, found := strings.CutPrefix(field.Name, "resource."); found {
-		return "Resource" + strings.ToUpper(resourceField[:1]) + resourceField[1:], nil
+		col := camelToSnake(resourceField)
+		return "s." + col, nil
 	}
 
-	// Scope fields
+	// Scope fields (span table columns: scope_name, scope_version, scope_dropped_attributes_count)
 	if scopeField, found := strings.CutPrefix(field.Name, "scope."); found {
-		return "Scope" + strings.ToUpper(scopeField[:1]) + scopeField[1:], nil
+		col := "scope_" + camelToSnake(scopeField)
+		return "s." + col, nil
 	}
 
-	// Event column: event.name -> events.Name
+	// Event column: event.name -> e.name
 	if col, found := strings.CutPrefix(field.Name, "event."); found {
-		capitalized := strings.ToUpper(col[:1]) + col[1:]
-		return fmt.Sprintf("EXISTS(SELECT 1 FROM events e WHERE e.SpanID = s.SpanID AND e.%s = ?)", capitalized), nil
+		snake := camelToSnake(col)
+		return fmt.Sprintf("exists(select 1 from events e where e.span_id = s.span_id and e.%s = ?)", snake), nil
 	}
 
-	// Link column: link.traceID -> links.TraceID
+	// Link column: link.traceID -> l.trace_id
 	if col, found := strings.CutPrefix(field.Name, "link."); found {
-		capitalized := strings.ToUpper(col[:1]) + col[1:]
-		return fmt.Sprintf("EXISTS(SELECT 1 FROM links l WHERE l.SpanID = s.SpanID AND l.%s = ?)", capitalized), nil
+		snake := camelToSnake(col)
+		return fmt.Sprintf("exists(select 1 from links l where l.span_id = s.span_id and l.%s = ?)", snake), nil
 	}
 
-	// Direct span column
+	// Direct span column (snake_case)
 	if len(field.Name) > 0 {
-		return strings.ToUpper(field.Name[:1]) + field.Name[1:], nil
+		return "s." + camelToSnake(field.Name), nil
 	}
 	return field.Name, nil
 }
 
-// mapTraceAttributeExpressions maps trace attributes to SQL expressions
+// mapTraceAttributeExpressions maps trace attributes to SQL expressions (snake_case columns).
 func mapTraceAttributeExpressions(field *FieldDefinition) ([]string, error) {
 	switch field.AttributeScope {
 	case "resource", "scope", "span":
-		expr := fmt.Sprintf("(SELECT a.Value FROM attributes a WHERE a.SpanID = s.SpanID AND a.Scope = '%s' AND a.Key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
+		expr := fmt.Sprintf("(select a.value from attributes a where a.span_id = s.span_id and a.scope = '%s' and a.key = '%s' limit 1)", field.AttributeScope, field.Name)
 		return []string{expr}, nil
 	case "event":
-		expr := fmt.Sprintf("EXISTS(SELECT 1 FROM events e JOIN attributes a ON a.EventID = e.ID WHERE e.SpanID = s.SpanID AND a.Scope = 'event' AND a.Key = '%s' AND a.Value = ?)", field.Name)
+		expr := fmt.Sprintf("exists(select 1 from events e join attributes a on a.event_id = e.id where e.span_id = s.span_id and a.scope = 'event' and a.key = '%s' and a.value = ?)", field.Name)
 		return []string{expr}, nil
 	case "link":
-		expr := fmt.Sprintf("EXISTS(SELECT 1 FROM links l JOIN attributes a ON a.LinkID = l.ID WHERE l.SpanID = s.SpanID AND a.Scope = 'link' AND a.Key = '%s' AND a.Value = ?)", field.Name)
+		expr := fmt.Sprintf("exists(select 1 from links l join attributes a on a.link_id = l.id where l.span_id = s.span_id and a.scope = 'link' and a.key = '%s' and a.value = ?)", field.Name)
 		return []string{expr}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope: %s", field.AttributeScope)
@@ -619,15 +621,15 @@ func mapTraceAttributeExpressions(field *FieldDefinition) ([]string, error) {
 // See BuildOperatorCondition in query_tree.go.
 func mapTraceGlobalExpressions() ([]string, error) {
 	return []string{
-		"s.SearchText = ?",
-		"EXISTS(SELECT 1 FROM events e WHERE e.SpanID = s.SpanID AND e.SearchText = ?)",
-		"EXISTS(SELECT 1 FROM links l WHERE l.SpanID = s.SpanID AND l.SearchText = ?)",
-		"EXISTS(SELECT 1 FROM attributes a WHERE a.SpanID = s.SpanID AND (a.Key = ? OR a.Value = ?))",
+		"s.search_text = ?",
+		"exists(select 1 from events e where e.span_id = s.span_id and e.search_text = ?)",
+		"exists(select 1 from links l where l.span_id = s.span_id and l.search_text = ?)",
+		"exists(select 1 from attributes a where a.span_id = s.span_id and (a.key = ? or a.value = ?))",
 	}, nil
 }
 
-// BuildTraceSQL converts a QueryNode into a parameterized CTE, WHERE clause, and args slice
+// BuildTraceSQL converts a QueryNode into a parameterized CTE, where clause, and args slice
 // for trace queries.
 func BuildTraceSQL(queryNode *QueryNode, startTime, endTime int64) (cteSQL string, whereSQL string, args []any, err error) {
-	return BuildSearchSQL(queryNode, startTime, endTime, traceFieldMapper(), "StartTime >= time_start AND StartTime <= time_end")
+	return BuildSearchSQL(queryNode, startTime, endTime, traceFieldMapper(), "s.start_time >= time_start and s.start_time <= time_end")
 }

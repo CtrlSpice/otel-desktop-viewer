@@ -229,14 +229,14 @@ func TestClearLogs(t *testing.T) {
 
 	entries := searchLogsAll(t, helper)
 	assert.Len(t, entries, 3)
-	assert.Greater(t, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE LogID IS NOT NULL"), 0)
+	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where log_id is not null"), 0)
 
 	err = helper.Store.ClearLogs(helper.Ctx)
 	assert.NoError(t, err)
 
 	entries = searchLogsAll(t, helper)
 	assert.Empty(t, entries)
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE LogID IS NOT NULL"))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where log_id is not null"))
 }
 
 // TestLogSuite runs a comprehensive suite on the same three-log dataset.
@@ -338,7 +338,7 @@ func TestDeleteLogByID(t *testing.T) {
 	targetID := entries[0].ID
 	assert.NotEmpty(t, targetID)
 
-	attrsBefore := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE LogID = ?", targetID)
+	attrsBefore := countRows(t, helper, "select count(*) from attributes where log_id = ?", targetID)
 	assert.Greater(t, attrsBefore, 0, "target log should have attributes")
 
 	err = helper.Store.DeleteLogByID(helper.Ctx, targetID)
@@ -350,7 +350,7 @@ func TestDeleteLogByID(t *testing.T) {
 		assert.NotEqual(t, targetID, e.ID)
 	}
 
-	assert.Equal(t, 0, countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE LogID = ?", targetID))
+	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where log_id = ?", targetID))
 }
 
 // TestDeleteLogsByIDs verifies that multiple logs can be deleted by their IDs.
