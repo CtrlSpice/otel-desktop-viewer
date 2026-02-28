@@ -1,17 +1,58 @@
-package store
+package metrics_test
 
 import (
+	"context"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 const maxNano = 1<<63 - 1
+
+func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
+	t.Helper()
+	ctx := context.Background()
+	s := store.NewStore(ctx, "")
+	require.NotNil(t, s)
+	return s, ctx, func() { s.Close() }
+}
+
+func countRows(t *testing.T, db *sql.DB, ctx context.Context, query string, args ...any) int {
+	t.Helper()
+	var n int
+	require.NoError(t, db.QueryRowContext(ctx, query, args...).Scan(&n))
+	return n
+}
+
+func mustDecodeTraceIDMetrics(s string) [16]byte {
+	b, err := hex.DecodeString(s)
+	if err != nil || len(b) != 16 {
+		panic("invalid trace ID hex: " + s)
+	}
+	var out [16]byte
+	copy(out[:], b)
+	return out
+}
+
+func mustDecodeSpanIDMetrics(s string) [8]byte {
+	b, err := hex.DecodeString(s)
+	if err != nil || len(b) != 8 {
+		panic("invalid span ID hex: " + s)
+	}
+	var out [8]byte
+	copy(out[:], b)
+	return out
+}
 
 // createTestMetricsPdataN builds pmetric.Metrics with n gauge metrics (one resource/scope).
 // Each metric has resource and scope attributes. Used to exercise flushIntervalMetrics by ingesting >= 100 metrics.
@@ -64,8 +105,8 @@ func createTestMetricsPdata() pmetric.Metrics {
 	ex0 := dp0.Exemplars().AppendEmpty()
 	ex0.SetTimestamp(pcommon.Timestamp(base - int64(time.Minute)))
 	ex0.SetDoubleValue(1000.0)
-	ex0.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
-	ex0.SetSpanID(mustDecodeSpanIDLogs("0000000000000001"))
+	ex0.SetTraceID(mustDecodeTraceIDMetrics("00000000000000000000000000000099"))
+	ex0.SetSpanID(mustDecodeSpanIDMetrics("0000000000000001"))
 	ex0.FilteredAttributes().PutStr("exemplar.source", "gauge")
 
 	// Gauge with Int value (covers numberDataPointValue Int branch: return nil, dp.IntValue(), typeStr)
@@ -94,8 +135,8 @@ func createTestMetricsPdata() pmetric.Metrics {
 	ex1 := dp1.Exemplars().AppendEmpty()
 	ex1.SetTimestamp(pcommon.Timestamp(base + int64(2*time.Minute)))
 	ex1.SetDoubleValue(1400.0)
-	ex1.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
-	ex1.SetSpanID(mustDecodeSpanIDLogs("0000000000000002"))
+	ex1.SetTraceID(mustDecodeTraceIDMetrics("00000000000000000000000000000099"))
+	ex1.SetSpanID(mustDecodeSpanIDMetrics("0000000000000002"))
 	ex1.FilteredAttributes().PutStr("exemplar.source", "sum")
 
 	// Histogram
@@ -116,8 +157,8 @@ func createTestMetricsPdata() pmetric.Metrics {
 	ex2 := dp2.Exemplars().AppendEmpty()
 	ex2.SetTimestamp(pcommon.Timestamp(base + int64(4*time.Minute)))
 	ex2.SetDoubleValue(1.25)
-	ex2.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
-	ex2.SetSpanID(mustDecodeSpanIDLogs("0000000000000007"))
+	ex2.SetTraceID(mustDecodeTraceIDMetrics("00000000000000000000000000000099"))
+	ex2.SetSpanID(mustDecodeSpanIDMetrics("0000000000000007"))
 	ex2.FilteredAttributes().PutStr("exemplar.source", "histogram")
 
 	// Exponential histogram
@@ -142,17 +183,17 @@ func createTestMetricsPdata() pmetric.Metrics {
 	ex3 := dp3.Exemplars().AppendEmpty()
 	ex3.SetTimestamp(pcommon.Timestamp(base + int64(6*time.Minute)))
 	ex3.SetDoubleValue(512.0)
-	ex3.SetTraceID(mustDecodeTraceIDLogs("00000000000000000000000000000099"))
-	ex3.SetSpanID(mustDecodeSpanIDLogs("000000000000000a"))
+	ex3.SetTraceID(mustDecodeTraceIDMetrics("00000000000000000000000000000099"))
+	ex3.SetSpanID(mustDecodeSpanIDMetrics("000000000000000a"))
 	ex3.FilteredAttributes().PutStr("exemplar.source", "exponential_histogram")
 
 	return metrics
 }
 
-// searchMetricsAll returns SearchMetrics with wide time range and nil query; parses JSON to slice of maps.
-func searchMetricsAll(t *testing.T, helper *TestHelper) []map[string]any {
+// searchMetricsAll returns metrics.Search with wide time range and nil query; parses JSON to slice of maps.
+func searchMetricsAll(t *testing.T, s *store.Store, ctx context.Context) []map[string]any {
 	t.Helper()
-	raw, err := helper.Store.SearchMetrics(helper.Ctx, 0, maxNano, nil)
+	raw, err := metrics.Search(ctx, s.DB(), 0, maxNano, nil)
 	assert.NoError(t, err)
 	var out []map[string]any
 	assert.NoError(t, json.Unmarshal(raw, &out))
@@ -161,14 +202,16 @@ func searchMetricsAll(t *testing.T, helper *TestHelper) []map[string]any {
 
 // TestMetricSuite runs tests on ingested metrics using SearchMetrics (DB-generated JSON).
 func TestMetricSuite(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.IngestMetrics(helper.Ctx, createTestMetricsPdata())
+	s.Lock()
+	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdata())
+	s.Unlock()
 	assert.NoError(t, err, "ingest test metrics")
 
 	t.Run("MetricRetrieval", func(t *testing.T) {
-		metrics := searchMetricsAll(t, helper)
+		metrics := searchMetricsAll(t, s, ctx)
 		assert.Len(t, metrics, 5, "should have five metrics")
 		names := make([]string, len(metrics))
 		for i, m := range metrics {
@@ -184,7 +227,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("GaugeMetric", func(t *testing.T) {
-		metrics := searchMetricsAll(t, helper)
+		metrics := searchMetricsAll(t, s, ctx)
 		var gauge map[string]any
 		for _, m := range metrics {
 			if m["name"] == "gauge_metric" {
@@ -207,7 +250,7 @@ func TestMetricSuite(t *testing.T) {
 
 	t.Run("GaugeIntMetric", func(t *testing.T) {
 		// Covers numberDataPointValue Int branch: return nil, dp.IntValue(), typeStr
-		metrics := searchMetricsAll(t, helper)
+		metrics := searchMetricsAll(t, s, ctx)
 		var m map[string]any
 		for _, metric := range metrics {
 			if metric["name"] == "gauge_int_metric" {
@@ -233,7 +276,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("SumMetric", func(t *testing.T) {
-		metrics := searchMetricsAll(t, helper)
+		metrics := searchMetricsAll(t, s, ctx)
 		var sum map[string]any
 		for _, m := range metrics {
 			if m["name"] == "sum_metric" {
@@ -248,7 +291,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("HistogramMetric", func(t *testing.T) {
-		metrics := searchMetricsAll(t, helper)
+		metrics := searchMetricsAll(t, s, ctx)
 		var hist map[string]any
 		for _, m := range metrics {
 			if m["name"] == "histogram_metric" {
@@ -266,7 +309,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("ExponentialHistogramMetric", func(t *testing.T) {
-		metrics := searchMetricsAll(t, helper)
+		metrics := searchMetricsAll(t, s, ctx)
 		var exp map[string]any
 		for _, m := range metrics {
 			if m["name"] == "exponential_histogram_metric" {
@@ -284,7 +327,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("MetricResourceAndScope", func(t *testing.T) {
-		metrics := searchMetricsAll(t, helper)
+		metrics := searchMetricsAll(t, s, ctx)
 		for i, m := range metrics {
 			resource, _ := m["resource"].(map[string]any)
 			assert.NotNil(t, resource, "metric %d resource", i)
@@ -296,8 +339,8 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
-		assert.Greater(t, countRows(t, helper, "select count(*) from exemplars"), 0, "exemplars should be ingested")
-		metrics := searchMetricsAll(t, helper)
+		assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from exemplars"), 0, "exemplars should be ingested")
+		metrics := searchMetricsAll(t, s, ctx)
 		var gauge map[string]any
 		for _, m := range metrics {
 			if m["name"] == "gauge_metric" {
@@ -335,7 +378,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-service",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -371,7 +414,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "gauge_metric",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -389,7 +432,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "memory",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -407,7 +450,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "bytes",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -430,7 +473,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-scope",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -450,7 +493,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-scope",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -467,7 +510,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "v1.0.0",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -487,7 +530,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "v1.0.0",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -505,7 +548,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "0",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -523,7 +566,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "memory",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -541,7 +584,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-service",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -558,7 +601,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "nonexistent-metric-xyz",
 			},
 		}
-		raw, err := helper.Store.SearchMetrics(helper.Ctx, startTime, endTime, query)
+		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -576,117 +619,127 @@ func requireMetric(t *testing.T, m map[string]any, name string) {
 
 // TestDeleteMetricByID verifies that a single metric can be deleted by its ID, including child rows.
 func TestDeleteMetricByID(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.IngestMetrics(helper.Ctx, createTestMetricsPdata())
+		s.Lock()
+	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdata())
+	s.Unlock()
 	assert.NoError(t, err)
 
-	metrics := searchMetricsAll(t, helper)
-	assert.Len(t, metrics, 5)
+	metricList := searchMetricsAll(t, s, ctx)
+	assert.Len(t, metricList, 5)
 
-	targetID, ok := metrics[0]["id"].(string)
+	targetID, ok := metricList[0]["id"].(string)
 	assert.True(t, ok, "metric ID should be a string")
 	assert.NotEmpty(t, targetID)
 
-	dpBefore := countRows(t, helper, "select count(*) from datapoints where metric_id = ?", targetID)
-	attrsBefore := countRows(t, helper, "select count(*) from attributes where metric_id = ?", targetID)
+	dpBefore := countRows(t, s.DB(), ctx, "select count(*) from datapoints where metric_id = ?", targetID)
+	attrsBefore := countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id = ?", targetID)
 	assert.Greater(t, dpBefore+attrsBefore, 0, "target metric should have child rows")
 
-	err = helper.Store.DeleteMetricByID(helper.Ctx, targetID)
+	err = metrics.DeleteMetricByID(ctx, s.DB(), targetID)
 	assert.NoError(t, err)
 
-	metrics = searchMetricsAll(t, helper)
-	assert.Len(t, metrics, 4)
-	for _, m := range metrics {
+	metricList = searchMetricsAll(t, s, ctx)
+	assert.Len(t, metricList, 4)
+	for _, m := range metricList {
 		assert.NotEqual(t, targetID, m["id"])
 	}
 
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from datapoints where metric_id = ?", targetID))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where metric_id = ?", targetID))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from datapoints where metric_id = ?", targetID))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id = ?", targetID))
 }
 
 // TestDeleteMetricsByIDs verifies that multiple metrics can be deleted by their IDs, including child rows.
 func TestDeleteMetricsByIDs(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.IngestMetrics(helper.Ctx, createTestMetricsPdata())
+		s.Lock()
+	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdata())
+	s.Unlock()
 	assert.NoError(t, err)
 
-	metrics := searchMetricsAll(t, helper)
-	assert.Len(t, metrics, 5)
+	metricList := searchMetricsAll(t, s, ctx)
+	assert.Len(t, metricList, 5)
 
-	idsToDelete := []any{metrics[0]["id"], metrics[1]["id"]}
-	dpBefore := countRows(t, helper, "select count(*) from datapoints where metric_id in (?, ?)", idsToDelete...)
+	idsToDelete := []any{metricList[0]["id"], metricList[1]["id"]}
+	dpBefore := countRows(t, s.DB(), ctx, "select count(*) from datapoints where metric_id in (?, ?)", idsToDelete...)
 	assert.Greater(t, dpBefore, 0, "deleted metrics should have datapoints")
 
-	err = helper.Store.DeleteMetricsByIDs(helper.Ctx, idsToDelete)
+	err = metrics.DeleteMetricsByIDs(ctx, s.DB(), idsToDelete)
 	assert.NoError(t, err)
 
-	metrics = searchMetricsAll(t, helper)
-	assert.Len(t, metrics, 3)
+	metricList = searchMetricsAll(t, s, ctx)
+	assert.Len(t, metricList, 3)
 
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from datapoints where metric_id in (?, ?)", idsToDelete...))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where metric_id in (?, ?)", idsToDelete...))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from datapoints where metric_id in (?, ?)", idsToDelete...))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id in (?, ?)", idsToDelete...))
 }
 
 // TestDeleteMetricsByIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteMetricsByIDs_Empty(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.DeleteMetricsByIDs(helper.Ctx, []any{})
+	err := metrics.DeleteMetricsByIDs(ctx, s.DB(), []any{})
 	assert.NoError(t, err)
 }
 
 // TestEmptyMetrics verifies empty metric list and empty store.
 func TestEmptyMetrics(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.IngestMetrics(helper.Ctx, pmetric.NewMetrics())
+		s.Lock()
+	err := metrics.Ingest(ctx, s.Conn(), pmetric.NewMetrics())
+	s.Unlock()
 	assert.NoError(t, err)
 
-	metrics := searchMetricsAll(t, helper)
-	assert.Empty(t, metrics)
+	metricList := searchMetricsAll(t, s, ctx)
+	assert.Empty(t, metricList)
 }
 
 // TestClearMetrics verifies that all metrics can be cleared, including child rows.
 func TestClearMetrics(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.IngestMetrics(helper.Ctx, createTestMetricsPdata())
+		s.Lock()
+	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdata())
+	s.Unlock()
 	assert.NoError(t, err)
 
-	metrics := searchMetricsAll(t, helper)
-	assert.Len(t, metrics, 5)
-	assert.Greater(t, countRows(t, helper, "select count(*) from datapoints"), 0)
-	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where metric_id is not null"), 0)
+	metricList := searchMetricsAll(t, s, ctx)
+	assert.Len(t, metricList, 5)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from datapoints"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id is not null"), 0)
 
-	err = helper.Store.ClearMetrics(helper.Ctx)
+	err = metrics.Clear(ctx, s.DB())
 	assert.NoError(t, err)
 
-	metrics = searchMetricsAll(t, helper)
-	assert.Empty(t, metrics)
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from datapoints"))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from exemplars"))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where metric_id is not null"))
+	metricList = searchMetricsAll(t, s, ctx)
+	assert.Empty(t, metricList)
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from datapoints"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from exemplars"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id is not null"))
 }
 
 // TestIngestMetrics_FlushInterval exercises the flushIntervalMetrics codepath by ingesting
 // more than 100 metrics in one call (flush runs when metricCount % 100 == 0). All metrics
 // have resource and scope attributes; we assert they were flushed correctly.
 func TestIngestMetrics_FlushInterval(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	const batchSize = 101 // > flushIntervalMetrics (100)
-	err := helper.Store.IngestMetrics(helper.Ctx, createTestMetricsPdataN(batchSize))
+		s.Lock()
+	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdataN(batchSize))
+	s.Unlock()
 	assert.NoError(t, err)
 
-	metrics := searchMetricsAll(t, helper)
+	metrics := searchMetricsAll(t, s, ctx)
 	assert.Len(t, metrics, batchSize)
 
 	// Find metrics by name so we can assert attributes on first, 99th, 100th, 101st

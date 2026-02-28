@@ -13,6 +13,9 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 )
 
 type desktopExporter struct {
@@ -30,15 +33,30 @@ func newDesktopExporter(cfg *Config) *desktopExporter {
 }
 
 func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
-	return e.store.IngestSpans(ctx, source)
+	if err := e.store.CheckConnection(); err != nil {
+		return fmt.Errorf("failed to add spans: %w", err)
+	}
+	e.store.Lock()
+	defer e.store.Unlock()
+	return spans.Ingest(ctx, e.store.Conn(), source)
 }
 
 func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {
-	return e.store.IngestMetrics(ctx, source)
+	if err := e.store.CheckConnection(); err != nil {
+		return fmt.Errorf("failed to add metrics: %w", err)
+	}
+	e.store.Lock()
+	defer e.store.Unlock()
+	return metrics.Ingest(ctx, e.store.Conn(), source)
 }
 
 func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error {
-	return e.store.IngestLogs(ctx, source)
+	if err := e.store.CheckConnection(); err != nil {
+		return fmt.Errorf("failed to add logs: %w", err)
+	}
+	e.store.Lock()
+	defer e.store.Unlock()
+	return logs.Ingest(ctx, e.store.Conn(), source)
 }
 
 func (e *desktopExporter) Start(ctx context.Context, host component.Host) error {

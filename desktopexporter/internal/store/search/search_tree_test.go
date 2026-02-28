@@ -1,4 +1,4 @@
-package store
+package search
 
 import (
 	"testing"
@@ -328,6 +328,42 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			value:        "gone",
 			expectedSQL:  "NOT list_contains(CAST(a.Value AS VARCHAR[]), value_0)",
 			expectedArgs: map[string]any{"value_0": "gone"},
+		},
+		{
+			name:         "string array = with array value",
+			expression:   "a.Value",
+			fieldType:    "string[]",
+			operator:     "=",
+			value:        "[one,two,three]",
+			expectedSQL:  "CAST(a.Value AS VARCHAR[]) = value_0",
+			expectedArgs: map[string]any{"value_0": []any{"one", "two", "three"}},
+		},
+		{
+			name:         "string array = with scalar value",
+			expression:   "a.Value",
+			fieldType:    "string[]",
+			operator:     "=",
+			value:        "single",
+			expectedSQL:  "CAST(a.Value AS VARCHAR[]) = value_0",
+			expectedArgs: map[string]any{"value_0": "single"},
+		},
+		{
+			name:         "string array != with array value",
+			expression:   "a.Value",
+			fieldType:    "string[]",
+			operator:     "!=",
+			value:        "[x,y]",
+			expectedSQL:  "CAST(a.Value AS VARCHAR[]) != value_0",
+			expectedArgs: map[string]any{"value_0": []any{"x", "y"}},
+		},
+		{
+			name:         "string array != with scalar value",
+			expression:   "a.Value",
+			fieldType:    "string[]",
+			operator:     "!=",
+			value:        "other",
+			expectedSQL:  "CAST(a.Value AS VARCHAR[]) != value_0",
+			expectedArgs: map[string]any{"value_0": "other"},
 		},
 		{
 			name:       "unsupported array type",

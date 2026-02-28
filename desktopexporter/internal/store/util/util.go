@@ -1,4 +1,4 @@
-package store
+package util
 
 import (
 	"encoding/hex"
@@ -9,8 +9,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
-// camelToSnake converts camelCase or PascalCase to snake_case (e.g. traceID -> trace_id).
-func camelToSnake(s string) string {
+// CamelToSnake converts camelCase or PascalCase to snake_case (e.g. traceID -> trace_id).
+func CamelToSnake(s string) string {
 	if s == "" {
 		return s
 	}
@@ -29,8 +29,8 @@ func camelToSnake(s string) string {
 	return b.String()
 }
 
-// buildPlaceholders returns a comma-separated list of ? placeholders for SQL IN clauses.
-func buildPlaceholders(count int) string {
+// BuildPlaceholders returns a comma-separated list of ? placeholders for SQL IN clauses.
+func BuildPlaceholders(count int) string {
 	if count == 0 {
 		return ""
 	}

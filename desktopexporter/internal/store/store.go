@@ -10,16 +10,18 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/marcboeker/go-duckdb/v2"
 )
 
 // Sentinel errors for use with errors.Is.
 var (
-	ErrLogIDNotFound          = errors.New("log ID not found")
-	ErrTraceIDNotFound        = errors.New("trace ID not found")
-	ErrSpanIDNotFound         = errors.New("span ID not found")
-	ErrMetricIDNotFound       = errors.New("metric ID not found")
-	ErrStoreConnectionClosed  = errors.New("store connection is closed")
+	ErrLogIDNotFound         = errors.New("log ID not found")
+	ErrTraceIDNotFound       = spans.ErrTraceIDNotFound
+	ErrSpanIDNotFound        = spans.ErrSpanIDNotFound
+	ErrMetricIDNotFound      = errors.New("metric ID not found")
+	ErrStoreConnectionClosed = errors.New("store connection is closed")
 )
 
 type Store struct {
@@ -47,7 +49,7 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	db := sql.OpenDB(connector)
 
 	// 1) Create types - ignore "already exists" errors
-	for i, query := range TypeCreationQueries {
+	for i, query := range schema.TypeCreationQueries {
 		if _, err = db.Exec(query); err != nil {
 			if !strings.Contains(err.Error(), "already exists") {
 				log.Fatalf("failed to create type %d: %v", i, err)
@@ -56,7 +58,7 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	}
 
 	// 2) Create the tables for our signals
-	for i, query := range TableCreationQueries {
+	for i, query := range schema.TableCreationQueries {
 		if _, err = db.Exec(query); err != nil {
 			log.Fatalf("failed to create table %d: %v", i, err)
 		}
@@ -87,11 +89,27 @@ func (s *Store) Close() error {
 	return nil
 }
 
-// checkConnection verifies that the store's connection is valid.
+// CheckConnection verifies that the store's connection is valid.
 // Returns an error if the connection is nil.
-func (s *Store) checkConnection() error {
+func (s *Store) CheckConnection() error {
 	if s.db == nil || s.conn == nil {
 		return ErrStoreConnectionClosed
 	}
 	return nil
+}
+
+// Lock acquires the store mutex. Hold it when calling spans.Ingest or other ingest that uses Conn().
+func (s *Store) Lock() { s.mu.Lock() }
+
+// Unlock releases the store mutex.
+func (s *Store) Unlock() { s.mu.Unlock() }
+
+// Conn returns the underlying driver connection (for appenders). Used by subpackages and tests.
+func (s *Store) Conn() driver.Conn {
+	return s.conn
+}
+
+// DB returns the underlying *sql.DB. Used by subpackages and tests.
+func (s *Store) DB() *sql.DB {
+	return s.db
 }

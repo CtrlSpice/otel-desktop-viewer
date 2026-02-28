@@ -1,4 +1,4 @@
-package store
+package schema
 
 // Type creation queries
 var TypeCreationQueries = []string{
@@ -197,7 +197,7 @@ var ConstraintCreationQueries = []string{
 	`alter table datapoints add constraint chk_exponential_histogram_fields check (
 		(metric_type != 'ExponentialHistogram') or (
 			count is not null and sum is not null AND
-			scale is not null and zero_count is null AND
+			scale is null and zero_count is null AND
 			positive_bucket_offset is not null and positive_bucket_counts is null AND
 			negative_bucket_offset is not null and negative_bucket_counts is null AND
 			aggregation_temporality is not null AND

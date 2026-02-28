@@ -1,4 +1,4 @@
-package store
+package search
 
 import (
 	"encoding/json"
@@ -16,12 +16,14 @@ type QueryNode struct {
 	Group *QueryGroup `json:"group,omitempty"`
 }
 
+// Query holds a single condition.
 type Query struct {
 	Field         *FieldDefinition `json:"field"`
 	FieldOperator string           `json:"fieldOperator"`
 	Value         string           `json:"value"`
 }
 
+// FieldDefinition describes a field or attribute used in a condition.
 type FieldDefinition struct {
 	Name           string `json:"name,omitempty"`
 	SearchScope    string `json:"searchScope"`
@@ -29,6 +31,7 @@ type FieldDefinition struct {
 	Type           string `json:"type,omitempty"`
 }
 
+// QueryGroup holds a logical group (AND/OR) of children.
 type QueryGroup struct {
 	LogicalOperator string      `json:"logicalOperator"` // "AND" or "OR"
 	Children        []QueryNode `json:"children"`
@@ -38,7 +41,7 @@ type QueryGroup struct {
 // Signal-specific code provides this to the generic tree walker.
 type FieldMapper func(field *FieldDefinition) ([]string, error)
 
-// ParseQueryTree converts JSON from frontend to QueryNode struct
+// ParseQueryTree converts JSON from frontend to QueryNode struct.
 func ParseQueryTree(jsonData any) (*QueryNode, error) {
 	jsonBytes, err := json.Marshal(jsonData)
 	if err != nil {
@@ -67,7 +70,6 @@ func BuildConditions(node *QueryNode, conditions *[]string, namedArgs *map[strin
 	}
 }
 
-// buildCondition builds SQL for a single condition
 func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]any, mapper FieldMapper) error {
 	if query == nil || query.Field == nil || query.FieldOperator == "" {
 		return fmt.Errorf("invalid condition: missing field or operator")
@@ -75,13 +77,11 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 
 	field := query.Field
 
-	// Map field to database expressions using the signal-specific mapper
 	dbExpressions, err := mapper(field)
 	if err != nil {
 		return fmt.Errorf("failed to map field %s: %w", field.Name, err)
 	}
 
-	// Build SQL condition for each expression
 	var sqlConditions []string
 	for _, dbExpression := range dbExpressions {
 		expression := dbExpression
@@ -94,7 +94,6 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 		sqlConditions = append(sqlConditions, sqlCondition)
 	}
 
-	// For global search, OR all expressions together
 	if field.SearchScope == "global" && len(sqlConditions) > 1 {
 		joinedConditions := strings.Join(sqlConditions, " OR ")
 		*conditions = append(*conditions, "("+joinedConditions+")")
@@ -105,7 +104,6 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 	return nil
 }
 
-// buildGroup builds SQL for a logical group (AND/OR)
 func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]any, mapper FieldMapper) error {
 	if group == nil {
 		return fmt.Errorf("invalid group: missing group data")
@@ -153,7 +151,6 @@ func BuildOperatorCondition(expression string, query *Query, namedArgs *map[stri
 	hasPlaceholder := strings.Contains(expression, "?")
 	var operatorString string
 
-	// Handle null values
 	if value == "NULL" {
 		switch operator {
 		case "=":
@@ -170,12 +167,10 @@ func BuildOperatorCondition(expression string, query *Query, namedArgs *map[stri
 		return expression + " " + operatorString, nil
 	}
 
-	// Handle array types
 	if query.Field != nil && strings.HasSuffix(query.Field.Type, "[]") {
 		return handleArrayOperator(expression, query, namedArgs)
 	}
 
-	// Generate parameter name
 	paramName := fmt.Sprintf("value_%d", len(*namedArgs)-2)
 
 	switch operator {
@@ -211,7 +206,6 @@ func BuildOperatorCondition(expression string, query *Query, namedArgs *map[stri
 	return expression + " " + operatorString, nil
 }
 
-// mapArrayTypeToDuckDB maps frontend array type names to DuckDB list types for use with from_json.
 func mapArrayTypeToDuckDB(frontendType string) (string, error) {
 	switch frontendType {
 	case "string[]":
@@ -227,9 +221,6 @@ func mapArrayTypeToDuckDB(frontendType string) (string, error) {
 	}
 }
 
-// handleArrayOperator handles array operators within BuildOperatorCondition.
-// Attribute values are stored as VARCHAR (JSON-serialized for arrays), so we use
-// from_json to parse them back into a DuckDB list at query time.
 func handleArrayOperator(expression string, query *Query, namedArgs *map[string]any) (string, error) {
 	operator := query.FieldOperator
 	value := query.Value
@@ -337,8 +328,7 @@ func ConvertValueForArrayType(value, arrayType string) any {
 }
 
 // BuildSearchSQL builds the search_params CTE, WHERE clause, and args for any signal.
-// timeCondition must reference time_start and time_end (e.g. "StartTime >= time_start AND StartTime <= time_end"
-// or "l.log_time >= time_start AND l.log_time <= time_end"). It is appended after any query-tree conditions.
+// timeCondition must reference time_start and time_end.
 func BuildSearchSQL(queryNode *QueryNode, startTime, endTime int64, mapper FieldMapper, timeCondition string) (cteSQL, whereSQL string, args []any, err error) {
 	namedArgs := make(map[string]any)
 	namedArgs["time_start"] = startTime

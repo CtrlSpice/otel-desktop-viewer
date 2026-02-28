@@ -1,4 +1,4 @@
-package store
+package ingest
 
 import (
 	"database/sql/driver"

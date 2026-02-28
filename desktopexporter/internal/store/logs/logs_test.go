@@ -1,16 +1,37 @@
-package store
+package logs_test
 
 import (
+	"context"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 )
+
+func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
+	t.Helper()
+	ctx := context.Background()
+	s := store.NewStore(ctx, "")
+	require.NotNil(t, s)
+	return s, ctx, func() { s.Close() }
+}
+
+func countRows(t *testing.T, db *sql.DB, ctx context.Context, query string, args ...any) int {
+	t.Helper()
+	var n int
+	require.NoError(t, db.QueryRowContext(ctx, query, args...).Scan(&n))
+	return n
+}
 
 // mustDecodeTraceID decodes a 32-char hex string to 16 bytes (trace ID).
 func mustDecodeTraceIDLogs(s string) [16]byte {
@@ -130,11 +151,11 @@ func createTestLogsPdataN(baseTime int64, n int) plog.Logs {
 	return logs
 }
 
-// searchLogsAll returns SearchLogs with a wide time range and nil query to get all logs.
-func searchLogsAll(t *testing.T, helper *TestHelper) []logEntryJSON {
+// searchLogsAll returns logs.Search with a wide time range and nil query to get all logs.
+func searchLogsAll(t *testing.T, s *store.Store, ctx context.Context) []logEntryJSON {
 	t.Helper()
 	const maxNano = 1<<63 - 1
-	raw, err := helper.Store.SearchLogs(helper.Ctx, 0, maxNano, nil)
+	raw, err := logs.Search(ctx, s.DB(), 0, maxNano, nil)
 	assert.NoError(t, err)
 	var entries []logEntryJSON
 	assert.NoError(t, json.Unmarshal(raw, &entries))
@@ -188,15 +209,17 @@ func attrMap(attrs []attrKeyValue) map[string]string {
 
 // TestLogOrdering verifies that logs are returned newest-first by effective time (timestamp or observedTimestamp).
 func TestLogOrdering(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
-	logs := createTestLogsPdata(baseTime)
-	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	ldata := createTestLogsPdata(baseTime)
+	s.Lock()
+	err := logs.Ingest(ctx, s.Conn(), ldata)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	entries := searchLogsAll(t, helper)
+	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 3)
 
 	// Order: newest first by effective time — 0002 (t+150ms), 0007 (t+100ms), 0001 (t+0)
@@ -207,50 +230,56 @@ func TestLogOrdering(t *testing.T) {
 
 // TestEmptyLogs verifies handling of empty log lists and empty store.
 func TestEmptyLogs(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.IngestLogs(helper.Ctx, plog.NewLogs())
+	s.Lock()
+	err := logs.Ingest(ctx, s.Conn(), plog.NewLogs())
+	s.Unlock()
 	assert.NoError(t, err)
 
-	entries := searchLogsAll(t, helper)
+	entries := searchLogsAll(t, s, ctx)
 	assert.Empty(t, entries)
 }
 
 // TestClearLogs verifies that all logs can be cleared from the store, including child attributes.
 func TestClearLogs(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
-	logs := createTestLogsPdata(baseTime)
-	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	ldata := createTestLogsPdata(baseTime)
+	s.Lock()
+	err := logs.Ingest(ctx, s.Conn(), ldata)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	entries := searchLogsAll(t, helper)
+	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 3)
-	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where log_id is not null"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from attributes where log_id is not null"), 0)
 
-	err = helper.Store.ClearLogs(helper.Ctx)
+	err = logs.Clear(ctx, s.DB())
 	assert.NoError(t, err)
 
-	entries = searchLogsAll(t, helper)
+	entries = searchLogsAll(t, s, ctx)
 	assert.Empty(t, entries)
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where log_id is not null"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where log_id is not null"))
 }
 
 // TestLogSuite runs a comprehensive suite on the same three-log dataset.
 func TestLogSuite(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
-	logs := createTestLogsPdata(baseTime)
-	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	ldata := createTestLogsPdata(baseTime)
+	s.Lock()
+	err := logs.Ingest(ctx, s.Conn(), ldata)
+	s.Unlock()
 	assert.NoError(t, err, "failed to ingest test logs")
 
 	t.Run("LogOrdering", func(t *testing.T) {
-		entries := searchLogsAll(t, helper)
+		entries := searchLogsAll(t, s, ctx)
 		assert.Len(t, entries, 3)
 		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
 		assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[1].SpanID)
@@ -258,7 +287,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogSeverity", func(t *testing.T) {
-		entries := searchLogsAll(t, helper)
+		entries := searchLogsAll(t, s, ctx)
 		assert.Equal(t, "ERROR", entries[0].SeverityText)
 		assert.Equal(t, int32(plog.SeverityNumberError), entries[0].SeverityNumber)
 		assert.Equal(t, "WARN", entries[1].SeverityText)
@@ -267,14 +296,14 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogBody", func(t *testing.T) {
-		entries := searchLogsAll(t, helper)
+		entries := searchLogsAll(t, s, ctx)
 		assert.Equal(t, "Operation failed", entries[0].Body)
 		assert.Equal(t, "Operation warning", entries[1].Body)
 		assert.Contains(t, entries[2].Body, "Operation started")
 	})
 
 	t.Run("LogTimestamp", func(t *testing.T) {
-		entries := searchLogsAll(t, helper)
+		entries := searchLogsAll(t, s, ctx)
 		assert.Equal(t, int64(0), entries[0].Timestamp)
 		assert.Equal(t, baseTime+150*int64(time.Millisecond), entries[0].ObservedTimestamp)
 		assert.NotZero(t, entries[1].Timestamp)
@@ -282,7 +311,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogResource", func(t *testing.T) {
-		entries := searchLogsAll(t, helper)
+		entries := searchLogsAll(t, s, ctx)
 		resMap := attrMap(entries[0].Resource.Attributes)
 		assert.Equal(t, "test-service", resMap["service.name"])
 		assert.Equal(t, "1.0.0", resMap["service.version"])
@@ -290,7 +319,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogScope", func(t *testing.T) {
-		entries := searchLogsAll(t, helper)
+		entries := searchLogsAll(t, s, ctx)
 		for i := range entries {
 			assert.Equal(t, "test-scope", entries[i].Scope.Name)
 			assert.Equal(t, "v1.0.0", entries[i].Scope.Version)
@@ -298,7 +327,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogAttributes", func(t *testing.T) {
-		entries := searchLogsAll(t, helper)
+		entries := searchLogsAll(t, s, ctx)
 		attrs0 := attrMap(entries[0].Attributes)
 		assert.Equal(t, "log-b", attrs0["log.string"])
 		assert.Equal(t, "24", attrs0["log.int"])
@@ -313,7 +342,7 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogMetadata", func(t *testing.T) {
-		entries := searchLogsAll(t, helper)
+		entries := searchLogsAll(t, s, ctx)
 		assert.Equal(t, uint32(1), entries[0].DroppedAttributesCount)
 		assert.Equal(t, uint32(1), entries[0].Flags)
 		assert.Equal(t, "event.b", entries[0].EventName)
@@ -324,62 +353,66 @@ func TestLogSuite(t *testing.T) {
 
 // TestDeleteLogByID verifies that a single log can be deleted by its ID, including child attributes.
 func TestDeleteLogByID(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
-	logs := createTestLogsPdata(baseTime)
-	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	ldata := createTestLogsPdata(baseTime)
+	s.Lock()
+	err := logs.Ingest(ctx, s.Conn(), ldata)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	entries := searchLogsAll(t, helper)
+	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 3)
 
 	targetID := entries[0].ID
 	assert.NotEmpty(t, targetID)
 
-	attrsBefore := countRows(t, helper, "select count(*) from attributes where log_id = ?", targetID)
+	attrsBefore := countRows(t, s.DB(), ctx, "select count(*) from attributes where log_id = ?", targetID)
 	assert.Greater(t, attrsBefore, 0, "target log should have attributes")
 
-	err = helper.Store.DeleteLogByID(helper.Ctx, targetID)
+	err = logs.DeleteLogByID(ctx, s.DB(), targetID)
 	assert.NoError(t, err)
 
-	entries = searchLogsAll(t, helper)
+	entries = searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 2)
 	for _, e := range entries {
 		assert.NotEqual(t, targetID, e.ID)
 	}
 
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where log_id = ?", targetID))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where log_id = ?", targetID))
 }
 
 // TestDeleteLogsByIDs verifies that multiple logs can be deleted by their IDs.
 func TestDeleteLogsByIDs(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
-	logs := createTestLogsPdata(baseTime)
-	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	ldata := createTestLogsPdata(baseTime)
+	s.Lock()
+	err := logs.Ingest(ctx, s.Conn(), ldata)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	entries := searchLogsAll(t, helper)
+	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 3)
 
 	idsToDelete := []any{entries[0].ID, entries[1].ID}
-	err = helper.Store.DeleteLogsByIDs(helper.Ctx, idsToDelete)
+	err = logs.DeleteLogsByIDs(ctx, s.DB(), idsToDelete)
 	assert.NoError(t, err)
 
-	entries = searchLogsAll(t, helper)
+	entries = searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 1)
 }
 
 // TestDeleteLogsByIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteLogsByIDs_Empty(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.DeleteLogsByIDs(helper.Ctx, []any{})
+	err := logs.DeleteLogsByIDs(ctx, s.DB(), []any{})
 	assert.NoError(t, err)
 }
 
@@ -387,16 +420,18 @@ func TestDeleteLogsByIDs_Empty(t *testing.T) {
 // a few hundred logs in one call (flush runs when logCount % 100 == 0). All logs
 // have resource, scope, and log attributes; we assert they were flushed correctly.
 func TestIngestLogs_FlushInterval(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
 	const batchSize = 250
-	logs := createTestLogsPdataN(baseTime, batchSize)
-	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	ldata := createTestLogsPdataN(baseTime, batchSize)
+	s.Lock()
+	err := logs.Ingest(ctx, s.Conn(), ldata)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	entries := searchLogsAll(t, helper)
+	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, batchSize)
 
 	// Find entries by log.index so we don't depend on result order.
@@ -423,14 +458,16 @@ func TestIngestLogs_FlushInterval(t *testing.T) {
 	}
 }
 
-// TestSearchLogs tests SearchLogs with various query types.
+// TestSearchLogs tests logs.Search with various query types.
 func TestSearchLogs(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
-	logs := createTestLogsPdata(baseTime)
-	err := helper.Store.IngestLogs(helper.Ctx, logs)
+	ldata := createTestLogsPdata(baseTime)
+	s.Lock()
+	err := logs.Ingest(ctx, s.Conn(), ldata)
+	s.Unlock()
 	assert.NoError(t, err)
 
 	startTime := baseTime - 24*int64(time.Hour)
@@ -443,16 +480,16 @@ func TestSearchLogs(t *testing.T) {
 	}
 
 	t.Run("GlobalSearch_Body", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q1",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{SearchScope: "global"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
 				Value:         "Operation failed",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
@@ -460,16 +497,16 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("GlobalSearch_EventName", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q2",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{SearchScope: "global"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
 				Value:         "event.a",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.NotEmpty(t, entries)
@@ -477,32 +514,32 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q3",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{SearchScope: "global"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
 				Value:         "nonexistent-log-text-xyz",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Empty(t, entries)
 	})
 
 	t.Run("Field_SeverityText", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q4",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{Name: "severityText", SearchScope: "field"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "severityText", SearchScope: "field"},
 				FieldOperator: "=",
 				Value:         "ERROR",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
@@ -510,16 +547,16 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Field_SpanID", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q5",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{Name: "spanID", SearchScope: "field"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "spanID", SearchScope: "field"},
 				FieldOperator: "=",
 				Value:         "00000000-0000-0000-0000-000000000001",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
@@ -527,16 +564,16 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Field_TraceID", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q5b",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{Name: "traceID", SearchScope: "field"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "traceID", SearchScope: "field"},
 				FieldOperator: "=",
 				Value:         "00000000-0000-0000-0000-000000000099",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 3, "all three logs share the same trace")
@@ -546,16 +583,16 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Field_SeverityNumber", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q5c",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{Name: "severityNumber", SearchScope: "field"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "severityNumber", SearchScope: "field"},
 				FieldOperator: "=",
 				Value:         "17", // plog.SeverityNumberError
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
@@ -564,16 +601,16 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Field_Body", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q5d",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{Name: "body", SearchScope: "field"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "body", SearchScope: "field"},
 				FieldOperator: "CONTAINS",
 				Value:         "Operation warning",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
@@ -582,16 +619,16 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Field_EventName", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q5e",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{Name: "eventName", SearchScope: "field"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "eventName", SearchScope: "field"},
 				FieldOperator: "=",
 				Value:         "event.a",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
@@ -600,16 +637,16 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Field_ScopeName", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q5f",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{Name: "scope.name", SearchScope: "field"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "scope.name", SearchScope: "field"},
 				FieldOperator: "=",
 				Value:         "test-scope",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 3)
@@ -619,16 +656,16 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Field_ScopeVersion", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q5g",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{Name: "scope.version", SearchScope: "field"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "scope.version", SearchScope: "field"},
 				FieldOperator: "=",
 				Value:         "v1.0.0",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 3)
@@ -638,11 +675,11 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Attribute_LogString", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q6",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "log.string",
 					SearchScope:    "attribute",
 					AttributeScope: "log",
@@ -652,7 +689,7 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "log-b",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
@@ -660,11 +697,11 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Attribute_Resource", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q7",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "service.name",
 					SearchScope:    "attribute",
 					AttributeScope: "resource",
@@ -674,7 +711,7 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "test-service",
 			},
 		}
-		raw, err := helper.Store.SearchLogs(helper.Ctx, startTime, endTime, query)
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.NotEmpty(t, entries)

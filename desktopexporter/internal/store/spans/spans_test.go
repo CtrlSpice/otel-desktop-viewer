@@ -1,16 +1,37 @@
-package store
+package spans_test
 
 import (
+	"context"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
+
+func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
+	t.Helper()
+	ctx := context.Background()
+	s := store.NewStore(ctx, "")
+	require.NotNil(t, s)
+	return s, ctx, func() { s.Close() }
+}
+
+func countRows(t *testing.T, db *sql.DB, ctx context.Context, query string, args ...any) int {
+	t.Helper()
+	var n int
+	require.NoError(t, db.QueryRowContext(ctx, query, args...).Scan(&n))
+	return n
+}
 
 // mustDecodeTraceID decodes a 32-char hex string to 16 bytes (trace ID).
 func mustDecodeTraceID(s string) [16]byte {
@@ -75,10 +96,10 @@ func buildTracesForSummaryOrdering(baseTime int64) (ptrace.Traces, string, strin
 }
 
 // searchTracesAll returns SearchTraces with a wide time range and nil query to get "all" summaries.
-func searchTracesAll(t *testing.T, helper *TestHelper) []traceSummaryJSON {
+func searchTracesAll(t *testing.T, s *store.Store, ctx context.Context) []traceSummaryJSON {
 	t.Helper()
 	const maxNano = 1<<63 - 1
-	raw, err := helper.Store.SearchTraces(helper.Ctx, 0, maxNano, nil)
+	raw, err := spans.SearchTraces(ctx, s.DB(), 0, maxNano, nil)
 	assert.NoError(t, err)
 	var summaries []traceSummaryJSON
 	assert.NoError(t, json.Unmarshal(raw, &summaries))
@@ -102,16 +123,18 @@ type rootSpanJSON struct {
 
 // TestTraceSummaryOrdering verifies that trace summaries are ordered by start time (newest first).
 func TestTraceSummaryOrdering(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
 	traces, trace1Hex, trace2Hex, trace3Hex := buildTracesForSummaryOrdering(baseTime)
 
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err, "failed to ingest spans")
 
-	summaries := searchTracesAll(t, helper)
+	summaries := searchTracesAll(t, s, ctx)
 	assert.Len(t, summaries, 3, "expected 3 traces")
 
 	// Order: trace3 (newest) -> trace1 -> trace2 (oldest)
@@ -126,49 +149,53 @@ func TestTraceSummaryOrdering(t *testing.T) {
 
 // TestTraceNotFound verifies error handling for non-existent trace IDs.
 func TestTraceNotFound(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	_, err := helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000000")
+	_, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000000")
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrTraceIDNotFound)
+	assert.ErrorIs(t, err, store.ErrTraceIDNotFound)
 }
 
 // TestEmptySpans verifies handling of empty span lists and empty stores.
 func TestEmptySpans(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.IngestSpans(helper.Ctx, ptrace.NewTraces())
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), ptrace.NewTraces())
+	s.Unlock()
 	assert.NoError(t, err)
 
-	summaries := searchTracesAll(t, helper)
+	summaries := searchTracesAll(t, s, ctx)
 	assert.Empty(t, summaries)
 }
 
 // TestClearTraces verifies that all traces can be cleared from the store, including child rows.
 func TestClearTraces(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := createTestTracePdata()
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	summaries := searchTracesAll(t, helper)
+	summaries := searchTracesAll(t, s, ctx)
 	assert.Len(t, summaries, 1)
-	assert.Greater(t, countRows(t, helper, "select count(*) from events"), 0)
-	assert.Greater(t, countRows(t, helper, "select count(*) from links"), 0)
-	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where span_id is not null"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from events"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from links"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id is not null"), 0)
 
-	err = helper.Store.ClearTraces(helper.Ctx)
+	err = spans.Clear(ctx, s.DB())
 	assert.NoError(t, err)
 
-	summaries = searchTracesAll(t, helper)
+	summaries = searchTracesAll(t, s, ctx)
 	assert.Empty(t, summaries)
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events"))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links"))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id is not null"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from events"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from links"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id is not null"))
 }
 
 // getTraceTraceID returns the trace ID from GetTrace JSON (traceID in response is hex string).
@@ -209,16 +236,18 @@ func spanDataFromGetTrace(t *testing.T, raw json.RawMessage, i int) (name, spanI
 
 // TestTraceSuite runs a comprehensive suite of tests on a single trace.
 func TestTraceSuite(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err, "failed to ingest test trace")
 
 	t.Run("TraceHierarchicalStructure", func(t *testing.T) {
-		raw, err := helper.Store.GetTrace(helper.Ctx, testTraceID)
+		raw, err := spans.GetTrace(ctx, s.DB(), testTraceID)
 		assert.NoError(t, err, "failed to get trace")
 		assert.NotEmpty(t, raw)
 
@@ -234,7 +263,7 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceSummary", func(t *testing.T) {
-		summaries := searchTracesAll(t, helper)
+		summaries := searchTracesAll(t, s, ctx)
 		assert.Len(t, summaries, 1, "should have one trace summary")
 
 		summary := summaries[0]
@@ -246,16 +275,16 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceNotFound", func(t *testing.T) {
-		_, err := helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000000")
+		_, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000000")
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrTraceIDNotFound)
+		assert.ErrorIs(t, err, store.ErrTraceIDNotFound)
 	})
 
 	t.Run("AttributeDiscovery", func(t *testing.T) {
 		now := time.Now().UnixNano()
 		start := now - 24*int64(time.Hour)
 		end := now + 24*int64(time.Hour)
-		raw, err := helper.Store.GetTraceAttributes(helper.Ctx, start, end)
+		raw, err := spans.GetTraceAttributes(ctx, s.DB(), start, end)
 		assert.NoError(t, err, "failed to get trace attributes")
 
 		var attributes []struct {
@@ -298,12 +327,14 @@ func TestTraceSuite(t *testing.T) {
 
 // TestSearchTraces tests SearchTraces with various query types.
 func TestSearchTraces(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err, "failed to ingest test trace")
 
 	baseTime := time.Now().UnixNano()
@@ -317,16 +348,16 @@ func TestSearchTraces(t *testing.T) {
 	}
 
 	t.Run("GlobalSearch_ResourceAttribute", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q1",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{SearchScope: "global"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
 				Value:         "test-service",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -334,16 +365,16 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("GlobalSearch_SpanAttribute", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q2",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{SearchScope: "global"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
 				Value:         "root-value",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -351,16 +382,16 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("GlobalSearch_EventField", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q3",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{SearchScope: "global"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
 				Value:         "root-event",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -368,16 +399,16 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("GlobalSearch_EventAttribute", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q4",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{SearchScope: "global"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
 				Value:         "Hello",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -385,16 +416,16 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("GlobalSearch_LinkAttribute", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q5",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{SearchScope: "global"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
 				Value:         "Link1",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -402,27 +433,27 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q6",
 			Type: "condition",
-			Query: &Query{
-				Field:         &FieldDefinition{SearchScope: "global"},
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
 				FieldOperator: "CONTAINS",
 				Value:         "nonexistent-value-12345",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.Empty(t, summaries)
 	})
 
 	t.Run("ResourceAttribute_ServiceName", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q9",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "service.name",
 					SearchScope:    "attribute",
 					AttributeScope: "resource",
@@ -432,7 +463,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "test-service",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -440,11 +471,11 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("SpanAttribute_Int64", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q10",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "root.int",
 					SearchScope:    "attribute",
 					AttributeScope: "span",
@@ -454,7 +485,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "42",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -462,11 +493,11 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("SpanAttribute_Float64", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q11",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "root.float",
 					SearchScope:    "attribute",
 					AttributeScope: "span",
@@ -476,7 +507,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "3.14",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -484,11 +515,11 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("SpanAttribute_Boolean", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q12",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "root.bool",
 					SearchScope:    "attribute",
 					AttributeScope: "span",
@@ -498,7 +529,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "true",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -506,11 +537,11 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("SpanAttribute_StringArray", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q13",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "root.list",
 					SearchScope:    "attribute",
 					AttributeScope: "span",
@@ -520,7 +551,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "two",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -528,11 +559,11 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("SpanAttribute_Int64Array", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q13b",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "root.int_list",
 					SearchScope:    "attribute",
 					AttributeScope: "span",
@@ -542,7 +573,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "20",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -550,11 +581,11 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("SpanAttribute_Float64Array", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q13c",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "root.float_list",
 					SearchScope:    "attribute",
 					AttributeScope: "span",
@@ -564,7 +595,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "2.2",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -572,11 +603,11 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("SpanAttribute_BooleanArray", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q13d",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "root.bool_list",
 					SearchScope:    "attribute",
 					AttributeScope: "span",
@@ -586,7 +617,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "true",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -594,11 +625,11 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("EventAttribute_String", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q15",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "event.string",
 					SearchScope:    "attribute",
 					AttributeScope: "event",
@@ -608,7 +639,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "Hello",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -616,11 +647,11 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("LinkAttribute_String", func(t *testing.T) {
-		query := &QueryNode{
+		query := &search.QueryNode{
 			ID:   "q16",
 			Type: "condition",
-			Query: &Query{
-				Field: &FieldDefinition{
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
 					Name:           "link.string",
 					SearchScope:    "attribute",
 					AttributeScope: "link",
@@ -630,7 +661,7 @@ func TestSearchTraces(t *testing.T) {
 				Value:         "Link1",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -652,7 +683,7 @@ func TestSearchTraces(t *testing.T) {
 				"value":         "test-service",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -670,7 +701,7 @@ func TestSearchTraces(t *testing.T) {
 				"value":         "root-operation",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.Len(t, summaries, 1)
@@ -689,7 +720,7 @@ func TestSearchTraces(t *testing.T) {
 				"value":         testTraceID,
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.Len(t, summaries, 1)
@@ -706,7 +737,7 @@ func TestSearchTraces(t *testing.T) {
 				"value":         "test-scope",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -723,7 +754,7 @@ func TestSearchTraces(t *testing.T) {
 				"value":         "v1.0.0",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -740,7 +771,7 @@ func TestSearchTraces(t *testing.T) {
 				"value":         "root-event",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -758,7 +789,7 @@ func TestSearchTraces(t *testing.T) {
 				"value":         "00000000-0000-0000-0000-00000000000a",
 			},
 		}
-		raw, err := helper.Store.SearchTraces(helper.Ctx, startTime, endTime, query)
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
@@ -770,16 +801,18 @@ func TestSearchTraces(t *testing.T) {
 // more than 50 spans in one call (flush runs when spanCount % 50 == 0). All spans have
 // resource, scope, and span attributes; we assert they were flushed correctly.
 func TestIngestSpans_FlushInterval(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	const batchSize = 51 // > flushIntervalSpans (50)
 	traces := createTestTracesPdataN(batchSize)
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err)
 
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	raw, err := helper.Store.GetTrace(helper.Ctx, testTraceID)
+	raw, err := spans.GetTrace(ctx, s.DB(), testTraceID)
 	assert.NoError(t, err)
 	assert.Equal(t, batchSize, getTraceSpansCount(t, raw))
 
@@ -788,58 +821,62 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 	for _, spanIndex := range []int{0, 49, 50} {
 		spanIDHex := fmt.Sprintf("%016x", spanIndex+1)
 		spanUUID := "00000000-0000-0000-0000-" + spanIDHex[4:]
-		attrCount := countRows(t, helper, "select count(*) from attributes where span_id = ? and scope = 'span' and key in ('span.index', 'flush_test')", spanUUID)
+		attrCount := countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id = ? and scope = 'span' and key in ('span.index', 'flush_test')", spanUUID)
 		assert.GreaterOrEqual(t, attrCount, 2, "span %d should have span.index and flush_test attributes", spanIndex)
 	}
 	// Resource/scope attributes on first span
 	span1UUID := "00000000-0000-0000-0000-000000000001"
-	resAttr := countRows(t, helper, "select count(*) from attributes where span_id = ? and scope = 'resource'", span1UUID)
-	scopeAttr := countRows(t, helper, "select count(*) from attributes where span_id = ? and scope = 'scope'", span1UUID)
+	resAttr := countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id = ? and scope = 'resource'", span1UUID)
+	scopeAttr := countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id = ? and scope = 'scope'", span1UUID)
 	assert.GreaterOrEqual(t, resAttr, 1)
 	assert.GreaterOrEqual(t, scopeAttr, 1)
 }
 
 // TestDeleteSpanByID verifies that a single span can be deleted by its SpanID, including child rows.
 func TestDeleteSpanByID(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := createTestTracePdata()
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	raw, err := helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000099")
+	raw, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
 	assert.NoError(t, err)
 	assert.Equal(t, 9, getTraceSpansCount(t, raw))
 
 	spanUUID := "00000000-0000-0000-0000-000000000001"
-	eventsBefore := countRows(t, helper, "select count(*) from events where span_id = ?", spanUUID)
-	linksBefore := countRows(t, helper, "select count(*) from links where span_id = ?", spanUUID)
-	attrsBefore := countRows(t, helper, "select count(*) from attributes where span_id = ?", spanUUID)
+	eventsBefore := countRows(t, s.DB(), ctx, "select count(*) from events where span_id = ?", spanUUID)
+	linksBefore := countRows(t, s.DB(), ctx, "select count(*) from links where span_id = ?", spanUUID)
+	attrsBefore := countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id = ?", spanUUID)
 	assert.Greater(t, eventsBefore+linksBefore+attrsBefore, 0, "root span should have child rows")
 
-	err = helper.Store.DeleteSpanByID(helper.Ctx, spanUUID)
+	err = spans.DeleteSpanByID(ctx, s.DB(), spanUUID)
 	assert.NoError(t, err)
 
-	raw, err = helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000099")
+	raw, err = spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
 	assert.NoError(t, err)
 	assert.Equal(t, 8, getTraceSpansCount(t, raw))
 
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events where span_id = ?", spanUUID))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links where span_id = ?", spanUUID))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id = ?", spanUUID))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from events where span_id = ?", spanUUID))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from links where span_id = ?", spanUUID))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id = ?", spanUUID))
 }
 
 // TestDeleteSpansByIDs verifies that multiple spans can be deleted by their SpanIDs, including child rows.
 func TestDeleteSpansByIDs(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := createTestTracePdata()
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	raw, err := helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000099")
+	raw, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
 	assert.NoError(t, err)
 	assert.Equal(t, 9, getTraceSpansCount(t, raw))
 
@@ -848,88 +885,92 @@ func TestDeleteSpansByIDs(t *testing.T) {
 		"00000000-0000-0000-0000-000000000002",
 		"00000000-0000-0000-0000-000000000003",
 	}
-	attrsBefore := countRows(t, helper, "select count(*) from attributes where span_id in (?, ?, ?)", deletedIDs...)
+	attrsBefore := countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id in (?, ?, ?)", deletedIDs...)
 	assert.Greater(t, attrsBefore, 0, "deleted spans should have attributes")
 
-	err = helper.Store.DeleteSpansByIDs(helper.Ctx, deletedIDs)
+	err = spans.DeleteSpansByIDs(ctx, s.DB(), deletedIDs)
 	assert.NoError(t, err)
 
-	raw, err = helper.Store.GetTrace(helper.Ctx, "00000000-0000-0000-0000-000000000099")
+	raw, err = spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
 	assert.NoError(t, err)
 	assert.Equal(t, 6, getTraceSpansCount(t, raw))
 
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events where span_id in (?, ?, ?)", deletedIDs...))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links where span_id in (?, ?, ?)", deletedIDs...))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id in (?, ?, ?)", deletedIDs...))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from events where span_id in (?, ?, ?)", deletedIDs...))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from links where span_id in (?, ?, ?)", deletedIDs...))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id in (?, ?, ?)", deletedIDs...))
 }
 
 // TestDeleteSpansByIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteSpansByIDs_Empty(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.DeleteSpansByIDs(helper.Ctx, []any{})
+	err := spans.DeleteSpansByIDs(ctx, s.DB(), []any{})
 	assert.NoError(t, err)
 }
 
 // TestDeleteSpansByTraceID verifies that all spans for a trace are deleted, including child rows.
 func TestDeleteSpansByTraceID(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	summaries := searchTracesAll(t, helper)
+	summaries := searchTracesAll(t, s, ctx)
 	assert.Len(t, summaries, 1)
-	assert.Greater(t, countRows(t, helper, "select count(*) from events"), 0)
-	assert.Greater(t, countRows(t, helper, "select count(*) from links"), 0)
-	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where span_id is not null"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from events"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from links"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id is not null"), 0)
 
-	err = helper.Store.DeleteSpansByTraceID(helper.Ctx, testTraceID)
+	err = spans.DeleteSpansByTraceID(ctx, s.DB(), testTraceID)
 	assert.NoError(t, err)
 
-	summaries = searchTracesAll(t, helper)
+	summaries = searchTracesAll(t, s, ctx)
 	assert.Empty(t, summaries)
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events"))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links"))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id is not null"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from events"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from links"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id is not null"))
 }
 
 // TestDeleteSpansByTraceIDs verifies that spans for multiple traces are deleted, including child rows.
 func TestDeleteSpansByTraceIDs(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err)
 
-	summaries := searchTracesAll(t, helper)
+	summaries := searchTracesAll(t, s, ctx)
 	assert.Len(t, summaries, 1)
-	assert.Greater(t, countRows(t, helper, "select count(*) from events"), 0)
-	assert.Greater(t, countRows(t, helper, "select count(*) from links"), 0)
-	assert.Greater(t, countRows(t, helper, "select count(*) from attributes where span_id is not null"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from events"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from links"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id is not null"), 0)
 
-	err = helper.Store.DeleteSpansByTraceIDs(helper.Ctx, []any{testTraceID})
+	err = spans.DeleteSpansByTraceIDs(ctx, s.DB(), []any{testTraceID})
 	assert.NoError(t, err)
 
-	summaries = searchTracesAll(t, helper)
+	summaries = searchTracesAll(t, s, ctx)
 	assert.Empty(t, summaries)
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from events"))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from links"))
-	assert.Equal(t, 0, countRows(t, helper, "select count(*) from attributes where span_id is not null"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from events"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from links"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id is not null"))
 }
 
 // TestDeleteSpansByTraceIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteSpansByTraceIDs_Empty(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := helper.Store.DeleteSpansByTraceIDs(helper.Ctx, []any{})
+	err := spans.DeleteSpansByTraceIDs(ctx, s.DB(), []any{})
 	assert.NoError(t, err)
 }
 

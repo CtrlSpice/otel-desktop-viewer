@@ -1,6 +1,7 @@
-package store
+package ingest
 
 import (
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/marcboeker/go-duckdb/v2"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
@@ -36,19 +37,19 @@ func IngestAttributes(appender *duckdb.Appender, items []AttributeBatchItem) err
 		ids := item.IDs
 		scope := item.Scope
 		for k, v := range item.Attrs.All() {
-			valueStr, attrType := ValueToStringAndType(v)
+			valueStr, attrType := util.ValueToStringAndType(v)
 			if err := appender.AppendRow(
-				ids.SpanID,      // SpanID VARCHAR
-				ids.EventID,     // EventID UUID
-				ids.LinkID,      // LinkID UUID
-				ids.LogID,       // LogID UUID
-				ids.MetricID,    // MetricID UUID
-				ids.DataPointID, // DataPointID UUID
-				ids.ExemplarID,  // ExemplarID UUID
-				scope,           // Scope VARCHAR
-				k,               // Key VARCHAR
-				valueStr,        // Value VARCHAR
-				attrType,        // Type attr_type
+				ids.SpanID,
+				ids.EventID,
+				ids.LinkID,
+				ids.LogID,
+				ids.MetricID,
+				ids.DataPointID,
+				ids.ExemplarID,
+				scope,
+				k,
+				valueStr,
+				attrType,
 			); err != nil {
 				return err
 			}

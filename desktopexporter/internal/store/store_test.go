@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -19,35 +22,6 @@ type storeTest struct {
 	name    string
 	dbPath  string
 	cleanup func()
-}
-
-// TestHelper holds common test dependencies
-type TestHelper struct {
-	T     *testing.T
-	Ctx   context.Context
-	Store *Store
-}
-
-// SetupTest creates a new test helper and returns a teardown function
-func SetupTest(t *testing.T) (*TestHelper, func()) {
-	ctx := context.Background()
-	store := NewStore(ctx, "")
-
-	assert.NotNil(t, store, "store should not be nil")
-
-	helper := &TestHelper{
-		T:     t,
-		Ctx:   ctx,
-		Store: store,
-	}
-
-	teardown := func() {
-		if helper.Store != nil {
-			helper.Store.Close()
-		}
-	}
-
-	return helper, teardown
 }
 
 // TestStore runs a comprehensive suite of tests on the store.
@@ -142,31 +116,37 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 
 			// Ingest two traces, three logs, and one metric via pdata
 			traces := buildStoreTestTraces()
-			err := s.IngestSpans(ctx, traces)
+			s.Lock()
+			err := spans.Ingest(ctx, s.Conn(), traces)
+			s.Unlock()
 			assert.NoError(t, err, "spans table should exist and accept data")
 
-			logs := buildStoreTestLogs()
-			err = s.IngestLogs(ctx, logs)
+			logData := buildStoreTestLogs()
+			s.Lock()
+			err = logs.Ingest(ctx, s.Conn(), logData)
+			s.Unlock()
 			assert.NoError(t, err, "logs table should exist and accept data")
 
-			metrics := buildStoreTestMetrics()
-			err = s.IngestMetrics(ctx, metrics)
+			metricData := buildStoreTestMetrics()
+			s.Lock()
+			err = metrics.Ingest(ctx, s.Conn(), metricData)
+			s.Unlock()
 			assert.NoError(t, err, "metrics table should exist and accept data")
 
 			// Verify data was inserted correctly
-			summariesRaw, err := s.SearchTraces(ctx, 0, 1<<63-1, nil)
+			summariesRaw, err := spans.SearchTraces(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries")
-			var summaries []traceSummaryJSON
+			var summaries []map[string]any
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 			assert.Len(t, summaries, 2, "should have two traces")
 
-			logsRaw, err := s.SearchLogs(ctx, 0, 1<<63-1, nil)
+			logsRaw, err := logs.Search(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve logs")
 			var logEntries []any
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 			assert.Len(t, logEntries, 3, "should have three logs")
 
-			metricsRaw, err := s.SearchMetrics(ctx, 0, 1<<63-1, nil)
+			metricsRaw, err := metrics.Search(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve metrics")
 			var metricEntries []any
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
@@ -183,15 +163,15 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
 
 			// Verify data after reopening
-			summariesRaw, err = s.SearchTraces(ctx, 0, 1<<63-1, nil)
+			summariesRaw, err = spans.SearchTraces(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 
-			logsRaw, err = s.SearchLogs(ctx, 0, 1<<63-1, nil)
+			logsRaw, err = logs.Search(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve logs after reopening")
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 
-			metricsRaw, err = s.SearchMetrics(ctx, 0, 1<<63-1, nil)
+			metricsRaw, err = metrics.Search(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve metrics after reopening")
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
 
@@ -219,16 +199,6 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 	}
 }
 
-// countRows returns the number of rows matching a query like "select count(*) from table where ...".
-// Use the full query so callers can add WHERE clauses for filtered counts.
-func countRows(t *testing.T, helper *TestHelper, query string, args ...any) int {
-	t.Helper()
-	var count int
-	err := helper.Store.db.QueryRowContext(helper.Ctx, query, args...).Scan(&count)
-	assert.NoError(t, err, "countRows: %s", query)
-	return count
-}
-
 func TestStoreLifecycleErrors(t *testing.T) {
 	ctx := context.Background()
 	s := NewStore(ctx, "")
@@ -239,7 +209,7 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	assert.NoError(t, err, "first close should succeed")
 
 	// Try to use the store after closing
-	err = s.IngestSpans(ctx, ptrace.NewTraces())
+	err = s.CheckConnection()
 	assert.Error(t, err, "should get error when using closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
@@ -247,12 +217,11 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	err = s.Close()
 	assert.NoError(t, err, "closing an already closed store should be a no-op")
 
-	// Try some other operations on closed store
-	_, err = s.SearchTraces(ctx, 0, 1<<63-1, nil)
+	// Try some other operations on closed store (callers use CheckConnection first)
+	err = s.CheckConnection()
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
-	_, err = s.SearchLogs(ctx, 0, 1<<63-1, nil)
-	assert.Error(t, err, "should get error when reading from closed store")
-	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
+	// After close, DB() is nil; callers should use CheckConnection() before using store.DB().
+	assert.Nil(t, s.DB(), "DB() should be nil after close")
 }

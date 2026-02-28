@@ -1,33 +1,33 @@
-package store
+package logs
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/google/uuid"
 	"github.com/marcboeker/go-duckdb/v2"
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-// IngestLogs ingests log records from pdata into the logs table.
-func (s *Store) IngestLogs(ctx context.Context, logs plog.Logs) error {
-	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf("failed to add logs: %w", err)
-	}
+const flushIntervalLogs = 100
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+// Ingest ingests log records from pdata into the logs table.
+// The caller must hold any required lock on the connection.
+func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) error {
 	tables := []string{"attributes", "logs"}
-	appenders, err := NewAppenders(s.conn, tables)
+	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
 		return err
 	}
-	defer CloseAppenders(appenders, tables)
+	defer ingest.CloseAppenders(appenders, tables)
 
-	const flushIntervalLogs = 100
 	logCount := 0
 	for _, resourceLogs := range logs.ResourceLogs().All() {
 		resource := resourceLogs.Resource()
@@ -50,7 +50,7 @@ func (s *Store) IngestLogs(ctx context.Context, logs plog.Logs) error {
 					spanUUID = &u
 				}
 
-				bodyValue, bodyType := ValueToStringAndType(log.Body())
+				bodyValue, bodyType := util.ValueToStringAndType(log.Body())
 				logSearchText := strings.Join([]string{
 					bodyValue,
 					log.SeverityText(),
@@ -82,8 +82,8 @@ func (s *Store) IngestLogs(ctx context.Context, logs plog.Logs) error {
 					return fmt.Errorf("failed to append row: %w", err)
 				}
 
-				ownerIDs := AttributeOwnerIDs{LogID: &logID}
-				if err := IngestAttributes(appenders["attributes"], []AttributeBatchItem{
+				ownerIDs := ingest.AttributeOwnerIDs{LogID: &logID}
+				if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
 					{Attrs: resource.Attributes(), IDs: ownerIDs, Scope: "resource"},
 					{Attrs: scope.Attributes(), IDs: ownerIDs, Scope: "scope"},
 					{Attrs: log.Attributes(), IDs: ownerIDs, Scope: "log"},
@@ -93,7 +93,7 @@ func (s *Store) IngestLogs(ctx context.Context, logs plog.Logs) error {
 
 				logCount++
 				if logCount%flushIntervalLogs == 0 {
-					if err := FlushAppenders(appenders, tables); err != nil {
+					if err := ingest.FlushAppenders(appenders, tables); err != nil {
 						return fmt.Errorf("failed to flush appender: %w", err)
 					}
 				}
@@ -103,27 +103,22 @@ func (s *Store) IngestLogs(ctx context.Context, logs plog.Logs) error {
 	return nil
 }
 
-// SearchLogs returns logs in the time range matching the optional query tree, as a JSON array of log objects.
-func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query any) (json.RawMessage, error) {
-	if err := s.checkConnection(); err != nil {
-		return nil, fmt.Errorf("failed to search logs: %w", err)
-	}
-
-	var queryTree *QueryNode
-	if query != nil {
+// Search returns logs in the time range matching the optional criteria.
+func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
+	var searchTree *search.QueryNode
+	if criteria != nil {
 		var err error
-		queryTree, err = ParseQueryTree(query)
+		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse query tree: %w", err)
 		}
 	}
 
-	cteSQL, whereClause, args, err := BuildLogSQL(queryTree, startTime, endTime)
+	cteSQL, whereClause, args, err := buildLogSQL(searchTree, startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build log SQL: %w", err)
 	}
 
-	// Log time: prefer timestamp, fall back to observed_timestamp per OTLP
 	logTimeExpr := `(case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end)`
 	whereWithTime := strings.ReplaceAll(whereClause, "l.log_time", logTimeExpr)
 	finalQuery := fmt.Sprintf(`%s,
@@ -163,7 +158,7 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 	)
 
 	var raw []byte
-	if err := s.db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("failed to search logs: %w", err)
 	}
 	if raw == nil {
@@ -172,70 +167,58 @@ func (s *Store) SearchLogs(ctx context.Context, startTime, endTime int64, query 
 	return json.RawMessage(raw), nil
 }
 
-// ClearLogs truncates the logs table and all child attributes.
-func (s *Store) ClearLogs(ctx context.Context) error {
-	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf("failed to clear logs: %w", err)
-	}
-
+// Clear truncates the logs table and all child attributes.
+func Clear(ctx context.Context, db *sql.DB) error {
 	childQueries := []string{
 		`delete from attributes where log_id is not null`,
 		`truncate table logs`,
 	}
-	for _, query := range childQueries {
-		if _, err := s.db.ExecContext(ctx, query); err != nil {
+	for _, q := range childQueries {
+		if _, err := db.ExecContext(ctx, q); err != nil {
 			return fmt.Errorf("failed to clear logs: %w", err)
 		}
 	}
 	return nil
 }
 
-// DeleteLogByID deletes a specific log by its ID, including child attributes.
-func (s *Store) DeleteLogByID(ctx context.Context, logID string) error {
-	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf("failed to delete log by ID: %w", err)
-	}
-
+// DeleteLogByID deletes a specific log by its ID.
+func DeleteLogByID(ctx context.Context, db *sql.DB, logID string) error {
 	childQueries := []string{
 		`delete from attributes where log_id = ?`,
 		`delete from logs where id = ?`,
 	}
-	for _, query := range childQueries {
-		if _, err := s.db.ExecContext(ctx, query, logID); err != nil {
+	for _, q := range childQueries {
+		if _, err := db.ExecContext(ctx, q, logID); err != nil {
 			return fmt.Errorf("failed to delete log by ID: %w", err)
 		}
 	}
-
 	return nil
 }
 
-// DeleteLogsByIDs deletes multiple logs by their IDs, including child attributes.
-func (s *Store) DeleteLogsByIDs(ctx context.Context, logIDs []any) error {
-	if err := s.checkConnection(); err != nil {
-		return fmt.Errorf("failed to delete logs by ID: %w", err)
-	}
-
+// DeleteLogsByIDs deletes multiple logs by their IDs.
+func DeleteLogsByIDs(ctx context.Context, db *sql.DB, logIDs []any) error {
 	if len(logIDs) == 0 {
 		return nil
 	}
-
-	placeholders := buildPlaceholders(len(logIDs))
+	placeholders := util.BuildPlaceholders(len(logIDs))
 	childQueries := []string{
 		fmt.Sprintf(`delete from attributes where log_id in (%s)`, placeholders),
 		fmt.Sprintf(`delete from logs where id in (%s)`, placeholders),
 	}
-	for _, query := range childQueries {
-		if _, err := s.db.ExecContext(ctx, query, logIDs...); err != nil {
+	for _, q := range childQueries {
+		if _, err := db.ExecContext(ctx, q, logIDs...); err != nil {
 			return fmt.Errorf("failed to delete logs by ID: %w", err)
 		}
 	}
-
 	return nil
 }
 
-// logFieldMapper returns a FieldMapper for log-specific field-to-SQL mapping.
-func logFieldMapper() FieldMapper {
-	return func(field *FieldDefinition) ([]string, error) {
+func buildLogSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteSQL string, whereSQL string, args []any, err error) {
+	return search.BuildSearchSQL(queryNode, startTime, endTime, logFieldMapper(), "l.log_time >= time_start AND l.log_time <= time_end")
+}
+
+func logFieldMapper() search.FieldMapper {
+	return func(field *search.FieldDefinition) ([]string, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapLogFieldExpression(field)
@@ -253,8 +236,7 @@ func logFieldMapper() FieldMapper {
 	}
 }
 
-func mapLogFieldExpression(field *FieldDefinition) (string, error) {
-	// Direct log columns (snake_case in schema)
+func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	name := field.Name
 	if name == "" {
 		return "", fmt.Errorf("empty field name")
@@ -277,11 +259,11 @@ func mapLogFieldExpression(field *FieldDefinition) (string, error) {
 	case "scope.version":
 		return "l.scope_version", nil
 	default:
-		return "l." + camelToSnake(name), nil
+		return "l." + util.CamelToSnake(name), nil
 	}
 }
 
-func mapLogAttributeExpressions(field *FieldDefinition) ([]string, error) {
+func mapLogAttributeExpressions(field *search.FieldDefinition) ([]string, error) {
 	switch field.AttributeScope {
 	case "resource", "scope", "log":
 		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.log_id = l.id AND a.scope = '%s' AND a.key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
@@ -291,22 +273,9 @@ func mapLogAttributeExpressions(field *FieldDefinition) ([]string, error) {
 	}
 }
 
-// mapLogGlobalExpressions returns all SQL expressions for a global search across logs.
-//
-// The "= ?" placeholders are conventions: BuildOperatorCondition replaces "= ?" with the
-// actual operator and a named CTE parameter (e.g. "LIKE value_0") based on the query's
-// FieldOperator.
-//
-// See BuildOperatorCondition in query_tree.go.
 func mapLogGlobalExpressions() ([]string, error) {
 	return []string{
 		"l.search_text = ?",
 		"EXISTS(SELECT 1 FROM attributes a WHERE a.log_id = l.id AND (a.key = ? OR a.value = ?))",
 	}, nil
-}
-
-// BuildLogSQL converts a QueryNode into a parameterized CTE, WHERE clause, and args for log queries.
-// The WHERE clause uses l.log_time so the caller can substitute the full (CASE WHEN ...) expression.
-func BuildLogSQL(queryNode *QueryNode, startTime, endTime int64) (cteSQL string, whereSQL string, args []any, err error) {
-	return BuildSearchSQL(queryNode, startTime, endTime, logFieldMapper(), "l.log_time >= time_start AND l.log_time <= time_end")
 }

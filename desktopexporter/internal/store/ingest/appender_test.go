@@ -1,8 +1,11 @@
-package store
+package ingest_test
 
 import (
+	"context"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/google/uuid"
 	"github.com/marcboeker/go-duckdb/v2"
 	"github.com/stretchr/testify/assert"
@@ -10,37 +13,43 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
+func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
+	t.Helper()
+	ctx := context.Background()
+	s := store.NewStore(ctx, "")
+	require.NotNil(t, s)
+	return s, ctx, func() { s.Close() }
+}
+
 // TestNewAppenders_ErrorPath verifies that when appender creation fails partway through,
 // we close any appenders already created before returning the error (no leak).
 func TestNewAppenders_ErrorPath(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, _, teardown := setupStore(t)
 	defer teardown()
 
-	// First table exists, second does not — so first NewAppender succeeds, second fails.
 	tables := []string{"attributes", "nonexistent_table"}
-	appenders, err := NewAppenders(helper.Store.conn, tables)
+	appenders, err := ingest.NewAppenders(s.Conn(), tables)
 
 	require.Error(t, err)
 	assert.Nil(t, appenders)
 	assert.Contains(t, err.Error(), "failed to create appender")
 
-	// Store should still be usable (cleanup closed only the appenders we created, not the conn).
-	appenders2, err := NewAppenders(helper.Store.conn, []string{"attributes"})
+	appenders2, err := ingest.NewAppenders(s.Conn(), []string{"attributes"})
 	require.NoError(t, err)
-	CloseAppenders(appenders2, []string{"attributes"})
+	ingest.CloseAppenders(appenders2, []string{"attributes"})
 }
 
 // TestFlushAppenders_MakesDataVisible verifies that FlushAppenders (not Close) makes rows
 // visible: we append a log row and attribute rows, flush, query without ever calling Close,
 // and assert both the log and its attributes are present.
 func TestFlushAppenders_MakesDataVisible(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	tables := []string{"attributes", "logs"}
-	appenders, err := NewAppenders(helper.Store.conn, tables)
+	appenders, err := ingest.NewAppenders(s.Conn(), tables)
 	require.NoError(t, err)
-	defer CloseAppenders(appenders, tables)
+	defer ingest.CloseAppenders(appenders, tables)
 
 	logID := duckdb.UUID(uuid.New())
 	err = appenders["logs"].AppendRow(
@@ -56,27 +65,26 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	attrs := pcommon.NewMap()
 	attrs.PutStr("flush_attr", "ok")
 	attrs.PutStr("key", "value")
-	err = IngestAttributes(appenders["attributes"], []AttributeBatchItem{
-		{Attrs: attrs, IDs: AttributeOwnerIDs{LogID: &logID}, Scope: "log"},
+	err = ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
+		{Attrs: attrs, IDs: ingest.AttributeOwnerIDs{LogID: &logID}, Scope: "log"},
 	})
 	require.NoError(t, err)
 
-	err = FlushAppenders(appenders, tables)
+	err = ingest.FlushAppenders(appenders, tables)
 	require.NoError(t, err)
-	// Do not close yet — query with the store's db. In DuckDB, flush makes data visible
-	// to other connections using the same (in-memory) database.
+
 	var logCount int
-	err = helper.Store.db.QueryRowContext(helper.Ctx, "select count(*) from logs").Scan(&logCount)
+	err = s.DB().QueryRowContext(ctx, "select count(*) from logs").Scan(&logCount)
 	require.NoError(t, err)
 	assert.Equal(t, 1, logCount, "log row must be visible after Flush without Close")
 
 	logIDStr := uuid.UUID(logID).String()
-	attrCount := countRows(t, helper, "SELECT COUNT(*) FROM attributes WHERE log_id = ?", logIDStr)
+	var attrCount int
+	require.NoError(t, s.DB().QueryRowContext(ctx, "select count(*) from attributes where log_id = ?", logIDStr).Scan(&attrCount))
 	assert.Equal(t, 2, attrCount, "attribute rows must be visible after Flush without Close")
 
-	// Assert the specific attribute key/values are present
 	var key, value, scope string
-	err = helper.Store.db.QueryRowContext(helper.Ctx,
+	err = s.DB().QueryRowContext(ctx,
 		"select key, value, scope from attributes where log_id = ? and key = ?",
 		logIDStr, "flush_attr").Scan(&key, &value, &scope)
 	require.NoError(t, err)
@@ -88,12 +96,12 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 // TestFlushAppenders_CloseAppenders_NilEmptySafe verifies that FlushAppenders and
 // CloseAppenders do not panic when given nil or empty inputs (documented as safe).
 func TestFlushAppenders_CloseAppenders_NilEmptySafe(t *testing.T) {
-	assert.NotPanics(t, func() { FlushAppenders(nil, nil) })
-	assert.NotPanics(t, func() { FlushAppenders(nil, []string{"x"}) })
-	assert.NotPanics(t, func() { FlushAppenders(map[string]*duckdb.Appender{}, nil) })
-	assert.NotPanics(t, func() { FlushAppenders(map[string]*duckdb.Appender{}, []string{}) })
+	assert.NotPanics(t, func() { ingest.FlushAppenders(nil, nil) })
+	assert.NotPanics(t, func() { ingest.FlushAppenders(nil, []string{"x"}) })
+	assert.NotPanics(t, func() { ingest.FlushAppenders(map[string]*duckdb.Appender{}, nil) })
+	assert.NotPanics(t, func() { ingest.FlushAppenders(map[string]*duckdb.Appender{}, []string{}) })
 
-	assert.NotPanics(t, func() { CloseAppenders(nil, nil) })
-	assert.NotPanics(t, func() { CloseAppenders(nil, []string{"x"}) })
-	assert.NotPanics(t, func() { CloseAppenders(map[string]*duckdb.Appender{}, []string{}) })
+	assert.NotPanics(t, func() { ingest.CloseAppenders(nil, nil) })
+	assert.NotPanics(t, func() { ingest.CloseAppenders(nil, []string{"x"}) })
+	assert.NotPanics(t, func() { ingest.CloseAppenders(map[string]*duckdb.Appender{}, []string{}) })
 }

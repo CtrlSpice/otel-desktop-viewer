@@ -1,10 +1,11 @@
-package store
+package ingest_test
 
 import (
 	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -13,7 +14,7 @@ import (
 // TestIngestAttributes_ResourceScopeSpan verifies that resource, scope, and span attributes
 // are ingested and discoverable via GetTraceAttributes.
 func TestIngestAttributes_ResourceScopeSpan(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := ptrace.NewTraces()
@@ -24,20 +25,22 @@ func TestIngestAttributes_ResourceScopeSpan(t *testing.T) {
 	ss.Scope().SetName("my-scope")
 	ss.Scope().SetVersion("1.0")
 	ss.Scope().Attributes().PutStr("scope.key", "scope-val")
-	s := ss.Spans().AppendEmpty()
-	s.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
-	s.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 1})
-	s.SetName("attr-span")
-	s.SetStartTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
-	s.SetEndTimestamp(pcommon.Timestamp(time.Now().UnixNano() + 1))
-	s.Attributes().PutStr("span.key", "span-val")
-	s.Attributes().PutBool("span.flag", true)
+	span := ss.Spans().AppendEmpty()
+	span.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	span.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 1})
+	span.SetName("attr-span")
+	span.SetStartTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	span.SetEndTimestamp(pcommon.Timestamp(time.Now().UnixNano() + 1))
+	span.Attributes().PutStr("span.key", "span-val")
+	span.Attributes().PutBool("span.flag", true)
 
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err)
 
 	now := time.Now().UnixNano()
-	raw, err := helper.Store.GetTraceAttributes(helper.Ctx, now-int64(time.Hour), now+int64(time.Hour))
+	raw, err := spans.GetTraceAttributes(ctx, s.DB(), now-int64(time.Hour), now+int64(time.Hour))
 	assert.NoError(t, err)
 
 	var attrs []struct {
@@ -70,36 +73,38 @@ func TestIngestAttributes_ResourceScopeSpan(t *testing.T) {
 // TestIngestAttributes_EventAndLink verifies that event and link attributes are ingested
 // and discoverable via GetTraceAttributes.
 func TestIngestAttributes_EventAndLink(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()
 	ss := rs.ScopeSpans().AppendEmpty()
-	s := ss.Spans().AppendEmpty()
-	s.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
-	s.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 2})
-	s.SetName("event-link-span")
-	s.SetStartTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
-	s.SetEndTimestamp(pcommon.Timestamp(time.Now().UnixNano() + 1))
+	span := ss.Spans().AppendEmpty()
+	span.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
+	span.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 2})
+	span.SetName("event-link-span")
+	span.SetStartTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	span.SetEndTimestamp(pcommon.Timestamp(time.Now().UnixNano() + 1))
 
-	ev := s.Events().AppendEmpty()
+	ev := span.Events().AppendEmpty()
 	ev.SetName("my-event")
 	ev.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
 	ev.Attributes().PutStr("event.attr", "event-value")
 	ev.Attributes().PutDouble("event.num", 3.14)
 
-	link := s.Links().AppendEmpty()
+	link := span.Links().AppendEmpty()
 	link.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})
 	link.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 3})
 	link.Attributes().PutStr("link.attr", "link-value")
 	link.Attributes().PutInt("link.num", 42)
 
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err)
 
 	now := time.Now().UnixNano()
-	raw, err := helper.Store.GetTraceAttributes(helper.Ctx, now-int64(time.Hour), now+int64(time.Hour))
+	raw, err := spans.GetTraceAttributes(ctx, s.DB(), now-int64(time.Hour), now+int64(time.Hour))
 	assert.NoError(t, err)
 
 	var attrs []struct {
@@ -128,7 +133,7 @@ func TestIngestAttributes_EventAndLink(t *testing.T) {
 // TestIngestAttributes_EmptyMaps verifies that spans with no attributes (or empty resource/scope)
 // do not cause errors and do not create spurious attribute rows for those scopes.
 func TestIngestAttributes_EmptyMaps(t *testing.T) {
-	helper, teardown := SetupTest(t)
+	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	traces := ptrace.NewTraces()
@@ -137,19 +142,21 @@ func TestIngestAttributes_EmptyMaps(t *testing.T) {
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName("empty-scope")
 	// No scope attributes
-	s := ss.Spans().AppendEmpty()
-	s.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})
-	s.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 4})
-	s.SetName("minimal-span")
-	s.SetStartTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
-	s.SetEndTimestamp(pcommon.Timestamp(time.Now().UnixNano() + 1))
+	span := ss.Spans().AppendEmpty()
+	span.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})
+	span.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 4})
+	span.SetName("minimal-span")
+	span.SetStartTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	span.SetEndTimestamp(pcommon.Timestamp(time.Now().UnixNano() + 1))
 	// No span attributes
 
-	err := helper.Store.IngestSpans(helper.Ctx, traces)
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
 	assert.NoError(t, err)
 
 	now := time.Now().UnixNano()
-	raw, err := helper.Store.GetTraceAttributes(helper.Ctx, now-int64(time.Hour), now+int64(time.Hour))
+	raw, err := spans.GetTraceAttributes(ctx, s.DB(), now-int64(time.Hour), now+int64(time.Hour))
 	assert.NoError(t, err)
 
 	var attrs []struct {

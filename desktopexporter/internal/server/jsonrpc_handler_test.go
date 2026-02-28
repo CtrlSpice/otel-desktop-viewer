@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -57,10 +59,14 @@ func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
 	handler := NewJSONRPCHandler(s)
 	ctx := context.Background()
 
-	err := s.IngestSpans(ctx, buildTestTraces())
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), buildTestTraces())
+	s.Unlock()
 	assert.NoError(t, err, "ingest spans")
 
-	err = s.IngestLogs(ctx, buildTestLogs())
+	s.Lock()
+	err = logs.Ingest(ctx, s.Conn(), buildTestLogs())
+	s.Unlock()
 	assert.NoError(t, err, "ingest logs")
 
 	return handler, func() {
