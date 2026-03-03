@@ -2,10 +2,15 @@ package search
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+)
+
+var (
+	ErrInvalidQuery = errors.New("invalid search query")
 )
 
 // QueryNode represents a parsed query tree from the frontend
@@ -45,12 +50,12 @@ type FieldMapper func(field *FieldDefinition) ([]string, error)
 func ParseQueryTree(jsonData any) (*QueryNode, error) {
 	jsonBytes, err := json.Marshal(jsonData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal query data: %w", err)
+		return nil, fmt.Errorf("ParseQueryTree: %w: %w", ErrInvalidQuery, err)
 	}
 
 	var queryNode QueryNode
 	if err := json.Unmarshal(jsonBytes, &queryNode); err != nil {
-		return nil, fmt.Errorf("failed to parse query tree: %w", err)
+		return nil, fmt.Errorf("ParseQueryTree: %w: %w", ErrInvalidQuery, err)
 	}
 
 	return &queryNode, nil
@@ -66,20 +71,20 @@ func BuildConditions(node *QueryNode, conditions *[]string, namedArgs *map[strin
 	case "group":
 		return buildGroup(node.Group, conditions, namedArgs, mapper)
 	default:
-		return fmt.Errorf("unknown node type: %s", node.Type)
+		return fmt.Errorf("unknown node type %s: %w", node.Type, ErrInvalidQuery)
 	}
 }
 
 func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]any, mapper FieldMapper) error {
 	if query == nil || query.Field == nil || query.FieldOperator == "" {
-		return fmt.Errorf("invalid condition: missing field or operator")
+		return fmt.Errorf("invalid condition: missing field or operator: %w", ErrInvalidQuery)
 	}
 
 	field := query.Field
 
 	dbExpressions, err := mapper(field)
 	if err != nil {
-		return fmt.Errorf("failed to map field %s: %w", field.Name, err)
+		return fmt.Errorf("map field %s: %w", field.Name, err)
 	}
 
 	var sqlConditions []string
@@ -88,7 +93,7 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 
 		sqlCondition, err := BuildOperatorCondition(expression, query, namedArgs)
 		if err != nil {
-			return fmt.Errorf("failed to build operator condition: %w", err)
+			return fmt.Errorf("build operator condition: %w", err)
 		}
 
 		sqlConditions = append(sqlConditions, sqlCondition)
@@ -106,7 +111,7 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 
 func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]any, mapper FieldMapper) error {
 	if group == nil {
-		return fmt.Errorf("invalid group: missing group data")
+		return fmt.Errorf("invalid group: missing group data: %w", ErrInvalidQuery)
 	}
 
 	var childConditions []string
@@ -116,7 +121,7 @@ func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]a
 
 		err := BuildConditions(&child, &childCondition, namedArgs, mapper)
 		if err != nil {
-			return err
+			return fmt.Errorf("BuildConditions: %w", err)
 		}
 
 		if len(childCondition) > 0 {
@@ -130,7 +135,7 @@ func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]a
 
 	operator := strings.ToUpper(group.LogicalOperator)
 	if operator != "AND" && operator != "OR" {
-		return fmt.Errorf("invalid logical operator: %s", group.LogicalOperator)
+		return fmt.Errorf("invalid logical operator %s: %w", group.LogicalOperator, ErrInvalidQuery)
 	}
 
 	joinedConditions := strings.Join(childConditions, " "+operator+" ")
@@ -142,7 +147,7 @@ func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]a
 // BuildOperatorCondition builds SQL condition for a specific operator.
 func BuildOperatorCondition(expression string, query *Query, namedArgs *map[string]any) (string, error) {
 	if query == nil {
-		return "", fmt.Errorf("query cannot be nil")
+		return "", fmt.Errorf("query cannot be nil: %w", ErrInvalidQuery)
 	}
 
 	operator := query.FieldOperator
@@ -158,7 +163,7 @@ func BuildOperatorCondition(expression string, query *Query, namedArgs *map[stri
 		case "!=":
 			operatorString = "IS NOT NULL"
 		default:
-			return "", fmt.Errorf("operator %s not supported with NULL value", operator)
+			return "", fmt.Errorf("operator %s not supported with NULL value: %w", operator, ErrInvalidQuery)
 		}
 
 		if hasPlaceholder {
@@ -192,12 +197,12 @@ func BuildOperatorCondition(expression string, query *Query, namedArgs *map[stri
 	case "IN", "NOT IN":
 		values := ParseArrayValue(value)
 		if len(values) == 0 {
-			return "", fmt.Errorf("IN/NOT IN requires at least one value")
+			return "", fmt.Errorf("IN/NOT IN requires at least one value: %w", ErrInvalidQuery)
 		}
 		(*namedArgs)[paramName] = values
 		operatorString = operator + " " + paramName
 	default:
-		return "", fmt.Errorf("unsupported operator: %s", operator)
+		return "", fmt.Errorf("unsupported operator %s: %w", operator, ErrInvalidQuery)
 	}
 
 	if hasPlaceholder {
@@ -217,7 +222,7 @@ func mapArrayTypeToDuckDB(frontendType string) (string, error) {
 	case "boolean[]":
 		return "BOOLEAN[]", nil
 	default:
-		return "", fmt.Errorf("unsupported array type: %s", frontendType)
+		return "", fmt.Errorf("unsupported array type %s: %w", frontendType, ErrInvalidQuery)
 	}
 }
 
@@ -254,7 +259,7 @@ func handleArrayOperator(expression string, query *Query, namedArgs *map[string]
 	case "IN":
 		values := ParseArrayValue(value)
 		if len(values) == 0 {
-			return "", fmt.Errorf("IN requires at least one value")
+			return "", fmt.Errorf("IN requires at least one value: %w", ErrInvalidQuery)
 		}
 		convertedValues := make([]any, len(values))
 		for i, val := range values {
@@ -270,7 +275,7 @@ func handleArrayOperator(expression string, query *Query, namedArgs *map[string]
 	case "NOT IN":
 		values := ParseArrayValue(value)
 		if len(values) == 0 {
-			return "", fmt.Errorf("NOT IN requires at least one value")
+			return "", fmt.Errorf("NOT IN requires at least one value: %w", ErrInvalidQuery)
 		}
 		convertedValues := make([]any, len(values))
 		for i, val := range values {
@@ -284,7 +289,7 @@ func handleArrayOperator(expression string, query *Query, namedArgs *map[string]
 		return fmt.Sprintf("NOT list_has_all(%s, %s)", expression, paramName), nil
 
 	default:
-		return "", fmt.Errorf("unsupported operator %s for array type", operator)
+		return "", fmt.Errorf("unsupported operator %s for array type: %w", operator, ErrInvalidQuery)
 	}
 }
 

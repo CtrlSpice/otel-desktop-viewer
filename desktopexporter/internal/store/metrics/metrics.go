@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -17,6 +18,12 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
+var (
+	ErrInvalidMetricQuery   = errors.New("invalid metric search query")
+	ErrMetricsStoreInternal = errors.New("metrics store internal error")
+	ErrMetricIDNotFound     = errors.New("metric ID not found")
+)
+
 const flushIntervalMetrics = 100
 
 // Ingest ingests metrics from pdata into the metrics table and related tables.
@@ -25,7 +32,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) error {
 	tables := []string{"attributes", "exemplars", "datapoints", "metrics"}
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
-		return err
+		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 	}
 	defer ingest.CloseAppenders(appenders, tables)
 
@@ -54,37 +61,37 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) error {
 					metricSearchText,                  // SearchText VARCHAR
 				)
 				if err != nil {
-					return fmt.Errorf("failed to append row: %w", err)
+					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 				}
 				switch metric.Type() {
 				case pmetric.MetricTypeGauge:
-					if err := ingestGaugeDatapoints(appenders, metricID, metric.Gauge().DataPoints()); err != nil {
-						return err
-					}
+if err := ingestGaugeDatapoints(appenders, metricID, metric.Gauge().DataPoints()); err != nil {
+					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+				}
 				case pmetric.MetricTypeSum:
-					if err := ingestSumDatapoints(appenders, metricID, metric.Sum()); err != nil {
-						return err
-					}
+if err := ingestSumDatapoints(appenders, metricID, metric.Sum()); err != nil {
+					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+				}
 				case pmetric.MetricTypeHistogram:
-					if err := ingestHistogramDatapoints(appenders, metricID, metric.Histogram()); err != nil {
-						return err
-					}
+if err := ingestHistogramDatapoints(appenders, metricID, metric.Histogram()); err != nil {
+					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+				}
 				case pmetric.MetricTypeExponentialHistogram:
-					if err := ingestExponentialHistogramDatapoints(appenders, metricID, metric.ExponentialHistogram()); err != nil {
-						return err
-					}
+if err := ingestExponentialHistogramDatapoints(appenders, metricID, metric.ExponentialHistogram()); err != nil {
+					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+				}
 				}
 				ownerIDs := ingest.AttributeOwnerIDs{MetricID: &metricID}
 				if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
 					{Attrs: resource.Attributes(), IDs: ownerIDs, Scope: "resource"},
 					{Attrs: scope.Attributes(), IDs: ownerIDs, Scope: "scope"},
 				}); err != nil {
-					return err
+					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 				}
 				metricCount++
 				if metricCount%flushIntervalMetrics == 0 {
 					if err := ingest.FlushAppenders(appenders, tables); err != nil {
-						return fmt.Errorf("failed to flush appender: %w", err)
+						return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 					}
 				}
 			}
@@ -111,13 +118,13 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, metricID, datapointI
 		if err := appenders["exemplars"].AppendRow(
 			exemplarID, datapointID, int64(ex.Timestamp()), ex.DoubleValue(), traceUUID, spanUUID,
 		); err != nil {
-			return fmt.Errorf("failed to append exemplar row: %w", err)
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		exOwnerIDs := ingest.AttributeOwnerIDs{MetricID: &metricID, DataPointID: &datapointID, ExemplarID: &exemplarID}
 		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
 			{Attrs: ex.FilteredAttributes(), IDs: exOwnerIDs, Scope: "exemplar"},
 		}); err != nil {
-			return err
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
@@ -131,16 +138,16 @@ func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID duckd
 			datapointID, metricID, "Gauge", int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
 			doubleVal, intVal, valType, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		); err != nil {
-			return fmt.Errorf("failed to append datapoint row: %w", err)
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		dpOwnerIDs := ingest.AttributeOwnerIDs{MetricID: &metricID, DataPointID: &datapointID}
 		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
 			{Attrs: dp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
 		}); err != nil {
-			return err
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		if err := ingestExemplars(appenders, metricID, datapointID, dp.Exemplars()); err != nil {
-			return err
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
@@ -155,16 +162,16 @@ func ingestSumDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.
 			doubleVal, intVal, valType, sum.IsMonotonic(), sum.AggregationTemporality().String(),
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		); err != nil {
-			return fmt.Errorf("failed to append datapoint row: %w", err)
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		dpOwnerIDs := ingest.AttributeOwnerIDs{MetricID: &metricID, DataPointID: &datapointID}
 		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
 			{Attrs: dp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
 		}); err != nil {
-			return err
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		if err := ingestExemplars(appenders, metricID, datapointID, dp.Exemplars()); err != nil {
-			return err
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
@@ -179,16 +186,16 @@ func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID d
 			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), dp.BucketCounts().AsRaw(), dp.ExplicitBounds().AsRaw(),
 			nil, nil, nil, nil, nil, nil,
 		); err != nil {
-			return fmt.Errorf("failed to append datapoint row: %w", err)
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		dpOwnerIDs := ingest.AttributeOwnerIDs{MetricID: &metricID, DataPointID: &datapointID}
 		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
 			{Attrs: dp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
 		}); err != nil {
-			return err
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		if err := ingestExemplars(appenders, metricID, datapointID, dp.Exemplars()); err != nil {
-			return err
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
@@ -204,16 +211,16 @@ func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender,
 			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), nil, nil,
 			dp.Scale(), dp.ZeroCount(), pos.Offset(), pos.BucketCounts().AsRaw(), neg.Offset(), neg.BucketCounts().AsRaw(),
 		); err != nil {
-			return fmt.Errorf("failed to append datapoint row: %w", err)
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		dpOwnerIDs := ingest.AttributeOwnerIDs{MetricID: &metricID, DataPointID: &datapointID}
 		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
 			{Attrs: dp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
 		}); err != nil {
-			return err
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		if err := ingestExemplars(appenders, metricID, datapointID, dp.Exemplars()); err != nil {
-			return err
+			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
@@ -238,12 +245,12 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse query tree: %w", err)
+			return nil, fmt.Errorf("Search: %w: %w", ErrInvalidMetricQuery, err)
 		}
 	}
 	cteSQL, whereClause, args, err := buildMetricSQL(searchTree, startTime, endTime)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build metric SQL: %w", err)
+		return nil, fmt.Errorf("Search: %w: %w", ErrInvalidMetricQuery, err)
 	}
 	finalQuery := fmt.Sprintf(`%s,
 		filtered_metrics as (
@@ -312,7 +319,7 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 	)
 	var raw []byte
 	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("failed to search metrics: %w", err)
+		return nil, fmt.Errorf("Search: %w: %w", ErrMetricsStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -329,7 +336,7 @@ func Clear(ctx context.Context, db *sql.DB) error {
 		`truncate table metrics`,
 	} {
 		if _, err := db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("failed to clear metrics: %w", err)
+			return fmt.Errorf("Clear: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
@@ -344,7 +351,7 @@ func DeleteMetricByID(ctx context.Context, db *sql.DB, metricID string) error {
 		`delete from metrics where id = ?`,
 	} {
 		if _, err := db.ExecContext(ctx, q, metricID); err != nil {
-			return fmt.Errorf("failed to delete metric by ID: %w", err)
+			return fmt.Errorf("DeleteMetricByID: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
@@ -363,7 +370,7 @@ func DeleteMetricsByIDs(ctx context.Context, db *sql.DB, metricIDs []any) error 
 		fmt.Sprintf(`delete from metrics where id in (%s)`, placeholders),
 	} {
 		if _, err := db.ExecContext(ctx, q, metricIDs...); err != nil {
-			return fmt.Errorf("failed to delete metrics by ID: %w", err)
+			return fmt.Errorf("DeleteMetricsByIDs: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
@@ -388,7 +395,7 @@ func metricFieldMapper() search.FieldMapper {
 		case "global":
 			return mapMetricGlobalExpressions()
 		default:
-			return nil, fmt.Errorf("unknown search scope: %s", field.SearchScope)
+			return nil, fmt.Errorf("unknown search scope %s: %w", field.SearchScope, ErrInvalidMetricQuery)
 		}
 	}
 }
@@ -396,7 +403,7 @@ func metricFieldMapper() search.FieldMapper {
 func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 	name := field.Name
 	if name == "" {
-		return "", fmt.Errorf("empty field name")
+		return "", fmt.Errorf("empty field name: %w", ErrInvalidMetricQuery)
 	}
 	switch name {
 	case "name":
@@ -420,7 +427,7 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition) ([]string, err
 		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.metric_id = m.id AND a.datapoint_id IS NULL AND a.exemplar_id IS NULL AND a.scope = '%s' AND a.key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
 		return []string{expr}, nil
 	default:
-		return nil, fmt.Errorf("unknown attribute scope: %s", field.AttributeScope)
+		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidMetricQuery)
 	}
 }
 

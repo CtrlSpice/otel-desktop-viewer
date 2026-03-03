@@ -103,7 +103,7 @@ func (h *JSONRPCHandler) getTraceByID(ctx context.Context, req *jsonrpc2.Request
 	trace, err := spans.GetTrace(ctx, h.store.DB(), traceID)
 	if err != nil {
 		log.Printf("Error getting trace by ID: %v", err)
-		if errors.Is(err, store.ErrTraceIDNotFound) {
+		if errors.Is(err, spans.ErrTraceIDNotFound) {
 			return nil, ErrTraceNotFound
 		}
 		return nil, jsonrpc2.ErrInternal

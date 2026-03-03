@@ -19,8 +19,10 @@ import (
 
 // Sentinel errors for use with errors.Is.
 var (
-	ErrTraceIDNotFound = errors.New("trace ID not found")
-	ErrSpanIDNotFound  = errors.New("span ID not found")
+	ErrTraceIDNotFound   = errors.New("trace ID not found")
+	ErrSpanIDNotFound    = errors.New("span ID not found")
+	ErrInvalidTraceQuery = errors.New("invalid trace search query")
+	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
 const flushIntervalSpans = 50
@@ -88,7 +90,7 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) error {
 					spanSearchText,                    // SearchText VARCHAR
 				)
 				if err != nil {
-					return fmt.Errorf("failed to append row: %w", err)
+					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 				}
 
 				for _, event := range span.Events().All() {
@@ -102,11 +104,11 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) error {
 						event.Name(),                   // SearchText VARCHAR
 					)
 					if err != nil {
-						return fmt.Errorf("failed to append row: %w", err)
+						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
 					if err := ingest.IngestAttributes(appenders["attributes"],
 						[]ingest.AttributeBatchItem{{Attrs: event.Attributes(), IDs: ingest.AttributeOwnerIDs{SpanID: &spanUUID, EventID: &eventID}, Scope: "event"}}); err != nil {
-						return err
+						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
 				}
 
@@ -134,10 +136,10 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) error {
 						linkSearchText,                // SearchText VARCHAR
 					)
 					if err != nil {
-						return fmt.Errorf("failed to append row: %w", err)
+						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
 					if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{{Attrs: link.Attributes(), IDs: ingest.AttributeOwnerIDs{SpanID: &spanUUID, LinkID: &linkID}, Scope: "link"}}); err != nil {
-						return err
+						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
 				}
 
@@ -147,13 +149,13 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) error {
 					{Attrs: resource.Attributes(), IDs: spanIDs, Scope: "resource"},
 					{Attrs: scope.Attributes(), IDs: spanIDs, Scope: "scope"},
 				}); err != nil {
-					return err
+					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 				}
 
 				spanCount++
 				if spanCount%flushIntervalSpans == 0 {
 					if err := ingest.FlushAppenders(appenders, tables); err != nil {
-						return fmt.Errorf("failed to flush appender: %w", err)
+						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
 				}
 			}
@@ -171,13 +173,13 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse query tree: %w", err)
+			return nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 		}
 	}
 
 	cteSQL, whereClause, args, err := buildTraceSQL(searchTree, startTime, endTime)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build trace SQL: %w", err)
+		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 	}
 
 	finalQuery := fmt.Sprintf(`%s
@@ -221,7 +223,7 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 
 	var raw []byte
 	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("failed to search traces: %w", err)
+		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -379,10 +381,10 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 	`
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("failed to get trace: %w", err)
+		return nil, fmt.Errorf("GetTrace: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
-		return nil, fmt.Errorf("failed to get trace %s: %w", traceID, ErrTraceIDNotFound)
+		return nil, fmt.Errorf("GetTrace: %w", ErrTraceIDNotFound)
 	}
 	return json.RawMessage(raw), nil
 }
@@ -401,7 +403,7 @@ func GetTraceAttributes(ctx context.Context, db *sql.DB, startTime, endTime int6
 	`
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("failed to get trace attributes: %w", err)
+		return nil, fmt.Errorf("GetTraceAttributes: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -419,7 +421,7 @@ func Clear(ctx context.Context, db *sql.DB) error {
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("failed to clear traces: %w", err)
+			return fmt.Errorf("Clear: %w: %w", ErrSpansStoreInternal, err)
 		}
 	}
 	return nil
@@ -435,7 +437,7 @@ func DeleteSpansByTraceID(ctx context.Context, db *sql.DB, traceID string) error
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, traceID); err != nil {
-			return fmt.Errorf("failed to delete spans by trace ID: %w", err)
+			return fmt.Errorf("DeleteSpansByTraceID: %w: %w", ErrSpansStoreInternal, err)
 		}
 	}
 	return nil
@@ -451,7 +453,7 @@ func DeleteSpanByID(ctx context.Context, db *sql.DB, spanID string) error {
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, spanID); err != nil {
-			return fmt.Errorf("failed to delete span by ID: %w", err)
+			return fmt.Errorf("DeleteSpanByID: %w: %w", ErrSpansStoreInternal, err)
 		}
 	}
 	return nil
@@ -471,7 +473,7 @@ func DeleteSpansByIDs(ctx context.Context, db *sql.DB, spanIDs []any) error {
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, spanIDs...); err != nil {
-			return fmt.Errorf("failed to delete spans by ID: %w", err)
+			return fmt.Errorf("DeleteSpansByIDs: %w: %w", ErrSpansStoreInternal, err)
 		}
 	}
 	return nil
@@ -491,7 +493,7 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, traceIDs...); err != nil {
-			return fmt.Errorf("failed to delete spans by trace ID: %w", err)
+			return fmt.Errorf("DeleteSpansByTraceIDs: %w: %w", ErrSpansStoreInternal, err)
 		}
 	}
 	return nil
@@ -515,7 +517,7 @@ func traceFieldMapper() search.FieldMapper {
 		case "global":
 			return mapTraceGlobalExpressions()
 		default:
-			return nil, fmt.Errorf("unknown search scope: %s", field.SearchScope)
+			return nil, fmt.Errorf("unknown search scope %s: %w", field.SearchScope, ErrInvalidTraceQuery)
 		}
 	}
 }
@@ -553,7 +555,7 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition) ([]string, erro
 		expr := fmt.Sprintf("exists(select 1 from links l join attributes a on a.link_id = l.id where l.span_id = s.span_id and a.scope = 'link' and a.key = '%s' and a.value = ?)", field.Name)
 		return []string{expr}, nil
 	default:
-		return nil, fmt.Errorf("unknown attribute scope: %s", field.AttributeScope)
+		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
 	}
 }
 

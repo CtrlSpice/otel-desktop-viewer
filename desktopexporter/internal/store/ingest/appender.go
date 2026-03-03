@@ -2,9 +2,14 @@ package ingest
 
 import (
 	"database/sql/driver"
+	"errors"
 	"fmt"
 
 	"github.com/marcboeker/go-duckdb/v2"
+)
+
+var (
+	ErrIngestInternal = errors.New("ingest internal error")
 )
 
 // NewAppenders creates one appender per table name, keyed by table name.
@@ -15,7 +20,7 @@ func NewAppenders(conn driver.Conn, tables []string) (map[string]*duckdb.Appende
 		a, err := duckdb.NewAppender(conn, "", "", table)
 		if err != nil {
 			CloseAppenders(out, tables)
-			return nil, fmt.Errorf("failed to create appender: %w", err)
+			return nil, fmt.Errorf("NewAppenders: %w: %w", ErrIngestInternal, err)
 		}
 		out[table] = a
 	}
@@ -28,7 +33,7 @@ func FlushAppenders(appenders map[string]*duckdb.Appender, tables []string) erro
 	for i := len(tables) - 1; i >= 0; i-- {
 		if a := appenders[tables[i]]; a != nil {
 			if err := a.Flush(); err != nil {
-				return err
+				return fmt.Errorf("FlushAppenders: %w: %w", ErrIngestInternal, err)
 			}
 		}
 	}

@@ -11,17 +11,13 @@ import (
 	"sync"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/marcboeker/go-duckdb/v2"
 )
 
 // Sentinel errors for use with errors.Is.
 var (
-	ErrLogIDNotFound         = errors.New("log ID not found")
-	ErrTraceIDNotFound       = spans.ErrTraceIDNotFound
-	ErrSpanIDNotFound        = spans.ErrSpanIDNotFound
-	ErrMetricIDNotFound      = errors.New("metric ID not found")
 	ErrStoreConnectionClosed = errors.New("store connection is closed")
+	ErrStoreInitFailed       = errors.New("store initialization failed")
 )
 
 type Store struct {
@@ -38,12 +34,12 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	}
 	connector, err := duckdb.NewConnector(dbPath, nil)
 	if err != nil {
-		log.Fatalf("failed to initialize connector: %v", err)
+		log.Fatalf("NewStore: %v: %v", ErrStoreInitFailed, err)
 	}
 
 	conn, err := connector.Connect(ctx)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		log.Fatalf("NewStore: %v: %v", ErrStoreInitFailed, err)
 	}
 
 	db := sql.OpenDB(connector)
@@ -52,7 +48,7 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	for i, query := range schema.TypeCreationQueries {
 		if _, err = db.Exec(query); err != nil {
 			if !strings.Contains(err.Error(), "already exists") {
-				log.Fatalf("failed to create type %d: %v", i, err)
+				log.Fatalf("NewStore: %v while creating type %d: %v", ErrStoreInitFailed, i, err)
 			}
 		}
 	}
@@ -60,7 +56,7 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	// 2) Create the tables for our signals
 	for i, query := range schema.TableCreationQueries {
 		if _, err = db.Exec(query); err != nil {
-			log.Fatalf("failed to create table %d: %v", i, err)
+			log.Fatalf("NewStore: %v while creating table %d: %v", ErrStoreInitFailed, i, err)
 		}
 	}
 

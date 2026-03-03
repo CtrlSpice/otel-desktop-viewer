@@ -154,7 +154,7 @@ func TestTraceNotFound(t *testing.T) {
 
 	_, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000000")
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, store.ErrTraceIDNotFound)
+	assert.ErrorIs(t, err, spans.ErrTraceIDNotFound)
 }
 
 // TestEmptySpans verifies handling of empty span lists and empty stores.
@@ -277,7 +277,7 @@ func TestTraceSuite(t *testing.T) {
 	t.Run("TraceNotFound", func(t *testing.T) {
 		_, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000000")
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, store.ErrTraceIDNotFound)
+		assert.ErrorIs(t, err, spans.ErrTraceIDNotFound)
 	})
 
 	t.Run("AttributeDiscovery", func(t *testing.T) {

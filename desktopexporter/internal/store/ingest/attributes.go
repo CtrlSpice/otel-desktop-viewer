@@ -1,6 +1,8 @@
 package ingest
 
 import (
+	"fmt"
+
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/marcboeker/go-duckdb/v2"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -51,7 +53,7 @@ func IngestAttributes(appender *duckdb.Appender, items []AttributeBatchItem) err
 				valueStr,
 				attrType,
 			); err != nil {
-				return err
+				return fmt.Errorf("IngestAttributes: %w: %w", ErrIngestInternal, err)
 			}
 		}
 	}

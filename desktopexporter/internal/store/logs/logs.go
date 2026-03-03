@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -16,6 +17,12 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
+var (
+	ErrInvalidLogQuery   = errors.New("invalid log search query")
+	ErrLogsStoreInternal = errors.New("logs store internal error")
+	ErrLogIDNotFound     = errors.New("log ID not found")
+)
+
 const flushIntervalLogs = 100
 
 // Ingest ingests log records from pdata into the logs table.
@@ -24,7 +31,7 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) error {
 	tables := []string{"attributes", "logs"}
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
-		return err
+		return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 	}
 	defer ingest.CloseAppenders(appenders, tables)
 
@@ -79,7 +86,7 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) error {
 					logSearchText,                     // SearchText VARCHAR
 				)
 				if err != nil {
-					return fmt.Errorf("failed to append row: %w", err)
+					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 				}
 
 				ownerIDs := ingest.AttributeOwnerIDs{LogID: &logID}
@@ -88,13 +95,13 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) error {
 					{Attrs: scope.Attributes(), IDs: ownerIDs, Scope: "scope"},
 					{Attrs: log.Attributes(), IDs: ownerIDs, Scope: "log"},
 				}); err != nil {
-					return err
+					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 				}
 
 				logCount++
 				if logCount%flushIntervalLogs == 0 {
 					if err := ingest.FlushAppenders(appenders, tables); err != nil {
-						return fmt.Errorf("failed to flush appender: %w", err)
+						return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 					}
 				}
 			}
@@ -110,13 +117,13 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse query tree: %w", err)
+			return nil, fmt.Errorf("Search: %w: %w", ErrInvalidLogQuery, err)
 		}
 	}
 
 	cteSQL, whereClause, args, err := buildLogSQL(searchTree, startTime, endTime)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build log SQL: %w", err)
+		return nil, fmt.Errorf("Search: %w: %w", ErrInvalidLogQuery, err)
 	}
 
 	logTimeExpr := `(case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end)`
@@ -159,7 +166,7 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 
 	var raw []byte
 	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("failed to search logs: %w", err)
+		return nil, fmt.Errorf("Search: %w: %w", ErrLogsStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -175,7 +182,7 @@ func Clear(ctx context.Context, db *sql.DB) error {
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("failed to clear logs: %w", err)
+			return fmt.Errorf("Clear: %w: %w", ErrLogsStoreInternal, err)
 		}
 	}
 	return nil
@@ -189,7 +196,7 @@ func DeleteLogByID(ctx context.Context, db *sql.DB, logID string) error {
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, logID); err != nil {
-			return fmt.Errorf("failed to delete log by ID: %w", err)
+			return fmt.Errorf("DeleteLogByID: %w: %w", ErrLogsStoreInternal, err)
 		}
 	}
 	return nil
@@ -207,7 +214,7 @@ func DeleteLogsByIDs(ctx context.Context, db *sql.DB, logIDs []any) error {
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, logIDs...); err != nil {
-			return fmt.Errorf("failed to delete logs by ID: %w", err)
+			return fmt.Errorf("DeleteLogsByIDs: %w: %w", ErrLogsStoreInternal, err)
 		}
 	}
 	return nil
@@ -231,7 +238,7 @@ func logFieldMapper() search.FieldMapper {
 		case "global":
 			return mapLogGlobalExpressions()
 		default:
-			return nil, fmt.Errorf("unknown search scope: %s", field.SearchScope)
+			return nil, fmt.Errorf("unknown search scope %s: %w", field.SearchScope, ErrInvalidLogQuery)
 		}
 	}
 }
@@ -239,7 +246,7 @@ func logFieldMapper() search.FieldMapper {
 func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	name := field.Name
 	if name == "" {
-		return "", fmt.Errorf("empty field name")
+		return "", fmt.Errorf("empty field name: %w", ErrInvalidLogQuery)
 	}
 	switch name {
 	case "traceID", "traceId":
@@ -269,7 +276,7 @@ func mapLogAttributeExpressions(field *search.FieldDefinition) ([]string, error)
 		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.log_id = l.id AND a.scope = '%s' AND a.key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
 		return []string{expr}, nil
 	default:
-		return nil, fmt.Errorf("unknown attribute scope: %s", field.AttributeScope)
+		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidLogQuery)
 	}
 }
 

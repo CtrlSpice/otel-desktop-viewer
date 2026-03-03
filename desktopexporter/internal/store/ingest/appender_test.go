@@ -2,6 +2,7 @@ package ingest_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
@@ -32,7 +33,8 @@ func TestNewAppenders_ErrorPath(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Nil(t, appenders)
-	assert.Contains(t, err.Error(), "failed to create appender")
+	assert.True(t, errors.Is(err, ingest.ErrIngestInternal))
+	assert.Contains(t, err.Error(), "appender")
 
 	appenders2, err := ingest.NewAppenders(s.Conn(), []string{"attributes"})
 	require.NoError(t, err)
