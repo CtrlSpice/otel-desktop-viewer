@@ -1,6 +1,6 @@
 .DS_Store
 otel-desktop-viewer
-desktopexporter/internal/app/node_modules
+desktopexporter/internal/frontend-legacy/
 .vscode/
 *.db
 *.duckdb*
@@ -14,7 +14,7 @@ task_list.txt
 dist/
 
 # V2 Frontend
-desktopexporter/internal/app-v2/node_modules/
-desktopexporter/internal/app-v2/dist/
-desktopexporter/internal/app-v2/.vite/
-desktopexporter/internal/app-v2/*.local
+desktopexporter/internal/frontend/node_modules/
+desktopexporter/internal/frontend/dist/
+desktopexporter/internal/frontend/.vite/
+desktopexporter/internal/frontend/*.local

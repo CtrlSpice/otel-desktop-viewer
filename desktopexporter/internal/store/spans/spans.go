@@ -19,9 +19,10 @@ import (
 
 // Sentinel errors for use with errors.Is.
 var (
-	ErrTraceIDNotFound   = errors.New("trace ID not found")
-	ErrSpanIDNotFound    = errors.New("span ID not found")
-	ErrInvalidTraceQuery = errors.New("invalid trace search query")
+	ErrTraceIDNotFound    = errors.New("trace ID not found")
+	ErrSpanIDNotFound     = errors.New("span ID not found")
+	ErrInvalidSpanID      = errors.New("invalid span ID")
+	ErrInvalidTraceQuery  = errors.New("invalid trace search query")
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
@@ -232,6 +233,7 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 }
 
 // GetTrace returns a single trace by ID as JSON, or ErrTraceIDNotFound if not found.
+// traceID is passed as a string; DuckDB casts it to UUID (accepts both hyphenated and 32-char hex).
 func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
 	query := `
 		with recursive
@@ -566,4 +568,22 @@ func mapTraceGlobalExpressions() ([]string, error) {
 		"exists(select 1 from links l where l.span_id = s.span_id and l.search_text = ?)",
 		"exists(select 1 from attributes a where a.span_id = s.span_id and (a.key = ? or a.value = ?))",
 	}, nil
+}
+
+// normalizeSpanID converts a 16-char OTel span ID to 32-char zero-padded hex
+// so it matches the UUID format used during ingest (8 zero bytes + 8 span ID bytes).
+// If the input is already 32 chars (with or without hyphens), it's returned as-is after stripping hyphens.
+var _ = normalizeSpanID // keep for upcoming span-lookup queries
+
+func normalizeSpanID(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "-", "")
+	switch len(s) {
+	case 16:
+		return "0000000000000000" + s, nil
+	case 32:
+		return s, nil
+	default:
+		return "", fmt.Errorf("%w: invalid length %d (expected 16 or 32 hex chars)", ErrInvalidSpanID, len(s))
+	}
 }

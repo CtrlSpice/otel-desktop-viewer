@@ -65,21 +65,21 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) error {
 				}
 				switch metric.Type() {
 				case pmetric.MetricTypeGauge:
-if err := ingestGaugeDatapoints(appenders, metricID, metric.Gauge().DataPoints()); err != nil {
-					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-				}
+					if err := ingestGaugeDatapoints(appenders, metricID, metric.Gauge().DataPoints()); err != nil {
+						return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+					}
 				case pmetric.MetricTypeSum:
-if err := ingestSumDatapoints(appenders, metricID, metric.Sum()); err != nil {
-					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-				}
+					if err := ingestSumDatapoints(appenders, metricID, metric.Sum()); err != nil {
+						return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+					}
 				case pmetric.MetricTypeHistogram:
-if err := ingestHistogramDatapoints(appenders, metricID, metric.Histogram()); err != nil {
-					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-				}
+					if err := ingestHistogramDatapoints(appenders, metricID, metric.Histogram()); err != nil {
+						return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+					}
 				case pmetric.MetricTypeExponentialHistogram:
-if err := ingestExponentialHistogramDatapoints(appenders, metricID, metric.ExponentialHistogram()); err != nil {
-					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-				}
+					if err := ingestExponentialHistogramDatapoints(appenders, metricID, metric.ExponentialHistogram()); err != nil {
+						return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+					}
 				}
 				ownerIDs := ingest.AttributeOwnerIDs{MetricID: &metricID}
 				if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log"
 	"strconv"
 
@@ -84,7 +83,7 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 	summaries, err := spans.SearchTraces(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
 		log.Printf("Error searching traces: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return summaries, nil
 }
@@ -103,10 +102,7 @@ func (h *JSONRPCHandler) getTraceByID(ctx context.Context, req *jsonrpc2.Request
 	trace, err := spans.GetTrace(ctx, h.store.DB(), traceID)
 	if err != nil {
 		log.Printf("Error getting trace by ID: %v", err)
-		if errors.Is(err, spans.ErrTraceIDNotFound) {
-			return nil, ErrTraceNotFound
-		}
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return trace, nil
@@ -116,7 +112,7 @@ func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
 	err := spans.Clear(ctx, h.store.DB())
 	if err != nil {
 		log.Printf("Error clearing traces: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return "Traces cleared successfully", nil
 }
@@ -146,7 +142,7 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 	result, err := logs.Search(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
 		log.Printf("Error searching logs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return result, nil
 }
@@ -155,7 +151,7 @@ func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 	err := logs.Clear(ctx, h.store.DB())
 	if err != nil {
 		log.Printf("Error clearing logs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return "Logs cleared successfully", nil
 }
@@ -185,7 +181,7 @@ func (h *JSONRPCHandler) searchMetrics(ctx context.Context, req *jsonrpc2.Reques
 	result, err := metrics.Search(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
 		log.Printf("Error searching metrics: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return result, nil
 }
@@ -194,7 +190,7 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 	err := metrics.Clear(ctx, h.store.DB())
 	if err != nil {
 		log.Printf("Error clearing metrics: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return "Metrics cleared successfully", nil
 }
@@ -213,7 +209,7 @@ func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2
 	err := spans.DeleteSpansByTraceIDs(ctx, h.store.DB(), params)
 	if err != nil {
 		log.Printf("Error deleting spans by trace IDs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
@@ -236,7 +232,7 @@ func (h *JSONRPCHandler) deleteSpanByID(ctx context.Context, req *jsonrpc2.Reque
 	err := spans.DeleteSpansByIDs(ctx, h.store.DB(), params)
 	if err != nil {
 		log.Printf("Error deleting spans by IDs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
@@ -259,7 +255,7 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 	err := logs.DeleteLogsByIDs(ctx, h.store.DB(), params)
 	if err != nil {
 		log.Printf("Error deleting logs by IDs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
@@ -282,7 +278,7 @@ func (h *JSONRPCHandler) deleteMetricByID(ctx context.Context, req *jsonrpc2.Req
 	err := metrics.DeleteMetricsByIDs(ctx, h.store.DB(), params)
 	if err != nil {
 		log.Printf("Error deleting metrics by IDs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
@@ -316,7 +312,7 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 	attributes, err := spans.GetTraceAttributes(ctx, h.store.DB(), startTime, endTime)
 	if err != nil {
 		log.Printf("Error getting trace attributes: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return attributes, nil

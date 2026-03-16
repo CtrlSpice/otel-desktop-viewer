@@ -1,0 +1,2 @@
+# This file ensures the static directory exists for Go's embed directive
+# It will be replaced by the frontend build output

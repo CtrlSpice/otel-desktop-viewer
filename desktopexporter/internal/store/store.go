@@ -60,6 +60,13 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 		}
 	}
 
+	// 3) Create indexes - queries use IF NOT EXISTS so reopening is safe
+	for i, query := range schema.IndexCreationQueries {
+		if _, err = db.Exec(query); err != nil {
+			log.Fatalf("NewStore: %v while creating index %d: %v", ErrStoreInitFailed, i, err)
+		}
+	}
+
 	return &Store{
 		db:   db,
 		conn: conn,

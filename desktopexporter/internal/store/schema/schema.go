@@ -102,7 +102,65 @@ var TableCreationQueries = []string{
 		positive_bucket_counts ubigint[],
 		negative_bucket_offset integer,
 		negative_bucket_counts ubigint[],
-		foreign key (metric_id) references metrics(id)
+		foreign key (metric_id) references metrics(id),
+		constraint chk_metric_type_valid check (
+			metric_type in ('Gauge', 'Sum', 'Histogram', 'ExponentialHistogram', 'Empty')
+		),
+		constraint chk_empty_fields check (
+			(metric_type != 'Empty') or (
+				double_value is null and int_value is null and value_type is null and
+				is_monotonic is null and aggregation_temporality is null and
+				count is null and sum is null and min is null and max is null and
+				bucket_counts is null and explicit_bounds is null and
+				scale is null and zero_count is null and
+				positive_bucket_offset is null and positive_bucket_counts is null and
+				negative_bucket_offset is null and negative_bucket_counts is null
+			)
+		),
+		constraint chk_gauge_fields check (
+			(metric_type != 'Gauge') or (
+				value_type is not null and (double_value is not null or int_value is not null) and
+				count is null and sum is null and min is null and max is null and
+				bucket_counts is null and explicit_bounds is null and
+				scale is null and zero_count is null and
+				positive_bucket_offset is null and positive_bucket_counts is null and
+				negative_bucket_offset is null and negative_bucket_counts is null and
+				aggregation_temporality is null
+			)
+		),
+		constraint chk_sum_fields check (
+			(metric_type != 'Sum') or (
+				value_type is not null and (double_value is not null or int_value is not null) and
+				is_monotonic is not null and aggregation_temporality is not null and
+				count is null and sum is null and min is null and max is null and
+				bucket_counts is null and explicit_bounds is null and
+				scale is null and zero_count is null and
+				positive_bucket_offset is null and positive_bucket_counts is null and
+				negative_bucket_offset is null and negative_bucket_counts is null
+			)
+		),
+		constraint chk_histogram_fields check (
+			(metric_type != 'Histogram') or (
+				count is not null and sum is not null and
+				bucket_counts is not null and explicit_bounds is not null and
+				aggregation_temporality is not null and
+				double_value is null and int_value is null and value_type is null and is_monotonic is null and
+				scale is null and zero_count is null and
+				positive_bucket_offset is null and positive_bucket_counts is null and
+				negative_bucket_offset is null and negative_bucket_counts is null
+			)
+		),
+		constraint chk_exponential_histogram_fields check (
+			(metric_type != 'ExponentialHistogram') or (
+				count is not null and sum is not null and
+				scale is not null and zero_count is not null and
+				positive_bucket_offset is not null and positive_bucket_counts is not null and
+				negative_bucket_offset is not null and negative_bucket_counts is not null and
+				aggregation_temporality is not null and
+				double_value is null and int_value is null and value_type is null and is_monotonic is null and
+				bucket_counts is null and explicit_bounds is null
+			)
+		)
 	)`,
 	`create table if not exists exemplars (
 		id uuid primary key,
@@ -132,77 +190,15 @@ var TableCreationQueries = []string{
 		foreign key (metric_id) references metrics(id),
 		foreign key (datapoint_id) references datapoints(id),
 		foreign key (exemplar_id) references exemplars(id),
-		unique (span_id, event_id, link_id, log_id, metric_id, datapoint_id, exemplar_id, scope, key)
-	)`,
-}
-
-// Constraint creation queries for discriminated union enforcement
-var ConstraintCreationQueries = []string{
-	`alter table attributes add constraint chk_attributes_one_owner check (
-		(span_id is not null and event_id is null and link_id is null and log_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
-		(event_id is not null and span_id is not null and link_id is null and log_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
-		(link_id is not null and span_id is not null and event_id is null and log_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
-		(log_id is not null and span_id is null and event_id is null and link_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
-		(metric_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and datapoint_id is null and exemplar_id is null) or
-		(datapoint_id is not null and metric_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and exemplar_id is null) or
-		(exemplar_id is not null and datapoint_id is not null and metric_id is not null and span_id is null and event_id is null and link_id is null and log_id is null)
-	)`,
-	`alter table datapoints add constraint chk_metric_type_valid check (
-		metric_type in ('Gauge', 'Sum', 'Histogram', 'ExponentialHistogram', 'Empty')
-	)`,
-	`alter table datapoints add constraint chk_empty_fields check (
-		(metric_type != 'Empty') or (
-			double_value is null and int_value is null and value_type is null AND
-			is_monotonic is null and aggregation_temporality is null AND
-			count is null and sum is null and min is null and max is null AND
-			bucket_counts is null and explicit_bounds is null AND
-			scale is null and zero_count is null AND
-			positive_bucket_offset is null and positive_bucket_counts is null AND
-			negative_bucket_offset is null and negative_bucket_counts is null
-		)
-	)`,
-	`alter table datapoints add constraint chk_gauge_fields check (
-		(metric_type != 'Gauge') or (
-			value_type is not null and (double_value is not null or int_value is not null) AND
-			count is null and sum is null and min is null and max is null AND
-			bucket_counts is null and explicit_bounds is null AND
-			scale is null and zero_count is null AND
-			positive_bucket_offset is null and positive_bucket_counts is null AND
-			negative_bucket_offset is null and negative_bucket_counts is null AND
-			aggregation_temporality is null
-		)
-	)`,
-	`alter table datapoints add constraint chk_sum_fields check (
-		(metric_type != 'Sum') or (
-			value_type is not null and (double_value is not null or int_value is not null) AND
-			is_monotonic is not null and aggregation_temporality is not null AND
-			count is null and sum is null and min is null and max is null AND
-			bucket_counts is null and explicit_bounds is null AND
-			scale is null and zero_count is null AND
-			positive_bucket_offset is null and positive_bucket_counts is null AND
-			negative_bucket_offset is null and negative_bucket_counts is null
-		)
-	)`,
-	`alter table datapoints add constraint chk_histogram_fields check (
-		(metric_type != 'Histogram') or (
-			count is not null and sum is not null AND
-			bucket_counts is not null and explicit_bounds is not null AND
-			aggregation_temporality is not null AND
-			double_value is null and int_value is null and value_type is null and is_monotonic is null AND
-			scale is null and zero_count is null AND
-			positive_bucket_offset is null and positive_bucket_counts is null AND
-			negative_bucket_offset is null and negative_bucket_counts is null
-		)
-	)`,
-	`alter table datapoints add constraint chk_exponential_histogram_fields check (
-		(metric_type != 'ExponentialHistogram') or (
-			count is not null and sum is not null AND
-			scale is null and zero_count is null AND
-			positive_bucket_offset is not null and positive_bucket_counts is null AND
-			negative_bucket_offset is not null and negative_bucket_counts is null AND
-			aggregation_temporality is not null AND
-			double_value is null and int_value is null and value_type is null and is_monotonic is null AND
-			bucket_counts is null and explicit_bounds is null
+		unique (span_id, event_id, link_id, log_id, metric_id, datapoint_id, exemplar_id, scope, key),
+		constraint chk_attributes_one_owner check (
+			(span_id is not null and event_id is null and link_id is null and log_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
+			(event_id is not null and span_id is not null and link_id is null and log_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
+			(link_id is not null and span_id is not null and event_id is null and log_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
+			(log_id is not null and span_id is null and event_id is null and link_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
+			(metric_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and datapoint_id is null and exemplar_id is null) or
+			(datapoint_id is not null and metric_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and exemplar_id is null) or
+			(exemplar_id is not null and datapoint_id is not null and metric_id is not null and span_id is null and event_id is null and link_id is null and log_id is null)
 		)
 	)`,
 }

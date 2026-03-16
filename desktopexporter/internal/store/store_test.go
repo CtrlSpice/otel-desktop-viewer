@@ -10,8 +10,10 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -197,6 +199,104 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			}
 		})
 	}
+}
+
+// TestStoreIndexesCreated verifies that all IndexCreationQueries are applied on store init.
+func TestStoreIndexesCreated(t *testing.T) {
+	ctx := context.Background()
+	s := NewStore(ctx, "")
+	require.NotNil(t, s)
+	defer s.Close()
+
+	var count int
+	err := s.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, len(schema.IndexCreationQueries), count, "index count should match IndexCreationQueries")
+}
+
+// TestStoreConstraintsEnforced verifies that inline CHECK constraints on the datapoints and
+// attributes tables are enforced by the database. It checks that inserting a row that violates
+// chk_metric_type_valid is rejected.
+func TestStoreConstraintsEnforced(t *testing.T) {
+	ctx := context.Background()
+	s := NewStore(ctx, "")
+	require.NotNil(t, s)
+	defer s.Close()
+
+	// chk_metric_type_valid rejects unknown metric_type values.
+	_, err := s.DB().ExecContext(ctx, `
+		insert into metrics (id, name, description, unit, resource_dropped_attributes_count,
+			scope_name, scope_version, scope_dropped_attributes_count, received, search_text)
+		values (gen_random_uuid(), 'test', '', '', 0, '', '', 0, 0, '')
+	`)
+	require.NoError(t, err, "inserting a metric row should succeed")
+
+	var metricID string
+	require.NoError(t, s.DB().QueryRowContext(ctx, "select id from metrics where name = 'test'").Scan(&metricID))
+
+	_, err = s.DB().ExecContext(ctx, `
+		insert into datapoints (id, metric_id, metric_type, timestamp, start_time, flags)
+		values (gen_random_uuid(), ?, 'InvalidType', 0, 0, 0)
+	`, metricID)
+	assert.Error(t, err, "inserting a datapoint with invalid metric_type should violate chk_metric_type_valid")
+}
+
+// TestStorePersistentReopenIdempotent verifies that reopening a persistent store does not fail
+// due to duplicate indexes.
+func TestStorePersistentReopenIdempotent(t *testing.T) {
+	const dbPath = "./reopen_test.db"
+	t.Cleanup(func() { os.Remove(dbPath) })
+
+	ctx := context.Background()
+
+	s := NewStore(ctx, dbPath)
+	require.NotNil(t, s)
+	require.NoError(t, s.Close())
+
+	// Reopening must not panic or fatal - constraints use "already exists" guard,
+	// indexes use IF NOT EXISTS.
+	s2 := NewStore(ctx, dbPath)
+	require.NotNil(t, s2)
+
+	var indexCount int
+	err := s2.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&indexCount)
+	require.NoError(t, err)
+	assert.Equal(t, len(schema.IndexCreationQueries), indexCount)
+	require.NoError(t, s2.Close())
+}
+
+// TestStoreExponentialHistogramConstraint verifies that the fixed chk_exponential_histogram_fields
+// constraint accepts a valid ExponentialHistogram datapoint.
+func TestStoreExponentialHistogramConstraint(t *testing.T) {
+	ctx := context.Background()
+	s := NewStore(ctx, "")
+	require.NotNil(t, s)
+	defer s.Close()
+
+	m := pmetric.NewMetrics()
+	rm := m.ResourceMetrics().AppendEmpty()
+	sm := rm.ScopeMetrics().AppendEmpty()
+	metric := sm.Metrics().AppendEmpty()
+	metric.SetName("exp_hist_constraint_test")
+	exp := metric.SetEmptyExponentialHistogram()
+	exp.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	dp := exp.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	dp.SetCount(10)
+	dp.SetSum(100.0)
+	dp.SetMin(5.0)
+	dp.SetMax(20.0)
+	dp.SetScale(1)
+	dp.SetZeroCount(2)
+	dp.Positive().SetOffset(0)
+	dp.Positive().BucketCounts().FromRaw([]uint64{3, 4, 3})
+	dp.Negative().SetOffset(0)
+	dp.Negative().BucketCounts().FromRaw([]uint64{1, 2})
+
+	s.Lock()
+	err := metrics.Ingest(ctx, s.Conn(), m)
+	s.Unlock()
+	assert.NoError(t, err, "ExponentialHistogram ingest should satisfy chk_exponential_histogram_fields constraint")
 }
 
 func TestStoreLifecycleErrors(t *testing.T) {

@@ -280,6 +280,15 @@ func TestTraceSuite(t *testing.T) {
 		assert.ErrorIs(t, err, spans.ErrTraceIDNotFound)
 	})
 
+	t.Run("GetTraceAcceptsTraceIDWithoutHyphens", func(t *testing.T) {
+		// DuckDB accepts 32-char hex trace ID for lookups; response may be hyphenated or not depending on driver.
+		raw, err := spans.GetTrace(ctx, s.DB(), "00000000000000000000000000000099")
+		assert.NoError(t, err, "GetTrace with 32-char hex trace ID should succeed")
+		got := getTraceTraceID(t, raw)
+		assert.True(t, got == "00000000-0000-0000-0000-000000000099" || got == "00000000000000000000000000000099",
+			"response traceID should be the same logical UUID (got %q)", got)
+	})
+
 	t.Run("AttributeDiscovery", func(t *testing.T) {
 		now := time.Now().UnixNano()
 		start := now - 24*int64(time.Hour)
@@ -696,7 +705,7 @@ func TestSearchTraces(t *testing.T) {
 			"id":   "f1",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "name", "searchScope": "field"},
+				"field":         map[string]any{"name": "name", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "root-operation",
 			},
@@ -715,7 +724,7 @@ func TestSearchTraces(t *testing.T) {
 			"id":   "f2",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "traceID", "searchScope": "field"},
+				"field":         map[string]any{"name": "traceID", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         testTraceID,
 			},
@@ -732,7 +741,7 @@ func TestSearchTraces(t *testing.T) {
 			"id":   "f3",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "scope.name", "searchScope": "field"},
+				"field":         map[string]any{"name": "scope.name", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "test-scope",
 			},
@@ -749,7 +758,7 @@ func TestSearchTraces(t *testing.T) {
 			"id":   "f4",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "scope.version", "searchScope": "field"},
+				"field":         map[string]any{"name": "scope.version", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "v1.0.0",
 			},
@@ -766,7 +775,7 @@ func TestSearchTraces(t *testing.T) {
 			"id":   "f5",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "event.name", "searchScope": "field"},
+				"field":         map[string]any{"name": "event.name", "searchScope": "field"},
 				"fieldOperator": "CONTAINS",
 				"value":         "root-event",
 			},
@@ -784,7 +793,7 @@ func TestSearchTraces(t *testing.T) {
 			"id":   "f6",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "link.traceID", "searchScope": "field"},
+				"field":         map[string]any{"name": "link.traceID", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "00000000-0000-0000-0000-00000000000a",
 			},
@@ -935,6 +944,25 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from events"))
 	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from links"))
 	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id is not null"))
+}
+
+// TestGetTraceWith32CharHexTraceID verifies that GetTrace finds a trace when given the 32-char hex form (no hyphens).
+func TestGetTraceWith32CharHexTraceID(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	traces := createTestTracePdata()
+	s.Lock()
+	err := spans.Ingest(ctx, s.Conn(), traces)
+	s.Unlock()
+	require.NoError(t, err)
+
+	raw, err := spans.GetTrace(ctx, s.DB(), "00000000000000000000000000000099")
+	assert.NoError(t, err, "GetTrace with 32-char hex trace ID should succeed")
+	assert.NotEmpty(t, raw)
+	got := getTraceTraceID(t, raw)
+	assert.True(t, got == "00000000-0000-0000-0000-000000000099" || got == "00000000000000000000000000000099",
+		"response traceID should be the same logical UUID (got %q)", got)
 }
 
 // TestDeleteSpansByTraceIDs verifies that spans for multiple traces are deleted, including child rows.
