@@ -17,8 +17,8 @@ func CamelToSnake(s string) string {
 	var b strings.Builder
 	for i, r := range s {
 		if r >= 'A' && r <= 'Z' {
-			prevLower := i > 0 && (s[i-1] >= 'a' && s[i-1] <= 'z' || s[i-1] >= '0' && s[i-1] <= '9')
-			if i > 0 && prevLower {
+			prevLowerOrDigit := i > 0 && (s[i-1] >= 'a' && s[i-1] <= 'z' || s[i-1] >= '0' && s[i-1] <= '9')
+			if prevLowerOrDigit {
 				b.WriteByte('_')
 			}
 			b.WriteRune(r + ('a' - 'A'))

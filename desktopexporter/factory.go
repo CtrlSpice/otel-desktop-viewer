@@ -61,6 +61,7 @@ func createMetricsExporter(ctx context.Context, set exporter.Settings, config co
 		exporter.Unwrap().pushMetrics,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		exporterhelper.WithStart(exporter.Start),
+		exporterhelper.WithShutdown(exporter.Shutdown),
 	)
 }
 
@@ -82,6 +83,7 @@ func createLogsExporter(ctx context.Context, set exporter.Settings, config compo
 		e.Unwrap().pushLogs,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
 		exporterhelper.WithStart(e.Start),
+		exporterhelper.WithShutdown(e.Shutdown),
 	)
 }
 
