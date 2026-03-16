@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"log"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -28,18 +28,18 @@ type Store struct {
 
 // NewStore creates a new store for the given database path.
 // An empty dbPath will create a temporary in-memory database.
-func NewStore(ctx context.Context, dbPath string) *Store {
+func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 	if dbPath != "" {
 		dbPath = filepath.Clean(dbPath)
 	}
 	connector, err := duckdb.NewConnector(dbPath, nil)
 	if err != nil {
-		log.Fatalf("NewStore: %v: %v", ErrStoreInitFailed, err)
+		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
 
 	conn, err := connector.Connect(ctx)
 	if err != nil {
-		log.Fatalf("NewStore: %v: %v", ErrStoreInitFailed, err)
+		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
 
 	db := sql.OpenDB(connector)
@@ -48,7 +48,7 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	for i, query := range schema.TypeCreationQueries {
 		if _, err = db.Exec(query); err != nil {
 			if !strings.Contains(err.Error(), "already exists") {
-				log.Fatalf("NewStore: %v while creating type %d: %v", ErrStoreInitFailed, i, err)
+				return nil, fmt.Errorf("%w while creating type %d: %w", ErrStoreInitFailed, i, err)
 			}
 		}
 	}
@@ -56,21 +56,21 @@ func NewStore(ctx context.Context, dbPath string) *Store {
 	// 2) Create the tables for our signals
 	for i, query := range schema.TableCreationQueries {
 		if _, err = db.Exec(query); err != nil {
-			log.Fatalf("NewStore: %v while creating table %d: %v", ErrStoreInitFailed, i, err)
+			return nil, fmt.Errorf("%w while creating table %d: %w", ErrStoreInitFailed, i, err)
 		}
 	}
 
 	// 3) Create indexes - queries use IF NOT EXISTS so reopening is safe
 	for i, query := range schema.IndexCreationQueries {
 		if _, err = db.Exec(query); err != nil {
-			log.Fatalf("NewStore: %v while creating index %d: %v", ErrStoreInitFailed, i, err)
+			return nil, fmt.Errorf("%w while creating index %d: %w", ErrStoreInitFailed, i, err)
 		}
 	}
 
 	return &Store{
 		db:   db,
 		conn: conn,
-	}
+	}, nil
 }
 
 // Close closes the store and the underlying database connection.

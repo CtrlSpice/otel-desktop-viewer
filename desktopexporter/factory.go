@@ -48,7 +48,7 @@ func createMetricsExporter(ctx context.Context, set exporter.Settings, config co
 	}
 
 	exporter, err := exporters.GetOrAdd(desktopCfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(desktopCfg), nil
+		return newDesktopExporter(desktopCfg)
 	})
 	if err != nil {
 		return nil, err
@@ -73,7 +73,7 @@ func createLogsExporter(ctx context.Context, set exporter.Settings, config compo
 	}
 
 	e, err := exporters.GetOrAdd(cfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(cfg), nil
+		return newDesktopExporter(cfg)
 	})
 	if err != nil {
 		return nil, err
@@ -95,7 +95,7 @@ func createTracesExporter(ctx context.Context, set exporter.Settings, config com
 	}
 
 	e, err := exporters.GetOrAdd(cfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(cfg), nil
+		return newDesktopExporter(cfg)
 	})
 	if err != nil {
 		return nil, err

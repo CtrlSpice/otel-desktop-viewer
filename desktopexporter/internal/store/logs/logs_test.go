@@ -21,8 +21,8 @@ import (
 func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	t.Helper()
 	ctx := context.Background()
-	s := store.NewStore(ctx, "")
-	require.NotNil(t, s)
+	s, err := store.NewStore(ctx, "")
+	require.NoError(t, err)
 	return s, ctx, func() { s.Close() }
 }
 

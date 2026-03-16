@@ -23,13 +23,22 @@ type desktopExporter struct {
 	store  *store.Store
 }
 
-func newDesktopExporter(cfg *Config) *desktopExporter {
-	store := store.NewStore(context.Background(), cfg.Db)
-	server := server.NewServer(cfg.Endpoint, store)
-	return &desktopExporter{
-		server: server,
-		store:  store,
+func newDesktopExporter(cfg *Config) (*desktopExporter, error) {
+	str, err := store.NewStore(context.Background(), cfg.Db)
+	if err != nil {
+		return nil, err
 	}
+
+	srv, err := server.NewServer(cfg.Endpoint, str)
+	if err != nil {
+		str.Close()
+		return nil, err
+	}
+
+	return &desktopExporter{
+		server: srv,
+		store:  str,
+	}, nil
 }
 
 func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {

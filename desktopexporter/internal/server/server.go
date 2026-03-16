@@ -2,6 +2,7 @@ package server
 
 import (
 	"embed"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -23,7 +24,7 @@ type Server struct {
 	staticDir      string
 }
 
-func NewServer(endpoint string, store *store.Store) *Server {
+func NewServer(endpoint string, store *store.Store) (*Server, error) {
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
@@ -33,10 +34,10 @@ func NewServer(endpoint string, store *store.Store) *Server {
 	}
 
 	if err := s.initHandler(); err != nil {
-		log.Fatalf("Could not initialize desktop exporter server: %v", err)
+		return nil, fmt.Errorf("could not initialize desktop exporter server: %w", err)
 	}
 
-	return &s
+	return &s, nil
 }
 
 func (s *Server) Start() error {
@@ -56,7 +57,7 @@ func (s *Server) initHandler() error {
 	} else {
 		staticContent, err := fs.Sub(assets, "static")
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		mux.Handle("/", http.FileServerFS(staticContent))
 	}

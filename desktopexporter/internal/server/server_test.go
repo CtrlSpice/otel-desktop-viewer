@@ -12,22 +12,26 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func setupServer() (*httptest.Server, func()) {
-	store := store.NewStore(context.Background(), "")
-	s := NewServer("localhost:8000", store)
+func setupServer(t *testing.T) (*httptest.Server, func()) {
+	t.Helper()
+	str, err := store.NewStore(context.Background(), "")
+	require.NoError(t, err)
+	s, err := NewServer("localhost:8000", str)
+	require.NoError(t, err)
 	testServer := httptest.NewServer(s.server.Handler)
 
 	return testServer, func() {
 		testServer.Close()
 		s.Close()
-		store.Close()
+		str.Close()
 	}
 }
 
 func TestIndexHandler(t *testing.T) {
-	testServer, teardown := setupServer()
+	testServer, teardown := setupServer(t)
 	defer teardown()
 
 	res, err := http.Get(fmt.Sprintf("%s/", testServer.URL))
@@ -39,7 +43,7 @@ func TestIndexHandler(t *testing.T) {
 }
 
 func TestRPCHandlerInvalidJSON(t *testing.T) {
-	testServer, teardown := setupServer()
+	testServer, teardown := setupServer(t)
 	defer teardown()
 
 	// Send invalid JSON
@@ -65,7 +69,7 @@ func TestRPCHandlerInvalidJSON(t *testing.T) {
 }
 
 func TestRPCHandlerInvalidRequest(t *testing.T) {
-	testServer, teardown := setupServer()
+	testServer, teardown := setupServer(t)
 	defer teardown()
 
 	// Send valid JSON but invalid JSON-RPC request
@@ -90,7 +94,7 @@ func TestRPCHandlerInvalidRequest(t *testing.T) {
 }
 
 func TestCORSHeaders(t *testing.T) {
-	testServer, teardown := setupServer()
+	testServer, teardown := setupServer(t)
 	defer teardown()
 
 	// Test preflight request

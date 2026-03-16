@@ -104,8 +104,8 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			ctx := context.Background()
 
 			// Test store initialization
-			s := NewStore(ctx, tt.dbPath)
-			assert.NotNil(t, s, "store should not be nil")
+			s, err := NewStore(ctx, tt.dbPath)
+			require.NoError(t, err, "store should initialize without error")
 			assert.NotNil(t, s.db, "database connection should not be nil")
 			assert.NotNil(t, s.conn, "duckdb connection should not be nil")
 
@@ -119,7 +119,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			// Ingest two traces, three logs, and one metric via pdata
 			traces := buildStoreTestTraces()
 			s.Lock()
-			err := spans.Ingest(ctx, s.Conn(), traces)
+			err = spans.Ingest(ctx, s.Conn(), traces)
 			s.Unlock()
 			assert.NoError(t, err, "spans table should exist and accept data")
 
@@ -159,8 +159,8 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, err, "store should close without error")
 
 			// Test store reopening
-			s = NewStore(ctx, tt.dbPath)
-			assert.NotNil(t, s, "store should be reopened successfully")
+			s, err = NewStore(ctx, tt.dbPath)
+			require.NoError(t, err, "store should reopen without error")
 			assert.NotNil(t, s.db, "database connection should be reestablished")
 			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
 
@@ -204,12 +204,12 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 // TestStoreIndexesCreated verifies that all IndexCreationQueries are applied on store init.
 func TestStoreIndexesCreated(t *testing.T) {
 	ctx := context.Background()
-	s := NewStore(ctx, "")
-	require.NotNil(t, s)
+	s, err := NewStore(ctx, "")
+	require.NoError(t, err)
 	defer s.Close()
 
 	var count int
-	err := s.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&count)
+	err = s.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, len(schema.IndexCreationQueries), count, "index count should match IndexCreationQueries")
 }
@@ -219,12 +219,12 @@ func TestStoreIndexesCreated(t *testing.T) {
 // chk_metric_type_valid is rejected.
 func TestStoreConstraintsEnforced(t *testing.T) {
 	ctx := context.Background()
-	s := NewStore(ctx, "")
-	require.NotNil(t, s)
+	s, err := NewStore(ctx, "")
+	require.NoError(t, err)
 	defer s.Close()
 
 	// chk_metric_type_valid rejects unknown metric_type values.
-	_, err := s.DB().ExecContext(ctx, `
+	_, err = s.DB().ExecContext(ctx, `
 		insert into metrics (id, name, description, unit, resource_dropped_attributes_count,
 			scope_name, scope_version, scope_dropped_attributes_count, received, search_text)
 		values (gen_random_uuid(), 'test', '', '', 0, '', '', 0, 0, '')
@@ -249,17 +249,17 @@ func TestStorePersistentReopenIdempotent(t *testing.T) {
 
 	ctx := context.Background()
 
-	s := NewStore(ctx, dbPath)
-	require.NotNil(t, s)
+	s, err := NewStore(ctx, dbPath)
+	require.NoError(t, err)
 	require.NoError(t, s.Close())
 
 	// Reopening must not panic or fatal - constraints use "already exists" guard,
 	// indexes use IF NOT EXISTS.
-	s2 := NewStore(ctx, dbPath)
-	require.NotNil(t, s2)
+	s2, err := NewStore(ctx, dbPath)
+	require.NoError(t, err)
 
 	var indexCount int
-	err := s2.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&indexCount)
+	err = s2.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&indexCount)
 	require.NoError(t, err)
 	assert.Equal(t, len(schema.IndexCreationQueries), indexCount)
 	require.NoError(t, s2.Close())
@@ -269,8 +269,8 @@ func TestStorePersistentReopenIdempotent(t *testing.T) {
 // constraint accepts a valid ExponentialHistogram datapoint.
 func TestStoreExponentialHistogramConstraint(t *testing.T) {
 	ctx := context.Background()
-	s := NewStore(ctx, "")
-	require.NotNil(t, s)
+	s, err := NewStore(ctx, "")
+	require.NoError(t, err)
 	defer s.Close()
 
 	m := pmetric.NewMetrics()
@@ -294,18 +294,18 @@ func TestStoreExponentialHistogramConstraint(t *testing.T) {
 	dp.Negative().BucketCounts().FromRaw([]uint64{1, 2})
 
 	s.Lock()
-	err := metrics.Ingest(ctx, s.Conn(), m)
+	err = metrics.Ingest(ctx, s.Conn(), m)
 	s.Unlock()
 	assert.NoError(t, err, "ExponentialHistogram ingest should satisfy chk_exponential_histogram_fields constraint")
 }
 
 func TestStoreLifecycleErrors(t *testing.T) {
 	ctx := context.Background()
-	s := NewStore(ctx, "")
-	assert.NotNil(t, s)
+	s, err := NewStore(ctx, "")
+	require.NoError(t, err)
 
 	// Test using store after close
-	err := s.Close()
+	err = s.Close()
 	assert.NoError(t, err, "first close should succeed")
 
 	// Try to use the store after closing
