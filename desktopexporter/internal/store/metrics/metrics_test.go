@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"database/sql/driver"
+
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/stretchr/testify/assert"
@@ -205,9 +207,9 @@ func TestMetricSuite(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	s.Lock()
-	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdata())
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+	})
 	assert.NoError(t, err, "ingest test metrics")
 
 	t.Run("MetricRetrieval", func(t *testing.T) {
@@ -622,9 +624,9 @@ func TestDeleteMetricByID(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-		s.Lock()
-	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdata())
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+	})
 	assert.NoError(t, err)
 
 	metricList := searchMetricsAll(t, s, ctx)
@@ -656,9 +658,9 @@ func TestDeleteMetricsByIDs(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-		s.Lock()
-	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdata())
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+	})
 	assert.NoError(t, err)
 
 	metricList := searchMetricsAll(t, s, ctx)
@@ -692,9 +694,9 @@ func TestEmptyMetrics(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-		s.Lock()
-	err := metrics.Ingest(ctx, s.Conn(), pmetric.NewMetrics())
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, pmetric.NewMetrics())
+	})
 	assert.NoError(t, err)
 
 	metricList := searchMetricsAll(t, s, ctx)
@@ -706,9 +708,9 @@ func TestClearMetrics(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-		s.Lock()
-	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdata())
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+	})
 	assert.NoError(t, err)
 
 	metricList := searchMetricsAll(t, s, ctx)
@@ -734,9 +736,9 @@ func TestIngestMetrics_FlushInterval(t *testing.T) {
 	defer teardown()
 
 	const batchSize = 101 // > flushIntervalMetrics (100)
-		s.Lock()
-	err := metrics.Ingest(ctx, s.Conn(), createTestMetricsPdataN(batchSize))
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(batchSize))
+	})
 	assert.NoError(t, err)
 
 	metrics := searchMetricsAll(t, s, ctx)

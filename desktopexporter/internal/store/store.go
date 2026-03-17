@@ -74,11 +74,14 @@ func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 }
 
 // Close closes the store and the underlying database connection.
-// Note:
-// We explicitly set the connection to nil to ensure checkConnection()
-// can detect closed state because sql.DB.Close() has a graceful shutdown
-// that can cause a ping to succeed briefly after close while in-progress queries finish.
+// It acquires the mutex to avoid racing with WithConn.
+// We explicitly set the connection to nil so that WithConn detects the
+// closed state, because sql.DB.Close() has a graceful shutdown that can
+// cause a ping to succeed briefly after close.
 func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	var connErr, dbErr error
 	if s.conn != nil {
 		connErr = s.conn.Close()
@@ -93,24 +96,17 @@ func (s *Store) Close() error {
 	return errors.Join(connErr, dbErr)
 }
 
-// CheckConnection verifies that the store's connection is valid.
-// Returns an error if the connection is nil.
-func (s *Store) CheckConnection() error {
+// WithConn locks the store, verifies the connection is alive,
+// and passes it to fn. The lock is released when fn returns.
+func (s *Store) WithConn(fn func(conn driver.Conn) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.db == nil || s.conn == nil {
 		return ErrStoreConnectionClosed
 	}
-	return nil
-}
 
-// Lock acquires the store mutex. Hold it when calling spans.Ingest or other ingest that uses Conn().
-func (s *Store) Lock() { s.mu.Lock() }
-
-// Unlock releases the store mutex.
-func (s *Store) Unlock() { s.mu.Unlock() }
-
-// Conn returns the underlying driver connection (for appenders). Used by subpackages and tests.
-func (s *Store) Conn() driver.Conn {
-	return s.conn
+	return fn(s.conn)
 }
 
 // DB returns the underlying *sql.DB. Used by subpackages and tests.

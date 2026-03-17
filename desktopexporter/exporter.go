@@ -2,6 +2,7 @@ package desktopexporter
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"net/http"
@@ -42,30 +43,21 @@ func newDesktopExporter(cfg *Config) (*desktopExporter, error) {
 }
 
 func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
-	if err := e.store.CheckConnection(); err != nil {
-		return fmt.Errorf("failed to add spans: %w", err)
-	}
-	e.store.Lock()
-	defer e.store.Unlock()
-	return spans.Ingest(ctx, e.store.Conn(), source)
+	return e.store.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, source)
+	})
 }
 
 func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {
-	if err := e.store.CheckConnection(); err != nil {
-		return fmt.Errorf("failed to add metrics: %w", err)
-	}
-	e.store.Lock()
-	defer e.store.Unlock()
-	return metrics.Ingest(ctx, e.store.Conn(), source)
+	return e.store.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, source)
+	})
 }
 
 func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error {
-	if err := e.store.CheckConnection(); err != nil {
-		return fmt.Errorf("failed to add logs: %w", err)
-	}
-	e.store.Lock()
-	defer e.store.Unlock()
-	return logs.Ingest(ctx, e.store.Conn(), source)
+	return e.store.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, source)
+	})
 }
 
 func (e *desktopExporter) Start(ctx context.Context, host component.Host) error {

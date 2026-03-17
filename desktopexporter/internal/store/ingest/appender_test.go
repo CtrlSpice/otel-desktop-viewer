@@ -2,6 +2,7 @@ package ingest_test
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"testing"
 
@@ -29,14 +30,24 @@ func TestNewAppenders_ErrorPath(t *testing.T) {
 	defer teardown()
 
 	tables := []string{"attributes", "nonexistent_table"}
-	appenders, err := ingest.NewAppenders(s.Conn(), tables)
+	var appenders map[string]*duckdb.Appender
+	err := s.WithConn(func(conn driver.Conn) error {
+		var err error
+		appenders, err = ingest.NewAppenders(conn, tables)
+		return err
+	})
 
 	require.Error(t, err)
 	assert.Nil(t, appenders)
 	assert.True(t, errors.Is(err, ingest.ErrIngestInternal))
 	assert.Contains(t, err.Error(), "appender")
 
-	appenders2, err := ingest.NewAppenders(s.Conn(), []string{"attributes"})
+	var appenders2 map[string]*duckdb.Appender
+	err = s.WithConn(func(conn driver.Conn) error {
+		var err error
+		appenders2, err = ingest.NewAppenders(conn, []string{"attributes"})
+		return err
+	})
 	require.NoError(t, err)
 	ingest.CloseAppenders(appenders2, []string{"attributes"})
 }
@@ -49,30 +60,36 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	defer teardown()
 
 	tables := []string{"attributes", "logs"}
-	appenders, err := ingest.NewAppenders(s.Conn(), tables)
-	require.NoError(t, err)
-	defer ingest.CloseAppenders(appenders, tables)
-
 	logID := duckdb.UUID(uuid.New())
-	err = appenders["logs"].AppendRow(
-		logID,
-		int64(0), int64(0), // Timestamp, ObservedTimestamp
-		nil, nil,           // TraceID, SpanID
-		"INFO", int32(9),   // SeverityText, SeverityNumber
-		"flush test", "str", // Body, BodyType
-		uint32(0), "scope", "v1", uint32(0), uint32(0), uint32(0), "", "flush test",
-	)
-	require.NoError(t, err)
+	err := s.WithConn(func(conn driver.Conn) error {
+		appenders, err := ingest.NewAppenders(conn, tables)
+		if err != nil {
+			return err
+		}
+		defer ingest.CloseAppenders(appenders, tables)
 
-	attrs := pcommon.NewMap()
-	attrs.PutStr("flush_attr", "ok")
-	attrs.PutStr("key", "value")
-	err = ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
-		{Attrs: attrs, IDs: ingest.AttributeOwnerIDs{LogID: &logID}, Scope: "log"},
+		if err := appenders["logs"].AppendRow(
+			logID,
+			int64(0), int64(0), // Timestamp, ObservedTimestamp
+			nil, nil,           // TraceID, SpanID
+			"INFO", int32(9),   // SeverityText, SeverityNumber
+			"flush test", "str", // Body, BodyType
+			uint32(0), "scope", "v1", uint32(0), uint32(0), uint32(0), "", "flush test",
+		); err != nil {
+			return err
+		}
+
+		attrs := pcommon.NewMap()
+		attrs.PutStr("flush_attr", "ok")
+		attrs.PutStr("key", "value")
+		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
+			{Attrs: attrs, IDs: ingest.AttributeOwnerIDs{LogID: &logID}, Scope: "log"},
+		}); err != nil {
+			return err
+		}
+
+		return ingest.FlushAppenders(appenders, tables)
 	})
-	require.NoError(t, err)
-
-	err = ingest.FlushAppenders(appenders, tables)
 	require.NoError(t, err)
 
 	var logCount int

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"database/sql/driver"
+
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
@@ -214,9 +216,9 @@ func TestLogOrdering(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
-	s.Lock()
-	err := logs.Ingest(ctx, s.Conn(), ldata)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, ldata)
+	})
 	assert.NoError(t, err)
 
 	entries := searchLogsAll(t, s, ctx)
@@ -233,9 +235,9 @@ func TestEmptyLogs(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	s.Lock()
-	err := logs.Ingest(ctx, s.Conn(), plog.NewLogs())
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, plog.NewLogs())
+	})
 	assert.NoError(t, err)
 
 	entries := searchLogsAll(t, s, ctx)
@@ -249,9 +251,9 @@ func TestClearLogs(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
-	s.Lock()
-	err := logs.Ingest(ctx, s.Conn(), ldata)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, ldata)
+	})
 	assert.NoError(t, err)
 
 	entries := searchLogsAll(t, s, ctx)
@@ -273,9 +275,9 @@ func TestLogSuite(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
-	s.Lock()
-	err := logs.Ingest(ctx, s.Conn(), ldata)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, ldata)
+	})
 	assert.NoError(t, err, "failed to ingest test logs")
 
 	t.Run("LogOrdering", func(t *testing.T) {
@@ -358,9 +360,9 @@ func TestDeleteLogByID(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
-	s.Lock()
-	err := logs.Ingest(ctx, s.Conn(), ldata)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, ldata)
+	})
 	assert.NoError(t, err)
 
 	entries := searchLogsAll(t, s, ctx)
@@ -391,9 +393,9 @@ func TestDeleteLogsByIDs(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
-	s.Lock()
-	err := logs.Ingest(ctx, s.Conn(), ldata)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, ldata)
+	})
 	assert.NoError(t, err)
 
 	entries := searchLogsAll(t, s, ctx)
@@ -426,9 +428,9 @@ func TestIngestLogs_FlushInterval(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	const batchSize = 250
 	ldata := createTestLogsPdataN(baseTime, batchSize)
-	s.Lock()
-	err := logs.Ingest(ctx, s.Conn(), ldata)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, ldata)
+	})
 	assert.NoError(t, err)
 
 	entries := searchLogsAll(t, s, ctx)
@@ -465,9 +467,9 @@ func TestSearchLogs(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
-	s.Lock()
-	err := logs.Ingest(ctx, s.Conn(), ldata)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, ldata)
+	})
 	assert.NoError(t, err)
 
 	startTime := baseTime - 24*int64(time.Hour)

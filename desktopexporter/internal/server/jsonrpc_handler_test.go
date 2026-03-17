@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"database/sql/driver"
+
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
@@ -65,14 +67,14 @@ func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
 	handler := NewJSONRPCHandler(s)
 	ctx := context.Background()
 
-	s.Lock()
-	err = spans.Ingest(ctx, s.Conn(), buildTestTraces())
-	s.Unlock()
+	err = s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, buildTestTraces())
+	})
 	assert.NoError(t, err, "ingest spans")
 
-	s.Lock()
-	err = logs.Ingest(ctx, s.Conn(), buildTestLogs())
-	s.Unlock()
+	err = s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, buildTestLogs())
+	})
 	assert.NoError(t, err, "ingest logs")
 
 	return handler, func() {

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"database/sql/driver"
+
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
@@ -129,9 +131,9 @@ func TestTraceSummaryOrdering(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	traces, trace1Hex, trace2Hex, trace3Hex := buildTracesForSummaryOrdering(baseTime)
 
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err, "failed to ingest spans")
 
 	summaries := searchTracesAll(t, s, ctx)
@@ -162,9 +164,9 @@ func TestEmptySpans(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), ptrace.NewTraces())
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, ptrace.NewTraces())
+	})
 	assert.NoError(t, err)
 
 	summaries := searchTracesAll(t, s, ctx)
@@ -177,9 +179,9 @@ func TestClearTraces(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err)
 
 	summaries := searchTracesAll(t, s, ctx)
@@ -241,9 +243,9 @@ func TestTraceSuite(t *testing.T) {
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err, "failed to ingest test trace")
 
 	t.Run("TraceHierarchicalStructure", func(t *testing.T) {
@@ -341,9 +343,9 @@ func TestSearchTraces(t *testing.T) {
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err, "failed to ingest test trace")
 
 	baseTime := time.Now().UnixNano()
@@ -815,9 +817,9 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 
 	const batchSize = 51 // > flushIntervalSpans (50)
 	traces := createTestTracesPdataN(batchSize)
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err)
 
 	testTraceID := "00000000-0000-0000-0000-000000000099"
@@ -847,9 +849,9 @@ func TestDeleteSpanByID(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err)
 
 	raw, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
@@ -880,9 +882,9 @@ func TestDeleteSpansByIDs(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err)
 
 	raw, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
@@ -925,9 +927,9 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err)
 
 	summaries := searchTracesAll(t, s, ctx)
@@ -952,9 +954,9 @@ func TestGetTraceWith32CharHexTraceID(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	require.NoError(t, err)
 
 	raw, err := spans.GetTrace(ctx, s.DB(), "00000000000000000000000000000099")
@@ -972,9 +974,9 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err)
 
 	summaries := searchTracesAll(t, s, ctx)

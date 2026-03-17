@@ -1,6 +1,7 @@
 package ingest_test
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"testing"
 	"time"
@@ -34,9 +35,9 @@ func TestIngestAttributes_ResourceScopeSpan(t *testing.T) {
 	span.Attributes().PutStr("span.key", "span-val")
 	span.Attributes().PutBool("span.flag", true)
 
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err)
 
 	now := time.Now().UnixNano()
@@ -98,9 +99,9 @@ func TestIngestAttributes_EventAndLink(t *testing.T) {
 	link.Attributes().PutStr("link.attr", "link-value")
 	link.Attributes().PutInt("link.num", 42)
 
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err)
 
 	now := time.Now().UnixNano()
@@ -150,9 +151,9 @@ func TestIngestAttributes_EmptyMaps(t *testing.T) {
 	span.SetEndTimestamp(pcommon.Timestamp(time.Now().UnixNano() + 1))
 	// No span attributes
 
-	s.Lock()
-	err := spans.Ingest(ctx, s.Conn(), traces)
-	s.Unlock()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
 	assert.NoError(t, err)
 
 	now := time.Now().UnixNano()

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"os"
@@ -118,21 +119,21 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 
 			// Ingest two traces, three logs, and one metric via pdata
 			traces := buildStoreTestTraces()
-			s.Lock()
-			err = spans.Ingest(ctx, s.Conn(), traces)
-			s.Unlock()
+			err = s.WithConn(func(conn driver.Conn) error {
+				return spans.Ingest(ctx, conn, traces)
+			})
 			assert.NoError(t, err, "spans table should exist and accept data")
 
 			logData := buildStoreTestLogs()
-			s.Lock()
-			err = logs.Ingest(ctx, s.Conn(), logData)
-			s.Unlock()
+			err = s.WithConn(func(conn driver.Conn) error {
+				return logs.Ingest(ctx, conn, logData)
+			})
 			assert.NoError(t, err, "logs table should exist and accept data")
 
 			metricData := buildStoreTestMetrics()
-			s.Lock()
-			err = metrics.Ingest(ctx, s.Conn(), metricData)
-			s.Unlock()
+			err = s.WithConn(func(conn driver.Conn) error {
+				return metrics.Ingest(ctx, conn, metricData)
+			})
 			assert.NoError(t, err, "metrics table should exist and accept data")
 
 			// Verify data was inserted correctly
@@ -293,9 +294,9 @@ func TestStoreExponentialHistogramConstraint(t *testing.T) {
 	dp.Negative().SetOffset(0)
 	dp.Negative().BucketCounts().FromRaw([]uint64{1, 2})
 
-	s.Lock()
-	err = metrics.Ingest(ctx, s.Conn(), m)
-	s.Unlock()
+	err = s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, m)
+	})
 	assert.NoError(t, err, "ExponentialHistogram ingest should satisfy chk_exponential_histogram_fields constraint")
 }
 
@@ -309,7 +310,9 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	assert.NoError(t, err, "first close should succeed")
 
 	// Try to use the store after closing
-	err = s.CheckConnection()
+	err = s.WithConn(func(conn driver.Conn) error {
+		return nil
+	})
 	assert.Error(t, err, "should get error when using closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
@@ -317,11 +320,12 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	err = s.Close()
 	assert.NoError(t, err, "closing an already closed store should be a no-op")
 
-	// Try some other operations on closed store (callers use CheckConnection first)
-	err = s.CheckConnection()
+	// Try WithConn on a double-closed store
+	err = s.WithConn(func(conn driver.Conn) error {
+		return nil
+	})
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
-	// After close, DB() is nil; callers should use CheckConnection() before using store.DB().
 	assert.Nil(t, s.DB(), "DB() should be nil after close")
 }
