@@ -12,8 +12,8 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
-	"github.com/google/uuid"
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -163,9 +163,6 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) error {
 		}
 	}
 
-	if err := ingest.FlushAppenders(appenders, tables); err != nil {
-		return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
-	}
 	return nil
 }
 

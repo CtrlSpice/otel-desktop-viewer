@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -95,7 +96,7 @@ func TestSearchTraces(t *testing.T) {
 		handler, teardown := setupHandler(t)
 		defer teardown()
 
-		req := createRequest("searchTraces", []any{0, 1<<63 - 1})
+		req := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -110,7 +111,7 @@ func TestSearchTraces(t *testing.T) {
 		handler, teardown := setupHandlerWithData(t)
 		defer teardown()
 
-		req := createRequest("searchTraces", []any{0, 1<<63 - 1})
+		req := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -161,7 +162,7 @@ func TestClearTraces(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "Traces cleared successfully", result)
 
-	searchReq := createRequest("searchTraces", []any{0, 1<<63 - 1})
+	searchReq := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 	searchResult, searchErr := handler.Handle(context.Background(), searchReq)
 	assert.NoError(t, searchErr)
 	raw, ok := searchResult.(json.RawMessage)
@@ -176,7 +177,7 @@ func TestSearchLogs(t *testing.T) {
 		handler, teardown := setupHandler(t)
 		defer teardown()
 
-		req := createRequest("searchLogs", []any{0, 1<<63 - 1})
+		req := createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -191,7 +192,7 @@ func TestSearchLogs(t *testing.T) {
 		handler, teardown := setupHandlerWithData(t)
 		defer teardown()
 
-		req := createRequest("searchLogs", []any{0, 1<<63 - 1})
+		req := createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -199,7 +200,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
 		var entries []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &entries))
-		assert.Len(t, entries, 1)
+		require.Len(t, entries, 1, "searchLogs should return the ingested log")
 		assert.Equal(t, "test log message", entries[0]["body"])
 	})
 }
@@ -210,7 +211,7 @@ func TestGetTraceAttributes(t *testing.T) {
 		defer teardown()
 
 		now := time.Now().UnixNano()
-		req := createRequest("getTraceAttributes", []any{now - 24*time.Hour.Nanoseconds(), now + 24*time.Hour.Nanoseconds()})
+		req := createRequest("getTraceAttributes", []string{strconv.FormatInt(now-24*time.Hour.Nanoseconds(), 10), strconv.FormatInt(now+24*time.Hour.Nanoseconds(), 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -224,7 +225,7 @@ func TestGetTraceAttributes(t *testing.T) {
 		defer teardown()
 
 		now := time.Now().UnixNano()
-		req := createRequest("getTraceAttributes", []any{now - 24*time.Hour.Nanoseconds(), now + 24*time.Hour.Nanoseconds()})
+		req := createRequest("getTraceAttributes", []string{strconv.FormatInt(now-24*time.Hour.Nanoseconds(), 10), strconv.FormatInt(now+24*time.Hour.Nanoseconds(), 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -291,7 +292,7 @@ func TestSearchLogsInvalidParams(t *testing.T) {
 	handler, teardown := setupHandler(t)
 	defer teardown()
 
-	req := createRequest("searchLogs", []any{0}) // only one param
+	req := createRequest("searchLogs", []string{"0"}) // only one param
 	result, err := handler.Handle(context.Background(), req)
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -303,7 +304,7 @@ func TestSearchMetricsInvalidParams(t *testing.T) {
 	handler, teardown := setupHandler(t)
 	defer teardown()
 
-	req := createRequest("searchMetrics", []any{0}) // only one param
+	req := createRequest("searchMetrics", []string{"0"}) // only one param
 	result, err := handler.Handle(context.Background(), req)
 	assert.Error(t, err)
 	assert.Nil(t, result)

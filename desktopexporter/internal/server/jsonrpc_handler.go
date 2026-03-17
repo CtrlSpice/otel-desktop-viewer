@@ -318,20 +318,19 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 	return attributes, nil
 }
 
-// Helper function to parse timestamp parameters (string or numeric from JSON).
+// parseTimestampParam parses a timestamp parameter that must be a JSON string
+// containing a base-10 int64. Large integers travel as strings to avoid
+// float64 precision loss in JSON.
 func parseTimestampParam(param any, paramName string) (int64, error) {
-	switch v := param.(type) {
-	case string:
-		parsed, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			log.Printf("Invalid %s string: %v", paramName, err)
-			return 0, jsonrpc2.ErrInvalidParams
-		}
-		return parsed, nil
-	case float64:
-		return int64(v), nil
-	default:
-		log.Printf("Invalid %s type: %T, value: %v", paramName, param, param)
+	s, ok := param.(string)
+	if !ok {
+		log.Printf("Invalid %s type: %T, value: %v (expected string)", paramName, param, param)
 		return 0, jsonrpc2.ErrInvalidParams
 	}
+	parsed, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		log.Printf("Invalid %s string: %v", paramName, err)
+		return 0, jsonrpc2.ErrInvalidParams
+	}
+	return parsed, nil
 }
