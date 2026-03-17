@@ -97,6 +97,10 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) error {
 			}
 		}
 	}
+
+	if err := ingest.FlushAppenders(appenders, tables); err != nil {
+		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+	}
 	return nil
 }
 

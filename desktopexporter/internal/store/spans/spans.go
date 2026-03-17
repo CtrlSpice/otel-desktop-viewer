@@ -163,6 +163,9 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) error {
 		}
 	}
 
+	if err := ingest.FlushAppenders(appenders, tables); err != nil {
+		return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
+	}
 	return nil
 }
 

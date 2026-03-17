@@ -107,6 +107,10 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) error {
 			}
 		}
 	}
+
+	if err := ingest.FlushAppenders(appenders, tables); err != nil {
+		return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
+	}
 	return nil
 }
 
