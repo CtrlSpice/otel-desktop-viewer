@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/marcboeker/go-duckdb/v2"
+	"github.com/duckdb/duckdb-go/v2"
 )
 
 var (

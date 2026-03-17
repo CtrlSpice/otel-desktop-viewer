@@ -118,7 +118,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
 		var summaries []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &summaries))
-		assert.Len(t, summaries, 1)
+		require.Len(t, summaries, 1, "searchTraces should return the ingested trace")
 		assert.Equal(t, testTraceIDHex, summaries[0]["traceID"])
 	})
 }

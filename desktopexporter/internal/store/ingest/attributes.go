@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
-	"github.com/marcboeker/go-duckdb/v2"
+	"github.com/duckdb/duckdb-go/v2"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
