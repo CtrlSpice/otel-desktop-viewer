@@ -28,13 +28,15 @@ const flushIntervalMetrics = 100
 
 // Ingest ingests metrics from pdata into the metrics table and related tables.
 // The caller must hold any required lock on the connection.
-func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) error {
+func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error) {
 	tables := []string{"attributes", "exemplars", "datapoints", "metrics"}
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 	}
-	defer ingest.CloseAppenders(appenders, tables)
+	defer func() {
+		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
+	}()
 
 	metricCount := 0
 	for _, resourceMetric := range m.ResourceMetrics().All() {

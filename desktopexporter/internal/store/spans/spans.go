@@ -30,13 +30,15 @@ const flushIntervalSpans = 50
 
 // Ingest ingests trace spans from pdata into the spans, events, links, and attributes tables.
 // The caller must hold any required lock on the connection.
-func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) error {
+func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err error) {
 	tables := []string{"attributes", "events", "links", "spans"}
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
 		return err
 	}
-	defer ingest.CloseAppenders(appenders, tables)
+	defer func() {
+		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
+	}()
 
 	spanCount := 0
 	for _, resourceSpan := range traces.ResourceSpans().All() {

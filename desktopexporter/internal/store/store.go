@@ -79,17 +79,18 @@ func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 // can detect closed state because sql.DB.Close() has a graceful shutdown
 // that can cause a ping to succeed briefly after close while in-progress queries finish.
 func (s *Store) Close() error {
+	var connErr, dbErr error
 	if s.conn != nil {
-		s.conn.Close()
+		connErr = s.conn.Close()
 		s.conn = nil
 	}
 
 	if s.db != nil {
-		s.db.Close()
+		dbErr = s.db.Close()
 		s.db = nil
 	}
 
-	return nil
+	return errors.Join(connErr, dbErr)
 }
 
 // CheckConnection verifies that the store's connection is valid.

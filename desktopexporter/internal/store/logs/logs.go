@@ -27,13 +27,15 @@ const flushIntervalLogs = 100
 
 // Ingest ingests log records from pdata into the logs table.
 // The caller must hold any required lock on the connection.
-func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) error {
+func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 	tables := []string{"attributes", "logs"}
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 	}
-	defer ingest.CloseAppenders(appenders, tables)
+	defer func() {
+		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
+	}()
 
 	logCount := 0
 	for _, resourceLogs := range logs.ResourceLogs().All() {
