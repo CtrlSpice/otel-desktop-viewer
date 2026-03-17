@@ -74,7 +74,7 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 			nil, nil,           // TraceID, SpanID
 			"INFO", int32(9),   // SeverityText, SeverityNumber
 			"flush test", "str", // Body, BodyType
-			uint32(0), "scope", "v1", uint32(0), uint32(0), uint32(0), "", "flush test",
+			uint32(0), "scope", "v1", uint32(0), uint32(0), uint32(0), "",
 		); err != nil {
 			return err
 		}

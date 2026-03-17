@@ -227,8 +227,8 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 	// chk_metric_type_valid rejects unknown metric_type values.
 	_, err = s.DB().ExecContext(ctx, `
 		insert into metrics (id, name, description, unit, resource_dropped_attributes_count,
-			scope_name, scope_version, scope_dropped_attributes_count, received, search_text)
-		values (gen_random_uuid(), 'test', '', '', 0, '', '', 0, 0, '')
+			scope_name, scope_version, scope_dropped_attributes_count, received)
+		values (gen_random_uuid(), 'test', '', '', 0, '', '', 0, 0)
 	`)
 	require.NoError(t, err, "inserting a metric row should succeed")
 

@@ -62,16 +62,6 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 					u := duckdb.UUID(parentPadded)
 					parentSpanUUID = &u
 				}
-				spanSearchText := strings.Join([]string{
-					span.Name(),
-					span.Kind().String(),
-					span.Status().Code().String(),
-					span.Status().Message(),
-					span.TraceState().AsRaw(),
-					scope.Name(),
-					scope.Version(),
-				}, " ")
-
 				err := appenders["spans"].AppendRow(
 					traceUUID,                         // TraceID UUID
 					span.TraceState().AsRaw(),         // TraceState VARCHAR
@@ -90,7 +80,6 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 					span.DroppedLinksCount(),          // DroppedLinksCount UINTEGER
 					span.Status().Code().String(),     // StatusCode VARCHAR
 					span.Status().Message(),           // StatusMessage VARCHAR
-					spanSearchText,                    // SearchText VARCHAR
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
@@ -104,7 +93,6 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 						event.Name(),                   // Name VARCHAR
 						int64(event.Timestamp()),       // Timestamp BIGINT
 						event.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
-						event.Name(),                   // SearchText VARCHAR
 					)
 					if err != nil {
 						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
@@ -123,12 +111,6 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 					copy(linkSpanPadded[8:], linkSpanID[:])
 					linkSpanUUID := duckdb.UUID(linkSpanPadded)
 
-					linkSearchText := strings.Join([]string{
-						link.TraceID().String(),
-						link.SpanID().String(),
-						link.TraceState().AsRaw(),
-					}, " ")
-
 					err = appenders["links"].AppendRow(
 						linkID,                        // ID UUID
 						spanUUID,                      // SpanID UUID
@@ -136,7 +118,6 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 						linkSpanUUID,                  // LinkedSpanID UUID
 						link.TraceState().AsRaw(),     // TraceState VARCHAR
 						link.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
-						linkSearchText,                // SearchText VARCHAR
 					)
 					if err != nil {
 						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
@@ -507,8 +488,45 @@ func buildTraceSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteSQ
 	return search.BuildSearchSQL(queryNode, startTime, endTime, traceFieldMapper(), "s.start_time >= time_start and s.start_time <= time_end")
 }
 
+var spanColumns = map[string]struct{}{
+	"trace_id":                          {},
+	"trace_state":                       {},
+	"span_id":                           {},
+	"parent_span_id":                    {},
+	"name":                              {},
+	"kind":                              {},
+	"start_time":                        {},
+	"end_time":                          {},
+	"resource_dropped_attributes_count": {},
+	"scope_name":                        {},
+	"scope_version":                     {},
+	"scope_dropped_attributes_count":    {},
+	"dropped_attributes_count":          {},
+	"dropped_events_count":              {},
+	"dropped_links_count":               {},
+	"status_code":                       {},
+	"status_message":                    {},
+}
+
+var eventColumns = map[string]struct{}{
+	"id":                       {},
+	"span_id":                  {},
+	"name":                     {},
+	"timestamp":                {},
+	"dropped_attributes_count": {},
+}
+
+var linkColumns = map[string]struct{}{
+	"id":                       {},
+	"span_id":                  {},
+	"trace_id":                 {},
+	"linked_span_id":           {},
+	"trace_state":              {},
+	"dropped_attributes_count": {},
+}
+
 func traceFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition) ([]string, error) {
+	return func(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapTraceFieldExpression(field)
@@ -517,7 +535,7 @@ func traceFieldMapper() search.FieldMapper {
 			}
 			return []string{expr}, nil
 		case "attribute":
-			return mapTraceAttributeExpressions(field)
+			return mapTraceAttributeExpressions(field, params)
 		case "global":
 			return mapTraceGlobalExpressions()
 		default:
@@ -528,35 +546,61 @@ func traceFieldMapper() search.FieldMapper {
 
 func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 	if resourceField, found := strings.CutPrefix(field.Name, "resource."); found {
-		return "s." + util.CamelToSnake(resourceField), nil
+		col := util.CamelToSnake(resourceField)
+		if err := util.ValidateColumnName(col, spanColumns); err != nil {
+			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+		}
+		return "s." + col, nil
 	}
 	if scopeField, found := strings.CutPrefix(field.Name, "scope."); found {
-		return "s.scope_" + util.CamelToSnake(scopeField), nil
+		col := "scope_" + util.CamelToSnake(scopeField)
+		if err := util.ValidateColumnName(col, spanColumns); err != nil {
+			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+		}
+		return "s." + col, nil
 	}
 	if col, found := strings.CutPrefix(field.Name, "event."); found {
 		snake := util.CamelToSnake(col)
-		return fmt.Sprintf("exists(select 1 from events e where e.span_id = s.span_id and e.%s = ?)", snake), nil
+		if err := util.ValidateColumnName(snake, eventColumns); err != nil {
+			return "", fmt.Errorf("event field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+		}
+		return fmt.Sprintf("exists(select 1 from events e where e.span_id = s.span_id and e.%s {COND})", snake), nil
 	}
 	if col, found := strings.CutPrefix(field.Name, "link."); found {
 		snake := util.CamelToSnake(col)
-		return fmt.Sprintf("exists(select 1 from links l where l.span_id = s.span_id and l.%s = ?)", snake), nil
+		if err := util.ValidateColumnName(snake, linkColumns); err != nil {
+			return "", fmt.Errorf("link field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+		}
+		return fmt.Sprintf("exists(select 1 from links l where l.span_id = s.span_id and l.%s {COND})", snake), nil
 	}
 	if len(field.Name) > 0 {
-		return "s." + util.CamelToSnake(field.Name), nil
+		col := util.CamelToSnake(field.Name)
+		if err := util.ValidateColumnName(col, spanColumns); err != nil {
+			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+		}
+		return "s." + col, nil
 	}
 	return field.Name, nil
 }
 
-func mapTraceAttributeExpressions(field *search.FieldDefinition) ([]string, error) {
+func mapTraceAttributeExpressions(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+	idx := len(*params)
+	scopeParam := fmt.Sprintf("attr_scope_%d", idx)
+	keyParam := fmt.Sprintf("attr_key_%d", idx+1)
+	*params = append(*params,
+		search.NamedParam{Name: scopeParam, Value: field.AttributeScope},
+		search.NamedParam{Name: keyParam, Value: field.Name},
+	)
+
 	switch field.AttributeScope {
 	case "resource", "scope", "span":
-		expr := fmt.Sprintf("(select a.value from attributes a where a.span_id = s.span_id and a.scope = '%s' and a.key = '%s' limit 1)", field.AttributeScope, field.Name)
+		expr := fmt.Sprintf("(select a.value from attributes a where a.span_id = s.span_id and a.scope = %s and a.key = %s limit 1)", scopeParam, keyParam)
 		return []string{expr}, nil
 	case "event":
-		expr := fmt.Sprintf("exists(select 1 from events e join attributes a on a.event_id = e.id where e.span_id = s.span_id and a.scope = 'event' and a.key = '%s' and a.value = ?)", field.Name)
+		expr := fmt.Sprintf("exists(select 1 from events e join attributes a on a.event_id = e.id where e.span_id = s.span_id and a.scope = %s and a.key = %s and a.value {COND})", scopeParam, keyParam)
 		return []string{expr}, nil
 	case "link":
-		expr := fmt.Sprintf("exists(select 1 from links l join attributes a on a.link_id = l.id where l.span_id = s.span_id and a.scope = 'link' and a.key = '%s' and a.value = ?)", field.Name)
+		expr := fmt.Sprintf("exists(select 1 from links l join attributes a on a.link_id = l.id where l.span_id = s.span_id and a.scope = %s and a.key = %s and a.value {COND})", scopeParam, keyParam)
 		return []string{expr}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
@@ -565,10 +609,26 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition) ([]string, erro
 
 func mapTraceGlobalExpressions() ([]string, error) {
 	return []string{
-		"s.search_text = ?",
-		"exists(select 1 from events e where e.span_id = s.span_id and e.search_text = ?)",
-		"exists(select 1 from links l where l.span_id = s.span_id and l.search_text = ?)",
-		"exists(select 1 from attributes a where a.span_id = s.span_id and (a.key = ? or a.value = ?))",
+		"CAST(s.name AS VARCHAR) {COND}",
+		"CAST(s.kind AS VARCHAR) {COND}",
+		"CAST(s.status_code AS VARCHAR) {COND}",
+		"CAST(s.status_message AS VARCHAR) {COND}",
+		"CAST(s.trace_state AS VARCHAR) {COND}",
+		"CAST(s.scope_name AS VARCHAR) {COND}",
+		"CAST(s.scope_version AS VARCHAR) {COND}",
+		"exists(select 1 from events e where e.span_id = s.span_id and CAST(e.name AS VARCHAR) {COND})",
+		"exists(select 1 from links l where l.span_id = s.span_id and (CAST(l.trace_id AS VARCHAR) {COND} or CAST(l.trace_state AS VARCHAR) {COND} or CAST(l.linked_span_id AS VARCHAR) {COND}))",
+		`exists(
+			select 1
+			from attributes a
+			where a.span_id = s.span_id and (
+				a.key {COND} or a.value {COND} or
+				(a.type = 'string[]' AND list_contains(CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
+				(a.type = 'int64[]' AND list_contains(CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
+				(a.type = 'float64[]' AND list_contains(CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
+				(a.type = 'boolean[]' AND list_contains(CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+			)
+		)`,
 	}, nil
 }
 

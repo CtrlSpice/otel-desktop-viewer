@@ -29,6 +29,15 @@ func CamelToSnake(s string) string {
 	return b.String()
 }
 
+// ValidateColumnName checks that a snake_case column name is in the allowlist.
+// Returns an error if not, preventing SQL injection through column name interpolation.
+func ValidateColumnName(column string, allowed map[string]struct{}) error {
+	if _, ok := allowed[column]; !ok {
+		return fmt.Errorf("unknown column %q", column)
+	}
+	return nil
+}
+
 // BuildPlaceholders returns a comma-separated list of ? placeholders for SQL IN clauses.
 func BuildPlaceholders(count int) string {
 	if count == 0 {

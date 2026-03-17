@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -42,9 +41,19 @@ type QueryGroup struct {
 	Children        []QueryNode `json:"children"`
 }
 
+// NamedParam is a positional parameter with a CTE column name and its value.
+// Using a slice of these instead of a map guarantees insertion-order alignment
+// between the CTE columns and the positional ? args.
+type NamedParam struct {
+	Name  string
+	Value any
+}
+
 // FieldMapper maps a FieldDefinition to one or more SQL expressions.
 // Signal-specific code provides this to the generic tree walker.
-type FieldMapper func(field *FieldDefinition) ([]string, error)
+// The params slice is provided so mappers can add their own CTE parameters
+// (e.g. for parameterized attribute scope/key lookups).
+type FieldMapper func(field *FieldDefinition, params *[]NamedParam) ([]string, error)
 
 // ParseQueryTree converts JSON from frontend to QueryNode struct.
 func ParseQueryTree(jsonData any) (*QueryNode, error) {
@@ -62,36 +71,34 @@ func ParseQueryTree(jsonData any) (*QueryNode, error) {
 }
 
 // BuildConditions walks the query tree and produces SQL condition strings,
-// populating namedArgs with parameter values. The caller provides a FieldMapper
+// appending parameter values to params. The caller provides a FieldMapper
 // so the tree walker doesn't need to know about signal-specific schema.
-func BuildConditions(node *QueryNode, conditions *[]string, namedArgs *map[string]any, mapper FieldMapper) error {
+func BuildConditions(node *QueryNode, conditions *[]string, params *[]NamedParam, mapper FieldMapper) error {
 	switch node.Type {
 	case "condition":
-		return buildCondition(node.Query, conditions, namedArgs, mapper)
+		return buildCondition(node.Query, conditions, params, mapper)
 	case "group":
-		return buildGroup(node.Group, conditions, namedArgs, mapper)
+		return buildGroup(node.Group, conditions, params, mapper)
 	default:
 		return fmt.Errorf("unknown node type %s: %w", node.Type, ErrInvalidQuery)
 	}
 }
 
-func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]any, mapper FieldMapper) error {
+func buildCondition(query *Query, conditions *[]string, params *[]NamedParam, mapper FieldMapper) error {
 	if query == nil || query.Field == nil || query.FieldOperator == "" {
 		return fmt.Errorf("invalid condition: missing field or operator: %w", ErrInvalidQuery)
 	}
 
 	field := query.Field
 
-	dbExpressions, err := mapper(field)
+	dbExpressions, err := mapper(field, params)
 	if err != nil {
 		return fmt.Errorf("map field %s: %w", field.Name, err)
 	}
 
 	var sqlConditions []string
 	for _, dbExpression := range dbExpressions {
-		expression := dbExpression
-
-		sqlCondition, err := BuildOperatorCondition(expression, query, namedArgs)
+		sqlCondition, err := BuildOperatorCondition(dbExpression, query, params)
 		if err != nil {
 			return fmt.Errorf("build operator condition: %w", err)
 		}
@@ -109,7 +116,7 @@ func buildCondition(query *Query, conditions *[]string, namedArgs *map[string]an
 	return nil
 }
 
-func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]any, mapper FieldMapper) error {
+func buildGroup(group *QueryGroup, conditions *[]string, params *[]NamedParam, mapper FieldMapper) error {
 	if group == nil {
 		return fmt.Errorf("invalid group: missing group data: %w", ErrInvalidQuery)
 	}
@@ -119,7 +126,7 @@ func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]a
 	for _, child := range group.Children {
 		var childCondition []string
 
-		err := BuildConditions(&child, &childCondition, namedArgs, mapper)
+		err := BuildConditions(&child, &childCondition, params, mapper)
 		if err != nil {
 			return fmt.Errorf("BuildConditions: %w", err)
 		}
@@ -145,7 +152,7 @@ func buildGroup(group *QueryGroup, conditions *[]string, namedArgs *map[string]a
 }
 
 // BuildOperatorCondition builds SQL condition for a specific operator.
-func BuildOperatorCondition(expression string, query *Query, namedArgs *map[string]any) (string, error) {
+func BuildOperatorCondition(expression string, query *Query, params *[]NamedParam) (string, error) {
 	if query == nil {
 		return "", fmt.Errorf("query cannot be nil: %w", ErrInvalidQuery)
 	}
@@ -153,8 +160,17 @@ func BuildOperatorCondition(expression string, query *Query, namedArgs *map[stri
 	operator := query.FieldOperator
 	value := query.Value
 
-	hasPlaceholder := strings.Contains(expression, "?")
+	const condToken = "{COND}"
+	const rawToken = "{RAW}"
+	hasPlaceholder := strings.Contains(expression, condToken)
+	hasRaw := strings.Contains(expression, rawToken)
 	var operatorString string
+
+	if hasRaw {
+		rawParamName := fmt.Sprintf("raw_%d", len(*params)-2)
+		*params = append(*params, NamedParam{rawParamName, value})
+		expression = strings.ReplaceAll(expression, rawToken, rawParamName)
+	}
 
 	if value == "NULL" {
 		switch operator {
@@ -166,47 +182,48 @@ func BuildOperatorCondition(expression string, query *Query, namedArgs *map[stri
 			return "", fmt.Errorf("operator %s not supported with NULL value: %w", operator, ErrInvalidQuery)
 		}
 
+		result := expression
 		if hasPlaceholder {
-			return strings.ReplaceAll(expression, "= ?", operatorString), nil
+			return strings.ReplaceAll(result, condToken, operatorString), nil
 		}
-		return expression + " " + operatorString, nil
+		return result + " " + operatorString, nil
 	}
 
 	if query.Field != nil && strings.HasSuffix(query.Field.Type, "[]") {
-		return handleArrayOperator(expression, query, namedArgs)
+		return handleArrayOperator(expression, query, params)
 	}
 
-	paramName := fmt.Sprintf("value_%d", len(*namedArgs)-2)
+	paramName := fmt.Sprintf("value_%d", len(*params)-2)
 
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=", "REGEXP":
-		(*namedArgs)[paramName] = value
+		*params = append(*params, NamedParam{paramName, value})
 		operatorString = operator + " " + paramName
 	case "CONTAINS":
-		(*namedArgs)[paramName] = "%" + value + "%"
+		*params = append(*params, NamedParam{paramName, "%" + value + "%"})
 		operatorString = "LIKE " + paramName
 	case "NOT CONTAINS":
-		(*namedArgs)[paramName] = "%" + value + "%"
+		*params = append(*params, NamedParam{paramName, "%" + value + "%"})
 		operatorString = "NOT LIKE " + paramName
 	case "^":
-		(*namedArgs)[paramName] = value + "%"
+		*params = append(*params, NamedParam{paramName, value + "%"})
 		operatorString = "LIKE " + paramName
 	case "$":
-		(*namedArgs)[paramName] = "%" + value
+		*params = append(*params, NamedParam{paramName, "%" + value})
 		operatorString = "LIKE " + paramName
 	case "IN", "NOT IN":
 		values := ParseArrayValue(value)
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN/NOT IN requires at least one value: %w", ErrInvalidQuery)
 		}
-		(*namedArgs)[paramName] = values
+		*params = append(*params, NamedParam{paramName, values})
 		operatorString = operator + " " + paramName
 	default:
 		return "", fmt.Errorf("unsupported operator %s: %w", operator, ErrInvalidQuery)
 	}
 
 	if hasPlaceholder {
-		return strings.ReplaceAll(expression, "= ?", operatorString), nil
+		return strings.ReplaceAll(expression, condToken, operatorString), nil
 	}
 	return expression + " " + operatorString, nil
 }
@@ -226,10 +243,10 @@ func mapArrayTypeToDuckDB(frontendType string) (string, error) {
 	}
 }
 
-func handleArrayOperator(expression string, query *Query, namedArgs *map[string]any) (string, error) {
+func handleArrayOperator(expression string, query *Query, params *[]NamedParam) (string, error) {
 	operator := query.FieldOperator
 	value := query.Value
-	paramName := fmt.Sprintf("value_%d", len(*namedArgs)-2)
+	paramName := fmt.Sprintf("value_%d", len(*params)-2)
 
 	duckDBType, err := mapArrayTypeToDuckDB(query.Field.Type)
 	if err != nil {
@@ -240,20 +257,20 @@ func handleArrayOperator(expression string, query *Query, namedArgs *map[string]
 	switch operator {
 	case "=", "!=":
 		if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
-			(*namedArgs)[paramName] = ParseArrayValue(value)
+			*params = append(*params, NamedParam{paramName, ParseArrayValue(value)})
 		} else {
-			(*namedArgs)[paramName] = value
+			*params = append(*params, NamedParam{paramName, value})
 		}
 		return fmt.Sprintf("%s %s %s", expression, operator, paramName), nil
 
 	case "CONTAINS":
 		convertedValue := ConvertValueForArrayType(value, query.Field.Type)
-		(*namedArgs)[paramName] = convertedValue
+		*params = append(*params, NamedParam{paramName, convertedValue})
 		return fmt.Sprintf("list_contains(%s, %s)", expression, paramName), nil
 
 	case "NOT CONTAINS":
 		convertedValue := ConvertValueForArrayType(value, query.Field.Type)
-		(*namedArgs)[paramName] = convertedValue
+		*params = append(*params, NamedParam{paramName, convertedValue})
 		return fmt.Sprintf("NOT list_contains(%s, %s)", expression, paramName), nil
 
 	case "IN":
@@ -269,7 +286,7 @@ func handleArrayOperator(expression string, query *Query, namedArgs *map[string]
 				convertedValues[i] = val
 			}
 		}
-		(*namedArgs)[paramName] = convertedValues
+		*params = append(*params, NamedParam{paramName, convertedValues})
 		return fmt.Sprintf("list_has_all(%s, %s)", expression, paramName), nil
 
 	case "NOT IN":
@@ -285,7 +302,7 @@ func handleArrayOperator(expression string, query *Query, namedArgs *map[string]
 				convertedValues[i] = val
 			}
 		}
-		(*namedArgs)[paramName] = convertedValues
+		*params = append(*params, NamedParam{paramName, convertedValues})
 		return fmt.Sprintf("NOT list_has_all(%s, %s)", expression, paramName), nil
 
 	default:
@@ -335,13 +352,14 @@ func ConvertValueForArrayType(value, arrayType string) any {
 // BuildSearchSQL builds the search_params CTE, WHERE clause, and args for any signal.
 // timeCondition must reference time_start and time_end.
 func BuildSearchSQL(queryNode *QueryNode, startTime, endTime int64, mapper FieldMapper, timeCondition string) (cteSQL, whereSQL string, args []any, err error) {
-	namedArgs := make(map[string]any)
-	namedArgs["time_start"] = startTime
-	namedArgs["time_end"] = endTime
+	params := []NamedParam{
+		{Name: "time_start", Value: startTime},
+		{Name: "time_end", Value: endTime},
+	}
 
 	var conditions []string
 	if queryNode != nil {
-		if err := BuildConditions(queryNode, &conditions, &namedArgs, mapper); err != nil {
+		if err := BuildConditions(queryNode, &conditions, &params, mapper); err != nil {
 			return "", "", nil, err
 		}
 	}
@@ -352,28 +370,11 @@ func BuildSearchSQL(queryNode *QueryNode, startTime, endTime int64, mapper Field
 		whereSQL = timeCondition
 	}
 
-	args = make([]any, len(namedArgs))
-	paramNames := make([]string, len(namedArgs))
-	args[0] = namedArgs["time_start"]
-	paramNames[0] = "time_start"
-	args[1] = namedArgs["time_end"]
-	paramNames[1] = "time_end"
-	userParamIndex := 2
-	var userParamNames []string
-	for name := range namedArgs {
-		if name != "time_start" && name != "time_end" {
-			userParamNames = append(userParamNames, name)
-		}
-	}
-	sort.Strings(userParamNames)
-	for _, name := range userParamNames {
-		args[userParamIndex] = namedArgs[name]
-		paramNames[userParamIndex] = name
-		userParamIndex++
-	}
-	var cteParams []string
-	for _, name := range paramNames {
-		cteParams = append(cteParams, fmt.Sprintf("? as %s", name))
+	args = make([]any, len(params))
+	cteParams := make([]string, len(params))
+	for i, p := range params {
+		args[i] = p.Value
+		cteParams[i] = fmt.Sprintf("? as %s", p.Name)
 	}
 	cteSQL = fmt.Sprintf("with search_params as (select %s)", strings.Join(cteParams, ", "))
 	return cteSQL, whereSQL, args, nil

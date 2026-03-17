@@ -60,13 +60,6 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 				}
 
 				bodyValue, bodyType := util.ValueToStringAndType(log.Body())
-				logSearchText := strings.Join([]string{
-					bodyValue,
-					log.SeverityText(),
-					log.EventName(),
-					scope.Name(),
-					scope.Version(),
-				}, " ")
 
 				err := appenders["logs"].AppendRow(
 					logID,                             // ID UUID
@@ -85,7 +78,6 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 					log.DroppedAttributesCount(),      // DroppedAttributesCount UINTEGER
 					uint32(log.Flags()),               // Flags UINTEGER
 					log.EventName(),                   // EventName VARCHAR
-					logSearchText,                     // SearchText VARCHAR
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
@@ -227,8 +219,27 @@ func buildLogSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteSQL 
 	return search.BuildSearchSQL(queryNode, startTime, endTime, logFieldMapper(), "l.log_time >= time_start AND l.log_time <= time_end")
 }
 
+var logColumns = map[string]struct{}{
+	"id":                                {},
+	"timestamp":                         {},
+	"observed_timestamp":                {},
+	"trace_id":                          {},
+	"span_id":                           {},
+	"severity_text":                     {},
+	"severity_number":                   {},
+	"body":                              {},
+	"body_type":                         {},
+	"resource_dropped_attributes_count": {},
+	"scope_name":                        {},
+	"scope_version":                     {},
+	"scope_dropped_attributes_count":    {},
+	"dropped_attributes_count":          {},
+	"flags":                             {},
+	"event_name":                        {},
+}
+
 func logFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition) ([]string, error) {
+	return func(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapLogFieldExpression(field)
@@ -237,7 +248,7 @@ func logFieldMapper() search.FieldMapper {
 			}
 			return []string{expr}, nil
 		case "attribute":
-			return mapLogAttributeExpressions(field)
+			return mapLogAttributeExpressions(field, params)
 		case "global":
 			return mapLogGlobalExpressions()
 		default:
@@ -269,14 +280,26 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	case "scope.version":
 		return "l.scope_version", nil
 	default:
-		return "l." + util.CamelToSnake(name), nil
+		col := util.CamelToSnake(name)
+		if err := util.ValidateColumnName(col, logColumns); err != nil {
+			return "", fmt.Errorf("log field %q: %w: %w", name, err, ErrInvalidLogQuery)
+		}
+		return "l." + col, nil
 	}
 }
 
-func mapLogAttributeExpressions(field *search.FieldDefinition) ([]string, error) {
+func mapLogAttributeExpressions(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+	idx := len(*params)
+	scopeParam := fmt.Sprintf("attr_scope_%d", idx)
+	keyParam := fmt.Sprintf("attr_key_%d", idx+1)
+	*params = append(*params,
+		search.NamedParam{Name: scopeParam, Value: field.AttributeScope},
+		search.NamedParam{Name: keyParam, Value: field.Name},
+	)
+
 	switch field.AttributeScope {
 	case "resource", "scope", "log":
-		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.log_id = l.id AND a.scope = '%s' AND a.key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
+		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.log_id = l.id AND a.scope = %s AND a.key = %s LIMIT 1)", scopeParam, keyParam)
 		return []string{expr}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidLogQuery)
@@ -285,7 +308,22 @@ func mapLogAttributeExpressions(field *search.FieldDefinition) ([]string, error)
 
 func mapLogGlobalExpressions() ([]string, error) {
 	return []string{
-		"l.search_text = ?",
-		"EXISTS(SELECT 1 FROM attributes a WHERE a.log_id = l.id AND (a.key = ? OR a.value = ?))",
+		"CAST(l.body AS VARCHAR) {COND}",
+		"CAST(l.severity_text AS VARCHAR) {COND}",
+		"CAST(l.severity_number AS VARCHAR) {COND}",
+		"CAST(l.event_name AS VARCHAR) {COND}",
+		"CAST(l.scope_name AS VARCHAR) {COND}",
+		"CAST(l.scope_version AS VARCHAR) {COND}",
+		`EXISTS(
+			SELECT 1
+			FROM attributes a
+			WHERE a.log_id = l.id AND (
+				a.key {COND} OR a.value {COND} OR
+				(a.type = 'string[]' AND list_contains(CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
+				(a.type = 'int64[]' AND list_contains(CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
+				(a.type = 'float64[]' AND list_contains(CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
+				(a.type = 'boolean[]' AND list_contains(CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+			)
+		)`,
 	}, nil
 }

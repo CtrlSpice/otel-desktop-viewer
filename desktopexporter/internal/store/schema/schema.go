@@ -25,8 +25,7 @@ var TableCreationQueries = []string{
 		dropped_events_count uinteger,
 		dropped_links_count uinteger,
 		status_code varchar,
-		status_message varchar,
-		search_text varchar
+		status_message varchar
 	)`,
 	`create table if not exists events (
 		id uuid primary key,
@@ -34,7 +33,6 @@ var TableCreationQueries = []string{
 		name varchar,
 		timestamp bigint,
 		dropped_attributes_count uinteger,
-		search_text varchar,
 		foreign key (span_id) references spans(span_id)
 	)`,
 	`create table if not exists links (
@@ -44,7 +42,6 @@ var TableCreationQueries = []string{
 		linked_span_id uuid,
 		trace_state varchar,
 		dropped_attributes_count uinteger,
-		search_text varchar,
 		foreign key (span_id) references spans(span_id)
 	)`,
 	`create table if not exists logs (
@@ -63,8 +60,7 @@ var TableCreationQueries = []string{
 		scope_dropped_attributes_count uinteger,
 		dropped_attributes_count uinteger,
 		flags uinteger,
-		event_name varchar,
-		search_text varchar
+		event_name varchar
 	)`,
 	`create table if not exists metrics (
 		id uuid primary key,
@@ -75,8 +71,7 @@ var TableCreationQueries = []string{
 		scope_name varchar,
 		scope_version varchar,
 		scope_dropped_attributes_count uinteger,
-		received bigint,
-		search_text varchar
+		received bigint
 	)`,
 	`create table if not exists datapoints (
 		id uuid primary key,
@@ -215,10 +210,8 @@ var IndexCreationQueries = []string{
 	`create index if not exists idx_logs_timestamp on logs(timestamp)`,
 	`create index if not exists idx_logs_traceid on logs(trace_id)`,
 	`create index if not exists idx_logs_severitynumber on logs(severity_number)`,
-	`create index if not exists idx_logs_searchtext on logs(search_text)`,
 	`create index if not exists idx_metrics_name on metrics(name)`,
 	`create index if not exists idx_metrics_received on metrics(received)`,
-	`create index if not exists idx_metrics_searchtext on metrics(search_text)`,
 	`create index if not exists idx_datapoints_type_metric_time on datapoints(metric_type, metric_id, timestamp desc)`,
 	`create index if not exists idx_datapoints_metric_time on datapoints(metric_id, timestamp desc)`,
 	`create index if not exists idx_datapoints_time on datapoints(timestamp desc)`,

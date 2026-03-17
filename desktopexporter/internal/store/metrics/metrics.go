@@ -7,14 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
-	"github.com/google/uuid"
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
@@ -46,10 +45,6 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 			for _, metric := range scopeMetric.Metrics().All() {
 				metricID := duckdb.UUID(uuid.New())
 				received := time.Now().UnixNano()
-				metricSearchText := strings.Join([]string{
-					metric.Name(), metric.Description(), metric.Unit(),
-					scope.Name(), scope.Version(),
-				}, " ")
 				err = appenders["metrics"].AppendRow(
 					metricID,                          // ID UUID
 					metric.Name(),                     // Name VARCHAR
@@ -60,7 +55,6 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 					scope.Version(),                   // ScopeVersion VARCHAR
 					scope.DroppedAttributesCount(),    // ScopeDroppedAttributesCount UINTEGER
 					received,                          // Received BIGINT
-					metricSearchText,                  // SearchText VARCHAR
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
@@ -384,8 +378,21 @@ func buildMetricSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteS
 	return search.BuildSearchSQL(queryNode, startTime, endTime, metricFieldMapper(), timeCondition)
 }
 
+var metricColumns = map[string]struct{}{
+	"id":                                {},
+	"name":                              {},
+	"description":                       {},
+	"unit":                              {},
+	"type":                              {},
+	"received":                          {},
+	"resource_dropped_attributes_count": {},
+	"scope_name":                        {},
+	"scope_version":                     {},
+	"scope_dropped_attributes_count":    {},
+}
+
 func metricFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition) ([]string, error) {
+	return func(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapMetricFieldExpression(field)
@@ -394,7 +401,7 @@ func metricFieldMapper() search.FieldMapper {
 			}
 			return []string{expr}, nil
 		case "attribute":
-			return mapMetricAttributeExpressions(field)
+			return mapMetricAttributeExpressions(field, params)
 		case "global":
 			return mapMetricGlobalExpressions()
 		default:
@@ -420,14 +427,26 @@ func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 	case "scope.version", "scopeVersion":
 		return "m.scope_version", nil
 	default:
-		return "m." + util.CamelToSnake(name), nil
+		col := util.CamelToSnake(name)
+		if err := util.ValidateColumnName(col, metricColumns); err != nil {
+			return "", fmt.Errorf("metric field %q: %w: %w", name, err, ErrInvalidMetricQuery)
+		}
+		return "m." + col, nil
 	}
 }
 
-func mapMetricAttributeExpressions(field *search.FieldDefinition) ([]string, error) {
+func mapMetricAttributeExpressions(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+	idx := len(*params)
+	scopeParam := fmt.Sprintf("attr_scope_%d", idx)
+	keyParam := fmt.Sprintf("attr_key_%d", idx+1)
+	*params = append(*params,
+		search.NamedParam{Name: scopeParam, Value: field.AttributeScope},
+		search.NamedParam{Name: keyParam, Value: field.Name},
+	)
+
 	switch field.AttributeScope {
 	case "resource", "scope", "metric":
-		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.metric_id = m.id AND a.datapoint_id IS NULL AND a.exemplar_id IS NULL AND a.scope = '%s' AND a.key = '%s' LIMIT 1)", field.AttributeScope, field.Name)
+		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.metric_id = m.id AND a.datapoint_id IS NULL AND a.exemplar_id IS NULL AND a.scope = %s AND a.key = %s LIMIT 1)", scopeParam, keyParam)
 		return []string{expr}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidMetricQuery)
@@ -436,7 +455,21 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition) ([]string, err
 
 func mapMetricGlobalExpressions() ([]string, error) {
 	return []string{
-		"m.search_text = ?",
-		"EXISTS(SELECT 1 FROM attributes a WHERE a.metric_id = m.id AND (a.key = ? OR a.value = ?))",
+		"CAST(m.name AS VARCHAR) {COND}",
+		"CAST(m.description AS VARCHAR) {COND}",
+		"CAST(m.unit AS VARCHAR) {COND}",
+		"CAST(m.scope_name AS VARCHAR) {COND}",
+		"CAST(m.scope_version AS VARCHAR) {COND}",
+		`EXISTS(
+			SELECT 1
+			FROM attributes a
+			WHERE a.metric_id = m.id AND (
+				a.key {COND} OR a.value {COND} OR
+				(a.type = 'string[]' AND list_contains(CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
+				(a.type = 'int64[]' AND list_contains(CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
+				(a.type = 'float64[]' AND list_contains(CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
+				(a.type = 'boolean[]' AND list_contains(CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+			)
+		)`,
 	}, nil
 }

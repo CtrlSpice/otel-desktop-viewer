@@ -557,8 +557,8 @@ func TestMetricSuite(t *testing.T) {
 		assert.Len(t, metrics, 5)
 	})
 
-	// Global search (mapMetricGlobalExpressions: m.SearchText and attributes)
-	t.Run("GlobalSearch_SearchText", func(t *testing.T) {
+	// Global search (mapMetricGlobalExpressions: explicit fields + attributes)
+	t.Run("GlobalSearch_Description", func(t *testing.T) {
 		query := map[string]any{
 			"id":   "g1",
 			"type": "condition",
@@ -572,7 +572,7 @@ func TestMetricSuite(t *testing.T) {
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
-		assert.Len(t, metrics, 1, "SearchText contains 'memory' (gauge description)")
+		assert.Len(t, metrics, 1, "description contains 'memory' (gauge description)")
 		assert.Equal(t, "gauge_metric", metrics[0]["name"])
 	})
 
