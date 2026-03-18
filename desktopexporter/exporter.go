@@ -2,6 +2,7 @@ package desktopexporter
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 )
 
 type desktopExporter struct {
@@ -20,25 +24,40 @@ type desktopExporter struct {
 	store  *store.Store
 }
 
-func newDesktopExporter(cfg *Config) *desktopExporter {
-	store := store.NewStore(context.Background(), cfg.Db)
-	server := server.NewServer(cfg.Endpoint, store)
-	return &desktopExporter{
-		server: server,
-		store:  store,
+func newDesktopExporter(cfg *Config) (*desktopExporter, error) {
+	str, err := store.NewStore(context.Background(), cfg.Db)
+	if err != nil {
+		return nil, err
 	}
+
+	srv, err := server.NewServer(cfg.Endpoint, str)
+	if err != nil {
+		str.Close()
+		return nil, err
+	}
+
+	return &desktopExporter{
+		server: srv,
+		store:  str,
+	}, nil
 }
 
 func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
-	return e.store.IngestSpans(ctx, source)
+	return e.store.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, source)
+	})
 }
 
 func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {
-	return e.store.IngestMetrics(ctx, source)
+	return e.store.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, source)
+	})
 }
 
 func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error {
-	return e.store.IngestLogs(ctx, source)
+	return e.store.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, source)
+	})
 }
 
 func (e *desktopExporter) Start(ctx context.Context, host component.Host) error {

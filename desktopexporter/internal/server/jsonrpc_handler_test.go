@@ -3,19 +3,27 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
+	"database/sql/driver"
+
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"golang.org/x/exp/jsonrpc2"
 )
 
-func setupHandler() (*JSONRPCHandler, func()) {
-	s := store.NewStore(context.Background(), "")
+func setupHandler(t *testing.T) (*JSONRPCHandler, func()) {
+	t.Helper()
+	s, err := store.NewStore(context.Background(), "")
+	require.NoError(t, err)
 	handler := NewJSONRPCHandler(s)
 	return handler, func() {
 		s.Close()
@@ -53,14 +61,20 @@ func buildTestLogs() plog.Logs {
 }
 
 func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
-	s := store.NewStore(context.Background(), "")
+	t.Helper()
+	s, err := store.NewStore(context.Background(), "")
+	require.NoError(t, err)
 	handler := NewJSONRPCHandler(s)
 	ctx := context.Background()
 
-	err := s.IngestSpans(ctx, buildTestTraces())
+	err = s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, buildTestTraces())
+	})
 	assert.NoError(t, err, "ingest spans")
 
-	err = s.IngestLogs(ctx, buildTestLogs())
+	err = s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, buildTestLogs())
+	})
 	assert.NoError(t, err, "ingest logs")
 
 	return handler, func() {
@@ -77,14 +91,14 @@ func createRequest(method string, params any) *jsonrpc2.Request {
 	}
 }
 
-const testTraceIDHex = "00000000000000000000000000000001"
+const testTraceIDHex = "00000000-0000-0000-0000-000000000001"
 
 func TestSearchTraces(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		handler, teardown := setupHandler()
+		handler, teardown := setupHandler(t)
 		defer teardown()
 
-		req := createRequest("searchTraces", []any{0, 1<<63 - 1})
+		req := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -99,7 +113,7 @@ func TestSearchTraces(t *testing.T) {
 		handler, teardown := setupHandlerWithData(t)
 		defer teardown()
 
-		req := createRequest("searchTraces", []any{0, 1<<63 - 1})
+		req := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -107,7 +121,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
 		var summaries []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &summaries))
-		assert.Len(t, summaries, 1)
+		require.Len(t, summaries, 1, "searchTraces should return the ingested trace")
 		assert.Equal(t, testTraceIDHex, summaries[0]["traceID"])
 	})
 }
@@ -131,7 +145,7 @@ func TestGetTraceByID(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		req := createRequest("getTraceByID", []string{"nonexistent"})
+		req := createRequest("getTraceByID", []string{"00000000-0000-0000-0000-000000000099"})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.Error(t, err)
@@ -150,7 +164,7 @@ func TestClearTraces(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "Traces cleared successfully", result)
 
-	searchReq := createRequest("searchTraces", []any{0, 1<<63 - 1})
+	searchReq := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 	searchResult, searchErr := handler.Handle(context.Background(), searchReq)
 	assert.NoError(t, searchErr)
 	raw, ok := searchResult.(json.RawMessage)
@@ -162,10 +176,10 @@ func TestClearTraces(t *testing.T) {
 
 func TestSearchLogs(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		handler, teardown := setupHandler()
+		handler, teardown := setupHandler(t)
 		defer teardown()
 
-		req := createRequest("searchLogs", []any{0, 1<<63 - 1})
+		req := createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -180,7 +194,7 @@ func TestSearchLogs(t *testing.T) {
 		handler, teardown := setupHandlerWithData(t)
 		defer teardown()
 
-		req := createRequest("searchLogs", []any{0, 1<<63 - 1})
+		req := createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -188,18 +202,18 @@ func TestSearchLogs(t *testing.T) {
 		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
 		var entries []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &entries))
-		assert.Len(t, entries, 1)
+		require.Len(t, entries, 1, "searchLogs should return the ingested log")
 		assert.Equal(t, "test log message", entries[0]["body"])
 	})
 }
 
 func TestGetTraceAttributes(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		handler, teardown := setupHandler()
+		handler, teardown := setupHandler(t)
 		defer teardown()
 
 		now := time.Now().UnixNano()
-		req := createRequest("getTraceAttributes", []any{now - 24*time.Hour.Nanoseconds(), now + 24*time.Hour.Nanoseconds()})
+		req := createRequest("getTraceAttributes", []string{strconv.FormatInt(now-24*time.Hour.Nanoseconds(), 10), strconv.FormatInt(now+24*time.Hour.Nanoseconds(), 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -213,7 +227,7 @@ func TestGetTraceAttributes(t *testing.T) {
 		defer teardown()
 
 		now := time.Now().UnixNano()
-		req := createRequest("getTraceAttributes", []any{now - 24*time.Hour.Nanoseconds(), now + 24*time.Hour.Nanoseconds()})
+		req := createRequest("getTraceAttributes", []string{strconv.FormatInt(now-24*time.Hour.Nanoseconds(), 10), strconv.FormatInt(now+24*time.Hour.Nanoseconds(), 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -239,7 +253,7 @@ func TestGetTraceAttributes(t *testing.T) {
 	})
 
 	t.Run("Invalid Parameters", func(t *testing.T) {
-		handler, teardown := setupHandler()
+		handler, teardown := setupHandler(t)
 		defer teardown()
 
 		req := createRequest("getTraceAttributes", []string{"123"})
@@ -251,7 +265,7 @@ func TestGetTraceAttributes(t *testing.T) {
 	})
 
 	t.Run("Invalid Parameter Types", func(t *testing.T) {
-		handler, teardown := setupHandler()
+		handler, teardown := setupHandler(t)
 		defer teardown()
 
 		req := createRequest("getTraceAttributes", []string{"pumpkin", "pie"})
@@ -264,7 +278,7 @@ func TestGetTraceAttributes(t *testing.T) {
 }
 
 func TestMethodNotFound(t *testing.T) {
-	handler, teardown := setupHandler()
+	handler, teardown := setupHandler(t)
 	defer teardown()
 
 	req := createRequest("nonexistentMethod", nil)
@@ -277,10 +291,10 @@ func TestMethodNotFound(t *testing.T) {
 
 // TestSearchLogsInvalidParams ensures searchLogs with wrong param count returns ErrInvalidParams.
 func TestSearchLogsInvalidParams(t *testing.T) {
-	handler, teardown := setupHandler()
+	handler, teardown := setupHandler(t)
 	defer teardown()
 
-	req := createRequest("searchLogs", []any{0}) // only one param
+	req := createRequest("searchLogs", []string{"0"}) // only one param
 	result, err := handler.Handle(context.Background(), req)
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -289,10 +303,10 @@ func TestSearchLogsInvalidParams(t *testing.T) {
 
 // TestSearchMetricsInvalidParams ensures searchMetrics with wrong param count returns ErrInvalidParams.
 func TestSearchMetricsInvalidParams(t *testing.T) {
-	handler, teardown := setupHandler()
+	handler, teardown := setupHandler(t)
 	defer teardown()
 
-	req := createRequest("searchMetrics", []any{0}) // only one param
+	req := createRequest("searchMetrics", []string{"0"}) // only one param
 	result, err := handler.Handle(context.Background(), req)
 	assert.Error(t, err)
 	assert.Nil(t, result)

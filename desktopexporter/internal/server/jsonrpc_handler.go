@@ -7,6 +7,9 @@ import (
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"golang.org/x/exp/jsonrpc2"
 )
 
@@ -77,10 +80,10 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 	}
 
 	log.Printf("searchTraces query parameter: %+v", query)
-	summaries, err := h.store.SearchTraces(ctx, startTime, endTime, query)
+	summaries, err := spans.SearchTraces(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
 		log.Printf("Error searching traces: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return summaries, nil
 }
@@ -96,20 +99,20 @@ func (h *JSONRPCHandler) getTraceByID(ctx context.Context, req *jsonrpc2.Request
 	}
 
 	traceID := params[0]
-	trace, err := h.store.GetTrace(ctx, traceID)
+	trace, err := spans.GetTrace(ctx, h.store.DB(), traceID)
 	if err != nil {
 		log.Printf("Error getting trace by ID: %v", err)
-		return nil, ErrTraceNotFound
+		return nil, mapStoreError(err)
 	}
 
 	return trace, nil
 }
 
 func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
-	err := h.store.ClearTraces(ctx)
+	err := spans.Clear(ctx, h.store.DB())
 	if err != nil {
 		log.Printf("Error clearing traces: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return "Traces cleared successfully", nil
 }
@@ -136,19 +139,19 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 	if len(params) == 3 {
 		query = params[2]
 	}
-	logs, err := h.store.SearchLogs(ctx, startTime, endTime, query)
+	result, err := logs.Search(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
 		log.Printf("Error searching logs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
-	return logs, nil
+	return result, nil
 }
 
 func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
-	err := h.store.ClearLogs(ctx)
+	err := logs.Clear(ctx, h.store.DB())
 	if err != nil {
 		log.Printf("Error clearing logs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return "Logs cleared successfully", nil
 }
@@ -175,19 +178,19 @@ func (h *JSONRPCHandler) searchMetrics(ctx context.Context, req *jsonrpc2.Reques
 	if len(params) == 3 {
 		query = params[2]
 	}
-	metrics, err := h.store.SearchMetrics(ctx, startTime, endTime, query)
+	result, err := metrics.Search(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
 		log.Printf("Error searching metrics: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
-	return metrics, nil
+	return result, nil
 }
 
 func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
-	err := h.store.ClearMetrics(ctx)
+	err := metrics.Clear(ctx, h.store.DB())
 	if err != nil {
 		log.Printf("Error clearing metrics: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 	return "Metrics cleared successfully", nil
 }
@@ -203,10 +206,10 @@ func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	err := h.store.DeleteSpansByTraceIDs(ctx, params)
+	err := spans.DeleteSpansByTraceIDs(ctx, h.store.DB(), params)
 	if err != nil {
 		log.Printf("Error deleting spans by trace IDs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
@@ -226,10 +229,10 @@ func (h *JSONRPCHandler) deleteSpanByID(ctx context.Context, req *jsonrpc2.Reque
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	err := h.store.DeleteSpansByIDs(ctx, params)
+	err := spans.DeleteSpansByIDs(ctx, h.store.DB(), params)
 	if err != nil {
 		log.Printf("Error deleting spans by IDs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
@@ -249,10 +252,10 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	err := h.store.DeleteLogsByIDs(ctx, params)
+	err := logs.DeleteLogsByIDs(ctx, h.store.DB(), params)
 	if err != nil {
 		log.Printf("Error deleting logs by IDs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
@@ -272,10 +275,10 @@ func (h *JSONRPCHandler) deleteMetricByID(ctx context.Context, req *jsonrpc2.Req
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	err := h.store.DeleteMetricsByIDs(ctx, params)
+	err := metrics.DeleteMetricsByIDs(ctx, h.store.DB(), params)
 	if err != nil {
 		log.Printf("Error deleting metrics by IDs: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
@@ -306,29 +309,28 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 		return nil, err
 	}
 
-	attributes, err := h.store.GetTraceAttributes(ctx, startTime, endTime)
+	attributes, err := spans.GetTraceAttributes(ctx, h.store.DB(), startTime, endTime)
 	if err != nil {
 		log.Printf("Error getting trace attributes: %v", err)
-		return nil, jsonrpc2.ErrInternal
+		return nil, mapStoreError(err)
 	}
 
 	return attributes, nil
 }
 
-// Helper function to parse timestamp parameters (string or numeric from JSON).
+// parseTimestampParam parses a timestamp parameter that must be a JSON string
+// containing a base-10 int64. Large integers travel as strings to avoid
+// float64 precision loss in JSON.
 func parseTimestampParam(param any, paramName string) (int64, error) {
-	switch v := param.(type) {
-	case string:
-		parsed, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			log.Printf("Invalid %s string: %v", paramName, err)
-			return 0, jsonrpc2.ErrInvalidParams
-		}
-		return parsed, nil
-	case float64:
-		return int64(v), nil
-	default:
-		log.Printf("Invalid %s type: %T, value: %v", paramName, param, param)
+	s, ok := param.(string)
+	if !ok {
+		log.Printf("Invalid %s type: %T, value: %v (expected string)", paramName, param, param)
 		return 0, jsonrpc2.ErrInvalidParams
 	}
+	parsed, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		log.Printf("Invalid %s string: %v", paramName, err)
+		return 0, jsonrpc2.ErrInvalidParams
+	}
+	return parsed, nil
 }

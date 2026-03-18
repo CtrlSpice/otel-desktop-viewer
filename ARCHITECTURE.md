@@ -1,14 +1,10 @@
 # axolotel Architecture Decisions
 
-For the actionable checklist, see [TODO.md](TODO.md).
-
 ---
 
-## Core Architectural Decision: JSON Rows from DuckDB
+## JSON Rows from DuckDB
 
-**This is the foundation - implement this first in Phase 2.**
-
-### The Approach
+### Approach
 
 Have DuckDB output each query row as a JSON object, eliminating all intermediate Go structs:
 
@@ -41,33 +37,21 @@ for rows.Next() {
 return jsonRows, nil  // jsonrpc2 marshals as JSON array
 ```
 
-### Why This Changes Everything
+### Rationale
 
-**Before:**
-- OTLP → Go structs → DuckDB (storage)
-- DuckDB → Go structs → JSON (responses)
-- Two sets of structs, scanning, marshaling
+Previously, the data path required two sets of Go structs: one to scan DuckDB rows into, and one to marshal into JSON for RPC responses. This approach eliminates both by having DuckDB produce JSON directly.
 
-**After:**
-- OTLP → DuckDB (direct, no structs)
-- DuckDB → JSON rows (direct, no structs)
-- Zero intermediate structs anywhere
+- Response shape is defined in SQL (`json_object(...)`) rather than duplicated across Go struct tags
+- No intermediate scanning or marshaling step
+- The JSON-RPC layer receives `[]json.RawMessage` and forwards it as-is
 
-### Impact on Architecture
+The trade-off is that response structure is less statically typed on the Go side — it lives in SQL instead. This is acceptable given that the frontend is the primary consumer and the schema is stable.
 
-1. **Phase 1 (Schema)**: No change - still need STRUCT(v,t) instead of UNION
-2. **Phase 2 (Server)**: This IS the approach - all queries output JSON rows
-3. **Phase 3-10 (Frontend)**: No change - frontend still receives JSON, just built differently
-4. **Type Safety**: Response structure lives in SQL, not Go structs (trade-off for simplicity)
-5. **Debugging**: Inspect JSON strings instead of structs (acceptable trade-off)
+### Status
 
-### Implementation Order
-
-1. **First**: Update one query (e.g., `getTraceSummaries`) to output JSON rows
-2. **Then**: Update all other queries to follow the same pattern
-3. **Finally**: Remove all response struct definitions
-
-This becomes the pattern for all JSON-RPC methods.
+- **Schema (Phase 1)**: Complete — normalized tables for attributes, events, links, datapoints, exemplars
+- **Query layer (Phase 2)**: In progress — queries are being migrated to `json_object(...)` output
+- **Frontend (Phase 3+)**: Unaffected — receives the same JSON shape, just produced differently
 
 ---
 
@@ -78,23 +62,22 @@ Related: [TODO.md - Phase 1](TODO.md#phase-1-database-schema-rework)
 ### Summary of Current Schema
 
 **Key Design Decisions:**
-- **TraceID/SpanID**: Stored as BLOB (binary) - TraceID is 16 bytes (128-bit), SpanID is 8 bytes (64-bit)
-- **Self-generating IDs**: Use DuckDB's native UUID type for `events.ID`, `links.ID`, `logs.ID`, `metrics.ID`, `datapoints.ID`, `exemplars.ID`
+- **All IDs stored as UUID**: TraceID, SpanID, ParentSpanID, and all foreign-key columns use DuckDB's native `uuid` type
 - **Normalized tables**: Events, links, exemplars, datapoints, and attributes are in separate tables
 - **Single datapoints table**: All metric types in one table with NULLs (optimized for columnar storage)
-- **Attributes table**: Separate ID columns (`SpanID BLOB`, `EventID UUID`, `LinkID UUID`, etc.) with foreign keys and CHECK constraints
+- **Attributes table**: Separate ID columns (all `uuid`) with foreign keys and CHECK constraints
 - **Depth calculation**: Query-time using recursive CTEs (not stored)
 - **CHECK constraints**: Enforce discriminated union patterns for `datapoints` (based on `MetricType`) and `attributes` (based on ID column combinations)
 
 **Schema Highlights:**
-- `spans`: TraceID/SpanID/ParentSpanID as BLOB, no nested arrays (events/links normalized)
-- `events`: ID as UUID (self-generating), SpanID as BLOB
-- `links`: ID as UUID (self-generating), SpanID/TraceID/LinkedSpanID as BLOB
-- `logs`: ID as UUID (self-generating), TraceID/SpanID as BLOB, Body as VARCHAR + BodyType
-- `metrics`: ID as UUID (self-generating), no MetricType (moved to datapoints)
-- `datapoints`: ID as UUID (self-generating), MetricID as UUID, MetricType with CHECK constraints
-- `exemplars`: ID as UUID (self-generating), DataPointID as UUID, TraceID/SpanID as BLOB
-- `attributes`: Separate ID columns with foreign keys, CHECK constraint for discriminated union, covering indexes
+- `spans`: `trace_id uuid`, `span_id uuid primary key`, `parent_span_id uuid`, no nested arrays (events/links normalized)
+- `events`: `id uuid primary key`, `span_id uuid` FK
+- `links`: `id uuid primary key`, `span_id uuid`, `trace_id uuid`, `linked_span_id uuid`
+- `logs`: `id uuid primary key`, `trace_id uuid`, `span_id uuid`, `body varchar`, `body_type varchar`
+- `metrics`: `id uuid primary key`, no MetricType (moved to datapoints)
+- `datapoints`: `id uuid primary key`, `metric_id uuid` FK, MetricType with CHECK constraints
+- `exemplars`: `id uuid primary key`, `datapoint_id uuid` FK, `trace_id uuid`, `span_id uuid`
+- `attributes`: all ID columns are `uuid`, foreign keys on each, CHECK constraint for discriminated union, covering indexes
 
 ### Problem
 
@@ -152,18 +135,22 @@ Normalize events, links, and exemplars into separate tables for better queryabil
 - Frontend can use `.t` to render values appropriately
 - This should fix AppenderWrapper memory issues (currently flushing every 10 rows due to reflection overhead)
 
+---
+
+## Search System
+
+Search queries are built from a frontend query tree and translated into SQL.
+
+- **Parameter handling**: query values are collected in an ordered parameter list to ensure CTE column order matches positional binding.
+- **Placeholder token**: expressions use an explicit placeholder token (`{COND}`) to avoid accidental rewriting of valid SQL; a separate raw-value token (`{RAW}`) supports array containment checks.
+- **Global search**: implemented as a set of per-field and per-scope expressions (scalar fields cast to strings plus attribute key/value search); array attribute values use `list_contains` with `TRY_CAST` to avoid conversion errors.
+
 ### Additional Changes
 
-**TraceID and SpanID storage:**
-- Store as BLOB (binary) instead of VARCHAR for efficiency
-- TraceID: 16 bytes (128-bit)
-- SpanID: 8 bytes (64-bit)
-- CHECK constraints enforce fixed sizes
-
-**Self-generating IDs:**
-- Use DuckDB's native UUID type for self-generating primary keys
-- `events.ID`, `links.ID`, `logs.ID`, `metrics.ID`, `datapoints.ID`, `exemplars.ID` all use `UUID PRIMARY KEY DEFAULT gen_random_uuid()`
-- Only `spans.SpanID` remains as BLOB (comes from OpenTelemetry)
+**All IDs stored as UUID:**
+- Every ID column — including `trace_id`, `span_id`, `parent_span_id`, and all foreign-key references — uses DuckDB's native `uuid` type
+- OpenTelemetry 8-byte span IDs are zero-padded to 16 bytes (UUID format) on ingest
+- No BLOB columns anywhere in the schema
 
 **Depth calculation:**
 - Calculated at query time using recursive CTEs (not stored)
@@ -440,14 +427,14 @@ Instead of separate tables (`span_attributes`, `event_attributes`, `log_attribut
 
 ```sql
 CREATE TABLE attributes (
-    -- Only relevant ID columns populated per row
-    SpanID BLOB,      -- Populated for span/resource/scope attributes
+    -- All ID columns are UUID; only the relevant ones are populated per row
+    SpanID UUID,      -- Populated for span/resource/scope attributes
     EventID UUID,     -- Populated for event attributes (with SpanID as parent)
     LinkID UUID,      -- Populated for link attributes (with SpanID as parent)
     LogID UUID,       -- Populated for log attributes
     MetricID UUID,    -- Populated for metric attributes
     DataPointID UUID, -- Populated for data point attributes (with MetricID as parent)
-    ExemplarID UUID,   -- Populated for exemplar attributes (with DataPointID + MetricID as parents)
+    ExemplarID UUID,  -- Populated for exemplar attributes (with DataPointID + MetricID as parents)
     Key VARCHAR NOT NULL,
     Value VARCHAR NOT NULL,
     Type attr_type NOT NULL
@@ -484,21 +471,21 @@ CREATE TABLE attributes (
 **Final structure:**
 ```sql
 CREATE TABLE attributes (
-    -- ID columns (only relevant ones populated per row based on attribute scope)
-    -- For span/resource/scope attributes: SpanID only (BLOB, 8 bytes from OpenTelemetry)
-    -- For event attributes: EventID (direct, UUID), SpanID (parent, BLOB, 8 bytes)
-    -- For link attributes: LinkID (direct, UUID), SpanID (parent, BLOB, 8 bytes)
-    -- For log/resource/scope attributes: LogID only (UUID, references logs.ID)
-    -- For metric/resource/scope attributes: MetricID only (UUID, references metrics.ID)
-    -- For data_point attributes: DataPointID (direct, UUID), MetricID (parent, UUID)
-    -- For exemplar attributes: ExemplarID (direct, UUID), DataPointID (parent, UUID), MetricID (grandparent, UUID)
-    SpanID BLOB,      -- 8 bytes (from OpenTelemetry)
-    EventID UUID,     -- Self-generating UUID
-    LinkID UUID,      -- Self-generating UUID
-    LogID UUID,       -- Self-generating UUID
-    MetricID UUID,    -- Self-generating UUID
-    DataPointID UUID, -- Self-generating UUID
-    ExemplarID UUID,  -- Self-generating UUID
+    -- All ID columns are UUID; only the relevant ones are populated per row
+    -- For span/resource/scope attributes: SpanID only
+    -- For event attributes: EventID (direct), SpanID (parent)
+    -- For link attributes: LinkID (direct), SpanID (parent)
+    -- For log/resource/scope attributes: LogID only
+    -- For metric/resource/scope attributes: MetricID only
+    -- For data_point attributes: DataPointID (direct), MetricID (parent)
+    -- For exemplar attributes: ExemplarID (direct), DataPointID (parent), MetricID (grandparent)
+    SpanID UUID,
+    EventID UUID,
+    LinkID UUID,
+    LogID UUID,
+    MetricID UUID,
+    DataPointID UUID,
+    ExemplarID UUID,
     -- Attribute data
     Key VARCHAR NOT NULL,
     Value VARCHAR NOT NULL,
@@ -638,8 +625,8 @@ CREATE INDEX idx_attributes_key_value ON attributes(Key, Value, Type);
 ```sql
 -- Events table
 CREATE TABLE events (
-    ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    SpanID BLOB NOT NULL,  -- 8 bytes (from OpenTelemetry)
+    ID UUID PRIMARY KEY,
+    SpanID UUID NOT NULL,
     Name VARCHAR,
     Timestamp BIGINT,
     DroppedAttributesCount UINTEGER,
@@ -648,10 +635,10 @@ CREATE TABLE events (
 
 -- Links table
 CREATE TABLE links (
-    ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    SpanID BLOB NOT NULL,      -- 8 bytes (from OpenTelemetry)
-    TraceID BLOB,              -- 16 bytes (from OpenTelemetry)
-    LinkedSpanID BLOB,         -- 8 bytes (from OpenTelemetry)
+    ID UUID PRIMARY KEY,
+    SpanID UUID NOT NULL,
+    TraceID UUID,
+    LinkedSpanID UUID,
     TraceState VARCHAR,
     DroppedAttributesCount UINTEGER,
     FOREIGN KEY (SpanID) REFERENCES spans(SpanID)
@@ -659,12 +646,12 @@ CREATE TABLE links (
 
 -- Exemplars table
 CREATE TABLE exemplars (
-    ID UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ID UUID PRIMARY KEY,
     DataPointID UUID NOT NULL,
     Timestamp BIGINT,
     Value DOUBLE,
-    TraceID BLOB,  -- 16 bytes (from OpenTelemetry)
-    SpanID BLOB,   -- 8 bytes (from OpenTelemetry)
+    TraceID UUID,
+    SpanID UUID,
     FOREIGN KEY (DataPointID) REFERENCES datapoints(ID)
 );
 ```
@@ -675,15 +662,14 @@ Normalize attributes for efficient querying and discovery, using separate ID col
 
 ```sql
 CREATE TABLE attributes (
-    -- ID columns (only relevant ones populated per row)
-    -- SpanID is BLOB (8 bytes), others are UUID (self-generating)
-    SpanID BLOB,      -- 8 bytes (from OpenTelemetry)
-    EventID UUID,     -- Self-generating UUID
-    LinkID UUID,      -- Self-generating UUID
-    LogID UUID,       -- Self-generating UUID
-    MetricID UUID,    -- Self-generating UUID
-    DataPointID UUID, -- Self-generating UUID
-    ExemplarID UUID,  -- Self-generating UUID
+    -- All ID columns are UUID; only the relevant ones are populated per row
+    SpanID UUID,
+    EventID UUID,
+    LinkID UUID,
+    LogID UUID,
+    MetricID UUID,
+    DataPointID UUID,
+    ExemplarID UUID,
     -- Attribute data
     Key VARCHAR NOT NULL,
     Value VARCHAR NOT NULL,

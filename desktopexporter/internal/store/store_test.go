@@ -2,13 +2,19 @@ package store
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -19,35 +25,6 @@ type storeTest struct {
 	name    string
 	dbPath  string
 	cleanup func()
-}
-
-// TestHelper holds common test dependencies
-type TestHelper struct {
-	T     *testing.T
-	Ctx   context.Context
-	Store *Store
-}
-
-// SetupTest creates a new test helper and returns a teardown function
-func SetupTest(t *testing.T) (*TestHelper, func()) {
-	ctx := context.Background()
-	store := NewStore(ctx, "")
-
-	assert.NotNil(t, store, "store should not be nil")
-
-	helper := &TestHelper{
-		T:     t,
-		Ctx:   ctx,
-		Store: store,
-	}
-
-	teardown := func() {
-		if helper.Store != nil {
-			helper.Store.Close()
-		}
-	}
-
-	return helper, teardown
 }
 
 // TestStore runs a comprehensive suite of tests on the store.
@@ -128,8 +105,8 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			ctx := context.Background()
 
 			// Test store initialization
-			s := NewStore(ctx, tt.dbPath)
-			assert.NotNil(t, s, "store should not be nil")
+			s, err := NewStore(ctx, tt.dbPath)
+			require.NoError(t, err, "store should initialize without error")
 			assert.NotNil(t, s.db, "database connection should not be nil")
 			assert.NotNil(t, s.conn, "duckdb connection should not be nil")
 
@@ -142,31 +119,37 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 
 			// Ingest two traces, three logs, and one metric via pdata
 			traces := buildStoreTestTraces()
-			err := s.IngestSpans(ctx, traces)
+			err = s.WithConn(func(conn driver.Conn) error {
+				return spans.Ingest(ctx, conn, traces)
+			})
 			assert.NoError(t, err, "spans table should exist and accept data")
 
-			logs := buildStoreTestLogs()
-			err = s.IngestLogs(ctx, logs)
+			logData := buildStoreTestLogs()
+			err = s.WithConn(func(conn driver.Conn) error {
+				return logs.Ingest(ctx, conn, logData)
+			})
 			assert.NoError(t, err, "logs table should exist and accept data")
 
-			metrics := buildStoreTestMetrics()
-			err = s.IngestMetrics(ctx, metrics)
+			metricData := buildStoreTestMetrics()
+			err = s.WithConn(func(conn driver.Conn) error {
+				return metrics.Ingest(ctx, conn, metricData)
+			})
 			assert.NoError(t, err, "metrics table should exist and accept data")
 
 			// Verify data was inserted correctly
-			summariesRaw, err := s.SearchTraces(ctx, 0, 1<<63-1, nil)
+			summariesRaw, err := spans.SearchTraces(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries")
-			var summaries []traceSummaryJSON
+			var summaries []map[string]any
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 			assert.Len(t, summaries, 2, "should have two traces")
 
-			logsRaw, err := s.SearchLogs(ctx, 0, 1<<63-1, nil)
+			logsRaw, err := logs.Search(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve logs")
 			var logEntries []any
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 			assert.Len(t, logEntries, 3, "should have three logs")
 
-			metricsRaw, err := s.SearchMetrics(ctx, 0, 1<<63-1, nil)
+			metricsRaw, err := metrics.Search(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve metrics")
 			var metricEntries []any
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
@@ -177,21 +160,21 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, err, "store should close without error")
 
 			// Test store reopening
-			s = NewStore(ctx, tt.dbPath)
-			assert.NotNil(t, s, "store should be reopened successfully")
+			s, err = NewStore(ctx, tt.dbPath)
+			require.NoError(t, err, "store should reopen without error")
 			assert.NotNil(t, s.db, "database connection should be reestablished")
 			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
 
 			// Verify data after reopening
-			summariesRaw, err = s.SearchTraces(ctx, 0, 1<<63-1, nil)
+			summariesRaw, err = spans.SearchTraces(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 
-			logsRaw, err = s.SearchLogs(ctx, 0, 1<<63-1, nil)
+			logsRaw, err = logs.Search(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve logs after reopening")
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 
-			metricsRaw, err = s.SearchMetrics(ctx, 0, 1<<63-1, nil)
+			metricsRaw, err = metrics.Search(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve metrics after reopening")
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
 
@@ -219,27 +202,117 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 	}
 }
 
-// countRows returns the number of rows matching a query like "SELECT COUNT(*) FROM table WHERE ...".
-// Use the full query so callers can add WHERE clauses for filtered counts.
-func countRows(t *testing.T, helper *TestHelper, query string, args ...any) int {
-	t.Helper()
+// TestStoreIndexesCreated verifies that all IndexCreationQueries are applied on store init.
+func TestStoreIndexesCreated(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "")
+	require.NoError(t, err)
+	defer s.Close()
+
 	var count int
-	err := helper.Store.db.QueryRowContext(helper.Ctx, query, args...).Scan(&count)
-	assert.NoError(t, err, "countRows: %s", query)
-	return count
+	err = s.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, len(schema.IndexCreationQueries), count, "index count should match IndexCreationQueries")
+}
+
+// TestStoreConstraintsEnforced verifies that inline CHECK constraints on the datapoints and
+// attributes tables are enforced by the database. It checks that inserting a row that violates
+// chk_metric_type_valid is rejected.
+func TestStoreConstraintsEnforced(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "")
+	require.NoError(t, err)
+	defer s.Close()
+
+	// chk_metric_type_valid rejects unknown metric_type values.
+	_, err = s.DB().ExecContext(ctx, `
+		insert into metrics (id, name, description, unit, resource_dropped_attributes_count,
+			scope_name, scope_version, scope_dropped_attributes_count, received)
+		values (gen_random_uuid(), 'test', '', '', 0, '', '', 0, 0)
+	`)
+	require.NoError(t, err, "inserting a metric row should succeed")
+
+	var metricID string
+	require.NoError(t, s.DB().QueryRowContext(ctx, "select id from metrics where name = 'test'").Scan(&metricID))
+
+	_, err = s.DB().ExecContext(ctx, `
+		insert into datapoints (id, metric_id, metric_type, timestamp, start_time, flags)
+		values (gen_random_uuid(), ?, 'InvalidType', 0, 0, 0)
+	`, metricID)
+	assert.Error(t, err, "inserting a datapoint with invalid metric_type should violate chk_metric_type_valid")
+}
+
+// TestStorePersistentReopenIdempotent verifies that reopening a persistent store does not fail
+// due to duplicate indexes.
+func TestStorePersistentReopenIdempotent(t *testing.T) {
+	const dbPath = "./reopen_test.db"
+	t.Cleanup(func() { os.Remove(dbPath) })
+
+	ctx := context.Background()
+
+	s, err := NewStore(ctx, dbPath)
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+
+	// Reopening must not panic or fatal - constraints use "already exists" guard,
+	// indexes use IF NOT EXISTS.
+	s2, err := NewStore(ctx, dbPath)
+	require.NoError(t, err)
+
+	var indexCount int
+	err = s2.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&indexCount)
+	require.NoError(t, err)
+	assert.Equal(t, len(schema.IndexCreationQueries), indexCount)
+	require.NoError(t, s2.Close())
+}
+
+// TestStoreExponentialHistogramConstraint verifies that the fixed chk_exponential_histogram_fields
+// constraint accepts a valid ExponentialHistogram datapoint.
+func TestStoreExponentialHistogramConstraint(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "")
+	require.NoError(t, err)
+	defer s.Close()
+
+	m := pmetric.NewMetrics()
+	rm := m.ResourceMetrics().AppendEmpty()
+	sm := rm.ScopeMetrics().AppendEmpty()
+	metric := sm.Metrics().AppendEmpty()
+	metric.SetName("exp_hist_constraint_test")
+	exp := metric.SetEmptyExponentialHistogram()
+	exp.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	dp := exp.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	dp.SetCount(10)
+	dp.SetSum(100.0)
+	dp.SetMin(5.0)
+	dp.SetMax(20.0)
+	dp.SetScale(1)
+	dp.SetZeroCount(2)
+	dp.Positive().SetOffset(0)
+	dp.Positive().BucketCounts().FromRaw([]uint64{3, 4, 3})
+	dp.Negative().SetOffset(0)
+	dp.Negative().BucketCounts().FromRaw([]uint64{1, 2})
+
+	err = s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, m)
+	})
+	assert.NoError(t, err, "ExponentialHistogram ingest should satisfy chk_exponential_histogram_fields constraint")
 }
 
 func TestStoreLifecycleErrors(t *testing.T) {
 	ctx := context.Background()
-	s := NewStore(ctx, "")
-	assert.NotNil(t, s)
+	s, err := NewStore(ctx, "")
+	require.NoError(t, err)
 
 	// Test using store after close
-	err := s.Close()
+	err = s.Close()
 	assert.NoError(t, err, "first close should succeed")
 
 	// Try to use the store after closing
-	err = s.IngestSpans(ctx, ptrace.NewTraces())
+	err = s.WithConn(func(conn driver.Conn) error {
+		return nil
+	})
 	assert.Error(t, err, "should get error when using closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
@@ -247,12 +320,12 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	err = s.Close()
 	assert.NoError(t, err, "closing an already closed store should be a no-op")
 
-	// Try some other operations on closed store
-	_, err = s.SearchTraces(ctx, 0, 1<<63-1, nil)
+	// Try WithConn on a double-closed store
+	err = s.WithConn(func(conn driver.Conn) error {
+		return nil
+	})
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
-	_, err = s.SearchLogs(ctx, 0, 1<<63-1, nil)
-	assert.Error(t, err, "should get error when reading from closed store")
-	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
+	assert.Nil(t, s.DB(), "DB() should be nil after close")
 }
