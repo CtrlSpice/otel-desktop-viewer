@@ -10,6 +10,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/stats"
 	"golang.org/x/exp/jsonrpc2"
 )
 
@@ -47,6 +48,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.deleteMetricByID(ctx, req)
 	case "getTraceAttributes":
 		return h.getTraceAttributes(ctx, req)
+	case "getStats":
+		return h.getStats(ctx)
 	default:
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
@@ -316,6 +319,15 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 	}
 
 	return attributes, nil
+}
+
+func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
+	result, err := stats.GetStats(ctx, h.store.DB())
+	if err != nil {
+		log.Printf("Error getting stats: %v", err)
+		return nil, mapStoreError(err)
+	}
+	return result, nil
 }
 
 // parseTimestampParam parses a timestamp parameter that must be a JSON string

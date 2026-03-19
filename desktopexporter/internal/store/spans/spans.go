@@ -193,7 +193,7 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 				case when s.parent_span_id is null then s.start_time end as root_start_time,
 				case when s.parent_span_id is null then s.end_time end as root_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'ERROR' then 1 end) over (partition by s.trace_id) as error_count,
+				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count,
 				count(case when exists(
 					select 1 from attributes a
 					where a.span_id = s.span_id and a.scope = 'span' and a.key = 'exception.type'

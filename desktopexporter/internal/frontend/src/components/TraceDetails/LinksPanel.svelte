@@ -85,7 +85,7 @@
   <p class="text-base-content/60">No links</p>
 {/if}
 
-<style>
+<style lang="postcss">
   .section-header {
     @apply text-sm font-semibold text-base-content py-2 px-4 flex items-center gap-2;
   }

@@ -5,6 +5,7 @@ import type {
   TraceSummary,
   LogData,
   MetricData,
+  Stats,
   Exemplar,
   GaugeDataPoint,
   SumDataPoint,
@@ -295,10 +296,10 @@ export let telemetryAPI = {
 
   clearMetrics: () => callRPC('clearMetrics', undefined),
 
-  // Sample data management
-  loadSampleData: () => callRPC('loadSampleData', undefined),
-  checkSampleDataExists: () => callRPC('checkSampleDataExists', undefined),
-  clearSampleData: () => callRPC('clearSampleData', undefined),
+  // Stats methods
+  getStats: async (): Promise<Stats> => {
+    return await callRPC('getStats');
+  },
 };
 
 // Helper function to convert frontend query tree to minimal backend format

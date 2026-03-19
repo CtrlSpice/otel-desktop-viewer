@@ -195,6 +195,33 @@ export type MetricData = {
   received: PreciseTimestamp;
 };
 
+// Stats types (homepage summary cards)
+export type TraceStats = {
+  traceCount: number;
+  spanCount: number;
+  serviceCount: number;
+  errorCount: number;
+  lastReceived: number | null;
+};
+
+export type LogStats = {
+  logCount: number;
+  errorCount: number;
+  lastReceived: number | null;
+};
+
+export type MetricStats = {
+  metricCount: number;
+  dataPointCount: number;
+  lastReceived: number | null;
+};
+
+export type Stats = {
+  traces: TraceStats;
+  logs: LogStats;
+  metrics: MetricStats;
+};
+
 // Discriminated union for search results
 // TODO: Add logs and metrics when implemented
 export type SearchResultEvent =

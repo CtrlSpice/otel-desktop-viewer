@@ -132,7 +132,7 @@
   </div>
 </div>
 
-<style>
+<style lang="postcss">
   .resize-handle {
     @apply w-1 h-full bg-base-300 hover:bg-base-content/20 transition-colors cursor-col-resize flex items-center justify-center relative;
     @apply select-none;

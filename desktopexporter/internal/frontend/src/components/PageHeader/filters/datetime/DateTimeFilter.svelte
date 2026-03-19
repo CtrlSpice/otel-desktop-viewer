@@ -196,7 +196,7 @@
   </div>
 </dialog>
 
-<style>
+<style lang="postcss">
   .datetime-dialog {
     /* Layout & Positioning */
     @apply dropdown-content;

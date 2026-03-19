@@ -4,7 +4,7 @@
     HomeIcon,
     BarChartHorizontalIcon,
     Chart03Icon,
-    File01Icon,
+    FirePitIcon,
   } from "@hugeicons/core-free-icons"
   import ThemeToggle from "@/components/ThemeToggle.svelte"
   import { router } from "tinro5"
@@ -15,7 +15,7 @@
     { id: "home", icon: HomeIcon, label: "Home", path: "/" },
     { id: "traces", icon: BarChartHorizontalIcon, label: "Traces", path: "/traces" },
     { id: "metrics", icon: Chart03Icon, label: "Metrics", path: "/metrics" },
-    { id: "logs", icon: File01Icon, label: "Logs", path: "/logs" },
+    { id: "logs", icon: FirePitIcon, label: "Logs", path: "/logs" },
   ]
 
   // Current path state
@@ -56,7 +56,7 @@
   </div>
 </nav>
 
-<style>
+<style lang="postcss">
   .nav-button {
     @apply flex items-center justify-center gap-1.5 px-3 rounded-t-lg transition-colors duration-200 mr-1 h-full w-24;
   }

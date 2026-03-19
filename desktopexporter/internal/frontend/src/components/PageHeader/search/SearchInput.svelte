@@ -526,7 +526,7 @@
   </div>
 </div>
 
-<style>
+<style lang="postcss">
   /* Search Container */
   .search-container {
     @apply flex items-center gap-2;

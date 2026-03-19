@@ -514,7 +514,7 @@
         </div>
 </div>
 
-<style>
+<style lang="postcss">
   .rows-per-page-popover {
     /* Layout & Positioning */
     @apply dropdown-content;

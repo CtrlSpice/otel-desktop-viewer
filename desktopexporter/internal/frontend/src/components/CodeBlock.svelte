@@ -48,7 +48,7 @@
   <pre><code>{@html processedCode}</code></pre>
 </div>
 
-<style>
+<style lang="postcss">
   .code-block {
     @apply bg-base-200 rounded-lg border border-base-300;
   }
