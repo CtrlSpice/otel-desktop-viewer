@@ -1,6 +1,10 @@
 <script lang="ts">
   import { getTimeContext } from '@/contexts/time-context.svelte';
   import { formatDateTimeRange } from '@/utils/time';
+  import {
+    loadRecentTimeRanges,
+    type RecentTimeRange,
+  } from '@/utils/recent-time-ranges';
 
   // Get time context
   let ctx = getTimeContext();
@@ -10,72 +14,27 @@
     );
   }
 
-  // ===== RECENT TIME RANGES =====
-  interface RecentTimeRange {
-    start: number;
-    end: number;
-    usedAt: number;
-  }
-
-  // Recently used time ranges
   let recentTimeRanges = $state<RecentTimeRange[]>([]);
 
-  // Load recent ranges from localStorage
+  // Keep list in sync when selection changes (setSelection writes localStorage recents)
   $effect(() => {
-    let saved = localStorage.getItem('datetime-filter-recent');
-    if (saved) {
-      recentTimeRanges = JSON.parse(saved);
-    } else {
-      recentTimeRanges = [];
-    }
+    void ctx.selection.start;
+    void ctx.selection.end;
+    void ctx.selection.type;
+    recentTimeRanges = loadRecentTimeRanges();
   });
-
-  function updateRecentRanges(start: number, end: number, usedAt: number) {
-    // Check if this time range already exists
-    let existingIndex = recentTimeRanges.findIndex(
-      entry => entry.start === start && entry.end === end
-    );
-
-    if (existingIndex !== -1) {
-      // Update existing entry
-      let updated = [...recentTimeRanges];
-      updated[existingIndex] = { ...updated[existingIndex], usedAt };
-      let sorted = updated.sort((a, b) => b.usedAt - a.usedAt);
-      recentTimeRanges = sorted;
-    } else {
-      // Add new entry
-      let updated = [{ start, end, usedAt }, ...recentTimeRanges]
-        .sort((a, b) => b.usedAt - a.usedAt)
-        .slice(0, 10);
-      recentTimeRanges = updated;
-    }
-
-    // Save to localStorage
-    localStorage.setItem(
-      'datetime-filter-recent',
-      JSON.stringify(recentTimeRanges)
-    );
-  }
 
   function applyRecentTimeRange(index: number) {
     let entry = recentTimeRanges[index];
     if (!entry) return;
-
-    let now = Date.now();
-
-    // First: Update the recent ranges (move to top)
-    updateRecentRanges(entry.start, entry.end, now);
-
-    // Then: Update the time context
     ctx.setSelection(entry.start, entry.end, 'recent');
   }
-
-  // Expose updateRecentRanges for use by parent components
-  export { updateRecentRanges };
 </script>
 
-<div>
-  <div class="section-header">
+<div class="pl-2">
+  <div
+    class="section-header mb-2 flex items-center text-sm font-semibold text-base-content"
+  >
     <svg
       class="w-4 h-4 mr-2"
       viewBox="0 0 24 24"
@@ -91,15 +50,15 @@
     </svg>
     Recently Used
   </div>
-  <div class="space-y-0 max-h-[84px] overflow-y-auto">
+  <div class="space-y-0 max-h-[84px] overflow-y-auto pr-2">
     {#if recentTimeRanges.length === 0}
-      <div class="w-full text-left px-2 py-1 text-sm text-base-content/60">
+      <div class="w-full text-left py-1 text-sm text-base-content/60">
         No recent time ranges
       </div>
     {:else}
       {#each recentTimeRanges as entry, index}
         <button
-          class="list-button"
+          class="recent-range-button"
           onclick={() => applyRecentTimeRange(index)}
         >
           {#if ctx.selection.type === 'recent' && index === 0}
@@ -117,3 +76,12 @@
     {/if}
   </div>
 </div>
+
+<style lang="postcss">
+  /* Match .timezone-toggle inner rhythm: section p-2 + control px-2 */
+  .recent-range-button {
+    @apply w-full text-left px-2 py-2 text-sm rounded;
+    @apply flex items-center gap-0 hover:bg-base-200 focus:bg-base-200 transition-colors;
+    @apply border-none bg-transparent cursor-pointer;
+  }
+</style>

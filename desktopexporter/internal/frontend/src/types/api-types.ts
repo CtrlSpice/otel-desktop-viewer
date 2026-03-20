@@ -1,10 +1,8 @@
-import { PreciseTimestamp } from '@/types/precise-timestamp';
-
 export type RootSpan = {
   serviceName: string;
   name: string;
-  startTime: PreciseTimestamp;
-  endTime: PreciseTimestamp;
+  startTime: bigint;
+  endTime: bigint;
 };
 
 export type TraceSummary = {
@@ -29,12 +27,12 @@ export type SpanData = {
   traceID: string;
   traceState: string;
   spanID: string;
-  parentSpanID: string;
+  parentSpanID: string | null;
 
   name: string;
   kind: string;
-  startTime: PreciseTimestamp;
-  endTime: PreciseTimestamp;
+  startTime: bigint;
+  endTime: bigint;
 
   attributes: Attributes;
   events: EventData[];
@@ -50,10 +48,13 @@ export type SpanData = {
   statusMessage: string;
 };
 
-export type Attributes = Record<
-  string,
-  string | number | boolean | string[] | number[] | boolean[]
->;
+export type Attribute = {
+  key: string;
+  value: string;
+  type: string;
+};
+
+export type Attributes = Attribute[];
 
 export type ResourceData = {
   attributes: Attributes;
@@ -69,7 +70,7 @@ export type ScopeData = {
 
 export type EventData = {
   name: string;
-  timestamp: PreciseTimestamp;
+  timestamp: bigint;
   attributes: Attributes;
   droppedAttributesCount: number;
 };
@@ -83,13 +84,15 @@ export type LinkData = {
 };
 
 export type LogData = {
-  timestamp: PreciseTimestamp;
-  observedTimestamp: PreciseTimestamp;
-  traceID: string;
-  spanID: string;
+  id: string;
+  timestamp: bigint;
+  observedTimestamp: bigint;
+  traceID: string | null;
+  spanID: string | null;
   severityText: string;
   severityNumber: number;
-  body: string | object;
+  body: string;
+  bodyType: string;
   resource: ResourceData;
   scope: ScopeData;
   attributes: Attributes;
@@ -107,92 +110,83 @@ export type MetricType =
   | 'ExponentialHistogram';
 
 export type Exemplar = {
-  timestamp: PreciseTimestamp;
+  timestamp: bigint;
   value: number;
   filteredAttributes: Attributes;
-  traceID: string;
-  spanID: string;
+  traceID: string | null;
+  spanID: string | null;
 };
 
-export type MetricDataPoint =
-  | GaugeDataPoint
-  | SumDataPoint
-  | HistogramDataPoint
-  | ExponentialHistogramDataPoint;
-
-export type GaugeDataPoint = {
-  timestamp: PreciseTimestamp;
-  startTime: PreciseTimestamp;
+type BaseDataPoint = {
+  id: string;
+  timestamp: bigint;
+  startTime: bigint;
   attributes: Attributes;
   flags: number;
-  valueType: string;
-  value: number;
-  exemplars?: Exemplar[];
+  exemplars: Exemplar[];
 };
 
-export type SumDataPoint = {
-  timestamp: PreciseTimestamp;
-  startTime: PreciseTimestamp;
-  attributes: Attributes;
-  flags: number;
+export type GaugeDataPoint = BaseDataPoint & {
+  metricType: 'Gauge';
+  doubleValue: number | null;
+  intValue: number | null;
   valueType: string;
-  value: number;
-  exemplars?: Exemplar[];
+};
+
+export type SumDataPoint = BaseDataPoint & {
+  metricType: 'Sum';
+  doubleValue: number | null;
+  intValue: number | null;
+  valueType: string;
   isMonotonic: boolean;
   aggregationTemporality: string;
 };
 
-export type HistogramDataPoint = {
-  timestamp: PreciseTimestamp;
-  startTime: PreciseTimestamp;
-  attributes: Attributes;
-  flags: number;
+export type HistogramDataPoint = BaseDataPoint & {
+  metricType: 'Histogram';
   count: number;
   sum: number;
   min: number;
   max: number;
-  bounds: number[];
-  counts: number[];
-  exemplars?: Exemplar[];
+  bucketCounts: number[];
+  explicitBounds: number[];
   aggregationTemporality: string;
 };
 
-export type ExponentialHistogramDataPoint = {
-  timestamp: PreciseTimestamp;
-  startTime: PreciseTimestamp;
-  attributes: Attributes;
-  flags: number;
+export type ExponentialHistogramDataPoint = BaseDataPoint & {
+  metricType: 'ExponentialHistogram';
   count: number;
   sum: number;
   min: number;
   max: number;
   scale: number;
   zeroCount: number;
-  positive: {
-    offset: number;
-    bucketCounts: number[];
-  };
-  negative: {
-    offset: number;
-    bucketCounts: number[];
-  };
-  exemplars?: Exemplar[];
+  positiveBucketOffset: number;
+  positiveBucketCounts: number[];
+  negativeBucketOffset: number;
+  negativeBucketCounts: number[];
   aggregationTemporality: string;
 };
 
-export type DataPoints = {
-  type: MetricType;
-  points: MetricDataPoint[];
-};
+export type DataPoint =
+  | GaugeDataPoint
+  | SumDataPoint
+  | HistogramDataPoint
+  | ExponentialHistogramDataPoint;
 
 export type MetricData = {
+  id: string;
   name: string;
   description: string;
   unit: string;
-  dataPoints: DataPoints;
+  resourceDroppedAttributesCount: number;
   resource: ResourceData;
+  scopeName: string;
+  scopeVersion: string;
+  scopeDroppedAttributesCount: number;
   scope: ScopeData;
-  received: PreciseTimestamp;
+  received: bigint;
+  datapoints: DataPoint[];
 };
 
 // Stats types (homepage summary cards)
@@ -201,19 +195,19 @@ export type TraceStats = {
   spanCount: number;
   serviceCount: number;
   errorCount: number;
-  lastReceived: number | null;
+  lastReceived: bigint | null;
 };
 
 export type LogStats = {
   logCount: number;
   errorCount: number;
-  lastReceived: number | null;
+  lastReceived: bigint | null;
 };
 
 export type MetricStats = {
   metricCount: number;
   dataPointCount: number;
-  lastReceived: number | null;
+  lastReceived: bigint | null;
 };
 
 export type Stats = {

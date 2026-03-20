@@ -1,5 +1,3 @@
-import { PreciseTimestamp } from '@/types/precise-timestamp';
-
 export function formatDuration(nanoseconds: bigint): string {
   if (nanoseconds >= BigInt(1_000_000_000)) {
     // Convert to seconds
@@ -20,11 +18,11 @@ export function formatDuration(nanoseconds: bigint): string {
 }
 
 export function getOffset(
-  startTime: PreciseTimestamp,
-  endTime: PreciseTimestamp,
-  point: PreciseTimestamp
+  startTime: bigint,
+  endTime: bigint,
+  point: bigint
 ): number {
-  let totalNs = endTime.nanoseconds - startTime.nanoseconds;
-  let offsetNs = point.nanoseconds - startTime.nanoseconds;
+  let totalNs = endTime - startTime;
+  let offsetNs = point - startTime;
   return Math.floor(Number((offsetNs * BigInt(100)) / totalNs));
 }

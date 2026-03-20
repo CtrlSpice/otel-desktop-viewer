@@ -41,7 +41,7 @@
 </script>
 
 <!-- Theme Toggle -->
-<div class="flex items-center gap-2">
+<div class="flex items-center gap-2 text-base-content/45">
   <HugeiconsIcon icon={Sun03Icon} size={16} />
   <label title="Toggle theme" class="flex items-center" for="theme-toggle">
     <input

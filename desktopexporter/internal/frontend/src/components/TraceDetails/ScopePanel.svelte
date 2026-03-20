@@ -8,16 +8,7 @@
 
   let { span }: Props = $props();
 
-  let scopeAttributes = $derived(
-    span
-      ? Object.entries(span.scope.attributes).map(([key, value]) => ({
-          key,
-          name: key,
-          value: value.toString(),
-          type: 'type',
-        }))
-      : []
-  );
+  let scopeAttributes = $derived(span?.scope.attributes ?? []);
 </script>
 
 {#if span}
@@ -35,7 +26,7 @@
       />
       {#each scopeAttributes as attr}
         <SpanField
-          fieldName={attr.name}
+          fieldName={attr.key}
           fieldValue={attr.value}
           fieldType={attr.type}
         />

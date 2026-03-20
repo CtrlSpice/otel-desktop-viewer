@@ -17,17 +17,18 @@
 </script>
 
 <!-- Page Header Component -->
-<div class="mb-6 space-y-4">
+<div class="mb-8 space-y-5">
   <!-- Title Row -->
-  <div class="flex items-center gap-3">
+  <div class="flex flex-wrap items-center gap-3">
     {#if onRefresh}
       <button
-        class="btn btn-circle btn-primary btn-sm"
+        type="button"
+        class="btn btn-square btn-ghost btn-sm border border-base-300/60 text-base-content/80 hover:border-primary/35 hover:bg-primary/5 hover:text-primary"
         onclick={onRefresh}
         aria-label="Refresh"
       >
         <svg
-          class="w-4 h-4"
+          class="h-4 w-4"
           viewBox="0 0 24 24"
         >
           <path
@@ -36,15 +37,17 @@
         </svg>
       </button>
     {/if}
-    <h1 class="text-2xl font-bold">
+    <h1 class="text-3xl font-semibold tracking-tight text-base-content">
       {signal.charAt(0).toUpperCase() + signal.slice(1)}
     </h1>
   </div>
 
-  <!-- Search and Time Row -->
-  <div class="flex items-center gap-4">
+  <!-- Search and Time Row: stack when narrow (half-screen), row when wide -->
+  <div
+    class="flex min-w-0 flex-col gap-3 min-[1000px]:flex-row min-[1000px]:items-center min-[1000px]:gap-4"
+  >
     <DateTimeFilter />
-    <div class="flex-1">
+    <div class="min-w-0 flex-1">
       <SearchInput {signal} {view} onSearchResults={onSearchResults || undefined} />
     </div>
   </div>

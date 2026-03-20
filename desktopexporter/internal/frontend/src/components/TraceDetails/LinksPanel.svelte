@@ -54,13 +54,13 @@
                 />
               </div>
             </div>
-            {#each Object.entries(link.attributes) as [key, value]}
+            {#each link.attributes as attr}
               <div class="data-table-row">
                 <div class="data-table-cell">
                   <SpanField
-                    fieldName={key}
-                    fieldValue={value.toString()}
-                    fieldType="type"
+                    fieldName={attr.key}
+                    fieldValue={attr.value}
+                    fieldType={attr.type}
                   />
                 </div>
               </div>

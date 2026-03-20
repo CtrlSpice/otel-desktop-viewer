@@ -7,13 +7,8 @@ import type {
   MetricData,
   Stats,
   Exemplar,
-  GaugeDataPoint,
-  SumDataPoint,
-  HistogramDataPoint,
-  ExponentialHistogramDataPoint,
-  DataPoints,
+  DataPoint,
 } from '@/types/api-types';
-import { PreciseTimestamp } from '@/types/precise-timestamp';
 import type { QueryNode } from '@/components/PageHeader/search/queryTree';
 import type {
   AttributeScope,
@@ -88,8 +83,8 @@ function traceSummaryFromJSON(json: any): TraceSummary {
     rootSpan: json.rootSpan
       ? {
           ...json.rootSpan,
-          startTime: PreciseTimestamp.fromJSON(json.rootSpan.startTime),
-          endTime: PreciseTimestamp.fromJSON(json.rootSpan.endTime),
+          startTime: BigInt(json.rootSpan.startTime),
+          endTime: BigInt(json.rootSpan.endTime),
         }
       : undefined,
   };
@@ -105,14 +100,14 @@ function traceDataFromJSON(json: any): TraceData {
     spans: json.spans.map((spanNode: any) => ({
       spanData: {
         ...spanNode.spanData,
-        startTime: PreciseTimestamp.fromJSON(spanNode.spanData.startTime),
-        endTime: PreciseTimestamp.fromJSON(spanNode.spanData.endTime),
+        startTime: BigInt(spanNode.spanData.startTime),
+        endTime: BigInt(spanNode.spanData.endTime),
         events: spanNode.spanData.events
           ? spanNode.spanData.events.map((event: any) => ({
               ...event,
               timestamp:
                 event.timestamp && event.timestamp !== undefined
-                  ? PreciseTimestamp.fromJSON(event.timestamp)
+                  ? BigInt(event.timestamp)
                   : undefined,
             }))
           : [],
@@ -126,88 +121,62 @@ function traceDataFromJSON(json: any): TraceData {
 function logsFromJSON(json: any): LogData[] {
   return json.map((log: any) => ({
     ...log,
-    timestamp: PreciseTimestamp.fromJSON(log.timestamp),
-    observedTimestamp: PreciseTimestamp.fromJSON(log.observedTimestamp),
+    timestamp: BigInt(log.timestamp),
+    observedTimestamp: BigInt(log.observedTimestamp),
   }));
 }
 
 function exemplarFromJSON(json: any): Exemplar {
   return {
     ...json,
-    timestamp: PreciseTimestamp.fromJSON(json.timestamp),
+    timestamp: BigInt(json.timestamp),
   };
 }
 
-function gaugeDataPointFromJSON(json: any): GaugeDataPoint {
+function dataPointFromJSON(json: any): DataPoint {
   return {
     ...json,
-    timestamp: PreciseTimestamp.fromJSON(json.timestamp),
-    startTime: PreciseTimestamp.fromJSON(json.startTimeUnixNano),
-    exemplars: json.exemplars?.map(exemplarFromJSON),
-  };
-}
-
-function sumDataPointFromJSON(json: any): SumDataPoint {
-  return {
-    ...json,
-    timestamp: PreciseTimestamp.fromJSON(json.timestamp),
-    startTime: PreciseTimestamp.fromJSON(json.startTimeUnixNano),
-    exemplars: json.exemplars?.map(exemplarFromJSON),
-  };
-}
-
-function histogramDataPointFromJSON(json: any): HistogramDataPoint {
-  return {
-    ...json,
-    timestamp: PreciseTimestamp.fromJSON(json.timestamp),
-    startTime: PreciseTimestamp.fromJSON(json.startTimeUnixNano),
-    exemplars: json.exemplars?.map(exemplarFromJSON),
-  };
-}
-
-function exponentialHistogramDataPointFromJSON(
-  json: any
-): ExponentialHistogramDataPoint {
-  return {
-    ...json,
-    timestamp: PreciseTimestamp.fromJSON(json.timestamp),
-    startTime: PreciseTimestamp.fromJSON(json.startTimeUnixNano),
-    exemplars: json.exemplars?.map(exemplarFromJSON),
-  };
-}
-
-function dataPointsFromJSON(json: any): DataPoints {
-  const points = json.points.map((point: any) => {
-    switch (json.type) {
-      case 'Gauge':
-        return gaugeDataPointFromJSON(point);
-      case 'Sum':
-        return sumDataPointFromJSON(point);
-      case 'Histogram':
-        return histogramDataPointFromJSON(point);
-      case 'ExponentialHistogram':
-        return exponentialHistogramDataPointFromJSON(point);
-      default:
-        return point; // For Empty type or unknown types
-    }
-  });
-
-  return {
-    type: json.type,
-    points,
+    timestamp: BigInt(json.timestamp),
+    startTime: BigInt(json.startTime),
+    exemplars: json.exemplars?.map(exemplarFromJSON) ?? [],
   };
 }
 
 function metricDataFromJSON(json: any): MetricData {
   return {
     ...json,
-    dataPoints: dataPointsFromJSON(json.dataPoints),
-    received: PreciseTimestamp.fromJSON(json.received),
+    datapoints: json.datapoints?.map(dataPointFromJSON) ?? [],
+    received: BigInt(json.received),
   };
 }
 
 function metricsFromJSON(json: any): MetricData[] {
   return json.map(metricDataFromJSON);
+}
+
+function parseNullableBigInt(value: unknown): bigint | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'string' || typeof value === 'number')
+    return BigInt(value);
+  throw new Error(`Invalid bigint value: ${String(value)}`);
+}
+
+function statsFromJSON(json: any): Stats {
+  return {
+    traces: {
+      ...json.traces,
+      lastReceived: parseNullableBigInt(json.traces?.lastReceived),
+    },
+    logs: {
+      ...json.logs,
+      lastReceived: parseNullableBigInt(json.logs?.lastReceived),
+    },
+    metrics: {
+      ...json.metrics,
+      lastReceived: parseNullableBigInt(json.metrics?.lastReceived),
+    },
+  };
 }
 
 // API Methods
@@ -265,15 +234,17 @@ export let telemetryAPI = {
   clearTraces: () => callRPC('clearTraces', undefined),
 
   // Log methods
-  getLogs: async (
+  searchLogs: async (
     startTime: number,
     endTime: number,
     queryTree?: QueryNode
   ): Promise<LogData[]> => {
+    const startTimeNs = toNanoseconds(startTime);
+    const endTimeNs = toNanoseconds(endTime);
     const params = queryTree
-      ? [startTime, endTime, convertQueryTreeForBackend(queryTree)]
-      : [startTime, endTime];
-    const rawData = await callRPC('getLogs', params);
+      ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
+      : [startTimeNs, endTimeNs];
+    const rawData = await callRPC('searchLogs', params);
     return logsFromJSON(rawData);
   },
 
@@ -287,9 +258,11 @@ export let telemetryAPI = {
     endTime: number,
     queryTree?: QueryNode
   ): Promise<MetricData[]> => {
+    const startTimeNs = toNanoseconds(startTime);
+    const endTimeNs = toNanoseconds(endTime);
     const params = queryTree
-      ? [startTime, endTime, convertQueryTreeForBackend(queryTree)]
-      : [startTime, endTime];
+      ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
+      : [startTimeNs, endTimeNs];
     const rawData = await callRPC('getMetrics', params);
     return metricsFromJSON(rawData);
   },
@@ -298,7 +271,8 @@ export let telemetryAPI = {
 
   // Stats methods
   getStats: async (): Promise<Stats> => {
-    return await callRPC('getStats');
+    const rawData = await callRPC('getStats');
+    return statsFromJSON(rawData);
   },
 };
 

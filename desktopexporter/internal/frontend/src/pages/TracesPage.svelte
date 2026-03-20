@@ -3,6 +3,7 @@
   import { router } from "tinro5"
   import { telemetryAPI } from "@/services/telemetry-service"
   import { getTimeContext } from "@/contexts/time-context.svelte"
+  import { formatTimestamp } from "@/utils/time"
   import type { TraceSummary, SearchResultEvent } from "@/types/api-types"
   import PageHeader from "@/components/PageHeader/PageHeader.svelte"
 
@@ -55,8 +56,8 @@
             comparison = aName.localeCompare(bName)
             break
           case 'startTime':
-            let aTime = a.rootSpan?.startTime.nanoseconds || BigInt(0)
-            let bTime = b.rootSpan?.startTime.nanoseconds || BigInt(0)
+            let aTime = a.rootSpan?.startTime || BigInt(0)
+            let bTime = b.rootSpan?.startTime || BigInt(0)
             if (aTime < bTime) comparison = -1
             else if (aTime > bTime) comparison = 1
             else comparison = 0
@@ -164,7 +165,7 @@
 </script>
 
 <!-- TracesPage.svelte - Traces list and visualization page -->
-<div class="flex flex-col w-full overflow-y-auto p-4">
+<div class="flex min-w-0 w-full flex-col overflow-y-auto px-0 py-4">
   <!-- Page Header -->
   <PageHeader 
     signal="traces"
@@ -181,13 +182,15 @@
 
   <div class="space-y-4">
     {#if traceSummaries.length > 0}
-      <p class="text-base-content/80">
-        Found {traceSummaries.length} trace(s):
+      <p class="text-sm font-medium text-base-content/70">
+        {traceSummaries.length} trace{traceSummaries.length !== 1 ? 's' : ''}
       </p>
     {/if}
     
     <!-- Material Design 2 Data Table -->
-    <div class="rounded-lg border border-base-300 bg-base-100 overflow-hidden">
+    <div
+      class="overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm"
+    >
       <div class="overflow-x-auto">
         <table class="w-full">
         <!-- Table Header -->
@@ -384,7 +387,7 @@
                     </td>
                     <td class="table-cell text-base-content/80">
                       {#if trace.rootSpan}
-                        {trace.rootSpan.startTime.toLocal('milliseconds')}
+                        {formatTimestamp(trace.rootSpan.startTime, 'local', 'milliseconds')}
                       {:else}
                         <span class="text-base-content/50 italic">—</span>
                       {/if}

@@ -1,32 +1,45 @@
 export type Timezone = 'local' | 'UTC';
 
-type TimeResolution =
-  | 'minutes' // 2024-01-15 14:30
-  | 'seconds' // 2024-01-15 14:30:45
-  | 'milliseconds' // 2024-01-15 14:30:45.123
-  | 'microseconds' // 2024-01-15 14:30:45.123456
-  | 'nanoseconds'; // 2024-01-15 14:30:45.123456789
+type DateTimeResolution = 'minutes' | 'seconds' | 'milliseconds';
+type TimestampResolution = DateTimeResolution | 'microseconds' | 'nanoseconds';
 
-// Function overloads
+// UI time: number = Unix ms (from Date.now(), time pickers, etc.)
 export function formatDateTime(
-  timestamp: number | bigint,
+  ms: number,
   timezone: Timezone,
-  resolution: 'minutes' | 'seconds' | 'milliseconds'
-): string;
-export function formatDateTime(
-  timestamp: bigint,
-  timezone: Timezone,
-  resolution: 'microseconds' | 'nanoseconds'
-): string;
-
-// Implementation
-export function formatDateTime(
-  timestamp: number | bigint,
-  timezone: Timezone,
-  resolution: TimeResolution = 'minutes'
+  resolution: DateTimeResolution = 'minutes'
 ): string {
-  // function body
-  // Base format options
+  return formatWithDate(new Date(ms), timezone, resolution);
+}
+
+// Telemetry time: bigint = Unix nanoseconds (from backend OTLP data)
+export function formatTimestamp(
+  ns: bigint,
+  timezone: Timezone,
+  resolution: TimestampResolution = 'nanoseconds'
+): string {
+  let epochMs = Number(ns / 1_000_000n);
+  let subMs = ns % 1_000_000n;
+  let date = new Date(epochMs);
+  let formatted = formatWithDate(date, timezone, resolution);
+
+  if (resolution === 'microseconds') {
+    let micros = Number(subMs).toString().padStart(6, '0');
+    return formatted.replace(/\.\d{3}(\s)/, `.${micros}$1`);
+  }
+  if (resolution === 'nanoseconds') {
+    let nanos = Number(subMs).toString().padStart(6, '0');
+    let extraNanos = Number(ns % 1000n).toString().padStart(3, '0');
+    return formatted.replace(/\.\d{3}(\s)/, `.${nanos}${extraNanos}$1`);
+  }
+  return formatted;
+}
+
+function formatWithDate(
+  date: Date,
+  timezone: Timezone,
+  resolution: TimestampResolution
+): string {
   let options: Intl.DateTimeFormatOptions = {
     year: 'numeric',
     month: '2-digit',
@@ -36,84 +49,34 @@ export function formatDateTime(
     hour12: false,
   };
 
-  let date: Date;
-  let remainder: bigint | undefined;
-  let formattedDate: string;
-
-  if (typeof timestamp === 'bigint') {
-    if (resolution === 'microseconds') {
-      // Extract milliseconds and keep remainder for microseconds
-      let divisor = 1000000n;
-      let milliseconds = Number(timestamp / divisor);
-      remainder = timestamp % divisor;
-      date = new Date(milliseconds);
-    } else if (resolution === 'nanoseconds') {
-      // Extract milliseconds and keep remainder for nanoseconds
-      let divisor = 1000000000n;
-      let milliseconds = Number(timestamp / divisor);
-      remainder = timestamp % divisor;
-      date = new Date(milliseconds);
-    } else {
-      // For lower resolutions, just convert to milliseconds
-      date = new Date(Number(timestamp));
-    }
-  } else {
-    date = new Date(timestamp);
-  }
-
-  // Add resolution-specific options
   switch (resolution) {
     case 'seconds':
-      // Format: 2024-01-15 14:30:45
       options.second = '2-digit';
       break;
     case 'milliseconds':
     case 'microseconds':
     case 'nanoseconds':
-      // Format: 2024-01-15 14:30:45.123 (milli), .123456 (micro), .123456789 (nano)
       options.second = '2-digit';
       options.fractionalSecondDigits = 3;
+      break;
   }
 
+  let formattedDate: string;
   if (timezone === 'UTC') {
-    // Display in UTC using en-CA locale
-    formattedDate = date.toLocaleString('en-CA', {
-      ...options,
-      timeZone: 'UTC',
-    });
+    formattedDate = date.toLocaleString('en-CA', { ...options, timeZone: 'UTC' });
   } else {
-    // Display in local timezone using en-CA locale
     formattedDate = date.toLocaleString('en-CA', options);
   }
 
-  // Handle microseconds and nanoseconds manually
-  if (resolution === 'microseconds' || resolution === 'nanoseconds') {
-    let fractionalPart = '';
-
-    if (resolution === 'microseconds') {
-      fractionalPart = Number(remainder!).toString().padStart(6, '0');
-    } else if (resolution === 'nanoseconds') {
-      fractionalPart = Number(remainder!).toString().padStart(9, '0');
-    }
-
-    // Replace the last 3 digits with our extended precision
-    formattedDate = formattedDate.replace(/\.\d{3}$/, `.${fractionalPart}`);
-  }
-
-  // Add timezone info
   if (timezone === 'UTC') {
     return `${formattedDate} UTC`;
-  } else {
-    // Get local timezone abbreviation
-    let tzAbbr =
-      new Intl.DateTimeFormat('en', {
-        timeZoneName: 'short',
-      })
-        .formatToParts(date)
-        .find(part => part.type === 'timeZoneName')?.value || '';
-
-    return `${formattedDate} ${tzAbbr}`;
   }
+
+  let tzAbbr =
+    new Intl.DateTimeFormat('en', { timeZoneName: 'short' })
+      .formatToParts(date)
+      .find(part => part.type === 'timeZoneName')?.value || '';
+  return `${formattedDate} ${tzAbbr}`;
 }
 
 export function formatDateTimeRange(

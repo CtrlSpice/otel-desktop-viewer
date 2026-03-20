@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  html {
+    @apply min-w-0 scroll-smooth;
+  }
+
+  body {
+    /* Desktop app + half-screen: no hard min width; children use min-w-0 where needed */
+    @apply min-w-0 font-sans text-base-content antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
+
 /* Default SVG styles */
 svg {
   fill: none;
@@ -11,24 +23,19 @@ svg {
   stroke-linejoin: round;
 }
 
-/* Global minimum width for the app */
-body {
-  min-width: 500px;
-}
-
 /* Global button styles */
 .btn {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  @apply transition-[color,background-color,border-color,transform,box-shadow] duration-200 ease-out;
 }
 
-/* Global card styles */
+/* DaisyUI cards — avoid generic "lift" hover; feels template-y */
 .card {
-  backdrop-filter: blur(10px);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  @apply transition-shadow duration-200;
 }
 
 .card:hover {
-  transform: translateY(-2px);
+  transform: none;
+  @apply shadow-md;
 }
 
 /* Code block styling */
@@ -37,7 +44,7 @@ body {
 }
 
 .code-block pre {
-  @apply text-sm font-mono;
+  @apply text-sm font-mono tracking-tight;
   white-space: pre;
   overflow-x: auto;
 }
@@ -61,8 +68,8 @@ body {
 }
 
 .tabs {
-  @apply grid grid-cols-3;
-  min-width: 400px;
+  @apply grid max-w-full grid-cols-3;
+  min-width: min(100%, 24rem);
 }
 
 .tab {
@@ -113,11 +120,11 @@ body {
 
 /* Data Table Styles */
 .table-header-row {
-  @apply border-b border-base-300 bg-base-200;
+  @apply border-b border-base-300/80 bg-base-200/60 backdrop-blur-sm;
 }
 
 .table-header-cell {
-  @apply px-4 py-3 text-xs font-semibold uppercase tracking-wider text-base-content/70;
+  @apply px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/55;
 }
 
 .table-header-cell--sortable {
@@ -137,11 +144,11 @@ body {
 }
 
 .table-row {
-  @apply hover:bg-base-200 transition-colors duration-150;
+  @apply hover:bg-base-200/70 transition-colors duration-150;
 }
 
 .table-cell {
-  @apply px-4 py-4 text-sm text-base-content;
+  @apply px-4 py-3.5 text-sm text-base-content;
 }
 
 .table-cell--right {

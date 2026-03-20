@@ -138,7 +138,7 @@
     <PresetTimeRanges />
 
     <!-- Custom Time Range -->
-    <div class="py-2">
+    <div class="p-2">
       <CustomTimeRange />
     </div>
 
@@ -190,7 +190,7 @@
     <div class="border-t border-base-300"></div>
 
     <!-- Recently Used -->
-    <div class="py-2">
+    <div class="p-2">
       <RecentTimeRanges />
     </div>
   </div>

@@ -37,7 +37,9 @@
   }
 </script>
 
-<div class="flex items-center gap-2 px-2 py-2 bg-base-200">
+<div
+  class="flex flex-nowrap items-center gap-2 overflow-x-auto bg-base-200/80 px-2 py-2 backdrop-blur-sm"
+>
   {#each PRESETS as preset, index}
     <button
       class="w-10 h-10 rounded-full text-sm font-medium transition-colors flex items-center justify-center {ctx.selection.type === 'preset' &&

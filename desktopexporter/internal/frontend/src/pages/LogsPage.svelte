@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { telemetryAPI } from '@/services/telemetry-service';
+  import { formatTimestamp } from '@/utils/time';
   import type { LogData } from '@/types/api-types';
 
   let logs: LogData[] = [];
@@ -9,7 +10,7 @@
 
   onMount(async () => {
     try {
-      logs = await telemetryAPI.getLogs(0, Date.now(), undefined);
+      logs = await telemetryAPI.searchLogs(0, Date.now(), undefined);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load logs';
     } finally {
@@ -19,7 +20,7 @@
 </script>
 
 <!-- LogsPage.svelte - Logs viewing page -->
-<div class="max-w-6xl mx-auto px-6 py-12">
+<div class="mx-auto max-w-6xl min-w-0 px-3 py-6">
   <div class="mb-8">
     <h1 class="text-3xl font-bold mb-2">Logs</h1>
     <p class="text-base-content/70">View and search your OpenTelemetry logs</p>
@@ -51,7 +52,7 @@
                   >{log.severityText}</span
                 >
                 <span class="text-sm text-base-content/70"
-                  >{log.timestamp.toLocal()}</span
+                  >{formatTimestamp(log.timestamp, 'local', 'nanoseconds')}</span
                 >
                 {#if log.traceID}
                   <span class="text-xs text-primary">Trace: {log.traceID}</span>
@@ -64,16 +65,16 @@
             </div>
           </div>
 
-          {#if log.attributes && Object.keys(log.attributes).length > 0}
+          {#if log.attributes && log.attributes.length > 0}
             <details class="mt-3">
               <summary class="cursor-pointer text-xs text-base-content/60"
-                >Attributes ({Object.keys(log.attributes).length})</summary
+                >Attributes ({log.attributes.length})</summary
               >
               <div class="mt-2 p-2 bg-base-100 rounded text-xs">
-                {#each Object.entries(log.attributes) as [key, value]}
+                {#each log.attributes as attr}
                   <div class="flex justify-between mb-1">
-                    <span class="font-mono">{key}:</span>
-                    <span class="font-mono">{value}</span>
+                    <span class="font-mono">{attr.key}:</span>
+                    <span class="font-mono">{attr.value}</span>
                   </div>
                 {/each}
               </div>

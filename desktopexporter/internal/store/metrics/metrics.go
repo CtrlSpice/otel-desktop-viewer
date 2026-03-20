@@ -265,8 +265,26 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 			where a.datapoint_id in (select id from filtered_dps) and a.scope = 'datapoint'
 			group by a.datapoint_id
 		),
+		exemplar_attrs as (
+			select a.exemplar_id,
+				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.exemplar_id is not null
+				and a.datapoint_id in (select id from filtered_dps)
+				and a.scope = 'exemplar'
+			group by a.exemplar_id
+		),
 		exemplars_agg as (
-			select e.datapoint_id, json_group_array(json_object('timestamp', e.timestamp, 'value', e.value, 'traceID', e.trace_id, 'spanID', e.span_id)) as exemplars
+			select e.datapoint_id, json_group_array(json_object(
+				'timestamp', e.timestamp,
+				'value', e.value,
+				'traceID', e.trace_id,
+				'spanID', e.span_id,
+				'filteredAttributes', coalesce(
+					(select attrs from exemplar_attrs where exemplar_attrs.exemplar_id = e.id),
+					json('[]')
+				)
+			)) as exemplars
 			from exemplars e
 			where e.datapoint_id in (select id from filtered_dps)
 			group by e.datapoint_id
@@ -284,17 +302,52 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 			group by a.metric_id
 		),
 		datapoints_agg as (
-			select d.metric_id, to_json(list(json_object(
-				'id', d.id, 'metricType', d.metric_type, 'timestamp', d.timestamp, 'startTime', d.start_time, 'flags', d.flags,
-				'doubleValue', d.double_value, 'intValue', d.int_value, 'valueType', d.value_type,
-				'isMonotonic', d.is_monotonic, 'aggregationTemporality', d.aggregation_temporality,
-				'count', d.count, 'sum', d.sum, 'min', d.min, 'max', d.max,
-				'bucketCounts', d.bucket_counts, 'explicitBounds', d.explicit_bounds,
-				'scale', d.scale, 'zeroCount', d.zero_count,
-				'positiveBucketOffset', d.positive_bucket_offset, 'positiveBucketCounts', d.positive_bucket_counts,
-				'negativeBucketOffset', d.negative_bucket_offset, 'negativeBucketCounts', d.negative_bucket_counts,
-				'attributes', coalesce((select attrs from dp_attrs_agg where dp_attrs_agg.datapoint_id = d.id), json('[]')),
-				'exemplars', coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]'))
+			select d.metric_id, to_json(list(json_merge_patch(
+				json_object(
+					'id', d.id,
+					'metricType', d.metric_type,
+					'timestamp', d.timestamp,
+					'startTime', d.start_time,
+					'flags', d.flags,
+					'attributes', coalesce((select attrs from dp_attrs_agg where dp_attrs_agg.datapoint_id = d.id), json('[]')),
+					'exemplars', coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]'))
+				),
+				case d.metric_type
+					when 'Gauge' then json_object(
+						'doubleValue', d.double_value,
+						'intValue', d.int_value,
+						'valueType', d.value_type
+					)
+					when 'Sum' then json_object(
+						'doubleValue', d.double_value,
+						'intValue', d.int_value,
+						'valueType', d.value_type,
+						'isMonotonic', d.is_monotonic,
+						'aggregationTemporality', d.aggregation_temporality
+					)
+					when 'Histogram' then json_object(
+						'count', d.count,
+						'sum', d.sum,
+						'min', d.min,
+						'max', d.max,
+						'bucketCounts', d.bucket_counts,
+						'explicitBounds', d.explicit_bounds,
+						'aggregationTemporality', d.aggregation_temporality
+					)
+					when 'ExponentialHistogram' then json_object(
+						'count', d.count,
+						'sum', d.sum,
+						'min', d.min,
+						'max', d.max,
+						'scale', d.scale,
+						'zeroCount', d.zero_count,
+						'positiveBucketOffset', d.positive_bucket_offset,
+						'positiveBucketCounts', d.positive_bucket_counts,
+						'negativeBucketOffset', d.negative_bucket_offset,
+						'negativeBucketCounts', d.negative_bucket_counts,
+						'aggregationTemporality', d.aggregation_temporality
+					)
+				end
 			) order by d.timestamp desc)) as datapoints
 			from filtered_dps d
 			group by d.metric_id

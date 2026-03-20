@@ -1,5 +1,6 @@
 import { setContext, getContext } from 'svelte';
 import type { Timezone } from '@/utils/time';
+import { recordRecentTimeRange } from '@/utils/recent-time-ranges';
 
 // Base interface with common fields
 interface BaseTimeSelection {
@@ -78,6 +79,7 @@ function createTimeContext(): TimeContext {
         break;
     }
     localStorage.setItem('time-selection', JSON.stringify(selection));
+    recordRecentTimeRange(start, end, Date.now());
   }
 
   // Set timezone

@@ -132,8 +132,8 @@
 
 </script>
 
-<div class="relative">
-  <div class="section-header mb-2">
+<div class="relative pl-2">
+  <div class="section-header mb-2 flex items-center text-sm font-semibold text-base-content">
     {#if ctx.selection.type === 'custom'}
       <svg class="w-4 h-4 mr-2 text-primary" viewBox="0 0 24 24">
         <path d="m5 14l3.5 3.5L19 6.5" />
@@ -156,7 +156,7 @@
     Custom Time Range
   </div>
 
-  <div class="pl-4 pr-4 pb-3">
+  <div class="pb-3 pr-2">
     <!-- From Date/Time -->
     <div class="flex items-center gap-2 mb-3">
       <label class="label py-0 w-18" for="custom-start">

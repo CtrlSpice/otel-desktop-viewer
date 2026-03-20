@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { EventData } from '@/types/api-types';
-  import { PreciseTimestamp } from '@/types/precise-timestamp';
   import SpanField from './SpanField.svelte';
   import { formatDuration } from '@/utils/duration';
+  import { formatTimestamp } from '@/utils/time';
 
   type Props = {
     events: EventData[];
-    spanStartTime: PreciseTimestamp;
+    spanStartTime: bigint;
   };
 
   let { events, spanStartTime }: Props = $props();
@@ -43,7 +43,7 @@
               <div>{event.name}</div>
               <div class="text-xs text-base-content/60 font-normal">
                 {formatDuration(
-                  event.timestamp.nanoseconds - spanStartTime.nanoseconds
+                  event.timestamp - spanStartTime
                 )}{' '}
                 since span start
               </div>
@@ -56,18 +56,18 @@
               <div class="data-table-cell">
                 <SpanField
                   fieldName="timestamp"
-                  fieldValue={event.timestamp.toString()}
+                  fieldValue={formatTimestamp(event.timestamp, 'local', 'nanoseconds')}
                   fieldType="timestamp"
                 />
               </div>
             </div>
-            {#each Object.entries(event.attributes) as [key, value]}
+            {#each event.attributes as attr}
               <div class="data-table-row">
                 <div class="data-table-cell">
                   <SpanField
-                    fieldName={key}
-                    fieldValue={value.toString()}
-                    fieldType="type"
+                    fieldName={attr.key}
+                    fieldValue={attr.value}
+                    fieldType={attr.type}
                   />
                 </div>
               </div>

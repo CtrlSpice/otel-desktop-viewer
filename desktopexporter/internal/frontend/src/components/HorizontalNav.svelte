@@ -33,10 +33,10 @@
 
 <!-- Horizontal Navigation Bar -->
 <nav
-  class="fixed top-0 left-0 right-0 h-12 bg-base-200 border-b border-base-300 flex items-center justify-between px-4 z-40"
+  class="fixed top-0 left-0 right-0 z-40 flex h-14 min-w-0 items-center justify-between gap-2 border-b border-base-300/50 bg-base-100/80 px-4 backdrop-blur-md backdrop-saturate-150 min-[900px]:px-6"
 >
-  <!-- Left side - Navigation items -->
-  <div class="flex items-end h-full pt-2">
+  <div class="flex min-w-0 flex-1 items-center overflow-x-auto overflow-y-hidden">
+    <div class="flex flex-nowrap items-center gap-1 pr-2">
     {#each navItems as item}
       <button
         class="nav-button {currentPath === item.path
@@ -44,37 +44,28 @@
           : 'nav-button-inactive'}"
         onclick={() => handleNavClick(item.path)}
       >
-        <HugeiconsIcon icon={item.icon} size={16} />
-        <span class="text-xs font-medium">{item.label}</span>
+        <HugeiconsIcon icon={item.icon} size={17} />
+        <span>{item.label}</span>
       </button>
     {/each}
+    </div>
   </div>
 
-  <!-- Right side - Theme toggle -->
-  <div class="flex items-center">
+  <div class="flex shrink-0 items-center">
     <ThemeToggle />
   </div>
 </nav>
 
 <style lang="postcss">
   .nav-button {
-    @apply flex items-center justify-center gap-1.5 px-3 rounded-t-lg transition-colors duration-200 mr-1 h-full w-24;
+    @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
   }
 
   .nav-button-active {
-    @apply bg-primary text-primary-content border-b-2 border-primary-content;
+    @apply bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
   }
 
   .nav-button-inactive {
-    @apply text-base-content hover:bg-base-300 border-b-2 border-transparent;
-  }
-
-  /* Light theme overrides */
-  :global([data-theme="light"]) .nav-button-active {
-    @apply bg-primary-content text-primary border-b-2 border-primary;
-  }
-
-  :global([data-theme="light"]) .nav-button-inactive {
-    @apply text-base-content/70 hover:bg-base-200 hover:text-base-content;
+    @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
   }
 </style>

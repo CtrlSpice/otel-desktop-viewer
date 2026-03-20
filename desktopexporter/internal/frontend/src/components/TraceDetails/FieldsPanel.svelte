@@ -2,6 +2,7 @@
   import type { SpanData } from '@/types/api-types';
   import SpanField from './SpanField.svelte';
   import { formatDuration } from '@/utils/duration';
+  import { formatTimestamp } from '@/utils/time';
 
   type Props = {
     span: SpanData | undefined;
@@ -9,48 +10,19 @@
 
   let { span }: Props = $props();
 
-  let isRoot = $derived(span?.parentSpanID.length === 0);
+  let isRoot = $derived(!span?.parentSpanID);
   let spanDataOpen = $state(true);
   let resourceDataOpen = $state(true);
   let scopeDataOpen = $state(true);
   let durationLabel = $derived(
     span
-      ? formatDuration(span.endTime.nanoseconds - span.startTime.nanoseconds)
+      ? formatDuration(span.endTime - span.startTime)
       : ''
   );
 
-  let spanAttributes = $derived(
-    span
-      ? Object.entries(span.attributes).map(([key, value]) => ({
-          key,
-          name: key,
-          value: value.toString(),
-          type: 'type',
-        }))
-      : []
-  );
-
-  let resourceAttributes = $derived(
-    span
-      ? Object.entries(span.resource.attributes).map(([key, value]) => ({
-          key,
-          name: key,
-          value: value.toString(),
-          type: 'type',
-        }))
-      : []
-  );
-
-  let scopeAttributes = $derived(
-    span
-      ? Object.entries(span.scope.attributes).map(([key, value]) => ({
-          key,
-          name: key,
-          value: value.toString(),
-          type: 'type',
-        }))
-      : []
-  );
+  let spanAttributes = $derived(span?.attributes ?? []);
+  let resourceAttributes = $derived(span?.resource.attributes ?? []);
+  let scopeAttributes = $derived(span?.scope.attributes ?? []);
 </script>
 
 {#if span}
@@ -103,7 +75,7 @@
             <div class="data-table-cell">
               <SpanField
                 fieldName="start time"
-                fieldValue={span.startTime.toString()}
+                fieldValue={formatTimestamp(span.startTime, 'local', 'nanoseconds')}
                 fieldType="timestamp"
               />
             </div>
@@ -112,7 +84,7 @@
             <div class="data-table-cell">
               <SpanField
                 fieldName="end time"
-                fieldValue={span.endTime.toString()}
+                fieldValue={formatTimestamp(span.endTime, 'local', 'nanoseconds')}
                 fieldType="timestamp"
               />
             </div>
@@ -160,7 +132,7 @@
               <div class="data-table-cell">
                 <SpanField
                   fieldName="parent span id"
-                  fieldValue={span.parentSpanID}
+                  fieldValue={span.parentSpanID ?? ''}
                   fieldType="string"
                 />
               </div>
@@ -179,7 +151,7 @@
             <div class="data-table-row">
               <div class="data-table-cell">
                 <SpanField
-                  fieldName={attr.name}
+                  fieldName={attr.key}
                   fieldValue={attr.value}
                   fieldType={attr.type}
                 />
@@ -248,7 +220,7 @@
             <div class="data-table-row">
               <div class="data-table-cell">
                 <SpanField
-                  fieldName={attr.name}
+                  fieldName={attr.key}
                   fieldValue={attr.value}
                   fieldType={attr.type}
                 />
@@ -313,7 +285,7 @@
             <div class="data-table-row">
               <div class="data-table-cell">
                 <SpanField
-                  fieldName={attr.name}
+                  fieldName={attr.key}
                   fieldValue={attr.value}
                   fieldType={attr.type}
                 />

@@ -8,16 +8,7 @@
 
   let { span }: Props = $props();
 
-  let resourceAttributes = $derived(
-    span
-      ? Object.entries(span.resource.attributes).map(([key, value]) => ({
-          key,
-          name: key,
-          value: value.toString(),
-          type: 'type',
-        }))
-      : []
-  );
+  let resourceAttributes = $derived(span?.resource.attributes ?? []);
 </script>
 
 {#if span}
@@ -25,7 +16,7 @@
     <div class="space-y-0">
       {#each resourceAttributes as attr}
         <SpanField
-          fieldName={attr.name}
+          fieldName={attr.key}
           fieldValue={attr.value}
           fieldType={attr.type}
         />

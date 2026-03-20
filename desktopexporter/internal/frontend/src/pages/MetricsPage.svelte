@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { telemetryAPI } from '@/services/telemetry-service';
+  import { formatTimestamp } from '@/utils/time';
   import type { MetricData } from '@/types/api-types';
 
   let metrics: MetricData[] = [];
@@ -19,7 +20,7 @@
 </script>
 
 <!-- MetricsPage.svelte - Metrics visualization page -->
-<div class="max-w-6xl mx-auto px-6 py-12">
+<div class="mx-auto max-w-6xl min-w-0 px-3 py-6">
   <div class="mb-8">
     <h1 class="text-3xl font-bold mb-2">Metrics</h1>
     <p class="text-base-content/70">
@@ -48,12 +49,14 @@
         <div class="bg-base-200 border border-base-300 rounded-lg p-6">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold">{metric.name}</h3>
-            <span class="badge badge-secondary badge-outline"
-              >{metric.dataPoints.type}</span
-            >
+            {#if metric.datapoints.length > 0}
+              <span class="badge badge-secondary badge-outline"
+                >{metric.datapoints[0].metricType}</span
+              >
+            {/if}
           </div>
 
-          <div class="grid md:grid-cols-2 gap-4 mb-4">
+          <div class="mb-4 grid grid-cols-1 gap-4 min-[700px]:grid-cols-2">
             <div>
               <p class="text-sm text-base-content/70">Description</p>
               <p class="text-sm">{metric.description || 'No description'}</p>
@@ -66,23 +69,27 @@
 
           <div class="mb-4">
             <p class="text-sm text-base-content/70 mb-2">
-              Data Points ({Array.isArray(metric.dataPoints)
-                ? metric.dataPoints.length
-                : 0})
+              Data Points ({metric.datapoints.length})
             </p>
             <div class="max-h-32 overflow-y-auto">
-              {#if Array.isArray(metric.dataPoints)}
-                {#each metric.dataPoints.slice(0, 5) as dataPoint}
+              {#if metric.datapoints.length > 0}
+                {#each metric.datapoints.slice(0, 5) as dataPoint}
                   <div class="text-xs bg-base-100 p-2 rounded mb-1">
                     <div class="flex justify-between">
-                      <span>Value: {dataPoint.value}</span>
-                      <span>{dataPoint.timestamp.toLocal()}</span>
+                      <span>
+                        {#if dataPoint.metricType === 'Gauge' || dataPoint.metricType === 'Sum'}
+                          Value: {dataPoint.doubleValue ?? dataPoint.intValue ?? '-'}
+                        {:else}
+                          Count: {dataPoint.count}
+                        {/if}
+                      </span>
+                      <span>{formatTimestamp(dataPoint.timestamp, 'local', 'nanoseconds')}</span>
                     </div>
                   </div>
                 {/each}
-                {#if metric.dataPoints.length > 5}
+                {#if metric.datapoints.length > 5}
                   <p class="text-xs text-base-content/50 text-center mt-2">
-                    ... and {metric.dataPoints.length - 5} more
+                    ... and {metric.datapoints.length - 5} more
                   </p>
                 {/if}
               {:else}

@@ -9,6 +9,8 @@
   import CodeBlock from "@/components/CodeBlock.svelte"
   import { telemetryAPI } from "@/services/telemetry-service"
   import type { Stats } from "@/types/api-types"
+  import luluImage from "@/assets/images/lulu.png"
+  import axolotlImage from "@/assets/images/axolotl.svg"
 
   const POLL_INTERVAL_MS = 5000;
 
@@ -22,9 +24,13 @@
     }
   }
 
-  function formatRelativeTime(timestampNs: number | null): string {
+  function formatRelativeTime(
+    timestampNs: bigint | number | string | null | undefined
+  ): string {
     if (timestampNs == null) return '-';
-    const ms = timestampNs / 1_000_000;
+    const normalizedNs =
+      typeof timestampNs === 'bigint' ? timestampNs : BigInt(timestampNs);
+    const ms = Number(normalizedNs / 1_000_000n);
     const seconds = Math.floor((Date.now() - ms) / 1000);
     if (seconds < 5) return 'just now';
     if (seconds < 60) return `${seconds}s ago`;
@@ -43,23 +49,35 @@
 </script>
 
 <!-- HomePage.svelte - The welcome/landing page -->
-<div class="max-w-6xl mx-auto px-6 py-12">
+<div class="mx-auto max-w-6xl min-w-0 px-3 py-6">
   <!-- Header Section -->
-  <div>
-    <div class="flex items-center gap-6">
+  <header class="mb-10">
+    <div
+      class="flex flex-col items-center gap-8 text-center min-[1100px]:flex-row min-[1100px]:items-center min-[1100px]:gap-10 min-[1100px]:text-left"
+    >
       <img
-        src="/src/assets/images/lulu.png"
+        src={luluImage}
         alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen."
-        class="w-64 h-64 object-contain"
+        class="h-48 w-48 shrink-0 object-contain drop-shadow-sm min-[1100px]:h-64 min-[1100px]:w-64"
       />
-      <div>
-        <h1 class="text-2xl font-bold">OpenTelemetry Desktop Viewer</h1>
-        <p class="text-base-content/70">
-          Collect, visualize, and query your OpenTelemetry data locally.
+      <div class="min-w-0 py-2">
+        <p
+          class="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary/80"
+        >
+          Local-first telemetry
+        </p>
+        <h1
+          class="mb-3 text-3xl font-semibold leading-tight tracking-tight text-base-content min-[1100px]:text-4xl"
+        >
+          OpenTelemetry Desktop Viewer
+        </h1>
+        <p class="max-w-xl text-base leading-relaxed text-base-content/65">
+          Collect, visualize, and query your OpenTelemetry data locally — without
+          shipping it to the cloud.
         </p>
       </div>
     </div>
-  </div>
+  </header>
 
   <!-- Summary Sections -->
   <div class="summary-grid">
@@ -67,7 +85,9 @@
     <div class="summary-card">
       <div class="summary-header">
         <div class="summary-icon">
-          <HugeiconsIcon icon={BarChartHorizontalIcon} size={16} color="hsl(var(--s))" />
+          <span class="text-secondary" aria-hidden="true">
+            <HugeiconsIcon icon={BarChartHorizontalIcon} size={18} color="currentColor" />
+          </span>
         </div>
         <h3 class="summary-title">Traces</h3>
       </div>
@@ -102,7 +122,9 @@
     <div class="summary-card">
       <div class="summary-header">
         <div class="summary-icon">
-          <HugeiconsIcon icon={Chart03Icon} size={16} color="hsl(var(--s))" />
+          <span class="text-secondary" aria-hidden="true">
+            <HugeiconsIcon icon={Chart03Icon} size={18} color="currentColor" />
+          </span>
         </div>
         <h3 class="summary-title">Metrics</h3>
       </div>
@@ -129,7 +151,9 @@
     <div class="summary-card">
       <div class="summary-header">
         <div class="summary-icon">
-          <HugeiconsIcon icon={FirePitIcon} size={16} color="hsl(var(--s))" />
+          <span class="text-secondary" aria-hidden="true">
+            <HugeiconsIcon icon={FirePitIcon} size={18} color="currentColor" />
+          </span>
         </div>
         <h3 class="summary-title">Logs</h3>
       </div>
@@ -202,7 +226,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
     <p class="footer-text">
       Made with 
       <img
-        src="/src/assets/images/axolotl.svg"
+        src={axolotlImage}
         alt="axolotl emoji"
         class="footer-icon"
       /> 
@@ -227,48 +251,53 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
 <style lang="postcss">
   /* Summary Cards */
   .summary-grid {
-    @apply grid md:grid-cols-3 gap-6 mb-8;
+    @apply mb-10 grid gap-5;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   }
   
   .summary-card {
-    @apply bg-base-200 border border-base-300 rounded-lg p-4 flex flex-col;
+    @apply flex flex-col rounded-2xl border border-base-300/60 bg-base-200/40 p-5 shadow-surface-sm backdrop-blur-sm transition-[border-color,box-shadow] duration-200;
+  }
+
+  .summary-card:hover {
+    @apply border-base-300 shadow-surface;
   }
   
   .summary-header {
-    @apply flex items-center gap-3 mb-4;
+    @apply mb-5 flex items-center gap-3;
   }
   
   .summary-icon {
-    @apply w-8 h-8 bg-secondary/20 rounded-lg flex items-center justify-center;
+    @apply flex h-10 w-10 items-center justify-center rounded-xl bg-secondary/15 text-secondary ring-1 ring-secondary/20;
   }
   
   .summary-title {
-    @apply text-lg font-semibold;
+    @apply text-lg font-semibold tracking-tight;
   }
   
   .summary-stats {
-    @apply space-y-2 flex-grow;
+    @apply flex-grow space-y-2.5;
   }
   
   .summary-stat {
-    @apply flex justify-between text-sm;
+    @apply flex items-baseline justify-between gap-3 text-sm;
   }
   
   .summary-label {
-    @apply text-base-content/70;
+    @apply text-base-content/60;
   }
   
   .summary-value {
-    @apply font-medium;
+    @apply tabular-nums font-medium tracking-tight text-base-content;
     transition: opacity 150ms ease;
   }
   
   .summary-footer {
-    @apply mt-4 pt-4 border-t border-base-300;
+    @apply mt-auto border-t border-base-300/70 pt-4;
   }
   
   .summary-link {
-    @apply text-primary text-sm hover:underline;
+    @apply text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/85 hover:underline;
   }
 
   
@@ -278,11 +307,11 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
   }
   
   .section-title {
-    @apply text-2xl font-semibold mb-6;
+    @apply mb-5 text-2xl font-semibold tracking-tight;
   }
   
   .section-description {
-    @apply text-base-content/70 mb-6;
+    @apply mb-6 max-w-2xl leading-relaxed text-base-content/65;
   }
   
   /* Configuration */
