@@ -462,6 +462,197 @@ class Parser {
   }
 }
 
+// Validation error with position info for the linter
+export interface ValidationError {
+  from: number;
+  to: number;
+  message: string;
+}
+
+// Lightweight validator that collects all errors without building a QueryNode tree
+export function validateQuery(
+  input: string,
+  availableFields: FieldDefinition[]
+): ValidationError[] {
+  if (!input.trim()) return [];
+
+  let tokens: Token[];
+  try {
+    tokens = new Lexer(input).tokenize();
+  } catch (error) {
+    return [{ from: 0, to: input.length, message: error instanceof Error ? error.message : 'Tokenization failed' }];
+  }
+
+  const errors: ValidationError[] = [];
+  let pos = 0;
+
+  function current(): Token | undefined {
+    return tokens[pos];
+  }
+
+  function advance(): void {
+    pos++;
+  }
+
+  function findField(name: string): FieldDefinition | undefined {
+    return availableFields.find(
+      f => f.searchScope !== 'global' && f.name.toLowerCase() === name.toLowerCase()
+    );
+  }
+
+  function findOperator(symbol: string): Operator | undefined {
+    for (let op of Object.values(OPERATORS)) {
+      if (op.symbol === symbol) return op;
+    }
+    return undefined;
+  }
+
+  function tokenEnd(token: Token): number {
+    return token.position + token.value.length;
+  }
+
+  function validateExpression(): void {
+    validateTerm();
+    while (current()?.type === 'LOGICAL') {
+      advance();
+      if (!current() || current()!.type === 'EOF') {
+        const last = tokens[pos - 1];
+        errors.push({ from: last.position, to: tokenEnd(last), message: 'Expected condition after logical operator' });
+        return;
+      }
+      validateTerm();
+    }
+  }
+
+  function validateTerm(): void {
+    const token = current();
+    if (!token) return;
+
+    if (token.type === 'LPAREN') {
+      advance();
+      validateExpression();
+      const closing = current();
+      if (!closing || closing.type !== 'RPAREN') {
+        errors.push({ from: token.position, to: token.position + 1, message: 'Expected closing parenthesis' });
+      } else {
+        advance();
+      }
+      return;
+    }
+
+    validateCondition();
+  }
+
+  function validateCondition(): void {
+    const fieldToken = current();
+    if (!fieldToken || fieldToken.type !== 'FIELD') {
+      if (fieldToken) {
+        errors.push({ from: fieldToken.position, to: tokenEnd(fieldToken), message: 'Expected field name' });
+        advance();
+      }
+      return;
+    }
+
+    const field = findField(fieldToken.value);
+    if (!field) {
+      errors.push({ from: fieldToken.position, to: tokenEnd(fieldToken), message: `Unknown field: ${fieldToken.value}` });
+    }
+    advance();
+
+    const opToken = current();
+    if (!opToken || opToken.type !== 'OPERATOR') {
+      if (opToken) {
+        errors.push({ from: opToken.position, to: tokenEnd(opToken), message: 'Expected operator' });
+      } else if (fieldToken) {
+        errors.push({ from: fieldToken.position, to: tokenEnd(fieldToken), message: 'Expected operator after field' });
+      }
+      return;
+    }
+
+    const operator = findOperator(opToken.value);
+    if (!operator) {
+      errors.push({ from: opToken.position, to: tokenEnd(opToken), message: `Unknown operator: ${opToken.value}` });
+    } else if (field && field.searchScope !== 'global' && !field.operators.some(op => op.symbol === operator.symbol)) {
+      errors.push({ from: opToken.position, to: tokenEnd(opToken), message: `Operator '${operator.symbol}' is not valid for field '${field.name}'` });
+    }
+    advance();
+
+    // Validate value
+    const valToken = current();
+    if (!valToken || (valToken.type !== 'VALUE' && valToken.type !== 'FIELD' && valToken.type !== 'LBRACKET')) {
+      errors.push({ from: opToken.position, to: tokenEnd(opToken), message: 'Expected value' });
+      return;
+    }
+
+    if (valToken.type === 'LBRACKET') {
+      validateArray();
+    } else {
+      advance();
+    }
+  }
+
+  function validateArray(): void {
+    const openBracket = current()!;
+    advance();
+
+    if (current()?.type === 'RBRACKET') {
+      advance();
+      return;
+    }
+
+    const firstVal = current();
+    if (!firstVal || (firstVal.type !== 'VALUE' && firstVal.type !== 'FIELD')) {
+      errors.push({ from: openBracket.position, to: openBracket.position + 1, message: 'Expected value in array' });
+      return;
+    }
+    advance();
+
+    while (current()?.type === 'COMMA') {
+      advance();
+      const val = current();
+      if (!val || (val.type !== 'VALUE' && val.type !== 'FIELD')) {
+        const comma = tokens[pos - 1];
+        errors.push({ from: comma.position, to: tokenEnd(comma), message: 'Expected value after comma' });
+        return;
+      }
+      advance();
+    }
+
+    if (current()?.type !== 'RBRACKET') {
+      errors.push({ from: openBracket.position, to: openBracket.position + 1, message: 'Expected ]' });
+    } else {
+      advance();
+    }
+  }
+
+  // Check for plain text (global search) — not an error
+  const trimmedInput = input.trim();
+  if (
+    trimmedInput &&
+    !trimmedInput.includes(':') &&
+    !trimmedInput.includes('=') &&
+    !trimmedInput.includes('~') &&
+    !trimmedInput.includes('>') &&
+    !trimmedInput.includes('<') &&
+    !trimmedInput.includes('!') &&
+    !trimmedInput.includes('[') &&
+    !trimmedInput.includes('(') &&
+    !trimmedInput.match(/\b(AND|OR|IN|NOT)\b/i)
+  ) {
+    return [];
+  }
+
+  validateExpression();
+
+  // Check for unconsumed tokens
+  if (current() && current()!.type !== 'EOF') {
+    const leftover = current()!;
+    errors.push({ from: leftover.position, to: tokenEnd(leftover), message: `Unexpected token: ${leftover.value}` });
+  }
+
+  return errors;
+}
+
 // Main Parse Function
 export function parseQuery(
   input: string,

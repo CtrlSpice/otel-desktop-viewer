@@ -1,19 +1,28 @@
 <script lang="ts">
-  import DateTimeFilter from './filters/datetime/DateTimeFilter.svelte';
-  import SearchInput from './search/SearchInput.svelte';
+  import DateTimeFilter from './datetime/DateTimeFilter.svelte';
+  import SearchEditor from './search/SearchEditor.svelte';
   import type { SearchResultEvent } from '@/types/api-types';
+
+  type PageHeaderProps =
+    | {
+        signal: 'logs';
+        view: 'list';
+        onRefresh?: (() => void) | null;
+        onSearchResults?: ((event: SearchResultEvent) => void) | null;
+      }
+    | {
+        signal: 'traces' | 'metrics';
+        view: 'list' | 'detail';
+        onRefresh?: (() => void) | null;
+        onSearchResults?: ((event: SearchResultEvent) => void) | null;
+      };
 
   let {
     signal,
     view,
     onRefresh = null,
     onSearchResults = null,
-  }: {
-    signal: 'traces' | 'logs' | 'metrics';
-    view: 'list' | 'detail';
-    onRefresh?: (() => void) | null;
-    onSearchResults?: ((event: SearchResultEvent) => void) | null;
-  } = $props();
+  }: PageHeaderProps = $props();
 </script>
 
 <!-- Page Header Component -->
@@ -48,7 +57,19 @@
   >
     <DateTimeFilter />
     <div class="min-w-0 flex-1">
-      <SearchInput {signal} {view} onSearchResults={onSearchResults || undefined} />
+      {#if signal === 'logs'}
+        <SearchEditor
+          signal="logs"
+          view="list"
+          onSearchResults={onSearchResults || undefined}
+        />
+      {:else}
+        <SearchEditor
+          signal={signal}
+          {view}
+          onSearchResults={onSearchResults || undefined}
+        />
+      {/if}
     </div>
   </div>
 </div>
