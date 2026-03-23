@@ -28,7 +28,7 @@ function DurationIndicator(props: DurationIndicatorProps) {
   // Determine the time unit we are working in
   let { traceBounds } = props;
   let duration = traceBounds.endTime.nanoseconds - traceBounds.startTime.nanoseconds;
-  let sectionNs = duration / BigInt(numSections);
+  let sectionNs = duration === BigInt(0) ? BigInt(0) : duration / BigInt(numSections);
   let sectionWidth = availableWidth / numSections;
 
   let durationSections = Array(numSections - 1)
