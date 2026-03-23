@@ -57999,6 +57999,9 @@
   }
   function getOffset2(startTime, endTime, point) {
     let totalNs = endTime.nanoseconds - startTime.nanoseconds;
+    if (totalNs === BigInt(0)) {
+      return 0;
+    }
     let offsetNs = point.nanoseconds - startTime.nanoseconds;
     return Math.floor(Number(offsetNs * BigInt(100) / totalNs));
   }
@@ -59731,7 +59734,7 @@ otel-cli exec --service my-service --name "curl google" curl https://google.com
     }
     let { traceBounds } = props;
     let duration = traceBounds.endTime.nanoseconds - traceBounds.startTime.nanoseconds;
-    let sectionNs = duration / BigInt(numSections);
+    let sectionNs = duration === BigInt(0) ? BigInt(0) : duration / BigInt(numSections);
     let sectionWidth = availableWidth / numSections;
     let durationSections = Array(numSections - 1).fill(null).map((_, i) => {
       let sectionLabel = formatDuration(sectionNs * BigInt(i));

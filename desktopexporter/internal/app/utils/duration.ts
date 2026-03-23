@@ -45,6 +45,9 @@ export function formatDuration(nanoseconds: bigint): string {
 
 export function getOffset(startTime: PreciseTimestamp, endTime: PreciseTimestamp, point: PreciseTimestamp): number {
   let totalNs = endTime.nanoseconds - startTime.nanoseconds;
+  if (totalNs === BigInt(0)) {
+    return 0;
+  }
   let offsetNs = point.nanoseconds - startTime.nanoseconds;
   return Math.floor(Number((offsetNs * BigInt(100)) / totalNs));
 }
