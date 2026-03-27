@@ -2,6 +2,7 @@
   import { router } from 'tinro5';
   import { telemetryAPI } from '@/services/telemetry-service';
   import type { TraceData } from '@/types/api-types';
+  import SignalHeader from '@/components/SignalHeader/SignalHeader.svelte';
   import DetailView from '@/components/TraceDetails/DetailView.svelte';
   import ResizablePanels from '@/components/ResizablePanels.svelte';
 
@@ -33,7 +34,7 @@
   });
 
   // TODO: Update when integrating search - will need to use searchTraceSpans endpoint
-  // with time range and query filters from PageHeader
+  // with time range and query filters from SignalHeader
   async function fetchTrace() {
     if (!traceID) return;
 
@@ -65,6 +66,8 @@
       <span>Back to Traces</span>
     </button>
   </div>
+
+  <SignalHeader signal="traces" view="detail" onRefresh={fetchTrace} />
 
   {#if loading}
     <div class="flex items-center justify-center h-64">

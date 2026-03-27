@@ -28,27 +28,42 @@ interface TimeContext {
   setTimezone: (timezone: Timezone) => void;
 }
 
+/** Default preset row index for `PresetTimeRanges` PRESETS (0 = All). */
+const DEFAULT_PRESET_INDEX_ALL = 0;
+
+function loadTimeSelection(raw: string | null): TimeSelection {
+  if (!raw) {
+    return {
+      start: 0,
+      end: Date.now(),
+      type: 'preset',
+      presetIndex: DEFAULT_PRESET_INDEX_ALL,
+    };
+  }
+
+  let parsed = JSON.parse(raw) as TimeSelection;
+
+  if (parsed.type === 'preset') {
+    return {
+      start: parsed.start,
+      end: parsed.end,
+      type: 'preset',
+      presetIndex: parsed.presetIndex,
+    };
+  }
+
+  return parsed;
+}
+
 // Create the time context with Svelte 5 runes
 function createTimeContext(): TimeContext {
   let savedSelection = localStorage.getItem('time-selection');
   let savedTimezone = localStorage.getItem('time-timezone') as Timezone | null;
 
-  // Time selection state
-  let selection = $state<TimeSelection>(
-    savedSelection
-      ? JSON.parse(savedSelection)
-      : {
-          start: 0,
-          end: Date.now(),
-          type: 'preset',
-          presetIndex: 9, // "Show all" is index 9 in the PRESETS array
-        }
-  );
+  let selection = $state<TimeSelection>(loadTimeSelection(savedSelection));
 
-  // Timezone state
   let timezone = $state<Timezone>(savedTimezone || 'local');
 
-  // Set time selection
   function setSelection(
     start: number,
     end: number,
@@ -82,13 +97,11 @@ function createTimeContext(): TimeContext {
     recordRecentTimeRange(start, end, Date.now());
   }
 
-  // Set timezone
   function setTimezone(newTimezone: Timezone) {
     timezone = newTimezone;
     localStorage.setItem('time-timezone', newTimezone);
   }
 
-  // Create reactive context object
   let contextObject = {
     get selection() {
       return selection;
@@ -100,16 +113,13 @@ function createTimeContext(): TimeContext {
     setTimezone,
   };
 
-  // Set context for child components
   setContext('time', contextObject);
   return contextObject;
 }
 
-// Get context in child components
 export function getTimeContext(): TimeContext {
   return getContext<TimeContext>('time');
 }
 
-// Export the creator function
 export { createTimeContext };
 export type { TimeContext, TimeSelection };

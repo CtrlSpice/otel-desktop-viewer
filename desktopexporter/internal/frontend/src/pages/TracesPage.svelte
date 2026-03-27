@@ -5,7 +5,7 @@
   import { getTimeContext } from "@/contexts/time-context.svelte"
   import { formatTimestamp } from "@/utils/time"
   import type { TraceSummary, SearchResultEvent } from "@/types/api-types"
-  import PageHeader from "@/components/PageHeader/PageHeader.svelte"
+  import SignalHeader from "@/components/SignalHeader/SignalHeader.svelte"
 
   // Create time context for this page
   let timeContext = getTimeContext();
@@ -165,9 +165,9 @@
 </script>
 
 <!-- TracesPage.svelte - Traces list and visualization page -->
-<div class="flex min-w-0 w-full flex-col overflow-y-auto px-0 py-4">
+<div class="flex min-w-0 w-full flex-col overflow-y-auto py-6">
   <!-- Page Header -->
-  <PageHeader 
+  <SignalHeader 
     signal="traces"
     view="list"
     onRefresh={fetchTraces}

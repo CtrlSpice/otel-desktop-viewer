@@ -1,0 +1,58 @@
+@precedence { logical @left }
+
+@top Query { expression }
+
+expression { condition (!logical LogicalOp expression)? }
+
+condition { Group | Comparison }
+
+Group { "(" expression ")" }
+
+Comparison { Field operator value }
+
+operator { Operator | KeywordOperator }
+
+KeywordOperator {
+  @specialize<Field, "CONTAINS"> |
+  @specialize<Field, "REGEXP"> |
+  @specialize<Field, "IN"> |
+  @specialize<Field, "NOT"> |
+  @specialize<Field, "NOT CONTAINS"> |
+  @specialize<Field, "NOT IN">
+}
+
+value { QuotedString | Array | Value | Null }
+
+Null {
+  @specialize<Field, "NULL"> |
+  @specialize<Field, "NIL">
+}
+
+Array { "[" commaSep<value> "]" }
+
+commaSep<content> { "" | content ("," content)* }
+
+@tokens {
+  Field { $[a-zA-Z_] $[a-zA-Z0-9_.]* }
+
+  Operator {
+    "=" | "!=" | ">" | "<" | ">=" | "<=" | "=~" | "!~" | "^" | "$"
+  }
+
+  valueChar { $[a-zA-Z0-9_./:\-+@#%&*?{}|\\] }
+
+  Value { valueChar+ }
+
+  QuotedString {
+    '"' (![\\\"] | "\\" _)* '"' |
+    "'" (![\\\'] | "\\" _)* "'"
+  }
+
+  LogicalOp { "AND" | "OR" }
+
+  space { @whitespace+ }
+
+  @precedence { LogicalOp, QuotedString, Operator, Field, Value }
+}
+
+@skip { space }

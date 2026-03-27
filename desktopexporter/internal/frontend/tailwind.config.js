@@ -4,8 +4,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"DM Sans"', 'system-ui', 'Segoe UI', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        sans: ['"Atkinson Hyperlegible Next"', 'system-ui', 'Segoe UI', 'sans-serif'],
+        mono: ['"Atkinson Hyperlegible Mono"', 'ui-monospace', 'monospace'],
       },
       boxShadow: {
         surface: '0 1px 2px rgb(0 0 0 / 0.05), 0 8px 28px rgb(0 0 0 / 0.07)',

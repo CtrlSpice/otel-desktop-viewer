@@ -217,7 +217,9 @@ export type Stats = {
 };
 
 // Discriminated union for search results
-// TODO: Add logs and metrics when implemented
 export type SearchResultEvent =
   | { signal: 'traces'; view: 'list'; results: TraceSummary[] }
-  | { signal: 'traces'; view: 'detail'; results: SpanData[] };
+  | { signal: 'traces'; view: 'detail'; results: SpanData[] }
+  | { signal: 'logs'; view: 'list'; results: LogData[] }
+  | { signal: 'metrics'; view: 'list'; results: MetricData[] }
+  | { signal: 'metrics'; view: 'detail'; results: MetricData[] };

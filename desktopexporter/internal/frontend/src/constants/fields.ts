@@ -22,6 +22,8 @@ export type FieldDefinition =
       searchScope: 'field';
       operators: Operator[];
       description: string;
+      /** If set, search autocomplete offers these literals after the operator. */
+      enumValues?: readonly string[];
     }
   | {
       name: string;
@@ -34,6 +36,38 @@ export type FieldDefinition =
   | {
       searchScope: 'global';
     };
+
+/** OTLP span kind string names (aligns with pdata). */
+export const SPAN_KIND_ENUM = [
+  'Unspecified',
+  'Internal',
+  'Server',
+  'Client',
+  'Producer',
+  'Consumer',
+] as const;
+
+/** OTLP status code string names (aligns with pdata). */
+export const SPAN_STATUS_CODE_ENUM = ['Unset', 'Ok', 'Error'] as const;
+
+/** Common OpenTelemetry Logs severity text values. */
+export const LOG_SEVERITY_TEXT_ENUM = [
+  'TRACE',
+  'DEBUG',
+  'INFO',
+  'WARN',
+  'ERROR',
+  'FATAL',
+] as const;
+
+/** Metric instrument / datapoint type strings used in this app’s store and API. */
+export const METRIC_TYPE_ENUM = [
+  'Empty',
+  'Gauge',
+  'Sum',
+  'Histogram',
+  'ExponentialHistogram',
+] as const;
 
 // Field suggestions based on signal
 export function getFieldsBySignal(
@@ -51,6 +85,13 @@ export function getFieldsBySignal(
     case 'metrics':
       return [...baseFields, ...METRIC_FIELDS];
   }
+}
+
+/** Static searchable fields for CodeMirror suggestions and parsing. */
+export function getStaticFieldsForSearch(
+  signal: 'traces' | 'logs' | 'metrics'
+): FieldDefinition[] {
+  return getFieldsBySignal(signal);
 }
 
 // Function to get dynamic attributes
@@ -142,6 +183,7 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     ],
     description:
       'Span kind (Unspecified, Internal, Server, Client, Producer, Consumer)',
+    enumValues: SPAN_KIND_ENUM,
   },
   {
     name: 'startTime',
@@ -218,6 +260,7 @@ export const SPAN_FIELDS: FieldDefinition[] = [
       OPERATORS.NOT_IN,
     ],
     description: 'Status code (Unset, Ok, Error)',
+    enumValues: SPAN_STATUS_CODE_ENUM,
   },
   {
     name: 'statusMessage',
@@ -369,6 +412,7 @@ export const LOG_FIELDS: FieldDefinition[] = [
     ],
     description:
       'Text representation of log severity (TRACE, DEBUG, INFO, WARN, ERROR, FATAL)',
+    enumValues: LOG_SEVERITY_TEXT_ENUM,
   },
   {
     name: 'severityNumber',
@@ -493,6 +537,7 @@ export const METRIC_FIELDS: FieldDefinition[] = [
     ],
     description:
       'Type of metric (Empty, Gauge, Sum, Histogram, ExponentialHistogram)',
+    enumValues: METRIC_TYPE_ENUM,
   },
   {
     name: 'received',

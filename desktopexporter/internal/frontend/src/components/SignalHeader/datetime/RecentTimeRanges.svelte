@@ -31,46 +31,25 @@
   }
 </script>
 
-<div class="pl-2">
-  <div
-    class="section-header mb-2 flex items-center text-sm font-semibold text-base-content"
-  >
-    <svg
-      class="w-4 h-4 mr-2"
-      viewBox="0 0 24 24"
-    >
-      <g>
-        <path
-          d="M19 10.5V10c0-3.771 0-5.657-1.172-6.828S14.771 2 11 2S5.343 2 4.172 3.172S3 6.229 3 10v4.5c0 3.287 0 4.931.908 6.038q.25.304.554.554C5.57 22 7.212 22 10.5 22M7 7h8m-8 4h4"
-        />
-        <path
-          d="m18 18.5l-1.5-.55V15.5m-4.5 2a4.5 4.5 0 1 0 9 0a4.5 4.5 0 0 0-9 0"
-        />
-      </g>
-    </svg>
+<div class="min-w-0">
+  <div class="section-header mb-1 text-xs font-semibold uppercase tracking-wide text-base-content/70">
     Recently Used
   </div>
-  <div class="space-y-0 max-h-[84px] overflow-y-auto pr-2">
+  <div class="max-h-[80px] space-y-0 overflow-y-auto">
     {#if recentTimeRanges.length === 0}
-      <div class="w-full text-left py-1 text-sm text-base-content/60">
+      <div class="w-full px-1.5 py-0.5 text-left text-xs text-base-content/60">
         No recent time ranges
       </div>
     {:else}
       {#each recentTimeRanges as entry, index}
         <button
           class="recent-range-button"
+          class:recent-range-button--active={ctx.selection.type === 'recent' &&
+            entry.start === ctx.selection.start &&
+            entry.end === ctx.selection.end}
           onclick={() => applyRecentTimeRange(index)}
         >
-          {#if ctx.selection.type === 'recent' && index === 0}
-            <svg class="w-4 h-4 mr-2 text-primary" viewBox="0 0 24 24">
-              <path d="m5 14l3.5 3.5L19 6.5" />
-            </svg>
-          {:else}
-            <span class="w-4 h-4 mr-2"></span>
-          {/if}
-          <span
-            >{formatDateTimeRange(entry.start, entry.end, ctx.timezone)}</span
-          >
+          {formatDateTimeRange(entry.start, entry.end, ctx.timezone)}
         </button>
       {/each}
     {/if}
@@ -78,10 +57,20 @@
 </div>
 
 <style lang="postcss">
-  /* Match .timezone-toggle inner rhythm: section p-2 + control px-2 */
   .recent-range-button {
-    @apply w-full text-left px-2 py-2 text-sm rounded;
-    @apply flex items-center gap-0 hover:bg-base-200 focus:bg-base-200 transition-colors;
-    @apply border-none bg-transparent cursor-pointer;
+    @apply block w-full rounded-md border-none bg-transparent px-1.5 py-1 text-left text-xs leading-snug;
+    @apply text-base-content/90 transition-colors;
+    @apply hover:bg-base-200/90 focus-visible:bg-base-200/90;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
+    @apply cursor-pointer;
+  }
+
+  .recent-range-button--active {
+    @apply bg-primary/20 font-semibold text-primary;
+    @apply ring-1 ring-inset ring-primary/20;
+  }
+
+  .recent-range-button--active:hover {
+    @apply bg-primary/30;
   }
 </style>

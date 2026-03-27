@@ -11,16 +11,14 @@
 
   // ===== PRESET TIME RANGES =====
   const PRESETS = [
+    { label: 'All', duration: undefined },
     { label: '5m', duration: 300000 }, // 5 * 60 * 1000
     { label: '15m', duration: 900000 }, // 15 * 60 * 1000
     { label: '30m', duration: 1800000 }, // 30 * 60 * 1000
     { label: '1h', duration: 3600000 }, // 60 * 60 * 1000
-    { label: '3h', duration: 10800000 }, // 3 * 60 * 60 * 1000
     { label: '6h', duration: 21600000 }, // 6 * 60 * 60 * 1000
     { label: '24h', duration: 86400000 }, // 24 * 60 * 60 * 1000
-    { label: '3d', duration: 259200000 }, // 3 * 24 * 60 * 60 * 1000
     { label: '7d', duration: 604800000 }, // 7 * 24 * 60 * 60 * 1000
-    { label: 'All', duration: undefined },
   ] as const;
 
   function applyPreset(index: number) {
@@ -38,11 +36,11 @@
 </script>
 
 <div
-  class="flex flex-nowrap items-center gap-2 overflow-x-auto bg-base-200/80 px-2 py-2 backdrop-blur-sm"
+  class="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto bg-base-200/80 p-1 backdrop-blur-sm"
 >
   {#each PRESETS as preset, index}
     <button
-      class="w-10 h-10 rounded-full text-sm font-medium transition-colors flex items-center justify-center {ctx.selection.type === 'preset' &&
+      class="h-10 w-10 shrink-0 rounded-full text-xs font-medium transition-colors flex items-center justify-center {ctx.selection.type === 'preset' &&
       ctx.selection.presetIndex === index
         ? 'bg-primary text-primary-content'
         : 'text-base-content hover:bg-base-300'}"

@@ -1,22 +1,46 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { router } from 'tinro5';
   import { telemetryAPI } from '@/services/telemetry-service';
   import { getTimeContext } from '@/contexts/time-context.svelte';
   import SignalHeader from '@/components/SignalHeader/SignalHeader.svelte';
   import { formatTimestamp } from '@/utils/time';
-  import type { MetricData, SearchResultEvent } from '@/types/api-types';
+  import type { MetricData } from '@/types/api-types';
 
   let timeContext = getTimeContext();
+  let metricName = $state('');
   let metrics = $state<MetricData[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let mounted = $state(false);
 
-  async function fetchMetrics() {
+  $effect(() => {
+    let unsubscribe = router.subscribe((route) => {
+      let match = route.path.match(/^\/metrics\/(.+)$/);
+      if (match && match[1]) {
+        try {
+          metricName = decodeURIComponent(match[1]);
+          error = null;
+        } catch {
+          metricName = '';
+          error = 'Invalid metric name in URL';
+          loading = false;
+        }
+      } else {
+        metricName = '';
+        error = 'No metric name provided';
+        loading = false;
+      }
+    });
+    return unsubscribe;
+  });
+
+  let loadSeq = 0;
+
+  async function fetchMetricDetail() {
+    if (!metricName) return;
+    const seq = ++loadSeq;
+    loading = true;
+    error = null;
     try {
-      loading = true;
-      error = null;
       let startTime = timeContext.selection.start;
       let endTime = timeContext.selection.end;
       if (timeContext.selection.type === 'preset') {
@@ -24,46 +48,53 @@
         endTime = Date.now();
         startTime = endTime - duration;
       }
-      metrics = await telemetryAPI.getMetrics(startTime, endTime, undefined);
+      let all = await telemetryAPI.getMetrics(startTime, endTime, undefined);
+      if (seq !== loadSeq) return;
+      metrics = all.filter((m) => m.name === metricName);
+      if (metrics.length === 0) {
+        error = null;
+      }
     } catch (err) {
+      if (seq !== loadSeq) return;
       error = err instanceof Error ? err.message : 'Failed to load metrics';
     } finally {
-      loading = false;
+      if (seq === loadSeq) {
+        loading = false;
+      }
     }
   }
 
   $effect(() => {
+    if (!metricName) return;
     let _ = timeContext.selection;
-    if (mounted) {
-      fetchMetrics();
-    }
+    void fetchMetricDetail();
   });
 
-  onMount(async () => {
-    await fetchMetrics();
-    mounted = true;
-  });
-
-  function handleSearchResults(event: SearchResultEvent) {
-    if (event.signal === 'metrics' && event.view === 'list') {
-      loading = false;
-      error = null;
-      metrics = event.results;
-    }
+  function handleBack() {
+    router.goto('/metrics');
   }
 </script>
 
-<!-- MetricsPage.svelte - Metrics visualization page -->
+<!-- MetricsDetailPage.svelte — stub; mirrors MetricsPage for a single metric from the URL -->
 <div class="min-w-0 py-6">
+  <div class="mb-4">
+    <button class="btn btn-sm btn-ghost" type="button" onclick={handleBack}>
+      <svg class="h-4 w-4" viewBox="0 0 24 24">
+        <path d="M15 19l-7-7 7-7" />
+      </svg>
+      <span>Back to Metrics</span>
+    </button>
+  </div>
+
   <SignalHeader
     signal="metrics"
-    view="list"
-    onRefresh={fetchMetrics}
-    onSearchResults={handleSearchResults}
+    view="detail"
+    title={metricName || 'Metric'}
+    onRefresh={fetchMetricDetail}
   />
 
   {#if loading}
-    <div class="flex justify-center items-center py-12">
+    <div class="flex items-center justify-center py-12">
       <span class="loading loading-spinner loading-lg"></span>
     </div>
   {:else if error}
@@ -71,27 +102,18 @@
       <span>Error: {error}</span>
     </div>
   {:else if metrics.length === 0}
-    <div class="text-center py-12">
-      <p class="text-base-content/60 text-lg">No metrics data available</p>
-      <p class="text-base-content/50 mt-2 text-sm">
-        Configure your OTLP exporter and send some metrics to see them here
+    <div class="py-12 text-center">
+      <p class="text-lg text-base-content/60">Metric not found</p>
+      <p class="mt-2 text-sm text-base-content/50">
+        No metric named <span class="font-mono">{metricName}</span> in the current data
       </p>
     </div>
   {:else}
     <div class="space-y-6">
       {#each metrics as metric}
-        <div class="bg-base-200 border border-base-300 rounded-lg p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold">
-              <button
-                type="button"
-                class="link link-hover text-left font-semibold"
-                onclick={() =>
-                  router.goto(`/metrics/${encodeURIComponent(metric.name)}`)}
-              >
-                {metric.name}
-              </button>
-            </h3>
+        <div class="rounded-lg border border-base-300 bg-base-200 p-6">
+          <div class="mb-4 flex items-center justify-between">
+            <h3 class="text-lg font-semibold">{metric.name}</h3>
             {#if metric.datapoints.length > 0}
               <span class="badge badge-secondary badge-outline"
                 >{metric.datapoints[0].metricType}</span
@@ -111,13 +133,13 @@
           </div>
 
           <div class="mb-4">
-            <p class="text-sm text-base-content/70 mb-2">
+            <p class="mb-2 text-sm text-base-content/70">
               Data Points ({metric.datapoints.length})
             </p>
             <div class="max-h-32 overflow-y-auto">
               {#if metric.datapoints.length > 0}
                 {#each metric.datapoints.slice(0, 5) as dataPoint}
-                  <div class="text-xs bg-base-100 p-2 rounded mb-1">
+                  <div class="mb-1 rounded bg-base-100 p-2 text-xs">
                     <div class="flex justify-between">
                       <span>
                         {#if dataPoint.metricType === 'Gauge' || dataPoint.metricType === 'Sum'}
@@ -131,14 +153,12 @@
                   </div>
                 {/each}
                 {#if metric.datapoints.length > 5}
-                  <p class="text-xs text-base-content/50 text-center mt-2">
+                  <p class="mt-2 text-center text-xs text-base-content/50">
                     ... and {metric.datapoints.length - 5} more
                   </p>
                 {/if}
               {:else}
-                <p class="text-xs text-base-content/50">
-                  No data points available
-                </p>
+                <p class="text-xs text-base-content/50">No data points available</p>
               {/if}
             </div>
           </div>
@@ -146,17 +166,13 @@
       {/each}
     </div>
 
-    <!-- Raw JSON for debugging -->
     <details class="mt-8">
-      <summary class="cursor-pointer text-sm text-base-content/60"
-        >Show raw JSON</summary
-      >
+      <summary class="cursor-pointer text-sm text-base-content/60">Show raw JSON</summary>
       <pre
-        class="mt-2 p-4 bg-base-100 border border-base-300 rounded text-xs overflow-auto max-h-64"><code
+        class="mt-2 max-h-64 overflow-auto rounded border border-base-300 bg-base-100 p-4 text-xs"><code
           >{JSON.stringify(
             metrics,
-            (key, value) =>
-              typeof value === 'bigint' ? value.toString() : value,
+            (key, value) => (typeof value === 'bigint' ? value.toString() : value),
             2
           )}</code
         ></pre>
