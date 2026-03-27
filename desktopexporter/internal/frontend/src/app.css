@@ -167,7 +167,7 @@ svg {
 }
 
 .table-header-cell {
-  @apply px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/55;
+  @apply px-4 py-2 text-xs font-semibold tracking-normal text-base-content/55;
 }
 
 .table-header-cell--sortable {
@@ -186,20 +186,37 @@ svg {
   @apply text-right pl-2 pr-4;
 }
 
+/* Tight gutter between Trace ID and Root Span (presence) column */
+.table-header-cell--trace-id {
+  @apply pl-4 pr-1 py-2 text-left text-xs font-semibold tracking-normal text-base-content/55 whitespace-nowrap;
+}
+
+.table-header-cell--after-trace-id {
+  @apply pl-1 pr-4 py-2 text-center text-xs font-semibold tracking-normal text-base-content/55;
+}
+
+.table-cell--trace-id {
+  @apply pl-4 pr-1 py-2 text-sm text-base-content font-mono align-top whitespace-nowrap;
+}
+
+.table-cell--has-root {
+  @apply pl-1 pr-4 py-2 text-sm text-center text-base-content align-top whitespace-nowrap;
+}
+
 .table-row {
-  @apply hover:bg-base-200/70 transition-colors duration-150;
+  @apply even:bg-base-200/30 hover:bg-base-200/70 transition-colors duration-150;
 }
 
 .table-cell {
-  @apply px-4 py-3.5 text-sm text-base-content;
+  @apply px-4 py-2 text-sm text-base-content;
 }
 
 .table-cell--right {
-  @apply pl-2 pr-4 py-4 text-sm text-right text-base-content;
+  @apply pl-2 pr-4 py-2 text-sm text-right text-base-content;
 }
 
 .table-cell--center {
-  @apply px-4 py-4 text-center;
+  @apply px-4 py-2 text-center;
 }
 
 /* Pagination Styles */

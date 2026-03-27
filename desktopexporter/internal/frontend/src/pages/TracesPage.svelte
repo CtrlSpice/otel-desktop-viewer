@@ -84,10 +84,11 @@
     return sortedTraces.slice(start, end)
   })
 
-  // Pagination calculations
   let totalPages = $derived(Math.ceil(sortedTraces.length / rowsPerPage))
   let startRow = $derived((currentPage - 1) * rowsPerPage + 1)
   let endRow = $derived(Math.min(currentPage * rowsPerPage, sortedTraces.length))
+
+  let hasTraceRows = $derived(traceSummaries.length > 0)
 
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
@@ -181,188 +182,188 @@
   {/if}
 
   <div class="space-y-4">
-    {#if traceSummaries.length > 0}
-      <p class="text-sm font-medium text-base-content/70">
-        {traceSummaries.length} trace{traceSummaries.length !== 1 ? 's' : ''}
-      </p>
-    {/if}
-    
-    <!-- Material Design 2 Data Table -->
+    <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-base-content/70">
+      {#if hasTraceRows}
+        <span class="font-medium">
+          {traceSummaries.length} trace{traceSummaries.length !== 1 ? 's' : ''}
+        </span>
+      {/if}
+      {#if loading && hasTraceRows}
+        <span class="text-base-content/50">Updating…</span>
+      {/if}
+    </div>
+
+    {#if loading && !hasTraceRows}
+      <div
+        class="rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center text-base-content/60 shadow-surface-sm backdrop-blur-sm"
+      >
+        Loading traces…
+      </div>
+    {:else if !loading && !hasTraceRows}
+      <div
+        class="rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center shadow-surface-sm backdrop-blur-sm"
+      >
+        <p class="text-base-content/60">No traces in this time range</p>
+        <p class="mt-2 text-sm text-base-content/50">
+          Send telemetry to the exporter or adjust the time range
+        </p>
+      </div>
+    {:else}
     <div
-      class="overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm"
+      class="overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200 {loading ? 'opacity-70' : 'opacity-100'}"
     >
       <div class="overflow-x-auto">
         <table class="w-full">
-        <!-- Table Header -->
         <thead>
-                <tr class="table-header-row">
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                    onclick={() => handleSort('serviceName')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => e.key === 'Enter' && handleSort('serviceName')}
-                  >
-                    <div class="flex items-center gap-2">
-                      <span>Service Name</span>
-                      <span class="w-4 h-4 flex items-center justify-center">
-                        <svg
-                          class="sort-indicator {sortColumn === 'serviceName'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn === 'serviceName' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                        </svg>
-                      </span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                    onclick={() => handleSort('rootSpanName')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => e.key === 'Enter' && handleSort('rootSpanName')}
-                  >
-                    <div class="flex items-center gap-2">
-                      <span>Root Span Name</span>
-                      <span class="w-4 h-4 flex items-center justify-center">
-                        <svg
-                          class="sort-indicator {sortColumn === 'rootSpanName'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn === 'rootSpanName' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                        </svg>
-                      </span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                    onclick={() => handleSort('startTime')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => e.key === 'Enter' && handleSort('startTime')}
-                  >
-                    <div class="flex items-center gap-2">
-                      <span>Start Time</span>
-                      <span class="w-4 h-4 flex items-center justify-center">
-                        <svg
-                          class="sort-indicator {sortColumn === 'startTime'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn === 'startTime' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                        </svg>
-                      </span>
-                    </div>
-                  </th>
-                  <th class="table-header-cell table-header-cell--left">
+              <tr class="table-header-row">
+                <th class="table-header-cell--trace-id">
                   Trace ID
-                  </th>
-                  <th class="table-header-cell table-header-cell--center">
-                    Has Root Span
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
-                    onclick={() => handleSort('spanCount')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => e.key === 'Enter' && handleSort('spanCount')}
-                  >
-                    <div class="flex items-center justify-end gap-2">
-                      <span class="w-4 h-4 flex items-center justify-center">
-                        <svg
-                          class="sort-indicator {sortColumn === 'spanCount'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn === 'spanCount' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                        </svg>
-                      </span>
-                      <span>Spans</span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
-                    onclick={() => handleSort('errorCount')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => e.key === 'Enter' && handleSort('errorCount')}
-                  >
-                    <div class="flex items-center justify-end gap-2">
-                      <span class="w-4 h-4 flex items-center justify-center">
-                        <svg
-                          class="sort-indicator {sortColumn === 'errorCount'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn === 'errorCount' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                        </svg>
-                      </span>
-                      <span>Errors</span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
-                    onclick={() => handleSort('exceptionCount')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => e.key === 'Enter' && handleSort('exceptionCount')}
-                  >
-                    <div class="flex items-center justify-end gap-2">
-                      <span class="w-4 h-4 flex items-center justify-center">
-                        <svg
-                          class="sort-indicator {sortColumn === 'exceptionCount'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn === 'exceptionCount' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                        </svg>
-                      </span>
-                      <span>Exceptions</span>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
+                </th>
+                <th class="table-header-cell--after-trace-id">
+                  Root Span
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                  onclick={() => handleSort('rootSpanName')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && handleSort('rootSpanName')}
+                >
+                  <div class="flex items-center gap-2">
+                    <span>Root Span Name</span>
+                    <span class="w-4 h-4 flex items-center justify-center">
+                      <svg
+                        class="sort-indicator {sortColumn === 'rootSpanName'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn === 'rootSpanName' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                  onclick={() => handleSort('serviceName')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && handleSort('serviceName')}
+                >
+                  <div class="flex items-center gap-2">
+                    <span>Service Name</span>
+                    <span class="w-4 h-4 flex items-center justify-center">
+                      <svg
+                        class="sort-indicator {sortColumn === 'serviceName'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn === 'serviceName' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                  onclick={() => handleSort('startTime')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && handleSort('startTime')}
+                >
+                  <div class="flex items-center gap-2">
+                    <span>Start Time</span>
+                    <span class="w-4 h-4 flex items-center justify-center">
+                      <svg
+                        class="sort-indicator {sortColumn === 'startTime'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn === 'startTime' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  onclick={() => handleSort('spanCount')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && handleSort('spanCount')}
+                >
+                  <div class="flex items-center justify-end gap-2">
+                    <span class="w-4 h-4 flex items-center justify-center">
+                      <svg
+                        class="sort-indicator {sortColumn === 'spanCount'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn === 'spanCount' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                      </svg>
+                    </span>
+                    <span>Spans</span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  onclick={() => handleSort('errorCount')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && handleSort('errorCount')}
+                >
+                  <div class="flex items-center justify-end gap-2">
+                    <span class="w-4 h-4 flex items-center justify-center">
+                      <svg
+                        class="sort-indicator {sortColumn === 'errorCount'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn === 'errorCount' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                      </svg>
+                    </span>
+                    <span>Errors</span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  onclick={() => handleSort('exceptionCount')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && handleSort('exceptionCount')}
+                >
+                  <div class="flex items-center justify-end gap-2">
+                    <span class="w-4 h-4 flex items-center justify-center">
+                      <svg
+                        class="sort-indicator {sortColumn === 'exceptionCount'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn === 'exceptionCount' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
+                      </svg>
+                    </span>
+                    <span>Exceptions</span>
+                  </div>
+                </th>
+              </tr>
+            </thead>
               <!-- Table Body -->
               <tbody class="divide-y divide-base-300">
-                {#if loading && traceSummaries.length === 0}
-                  <!-- Initial loading state -->
-                  <tr>
-                    <td colspan="8" class="px-4 py-12 text-center">
-                      <span class="text-base-content/60">Loading traces...</span>
-                    </td>
-                  </tr>
-                {:else if traceSummaries.length === 0}
-                  <!-- Empty state -->
-                  <tr>
-                    <td colspan="8" class="px-4 py-12 text-center">
-                      <p class="text-base-content/60">No traces found</p>
-                      <p class="text-sm text-base-content/50 mt-2">
-                        Send some telemetry data to see traces here
-                      </p>
-                    </td>
-                  </tr>
-                {:else}
-                  <!-- Data rows (shown even during refresh) -->
                   {#each paginatedTraces as trace}
                   <tr 
                     class="table-row cursor-pointer hover:bg-base-200 transition-colors"
@@ -371,31 +372,10 @@
                     tabindex="0"
                     onkeydown={(e) => e.key === 'Enter' && router.goto(`/trace/${trace.traceID}`)}
                   >
-                    <td class="table-cell">
-                      {#if trace.rootSpan?.serviceName}
-                        {trace.rootSpan.serviceName}
-                      {:else}
-                        <span class="text-base-content/50 italic">—</span>
-                      {/if}
-                    </td>
-                    <td class="table-cell">
-                      {#if trace.rootSpan?.name}
-                        {trace.rootSpan.name}
-                      {:else}
-                        <span class="text-base-content/50 italic">—</span>
-                      {/if}
-                    </td>
-                    <td class="table-cell text-base-content/80">
-                      {#if trace.rootSpan}
-                        {formatTimestamp(trace.rootSpan.startTime, 'local', 'milliseconds')}
-                      {:else}
-                        <span class="text-base-content/50 italic">—</span>
-                      {/if}
-                    </td>
-                    <td class="table-cell font-mono">
+                    <td class="table-cell--trace-id">
                       {trace.traceID}
                     </td>
-                    <td class="table-cell--center">
+                    <td class="table-cell--has-root">
                       {#if trace.rootSpan}
                         <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-success/20 text-success">
                           <svg class="w-4 h-4" viewBox="0 0 24 24">
@@ -408,6 +388,27 @@
                             <path d="M18 6L6 18m12 0L6 6" />
                           </svg>
                         </span>
+                      {/if}
+                    </td>
+                    <td class="table-cell">
+                      {#if trace.rootSpan?.name}
+                        {trace.rootSpan.name}
+                      {:else}
+                        <span class="text-base-content/50 italic">—</span>
+                      {/if}
+                    </td>
+                    <td class="table-cell">
+                      {#if trace.rootSpan?.serviceName}
+                        {trace.rootSpan.serviceName}
+                      {:else}
+                        <span class="text-base-content/50 italic">—</span>
+                      {/if}
+                    </td>
+                    <td class="table-cell text-base-content/80">
+                      {#if trace.rootSpan}
+                        {formatTimestamp(trace.rootSpan.startTime, 'local', 'milliseconds')}
+                      {:else}
+                        <span class="text-base-content/50 italic">—</span>
                       {/if}
                     </td>
                     <td class="table-cell--right">
@@ -433,7 +434,6 @@
                     </td>
                   </tr>
                   {/each}
-                {/if}
               </tbody>
               </table>
             </div>
@@ -492,6 +492,7 @@
               </div>
             {/if}
           </div>
+    {/if}
         </div>
 
         <!-- Rows per page popover -->
