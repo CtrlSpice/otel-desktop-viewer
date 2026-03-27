@@ -1,30 +1,65 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { telemetryAPI } from '@/services/telemetry-service';
+  import { getTimeContext } from '@/contexts/time-context.svelte';
+  import SignalHeader from '@/components/SignalHeader/SignalHeader.svelte';
   import { formatTimestamp } from '@/utils/time';
-  import type { LogData } from '@/types/api-types';
+  import type { LogData, SearchResultEvent } from '@/types/api-types';
 
-  let logs: LogData[] = [];
-  let loading = true;
-  let error: string | null = null;
+  let timeContext = getTimeContext();
+  let logs = $state<LogData[]>([]);
+  let loading = $state(true);
+  let error = $state<string | null>(null);
+  let mounted = $state(false);
 
-  onMount(async () => {
+  async function fetchLogs() {
     try {
-      logs = await telemetryAPI.searchLogs(0, Date.now(), undefined);
+      loading = true;
+      error = null;
+      let startTime = timeContext.selection.start;
+      let endTime = timeContext.selection.end;
+      if (timeContext.selection.type === 'preset') {
+        const duration = timeContext.selection.end - timeContext.selection.start;
+        endTime = Date.now();
+        startTime = endTime - duration;
+      }
+      logs = await telemetryAPI.searchLogs(startTime, endTime, undefined);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load logs';
     } finally {
       loading = false;
     }
+  }
+
+  $effect(() => {
+    let _ = timeContext.selection;
+    if (mounted) {
+      fetchLogs();
+    }
   });
+
+  onMount(async () => {
+    await fetchLogs();
+    mounted = true;
+  });
+
+  function handleSearchResults(event: SearchResultEvent) {
+    if (event.signal === 'logs' && event.view === 'list') {
+      loading = false;
+      error = null;
+      logs = event.results;
+    }
+  }
 </script>
 
 <!-- LogsPage.svelte - Logs viewing page -->
-<div class="mx-auto max-w-6xl min-w-0 px-3 py-6">
-  <div class="mb-8">
-    <h1 class="text-3xl font-bold mb-2">Logs</h1>
-    <p class="text-base-content/70">View and search your OpenTelemetry logs</p>
-  </div>
+<div class="min-w-0 py-6">
+  <SignalHeader
+    signal="logs"
+    view="list"
+    onRefresh={fetchLogs}
+    onSearchResults={handleSearchResults}
+  />
 
   {#if loading}
     <div class="flex justify-center items-center py-12">
@@ -37,7 +72,7 @@
   {:else if logs.length === 0}
     <div class="text-center py-12">
       <p class="text-base-content/60 text-lg">No logs available</p>
-      <p class="text-base-content/50 text-sm mt-2">
+      <p class="text-base-content/50 mt-2 text-sm">
         Configure your OTLP exporter and send some logs to see them here
       </p>
     </div>

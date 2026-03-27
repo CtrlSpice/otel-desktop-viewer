@@ -49,7 +49,7 @@
 </script>
 
 <!-- HomePage.svelte - The welcome/landing page -->
-<div class="mx-auto max-w-6xl min-w-0 px-3 py-6">
+<div class="min-w-0 py-6">
   <!-- Header Section -->
   <header class="mb-10">
     <div

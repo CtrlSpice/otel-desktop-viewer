@@ -9,7 +9,7 @@ import type {
   Exemplar,
   DataPoint,
 } from '@/types/api-types';
-import type { QueryNode } from '@/components/PageHeader/search/queryTree';
+import type { QueryNode } from '@/components/SignalHeader/search/queryTree';
 import type {
   AttributeScope,
   FieldDefinition,

@@ -2,6 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Shared query syntax colors (used by CodeMirror + help dialog) */
+:root {
+  --query-base: #232136;
+  --query-surface: #2a273f;
+  --query-overlay: #393552;
+  --query-muted: #6e6a86;
+  --query-subtle: #908caa;
+  --query-text: #e0def4;
+  --query-iris: #c4a7e7;
+  --query-foam: #9ccfd8;
+  --query-gold: #f6c177;
+  --query-rose: #ea9ab2;
+  --query-love: #eb6f92;
+}
+
+html[data-theme='rose-pine-moon'] {
+  --query-base: #232136;
+  --query-surface: #2a273f;
+  --query-overlay: #393552;
+  --query-muted: #6e6a86;
+  --query-subtle: #908caa;
+  --query-text: #e0def4;
+  --query-iris: #c4a7e7;
+  --query-foam: #9ccfd8;
+  --query-gold: #f6c177;
+  --query-rose: #ea9ab2;
+  --query-love: #eb6f92;
+}
+
+html[data-theme='rose-pine-dawn'] {
+  --query-base: #faf4ed;
+  --query-surface: #fffaf3;
+  --query-overlay: #f2e9e1;
+  --query-muted: #9893a5;
+  --query-subtle: #797593;
+  --query-text: #575279;
+  --query-iris: #907aa9;
+  --query-foam: #56949f;
+  --query-gold: #ea9d34;
+  --query-rose: #d7827e;
+  --query-love: #b4637a;
+}
+
 @layer base {
   html {
     @apply min-w-0 scroll-smooth;

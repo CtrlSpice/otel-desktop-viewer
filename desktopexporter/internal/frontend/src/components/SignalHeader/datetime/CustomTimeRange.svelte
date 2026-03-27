@@ -132,80 +132,80 @@
 
 </script>
 
-<div class="relative pl-2">
-  <div class="section-header mb-2 flex items-center text-sm font-semibold text-base-content">
-    {#if ctx.selection.type === 'custom'}
-      <svg class="w-4 h-4 mr-2 text-primary" viewBox="0 0 24 24">
-        <path d="m5 14l3.5 3.5L19 6.5" />
-      </svg>
-    {:else}
-      <svg
-        class="w-4 h-4 mr-2"
-        viewBox="0 0 24 24"
-      >
-        <g>
-          <path
-            d="M16 2v4M8 2v4m13 6c0-3.771 0-5.657-1.172-6.828S16.771 4 13 4h-2C7.229 4 5.343 4 4.172 5.172S3 8.229 3 12v2c0 3.771 0 5.657 1.172 6.828S7.229 22 11 22M3 10h18"
-          />
-          <path
-            d="M18.267 18.701L17 18v-1.733M21 18a4 4 0 1 1-8 0a4 4 0 0 1 8 0"
-          />
-        </g>
-      </svg>
-    {/if}
+<div class="min-w-0">
+  <div
+    class="section-header mb-1 text-xs font-semibold uppercase tracking-wide text-base-content/70"
+  >
     Custom Time Range
   </div>
 
-  <div class="pb-3 pr-2">
-    <!-- From Date/Time -->
-    <div class="flex items-center gap-2 mb-3">
-      <label class="label py-0 w-18" for="custom-start">
-        <span class="label-text text-sm whitespace-nowrap">Start time:</span>
-      </label>
-      <input
-        id="custom-start"
-        type="text"
-        placeholder="e.g., 2 hours ago, yesterday, 2024-01-01"
-        class="input input-bordered input-sm flex-1"
-        bind:value={customStartText}
-      />
+  <form
+    class="flex min-w-0 flex-col gap-2 px-1.5 py-1"
+    onsubmit={(e) => {
+      e.preventDefault();
+      applyCustom();
+    }}
+  >
+    <div class="flex flex-col gap-2">
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <label class="custom-time-field-label" for="custom-start"
+          >Start time</label>
+        <input
+          id="custom-start"
+          type="text"
+          placeholder="e.g., 2 hours ago, yesterday, 2024-01-01"
+          class="input input-bordered input-sm min-w-0 font-mono text-xs"
+          bind:value={customStartText}
+        />
+      </div>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <label class="custom-time-field-label" for="custom-end"
+          >End time</label>
+        <input
+          id="custom-end"
+          type="text"
+          placeholder="e.g., now, 1 hour ago, 2024-01-02"
+          class="input input-bordered input-sm min-w-0 font-mono text-xs"
+          bind:value={customEndText}
+        />
+      </div>
     </div>
 
-    <!-- To Date/Time -->
-    <div class="flex items-center gap-2 mb-3">
-      <label class="label py-0 w-18" for="custom-end">
-        <span class="label-text text-sm whitespace-nowrap">End time:</span>
-      </label>
-      <input
-        id="custom-end"
-        type="text"
-        placeholder="e.g., now, 1 hour ago, 2024-01-02"
-        class="input input-bordered input-sm flex-1"
-        bind:value={customEndText}
-      />
-    </div>
-
-    <!-- Error Display -->
     {#if customError}
-      <div class="mb-3">
-        <div class="alert alert-error alert-sm rounded-md">
-          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path
-              fill-rule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-              clip-rule="evenodd"
-            ></path>
-          </svg>
-          <span class="text-xs">{customError}</span>
-        </div>
+      <div class="flex items-start gap-1.5 bg-transparent text-error" role="alert">
+        <svg
+          class="mt-0.5 h-3 w-3 shrink-0"
+          fill="currentColor"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+            clip-rule="evenodd"
+          ></path>
+        </svg>
+        <span class="text-xs leading-snug">{customError}</span>
       </div>
     {/if}
 
-    <!-- Apply Button -->
-    <div class="mt-3">
-      <button class="btn btn-primary btn-sm w-full" onclick={applyCustom}>
-        Apply
-      </button>
-    </div>
-  </div>
+    <button
+      type="submit"
+      class="btn btn-primary btn-xs h-7 min-h-0 w-full gap-1 border-none font-semibold"
+      title="Apply"
+    >
+      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 14l3.5 3.5L19 6.5" />
+      </svg>
+      Apply
+    </button>
+  </form>
 </div>
+
+<style lang="postcss">
+  /* Small caption above each field */
+  .custom-time-field-label {
+    @apply cursor-pointer select-none text-[10px] font-semibold tracking-wide text-base-content/55;
+    @apply leading-tight;
+  }
+</style>
