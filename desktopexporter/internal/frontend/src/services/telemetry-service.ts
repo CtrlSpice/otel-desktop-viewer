@@ -232,6 +232,7 @@ export let telemetryAPI = {
   },
 
   clearTraces: () => callRPC('clearTraces', undefined),
+  deleteTraces: (traceIDs: string[]) => callRPC('deleteSpansByTraceID', traceIDs),
 
   // Log methods
   searchLogs: async (

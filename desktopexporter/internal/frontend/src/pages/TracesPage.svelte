@@ -59,6 +59,9 @@
   let rowsPerPageOptions = [10, 25, 50, 100]
   let rowsPerPagePopoverOpen = $state(false)
 
+  // --- state: selection ---
+  let selectedTraceIDs = $state(new Set<string>())
+
   /** Dim stats while refetching; stays on briefly after `loading` ends so opacity can animate. */
   let statsRowMuted = $state(false)
 
@@ -82,10 +85,16 @@
   let endRow = $derived(Math.min(currentPage * rowsPerPage, sortedTraces.length))
 
   let hasTraceRows = $derived(traceSummaries.length > 0)
+  let someSelected = $derived(selectedTraceIDs.size > 0)
   // --- derived: summary stats — full traceSummaries (not the current page) ---
   let listStats = $derived(traceListStats(traceSummaries))
 
   // --- effects ---
+  $effect(() => {
+    void sortedTraces
+    selectedTraceIDs = new Set()
+  })
+
   $effect(() => {
     const busy = loading && hasTraceRows
     if (busy) {
@@ -177,6 +186,21 @@
     }
   }
 
+  async function handleDelete() {
+    try {
+      if (someSelected) {
+        await telemetryAPI.deleteTraces([...selectedTraceIDs])
+      } else {
+        await telemetryAPI.clearTraces()
+      }
+      selectedTraceIDs = new Set()
+      await fetchTraces()
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to delete traces"
+      console.error("Error deleting traces:", err)
+    }
+  }
+
   // --- lifecycle ---
   onMount(async () => {
     await fetchTraces()
@@ -223,6 +247,22 @@
         <span class={s.exceptions > 0 ? 'text-warning/90' : ''}>
           {s.exceptions} exception{s.exceptions !== 1 ? 's' : ''}
         </span>
+        <div class="ml-auto">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm gap-1.5 text-base-content/50 hover:text-error"
+            onclick={handleDelete}
+          >
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5">
+              <path d="m19.5 5.5l-.62 10.025c-.158 2.561-.237 3.842-.88 4.763a4 4 0 0 1-1.2 1.128c-.957.584-2.24.584-4.806.584c-2.57 0-3.855 0-4.814-.585a4 4 0 0 1-1.2-1.13c-.642-.922-.72-2.205-.874-4.77L4.5 5.5M3 5.5h18m-4.944 0l-.683-1.408c-.453-.936-.68-1.403-1.071-1.695a2 2 0 0 0-.275-.172C13.594 2 13.074 2 12.035 2c-1.066 0-1.599 0-2.04.234a2 2 0 0 0-.278.18c-.395.303-.616.788-1.058 1.757L8.053 5.5m1.447 11v-6m5 6v-6" />
+            </svg>
+            {#if someSelected}
+              Delete {selectedTraceIDs.size} trace{selectedTraceIDs.size !== 1 ? 's' : ''}
+            {:else}
+              Clear all
+            {/if}
+          </button>
+        </div>
       {/if}
     </div>
 
@@ -252,6 +292,22 @@
         <table class="w-full">
         <thead>
               <tr class="table-header-row">
+                <th class="table-header-cell table-header-cell--checkbox">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    checked={someSelected}
+                    indeterminate={someSelected}
+                    onchange={() => {
+                      if (someSelected) {
+                        selectedTraceIDs = new Set()
+                      } else {
+                        selectedTraceIDs = new Set(paginatedTraces.map(t => t.traceID))
+                      }
+                    }}
+                    aria-label="Select all on this page"
+                  />
+                </th>
                 <th class="table-header-cell--trace-id">
                   Trace ID
                 </th>
@@ -402,12 +458,33 @@
               <tbody class="divide-y divide-base-300">
                   {#each paginatedTraces as trace}
                   <tr 
-                    class="table-row cursor-pointer hover:bg-base-200 transition-colors"
+                    class="table-row cursor-pointer hover:bg-base-200 transition-colors {selectedTraceIDs.has(trace.traceID) ? 'bg-primary/5' : ''}"
                     onclick={() => router.goto(`/trace/${trace.traceID}`)}
                     role="button"
                     tabindex="0"
                     onkeydown={(e) => e.key === 'Enter' && router.goto(`/trace/${trace.traceID}`)}
                   >
+                    <td
+                      class="table-cell--checkbox"
+                      onclick={(e) => e.stopPropagation()}
+                      onkeydown={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-xs checkbox-primary"
+                        checked={selectedTraceIDs.has(trace.traceID)}
+                        onchange={() => {
+                          const next = new Set(selectedTraceIDs)
+                          if (next.has(trace.traceID)) {
+                            next.delete(trace.traceID)
+                          } else {
+                            next.add(trace.traceID)
+                          }
+                          selectedTraceIDs = next
+                        }}
+                        aria-label="Select trace {trace.traceID}"
+                      />
+                    </td>
                     <td class="table-cell--trace-id">
                       {trace.traceID}
                     </td>

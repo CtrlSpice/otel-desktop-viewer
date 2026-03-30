@@ -167,7 +167,7 @@ svg {
 }
 
 .table-header-cell {
-  @apply px-4 py-2 text-xs font-semibold tracking-normal text-base-content/55;
+  @apply px-4 py-3 text-xs font-semibold tracking-normal text-base-content/55;
 }
 
 .table-header-cell--sortable {
@@ -186,21 +186,29 @@ svg {
   @apply text-right pl-2 pr-4;
 }
 
+.table-header-cell--checkbox {
+  @apply w-10 text-center;
+}
+
+.table-cell--checkbox {
+  @apply w-10 py-2 text-center align-middle;
+}
+
 /* Tight gutter between Trace ID and Root Span (presence) column */
 .table-header-cell--trace-id {
-  @apply pl-4 pr-1 py-2 text-left text-xs font-semibold tracking-normal text-base-content/55 whitespace-nowrap;
+  @apply pl-4 pr-1 py-3 text-left text-xs font-semibold tracking-normal text-base-content/55 whitespace-nowrap;
 }
 
 .table-header-cell--after-trace-id {
-  @apply pl-1 pr-4 py-2 text-center text-xs font-semibold tracking-normal text-base-content/55;
+  @apply pl-1 pr-4 py-3 text-center text-xs font-semibold tracking-normal text-base-content/55;
 }
 
 .table-cell--trace-id {
-  @apply pl-4 pr-1 py-2 text-sm text-base-content font-mono align-top whitespace-nowrap;
+  @apply pl-4 pr-1 py-2 text-sm text-base-content font-mono align-middle whitespace-nowrap;
 }
 
 .table-cell--has-root {
-  @apply pl-1 pr-4 py-2 text-sm text-center text-base-content align-top whitespace-nowrap;
+  @apply pl-1 pr-4 py-2 text-sm text-center text-base-content align-middle whitespace-nowrap;
 }
 
 .table-row {
@@ -208,15 +216,15 @@ svg {
 }
 
 .table-cell {
-  @apply px-4 py-2 text-sm text-base-content;
+  @apply px-4 py-2 text-sm text-base-content align-middle;
 }
 
 .table-cell--right {
-  @apply pl-2 pr-4 py-2 text-sm text-right text-base-content;
+  @apply pl-2 pr-4 py-2 text-sm text-right text-base-content align-middle;
 }
 
 .table-cell--count {
-  @apply px-4 py-2 text-center text-sm tabular-nums text-base-content;
+  @apply px-4 py-2 text-center text-sm tabular-nums text-base-content align-middle;
 }
 
 .table-cell--center {
