@@ -3,12 +3,15 @@
   import SpanField from './SpanField.svelte';
   import { formatDuration } from '@/utils/duration';
   import { formatTimestamp } from '@/utils/time';
+  import { getTimeContext } from '@/contexts/time-context.svelte';
 
   type Props = {
     span: SpanData | undefined;
   };
 
   let { span }: Props = $props();
+
+  let timeContext = getTimeContext();
 
   let isRoot = $derived(!span?.parentSpanID);
   let spanDataOpen = $state(true);
@@ -75,7 +78,7 @@
             <div class="data-table-cell">
               <SpanField
                 fieldName="start time"
-                fieldValue={formatTimestamp(span.startTime, 'local', 'nanoseconds')}
+                fieldValue={formatTimestamp(span.startTime, timeContext.timezone, 'nanoseconds')}
                 fieldType="timestamp"
               />
             </div>
@@ -84,7 +87,7 @@
             <div class="data-table-cell">
               <SpanField
                 fieldName="end time"
-                fieldValue={formatTimestamp(span.endTime, 'local', 'nanoseconds')}
+                fieldValue={formatTimestamp(span.endTime, timeContext.timezone, 'nanoseconds')}
                 fieldType="timestamp"
               />
             </div>

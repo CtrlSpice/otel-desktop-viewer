@@ -2,104 +2,140 @@
   import { onMount } from "svelte"
   import { router } from "tinro5"
   import { telemetryAPI } from "@/services/telemetry-service"
-  import { getTimeContext } from "@/contexts/time-context.svelte"
+  import { getTimeContext, selectionToQueryRangeMs } from "@/contexts/time-context.svelte"
   import { formatTimestamp } from "@/utils/time"
+  import { compareByStringField, compareByTimestampField } from "@/utils/compare"
   import type { TraceSummary, SearchResultEvent } from "@/types/api-types"
   import SignalHeader from "@/components/SignalHeader/SignalHeader.svelte"
+  import { traceListStats } from "@/components/TraceList/trace-list-stats"
 
-  // Create time context for this page
-  let timeContext = getTimeContext();
+  // --- types (table) ---
+  type SortColumn =
+    | 'serviceName'
+    | 'rootSpanName'
+    | 'startTime'
+    | 'spanCount'
+    | 'errorCount'
+    | 'exceptionCount'
+  type SortDirection = 'asc' | 'desc'
 
+  // --- row comparator for sort() ---
+  /** Primary key by column + direction; tie-break on trace ID. */
+  function compareTraceSummaries(
+    a: TraceSummary,
+    b: TraceSummary,
+    col: SortColumn,
+    dir: SortDirection
+  ): number {
+    const cmp =
+      col === 'serviceName' ? compareByStringField(a, b, (t) => t.rootSpan?.serviceName) :
+      col === 'rootSpanName' ? compareByStringField(a, b, (t) => t.rootSpan?.name) :
+      col === 'startTime' ? compareByTimestampField(a, b, (t) => t.rootSpan?.startTime) :
+      col === 'spanCount' ? a.spanCount - b.spanCount :
+      col === 'errorCount' ? a.errorCount - b.errorCount :
+      a.exceptionCount - b.exceptionCount
+
+    return cmp !== 0
+      ? dir === 'asc' ? cmp : -cmp
+      : a.traceID.localeCompare(b.traceID)
+  }
+
+  // --- context ---
+  let timeContext = getTimeContext()
+
+  // --- state: API / list ---
   let traceSummaries = $state<TraceSummary[]>([])
   let loading = $state(true)
   let error = $state<string | null>(null)
   let mounted = $state(false)
 
-  // Sorting state
-  type SortColumn = 'serviceName' | 'rootSpanName' | 'startTime' | 'spanCount' | 'errorCount' | 'exceptionCount'
-  type SortDirection = 'asc' | 'desc'
+  // --- state: sort ---
   let sortColumn = $state<SortColumn>('startTime')
   let sortDirection = $state<SortDirection>('desc')
 
-  // Pagination state
+  // --- state: pagination ---
   let currentPage = $state(1)
   let rowsPerPage = $state(25)
   let rowsPerPageOptions = [10, 25, 50, 100]
   let rowsPerPagePopoverOpen = $state(false)
 
-  // Track rows per page popover state
+  /** Dim stats while refetching; stays on briefly after `loading` ends so opacity can animate. */
+  let statsRowMuted = $state(false)
+
+  // --- derived: table rows — traceSummaries → sortedTraces → paginatedTraces ---
+  let sortedTraces = $derived.by(() => {
+    const col = sortColumn
+    const dir = sortDirection
+    const rows = [...traceSummaries]
+    rows.sort((a, b) => compareTraceSummaries(a, b, col, dir))
+    return rows
+  })
+
+  let paginatedTraces = $derived.by(() => {
+    const start = (currentPage - 1) * rowsPerPage
+    const end = start + rowsPerPage
+    return sortedTraces.slice(start, end)
+  })
+
+  let totalPages = $derived(Math.ceil(sortedTraces.length / rowsPerPage))
+  let startRow = $derived(sortedTraces.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1)
+  let endRow = $derived(Math.min(currentPage * rowsPerPage, sortedTraces.length))
+
+  let hasTraceRows = $derived(traceSummaries.length > 0)
+  // --- derived: summary stats — full traceSummaries (not the current page) ---
+  let listStats = $derived(traceListStats(traceSummaries))
+
+  // --- effects ---
+  $effect(() => {
+    const busy = loading && hasTraceRows
+    if (busy) {
+      statsRowMuted = true
+      return
+    }
+    if (!statsRowMuted) {
+      return
+    }
+    const id = setTimeout(() => {
+      statsRowMuted = false
+    }, 220)
+    return () => clearTimeout(id)
+  })
+
   $effect(() => {
     const popover = document.getElementById('rows-per-page-popover')
     if (popover) {
       const handleToggle = () => {
         rowsPerPagePopoverOpen = popover.matches(':popover-open')
       }
-
       popover.addEventListener('toggle', handleToggle)
       return () => popover.removeEventListener('toggle', handleToggle)
     }
   })
 
-  // Sorted traces
-  let sortedTraces = $derived([...traceSummaries].sort((a, b) => {
-        let comparison = 0
-
-        switch (sortColumn) {
-          case 'serviceName':
-            let aService = a.rootSpan?.serviceName || ''
-            let bService = b.rootSpan?.serviceName || ''
-            comparison = aService.localeCompare(bService)
-            break
-          case 'rootSpanName':
-            let aName = a.rootSpan?.name || ''
-            let bName = b.rootSpan?.name || ''
-            comparison = aName.localeCompare(bName)
-            break
-          case 'startTime':
-            let aTime = a.rootSpan?.startTime || BigInt(0)
-            let bTime = b.rootSpan?.startTime || BigInt(0)
-            if (aTime < bTime) comparison = -1
-            else if (aTime > bTime) comparison = 1
-            else comparison = 0
-            break
-          case 'spanCount':
-            comparison = a.spanCount - b.spanCount
-            break
-          case 'errorCount':
-            comparison = a.errorCount - b.errorCount
-            break
-          case 'exceptionCount':
-            comparison = a.exceptionCount - b.exceptionCount
-            break
-        }
-
-        return sortDirection === 'asc' ? comparison : -comparison
-      })
-  )
-
-  // Paginated traces
-  let paginatedTraces = $derived.by(() => {
-    let start = (currentPage - 1) * rowsPerPage
-    let end = start + rowsPerPage
-    return sortedTraces.slice(start, end)
+  /** Clamp page when row count shrinks (refresh, time range, etc.). */
+  $effect(() => {
+    const n = sortedTraces.length
+    const pages = Math.max(1, Math.ceil(n / rowsPerPage))
+    if (n > 0 && currentPage > pages) {
+      currentPage = pages
+    }
   })
 
-  let totalPages = $derived(Math.ceil(sortedTraces.length / rowsPerPage))
-  let startRow = $derived((currentPage - 1) * rowsPerPage + 1)
-  let endRow = $derived(Math.min(currentPage * rowsPerPage, sortedTraces.length))
+  $effect(() => {
+    void timeContext.selection
+    if (mounted) {
+      fetchTraces()
+    }
+  })
 
-  let hasTraceRows = $derived(traceSummaries.length > 0)
-
+  // --- handlers & loaders ---
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
-      // Toggle direction if clicking the same column
       sortDirection = sortDirection === 'asc' ? 'desc' : 'asc'
     } else {
-      // New column, start with ascending
       sortColumn = column
       sortDirection = 'asc'
     }
-    // Reset to first page when sorting changes
     currentPage = 1
   }
 
@@ -114,23 +150,16 @@
     }
   }
 
-  // Shared function to fetch traces based on current time context
   async function fetchTraces() {
     try {
       loading = true
       error = null
-      
-      // Use time context for time range
-      let startTime = timeContext.selection.start;
-      let endTime = timeContext.selection.end;
-      
-      // For presets, calculate fresh time range based on current time
-      if (timeContext.selection.type === 'preset') {
-        const duration = timeContext.selection.end - timeContext.selection.start;
-        endTime = Date.now();
-        startTime = endTime - duration;
-      }
-      
+
+      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+        timeContext.selection,
+        Date.now()
+      )
+
       traceSummaries = await telemetryAPI.searchTraces(startTime, endTime)
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to fetch traces"
@@ -141,7 +170,6 @@
   }
 
   function handleSearchResults(event: SearchResultEvent) {
-    // Type narrowing with discriminated union
     if (event.signal === 'traces' && event.view === 'list') {
       loading = false
       error = null
@@ -149,25 +177,16 @@
     }
   }
 
-  // Watch for time context changes and refresh automatically
-  $effect(() => {
-    // Access timeContext.selection to create a reactive dependency
-    let _ = timeContext.selection
-    // Only refresh after initial mount to avoid double fetch
-    if (mounted) {
-      fetchTraces()
-    }
-  })
-
+  // --- lifecycle ---
   onMount(async () => {
     await fetchTraces()
     mounted = true
   })
 </script>
 
-<!-- TracesPage.svelte - Traces list and visualization page -->
+<!-- TracesPage: list view — script order: imports → types → pure cmp → context → state → derived → effects → handlers → onMount -->
 <div class="flex min-w-0 w-full flex-col overflow-y-auto py-6">
-  <!-- Page Header -->
+  <!-- 1. Header + search -->
   <SignalHeader 
     signal="traces"
     view="list"
@@ -182,23 +201,39 @@
   {/if}
 
   <div class="space-y-4">
-    <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-base-content/70">
+    <!-- 2. Summary stats row -->
+    <div
+      class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-base-content/70 transition-opacity duration-300 ease-in-out {statsRowMuted ? 'opacity-[0.55]' : 'opacity-100'}"
+      aria-busy={statsRowMuted}
+    >
       {#if hasTraceRows}
-        <span class="font-medium">
-          {traceSummaries.length} trace{traceSummaries.length !== 1 ? 's' : ''}
+        {@const s = listStats}
+        <span class="font-medium text-base-content">
+          {s.traces} trace{s.traces !== 1 ? 's' : ''}
         </span>
-      {/if}
-      {#if loading && hasTraceRows}
-        <span class="text-base-content/50">Updating…</span>
+        <span class="text-base-content/35" aria-hidden="true">·</span>
+        <span>{s.spans} span{s.spans !== 1 ? 's' : ''}</span>
+        <span class="text-base-content/35" aria-hidden="true">·</span>
+        <span>{s.services} service{s.services !== 1 ? 's' : ''}</span>
+        <span class="text-base-content/35" aria-hidden="true">·</span>
+        <span class={s.errors > 0 ? 'text-error/90' : ''}>
+          {s.errors} error{s.errors !== 1 ? 's' : ''}
+        </span>
+        <span class="text-base-content/35" aria-hidden="true">·</span>
+        <span class={s.exceptions > 0 ? 'text-warning/90' : ''}>
+          {s.exceptions} exception{s.exceptions !== 1 ? 's' : ''}
+        </span>
       {/if}
     </div>
 
+    <!-- 3a. Loading (no rows yet) -->
     {#if loading && !hasTraceRows}
       <div
         class="rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center text-base-content/60 shadow-surface-sm backdrop-blur-sm"
       >
         Loading traces…
       </div>
+    <!-- 3b. Empty state -->
     {:else if !loading && !hasTraceRows}
       <div
         class="rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center shadow-surface-sm backdrop-blur-sm"
@@ -208,6 +243,7 @@
           Send telemetry to the exporter or adjust the time range
         </p>
       </div>
+    <!-- 3c. Table + pagination -->
     {:else}
     <div
       class="overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200 {loading ? 'opacity-70' : 'opacity-100'}"
@@ -292,13 +328,14 @@
                   </div>
                 </th>
                 <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  class="table-header-cell table-header-cell--sortable table-header-cell--center group"
                   onclick={() => handleSort('spanCount')}
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => e.key === 'Enter' && handleSort('spanCount')}
                 >
-                  <div class="flex items-center justify-end gap-2">
+                  <div class="flex items-center justify-center gap-2">
+                    <span>Spans</span>
                     <span class="w-4 h-4 flex items-center justify-center">
                       <svg
                         class="sort-indicator {sortColumn === 'spanCount'
@@ -311,17 +348,17 @@
                         <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
                       </svg>
                     </span>
-                    <span>Spans</span>
                   </div>
                 </th>
                 <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  class="table-header-cell table-header-cell--sortable table-header-cell--center group"
                   onclick={() => handleSort('errorCount')}
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => e.key === 'Enter' && handleSort('errorCount')}
                 >
-                  <div class="flex items-center justify-end gap-2">
+                  <div class="flex items-center justify-center gap-2">
+                    <span>Errors</span>
                     <span class="w-4 h-4 flex items-center justify-center">
                       <svg
                         class="sort-indicator {sortColumn === 'errorCount'
@@ -334,17 +371,17 @@
                         <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
                       </svg>
                     </span>
-                    <span>Errors</span>
                   </div>
                 </th>
                 <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  class="table-header-cell table-header-cell--sortable table-header-cell--center group"
                   onclick={() => handleSort('exceptionCount')}
                   role="button"
                   tabindex="0"
                   onkeydown={(e) => e.key === 'Enter' && handleSort('exceptionCount')}
                 >
-                  <div class="flex items-center justify-end gap-2">
+                  <div class="flex items-center justify-center gap-2">
+                    <span>Exceptions</span>
                     <span class="w-4 h-4 flex items-center justify-center">
                       <svg
                         class="sort-indicator {sortColumn === 'exceptionCount'
@@ -357,7 +394,6 @@
                         <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
                       </svg>
                     </span>
-                    <span>Exceptions</span>
                   </div>
                 </th>
               </tr>
@@ -406,26 +442,30 @@
                     </td>
                     <td class="table-cell text-base-content/80">
                       {#if trace.rootSpan}
-                        {formatTimestamp(trace.rootSpan.startTime, 'local', 'milliseconds')}
+                        {formatTimestamp(trace.rootSpan.startTime, timeContext.timezone, 'milliseconds')}
                       {:else}
                         <span class="text-base-content/50 italic">—</span>
                       {/if}
                     </td>
-                    <td class="table-cell--right">
+                    <td class="table-cell--count">
                       {trace.spanCount}
                     </td>
-                    <td class="table-cell--right">
+                    <td class="table-cell--count">
                       {#if trace.errorCount > 0}
-                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-error/20 text-error">
+                        <span
+                          class="inline-flex items-center justify-center rounded-full bg-error/20 px-2 py-0.5 font-medium text-error"
+                        >
                           {trace.errorCount}
                         </span>
                       {:else}
                         <span class="text-base-content/50">0</span>
                       {/if}
                     </td>
-                    <td class="table-cell--right">
+                    <td class="table-cell--count">
                       {#if trace.exceptionCount > 0}
-                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-warning/20 text-warning">
+                        <span
+                          class="inline-flex items-center justify-center rounded-full bg-warning/20 px-2 py-0.5 font-medium text-warning"
+                        >
                           {trace.exceptionCount}
                         </span>
                       {:else}

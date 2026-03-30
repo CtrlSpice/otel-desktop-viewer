@@ -215,6 +215,10 @@ svg {
   @apply pl-2 pr-4 py-2 text-sm text-right text-base-content;
 }
 
+.table-cell--count {
+  @apply px-4 py-2 text-center text-sm tabular-nums text-base-content;
+}
+
 .table-cell--center {
   @apply px-4 py-2 text-center;
 }

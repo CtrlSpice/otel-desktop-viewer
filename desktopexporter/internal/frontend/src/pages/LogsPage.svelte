@@ -87,7 +87,7 @@
                   >{log.severityText}</span
                 >
                 <span class="text-sm text-base-content/70"
-                  >{formatTimestamp(log.timestamp, 'local', 'nanoseconds')}</span
+                  >{formatTimestamp(log.timestamp, timeContext.timezone, 'nanoseconds')}</span
                 >
                 {#if log.traceID}
                   <span class="text-xs text-primary">Trace: {log.traceID}</span>

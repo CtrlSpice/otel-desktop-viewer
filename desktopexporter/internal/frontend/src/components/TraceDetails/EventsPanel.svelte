@@ -3,6 +3,7 @@
   import SpanField from './SpanField.svelte';
   import { formatDuration } from '@/utils/duration';
   import { formatTimestamp } from '@/utils/time';
+  import { getTimeContext } from '@/contexts/time-context.svelte';
 
   type Props = {
     events: EventData[];
@@ -10,6 +11,9 @@
   };
 
   let { events, spanStartTime }: Props = $props();
+
+  let timeContext = getTimeContext();
+
   let openEvents = $state<Set<number>>(new Set());
 </script>
 
@@ -56,7 +60,7 @@
               <div class="data-table-cell">
                 <SpanField
                   fieldName="timestamp"
-                  fieldValue={formatTimestamp(event.timestamp, 'local', 'nanoseconds')}
+                  fieldValue={formatTimestamp(event.timestamp, timeContext.timezone, 'nanoseconds')}
                   fieldType="timestamp"
                 />
               </div>
