@@ -196,11 +196,11 @@ svg {
 
 /* Tight gutter between Trace ID and Root Span (presence) column */
 .table-header-cell--trace-id {
-  @apply pl-4 pr-1 py-3 text-left text-xs font-semibold tracking-normal text-base-content/55 whitespace-nowrap;
+  @apply pl-4 pr-1 py-4 text-left text-xs font-semibold tracking-normal text-base-content/55 whitespace-nowrap;
 }
 
 .table-header-cell--after-trace-id {
-  @apply pl-1 pr-4 py-3 text-center text-xs font-semibold tracking-normal text-base-content/55;
+  @apply pl-1 pr-4 py-4 text-center text-xs font-semibold tracking-normal text-base-content/55;
 }
 
 .table-cell--trace-id {
