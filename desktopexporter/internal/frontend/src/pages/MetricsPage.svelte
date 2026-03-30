@@ -126,7 +126,7 @@
                           Count: {dataPoint.count}
                         {/if}
                       </span>
-                      <span>{formatTimestamp(dataPoint.timestamp, 'local', 'nanoseconds')}</span>
+                      <span>{formatTimestamp(dataPoint.timestamp, timeContext.timezone, 'nanoseconds')}</span>
                     </div>
                   </div>
                 {/each}

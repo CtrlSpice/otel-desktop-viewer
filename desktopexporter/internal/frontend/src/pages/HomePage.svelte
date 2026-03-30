@@ -24,13 +24,9 @@
     }
   }
 
-  function formatRelativeTime(
-    timestampNs: bigint | number | string | null | undefined
-  ): string {
+  function formatRelativeTime(timestampNs: bigint | null | undefined): string {
     if (timestampNs == null) return '-';
-    const normalizedNs =
-      typeof timestampNs === 'bigint' ? timestampNs : BigInt(timestampNs);
-    const ms = Number(normalizedNs / 1_000_000n);
+    const ms = Number(timestampNs / 1_000_000n);
     const seconds = Math.floor((Date.now() - ms) / 1000);
     if (seconds < 5) return 'just now';
     if (seconds < 60) return `${seconds}s ago`;
