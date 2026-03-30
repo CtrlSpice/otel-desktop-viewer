@@ -54,7 +54,7 @@
 </script>
 
 <!-- MetricsPage.svelte - Metrics visualization page -->
-<div class="min-w-0 py-6">
+<div class="flex min-w-0 w-full flex-col overflow-y-auto py-6">
   <SignalHeader
     signal="metrics"
     view="list"

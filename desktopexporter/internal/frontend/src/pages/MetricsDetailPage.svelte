@@ -71,25 +71,21 @@
   });
 
   function handleBack() {
-    router.goto('/metrics');
+    if (history.length > 1) {
+      history.back()
+    } else {
+      router.goto('/metrics')
+    }
   }
 </script>
 
 <!-- MetricsDetailPage.svelte — stub; mirrors MetricsPage for a single metric from the URL -->
-<div class="min-w-0 py-6">
-  <div class="mb-4">
-    <button class="btn btn-sm btn-ghost" type="button" onclick={handleBack}>
-      <svg class="h-4 w-4" viewBox="0 0 24 24">
-        <path d="M15 19l-7-7 7-7" />
-      </svg>
-      <span>Back to Metrics</span>
-    </button>
-  </div>
-
+<div class="flex min-w-0 w-full flex-col overflow-y-auto py-6">
   <SignalHeader
     signal="metrics"
     view="detail"
-    title={metricName || 'Metric'}
+    metricName={metricName || 'Metric'}
+    onBack={handleBack}
     onRefresh={fetchMetricDetail}
   />
 

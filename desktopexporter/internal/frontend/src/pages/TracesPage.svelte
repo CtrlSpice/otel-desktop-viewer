@@ -5,6 +5,7 @@
   import { getTimeContext, selectionToQueryRangeMs } from "@/contexts/time-context.svelte"
   import { formatTimestamp } from "@/utils/time"
   import { compareByStringField, compareByTimestampField } from "@/utils/compare"
+  import { popNavState, stashNavState } from "@/utils/nav-state"
   import type { TraceSummary, SearchResultEvent } from "@/types/api-types"
   import SignalHeader from "@/components/SignalHeader/SignalHeader.svelte"
   import { traceListStats } from "@/components/TraceList/trace-list-stats"
@@ -18,6 +19,13 @@
     | 'errorCount'
     | 'exceptionCount'
   type SortDirection = 'asc' | 'desc'
+
+  interface TracesPageNav {
+    currentPage: number
+    rowsPerPage: number
+    sortColumn: SortColumn
+    sortDirection: SortDirection
+  }
 
   // --- row comparator for sort() ---
   /** Primary key by column + direction; tie-break on trace ID. */
@@ -186,6 +194,16 @@
     }
   }
 
+  function navigateToTrace(traceID: string) {
+    stashNavState<TracesPageNav>('tracesPage', {
+      currentPage,
+      rowsPerPage,
+      sortColumn,
+      sortDirection,
+    })
+    router.goto(`/trace/${traceID}`)
+  }
+
   async function handleDelete() {
     try {
       if (someSelected) {
@@ -203,6 +221,14 @@
 
   // --- lifecycle ---
   onMount(async () => {
+    const saved = popNavState<TracesPageNav>('tracesPage')
+    if (saved) {
+      currentPage = saved.currentPage
+      rowsPerPage = saved.rowsPerPage
+      sortColumn = saved.sortColumn
+      sortDirection = saved.sortDirection
+    }
+
     await fetchTraces()
     mounted = true
   })
@@ -459,10 +485,10 @@
                   {#each paginatedTraces as trace}
                   <tr 
                     class="table-row cursor-pointer hover:bg-base-200 transition-colors {selectedTraceIDs.has(trace.traceID) ? 'bg-primary/5' : ''}"
-                    onclick={() => router.goto(`/trace/${trace.traceID}`)}
+                    onclick={() => navigateToTrace(trace.traceID)}
                     role="button"
                     tabindex="0"
-                    onkeydown={(e) => e.key === 'Enter' && router.goto(`/trace/${trace.traceID}`)}
+                    onkeydown={(e) => e.key === 'Enter' && navigateToTrace(trace.traceID)}
                   >
                     <td
                       class="table-cell--checkbox"

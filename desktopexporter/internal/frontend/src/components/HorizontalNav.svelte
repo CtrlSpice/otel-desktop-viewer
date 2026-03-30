@@ -9,6 +9,22 @@
   import ThemeToggle from "@/components/ThemeToggle.svelte"
   import { router } from "tinro5"
 
+  /** True when this top-level nav item should show as active (list or detail under that signal). */
+  function isNavItemActive(path: string, itemId: string): boolean {
+    switch (itemId) {
+      case "home":
+        return path === "/"
+      case "traces":
+        return path === "/traces" || path.startsWith("/trace/")
+      case "metrics":
+        return path === "/metrics" || path.startsWith("/metrics/")
+      case "logs":
+        return path === "/logs" || path.startsWith("/logs/")
+      default:
+        return false
+    }
+  }
+
   // Navigation items
   // prettier-ignore
   let navItems = [
@@ -38,10 +54,11 @@
   <div class="flex min-w-0 flex-1 items-center overflow-x-auto overflow-y-hidden">
     <div class="flex flex-nowrap items-center gap-1 pr-2">
     {#each navItems as item}
+      {@const active = isNavItemActive(currentPath, item.id)}
       <button
-        class="nav-button {currentPath === item.path
-          ? 'nav-button-active'
-          : 'nav-button-inactive'}"
+        type="button"
+        class="nav-button {active ? 'nav-button-active' : 'nav-button-inactive'}"
+        aria-current={active ? "page" : undefined}
         onclick={() => handleNavClick(item.path)}
       >
         <HugeiconsIcon icon={item.icon} size={17} />

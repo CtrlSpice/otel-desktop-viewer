@@ -1,180 +1,258 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { EditorView, placeholder as cmPlaceholder } from '@codemirror/view';
-  import { EditorState } from '@codemirror/state';
-  import { autocompletion, closeBrackets } from '@codemirror/autocomplete';
-  import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
-  import { keymap } from '@codemirror/view';
+  import { onMount, onDestroy } from 'svelte'
+  import { EditorView, placeholder as cmPlaceholder } from '@codemirror/view'
+  import { EditorState } from '@codemirror/state'
+  import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
+  import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
+  import { keymap } from '@codemirror/view'
   import {
     getStaticFieldsForSearch,
     getDynamicAttributes,
     type FieldDefinition,
-  } from '@/constants/fields';
-  import { parseQuery } from './queryParser';
-  import type { QueryNode } from './queryTree';
-  import { telemetryAPI } from '@/services/telemetry-service';
-  import { getTimeContext } from '@/contexts/time-context.svelte';
-  import type { SearchResultEvent } from '@/types/api-types';
-  import { queryLanguageSupport } from './lang/query-language';
-  import { createQueryCompletionSource } from './lang/completions';
-  import { createQueryLinter } from './lang/linter';
-  import { queryTheme } from './lang/theme';
-  import { createQueryKeymap } from './lang/keymap';
+  } from '@/constants/fields'
+  import { parseQuery } from './queryParser'
+  import type { QueryNode } from './queryTree'
+  import { telemetryAPI } from '@/services/telemetry-service'
+  import { getTimeContext, selectionToQueryRangeMs } from '@/contexts/time-context.svelte'
+  import type { TimeContext } from '@/contexts/time-context.svelte'
+  import type { SearchResultEvent } from '@/types/api-types'
+  import { queryLanguageSupport } from './lang/query-language'
+  import { createQueryCompletionSource } from './lang/completions'
+  import { createQueryLinter } from './lang/linter'
+  import { queryTheme } from './lang/theme'
+  import { createQueryKeymap } from './lang/keymap'
+
+  // --- types ---
   type SearchEditorProps =
     | {
-        signal: 'logs';
-        view: 'list';
-        onSearchResults?: (event: SearchResultEvent) => void;
+        signal: 'traces' | 'metrics' | 'logs'
+        view: 'list'
+        onSearchResults?: (event: SearchResultEvent) => void
       }
     | {
-        signal: 'traces' | 'metrics';
-        view: 'list' | 'detail';
-        onSearchResults?: (event: SearchResultEvent) => void;
-      };
+        signal: 'traces'
+        view: 'detail'
+        traceID: string
+        onSearchResults?: (event: SearchResultEvent) => void
+      }
+    | {
+        signal: 'metrics'
+        view: 'detail'
+        onSearchResults?: (event: SearchResultEvent) => void
+      }
 
-  let {
-    signal,
-    view,
-    onSearchResults,
-  }: SearchEditorProps = $props();
-  let signalLabel = $derived(signal.charAt(0).toUpperCase() + signal.slice(1));
+  // --- helpers ---
 
-  let timeContext: any = null;
-  try {
-    timeContext = getTimeContext();
-  } catch (error) {
-    console.warn('Could not get time context during initialization:', error);
+  /** Build the API call for a signal+view, or null if unsupported. */
+  function buildSearchFn(
+    sig: SearchEditorProps['signal'],
+    v: string,
+    startTime: number,
+    endTime: number,
+    queryTree: QueryNode
+  ): (() => Promise<any>) | null {
+    if (sig === 'traces') {
+      return v === 'list'
+        ? () => telemetryAPI.searchTraces(startTime, endTime, queryTree)
+        : null
+    }
+    if (sig === 'logs') {
+      return () => telemetryAPI.searchLogs(startTime, endTime, queryTree)
+    }
+    return () => telemetryAPI.getMetrics(startTime, endTime, queryTree)
   }
 
-  let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)]);
-  let availableFields = $state<FieldDefinition[]>([]);
+  /** Label after "Search " in the editor placeholder (list vs detail). */
+  function searchPlaceholderSubject(
+    sig: SearchEditorProps['signal'],
+    v: SearchEditorProps['view']
+  ): string {
+    if (v === 'detail' && sig === 'traces') return 'Spans'
+    if (v === 'detail' && sig === 'metrics') return 'Data Points'
+    return sig.charAt(0).toUpperCase() + sig.slice(1)
+  }
 
+  /** Detect pasted trace/span IDs and wrap with the field name. */
+  function idReplacementForPaste(text: string): string | null {
+    const trimmed = text.trim()
+    if (/^[a-f0-9]{32}$/i.test(trimmed)) return `traceID = ${trimmed}`
+    if (/^[a-f0-9]{16}$/i.test(trimmed)) return `spanID = ${trimmed}`
+    return null
+  }
+
+  // --- context ---
+  let { signal, view, onSearchResults, ...rest }: SearchEditorProps = $props()
+  let traceID = $derived('traceID' in rest ? rest.traceID : undefined)
+
+  let timeContext: TimeContext | null = null
+  try {
+    timeContext = getTimeContext()
+  } catch {
+    console.warn('SearchEditor: time context not available')
+  }
+
+  // --- state: editor ---
+  let editorContainer: HTMLDivElement
+  let editorView: EditorView | null = null
+  let searchError = $state<string | null>(null)
+
+  // --- state: help dialog ---
+  let helpDialogElement = $state<HTMLDialogElement | null>(null)
+  let helpDialogOpen = $state(false)
+  let helpLastFocusedElement = $state<HTMLElement | null>(null)
+  let prevBodyOverflow = $state<string | null>(null)
+  const supportsClosedBy = 'closedBy' in HTMLDialogElement.prototype
+
+  // --- state: available fields (static + dynamic attributes) ---
+  let availableFields = $state<FieldDefinition[]>([])
+
+  // --- derived ---
+  let signalLabel = $derived(signal.charAt(0).toUpperCase() + signal.slice(1))
+  let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
+  let placeholderText = $derived(
+    `Search ${searchPlaceholderSubject(signal, view)}… (Cmd+Enter to submit)`
+  )
+
+  // --- effects ---
+
+  /** Debounced fetch of dynamic attributes when time selection or signal changes. */
   $effect(() => {
-    const base = [...staticFieldsList];
-    availableFields = base;
-    const tc = timeContext;
-    if (!tc) return;
+    const base = [...staticFieldsList]
+    availableFields = base
+    const tc = timeContext
+    if (!tc) return
 
-    let cancelled = false;
+    let cancelled = false
     const t = window.setTimeout(async () => {
       try {
         const dynamicAttrs = await getDynamicAttributes(
           tc.selection.start,
           tc.selection.end,
           signal
-        );
-        if (cancelled) return;
-        availableFields = [...base, ...dynamicAttrs];
+        )
+        if (cancelled) return
+        availableFields = [...base, ...dynamicAttrs]
       } catch (error) {
-        console.warn('Failed to load dynamic attributes:', error);
+        console.warn('Failed to load dynamic attributes:', error)
       }
-    }, 250);
+    }, 250)
 
     return () => {
-      cancelled = true;
-      window.clearTimeout(t);
-    };
-  });
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  })
 
-  let editorContainer: HTMLDivElement;
-  let editorView: EditorView | null = null;
-  let searchError = $state<string | null>(null);
+  /** Wire up close/cancel/click-outside on the help dialog element. */
+  $effect(() => {
+    if (!helpDialogElement) return
 
-  let placeholderText = $derived(`Search ${signalLabel}... (Cmd+Enter to submit)`);
+    const dialog = helpDialogElement
+
+    const handleClose = () => {
+      helpDialogOpen = dialog.open
+      if (prevBodyOverflow !== null) {
+        document.body.style.overflow = prevBodyOverflow
+        prevBodyOverflow = null
+      }
+      if (helpLastFocusedElement?.isConnected) {
+        helpLastFocusedElement.focus()
+      }
+      helpLastFocusedElement = null
+    }
+
+    const handleCancel = () => {
+      helpDialogOpen = false
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (supportsClosedBy) return
+      const rect = dialog.getBoundingClientRect()
+      const inside =
+        rect.top <= event.clientY &&
+        event.clientY <= rect.top + rect.height &&
+        rect.left <= event.clientX &&
+        event.clientX <= rect.left + rect.width
+      if (!inside) dialog.close()
+    }
+
+    dialog.addEventListener('close', handleClose)
+    dialog.addEventListener('cancel', handleCancel)
+    if (!supportsClosedBy) {
+      dialog.addEventListener('click', handleClickOutside)
+    }
+
+    helpDialogOpen = dialog.open
+
+    return () => {
+      dialog.removeEventListener('close', handleClose)
+      dialog.removeEventListener('cancel', handleCancel)
+      if (!supportsClosedBy) {
+        dialog.removeEventListener('click', handleClickOutside)
+      }
+    }
+  })
+
+  // --- handlers ---
 
   function onSubmit() {
-    const text = editorView?.state.doc.toString() ?? '';
-    if (!text.trim()) return;
+    const text = editorView?.state.doc.toString() ?? ''
+    if (!text.trim()) return
 
     try {
-      const queryTree: QueryNode | null = parseQuery(text, availableFields);
-      searchError = null;
+      const queryTree: QueryNode | null = parseQuery(text, availableFields)
+      searchError = null
+      if (!queryTree) return
 
-      if (!queryTree) return;
+      const { start: startTime, end: endTime } = timeContext
+        ? selectionToQueryRangeMs(timeContext.selection, Date.now())
+        : { start: 0, end: Date.now() }
 
-      let startTime = 0;
-      let endTime = Date.now();
-
-      if (timeContext) {
-        if (timeContext.selection.type === 'preset') {
-          const duration = timeContext.selection.end - timeContext.selection.start;
-          startTime = endTime - duration;
-        } else {
-          startTime = timeContext.selection.start;
-          endTime = timeContext.selection.end;
-        }
-      }
-
-      const searchBySignal = {
-        traces: {
-          list: () => telemetryAPI.searchTraces(startTime, endTime, queryTree),
-          detail: null,
-        },
-        logs: {
-          list: () => telemetryAPI.searchLogs(startTime, endTime, queryTree),
-        },
-        metrics: {
-          list: () => telemetryAPI.getMetrics(startTime, endTime, queryTree),
-          detail: () => telemetryAPI.getMetrics(startTime, endTime, queryTree),
-        },
-      } as const;
-
-      const emitResultsBySignal = {
-        traces: (results: any) =>
-          onSearchResults?.({ signal: 'traces', view: view as 'list' | 'detail', results }),
-        logs: (results: any) =>
-          onSearchResults?.({ signal: 'logs', view: 'list', results }),
-        metrics: (results: any) =>
-          onSearchResults?.({ signal: 'metrics', view, results }),
-      } as const;
-
-      const searchFn: (() => Promise<any>) | null =
-        signal === 'traces'
-          ? searchBySignal.traces[view]
-          : signal === 'logs'
-            ? searchBySignal.logs[view as 'list']
-            : searchBySignal.metrics[view];
-
+      const searchFn = buildSearchFn(signal, view, startTime, endTime, queryTree)
       if (!searchFn) {
-        console.warn('Detail view search not yet implemented');
-        return;
+        console.warn('Detail view search not yet implemented')
+        return
       }
 
       searchFn()
         .then(results => {
-          emitResultsBySignal[signal](results);
+          onSearchResults?.({ signal, view, results } as SearchResultEvent)
         })
-        .catch(error => {
-          searchError = 'Search failed: ' + error.message;
-        });
+        .catch(err => {
+          searchError = 'Search failed: ' + err.message
+        })
     } catch (error) {
-      searchError = error instanceof Error ? error.message : 'Parse error';
+      searchError = error instanceof Error ? error.message : 'Parse error'
     }
   }
 
-  // Paste handler: detect trace/span IDs and wrap with field name
+  function openHelp() {
+    helpLastFocusedElement =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
+    prevBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    helpDialogElement?.showModal()
+    helpDialogOpen = true
+    requestAnimationFrame(() => helpDialogElement?.focus())
+  }
+
+  // --- CodeMirror extensions (static; reference closures over mutable state) ---
+
   const pasteHandler = EditorView.inputHandler.of((view, from, to, text) => {
-    const trimmed = text.trim();
-    const traceIdPattern = /^[a-f0-9]{32}$/i;
-    const spanIdPattern = /^[a-f0-9]{16}$/i;
-
-    let replacement: string | null = null;
-    if (traceIdPattern.test(trimmed)) {
-      replacement = `traceID = ${trimmed}`;
-    } else if (spanIdPattern.test(trimmed)) {
-      replacement = `spanID = ${trimmed}`;
-    }
-
+    const replacement = idReplacementForPaste(text)
     if (replacement) {
       view.dispatch({
         changes: { from, to, insert: replacement },
         selection: { anchor: from + replacement.length },
-      });
-      return true;
+      })
+      return true
     }
+    return false
+  })
 
-    return false;
-  });
+  // --- lifecycle ---
 
   onMount(() => {
     const state = EditorState.create({
@@ -195,89 +273,17 @@
         pasteHandler,
         EditorView.lineWrapping,
       ],
-    });
+    })
 
     editorView = new EditorView({
       state,
       parent: editorContainer,
-    });
-  });
+    })
+  })
 
   onDestroy(() => {
-    editorView?.destroy();
-  });
-
-  // Help dialog
-  let helpDialogElement = $state<HTMLDialogElement | null>(null);
-  let helpDialogOpen = $state(false);
-  let helpLastFocusedElement = $state<HTMLElement | null>(null);
-  let prevBodyOverflow = $state<string | null>(null);
-
-  const supportsClosedBy = 'closedBy' in HTMLDialogElement.prototype;
-
-  function openHelp() {
-    helpLastFocusedElement =
-      (document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null);
-    prevBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    helpDialogElement?.showModal();
-    helpDialogOpen = true;
-    requestAnimationFrame(() => helpDialogElement?.focus());
-  }
-
-  $effect(() => {
-    if (helpDialogElement) {
-      const handleClose = () => {
-        helpDialogOpen = helpDialogElement?.open ?? false;
-        if (prevBodyOverflow !== null) {
-          document.body.style.overflow = prevBodyOverflow;
-          prevBodyOverflow = null;
-        }
-        if (helpLastFocusedElement?.isConnected) {
-          helpLastFocusedElement.focus();
-        }
-        helpLastFocusedElement = null;
-      };
-
-      const handleCancel = () => {
-        helpDialogOpen = false;
-      };
-
-      const handleClickOutside = (event: MouseEvent) => {
-        if (!supportsClosedBy && helpDialogElement) {
-          const rect = helpDialogElement.getBoundingClientRect();
-          const isInDialog =
-            rect.top <= event.clientY &&
-            event.clientY <= rect.top + rect.height &&
-            rect.left <= event.clientX &&
-            event.clientX <= rect.left + rect.width;
-
-          if (!isInDialog) {
-            helpDialogElement.close();
-          }
-        }
-      };
-
-      helpDialogElement.addEventListener('close', handleClose);
-      helpDialogElement.addEventListener('cancel', handleCancel);
-
-      if (!supportsClosedBy) {
-        helpDialogElement.addEventListener('click', handleClickOutside);
-      }
-
-      helpDialogOpen = helpDialogElement.open;
-
-      return () => {
-        helpDialogElement?.removeEventListener('close', handleClose);
-        helpDialogElement?.removeEventListener('cancel', handleCancel);
-        if (!supportsClosedBy) {
-          helpDialogElement?.removeEventListener('click', handleClickOutside);
-        }
-      };
-    }
-  });
+    editorView?.destroy()
+  })
 </script>
 
 <div class="search-editor-wrapper">

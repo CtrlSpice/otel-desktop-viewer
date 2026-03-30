@@ -52,22 +52,16 @@
   }
 
   function handleBack() {
-    router.goto('/traces');
+    if (history.length > 1) {
+      history.back()
+    } else {
+      router.goto('/traces')
+    }
   }
 </script>
 
-<div class="flex flex-col w-full h-full">
-  <!-- Back button -->
-  <div class="mb-4">
-    <button class="btn btn-sm btn-ghost" onclick={handleBack}>
-      <svg class="w-4 h-4" viewBox="0 0 24 24">
-        <path d="M15 19l-7-7 7-7" />
-      </svg>
-      <span>Back to Traces</span>
-    </button>
-  </div>
-
-  <SignalHeader signal="traces" view="detail" onRefresh={fetchTrace} />
+<div class="flex min-w-0 w-full flex-col overflow-y-auto py-6">
+  <SignalHeader signal="traces" view="detail" {traceID} onBack={handleBack} onRefresh={fetchTrace} />
 
   {#if loading}
     <div class="flex items-center justify-center h-64">
