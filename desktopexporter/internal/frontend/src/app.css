@@ -2,47 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Shared query syntax colors (used by CodeMirror + help dialog) */
-:root {
-  --query-base: #232136;
-  --query-surface: #2a273f;
-  --query-overlay: #393552;
-  --query-muted: #6e6a86;
-  --query-subtle: #908caa;
-  --query-text: #e0def4;
-  --query-iris: #c4a7e7;
-  --query-foam: #9ccfd8;
-  --query-gold: #f6c177;
-  --query-rose: #ea9ab2;
-  --query-love: #eb6f92;
-}
-
+/* Rosé Pine palette tokens — single source of truth for both themes */
 html[data-theme='rose-pine-moon'] {
-  --query-base: #232136;
-  --query-surface: #2a273f;
-  --query-overlay: #393552;
-  --query-muted: #6e6a86;
-  --query-subtle: #908caa;
-  --query-text: #e0def4;
-  --query-iris: #c4a7e7;
-  --query-foam: #9ccfd8;
-  --query-gold: #f6c177;
-  --query-rose: #ea9ab2;
-  --query-love: #eb6f92;
+  --rp-base: #232136;
+  --rp-surface: #2a273f;
+  --rp-overlay: #393552;
+  --rp-muted: #6e6a86;
+  --rp-subtle: #908caa;
+  --rp-text: #e0def4;
+  --rp-iris: #c4a7e7;
+  --rp-foam: #9ccfd8;
+  --rp-gold: #f6c177;
+  --rp-pine: #3e8fb0;
+  --rp-rose: #ea9ab2;
+  --rp-love: #eb6f92;
 }
 
 html[data-theme='rose-pine-dawn'] {
-  --query-base: #faf4ed;
-  --query-surface: #fffaf3;
-  --query-overlay: #f2e9e1;
-  --query-muted: #9893a5;
-  --query-subtle: #797593;
-  --query-text: #575279;
-  --query-iris: #907aa9;
-  --query-foam: #56949f;
-  --query-gold: #ea9d34;
-  --query-rose: #d7827e;
-  --query-love: #b4637a;
+  --rp-base: #faf4ed;
+  --rp-surface: #fffaf3;
+  --rp-overlay: #f2e9e1;
+  --rp-muted: #9893a5;
+  --rp-subtle: #797593;
+  --rp-text: #575279;
+  --rp-iris: #907aa9;
+  --rp-foam: #56949f;
+  --rp-gold: #ea9d34;
+  --rp-pine: #286983;
+  --rp-rose: #d7827e;
+  --rp-love: #b4637a;
 }
 
 @layer base {
@@ -161,6 +149,19 @@ svg {
   @apply rotate-180;
 }
 
+/* Navigation */
+.nav-button {
+  @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
+}
+
+.nav-button-active {
+  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+}
+
+.nav-button-inactive {
+  @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+}
+
 /* Data Table Styles */
 .table-header-row {
   @apply border-b border-base-300/80 bg-base-200/60 backdrop-blur-sm;
@@ -269,4 +270,23 @@ svg {
 
 .pagination-popover-option--selected {
   @apply bg-base-200;
+}
+
+/* Semantic badges (Rosé Pine accents via --rp-* tokens) */
+.badge-origin {
+  @apply badge badge-sm text-xs border-0;
+  background-color: color-mix(in srgb, var(--rp-iris) 20%, transparent);
+  color: var(--rp-iris);
+}
+
+.badge-type {
+  @apply badge badge-sm text-xs border-0;
+  background-color: color-mix(in srgb, var(--rp-pine) 20%, transparent);
+  color: var(--rp-pine);
+}
+
+.badge-root {
+  @apply badge badge-sm text-xs border-0;
+  background-color: color-mix(in srgb, var(--rp-gold) 20%, transparent);
+  color: var(--rp-gold);
 }

@@ -2,19 +2,19 @@ import { EditorView } from '@codemirror/view';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 
-// Theme-aware colors shared with app.css CSS variables
+// Theme-aware colors via --rp-* tokens defined in app.css
 const qc = {
-  base: 'var(--query-base)',
-  surface: 'var(--query-surface)',
-  overlay: 'var(--query-overlay)',
-  muted: 'var(--query-muted)',
-  subtle: 'var(--query-subtle)',
-  text: 'var(--query-text)',
-  iris: 'var(--query-iris)',
-  foam: 'var(--query-foam)',
-  gold: 'var(--query-gold)',
-  rose: 'var(--query-rose)',
-  love: 'var(--query-love)',
+  base: 'var(--rp-base)',
+  surface: 'var(--rp-surface)',
+  overlay: 'var(--rp-overlay)',
+  muted: 'var(--rp-muted)',
+  subtle: 'var(--rp-subtle)',
+  text: 'var(--rp-text)',
+  iris: 'var(--rp-iris)',
+  foam: 'var(--rp-foam)',
+  gold: 'var(--rp-gold)',
+  rose: 'var(--rp-rose)',
+  love: 'var(--rp-love)',
 };
 
 const queryHighlightStyle = HighlightStyle.define([

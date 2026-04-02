@@ -52,9 +52,13 @@
     queryTree: QueryNode
   ): (() => Promise<any>) | null {
     if (sig === 'traces') {
-      return v === 'list'
-        ? () => telemetryAPI.searchTraces(startTime, endTime, queryTree)
-        : null
+      if (v === 'list') {
+        return () => telemetryAPI.searchTraces(startTime, endTime, queryTree)
+      }
+      if (v === 'detail' && traceID) {
+        return () => telemetryAPI.searchTraceSpans(traceID, queryTree)
+      }
+      return null
     }
     if (sig === 'logs') {
       return () => telemetryAPI.searchLogs(startTime, endTime, queryTree)
@@ -610,25 +614,25 @@
     @apply whitespace-pre-wrap break-all bg-transparent p-0;
   }
 
-  /* Match CodeMirror query token colors via shared CSS vars */
+  /* Match CodeMirror query token colors via --rp-* tokens */
   .q-field {
-    color: var(--query-foam);
+    color: var(--rp-foam);
   }
 
   .q-operator {
-    color: var(--query-subtle);
+    color: var(--rp-subtle);
   }
 
   .q-logic {
-    color: var(--query-iris);
+    color: var(--rp-iris);
     font-weight: 600;
   }
 
   .q-value {
-    color: var(--query-gold);
+    color: var(--rp-gold);
   }
 
   .q-paren {
-    color: var(--query-subtle);
+    color: var(--rp-subtle);
   }
 </style>

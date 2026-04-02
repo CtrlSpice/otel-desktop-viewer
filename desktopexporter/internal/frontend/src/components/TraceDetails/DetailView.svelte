@@ -1,188 +1,192 @@
 <script lang="ts">
-  import type { SpanData } from '@/types/api-types';
-  import FieldsPanel from './FieldsPanel.svelte';
-  import EventsPanel from './EventsPanel.svelte';
-  import LinksPanel from './LinksPanel.svelte';
+  import type { SpanData } from '@/types/api-types'
+  import SpanField from './SpanField.svelte'
+  import EventsPanel from './EventsPanel.svelte'
+  import LinksPanel from './LinksPanel.svelte'
+  import { formatDuration } from '@/utils/duration'
+  import { formatTimestamp } from '@/utils/time'
+  import { getTimeContext } from '@/contexts/time-context.svelte'
 
   type Props = {
-    span: SpanData | undefined;
-  };
+    span: SpanData | undefined
+  }
 
-  let { span }: Props = $props();
+  let { span }: Props = $props()
 
-  let numEvents = $derived(span?.events.length ?? 0);
-  let numLinks = $derived(span?.links.length ?? 0);
-  let activeSection = $state<'fields' | 'events' | 'links'>('fields');
+  let timeContext = getTimeContext()
+
+  // --- Derived span data ---
+
+  let isRoot = $derived(!span?.parentSpanID)
+  let durationLabel = $derived(
+    span ? formatDuration(span.endTime - span.startTime) : '',
+  )
+  let spanAttributes = $derived(span?.attributes ?? [])
+  let resourceAttributes = $derived(span?.resource.attributes ?? [])
+  let scopeAttributes = $derived(span?.scope.attributes ?? [])
+  let numEvents = $derived(span?.events.length ?? 0)
+  let numLinks = $derived(span?.links.length ?? 0)
+
+  // --- Tab state ---
+
+  type Tab = 'fields' | 'events' | 'links'
+  const tabs: { id: Tab; label: string; count?: () => number }[] = [
+    { id: 'fields', label: 'Fields' },
+    { id: 'events', label: 'Events', count: () => numEvents },
+    { id: 'links', label: 'Links', count: () => numLinks },
+  ]
+  let activeTab = $state<Tab>('fields')
 </script>
 
 {#if span}
-  <div class="w-96 h-full flex flex-col">
-    <!-- Button Row -->
-    <div
-      class="flex items-center gap-2 px-4 py-2 bg-base-200 border border-base-300 rounded-lg flex-shrink-0"
-    >
-      <button
-        class="px-3 py-1.5 rounded-xl text-xs font-medium transition-colors flex items-center gap-1.5 justify-center flex-1
-        {activeSection === 'fields'
-          ? 'bg-primary text-primary-content'
-          : 'text-base-content hover:bg-base-300'}"
-        onclick={() => (activeSection = 'fields')}
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          class="w-4 h-4"
+  <div class="detail-view">
+    <nav class="detail-view__tabs">
+      {#each tabs as tab}
+        <button
+          type="button"
+          class="nav-button {activeTab === tab.id ? 'nav-button-active' : 'nav-button-inactive'}"
+          onclick={() => { activeTab = tab.id }}
         >
-          <g fill="none" stroke="currentColor">
-            <path
-              d="M2.5 12c0-4.478 0-6.718 1.391-8.109S7.521 2.5 12 2.5c4.478 0 6.718 0 8.109 1.391S21.5 7.521 21.5 12c0 4.478 0 6.718-1.391 8.109S16.479 21.5 12 21.5c-4.478 0-6.718 0-8.109-1.391S2.5 16.479 2.5 12Z"
-            />
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M2.5 12h19M13 7h4"
-            />
-            <circle
-              cx="8.25"
-              cy="7"
-              r="1.25"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <circle
-              cx="8.25"
-              cy="17"
-              r="1.25"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M13 17h4" />
-          </g>
-        </svg>
-        <span>Fields</span>
-      </button>
-      <button
-        class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 justify-center flex-1 {activeSection ===
-        'events'
-          ? 'bg-primary text-primary-content'
-          : 'text-base-content hover:bg-base-300'}"
-        onclick={() => (activeSection = 'events')}
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          class="w-4 h-4"
-        >
-          <path
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M18.01 7.49L19.5 6m1 7.5a8.5 8.5 0 1 1-17 0a8.5 8.5 0 0 1 17 0M14.5 2h-5M12 13.5l3.5-3.5"
-          />
-        </svg>
-        <span>Events</span>
-        <span
-          class="badge badge-sm {activeSection === 'events'
-            ? 'badge-primary-content'
-            : 'badge-secondary badge-outline'}">{numEvents}</span
-        >
-      </button>
-      <button
-        class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 justify-center flex-1 {activeSection ===
-        'links'
-          ? 'bg-primary text-primary-content'
-          : 'text-base-content hover:bg-base-300'}"
-        onclick={() => (activeSection = 'links')}
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          class="w-4 h-4"
-        >
-          <g fill="none" stroke="currentColor" stroke-linecap="round">
-            <path
-              d="M10 13.229q.213.349.504.654a3.56 3.56 0 0 0 4.454.59q.391-.24.73-.59l3.239-3.372c1.43-1.49 1.43-3.904 0-5.394a3.564 3.564 0 0 0-5.183 0l-.714.743"
-            />
-            <path
-              d="m10.97 18.14l-.713.743a3.564 3.564 0 0 1-5.184 0c-1.43-1.49-1.43-3.905 0-5.394l3.24-3.372a3.564 3.564 0 0 1 5.183 0q.291.305.504.654"
-            />
-          </g>
-        </svg>
-        <span>Links</span>
-        <span
-          class="badge badge-sm {activeSection === 'links'
-            ? 'badge-primary-content'
-            : 'badge-secondary badge-outline'}">{numLinks}</span
-        >
-      </button>
-    </div>
+          <span>{tab.label}</span>
+          {#if tab.count !== undefined}
+            <span class="detail-view__tab-count">{tab.count()}</span>
+          {/if}
+        </button>
+      {/each}
+    </nav>
 
-    <!-- Content Area -->
-    <div class="flex-1 overflow-y-auto pt-2">
-      {#if activeSection === 'fields'}
-        <FieldsPanel {span} />
-      {:else if activeSection === 'events'}
+    <div class="detail-view__content">
+      {#if activeTab === 'fields'}
+        <section class="detail-section">
+          <h3 class="detail-section__heading">Span</h3>
+          <div class="detail-section__body">
+            <SpanField fieldName="name" fieldValue={span.name} fieldType="string" {isRoot} />
+            <SpanField fieldName="kind" fieldValue={span.kind} fieldType="string" />
+            <SpanField
+              fieldName="start time"
+              fieldValue={formatTimestamp(span.startTime, timeContext.timezone, 'nanoseconds')}
+              fieldType="timestamp"
+            />
+            <SpanField
+              fieldName="end time"
+              fieldValue={formatTimestamp(span.endTime, timeContext.timezone, 'nanoseconds')}
+              fieldType="timestamp"
+            />
+            <SpanField fieldName="duration" fieldValue={durationLabel} fieldType="string" />
+            <SpanField fieldName="status code" fieldValue={span.statusCode} fieldType="string" />
+            {#if span.statusCode !== 'Unset' && span.statusCode !== 'Ok'}
+              <SpanField fieldName="status message" fieldValue={span.statusMessage} fieldType="string" />
+            {/if}
+            <SpanField fieldName="trace id" fieldValue={span.traceID} fieldType="string" />
+            {#if !isRoot}
+              <SpanField fieldName="parent span id" fieldValue={span.parentSpanID ?? ''} fieldType="string" />
+            {/if}
+            <SpanField fieldName="span id" fieldValue={span.spanID} fieldType="string" />
+            {#each spanAttributes as attr}
+              <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} />
+            {/each}
+            {#if span.droppedAttributesCount > 0}
+              <SpanField fieldName="dropped attributes count" fieldValue={span.droppedAttributesCount.toString()} fieldType="uint32" />
+            {/if}
+            {#if span.droppedEventsCount > 0}
+              <SpanField fieldName="dropped events count" fieldValue={span.droppedEventsCount.toString()} fieldType="uint32" />
+            {/if}
+            {#if span.droppedLinksCount > 0}
+              <SpanField fieldName="dropped links count" fieldValue={span.droppedLinksCount.toString()} fieldType="uint32" />
+            {/if}
+          </div>
+        </section>
+
+        {#if resourceAttributes.length > 0 || span.resource.droppedAttributesCount > 0}
+          <section class="detail-section">
+            <h3 class="detail-section__heading">Resource</h3>
+            <div class="detail-section__body">
+              {#each resourceAttributes as attr}
+                <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} origin="resource" />
+              {/each}
+              {#if span.resource.droppedAttributesCount > 0}
+                <SpanField fieldName="dropped attributes count" fieldValue={span.resource.droppedAttributesCount.toString()} fieldType="uint32" origin="resource" />
+              {/if}
+            </div>
+          </section>
+        {/if}
+
+        {#if scopeAttributes.length > 0 || span.scope.name || span.scope.version || span.scope.droppedAttributesCount > 0}
+          <section class="detail-section">
+            <h3 class="detail-section__heading">Scope</h3>
+            <div class="detail-section__body">
+              {#if span.scope.name}
+                <SpanField fieldName="scope name" fieldValue={span.scope.name} fieldType="string" origin="scope" />
+              {/if}
+              {#if span.scope.version}
+                <SpanField fieldName="scope version" fieldValue={span.scope.version} fieldType="string" origin="scope" />
+              {/if}
+              {#each scopeAttributes as attr}
+                <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} origin="scope" />
+              {/each}
+              {#if span.scope.droppedAttributesCount > 0}
+                <SpanField fieldName="dropped attributes count" fieldValue={span.scope.droppedAttributesCount.toString()} fieldType="uint32" origin="scope" />
+              {/if}
+            </div>
+          </section>
+        {/if}
+
+      {:else if activeTab === 'events'}
         {#if numEvents > 0}
           <EventsPanel events={span.events} spanStartTime={span.startTime} />
         {:else}
-          <div class="border border-base-300 rounded-lg p-8">
-            <div class="flex flex-col items-center justify-center">
-              <svg
-                class="w-12 h-12 text-base-content/30 mb-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M18.01 7.49L19.5 6m1 7.5a8.5 8.5 0 1 1-17 0a8.5 8.5 0 0 1 17 0M14.5 2h-5M12 13.5l3.5-3.5"
-                />
-              </svg>
-              <p class="text-base-content/60 text-sm">
-                No events recorded for this span
-              </p>
-            </div>
-          </div>
+          <p class="detail-view__empty">No events recorded for this span</p>
         {/if}
-      {:else if activeSection === 'links'}
+
+      {:else if activeTab === 'links'}
         {#if numLinks > 0}
           <LinksPanel links={span.links} />
         {:else}
-          <div class="border border-base-300 rounded-lg p-8">
-            <div class="flex flex-col items-center justify-center">
-              <svg
-                class="w-12 h-12 text-base-content/30 mb-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-linecap="round"
-              >
-                <path
-                  d="M10 13.229q.213.349.504.654a3.56 3.56 0 0 0 4.454.59q.391-.24.73-.59l3.239-3.372c1.43-1.49 1.43-3.904 0-5.394a3.564 3.564 0 0 0-5.183 0l-.714.743"
-                />
-                <path
-                  d="m10.97 18.14l-.713.743a3.564 3.564 0 0 1-5.184 0c-1.43-1.49-1.43-3.905 0-5.394l3.24-3.372a3.564 3.564 0 0 1 5.183 0q.291.305.504.654"
-                />
-              </svg>
-              <p class="text-base-content/60 text-sm">
-                No links recorded for this span
-              </p>
-            </div>
-          </div>
+          <p class="detail-view__empty">No links recorded for this span</p>
         {/if}
       {/if}
     </div>
   </div>
 {:else}
-  <div class="w-96 h-full overflow-y-auto pt-4">
-    <p class="text-base-content/60 p-4">No span selected</p>
+  <div class="detail-view">
+    <p class="detail-view__empty">No span selected</p>
   </div>
 {/if}
+
+<style lang="postcss">
+  .detail-view {
+    @apply flex h-full min-h-0 flex-col;
+  }
+
+  .detail-view__tabs {
+    @apply flex flex-nowrap items-center gap-1 border-b border-base-300/50 px-4 py-2;
+  }
+
+  .detail-view__tab-count {
+    @apply text-xs opacity-60;
+  }
+
+  .detail-view__content {
+    @apply flex-1 overflow-y-auto p-2;
+  }
+
+  .detail-view__empty {
+    @apply text-base-content/60 text-sm py-8 text-center;
+  }
+
+  .detail-section {
+    @apply border border-base-300 rounded-lg overflow-hidden;
+  }
+
+  .detail-section + .detail-section {
+    @apply mt-2;
+  }
+
+  .detail-section__heading {
+    @apply px-4 py-1.5 text-xs font-semibold text-base-content/50 uppercase tracking-wider bg-base-200/30;
+  }
+
+  .detail-section__body {
+    @apply divide-y divide-base-300/50;
+  }
+</style>

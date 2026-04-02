@@ -31,6 +31,10 @@ dev-ts:
 run-go-persist:
 	STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/frontend/dist/) go run . --db duck.db
 
+.PHONY: populate-traces
+populate-traces:
+	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" bash "$(CURDIR)/scripts/seed-traces.sh"
+
 .PHONY: build-ts
 build-ts:
 	cd desktopexporter/internal/frontend && npm run build && cp -r dist/* ../../internal/server/static/
@@ -86,6 +90,7 @@ help:
 	@echo "  test-go           - Run Go tests"
 	@echo "  run-go            - Run server (in-memory, data lost on exit)"
 	@echo "  run-go-persist    - Run server with persistent DB file (data retained)"
+	@echo "  populate-traces   - POST sample traces to OTLP HTTP (default localhost:4318)"
 	@echo ""
 	@echo "Convenience:"
 	@echo "  build             - Build frontend and Go binary"

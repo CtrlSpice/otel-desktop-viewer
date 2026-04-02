@@ -223,11 +223,20 @@ export let telemetryAPI = {
     return traceSummariesFromJSON(rawData);
   },
 
-  // TODO: Update when integrating search - will need to add searchTraceSpans endpoint
-  // for filtering spans within a trace by time range and query
   getTraceByID: async (traceID: string): Promise<TraceData> => {
     const params = [traceID];
     const rawData = await callRPC('getTraceByID', params);
+    return traceDataFromJSON(rawData);
+  },
+
+  searchTraceSpans: async (
+    traceID: string,
+    queryTree?: QueryNode
+  ): Promise<TraceData> => {
+    const params = queryTree
+      ? [traceID, convertQueryTreeForBackend(queryTree)]
+      : [traceID];
+    const rawData = await callRPC('searchTraceSpans', params);
     return traceDataFromJSON(rawData);
   },
 
