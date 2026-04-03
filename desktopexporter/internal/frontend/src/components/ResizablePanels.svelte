@@ -100,7 +100,7 @@
 
 <div class="flex w-full h-full gap-2" bind:this={containerRef}>
   <!-- Left Panel -->
-  <div style="width: {leftWidth * 100}%; flex-shrink: 0;">
+  <div class="h-full" style="width: {leftWidth * 100}%; flex-shrink: 0;">
     {@render leftPanel()}
   </div>
 
@@ -127,7 +127,7 @@
   </div>
 
   <!-- Right Panel -->
-  <div style="width: {(1 - leftWidth) * 100}%; flex-shrink: 0;">
+  <div class="h-full" style="width: {(1 - leftWidth) * 100}%; flex-shrink: 0;">
     {@render rightPanel()}
   </div>
 </div>

@@ -12,8 +12,10 @@
 
   // --- Categorical coloring ---
 
-  const CATEGORICAL_TOKENS = ['gold', 'pine', 'foam', 'iris', 'rose'] as const
+  const CATEGORICAL_TOKENS = ['iris', 'pine', 'gold', 'rose', 'foam'] as const
   export type CategoricalToken = (typeof CATEGORICAL_TOKENS)[number]
+
+  export type EventMarker = { percent: number; name: string }
 
   export type WaterfallRowData = {
     spanNode: SpanNode
@@ -21,6 +23,7 @@
     offsetPercent: number
     widthPercent: number
     tree: TreeConnectorMeta
+    eventMarkers: EventMarker[]
   }
 
   export function getTraceBounds(spans: SpanNode[]): TraceBounds {
@@ -105,10 +108,10 @@
     const depth = spans[i].depth
     const tail = spans.slice(i + 1)
     return Array.from({ length: depth }, (_, d) => {
-      const segment = tail.slice(
-        0,
-        tail.findIndex(s => s.depth <= d) >>> 0 || tail.length
-      )
+      // Find where this ancestor's subtree ends: the next span at depth ≤ d.
+      // Only spans within that window could be siblings at depth d+1.
+      const endIdx = tail.findIndex(s => s.depth <= d)
+      const segment = endIdx === -1 ? tail : tail.slice(0, endIdx)
       return segment.some(s => s.depth === d + 1)
     })
   }
@@ -192,13 +195,19 @@
         node.spanData.endTime - node.spanData.startTime
       ),
       tree: treeMeta[i]!,
+      eventMarkers: node.spanData.events.map(e => ({
+        percent: getOffsetPercent(bounds.start, bounds.duration, e.timestamp),
+        name: e.name,
+      })),
     }))
   }
 </script>
 
 <script lang="ts">
   import { tick } from 'svelte'
-  import WaterfallTimeAxisHeader from './WaterfallTimeAxisHeader.svelte'
+  import WaterfallTimeAxisHeader, {
+    waterfallTimeAxis,
+  } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallRow from './WaterfallRow.svelte'
 
   // --- Keyboard paging ---
@@ -242,12 +251,21 @@
     spans: SpanNode[]
     selectedSpanID: string | null
     onSelectSpan: (spanID: string) => void
+    loading?: boolean
   }
 
-  let { spans, selectedSpanID, onSelectSpan }: Props = $props()
+  let { spans, selectedSpanID, onSelectSpan, loading = false }: Props = $props()
+
+  let tableHeight = $state(0)
+  let panelHeight = $state(0)
 
   let bounds = $derived(getTraceBounds(spans))
   const TARGET_TICK_COUNT = 6
+  let barGridPercents = $derived(
+    waterfallTimeAxis(bounds.duration, TARGET_TICK_COUNT).ticks.map(
+      t => t.offsetPercent
+    )
+  )
   let rows = $derived(buildWaterfallRows(spans, bounds))
 
   // --- Column widths (resizable) ---
@@ -413,11 +431,18 @@
   }
 </script>
 
-<div class="waterfall-view">
-  <div class="waterfall-view__scroll overflow-x-auto overflow-y-auto">
+<div class="waterfall-panel" bind:clientHeight={panelHeight}>
+  <div
+    class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}"
+    style:height={tableHeight > 0 && panelHeight > 0
+      ? `${Math.min(tableHeight, panelHeight)}px`
+      : undefined}
+  >
+    <div class="waterfall-view__scroll">
     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
     <table
       bind:this={gridTableEl}
+      bind:clientHeight={tableHeight}
       class="waterfall-grid table table-sm table-zebra table-fixed w-full min-w-[36rem] border-collapse"
       role="grid"
       aria-label="Span waterfall"
@@ -436,8 +461,12 @@
           targetTickCount={TARGET_TICK_COUNT}
           {spanColWidth}
           {serviceColWidth}
-          onResizeSpanCol={(w: number) => { spanColWidth = Math.max(MIN_SPAN_COL, w) }}
-          onResizeServiceCol={(w: number) => { serviceColWidth = Math.max(MIN_SERVICE_COL, w) }}
+          onResizeSpanCol={(w: number) => {
+            spanColWidth = Math.max(MIN_SPAN_COL, w)
+          }}
+          onResizeServiceCol={(w: number) => {
+            serviceColWidth = Math.max(MIN_SERVICE_COL, w)
+          }}
         />
       </thead>
       <tbody>
@@ -445,6 +474,7 @@
           {@const sid = row.spanNode.spanData.spanID}
           <WaterfallRow
             {row}
+            {barGridPercents}
             selected={sid === selectedSpanID}
             visible={rowVisibilityBySpanId.get(sid) ?? true}
             subtreeCollapsed={collapsedParents.has(sid)}
@@ -457,12 +487,25 @@
         {/each}
       </tbody>
     </table>
+    </div>
   </div>
 </div>
 
 <style lang="postcss">
+  .waterfall-panel {
+    @apply h-full;
+  }
+
   .waterfall-view {
-    @apply flex h-full min-h-0 flex-col overflow-hidden;
+    @apply flex flex-col overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200;
+  }
+
+  .waterfall-grid :global(thead) {
+    @apply sticky top-0 z-10 bg-base-100;
+  }
+
+  .waterfall-grid :global(thead tr) {
+    border-bottom-width: 0;
   }
 
   .waterfall-grid:focus-within {
@@ -470,6 +513,6 @@
   }
 
   .waterfall-view__scroll {
-    @apply min-h-0 flex-1;
+    @apply min-h-0 flex-1 overflow-x-auto overflow-y-auto;
   }
 </style>

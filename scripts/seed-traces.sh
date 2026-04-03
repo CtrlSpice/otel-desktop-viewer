@@ -673,4 +673,230 @@ send_orphan_spans_trace
 send_orphan_subtree_trace
 
 echo
+echo "Large multi-service trace …"
+echo
+
+# Realistic e-commerce order flow: ~40 spans across 7 services with varied depths,
+# parallel branches, an error subtree, and realistic timing.
+send_large_multiservice_trace() {
+  local tid; tid=$(rnd_trace_id)
+
+  # -- span ids --
+  local gw_root; gw_root=$(rnd_span_id)
+  local gw_auth; gw_auth=$(rnd_span_id)
+  local gw_rate; gw_rate=$(rnd_span_id)
+  local gw_route; gw_route=$(rnd_span_id)
+
+  local usr_validate; usr_validate=$(rnd_span_id)
+  local usr_profile; usr_profile=$(rnd_span_id)
+  local usr_db_read; usr_db_read=$(rnd_span_id)
+  local usr_cache_check; usr_cache_check=$(rnd_span_id)
+  local usr_perms; usr_perms=$(rnd_span_id)
+
+  local cat_list; cat_list=$(rnd_span_id)
+  local cat_db; cat_db=$(rnd_span_id)
+  local cat_cache; cat_cache=$(rnd_span_id)
+  local cat_enrich; cat_enrich=$(rnd_span_id)
+  local cat_img; cat_img=$(rnd_span_id)
+  local cat_price; cat_price=$(rnd_span_id)
+
+  local inv_reserve; inv_reserve=$(rnd_span_id)
+  local inv_lock; inv_lock=$(rnd_span_id)
+  local inv_db_write; inv_db_write=$(rnd_span_id)
+  local inv_db_read; inv_db_read=$(rnd_span_id)
+  local inv_confirm; inv_confirm=$(rnd_span_id)
+
+  local ord_create; ord_create=$(rnd_span_id)
+  local ord_validate; ord_validate=$(rnd_span_id)
+  local ord_db_insert; ord_db_insert=$(rnd_span_id)
+  local ord_line1; ord_line1=$(rnd_span_id)
+  local ord_line2; ord_line2=$(rnd_span_id)
+  local ord_line3; ord_line3=$(rnd_span_id)
+  local ord_total; ord_total=$(rnd_span_id)
+
+  local pay_charge; pay_charge=$(rnd_span_id)
+  local pay_fraud; pay_fraud=$(rnd_span_id)
+  local pay_fraud_ml; pay_fraud_ml=$(rnd_span_id)
+  local pay_gateway; pay_gateway=$(rnd_span_id)
+  local pay_ledger; pay_ledger=$(rnd_span_id)
+  local pay_receipt; pay_receipt=$(rnd_span_id)
+
+  local notif_email; notif_email=$(rnd_span_id)
+  local notif_render; notif_render=$(rnd_span_id)
+  local notif_smtp; notif_smtp=$(rnd_span_id)
+  local notif_push; notif_push=$(rnd_span_id)
+  local notif_webhook; notif_webhook=$(rnd_span_id)
+
+  local ship_schedule; ship_schedule=$(rnd_span_id)
+  local ship_carrier; ship_carrier=$(rnd_span_id)
+  local ship_label; ship_label=$(rnd_span_id)
+
+  local t0=$now_ns
+  local tmpfile; tmpfile=$(mktemp)
+  trap "rm -f '$tmpfile'" RETURN
+
+  # Helper: span JSON fragment
+  # args: service, spanId, parentSpanId, name, kind, startOffsetMs, endOffsetMs, statusCode [, extraJson]
+  span_json() {
+    local svc="$1" sid="$2" psid="$3" name="$4" kind="$5"
+    local s_off="$6" e_off="$7" status="$8"
+    local extra="${9:-}"
+    local s_ns=$(( t0 + s_off * ms_ns ))
+    local e_ns=$(( t0 + e_off * ms_ns ))
+    local parent=""
+    [ -n "$psid" ] && parent="\"parentSpanId\": \"${psid}\","
+    cat <<SPAN
+    {
+      "traceId": "${tid}",
+      "spanId": "${sid}",
+      ${parent}
+      "name": "${name}",
+      "kind": ${kind},
+      "startTimeUnixNano": "${s_ns}",
+      "endTimeUnixNano": "${e_ns}",
+      "status": { "code": ${status} },
+      "attributes": [
+        { "key": "service.layer", "value": { "stringValue": "${svc}" } }
+      ]${extra:+,${extra}}
+    }
+SPAN
+  }
+
+  cat > "$tmpfile" <<JSON
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "api-gateway" } },
+          { "key": "service.version", "value": { "stringValue": "2.4.1" } },
+          { "key": "deployment.environment", "value": { "stringValue": "production" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "api-gateway.tracer" }, "spans": [
+$(span_json "api-gateway" "$gw_root"  "" "POST /api/v2/orders" 2 0 1200 1 "\"events\": [{\"timeUnixNano\":\"${t0}\",\"name\":\"request.received\",\"attributes\":[{\"key\":\"http.method\",\"value\":{\"stringValue\":\"POST\"}},{\"key\":\"http.url\",\"value\":{\"stringValue\":\"/api/v2/orders\"}}]}]"),
+$(span_json "api-gateway" "$gw_auth"  "$gw_root" "middleware/authenticate" 1 2 18 1),
+$(span_json "api-gateway" "$gw_rate"  "$gw_root" "middleware/rate-limit" 1 18 22 1),
+$(span_json "api-gateway" "$gw_route" "$gw_root" "router/dispatch" 1 22 1180 1)
+      ]}]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "user-service" } },
+          { "key": "service.version", "value": { "stringValue": "1.8.0" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "user-service.tracer" }, "spans": [
+$(span_json "user-service" "$usr_validate"    "$gw_auth"     "user/validate-token" 1 3 16 1),
+$(span_json "user-service" "$usr_profile"     "$usr_validate" "user/load-profile" 1 5 14 1),
+$(span_json "user-service" "$usr_db_read"     "$usr_profile"  "db/SELECT users" 3 6 10 1),
+$(span_json "user-service" "$usr_cache_check" "$usr_profile"  "cache/profile-lookup" 3 6 8 1),
+$(span_json "user-service" "$usr_perms"       "$usr_validate" "user/check-permissions" 1 14 16 1)
+      ]}]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "catalog-service" } },
+          { "key": "service.version", "value": { "stringValue": "3.1.2" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "catalog-service.tracer" }, "spans": [
+$(span_json "catalog-service" "$cat_list"   "$gw_route" "catalog/resolve-items" 1 25 280 1),
+$(span_json "catalog-service" "$cat_db"     "$cat_list" "db/SELECT products" 3 28 120 1),
+$(span_json "catalog-service" "$cat_cache"  "$cat_list" "cache/product-details" 3 28 45 1),
+$(span_json "catalog-service" "$cat_enrich" "$cat_list" "catalog/enrich-metadata" 1 125 270 1),
+$(span_json "catalog-service" "$cat_img"    "$cat_enrich" "cdn/resolve-image-urls" 3 130 200 1),
+$(span_json "catalog-service" "$cat_price"  "$cat_enrich" "pricing/compute-discounts" 1 135 260 1)
+      ]}]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "inventory-service" } },
+          { "key": "service.version", "value": { "stringValue": "1.2.0" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "inventory-service.tracer" }, "spans": [
+$(span_json "inventory-service" "$inv_reserve"  "$gw_route"    "inventory/reserve-stock" 1 285 500 1),
+$(span_json "inventory-service" "$inv_lock"     "$inv_reserve" "db/advisory-lock" 3 288 310 1),
+$(span_json "inventory-service" "$inv_db_write" "$inv_reserve" "db/UPDATE stock" 3 312 420 1),
+$(span_json "inventory-service" "$inv_db_read"  "$inv_reserve" "db/SELECT remaining" 3 422 460 1),
+$(span_json "inventory-service" "$inv_confirm"  "$inv_reserve" "inventory/confirm-hold" 1 462 495 1)
+      ]}]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "order-service" } },
+          { "key": "service.version", "value": { "stringValue": "2.0.3" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "order-service.tracer" }, "spans": [
+$(span_json "order-service" "$ord_create"    "$gw_route"     "order/create" 1 505 780 1),
+$(span_json "order-service" "$ord_validate"  "$ord_create"   "order/validate-request" 1 508 530 1),
+$(span_json "order-service" "$ord_db_insert" "$ord_create"   "db/INSERT orders" 3 532 600 1),
+$(span_json "order-service" "$ord_line1"     "$ord_db_insert" "db/INSERT line_items[0]" 3 535 555 1),
+$(span_json "order-service" "$ord_line2"     "$ord_db_insert" "db/INSERT line_items[1]" 3 556 575 1),
+$(span_json "order-service" "$ord_line3"     "$ord_db_insert" "db/INSERT line_items[2]" 3 576 595 1),
+$(span_json "order-service" "$ord_total"     "$ord_create"   "order/compute-totals" 1 602 770 1)
+      ]}]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "payment-service" } },
+          { "key": "service.version", "value": { "stringValue": "4.0.1" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "payment-service.tracer" }, "spans": [
+$(span_json "payment-service" "$pay_charge"   "$gw_route"    "payment/charge" 1 785 1050 1),
+$(span_json "payment-service" "$pay_fraud"    "$pay_charge"  "payment/fraud-check" 1 788 880 1),
+$(span_json "payment-service" "$pay_fraud_ml" "$pay_fraud"   "ml/score-transaction" 3 790 870 1),
+$(span_json "payment-service" "$pay_gateway"  "$pay_charge"  "stripe/create-charge" 3 882 1000 2 "\"events\": [{\"timeUnixNano\":\"$(( t0 + 950 * ms_ns ))\",\"name\":\"exception\",\"attributes\":[{\"key\":\"exception.type\",\"value\":{\"stringValue\":\"PaymentDeclinedError\"}},{\"key\":\"exception.message\",\"value\":{\"stringValue\":\"Card declined: insufficient funds\"}}]}]"),
+$(span_json "payment-service" "$pay_ledger"   "$pay_charge"  "db/INSERT ledger_entry" 3 1002 1030 1),
+$(span_json "payment-service" "$pay_receipt"  "$pay_charge"  "payment/generate-receipt" 1 1032 1048 1)
+      ]}]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "notification-service" } },
+          { "key": "service.version", "value": { "stringValue": "1.5.0" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "notification-service.tracer" }, "spans": [
+$(span_json "notification-service" "$notif_email"   "$gw_route"     "notify/send-confirmation" 1 1055 1170 1),
+$(span_json "notification-service" "$notif_render"  "$notif_email"  "template/render-email" 1 1058 1090 1),
+$(span_json "notification-service" "$notif_smtp"    "$notif_email"  "smtp/deliver" 3 1092 1140 1),
+$(span_json "notification-service" "$notif_push"    "$notif_email"  "push/send-mobile" 3 1092 1130 1),
+$(span_json "notification-service" "$notif_webhook" "$notif_email"  "webhook/post-order-event" 3 1095 1165 1)
+      ]}]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "shipping-service" } },
+          { "key": "service.version", "value": { "stringValue": "1.0.4" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "shipping-service.tracer" }, "spans": [
+$(span_json "shipping-service" "$ship_schedule" "$gw_route"      "shipping/schedule-pickup" 1 1055 1175 1),
+$(span_json "shipping-service" "$ship_carrier"  "$ship_schedule" "carrier/query-rates" 3 1060 1120 1),
+$(span_json "shipping-service" "$ship_label"    "$ship_schedule" "label/generate-pdf" 1 1122 1170 1)
+      ]}]
+    }
+  ]
+}
+JSON
+
+  local http_code
+  http_code=$(post_trace_json "$tmpfile")
+  printf '  %-50s %s  (spans: %d, multi-service order flow)\n' "multi-service/POST /api/v2/orders" "$http_code" 40
+}
+
+send_large_multiservice_trace
+
+echo
 echo "Done."

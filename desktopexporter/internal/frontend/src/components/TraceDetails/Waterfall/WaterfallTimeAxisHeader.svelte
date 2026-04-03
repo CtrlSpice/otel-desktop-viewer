@@ -35,23 +35,15 @@
     return go([], 0n)
   }
 
-  function pickUnit(durationNs: bigint): UnitDef {
+  // Pick the largest unit whose size fits within the given nanosecond value.
+  // e.g. 1,200,000,000ns → "s", 500,000ns → "μs", 42ns → "ns".
+  function pickUnit(ns: bigint): UnitDef {
     return (
-      UNITS.findLast(u => durationNs >= u.ns) ??
-      [...UNITS].reverse().find(u => durationNs >= u.ns) ??
+      UNITS.findLast(u => ns >= u.ns) ??
+      [...UNITS].reverse().find(u => ns >= u.ns) ??
       UNITS[0]
     )
   }
-
-  // Pads the layout duration to the next tick boundary + one extra step.
-  // Commented out: we now use the actual trace duration as the axis extent,
-  // with the last label showing the real duration.
-  //
-  // function layoutSpanNs(traceDurationNs: bigint, stepNs: bigint): bigint {
-  //   if (traceDurationNs <= 0n) return traceDurationNs
-  //   const ceil = ((traceDurationNs + stepNs - 1n) / stepNs) * stepNs
-  //   return ceil === traceDurationNs ? ceil + stepNs : ceil
-  // }
 
   export type WaterfallAxis = {
     layoutDurationNs: bigint
@@ -60,6 +52,15 @@
     ticks: TimeAxisTick[]
   }
 
+  // Round a raw interval to a "nice" human-friendly step size.
+  //
+  // Given a raw interval in nanoseconds and a unit to think in (e.g. ms),
+  // converts to that unit, finds the nearest nice number (1, 2, 5 × 10^n),
+  // and converts back to nanoseconds.
+  //
+  // Example: rawIntervalNs=200,000,000 (200ms), unitNs=1,000,000 (ms)
+  //   → rawInUnit=200, magnitude=100, candidates=[100,200,500,...], best=200
+  //   → returns 200,000,000ns
   function niceStep(rawIntervalNs: bigint, unitNs: bigint): bigint {
     const rawInUnit = Math.max(Number(rawIntervalNs) / Number(unitNs), 1)
     const magnitude = 10 ** Math.floor(Math.log10(rawInUnit))
@@ -116,6 +117,24 @@
     }
   }
 
+  // Two-pass unit selection for human-friendly tick labels.
+  //
+  // The naive approach picks the display unit from the trace duration:
+  // a 1.2s trace picks "s", then tries to compute a nice step of 0.2s.
+  // But niceStep works in whole-unit multiples, so 0.2 rounds to 0 → breaks.
+  //
+  // Instead we do two passes:
+  //
+  //   Pass 1 — pick a "computation unit" from the raw interval (duration / tickCount).
+  //            This ensures niceStep always works with whole numbers.
+  //            e.g. 1.2s trace → rawInterval=200ms → stepUnit="ms" → niceStep=200ms ✓
+  //
+  //   Pass 2 — pick the "display unit" from the computed nice step.
+  //            If niceStep rounded up across a unit boundary, the labels follow.
+  //            e.g. 5.5s trace → rawInterval=917ms → niceStep=1000ms=1s → display="s" ✓
+  //
+  // This handles every unit boundary uniformly: ns↔μs, μs↔ms, ms↔s, s↔min.
+
   /** Time axis for the waterfall ruler. Uses the actual trace duration as extent. */
   export function waterfallTimeAxis(
     traceDurationNs: bigint,
@@ -130,20 +149,25 @@
       }
     }
 
-    const unit = pickUnit(traceDurationNs)
     const rawInterval = traceDurationNs / BigInt(Math.max(targetTickCount, 1))
-    const intervalNs = niceStep(rawInterval, unit.ns)
+
+    // Pass 1: compute the step in the raw interval's natural unit
+    const stepUnit = pickUnit(rawInterval)
+    const intervalNs = niceStep(rawInterval, stepUnit.ns)
+
+    // Pass 2: derive the display unit from the actual step
+    const displayUnit = pickUnit(intervalNs)
 
     const positions = collectTickPositions(
       traceDurationNs,
       intervalNs,
       MAX_AXIS_TICKS
     )
-    const ticks = positions.map(pos => tickAt(pos, traceDurationNs, unit))
+    const ticks = positions.map(pos => tickAt(pos, traceDurationNs, displayUnit))
 
     return {
       layoutDurationNs: traceDurationNs,
-      unit: unit.name,
+      unit: displayUnit.name,
       intervalNs,
       ticks,
     }
@@ -162,17 +186,19 @@
       }
     }
 
-    const unit = pickUnit(durationNs)
     const rawInterval = durationNs / BigInt(Math.max(targetTickCount, 1))
-    const intervalNs = niceStep(rawInterval, unit.ns)
+    const stepUnit = pickUnit(rawInterval)
+    const intervalNs = niceStep(rawInterval, stepUnit.ns)
+    const displayUnit = pickUnit(intervalNs)
+
     const positions = collectTickPositions(
       durationNs,
       intervalNs,
       MAX_AXIS_TICKS
     )
-    const ticks = positions.map(pos => tickAt(pos, durationNs, unit))
+    const ticks = positions.map(pos => tickAt(pos, durationNs, displayUnit))
 
-    return { unit: unit.name, intervalNs, ticks }
+    return { unit: displayUnit.name, intervalNs, ticks }
   }
 </script>
 
@@ -256,7 +282,7 @@
           <span class="waterfall-time-axis-header__tick-label"
             >{tick.label}</span
           >
-          <div class="waterfall-time-axis-header__tick-line"></div>
+          <span class="waterfall-time-axis-header__tick-line" aria-hidden="true"></span>
         </div>
       {/each}
     </div>
@@ -265,12 +291,12 @@
 
 <style lang="postcss">
   .waterfall-time-axis-header__th-label {
-    @apply relative align-bottom pb-1 text-left text-xs font-medium text-base-content/70;
+    @apply relative align-middle py-2 text-left text-xs font-semibold tracking-normal text-base-content/55;
   }
 
   .waterfall-time-axis-header__th-span {
-    /* Align with root span name: gutter(26px) + gap-1(4px) = 30px */
-    padding-left: 30px;
+    /* Row inset (8px) + gutter(26px) + gap-1(4px) = 38px */
+    padding-left: 38px;
   }
 
   .waterfall-time-axis-header__th-service {
@@ -278,13 +304,13 @@
   }
 
   .waterfall-time-axis-header__th-ruler {
-    @apply relative min-w-[12rem] h-8 px-4 py-0 align-bottom;
+    @apply relative min-w-[12rem] pl-4 pr-6 py-2 align-middle text-xs tracking-normal text-base-content/55;
   }
 
   .waterfall-time-axis-header__ruler {
     @apply absolute bottom-0 top-0 min-w-0 overflow-visible;
     left: 16px;
-    right: 16px;
+    right: 24px;
   }
 
   .waterfall-time-axis-header__tick {
@@ -292,12 +318,15 @@
   }
 
   .waterfall-time-axis-header__tick-label {
-    @apply absolute bottom-1 text-[10px] text-base-content/50 font-mono whitespace-nowrap;
-    transform: translateX(-50%);
+    @apply absolute top-1/2 text-xs tracking-normal text-base-content/55 whitespace-nowrap;
+    transform: translate(-50%, -50%);
   }
 
   .waterfall-time-axis-header__tick-line {
-    @apply absolute bottom-0 w-px h-1.5 bg-base-300;
+    @apply absolute bottom-0 w-px bg-base-content/5;
+    left: 0;
+    top: calc(50% + 10px);
+    transform: translateX(-50%);
   }
 
   .resize-handle {

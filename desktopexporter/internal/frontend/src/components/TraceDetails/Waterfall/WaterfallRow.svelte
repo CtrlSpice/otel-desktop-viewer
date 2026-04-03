@@ -3,6 +3,7 @@
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/duration'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
+  import WaterfallEventDots from './WaterfallEventDots.svelte'
 
   function getServiceName(span: SpanData): string {
     const svc = span.resource.attributes.find(a => a.key === 'service.name')
@@ -11,6 +12,7 @@
 
   type Props = {
     row: WaterfallRowData
+    barGridPercents: readonly number[]
     selected: boolean
     visible: boolean
     subtreeCollapsed: boolean
@@ -20,6 +22,7 @@
 
   let {
     row,
+    barGridPercents,
     selected,
     visible,
     subtreeCollapsed,
@@ -30,7 +33,13 @@
   let span = $derived(row.spanNode.spanData)
   let durationLabel = $derived(formatDuration(span.endTime - span.startTime))
   let serviceName = $derived(getServiceName(span))
-  let barFitsLabel = $derived(row.widthPercent > 8)
+
+  const MIN_LABEL_INSIDE_PCT = 12
+  const LABEL_FLIP_SIDE_PCT = 50
+  let barFitsLabel = $derived(row.widthPercent > MIN_LABEL_INSIDE_PCT)
+  let labelOnLeft = $derived(
+    !barFitsLabel && row.offsetPercent > LABEL_FLIP_SIDE_PCT
+  )
   let hasChildren = $derived(row.tree.childrenCount > 0)
   let ariaLevel = $derived(row.spanNode.depth + 1)
 </script>
@@ -48,9 +57,7 @@
   aria-selected={selected}
   aria-expanded={hasChildren ? !subtreeCollapsed : undefined}
 >
-  <td
-    class="waterfall-row__td-name p-0 align-middle"
-  >
+  <td class="waterfall-row__td-name p-0 pl-2 align-middle">
     <div class="flex min-w-0 items-center gap-1">
       <WaterfallTreeGutter
         depth={row.spanNode.depth}
@@ -60,7 +67,7 @@
         {onToggleExpand}
       />
       <span
-        class="waterfall-row__title truncate text-xs text-base-content"
+        class="waterfall-row__title truncate text-sm text-base-content"
         title={span.name}
       >
         {span.name}
@@ -68,13 +75,13 @@
     </div>
   </td>
   <td
-    class="waterfall-row__td-service p-0 align-middle text-xs text-base-content/60"
+    class="waterfall-row__td-service p-0 align-middle text-sm text-base-content/60"
     title={serviceName}
   >
     <span class="block truncate pl-2 pr-1">{serviceName}</span>
   </td>
-  <td class="waterfall-row__td-bar p-0 px-4 align-middle">
-    <div class="waterfall-row__bar-area relative h-7 w-full">
+  <td class="waterfall-row__td-bar p-0 align-middle">
+    <div class="waterfall-row__bar-area">
       <div
         class="waterfall-row__bar waterfall-bar--{row.colorToken}"
         style:left="{row.offsetPercent}%"
@@ -88,10 +95,24 @@
           </span>
         {/if}
       </div>
+      <div class="waterfall-row__bar-grid" aria-hidden="true">
+        {#each barGridPercents as p}
+          <div class="waterfall-row__grid-line" style:left="{p}%"></div>
+        {/each}
+      </div>
+      {#if row.eventMarkers.length > 0}
+        <WaterfallEventDots markers={row.eventMarkers} colorToken={row.colorToken} />
+      {/if}
       {#if !barFitsLabel}
         <span
           class="waterfall-row__bar-label waterfall-row__bar-label--outside"
-          style:left="{row.offsetPercent + row.widthPercent + 0.5}%"
+          class:waterfall-row__bar-label--left={labelOnLeft}
+          style:left={labelOnLeft
+            ? undefined
+            : `${row.offsetPercent + row.widthPercent + 0.5}%`}
+          style:right={labelOnLeft
+            ? `${100 - row.offsetPercent + 0.5}%`
+            : undefined}
         >
           {durationLabel}
         </span>
@@ -111,6 +132,8 @@
 
   .waterfall-row:hover {
     @apply bg-base-200/50;
+    position: relative;
+    z-index: 20;
   }
 
   .waterfall-row:focus-visible {
@@ -127,12 +150,22 @@
   }
 
   .waterfall-row__bar-area {
-    @apply flex items-center;
+    @apply relative flex items-center h-7;
+    margin-left: 16px;
+    margin-right: 24px;
   }
 
   .waterfall-row__bar {
-    @apply absolute h-3.5 rounded-sm;
+    @apply absolute z-[1] h-3.5 rounded-sm top-1/2 -translate-y-1/2;
     min-width: 2px;
+  }
+
+  .waterfall-row__bar-grid {
+    @apply pointer-events-none absolute inset-0 z-[2];
+  }
+
+  .waterfall-row__grid-line {
+    @apply absolute top-0 bottom-0 w-px -translate-x-1/2 bg-base-content/5;
   }
 
   .waterfall-row__bar-label {
@@ -140,13 +173,15 @@
   }
 
   .waterfall-row__bar-label--inside {
-    @apply px-1 truncate text-base-100 block;
+    @apply relative z-[3] flex h-full items-center px-1 text-base-100 truncate;
     line-height: 14px;
   }
 
   .waterfall-row__bar-label--outside {
-    @apply absolute text-base-content/60;
+    @apply absolute z-[3] text-base-content/60;
     line-height: 14px;
+    top: 50%;
+    transform: translateY(-50%);
   }
 
   .waterfall-bar--gold {
