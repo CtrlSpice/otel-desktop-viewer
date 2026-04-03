@@ -514,5 +514,6 @@
 
   .waterfall-view__scroll {
     @apply min-h-0 flex-1 overflow-x-auto overflow-y-auto;
+    scrollbar-width: thin;
   }
 </style>

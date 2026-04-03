@@ -97,7 +97,17 @@
           onToggleExpand()
         }}
       >
-        <span class="tabular-nums">{childCount}</span>
+        <span class="gutter__btn-label tabular-nums">{childCount}</span>
+        <svg
+          class="gutter__btn-caret"
+          class:gutter__btn-caret--down={!subtreeCollapsed}
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" />
+          <path d="M10 8l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
       </button>
     {:else}
       <button
@@ -179,6 +189,35 @@
     @apply relative z-[1];
   }
 
+  .gutter__btn-label,
+  .gutter__btn-caret {
+    @apply absolute;
+    transition: opacity 0.1s;
+  }
+
+  .gutter__btn-label {
+    opacity: 1;
+  }
+
+  .gutter__btn-caret {
+    width: 16px;
+    height: 16px;
+    opacity: 0;
+    transition: opacity 0.1s, transform 0.15s;
+  }
+
+  .gutter__btn-caret--down {
+    transform: rotate(90deg);
+  }
+
+  .gutter__btn--hub:hover .gutter__btn-label {
+    opacity: 0;
+  }
+
+  .gutter__btn--hub:hover .gutter__btn-caret {
+    opacity: 1;
+  }
+
   /* ───── Button base ───── */
 
   .gutter__btn {
@@ -214,23 +253,15 @@
 
   /* ───── Button states ───── */
 
-  .gutter__btn--expanded {
-    background-color: color-mix(in srgb, var(--tree-accent) 24%, transparent);
+  .gutter__btn--expanded,
+  .gutter__btn--collapsed {
+    background-color: color-mix(in srgb, var(--tree-accent) 18%, transparent);
     color: var(--tree-accent);
   }
 
-  .gutter__btn--expanded:hover {
-    background-color: color-mix(in srgb, var(--tree-accent) 34%, transparent);
-  }
-
-  .gutter__btn--collapsed {
-    background-color: color-mix(in srgb, var(--tree-accent) 12%, transparent);
-    color: color-mix(in srgb, var(--tree-accent) 42%, var(--rp-muted));
-  }
-
+  .gutter__btn--expanded:hover,
   .gutter__btn--collapsed:hover {
-    background-color: color-mix(in srgb, var(--tree-accent) 20%, transparent);
-    color: color-mix(in srgb, var(--tree-accent) 58%, var(--rp-muted));
+    background-color: color-mix(in srgb, var(--tree-accent) 28%, transparent);
   }
 
   .gutter__btn--leaf {
