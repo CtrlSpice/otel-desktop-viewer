@@ -1,27 +1,45 @@
 <script lang="ts">
+  /** Default split when no prop / storage; keep in sync with prop default below */
+  const DEFAULT_LEFT_WIDTH = 0.7;
+
   type Props = {
     leftPanel: any;
     rightPanel: any;
-    defaultLeftWidth?: number; // 0-1, percentage
-    minLeftWidth?: number; // 0-1, minimum percentage
-    minRightWidth?: number; // 0-1, minimum percentage
-    storageKey?: string; // localStorage key for persistence
+    defaultLeftWidth?: number;
+    minLeftWidth?: number;
+    minRightWidth?: number;
+    storageKey?: string;
+    stackBreakpoint?: number;
   };
 
   let {
     leftPanel,
     rightPanel,
-    defaultLeftWidth = 0.6,
-    minLeftWidth = 0.2,
-    minRightWidth = 0.3,
+    defaultLeftWidth = DEFAULT_LEFT_WIDTH,
+    minLeftWidth = 0.3,
+    minRightWidth = 0.2,
     storageKey,
+    stackBreakpoint = 700,
   }: Props = $props();
 
-  let leftWidth = $state(defaultLeftWidth);
+  let leftWidth = $state(DEFAULT_LEFT_WIDTH);
+  let appliedInitialDefault = $state(false);
   let isDragging = $state(false);
-  let containerRef: HTMLDivElement | null = null;
 
-  // Load saved width from localStorage
+  $effect.pre(() => {
+    if (appliedInitialDefault) return;
+    leftWidth = defaultLeftWidth;
+    appliedInitialDefault = true;
+  });
+  let containerRef = $state<HTMLDivElement | null>(null);
+  let dividerRef = $state<HTMLDivElement | null>(null);
+  let containerWidth = $state(0);
+
+  /** Match Tailwind `gap-0.5` (0.125rem; ~2px at 16px root). Resize math uses two gaps. */
+  const PANEL_GAP_PX = 2;
+
+  let stacked = $derived(containerWidth > 0 && containerWidth < stackBreakpoint);
+
   $effect(() => {
     if (storageKey) {
       let saved = localStorage.getItem(storageKey);
@@ -38,128 +56,176 @@
     }
   });
 
-  // Save width to localStorage
   function saveWidth() {
     if (storageKey) {
       localStorage.setItem(storageKey, leftWidth.toString());
     }
   }
 
-  function handleMouseDown(e: MouseEvent) {
+  function handlePointerDown(e: PointerEvent) {
     e.preventDefault();
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
     isDragging = true;
-    document.body.style.cursor = 'col-resize';
+    document.body.style.cursor = stacked ? 'row-resize' : 'col-resize';
     document.body.style.userSelect = 'none';
   }
 
-  function handleMouseMove(e: MouseEvent) {
-    if (!isDragging || !containerRef) return;
-
-    let rect = containerRef.getBoundingClientRect();
-    let newLeftWidth = (e.clientX - rect.left) / rect.width;
-
-    // Enforce minimum widths
-    newLeftWidth = Math.max(
-      minLeftWidth,
-      Math.min(1 - minRightWidth, newLeftWidth)
-    );
-
-    leftWidth = newLeftWidth;
-  }
-
-  function handleMouseUp() {
-    if (isDragging) {
-      isDragging = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      saveWidth();
+  function applySplitFromPointer(e: PointerEvent) {
+    if (!containerRef || !dividerRef) return;
+    const rect = containerRef.getBoundingClientRect();
+    let fraction: number;
+    if (stacked) {
+      const divH = dividerRef.offsetHeight;
+      const flexSpace = Math.max(1, rect.height - divH - 2 * PANEL_GAP_PX);
+      fraction = (e.clientY - rect.top) / flexSpace;
+    } else {
+      const divW = dividerRef.offsetWidth;
+      const flexSpace = Math.max(1, rect.width - divW - 2 * PANEL_GAP_PX);
+      fraction = (e.clientX - rect.left) / flexSpace;
     }
+    leftWidth = Math.max(
+      minLeftWidth,
+      Math.min(1 - minRightWidth, fraction)
+    );
   }
 
-  // Handle double-click to reset
+  function handlePointerMove(e: PointerEvent) {
+    if (!isDragging || !containerRef || !dividerRef) return;
+    applySplitFromPointer(e);
+  }
+
+  function handlePointerUp(e: PointerEvent) {
+    if (!isDragging) return;
+    const target = e.currentTarget as HTMLElement;
+    target.releasePointerCapture(e.pointerId);
+    isDragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    saveWidth();
+  }
+
   function handleDoubleClick() {
     leftWidth = defaultLeftWidth;
     saveWidth();
   }
 
-  // Cleanup on unmount
-  $effect(() => {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-
-      return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      };
+  function handleKeydown(e: KeyboardEvent) {
+    const step = e.shiftKey ? 0.05 : 0.01;
+    if (stacked) {
+      if (e.key === 'ArrowUp' && leftWidth > minLeftWidth) {
+        e.preventDefault();
+        leftWidth = Math.max(minLeftWidth, leftWidth - step);
+        saveWidth();
+      } else if (e.key === 'ArrowDown' && leftWidth < 1 - minRightWidth) {
+        e.preventDefault();
+        leftWidth = Math.min(1 - minRightWidth, leftWidth + step);
+        saveWidth();
+      }
+    } else {
+      if (e.key === 'ArrowLeft' && leftWidth > minLeftWidth) {
+        e.preventDefault();
+        leftWidth = Math.max(minLeftWidth, leftWidth - step);
+        saveWidth();
+      } else if (e.key === 'ArrowRight' && leftWidth < 1 - minRightWidth) {
+        e.preventDefault();
+        leftWidth = Math.min(1 - minRightWidth, leftWidth + step);
+        saveWidth();
+      }
     }
+  }
+
+  $effect(() => {
+    if (!containerRef) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        containerWidth = entry.contentRect.width;
+      }
+    });
+    ro.observe(containerRef);
+    return () => ro.disconnect();
   });
 </script>
 
-<div class="flex w-full h-full gap-2" bind:this={containerRef}>
-  <!-- Left Panel -->
-  <div class="h-full" style="width: {leftWidth * 100}%; flex-shrink: 0;">
-    {@render leftPanel()}
-  </div>
+{#if stacked}
+  <div class="flex h-full w-full flex-col gap-0.5" bind:this={containerRef}>
+    <div
+      class="panel-shell min-h-0 overflow-hidden rounded-xl"
+      style="flex: {leftWidth} 1 0px"
+    >
+      {@render leftPanel()}
+    </div>
 
-  <!-- Resize Handle -->
-  <div
-    class="resize-handle"
-    class:active={isDragging}
-    onmousedown={handleMouseDown}
-    ondblclick={handleDoubleClick}
-    role="button"
-    aria-label="Resize panels"
-    tabindex="0"
-    onkeydown={e => {
-      if (e.key === 'ArrowLeft' && leftWidth > minLeftWidth) {
-        leftWidth = Math.max(minLeftWidth, leftWidth - 0.01);
-        saveWidth();
-      } else if (e.key === 'ArrowRight' && leftWidth < 1 - minRightWidth) {
-        leftWidth = Math.min(1 - minRightWidth, leftWidth + 0.01);
-        saveWidth();
-      }
-    }}
-  >
-    <div class="resize-handle-grip"></div>
-  </div>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      bind:this={dividerRef}
+      class="col-resize-bar col-resize-bar--row-in-flow"
+      class:col-resize-bar--active={isDragging}
+      onpointerdown={handlePointerDown}
+      onpointermove={handlePointerMove}
+      onpointerup={handlePointerUp}
+      ondblclick={handleDoubleClick}
+      onkeydown={handleKeydown}
+      role="separator"
+      aria-orientation="horizontal"
+      aria-valuenow={Math.round(leftWidth * 100)}
+      aria-valuemin={Math.round(minLeftWidth * 100)}
+      aria-valuemax={Math.round((1 - minRightWidth) * 100)}
+      tabindex="0"
+    >
+      <div class="col-resize-bar__line"></div>
+    </div>
 
-  <!-- Right Panel -->
-  <div class="h-full" style="width: {(1 - leftWidth) * 100}%; flex-shrink: 0;">
-    {@render rightPanel()}
+    <div
+      class="panel-shell min-h-0 overflow-hidden rounded-xl"
+      style="flex: {1 - leftWidth} 1 0px"
+    >
+      {@render rightPanel()}
+    </div>
   </div>
-</div>
+{:else}
+  <div class="flex h-full w-full gap-0.5" bind:this={containerRef}>
+    <div
+      class="panel-shell h-full min-w-0 overflow-hidden rounded-xl"
+      style="flex: {leftWidth} 1 0px"
+    >
+      {@render leftPanel()}
+    </div>
+
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      bind:this={dividerRef}
+      class="col-resize-bar col-resize-bar--in-flow"
+      class:col-resize-bar--active={isDragging}
+      onpointerdown={handlePointerDown}
+      onpointermove={handlePointerMove}
+      onpointerup={handlePointerUp}
+      ondblclick={handleDoubleClick}
+      onkeydown={handleKeydown}
+      role="separator"
+      aria-orientation="vertical"
+      aria-valuenow={Math.round(leftWidth * 100)}
+      aria-valuemin={Math.round(minLeftWidth * 100)}
+      aria-valuemax={Math.round((1 - minRightWidth) * 100)}
+      tabindex="0"
+    >
+      <div class="col-resize-bar__line"></div>
+    </div>
+
+    <div
+      class="panel-shell h-full min-w-0 overflow-hidden rounded-xl"
+      style="flex: {1 - leftWidth} 1 0px"
+    >
+      {@render rightPanel()}
+    </div>
+  </div>
+{/if}
 
 <style lang="postcss">
-  .resize-handle {
-    @apply w-1 h-full bg-base-300 hover:bg-base-content/20 transition-colors cursor-col-resize flex items-center justify-center relative;
-    @apply select-none;
-    flex-shrink: 0;
-  }
-
-  .resize-handle:hover {
-    @apply bg-base-content/30;
-  }
-
-  .resize-handle.active {
-    @apply bg-primary/40;
-  }
-
-  .resize-handle:focus {
-    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-base-100;
-  }
-
-  .resize-handle-grip {
-    @apply w-0.5 h-8 bg-base-content/40 rounded-full;
-  }
-
-  .resize-handle:hover .resize-handle-grip {
-    @apply bg-base-content/60;
-  }
-
-  .resize-handle.active .resize-handle-grip {
-    @apply bg-primary-content;
+  @reference "../app.css";
+  .panel-shell {
+    @apply min-h-0;
   }
 </style>

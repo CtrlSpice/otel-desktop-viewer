@@ -17,11 +17,11 @@
 </script>
 
 <main
-  class="min-h-screen min-w-0 bg-base-100 bg-gradient-to-b from-base-100 via-base-100 to-base-200/25 transition-colors duration-300"
+  class="flex h-screen min-w-0 flex-col bg-base-100 bg-gradient-to-b from-base-100 via-base-100 to-base-200/25 transition-colors duration-300"
 >
   <HorizontalNav />
   <div
-    class="mx-auto w-full min-w-0 max-w-[88rem] px-4 pb-10 pt-[4.5rem] min-[900px]:px-6"
+    class="mx-auto flex min-h-0 w-full min-w-0 flex-1 flex-col px-4 pb-10 pt-[4.5rem] min-[900px]:px-6"
   >
     <!-- Router: Show different pages based on current route -->
     <Route path="/">

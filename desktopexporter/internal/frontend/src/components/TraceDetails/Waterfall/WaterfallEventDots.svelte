@@ -19,6 +19,7 @@
 {/each}
 
 <style lang="postcss">
+  @reference "../../../app.css";
   .event-marker {
     @apply absolute z-[4] rounded-full;
     width: 11px;
@@ -41,33 +42,33 @@
   }
 
   .event-marker--iris {
-    --marker-color: var(--rp-iris);
-    background-color: color-mix(in srgb, var(--rp-iris) 40%, white);
-    border-color: color-mix(in srgb, var(--rp-iris) 80%, black);
+    --marker-color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-primary) 40%, white);
+    border-color: color-mix(in srgb, var(--color-primary) 80%, black);
   }
   .event-marker--pine {
-    --marker-color: var(--rp-pine);
-    background-color: color-mix(in srgb, var(--rp-pine) 40%, white);
-    border-color: color-mix(in srgb, var(--rp-pine) 80%, black);
+    --marker-color: var(--color-secondary);
+    background-color: color-mix(in srgb, var(--color-secondary) 40%, white);
+    border-color: color-mix(in srgb, var(--color-secondary) 80%, black);
   }
   .event-marker--gold {
-    --marker-color: var(--rp-gold);
-    background-color: color-mix(in srgb, var(--rp-gold) 40%, white);
-    border-color: color-mix(in srgb, var(--rp-gold) 80%, black);
+    --marker-color: var(--color-warning);
+    background-color: color-mix(in srgb, var(--color-warning) 40%, white);
+    border-color: color-mix(in srgb, var(--color-warning) 80%, black);
   }
   .event-marker--rose {
-    --marker-color: var(--rp-rose);
-    background-color: color-mix(in srgb, var(--rp-rose) 40%, white);
-    border-color: color-mix(in srgb, var(--rp-rose) 80%, black);
+    --marker-color: var(--color-rose);
+    background-color: color-mix(in srgb, var(--color-rose) 40%, white);
+    border-color: color-mix(in srgb, var(--color-rose) 80%, black);
   }
   .event-marker--foam {
-    --marker-color: var(--rp-foam);
-    background-color: color-mix(in srgb, var(--rp-foam) 40%, white);
-    border-color: color-mix(in srgb, var(--rp-foam) 80%, black);
+    --marker-color: var(--color-accent);
+    background-color: color-mix(in srgb, var(--color-accent) 40%, white);
+    border-color: color-mix(in srgb, var(--color-accent) 80%, black);
   }
   .event-marker--error {
-    --marker-color: var(--rp-love);
-    background-color: color-mix(in srgb, var(--rp-love) 40%, white);
-    border-color: color-mix(in srgb, var(--rp-love) 80%, black);
+    --marker-color: var(--color-error);
+    background-color: color-mix(in srgb, var(--color-error) 40%, white);
+    border-color: color-mix(in srgb, var(--color-error) 80%, black);
   }
 </style>

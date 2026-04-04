@@ -203,6 +203,7 @@
 </div>
 
 <style lang="postcss">
+  @reference "../../../app.css";
   /* Small caption above each field */
   .custom-time-field-label {
     @apply cursor-pointer select-none text-[10px] font-semibold tracking-wide text-base-content/55;

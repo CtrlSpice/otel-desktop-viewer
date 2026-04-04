@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { LinkData } from '@/types/api-types';
   import SpanField from './SpanField.svelte';
+  import { router } from 'tinro5';
 
   type Props = {
     links: LinkData[];
@@ -8,114 +9,108 @@
 
   let { links }: Props = $props();
 
-  let openLinks = $state<Set<number>>(new Set());
+  let openLinks = $state<Set<number>>(new Set([0]));
+
+  function toggle(index: number, e: MouseEvent) {
+    e.stopPropagation();
+    let next = new Set(openLinks);
+    if (next.has(index)) {
+      next.delete(index);
+    } else {
+      next.add(index);
+    }
+    openLinks = next;
+  }
 </script>
 
-{#if links && links.length > 0}
-  <div class="space-y-2">
-    {#each links as link, index}
-      <div class="data-table-section">
+{#each links as link, index}
+  {@const open = openLinks.has(index)}
+  <tr class="table-row">
+    <th scope="row" class="table-cell--field-name">
+      <div class="links-panel__field-name-inner">
         <button
           type="button"
-          class="data-table-header"
-          onclick={() => {
-            let newSet = new Set(openLinks);
-            if (newSet.has(index)) {
-              newSet.delete(index);
-            } else {
-              newSet.add(index);
-            }
-            openLinks = newSet;
+          class="group-toggle"
+          class:group-toggle--open={open}
+          aria-expanded={open}
+          aria-label={open ? `Collapse link ${index + 1}` : `Expand link ${index + 1}`}
+          onclick={(e) => toggle(index, e)}
+        >
+          <svg
+            class="group-toggle__caret"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" />
+            <path d="M10 8l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <span class="links-panel__key">traceID<span aria-hidden="true">:</span></span>
+      </div>
+      <span class="col-resize-marker" aria-hidden="true"></span>
+    </th>
+    <td class="table-cell">
+      <div class="links-panel__value-cell">
+        <a
+          class="links-panel__trace-link"
+          href="/trace/{link.traceID}"
+          onclick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            router.goto(`/trace/${link.traceID}`)
           }}
         >
-          <div class="section-header">
-            <svg
-              class="w-4 h-4 transition-transform {openLinks.has(index)
-                ? 'rotate-180'
-                : ''}"
-              viewBox="0 0 24 24"
-            >
-              <path d="M18 9s-4.419 6-6 6s-6-6-6-6" />
-            </svg>
-            <div class="text-sm">
-              <div>Trace ID: <strong>{link.traceID}</strong></div>
-              <div>Span ID: <strong>{link.spanID}</strong></div>
-            </div>
-          </div>
-        </button>
-        {#if openLinks.has(index)}
-          <div class="data-table">
-            <div class="data-table-row">
-              <div class="data-table-cell">
-                <SpanField
-                  fieldName="trace state"
-                  fieldValue={link.traceState}
-                  fieldType="string"
-                />
-              </div>
-            </div>
-            {#each link.attributes as attr}
-              <div class="data-table-row">
-                <div class="data-table-cell">
-                  <SpanField
-                    fieldName={attr.key}
-                    fieldValue={attr.value}
-                    fieldType={attr.type}
-                  />
-                </div>
-              </div>
-            {/each}
-            {#if link.droppedAttributesCount > 0}
-              <div class="data-table-row">
-                <div class="data-table-cell">
-                  <SpanField
-                    fieldName="dropped attributes count"
-                    fieldValue={link.droppedAttributesCount.toString()}
-                    fieldType="uint32"
-                  />
-                </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
+          {link.traceID}
+        </a>
+        <span class="links-panel__badges">
+          <span class="badge-type">string</span>
+        </span>
       </div>
+    </td>
+  </tr>
+  {#if open}
+    <SpanField nested fieldName="span id" fieldValue={link.spanID} fieldType="string" />
+    <SpanField nested fieldName="trace state" fieldValue={link.traceState} fieldType="string" />
+    {#each link.attributes as attr}
+      <SpanField
+        nested
+        fieldName={attr.key}
+        fieldValue={attr.value}
+        fieldType={attr.type}
+      />
     {/each}
-  </div>
-{:else}
-  <p class="text-base-content/60">No links</p>
-{/if}
+    {#if link.droppedAttributesCount > 0}
+      <SpanField
+        nested
+        fieldName="dropped attributes count"
+        fieldValue={link.droppedAttributesCount.toString()}
+        fieldType="uint32"
+      />
+    {/if}
+  {/if}
+{/each}
 
 <style lang="postcss">
-  .section-header {
-    @apply text-sm font-semibold text-base-content py-2 px-4 flex items-center gap-2;
+  @reference "../../../app.css";
+  .links-panel__field-name-inner {
+    @apply flex min-w-0 items-center gap-1.5;
   }
 
-  .data-table-section {
-    @apply border border-base-300 rounded-lg overflow-hidden;
+  .links-panel__key {
+    @apply min-w-0 truncate;
   }
 
-  .data-table-header {
-    @apply w-full text-left cursor-pointer hover:bg-base-200 transition-colors border-none bg-transparent;
+  .links-panel__value-cell {
+    @apply flex min-w-0 items-center gap-1.5;
   }
 
-  .data-table {
-    display: table;
-    width: 100%;
-    border-collapse: collapse;
+  .links-panel__trace-link {
+    @apply min-w-0 flex-1 truncate font-mono text-xs text-primary underline decoration-primary/30 underline-offset-2;
+    @apply hover:decoration-primary/60 hover:text-primary;
   }
 
-  .data-table-row {
-    display: table-row;
-    border-top: 1px solid hsl(var(--b3));
-  }
-
-  .data-table-row:first-child {
-    border-top: none;
-  }
-
-  .data-table-cell {
-    display: table-cell;
-    width: 100%;
-    padding: 0;
+  .links-panel__badges {
+    @apply flex shrink-0 items-center gap-1;
   }
 </style>

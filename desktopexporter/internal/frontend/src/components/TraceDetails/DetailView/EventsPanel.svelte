@@ -14,119 +14,102 @@
 
   let timeContext = getTimeContext();
 
-  let openEvents = $state<Set<number>>(new Set());
+  let openEvents = $state<Set<number>>(new Set([0]));
+
+  function toggle(index: number, e: MouseEvent) {
+    e.stopPropagation();
+    let next = new Set(openEvents);
+    if (next.has(index)) {
+      next.delete(index);
+    } else {
+      next.add(index);
+    }
+    openEvents = next;
+  }
 </script>
 
-{#if events && events.length > 0}
-  <div class="space-y-2">
-    {#each events as event, index}
-      <div class="data-table-section">
+{#each events as event, index}
+  {@const open = openEvents.has(index)}
+  <tr class="table-row">
+    <th scope="row" class="table-cell--field-name">
+      <div class="events-panel__field-name-inner">
         <button
           type="button"
-          class="data-table-header"
-          onclick={() => {
-            let newSet = new Set(openEvents);
-            if (newSet.has(index)) {
-              newSet.delete(index);
-            } else {
-              newSet.add(index);
-            }
-            openEvents = newSet;
-          }}
+          class="group-toggle"
+          class:group-toggle--open={open}
+          aria-expanded={open}
+          aria-label={open ? `Collapse ${event.name}` : `Expand ${event.name}`}
+          onclick={(e) => toggle(index, e)}
         >
-          <div class="section-header">
-            <svg
-              class="w-4 h-4 transition-transform {openEvents.has(index)
-                ? 'rotate-180'
-                : ''}"
-              viewBox="0 0 24 24"
-            >
-              <path d="M18 9s-4.419 6-6 6s-6-6-6-6" />
-            </svg>
-            <div>
-              <div>{event.name}</div>
-              <div class="text-xs text-base-content/60 font-normal">
-                {formatDuration(
-                  event.timestamp - spanStartTime
-                )}{' '}
-                since span start
-              </div>
-            </div>
-          </div>
+          <svg
+            class="group-toggle__caret"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" />
+            <path d="M10 8l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
         </button>
-        {#if openEvents.has(index)}
-          <div class="data-table">
-            <div class="data-table-row">
-              <div class="data-table-cell">
-                <SpanField
-                  fieldName="timestamp"
-                  fieldValue={formatTimestamp(event.timestamp, timeContext.timezone, 'nanoseconds')}
-                  fieldType="timestamp"
-                />
-              </div>
-            </div>
-            {#each event.attributes as attr}
-              <div class="data-table-row">
-                <div class="data-table-cell">
-                  <SpanField
-                    fieldName={attr.key}
-                    fieldValue={attr.value}
-                    fieldType={attr.type}
-                  />
-                </div>
-              </div>
-            {/each}
-            {#if event.droppedAttributesCount > 0}
-              <div class="data-table-row">
-                <div class="data-table-cell">
-                  <SpanField
-                    fieldName="dropped attributes count"
-                    fieldValue={event.droppedAttributesCount.toString()}
-                    fieldType="uint32"
-                  />
-                </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
+        <span class="events-panel__key">name<span aria-hidden="true">:</span></span>
       </div>
+      <span class="col-resize-marker" aria-hidden="true"></span>
+    </th>
+    <td class="table-cell">
+      <div class="events-panel__value-cell">
+        <span class="events-panel__value-text">{event.name}</span>
+        <span class="events-panel__badges">
+          <span class="badge-type">string</span>
+          <span class="badge-offset">+{formatDuration(event.timestamp - spanStartTime)}</span>
+        </span>
+      </div>
+    </td>
+  </tr>
+  {#if open}
+    <SpanField
+      nested
+      fieldName="timestamp"
+      fieldValue={formatTimestamp(event.timestamp, timeContext.timezone, 'nanoseconds')}
+      fieldType="timestamp"
+    />
+    {#each event.attributes as attr}
+      <SpanField
+        nested
+        fieldName={attr.key}
+        fieldValue={attr.value}
+        fieldType={attr.type}
+      />
     {/each}
-  </div>
-{:else}
-  <p class="text-base-content/60">No events</p>
-{/if}
+    {#if event.droppedAttributesCount > 0}
+      <SpanField
+        nested
+        fieldName="dropped attributes count"
+        fieldValue={event.droppedAttributesCount.toString()}
+        fieldType="uint32"
+      />
+    {/if}
+  {/if}
+{/each}
 
 <style lang="postcss">
-  .section-header {
-    @apply text-sm font-semibold text-base-content py-2 px-4 flex items-center gap-2;
+  @reference "../../../app.css";
+  .events-panel__field-name-inner {
+    @apply flex min-w-0 items-center gap-1.5;
   }
 
-  .data-table-section {
-    @apply border border-base-300 rounded-lg overflow-hidden;
+  .events-panel__key {
+    @apply min-w-0 truncate;
   }
 
-  .data-table-header {
-    @apply w-full text-left cursor-pointer hover:bg-base-200 transition-colors border-none bg-transparent;
+  .events-panel__value-cell {
+    @apply flex min-w-0 items-center gap-1.5;
   }
 
-  .data-table {
-    display: table;
-    width: 100%;
-    border-collapse: collapse;
+  .events-panel__value-text {
+    @apply min-w-0 flex-1 truncate text-sm text-base-content;
   }
 
-  .data-table-row {
-    display: table-row;
-    border-top: 1px solid hsl(var(--b3));
-  }
-
-  .data-table-row:first-child {
-    border-top: none;
-  }
-
-  .data-table-cell {
-    display: table-cell;
-    width: 100%;
-    padding: 0;
+  .events-panel__badges {
+    @apply flex shrink-0 items-center gap-1;
   }
 </style>

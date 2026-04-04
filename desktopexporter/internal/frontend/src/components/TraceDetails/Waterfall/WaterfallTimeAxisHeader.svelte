@@ -163,7 +163,9 @@
       intervalNs,
       MAX_AXIS_TICKS
     )
-    const ticks = positions.map(pos => tickAt(pos, traceDurationNs, displayUnit))
+    const ticks = positions.map(pos =>
+      tickAt(pos, traceDurationNs, displayUnit)
+    )
 
     return {
       layoutDurationNs: traceDurationNs,
@@ -282,7 +284,8 @@
           <span class="waterfall-time-axis-header__tick-label"
             >{tick.label}</span
           >
-          <span class="waterfall-time-axis-header__tick-line" aria-hidden="true"></span>
+          <span class="waterfall-time-axis-header__tick-line" aria-hidden="true"
+          ></span>
         </div>
       {/each}
     </div>
@@ -290,8 +293,13 @@
 </tr>
 
 <style lang="postcss">
+  @reference "../../../app.css";
+  .waterfall-time-axis-header {
+    height: var(--table-header-h);
+  }
+
   .waterfall-time-axis-header__th-label {
-    @apply relative align-middle py-2 text-left text-xs font-semibold tracking-normal text-base-content/55;
+    @apply relative align-middle text-left text-xs font-semibold tracking-normal text-base-content/55;
   }
 
   .waterfall-time-axis-header__th-span {
@@ -304,13 +312,15 @@
   }
 
   .waterfall-time-axis-header__th-ruler {
-    @apply relative min-w-[12rem] pl-4 pr-6 py-2 align-middle text-xs tracking-normal text-base-content/55;
+    @apply relative min-w-[12rem] align-middle text-xs tracking-normal text-base-content/55;
+    padding-left: 1.25rem;
+    padding-right: 1.75rem;
   }
 
   .waterfall-time-axis-header__ruler {
     @apply absolute bottom-0 top-0 min-w-0 overflow-visible;
-    left: 16px;
-    right: 24px;
+    left: 1.25rem;
+    right: 1.75rem;
   }
 
   .waterfall-time-axis-header__tick {
@@ -330,22 +340,10 @@
   }
 
   .resize-handle {
-    @apply absolute top-0 bottom-0 cursor-col-resize;
+    @apply absolute top-0 bottom-0 flex items-center justify-center cursor-col-resize;
     right: -3px;
     width: 7px;
     z-index: 2;
   }
 
-  .resize-handle::after {
-    content: '';
-    @apply absolute top-1 bottom-1 left-1/2 -translate-x-1/2 w-px bg-base-content/10 transition-all duration-100;
-  }
-
-  .resize-handle:hover::after {
-    @apply w-0.5 bg-primary/40 top-0 bottom-0 rounded-full;
-  }
-
-  .resize-handle:active::after {
-    @apply w-0.5 bg-primary/60 top-0 bottom-0 rounded-full;
-  }
 </style>

@@ -2,19 +2,19 @@ import { EditorView } from '@codemirror/view';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 
-// Theme-aware colors via --rp-* tokens defined in app.css
+// Theme-aware colors: DaisyUI --color-* plus --color-rose / --color-subtle (app.css)
 const qc = {
-  base: 'var(--rp-base)',
-  surface: 'var(--rp-surface)',
-  overlay: 'var(--rp-overlay)',
-  muted: 'var(--rp-muted)',
-  subtle: 'var(--rp-subtle)',
-  text: 'var(--rp-text)',
-  iris: 'var(--rp-iris)',
-  foam: 'var(--rp-foam)',
-  gold: 'var(--rp-gold)',
-  rose: 'var(--rp-rose)',
-  love: 'var(--rp-love)',
+  base: 'var(--color-base-100)',
+  surface: 'var(--color-base-200)',
+  overlay: 'var(--color-base-300)',
+  muted: 'var(--color-neutral)',
+  subtle: 'var(--color-subtle)',
+  text: 'var(--color-base-content)',
+  iris: 'var(--color-primary)',
+  foam: 'var(--color-accent)',
+  gold: 'var(--color-warning)',
+  rose: 'var(--color-rose)',
+  love: 'var(--color-error)',
 };
 
 const queryHighlightStyle = HighlightStyle.define([
@@ -86,7 +86,7 @@ export const queryEditorTheme = EditorView.theme({
   // Lint diagnostics
   '.cm-diagnostic-error': {
     borderLeft: `3px solid ${qc.love}`,
-    backgroundColor: `${qc.love}10`,
+    backgroundColor: 'color-mix(in oklab, var(--color-error) 12%, transparent)',
     padding: '4px 8px',
     marginLeft: '4px',
   },

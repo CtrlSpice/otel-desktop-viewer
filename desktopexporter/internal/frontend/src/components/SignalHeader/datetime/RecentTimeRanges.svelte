@@ -57,6 +57,7 @@
 </div>
 
 <style lang="postcss">
+  @reference "../../../app.css";
   .recent-range-button {
     @apply block w-full rounded-md border-none bg-transparent px-1.5 py-1 text-left text-xs leading-snug;
     @apply text-base-content/90 transition-colors;

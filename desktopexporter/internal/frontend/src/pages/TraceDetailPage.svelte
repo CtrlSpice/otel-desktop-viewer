@@ -94,7 +94,7 @@
   }
 </script>
 
-<div class="flex min-w-0 w-full flex-col overflow-y-auto py-6">
+<div class="flex min-h-0 min-w-0 w-full flex-1 flex-col py-6">
   <SignalHeader
     signal="traces"
     view="detail"
@@ -118,11 +118,11 @@
     </div>
   {:else if traceData}
     {@const data = traceData}
-    <div class="h-[calc(100vh-10rem)]">
+    <div class="min-h-0 flex-1">
       <ResizablePanels
-        defaultLeftWidth={0.6}
+        defaultLeftWidth={0.7}
         minLeftWidth={0.3}
-        minRightWidth={0.3}
+        minRightWidth={0.2}
         storageKey="trace-detail-panels"
       >
         {#snippet leftPanel()}

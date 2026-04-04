@@ -12,11 +12,6 @@
   /** Same as `row.colorToken` — derived so palette changes never desync from the row type. */
   type BarColorToken = WaterfallRowData['colorToken']
 
-  /** Column width (px) for each tree level. */
-  const COL = 22
-  /** Must match btn width/height — horizontal arms stop at the circle edge. */
-  const HUB_PX = 16
-
   type SegmentKind = 'none' | 'passthrough' | 'tee' | 'elbow'
 
   type Props = {
@@ -32,8 +27,6 @@
 
   let hasChildren = $derived(tree.childrenCount > 0)
   let childCount = $derived(tree.childrenCount)
-  let gutterWidthPx = $derived((depth + 1) * COL + 4)
-  let armWidthPx = $derived(COL - HUB_PX / 2)
 
   /**
    * Picks the line shape for one gutter column.
@@ -60,25 +53,39 @@
   )
 </script>
 
-<div class="gutter" style:width="{gutterWidthPx}px">
+<div
+  class="gutter"
+  style:width="calc({depth + 1} * var(--waterfall-gutter-col) + var(--waterfall-gutter-tail))"
+>
   {#each segments as kind, d}
-    <div class="gutter__col" style:left="{d * COL}px" style:width="{COL}px">
+    <div
+      class="gutter__col"
+      style:left="calc({d} * var(--waterfall-gutter-col))"
+      style:width="var(--waterfall-gutter-col)"
+    >
       {#if kind === 'passthrough'}
         <div class="seg seg--passthrough"></div>
       {:else if kind === 'tee'}
         <div class="seg seg--tee"></div>
-        <div class="seg__arm" style:width="{armWidthPx}px"></div>
+        <div
+          class="seg__arm"
+          style:width="calc(var(--waterfall-gutter-col) - var(--waterfall-gutter-hub) / 2)"
+        ></div>
       {:else if kind === 'elbow'}
         <div class="seg seg--elbow"></div>
         <div
           class="seg__arm seg__arm--elbow"
-          style:width="{armWidthPx}px"
+          style:width="calc(var(--waterfall-gutter-col) - var(--waterfall-gutter-hub) / 2)"
         ></div>
       {/if}
     </div>
   {/each}
 
-  <div class="gutter__node" style:left="{depth * COL}px" style:width="{COL}px">
+  <div
+    class="gutter__node"
+    style:left="calc({depth} * var(--waterfall-gutter-col))"
+    style:width="var(--waterfall-gutter-col)"
+  >
     {#if hasChildren}
       {#if !subtreeCollapsed}
         <span class="gutter__stem" aria-hidden="true"></span>
@@ -124,6 +131,7 @@
 </div>
 
 <style lang="postcss">
+  @reference "../../../app.css";
   .gutter {
     @apply relative flex-shrink-0;
     height: 28px;
@@ -174,7 +182,7 @@
   /* ───── Node slot (hub button column) ───── */
 
   .gutter__node {
-    --hub-px: 16px;
+    --hub-px: var(--waterfall-gutter-hub);
     @apply absolute top-0 bottom-0 z-[1] flex items-center justify-center;
   }
 
@@ -200,8 +208,8 @@
   }
 
   .gutter__btn-caret {
-    width: 16px;
-    height: 16px;
+    width: var(--waterfall-gutter-hub);
+    height: var(--waterfall-gutter-hub);
     opacity: 0;
     transition: opacity 0.1s, transform 0.15s;
   }
@@ -223,32 +231,32 @@
   .gutter__btn {
     @apply inline-flex cursor-pointer items-center justify-center rounded-full border-0 p-0 font-semibold leading-none outline-none transition-[background-color,color] duration-100;
     @apply focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100;
-    min-width: 16px;
-    min-height: 16px;
-    width: 16px;
-    height: 16px;
+    min-width: var(--waterfall-gutter-hub);
+    min-height: var(--waterfall-gutter-hub);
+    width: var(--waterfall-gutter-hub);
+    height: var(--waterfall-gutter-hub);
     font-size: 8px;
   }
 
   /* ───── Color tokens ───── */
 
   .gutter__btn--gold {
-    --tree-accent: var(--rp-gold);
+    --tree-accent: var(--color-warning);
   }
   .gutter__btn--pine {
-    --tree-accent: var(--rp-pine);
+    --tree-accent: var(--color-secondary);
   }
   .gutter__btn--foam {
-    --tree-accent: var(--rp-foam);
+    --tree-accent: var(--color-accent);
   }
   .gutter__btn--iris {
-    --tree-accent: var(--rp-iris);
+    --tree-accent: var(--color-primary);
   }
   .gutter__btn--rose {
-    --tree-accent: var(--rp-rose);
+    --tree-accent: var(--color-rose);
   }
   .gutter__btn--error {
-    --tree-accent: var(--rp-love);
+    --tree-accent: var(--color-error);
   }
 
   /* ───── Button states ───── */

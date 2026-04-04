@@ -49,6 +49,7 @@
 </div>
 
 <style lang="postcss">
+  @reference "../app.css";
   .code-block {
     @apply bg-base-200 rounded-lg border border-base-300;
   }

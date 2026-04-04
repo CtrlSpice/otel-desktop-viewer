@@ -1,48 +1,161 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "daisyui" {
+  logs: false;
+  themes: false;
+}
+@config "../tailwind.config.js";
 
-/* Rosé Pine palette tokens — single source of truth for both themes */
+/* Rosé Pine + DaisyUI 5 semantic tokens */
 html[data-theme='rose-pine-moon'] {
-  --rp-base: #232136;
-  --rp-surface: #2a273f;
-  --rp-overlay: #393552;
-  --rp-muted: #6e6a86;
-  --rp-subtle: #908caa;
-  --rp-text: #e0def4;
-  --rp-iris: #c4a7e7;
-  --rp-foam: #9ccfd8;
-  --rp-gold: #f6c177;
-  --rp-pine: #3e8fb0;
-  --rp-rose: #ea9ab2;
-  --rp-love: #eb6f92;
+  color-scheme: dark;
+  --color-rose: #ea9ab2;
+  --color-subtle: #908caa;
+  --color-base-100: #232136;
+  --color-base-200: #2a273f;
+  --color-base-300: #393552;
+  --color-base-content: #e0def4;
+  --color-primary: #c4a7e7;
+  --color-primary-content: #232136;
+  --color-secondary: #3e8fb0;
+  --color-secondary-content: #e0def4;
+  --color-accent: #9ccfd8;
+  --color-accent-content: #232136;
+  --color-neutral: #6e6a86;
+  --color-neutral-content: #e0def4;
+  --color-info: #9ccfd8;
+  --color-info-content: #232136;
+  --color-success: #3e8fb0;
+  --color-success-content: #e0def4;
+  --color-warning: #f6c177;
+  --color-warning-content: #232136;
+  --color-error: #eb6f92;
+  --color-error-content: #e0def4;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
 }
 
 html[data-theme='rose-pine-dawn'] {
-  --rp-base: #faf4ed;
-  --rp-surface: #fffaf3;
-  --rp-overlay: #f2e9e1;
-  --rp-muted: #9893a5;
-  --rp-subtle: #797593;
-  --rp-text: #575279;
-  --rp-iris: #907aa9;
-  --rp-foam: #56949f;
-  --rp-gold: #ea9d34;
-  --rp-pine: #286983;
-  --rp-rose: #d7827e;
-  --rp-love: #b4637a;
+  color-scheme: light;
+  --color-rose: #d7827e;
+  --color-subtle: #797593;
+  --color-base-100: #faf4ed;
+  --color-base-200: #fffaf3;
+  --color-base-300: #f2e9e1;
+  --color-base-content: #575279;
+  --color-primary: #907aa9;
+  --color-primary-content: #faf4ed;
+  --color-secondary: #286983;
+  --color-secondary-content: #faf4ed;
+  --color-accent: #56949f;
+  --color-accent-content: #faf4ed;
+  --color-neutral: #9893a5;
+  --color-neutral-content: #575279;
+  --color-info: #56949f;
+  --color-info-content: #faf4ed;
+  --color-success: #286983;
+  --color-success-content: #faf4ed;
+  --color-warning: #ea9d34;
+  --color-warning-content: #faf4ed;
+  --color-error: #b4637a;
+  --color-error-content: #faf4ed;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+/* Default theme until JS sets data-theme (matches rose-pine-moon as default app theme) */
+:root {
+  color-scheme: dark;
+  --color-rose: #ea9ab2;
+  --color-subtle: #908caa;
+  --color-base-100: #232136;
+  --color-base-200: #2a273f;
+  --color-base-300: #393552;
+  --color-base-content: #e0def4;
+  --color-primary: #c4a7e7;
+  --color-primary-content: #232136;
+  --color-secondary: #3e8fb0;
+  --color-secondary-content: #e0def4;
+  --color-accent: #9ccfd8;
+  --color-accent-content: #232136;
+  --color-neutral: #6e6a86;
+  --color-neutral-content: #e0def4;
+  --color-info: #9ccfd8;
+  --color-info-content: #232136;
+  --color-success: #3e8fb0;
+  --color-success-content: #e0def4;
+  --color-warning: #f6c177;
+  --color-warning-content: #232136;
+  --color-error: #eb6f92;
+  --color-error-content: #e0def4;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
 }
 
 @layer base {
   html {
     @apply min-w-0 scroll-smooth;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-base-content) 28%, transparent)
+      transparent;
   }
 
   body {
     /* Desktop app + half-screen: no hard min width; children use min-w-0 where needed */
     @apply min-w-0 font-sans text-base-content antialiased;
     text-rendering: optimizeLegibility;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-base-content) 28%, transparent)
+      transparent;
   }
+
+  #app,
+  main {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-base-content) 28%, transparent)
+      transparent;
+  }
+}
+
+/* WebKit: thin scrollbars for document / app shell (matches scrollbar-width: thin above) */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#app::-webkit-scrollbar,
+main::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+#app::-webkit-scrollbar-thumb,
+main::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-base-content) 28%, transparent);
+  border-radius: 9999px;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+#app::-webkit-scrollbar-track,
+main::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Default SVG styles */
@@ -162,9 +275,37 @@ svg {
   @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
 }
 
+/* ── Shared table tokens ──
+   DaisyUI v5 uses --color-* (hex); v3’s --b2 / --p are gone, so zebra/hover/selection
+   must mix from semantic colors. */
+:root {
+  /* Primary data panels (trace list, waterfall, detail): caps scroll height, aligns column resize strips */
+  --panel-body-max-height: min(85vh, calc(100vh - 9rem));
+  --table-row-h: 1.75rem;
+  --table-header-h: 2.25rem;
+  --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 40%, transparent);
+  --table-hover-bg: color-mix(in oklab, var(--color-base-200) 60%, transparent);
+  --table-selected-bg: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  /* Waterfall span column tree + nested detail rows (WaterfallTreeGutter) */
+  --waterfall-gutter-col: 22px;
+  --waterfall-gutter-tail: 4px;
+  --waterfall-gutter-hub: 16px;
+}
+
+/* Same frosted fill as panel chrome: paint this on tbody / field lists, then zebra rows on top */
+.table-body-surface {
+  @apply bg-base-100/80;
+}
+
+/* DaisyUI .table draws hairlines between rows; we rely on zebra + hover instead */
+.table :where(thead tr :is(th, td), tbody tr :is(th, td), tfoot tr :is(th, td)) {
+  border-bottom: none;
+  border-top: none;
+}
+
 /* Data Table Styles */
 .table-header-row {
-  @apply border-b border-base-300/80 bg-base-200/60 backdrop-blur-sm;
+  @apply bg-base-200/60 backdrop-blur-sm;
 }
 
 .table-header-cell {
@@ -192,7 +333,7 @@ svg {
 }
 
 .table-cell--checkbox {
-  @apply w-10 py-2 text-center align-middle;
+  @apply w-10 py-1 text-center align-middle;
 }
 
 /* Tight gutter between Trace ID and Root Span (presence) column */
@@ -205,31 +346,183 @@ svg {
 }
 
 .table-cell--trace-id {
-  @apply pl-4 pr-1 py-2 text-sm text-base-content font-mono align-middle whitespace-nowrap;
+  @apply pl-4 pr-1 py-1 text-sm text-base-content font-mono align-middle whitespace-nowrap;
 }
 
 .table-cell--has-root {
-  @apply pl-1 pr-4 py-2 text-sm text-center text-base-content align-middle whitespace-nowrap;
+  @apply pl-1 pr-4 py-1 text-sm text-center text-base-content align-middle whitespace-nowrap;
 }
 
 .table-row {
-  @apply even:bg-base-200/30 hover:bg-base-200/70 transition-colors duration-150;
+  @apply transition-colors duration-150;
+  height: var(--table-row-h);
+}
+
+.table-row:nth-child(even) {
+  background-color: var(--table-zebra-bg);
+}
+
+.table-row:hover {
+  background-color: var(--table-hover-bg);
+}
+
+.table-row--selected {
+  background-color: var(--table-selected-bg);
 }
 
 .table-cell {
-  @apply px-4 py-2 text-sm text-base-content align-middle;
+  @apply pl-4 pr-4 py-1 text-sm text-base-content align-middle;
 }
 
 .table-cell--right {
-  @apply pl-2 pr-4 py-2 text-sm text-right text-base-content align-middle;
+  @apply pl-2 pr-4 py-1 text-sm text-right text-base-content align-middle;
 }
 
 .table-cell--count {
-  @apply px-4 py-2 text-center text-sm tabular-nums text-base-content align-middle;
+  @apply px-4 py-1 text-center text-sm tabular-nums text-base-content align-middle;
 }
 
 .table-cell--center {
-  @apply px-4 py-2 text-center;
+  @apply px-4 py-1 text-center;
+}
+
+/* Detail fields: field + colon — same muted tone as waterfall service column. */
+.table-cell--field-name {
+  @apply pl-4 pr-4 py-1 text-left align-middle text-sm font-normal text-base-content/60;
+}
+
+.detail-fields {
+  table-layout: fixed;
+}
+
+.detail-fields .table-cell--field-name,
+.detail-fields td.table-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Value column takes remaining width; max-width 0 makes ellipsis work in fixed tables */
+.detail-fields td.table-cell {
+  max-width: 0;
+}
+
+/* Indent nested field names under the caret; value column stays pl-4 like group header rows */
+.detail-fields tr.table-row--nested th.table-cell--field-name {
+  padding-left: calc(1rem + var(--waterfall-gutter-col));
+}
+
+
+/* ── Shared column-resize system ──
+   One interaction pattern everywhere:
+   • Wrap the table in .col-resize-context (position: relative).
+   • Place .col-resize-bar siblings after the table; set style:left to the column
+     boundary in px from script. Use .col-resize-bar--below-header when the table
+     has a thead so the strip (and visible line) start under the header row.
+   • Put .col-resize-marker inside each cell that borders a bar (th/td) so
+     :has(.col-resize-marker) zeros right padding; the next cell gets 1rem inset-start.
+   • Use .col-resize-bar--in-flow on a flex-row separator (ResizablePanels side-by-side)
+     or .col-resize-bar--row-in-flow for stacked column layout — same __line child. */
+
+.col-resize-context {
+  @apply relative isolate w-full min-h-full;
+  /* Short tables: keep column resize strips as tall as the standard panel cap (not only tbody height) */
+  min-height: var(--panel-body-max-height);
+}
+
+/* Scroll region capped like detail / waterfall; use inside flex children with min-h-0 */
+.panel-body-scroll {
+  max-height: min(var(--panel-body-max-height), 100%);
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+/* Marker: kills right padding on its parent cell */
+.col-resize-marker {
+  display: none;
+  pointer-events: none;
+}
+
+:is(th, td):has(.col-resize-marker) {
+  padding-right: 0 !important;
+}
+
+:is(th, td):has(.col-resize-marker) + :is(th, td) {
+  padding-left: 1rem;
+}
+
+/* z above .waterfall-row:hover (z-20) so the hit strip stays draggable */
+.col-resize-bar {
+  @apply absolute top-0 bottom-0 z-[25] flex cursor-col-resize items-stretch justify-center;
+  right: auto;
+  margin-left: -0.25rem;
+  width: 0.5rem;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Strip + line start at first body row — keeps thead/tabs clear (matches --table-header-h) */
+.col-resize-bar.col-resize-bar--below-header {
+  top: var(--table-header-h);
+}
+
+.col-resize-bar__line {
+  @apply self-stretch rounded-full;
+  width: 0.125rem;
+  min-height: 100%;
+  background-color: var(--color-neutral);
+  opacity: 0;
+  transition: width 0.15s, background-color 0.15s, opacity 0.15s;
+}
+
+.col-resize-bar:hover .col-resize-bar__line {
+  opacity: 0.6;
+}
+
+.col-resize-bar--active .col-resize-bar__line {
+  width: 0.125rem;
+  background-color: var(--color-primary);
+  opacity: 0.9;
+}
+
+.col-resize-bar:focus-visible {
+  outline: none;
+}
+
+.col-resize-bar:focus-visible .col-resize-bar__line {
+  background-color: var(--color-primary);
+  opacity: 0.9;
+}
+
+/* In-flow flex sibling (not absolute over a table) */
+.col-resize-bar.col-resize-bar--in-flow {
+  @apply relative self-stretch shrink-0;
+  inset: auto;
+  margin-left: 0;
+  z-index: 10;
+}
+
+/* Stacked panels: full-width hit strip, drag adjusts height split (row-resize) */
+.col-resize-bar.col-resize-bar--row-in-flow {
+  @apply relative z-10 shrink-0;
+  inset: auto;
+  display: flex;
+  width: 100%;
+  height: 0.5rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  cursor: row-resize;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.col-resize-bar--row-in-flow .col-resize-bar__line {
+  align-self: auto;
+  width: 100%;
+  min-width: 0;
+  height: 0.125rem;
+  min-height: 0.125rem;
 }
 
 /* Pagination Styles */
@@ -272,21 +565,45 @@ svg {
   @apply bg-base-200;
 }
 
-/* Semantic badges (Rosé Pine accents via --rp-* tokens) */
-.badge-origin {
-  @apply badge badge-sm text-xs border-0;
-  background-color: color-mix(in srgb, var(--rp-iris) 20%, transparent);
-  color: var(--rp-iris);
+/* ── Group toggle button (collapse/expand in event & link tables) ──
+   Circle-on-hover caret, matching the waterfall gutter button style. */
+.group-toggle {
+  @apply inline-flex cursor-pointer items-center justify-center rounded-full border-0 p-0 leading-none outline-none;
+  @apply focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100;
+  width: 1rem;
+  height: 1rem;
+  background: transparent;
+  color: var(--color-primary);
+  transition: background-color 0.1s;
 }
 
+.group-toggle:hover {
+  background-color: color-mix(in oklab, var(--color-primary) 15%, transparent);
+}
+
+.group-toggle__caret {
+  width: 1rem;
+  height: 1rem;
+  transition: transform 0.15s;
+}
+
+.group-toggle--open .group-toggle__caret {
+  transform: rotate(90deg);
+}
+
+/* Detail field badges — daisyUI: badge · badge-sm · text-xs · badge-soft · role */
 .badge-type {
-  @apply badge badge-sm text-xs border-0;
-  background-color: color-mix(in srgb, var(--rp-pine) 20%, transparent);
-  color: var(--rp-pine);
+  @apply badge badge-sm text-xs badge-soft badge-secondary;
+}
+
+.badge-origin {
+  @apply badge badge-sm text-xs badge-soft badge-accent;
 }
 
 .badge-root {
-  @apply badge badge-sm text-xs border-0;
-  background-color: color-mix(in srgb, var(--rp-gold) 20%, transparent);
-  color: var(--rp-gold);
+  @apply badge badge-sm text-xs badge-soft badge-primary;
+}
+
+.badge-offset {
+  @apply badge badge-sm text-xs badge-soft badge-warning tabular-nums;
 }

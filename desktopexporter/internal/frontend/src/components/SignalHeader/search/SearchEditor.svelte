@@ -457,12 +457,13 @@
 </dialog>
 
 <style lang="postcss">
+  @reference "../../../app.css";
   .search-editor-wrapper {
     @apply relative;
   }
 
   .search-editor-container {
-    @apply input input-bordered;
+    @apply input;
     @apply relative flex min-h-10 w-full items-start px-3 py-1;
     min-height: 2.5rem;
     height: auto;
@@ -567,15 +568,15 @@
   }
 
   .help-op-table thead th {
-    @apply border-b border-base-300 pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-base-content/70;
+    @apply pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-base-content/70;
   }
 
   .help-op-table tbody th {
-    @apply w-[5.5rem] max-w-[7rem] border-b border-base-300 py-2 pr-3 align-top text-left text-xs font-medium text-base-content/80;
+    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-xs font-medium text-base-content/80;
   }
 
   .help-op-table tbody td {
-    @apply border-b border-base-300 py-2 align-top;
+    @apply py-2 align-top;
   }
 
   .help-op-code {
@@ -614,25 +615,25 @@
     @apply whitespace-pre-wrap break-all bg-transparent p-0;
   }
 
-  /* Match CodeMirror query token colors via --rp-* tokens */
+  /* Match CodeMirror query token colors (see lang/theme.ts + app.css --color-*) */
   .q-field {
-    color: var(--rp-foam);
+    color: var(--color-accent);
   }
 
   .q-operator {
-    color: var(--rp-subtle);
+    color: var(--color-subtle);
   }
 
   .q-logic {
-    color: var(--rp-iris);
+    color: var(--color-primary);
     font-weight: 600;
   }
 
   .q-value {
-    color: var(--rp-gold);
+    color: var(--color-warning);
   }
 
   .q-paren {
-    color: var(--rp-subtle);
+    color: var(--color-subtle);
   }
 </style>

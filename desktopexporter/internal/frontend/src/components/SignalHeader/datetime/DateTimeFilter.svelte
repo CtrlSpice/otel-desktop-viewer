@@ -182,7 +182,7 @@
 <dialog
   bind:this={dialogElement}
   id="datetime-dialog"
-  class="datetime-dialog"
+  class="datetime-dialog dropdown-content"
   closedby="any"
 >
   <!-- Vertical stacked layout -->
@@ -253,9 +253,9 @@
 </dialog>
 
 <style lang="postcss">
+  @reference "../../../app.css";
   .datetime-dialog {
     /* Width from CSS (not squeezed to vw-16); script only positions using measured width */
-    @apply dropdown-content;
     @apply px-0 pb-2 pt-0;
     position: fixed;
     margin: 0;

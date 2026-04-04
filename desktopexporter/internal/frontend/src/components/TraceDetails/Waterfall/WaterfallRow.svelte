@@ -72,6 +72,7 @@
       >
         {span.name}
       </span>
+      <span class="col-resize-marker" aria-hidden="true"></span>
     </div>
   </td>
   <td
@@ -79,6 +80,7 @@
     title={serviceName}
   >
     <span class="block truncate pl-2 pr-1">{serviceName}</span>
+    <span class="col-resize-marker" aria-hidden="true"></span>
   </td>
   <td class="waterfall-row__td-bar p-0 align-middle">
     <div class="waterfall-row__bar-area">
@@ -122,16 +124,18 @@
 </tr>
 
 <style lang="postcss">
+  @reference "../../../app.css";
   .waterfall-row {
     @apply cursor-pointer border-none bg-transparent transition-colors duration-100;
+    height: var(--table-row-h);
   }
 
   .waterfall-row:nth-child(even) {
-    @apply bg-base-200/20;
+    background-color: var(--table-zebra-bg);
   }
 
   .waterfall-row:hover {
-    @apply bg-base-200/50;
+    background-color: var(--table-hover-bg);
     position: relative;
     z-index: 20;
   }
@@ -142,7 +146,7 @@
 
   .waterfall-row--selected {
     @apply bg-primary/10 hover:bg-primary/15;
-    box-shadow: inset 0 0 0 1px hsl(var(--p) / 0.3);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-primary) 30%, transparent);
   }
 
   .waterfall-row__title {
@@ -150,9 +154,10 @@
   }
 
   .waterfall-row__bar-area {
-    @apply relative flex items-center h-7;
-    margin-left: 16px;
-    margin-right: 24px;
+    @apply relative flex items-center;
+    height: var(--table-row-h);
+    margin-left: 1.25rem;
+    margin-right: 1.75rem;
   }
 
   .waterfall-row__bar {
@@ -185,22 +190,22 @@
   }
 
   .waterfall-bar--gold {
-    background-color: var(--rp-gold);
+    background-color: var(--color-warning);
   }
   .waterfall-bar--pine {
-    background-color: var(--rp-pine);
+    background-color: var(--color-secondary);
   }
   .waterfall-bar--foam {
-    background-color: var(--rp-foam);
+    background-color: var(--color-accent);
   }
   .waterfall-bar--iris {
-    background-color: var(--rp-iris);
+    background-color: var(--color-primary);
   }
   .waterfall-bar--rose {
-    background-color: var(--rp-rose);
+    background-color: var(--color-rose);
   }
   .waterfall-bar--error {
-    background-color: var(--rp-love);
+    background-color: var(--color-error);
   }
 
   .waterfall-row--error .waterfall-row__title {
