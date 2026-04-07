@@ -1,5 +1,11 @@
 <script lang="ts">
   import type { SpanData } from '@/types/api-types'
+  import type { FieldDefinition } from '@/constants/fields'
+  import {
+    detailSearchFieldVisible,
+    detailAttributeVisible,
+    detailDurationVisible,
+  } from '@/utils/detail-column-filter'
   import SpanField from './SpanField.svelte'
   import EventsPanel from './EventsPanel.svelte'
   import LinksPanel from './LinksPanel.svelte'
@@ -9,9 +15,11 @@
 
   type Props = {
     span: SpanData | undefined
+    /** Empty: show all Fields rows. Non-empty: only selected search fields / attributes. */
+    columnFilter?: FieldDefinition[]
   }
 
-  let { span }: Props = $props()
+  let { span, columnFilter = [] }: Props = $props()
 
   let timeContext = getTimeContext()
 
@@ -162,56 +170,78 @@
           </thead>
         <tbody class="table-body-surface">
           {#if activeTab === 'fields'}
-            <SpanField fieldName="name" fieldValue={span.name} fieldType="string" {isRoot} />
-            <SpanField fieldName="kind" fieldValue={span.kind} fieldType="string" />
-            <SpanField
-              fieldName="start time"
-              fieldValue={formatTimestamp(span.startTime, timeContext.timezone, 'nanoseconds')}
-              fieldType="timestamp"
-            />
-            <SpanField
-              fieldName="end time"
-              fieldValue={formatTimestamp(span.endTime, timeContext.timezone, 'nanoseconds')}
-              fieldType="timestamp"
-            />
-            <SpanField fieldName="duration" fieldValue={durationLabel} fieldType="string" />
-            <SpanField fieldName="status code" fieldValue={span.statusCode} fieldType="string" />
-            {#if span.statusCode !== 'Unset' && span.statusCode !== 'Ok'}
+            {#if detailSearchFieldVisible(columnFilter, 'name')}
+              <SpanField fieldName="name" fieldValue={span.name} fieldType="string" {isRoot} />
+            {/if}
+            {#if detailSearchFieldVisible(columnFilter, 'kind')}
+              <SpanField fieldName="kind" fieldValue={span.kind} fieldType="string" />
+            {/if}
+            {#if detailSearchFieldVisible(columnFilter, 'startTime')}
+              <SpanField
+                fieldName="start time"
+                fieldValue={formatTimestamp(span.startTime, timeContext.timezone, 'nanoseconds')}
+                fieldType="timestamp"
+              />
+            {/if}
+            {#if detailSearchFieldVisible(columnFilter, 'endTime')}
+              <SpanField
+                fieldName="end time"
+                fieldValue={formatTimestamp(span.endTime, timeContext.timezone, 'nanoseconds')}
+                fieldType="timestamp"
+              />
+            {/if}
+            {#if detailDurationVisible(columnFilter)}
+              <SpanField fieldName="duration" fieldValue={durationLabel} fieldType="string" />
+            {/if}
+            {#if detailSearchFieldVisible(columnFilter, 'statusCode')}
+              <SpanField fieldName="status code" fieldValue={span.statusCode} fieldType="string" />
+            {/if}
+            {#if span.statusCode !== 'Unset' && span.statusCode !== 'Ok' && detailSearchFieldVisible(columnFilter, 'statusMessage')}
               <SpanField fieldName="status message" fieldValue={span.statusMessage} fieldType="string" />
             {/if}
-            <SpanField fieldName="trace id" fieldValue={span.traceID} fieldType="string" />
-            {#if !isRoot}
+            {#if detailSearchFieldVisible(columnFilter, 'traceID')}
+              <SpanField fieldName="trace id" fieldValue={span.traceID} fieldType="string" />
+            {/if}
+            {#if !isRoot && detailSearchFieldVisible(columnFilter, 'parentSpanID')}
               <SpanField fieldName="parent span id" fieldValue={span.parentSpanID ?? ''} fieldType="string" />
             {/if}
-            <SpanField fieldName="span id" fieldValue={span.spanID} fieldType="string" />
+            {#if detailSearchFieldVisible(columnFilter, 'spanID')}
+              <SpanField fieldName="span id" fieldValue={span.spanID} fieldType="string" />
+            {/if}
             {#each spanAttributes as attr}
-              <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} />
+              {#if detailAttributeVisible(columnFilter, attr.key, 'span')}
+                <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} />
+              {/if}
             {/each}
-            {#if span.droppedAttributesCount > 0}
+            {#if span.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedAttributesCount')}
               <SpanField fieldName="dropped attributes count" fieldValue={span.droppedAttributesCount.toString()} fieldType="uint32" />
             {/if}
-            {#if span.droppedEventsCount > 0}
+            {#if span.droppedEventsCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedEventsCount')}
               <SpanField fieldName="dropped events count" fieldValue={span.droppedEventsCount.toString()} fieldType="uint32" />
             {/if}
-            {#if span.droppedLinksCount > 0}
+            {#if span.droppedLinksCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedLinksCount')}
               <SpanField fieldName="dropped links count" fieldValue={span.droppedLinksCount.toString()} fieldType="uint32" />
             {/if}
             {#each resourceAttributes as attr}
-              <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} origin="resource" />
+              {#if detailAttributeVisible(columnFilter, attr.key, 'resource')}
+                <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} origin="resource" />
+              {/if}
             {/each}
-            {#if span.resource.droppedAttributesCount > 0}
+            {#if span.resource.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'resource.droppedAttributesCount')}
               <SpanField fieldName="dropped attributes count" fieldValue={span.resource.droppedAttributesCount.toString()} fieldType="uint32" origin="resource" />
             {/if}
-            {#if span.scope.name}
+            {#if span.scope.name && detailSearchFieldVisible(columnFilter, 'scope.name')}
               <SpanField fieldName="scope name" fieldValue={span.scope.name} fieldType="string" origin="scope" />
             {/if}
-            {#if span.scope.version}
+            {#if span.scope.version && detailSearchFieldVisible(columnFilter, 'scope.version')}
               <SpanField fieldName="scope version" fieldValue={span.scope.version} fieldType="string" origin="scope" />
             {/if}
             {#each scopeAttributes as attr}
-              <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} origin="scope" />
+              {#if detailAttributeVisible(columnFilter, attr.key, 'scope')}
+                <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} origin="scope" />
+              {/if}
             {/each}
-            {#if span.scope.droppedAttributesCount > 0}
+            {#if span.scope.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'scope.droppedAttributesCount')}
               <SpanField fieldName="dropped attributes count" fieldValue={span.scope.droppedAttributesCount.toString()} fieldType="uint32" origin="scope" />
             {/if}
 

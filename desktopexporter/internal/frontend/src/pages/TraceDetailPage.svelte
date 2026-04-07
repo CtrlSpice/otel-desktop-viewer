@@ -2,8 +2,13 @@
   import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { TraceData, SearchResultEvent } from '@/types/api-types'
+  import type { FieldDefinition } from '@/constants/fields'
+  import { sameFieldDefinition } from '@/constants/fields'
   import { stashNavState } from '@/utils/nav-state'
-  import SignalHeader from '@/components/SignalHeader/SignalHeader.svelte'
+  import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
+  import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
+  import FieldFilter from '@/components/SignalToolbar/FieldFilter.svelte'
+  import { traceDetailStats } from '@/utils/trace-detail-stats'
   import DetailView from '@/components/TraceDetails/DetailView/DetailView.svelte'
   import WaterfallView from '@/components/TraceDetails/Waterfall/WaterfallView.svelte'
   import ResizablePanels from '@/components/ResizablePanels.svelte'
@@ -24,6 +29,21 @@
       traceData?.spans[0]?.spanData ??
       undefined
   )
+
+  let traceStats = $derived(traceData ? traceDetailStats(traceData) : null)
+
+  let columnFilterSelection = $state<FieldDefinition[]>([])
+
+  function toggleColumnFilterField(field: FieldDefinition) {
+    const i = columnFilterSelection.findIndex(f =>
+      sameFieldDefinition(f, field)
+    )
+    if (i >= 0) {
+      columnFilterSelection = columnFilterSelection.filter((_, j) => j !== i)
+    } else {
+      columnFilterSelection = [...columnFilterSelection, field]
+    }
+  }
 
   // --- effects ---
 
@@ -87,25 +107,42 @@
 
   const handleSearchResults = (event: SearchResultEvent) => {
     if (event.signal === 'traces' && event.view === 'detail') {
-      const result = event.results as unknown as TraceData
-      traceData = result
-      selectedSpanID = result.spans[0]?.spanData.spanID ?? null
+      traceData = event.results
+      selectedSpanID = event.results.spans[0]?.spanData.spanID ?? null
     }
   }
 </script>
 
-<div class="flex min-h-0 min-w-0 w-full flex-1 flex-col py-6">
-  <SignalHeader
+{#snippet toolbarSpanFieldFilter()}
+  <FieldFilter
+    signal="traces"
+    selectedFields={columnFilterSelection}
+    onToggleField={toggleColumnFilterField}
+  />
+{/snippet}
+
+<div
+  class="flex min-h-0 min-w-0 w-full flex-1 flex-col gap-[var(--layout-gap)] pb-6 pt-0"
+>
+  <SignalToolbar
     signal="traces"
     view="detail"
     {traceID}
+    {traceStats}
     onBack={handleBack}
     onRefresh={fetchTrace}
+    trailingFilters={[toolbarSpanFieldFilter]}
+  />
+  <SearchEditor
+    signal="traces"
+    view="detail"
+    {traceID}
+    inToolbar
     onSearchResults={handleSearchResults}
   />
 
   {#if error}
-    <div class="alert alert-error mb-4">
+    <div class="alert alert-error">
       <span>Error: {error}</span>
     </div>
   {/if}
@@ -130,14 +167,17 @@
             spans={data.spans}
             {selectedSpanID}
             onSelectSpan={handleSelectSpan}
-            loading={loading}
+            {loading}
           />
         {/snippet}
         {#snippet rightPanel()}
           <div
             class="h-full overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm"
           >
-            <DetailView span={selectedSpan} />
+            <DetailView
+              span={selectedSpan}
+              columnFilter={columnFilterSelection}
+            />
           </div>
         {/snippet}
       </ResizablePanels>

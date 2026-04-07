@@ -94,6 +94,25 @@ export function getStaticFieldsForSearch(
   return getFieldsBySignal(signal);
 }
 
+/** Same searchable field identity (for column filter toggles and detail visibility). */
+export function sameFieldDefinition(
+  a: FieldDefinition,
+  b: FieldDefinition
+): boolean {
+  if (a.searchScope !== b.searchScope) return false;
+  if (a.searchScope === 'global' || b.searchScope === 'global') return false;
+  if (!('name' in a) || !('name' in b)) return false;
+  if (a.name !== b.name) return false;
+  if (a.searchScope === 'attribute' && b.searchScope === 'attribute') {
+    return (
+      'attributeScope' in a &&
+      'attributeScope' in b &&
+      a.attributeScope === b.attributeScope
+    );
+  }
+  return true;
+}
+
 // Function to get dynamic attributes
 export async function getDynamicAttributes(
   startTime: number,

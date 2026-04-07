@@ -13,9 +13,13 @@
   import { parseQuery } from './queryParser'
   import type { QueryNode } from './queryTree'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import { getTimeContext, selectionToQueryRangeMs } from '@/contexts/time-context.svelte'
+  import {
+    getTimeContext,
+    selectionToQueryRangeMs,
+  } from '@/contexts/time-context.svelte'
   import type { TimeContext } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
+  import type { FilterDescriptor } from '@/components/SignalToolbar/filter-types'
   import { queryLanguageSupport } from './lang/query-language'
   import { createQueryCompletionSource } from './lang/completions'
   import { createQueryLinter } from './lang/linter'
@@ -28,17 +32,21 @@
         signal: 'traces' | 'metrics' | 'logs'
         view: 'list'
         onSearchResults?: (event: SearchResultEvent) => void
+        /** Toolbar layout: panel chrome on the search wrapper only (not the action row). */
+        inToolbar?: boolean
       }
     | {
         signal: 'traces'
         view: 'detail'
         traceID: string
         onSearchResults?: (event: SearchResultEvent) => void
+        inToolbar?: boolean
       }
     | {
         signal: 'metrics'
         view: 'detail'
         onSearchResults?: (event: SearchResultEvent) => void
+        inToolbar?: boolean
       }
 
   // --- helpers ---
@@ -85,7 +93,14 @@
   }
 
   // --- context ---
-  let { signal, view, onSearchResults, ...rest }: SearchEditorProps = $props()
+  let {
+    signal,
+    view,
+    onSearchResults,
+    inToolbar = false,
+    filters = [],
+    ...rest
+  }: SearchEditorProps & { filters?: FilterDescriptor[] } = $props()
   let traceID = $derived('traceID' in rest ? rest.traceID : undefined)
 
   let timeContext: TimeContext | null = null
@@ -99,6 +114,14 @@
   let editorContainer: HTMLDivElement
   let editorView: EditorView | null = null
   let searchError = $state<string | null>(null)
+
+  // --- state: filter popover ---
+  let activeFilterId = $state<string | null>(null)
+  let filterPopoverEl = $state<HTMLDivElement | null>(null)
+
+  let activeFilter = $derived(
+    activeFilterId ? (filters.find(f => f.id === activeFilterId) ?? null) : null
+  )
 
   // --- state: help dialog ---
   let helpDialogElement = $state<HTMLDialogElement | null>(null)
@@ -212,7 +235,13 @@
         ? selectionToQueryRangeMs(timeContext.selection, Date.now())
         : { start: 0, end: Date.now() }
 
-      const searchFn = buildSearchFn(signal, view, startTime, endTime, queryTree)
+      const searchFn = buildSearchFn(
+        signal,
+        view,
+        startTime,
+        endTime,
+        queryTree
+      )
       if (!searchFn) {
         console.warn('Detail view search not yet implemented')
         return
@@ -241,6 +270,24 @@
     helpDialogOpen = true
     requestAnimationFrame(() => helpDialogElement?.focus())
   }
+
+  function toggleFilter(id: string) {
+    activeFilterId = activeFilterId === id ? null : id
+  }
+
+  /** Close filter popover when clicking outside. */
+  $effect(() => {
+    if (!activeFilterId) return
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (filterPopoverEl?.contains(target)) return
+      const btn = (target as Element).closest?.('[data-filter-id]')
+      if (btn) return
+      activeFilterId = null
+    }
+    document.addEventListener('click', handleClick, true)
+    return () => document.removeEventListener('click', handleClick, true)
+  })
 
   // --- CodeMirror extensions (static; reference closures over mutable state) ---
 
@@ -290,31 +337,46 @@
   })
 </script>
 
-<div class="search-editor-wrapper">
+<div
+  class="search-editor-wrapper"
+  class:search-editor-wrapper--in-toolbar={inToolbar}
+>
   <div class="search-editor-container">
     <!-- CodeMirror Editor -->
     <div class="editor-mount" bind:this={editorContainer}></div>
 
-    <!-- Actions pinned top-right while editor grows -->
+    <!-- Action cluster: bottom-right, anchored to bottom as editor grows -->
     <div class="search-actions">
       <button
         type="button"
-        class="help-button"
+        class="btn btn-soft btn-sm btn-circle font-semibold leading-none"
         onclick={openHelp}
         aria-label="Search query help"
         title="Search query help"
       >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-          <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10" stroke-width="1.5"></circle>
-            <path stroke-width="1.5" d="M9.5 9.5a2.5 2.5 0 1 1 3.912 2.064C12.728 12.032 12 12.672 12 13.5"></path>
-            <path stroke-width="1.8" d="M12 17h.009"></path>
-          </g>
-        </svg>
+        <span aria-hidden="true">?</span>
       </button>
 
+      {#if !inToolbar}
+        {#each filters as filter (filter.id)}
+          <button
+            type="button"
+            class="btn btn-soft btn-sm btn-circle"
+            class:btn-active={activeFilterId === filter.id}
+            onclick={() => toggleFilter(filter.id)}
+            aria-label={filter.label}
+            title={filter.label}
+            aria-expanded={activeFilterId === filter.id}
+            data-filter-id={filter.id}
+          >
+            {@render filter.icon()}
+          </button>
+        {/each}
+      {/if}
+
       <button
-        class="search-button"
+        type="button"
+        class="btn btn-primary btn-sm btn-circle"
         onclick={onSubmit}
         aria-label="Search (Cmd+Enter)"
         title="Search (Cmd+Enter)"
@@ -336,6 +398,13 @@
     </div>
   </div>
 
+  <!-- Filter popover (non-toolbar layouts only; toolbar uses SignalToolbar). -->
+  {#if activeFilter && !inToolbar}
+    <div bind:this={filterPopoverEl} class="search-filter-popover">
+      {@render activeFilter.content()}
+    </div>
+  {/if}
+
   {#if searchError}
     <div class="error-message">
       {searchError}
@@ -354,11 +423,20 @@
     <h2 class="help-dialog-title">Querying Your {signalLabel}</h2>
     <button
       type="button"
-      class="btn btn-ghost btn-square btn-sm shrink-0 text-base-content/70 hover:text-base-content"
+      class="btn btn-ghost btn-sm btn-circle shrink-0 text-base-content/70 hover:text-base-content"
       onclick={() => helpDialogElement?.close()}
       aria-label="Close"
     >
-      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <svg
+        class="h-5 w-5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
         <path d="M18 6L6 18M6 6l12 12" />
       </svg>
     </button>
@@ -366,9 +444,18 @@
 
   <div class="help-dialog-body">
     <div class="help-query-lines">
-      <p>Each query follows the pattern <code class="q-field">field</code> <code class="q-operator">operator</code> <code class="q-value">value</code></p>
-      <p>Combine filters with <code class="q-logic">AND</code> or <code class="q-logic">OR</code></p>
-      <p>Use parentheses <code class="q-paren">( )</code> to control grouping</p>
+      <p>
+        Each query follows the pattern <code class="q-field">field</code>
+        <code class="q-operator">operator</code>
+        <code class="q-value">value</code>
+      </p>
+      <p>
+        Combine filters with <code class="q-logic">AND</code> or
+        <code class="q-logic">OR</code>
+      </p>
+      <p>
+        Use parentheses <code class="q-paren">( )</code> to control grouping
+      </p>
     </div>
 
     <h3 class="help-section-heading">Operators</h3>
@@ -383,14 +470,17 @@
         <tr>
           <th scope="row">Equality</th>
           <td>
-            <code class="help-op-code">=</code>, <code class="help-op-code">!=</code>
+            <code class="help-op-code">=</code>,
+            <code class="help-op-code">!=</code>
           </td>
         </tr>
         <tr>
           <th scope="row">Comparison</th>
           <td>
-            <code class="help-op-code">&gt;</code>, <code class="help-op-code">&lt;</code>,
-            <code class="help-op-code">&gt;=</code>, <code class="help-op-code">&lt;=</code>
+            <code class="help-op-code">&gt;</code>,
+            <code class="help-op-code">&lt;</code>,
+            <code class="help-op-code">&gt;=</code>,
+            <code class="help-op-code">&lt;=</code>
           </td>
         </tr>
         <tr>
@@ -407,14 +497,16 @@
         <tr>
           <th scope="row">Pattern</th>
           <td>
-            <code class="help-op-code">=~</code>, <code class="help-op-code">!~</code>,
+            <code class="help-op-code">=~</code>,
+            <code class="help-op-code">!~</code>,
             <code class="help-op-code">REGEXP</code>
           </td>
         </tr>
         <tr>
           <th scope="row">List</th>
           <td>
-            <code class="help-op-code">IN</code>, <code class="help-op-code">NOT IN</code>
+            <code class="help-op-code">IN</code>,
+            <code class="help-op-code">NOT IN</code>
           </td>
         </tr>
       </tbody>
@@ -423,13 +515,36 @@
     <h3 class="help-section-heading">Examples</h3>
 
     {#if signal === 'traces'}
-      <pre class="help-example"><code class="q-field">name</code> <code class="q-operator">CONTAINS</code> <code class="q-value">http</code></pre>
-      <pre class="help-example"><code class="q-field">kind</code> <code class="q-operator">=</code> <code class="q-value">Server</code> <code class="q-logic">AND</code> <code class="q-field">statusCode</code> <code class="q-operator">=</code> <code class="q-value">Error</code> <code class="q-logic">AND</code> <code class="q-field">name</code> <code class="q-operator">CONTAINS</code> <code class="q-value">checkout</code></pre>
+      <pre class="help-example"><code class="q-field">name</code> <code
+          class="q-operator">CONTAINS</code
+        > <code class="q-value">http</code></pre>
+      <pre class="help-example"><code class="q-field">kind</code> <code
+          class="q-operator">=</code
+        > <code class="q-value">Server</code> <code class="q-logic">AND</code
+        > <code class="q-field">statusCode</code> <code class="q-operator"
+          >=</code
+        > <code class="q-value">Error</code> <code class="q-logic">AND</code
+        > <code class="q-field">name</code> <code class="q-operator"
+          >CONTAINS</code
+        > <code class="q-value">checkout</code></pre>
     {:else if signal === 'logs'}
-      <pre class="help-example"><code class="q-field">severityText</code> <code class="q-operator">=</code> <code class="q-value">ERROR</code></pre>
-      <pre class="help-example"><code class="q-field">severityText</code> <code class="q-operator">=</code> <code class="q-value">WARN</code> <code class="q-logic">AND</code> <code class="q-field">body</code> <code class="q-operator">CONTAINS</code> <code class="q-value">disk</code> <code class="q-logic">AND</code> <code class="q-field">traceID</code> <code class="q-operator">=</code> <code class="q-value">4af9f2c…</code></pre>
+      <pre class="help-example"><code class="q-field">severityText</code> <code
+          class="q-operator">=</code
+        > <code class="q-value">ERROR</code></pre>
+      <pre class="help-example"><code class="q-field">severityText</code> <code
+          class="q-operator">=</code
+        > <code class="q-value">WARN</code> <code class="q-logic">AND</code
+        > <code class="q-field">body</code> <code class="q-operator"
+          >CONTAINS</code
+        > <code class="q-value">disk</code> <code class="q-logic">AND</code
+        > <code class="q-field">traceID</code> <code class="q-operator">=</code
+        > <code class="q-value">4af9f2c…</code></pre>
     {:else}
-      <pre class="help-example"><code class="q-field">name</code> <code class="q-operator">CONTAINS</code> <code class="q-value">requests</code> <code class="q-logic">AND</code> <code class="q-field">type</code> <code class="q-operator">=</code> <code class="q-value">Gauge</code></pre>
+      <pre class="help-example"><code class="q-field">name</code> <code
+          class="q-operator">CONTAINS</code
+        > <code class="q-value">requests</code> <code class="q-logic">AND</code
+        > <code class="q-field">type</code> <code class="q-operator">=</code
+        > <code class="q-value">Gauge</code></pre>
     {/if}
 
     <h3 class="help-section-heading">Keyboard shortcuts</h3>
@@ -451,7 +566,8 @@
     <h3 class="help-section-heading">Pasting IDs</h3>
     <p class="mt-1 text-sm text-base-content/80">
       Paste a 32-character trace ID or 16-character span ID and it auto-fills as
-      <code class="text-xs">traceID = …</code> or <code class="text-xs">spanID = …</code>.
+      <code class="text-xs">traceID = …</code> or
+      <code class="text-xs">spanID = …</code>.
     </p>
   </div>
 </dialog>
@@ -459,7 +575,19 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .search-editor-wrapper {
-    @apply relative;
+    @apply relative w-full;
+  }
+
+  .search-editor-wrapper--in-toolbar {
+    /*
+      Parent pages use flex column (e.g. TracesPage). With overflow-hidden, flex’s
+      automatic min-height on the main axis can become 0, so this row was allowed to
+      shrink unless we opt out of flex-shrink and set an explicit min-height.
+    */
+    @apply w-full shrink-0 overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm;
+    min-width: var(--trace-list-table-min-width);
+    /* Outer box: inner row uses min-height var(--table-row-h) + py-1 on container */
+    min-height: calc(var(--table-row-h) + 0.5rem + 2 * var(--border, 1px));
   }
 
   .search-editor-container {
@@ -469,12 +597,34 @@
     height: auto;
   }
 
+  .search-editor-wrapper--in-toolbar .search-editor-container {
+    /* flex overrides daisy .input display:inline-flex so this row is block-level and fills the wrapper */
+    @apply flex min-h-0 min-w-0 items-stretch rounded-none border-0 bg-transparent shadow-none;
+    /* Beat daisy .input fixed height + clamp(…,20rem,…) so the toolbar card can grow and use full width. */
+    height: auto;
+    min-height: var(--table-row-h);
+    width: 100%;
+    max-width: none;
+  }
+
   .editor-mount {
     @apply flex-1 min-w-0;
   }
 
+  .search-editor-wrapper--in-toolbar .editor-mount {
+    @apply min-h-0 self-stretch;
+  }
+
   .editor-mount :global(.cm-editor) {
     @apply bg-transparent;
+  }
+
+  .search-editor-wrapper--in-toolbar .editor-mount :global(.cm-editor) {
+    @apply min-h-full;
+  }
+
+  .search-editor-wrapper--in-toolbar .editor-mount :global(.cm-scroller) {
+    min-height: var(--table-row-h);
   }
 
   .editor-mount :global(.cm-focused) {
@@ -482,21 +632,26 @@
   }
 
   .editor-mount :global(.cm-content) {
-    /* Keep text clear of top-right action buttons */
-    padding-right: 5.5rem;
+    /* Keep text clear of bottom-right action cluster (help + filters + search) */
+    padding-right: 7rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .search-editor-wrapper--in-toolbar .editor-mount :global(.cm-content) {
+    padding-right: 5rem;
   }
 
   .search-actions {
-    @apply absolute right-1.5 top-1.5 z-10 flex items-center gap-1;
-  }
-
-  .search-button {
-    @apply btn btn-primary btn-square;
-    @apply h-8 min-h-8 w-8 p-0;
+    @apply absolute bottom-1 right-1.5 z-10 flex items-center gap-1;
   }
 
   .search-button-icon {
     @apply block h-4 w-4;
+  }
+
+  .search-filter-popover {
+    @apply border-t border-base-300/70 bg-base-100/80 backdrop-blur-sm;
+    @apply px-3 py-2;
   }
 
   .error-message {
@@ -505,11 +660,6 @@
     @apply bg-error/10 text-error;
     @apply text-xs rounded-md;
     @apply border border-error/20;
-  }
-
-  .help-button {
-    @apply btn btn-ghost btn-square;
-    @apply h-8 min-h-8 w-8 p-0 text-base-content/70 hover:text-base-content;
   }
 
   .help-dialog {
@@ -559,10 +709,6 @@
     @apply mt-1 space-y-1 text-sm text-base-content/80;
   }
 
-  .help-signal-heading {
-    @apply mt-4 text-sm font-semibold text-base-content;
-  }
-
   .help-op-table {
     @apply mt-2 w-full border-collapse text-left text-sm text-base-content/80;
   }
@@ -605,10 +751,6 @@
 
   .help-example {
     @apply mt-2 overflow-x-auto rounded-md bg-base-200 p-3 font-mono text-xs leading-relaxed text-base-content;
-  }
-
-  .help-signal-heading + .help-example {
-    @apply mt-1;
   }
 
   .help-example :global(code) {

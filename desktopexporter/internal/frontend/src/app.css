@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 @plugin "daisyui" {
   logs: false;
   themes: false;
@@ -113,7 +113,11 @@ html[data-theme='rose-pine-dawn'] {
   html {
     @apply min-w-0 scroll-smooth;
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--color-base-content) 28%, transparent)
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--color-base-content) 28%,
+        transparent
+      )
       transparent;
   }
 
@@ -122,14 +126,22 @@ html[data-theme='rose-pine-dawn'] {
     @apply min-w-0 font-sans text-base-content antialiased;
     text-rendering: optimizeLegibility;
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--color-base-content) 28%, transparent)
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--color-base-content) 28%,
+        transparent
+      )
       transparent;
   }
 
   #app,
   main {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--color-base-content) 28%, transparent)
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--color-base-content) 28%,
+        transparent
+      )
       transparent;
   }
 }
@@ -262,6 +274,45 @@ svg {
   @apply rotate-180;
 }
 
+/* Toolbar filter triggers (time range, column filter): soft pill; icon first, optional label, then chevron/badge */
+.toolbar-filter-trigger {
+  @apply btn btn-soft btn-sm inline-flex h-9 min-h-9 min-w-0 shrink items-center gap-2 rounded-full border border-base-300/60 bg-base-100/90 px-3 font-normal normal-case shadow-none;
+}
+
+.toolbar-filter-trigger:hover {
+  @apply border-base-300 bg-base-200/55;
+}
+
+.toolbar-filter-trigger--active {
+  @apply border-primary/30 bg-primary/10 text-primary;
+}
+
+.toolbar-filter-trigger--compact {
+  @apply max-w-none shrink-0 px-2.5;
+}
+
+/* Field filter (optional text): cap width; time range uses --time instead */
+.toolbar-filter-trigger:not(.toolbar-filter-trigger--compact):not(.toolbar-filter-trigger--time) {
+  @apply max-w-[min(100%,22rem)];
+}
+
+/* Time range: can shrink with row so it never crowds actions (refresh); label truncates */
+.toolbar-filter-trigger--time {
+  @apply max-w-full;
+}
+
+.toolbar-filter-trigger__label {
+  @apply min-w-0 flex-1 truncate text-left text-sm text-base-content/85;
+}
+
+.toolbar-filter-trigger__icon {
+  @apply inline-flex h-4 w-4 shrink-0 items-center justify-center text-current opacity-80;
+}
+
+.toolbar-filter-trigger__badge {
+  @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-full bg-primary/20 px-1 text-[0.65rem] font-semibold tabular-nums text-primary;
+}
+
 /* Navigation */
 .nav-button {
   @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
@@ -283,13 +334,31 @@ svg {
   --panel-body-max-height: min(85vh, calc(100vh - 9rem));
   --table-row-h: 1.75rem;
   --table-header-h: 2.25rem;
+  /* Trace list (and matching search chrome): min width before horizontal scroll */
+  --trace-list-table-min-width: 56rem;
   --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 40%, transparent);
   --table-hover-bg: color-mix(in oklab, var(--color-base-200) 60%, transparent);
-  --table-selected-bg: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  --table-selected-bg: color-mix(
+    in oklab,
+    var(--color-primary) 10%,
+    transparent
+  );
   /* Waterfall span column tree + nested detail rows (WaterfallTreeGutter) */
   --waterfall-gutter-col: 22px;
   --waterfall-gutter-tail: 4px;
   --waterfall-gutter-hub: 16px;
+
+  /* ── App shell + resizable panels (tune here) ── */
+  --nav-height: 3.5rem; /* keep in sync with HorizontalNav */
+  --resize-bar-hit-width: 0.5rem; /* col-resize in-flow hit strip; line is narrower inside */
+  /* Outer edge of left panel → outer edge of right panel across the splitter */
+  --panel-split-total: 1.5rem;
+  /* Flex gap between [panel][bar][panel]: (total − bar) / 2 each side */
+  --panel-split-flex-gap: calc(
+    (var(--panel-split-total) - var(--resize-bar-hit-width)) / 2
+  );
+  /* Page stacks, toolbar rows, space below fixed nav — same rhythm as panel flanks */
+  --layout-gap: var(--panel-split-flex-gap);
 }
 
 /* Same frosted fill as panel chrome: paint this on tbody / field lists, then zebra rows on top */
@@ -298,7 +367,8 @@ svg {
 }
 
 /* DaisyUI .table draws hairlines between rows; we rely on zebra + hover instead */
-.table :where(thead tr :is(th, td), tbody tr :is(th, td), tfoot tr :is(th, td)) {
+.table
+  :where(thead tr :is(th, td), tbody tr :is(th, td), tfoot tr :is(th, td)) {
   border-bottom: none;
   border-top: none;
 }
@@ -412,7 +482,6 @@ svg {
   padding-left: calc(1rem + var(--waterfall-gutter-col));
 }
 
-
 /* ── Shared column-resize system ──
    One interaction pattern everywhere:
    • Wrap the table in .col-resize-context (position: relative).
@@ -457,7 +526,7 @@ svg {
   @apply absolute top-0 bottom-0 z-[25] flex cursor-col-resize items-stretch justify-center;
   right: auto;
   margin-left: -0.25rem;
-  width: 0.5rem;
+  width: var(--resize-bar-hit-width);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -472,7 +541,10 @@ svg {
   min-height: 100%;
   background-color: var(--color-neutral);
   opacity: 0;
-  transition: width 0.15s, background-color 0.15s, opacity 0.15s;
+  transition:
+    width 0.15s,
+    background-color 0.15s,
+    opacity 0.15s;
 }
 
 .col-resize-bar:hover .col-resize-bar__line {
@@ -508,7 +580,7 @@ svg {
   inset: auto;
   display: flex;
   width: 100%;
-  height: 0.5rem;
+  height: var(--resize-bar-hit-width);
   flex-direction: row;
   align-items: center;
   justify-content: center;
@@ -525,13 +597,13 @@ svg {
   min-height: 0.125rem;
 }
 
-/* Pagination Styles */
+/* Pagination Styles — rows left, prev|range|next join centered, delete trailing */
 .pagination-controls {
-  @apply flex items-center justify-between px-4 py-3 bg-base-100 border-t border-base-300;
+  @apply flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 bg-base-100 border-t border-base-300;
 }
 
 .pagination-rows-selector {
-  @apply flex items-center gap-3;
+  @apply flex shrink-0 items-center gap-3;
 }
 
 .pagination-label {
@@ -543,18 +615,12 @@ svg {
   @apply bg-base-100 border border-base-300 hover:bg-base-200;
 }
 
-.pagination-range {
-  @apply text-sm text-base-content/70;
+.pagination-controls__center {
+  @apply flex min-w-0 flex-1 items-center justify-center;
 }
 
-.pagination-nav {
-  @apply flex items-center gap-1;
-}
-
-.pagination-nav-button {
-  @apply btn btn-sm btn-ghost btn-square;
-  @apply disabled:opacity-30 disabled:cursor-not-allowed;
-  @apply hover:bg-base-200;
+.pagination-controls__actions {
+  @apply flex shrink-0 items-center gap-2;
 }
 
 .pagination-popover-option {

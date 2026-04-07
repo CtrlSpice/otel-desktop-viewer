@@ -1,63 +1,77 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { telemetryAPI } from '@/services/telemetry-service';
-  import { getTimeContext } from '@/contexts/time-context.svelte';
-  import SignalHeader from '@/components/SignalHeader/SignalHeader.svelte';
-  import { formatTimestamp } from '@/utils/time';
-  import type { LogData, SearchResultEvent } from '@/types/api-types';
+  import { onMount } from 'svelte'
+  import { telemetryAPI } from '@/services/telemetry-service'
+  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
+  import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
+  import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
+  import { formatTimestamp } from '@/utils/time'
+  import type { LogData, SearchResultEvent } from '@/types/api-types'
 
-  let timeContext = getTimeContext();
-  let logs = $state<LogData[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let mounted = $state(false);
+  let timeContext = getTimeContext()
+  let logs = $state<LogData[]>([])
+  let loading = $state(true)
+  let error = $state<string | null>(null)
+  let mounted = $state(false)
 
   async function fetchLogs() {
     try {
-      loading = true;
-      error = null;
-      let startTime = timeContext.selection.start;
-      let endTime = timeContext.selection.end;
+      loading = true
+      error = null
+      let startTime = timeContext.selection.start
+      let endTime = timeContext.selection.end
       if (timeContext.selection.type === 'preset') {
-        const duration = timeContext.selection.end - timeContext.selection.start;
-        endTime = Date.now();
-        startTime = endTime - duration;
+        const duration = timeContext.selection.end - timeContext.selection.start
+        endTime = Date.now()
+        startTime = endTime - duration
       }
-      logs = await telemetryAPI.searchLogs(startTime, endTime, undefined);
+      logs = await telemetryAPI.searchLogs(startTime, endTime, undefined)
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to load logs';
+      error = err instanceof Error ? err.message : 'Failed to load logs'
     } finally {
-      loading = false;
+      loading = false
     }
   }
 
   $effect(() => {
-    let _ = timeContext.selection;
+    let _ = timeContext.selection
     if (mounted) {
-      fetchLogs();
+      fetchLogs()
     }
-  });
+  })
 
   onMount(async () => {
-    await fetchLogs();
-    mounted = true;
-  });
+    await fetchLogs()
+    mounted = true
+  })
 
   function handleSearchResults(event: SearchResultEvent) {
     if (event.signal === 'logs' && event.view === 'list') {
-      loading = false;
-      error = null;
-      logs = event.results;
+      loading = false
+      error = null
+      logs = event.results
     }
   }
 </script>
 
+{#snippet toolbarTimeRange()}
+  <DateTimeFilter />
+{/snippet}
+
 <!-- LogsPage.svelte - Logs viewing page -->
-<div class="flex min-w-0 w-full flex-col overflow-y-auto py-6">
-  <SignalHeader
+<div
+  class="flex min-w-0 w-full flex-col gap-[var(--layout-gap)] overflow-y-auto pb-6 pt-0"
+>
+  <SignalToolbar
     signal="logs"
     view="list"
     onRefresh={fetchLogs}
+    trailingFilters={[toolbarTimeRange]}
+  />
+  <SearchEditor
+    signal="logs"
+    view="list"
+    inToolbar
     onSearchResults={handleSearchResults}
   />
 
@@ -77,7 +91,7 @@
       </p>
     </div>
   {:else}
-    <div class="space-y-4">
+    <div class="space-y-[var(--layout-gap)]">
       {#each logs as log}
         <div class="bg-base-200 border border-base-300 rounded-lg p-4">
           <div class="flex items-start justify-between mb-3">
@@ -87,7 +101,11 @@
                   >{log.severityText}</span
                 >
                 <span class="text-sm text-base-content/70"
-                  >{formatTimestamp(log.timestamp, timeContext.timezone, 'nanoseconds')}</span
+                  >{formatTimestamp(
+                    log.timestamp,
+                    timeContext.timezone,
+                    'nanoseconds'
+                  )}</span
                 >
                 {#if log.traceID}
                   <span class="text-xs text-primary">Trace: {log.traceID}</span>

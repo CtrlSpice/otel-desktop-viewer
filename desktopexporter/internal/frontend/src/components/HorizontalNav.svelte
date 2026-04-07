@@ -36,7 +36,6 @@
 
   // Current path state
   let currentPath = $state(router.path ?? '/');
-  // Subscribe to router changes (effect cleanup unsubscribes)
   $effect(() => {
     const unsubscribe = router.subscribe(route => {
       currentPath = route.path;
@@ -49,7 +48,8 @@
 
 <!-- Horizontal Navigation Bar -->
 <nav
-  class="fixed top-0 left-0 right-0 z-40 flex h-14 min-w-0 items-center justify-between gap-2 border-b border-base-300/50 bg-base-100/80 px-4 backdrop-blur-md backdrop-saturate-150 min-[900px]:px-6"
+  class="fixed top-0 left-0 right-0 z-40 flex min-h-0 min-w-0 items-center justify-between gap-2 border-b border-base-300/50 bg-base-100/80 px-4 backdrop-blur-md backdrop-saturate-150 min-[900px]:px-6"
+  style="height: var(--nav-height);"
 >
   <div
     class="flex min-w-0 flex-1 items-center overflow-x-auto overflow-y-hidden"
@@ -76,3 +76,4 @@
     <ThemeToggle />
   </div>
 </nav>
+

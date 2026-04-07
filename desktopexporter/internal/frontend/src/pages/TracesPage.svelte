@@ -13,7 +13,9 @@
   } from '@/utils/compare'
   import { popNavState, stashNavState } from '@/utils/nav-state'
   import type { TraceSummary, SearchResultEvent } from '@/types/api-types'
-  import SignalHeader from '@/components/SignalHeader/SignalHeader.svelte'
+  import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
+  import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
+  import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
   import { traceListStats } from '@/components/TraceList/trace-list-stats'
 
   // --- types (table) ---
@@ -113,6 +115,18 @@
   let someSelected = $derived(selectedTraceIDs.size > 0)
   // --- derived: summary stats — full traceSummaries (not the current page) ---
   let listStats = $derived(traceListStats(traceSummaries))
+
+  let traceDeleteLabel = $derived(
+    someSelected
+      ? `Delete ${selectedTraceIDs.size} trace${selectedTraceIDs.size !== 1 ? 's' : ''}`
+      : 'Delete all traces'
+  )
+
+  let traceDeleteAriaLabel = $derived(
+    someSelected
+      ? `Delete ${selectedTraceIDs.size} selected trace${selectedTraceIDs.size !== 1 ? 's' : ''}`
+      : 'Delete all traces in this time range'
+  )
 
   // --- effects ---
   $effect(() => {
@@ -251,85 +265,45 @@
   })
 </script>
 
+{#snippet toolbarTimeRange()}
+  <DateTimeFilter />
+{/snippet}
+
 <!-- TracesPage: list view — script order: imports → types → pure cmp → context → state → derived → effects → handlers → onMount -->
-<div class="flex min-w-0 w-full flex-col overflow-y-auto py-6">
+<div
+  class="flex min-w-0 w-full flex-col gap-[var(--layout-gap)] overflow-x-auto overflow-y-auto pb-6 pt-0"
+>
   <!-- 1. Header + search -->
-  <SignalHeader
+  <SignalToolbar
     signal="traces"
     view="list"
     onRefresh={fetchTraces}
+    {listStats}
+    listStatsMuted={statsRowMuted}
+    trailingFilters={[toolbarTimeRange]}
+  />
+  <SearchEditor
+    signal="traces"
+    view="list"
+    inToolbar
     onSearchResults={handleSearchResults}
   />
 
   {#if error}
-    <div class="alert alert-error mb-4">
+    <div class="alert alert-error">
       <span>Error: {error}</span>
     </div>
   {/if}
 
-  <div class="space-y-4">
-    <!-- 2. Summary stats row -->
-    <div
-      class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-base-content/70 transition-opacity duration-300 ease-in-out {statsRowMuted
-        ? 'opacity-[0.55]'
-        : 'opacity-100'}"
-      aria-busy={statsRowMuted}
-    >
-      {#if hasTraceRows}
-        {@const s = listStats}
-        <span class="font-medium text-base-content">
-          {s.traces} trace{s.traces !== 1 ? 's' : ''}
-        </span>
-        <span class="text-base-content/35" aria-hidden="true">·</span>
-        <span>{s.spans} span{s.spans !== 1 ? 's' : ''}</span>
-        <span class="text-base-content/35" aria-hidden="true">·</span>
-        <span>{s.services} service{s.services !== 1 ? 's' : ''}</span>
-        <span class="text-base-content/35" aria-hidden="true">·</span>
-        <span class={s.errors > 0 ? 'text-error/90' : ''}>
-          {s.errors} error{s.errors !== 1 ? 's' : ''}
-        </span>
-        <span class="text-base-content/35" aria-hidden="true">·</span>
-        <span class={s.exceptions > 0 ? 'text-warning/90' : ''}>
-          {s.exceptions} exception{s.exceptions !== 1 ? 's' : ''}
-        </span>
-        <div class="ml-auto">
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm gap-1.5 text-base-content/50 hover:text-error"
-            onclick={handleDelete}
-          >
-            <svg
-              class="w-4 h-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-width="1.5"
-            >
-              <path
-                d="m19.5 5.5l-.62 10.025c-.158 2.561-.237 3.842-.88 4.763a4 4 0 0 1-1.2 1.128c-.957.584-2.24.584-4.806.584c-2.57 0-3.855 0-4.814-.585a4 4 0 0 1-1.2-1.13c-.642-.922-.72-2.205-.874-4.77L4.5 5.5M3 5.5h18m-4.944 0l-.683-1.408c-.453-.936-.68-1.403-1.071-1.695a2 2 0 0 0-.275-.172C13.594 2 13.074 2 12.035 2c-1.066 0-1.599 0-2.04.234a2 2 0 0 0-.278.18c-.395.303-.616.788-1.058 1.757L8.053 5.5m1.447 11v-6m5 6v-6"
-              />
-            </svg>
-            {#if someSelected}
-              Delete {selectedTraceIDs.size} trace{selectedTraceIDs.size !== 1
-                ? 's'
-                : ''}
-            {:else}
-              Clear all
-            {/if}
-          </button>
-        </div>
-      {/if}
-    </div>
-
-    <!-- 3a. Loading (no rows yet) -->
+  <div class="space-y-[var(--layout-gap)]">
+    <!-- 2a. Loading (no rows yet) -->
     {#if loading && !hasTraceRows}
       <div
         class="rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center text-base-content/60 shadow-surface-sm backdrop-blur-sm"
       >
         Loading traces…
       </div>
-      <!-- 3b. Empty state -->
+      <!-- 2b. Empty state -->
     {:else if !loading && !hasTraceRows}
       <div
         class="rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center shadow-surface-sm backdrop-blur-sm"
@@ -339,7 +313,7 @@
           Send telemetry to the exporter or adjust the time range
         </p>
       </div>
-      <!-- 3c. Table + pagination -->
+      <!-- 2c. Table + pagination -->
     {:else}
       <div
         class="overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200 {loading
@@ -347,7 +321,7 @@
           : 'opacity-100'}"
       >
         <div class="overflow-x-auto">
-          <table class="w-full">
+          <table class="w-full min-w-[var(--trace-list-table-min-width)]">
             <thead>
               <tr class="table-header-row">
                 <th class="table-header-cell table-header-cell--checkbox">
@@ -636,7 +610,6 @@
         <!-- Pagination Controls -->
         {#if sortedTraces.length > 0}
           <div class="pagination-controls">
-            <!-- Rows per page selector -->
             <div class="pagination-rows-selector">
               <span class="pagination-label">Rows per page:</span>
               <button
@@ -656,34 +629,91 @@
               </button>
             </div>
 
-            <!-- Current range and total -->
-            <div class="pagination-range">
-              {startRow}–{endRow} of {sortedTraces.length}
+            <div class="pagination-controls__center">
+              <div class="join join-horizontal">
+                <button
+                  type="button"
+                  class="btn btn-soft btn-sm btn-circle join-item"
+                  disabled={currentPage === 1}
+                  onclick={() => goToPage(currentPage - 1)}
+                  aria-label="Previous page"
+                >
+                  <svg
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M11.5 18s-6-4.419-6-6s6-6 6-6m7 12s-6-4.419-6-6s6-6 6-6"
+                    />
+                  </svg>
+                </button>
+                <div
+                  class="join-item flex min-w-[10rem] items-center justify-center border border-base-300 bg-base-100 px-3 py-1 text-sm tabular-nums text-base-content/70"
+                >
+                  {startRow}–{endRow} of {sortedTraces.length}
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-soft btn-sm btn-circle join-item"
+                  disabled={currentPage === totalPages}
+                  onclick={() => goToPage(currentPage + 1)}
+                  aria-label="Next page"
+                >
+                  <svg
+                    class="h-4 w-4 scale-x-[-1]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M11.5 18s-6-4.419-6-6s6-6 6-6m7 12s-6-4.419-6-6s6-6 6-6"
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
 
-            <!-- Navigation arrows -->
-            <div class="pagination-nav">
-              <button
-                class="pagination-nav-button"
-                disabled={currentPage === 1}
-                onclick={() => goToPage(currentPage - 1)}
-                aria-label="Previous page"
-              >
-                <svg class="w-5 h-5" viewBox="0 0 24 24">
-                  <path d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <button
-                class="pagination-nav-button"
-                disabled={currentPage === totalPages}
-                onclick={() => goToPage(currentPage + 1)}
-                aria-label="Next page"
-              >
-                <svg class="w-5 h-5" viewBox="0 0 24 24">
-                  <path d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
+            {#if hasTraceRows}
+              <div class="pagination-controls__actions">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm btn-circle text-base-content/50 hover:text-error"
+                  onclick={handleDelete}
+                  aria-label={traceDeleteAriaLabel}
+                  title={traceDeleteAriaLabel}
+                >
+                  <svg
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-width="1.5"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="m19.5 5.5l-.62 10.025c-.158 2.561-.237 3.842-.88 4.763a4 4 0 0 1-1.2 1.128c-.957.584-2.24.584-4.806.584c-2.57 0-3.855 0-4.814-.585a4 4 0 0 1-1.2-1.13c-.642-.922-.72-2.205-.874-4.77L4.5 5.5M3 5.5h18m-4.944 0l-.683-1.408c-.453-.936-.68-1.403-1.071-1.695a2 2 0 0 0-.275-.172C13.594 2 13.074 2 12.035 2c-1.066 0-1.599 0-2.04.234a2 2 0 0 0-.278.18c-.395.303-.616.788-1.058 1.757L8.053 5.5m1.447 11v-6m5 6v-6"
+                    />
+                  </svg>
+                </button>
+                <span
+                  class="pagination-delete-label hidden sm:inline max-w-[12rem] truncate text-sm text-base-content/60"
+                  title={traceDeleteLabel}
+                >
+                  {traceDeleteLabel}
+                </span>
+              </div>
+            {/if}
           </div>
         {/if}
       </div>
@@ -693,7 +723,7 @@
   <!-- Rows per page popover -->
   <div
     id="rows-per-page-popover"
-    class="popover rows-per-page-popover"
+    class="popover dropdown-content rows-per-page-popover"
     popover="auto"
   >
     {#each rowsPerPageOptions as option}
@@ -720,9 +750,10 @@
 </div>
 
 <style lang="postcss">
+  @reference "../app.css";
+
   .rows-per-page-popover {
     /* Layout & Positioning */
-    @apply dropdown-content;
     @apply px-0 py-1 mx-0 my-2;
     position-anchor: --rows-per-page-anchor;
     top: anchor(--rows-per-page-anchor bottom);

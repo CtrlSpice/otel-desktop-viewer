@@ -35,8 +35,14 @@
   let dividerRef = $state<HTMLDivElement | null>(null);
   let containerWidth = $state(0);
 
-  /** Match Tailwind `gap-0.5` (0.125rem; ~2px at 16px root). Resize math uses two gaps. */
-  const PANEL_GAP_PX = 2;
+  /** Matches CSS `gap` on the flex container (`--panel-split-flex-gap`). */
+  function panelSplitGapPx(): number {
+    if (!containerRef) return 8;
+    const s = getComputedStyle(containerRef);
+    const raw = stacked ? s.rowGap : s.columnGap;
+    const px = parseFloat(raw);
+    return Number.isFinite(px) ? px : 8;
+  }
 
   let stacked = $derived(containerWidth > 0 && containerWidth < stackBreakpoint);
 
@@ -75,13 +81,14 @@
     if (!containerRef || !dividerRef) return;
     const rect = containerRef.getBoundingClientRect();
     let fraction: number;
+    const g = panelSplitGapPx();
     if (stacked) {
       const divH = dividerRef.offsetHeight;
-      const flexSpace = Math.max(1, rect.height - divH - 2 * PANEL_GAP_PX);
+      const flexSpace = Math.max(1, rect.height - divH - 2 * g);
       fraction = (e.clientY - rect.top) / flexSpace;
     } else {
       const divW = dividerRef.offsetWidth;
-      const flexSpace = Math.max(1, rect.width - divW - 2 * PANEL_GAP_PX);
+      const flexSpace = Math.max(1, rect.width - divW - 2 * g);
       fraction = (e.clientX - rect.left) / flexSpace;
     }
     leftWidth = Math.max(
@@ -148,7 +155,10 @@
 </script>
 
 {#if stacked}
-  <div class="flex h-full w-full flex-col gap-0.5" bind:this={containerRef}>
+  <div
+    class="flex h-full w-full flex-col gap-[var(--panel-split-flex-gap)]"
+    bind:this={containerRef}
+  >
     <div
       class="panel-shell min-h-0 overflow-hidden rounded-xl"
       style="flex: {leftWidth} 1 0px"
@@ -185,7 +195,10 @@
     </div>
   </div>
 {:else}
-  <div class="flex h-full w-full gap-0.5" bind:this={containerRef}>
+  <div
+    class="flex h-full w-full gap-[var(--panel-split-flex-gap)]"
+    bind:this={containerRef}
+  >
     <div
       class="panel-shell h-full min-w-0 overflow-hidden rounded-xl"
       style="flex: {leftWidth} 1 0px"
