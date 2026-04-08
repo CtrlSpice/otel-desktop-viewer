@@ -76,7 +76,7 @@
         {#if onBack}
           <button
             type="button"
-            class="btn btn-soft btn-sm btn-circle"
+            class="btn btn-ghost btn-sm btn-circle"
             onclick={onBack}
             aria-label="Go back"
           >
@@ -97,7 +97,7 @@
         {#if onRefresh}
           <button
             type="button"
-            class="btn btn-primary btn-sm btn-circle"
+            class="btn btn-soft btn-primary btn-sm btn-circle"
             onclick={onRefresh}
             aria-label="Refresh"
           >
@@ -210,8 +210,21 @@
   }
 
   .signal-toolbar__top-row {
-    @apply flex w-full min-w-0 flex-nowrap items-center;
+    @apply flex w-full min-w-0 flex-nowrap items-center px-2 py-1;
     gap: var(--layout-gap);
+  }
+
+  /* No outline rings on toolbar actions / filters (soft + primary still read from fill). */
+  .signal-toolbar__top-row :global(.btn) {
+    @apply border-0 shadow-none;
+  }
+
+  .signal-toolbar__top-row :global(.toolbar-filter-trigger) {
+    @apply border-0;
+  }
+
+  .signal-toolbar__top-row :global(.toolbar-filter-trigger__dropdown-circle) {
+    @apply border-0;
   }
 
   .signal-toolbar__action-group {

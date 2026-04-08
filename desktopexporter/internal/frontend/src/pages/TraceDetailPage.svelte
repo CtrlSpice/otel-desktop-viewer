@@ -2,12 +2,9 @@
   import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { TraceData, SearchResultEvent } from '@/types/api-types'
-  import type { FieldDefinition } from '@/constants/fields'
-  import { sameFieldDefinition } from '@/constants/fields'
   import { stashNavState } from '@/utils/nav-state'
   import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
-  import FieldFilter from '@/components/SignalToolbar/FieldFilter.svelte'
   import { traceDetailStats } from '@/utils/trace-detail-stats'
   import DetailView from '@/components/TraceDetails/DetailView/DetailView.svelte'
   import WaterfallView from '@/components/TraceDetails/Waterfall/WaterfallView.svelte'
@@ -32,18 +29,9 @@
 
   let traceStats = $derived(traceData ? traceDetailStats(traceData) : null)
 
-  let columnFilterSelection = $state<FieldDefinition[]>([])
-
-  function toggleColumnFilterField(field: FieldDefinition) {
-    const i = columnFilterSelection.findIndex(f =>
-      sameFieldDefinition(f, field)
-    )
-    if (i >= 0) {
-      columnFilterSelection = columnFilterSelection.filter((_, j) => j !== i)
-    } else {
-      columnFilterSelection = [...columnFilterSelection, field]
-    }
-  }
+  // Column filter (FieldFilter in toolbar + DetailView columnFilter): deferred for this
+  // release. FieldFilter / helpers stay in repo; restore snippet + state, trailingFilters, and
+  // columnFilter={columnFilterSelection} on DetailView (empty selection = show all columns).
 
   // --- effects ---
 
@@ -113,14 +101,6 @@
   }
 </script>
 
-{#snippet toolbarSpanFieldFilter()}
-  <FieldFilter
-    signal="traces"
-    selectedFields={columnFilterSelection}
-    onToggleField={toggleColumnFilterField}
-  />
-{/snippet}
-
 <div
   class="flex min-h-0 min-w-0 w-full flex-1 flex-col gap-[var(--layout-gap)] pb-6 pt-0"
 >
@@ -131,7 +111,7 @@
     {traceStats}
     onBack={handleBack}
     onRefresh={fetchTrace}
-    trailingFilters={[toolbarSpanFieldFilter]}
+    trailingFilters={[]}
   />
   <SearchEditor
     signal="traces"
@@ -174,10 +154,7 @@
           <div
             class="h-full overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm"
           >
-            <DetailView
-              span={selectedSpan}
-              columnFilter={columnFilterSelection}
-            />
+            <DetailView span={selectedSpan} />
           </div>
         {/snippet}
       </ResizablePanels>

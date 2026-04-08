@@ -1,9 +1,5 @@
 <script lang="ts">
-  import { HugeiconsIcon } from '@hugeicons/svelte';
-  import {
-    Copy01Icon,
-    CheckmarkCircle02Icon,
-  } from '@hugeicons/core-free-icons';
+  import { CheckmarkCircleIcon, CopyIcon } from '@/icons'
 
   export let code: string;
 
@@ -38,11 +34,11 @@
       onclick={copyToClipboard}
       data-tip={copied ? 'Copied!' : 'Copy to clipboard'}
     >
-      <HugeiconsIcon
-        icon={copied ? CheckmarkCircle02Icon : Copy01Icon}
-        size={16}
-        className="copy-icon"
-      />
+      {#if copied}
+        <CheckmarkCircleIcon class="copy-icon h-4 w-4" aria-hidden="true" />
+      {:else}
+        <CopyIcon class="copy-icon h-4 w-4" aria-hidden="true" />
+      {/if}
     </button>
   </div>
   <pre><code>{@html processedCode}</code></pre>

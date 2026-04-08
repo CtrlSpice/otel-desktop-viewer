@@ -1,49 +1,65 @@
 <script lang="ts">
-  import { HugeiconsIcon } from '@hugeicons/svelte';
+  import type { Component } from 'svelte'
   import {
     HomeIcon,
     BarChartHorizontalIcon,
-    Chart03Icon,
+    ChartHistogramIcon,
     FirePitIcon,
-  } from '@hugeicons/core-free-icons';
-  import ThemeToggle from '@/components/ThemeToggle.svelte';
-  import { router } from 'tinro5';
+  } from '@/icons'
+  import ThemeToggle from '@/components/ThemeToggle.svelte'
+  import { router } from 'tinro5'
 
-  // Navigation items
-  const navItems = [
-    { id: 'home', icon: HomeIcon, label: 'Home', path: '/' },
+  type NavItem = {
+    id: string
+    label: string
+    path: string
+    icon: Component
+  }
+
+  const navItems: NavItem[] = [
+    { id: 'home', label: 'Home', path: '/', icon: HomeIcon },
     {
       id: 'traces',
-      icon: BarChartHorizontalIcon,
       label: 'Traces',
       path: '/traces',
+      icon: BarChartHorizontalIcon,
     },
-    { id: 'metrics', icon: Chart03Icon, label: 'Metrics', path: '/metrics' },
-    { id: 'logs', icon: FirePitIcon, label: 'Logs', path: '/logs' },
-  ];
+    {
+      id: 'metrics',
+      label: 'Metrics',
+      path: '/metrics',
+      icon: ChartHistogramIcon,
+    },
+    {
+      id: 'logs',
+      label: 'Logs',
+      path: '/logs',
+      icon: FirePitIcon,
+    },
+  ]
 
   const rules: Record<string, (p: string) => boolean> = {
     home: p => p === '/',
     traces: p => p === '/traces' || p.startsWith('/trace/'),
     metrics: p => p === '/metrics' || p.startsWith('/metrics/'),
     logs: p => p === '/logs' || p.startsWith('/logs/'),
-  };
+  }
 
   /** True when this top-level nav item should show as active (list or detail under that signal). */
   function isNavItemActive(path: string, itemId: string): boolean {
-    return (rules[itemId] ?? (() => false))(path);
+    return (rules[itemId] ?? (() => false))(path)
   }
 
   // Current path state
-  let currentPath = $state(router.path ?? '/');
+  let currentPath = $state(router.path ?? '/')
   $effect(() => {
     const unsubscribe = router.subscribe(route => {
-      currentPath = route.path;
-    });
-    return unsubscribe;
-  });
+      currentPath = route.path
+    })
+    return unsubscribe
+  })
 
-  const handleNavClick = (path: string) => router.goto(path);
+  const handleNavClick = (path: string) => router.goto(path)
 </script>
 
 <!-- Horizontal Navigation Bar -->
@@ -57,6 +73,7 @@
     <div class="flex flex-nowrap items-center gap-1 pr-2">
       {#each navItems as item}
         {@const active = isNavItemActive(currentPath, item.id)}
+        {@const NavIcon = item.icon}
         <button
           type="button"
           class="nav-button {active
@@ -65,7 +82,7 @@
           aria-current={active ? 'page' : undefined}
           onclick={() => handleNavClick(item.path)}
         >
-          <HugeiconsIcon icon={item.icon} size={17} />
+          <NavIcon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
           <span>{item.label}</span>
         </button>
       {/each}
@@ -76,4 +93,3 @@
     <ThemeToggle />
   </div>
 </nav>
-

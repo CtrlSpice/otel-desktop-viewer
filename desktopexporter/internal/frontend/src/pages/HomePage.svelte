@@ -1,11 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     BarChartHorizontalIcon,
-    Chart03Icon,
+    ChartHistogramIcon,
     FirePitIcon,
-  } from '@hugeicons/core-free-icons'
+  } from '@/icons'
   import CodeBlock from '@/components/CodeBlock.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { Stats } from '@/types/api-types'
@@ -82,11 +81,7 @@
       <div class="summary-header">
         <div class="summary-icon">
           <span class="text-secondary" aria-hidden="true">
-            <HugeiconsIcon
-              icon={BarChartHorizontalIcon}
-              size={18}
-              color="currentColor"
-            />
+            <BarChartHorizontalIcon class="h-[18px] w-[18px]" />
           </span>
         </div>
         <h3 class="summary-title">Traces</h3>
@@ -125,7 +120,7 @@
       <div class="summary-header">
         <div class="summary-icon">
           <span class="text-secondary" aria-hidden="true">
-            <HugeiconsIcon icon={Chart03Icon} size={18} color="currentColor" />
+            <ChartHistogramIcon class="h-[18px] w-[18px]" />
           </span>
         </div>
         <h3 class="summary-title">Metrics</h3>
@@ -157,7 +152,7 @@
       <div class="summary-header">
         <div class="summary-icon">
           <span class="text-secondary" aria-hidden="true">
-            <HugeiconsIcon icon={FirePitIcon} size={18} color="currentColor" />
+            <FirePitIcon class="h-[18px] w-[18px]" />
           </span>
         </div>
         <h3 class="summary-title">Logs</h3>

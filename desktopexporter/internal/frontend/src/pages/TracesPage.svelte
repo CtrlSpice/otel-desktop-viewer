@@ -7,7 +7,9 @@
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import { formatTimestamp } from '@/utils/time'
+  import { formatDuration, traceSummaryDurationNs } from '@/utils/duration'
   import {
+    compareByOptionalBigintField,
     compareByStringField,
     compareByTimestampField,
   } from '@/utils/compare'
@@ -17,12 +19,21 @@
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
   import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
   import { traceListStats } from '@/components/TraceList/trace-list-stats'
+  import {
+    ArrowDownIcon,
+    ArrowLeftDoubleIcon,
+    ArrowLeftIcon,
+    ArrowRightDoubleIcon,
+    ArrowRightIcon,
+    TrashIcon,
+  } from '@/icons'
 
   // --- types (table) ---
   type SortColumn =
     | 'serviceName'
     | 'rootSpanName'
     | 'startTime'
+    | 'duration'
     | 'spanCount'
     | 'errorCount'
     | 'exceptionCount'
@@ -50,7 +61,9 @@
           ? compareByStringField(a, b, t => t.rootSpan?.name)
           : col === 'startTime'
             ? compareByTimestampField(a, b, t => t.rootSpan?.startTime)
-            : col === 'spanCount'
+            : col === 'duration'
+              ? compareByOptionalBigintField(a, b, traceSummaryDurationNs)
+              : col === 'spanCount'
               ? a.spanCount - b.spanCount
               : col === 'errorCount'
                 ? a.errorCount - b.errorCount
@@ -177,6 +190,11 @@
   })
 
   // --- handlers & loaders ---
+  function traceDurationCellLabel(trace: TraceSummary): string {
+    const ns = traceSummaryDurationNs(trace)
+    return ns === undefined ? '' : formatDuration(ns)
+  }
+
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
       sortDirection = sortDirection === 'asc' ? 'desc' : 'asc'
@@ -321,290 +339,329 @@
           : 'opacity-100'}"
       >
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[var(--trace-list-table-min-width)]">
-            <thead>
-              <tr class="table-header-row">
-                <th class="table-header-cell table-header-cell--checkbox">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    checked={someSelected}
-                    indeterminate={someSelected}
-                    onchange={() => {
-                      if (someSelected) {
-                        selectedTraceIDs = new Set()
-                      } else {
-                        selectedTraceIDs = new Set(
-                          paginatedTraces.map(t => t.traceID)
-                        )
-                      }
-                    }}
-                    aria-label="Select all on this page"
-                  />
-                </th>
-                <th class="table-header-cell--trace-id"> Trace ID </th>
-                <th class="table-header-cell--after-trace-id"> Root Span </th>
-                <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                  onclick={() => handleSort('rootSpanName')}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e =>
-                    e.key === 'Enter' && handleSort('rootSpanName')}
-                >
-                  <div class="flex items-center gap-2">
-                    <span>Root Span Name</span>
-                    <span class="w-4 h-4 flex items-center justify-center">
-                      <svg
-                        class="sort-indicator {sortColumn === 'rootSpanName'
-                          ? 'sort-indicator--active'
-                          : 'sort-indicator--inactive'} {sortColumn ===
-                          'rootSpanName' && sortDirection === 'asc'
-                          ? 'sort-indicator--asc'
-                          : ''}"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                      </svg>
-                    </span>
-                  </div>
-                </th>
-                <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                  onclick={() => handleSort('serviceName')}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e =>
-                    e.key === 'Enter' && handleSort('serviceName')}
-                >
-                  <div class="flex items-center gap-2">
-                    <span>Service Name</span>
-                    <span class="w-4 h-4 flex items-center justify-center">
-                      <svg
-                        class="sort-indicator {sortColumn === 'serviceName'
-                          ? 'sort-indicator--active'
-                          : 'sort-indicator--inactive'} {sortColumn ===
-                          'serviceName' && sortDirection === 'asc'
-                          ? 'sort-indicator--asc'
-                          : ''}"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                      </svg>
-                    </span>
-                  </div>
-                </th>
-                <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                  onclick={() => handleSort('startTime')}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e => e.key === 'Enter' && handleSort('startTime')}
-                >
-                  <div class="flex items-center gap-2">
-                    <span>Start Time</span>
-                    <span class="w-4 h-4 flex items-center justify-center">
-                      <svg
-                        class="sort-indicator {sortColumn === 'startTime'
-                          ? 'sort-indicator--active'
-                          : 'sort-indicator--inactive'} {sortColumn ===
-                          'startTime' && sortDirection === 'asc'
-                          ? 'sort-indicator--asc'
-                          : ''}"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                      </svg>
-                    </span>
-                  </div>
-                </th>
-                <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--center group"
-                  onclick={() => handleSort('spanCount')}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e => e.key === 'Enter' && handleSort('spanCount')}
-                >
-                  <div class="flex items-center justify-center gap-2">
-                    <span>Spans</span>
-                    <span class="w-4 h-4 flex items-center justify-center">
-                      <svg
-                        class="sort-indicator {sortColumn === 'spanCount'
-                          ? 'sort-indicator--active'
-                          : 'sort-indicator--inactive'} {sortColumn ===
-                          'spanCount' && sortDirection === 'asc'
-                          ? 'sort-indicator--asc'
-                          : ''}"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                      </svg>
-                    </span>
-                  </div>
-                </th>
-                <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--center group"
-                  onclick={() => handleSort('errorCount')}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e => e.key === 'Enter' && handleSort('errorCount')}
-                >
-                  <div class="flex items-center justify-center gap-2">
-                    <span>Errors</span>
-                    <span class="w-4 h-4 flex items-center justify-center">
-                      <svg
-                        class="sort-indicator {sortColumn === 'errorCount'
-                          ? 'sort-indicator--active'
-                          : 'sort-indicator--inactive'} {sortColumn ===
-                          'errorCount' && sortDirection === 'asc'
-                          ? 'sort-indicator--asc'
-                          : ''}"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                      </svg>
-                    </span>
-                  </div>
-                </th>
-                <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--center group"
-                  onclick={() => handleSort('exceptionCount')}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e =>
-                    e.key === 'Enter' && handleSort('exceptionCount')}
-                >
-                  <div class="flex items-center justify-center gap-2">
-                    <span>Exceptions</span>
-                    <span class="w-4 h-4 flex items-center justify-center">
-                      <svg
-                        class="sort-indicator {sortColumn === 'exceptionCount'
-                          ? 'sort-indicator--active'
-                          : 'sort-indicator--inactive'} {sortColumn ===
-                          'exceptionCount' && sortDirection === 'asc'
-                          ? 'sort-indicator--asc'
-                          : ''}"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M12 18.502v-13.5m6 8s-4.419 6-6 6s-6-6-6-6" />
-                      </svg>
-                    </span>
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <!-- Table Body -->
-            <tbody class="table-body-surface">
-              {#each paginatedTraces as trace}
-                <tr
-                  class="table-row cursor-pointer hover:bg-base-200 transition-colors {selectedTraceIDs.has(
-                    trace.traceID
-                  )
-                    ? 'bg-primary/5'
-                    : ''}"
-                  onclick={() => navigateToTrace(trace.traceID)}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e =>
-                    e.key === 'Enter' && navigateToTrace(trace.traceID)}
-                >
-                  <td
-                    class="table-cell--checkbox"
-                    onclick={e => e.stopPropagation()}
-                    onkeydown={e => e.stopPropagation()}
-                  >
+            <table
+              class="trace-list-table table table-sm w-full border-collapse"
+            >
+              <thead>
+                <tr class="table-header-row">
+                  <th class="table-header-cell table-header-cell--checkbox">
                     <input
                       type="checkbox"
                       class="checkbox checkbox-xs checkbox-primary"
-                      checked={selectedTraceIDs.has(trace.traceID)}
+                      checked={someSelected}
+                      indeterminate={someSelected}
                       onchange={() => {
-                        const next = new Set(selectedTraceIDs)
-                        if (next.has(trace.traceID)) {
-                          next.delete(trace.traceID)
+                        if (someSelected) {
+                          selectedTraceIDs = new Set()
                         } else {
-                          next.add(trace.traceID)
+                          selectedTraceIDs = new Set(
+                            paginatedTraces.map(t => t.traceID)
+                          )
                         }
-                        selectedTraceIDs = next
                       }}
-                      aria-label="Select trace {trace.traceID}"
+                      aria-label="Select all on this page"
                     />
-                  </td>
-                  <td class="table-cell--trace-id">
-                    {trace.traceID}
-                  </td>
-                  <td class="table-cell--has-root">
-                    {#if trace.rootSpan}
-                      <span
-                        class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-success/20 text-success"
-                      >
-                        <svg class="w-4 h-4" viewBox="0 0 24 24">
-                          <path d="m5 14l3.5 3.5L19 6.5" />
-                        </svg>
+                  </th>
+                  <th class="table-header-cell table-header-cell--left">
+                    Trace ID
+                  </th>
+                  <th
+                    class="table-header-cell table-header-cell--trace-root"
+                    style="width: 3rem"
+                  >
+                    Root Span
+                  </th>
+                  <th
+                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                    onclick={() => handleSort('rootSpanName')}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={e =>
+                      e.key === 'Enter' && handleSort('rootSpanName')}
+                  >
+                    <div class="table-header-sort">
+                      <span>Root Span Name</span>
+                      <span class="table-header-sort__indicator">
+                        <ArrowDownIcon
+                          class="sort-indicator {sortColumn === 'rootSpanName'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn ===
+                            'rootSpanName' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          aria-hidden="true"
+                        />
                       </span>
-                    {:else}
-                      <span
-                        class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-error/20 text-error"
-                      >
-                        <svg class="w-4 h-4" viewBox="0 0 24 24">
-                          <path d="M18 6L6 18m12 0L6 6" />
-                        </svg>
+                    </div>
+                  </th>
+                  <th
+                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                    onclick={() => handleSort('serviceName')}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={e =>
+                      e.key === 'Enter' && handleSort('serviceName')}
+                  >
+                    <div class="table-header-sort">
+                      <span>Service Name</span>
+                      <span class="table-header-sort__indicator">
+                        <ArrowDownIcon
+                          class="sort-indicator {sortColumn === 'serviceName'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn ===
+                            'serviceName' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          aria-hidden="true"
+                        />
                       </span>
-                    {/if}
-                  </td>
-                  <td class="table-cell">
-                    {#if trace.rootSpan?.name}
-                      {trace.rootSpan.name}
-                    {:else}
-                      <span class="text-base-content/50 italic">—</span>
-                    {/if}
-                  </td>
-                  <td class="table-cell">
-                    {#if trace.rootSpan?.serviceName}
-                      {trace.rootSpan.serviceName}
-                    {:else}
-                      <span class="text-base-content/50 italic">—</span>
-                    {/if}
-                  </td>
-                  <td class="table-cell text-base-content/80">
-                    {#if trace.rootSpan}
-                      {formatTimestamp(
-                        trace.rootSpan.startTime,
-                        timeContext.timezone,
-                        'milliseconds'
-                      )}
-                    {:else}
-                      <span class="text-base-content/50 italic">—</span>
-                    {/if}
-                  </td>
-                  <td class="table-cell--count">
-                    {trace.spanCount}
-                  </td>
-                  <td class="table-cell--count">
-                    {#if trace.errorCount > 0}
-                      <span
-                        class="inline-flex items-center justify-center rounded-full bg-error/20 px-2 py-0.5 font-medium text-error"
-                      >
-                        {trace.errorCount}
+                    </div>
+                  </th>
+                  <th
+                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                    onclick={() => handleSort('startTime')}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={e => e.key === 'Enter' && handleSort('startTime')}
+                  >
+                    <div class="table-header-sort">
+                      <span>Start Time</span>
+                      <span class="table-header-sort__indicator">
+                        <ArrowDownIcon
+                          class="sort-indicator {sortColumn === 'startTime'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn ===
+                            'startTime' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          aria-hidden="true"
+                        />
                       </span>
-                    {:else}
-                      <span class="text-base-content/50">0</span>
-                    {/if}
-                  </td>
-                  <td class="table-cell--count">
-                    {#if trace.exceptionCount > 0}
-                      <span
-                        class="inline-flex items-center justify-center rounded-full bg-warning/20 px-2 py-0.5 font-medium text-warning"
-                      >
-                        {trace.exceptionCount}
+                    </div>
+                  </th>
+                  <th
+                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                    onclick={() => handleSort('duration')}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={e => e.key === 'Enter' && handleSort('duration')}
+                  >
+                    <div class="table-header-sort table-header-sort--end">
+                      <span class="table-header-sort__indicator">
+                        <ArrowDownIcon
+                          class="sort-indicator {sortColumn === 'duration'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn ===
+                            'duration' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          aria-hidden="true"
+                        />
                       </span>
-                    {:else}
-                      <span class="text-base-content/50">0</span>
-                    {/if}
-                  </td>
+                      <span>Duration</span>
+                    </div>
+                  </th>
+                  <th
+                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                    style="width: 5.5rem"
+                    onclick={() => handleSort('spanCount')}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={e => e.key === 'Enter' && handleSort('spanCount')}
+                  >
+                    <div class="table-header-sort table-header-sort--end">
+                      <span class="table-header-sort__indicator">
+                        <ArrowDownIcon
+                          class="sort-indicator {sortColumn === 'spanCount'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn ===
+                            'spanCount' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          aria-hidden="true"
+                        />
+                      </span>
+                      <span>Spans</span>
+                    </div>
+                  </th>
+                  <th
+                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                    style="width: 5.5rem"
+                    onclick={() => handleSort('errorCount')}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={e => e.key === 'Enter' && handleSort('errorCount')}
+                  >
+                    <div class="table-header-sort table-header-sort--end">
+                      <span class="table-header-sort__indicator">
+                        <ArrowDownIcon
+                          class="sort-indicator {sortColumn === 'errorCount'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn ===
+                            'errorCount' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          aria-hidden="true"
+                        />
+                      </span>
+                      <span>Errors</span>
+                    </div>
+                  </th>
+                  <th
+                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                    style="width: 6.5rem"
+                    onclick={() => handleSort('exceptionCount')}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={e =>
+                      e.key === 'Enter' && handleSort('exceptionCount')}
+                  >
+                    <div class="table-header-sort table-header-sort--end">
+                      <span class="table-header-sort__indicator">
+                        <ArrowDownIcon
+                          class="sort-indicator {sortColumn === 'exceptionCount'
+                            ? 'sort-indicator--active'
+                            : 'sort-indicator--inactive'} {sortColumn ===
+                            'exceptionCount' && sortDirection === 'asc'
+                            ? 'sort-indicator--asc'
+                            : ''}"
+                          aria-hidden="true"
+                        />
+                      </span>
+                      <span>Exceptions</span>
+                    </div>
+                  </th>
                 </tr>
-              {/each}
-            </tbody>
-          </table>
+              </thead>
+              <tbody class="table-body-surface">
+                {#each paginatedTraces as trace}
+                  <tr
+                    class="table-row cursor-pointer hover:bg-base-200 transition-colors {selectedTraceIDs.has(
+                      trace.traceID
+                    )
+                      ? 'bg-primary/5'
+                      : ''}"
+                    onclick={() => navigateToTrace(trace.traceID)}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={e =>
+                      e.key === 'Enter' && navigateToTrace(trace.traceID)}
+                  >
+                    <td
+                      class="table-cell--checkbox"
+                      onclick={e => e.stopPropagation()}
+                      onkeydown={e => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-xs checkbox-primary"
+                        checked={selectedTraceIDs.has(trace.traceID)}
+                        onchange={() => {
+                          const next = new Set(selectedTraceIDs)
+                          if (next.has(trace.traceID)) {
+                            next.delete(trace.traceID)
+                          } else {
+                            next.add(trace.traceID)
+                          }
+                          selectedTraceIDs = next
+                        }}
+                        aria-label="Select trace {trace.traceID}"
+                      />
+                    </td>
+                    <td
+                      class="table-cell--trace-id"
+                      title={trace.traceID}
+                    >
+                      <span class="trace-list-cell-text">{trace.traceID}</span>
+                    </td>
+                    <td class="table-cell--has-root">
+                      {#if trace.rootSpan}
+                        <span
+                          class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-success/20 text-success"
+                        >
+                          <svg class="w-4 h-4" viewBox="0 0 24 24">
+                            <path d="m5 14l3.5 3.5L19 6.5" />
+                          </svg>
+                        </span>
+                      {:else}
+                        <span
+                          class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-error/20 text-error"
+                        >
+                          <svg class="w-4 h-4" viewBox="0 0 24 24">
+                            <path d="M18 6L6 18m12 0L6 6" />
+                          </svg>
+                        </span>
+                      {/if}
+                    </td>
+                    <td
+                      class="table-cell trace-list-cell-truncate"
+                      title={trace.rootSpan?.name?.trim()
+                        ? trace.rootSpan.name
+                        : undefined}
+                    >
+                      <span class="trace-list-cell-text">
+                        {#if trace.rootSpan?.name}
+                          {trace.rootSpan.name}
+                        {:else}
+                          <span class="text-base-content/50 italic">—</span>
+                        {/if}
+                      </span>
+                    </td>
+                    <td
+                      class="table-cell trace-list-cell-truncate"
+                      title={trace.rootSpan?.serviceName?.trim()
+                        ? trace.rootSpan.serviceName
+                        : undefined}
+                    >
+                      <span class="trace-list-cell-text">
+                        {#if trace.rootSpan?.serviceName}
+                          {trace.rootSpan.serviceName}
+                        {:else}
+                          <span class="text-base-content/50 italic">—</span>
+                        {/if}
+                      </span>
+                    </td>
+                    <td
+                      class="table-cell text-base-content/80 trace-list-cell-truncate"
+                      title={trace.rootSpan
+                        ? formatTimestamp(
+                            trace.rootSpan.startTime,
+                            timeContext.timezone,
+                            'milliseconds'
+                          )
+                        : undefined}
+                    >
+                      <span class="trace-list-cell-text">
+                        {#if trace.rootSpan}
+                          {formatTimestamp(
+                            trace.rootSpan.startTime,
+                            timeContext.timezone,
+                            'milliseconds'
+                          )}
+                        {:else}
+                          <span class="text-base-content/50 italic">—</span>
+                        {/if}
+                      </span>
+                    </td>
+                    <td
+                      class="table-cell text-right tabular-nums text-base-content/80 trace-list-cell-truncate"
+                      title={traceDurationCellLabel(trace) || undefined}
+                    >
+                      <span class="trace-list-cell-text">{traceDurationCellLabel(trace)}</span>
+                    </td>
+                    <td class="table-cell--count">
+                      {trace.spanCount}
+                    </td>
+                    <td class="table-cell--count {trace.errorCount > 0 ? 'text-error' : 'text-base-content/50'}">
+                      {trace.errorCount}
+                    </td>
+                    <td class="table-cell--count {trace.exceptionCount > 0 ? 'text-warning' : 'text-base-content/50'}">
+                      {trace.exceptionCount}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
         </div>
 
         <!-- Pagination Controls -->
@@ -630,88 +687,70 @@
             </div>
 
             <div class="pagination-controls__center">
-              <div class="join join-horizontal">
+              <div
+                class="flex min-w-0 flex-nowrap items-center justify-center gap-1.5"
+              >
                 <button
                   type="button"
-                  class="btn btn-soft btn-sm btn-circle join-item"
+                  class="btn btn-ghost btn-sm btn-circle"
+                  disabled={currentPage === 1}
+                  onclick={() => goToPage(1)}
+                  aria-label="First page"
+                >
+                  <ArrowLeftDoubleIcon class="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm btn-circle"
                   disabled={currentPage === 1}
                   onclick={() => goToPage(currentPage - 1)}
                   aria-label="Previous page"
                 >
-                  <svg
-                    class="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.5"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M11.5 18s-6-4.419-6-6s6-6 6-6m7 12s-6-4.419-6-6s6-6 6-6"
-                    />
-                  </svg>
+                  <ArrowLeftIcon class="h-4 w-4" aria-hidden="true" />
                 </button>
                 <div
-                  class="join-item flex min-w-[10rem] items-center justify-center border border-base-300 bg-base-100 px-3 py-1 text-sm tabular-nums text-base-content/70"
+                  class="flex min-h-8 min-w-[10rem] items-center justify-center rounded-lg bg-base-200/50 px-3 text-sm tabular-nums text-base-content/70"
                 >
                   {startRow}–{endRow} of {sortedTraces.length}
                 </div>
                 <button
                   type="button"
-                  class="btn btn-soft btn-sm btn-circle join-item"
+                  class="btn btn-ghost btn-sm btn-circle"
                   disabled={currentPage === totalPages}
                   onclick={() => goToPage(currentPage + 1)}
                   aria-label="Next page"
                 >
-                  <svg
-                    class="h-4 w-4 scale-x-[-1]"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.5"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M11.5 18s-6-4.419-6-6s6-6 6-6m7 12s-6-4.419-6-6s6-6 6-6"
-                    />
-                  </svg>
+                  <ArrowRightIcon class="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm btn-circle"
+                  disabled={currentPage === totalPages}
+                  onclick={() => goToPage(totalPages)}
+                  aria-label="Last page"
+                >
+                  <ArrowRightDoubleIcon class="h-4 w-4" aria-hidden="true" />
                 </button>
               </div>
             </div>
 
             {#if hasTraceRows}
               <div class="pagination-controls__actions">
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm btn-circle text-base-content/50 hover:text-error"
-                  onclick={handleDelete}
-                  aria-label={traceDeleteAriaLabel}
-                  title={traceDeleteAriaLabel}
-                >
-                  <svg
-                    class="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-width="1.5"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="m19.5 5.5l-.62 10.025c-.158 2.561-.237 3.842-.88 4.763a4 4 0 0 1-1.2 1.128c-.957.584-2.24.584-4.806.584c-2.57 0-3.855 0-4.814-.585a4 4 0 0 1-1.2-1.13c-.642-.922-.72-2.205-.874-4.77L4.5 5.5M3 5.5h18m-4.944 0l-.683-1.408c-.453-.936-.68-1.403-1.071-1.695a2 2 0 0 0-.275-.172C13.594 2 13.074 2 12.035 2c-1.066 0-1.599 0-2.04.234a2 2 0 0 0-.278.18c-.395.303-.616.788-1.058 1.757L8.053 5.5m1.447 11v-6m5 6v-6"
-                    />
-                  </svg>
-                </button>
                 <span
                   class="pagination-delete-label hidden sm:inline max-w-[12rem] truncate text-sm text-base-content/60"
                   title={traceDeleteLabel}
                 >
                   {traceDeleteLabel}
                 </span>
+                <button
+                  type="button"
+                  class="btn btn-soft btn-error btn-sm btn-circle"
+                  onclick={handleDelete}
+                  aria-label={traceDeleteAriaLabel}
+                  title={traceDeleteAriaLabel}
+                >
+                  <TrashIcon class="h-4 w-4" aria-hidden="true" />
+                </button>
               </div>
             {/if}
           </div>

@@ -25,6 +25,7 @@
   import { createQueryLinter } from './lang/linter'
   import { queryTheme } from './lang/theme'
   import { createQueryKeymap } from './lang/keymap'
+  import { HelpCircleIcon } from '@/icons'
 
   // --- types ---
   type SearchEditorProps =
@@ -349,12 +350,12 @@
     <div class="search-actions">
       <button
         type="button"
-        class="btn btn-soft btn-sm btn-circle font-semibold leading-none"
+        class="btn btn-ghost btn-sm btn-circle font-semibold leading-none"
         onclick={openHelp}
         aria-label="Search query help"
         title="Search query help"
       >
-        <span aria-hidden="true">?</span>
+        <HelpCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
       </button>
 
       {#if !inToolbar}
@@ -376,7 +377,7 @@
 
       <button
         type="button"
-        class="btn btn-primary btn-sm btn-circle"
+        class="btn btn-soft btn-primary btn-sm btn-circle"
         onclick={onSubmit}
         aria-label="Search (Cmd+Enter)"
         title="Search (Cmd+Enter)"
@@ -584,10 +585,12 @@
       automatic min-height on the main axis can become 0, so this row was allowed to
       shrink unless we opt out of flex-shrink and set an explicit min-height.
     */
-    @apply w-full shrink-0 overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm;
+    @apply w-full shrink-0 overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 py-1 shadow-surface-sm backdrop-blur-sm;
     min-width: var(--trace-list-table-min-width);
-    /* Outer box: inner row uses min-height var(--table-row-h) + py-1 on container */
-    min-height: calc(var(--table-row-h) + 0.5rem + 2 * var(--border, 1px));
+    /* Outer box: py-1 matches SignalToolbar top row; inner row = table-row-h + py-1 + borders */
+    min-height: calc(
+      var(--table-row-h) + 0.5rem + 0.5rem + 2 * var(--border, 1px)
+    );
   }
 
   .search-editor-container {

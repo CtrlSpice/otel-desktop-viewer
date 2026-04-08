@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { FilterIcon } from '@/icons'
   import {
     getStaticFieldsForSearch,
     getDynamicAttributes,
@@ -95,23 +96,39 @@
   <button
     bind:this={buttonEl}
     type="button"
-    class="toolbar-filter-trigger"
+    class="toolbar-filter-trigger toolbar-filter-trigger--field"
     class:toolbar-filter-trigger--compact={!label}
+    class:toolbar-filter-trigger--active={popoverOpen}
     onclick={togglePopover}
     aria-label={label ? `${label}: filter columns` : 'Filter columns'}
     title="Filter columns"
     aria-expanded={popoverOpen}
   >
     <span class="toolbar-filter-trigger__icon" aria-hidden="true">
-      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 6h18M7 12h10m-6 6h2" />
-      </svg>
+      <FilterIcon />
     </span>
     {#if label}
       <span class="toolbar-filter-trigger__label">{label}</span>
     {/if}
     {#if activeCount > 0}
       <span class="toolbar-filter-trigger__badge">{activeCount}</span>
+    {/if}
+    {#if label}
+      <span class="toolbar-filter-trigger__dropdown-circle" aria-hidden="true">
+        <svg
+          class="popover-indicator h-3 w-3 shrink-0 {popoverOpen
+            ? 'popover-indicator--open'
+            : ''}"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M18 9s-4.419 6-6 6s-6-6-6-6" />
+        </svg>
+      </span>
     {/if}
   </button>
 

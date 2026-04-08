@@ -3,15 +3,6 @@
   import { formatDateTimeRange } from '@/utils/time';
   import TimeRangeFilterBody from './TimeRangeFilterBody.svelte';
 
-  type Props = {
-    /** When false, clock only (no range text / chevron). Default true. */
-    showLabel?: boolean;
-    /** Override label text; default is formatted range from context. */
-    label?: string;
-  };
-
-  let { showLabel = true, label: labelOverride }: Props = $props();
-
   // Get time context
   let ctx = getTimeContext();
   if (!ctx) {
@@ -160,49 +151,40 @@
     );
   }
 
-  let displayLabel = $derived(
-    labelOverride !== undefined ? labelOverride : getDisplayText()
-  );
+  let displayLabel = $derived(getDisplayText());
 </script>
 
-<!-- Time Filter Button -->
-<button
-  bind:this={timeTriggerEl}
-  type="button"
-  class="toolbar-filter-trigger toolbar-filter-trigger--time"
-  class:toolbar-filter-trigger--active={dialogOpen}
-  class:toolbar-filter-trigger--compact={!showLabel}
-  onclick={openTimePopover}
-  aria-label={showLabel ? `Time range: ${displayLabel}` : 'Time range'}
-  aria-expanded={dialogOpen}
-  title={displayLabel}
->
-  <span class="toolbar-filter-trigger__icon" aria-hidden="true">
-    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 8v4l2 2" />
-    </svg>
+<!-- Range text + round soft-primary clock trigger on the right -->
+<div class="datetime-filter">
+  <span class="datetime-filter__range-text" title={displayLabel}>
+    {displayLabel}
   </span>
-  {#if showLabel}
-    <span class="toolbar-filter-trigger__label">{displayLabel}</span>
-  {/if}
-  {#if showLabel}
-    <svg
-      class="popover-indicator h-3 w-3 shrink-0 opacity-60 {dialogOpen
-        ? 'popover-indicator--open'
-        : ''}"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 9s-4.419 6-6 6s-6-6-6-6" />
-    </svg>
-  {/if}
-</button>
+  <button
+    bind:this={timeTriggerEl}
+    type="button"
+    class="datetime-filter__trigger btn btn-soft btn-primary btn-sm btn-circle"
+    class:btn-active={dialogOpen}
+    onclick={openTimePopover}
+    aria-expanded={dialogOpen}
+    aria-label={`Change time range, ${displayLabel}`}
+    title={displayLabel}
+  >
+    <span class="datetime-filter__trigger-icon" aria-hidden="true">
+      <svg
+        class="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 8v4l2 2" />
+      </svg>
+    </span>
+  </button>
+</div>
 
 <!-- Dialog Content -->
 <dialog
@@ -216,15 +198,30 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+
+  .datetime-filter {
+    @apply flex min-w-0 max-w-full items-center gap-2;
+  }
+
+  .datetime-filter__range-text {
+    @apply min-w-0 flex-1 truncate text-left text-sm leading-snug text-base-content/85;
+  }
+
+  .datetime-filter__trigger {
+    @apply shrink-0 border-0 shadow-none;
+  }
+
+  .datetime-filter__trigger-icon {
+    @apply inline-flex items-center justify-center text-current;
+  }
+
   .datetime-dialog {
-    /* Width from CSS (not squeezed to vw-16); script only positions using measured width */
     @apply px-0 pb-2 pt-0;
     position: fixed;
     margin: 0;
     box-sizing: border-box;
     width: 24rem;
     max-width: calc(100vw - 1.5rem);
-    min-width: min(24rem, calc(100vw - 1.5rem));
     overflow-y: auto;
 
     @apply bg-base-100 rounded-md shadow-lg;

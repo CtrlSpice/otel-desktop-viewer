@@ -184,6 +184,49 @@ svg {
   @apply transition-[color,background-color,border-color,transform,box-shadow] duration-200 ease-out;
 }
 
+/*
+ * Ghost buttons: muted wash on hover/active instead of Daisy’s default fill + no hover border ring.
+ */
+@media (hover: hover) {
+  .btn.btn-ghost:hover:not(:disabled, [disabled], .btn-disabled) {
+    --btn-border: #0000;
+    --btn-noise: none;
+    --btn-bg: color-mix(
+      in oklab,
+      var(--color-base-content) 10%,
+      var(--color-base-100)
+    );
+    box-shadow: none;
+  }
+}
+.btn.btn-ghost:active:not(:disabled, [disabled], .btn-disabled),
+.btn.btn-ghost.btn-active {
+  --btn-border: #0000;
+  --btn-noise: none;
+  --btn-bg: color-mix(
+    in oklab,
+    var(--color-base-content) 14%,
+    var(--color-base-100)
+  );
+  box-shadow: none;
+}
+
+/*
+ * Daisy checkbox-primary sets --input-color to full primary, so the default border is a loud ring
+ * (see https://daisyui.com/components/checkbox/). Unchecked: blend primary into base-300 instead.
+ */
+.checkbox.checkbox-primary:not(:checked):not(:indeterminate) {
+  border-color: color-mix(
+    in oklab,
+    var(--color-primary) 38%,
+    var(--color-base-300)
+  );
+}
+
+.checkbox.checkbox-primary:focus-visible {
+  outline-color: color-mix(in oklab, var(--color-primary) 50%, transparent);
+}
+
 /* DaisyUI cards — avoid generic "lift" hover; feels template-y */
 .card {
   @apply transition-shadow duration-200;
@@ -243,7 +286,21 @@ svg {
   @apply border-b-2 border-b-primary-content;
 }
 
-/* Sort indicator styles */
+/* Sortable thead: caret mirrors alignment — left = title then caret; right (--end) = caret then title.
+   Column width = col / resize (not this flex). */
+.table-header-sort {
+  @apply flex items-center gap-2;
+}
+
+.table-header-sort--end {
+  @apply justify-end;
+}
+
+.table-header-sort__indicator {
+  @apply flex h-4 w-4 shrink-0 items-center justify-center;
+}
+
+/* Sort indicator styles (typically on ArrowDownIcon inside .table-header-sort__indicator) */
 .sort-indicator {
   @apply w-4 h-4;
   @apply transition-[transform,opacity] duration-200;
@@ -274,9 +331,9 @@ svg {
   @apply rotate-180;
 }
 
-/* Toolbar filter triggers (time range, column filter): soft pill; icon first, optional label, then chevron/badge */
+/* Toolbar filter triggers (time range, column filter): lg when labeled, full pill when icon-only (--compact) */
 .toolbar-filter-trigger {
-  @apply btn btn-soft btn-sm inline-flex h-9 min-h-9 min-w-0 shrink items-center gap-2 rounded-full border border-base-300/60 bg-base-100/90 px-3 font-normal normal-case shadow-none;
+  @apply btn btn-soft btn-sm inline-flex h-9 min-h-9 min-w-0 shrink items-center gap-2 rounded-lg border border-base-300/60 bg-base-100/90 px-3 font-normal normal-case shadow-none;
 }
 
 .toolbar-filter-trigger:hover {
@@ -288,17 +345,31 @@ svg {
 }
 
 .toolbar-filter-trigger--compact {
-  @apply max-w-none shrink-0 px-2.5;
+  @apply max-w-none shrink-0 rounded-full px-2.5;
 }
 
-/* Field filter (optional text): cap width; time range uses --time instead */
-.toolbar-filter-trigger:not(.toolbar-filter-trigger--compact):not(.toolbar-filter-trigger--time) {
+/* Field filter only: icon-only compact trigger = soft primary (not time range). */
+.toolbar-filter-trigger--field.toolbar-filter-trigger--compact {
+  @apply btn-soft btn-primary border-primary/25 bg-primary/10 text-primary shadow-none;
+}
+
+.toolbar-filter-trigger--field.toolbar-filter-trigger--compact:hover {
+  @apply border-primary/35 bg-primary/15;
+}
+
+.toolbar-filter-trigger--field.toolbar-filter-trigger--compact .toolbar-filter-trigger__icon {
+  @apply opacity-100;
+}
+
+/* Field filter labeled row: dropdown chevron in a soft-primary circle */
+.toolbar-filter-trigger__dropdown-circle {
+  @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full;
+  @apply border border-primary/25 bg-primary/10 text-primary;
+}
+
+/* Field filter (labeled): cap width (time range is DateTimeFilter, not this class). */
+.toolbar-filter-trigger:not(.toolbar-filter-trigger--compact) {
   @apply max-w-[min(100%,22rem)];
-}
-
-/* Time range: can shrink with row so it never crowds actions (refresh); label truncates */
-.toolbar-filter-trigger--time {
-  @apply max-w-full;
 }
 
 .toolbar-filter-trigger__label {
@@ -335,7 +406,7 @@ svg {
   --table-row-h: 1.75rem;
   --table-header-h: 2.25rem;
   /* Trace list (and matching search chrome): min width before horizontal scroll */
-  --trace-list-table-min-width: 56rem;
+  --trace-list-table-min-width: 60rem;
   --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 40%, transparent);
   --table-hover-bg: color-mix(in oklab, var(--color-base-200) 60%, transparent);
   --table-selected-bg: color-mix(
@@ -374,12 +445,22 @@ svg {
 }
 
 /* Data Table Styles */
+.trace-list-table :where(th, td) {
+  @apply whitespace-nowrap;
+}
+
+/* Root presence column: center header (Daisy table th can default to start). */
+.trace-list-table thead th.table-header-cell--trace-root {
+  @apply text-center;
+}
+
 .table-header-row {
   @apply bg-base-200/60 backdrop-blur-sm;
+  height: var(--table-header-h);
 }
 
 .table-header-cell {
-  @apply px-4 py-3 text-xs font-semibold tracking-normal text-base-content/55;
+  @apply align-middle px-4 py-3 text-xs font-semibold tracking-normal text-base-content/55;
 }
 
 .table-header-cell--sortable {
@@ -419,6 +500,28 @@ svg {
   @apply pl-4 pr-1 py-1 text-sm text-base-content font-mono align-middle whitespace-nowrap;
 }
 
+/*
+ * Fixed-layout trace list: ellipsis on a single line (nowrap is on .trace-list-table).
+ * max-width: 0 lets table-fixed + col widths shrink the cell below content min-width.
+ * Ellipsis on td is flaky; inner .trace-list-cell-text is the reliable clip box.
+ */
+.trace-list-table td.table-cell--trace-id,
+.trace-list-table td.trace-list-cell-truncate {
+  max-width: 0;
+}
+
+.trace-list-table .trace-list-cell-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-list-table td.table-cell--count {
+  @apply pl-2 pr-4 text-right;
+}
+
 .table-cell--has-root {
   @apply pl-1 pr-4 py-1 text-sm text-center text-base-content align-middle whitespace-nowrap;
 }
@@ -449,7 +552,7 @@ svg {
 }
 
 .table-cell--count {
-  @apply px-4 py-1 text-center text-sm tabular-nums text-base-content align-middle;
+  @apply px-4 py-1 text-right text-sm tabular-nums align-middle;
 }
 
 .table-cell--center {
@@ -482,6 +585,37 @@ svg {
   padding-left: calc(1rem + var(--waterfall-gutter-col));
 }
 
+/* ── In-header column resize handle ──
+   Place inside a position:relative <th>. Hit strip straddles the right cell border.
+   The ::after pseudo-element is the visible line; appears on hover / during drag. */
+
+.resize-handle {
+  @apply absolute top-0 bottom-0 flex items-center justify-center cursor-col-resize;
+  right: -3px;
+  width: 7px;
+  z-index: 2;
+}
+
+.resize-handle::after {
+  content: '';
+  width: 0.125rem;
+  min-height: 100%;
+  border-radius: 9999px;
+  background-color: var(--color-neutral);
+  opacity: 0;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.resize-handle:hover::after,
+.resize-handle--active::after {
+  opacity: 0.6;
+}
+
+.resize-handle--active::after {
+  background-color: var(--color-primary);
+  opacity: 0.9;
+}
+
 /* ── Shared column-resize system ──
    One interaction pattern everywhere:
    • Wrap the table in .col-resize-context (position: relative).
@@ -497,6 +631,11 @@ svg {
   @apply relative isolate w-full min-h-full;
   /* Short tables: keep column resize strips as tall as the standard panel cap (not only tbody height) */
   min-height: var(--panel-body-max-height);
+}
+
+/* Trace list table: no panel-body-max-height cap (it scrolls inside the page, not a fixed panel). */
+.trace-list-col-resize.col-resize-context {
+  min-height: 0;
 }
 
 /* Scroll region capped like detail / waterfall; use inside flex children with min-h-0 */
@@ -597,7 +736,7 @@ svg {
   min-height: 0.125rem;
 }
 
-/* Pagination Styles — rows left, prev|range|next join centered, delete trailing */
+/* Pagination Styles — rows left, pager cluster centered, delete label + button trailing */
 .pagination-controls {
   @apply flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 bg-base-100 border-t border-base-300;
 }

@@ -275,6 +275,11 @@
   let spanDividerDrag = $state(false)
   let serviceDividerDrag = $state(false)
 
+  let barLeftPx = $derived({
+    span: spanColWidth,
+    service: spanColWidth + serviceColWidth,
+  })
+
   function startResizeSpanCol(e: PointerEvent) {
     e.preventDefault()
     const startX = e.clientX
@@ -531,7 +536,7 @@
         <div
           class="col-resize-bar"
           class:col-resize-bar--active={spanDividerDrag}
-          style:left="{spanColWidth}px"
+          style:left="{barLeftPx.span}px"
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize span and service columns"
@@ -542,7 +547,7 @@
         <div
           class="col-resize-bar"
           class:col-resize-bar--active={serviceDividerDrag}
-          style:left="{spanColWidth + serviceColWidth}px"
+          style:left="{barLeftPx.service}px"
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize service and timeline columns"
