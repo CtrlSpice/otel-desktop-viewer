@@ -289,7 +289,11 @@ svg {
 /* Sortable thead: caret mirrors alignment — left = title then caret; right (--end) = caret then title.
    Column width = col / resize (not this flex). */
 .table-header-sort {
-  @apply flex items-center gap-2;
+  @apply flex min-w-0 items-center gap-2;
+}
+
+.table-header-sort__label {
+  @apply min-w-0 truncate;
 }
 
 .table-header-sort--end {
@@ -657,7 +661,7 @@ svg {
 }
 
 :is(th, td):has(.col-resize-marker) + :is(th, td) {
-  padding-left: 1rem;
+  padding-left: 0;
 }
 
 /* z above .waterfall-row:hover (z-20) so the hit strip stays draggable */
@@ -684,6 +688,24 @@ svg {
     width 0.15s,
     background-color 0.15s,
     opacity 0.15s;
+}
+
+.col-resize-bar--guide::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  height: calc(var(--table-header-h) - 12px);
+  border-radius: 9999px;
+  background-color: color-mix(in oklab, var(--color-base-300) 70%, transparent);
+  pointer-events: none;
+}
+
+.col-resize-bar--guide:hover::before,
+.col-resize-bar--guide.col-resize-bar--active::before {
+  visibility: hidden;
 }
 
 .col-resize-bar:hover .col-resize-bar__line {

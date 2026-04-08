@@ -266,11 +266,19 @@
   let rows = $derived(buildWaterfallRows(spans, bounds))
 
   // --- Column widths (resizable) ---
+  import type { ResizableColumn, ElasticColumn } from '@/types/column-sizing'
 
-  const MIN_SPAN_COL = 120
-  const MIN_SERVICE_COL = 80
-  let spanColWidth = $state(192)
-  let serviceColWidth = $state(120)
+  const waterfallCols = {
+    span:     { kind: 'resizable', min: 120, default: 192 } satisfies ResizableColumn,
+    service:  { kind: 'resizable', min: 80, default: 120 } satisfies ResizableColumn,
+    timeline: { kind: 'elastic', min: 200 } satisfies ElasticColumn,
+  }
+
+  const MIN_SPAN_COL = waterfallCols.span.min
+  const MIN_SERVICE_COL = waterfallCols.service.min
+  const MIN_TIMELINE_COL = waterfallCols.timeline.min
+  let spanColWidth = $state(waterfallCols.span.default)
+  let serviceColWidth = $state(waterfallCols.service.default)
 
   let spanDividerDrag = $state(false)
   let serviceDividerDrag = $state(false)
@@ -289,7 +297,9 @@
     spanDividerDrag = true
 
     function onMove(ev: PointerEvent) {
-      spanColWidth = Math.max(MIN_SPAN_COL, startW + (ev.clientX - startX))
+      const containerW = gridTableEl?.closest('.panel-body-scroll')?.clientWidth ?? Infinity
+      const maxW = containerW - serviceColWidth - MIN_TIMELINE_COL
+      spanColWidth = Math.min(maxW, Math.max(MIN_SPAN_COL, startW + (ev.clientX - startX)))
     }
 
     function end() {
@@ -313,7 +323,9 @@
     serviceDividerDrag = true
 
     function onMove(ev: PointerEvent) {
-      serviceColWidth = Math.max(MIN_SERVICE_COL, startW + (ev.clientX - startX))
+      const containerW = gridTableEl?.closest('.panel-body-scroll')?.clientWidth ?? Infinity
+      const maxW = containerW - spanColWidth - MIN_TIMELINE_COL
+      serviceColWidth = Math.min(maxW, Math.max(MIN_SERVICE_COL, startW + (ev.clientX - startX)))
     }
 
     function end() {
@@ -509,10 +521,16 @@
               targetTickCount={TARGET_TICK_COUNT}
               spanColWidth={spanColWidth}
               serviceColWidth={serviceColWidth}
-              onResizeSpanCol={w =>
-                (spanColWidth = Math.max(MIN_SPAN_COL, w))}
-              onResizeServiceCol={w =>
-                (serviceColWidth = Math.max(MIN_SERVICE_COL, w))}
+              onResizeSpanCol={w => {
+                const containerW = gridTableEl?.closest('.panel-body-scroll')?.clientWidth ?? Infinity
+                const maxW = containerW - serviceColWidth - MIN_TIMELINE_COL
+                spanColWidth = Math.min(maxW, Math.max(MIN_SPAN_COL, w))
+              }}
+              onResizeServiceCol={w => {
+                const containerW = gridTableEl?.closest('.panel-body-scroll')?.clientWidth ?? Infinity
+                const maxW = containerW - spanColWidth - MIN_TIMELINE_COL
+                serviceColWidth = Math.min(maxW, Math.max(MIN_SERVICE_COL, w))
+              }}
             />
           </thead>
           <tbody class="table-body-surface">
@@ -534,7 +552,7 @@
           </tbody>
         </table>
         <div
-          class="col-resize-bar"
+          class="col-resize-bar col-resize-bar--guide"
           class:col-resize-bar--active={spanDividerDrag}
           style:left="{barLeftPx.span}px"
           role="separator"
@@ -545,7 +563,7 @@
           <div class="col-resize-bar__line"></div>
         </div>
         <div
-          class="col-resize-bar"
+          class="col-resize-bar col-resize-bar--guide"
           class:col-resize-bar--active={serviceDividerDrag}
           style:left="{barLeftPx.service}px"
           role="separator"

@@ -99,13 +99,27 @@
   let selectedTraceIDs = $state(new Set<string>())
 
   // --- state: column resize ---
-  const COL_CHECKBOX = 40
-  const COL_ROOT_INDICATOR = 48
+  import type { FixedColumn, ResizableColumn, ElasticColumn } from '@/types/column-sizing'
 
-  const MIN_COL_W = 80
-  const MIN_ELASTIC_COL = 120
-  const DEFAULT_TRACE_ID = 300
-  const COL_TRAILING_FIXED = 128 + 88 + 88 + 104
+  const cols = {
+    checkbox:      { kind: 'fixed', width: 40 } satisfies FixedColumn,
+    traceId:       { kind: 'resizable', min: 100, default: 300 } satisfies ResizableColumn,
+    rootIndicator: { kind: 'fixed', width: 48 } satisfies FixedColumn,
+    rootName:      { kind: 'resizable', min: 100, default: 0 } satisfies ResizableColumn,
+    service:       { kind: 'resizable', min: 100, default: 0 } satisfies ResizableColumn,
+    startTime:     { kind: 'elastic', min: 120 } satisfies ElasticColumn,
+    duration:      { kind: 'fixed', width: 128 } satisfies FixedColumn,
+    spans:         { kind: 'fixed', width: 88 } satisfies FixedColumn,
+    errors:        { kind: 'fixed', width: 88 } satisfies FixedColumn,
+    exceptions:    { kind: 'fixed', width: 104 } satisfies FixedColumn,
+  }
+
+  const COL_CHECKBOX = cols.checkbox.width
+  const COL_ROOT_INDICATOR = cols.rootIndicator.width
+  const MIN_COL_W = cols.traceId.min
+  const MIN_ELASTIC_COL = cols.startTime.min
+  const DEFAULT_TRACE_ID = cols.traceId.default
+  const COL_TRAILING_FIXED = cols.duration.width + cols.spans.width + cols.errors.width + cols.exceptions.width
 
   let traceIdColW = $state(0)
   let rootNameColW = $state(0)
@@ -389,7 +403,7 @@
 
 <!-- TracesPage: list view — script order: imports → types → pure cmp → context → state → derived → effects → handlers → onMount -->
 <div
-  class="flex min-w-0 w-full flex-col gap-[var(--layout-gap)] overflow-x-auto overflow-y-auto pb-6 pt-0"
+  class="flex min-h-0 min-w-0 w-full flex-1 flex-col gap-[var(--layout-gap)] pt-0"
 >
   <!-- 1. Header + search -->
   <SignalToolbar
@@ -413,7 +427,7 @@
     </div>
   {/if}
 
-  <div class="space-y-[var(--layout-gap)]">
+  <div class="flex min-h-0 flex-1 flex-col gap-[var(--layout-gap)]">
     <!-- 2a. Loading (no rows yet) -->
     {#if loading && !hasTraceRows}
       <div
@@ -434,11 +448,11 @@
       <!-- 2c. Table + pagination -->
     {:else}
       <div
-        class="overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200 {loading
+        class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200 {loading
           ? 'opacity-70'
           : 'opacity-100'}"
       >
-        <div class="overflow-x-auto">
+        <div class="flex-1 min-h-0 overflow-x-auto overflow-y-auto">
           <div class="col-resize-context trace-list-col-resize">
             <table
               bind:this={tableEl}
@@ -460,7 +474,7 @@
                   <col style="width: 6.5rem" />
                 </colgroup>
               {/if}
-              <thead>
+              <thead class="sticky top-0 z-10 bg-base-100">
               <tr class="table-header-row">
                 <th class="table-header-cell table-header-cell--checkbox">
                   <input
@@ -497,7 +511,7 @@
                     e.key === 'Enter' && handleSort('rootSpanName')}
                 >
                   <div class="table-header-sort">
-                    <span>Root Span Name</span>
+                    <span class="table-header-sort__label">Root Span Name</span>
                     <span class="table-header-sort__indicator">
                       <ArrowDownIcon
                         class="sort-indicator {sortColumn === 'rootSpanName'
@@ -520,7 +534,7 @@
                     e.key === 'Enter' && handleSort('serviceName')}
                 >
                   <div class="table-header-sort">
-                    <span>Service Name</span>
+                    <span class="table-header-sort__label">Service Name</span>
                     <span class="table-header-sort__indicator">
                       <ArrowDownIcon
                         class="sort-indicator {sortColumn === 'serviceName'
@@ -542,7 +556,7 @@
                   onkeydown={e => e.key === 'Enter' && handleSort('startTime')}
                 >
                   <div class="table-header-sort">
-                    <span>Start Time</span>
+                    <span class="table-header-sort__label">Start Time</span>
                     <span class="table-header-sort__indicator">
                       <ArrowDownIcon
                         class="sort-indicator {sortColumn === 'startTime'
@@ -784,7 +798,7 @@
             </tbody>
             </table>
             <div
-              class="col-resize-bar"
+              class="col-resize-bar col-resize-bar--guide"
               class:col-resize-bar--active={activeResizeCol === 'traceId'}
               style:left="{barLeftPx.traceId}px"
               role="separator"
@@ -795,7 +809,7 @@
               <div class="col-resize-bar__line"></div>
             </div>
             <div
-              class="col-resize-bar"
+              class="col-resize-bar col-resize-bar--guide"
               class:col-resize-bar--active={activeResizeCol === 'rootName'}
               style:left="{barLeftPx.rootName}px"
               role="separator"
@@ -806,7 +820,7 @@
               <div class="col-resize-bar__line"></div>
             </div>
             <div
-              class="col-resize-bar"
+              class="col-resize-bar col-resize-bar--guide"
               class:col-resize-bar--active={activeResizeCol === 'service'}
               style:left="{barLeftPx.service}px"
               role="separator"
