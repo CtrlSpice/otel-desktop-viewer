@@ -64,10 +64,10 @@
             : col === 'duration'
               ? compareByOptionalBigintField(a, b, traceSummaryDurationNs)
               : col === 'spanCount'
-              ? a.spanCount - b.spanCount
-              : col === 'errorCount'
-                ? a.errorCount - b.errorCount
-                : a.exceptionCount - b.exceptionCount
+                ? a.spanCount - b.spanCount
+                : col === 'errorCount'
+                  ? a.errorCount - b.errorCount
+                  : a.exceptionCount - b.exceptionCount
 
     return cmp !== 0
       ? dir === 'asc'
@@ -97,6 +97,90 @@
 
   // --- state: selection ---
   let selectedTraceIDs = $state(new Set<string>())
+
+  // --- state: column resize ---
+  const COL_CHECKBOX = 40
+  const COL_ROOT_INDICATOR = 48
+
+  const MIN_COL_W = 80
+  const MIN_ELASTIC_COL = 120
+  const DEFAULT_TRACE_ID = 300
+  const COL_TRAILING_FIXED = 128 + 88 + 88 + 104
+
+  let traceIdColW = $state(0)
+  let rootNameColW = $state(0)
+  let serviceColW = $state(0)
+  let colsReady = $state(false)
+  let tableEl = $state<HTMLTableElement | null>(null)
+
+  type ResizeCol = 'traceId' | 'rootName' | 'service'
+  let activeResizeCol = $state<ResizeCol | null>(null)
+
+  let tableMinWidth = $derived(
+    COL_CHECKBOX + traceIdColW + COL_ROOT_INDICATOR + rootNameColW + serviceColW + MIN_ELASTIC_COL + COL_TRAILING_FIXED
+  )
+
+  let barLeftPx = $derived({
+    traceId: COL_CHECKBOX + traceIdColW,
+    rootName: COL_CHECKBOX + traceIdColW + COL_ROOT_INDICATOR + rootNameColW,
+    service: COL_CHECKBOX + traceIdColW + COL_ROOT_INDICATOR + rootNameColW + serviceColW,
+  })
+
+  function startResizeCol(col: ResizeCol, e: PointerEvent) {
+    e.preventDefault()
+    const startX = e.clientX
+    const snapshot = { traceId: traceIdColW, rootName: rootNameColW, service: serviceColW }
+    const colOrder: ResizeCol[] = ['traceId', 'rootName', 'service']
+    const colIdx = colOrder.indexOf(col)
+    const colsToRight = colOrder.slice(colIdx + 1)
+    const target = e.currentTarget as HTMLElement
+    target.setPointerCapture(e.pointerId)
+    activeResizeCol = col
+
+    function onMove(ev: PointerEvent) {
+      const raw = Math.max(MIN_COL_W, snapshot[col] + (ev.clientX - startX))
+      const growth = raw - snapshot[col]
+
+      const rightWidths = colsToRight.map(c => snapshot[c])
+      if (growth > 0) {
+        let remaining = growth
+        for (let i = 0; i < rightWidths.length && remaining > 0; i++) {
+          const shrink = Math.min(remaining, rightWidths[i] - MIN_COL_W)
+          if (shrink > 0) {
+            rightWidths[i] -= shrink
+            remaining -= shrink
+          }
+        }
+      }
+
+      const containerW = tableEl?.closest('.overflow-x-auto')?.clientWidth ?? Infinity
+      const leftW = colOrder.slice(0, colIdx).reduce((sum, c) => sum + snapshot[c], 0)
+      const fixedW = COL_CHECKBOX + COL_ROOT_INDICATOR + COL_TRAILING_FIXED + MIN_ELASTIC_COL
+      const maxW = containerW - fixedW - leftW - rightWidths.reduce((a, b) => a + b, 0)
+      const next = Math.min(maxW, raw)
+
+      if (col === 'traceId') traceIdColW = next
+      else if (col === 'rootName') rootNameColW = next
+      else serviceColW = next
+
+      colsToRight.forEach((c, i) => {
+        if (c === 'traceId') traceIdColW = rightWidths[i]
+        else if (c === 'rootName') rootNameColW = rightWidths[i]
+        else serviceColW = rightWidths[i]
+      })
+    }
+
+    function end() {
+      activeResizeCol = null
+      target.removeEventListener('pointermove', onMove)
+      target.removeEventListener('pointerup', end)
+      target.removeEventListener('pointercancel', end)
+    }
+
+    target.addEventListener('pointermove', onMove)
+    target.addEventListener('pointerup', end)
+    target.addEventListener('pointercancel', end)
+  }
 
   /** Dim stats while refetching; stays on briefly after `loading` ends so opacity can animate. */
   let statsRowMuted = $state(false)
@@ -268,6 +352,22 @@
     }
   }
 
+  function measureAndLockColumns() {
+    if (colsReady || !tableEl) return
+    const ths = tableEl.querySelectorAll<HTMLTableCellElement>('thead th')
+    if (ths.length < 6) return
+    traceIdColW = Math.max(DEFAULT_TRACE_ID, ths[1].offsetWidth)
+    rootNameColW = Math.max(MIN_COL_W, ths[3].offsetWidth)
+    serviceColW = Math.max(MIN_COL_W, ths[4].offsetWidth)
+    colsReady = true
+  }
+
+  $effect(() => {
+    if (!colsReady && hasTraceRows && tableEl) {
+      measureAndLockColumns()
+    }
+  })
+
   // --- lifecycle ---
   onMount(async () => {
     const saved = popNavState<TracesPageNav>('tracesPage')
@@ -339,329 +439,384 @@
           : 'opacity-100'}"
       >
         <div class="overflow-x-auto">
+          <div class="col-resize-context trace-list-col-resize">
             <table
+              bind:this={tableEl}
               class="trace-list-table table table-sm w-full border-collapse"
+              class:table-fixed={colsReady}
+              style:min-width={colsReady ? `${tableMinWidth}px` : undefined}
             >
+              {#if colsReady}
+                <colgroup>
+                  <col style:width="{COL_CHECKBOX}px" />
+                  <col style:width="{traceIdColW}px" />
+                  <col style:width="{COL_ROOT_INDICATOR}px" />
+                  <col style:width="{rootNameColW}px" />
+                  <col style:width="{serviceColW}px" />
+                  <col /><!-- Start Time: elastic, absorbs remaining width -->
+                  <col style="width: 8rem" />
+                  <col style="width: 5.5rem" />
+                  <col style="width: 5.5rem" />
+                  <col style="width: 6.5rem" />
+                </colgroup>
+              {/if}
               <thead>
-                <tr class="table-header-row">
-                  <th class="table-header-cell table-header-cell--checkbox">
+              <tr class="table-header-row">
+                <th class="table-header-cell table-header-cell--checkbox">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    checked={someSelected}
+                    indeterminate={someSelected}
+                    onchange={() => {
+                      if (someSelected) {
+                        selectedTraceIDs = new Set()
+                      } else {
+                        selectedTraceIDs = new Set(
+                          paginatedTraces.map(t => t.traceID)
+                        )
+                      }
+                    }}
+                    aria-label="Select all on this page"
+                  />
+                </th>
+                <th class="table-header-cell table-header-cell--left">
+                  Trace ID
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--trace-root"
+                >
+                  <span class="sr-only">Root Span</span>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                  onclick={() => handleSort('rootSpanName')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={e =>
+                    e.key === 'Enter' && handleSort('rootSpanName')}
+                >
+                  <div class="table-header-sort">
+                    <span>Root Span Name</span>
+                    <span class="table-header-sort__indicator">
+                      <ArrowDownIcon
+                        class="sort-indicator {sortColumn === 'rootSpanName'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn ===
+                          'rootSpanName' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        aria-hidden="true"
+                      />
+                    </span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                  onclick={() => handleSort('serviceName')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={e =>
+                    e.key === 'Enter' && handleSort('serviceName')}
+                >
+                  <div class="table-header-sort">
+                    <span>Service Name</span>
+                    <span class="table-header-sort__indicator">
+                      <ArrowDownIcon
+                        class="sort-indicator {sortColumn === 'serviceName'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn ===
+                          'serviceName' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        aria-hidden="true"
+                      />
+                    </span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                  onclick={() => handleSort('startTime')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={e => e.key === 'Enter' && handleSort('startTime')}
+                >
+                  <div class="table-header-sort">
+                    <span>Start Time</span>
+                    <span class="table-header-sort__indicator">
+                      <ArrowDownIcon
+                        class="sort-indicator {sortColumn === 'startTime'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn ===
+                          'startTime' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        aria-hidden="true"
+                      />
+                    </span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  onclick={() => handleSort('duration')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={e => e.key === 'Enter' && handleSort('duration')}
+                >
+                  <div class="table-header-sort table-header-sort--end">
+                    <span class="table-header-sort__indicator">
+                      <ArrowDownIcon
+                        class="sort-indicator {sortColumn === 'duration'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn ===
+                          'duration' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span>Duration</span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  onclick={() => handleSort('spanCount')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={e => e.key === 'Enter' && handleSort('spanCount')}
+                >
+                  <div class="table-header-sort table-header-sort--end">
+                    <span class="table-header-sort__indicator">
+                      <ArrowDownIcon
+                        class="sort-indicator {sortColumn === 'spanCount'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn ===
+                          'spanCount' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span>Spans</span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  onclick={() => handleSort('errorCount')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={e => e.key === 'Enter' && handleSort('errorCount')}
+                >
+                  <div class="table-header-sort table-header-sort--end">
+                    <span class="table-header-sort__indicator">
+                      <ArrowDownIcon
+                        class="sort-indicator {sortColumn === 'errorCount'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn ===
+                          'errorCount' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span>Errors</span>
+                  </div>
+                </th>
+                <th
+                  class="table-header-cell table-header-cell--sortable table-header-cell--right group"
+                  onclick={() => handleSort('exceptionCount')}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={e =>
+                    e.key === 'Enter' && handleSort('exceptionCount')}
+                >
+                  <div class="table-header-sort table-header-sort--end">
+                    <span class="table-header-sort__indicator">
+                      <ArrowDownIcon
+                        class="sort-indicator {sortColumn === 'exceptionCount'
+                          ? 'sort-indicator--active'
+                          : 'sort-indicator--inactive'} {sortColumn ===
+                          'exceptionCount' && sortDirection === 'asc'
+                          ? 'sort-indicator--asc'
+                          : ''}"
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span>Exceptions</span>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody class="table-body-surface">
+              {#each paginatedTraces as trace}
+                <tr
+                  class="table-row cursor-pointer hover:bg-base-200 transition-colors {selectedTraceIDs.has(
+                    trace.traceID
+                  )
+                    ? 'bg-primary/5'
+                    : ''}"
+                  onclick={() => navigateToTrace(trace.traceID)}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={e =>
+                    e.key === 'Enter' && navigateToTrace(trace.traceID)}
+                >
+                  <td
+                    class="table-cell--checkbox"
+                    onclick={e => e.stopPropagation()}
+                    onkeydown={e => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       class="checkbox checkbox-xs checkbox-primary"
-                      checked={someSelected}
-                      indeterminate={someSelected}
+                      checked={selectedTraceIDs.has(trace.traceID)}
                       onchange={() => {
-                        if (someSelected) {
-                          selectedTraceIDs = new Set()
+                        const next = new Set(selectedTraceIDs)
+                        if (next.has(trace.traceID)) {
+                          next.delete(trace.traceID)
                         } else {
-                          selectedTraceIDs = new Set(
-                            paginatedTraces.map(t => t.traceID)
-                          )
+                          next.add(trace.traceID)
                         }
+                        selectedTraceIDs = next
                       }}
-                      aria-label="Select all on this page"
+                      aria-label="Select trace {trace.traceID}"
                     />
-                  </th>
-                  <th class="table-header-cell table-header-cell--left">
-                    Trace ID
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--trace-root"
-                    style="width: 3rem"
-                  >
-                    Root Span
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                    onclick={() => handleSort('rootSpanName')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={e =>
-                      e.key === 'Enter' && handleSort('rootSpanName')}
-                  >
-                    <div class="table-header-sort">
-                      <span>Root Span Name</span>
-                      <span class="table-header-sort__indicator">
-                        <ArrowDownIcon
-                          class="sort-indicator {sortColumn === 'rootSpanName'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn ===
-                            'rootSpanName' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          aria-hidden="true"
-                        />
+                  </td>
+                  <td class="table-cell--trace-id" title={trace.traceID}>
+                    <span class="trace-list-cell-text">{trace.traceID}</span>
+                  </td>
+                  <td class="table-cell--has-root">
+                    {#if trace.rootSpan}
+                      <span
+                        class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-success/20 text-success"
+                      >
+                        <svg class="w-4 h-4" viewBox="0 0 24 24">
+                          <path d="m5 14l3.5 3.5L19 6.5" />
+                        </svg>
                       </span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                    onclick={() => handleSort('serviceName')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={e =>
-                      e.key === 'Enter' && handleSort('serviceName')}
-                  >
-                    <div class="table-header-sort">
-                      <span>Service Name</span>
-                      <span class="table-header-sort__indicator">
-                        <ArrowDownIcon
-                          class="sort-indicator {sortColumn === 'serviceName'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn ===
-                            'serviceName' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          aria-hidden="true"
-                        />
+                    {:else}
+                      <span
+                        class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-error/20 text-error"
+                      >
+                        <svg class="w-4 h-4" viewBox="0 0 24 24">
+                          <path d="M18 6L6 18m12 0L6 6" />
+                        </svg>
                       </span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                    onclick={() => handleSort('startTime')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={e => e.key === 'Enter' && handleSort('startTime')}
+                    {/if}
+                  </td>
+                  <td
+                    class="table-cell trace-list-cell-truncate"
+                    title={trace.rootSpan?.name?.trim()
+                      ? trace.rootSpan.name
+                      : undefined}
                   >
-                    <div class="table-header-sort">
-                      <span>Start Time</span>
-                      <span class="table-header-sort__indicator">
-                        <ArrowDownIcon
-                          class="sort-indicator {sortColumn === 'startTime'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn ===
-                            'startTime' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          aria-hidden="true"
-                        />
-                      </span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
-                    onclick={() => handleSort('duration')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={e => e.key === 'Enter' && handleSort('duration')}
-                  >
-                    <div class="table-header-sort table-header-sort--end">
-                      <span class="table-header-sort__indicator">
-                        <ArrowDownIcon
-                          class="sort-indicator {sortColumn === 'duration'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn ===
-                            'duration' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          aria-hidden="true"
-                        />
-                      </span>
-                      <span>Duration</span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
-                    style="width: 5.5rem"
-                    onclick={() => handleSort('spanCount')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={e => e.key === 'Enter' && handleSort('spanCount')}
-                  >
-                    <div class="table-header-sort table-header-sort--end">
-                      <span class="table-header-sort__indicator">
-                        <ArrowDownIcon
-                          class="sort-indicator {sortColumn === 'spanCount'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn ===
-                            'spanCount' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          aria-hidden="true"
-                        />
-                      </span>
-                      <span>Spans</span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
-                    style="width: 5.5rem"
-                    onclick={() => handleSort('errorCount')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={e => e.key === 'Enter' && handleSort('errorCount')}
-                  >
-                    <div class="table-header-sort table-header-sort--end">
-                      <span class="table-header-sort__indicator">
-                        <ArrowDownIcon
-                          class="sort-indicator {sortColumn === 'errorCount'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn ===
-                            'errorCount' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          aria-hidden="true"
-                        />
-                      </span>
-                      <span>Errors</span>
-                    </div>
-                  </th>
-                  <th
-                    class="table-header-cell table-header-cell--sortable table-header-cell--right group"
-                    style="width: 6.5rem"
-                    onclick={() => handleSort('exceptionCount')}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={e =>
-                      e.key === 'Enter' && handleSort('exceptionCount')}
-                  >
-                    <div class="table-header-sort table-header-sort--end">
-                      <span class="table-header-sort__indicator">
-                        <ArrowDownIcon
-                          class="sort-indicator {sortColumn === 'exceptionCount'
-                            ? 'sort-indicator--active'
-                            : 'sort-indicator--inactive'} {sortColumn ===
-                            'exceptionCount' && sortDirection === 'asc'
-                            ? 'sort-indicator--asc'
-                            : ''}"
-                          aria-hidden="true"
-                        />
-                      </span>
-                      <span>Exceptions</span>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="table-body-surface">
-                {#each paginatedTraces as trace}
-                  <tr
-                    class="table-row cursor-pointer hover:bg-base-200 transition-colors {selectedTraceIDs.has(
-                      trace.traceID
-                    )
-                      ? 'bg-primary/5'
-                      : ''}"
-                    onclick={() => navigateToTrace(trace.traceID)}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={e =>
-                      e.key === 'Enter' && navigateToTrace(trace.traceID)}
-                  >
-                    <td
-                      class="table-cell--checkbox"
-                      onclick={e => e.stopPropagation()}
-                      onkeydown={e => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        class="checkbox checkbox-xs checkbox-primary"
-                        checked={selectedTraceIDs.has(trace.traceID)}
-                        onchange={() => {
-                          const next = new Set(selectedTraceIDs)
-                          if (next.has(trace.traceID)) {
-                            next.delete(trace.traceID)
-                          } else {
-                            next.add(trace.traceID)
-                          }
-                          selectedTraceIDs = next
-                        }}
-                        aria-label="Select trace {trace.traceID}"
-                      />
-                    </td>
-                    <td
-                      class="table-cell--trace-id"
-                      title={trace.traceID}
-                    >
-                      <span class="trace-list-cell-text">{trace.traceID}</span>
-                    </td>
-                    <td class="table-cell--has-root">
-                      {#if trace.rootSpan}
-                        <span
-                          class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-success/20 text-success"
-                        >
-                          <svg class="w-4 h-4" viewBox="0 0 24 24">
-                            <path d="m5 14l3.5 3.5L19 6.5" />
-                          </svg>
-                        </span>
+                    <span class="trace-list-cell-text">
+                      {#if trace.rootSpan?.name}
+                        {trace.rootSpan.name}
                       {:else}
-                        <span
-                          class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-error/20 text-error"
-                        >
-                          <svg class="w-4 h-4" viewBox="0 0 24 24">
-                            <path d="M18 6L6 18m12 0L6 6" />
-                          </svg>
-                        </span>
+                        <span class="text-base-content/50 italic">—</span>
                       {/if}
-                    </td>
-                    <td
-                      class="table-cell trace-list-cell-truncate"
-                      title={trace.rootSpan?.name?.trim()
-                        ? trace.rootSpan.name
-                        : undefined}
+                    </span>
+                  </td>
+                  <td
+                    class="table-cell trace-list-cell-truncate"
+                    title={trace.rootSpan?.serviceName?.trim()
+                      ? trace.rootSpan.serviceName
+                      : undefined}
+                  >
+                    <span class="trace-list-cell-text">
+                      {#if trace.rootSpan?.serviceName}
+                        {trace.rootSpan.serviceName}
+                      {:else}
+                        <span class="text-base-content/50 italic">—</span>
+                      {/if}
+                    </span>
+                  </td>
+                  <td
+                    class="table-cell text-base-content/80 trace-list-cell-truncate"
+                    title={trace.rootSpan
+                      ? formatTimestamp(
+                          trace.rootSpan.startTime,
+                          timeContext.timezone,
+                          'milliseconds'
+                        )
+                      : undefined}
+                  >
+                    <span class="trace-list-cell-text">
+                      {#if trace.rootSpan}
+                        {formatTimestamp(
+                          trace.rootSpan.startTime,
+                          timeContext.timezone,
+                          'milliseconds'
+                        )}
+                      {:else}
+                        <span class="text-base-content/50 italic">—</span>
+                      {/if}
+                    </span>
+                  </td>
+                  <td
+                    class="table-cell text-right tabular-nums text-base-content/80 trace-list-cell-truncate"
+                    title={traceDurationCellLabel(trace) || undefined}
+                  >
+                    <span class="trace-list-cell-text"
+                      >{traceDurationCellLabel(trace)}</span
                     >
-                      <span class="trace-list-cell-text">
-                        {#if trace.rootSpan?.name}
-                          {trace.rootSpan.name}
-                        {:else}
-                          <span class="text-base-content/50 italic">—</span>
-                        {/if}
-                      </span>
-                    </td>
-                    <td
-                      class="table-cell trace-list-cell-truncate"
-                      title={trace.rootSpan?.serviceName?.trim()
-                        ? trace.rootSpan.serviceName
-                        : undefined}
-                    >
-                      <span class="trace-list-cell-text">
-                        {#if trace.rootSpan?.serviceName}
-                          {trace.rootSpan.serviceName}
-                        {:else}
-                          <span class="text-base-content/50 italic">—</span>
-                        {/if}
-                      </span>
-                    </td>
-                    <td
-                      class="table-cell text-base-content/80 trace-list-cell-truncate"
-                      title={trace.rootSpan
-                        ? formatTimestamp(
-                            trace.rootSpan.startTime,
-                            timeContext.timezone,
-                            'milliseconds'
-                          )
-                        : undefined}
-                    >
-                      <span class="trace-list-cell-text">
-                        {#if trace.rootSpan}
-                          {formatTimestamp(
-                            trace.rootSpan.startTime,
-                            timeContext.timezone,
-                            'milliseconds'
-                          )}
-                        {:else}
-                          <span class="text-base-content/50 italic">—</span>
-                        {/if}
-                      </span>
-                    </td>
-                    <td
-                      class="table-cell text-right tabular-nums text-base-content/80 trace-list-cell-truncate"
-                      title={traceDurationCellLabel(trace) || undefined}
-                    >
-                      <span class="trace-list-cell-text">{traceDurationCellLabel(trace)}</span>
-                    </td>
-                    <td class="table-cell--count">
-                      {trace.spanCount}
-                    </td>
-                    <td class="table-cell--count {trace.errorCount > 0 ? 'text-error' : 'text-base-content/50'}">
-                      {trace.errorCount}
-                    </td>
-                    <td class="table-cell--count {trace.exceptionCount > 0 ? 'text-warning' : 'text-base-content/50'}">
-                      {trace.exceptionCount}
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
+                  </td>
+                  <td class="table-cell--count">
+                    {trace.spanCount}
+                  </td>
+                  <td
+                    class="table-cell--count {trace.errorCount > 0
+                      ? 'text-error'
+                      : 'text-base-content/50'}"
+                  >
+                    {trace.errorCount}
+                  </td>
+                  <td
+                    class="table-cell--count {trace.exceptionCount > 0
+                      ? 'text-warning'
+                      : 'text-base-content/50'}"
+                  >
+                    {trace.exceptionCount}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
             </table>
+            <div
+              class="col-resize-bar"
+              class:col-resize-bar--active={activeResizeCol === 'traceId'}
+              style:left="{barLeftPx.traceId}px"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize Trace ID column"
+              onpointerdown={e => startResizeCol('traceId', e)}
+            >
+              <div class="col-resize-bar__line"></div>
+            </div>
+            <div
+              class="col-resize-bar"
+              class:col-resize-bar--active={activeResizeCol === 'rootName'}
+              style:left="{barLeftPx.rootName}px"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize Root Span Name column"
+              onpointerdown={e => startResizeCol('rootName', e)}
+            >
+              <div class="col-resize-bar__line"></div>
+            </div>
+            <div
+              class="col-resize-bar"
+              class:col-resize-bar--active={activeResizeCol === 'service'}
+              style:left="{barLeftPx.service}px"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize Service Name column"
+              onpointerdown={e => startResizeCol('service', e)}
+            >
+              <div class="col-resize-bar__line"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Pagination Controls -->

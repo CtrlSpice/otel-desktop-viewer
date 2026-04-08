@@ -523,7 +523,7 @@ svg {
 }
 
 .table-cell--has-root {
-  @apply pl-1 pr-4 py-1 text-sm text-center text-base-content align-middle whitespace-nowrap;
+  @apply px-2 py-1 text-sm text-center text-base-content align-middle whitespace-nowrap;
 }
 
 .table-row {
