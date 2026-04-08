@@ -85,7 +85,8 @@
   $effect(() => {
     if (popoverOpen) {
       document.addEventListener('click', handleClickOutside, true)
-      return () => document.removeEventListener('click', handleClickOutside, true)
+      return () =>
+        document.removeEventListener('click', handleClickOutside, true)
     }
   })
 
@@ -134,8 +135,11 @@
 
   {#if popoverOpen}
     <div bind:this={popoverEl} class="field-filter__popover">
-      <div class="field-filter__popover-header">
-        <span class="text-xs font-semibold uppercase tracking-wide text-base-content/55">Columns</span>
+      <div class="field-filter__popover-header table-header-surface">
+        <span
+          class="text-xs font-semibold uppercase tracking-wide text-base-content/55"
+          >Columns</span
+        >
       </div>
       <div class="field-filter__popover-list">
         {#each filterableFields as field (field.name + ':' + field.searchScope)}
@@ -146,9 +150,20 @@
             class:field-filter__option--selected={checked}
             onclick={() => onToggleField(field)}
           >
-            <span class="field-filter__checkbox" class:field-filter__checkbox--checked={checked}>
+            <span
+              class="field-filter__checkbox"
+              class:field-filter__checkbox--checked={checked}
+            >
               {#if checked}
-                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <svg
+                  class="h-3 w-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
                   <path d="M5 12l5 5L20 7" />
                 </svg>
               {/if}

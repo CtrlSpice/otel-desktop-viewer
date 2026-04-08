@@ -474,7 +474,7 @@
                   <col style="width: 6.5rem" />
                 </colgroup>
               {/if}
-              <thead class="sticky top-0 z-10 bg-base-100">
+              <thead class="sticky top-0 z-10 table-header-surface">
               <tr class="table-header-row">
                 <th class="table-header-cell table-header-cell--checkbox">
                   <input
@@ -499,8 +499,9 @@
                 </th>
                 <th
                   class="table-header-cell table-header-cell--trace-root"
+                  title="Has Root Span"
                 >
-                  <span class="sr-only">Root Span</span>
+                  Root
                 </th>
                 <th
                   class="table-header-cell table-header-cell--sortable table-header-cell--left group"

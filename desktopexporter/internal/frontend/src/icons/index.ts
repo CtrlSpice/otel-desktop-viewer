@@ -13,6 +13,7 @@ import CheckmarkCircleIcon from './CheckmarkCircleIcon.svelte'
 import CopyIcon from './CopyIcon.svelte'
 import FilterIcon from './FilterIcon.svelte'
 import FirePitIcon from './FirePitIcon.svelte'
+import GlobalIcon from './GlobalIcon.svelte'
 import HelpCircleIcon from './HelpCircleIcon.svelte'
 import HomeIcon from './HomeIcon.svelte'
 import MoonIcon from './MoonIcon.svelte'
@@ -31,6 +32,7 @@ export {
   CopyIcon,
   FilterIcon,
   FirePitIcon,
+  GlobalIcon,
   HelpCircleIcon,
   HomeIcon,
   MoonIcon,

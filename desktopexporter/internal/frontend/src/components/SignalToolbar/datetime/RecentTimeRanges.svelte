@@ -3,6 +3,7 @@
   import { formatDateTimeRange } from '@/utils/time';
   import {
     loadRecentTimeRanges,
+    MAX_RECENT_TIME_RANGES,
     type RecentTimeRange,
   } from '@/utils/recent-time-ranges';
 
@@ -21,7 +22,7 @@
     void ctx.selection.start;
     void ctx.selection.end;
     void ctx.selection.type;
-    recentTimeRanges = loadRecentTimeRanges();
+    recentTimeRanges = loadRecentTimeRanges().slice(0, MAX_RECENT_TIME_RANGES);
   });
 
   function applyRecentTimeRange(index: number) {
@@ -31,13 +32,15 @@
   }
 </script>
 
-<div class="min-w-0">
-  <div class="section-header mb-1 text-xs font-semibold uppercase tracking-wide text-base-content/70">
-    Recently Used
+<div class="min-w-0 w-full">
+  <div class="recent-section-heading px-3">
+    <span class="table-header-typography">Recently Used</span>
   </div>
-  <div class="max-h-[80px] space-y-0 overflow-y-auto">
+  <div class="recent-ranges-list space-y-0">
     {#if recentTimeRanges.length === 0}
-      <div class="w-full px-1.5 py-0.5 text-left text-xs text-base-content/60">
+      <div
+        class="recent-range-empty flex w-full items-center px-3 text-left text-sm text-base-content/60"
+      >
         No recent time ranges
       </div>
     {:else}
@@ -49,7 +52,9 @@
             entry.end === ctx.selection.end}
           onclick={() => applyRecentTimeRange(index)}
         >
-          {formatDateTimeRange(entry.start, entry.end, ctx.timezone)}
+          <span class="min-w-0 truncate">
+            {formatDateTimeRange(entry.start, entry.end, ctx.timezone)}
+          </span>
         </button>
       {/each}
     {/if}
@@ -58,12 +63,39 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+
+  .recent-section-heading {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    height: var(--table-header-h);
+    min-height: var(--table-header-h);
+    @apply py-1;
+  }
+
+  .recent-ranges-list > :nth-child(odd) {
+    background-color: var(--table-zebra-bg);
+  }
+
+  .recent-range-empty {
+    box-sizing: border-box;
+    height: var(--table-row-h);
+    min-height: var(--table-row-h);
+  }
+
   .recent-range-button {
-    @apply block w-full rounded-md border-none bg-transparent px-1.5 py-1 text-left text-xs leading-snug;
-    @apply text-base-content/90 transition-colors;
-    @apply hover:bg-base-200/90 focus-visible:bg-base-200/90;
+    box-sizing: border-box;
+    height: var(--table-row-h);
+    min-height: var(--table-row-h);
+    @apply flex w-full items-center rounded-none border-none bg-transparent px-3 py-0 text-left text-sm leading-snug;
+    @apply text-base-content/90 transition-colors duration-150;
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
     @apply cursor-pointer;
+  }
+
+  .recent-range-button:hover,
+  .recent-range-button:focus-visible {
+    background-color: var(--table-hover-bg);
   }
 
   .recent-range-button--active {

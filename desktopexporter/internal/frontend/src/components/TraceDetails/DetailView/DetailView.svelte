@@ -118,7 +118,7 @@
             <col style="width: {fieldColWidthPx}px" />
             <col />
           </colgroup>
-          <thead class="detail-view__thead">
+          <thead class="detail-view__thead table-header-surface">
             <tr class="detail-view__header-row">
               <th class="detail-view__th-tabs" colspan="2" scope="colgroup">
                 <nav class="detail-view__tabs">
@@ -292,7 +292,7 @@
   }
 
   .detail-view__thead {
-    @apply sticky top-0 z-10 bg-base-100;
+    @apply sticky top-0 z-10;
   }
 
   .detail-view__header-row {

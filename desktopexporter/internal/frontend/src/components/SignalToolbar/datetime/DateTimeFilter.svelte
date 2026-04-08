@@ -224,7 +224,7 @@
     max-width: calc(100vw - 1.5rem);
     overflow-y: auto;
 
-    @apply bg-base-100 rounded-md shadow-lg;
+    @apply bg-base-100 rounded-lg text-sm shadow-lg;
     @apply border border-base-300 text-base-content;
   }
 

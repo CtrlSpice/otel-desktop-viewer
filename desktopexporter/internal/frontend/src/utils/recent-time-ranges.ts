@@ -1,5 +1,7 @@
 const RECENT_STORAGE_KEY = 'datetime-filter-recent';
-const MAX_RECENT = 10;
+
+/** Stored in localStorage and shown in the datetime popover — keep in sync. */
+export const MAX_RECENT_TIME_RANGES = 5;
 
 export type RecentTimeRange = {
   start: number;
@@ -13,7 +15,13 @@ export function loadRecentTimeRanges(): RecentTimeRange[] {
     if (!saved) return [];
     const parsed: unknown = JSON.parse(saved);
     if (!Array.isArray(parsed)) return [];
-    return parsed as RecentTimeRange[];
+    const rows = parsed as RecentTimeRange[];
+    const sorted = [...rows].sort((a, b) => b.usedAt - a.usedAt);
+    const trimmed = sorted.slice(0, MAX_RECENT_TIME_RANGES);
+    if (trimmed.length < rows.length) {
+      localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(trimmed));
+    }
+    return trimmed;
   } catch {
     return [];
   }
@@ -33,11 +41,13 @@ export function recordRecentTimeRange(
   if (existingIndex !== -1) {
     const updated = [...recentTimeRanges];
     updated[existingIndex] = { ...updated[existingIndex], usedAt };
-    recentTimeRanges = updated.sort((a, b) => b.usedAt - a.usedAt);
+    recentTimeRanges = updated
+      .sort((a, b) => b.usedAt - a.usedAt)
+      .slice(0, MAX_RECENT_TIME_RANGES);
   } else {
     recentTimeRanges = [{ start, end, usedAt }, ...recentTimeRanges]
       .sort((a, b) => b.usedAt - a.usedAt)
-      .slice(0, MAX_RECENT);
+      .slice(0, MAX_RECENT_TIME_RANGES);
   }
 
   localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(recentTimeRanges));

@@ -36,14 +36,20 @@
 </script>
 
 <div
-  class="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto bg-base-200/80 p-1 backdrop-blur-sm"
+  class="table-header-surface min-w-0 flex-nowrap justify-evenly rounded-t-lg px-2"
 >
   {#each PRESETS as preset, index}
+    {@const selected =
+      ctx.selection.type === 'preset' && ctx.selection.presetIndex === index}
     <button
-      class="h-10 w-10 shrink-0 rounded-full text-xs font-medium transition-colors flex items-center justify-center {ctx.selection.type === 'preset' &&
-      ctx.selection.presetIndex === index
-        ? 'bg-primary text-primary-content'
-        : 'text-base-content hover:bg-base-300'}"
+      type="button"
+      class="btn btn-circle btn-sm shrink-0 transition-colors {selected
+        ? 'btn-soft btn-primary'
+        : 'btn-ghost'}"
+      aria-pressed={selected}
+      aria-label={preset.label === 'All'
+        ? 'All time'
+        : `Last ${preset.label}`}
       onclick={() => applyPreset(index)}
     >
       {preset.label}

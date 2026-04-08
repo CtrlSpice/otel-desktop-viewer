@@ -458,13 +458,30 @@ svg {
   @apply text-center;
 }
 
-.table-header-row {
+/* Shared thead / header row fill (trace list, waterfall, any data table). */
+.table-header-surface {
+  box-sizing: border-box;
+  height: var(--table-header-h);
+  min-height: var(--table-header-h);
   @apply bg-base-200/60 backdrop-blur-sm;
+}
+
+/* Div/popover strips use the same bar height; <thead> keeps table layout (no flex here). */
+.table-header-surface:not(thead) {
+  @apply flex items-center py-1;
+}
+
+.table-header-row {
   height: var(--table-header-h);
 }
 
 .table-header-cell {
   @apply align-middle px-4 py-3 text-xs font-semibold tracking-normal text-base-content/55;
+}
+
+/* Same text treatment as .table-header-cell; use on form labels / section titles outside <table>. */
+.table-header-typography {
+  @apply text-xs font-semibold tracking-normal text-base-content/55;
 }
 
 .table-header-cell--sortable {

@@ -515,7 +515,7 @@
             <col style:width="{serviceColWidth}px" />
             <col />
           </colgroup>
-          <thead>
+          <thead class="sticky top-0 z-10 table-header-surface">
             <WaterfallTimeAxisHeader
               traceDurationNs={bounds.duration}
               targetTickCount={TARGET_TICK_COUNT}
@@ -586,10 +586,6 @@
 
   .waterfall-view {
     @apply flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200;
-  }
-
-  .waterfall-grid :global(thead) {
-    @apply sticky top-0 z-10 bg-base-100;
   }
 
   .waterfall-grid:focus-within {
