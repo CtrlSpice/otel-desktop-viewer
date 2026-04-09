@@ -205,6 +205,7 @@
 
 <script lang="ts">
   import { tick } from 'svelte'
+  import type { Snippet } from 'svelte'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
@@ -252,9 +253,10 @@
     selectedSpanID: string | null
     onSelectSpan: (spanID: string) => void
     loading?: boolean
+    footer?: Snippet
   }
 
-  let { spans, selectedSpanID, onSelectSpan, loading = false }: Props = $props()
+  let { spans, selectedSpanID, onSelectSpan, loading = false, footer }: Props = $props()
 
   let bounds = $derived(getTraceBounds(spans))
   const TARGET_TICK_COUNT = 6
@@ -306,7 +308,7 @@
 
     function onMove(ev: PointerEvent) {
       const containerW =
-        gridTableEl?.closest('.panel-body-scroll')?.clientWidth ?? Infinity
+        gridTableEl?.closest('.waterfall-view__scroll')?.clientWidth ?? Infinity
       const maxW = containerW - serviceColWidth - MIN_TIMELINE_COL
       spanColWidth = Math.min(
         maxW,
@@ -336,7 +338,7 @@
 
     function onMove(ev: PointerEvent) {
       const containerW =
-        gridTableEl?.closest('.panel-body-scroll')?.clientWidth ?? Infinity
+        gridTableEl?.closest('.waterfall-view__scroll')?.clientWidth ?? Infinity
       const maxW = containerW - spanColWidth - MIN_TIMELINE_COL
       serviceColWidth = Math.min(
         maxW,
@@ -382,11 +384,20 @@
     if (next.has(spanID)) next.delete(spanID)
     else next.add(spanID)
     collapsedParents = next
+    void clampScroll()
   }
 
   // --- Focus & keyboard on the grid ---
 
+  let scrollEl = $state<HTMLTableSectionElement | null>(null)
   let gridTableEl = $state<HTMLTableElement | null>(null)
+
+  async function clampScroll() {
+    await tick()
+    if (!scrollEl) return
+    const max = scrollEl.scrollHeight - scrollEl.clientHeight
+    if (scrollEl.scrollTop > max) scrollEl.scrollTop = max
+  }
 
   function escapeSpanIdForSelector(spanId: string): string {
     return typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
@@ -514,24 +525,19 @@
 
 <div class="waterfall-panel">
   <div class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}">
-    <div class="waterfall-view__scroll panel-body-scroll">
+    <div class="waterfall-view__scroll">
       <div class="col-resize-context">
         <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
         <table
           bind:this={gridTableEl}
-          class="waterfall-grid table table-sm table-fixed w-full min-w-[36rem] border-collapse"
+          class="split-table waterfall-grid table table-sm w-full min-w-[36rem] border-collapse"
           role="grid"
           aria-label="Span waterfall"
           aria-colcount={3}
           tabindex="-1"
           onkeydown={handleKeydown}
         >
-          <colgroup>
-            <col style:width="{spanColWidth}px" />
-            <col style:width="{serviceColWidth}px" />
-            <col />
-          </colgroup>
-          <thead class="sticky top-0 z-10 table-header-surface">
+          <thead class="table-header-surface">
             <WaterfallTimeAxisHeader
               traceDurationNs={bounds.duration}
               targetTickCount={TARGET_TICK_COUNT}
@@ -539,21 +545,21 @@
               {serviceColWidth}
               onResizeSpanCol={w => {
                 const containerW =
-                  gridTableEl?.closest('.panel-body-scroll')?.clientWidth ??
+                  gridTableEl?.closest('.waterfall-view__scroll')?.clientWidth ??
                   Infinity
                 const maxW = containerW - serviceColWidth - MIN_TIMELINE_COL
                 spanColWidth = Math.min(maxW, Math.max(MIN_SPAN_COL, w))
               }}
               onResizeServiceCol={w => {
                 const containerW =
-                  gridTableEl?.closest('.panel-body-scroll')?.clientWidth ??
+                  gridTableEl?.closest('.waterfall-view__scroll')?.clientWidth ??
                   Infinity
                 const maxW = containerW - spanColWidth - MIN_TIMELINE_COL
                 serviceColWidth = Math.min(maxW, Math.max(MIN_SERVICE_COL, w))
               }}
             />
           </thead>
-          <tbody class="table-body-surface">
+          <tbody class="table-body-surface" bind:this={scrollEl}>
             {#each rows as row (row.spanNode.spanData.spanID)}
               {@const sid = row.spanNode.spanData.spanID}
               <WaterfallRow
@@ -562,6 +568,8 @@
                 selected={sid === selectedSpanID}
                 visible={rowVisibilityBySpanId.get(sid) ?? true}
                 subtreeCollapsed={collapsedParents.has(sid)}
+                {spanColWidth}
+                {serviceColWidth}
                 onRowClick={() => {
                   onSelectSpan(sid)
                   void focusRowTr(sid)
@@ -595,6 +603,9 @@
         </div>
       </div>
     </div>
+    {#if footer}
+      {@render footer()}
+    {/if}
   </div>
 </div>
 
@@ -608,11 +619,19 @@
     @apply flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200;
   }
 
+  .waterfall-grid {
+    @apply min-h-0 flex-1;
+  }
+
   .waterfall-grid:focus-within {
     @apply rounded-xl ring-1 ring-primary/30;
   }
 
   .waterfall-view__scroll {
-    @apply min-h-0 flex-1;
+    @apply flex min-h-0 flex-1 flex-col;
+  }
+
+  .waterfall-view__scroll > :global(.col-resize-context) {
+    @apply flex min-h-0 flex-1 flex-col;
   }
 </style>

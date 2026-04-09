@@ -107,17 +107,14 @@
 
 {#if span}
   <div class="detail-view">
-    <div class="detail-view__scroll panel-body-scroll">
+    <div class="detail-view__scroll">
       <div class="col-resize-context">
         <table
           bind:this={detailTableEl}
-          class="detail-fields w-full min-h-full"
+          class="split-table detail-fields w-full"
           aria-label="Span details"
+          style:--detail-field-col-w="{fieldColWidthPx}px"
         >
-          <colgroup>
-            <col style="width: {fieldColWidthPx}px" />
-            <col />
-          </colgroup>
           <thead class="detail-view__thead table-header-surface">
             <tr class="detail-view__header-row">
               <th class="detail-view__th-tabs" colspan="2" scope="colgroup">
@@ -288,11 +285,15 @@
   }
 
   .detail-view__scroll {
-    @apply min-h-0 flex-1;
+    @apply flex min-h-0 flex-1 flex-col;
   }
 
-  .detail-view__thead {
-    @apply sticky top-0 z-10;
+  .detail-view__scroll > :global(.col-resize-context) {
+    @apply flex min-h-0 flex-1 flex-col;
+  }
+
+  :global(.detail-fields) {
+    @apply min-h-0 flex-1;
   }
 
   .detail-view__header-row {

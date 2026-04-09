@@ -16,6 +16,8 @@
     selected: boolean
     visible: boolean
     subtreeCollapsed: boolean
+    spanColWidth: number
+    serviceColWidth: number
     onRowClick: () => void
     onToggleExpand: () => void
   }
@@ -26,6 +28,8 @@
     selected,
     visible,
     subtreeCollapsed,
+    spanColWidth,
+    serviceColWidth,
     onRowClick,
     onToggleExpand,
   }: Props = $props()
@@ -57,7 +61,7 @@
   aria-selected={selected}
   aria-expanded={hasChildren ? !subtreeCollapsed : undefined}
 >
-  <td class="waterfall-row__td-name p-0 pl-2 align-middle">
+  <td class="waterfall-row__td-name p-0 pl-2 align-middle" style:width="{spanColWidth}px">
     <div class="flex min-w-0 items-center gap-1">
       <WaterfallTreeGutter
         depth={row.spanNode.depth}
@@ -78,6 +82,7 @@
   <td
     class="waterfall-row__td-service p-0 align-middle text-sm text-base-content/60"
     title={serviceName}
+    style:width="{serviceColWidth}px"
   >
     <span class="block truncate pl-2 pr-1">{serviceName}</span>
     <span class="col-resize-marker" aria-hidden="true"></span>

@@ -496,7 +496,7 @@ button:focus-visible:not(.btn) {
   );
   /* Trace list (and matching search chrome): min width before horizontal scroll */
   --trace-list-table-min-width: 60rem;
-  --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 40%, transparent);
+  --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 55%, transparent);
   --table-hover-bg: color-mix(in oklab, var(--color-base-200) 60%, transparent);
   --table-selected-bg: color-mix(
     in oklab,
@@ -534,6 +534,35 @@ button:focus-visible:not(.btn) {
 /* Same frosted fill as panel chrome: paint this on tbody / field lists, then zebra rows on top */
 .table-body-surface {
   @apply bg-base-100/80;
+}
+
+/* Split-table: thead stays in flow, tbody scrolls independently.
+   Requires explicit widths on <th>/<td> since colgroup stops working with display:block.
+   The <table> becomes a flex column so tbody can flex-grow into available space. */
+.split-table {
+  display: flex;
+  flex-direction: column;
+}
+.split-table > thead,
+.split-table > tbody {
+  display: block;
+}
+.split-table > tbody {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  scrollbar-width: thin;
+}
+.split-table > thead > tr,
+.split-table > tbody > tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+/* Soften the last zebra stripe so the table doesn't end abruptly. */
+.table-row:nth-child(even):last-child {
+  --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 40%, transparent);
 }
 
 /* DaisyUI .table draws hairlines between rows; we rely on zebra + hover instead */
@@ -680,8 +709,8 @@ button:focus-visible:not(.btn) {
   @apply pl-4 pr-4 py-1 text-left align-middle text-sm font-normal text-base-content/60;
 }
 
-.detail-fields {
-  table-layout: fixed;
+.detail-fields .table-cell--field-name {
+  width: var(--detail-field-col-w);
 }
 
 .detail-fields .table-cell--field-name,
@@ -747,8 +776,6 @@ button:focus-visible:not(.btn) {
 
 .col-resize-context {
   @apply relative isolate w-full min-h-full;
-  /* Short tables: keep column resize strips as tall as the standard panel cap (not only tbody height) */
-  min-height: var(--panel-body-max-height);
 }
 
 /* Trace list table: no panel-body-max-height cap (it scrolls inside the page, not a fixed panel). */

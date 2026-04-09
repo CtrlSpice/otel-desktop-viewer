@@ -253,6 +253,7 @@
   <th
     scope="col"
     class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-span"
+    style:width="{spanColWidth}px"
   >
     Span
     <div
@@ -265,6 +266,7 @@
   <th
     scope="col"
     class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-service"
+    style:width="{serviceColWidth}px"
   >
     Service
     <div

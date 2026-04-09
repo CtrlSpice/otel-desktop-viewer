@@ -9,11 +9,15 @@
   import { formatTimestamp } from '@/utils/time'
   import { formatDuration, traceSummaryDurationNs } from '@/utils/duration'
   import {
-    compareByOptionalBigintField,
-    compareByStringField,
-    compareByTimestampField,
-  } from '@/utils/compare'
-  import { popNavState, stashNavState } from '@/utils/nav-state'
+    compareTraceSummaries,
+    type TraceSummarySortColumn,
+    type TraceSummarySortDirection,
+  } from '@/utils/trace-summary-sort'
+  import { setTraceListNavIds } from '@/stores/trace-list-nav.svelte'
+  import {
+    loadTraceListTableState,
+    saveTraceListTableState,
+  } from '@/utils/trace-list-table-state'
   import type { TraceSummary, SearchResultEvent } from '@/types/api-types'
   import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
@@ -29,52 +33,8 @@
   } from '@/icons'
 
   // --- types (table) ---
-  type SortColumn =
-    | 'serviceName'
-    | 'rootSpanName'
-    | 'startTime'
-    | 'duration'
-    | 'spanCount'
-    | 'errorCount'
-    | 'exceptionCount'
-  type SortDirection = 'asc' | 'desc'
-
-  interface TracesPageNav {
-    currentPage: number
-    rowsPerPage: number
-    sortColumn: SortColumn
-    sortDirection: SortDirection
-  }
-
-  // --- row comparator for sort() ---
-  /** Primary key by column + direction; tie-break on trace ID. */
-  function compareTraceSummaries(
-    a: TraceSummary,
-    b: TraceSummary,
-    col: SortColumn,
-    dir: SortDirection
-  ): number {
-    const cmp =
-      col === 'serviceName'
-        ? compareByStringField(a, b, t => t.rootSpan?.serviceName)
-        : col === 'rootSpanName'
-          ? compareByStringField(a, b, t => t.rootSpan?.name)
-          : col === 'startTime'
-            ? compareByTimestampField(a, b, t => t.rootSpan?.startTime)
-            : col === 'duration'
-              ? compareByOptionalBigintField(a, b, traceSummaryDurationNs)
-              : col === 'spanCount'
-                ? a.spanCount - b.spanCount
-                : col === 'errorCount'
-                  ? a.errorCount - b.errorCount
-                  : a.exceptionCount - b.exceptionCount
-
-    return cmp !== 0
-      ? dir === 'asc'
-        ? cmp
-        : -cmp
-      : a.traceID.localeCompare(b.traceID)
-  }
+  type SortColumn = TraceSummarySortColumn
+  type SortDirection = TraceSummarySortDirection
 
   // --- context ---
   let timeContext = getTimeContext()
@@ -85,13 +45,12 @@
   let error = $state<string | null>(null)
   let mounted = $state(false)
 
-  // --- state: sort ---
-  let sortColumn = $state<SortColumn>('startTime')
-  let sortDirection = $state<SortDirection>('desc')
-
-  // --- state: pagination ---
+  // --- state: sort + pagination (persisted via localStorage) ---
+  const savedTableState = loadTraceListTableState()
+  let sortColumn = $state<SortColumn>(savedTableState.sortColumn)
+  let sortDirection = $state<SortDirection>(savedTableState.sortDirection)
   let currentPage = $state(1)
-  let rowsPerPage = $state(25)
+  let rowsPerPage = $state(savedTableState.rowsPerPage)
   let rowsPerPageOptions = [10, 25, 50, 100]
   let rowsPerPagePopoverOpen = $state(false)
 
@@ -214,6 +173,10 @@
     return sortedTraces.slice(start, end)
   })
 
+  $effect(() => {
+    setTraceListNavIds(sortedTraces.map(t => t.traceID))
+  })
+
   let totalPages = $derived(Math.ceil(sortedTraces.length / rowsPerPage))
   let startRow = $derived(
     sortedTraces.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1
@@ -240,6 +203,10 @@
   )
 
   // --- effects ---
+  $effect(() => {
+    saveTraceListTableState({ sortColumn, sortDirection, rowsPerPage })
+  })
+
   $effect(() => {
     void sortedTraces
     selectedTraceIDs = new Set()
@@ -342,12 +309,6 @@
   }
 
   function navigateToTrace(traceID: string) {
-    stashNavState<TracesPageNav>('tracesPage', {
-      currentPage,
-      rowsPerPage,
-      sortColumn,
-      sortDirection,
-    })
     router.goto(`/trace/${traceID}`)
   }
 
@@ -384,14 +345,6 @@
 
   // --- lifecycle ---
   onMount(async () => {
-    const saved = popNavState<TracesPageNav>('tracesPage')
-    if (saved) {
-      currentPage = saved.currentPage
-      rowsPerPage = saved.rowsPerPage
-      sortColumn = saved.sortColumn
-      sortDirection = saved.sortDirection
-    }
-
     await fetchTraces()
     mounted = true
   })
