@@ -66,7 +66,7 @@
         return () => telemetryAPI.searchTraces(startTime, endTime, queryTree)
       }
       if (v === 'detail' && traceID) {
-        return () => telemetryAPI.searchTraceSpans(traceID, queryTree)
+        return () => telemetryAPI.searchSpans(traceID, queryTree)
       }
       return null
     }
@@ -145,10 +145,24 @@
 
   // --- effects ---
 
-  /** Debounced fetch of dynamic attributes when time selection or signal changes. */
+  /** Fetch dynamic attributes — by traceID in detail view, by time range in list view. */
   $effect(() => {
     const base = [...staticFieldsList]
     availableFields = base
+
+    if (view === 'detail' && traceID) {
+      let cancelled = false
+      telemetryAPI
+        .getAttributesByTraceID(traceID)
+        .then(attrs => {
+          if (!cancelled) availableFields = [...base, ...attrs]
+        })
+        .catch(err => console.warn('Failed to load trace attributes:', err))
+      return () => {
+        cancelled = true
+      }
+    }
+
     const tc = timeContext
     if (!tc) return
 
@@ -225,14 +239,35 @@
 
   // --- handlers ---
 
+  /** Fetch the trace without any search filter and deliver via onSearchResults. */
+  function fetchCleanTrace() {
+    if (view !== 'detail' || !traceID) return
+    telemetryAPI
+      .searchSpans(traceID)
+      .then(results => {
+        onSearchResults?.({ signal, view, results } as SearchResultEvent)
+      })
+      .catch(err => {
+        searchError = 'Search failed: ' + err.message
+      })
+  }
+
   function onSubmit() {
     const text = editorView?.state.doc.toString() ?? ''
-    if (!text.trim()) return
+
+    if (!text.trim()) {
+      searchError = null
+      fetchCleanTrace()
+      return
+    }
 
     try {
       const queryTree: QueryNode | null = parseQuery(text, availableFields)
       searchError = null
-      if (!queryTree) return
+      if (!queryTree) {
+        fetchCleanTrace()
+        return
+      }
 
       const { start: startTime, end: endTime } = timeContext
         ? selectionToQueryRangeMs(timeContext.selection, Date.now())
@@ -246,19 +281,28 @@
         queryTree
       )
       if (!searchFn) {
-        console.warn('Detail view search not yet implemented')
+        fetchCleanTrace()
         return
       }
 
       searchFn()
         .then(results => {
           onSearchResults?.({ signal, view, results } as SearchResultEvent)
+          if (
+            view === 'detail' &&
+            results?.spans?.length > 0 &&
+            results.spans.every((n: any) => !n.matched)
+          ) {
+            searchError = 'No matching spans found'
+          }
         })
         .catch(err => {
           searchError = 'Search failed: ' + err.message
+          fetchCleanTrace()
         })
-    } catch (error) {
-      searchError = error instanceof Error ? error.message : 'Parse error'
+    } catch (err) {
+      searchError = err instanceof Error ? err.message : 'Parse error'
+      fetchCleanTrace()
     }
   }
 
@@ -290,6 +334,16 @@
     }
     document.addEventListener('click', handleClick, true)
     return () => document.removeEventListener('click', handleClick, true)
+  })
+
+  // Re-fire the current query when navigating between traces in detail view.
+  // The query persists so users can scan across traces for the same pattern;
+  // if nothing matches the new trace, the "zero matches = show all" rule applies.
+  $effect(() => {
+    if (view !== 'detail' || !traceID) return
+    traceID // track changes
+    searchError = null
+    onSubmit()
   })
 
   // --- CodeMirror extensions (static; reference closures over mutable state) ---

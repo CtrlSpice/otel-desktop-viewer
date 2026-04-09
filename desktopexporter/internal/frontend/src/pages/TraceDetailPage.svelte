@@ -76,10 +76,14 @@
     return unsubscribe
   })
 
+  // Trace data fetching is driven by the SearchEditor's re-fire $effect,
+  // which calls onSubmit() on every traceID change. This ensures a single
+  // fetch per navigation — with the active query when present, or a clean
+  // fetch when the editor is empty. Results arrive via handleSearchResults.
   $effect(() => {
-    if (traceID) {
-      fetchTrace()
-    }
+    if (!traceID) return
+    loading = true
+    error = null
   })
 
   async function backfillTraceListIfEmpty() {
@@ -112,14 +116,19 @@
     loading = true
     error = null
     try {
-      const result = await telemetryAPI.getTraceByID(traceID)
+      const result = await telemetryAPI.searchSpans(traceID)
       if (seq !== loadSeq) return
       traceData = result
       selectedSpanID = result.spans[0]?.spanData.spanID ?? null
     } catch (err) {
       if (seq !== loadSeq) return
-      error = err instanceof Error ? err.message : 'Failed to fetch trace'
-      console.error('Error fetching trace:', err)
+      const msg = err instanceof Error ? err.message : ''
+      if (msg.includes('Trace not found')) {
+        traceData = null
+      } else {
+        error = msg || 'Failed to fetch trace'
+        console.error('Error fetching trace:', err)
+      }
     } finally {
       if (seq === loadSeq) {
         loading = false
@@ -138,7 +147,15 @@
   const handleSearchResults = (event: SearchResultEvent) => {
     if (event.signal === 'traces' && event.view === 'detail') {
       traceData = event.results
-      selectedSpanID = event.results.spans[0]?.spanData.spanID ?? null
+      loading = false
+      error = null
+      const stillExists = event.results.spans.some(
+        n => n.spanData.spanID === selectedSpanID
+      )
+      if (!stillExists) {
+        const firstMatch = event.results.spans.find(n => n.matched)
+        selectedSpanID = firstMatch?.spanData.spanID ?? event.results.spans[0]?.spanData.spanID ?? null
+      }
     }
   }
 
@@ -190,7 +207,7 @@
           <div
             class="flex min-h-8 min-w-[10rem] items-center justify-center rounded-lg bg-base-200/50 px-3 text-sm tabular-nums text-base-content/70"
           >
-            {traceNavPositionLabel} of {traceNavTotal}
+            {traceNavPositionLabel} of {traceNavTotal} traces
           </div>
           <button
             type="button"

@@ -21,6 +21,7 @@ export type TraceData = {
 export type SpanNode = {
   spanData: SpanData;
   depth: number;
+  matched: boolean;
 };
 
 export type SpanData = {

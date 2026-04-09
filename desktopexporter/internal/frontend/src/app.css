@@ -497,7 +497,7 @@ button:focus-visible:not(.btn) {
   /* Trace list (and matching search chrome): min width before horizontal scroll */
   --trace-list-table-min-width: 60rem;
   --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 55%, transparent);
-  --table-hover-bg: color-mix(in oklab, var(--color-base-200) 60%, transparent);
+  --table-hover-bg: color-mix(in oklab, var(--color-base-200) 70%, transparent);
   --table-selected-bg: color-mix(
     in oklab,
     var(--color-primary) 10%,

@@ -233,6 +233,20 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     description: 'End timestamp in nanoseconds',
   },
   {
+    name: 'duration',
+    type: 'int64',
+    searchScope: 'field',
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.LESS_THAN,
+      OPERATORS.GREATER_THAN_OR_EQUAL,
+      OPERATORS.LESS_THAN_OR_EQUAL,
+    ],
+    description: 'Span duration in nanoseconds (endTime - startTime)',
+  },
+  {
     name: 'droppedAttributesCount',
     type: 'int64',
     searchScope: 'field',

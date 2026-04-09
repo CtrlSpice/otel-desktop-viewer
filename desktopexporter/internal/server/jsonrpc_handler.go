@@ -26,10 +26,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	switch req.Method {
 	case "searchTraces":
 		return h.searchTraces(ctx, req)
-	case "getTraceByID":
-		return h.getTraceByID(ctx, req)
-	case "searchTraceSpans":
-		return h.searchTraceSpans(ctx, req)
+	case "searchSpans":
+		return h.searchSpans(ctx, req)
 	case "searchLogs":
 		return h.searchLogs(ctx, req)
 	case "searchMetrics", "getMetrics":
@@ -50,6 +48,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.deleteMetricByID(ctx, req)
 	case "getTraceAttributes":
 		return h.getTraceAttributes(ctx, req)
+	case "getAttributesByTraceID":
+		return h.getAttributesByTraceID(ctx, req)
 	case "getStats":
 		return h.getStats(ctx)
 	default:
@@ -93,27 +93,7 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 	return summaries, nil
 }
 
-func (h *JSONRPCHandler) getTraceByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []string
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	if len(params) != 1 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	traceID := params[0]
-	trace, err := spans.GetTrace(ctx, h.store.DB(), traceID)
-	if err != nil {
-		log.Printf("Error getting trace by ID: %v", err)
-		return nil, mapStoreError(err)
-	}
-
-	return trace, nil
-}
-
-func (h *JSONRPCHandler) searchTraceSpans(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		log.Printf("Failed to unmarshal params: %v", err)
@@ -136,9 +116,9 @@ func (h *JSONRPCHandler) searchTraceSpans(ctx context.Context, req *jsonrpc2.Req
 		query = params[1]
 	}
 
-	result, err := spans.SearchTraceSpans(ctx, h.store.DB(), traceID, query)
+	result, err := spans.SearchSpans(ctx, h.store.DB(), traceID, query)
 	if err != nil {
-		log.Printf("Error searching trace spans: %v", err)
+		log.Printf("Error searching spans: %v", err)
 		return nil, mapStoreError(err)
 	}
 	return result, nil
@@ -348,6 +328,33 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 	attributes, err := spans.GetTraceAttributes(ctx, h.store.DB(), startTime, endTime)
 	if err != nil {
 		log.Printf("Error getting trace attributes: %v", err)
+		return nil, mapStoreError(err)
+	}
+
+	return attributes, nil
+}
+
+func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) != 1 {
+		log.Printf("Invalid parameter count: %d (expected 1)", len(params))
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	traceID, ok := params[0].(string)
+	if !ok {
+		log.Printf("Invalid traceID type: %T", params[0])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	attributes, err := spans.GetAttributesByTraceID(ctx, h.store.DB(), traceID)
+	if err != nil {
+		log.Printf("Error getting attributes by trace ID: %v", err)
 		return nil, mapStoreError(err)
 	}
 

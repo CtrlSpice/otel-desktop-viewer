@@ -228,9 +228,7 @@ send_deep_hierarchy_trace() {
           "startTimeUnixNano": "${t0}",
           "endTimeUnixNano": "$(( t0 + 800 * ms_ns ))",
           "status": { "code": 1 },
-          "attributes": [
-            { "key": "span.depth", "value": { "intValue": "0" } }
-          ],
+          "attributes": [],
           "events": [
             {
               "timeUnixNano": "${t0}",

@@ -836,7 +836,7 @@
                 <div
                   class="flex min-h-8 min-w-[10rem] items-center justify-center rounded-lg bg-base-200/50 px-3 text-sm tabular-nums text-base-content/70"
                 >
-                  {startRow}–{endRow} of {sortedTraces.length}
+                  {startRow}–{endRow} of {sortedTraces.length} traces
                 </div>
                 <button
                   type="button"

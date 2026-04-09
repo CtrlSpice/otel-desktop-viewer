@@ -18,6 +18,7 @@
     subtreeCollapsed: boolean
     spanColWidth: number
     serviceColWidth: number
+    matched?: boolean
     onRowClick: () => void
     onToggleExpand: () => void
   }
@@ -30,6 +31,7 @@
     subtreeCollapsed,
     spanColWidth,
     serviceColWidth,
+    matched = false,
     onRowClick,
     onToggleExpand,
   }: Props = $props()
@@ -52,6 +54,7 @@
   class="waterfall-row"
   class:waterfall-row--selected={selected}
   class:waterfall-row--error={row.colorToken === 'error'}
+  class:waterfall-row--matched={matched}
   data-span-id={span.spanID}
   style:visibility={visible ? 'visible' : 'collapse'}
   tabindex={selected && visible ? 0 : -1}
@@ -61,7 +64,10 @@
   aria-selected={selected}
   aria-expanded={hasChildren ? !subtreeCollapsed : undefined}
 >
-  <td class="waterfall-row__td-name p-0 pl-2 align-middle" style:width="{spanColWidth}px">
+  <td
+    class="waterfall-row__td-name p-0 pl-2 align-middle"
+    style:width="{spanColWidth}px"
+  >
     <div class="flex min-w-0 items-center gap-1">
       <WaterfallTreeGutter
         depth={row.spanNode.depth}
@@ -137,28 +143,19 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .waterfall-row {
-    @apply cursor-pointer border-none bg-transparent transition-colors duration-100;
+    @apply cursor-pointer border-none bg-transparent;
     height: var(--table-row-h);
-  }
-
-  .waterfall-row:nth-child(even) {
-    background-color: var(--table-zebra-bg);
   }
 
   .waterfall-row:hover {
     background-color: var(--table-hover-bg);
-    position: relative;
-    z-index: 20;
-  }
-
-  .waterfall-row:focus-visible {
-    @apply outline-none ring-2 ring-primary/40 ring-inset z-[1];
   }
 
   .waterfall-row--selected {
-    @apply bg-primary/10 hover:bg-primary/15;
-    box-shadow: inset 0 0 0 1px
-      color-mix(in oklab, var(--color-primary) 30%, transparent);
+    outline: 1px solid color-mix(in oklab, var(--color-primary) 50%, transparent);
+    outline-offset: -1px;
+    position: relative;
+    z-index: 1;
   }
 
   .waterfall-row__title {
@@ -230,5 +227,22 @@
 
   .waterfall-row--error .waterfall-row__title {
     @apply text-error;
+  }
+
+  .waterfall-row--matched {
+    background-color: color-mix(
+      in oklab,
+      var(--color-primary) 12%,
+      transparent
+    );
+  }
+
+  .waterfall-row--matched:hover,
+  .waterfall-row--matched.waterfall-row--selected {
+    background-color: color-mix(
+      in oklab,
+      var(--color-primary) 22%,
+      transparent
+    );
   }
 </style>

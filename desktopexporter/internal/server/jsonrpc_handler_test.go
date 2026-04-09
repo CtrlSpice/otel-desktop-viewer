@@ -126,12 +126,12 @@ func TestSearchTraces(t *testing.T) {
 	})
 }
 
-func TestGetTraceByID(t *testing.T) {
+func TestSearchSpans(t *testing.T) {
 	handler, teardown := setupHandlerWithData(t)
 	defer teardown()
 
 	t.Run("Found", func(t *testing.T) {
-		req := createRequest("getTraceByID", []string{testTraceIDHex})
+		req := createRequest("searchSpans", []string{testTraceIDHex})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -145,7 +145,7 @@ func TestGetTraceByID(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		req := createRequest("getTraceByID", []string{"00000000-0000-0000-0000-000000000099"})
+		req := createRequest("searchSpans", []string{"00000000-0000-0000-0000-000000000099"})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.Error(t, err)

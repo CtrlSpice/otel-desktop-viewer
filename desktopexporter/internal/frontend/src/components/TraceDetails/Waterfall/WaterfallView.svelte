@@ -358,16 +358,45 @@
     target.addEventListener('pointercancel', end)
   }
 
-  // --- Expand/collapse ---
+  // --- Search match annotation ---
 
-  /** Span IDs whose descendant rows are hidden (`visibility: collapse` on child `<tr>`s). */
-  let collapsedParents = $state<Set<string>>(new Set())
+  let matchedIDs = $derived(
+    new Set(spans.filter(n => n.matched).map(n => n.spanData.spanID))
+  )
+
+  let hasActiveSearch = $derived(
+    spans.length > 0 && matchedIDs.size > 0 && spans.some(n => !n.matched)
+  )
 
   let parentBySpanId = $derived(
     new Map(
       spans.map(n => [n.spanData.spanID, n.spanData.parentSpanID] as const)
     )
   )
+
+  function computeAncestorsOfMatched(
+    matched: Set<string>,
+    parentOf: Map<string, string | null>
+  ): Set<string> {
+    const ancestors = new Set<string>()
+    for (const id of matched) {
+      let pid = parentOf.get(id) ?? null
+      while (pid !== null && !ancestors.has(pid)) {
+        ancestors.add(pid)
+        pid = parentOf.get(pid) ?? null
+      }
+    }
+    return ancestors
+  }
+
+  let ancestorsOfMatched = $derived(
+    computeAncestorsOfMatched(matchedIDs, parentBySpanId)
+  )
+
+  // --- Expand/collapse ---
+
+  /** Span IDs whose descendant rows are hidden (`visibility: collapse` on child `<tr>`s). */
+  let collapsedParents = $state<Set<string>>(new Set())
 
   let rowVisibilityBySpanId = $derived(
     rowVisibilityMap(spans, parentBySpanId, collapsedParents)
@@ -386,6 +415,55 @@
     collapsedParents = next
     void clampScroll()
   }
+
+  let childrenBySpanId = $derived(() => {
+    const map = new Map<string, string[]>()
+    for (const n of spans) {
+      const pid = n.spanData.parentSpanID
+      if (pid) {
+        const list = map.get(pid)
+        if (list) list.push(n.spanData.spanID)
+        else map.set(pid, [n.spanData.spanID])
+      }
+    }
+    return map
+  })
+
+  function hasRelevantDescendant(
+    sid: string,
+    children: Map<string, string[]>,
+    relevant: Set<string>
+  ): boolean {
+    const kids = children.get(sid)
+    if (!kids) return false
+    for (const kid of kids) {
+      if (relevant.has(kid)) return true
+      if (hasRelevantDescendant(kid, children, relevant)) return true
+    }
+    return false
+  }
+
+  // Auto-collapse irrelevant branches when search results arrive; reset when cleared.
+  $effect(() => {
+    if (hasActiveSearch) {
+      const relevant = new Set([...matchedIDs, ...ancestorsOfMatched])
+      const children = childrenBySpanId()
+      const toCollapse = new Set<string>()
+      for (const node of spans) {
+        const sid = node.spanData.spanID
+        const hasKids = (children.get(sid)?.length ?? 0) > 0
+        if (!hasKids) continue
+        if (!relevant.has(sid)) {
+          toCollapse.add(sid)
+        } else if (matchedIDs.has(sid) && !hasRelevantDescendant(sid, children, relevant)) {
+          toCollapse.add(sid)
+        }
+      }
+      collapsedParents = toCollapse
+    } else {
+      collapsedParents = new Set()
+    }
+  })
 
   // --- Focus & keyboard on the grid ---
 
@@ -568,6 +646,7 @@
                 selected={sid === selectedSpanID}
                 visible={rowVisibilityBySpanId.get(sid) ?? true}
                 subtreeCollapsed={collapsedParents.has(sid)}
+                matched={hasActiveSearch && matchedIDs.has(sid)}
                 {spanColWidth}
                 {serviceColWidth}
                 onRowClick={() => {

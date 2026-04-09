@@ -114,6 +114,7 @@ function traceDataFromJSON(json: any): TraceData {
         links: spanNode.spanData.links || [],
       },
       depth: spanNode.depth,
+      matched: spanNode.matched ?? true,
     })),
   }
 }
@@ -208,6 +209,21 @@ export let telemetryAPI = {
     return converted
   },
 
+  getAttributesByTraceID: async (
+    traceID: string
+  ): Promise<FieldDefinition[]> => {
+    const rawData = await callRPC('getAttributesByTraceID', [traceID])
+    if (!Array.isArray(rawData)) {
+      console.warn(
+        'getAttributesByTraceID: Expected array, got:',
+        typeof rawData,
+        rawData
+      )
+      return []
+    }
+    return convertAttributesToFieldDefinitions(rawData)
+  },
+
   searchTraces: async (
     startTime: number,
     endTime: number,
@@ -223,20 +239,14 @@ export let telemetryAPI = {
     return traceSummariesFromJSON(rawData)
   },
 
-  getTraceByID: async (traceID: string): Promise<TraceData> => {
-    const params = [traceID]
-    const rawData = await callRPC('getTraceByID', params)
-    return traceDataFromJSON(rawData)
-  },
-
-  searchTraceSpans: async (
+  searchSpans: async (
     traceID: string,
     queryTree?: QueryNode
   ): Promise<TraceData> => {
     const params = queryTree
       ? [traceID, convertQueryTreeForBackend(queryTree)]
       : [traceID]
-    const rawData = await callRPC('searchTraceSpans', params)
+    const rawData = await callRPC('searchSpans', params)
     return traceDataFromJSON(rawData)
   },
 

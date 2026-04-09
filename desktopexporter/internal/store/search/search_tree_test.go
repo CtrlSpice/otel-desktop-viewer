@@ -125,48 +125,48 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "Name",
 			operator:       "=",
 			value:          "test-span",
-			expectedSQL:    "Name = value_0",
-			expectedParams: []NamedParam{{"value_0", "test-span"}},
+			expectedSQL:    "Name = value_2",
+			expectedParams: []NamedParam{{"value_2", "test-span"}},
 		},
 		{
 			name:           "contains operator",
 			expression:     "Name",
 			operator:       "CONTAINS",
 			value:          "test",
-			expectedSQL:    "Name LIKE value_0",
-			expectedParams: []NamedParam{{"value_0", "%test%"}},
+			expectedSQL:    "Name LIKE value_2",
+			expectedParams: []NamedParam{{"value_2", "%test%"}},
 		},
 		{
 			name:           "starts with operator",
 			expression:     "Name",
 			operator:       "^",
 			value:          "test",
-			expectedSQL:    "Name LIKE value_0",
-			expectedParams: []NamedParam{{"value_0", "test%"}},
+			expectedSQL:    "Name LIKE value_2",
+			expectedParams: []NamedParam{{"value_2", "test%"}},
 		},
 		{
 			name:           "ends with operator",
 			expression:     "Name",
 			operator:       "$",
 			value:          "span",
-			expectedSQL:    "Name LIKE value_0",
-			expectedParams: []NamedParam{{"value_0", "%span"}},
+			expectedSQL:    "Name LIKE value_2",
+			expectedParams: []NamedParam{{"value_2", "%span"}},
 		},
 		{
 			name:           "not contains operator",
 			expression:     "Name",
 			operator:       "NOT CONTAINS",
 			value:          "test",
-			expectedSQL:    "Name NOT LIKE value_0",
-			expectedParams: []NamedParam{{"value_0", "%test%"}},
+			expectedSQL:    "Name NOT LIKE value_2",
+			expectedParams: []NamedParam{{"value_2", "%test%"}},
 		},
 		{
 			name:           "IN operator",
 			expression:     "Name",
 			operator:       "IN",
 			value:          "[test1,test2,test3]",
-			expectedSQL:    "Name IN value_0",
-			expectedParams: []NamedParam{{"value_0", []any{"test1", "test2", "test3"}}},
+			expectedSQL:    "Name IN value_2",
+			expectedParams: []NamedParam{{"value_2", []any{"test1", "test2", "test3"}}},
 		},
 		{
 			name:           "NULL value with equals",
@@ -203,16 +203,16 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expression:     "s.SearchText {COND}",
 			operator:       "=",
 			value:          "test",
-			expectedSQL:    "s.SearchText = value_0",
-			expectedParams: []NamedParam{{"value_0", "test"}},
+			expectedSQL:    "s.SearchText = value_2",
+			expectedParams: []NamedParam{{"value_2", "test"}},
 		},
 		{
 			name:           "placeholder expression CONTAINS",
 			expression:     "s.SearchText {COND}",
 			operator:       "CONTAINS",
 			value:          "test",
-			expectedSQL:    "s.SearchText LIKE value_0",
-			expectedParams: []NamedParam{{"value_0", "%test%"}},
+			expectedSQL:    "s.SearchText LIKE value_2",
+			expectedParams: []NamedParam{{"value_2", "%test%"}},
 		},
 		{
 			name:           "placeholder expression NULL",
@@ -272,8 +272,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "string[]",
 			operator:       "CONTAINS",
 			value:          "hello",
-			expectedSQL:    "list_contains(CAST(a.Value AS VARCHAR[]), value_0)",
-			expectedParams: []NamedParam{{"value_0", "hello"}},
+			expectedSQL:    "list_contains(CAST(a.Value AS VARCHAR[]), value_2)",
+			expectedParams: []NamedParam{{"value_2", "hello"}},
 		},
 		{
 			name:           "int64 array CONTAINS",
@@ -281,8 +281,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "int64[]",
 			operator:       "CONTAINS",
 			value:          "42",
-			expectedSQL:    "list_contains(CAST(a.Value AS BIGINT[]), value_0)",
-			expectedParams: []NamedParam{{"value_0", int64(42)}},
+			expectedSQL:    "list_contains(CAST(a.Value AS BIGINT[]), value_2)",
+			expectedParams: []NamedParam{{"value_2", int64(42)}},
 		},
 		{
 			name:           "float64 array CONTAINS",
@@ -290,8 +290,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "float64[]",
 			operator:       "CONTAINS",
 			value:          "3.14",
-			expectedSQL:    "list_contains(CAST(a.Value AS DOUBLE[]), value_0)",
-			expectedParams: []NamedParam{{"value_0", 3.14}},
+			expectedSQL:    "list_contains(CAST(a.Value AS DOUBLE[]), value_2)",
+			expectedParams: []NamedParam{{"value_2", 3.14}},
 		},
 		{
 			name:           "boolean array CONTAINS",
@@ -299,8 +299,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "boolean[]",
 			operator:       "CONTAINS",
 			value:          "true",
-			expectedSQL:    "list_contains(CAST(a.Value AS BOOLEAN[]), value_0)",
-			expectedParams: []NamedParam{{"value_0", true}},
+			expectedSQL:    "list_contains(CAST(a.Value AS BOOLEAN[]), value_2)",
+			expectedParams: []NamedParam{{"value_2", true}},
 		},
 		{
 			name:           "string array IN",
@@ -308,8 +308,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "string[]",
 			operator:       "IN",
 			value:          "[one,two,three]",
-			expectedSQL:    "list_has_all(CAST(a.Value AS VARCHAR[]), value_0)",
-			expectedParams: []NamedParam{{"value_0", []any{"one", "two", "three"}}},
+			expectedSQL:    "list_has_all(CAST(a.Value AS VARCHAR[]), value_2)",
+			expectedParams: []NamedParam{{"value_2", []any{"one", "two", "three"}}},
 		},
 		{
 			name:           "string array NOT IN",
@@ -317,8 +317,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "string[]",
 			operator:       "NOT IN",
 			value:          "[bad1,bad2]",
-			expectedSQL:    "NOT list_has_all(CAST(a.Value AS VARCHAR[]), value_0)",
-			expectedParams: []NamedParam{{"value_0", []any{"bad1", "bad2"}}},
+			expectedSQL:    "NOT list_has_all(CAST(a.Value AS VARCHAR[]), value_2)",
+			expectedParams: []NamedParam{{"value_2", []any{"bad1", "bad2"}}},
 		},
 		{
 			name:           "string array NOT CONTAINS",
@@ -326,8 +326,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "string[]",
 			operator:       "NOT CONTAINS",
 			value:          "gone",
-			expectedSQL:    "NOT list_contains(CAST(a.Value AS VARCHAR[]), value_0)",
-			expectedParams: []NamedParam{{"value_0", "gone"}},
+			expectedSQL:    "NOT list_contains(CAST(a.Value AS VARCHAR[]), value_2)",
+			expectedParams: []NamedParam{{"value_2", "gone"}},
 		},
 		{
 			name:           "string array = with array value",
@@ -335,8 +335,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "string[]",
 			operator:       "=",
 			value:          "[one,two,three]",
-			expectedSQL:    "CAST(a.Value AS VARCHAR[]) = value_0",
-			expectedParams: []NamedParam{{"value_0", []any{"one", "two", "three"}}},
+			expectedSQL:    "CAST(a.Value AS VARCHAR[]) = value_2",
+			expectedParams: []NamedParam{{"value_2", []any{"one", "two", "three"}}},
 		},
 		{
 			name:           "string array = with scalar value",
@@ -344,8 +344,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "string[]",
 			operator:       "=",
 			value:          "single",
-			expectedSQL:    "CAST(a.Value AS VARCHAR[]) = value_0",
-			expectedParams: []NamedParam{{"value_0", "single"}},
+			expectedSQL:    "CAST(a.Value AS VARCHAR[]) = value_2",
+			expectedParams: []NamedParam{{"value_2", "single"}},
 		},
 		{
 			name:           "string array != with array value",
@@ -353,8 +353,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "string[]",
 			operator:       "!=",
 			value:          "[x,y]",
-			expectedSQL:    "CAST(a.Value AS VARCHAR[]) != value_0",
-			expectedParams: []NamedParam{{"value_0", []any{"x", "y"}}},
+			expectedSQL:    "CAST(a.Value AS VARCHAR[]) != value_2",
+			expectedParams: []NamedParam{{"value_2", []any{"x", "y"}}},
 		},
 		{
 			name:           "string array != with scalar value",
@@ -362,8 +362,8 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:      "string[]",
 			operator:       "!=",
 			value:          "other",
-			expectedSQL:    "CAST(a.Value AS VARCHAR[]) != value_0",
-			expectedParams: []NamedParam{{"value_0", "other"}},
+			expectedSQL:    "CAST(a.Value AS VARCHAR[]) != value_2",
+			expectedParams: []NamedParam{{"value_2", "other"}},
 		},
 		{
 			name:       "unsupported array type",
@@ -501,8 +501,8 @@ func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
 
 	cte, where, args, err := BuildSearchSQL(query, 1000, 2000, mapper, "StartTime >= time_start AND StartTime <= time_end")
 	require.NoError(t, err)
-	assert.Equal(t, "with search_params as (select ? as time_start, ? as time_end, ? as value_0)", cte)
-	assert.Equal(t, "(Name = value_0) AND StartTime >= time_start AND StartTime <= time_end", where)
+	assert.Equal(t, "with search_params as (select ? as time_start, ? as time_end, ? as value_2)", cte)
+	assert.Equal(t, "(Name = value_2) AND StartTime >= time_start AND StartTime <= time_end", where)
 	assert.Equal(t, []any{int64(1000), int64(2000), "test-span"}, args)
 }
 
@@ -541,9 +541,9 @@ func TestBuildSearchSQL_GroupAND(t *testing.T) {
 
 	cte, where, args, err := BuildSearchSQL(query, 1000, 2000, mapper, "StartTime >= time_start AND StartTime <= time_end")
 	require.NoError(t, err)
-	assert.Contains(t, cte, "value_0")
-	assert.Contains(t, cte, "value_1")
-	assert.Contains(t, where, "Name = value_0 AND Kind = value_1")
+	assert.Contains(t, cte, "value_2")
+	assert.Contains(t, cte, "value_3")
+	assert.Contains(t, where, "Name = value_2 AND Kind = value_3")
 	assert.Len(t, args, 4)
 	assert.Equal(t, int64(1000), args[0])
 	assert.Equal(t, int64(2000), args[1])
@@ -569,7 +569,7 @@ func TestBuildSearchSQL_GlobalORs(t *testing.T) {
 
 	_, where, args, err := BuildSearchSQL(query, 1000, 2000, mapper, "StartTime >= time_start AND StartTime <= time_end")
 	require.NoError(t, err)
-	assert.Contains(t, where, "SearchText LIKE value_0 OR Name LIKE value_1")
+	assert.Contains(t, where, "SearchText LIKE value_2 OR Name LIKE value_3")
 	assert.Contains(t, args, "%test%")
 }
 

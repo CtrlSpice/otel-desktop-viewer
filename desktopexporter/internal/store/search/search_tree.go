@@ -167,7 +167,7 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 	var operatorString string
 
 	if hasRaw {
-		rawParamName := fmt.Sprintf("raw_%d", len(*params)-2)
+		rawParamName := fmt.Sprintf("raw_%d", len(*params))
 		*params = append(*params, NamedParam{rawParamName, value})
 		expression = strings.ReplaceAll(expression, rawToken, rawParamName)
 	}
@@ -193,7 +193,7 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		return handleArrayOperator(expression, query, params)
 	}
 
-	paramName := fmt.Sprintf("value_%d", len(*params)-2)
+	paramName := fmt.Sprintf("value_%d", len(*params))
 
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=", "REGEXP":
@@ -246,7 +246,7 @@ func mapArrayTypeToDuckDB(frontendType string) (string, error) {
 func handleArrayOperator(expression string, query *Query, params *[]NamedParam) (string, error) {
 	operator := query.FieldOperator
 	value := query.Value
-	paramName := fmt.Sprintf("value_%d", len(*params)-2)
+	paramName := fmt.Sprintf("value_%d", len(*params))
 
 	duckDBType, err := mapArrayTypeToDuckDB(query.Field.Type)
 	if err != nil {
