@@ -1,6 +1,77 @@
-import { EditorView } from '@codemirror/view';
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { tags as t } from '@lezer/highlight';
+import { EditorView } from '@codemirror/view'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { tags as t } from '@lezer/highlight'
+
+// Tooltip styles injected as a global <style> because:
+//   1. tooltips render in document.body (to escape backdrop-blur containment)
+//   2. EditorView.theme() scopes under .cm-editor, which won't match body-parented tooltips
+//   3. Tailwind tree-shakes unknown selectors from app.css
+//
+// Selectors use html[data-theme] to beat CM's baseTheme `&light`/`&dark` rules
+// and follow the active Rosé Pine palette automatically.
+let tooltipStylesInjected = false
+function ensureTooltipStyles() {
+  if (tooltipStylesInjected) return
+  tooltipStylesInjected = true
+  const style = document.createElement('style')
+  style.textContent = `
+    html[data-theme] .cm-tooltip {
+      background-color: var(--color-base-100);
+      border: 1px solid var(--color-base-300);
+      border-radius: var(--radius-box);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      color: var(--color-base-content);
+      overflow: hidden;
+    }
+    html[data-theme] .cm-tooltip-autocomplete > ul {
+      font-family: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+      font-size: 13px;
+      padding: 0;
+    }
+    html[data-theme] .cm-tooltip-autocomplete > ul > li {
+      display: flex;
+      align-items: center;
+      height: var(--table-row-h);
+      min-height: var(--table-row-h);
+      padding: 0.25rem 1rem;
+      gap: 0.5rem;
+      box-sizing: border-box;
+    }
+    html[data-theme] .cm-tooltip-autocomplete > ul > li:nth-child(odd) {
+      background-color: var(--table-zebra-bg);
+    }
+    html[data-theme] .cm-tooltip-autocomplete > ul > li:hover {
+      background-color: var(--table-hover-bg);
+    }
+    html[data-theme] .cm-tooltip-autocomplete > ul > li[aria-selected] {
+      background-color: var(--color-base-300);
+      color: var(--color-base-content);
+    }
+    html[data-theme] .cm-completionLabel {
+      color: var(--color-base-content);
+      padding-left: 0.25rem;
+    }
+    html[data-theme] .cm-completionDetail {
+      --badge-color: var(--color-secondary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: fit-content;
+      height: calc(var(--size-selector, 0.25rem) * 5);
+      padding-inline: calc(calc(var(--size-selector, 0.25rem) * 5) / 2 - var(--border, 1px));
+      border-radius: var(--radius-selector, 0.25rem);
+      border: var(--border, 1px) solid color-mix(in oklab, var(--badge-color) 10%, var(--color-base-100));
+      background-color: color-mix(in oklab, var(--badge-color) 8%, var(--color-base-100));
+      color: var(--badge-color);
+      font-style: normal;
+      font-size: 0.75rem;
+      margin-left: auto;
+      margin-right: 0.25rem;
+      vertical-align: middle;
+    }
+  `
+  document.head.appendChild(style)
+}
 
 // Theme-aware colors: DaisyUI --color-* plus --color-rose / --color-subtle (app.css)
 const qc = {
@@ -15,7 +86,7 @@ const qc = {
   gold: 'var(--color-warning)',
   rose: 'var(--color-rose)',
   love: 'var(--color-error)',
-};
+}
 
 const queryHighlightStyle = HighlightStyle.define([
   { tag: t.propertyName, color: qc.foam },
@@ -27,7 +98,7 @@ const queryHighlightStyle = HighlightStyle.define([
   { tag: t.null, color: qc.muted, fontStyle: 'italic' },
   { tag: t.paren, color: qc.subtle },
   { tag: t.squareBracket, color: qc.subtle },
-]);
+])
 
 export const queryEditorTheme = EditorView.theme({
   '&': {
@@ -55,35 +126,7 @@ export const queryEditorTheme = EditorView.theme({
   '.cm-placeholder': {
     color: qc.muted,
   },
-  // Completion popup
-  '.cm-tooltip': {
-    backgroundColor: qc.surface,
-    border: `1px solid ${qc.overlay}`,
-    borderRadius: '6px',
-    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
-  },
-  '.cm-tooltip-autocomplete': {
-    '& > ul': {
-      fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
-      fontSize: '13px',
-    },
-    '& > ul > li': {
-      padding: '4px 8px',
-    },
-    '& > ul > li[aria-selected]': {
-      backgroundColor: qc.overlay,
-      color: qc.text,
-    },
-  },
-  '.cm-completionLabel': {
-    color: qc.text,
-  },
-  '.cm-completionDetail': {
-    color: qc.muted,
-    fontStyle: 'normal',
-    marginLeft: '8px',
-  },
-  // Lint diagnostics
+  // Lint diagnostics (render inline in .cm-editor, so EditorView.theme works)
   '.cm-diagnostic-error': {
     borderLeft: `3px solid ${qc.love}`,
     backgroundColor: 'color-mix(in oklab, var(--color-error) 12%, transparent)',
@@ -95,9 +138,11 @@ export const queryEditorTheme = EditorView.theme({
     textDecoration: `underline wavy ${qc.love}`,
     textUnderlineOffset: '3px',
   },
-});
+})
+
+export { ensureTooltipStyles }
 
 export const queryTheme = [
   queryEditorTheme,
   syntaxHighlighting(queryHighlightStyle),
-];
+]

@@ -104,22 +104,24 @@
 <div
   class="flex min-h-0 min-w-0 w-full flex-1 flex-col gap-[var(--layout-gap)] pb-6 pt-0"
 >
-  <SignalToolbar
-    signal="traces"
-    view="detail"
-    {traceID}
-    {traceStats}
-    onBack={handleBack}
-    onRefresh={fetchTrace}
-    trailingFilters={[]}
-  />
-  <SearchEditor
-    signal="traces"
-    view="detail"
-    {traceID}
-    inToolbar
-    onSearchResults={handleSearchResults}
-  />
+  <div class="page-toolbar-block">
+    <SignalToolbar
+      signal="traces"
+      view="detail"
+      {traceID}
+      {traceStats}
+      onBack={handleBack}
+      onRefresh={fetchTrace}
+      trailingFilters={[]}
+    />
+    <SearchEditor
+      signal="traces"
+      view="detail"
+      {traceID}
+      inToolbar
+      onSearchResults={handleSearchResults}
+    />
+  </div>
 
   {#if error}
     <div class="alert alert-error">

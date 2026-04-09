@@ -406,20 +406,22 @@
   class="flex min-h-0 min-w-0 w-full flex-1 flex-col gap-[var(--layout-gap)] pt-0"
 >
   <!-- 1. Header + search -->
-  <SignalToolbar
-    signal="traces"
-    view="list"
-    onRefresh={fetchTraces}
-    {listStats}
-    listStatsMuted={statsRowMuted}
-    trailingFilters={[toolbarTimeRange]}
-  />
-  <SearchEditor
-    signal="traces"
-    view="list"
-    inToolbar
-    onSearchResults={handleSearchResults}
-  />
+  <div class="page-toolbar-block">
+    <SignalToolbar
+      signal="traces"
+      view="list"
+      onRefresh={fetchTraces}
+      {listStats}
+      listStatsMuted={statsRowMuted}
+      trailingFilters={[toolbarTimeRange]}
+    />
+    <SearchEditor
+      signal="traces"
+      view="list"
+      inToolbar
+      onSearchResults={handleSearchResults}
+    />
+  </div>
 
   {#if error}
     <div class="alert alert-error">
@@ -962,11 +964,14 @@
   @reference "../app.css";
 
   .rows-per-page-popover {
-    /* Layout & Positioning */
-    @apply px-0 py-1 mx-0 my-2;
+    /* Layout & Positioning — open upward (pagination sits at bottom; below overflows viewport). */
+    @apply fixed z-50 px-0 py-1 mx-0 mb-2;
     position-anchor: --rows-per-page-anchor;
-    top: anchor(--rows-per-page-anchor bottom);
+    bottom: anchor(--rows-per-page-anchor top);
+    top: auto;
     left: anchor(--rows-per-page-anchor left);
+    right: auto;
+    position-try-fallbacks: flip-block;
 
     /* Visual Styling */
     @apply bg-base-100 rounded-md shadow-lg;

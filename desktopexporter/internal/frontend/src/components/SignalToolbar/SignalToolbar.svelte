@@ -212,6 +212,8 @@
   .signal-toolbar__top-row {
     @apply flex w-full min-w-0 flex-nowrap items-center px-2 py-1;
     gap: var(--layout-gap);
+    min-height: var(--toolbar-search-chrome-min-height);
+    box-sizing: border-box;
   }
 
   /* No outline rings on toolbar actions / filters (soft + primary still read from fill). */

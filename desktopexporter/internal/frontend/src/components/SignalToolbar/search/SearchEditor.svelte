@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import { EditorView, placeholder as cmPlaceholder } from '@codemirror/view'
+  import { EditorView, placeholder as cmPlaceholder, tooltips } from '@codemirror/view'
   import { EditorState } from '@codemirror/state'
   import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
   import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
@@ -23,9 +23,10 @@
   import { queryLanguageSupport } from './lang/query-language'
   import { createQueryCompletionSource } from './lang/completions'
   import { createQueryLinter } from './lang/linter'
-  import { queryTheme } from './lang/theme'
+  import { queryTheme, ensureTooltipStyles } from './lang/theme'
   import { createQueryKeymap } from './lang/keymap'
   import { HelpCircleIcon } from '@/icons'
+  import FieldErrorMessage from '@/components/FieldErrorMessage.svelte'
 
   // --- types ---
   type SearchEditorProps =
@@ -85,11 +86,12 @@
     return sig.charAt(0).toUpperCase() + sig.slice(1)
   }
 
-  /** Detect pasted trace/span IDs and wrap with the field name. */
+  /** Detect pasted trace/span IDs (with or without dashes) and build the default expression. */
   function idReplacementForPaste(text: string): string | null {
-    const trimmed = text.trim()
-    if (/^[a-f0-9]{32}$/i.test(trimmed)) return `traceID = ${trimmed}`
-    if (/^[a-f0-9]{16}$/i.test(trimmed)) return `spanID = ${trimmed}`
+    const hex = text.trim().replace(/-/g, '')
+    if (!/^[a-f0-9]+$/i.test(hex)) return null
+    if (hex.length === 32) return `traceID = ${hex}`
+    if (hex.length === 16) return `spanID = ${hex}`
     return null
   }
 
@@ -292,21 +294,28 @@
 
   // --- CodeMirror extensions (static; reference closures over mutable state) ---
 
-  const pasteHandler = EditorView.inputHandler.of((view, from, to, text) => {
-    const replacement = idReplacementForPaste(text)
-    if (replacement) {
+  const pasteHandler = EditorView.domEventHandlers({
+    paste(event, view) {
+      const text = event.clipboardData?.getData('text/plain')
+      if (!text) return false
+      const replacement = idReplacementForPaste(text)
+      if (!replacement) return false
+
+      event.preventDefault()
+      const { from, to } = view.state.selection.main
       view.dispatch({
         changes: { from, to, insert: replacement },
         selection: { anchor: from + replacement.length },
       })
       return true
-    }
-    return false
+    },
   })
 
   // --- lifecycle ---
 
   onMount(() => {
+    ensureTooltipStyles()
+
     const state = EditorState.create({
       doc: '',
       extensions: [
@@ -314,10 +323,12 @@
         autocompletion({
           override: [createQueryCompletionSource(() => availableFields)],
           activateOnTyping: true,
+          icons: false,
         }),
         createQueryLinter(() => availableFields),
         createQueryKeymap(onSubmit),
         ...queryTheme,
+        tooltips({ parent: document.body }),
         closeBrackets(),
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -407,8 +418,8 @@
   {/if}
 
   {#if searchError}
-    <div class="error-message">
-      {searchError}
+    <div class="px-3">
+      <FieldErrorMessage message={searchError} />
     </div>
   {/if}
 </div>
@@ -575,59 +586,66 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+
   .search-editor-wrapper {
     @apply relative w-full;
   }
 
+  /* List/detail toolbar: frosted card, same min-height as SignalToolbar row, overflow visible for CM tooltips. */
   .search-editor-wrapper--in-toolbar {
-    /*
-      Parent pages use flex column (e.g. TracesPage). With overflow-hidden, flex’s
-      automatic min-height on the main axis can become 0, so this row was allowed to
-      shrink unless we opt out of flex-shrink and set an explicit min-height.
-    */
-    @apply w-full shrink-0 overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 py-1 shadow-surface-sm backdrop-blur-sm;
-    min-width: var(--trace-list-table-min-width);
-    /* Outer box: py-1 matches SignalToolbar top row; inner row = table-row-h + py-1 + borders */
-    min-height: calc(
-      var(--table-row-h) + 0.5rem + 0.5rem + 2 * var(--border, 1px)
-    );
+    @apply w-full shrink-0 overflow-visible rounded-xl border border-base-300/70 bg-base-100/80 py-1 shadow-surface-sm backdrop-blur-sm;
+    box-sizing: border-box;
+    min-height: var(--toolbar-search-chrome-min-height);
+
+    &:focus-within {
+      outline: var(--focus-ring-width) solid var(--focus-ring-color);
+      outline-offset: var(--focus-ring-offset);
+    }
+
+    & .search-editor-container {
+      @apply flex min-h-0 min-w-0 items-stretch rounded-none border-0 bg-transparent shadow-none;
+      height: auto;
+      max-width: none;
+      min-height: var(--table-row-h);
+      width: 100%;
+
+      &:focus,
+      &:focus-within {
+        outline: none;
+        box-shadow: none;
+      }
+    }
+
+    & .editor-mount {
+      @apply min-h-0 self-stretch;
+
+      & :global(.cm-editor) {
+        @apply min-h-full;
+      }
+
+      & :global(.cm-scroller) {
+        min-height: var(--table-row-h);
+      }
+
+      & :global(.cm-content) {
+        /* Tighter than standalone: smaller action cluster in toolbar layout */
+        padding-right: 5rem;
+      }
+    }
   }
 
   .search-editor-container {
-    @apply input;
-    @apply relative flex min-h-10 w-full items-start px-3 py-1;
+    @apply input relative flex min-h-10 w-full items-start px-3 py-1;
+    height: auto;
     min-height: 2.5rem;
-    height: auto;
-  }
-
-  .search-editor-wrapper--in-toolbar .search-editor-container {
-    /* flex overrides daisy .input display:inline-flex so this row is block-level and fills the wrapper */
-    @apply flex min-h-0 min-w-0 items-stretch rounded-none border-0 bg-transparent shadow-none;
-    /* Beat daisy .input fixed height + clamp(…,20rem,…) so the toolbar card can grow and use full width. */
-    height: auto;
-    min-height: var(--table-row-h);
-    width: 100%;
-    max-width: none;
   }
 
   .editor-mount {
     @apply flex-1 min-w-0;
   }
 
-  .search-editor-wrapper--in-toolbar .editor-mount {
-    @apply min-h-0 self-stretch;
-  }
-
   .editor-mount :global(.cm-editor) {
     @apply bg-transparent;
-  }
-
-  .search-editor-wrapper--in-toolbar .editor-mount :global(.cm-editor) {
-    @apply min-h-full;
-  }
-
-  .search-editor-wrapper--in-toolbar .editor-mount :global(.cm-scroller) {
-    min-height: var(--table-row-h);
   }
 
   .editor-mount :global(.cm-focused) {
@@ -635,13 +653,9 @@
   }
 
   .editor-mount :global(.cm-content) {
-    /* Keep text clear of bottom-right action cluster (help + filters + search) */
+    /* Room for bottom-right actions (help, filters, submit) */
     padding-right: 7rem;
     padding-bottom: 0.25rem;
-  }
-
-  .search-editor-wrapper--in-toolbar .editor-mount :global(.cm-content) {
-    padding-right: 5rem;
   }
 
   .search-actions {
@@ -655,14 +669,6 @@
   .search-filter-popover {
     @apply border-t border-base-300/70 bg-base-100/80 backdrop-blur-sm;
     @apply px-3 py-2;
-  }
-
-  .error-message {
-    @apply absolute top-full left-0 right-0;
-    @apply mt-1 px-3 py-2;
-    @apply bg-error/10 text-error;
-    @apply text-xs rounded-md;
-    @apply border border-error/20;
   }
 
   .help-dialog {

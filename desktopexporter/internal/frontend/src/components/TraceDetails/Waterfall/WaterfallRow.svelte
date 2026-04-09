@@ -103,7 +103,10 @@
         {/each}
       </div>
       {#if row.eventMarkers.length > 0}
-        <WaterfallEventDots markers={row.eventMarkers} colorToken={row.colorToken} />
+        <WaterfallEventDots
+          markers={row.eventMarkers}
+          colorToken={row.colorToken}
+        />
       {/if}
       {#if !barFitsLabel}
         <span
@@ -146,7 +149,8 @@
 
   .waterfall-row--selected {
     @apply bg-primary/10 hover:bg-primary/15;
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-primary) 30%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-primary) 30%, transparent);
   }
 
   .waterfall-row__title {

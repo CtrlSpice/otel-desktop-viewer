@@ -89,15 +89,17 @@
 <div
   class="flex min-w-0 w-full flex-col gap-[var(--layout-gap)] overflow-y-auto pb-6 pt-0"
 >
-  <SignalToolbar
-    signal="metrics"
-    view="detail"
-    metricName={metricName || 'Metric'}
-    onBack={handleBack}
-    onRefresh={fetchMetricDetail}
-    trailingFilters={[toolbarTimeRange]}
-  />
-  <SearchEditor signal="metrics" view="detail" inToolbar />
+  <div class="page-toolbar-block">
+    <SignalToolbar
+      signal="metrics"
+      view="detail"
+      metricName={metricName || 'Metric'}
+      onBack={handleBack}
+      onRefresh={fetchMetricDetail}
+      trailingFilters={[toolbarTimeRange]}
+    />
+    <SearchEditor signal="metrics" view="detail" inToolbar />
+  </div>
 
   {#if loading}
     <div class="flex items-center justify-center py-12">

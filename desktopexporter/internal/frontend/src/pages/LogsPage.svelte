@@ -62,18 +62,20 @@
 <div
   class="flex min-w-0 w-full flex-col gap-[var(--layout-gap)] overflow-y-auto pb-6 pt-0"
 >
-  <SignalToolbar
-    signal="logs"
-    view="list"
-    onRefresh={fetchLogs}
-    trailingFilters={[toolbarTimeRange]}
-  />
-  <SearchEditor
-    signal="logs"
-    view="list"
-    inToolbar
-    onSearchResults={handleSearchResults}
-  />
+  <div class="page-toolbar-block">
+    <SignalToolbar
+      signal="logs"
+      view="list"
+      onRefresh={fetchLogs}
+      trailingFilters={[toolbarTimeRange]}
+    />
+    <SearchEditor
+      signal="logs"
+      view="list"
+      inToolbar
+      onSearchResults={handleSearchResults}
+    />
+  </div>
 
   {#if loading}
     <div class="flex justify-center items-center py-12">

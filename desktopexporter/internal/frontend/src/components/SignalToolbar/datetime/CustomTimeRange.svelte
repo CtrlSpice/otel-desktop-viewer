@@ -1,5 +1,6 @@
 <script lang="ts">
   import * as chrono from 'chrono-node'
+  import FieldErrorMessage from '@/components/FieldErrorMessage.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { formatDateTime } from '@/utils/time'
 
@@ -12,11 +13,25 @@
   }
   let customStartText = $state('')
   let customEndText = $state('now')
-  let customError = $state<string | null>(null)
+  let customFieldIssue = $state<{
+    message: string
+    invalidFields: ('start' | 'end')[]
+  } | null>(null)
+
+  let startInputInvalid = $derived(
+    customFieldIssue?.invalidFields.includes('start') ?? false
+  )
+  let endInputInvalid = $derived(
+    customFieldIssue?.invalidFields.includes('end') ?? false
+  )
 
   type ValidationResult =
     | { isValid: true; start: number; end: number }
-    | { isValid: false; error: string }
+    | {
+        isValid: false
+        error: string
+        invalidFields: ('start' | 'end')[]
+      }
 
   type ParseResult =
     | { success: true; timestamp: number }
@@ -31,12 +46,12 @@
         'seconds'
       )
       customEndText = formatDateTime(ctx.selection.end, ctx.timezone, 'seconds')
-      customError = null
+      customFieldIssue = null
     } else {
       // Reset fields when selection changes to non-custom type
       customStartText = ''
       customEndText = 'now'
-      customError = null
+      customFieldIssue = null
     }
   })
 
@@ -46,6 +61,7 @@
       return {
         isValid: false,
         error: 'Please enter start time',
+        invalidFields: ['start'],
       }
     }
 
@@ -60,6 +76,7 @@
       return {
         isValid: false,
         error: startResult.error,
+        invalidFields: ['start'],
       }
     }
 
@@ -68,6 +85,7 @@
       return {
         isValid: false,
         error: endResult.error,
+        invalidFields: ['end'],
       }
     }
 
@@ -79,6 +97,7 @@
       return {
         isValid: false,
         error: 'Start time must be before end time',
+        invalidFields: ['start', 'end'],
       }
     }
 
@@ -87,6 +106,7 @@
       return {
         isValid: false,
         error: 'End time cannot be in the future',
+        invalidFields: ['end'],
       }
     }
 
@@ -94,11 +114,14 @@
   }
 
   function applyCustom() {
-    customError = null
+    customFieldIssue = null
     let validation = validateCustomRange()
 
     if (!validation.isValid) {
-      customError = validation.error
+      customFieldIssue = {
+        message: validation.error,
+        invalidFields: validation.invalidFields,
+      }
       return // Don't change the application state
     }
 
@@ -145,6 +168,11 @@
         type="text"
         placeholder="yesterday, 2024-01-01, 2 hours ago"
         class="input input-bordered input-sm min-w-0 w-full rounded-lg font-mono text-sm"
+        class:input-error={startInputInvalid}
+        aria-invalid={startInputInvalid}
+        aria-describedby={customFieldIssue
+          ? 'custom-time-range-error'
+          : undefined}
         bind:value={customStartText}
       />
 
@@ -157,6 +185,11 @@
           type="text"
           placeholder="e.g., now, 1 hour ago, 2024-01-02"
           class="input input-bordered input-sm join-item min-w-0 flex-1 rounded-l-lg rounded-r-none font-mono text-sm"
+          class:input-error={endInputInvalid}
+          aria-invalid={endInputInvalid}
+          aria-describedby={customFieldIssue
+            ? 'custom-time-range-error'
+            : undefined}
           bind:value={customEndText}
         />
         <button
@@ -171,25 +204,11 @@
         </button>
       </div>
 
-      {#if customError}
-        <div
-          class="flex items-start gap-1.5 bg-transparent text-error"
-          role="alert"
-        >
-          <svg
-            class="mt-0.5 h-3 w-3 shrink-0"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-            aria-hidden="true"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-              clip-rule="evenodd"
-            ></path>
-          </svg>
-          <span class="text-sm leading-snug">{customError}</span>
-        </div>
+      {#if customFieldIssue}
+        <FieldErrorMessage
+          id="custom-time-range-error"
+          message={customFieldIssue.message}
+        />
       {/if}
     </fieldset>
   </form>
