@@ -21,7 +21,7 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .event-marker {
-    @apply absolute z-[3] rounded-full;
+    @apply absolute z-0 rounded-full;
     width: 11px;
     height: 11px;
     top: 50%;

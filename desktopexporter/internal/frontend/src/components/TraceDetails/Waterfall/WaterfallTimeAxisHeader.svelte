@@ -333,7 +333,7 @@
   }
 
   .waterfall-time-axis-header__tick-line {
-    @apply absolute bottom-0 w-px bg-base-content/5;
+    @apply absolute bottom-0 w-px bg-base-content/20;
     left: 0;
     top: calc(50% + 10px);
     transform: translateX(-50%);
@@ -345,5 +345,4 @@
     width: 7px;
     z-index: 2;
   }
-
 </style>

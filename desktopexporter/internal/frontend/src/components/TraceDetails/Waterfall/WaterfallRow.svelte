@@ -88,25 +88,28 @@
         class="waterfall-row__bar waterfall-bar--{row.colorToken}"
         style:left="{row.offsetPercent}%"
         style:width="{row.widthPercent}%"
-      >
-        {#if barFitsLabel}
-          <span
-            class="waterfall-row__bar-label waterfall-row__bar-label--inside"
-          >
-            {durationLabel}
-          </span>
-        {/if}
-      </div>
+      ></div>
       <div class="waterfall-row__bar-grid" aria-hidden="true">
         {#each barGridPercents as p}
           <div class="waterfall-row__grid-line" style:left="{p}%"></div>
         {/each}
       </div>
       {#if row.eventMarkers.length > 0}
-        <WaterfallEventDots
-          markers={row.eventMarkers}
-          colorToken={row.colorToken}
-        />
+        <div class="waterfall-row__event-markers">
+          <WaterfallEventDots
+            markers={row.eventMarkers}
+            colorToken={row.colorToken}
+          />
+        </div>
+      {/if}
+      {#if barFitsLabel}
+        <span
+          class="waterfall-row__bar-label waterfall-row__bar-label--inside"
+          style:left="{row.offsetPercent}%"
+          style:width="{row.widthPercent}%"
+        >
+          {durationLabel}
+        </span>
       {/if}
       {#if !barFitsLabel}
         <span
@@ -174,7 +177,12 @@
   }
 
   .waterfall-row__grid-line {
-    @apply absolute top-0 bottom-0 w-px -translate-x-1/2 bg-base-content/5;
+    @apply absolute top-0 bottom-0 w-px -translate-x-1/2 bg-base-content/10;
+  }
+
+  /* z-[3] layer: event dots (above grid, below labels). */
+  .waterfall-row__event-markers {
+    @apply pointer-events-none absolute inset-0 z-[3];
   }
 
   .waterfall-row__bar-label {
@@ -182,12 +190,15 @@
   }
 
   .waterfall-row__bar-label--inside {
-    @apply relative z-[3] flex h-full items-center px-1 text-base-100 truncate;
+    @apply absolute z-[4] flex h-3.5 min-w-[2px] items-center justify-start overflow-hidden rounded-sm px-1 text-base-100 truncate;
+    top: 50%;
+    transform: translateY(-50%);
     line-height: 14px;
+    pointer-events: none;
   }
 
   .waterfall-row__bar-label--outside {
-    @apply absolute z-[3] text-base-content/60;
+    @apply absolute z-[4] text-base-content/60;
     line-height: 14px;
     top: 50%;
     transform: translateY(-50%);

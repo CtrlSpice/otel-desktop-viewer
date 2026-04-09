@@ -370,7 +370,8 @@ svg {
   @apply border-primary/35 bg-primary/15;
 }
 
-.toolbar-filter-trigger--field.toolbar-filter-trigger--compact .toolbar-filter-trigger__icon {
+.toolbar-filter-trigger--field.toolbar-filter-trigger--compact
+  .toolbar-filter-trigger__icon {
   @apply opacity-100;
 }
 
@@ -442,18 +443,18 @@ svg {
 }
 
 :where(
-    input:not(
-        [type='hidden'],
-        [type='checkbox'],
-        [type='radio'],
-        [type='range'],
-        [type='button'],
-        [type='submit'],
-        [type='reset']
-      ),
-    textarea,
-    select
-  ):focus-visible {
+  input:not(
+    [type='hidden'],
+    [type='checkbox'],
+    [type='radio'],
+    [type='range'],
+    [type='button'],
+    [type='submit'],
+    [type='reset']
+  ),
+  textarea,
+  select
+):focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
 }
@@ -718,7 +719,9 @@ button:focus-visible:not(.btn) {
   border-radius: 9999px;
   background-color: var(--color-neutral);
   opacity: 0;
-  transition: opacity 0.15s, background-color 0.15s;
+  transition:
+    opacity 0.15s,
+    background-color 0.15s;
 }
 
 .resize-handle:hover::after,
