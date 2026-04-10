@@ -4,7 +4,9 @@
 
 expression { condition (!logical LogicalOp expression)? }
 
-condition { Group | Comparison }
+condition { Group | Comparison | FreeText }
+
+FreeText { Value | Field }
 
 Group { "(" expression ")" }
 
@@ -33,7 +35,7 @@ Array { "[" commaSep<value> "]" }
 commaSep<content> { "" | content ("," content)* }
 
 @tokens {
-  Field { $[a-zA-Z_] $[a-zA-Z0-9_.]* }
+  Field { $[a-zA-Z_] $[a-zA-Z0-9_.\-]* }
 
   Operator {
     "=" | "!=" | ">" | "<" | ">=" | "<=" | "=~" | "!~" | "^" | "$"

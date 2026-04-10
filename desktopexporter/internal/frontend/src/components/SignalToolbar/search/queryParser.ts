@@ -139,7 +139,7 @@ class Lexer {
   // Read A Keyword Or Identifier
   private readKeywordOrIdentifier(): string {
     let result = '';
-    while (this.current && /[a-zA-Z0-9_.]/.test(this.current)) {
+    while (this.current && /[a-zA-Z0-9_.\-]/.test(this.current)) {
       result += this.current;
       this.advance();
     }
@@ -232,9 +232,14 @@ class Lexer {
       return { type: 'VALUE', value: 'NULL', position };
     }
 
-    // Otherwise it's a field or value
-    // We'll determine which during parsing
-    return { type: 'FIELD', value: word, position };
+    if (word) {
+      return { type: 'FIELD', value: word, position };
+    }
+
+    // Unrecognized character — consume it so we never loop forever.
+    const ch = this.current;
+    this.advance();
+    return { type: 'VALUE', value: ch, position };
   }
 
   // Tokenize entire input
@@ -625,22 +630,12 @@ export function validateQuery(
     }
   }
 
-  // Check for plain text (global search) — not an error
-  const trimmedInput = input.trim();
-  if (
-    trimmedInput &&
-    !trimmedInput.includes(':') &&
-    !trimmedInput.includes('=') &&
-    !trimmedInput.includes('~') &&
-    !trimmedInput.includes('>') &&
-    !trimmedInput.includes('<') &&
-    !trimmedInput.includes('!') &&
-    !trimmedInput.includes('[') &&
-    !trimmedInput.includes('(') &&
-    !trimmedInput.match(/\b(AND|OR|IN|NOT)\b/i)
-  ) {
-    return [];
-  }
+  // If the token stream has no operators or logical keywords, parseQuery
+  // will treat this as global text search -- not an error.
+  const hasStructuredSyntax = tokens.some(
+    t => t.type === 'OPERATOR' || t.type === 'LOGICAL'
+  );
+  if (!hasStructuredSyntax) return [];
 
   validateExpression();
 
@@ -668,26 +663,20 @@ export function parseQuery(
     const parser = new Parser(tokens, availableFields);
     return parser.parse();
   } catch (error) {
-    // If structured parsing fails, check if it's just plain text
-    const trimmedInput = input.trim();
-
-    // If it's plain text (no operators, no colons), treat as full-text search
-    if (
-      trimmedInput &&
-      !trimmedInput.includes(':') &&
-      !trimmedInput.includes('=') &&
-      !trimmedInput.includes('~') &&
-      !trimmedInput.includes('>') &&
-      !trimmedInput.includes('<') &&
-      !trimmedInput.includes('!') &&
-      !trimmedInput.includes('[') &&
-      !trimmedInput.includes('(') &&
-      !trimmedInput.match(/\b(AND|OR|IN|NOT)\b/i)
-    ) {
-      return createGlobalTextSearch(trimmedInput);
+    // If the input has no operator or logical tokens, it's plain text --
+    // treat as global search. Otherwise it's a malformed structured query.
+    try {
+      const tokens = new Lexer(input).tokenize();
+      const hasStructuredSyntax = tokens.some(
+        t => t.type === 'OPERATOR' || t.type === 'LOGICAL'
+      );
+      if (!hasStructuredSyntax) {
+        return createGlobalTextSearch(input.trim());
+      }
+    } catch {
+      return createGlobalTextSearch(input.trim());
     }
 
-    // Re-throw the original parse error
     throw new Error(
       error instanceof Error ? error.message : 'Failed to parse query'
     );

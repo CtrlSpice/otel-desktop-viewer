@@ -21,8 +21,7 @@ import (
 var (
 	ErrTraceIDNotFound    = errors.New("trace ID not found")
 	ErrSpanIDNotFound     = errors.New("span ID not found")
-	ErrInvalidSpanID      = errors.New("invalid span ID")
-	ErrInvalidTraceQuery  = errors.New("invalid trace search query")
+	ErrInvalidTraceQuery = errors.New("invalid trace search query")
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
@@ -706,6 +705,9 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, params *[]searc
 
 func mapTraceGlobalExpressions() ([]string, error) {
 	return []string{
+		"replace(s.trace_id::varchar, '-', '') {COND}",
+		"right(replace(s.span_id::varchar, '-', ''), 16) {COND}",
+		"right(replace(s.parent_span_id::varchar, '-', ''), 16) {COND}",
 		"CAST(s.name AS VARCHAR) {COND}",
 		"CAST(s.kind AS VARCHAR) {COND}",
 		"CAST(s.status_code AS VARCHAR) {COND}",
@@ -714,7 +716,7 @@ func mapTraceGlobalExpressions() ([]string, error) {
 		"CAST(s.scope_name AS VARCHAR) {COND}",
 		"CAST(s.scope_version AS VARCHAR) {COND}",
 		"exists(select 1 from events e where e.span_id = s.span_id and CAST(e.name AS VARCHAR) {COND})",
-		"exists(select 1 from links l where l.span_id = s.span_id and (CAST(l.trace_id AS VARCHAR) {COND} or CAST(l.trace_state AS VARCHAR) {COND} or CAST(l.linked_span_id AS VARCHAR) {COND}))",
+		"exists(select 1 from links l where l.span_id = s.span_id and (replace(l.trace_id::varchar, '-', '') {COND} or CAST(l.trace_state AS VARCHAR) {COND} or right(replace(l.linked_span_id::varchar, '-', ''), 16) {COND}))",
 		`exists(
 			select 1
 			from attributes a
@@ -729,20 +731,3 @@ func mapTraceGlobalExpressions() ([]string, error) {
 	}, nil
 }
 
-// normalizeSpanID converts a 16-char OTel span ID to 32-char zero-padded hex
-// so it matches the UUID format used during ingest (8 zero bytes + 8 span ID bytes).
-// If the input is already 32 chars (with or without hyphens), it's returned as-is after stripping hyphens.
-var _ = normalizeSpanID // keep for upcoming span-lookup queries
-
-func normalizeSpanID(s string) (string, error) {
-	s = strings.TrimSpace(s)
-	s = strings.ReplaceAll(s, "-", "")
-	switch len(s) {
-	case 16:
-		return "0000000000000000" + s, nil
-	case 32:
-		return s, nil
-	default:
-		return "", fmt.Errorf("%w: invalid length %d (expected 16 or 32 hex chars)", ErrInvalidSpanID, len(s))
-	}
-}

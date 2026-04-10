@@ -86,15 +86,6 @@
     return sig.charAt(0).toUpperCase() + sig.slice(1)
   }
 
-  /** Detect pasted trace/span IDs (with or without dashes) and build the default expression. */
-  function idReplacementForPaste(text: string): string | null {
-    const hex = text.trim().replace(/-/g, '')
-    if (!/^[a-f0-9]+$/i.test(hex)) return null
-    if (hex.length === 32) return `traceID = ${hex}`
-    if (hex.length === 16) return `spanID = ${hex}`
-    return null
-  }
-
   // --- context ---
   let {
     signal,
@@ -346,25 +337,6 @@
     onSubmit()
   })
 
-  // --- CodeMirror extensions (static; reference closures over mutable state) ---
-
-  const pasteHandler = EditorView.domEventHandlers({
-    paste(event, view) {
-      const text = event.clipboardData?.getData('text/plain')
-      if (!text) return false
-      const replacement = idReplacementForPaste(text)
-      if (!replacement) return false
-
-      event.preventDefault()
-      const { from, to } = view.state.selection.main
-      view.dispatch({
-        changes: { from, to, insert: replacement },
-        selection: { anchor: from + replacement.length },
-      })
-      return true
-    },
-  })
-
   // --- lifecycle ---
 
   onMount(() => {
@@ -387,7 +359,6 @@
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         cmPlaceholder(placeholderText),
-        pasteHandler,
         EditorView.lineWrapping,
       ],
     })
@@ -629,12 +600,6 @@
       </li>
     </ul>
 
-    <h3 class="help-section-heading">Pasting IDs</h3>
-    <p class="mt-1 text-sm text-base-content/80">
-      Paste a 32-character trace ID or 16-character span ID and it auto-fills as
-      <code class="text-xs">traceID = …</code> or
-      <code class="text-xs">spanID = …</code>.
-    </p>
   </div>
 </dialog>
 

@@ -442,6 +442,40 @@ func TestSearchTraces(t *testing.T) {
 		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
+	t.Run("GlobalSearch_SpanID", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q7",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "0000000000000001",
+			},
+		}
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries, "global search for span ID hex should match")
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_TraceID", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q8",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "00000000000000000000000000000099",
+			},
+		}
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries, "global search for trace ID hex should match")
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
 	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
 		query := &search.QueryNode{
 			ID:   "q6",

@@ -10,4 +10,5 @@ export const
   Array = 8,
   Value = 9,
   Null = 10,
-  LogicalOp = 11
+  FreeText = 11,
+  LogicalOp = 12
