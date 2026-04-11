@@ -80,6 +80,7 @@ export function getOffset(
   point: bigint
 ): number {
   let totalNs = endTime - startTime;
+  if (totalNs <= 0n) return 0;
   let offsetNs = point - startTime;
   return Math.floor(Number((offsetNs * 100n) / totalNs));
 }
