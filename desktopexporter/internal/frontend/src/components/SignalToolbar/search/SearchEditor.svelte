@@ -63,23 +63,49 @@
   // --- helpers ---
 
   type SearchContext =
-    | { view: 'list'; signal: 'traces' | 'logs' | 'metrics'; startTime: number; endTime: number }
+    | {
+        view: 'list'
+        signal: 'traces' | 'logs' | 'metrics'
+        startTime: number
+        endTime: number
+      }
     | { view: 'detail'; signal: 'traces'; traceID: string }
     | { view: 'detail'; signal: 'metrics'; metricName: string }
 
-  const searchDispatch: Record<string, Record<string, (ctx: SearchContext, q?: QueryNode) => (() => Promise<any>) | null>> = {
+  const searchDispatch: Record<
+    string,
+    Record<
+      string,
+      (ctx: SearchContext, q?: QueryNode) => (() => Promise<any>) | null
+    >
+  > = {
     list: {
-      traces:  (ctx, q) => ctx.view === 'list' ? () => telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q) : null,
-      logs:    (ctx, q) => ctx.view === 'list' ? () => telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q) : null,
-      metrics: (ctx, q) => ctx.view === 'list' ? () => telemetryAPI.getMetrics(ctx.startTime, ctx.endTime, q) : null,
+      traces: (ctx, q) =>
+        ctx.view === 'list'
+          ? () => telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q)
+          : null,
+      logs: (ctx, q) =>
+        ctx.view === 'list'
+          ? () => telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q)
+          : null,
+      metrics: (ctx, q) =>
+        ctx.view === 'list'
+          ? () => telemetryAPI.getMetrics(ctx.startTime, ctx.endTime, q)
+          : null,
     },
     detail: {
-      traces:  (ctx, q) => 'traceID' in ctx ? () => telemetryAPI.searchSpans(ctx.traceID, q) : null,
+      traces: (ctx, q) =>
+        'traceID' in ctx
+          ? () => telemetryAPI.searchSpans(ctx.traceID, q)
+          : null,
     },
   }
 
   /** Build the API call for a signal+view, or null if unsupported. */
-  function buildSearchFn(ctx: SearchContext, queryTree?: QueryNode): (() => Promise<any>) | null {
+  function buildSearchFn(
+    ctx: SearchContext,
+    queryTree?: QueryNode
+  ): (() => Promise<any>) | null {
     return searchDispatch[ctx.view]?.[ctx.signal]?.(ctx, queryTree) ?? null
   }
 
@@ -91,13 +117,16 @@
   function normalizeDurationValues(node: QueryNode): string | null {
     if (node.type === 'group') {
       return node.group.children.reduce<string | null>(
-        (err, child) => err ?? normalizeDurationValues(child), null
+        (err, child) => err ?? normalizeDurationValues(child),
+        null
       )
     }
-    if (!('name' in node.query.field) || node.query.field.name !== 'duration') return null
+    if (!('name' in node.query.field) || node.query.field.name !== 'duration')
+      return null
 
     const ns = parseDuration(node.query.value)
-    if (ns === null) return `Invalid duration: "${node.query.value}". Try "1s", "500ms", "2m", etc.`
+    if (ns === null)
+      return `Invalid duration: "${node.query.value}". Try "1s", "500ms", "2m", etc.`
     node.query.value = ns.toString()
     return null
   }
@@ -163,7 +192,9 @@
 
   $effect(() => {
     editorView?.dispatch({
-      effects: placeholderCompartment.reconfigure(cmPlaceholder(placeholderText)),
+      effects: placeholderCompartment.reconfigure(
+        cmPlaceholder(placeholderText)
+      ),
     })
   })
 
@@ -436,7 +467,10 @@
   class="search-editor-wrapper"
   class:search-editor-wrapper--in-toolbar={inToolbar}
 >
-  <div class="search-editor-container" class:search-editor-container--error={!!searchError}>
+  <div
+    class="search-editor-container"
+    class:search-editor-container--error={!!searchError}
+  >
     <div class="editor-mount" bind:this={editorContainer}></div>
 
     <div class="search-actions join">

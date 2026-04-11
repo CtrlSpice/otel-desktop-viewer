@@ -67,7 +67,9 @@
       try {
         const s = await telemetryAPI.getStats()
         polledLogCount = s.logs.logCount
-      } catch { /* polling failures are silent */ }
+      } catch {
+        /* polling failures are silent */
+      }
     }, POLL_INTERVAL_MS)
     return () => clearInterval(id)
   })
@@ -108,8 +110,8 @@
         view="list"
         inToolbar
         onSearchResults={handleSearchResults}
-        onSearchError={(err) => (searchError = err)}
-        onReady={(api) => (searchEditorApi = api)}
+        onSearchError={err => (searchError = err)}
+        onReady={api => (searchEditorApi = api)}
       />
     </SignalToolbar>
   </div>

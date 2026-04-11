@@ -126,7 +126,9 @@
             </button>
             {#if refreshIndicatorText}
               <span class="refresh-indicator-badge">
-                <span class="refresh-indicator-badge__text">{refreshIndicatorText}</span>
+                <span class="refresh-indicator-badge__text"
+                  >{refreshIndicatorText}</span
+                >
               </span>
             {/if}
           </div>
@@ -275,7 +277,9 @@
     padding: 0;
     border-radius: 9999px;
     overflow: hidden;
-    transition: width 0.25s ease, padding 0.25s ease;
+    transition:
+      width 0.25s ease,
+      padding 0.25s ease;
     z-index: 1;
   }
 

@@ -124,7 +124,9 @@
     const id = setInterval(async () => {
       try {
         polledSpanCount = await telemetryAPI.getTraceSpanCount(tid)
-      } catch { /* polling failures are silent */ }
+      } catch {
+        /* polling failures are silent */
+      }
     }, POLL_INTERVAL_MS)
     return () => clearInterval(id)
   })
@@ -184,7 +186,10 @@
       )
       if (!stillExists) {
         const firstMatch = event.results.spans.find(n => n.matched)
-        selectedSpanID = firstMatch?.spanData.spanID ?? event.results.spans[0]?.spanData.spanID ?? null
+        selectedSpanID =
+          firstMatch?.spanData.spanID ??
+          event.results.spans[0]?.spanData.spanID ??
+          null
       }
     }
   }
@@ -285,8 +290,8 @@
         {traceID}
         inToolbar
         onSearchResults={handleSearchResults}
-        onSearchError={(err) => (searchError = err)}
-        onReady={(api) => (searchEditorApi = api)}
+        onSearchError={err => (searchError = err)}
+        onReady={api => (searchEditorApi = api)}
       />
     </SignalToolbar>
   </div>

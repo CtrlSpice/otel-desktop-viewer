@@ -1,28 +1,28 @@
 <script lang="ts">
   import { CheckmarkCircleIcon, CopyIcon } from '@/icons'
 
-  export let code: string;
+  export let code: string
 
-  let copied = false;
+  let copied = false
 
   // Process the code for bash commands
-  $: processedCode = processCode(code);
+  $: processedCode = processCode(code)
 
   function processCode(code: string): string {
     return code
       .replace(/^\$ /gm, '<span class="prompt">$</span> ')
-      .replace(/^# (.+)$/gm, '<span class="comment"># $1</span>');
+      .replace(/^# (.+)$/gm, '<span class="comment"># $1</span>')
   }
 
   async function copyToClipboard() {
     try {
-      await navigator.clipboard.writeText(code);
-      copied = true;
+      await navigator.clipboard.writeText(code)
+      copied = true
       setTimeout(() => {
-        copied = false;
-      }, 2000);
+        copied = false
+      }, 2000)
     } catch (err) {
-      console.error('Failed to copy text: ', err);
+      console.error('Failed to copy text: ', err)
     }
   }
 </script>

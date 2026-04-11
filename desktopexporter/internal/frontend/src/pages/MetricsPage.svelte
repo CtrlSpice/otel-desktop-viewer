@@ -7,7 +7,11 @@
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
   import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
   import { formatTimestamp } from '@/utils/time'
-  import type { MetricData, MetricStats, SearchResultEvent } from '@/types/api-types'
+  import type {
+    MetricData,
+    MetricStats,
+    SearchResultEvent,
+  } from '@/types/api-types'
   import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
 
   let timeContext = getTimeContext()
@@ -26,9 +30,11 @@
     if (!baselineStats || !polledStats) return ''
     const parts: string[] = []
     const metricDelta = polledStats.metricCount - baselineStats.metricCount
-    if (metricDelta > 0) parts.push(`+${metricDelta} metric${metricDelta !== 1 ? 's' : ''}`)
+    if (metricDelta > 0)
+      parts.push(`+${metricDelta} metric${metricDelta !== 1 ? 's' : ''}`)
     const dpDelta = polledStats.dataPointCount - baselineStats.dataPointCount
-    if (dpDelta > 0) parts.push(`+${dpDelta} data point${dpDelta !== 1 ? 's' : ''}`)
+    if (dpDelta > 0)
+      parts.push(`+${dpDelta} data point${dpDelta !== 1 ? 's' : ''}`)
     return parts.join(', ')
   })
 
@@ -72,7 +78,9 @@
       try {
         const s = await telemetryAPI.getStats()
         polledStats = s.metrics
-      } catch { /* polling failures are silent */ }
+      } catch {
+        /* polling failures are silent */
+      }
     }, POLL_INTERVAL_MS)
     return () => clearInterval(id)
   })
@@ -113,8 +121,8 @@
         view="list"
         inToolbar
         onSearchResults={handleSearchResults}
-        onSearchError={(err) => (searchError = err)}
-        onReady={(api) => (searchEditorApi = api)}
+        onSearchError={err => (searchError = err)}
+        onReady={api => (searchEditorApi = api)}
       />
     </SignalToolbar>
   </div>

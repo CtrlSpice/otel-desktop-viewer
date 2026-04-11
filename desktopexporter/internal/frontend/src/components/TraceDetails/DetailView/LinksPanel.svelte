@@ -1,25 +1,25 @@
 <script lang="ts">
-  import type { LinkData } from '@/types/api-types';
-  import SpanField from './SpanField.svelte';
-  import { router } from 'tinro5';
+  import type { LinkData } from '@/types/api-types'
+  import SpanField from './SpanField.svelte'
+  import { router } from 'tinro5'
 
   type Props = {
-    links: LinkData[];
-  };
+    links: LinkData[]
+  }
 
-  let { links }: Props = $props();
+  let { links }: Props = $props()
 
-  let openLinks = $state<Set<number>>(new Set([0]));
+  let openLinks = $state<Set<number>>(new Set([0]))
 
   function toggle(index: number, e: MouseEvent) {
-    e.stopPropagation();
-    let next = new Set(openLinks);
+    e.stopPropagation()
+    let next = new Set(openLinks)
     if (next.has(index)) {
-      next.delete(index);
+      next.delete(index)
     } else {
-      next.add(index);
+      next.add(index)
     }
-    openLinks = next;
+    openLinks = next
   }
 </script>
 
@@ -33,8 +33,10 @@
           class="group-toggle"
           class:group-toggle--open={open}
           aria-expanded={open}
-          aria-label={open ? `Collapse link ${index + 1}` : `Expand link ${index + 1}`}
-          onclick={(e) => toggle(index, e)}
+          aria-label={open
+            ? `Collapse link ${index + 1}`
+            : `Expand link ${index + 1}`}
+          onclick={e => toggle(index, e)}
         >
           <svg
             class="group-toggle__caret"
@@ -42,11 +44,25 @@
             fill="none"
             aria-hidden="true"
           >
-            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" />
-            <path d="M10 8l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+            <path
+              d="M10 8l4 4-4 4"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </button>
-        <span class="links-panel__key">traceID<span aria-hidden="true">:</span></span>
+        <span class="links-panel__key"
+          >traceID<span aria-hidden="true">:</span></span
+        >
       </div>
       <span class="col-resize-marker" aria-hidden="true"></span>
     </th>
@@ -55,7 +71,7 @@
         <a
           class="links-panel__trace-link"
           href="/trace/{link.traceID}"
-          onclick={(e) => {
+          onclick={e => {
             e.preventDefault()
             e.stopPropagation()
             router.goto(`/trace/${link.traceID}`)
@@ -70,8 +86,18 @@
     </td>
   </tr>
   {#if open}
-    <SpanField nested fieldName="span id" fieldValue={link.spanID} fieldType="string" />
-    <SpanField nested fieldName="trace state" fieldValue={link.traceState} fieldType="string" />
+    <SpanField
+      nested
+      fieldName="span id"
+      fieldValue={link.spanID}
+      fieldType="string"
+    />
+    <SpanField
+      nested
+      fieldName="trace state"
+      fieldValue={link.traceState}
+      fieldType="string"
+    />
     {#each link.attributes as attr}
       <SpanField
         nested

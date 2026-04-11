@@ -1,30 +1,30 @@
 <script lang="ts">
-  import type { EventData } from '@/types/api-types';
-  import SpanField from './SpanField.svelte';
-  import { formatDuration } from '@/utils/duration';
-  import { formatTimestamp } from '@/utils/time';
-  import { getTimeContext } from '@/contexts/time-context.svelte';
+  import type { EventData } from '@/types/api-types'
+  import SpanField from './SpanField.svelte'
+  import { formatDuration } from '@/utils/duration'
+  import { formatTimestamp } from '@/utils/time'
+  import { getTimeContext } from '@/contexts/time-context.svelte'
 
   type Props = {
-    events: EventData[];
-    spanStartTime: bigint;
-  };
+    events: EventData[]
+    spanStartTime: bigint
+  }
 
-  let { events, spanStartTime }: Props = $props();
+  let { events, spanStartTime }: Props = $props()
 
-  let timeContext = getTimeContext();
+  let timeContext = getTimeContext()
 
-  let openEvents = $state<Set<number>>(new Set([0]));
+  let openEvents = $state<Set<number>>(new Set([0]))
 
   function toggle(index: number, e: MouseEvent) {
-    e.stopPropagation();
-    let next = new Set(openEvents);
+    e.stopPropagation()
+    let next = new Set(openEvents)
     if (next.has(index)) {
-      next.delete(index);
+      next.delete(index)
     } else {
-      next.add(index);
+      next.add(index)
     }
-    openEvents = next;
+    openEvents = next
   }
 </script>
 
@@ -39,7 +39,7 @@
           class:group-toggle--open={open}
           aria-expanded={open}
           aria-label={open ? `Collapse ${event.name}` : `Expand ${event.name}`}
-          onclick={(e) => toggle(index, e)}
+          onclick={e => toggle(index, e)}
         >
           <svg
             class="group-toggle__caret"
@@ -47,11 +47,25 @@
             fill="none"
             aria-hidden="true"
           >
-            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" />
-            <path d="M10 8l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+            <path
+              d="M10 8l4 4-4 4"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </button>
-        <span class="events-panel__key">name<span aria-hidden="true">:</span></span>
+        <span class="events-panel__key"
+          >name<span aria-hidden="true">:</span></span
+        >
       </div>
       <span class="col-resize-marker" aria-hidden="true"></span>
     </th>
@@ -60,7 +74,9 @@
         <span class="events-panel__value-text">{event.name}</span>
         <span class="events-panel__badges">
           <span class="badge-type">string</span>
-          <span class="badge-offset">+{formatDuration(event.timestamp - spanStartTime)}</span>
+          <span class="badge-offset"
+            >+{formatDuration(event.timestamp - spanStartTime)}</span
+          >
         </span>
       </div>
     </td>
@@ -69,7 +85,11 @@
     <SpanField
       nested
       fieldName="timestamp"
-      fieldValue={formatTimestamp(event.timestamp, timeContext.timezone, 'nanoseconds')}
+      fieldValue={formatTimestamp(
+        event.timestamp,
+        timeContext.timezone,
+        'nanoseconds'
+      )}
       fieldType="timestamp"
     />
     {#each event.attributes as attr}
