@@ -7,7 +7,8 @@
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
   import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
   import { formatTimestamp } from '@/utils/time'
-  import type { MetricData, SearchResultEvent } from '@/types/api-types'
+  import type { MetricData, MetricStats, SearchResultEvent } from '@/types/api-types'
+  import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
 
   let timeContext = getTimeContext()
   let metrics = $state<MetricData[]>([])
@@ -15,6 +16,21 @@
   let error = $state<string | null>(null)
   let mounted = $state(false)
   let searchError = $state<string | null>(null)
+
+  let searchEditorApi = $state<SearchEditorAPI | null>(null)
+  let baselineStats = $state<MetricStats | null>(null)
+  let polledStats = $state<MetricStats | null>(null)
+  const POLL_INTERVAL_MS = 3000
+
+  let refreshIndicatorText = $derived.by(() => {
+    if (!baselineStats || !polledStats) return ''
+    const parts: string[] = []
+    const metricDelta = polledStats.metricCount - baselineStats.metricCount
+    if (metricDelta > 0) parts.push(`+${metricDelta} metric${metricDelta !== 1 ? 's' : ''}`)
+    const dpDelta = polledStats.dataPointCount - baselineStats.dataPointCount
+    if (dpDelta > 0) parts.push(`+${dpDelta} data point${dpDelta !== 1 ? 's' : ''}`)
+    return parts.join(', ')
+  })
 
   async function fetchMetrics() {
     try {
@@ -28,6 +44,9 @@
         startTime = endTime - duration
       }
       metrics = await telemetryAPI.getMetrics(startTime, endTime, undefined)
+      const s = await telemetryAPI.getStats()
+      baselineStats = s.metrics
+      polledStats = s.metrics
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load metrics'
     } finally {
@@ -35,11 +54,27 @@
     }
   }
 
+  function handleRefresh() {
+    searchEditorApi?.clear()
+    fetchMetrics()
+  }
+
   $effect(() => {
     let _ = timeContext.selection
     if (mounted) {
       fetchMetrics()
     }
+  })
+
+  $effect(() => {
+    if (!mounted) return
+    const id = setInterval(async () => {
+      try {
+        const s = await telemetryAPI.getStats()
+        polledStats = s.metrics
+      } catch { /* polling failures are silent */ }
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
   })
 
   onMount(async () => {
@@ -68,10 +103,10 @@
     <SignalToolbar
       signal="metrics"
       view="list"
-      onRefresh={fetchMetrics}
+      onRefresh={handleRefresh}
       trailingFilters={[toolbarTimeRange]}
       {searchError}
-
+      {refreshIndicatorText}
     >
       <SearchEditor
         signal="metrics"
@@ -79,6 +114,7 @@
         inToolbar
         onSearchResults={handleSearchResults}
         onSearchError={(err) => (searchError = err)}
+        onReady={(api) => (searchEditorApi = api)}
       />
     </SignalToolbar>
   </div>

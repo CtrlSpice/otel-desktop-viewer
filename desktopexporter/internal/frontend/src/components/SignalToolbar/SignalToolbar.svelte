@@ -4,26 +4,22 @@
   import type { TraceListStats } from '@/components/TraceList/trace-list-stats'
   import FieldErrorMessage from '@/components/FieldErrorMessage.svelte'
 
-  type TrailingFilterSlots = {
-    /**
-     * Ordered trailing filter UI: each snippet should render one control
-     * (e.g. DateTimeFilter, FieldFilter). Rendered left-to-right after title/stats.
-     */
+  type SharedToolbarProps = {
     trailingFilters?: readonly Snippet[]
+    refreshIndicatorText?: string
   }
 
   type SignalToolbarProps =
-    | (TrailingFilterSlots & {
+    | (SharedToolbarProps & {
         signal: 'traces' | 'metrics' | 'logs'
         view: 'list'
         onRefresh?: (() => void) | null
         listStats?: TraceListStats | null
-        /** Dim list summary stats (e.g. while refetching). */
         listStatsMuted?: boolean
         children?: Snippet
         searchError?: string | null
       })
-    | (TrailingFilterSlots & {
+    | (SharedToolbarProps & {
         signal: 'traces'
         view: 'detail'
         traceID: string
@@ -33,7 +29,7 @@
         children?: Snippet
         searchError?: string | null
       })
-    | (TrailingFilterSlots & {
+    | (SharedToolbarProps & {
         signal: 'metrics'
         view: 'detail'
         metricName: string
@@ -75,6 +71,7 @@
   )
 
   let trailingFilters = $derived([...(props.trailingFilters ?? [])])
+  let refreshIndicatorText = $derived(props.refreshIndicatorText ?? '')
 
   let title = $derived.by(() => {
     if (view === 'detail' && traceDetailId) return traceDetailId
@@ -114,18 +111,25 @@
           </button>
         {/if}
         {#if onRefresh}
-          <button
-            type="button"
-            class="btn btn-soft btn-primary btn-sm btn-circle"
-            onclick={onRefresh}
-            aria-label="Refresh"
-          >
-            <svg class="h-4 w-4" viewBox="0 0 24 24">
-              <path
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-          </button>
+          <div class="refresh-indicator-wrap">
+            <button
+              type="button"
+              class="btn btn-soft btn-primary btn-sm btn-circle"
+              onclick={onRefresh}
+              aria-label="Refresh"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 24 24">
+                <path
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </button>
+            {#if refreshIndicatorText}
+              <span class="refresh-indicator-badge">
+                <span class="refresh-indicator-badge__text">{refreshIndicatorText}</span>
+              </span>
+            {/if}
+          </div>
         {/if}
       </div>
     {/if}
@@ -255,6 +259,38 @@
 
   .signal-toolbar__action-group {
     @apply flex shrink-0 flex-nowrap items-center gap-1.5 mr-1;
+  }
+
+  .refresh-indicator-wrap {
+    @apply relative;
+  }
+
+  .refresh-indicator-badge {
+    @apply absolute badge badge-success badge-xs whitespace-nowrap pointer-events-none;
+    bottom: -2px;
+    left: calc(100% - 12px);
+    height: 10px;
+    min-width: 10px;
+    width: 10px;
+    padding: 0;
+    border-radius: 9999px;
+    overflow: hidden;
+    transition: width 0.25s ease, padding 0.25s ease;
+    z-index: 1;
+  }
+
+  .refresh-indicator-badge__text {
+    @apply opacity-0 text-[10px] leading-none;
+    transition: opacity 0.15s ease 0.05s;
+  }
+
+  .refresh-indicator-wrap:hover .refresh-indicator-badge {
+    width: auto;
+    padding-inline: 6px;
+  }
+
+  .refresh-indicator-wrap:hover .refresh-indicator-badge__text {
+    @apply opacity-100;
   }
 
   .signal-toolbar__title {

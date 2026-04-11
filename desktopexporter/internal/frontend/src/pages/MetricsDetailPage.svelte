@@ -6,7 +6,8 @@
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
   import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
   import { formatTimestamp } from '@/utils/time'
-  import type { MetricData } from '@/types/api-types'
+  import type { MetricData, MetricStats } from '@/types/api-types'
+  import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
 
   let timeContext = getTimeContext()
   let metricName = $state('')
@@ -14,6 +15,17 @@
   let loading = $state(true)
   let error = $state<string | null>(null)
   let searchError = $state<string | null>(null)
+
+  let searchEditorApi = $state<SearchEditorAPI | null>(null)
+  let baselineDataPointCount = $state(0)
+  let polledDataPointCount = $state(0)
+  const POLL_INTERVAL_MS = 3000
+
+  let refreshIndicatorText = $derived.by(() => {
+    const delta = polledDataPointCount - baselineDataPointCount
+    if (delta <= 0) return ''
+    return `+${delta} data point${delta !== 1 ? 's' : ''}`
+  })
 
   $effect(() => {
     let unsubscribe = router.subscribe(route => {
@@ -57,6 +69,9 @@
       if (metrics.length === 0) {
         error = null
       }
+      const s = await telemetryAPI.getStats()
+      baselineDataPointCount = s.metrics.dataPointCount
+      polledDataPointCount = s.metrics.dataPointCount
     } catch (err) {
       if (seq !== loadSeq) return
       error = err instanceof Error ? err.message : 'Failed to load metrics'
@@ -80,6 +95,22 @@
       router.goto('/metrics')
     }
   }
+
+  function handleRefresh() {
+    searchEditorApi?.clear()
+    fetchMetricDetail()
+  }
+
+  $effect(() => {
+    if (!metricName) return
+    const id = setInterval(async () => {
+      try {
+        const s = await telemetryAPI.getStats()
+        polledDataPointCount = s.metrics.dataPointCount
+      } catch { /* polling failures are silent */ }
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  })
 </script>
 
 {#snippet toolbarTimeRange()}
@@ -96,16 +127,17 @@
       view="detail"
       metricName={metricName || 'Metric'}
       onBack={handleBack}
-      onRefresh={fetchMetricDetail}
+      onRefresh={handleRefresh}
       trailingFilters={[toolbarTimeRange]}
       {searchError}
-
+      {refreshIndicatorText}
     >
       <SearchEditor
         signal="metrics"
         view="detail"
         inToolbar
         onSearchError={(err) => (searchError = err)}
+        onReady={(api) => (searchEditorApi = api)}
       />
     </SignalToolbar>
   </div>

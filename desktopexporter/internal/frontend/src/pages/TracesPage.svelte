@@ -18,7 +18,8 @@
     loadTraceListTableState,
     saveTraceListTableState,
   } from '@/utils/trace-list-table-state'
-  import type { TraceSummary, SearchResultEvent } from '@/types/api-types'
+  import type { TraceSummary, SearchResultEvent, TraceStats } from '@/types/api-types'
+  import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
   import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
   import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
@@ -58,6 +59,12 @@
   // --- state: selection ---
   let selectedTraceIDs = $state(new Set<string>())
 
+  // --- state: polling / refresh indicator ---
+  let searchEditorApi = $state<SearchEditorAPI | null>(null)
+  let baselineStats = $state<TraceStats | null>(null)
+  let polledStats = $state<TraceStats | null>(null)
+  const POLL_INTERVAL_MS = 3000
+
   // --- state: column resize ---
   import type { FixedColumn, ResizableColumn, ElasticColumn } from '@/types/column-sizing'
 
@@ -90,7 +97,7 @@
   let activeResizeCol = $state<ResizeCol | null>(null)
 
   let tableMinWidth = $derived(
-    COL_CHECKBOX + traceIdColW + COL_ROOT_INDICATOR + rootNameColW + serviceColW + MIN_ELASTIC_COL + COL_TRAILING_FIXED
+    FIXED_TOTAL + traceIdColW + rootNameColW + serviceColW + MIN_ELASTIC_COL
   )
 
   let barLeftPx = $derived({
@@ -181,6 +188,16 @@
       : 'Delete all traces in this time range'
   )
 
+  let refreshIndicatorText = $derived.by(() => {
+    if (!baselineStats || !polledStats) return ''
+    const parts: string[] = []
+    const traceDelta = polledStats.traceCount - baselineStats.traceCount
+    if (traceDelta > 0) parts.push(`+${traceDelta} trace${traceDelta !== 1 ? 's' : ''}`)
+    const spanDelta = polledStats.spanCount - baselineStats.spanCount
+    if (spanDelta > 0) parts.push(`+${spanDelta} span${spanDelta !== 1 ? 's' : ''}`)
+    return parts.join(', ')
+  })
+
   // --- effects ---
   $effect(() => {
     saveTraceListTableState({ sortColumn, sortDirection, rowsPerPage })
@@ -233,6 +250,17 @@
     }
   })
 
+  $effect(() => {
+    if (!mounted) return
+    const id = setInterval(async () => {
+      try {
+        const s = await telemetryAPI.getStats()
+        polledStats = s.traces
+      } catch { /* polling failures are silent */ }
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  })
+
   // --- handlers & loaders ---
   function traceDurationCellLabel(trace: TraceSummary): string {
     const ns = traceSummaryDurationNs(trace)
@@ -271,12 +299,20 @@
       )
 
       traceSummaries = await telemetryAPI.searchTraces(startTime, endTime)
+      const s = await telemetryAPI.getStats()
+      baselineStats = s.traces
+      polledStats = s.traces
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to fetch traces'
       console.error('Error fetching trace summaries:', err)
     } finally {
       loading = false
     }
+  }
+
+  function handleRefresh() {
+    searchEditorApi?.clear()
+    fetchTraces()
   }
 
   function handleSearchResults(event: SearchResultEvent) {
@@ -326,12 +362,12 @@
     <SignalToolbar
       signal="traces"
       view="list"
-      onRefresh={fetchTraces}
+      onRefresh={handleRefresh}
       {listStats}
       listStatsMuted={statsRowMuted}
       trailingFilters={[toolbarTimeRange]}
       {searchError}
-
+      {refreshIndicatorText}
     >
       <SearchEditor
         signal="traces"
@@ -339,6 +375,7 @@
         inToolbar
         onSearchResults={handleSearchResults}
         onSearchError={(err) => (searchError = err)}
+        onReady={(api) => (searchEditorApi = api)}
       />
     </SignalToolbar>
   </div>
@@ -388,10 +425,10 @@
                 <col style:width="{rootNameColW}px" />
                 <col style:width="{serviceColW}px" />
                 <col /><!-- Start Time: elastic, absorbs remaining width -->
-                <col style="width: 8rem" />
-                <col style="width: 5.5rem" />
-                <col style="width: 5.5rem" />
-                <col style="width: 6.5rem" />
+                <col style:width="{cols.duration.width}px" />
+                <col style:width="{cols.spans.width}px" />
+                <col style:width="{cols.errors.width}px" />
+                <col style:width="{cols.exceptions.width}px" />
               </colgroup>
               <thead class="sticky top-0 z-10 table-header-surface">
               <tr class="table-header-row">

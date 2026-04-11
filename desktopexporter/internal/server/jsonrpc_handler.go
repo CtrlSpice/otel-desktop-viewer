@@ -52,6 +52,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getAttributesByTraceID(ctx, req)
 	case "getStats":
 		return h.getStats(ctx)
+	case "getTraceSpanCount":
+		return h.getTraceSpanCount(ctx, req)
 	default:
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
@@ -359,6 +361,26 @@ func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrp
 	}
 
 	return attributes, nil
+}
+
+func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if len(params) != 1 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	traceID, ok := params[0].(string)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	count, err := stats.GetTraceSpanCount(ctx, h.store.DB(), traceID)
+	if err != nil {
+		log.Printf("Error getting trace span count: %v", err)
+		return nil, mapStoreError(err)
+	}
+	return count, nil
 }
 
 func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {

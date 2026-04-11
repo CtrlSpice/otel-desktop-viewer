@@ -256,7 +256,13 @@
     footer?: Snippet
   }
 
-  let { spans, selectedSpanID, onSelectSpan, loading = false, footer }: Props = $props()
+  let {
+    spans,
+    selectedSpanID,
+    onSelectSpan,
+    loading = false,
+    footer,
+  }: Props = $props()
 
   let bounds = $derived(getTraceBounds(spans))
   let rows = $derived(buildWaterfallRows(spans, bounds))
@@ -306,11 +312,15 @@
 
   const TICK_LABEL_SLOT_PX = 80
   const RULER_PADDING_PX = 48
-  const TICK_COUNT_STEPS = [2, 4, 6, 8]
+  const TICK_COUNT_STEPS = [2, 4, 6]
 
-  let timelineColPx = $derived(scrollContainerW - spanColWidth - serviceColWidth)
+  let timelineColPx = $derived(
+    scrollContainerW - spanColWidth - serviceColWidth
+  )
   let targetTickCount = $derived.by(() => {
-    const fits = Math.floor((timelineColPx - RULER_PADDING_PX) / TICK_LABEL_SLOT_PX)
+    const fits = Math.floor(
+      (timelineColPx - RULER_PADDING_PX) / TICK_LABEL_SLOT_PX
+    )
     return TICK_COUNT_STEPS.findLast(n => n <= fits) ?? TICK_COUNT_STEPS[0]
   })
 
@@ -477,7 +487,10 @@
         if (!hasKids) continue
         if (!relevant.has(sid)) {
           toCollapse.add(sid)
-        } else if (matchedIDs.has(sid) && !hasRelevantDescendant(sid, children, relevant)) {
+        } else if (
+          matchedIDs.has(sid) &&
+          !hasRelevantDescendant(sid, children, relevant)
+        ) {
           toCollapse.add(sid)
         }
       }
@@ -645,15 +658,15 @@
               {serviceColWidth}
               onResizeSpanCol={w => {
                 const containerW =
-                  gridTableEl?.closest('.waterfall-view__scroll')?.clientWidth ??
-                  Infinity
+                  gridTableEl?.closest('.waterfall-view__scroll')
+                    ?.clientWidth ?? Infinity
                 const maxW = containerW - serviceColWidth - MIN_TIMELINE_COL
                 spanColWidth = Math.min(maxW, Math.max(MIN_SPAN_COL, w))
               }}
               onResizeServiceCol={w => {
                 const containerW =
-                  gridTableEl?.closest('.waterfall-view__scroll')?.clientWidth ??
-                  Infinity
+                  gridTableEl?.closest('.waterfall-view__scroll')
+                    ?.clientWidth ?? Infinity
                 const maxW = containerW - spanColWidth - MIN_TIMELINE_COL
                 serviceColWidth = Math.min(maxW, Math.max(MIN_SERVICE_COL, w))
               }}

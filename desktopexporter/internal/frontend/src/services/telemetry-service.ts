@@ -295,6 +295,10 @@ export let telemetryAPI = {
     const rawData = await callRPC('getStats')
     return statsFromJSON(rawData)
   },
+
+  getTraceSpanCount: async (traceID: string): Promise<number> => {
+    return await callRPC('getTraceSpanCount', [traceID])
+  },
 }
 
 // Helper function to convert frontend query tree to minimal backend format

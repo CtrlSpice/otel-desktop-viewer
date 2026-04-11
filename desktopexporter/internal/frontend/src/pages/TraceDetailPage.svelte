@@ -12,6 +12,7 @@
   } from '@/stores/trace-list-nav.svelte'
   import { sortTraceSummaries } from '@/utils/trace-summary-sort'
   import { loadTraceListTableState } from '@/utils/trace-list-table-state'
+  import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
   import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
   import { traceDetailStats } from '@/utils/trace-detail-stats'
@@ -36,6 +37,12 @@
   // --- state: span selection ---
   let selectedSpanID = $state<string | null>(null)
 
+  // --- state: polling / refresh indicator ---
+  let searchEditorApi = $state<SearchEditorAPI | null>(null)
+  let baselineSpanCount = $state(0)
+  let polledSpanCount = $state(0)
+  const POLL_INTERVAL_MS = 3000
+
   let selectedSpan = $derived(
     traceData?.spans.find(n => n.spanData.spanID === selectedSpanID)
       ?.spanData ??
@@ -58,9 +65,11 @@
     traceNavIndex >= 0 && traceNavIndex < traceNavTotal - 1
   )
 
-  // Column filter (FieldFilter in toolbar + DetailView columnFilter): deferred for this
-  // release. FieldFilter / helpers stay in repo; restore snippet + state, trailingFilters, and
-  // columnFilter={columnFilterSelection} on DetailView (empty selection = show all columns).
+  let refreshIndicatorText = $derived.by(() => {
+    const delta = polledSpanCount - baselineSpanCount
+    if (delta <= 0) return ''
+    return `+${delta} span${delta !== 1 ? 's' : ''}`
+  })
 
   // --- effects ---
 
@@ -109,6 +118,17 @@
     void backfillTraceListIfEmpty()
   })
 
+  $effect(() => {
+    if (!traceID) return
+    const tid = traceID
+    const id = setInterval(async () => {
+      try {
+        polledSpanCount = await telemetryAPI.getTraceSpanCount(tid)
+      } catch { /* polling failures are silent */ }
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  })
+
   // --- handlers ---
 
   async function fetchTrace() {
@@ -121,6 +141,8 @@
       if (seq !== loadSeq) return
       traceData = result
       selectedSpanID = result.spans[0]?.spanData.spanID ?? null
+      baselineSpanCount = result.spans.length
+      polledSpanCount = result.spans.length
     } catch (err) {
       if (seq !== loadSeq) return
       const msg = err instanceof Error ? err.message : ''
@@ -137,6 +159,11 @@
     }
   }
 
+  function handleRefresh() {
+    searchEditorApi?.clear()
+    fetchTrace()
+  }
+
   const handleBack = () => {
     router.goto('/traces')
   }
@@ -150,6 +177,8 @@
       traceData = event.results
       loading = false
       error = null
+      baselineSpanCount = event.results.spans.length
+      polledSpanCount = event.results.spans.length
       const stillExists = event.results.spans.some(
         n => n.spanData.spanID === selectedSpanID
       )
@@ -245,10 +274,10 @@
       {traceID}
       {traceStats}
       onBack={handleBack}
-      onRefresh={fetchTrace}
+      onRefresh={handleRefresh}
       trailingFilters={[]}
       {searchError}
-
+      {refreshIndicatorText}
     >
       <SearchEditor
         signal="traces"
@@ -257,6 +286,7 @@
         inToolbar
         onSearchResults={handleSearchResults}
         onSearchError={(err) => (searchError = err)}
+        onReady={(api) => (searchEditorApi = api)}
       />
     </SignalToolbar>
   </div>

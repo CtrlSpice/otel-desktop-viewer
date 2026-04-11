@@ -6,7 +6,8 @@
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
   import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
   import { formatTimestamp } from '@/utils/time'
-  import type { LogData, SearchResultEvent } from '@/types/api-types'
+  import type { LogData, LogStats, SearchResultEvent } from '@/types/api-types'
+  import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
 
   let timeContext = getTimeContext()
   let logs = $state<LogData[]>([])
@@ -14,6 +15,17 @@
   let error = $state<string | null>(null)
   let mounted = $state(false)
   let searchError = $state<string | null>(null)
+
+  let searchEditorApi = $state<SearchEditorAPI | null>(null)
+  let baselineLogCount = $state(0)
+  let polledLogCount = $state(0)
+  const POLL_INTERVAL_MS = 3000
+
+  let refreshIndicatorText = $derived.by(() => {
+    const delta = polledLogCount - baselineLogCount
+    if (delta <= 0) return ''
+    return `+${delta} log${delta !== 1 ? 's' : ''}`
+  })
 
   async function fetchLogs() {
     try {
@@ -27,6 +39,9 @@
         startTime = endTime - duration
       }
       logs = await telemetryAPI.searchLogs(startTime, endTime, undefined)
+      const s = await telemetryAPI.getStats()
+      baselineLogCount = s.logs.logCount
+      polledLogCount = s.logs.logCount
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load logs'
     } finally {
@@ -34,11 +49,27 @@
     }
   }
 
+  function handleRefresh() {
+    searchEditorApi?.clear()
+    fetchLogs()
+  }
+
   $effect(() => {
     let _ = timeContext.selection
     if (mounted) {
       fetchLogs()
     }
+  })
+
+  $effect(() => {
+    if (!mounted) return
+    const id = setInterval(async () => {
+      try {
+        const s = await telemetryAPI.getStats()
+        polledLogCount = s.logs.logCount
+      } catch { /* polling failures are silent */ }
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
   })
 
   onMount(async () => {
@@ -67,10 +98,10 @@
     <SignalToolbar
       signal="logs"
       view="list"
-      onRefresh={fetchLogs}
+      onRefresh={handleRefresh}
       trailingFilters={[toolbarTimeRange]}
       {searchError}
-
+      {refreshIndicatorText}
     >
       <SearchEditor
         signal="logs"
@@ -78,6 +109,7 @@
         inToolbar
         onSearchResults={handleSearchResults}
         onSearchError={(err) => (searchError = err)}
+        onReady={(api) => (searchEditorApi = api)}
       />
     </SignalToolbar>
   </div>
