@@ -645,6 +645,94 @@ JSON
   printf '  %-50s %s  (spans: %d, orphan w/ children)\n' "${service}/subtree-under-missing-parent" "$http_code" 3
 }
 
+# Recreates the trace from the original README screenshot:
+# sample-loadgenerator → sample-loadgenerator → sample-frontend, all "sample-HTTP POST" hitting /api/cart.
+send_sample_loadgenerator_trace() {
+  local tid; tid=$(rnd_trace_id)
+  local root_sid; root_sid=$(rnd_span_id)
+  local child_sid; child_sid=$(rnd_span_id)
+  local frontend_sid; frontend_sid=$(rnd_span_id)
+
+  local t0=$(( now_ns - 2 * hour_ns ))
+  local tmpfile; tmpfile=$(mktemp)
+  trap "rm -f '$tmpfile'" RETURN
+
+  cat > "$tmpfile" <<JSON
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "sample-loadgenerator" } },
+          { "key": "service.version", "value": { "stringValue": "1.0.0" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "sample-loadgenerator.tracer", "version": "0.1.0" }, "spans": [
+        {
+          "traceId": "${tid}",
+          "spanId": "${root_sid}",
+          "name": "sample-HTTP POST",
+          "kind": 3,
+          "startTimeUnixNano": "${t0}",
+          "endTimeUnixNano": "$(( t0 + 13840000 ))",
+          "status": { "code": 0 },
+          "attributes": [
+            { "key": "http.method",      "value": { "stringValue": "POST" } },
+            { "key": "http.url",         "value": { "stringValue": "http://frontend:8080/api/cart" } },
+            { "key": "http.status_code", "value": { "intValue": "200" } }
+          ]
+        },
+        {
+          "traceId": "${tid}",
+          "spanId": "${child_sid}",
+          "parentSpanId": "${root_sid}",
+          "name": "sample-HTTP POST",
+          "kind": 3,
+          "startTimeUnixNano": "$(( t0 + 1200000 ))",
+          "endTimeUnixNano": "$(( t0 + 12542000 ))",
+          "status": { "code": 0 },
+          "attributes": [
+            { "key": "http.method",      "value": { "stringValue": "POST" } },
+            { "key": "http.url",         "value": { "stringValue": "http://frontend:8080/api/cart" } },
+            { "key": "http.status_code", "value": { "intValue": "200" } }
+          ]
+        }
+      ]}]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "sample-frontend" } },
+          { "key": "service.version", "value": { "stringValue": "1.0.0" } }
+        ]
+      },
+      "scopeSpans": [{ "scope": { "name": "sample-frontend.tracer", "version": "0.1.0" }, "spans": [
+        {
+          "traceId": "${tid}",
+          "spanId": "${frontend_sid}",
+          "parentSpanId": "${child_sid}",
+          "name": "sample-HTTP POST",
+          "kind": 2,
+          "startTimeUnixNano": "$(( t0 + 2600000 ))",
+          "endTimeUnixNano": "$(( t0 + 11235000 ))",
+          "status": { "code": 0 },
+          "attributes": [
+            { "key": "http.method",      "value": { "stringValue": "POST" } },
+            { "key": "http.target",      "value": { "stringValue": "/api/cart" } },
+            { "key": "http.status_code", "value": { "intValue": "200" } }
+          ]
+        }
+      ]}]
+    }
+  ]
+}
+JSON
+
+  local http_code
+  http_code=$(post_trace_json "$tmpfile")
+  printf '  %-50s %s  (spans: %d, README screenshot trace)\n' "sample-loadgenerator/HTTP POST /api/cart" "$http_code" 3
+}
+
 echo "Sending sample traces to ${URL} …"
 echo
 
@@ -661,6 +749,12 @@ send_trace "catalog-service"  "get-product-detail"       1    1       30        
 send_trace "order-service"    "create-order"             2    4       36       420
 send_trace "order-service"    "list-orders"              1    2       40        95
 send_trace "notification"     "send-email"               1    0       44        30
+
+echo
+echo "README screenshot trace …"
+echo
+
+send_sample_loadgenerator_trace
 
 echo
 echo "Deep hierarchy + orphan scenarios …"
