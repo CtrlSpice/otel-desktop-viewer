@@ -13,6 +13,7 @@
   let metrics = $state<MetricData[]>([])
   let loading = $state(true)
   let error = $state<string | null>(null)
+  let searchError = $state<string | null>(null)
 
   $effect(() => {
     let unsubscribe = router.subscribe(route => {
@@ -97,8 +98,16 @@
       onBack={handleBack}
       onRefresh={fetchMetricDetail}
       trailingFilters={[toolbarTimeRange]}
-    />
-    <SearchEditor signal="metrics" view="detail" inToolbar />
+      {searchError}
+
+    >
+      <SearchEditor
+        signal="metrics"
+        view="detail"
+        inToolbar
+        onSearchError={(err) => (searchError = err)}
+      />
+    </SignalToolbar>
   </div>
 
   {#if loading}

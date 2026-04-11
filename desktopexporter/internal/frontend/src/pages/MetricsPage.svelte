@@ -14,6 +14,7 @@
   let loading = $state(true)
   let error = $state<string | null>(null)
   let mounted = $state(false)
+  let searchError = $state<string | null>(null)
 
   async function fetchMetrics() {
     try {
@@ -63,18 +64,24 @@
 <div
   class="flex min-w-0 w-full flex-col gap-[var(--layout-gap)] overflow-y-auto pb-6 pt-0"
 >
-  <SignalToolbar
-    signal="metrics"
-    view="list"
-    onRefresh={fetchMetrics}
-    trailingFilters={[toolbarTimeRange]}
-  />
-  <SearchEditor
-    signal="metrics"
-    view="list"
-    inToolbar
-    onSearchResults={handleSearchResults}
-  />
+  <div class="page-toolbar-block">
+    <SignalToolbar
+      signal="metrics"
+      view="list"
+      onRefresh={fetchMetrics}
+      trailingFilters={[toolbarTimeRange]}
+      {searchError}
+
+    >
+      <SearchEditor
+        signal="metrics"
+        view="list"
+        inToolbar
+        onSearchResults={handleSearchResults}
+        onSearchError={(err) => (searchError = err)}
+      />
+    </SignalToolbar>
+  </div>
 
   {#if loading}
     <div class="flex justify-center items-center py-12">

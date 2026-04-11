@@ -31,7 +31,7 @@ html[data-theme='rose-pine-moon'] {
   --color-error: #eb6f92;
   --color-error-content: #e0def4;
   --radius-selector: 0.5rem;
-  --radius-field: 0.25rem;
+  --radius-field: 0.5rem;
   --radius-box: 0.5rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
@@ -39,8 +39,8 @@ html[data-theme='rose-pine-moon'] {
   --depth: 1;
   --noise: 0;
   --focus-ring-width: 1px;
-  --focus-ring-offset: 1px;
-  --focus-ring-color: var(--color-primary);
+  --focus-ring-offset: 0px;
+  --focus-ring-color: color-mix(in oklab, var(--color-primary) 50%, transparent);
 }
 
 html[data-theme='rose-pine-dawn'] {
@@ -68,7 +68,7 @@ html[data-theme='rose-pine-dawn'] {
   --color-error: #b4637a;
   --color-error-content: #faf4ed;
   --radius-selector: 0.5rem;
-  --radius-field: 0.25rem;
+  --radius-field: 0.5rem;
   --radius-box: 0.5rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
@@ -76,8 +76,8 @@ html[data-theme='rose-pine-dawn'] {
   --depth: 1;
   --noise: 0;
   --focus-ring-width: 1px;
-  --focus-ring-offset: 1px;
-  --focus-ring-color: var(--color-primary);
+  --focus-ring-offset: 0px;
+  --focus-ring-color: color-mix(in oklab, var(--color-primary) 50%, transparent);
 }
 
 /* Default theme until JS sets data-theme (matches rose-pine-moon as default app theme) */
@@ -106,7 +106,7 @@ html[data-theme='rose-pine-dawn'] {
   --color-error: #eb6f92;
   --color-error-content: #e0def4;
   --radius-selector: 0.5rem;
-  --radius-field: 0.25rem;
+  --radius-field: 0.5rem;
   --radius-box: 0.5rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
@@ -114,8 +114,8 @@ html[data-theme='rose-pine-dawn'] {
   --depth: 1;
   --noise: 0;
   --focus-ring-width: 1px;
-  --focus-ring-offset: 1px;
-  --focus-ring-color: var(--color-primary);
+  --focus-ring-offset: 0px;
+  --focus-ring-color: color-mix(in oklab, var(--color-primary) 50%, transparent);
 }
 
 @layer base {
@@ -426,7 +426,7 @@ svg {
 
 /* Inline validation text under inputs (role="alert" on the element in markup). */
 .field-error-message {
-  @apply m-0 mt-1.5 block w-full min-w-0 text-sm leading-snug text-error;
+  @apply m-0 block w-full min-w-0 text-sm leading-snug text-error;
 }
 
 .btn:focus-visible,

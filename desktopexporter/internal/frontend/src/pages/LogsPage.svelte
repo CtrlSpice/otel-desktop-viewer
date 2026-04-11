@@ -13,6 +13,7 @@
   let loading = $state(true)
   let error = $state<string | null>(null)
   let mounted = $state(false)
+  let searchError = $state<string | null>(null)
 
   async function fetchLogs() {
     try {
@@ -68,13 +69,17 @@
       view="list"
       onRefresh={fetchLogs}
       trailingFilters={[toolbarTimeRange]}
-    />
-    <SearchEditor
-      signal="logs"
-      view="list"
-      inToolbar
-      onSearchResults={handleSearchResults}
-    />
+      {searchError}
+
+    >
+      <SearchEditor
+        signal="logs"
+        view="list"
+        inToolbar
+        onSearchResults={handleSearchResults}
+        onSearchError={(err) => (searchError = err)}
+      />
+    </SignalToolbar>
   </div>
 
   {#if loading}

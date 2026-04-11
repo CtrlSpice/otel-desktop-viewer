@@ -31,6 +31,7 @@
   let loading = $state(true)
   let error = $state<string | null>(null)
   let loadSeq = 0
+  let searchError = $state<string | null>(null)
 
   // --- state: span selection ---
   let selectedSpanID = $state<string | null>(null)
@@ -246,14 +247,18 @@
       onBack={handleBack}
       onRefresh={fetchTrace}
       trailingFilters={[]}
-    />
-    <SearchEditor
-      signal="traces"
-      view="detail"
-      {traceID}
-      inToolbar
-      onSearchResults={handleSearchResults}
-    />
+      {searchError}
+
+    >
+      <SearchEditor
+        signal="traces"
+        view="detail"
+        {traceID}
+        inToolbar
+        onSearchResults={handleSearchResults}
+        onSearchError={(err) => (searchError = err)}
+      />
+    </SignalToolbar>
   </div>
 
   {#if error}

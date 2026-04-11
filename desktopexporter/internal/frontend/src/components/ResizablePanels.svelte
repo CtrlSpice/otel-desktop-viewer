@@ -68,38 +68,34 @@
     }
   }
 
+  let dragStartPos = 0;
+  let dragStartWidth = 0;
+
   function handlePointerDown(e: PointerEvent) {
     e.preventDefault();
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
     isDragging = true;
+    dragStartPos = stacked ? e.clientY : e.clientX;
+    dragStartWidth = leftWidth;
     document.body.style.cursor = stacked ? 'row-resize' : 'col-resize';
     document.body.style.userSelect = 'none';
   }
 
-  function applySplitFromPointer(e: PointerEvent) {
-    if (!containerRef || !dividerRef) return;
-    const rect = containerRef.getBoundingClientRect();
-    let fraction: number;
-    const g = panelSplitGapPx();
-    if (stacked) {
-      const divH = dividerRef.offsetHeight;
-      const flexSpace = Math.max(1, rect.height - divH - 2 * g);
-      fraction = (e.clientY - rect.top) / flexSpace;
-    } else {
-      const divW = dividerRef.offsetWidth;
-      const flexSpace = Math.max(1, rect.width - divW - 2 * g);
-      fraction = (e.clientX - rect.left) / flexSpace;
-    }
-    leftWidth = Math.max(
-      minLeftWidth,
-      Math.min(1 - minRightWidth, fraction)
-    );
-  }
-
   function handlePointerMove(e: PointerEvent) {
     if (!isDragging || !containerRef || !dividerRef) return;
-    applySplitFromPointer(e);
+    const g = panelSplitGapPx();
+    const currentPos = stacked ? e.clientY : e.clientX;
+    const deltaPx = currentPos - dragStartPos;
+    if (stacked) {
+      const divH = dividerRef.offsetHeight;
+      const flexSpace = Math.max(1, containerRef.getBoundingClientRect().height - divH - 2 * g);
+      leftWidth = Math.max(minLeftWidth, Math.min(1 - minRightWidth, dragStartWidth + deltaPx / flexSpace));
+    } else {
+      const divW = dividerRef.offsetWidth;
+      const flexSpace = Math.max(1, containerRef.getBoundingClientRect().width - divW - 2 * g);
+      leftWidth = Math.max(minLeftWidth, Math.min(1 - minRightWidth, dragStartWidth + deltaPx / flexSpace));
+    }
   }
 
   function handlePointerUp(e: PointerEvent) {

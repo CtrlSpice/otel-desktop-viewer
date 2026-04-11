@@ -44,6 +44,7 @@
   let loading = $state(true)
   let error = $state<string | null>(null)
   let mounted = $state(false)
+  let searchError = $state<string | null>(null)
 
   // --- state: sort + pagination (persisted via localStorage) ---
   const savedTableState = loadTraceListTableState()
@@ -64,8 +65,8 @@
     checkbox:      { kind: 'fixed', width: 40 } satisfies FixedColumn,
     traceId:       { kind: 'resizable', min: 100, default: 300 } satisfies ResizableColumn,
     rootIndicator: { kind: 'fixed', width: 48 } satisfies FixedColumn,
-    rootName:      { kind: 'resizable', min: 100, default: 0 } satisfies ResizableColumn,
-    service:       { kind: 'resizable', min: 100, default: 0 } satisfies ResizableColumn,
+    rootName:      { kind: 'resizable', min: 100, default: 200 } satisfies ResizableColumn,
+    service:       { kind: 'resizable', min: 100, default: 200 } satisfies ResizableColumn,
     startTime:     { kind: 'elastic', min: 120 } satisfies ElasticColumn,
     duration:      { kind: 'fixed', width: 128 } satisfies FixedColumn,
     spans:         { kind: 'fixed', width: 88 } satisfies FixedColumn,
@@ -77,13 +78,12 @@
   const COL_ROOT_INDICATOR = cols.rootIndicator.width
   const MIN_COL_W = cols.traceId.min
   const MIN_ELASTIC_COL = cols.startTime.min
-  const DEFAULT_TRACE_ID = cols.traceId.default
   const COL_TRAILING_FIXED = cols.duration.width + cols.spans.width + cols.errors.width + cols.exceptions.width
+  const FIXED_TOTAL = COL_CHECKBOX + COL_ROOT_INDICATOR + COL_TRAILING_FIXED
 
-  let traceIdColW = $state(0)
-  let rootNameColW = $state(0)
-  let serviceColW = $state(0)
-  let colsReady = $state(false)
+  let traceIdColW = $state(cols.traceId.default)
+  let rootNameColW = $state(cols.rootName.default)
+  let serviceColW = $state(cols.service.default)
   let tableEl = $state<HTMLTableElement | null>(null)
 
   type ResizeCol = 'traceId' | 'rootName' | 'service'
@@ -102,45 +102,24 @@
   function startResizeCol(col: ResizeCol, e: PointerEvent) {
     e.preventDefault()
     const startX = e.clientX
-    const snapshot = { traceId: traceIdColW, rootName: rootNameColW, service: serviceColW }
-    const colOrder: ResizeCol[] = ['traceId', 'rootName', 'service']
-    const colIdx = colOrder.indexOf(col)
-    const colsToRight = colOrder.slice(colIdx + 1)
+    const startW = col === 'traceId' ? traceIdColW
+                 : col === 'rootName' ? rootNameColW
+                 : serviceColW
     const target = e.currentTarget as HTMLElement
     target.setPointerCapture(e.pointerId)
     activeResizeCol = col
 
     function onMove(ev: PointerEvent) {
-      const raw = Math.max(MIN_COL_W, snapshot[col] + (ev.clientX - startX))
-      const growth = raw - snapshot[col]
-
-      const rightWidths = colsToRight.map(c => snapshot[c])
-      if (growth > 0) {
-        let remaining = growth
-        for (let i = 0; i < rightWidths.length && remaining > 0; i++) {
-          const shrink = Math.min(remaining, rightWidths[i] - MIN_COL_W)
-          if (shrink > 0) {
-            rightWidths[i] -= shrink
-            remaining -= shrink
-          }
-        }
-      }
-
       const containerW = tableEl?.closest('.overflow-x-auto')?.clientWidth ?? Infinity
-      const leftW = colOrder.slice(0, colIdx).reduce((sum, c) => sum + snapshot[c], 0)
-      const fixedW = COL_CHECKBOX + COL_ROOT_INDICATOR + COL_TRAILING_FIXED + MIN_ELASTIC_COL
-      const maxW = containerW - fixedW - leftW - rightWidths.reduce((a, b) => a + b, 0)
-      const next = Math.min(maxW, raw)
+      const others = col === 'traceId' ? rootNameColW + serviceColW
+                   : col === 'rootName' ? traceIdColW + serviceColW
+                   : traceIdColW + rootNameColW
+      const maxW = containerW - FIXED_TOTAL - MIN_ELASTIC_COL - others
+      const next = Math.min(maxW, Math.max(MIN_COL_W, startW + (ev.clientX - startX)))
 
       if (col === 'traceId') traceIdColW = next
       else if (col === 'rootName') rootNameColW = next
       else serviceColW = next
-
-      colsToRight.forEach((c, i) => {
-        if (c === 'traceId') traceIdColW = rightWidths[i]
-        else if (c === 'rootName') rootNameColW = rightWidths[i]
-        else serviceColW = rightWidths[i]
-      })
     }
 
     function end() {
@@ -327,22 +306,6 @@
     }
   }
 
-  function measureAndLockColumns() {
-    if (colsReady || !tableEl) return
-    const ths = tableEl.querySelectorAll<HTMLTableCellElement>('thead th')
-    if (ths.length < 6) return
-    traceIdColW = Math.max(DEFAULT_TRACE_ID, ths[1].offsetWidth)
-    rootNameColW = Math.max(MIN_COL_W, ths[3].offsetWidth)
-    serviceColW = Math.max(MIN_COL_W, ths[4].offsetWidth)
-    colsReady = true
-  }
-
-  $effect(() => {
-    if (!colsReady && hasTraceRows && tableEl) {
-      measureAndLockColumns()
-    }
-  })
-
   // --- lifecycle ---
   onMount(async () => {
     await fetchTraces()
@@ -367,13 +330,17 @@
       {listStats}
       listStatsMuted={statsRowMuted}
       trailingFilters={[toolbarTimeRange]}
-    />
-    <SearchEditor
-      signal="traces"
-      view="list"
-      inToolbar
-      onSearchResults={handleSearchResults}
-    />
+      {searchError}
+
+    >
+      <SearchEditor
+        signal="traces"
+        view="list"
+        inToolbar
+        onSearchResults={handleSearchResults}
+        onSearchError={(err) => (searchError = err)}
+      />
+    </SignalToolbar>
   </div>
 
   {#if error}
@@ -411,24 +378,21 @@
           <div class="col-resize-context trace-list-col-resize">
             <table
               bind:this={tableEl}
-              class="trace-list-table table table-sm w-full border-collapse"
-              class:table-fixed={colsReady}
-              style:min-width={colsReady ? `${tableMinWidth}px` : undefined}
+              class="trace-list-table table table-fixed table-sm w-full border-collapse"
+              style:min-width="{tableMinWidth}px"
             >
-              {#if colsReady}
-                <colgroup>
-                  <col style:width="{COL_CHECKBOX}px" />
-                  <col style:width="{traceIdColW}px" />
-                  <col style:width="{COL_ROOT_INDICATOR}px" />
-                  <col style:width="{rootNameColW}px" />
-                  <col style:width="{serviceColW}px" />
-                  <col /><!-- Start Time: elastic, absorbs remaining width -->
-                  <col style="width: 8rem" />
-                  <col style="width: 5.5rem" />
-                  <col style="width: 5.5rem" />
-                  <col style="width: 6.5rem" />
-                </colgroup>
-              {/if}
+              <colgroup>
+                <col style:width="{COL_CHECKBOX}px" />
+                <col style:width="{traceIdColW}px" />
+                <col style:width="{COL_ROOT_INDICATOR}px" />
+                <col style:width="{rootNameColW}px" />
+                <col style:width="{serviceColW}px" />
+                <col /><!-- Start Time: elastic, absorbs remaining width -->
+                <col style="width: 8rem" />
+                <col style="width: 5.5rem" />
+                <col style="width: 5.5rem" />
+                <col style="width: 6.5rem" />
+              </colgroup>
               <thead class="sticky top-0 z-10 table-header-surface">
               <tr class="table-header-row">
                 <th class="table-header-cell table-header-cell--checkbox">

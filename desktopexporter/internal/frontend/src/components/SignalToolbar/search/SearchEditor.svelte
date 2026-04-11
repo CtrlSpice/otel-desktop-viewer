@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import { EditorView, placeholder as cmPlaceholder, tooltips } from '@codemirror/view'
+  import {
+    EditorView,
+    placeholder as cmPlaceholder,
+    tooltips,
+  } from '@codemirror/view'
   import { EditorState } from '@codemirror/state'
   import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
   import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
@@ -25,31 +29,35 @@
   import { createQueryLinter } from './lang/linter'
   import { queryTheme, ensureTooltipStyles } from './lang/theme'
   import { createQueryKeymap } from './lang/keymap'
-  import { HelpCircleIcon } from '@/icons'
-  import FieldErrorMessage from '@/components/FieldErrorMessage.svelte'
+  import { HelpCircleIcon, CancelIcon } from '@/icons'
+
+  import type { SearchEditorAPI } from './search-editor-api'
 
   // --- types ---
+  type SearchEditorCallbacks = {
+    onSearchResults?: (event: SearchResultEvent) => void
+    /** Toolbar layout: panel chrome on the search wrapper only (not the action row). */
+    inToolbar?: boolean
+    /** Called once after mount with imperative handles. */
+    onReady?: (api: SearchEditorAPI) => void
+    /** Called whenever the search error state changes. */
+    onSearchError?: (error: string | null) => void
+  }
+
   type SearchEditorProps =
-    | {
+    | (SearchEditorCallbacks & {
         signal: 'traces' | 'metrics' | 'logs'
         view: 'list'
-        onSearchResults?: (event: SearchResultEvent) => void
-        /** Toolbar layout: panel chrome on the search wrapper only (not the action row). */
-        inToolbar?: boolean
-      }
-    | {
+      })
+    | (SearchEditorCallbacks & {
         signal: 'traces'
         view: 'detail'
         traceID: string
-        onSearchResults?: (event: SearchResultEvent) => void
-        inToolbar?: boolean
-      }
-    | {
+      })
+    | (SearchEditorCallbacks & {
         signal: 'metrics'
         view: 'detail'
-        onSearchResults?: (event: SearchResultEvent) => void
-        inToolbar?: boolean
-      }
+      })
 
   // --- helpers ---
 
@@ -92,6 +100,8 @@
     view,
     onSearchResults,
     inToolbar = false,
+    onReady,
+    onSearchError,
     filters = [],
     ...rest
   }: SearchEditorProps & { filters?: FilterDescriptor[] } = $props()
@@ -230,17 +240,40 @@
 
   // --- handlers ---
 
-  /** Fetch the trace without any search filter and deliver via onSearchResults. */
-  function fetchCleanTrace() {
-    if (view !== 'detail' || !traceID) return
-    telemetryAPI
-      .searchSpans(traceID)
-      .then(results => {
-        onSearchResults?.({ signal, view, results } as SearchResultEvent)
-      })
-      .catch(err => {
-        searchError = 'Search failed: ' + err.message
-      })
+  /** Fetch without any search filter and deliver via onSearchResults. */
+  function fetchClean() {
+    if (view === 'detail' && traceID) {
+      telemetryAPI
+        .searchSpans(traceID)
+        .then(results => {
+          onSearchResults?.({ signal, view, results } as SearchResultEvent)
+        })
+        .catch(err => {
+          searchError = 'Search failed: ' + err.message
+        })
+      return
+    }
+
+    if (view === 'list') {
+      const { start: startTime, end: endTime } = timeContext
+        ? selectionToQueryRangeMs(timeContext.selection, Date.now())
+        : { start: 0, end: Date.now() }
+
+      const fetchFn =
+        signal === 'traces'
+          ? () => telemetryAPI.searchTraces(startTime, endTime)
+          : signal === 'logs'
+            ? () => telemetryAPI.searchLogs(startTime, endTime, undefined)
+            : () => telemetryAPI.getMetrics(startTime, endTime, undefined)
+
+      fetchFn()
+        .then(results => {
+          onSearchResults?.({ signal, view, results } as SearchResultEvent)
+        })
+        .catch(err => {
+          searchError = 'Search failed: ' + err.message
+        })
+    }
   }
 
   function onSubmit() {
@@ -248,7 +281,7 @@
 
     if (!text.trim()) {
       searchError = null
-      fetchCleanTrace()
+      fetchClean()
       return
     }
 
@@ -256,7 +289,7 @@
       const queryTree: QueryNode | null = parseQuery(text, availableFields)
       searchError = null
       if (!queryTree) {
-        fetchCleanTrace()
+        fetchClean()
         return
       }
 
@@ -272,7 +305,7 @@
         queryTree
       )
       if (!searchFn) {
-        fetchCleanTrace()
+        fetchClean()
         return
       }
 
@@ -289,11 +322,11 @@
         })
         .catch(err => {
           searchError = 'Search failed: ' + err.message
-          fetchCleanTrace()
+          fetchClean()
         })
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
-      fetchCleanTrace()
+      fetchClean()
     }
   }
 
@@ -307,6 +340,16 @@
     helpDialogElement?.showModal()
     helpDialogOpen = true
     requestAnimationFrame(() => helpDialogElement?.focus())
+  }
+
+  function clearSearch() {
+    if (editorView) {
+      editorView.dispatch({
+        changes: { from: 0, to: editorView.state.doc.length, insert: '' },
+      })
+    }
+    searchError = null
+    onSubmit()
   }
 
   function toggleFilter(id: string) {
@@ -325,6 +368,10 @@
     }
     document.addEventListener('click', handleClick, true)
     return () => document.removeEventListener('click', handleClick, true)
+  })
+
+  $effect(() => {
+    onSearchError?.(searchError)
   })
 
   // Re-fire the current query when navigating between traces in detail view.
@@ -367,6 +414,11 @@
       state,
       parent: editorContainer,
     })
+
+    onReady?.({
+      submit: onSubmit,
+      clear: clearSearch,
+    })
   })
 
   onDestroy(() => {
@@ -378,48 +430,37 @@
   class="search-editor-wrapper"
   class:search-editor-wrapper--in-toolbar={inToolbar}
 >
-  <div class="search-editor-container">
-    <!-- CodeMirror Editor -->
+  <div class="search-editor-container" class:search-editor-container--error={!!searchError}>
     <div class="editor-mount" bind:this={editorContainer}></div>
 
-    <!-- Action cluster: bottom-right, anchored to bottom as editor grows -->
-    <div class="search-actions">
+    <div class="search-actions join">
       <button
         type="button"
-        class="btn btn-ghost btn-sm btn-circle font-semibold leading-none"
+        class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
         onclick={openHelp}
         aria-label="Search query help"
         title="Search query help"
       >
         <HelpCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
       </button>
-
-      {#if !inToolbar}
-        {#each filters as filter (filter.id)}
-          <button
-            type="button"
-            class="btn btn-soft btn-sm btn-circle"
-            class:btn-active={activeFilterId === filter.id}
-            onclick={() => toggleFilter(filter.id)}
-            aria-label={filter.label}
-            title={filter.label}
-            aria-expanded={activeFilterId === filter.id}
-            data-filter-id={filter.id}
-          >
-            {@render filter.icon()}
-          </button>
-        {/each}
-      {/if}
-
       <button
         type="button"
-        class="btn btn-soft btn-primary btn-sm btn-circle"
+        class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
+        onclick={clearSearch}
+        aria-label="Clear search"
+        title="Clear search"
+      >
+        <CancelIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
         onclick={onSubmit}
         aria-label="Search (Cmd+Enter)"
         title="Search (Cmd+Enter)"
       >
         <svg
-          class="search-button-icon"
+          class="h-4 w-4 shrink-0"
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
           fill="none"
@@ -439,12 +480,6 @@
   {#if activeFilter && !inToolbar}
     <div bind:this={filterPopoverEl} class="search-filter-popover">
       {@render activeFilter.content()}
-    </div>
-  {/if}
-
-  {#if searchError}
-    <div class="px-3">
-      <FieldErrorMessage message={searchError} />
     </div>
   {/if}
 </div>
@@ -599,7 +634,6 @@
         open autocomplete
       </li>
     </ul>
-
   </div>
 </dialog>
 
@@ -608,55 +642,23 @@
 
   .search-editor-wrapper {
     @apply relative w-full;
+    min-height: var(--table-row-h);
+    line-height: var(--table-row-h);
   }
 
-  /* List/detail toolbar: frosted card, same min-height as SignalToolbar row, overflow visible for CM tooltips. */
   .search-editor-wrapper--in-toolbar {
-    @apply w-full shrink-0 overflow-visible rounded-xl border border-base-300/70 bg-base-100/80 py-1 shadow-surface-sm backdrop-blur-sm;
+    @apply w-full shrink-0 overflow-visible px-3 py-1;
     box-sizing: border-box;
-    min-height: var(--toolbar-search-chrome-min-height);
-
-    &:focus-within {
-      outline: var(--focus-ring-width) solid var(--focus-ring-color);
-      outline-offset: var(--focus-ring-offset);
-    }
-
-    & .search-editor-container {
-      @apply flex min-h-0 min-w-0 items-stretch rounded-none border-0 bg-transparent shadow-none;
-      height: auto;
-      max-width: none;
-      min-height: var(--table-row-h);
-      width: 100%;
-
-      &:focus,
-      &:focus-within {
-        outline: none;
-        box-shadow: none;
-      }
-    }
-
-    & .editor-mount {
-      @apply min-h-0 self-stretch;
-
-      & :global(.cm-editor) {
-        @apply min-h-full;
-      }
-
-      & :global(.cm-scroller) {
-        min-height: var(--table-row-h);
-      }
-
-      & :global(.cm-content) {
-        /* Tighter than standalone: smaller action cluster in toolbar layout */
-        padding-right: 5rem;
-      }
-    }
   }
 
   .search-editor-container {
-    @apply input relative flex min-h-10 w-full items-start px-3 py-1;
-    height: auto;
-    min-height: 2.5rem;
+    @apply input relative flex w-full items-start px-3;
+    height: fit-content;
+    min-height: var(--table-row-h);
+  }
+
+  .search-editor-container--error {
+    border-color: var(--color-error);
   }
 
   .editor-mount {
@@ -672,17 +674,21 @@
   }
 
   .editor-mount :global(.cm-content) {
-    /* Room for bottom-right actions (help, filters, submit) */
-    padding-right: 7rem;
+    padding-right: 4rem;
     padding-bottom: 0.25rem;
   }
 
   .search-actions {
-    @apply absolute bottom-1 right-1.5 z-10 flex items-center gap-1;
+    @apply absolute right-0 bottom-0 z-10 flex items-center;
+    --join-radius: 0;
   }
 
-  .search-button-icon {
-    @apply block h-4 w-4;
+  .search-actions :global(.join-item:first-child) {
+    border-top-left-radius: var(--radius-field);
+  }
+
+  .search-actions :global(.join-item:last-child) {
+    border-bottom-right-radius: var(--radius-field);
   }
 
   .search-filter-popover {

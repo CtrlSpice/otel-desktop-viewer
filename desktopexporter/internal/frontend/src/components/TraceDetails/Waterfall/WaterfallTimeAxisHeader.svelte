@@ -330,8 +330,11 @@
   }
 
   .waterfall-time-axis-header__tick-label {
-    @apply absolute top-1/2 text-xs tracking-normal text-base-content/55 whitespace-nowrap;
-    transform: translate(-50%, -50%);
+    --tick-label-w: 5rem;
+    @apply absolute top-1/2 text-xs tracking-normal text-base-content/55 text-center;
+    width: var(--tick-label-w);
+    margin-left: calc(var(--tick-label-w) / -2);
+    transform: translateY(-50%);
   }
 
   .waterfall-time-axis-header__tick-line {

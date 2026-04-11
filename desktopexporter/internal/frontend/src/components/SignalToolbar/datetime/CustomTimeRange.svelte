@@ -205,10 +205,12 @@
       </div>
 
       {#if customFieldIssue}
-        <FieldErrorMessage
-          id="custom-time-range-error"
-          message={customFieldIssue.message}
-        />
+        <div class="mt-1.5">
+          <FieldErrorMessage
+            id="custom-time-range-error"
+            message={customFieldIssue.message}
+          />
+        </div>
       {/if}
     </fieldset>
   </form>

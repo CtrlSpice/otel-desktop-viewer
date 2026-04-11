@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte'
   import type { TraceDetailStats } from '@/utils/trace-detail-stats'
   import type { TraceListStats } from '@/components/TraceList/trace-list-stats'
+  import FieldErrorMessage from '@/components/FieldErrorMessage.svelte'
 
   type TrailingFilterSlots = {
     /**
@@ -19,6 +20,8 @@
         listStats?: TraceListStats | null
         /** Dim list summary stats (e.g. while refetching). */
         listStatsMuted?: boolean
+        children?: Snippet
+        searchError?: string | null
       })
     | (TrailingFilterSlots & {
         signal: 'traces'
@@ -27,6 +30,8 @@
         traceStats?: TraceDetailStats | null
         onBack?: (() => void) | null
         onRefresh?: (() => void) | null
+        children?: Snippet
+        searchError?: string | null
       })
     | (TrailingFilterSlots & {
         signal: 'metrics'
@@ -34,6 +39,8 @@
         metricName: string
         onBack?: (() => void) | null
         onRefresh?: (() => void) | null
+        children?: Snippet
+        searchError?: string | null
       })
 
   let props: SignalToolbarProps = $props()
@@ -42,6 +49,8 @@
   let view = $derived(props.view)
   let onBack = $derived('onBack' in props ? (props.onBack ?? null) : null)
   let onRefresh = $derived(props.onRefresh ?? null)
+  let children = $derived(props.children ?? null)
+  let searchError = $derived(props.searchError ?? null)
 
   let detailTraceStats = $derived(
     signal === 'traces' && view === 'detail' && 'traceStats' in props
@@ -66,11 +75,21 @@
   )
 
   let trailingFilters = $derived([...(props.trailingFilters ?? [])])
+
+  let title = $derived.by(() => {
+    if (view === 'detail' && traceDetailId) return traceDetailId
+    if (view === 'detail' && 'metricName' in props) return props.metricName
+    return signal.charAt(0).toUpperCase() + signal.slice(1)
+  })
+
+  let isDetailTitle = $derived(
+    view === 'detail' && (traceDetailId || 'metricName' in props)
+  )
 </script>
 
 <div class="signal-toolbar">
-  <div class="signal-toolbar__top-row">
-    <!-- 1. Actions: back + refresh -->
+  <!-- HEADER -->
+  <div class="signal-toolbar__header">
     {#if onBack || onRefresh}
       <div class="signal-toolbar__action-group">
         {#if onBack}
@@ -111,44 +130,71 @@
       </div>
     {/if}
 
-    <!-- 2. Title + Stats -->
-    {#if listStats}
-      {@const s = listStats}
-      <div
-        class="signal-toolbar__stats-scroll"
-        class:signal-toolbar__stats-scroll--muted={listStatsMuted}
-        aria-label="List summary"
-        aria-busy={listStatsMuted}
+    <div class="signal-toolbar__title">
+      <span
+        class={isDetailTitle
+          ? 'signal-toolbar__detail-title'
+          : 'signal-toolbar__list-title'}
+        title={isDetailTitle ? title : undefined}
       >
-        <div class="signal-toolbar__stats-inner text-sm text-base-content/70">
-          <span class="shrink-0 font-medium text-base-content"
-            >{s.traces} trace{s.traces !== 1 ? 's' : ''}</span
-          >
-          <span class="text-base-content/35" aria-hidden="true">·</span>
-          <span class="shrink-0">{s.spans} span{s.spans !== 1 ? 's' : ''}</span>
-          <span class="text-base-content/35" aria-hidden="true">·</span>
-          <span class="shrink-0"
-            >{s.services} service{s.services !== 1 ? 's' : ''}</span
-          >
-          <span class="text-base-content/35" aria-hidden="true">·</span>
-          <span class="shrink-0 {s.errors > 0 ? 'text-error/90' : ''}"
-            >{s.errors} error{s.errors !== 1 ? 's' : ''}</span
-          >
-          <span class="text-base-content/35" aria-hidden="true">·</span>
-          <span class="shrink-0 {s.exceptions > 0 ? 'text-warning/90' : ''}"
-            >{s.exceptions} exception{s.exceptions !== 1 ? 's' : ''}</span
-          >
-        </div>
+        {title}
+      </span>
+    </div>
+
+    {#if trailingFilters.length > 0}
+      <div
+        class="signal-toolbar__trailing-filters"
+        aria-label="Toolbar filters"
+      >
+        {#each trailingFilters as render, i (i)}
+          <div class="signal-toolbar__trailing-item">
+            {@render render()}
+          </div>
+        {/each}
       </div>
-    {:else if view === 'detail' && traceDetailId}
-      <div class="signal-toolbar__title">
-        <span class="signal-toolbar__detail-title" title={traceDetailId}
-          >{traceDetailId}</span
+    {/if}
+  </div>
+
+  <!-- SEARCH EDITOR (children slot) -->
+  {#if children}
+    {@render children()}
+  {/if}
+
+  <!-- FOOTER -->
+  <div class="signal-toolbar__footer">
+    <div class="signal-toolbar__footer-left">
+      {#if listStats}
+        {@const s = listStats}
+        <div
+          class="signal-toolbar__stats-scroll"
+          class:signal-toolbar__stats-scroll--muted={listStatsMuted}
+          aria-label="List summary"
+          aria-busy={listStatsMuted}
         >
-      </div>
-      {#if detailTraceStats}
+          <div class="signal-toolbar__stats-inner text-sm text-base-content/70">
+            <span class="shrink-0 font-medium text-base-content"
+              >{s.traces} trace{s.traces !== 1 ? 's' : ''}</span
+            >
+            <span class="text-base-content/35" aria-hidden="true">·</span>
+            <span class="shrink-0"
+              >{s.spans} span{s.spans !== 1 ? 's' : ''}</span
+            >
+            <span class="text-base-content/35" aria-hidden="true">·</span>
+            <span class="shrink-0"
+              >{s.services} service{s.services !== 1 ? 's' : ''}</span
+            >
+            <span class="text-base-content/35" aria-hidden="true">·</span>
+            <span class="shrink-0 {s.errors > 0 ? 'text-error/90' : ''}"
+              >{s.errors} error{s.errors !== 1 ? 's' : ''}</span
+            >
+            <span class="text-base-content/35" aria-hidden="true">·</span>
+            <span class="shrink-0 {s.exceptions > 0 ? 'text-warning/90' : ''}"
+              >{s.exceptions} exception{s.exceptions !== 1 ? 's' : ''}</span
+            >
+          </div>
+        </div>
+      {:else if detailTraceStats}
         {@const s = detailTraceStats}
-        <span class="text-base-content/35" aria-hidden="true">·</span>
         <div class="signal-toolbar__stats-scroll" aria-label="Trace summary">
           <div class="signal-toolbar__stats-inner text-sm text-base-content/70">
             <span class="shrink-0"
@@ -172,31 +218,10 @@
           </div>
         </div>
       {/if}
-    {:else if view === 'detail' && 'metricName' in props}
-      <div class="signal-toolbar__title">
-        <span class="signal-toolbar__detail-title" title={props.metricName}
-          >{props.metricName}</span
-        >
-      </div>
-    {:else}
-      <div class="signal-toolbar__title">
-        <span class="signal-toolbar__list-title"
-          >{signal.charAt(0).toUpperCase() + signal.slice(1)}</span
-        >
-      </div>
-    {/if}
-
-    <!-- 3. Trailing filters (page-defined order) -->
-    {#if trailingFilters.length > 0}
-      <div
-        class="signal-toolbar__trailing-filters"
-        aria-label="Toolbar filters"
-      >
-        {#each trailingFilters as render, i (i)}
-          <div class="signal-toolbar__trailing-item">
-            {@render render()}
-          </div>
-        {/each}
+    </div>
+    {#if searchError}
+      <div class="signal-toolbar__footer-right">
+        <FieldErrorMessage message={searchError} />
       </div>
     {/if}
   </div>
@@ -206,26 +231,25 @@
   @reference "../../app.css";
 
   .signal-toolbar {
-    @apply relative w-full min-w-0;
+    @apply relative w-full min-w-0 overflow-hidden rounded-xl border border-base-300/70 bg-base-200/60 shadow-surface-sm backdrop-blur-sm;
   }
 
-  .signal-toolbar__top-row {
-    @apply flex w-full min-w-0 flex-nowrap items-center px-2 py-1;
+  .signal-toolbar__header {
+    @apply flex w-full min-w-0 flex-nowrap items-center px-3 py-1;
     gap: var(--layout-gap);
     min-height: var(--toolbar-search-chrome-min-height);
     box-sizing: border-box;
   }
 
-  /* No outline rings on toolbar actions / filters (soft + primary still read from fill). */
-  .signal-toolbar__top-row :global(.btn) {
+  .signal-toolbar__header :global(.btn) {
     @apply border-0 shadow-none;
   }
 
-  .signal-toolbar__top-row :global(.toolbar-filter-trigger) {
+  .signal-toolbar__header :global(.toolbar-filter-trigger) {
     @apply border-0;
   }
 
-  .signal-toolbar__top-row :global(.toolbar-filter-trigger__dropdown-circle) {
+  .signal-toolbar__header :global(.toolbar-filter-trigger__dropdown-circle) {
     @apply border-0;
   }
 
@@ -253,6 +277,21 @@
     @apply flex min-w-0 max-w-full shrink items-center;
   }
 
+  .signal-toolbar__footer {
+    @apply flex w-full min-w-0 flex-nowrap items-center px-3;
+    gap: var(--layout-gap);
+    height: var(--table-row-h);
+    box-sizing: border-box;
+  }
+
+  .signal-toolbar__footer-left {
+    @apply flex min-w-0 flex-1 items-center;
+  }
+
+  .signal-toolbar__footer-right {
+    @apply flex shrink-0 items-center text-sm;
+  }
+
   .signal-toolbar__stats-scroll {
     @apply min-w-0 flex-1 overflow-x-auto transition-opacity duration-300 ease-in-out;
     scrollbar-width: thin;
@@ -263,6 +302,6 @@
   }
 
   .signal-toolbar__stats-inner {
-    @apply inline-flex min-w-max flex-nowrap items-center gap-x-2 py-0.5;
+    @apply inline-flex min-w-max flex-nowrap items-center gap-x-2;
   }
 </style>

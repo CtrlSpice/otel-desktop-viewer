@@ -259,12 +259,6 @@
   let { spans, selectedSpanID, onSelectSpan, loading = false, footer }: Props = $props()
 
   let bounds = $derived(getTraceBounds(spans))
-  const TARGET_TICK_COUNT = 6
-  let barGridPercents = $derived(
-    waterfallTimeAxis(bounds.duration, TARGET_TICK_COUNT).ticks.map(
-      t => t.offsetPercent
-    )
-  )
   let rows = $derived(buildWaterfallRows(spans, bounds))
 
   // --- Column widths (resizable) ---
@@ -273,15 +267,15 @@
   const waterfallCols = {
     span: {
       kind: 'resizable',
-      min: 120,
-      default: 192,
+      min: 140,
+      default: 200,
     } satisfies ResizableColumn,
     service: {
       kind: 'resizable',
-      min: 80,
-      default: 120,
+      min: 100,
+      default: 140,
     } satisfies ResizableColumn,
-    timeline: { kind: 'elastic', min: 200 } satisfies ElasticColumn,
+    timeline: { kind: 'elastic', min: 240 } satisfies ElasticColumn,
   }
 
   const MIN_SPAN_COL = waterfallCols.span.min
@@ -297,6 +291,34 @@
     span: spanColWidth,
     service: spanColWidth + serviceColWidth,
   })
+
+  let scrollContainerEl = $state<HTMLDivElement | null>(null)
+  let scrollContainerW = $state(800)
+
+  $effect(() => {
+    if (!scrollContainerEl) return
+    const ro = new ResizeObserver(entries => {
+      scrollContainerW = entries[0]?.contentRect.width ?? 800
+    })
+    ro.observe(scrollContainerEl)
+    return () => ro.disconnect()
+  })
+
+  const TICK_LABEL_SLOT_PX = 80
+  const RULER_PADDING_PX = 48
+  const TICK_COUNT_STEPS = [2, 4, 6, 8]
+
+  let timelineColPx = $derived(scrollContainerW - spanColWidth - serviceColWidth)
+  let targetTickCount = $derived.by(() => {
+    const fits = Math.floor((timelineColPx - RULER_PADDING_PX) / TICK_LABEL_SLOT_PX)
+    return TICK_COUNT_STEPS.findLast(n => n <= fits) ?? TICK_COUNT_STEPS[0]
+  })
+
+  let barGridPercents = $derived(
+    waterfallTimeAxis(bounds.duration, targetTickCount).ticks.map(
+      t => t.offsetPercent
+    )
+  )
 
   function startResizeSpanCol(e: PointerEvent) {
     e.preventDefault()
@@ -603,7 +625,7 @@
 
 <div class="waterfall-panel">
   <div class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}">
-    <div class="waterfall-view__scroll">
+    <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
       <div class="col-resize-context">
         <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
         <table
@@ -618,7 +640,7 @@
           <thead class="table-header-surface">
             <WaterfallTimeAxisHeader
               traceDurationNs={bounds.duration}
-              targetTickCount={TARGET_TICK_COUNT}
+              {targetTickCount}
               {spanColWidth}
               {serviceColWidth}
               onResizeSpanCol={w => {

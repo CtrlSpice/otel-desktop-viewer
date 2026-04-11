@@ -9,6 +9,7 @@ import ArrowRightDoubleIcon from './ArrowRightDoubleIcon.svelte'
 import ArrowRightIcon from './ArrowRightIcon.svelte'
 import BarChartHorizontalIcon from './BarChartHorizontalIcon.svelte'
 import ChartHistogramIcon from './ChartHistogramIcon.svelte'
+import CancelIcon from './CancelIcon.svelte'
 import CheckmarkCircleIcon from './CheckmarkCircleIcon.svelte'
 import CopyIcon from './CopyIcon.svelte'
 import FilterIcon from './FilterIcon.svelte'
@@ -27,6 +28,7 @@ export {
   ArrowRightDoubleIcon,
   ArrowRightIcon,
   BarChartHorizontalIcon,
+  CancelIcon,
   ChartHistogramIcon,
   CheckmarkCircleIcon,
   CopyIcon,
