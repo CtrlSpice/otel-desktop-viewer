@@ -1,6 +1,8 @@
 .DS_Store
+.cursor/
+.claude/
 otel-desktop-viewer
-desktopexporter/internal/app/node_modules
+desktopexporter/internal/frontend-legacy/
 .vscode/
 *.db
 *.duckdb*
@@ -12,3 +14,9 @@ task_list.txt
 
 # Added by goreleaser init:
 dist/
+
+# V2 Frontend
+desktopexporter/internal/frontend/node_modules/
+desktopexporter/internal/frontend/dist/
+desktopexporter/internal/frontend/.vite/
+desktopexporter/internal/frontend/*.local

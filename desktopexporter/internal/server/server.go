@@ -2,6 +2,7 @@ package server
 
 import (
 	"embed"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -14,7 +15,7 @@ import (
 	"golang.org/x/exp/jsonrpc2"
 )
 
-//go:embed static/*
+//go:embed static
 var assets embed.FS
 
 type Server struct {
@@ -23,7 +24,7 @@ type Server struct {
 	staticDir      string
 }
 
-func NewServer(endpoint string, store *store.Store) *Server {
+func NewServer(endpoint string, store *store.Store) (*Server, error) {
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
@@ -33,10 +34,10 @@ func NewServer(endpoint string, store *store.Store) *Server {
 	}
 
 	if err := s.initHandler(); err != nil {
-		log.Fatalf("Could not initialize desktop exporter server: %v", err)
+		return nil, fmt.Errorf("could not initialize desktop exporter server: %w", err)
 	}
 
-	return &s
+	return &s, nil
 }
 
 func (s *Server) Start() error {
@@ -56,7 +57,7 @@ func (s *Server) initHandler() error {
 	} else {
 		staticContent, err := fs.Sub(assets, "static")
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		mux.Handle("/", http.FileServerFS(staticContent))
 	}
@@ -71,8 +72,8 @@ func (s *Server) initHandler() error {
 	return nil
 }
 
-// indexHandler serves the frontend application
-// It handles both development (staticDir) and production (embedded assets) scenarios
+// indexHandler serves the frontend application.
+// Uses STATIC_ASSETS_DIR for development, embedded assets for production.
 func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request) {
 	if s.staticDir != "" {
 		http.ServeFile(writer, request, s.staticDir+"/index.html")
@@ -137,14 +138,13 @@ func sendJSONRPCResponse(writer http.ResponseWriter, id jsonrpc2.ID, result any,
 	writer.Write(bytes)
 }
 
-// getStaticDir returns the path to the static assets directory we use for development
-// If the environment variable is not set, it returns an empty string
+// getStaticDir returns the path to the static assets directory for development.
+// Set STATIC_ASSETS_DIR to point at the frontend build output (e.g. frontend/dist).
+// Returns empty string if not set (uses embedded assets).
 func getStaticDir() string {
-	staticDir, ok := os.LookupEnv("STATIC_ASSETS_DIR")
-	if ok {
-		return filepath.Clean(staticDir)
+	if dir, ok := os.LookupEnv("STATIC_ASSETS_DIR"); ok {
+		return filepath.Clean(dir)
 	}
-
 	return ""
 }
 

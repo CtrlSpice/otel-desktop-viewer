@@ -6,12 +6,9 @@ import (
 	desktopexporter "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/connector"
-	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/extension"
 	"go.opentelemetry.io/collector/otelcol"
-	"go.opentelemetry.io/collector/processor"
 	batchprocessor "go.opentelemetry.io/collector/processor/batchprocessor"
-	"go.opentelemetry.io/collector/receiver"
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"
 )
 
@@ -25,7 +22,7 @@ func components() (otelcol.Factories, error) {
 	}
 	factories.ExtensionModules = make(map[component.Type]string, len(factories.Extensions))
 
-	factories.Receivers, err = otelcol.MakeFactoryMap[receiver.Factory](
+	factories.Receivers, err = otelcol.MakeFactoryMap(
 		otlpreceiver.NewFactory(),
 	)
 	if err != nil {
@@ -34,7 +31,7 @@ func components() (otelcol.Factories, error) {
 	factories.ReceiverModules = make(map[component.Type]string, len(factories.Receivers))
 	factories.ReceiverModules[otlpreceiver.NewFactory().Type()] = "go.opentelemetry.io/collector/receiver/otlpreceiver v0.125.0"
 
-	factories.Exporters, err = otelcol.MakeFactoryMap[exporter.Factory](
+	factories.Exporters, err = otelcol.MakeFactoryMap(
 		desktopexporter.NewFactory(),
 	)
 	if err != nil {
@@ -43,7 +40,7 @@ func components() (otelcol.Factories, error) {
 	factories.ExporterModules = make(map[component.Type]string, len(factories.Exporters))
 	factories.ExporterModules[desktopexporter.NewFactory().Type()] = "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
 
-	factories.Processors, err = otelcol.MakeFactoryMap[processor.Factory](
+	factories.Processors, err = otelcol.MakeFactoryMap(
 		batchprocessor.NewFactory(),
 	)
 	if err != nil {

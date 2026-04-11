@@ -1,0 +1,11 @@
+/* Atkinson Hyperlegible Next — UI (latin subset) */
+@import '@fontsource/atkinson-hyperlegible-next/latin-400.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-400-italic.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-500.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-600.css';
+@import '@fontsource/atkinson-hyperlegible-next/latin-700.css';
+
+/* Atkinson Hyperlegible Mono — code / monospace (latin subset) */
+@import '@fontsource/atkinson-hyperlegible-mono/latin-400.css';
+@import '@fontsource/atkinson-hyperlegible-mono/latin-500.css';
+@import '@fontsource/atkinson-hyperlegible-mono/latin-600.css';
