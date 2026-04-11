@@ -5,7 +5,7 @@
     placeholder as cmPlaceholder,
     tooltips,
   } from '@codemirror/view'
-  import { EditorState } from '@codemirror/state'
+  import { EditorState, Compartment } from '@codemirror/state'
   import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
   import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
   import { keymap } from '@codemirror/view'
@@ -32,6 +32,7 @@
   import { HelpCircleIcon, CancelIcon } from '@/icons'
 
   import type { SearchEditorAPI } from './search-editor-api'
+  import { parseDuration } from '@/utils/duration'
 
   // --- types ---
   type SearchEditorCallbacks = {
@@ -61,37 +62,50 @@
 
   // --- helpers ---
 
-  /** Build the API call for a signal+view, or null if unsupported. */
-  function buildSearchFn(
-    sig: SearchEditorProps['signal'],
-    v: string,
-    startTime: number,
-    endTime: number,
-    queryTree: QueryNode
-  ): (() => Promise<any>) | null {
-    if (sig === 'traces') {
-      if (v === 'list') {
-        return () => telemetryAPI.searchTraces(startTime, endTime, queryTree)
-      }
-      if (v === 'detail' && traceID) {
-        return () => telemetryAPI.searchSpans(traceID, queryTree)
-      }
-      return null
-    }
-    if (sig === 'logs') {
-      return () => telemetryAPI.searchLogs(startTime, endTime, queryTree)
-    }
-    return () => telemetryAPI.getMetrics(startTime, endTime, queryTree)
+  type SearchContext =
+    | { view: 'list'; signal: 'traces' | 'logs' | 'metrics'; startTime: number; endTime: number }
+    | { view: 'detail'; signal: 'traces'; traceID: string }
+    | { view: 'detail'; signal: 'metrics'; metricName: string }
+
+  const searchDispatch: Record<string, Record<string, (ctx: SearchContext, q?: QueryNode) => (() => Promise<any>) | null>> = {
+    list: {
+      traces:  (ctx, q) => ctx.view === 'list' ? () => telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q) : null,
+      logs:    (ctx, q) => ctx.view === 'list' ? () => telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q) : null,
+      metrics: (ctx, q) => ctx.view === 'list' ? () => telemetryAPI.getMetrics(ctx.startTime, ctx.endTime, q) : null,
+    },
+    detail: {
+      traces:  (ctx, q) => 'traceID' in ctx ? () => telemetryAPI.searchSpans(ctx.traceID, q) : null,
+    },
   }
 
-  /** Label after "Search " in the editor placeholder (list vs detail). */
-  function searchPlaceholderSubject(
-    sig: SearchEditorProps['signal'],
-    v: SearchEditorProps['view']
-  ): string {
-    if (v === 'detail' && sig === 'traces') return 'Spans'
-    if (v === 'detail' && sig === 'metrics') return 'Data Points'
-    return sig.charAt(0).toUpperCase() + sig.slice(1)
+  /** Build the API call for a signal+view, or null if unsupported. */
+  function buildSearchFn(ctx: SearchContext, queryTree?: QueryNode): (() => Promise<any>) | null {
+    return searchDispatch[ctx.view]?.[ctx.signal]?.(ctx, queryTree) ?? null
+  }
+
+  /**
+   * Walk the query tree and convert human-readable duration values to
+   * nanosecond strings in-place. Returns an error message if any
+   * duration value can't be parsed, or null on success.
+   */
+  function normalizeDurationValues(node: QueryNode): string | null {
+    if (node.type === 'group') {
+      return node.group.children.reduce<string | null>(
+        (err, child) => err ?? normalizeDurationValues(child), null
+      )
+    }
+    if (!('name' in node.query.field) || node.query.field.name !== 'duration') return null
+
+    const ns = parseDuration(node.query.value)
+    if (ns === null) return `Invalid duration: "${node.query.value}". Try "1s", "500ms", "2m", etc.`
+    node.query.value = ns.toString()
+    return null
+  }
+
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+  const placeholderSubjects: Record<string, Record<string, string>> = {
+    detail: { traces: 'Spans', metrics: 'Data Points' },
   }
 
   // --- context ---
@@ -118,6 +132,7 @@
   let editorContainer: HTMLDivElement
   let editorView: EditorView | null = null
   let searchError = $state<string | null>(null)
+  const placeholderCompartment = new Compartment()
 
   // --- state: filter popover ---
   let activeFilterId = $state<string | null>(null)
@@ -138,13 +153,19 @@
   let availableFields = $state<FieldDefinition[]>([])
 
   // --- derived ---
-  let signalLabel = $derived(signal.charAt(0).toUpperCase() + signal.slice(1))
+  let signalLabel = $derived(capitalize(signal))
   let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
   let placeholderText = $derived(
-    `Search ${searchPlaceholderSubject(signal, view)}… (Cmd+Enter to submit)`
+    `Search ${placeholderSubjects[view]?.[signal] ?? capitalize(signal)}… (Cmd+Enter to submit)`
   )
 
   // --- effects ---
+
+  $effect(() => {
+    editorView?.dispatch({
+      effects: placeholderCompartment.reconfigure(cmPlaceholder(placeholderText)),
+    })
+  })
 
   /** Fetch dynamic attributes — by traceID in detail view, by time range in list view. */
   $effect(() => {
@@ -240,40 +261,30 @@
 
   // --- handlers ---
 
+  /** Build a SearchContext from the current component state. */
+  function currentSearchContext(): SearchContext | null {
+    const { start: startTime, end: endTime } = timeContext
+      ? selectionToQueryRangeMs(timeContext.selection, Date.now())
+      : { start: 0, end: Date.now() }
+
+    return view === 'list'
+      ? { view, signal, startTime, endTime }
+      : view === 'detail' && signal === 'traces' && traceID
+        ? { view, signal, traceID }
+        : null
+  }
+
   /** Fetch without any search filter and deliver via onSearchResults. */
   function fetchClean() {
-    if (view === 'detail' && traceID) {
-      telemetryAPI
-        .searchSpans(traceID)
-        .then(results => {
-          onSearchResults?.({ signal, view, results } as SearchResultEvent)
-        })
-        .catch(err => {
-          searchError = 'Search failed: ' + err.message
-        })
-      return
-    }
-
-    if (view === 'list') {
-      const { start: startTime, end: endTime } = timeContext
-        ? selectionToQueryRangeMs(timeContext.selection, Date.now())
-        : { start: 0, end: Date.now() }
-
-      const fetchFn =
-        signal === 'traces'
-          ? () => telemetryAPI.searchTraces(startTime, endTime)
-          : signal === 'logs'
-            ? () => telemetryAPI.searchLogs(startTime, endTime, undefined)
-            : () => telemetryAPI.getMetrics(startTime, endTime, undefined)
-
-      fetchFn()
-        .then(results => {
-          onSearchResults?.({ signal, view, results } as SearchResultEvent)
-        })
-        .catch(err => {
-          searchError = 'Search failed: ' + err.message
-        })
-    }
+    const ctx = currentSearchContext()
+    const fn = ctx ? buildSearchFn(ctx) : null
+    fn?.()
+      .then(results => {
+        onSearchResults?.({ signal, view, results } as SearchResultEvent)
+      })
+      .catch(err => {
+        searchError = 'Search failed: ' + err.message
+      })
   }
 
   function onSubmit() {
@@ -293,17 +304,14 @@
         return
       }
 
-      const { start: startTime, end: endTime } = timeContext
-        ? selectionToQueryRangeMs(timeContext.selection, Date.now())
-        : { start: 0, end: Date.now() }
+      const durationErr = normalizeDurationValues(queryTree)
+      if (durationErr) {
+        searchError = durationErr
+        return
+      }
 
-      const searchFn = buildSearchFn(
-        signal,
-        view,
-        startTime,
-        endTime,
-        queryTree
-      )
+      const searchCtx = currentSearchContext()
+      const searchFn = searchCtx ? buildSearchFn(searchCtx, queryTree) : null
       if (!searchFn) {
         fetchClean()
         return
@@ -322,11 +330,9 @@
         })
         .catch(err => {
           searchError = 'Search failed: ' + err.message
-          fetchClean()
         })
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
-      fetchClean()
     }
   }
 
@@ -405,7 +411,7 @@
         closeBrackets(),
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
-        cmPlaceholder(placeholderText),
+        placeholderCompartment.of(cmPlaceholder(placeholderText)),
         EditorView.lineWrapping,
       ],
     })
@@ -655,10 +661,20 @@
     @apply input relative flex w-full items-start px-3;
     height: fit-content;
     min-height: var(--table-row-h);
+    border-color: var(--color-base-300);
+  }
+
+  .search-editor-container:focus-within {
+    outline: 1px solid var(--color-primary);
+    outline-offset: 1px;
   }
 
   .search-editor-container--error {
     border-color: var(--color-error);
+  }
+
+  .search-editor-container--error:focus-within {
+    outline-color: var(--color-error);
   }
 
   .editor-mount {

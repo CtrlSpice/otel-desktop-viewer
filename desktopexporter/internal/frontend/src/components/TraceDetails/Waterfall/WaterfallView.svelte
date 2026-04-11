@@ -654,6 +654,7 @@
             <WaterfallTimeAxisHeader
               traceDurationNs={bounds.duration}
               {targetTickCount}
+              tickLabelWidth={TICK_LABEL_SLOT_PX}
               {spanColWidth}
               {serviceColWidth}
               onResizeSpanCol={w => {

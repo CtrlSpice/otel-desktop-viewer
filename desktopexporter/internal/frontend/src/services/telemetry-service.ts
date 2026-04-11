@@ -311,11 +311,11 @@ function convertQueryTreeForBackend(queryTree: QueryNode): any {
         field: {
           ...(queryTree.query.field.searchScope !== 'global' && {
             name: queryTree.query.field.name,
+            type: queryTree.query.field.type,
           }),
           searchScope: queryTree.query.field.searchScope,
           ...(queryTree.query.field.searchScope === 'attribute' && {
             attributeScope: queryTree.query.field.attributeScope,
-            type: queryTree.query.field.type,
           }),
         },
         fieldOperator: queryTree.query.operator.symbol,

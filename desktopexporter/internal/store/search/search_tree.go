@@ -195,9 +195,20 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 
 	paramName := fmt.Sprintf("value_%d", len(*params))
 
+	// TODO: Query.Value is always a string because the frontend sends JSON and
+	// the Go struct declares Value as string. For int64 fields (e.g. duration),
+	// DuckDB needs an integer bind parameter — parse the string here as a
+	// workaround until the wire format carries typed values.
+	var bindValue any = value
+	if query.Field != nil && query.Field.Type == "int64" {
+		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
+			bindValue = n
+		}
+	}
+
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=", "REGEXP":
-		*params = append(*params, NamedParam{paramName, value})
+		*params = append(*params, NamedParam{paramName, bindValue})
 		operatorString = operator + " " + paramName
 	case "CONTAINS":
 		*params = append(*params, NamedParam{paramName, "%" + value + "%"})

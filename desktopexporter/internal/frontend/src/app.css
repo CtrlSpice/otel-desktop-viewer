@@ -39,8 +39,8 @@ html[data-theme='rose-pine-moon'] {
   --depth: 1;
   --noise: 0;
   --focus-ring-width: 1px;
-  --focus-ring-offset: 0px;
-  --focus-ring-color: color-mix(in oklab, var(--color-primary) 50%, transparent);
+  --focus-ring-offset: 1px;
+  --focus-ring-color: var(--color-primary);
 }
 
 html[data-theme='rose-pine-dawn'] {
@@ -76,8 +76,8 @@ html[data-theme='rose-pine-dawn'] {
   --depth: 1;
   --noise: 0;
   --focus-ring-width: 1px;
-  --focus-ring-offset: 0px;
-  --focus-ring-color: color-mix(in oklab, var(--color-primary) 50%, transparent);
+  --focus-ring-offset: 1px;
+  --focus-ring-color: var(--color-primary);
 }
 
 /* Default theme until JS sets data-theme (matches rose-pine-moon as default app theme) */
@@ -114,8 +114,8 @@ html[data-theme='rose-pine-dawn'] {
   --depth: 1;
   --noise: 0;
   --focus-ring-width: 1px;
-  --focus-ring-offset: 0px;
-  --focus-ring-color: color-mix(in oklab, var(--color-primary) 50%, transparent);
+  --focus-ring-offset: 1px;
+  --focus-ring-color: var(--color-primary);
 }
 
 @layer base {
@@ -411,11 +411,15 @@ svg {
   @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
 }
 
+.input {
+  border-color: var(--color-base-300);
+}
+
 /* Unified keyboard focus rings (--focus-ring-* on theme roots). Outline follows border-radius on the same box in modern browsers. */
 .input:focus,
 .input:focus-within {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
+  outline: 1px solid var(--color-primary);
+  outline-offset: 1px;
 }
 
 /* Invalid Daisy inputs: keep focus ring aligned with error color (see CustomTimeRange). */

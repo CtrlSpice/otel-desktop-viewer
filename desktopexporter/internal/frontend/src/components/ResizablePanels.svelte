@@ -70,6 +70,7 @@
 
   let dragStartPos = 0;
   let dragStartWidth = 0;
+  let dragFlexSpace = 1;
 
   function handlePointerDown(e: PointerEvent) {
     e.preventDefault();
@@ -78,24 +79,23 @@
     isDragging = true;
     dragStartPos = stacked ? e.clientY : e.clientX;
     dragStartWidth = leftWidth;
+
+    if (containerRef && dividerRef) {
+      const g = panelSplitGapPx();
+      const rect = containerRef.getBoundingClientRect();
+      const divSize = stacked ? dividerRef.offsetHeight : dividerRef.offsetWidth;
+      dragFlexSpace = Math.max(1, (stacked ? rect.height : rect.width) - divSize - 2 * g);
+    }
+
     document.body.style.cursor = stacked ? 'row-resize' : 'col-resize';
     document.body.style.userSelect = 'none';
   }
 
   function handlePointerMove(e: PointerEvent) {
-    if (!isDragging || !containerRef || !dividerRef) return;
-    const g = panelSplitGapPx();
+    if (!isDragging) return;
     const currentPos = stacked ? e.clientY : e.clientX;
     const deltaPx = currentPos - dragStartPos;
-    if (stacked) {
-      const divH = dividerRef.offsetHeight;
-      const flexSpace = Math.max(1, containerRef.getBoundingClientRect().height - divH - 2 * g);
-      leftWidth = Math.max(minLeftWidth, Math.min(1 - minRightWidth, dragStartWidth + deltaPx / flexSpace));
-    } else {
-      const divW = dividerRef.offsetWidth;
-      const flexSpace = Math.max(1, containerRef.getBoundingClientRect().width - divW - 2 * g);
-      leftWidth = Math.max(minLeftWidth, Math.min(1 - minRightWidth, dragStartWidth + deltaPx / flexSpace));
-    }
+    leftWidth = Math.max(minLeftWidth, Math.min(1 - minRightWidth, dragStartWidth + deltaPx / dragFlexSpace));
   }
 
   function handlePointerUp(e: PointerEvent) {

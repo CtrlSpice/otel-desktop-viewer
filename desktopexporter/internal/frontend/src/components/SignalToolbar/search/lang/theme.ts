@@ -125,7 +125,8 @@ export const queryEditorTheme = EditorView.theme({
   },
   '.cm-placeholder': {
     color: qc.muted,
-    fontSize: '0.875rem',
+    fontSize: '0.8125rem',
+    fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
   },
   // Lint diagnostics (render inline in .cm-editor, so EditorView.theme works)
   '.cm-diagnostic-error': {

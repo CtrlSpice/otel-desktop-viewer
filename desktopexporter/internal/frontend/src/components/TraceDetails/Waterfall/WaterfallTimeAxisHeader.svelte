@@ -208,6 +208,7 @@
   type Props = {
     traceDurationNs: bigint
     targetTickCount?: number
+    tickLabelWidth?: number
     spanColWidth: number
     serviceColWidth: number
     onResizeSpanCol: (width: number) => void
@@ -217,6 +218,7 @@
   let {
     traceDurationNs,
     targetTickCount = 6,
+    tickLabelWidth = 80,
     spanColWidth,
     serviceColWidth,
     onResizeSpanCol,
@@ -249,7 +251,7 @@
   }
 </script>
 
-<tr class="waterfall-time-axis-header">
+<tr class="waterfall-time-axis-header" style:--tick-label-w="{tickLabelWidth}px">
   <th
     scope="col"
     class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-span"
@@ -330,7 +332,6 @@
   }
 
   .waterfall-time-axis-header__tick-label {
-    --tick-label-w: 5rem;
     @apply absolute top-1/2 text-xs tracking-normal text-base-content/55 text-center;
     width: var(--tick-label-w);
     margin-left: calc(var(--tick-label-w) / -2);
