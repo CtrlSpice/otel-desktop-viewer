@@ -1,4 +1,4 @@
-import type { TraceSummary } from "@/types/api-types"
+import type { TraceSummary } from '@/types/api-types'
 
 export type TraceListStats = {
   traces: number

@@ -1,4 +1,5 @@
 .DS_Store
+.cursor/
 .claude/
 otel-desktop-viewer
 desktopexporter/internal/frontend-legacy/

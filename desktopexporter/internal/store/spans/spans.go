@@ -21,8 +21,7 @@ import (
 var (
 	ErrTraceIDNotFound    = errors.New("trace ID not found")
 	ErrSpanIDNotFound     = errors.New("span ID not found")
-	ErrInvalidSpanID      = errors.New("invalid span ID")
-	ErrInvalidTraceQuery  = errors.New("invalid trace search query")
+	ErrInvalidTraceQuery = errors.New("invalid trace search query")
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
@@ -150,7 +149,6 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 }
 
 // SearchTraces returns trace summaries in the time range matching the optional criteria.
-// A separate SearchTraceSpans (span-level results for a trace) may be added later.
 func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
@@ -195,8 +193,8 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 				count(*) over (partition by s.trace_id) as span_count,
 				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count,
 				count(case when exists(
-					select 1 from attributes a
-					where a.span_id = s.span_id and a.scope = 'span' and a.key = 'exception.type'
+					select 1 from events e
+					where e.span_id = s.span_id and e.name = 'exception'
 				) then 1 end) over (partition by s.trace_id) as exception_count
 			from spans s, search_params
 			where %s
@@ -215,12 +213,45 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 	return json.RawMessage(raw), nil
 }
 
-// GetTrace returns a single trace by ID as JSON, or ErrTraceIDNotFound if not found.
-// traceID is passed as a string; DuckDB casts it to UUID (accepts both hyphenated and 32-char hex).
-func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
-	query := `
+// SearchSpans returns spans for a single trace, optionally filtered by search criteria.
+// When criteria is nil, all spans for the trace are returned (replacing GetTrace).
+// When criteria is provided, only matching spans are returned (replacing SearchTraceSpans).
+func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
+	var searchTree *search.QueryNode
+	if criteria != nil {
+		var err error
+		searchTree, err = search.ParseQueryTree(criteria)
+		if err != nil {
+			return nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
+		}
+	}
+
+	cteSQL, whereClause, args, err := buildSpanSQL(searchTree, traceID)
+	if err != nil {
+		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
+	}
+
+	// The recursive CTE always walks the full trace tree (filtered by trace_id only)
+	// to compute depth and sort_path. When search criteria are present, a matched_spans
+	// CTE identifies matching span IDs via LEFT JOIN so the full tree is always returned
+	// with a per-span 'matched' boolean annotation.
+	matchedCTE := ""
+	matchedJoin := ""
+	matchedExpr := "true"
+	if searchTree != nil {
+		matchedCTE = fmt.Sprintf(`,
+		matched_spans as (
+			select s.span_id
+			from spans s, search_params
+			where %s
+		)`, whereClause)
+		matchedJoin = "left join matched_spans ms on st.span_id = ms.span_id"
+		matchedExpr = "case when ms.span_id is not null then true else false end"
+	}
+
+	query := fmt.Sprintf(`
 		with recursive
-		param(trace_id) as (values (?)),
+		%s,
 
 		spans_tree as (
 			select
@@ -232,12 +263,14 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 				s.status_code, s.status_message,
 				0 as depth,
 				array[row_number() over (order by
-					case when s.parent_span_id is null then 0 else 1 END,
+					case when s.parent_span_id is null then 0 else 1 end,
 					s.start_time
 				)] as sort_path
-			from spans s, param p
-			where s.trace_id = p.trace_id
-				and (s.parent_span_id is null or s.parent_span_id not in (select span_id from spans where trace_id = p.trace_id))
+			from spans s, search_params
+			where s.trace_id = search_params.trace_id
+				and (s.parent_span_id is null or s.parent_span_id not in (
+					select span_id from spans where trace_id = search_params.trace_id
+				))
 
 			union all
 
@@ -252,10 +285,9 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 				st.sort_path || array[row_number() over (
 					partition by st.span_id order by s.start_time
 				)] as sort_path
-			from spans s, param p
+			from spans s
 			join spans_tree st on s.parent_span_id = st.span_id and s.trace_id = st.trace_id
-			where s.trace_id = p.trace_id
-		),
+		)%s,
 
 		span_attributes as (
 			select a.span_id, a.scope,
@@ -302,7 +334,7 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 			select l.span_id,
 				json_group_array(json_object(
 					'traceID', l.trace_id,
-					'spanID', l.linked_span_id,
+					'spanID', right(replace(l.linked_span_id::varchar, '-', ''), 16),
 					'traceState', l.trace_state,
 					'droppedAttributesCount', l.dropped_attributes_count,
 					'attributes', coalesce(la.attributes, json('[]'))
@@ -318,8 +350,8 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 					'spanData', json_object(
 						'traceID', st.trace_id,
 						'traceState', st.trace_state,
-						'spanID', st.span_id,
-						'parentSpanID', st.parent_span_id,
+						'spanID', right(replace(st.span_id::varchar, '-', ''), 16),
+						'parentSpanID', case when st.parent_span_id is not null then right(replace(st.parent_span_id::varchar, '-', ''), 16) end,
 						'name', st.name,
 						'kind', st.kind,
 						'startTime', st.start_time,
@@ -343,10 +375,12 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 						'statusCode', st.status_code,
 						'statusMessage', st.status_message
 					),
-					'depth', st.depth
-				) as span_json,
+				'depth', st.depth,
+				'matched', %s
+			) as span_json,
 				st.sort_path
 			from spans_tree st
+			%s
 			left join span_attributes sa_span on st.span_id = sa_span.span_id and sa_span.scope = 'span'
 			left join span_attributes sa_res on st.span_id = sa_res.span_id and sa_res.scope = 'resource'
 			left join span_attributes sa_scope on st.span_id = sa_scope.span_id and sa_scope.scope = 'scope'
@@ -355,21 +389,22 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 		)
 
 		select case
-			when not exists (select 1 from spans where trace_id = (select trace_id from param))
+			when not exists (select 1 from spans where trace_id = (select trace_id from search_params))
 				then null
 			else cast(json_object(
-				'traceID', (select trace_id from param),
+				'traceID', (select trace_id from search_params),
 				'spans', coalesce(to_json(list(span_json order by sort_path)), json('[]'))
 			) as varchar)
 		end as trace
 		from ordered_spans
-	`
+	`, cteSQL, matchedCTE, matchedExpr, matchedJoin)
+
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetTrace: %w: %w", ErrSpansStoreInternal, err)
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
-		return nil, fmt.Errorf("GetTrace: %w", ErrTraceIDNotFound)
+		return nil, fmt.Errorf("SearchSpans: %w", ErrTraceIDNotFound)
 	}
 	return json.RawMessage(raw), nil
 }
@@ -389,6 +424,28 @@ func GetTraceAttributes(ctx context.Context, db *sql.DB, startTime, endTime int6
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetTraceAttributes: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// GetAttributesByTraceID returns a JSON array of distinct attribute key/scope/type for all spans in a trace.
+func GetAttributesByTraceID(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+	query := `
+		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope, 'type', sub.type::varchar)
+			order by sub.key, sub.scope)) as varchar) as attributes
+		from (
+			select distinct a.key, a.scope, a.type
+			from attributes a
+			inner join spans s on a.span_id = s.span_id
+			where s.trace_id = ?
+		) sub
+	`
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetAttributesByTraceID: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -488,6 +545,34 @@ func buildTraceSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteSQ
 	return search.BuildSearchSQL(queryNode, startTime, endTime, traceFieldMapper(), "s.start_time >= time_start and s.start_time <= time_end")
 }
 
+func buildSpanSQL(queryNode *search.QueryNode, traceID string) (cteSQL string, whereSQL string, args []any, err error) {
+	params := []search.NamedParam{
+		{Name: "trace_id", Value: traceID},
+	}
+
+	var conditions []string
+	if queryNode != nil {
+		if err := search.BuildConditions(queryNode, &conditions, &params, traceFieldMapper()); err != nil {
+			return "", "", nil, err
+		}
+	}
+
+	if len(conditions) > 0 {
+		whereSQL = "s.trace_id = search_params.trace_id AND (" + strings.Join(conditions, " ") + ")"
+	} else {
+		whereSQL = "s.trace_id = search_params.trace_id"
+	}
+
+	args = make([]any, len(params))
+	cteParams := make([]string, len(params))
+	for i, p := range params {
+		args[i] = p.Value
+		cteParams[i] = fmt.Sprintf("? as %s", p.Name)
+	}
+	cteSQL = fmt.Sprintf("search_params as (select %s)", strings.Join(cteParams, ", "))
+	return cteSQL, whereSQL, args, nil
+}
+
 var spanColumns = map[string]struct{}{
 	"trace_id":                          {},
 	"trace_state":                       {},
@@ -571,7 +656,18 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 		if err := util.ValidateColumnName(snake, linkColumns); err != nil {
 			return "", fmt.Errorf("link field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
-		return fmt.Sprintf("exists(select 1 from links l where l.span_id = s.span_id and l.%s {COND})", snake), nil
+		colExpr := "l." + snake
+		if snake == "linked_span_id" {
+			colExpr = "right(replace(l." + snake + "::varchar, '-', ''), 16)"
+		}
+		return fmt.Sprintf("exists(select 1 from links l where l.span_id = s.span_id and %s {COND})", colExpr), nil
+	}
+	if field.Name == "duration" {
+		return "(s.end_time - s.start_time)", nil
+	}
+	if field.Name == "spanID" || field.Name == "parentSpanID" {
+		col := util.CamelToSnake(field.Name)
+		return "right(replace(s." + col + "::varchar, '-', ''), 16)", nil
 	}
 	if len(field.Name) > 0 {
 		col := util.CamelToSnake(field.Name)
@@ -609,6 +705,9 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, params *[]searc
 
 func mapTraceGlobalExpressions() ([]string, error) {
 	return []string{
+		"replace(s.trace_id::varchar, '-', '') {COND}",
+		"right(replace(s.span_id::varchar, '-', ''), 16) {COND}",
+		"right(replace(s.parent_span_id::varchar, '-', ''), 16) {COND}",
 		"CAST(s.name AS VARCHAR) {COND}",
 		"CAST(s.kind AS VARCHAR) {COND}",
 		"CAST(s.status_code AS VARCHAR) {COND}",
@@ -617,7 +716,7 @@ func mapTraceGlobalExpressions() ([]string, error) {
 		"CAST(s.scope_name AS VARCHAR) {COND}",
 		"CAST(s.scope_version AS VARCHAR) {COND}",
 		"exists(select 1 from events e where e.span_id = s.span_id and CAST(e.name AS VARCHAR) {COND})",
-		"exists(select 1 from links l where l.span_id = s.span_id and (CAST(l.trace_id AS VARCHAR) {COND} or CAST(l.trace_state AS VARCHAR) {COND} or CAST(l.linked_span_id AS VARCHAR) {COND}))",
+		"exists(select 1 from links l where l.span_id = s.span_id and (replace(l.trace_id::varchar, '-', '') {COND} or CAST(l.trace_state AS VARCHAR) {COND} or right(replace(l.linked_span_id::varchar, '-', ''), 16) {COND}))",
 		`exists(
 			select 1
 			from attributes a
@@ -632,20 +731,3 @@ func mapTraceGlobalExpressions() ([]string, error) {
 	}, nil
 }
 
-// normalizeSpanID converts a 16-char OTel span ID to 32-char zero-padded hex
-// so it matches the UUID format used during ingest (8 zero bytes + 8 span ID bytes).
-// If the input is already 32 chars (with or without hyphens), it's returned as-is after stripping hyphens.
-var _ = normalizeSpanID // keep for upcoming span-lookup queries
-
-func normalizeSpanID(s string) (string, error) {
-	s = strings.TrimSpace(s)
-	s = strings.ReplaceAll(s, "-", "")
-	switch len(s) {
-	case 16:
-		return "0000000000000000" + s, nil
-	case 32:
-		return s, nil
-	default:
-		return "", fmt.Errorf("%w: invalid length %d (expected 16 or 32 hex chars)", ErrInvalidSpanID, len(s))
-	}
-}

@@ -515,6 +515,39 @@ func TestSearchLogs(t *testing.T) {
 		assert.Equal(t, "event.a", entries[0].EventName)
 	})
 
+	t.Run("GlobalSearch_TraceID", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q3a",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "00000000000000000000000000000099",
+			},
+		}
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 3, "global search for trace ID hex should match all logs")
+	})
+
+	t.Run("GlobalSearch_SpanID", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q3b",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "0000000000000002",
+			},
+		}
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseEntries(raw)
+		assert.Len(t, entries, 1, "global search for span ID hex should match one log")
+		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
+	})
+
 	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
 		query := &search.QueryNode{
 			ID:   "q3",

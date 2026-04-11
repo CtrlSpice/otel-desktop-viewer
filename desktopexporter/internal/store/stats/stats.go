@@ -10,6 +10,16 @@ import (
 
 var ErrStatsInternal = errors.New("stats store internal error")
 
+// GetTraceSpanCount returns the total number of spans for a given trace.
+func GetTraceSpanCount(ctx context.Context, db *sql.DB, traceID string) (int64, error) {
+	var count int64
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM spans WHERE trace_id = ?`, traceID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("GetTraceSpanCount: %w: %w", ErrStatsInternal, err)
+	}
+	return count, nil
+}
+
 // GetStats returns aggregate counts across all telemetry signals as a single
 // JSON object built entirely by DuckDB.
 func GetStats(ctx context.Context, db *sql.DB) (json.RawMessage, error) {

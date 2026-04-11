@@ -21,6 +21,7 @@ export type TraceData = {
 export type SpanNode = {
   spanData: SpanData;
   depth: number;
+  matched: boolean;
 };
 
 export type SpanData = {
@@ -219,7 +220,7 @@ export type Stats = {
 // Discriminated union for search results
 export type SearchResultEvent =
   | { signal: 'traces'; view: 'list'; results: TraceSummary[] }
-  | { signal: 'traces'; view: 'detail'; results: SpanData[] }
+  | { signal: 'traces'; view: 'detail'; results: TraceData }
   | { signal: 'logs'; view: 'list'; results: LogData[] }
   | { signal: 'metrics'; view: 'list'; results: MetricData[] }
   | { signal: 'metrics'; view: 'detail'; results: MetricData[] };

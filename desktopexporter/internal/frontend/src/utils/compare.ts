@@ -17,3 +17,17 @@ export function compareByTimestampField<T>(
   const bTime = pick(b) ?? 0n
   return aTime < bTime ? -1 : aTime > bTime ? 1 : 0
 }
+
+/** Optional bigint; both missing → 0; missing sorts after defined (ascending: defined rows first). */
+export function compareByOptionalBigintField<T>(
+  a: T,
+  b: T,
+  pick: (t: T) => bigint | undefined
+): number {
+  const av = pick(a)
+  const bv = pick(b)
+  if (av === undefined && bv === undefined) return 0
+  if (av === undefined) return 1
+  if (bv === undefined) return -1
+  return av < bv ? -1 : av > bv ? 1 : 0
+}

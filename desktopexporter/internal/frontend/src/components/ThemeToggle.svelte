@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte"
-  import { HugeiconsIcon } from "@hugeicons/svelte"
-  import { Sun03Icon, Moon02Icon } from "@hugeicons/core-free-icons"
+  import { MoonIcon, SunIcon } from "@/icons"
 
   type ThemeName = "rose-pine-dawn" | "rose-pine-moon"
   let currentTheme: ThemeName = "rose-pine-moon"
@@ -42,16 +41,16 @@
 
 <!-- Theme Toggle -->
 <div class="flex items-center gap-2 text-base-content/45">
-  <HugeiconsIcon icon={Sun03Icon} size={16} />
+  <SunIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
   <label title="Toggle theme" class="flex items-center" for="theme-toggle">
     <input
       id="theme-toggle"
       name="theme-toggle"
       type="checkbox"
-      class="toggle"
+      class="toggle toggle-neutral toggle-sm"
       checked={currentTheme === "rose-pine-moon"}
       onchange={() => setTheme(currentTheme === "rose-pine-dawn" ? "rose-pine-moon" : "rose-pine-dawn")}
     />
   </label>
-  <HugeiconsIcon icon={Moon02Icon} size={16} />
+  <MoonIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
 </div>

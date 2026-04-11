@@ -308,6 +308,8 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, params *[]search.
 
 func mapLogGlobalExpressions() ([]string, error) {
 	return []string{
+		"replace(l.trace_id::varchar, '-', '') {COND}",
+		"right(replace(l.span_id::varchar, '-', ''), 16) {COND}",
 		"CAST(l.body AS VARCHAR) {COND}",
 		"CAST(l.severity_text AS VARCHAR) {COND}",
 		"CAST(l.severity_number AS VARCHAR) {COND}",

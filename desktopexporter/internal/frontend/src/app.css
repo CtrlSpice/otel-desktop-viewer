@@ -1,60 +1,182 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* Shared query syntax colors (used by CodeMirror + help dialog) */
-:root {
-  --query-base: #232136;
-  --query-surface: #2a273f;
-  --query-overlay: #393552;
-  --query-muted: #6e6a86;
-  --query-subtle: #908caa;
-  --query-text: #e0def4;
-  --query-iris: #c4a7e7;
-  --query-foam: #9ccfd8;
-  --query-gold: #f6c177;
-  --query-rose: #ea9ab2;
-  --query-love: #eb6f92;
+@import 'tailwindcss';
+@plugin "daisyui" {
+  logs: false;
+  themes: false;
 }
+@config "../tailwind.config.js";
 
+/* Rosé Pine + DaisyUI 5 semantic tokens */
 html[data-theme='rose-pine-moon'] {
-  --query-base: #232136;
-  --query-surface: #2a273f;
-  --query-overlay: #393552;
-  --query-muted: #6e6a86;
-  --query-subtle: #908caa;
-  --query-text: #e0def4;
-  --query-iris: #c4a7e7;
-  --query-foam: #9ccfd8;
-  --query-gold: #f6c177;
-  --query-rose: #ea9ab2;
-  --query-love: #eb6f92;
+  color-scheme: dark;
+  --color-rose: #ea9ab2;
+  --color-subtle: #908caa;
+  --color-base-100: #232136;
+  --color-base-200: #2a273f;
+  --color-base-300: #393552;
+  --color-base-content: #e0def4;
+  --color-primary: #c4a7e7;
+  --color-primary-content: #232136;
+  --color-secondary: #3e8fb0;
+  --color-secondary-content: #e0def4;
+  --color-accent: #9ccfd8;
+  --color-accent-content: #232136;
+  --color-neutral: #6e6a86;
+  --color-neutral-content: #e0def4;
+  --color-info: #9ccfd8;
+  --color-info-content: #232136;
+  --color-success: #3e8fb0;
+  --color-success-content: #e0def4;
+  --color-warning: #f6c177;
+  --color-warning-content: #232136;
+  --color-error: #eb6f92;
+  --color-error-content: #e0def4;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+  --focus-ring-width: 1px;
+  --focus-ring-offset: 1px;
+  --focus-ring-color: var(--color-primary);
 }
 
 html[data-theme='rose-pine-dawn'] {
-  --query-base: #faf4ed;
-  --query-surface: #fffaf3;
-  --query-overlay: #f2e9e1;
-  --query-muted: #9893a5;
-  --query-subtle: #797593;
-  --query-text: #575279;
-  --query-iris: #907aa9;
-  --query-foam: #56949f;
-  --query-gold: #ea9d34;
-  --query-rose: #d7827e;
-  --query-love: #b4637a;
+  color-scheme: light;
+  --color-rose: #d7827e;
+  --color-subtle: #797593;
+  --color-base-100: #faf4ed;
+  --color-base-200: #fffaf3;
+  --color-base-300: #f2e9e1;
+  --color-base-content: #575279;
+  --color-primary: #907aa9;
+  --color-primary-content: #faf4ed;
+  --color-secondary: #286983;
+  --color-secondary-content: #faf4ed;
+  --color-accent: #56949f;
+  --color-accent-content: #faf4ed;
+  --color-neutral: #9893a5;
+  --color-neutral-content: #575279;
+  --color-info: #56949f;
+  --color-info-content: #faf4ed;
+  --color-success: #286983;
+  --color-success-content: #faf4ed;
+  --color-warning: #ea9d34;
+  --color-warning-content: #faf4ed;
+  --color-error: #b4637a;
+  --color-error-content: #faf4ed;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+  --focus-ring-width: 1px;
+  --focus-ring-offset: 1px;
+  --focus-ring-color: var(--color-primary);
+}
+
+/* Default theme until JS sets data-theme (matches rose-pine-moon as default app theme) */
+:root {
+  color-scheme: dark;
+  --color-rose: #ea9ab2;
+  --color-subtle: #908caa;
+  --color-base-100: #232136;
+  --color-base-200: #2a273f;
+  --color-base-300: #393552;
+  --color-base-content: #e0def4;
+  --color-primary: #c4a7e7;
+  --color-primary-content: #232136;
+  --color-secondary: #3e8fb0;
+  --color-secondary-content: #e0def4;
+  --color-accent: #9ccfd8;
+  --color-accent-content: #232136;
+  --color-neutral: #6e6a86;
+  --color-neutral-content: #e0def4;
+  --color-info: #9ccfd8;
+  --color-info-content: #232136;
+  --color-success: #3e8fb0;
+  --color-success-content: #e0def4;
+  --color-warning: #f6c177;
+  --color-warning-content: #232136;
+  --color-error: #eb6f92;
+  --color-error-content: #e0def4;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+  --focus-ring-width: 1px;
+  --focus-ring-offset: 1px;
+  --focus-ring-color: var(--color-primary);
 }
 
 @layer base {
   html {
     @apply min-w-0 scroll-smooth;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--color-base-content) 28%,
+        transparent
+      )
+      transparent;
   }
 
   body {
     /* Desktop app + half-screen: no hard min width; children use min-w-0 where needed */
     @apply min-w-0 font-sans text-base-content antialiased;
     text-rendering: optimizeLegibility;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--color-base-content) 28%,
+        transparent
+      )
+      transparent;
   }
+
+  #app,
+  main {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--color-base-content) 28%,
+        transparent
+      )
+      transparent;
+  }
+}
+
+/* WebKit: thin scrollbars for document / app shell (matches scrollbar-width: thin above) */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#app::-webkit-scrollbar,
+main::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+#app::-webkit-scrollbar-thumb,
+main::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-base-content) 28%, transparent);
+  border-radius: 9999px;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+#app::-webkit-scrollbar-track,
+main::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Default SVG styles */
@@ -69,6 +191,49 @@ svg {
 /* Global button styles */
 .btn {
   @apply transition-[color,background-color,border-color,transform,box-shadow] duration-200 ease-out;
+}
+
+/*
+ * Ghost buttons: muted wash on hover/active instead of Daisy’s default fill + no hover border ring.
+ */
+@media (hover: hover) {
+  .btn.btn-ghost:hover:not(:disabled, [disabled], .btn-disabled) {
+    --btn-border: #0000;
+    --btn-noise: none;
+    --btn-bg: color-mix(
+      in oklab,
+      var(--color-base-content) 10%,
+      var(--color-base-100)
+    );
+    box-shadow: none;
+  }
+}
+.btn.btn-ghost:active:not(:disabled, [disabled], .btn-disabled),
+.btn.btn-ghost.btn-active {
+  --btn-border: #0000;
+  --btn-noise: none;
+  --btn-bg: color-mix(
+    in oklab,
+    var(--color-base-content) 14%,
+    var(--color-base-100)
+  );
+  box-shadow: none;
+}
+
+/*
+ * Daisy checkbox-primary sets --input-color to full primary, so the default border is a loud ring
+ * (see https://daisyui.com/components/checkbox/). Unchecked: blend primary into base-300 instead.
+ */
+.checkbox.checkbox-primary:not(:checked):not(:indeterminate) {
+  border-color: color-mix(
+    in oklab,
+    var(--color-primary) 38%,
+    var(--color-base-300)
+  );
+}
+
+.checkbox.checkbox-primary:focus-visible {
+  outline-color: var(--focus-ring-color);
 }
 
 /* DaisyUI cards — avoid generic "lift" hover; feels template-y */
@@ -130,7 +295,25 @@ svg {
   @apply border-b-2 border-b-primary-content;
 }
 
-/* Sort indicator styles */
+/* Sortable thead: caret mirrors alignment — left = title then caret; right (--end) = caret then title.
+   Column width = col / resize (not this flex). */
+.table-header-sort {
+  @apply flex min-w-0 items-center gap-2;
+}
+
+.table-header-sort__label {
+  @apply min-w-0 truncate;
+}
+
+.table-header-sort--end {
+  @apply justify-end;
+}
+
+.table-header-sort__indicator {
+  @apply flex h-4 w-4 shrink-0 items-center justify-center;
+}
+
+/* Sort indicator styles (typically on ArrowDownIcon inside .table-header-sort__indicator) */
 .sort-indicator {
   @apply w-4 h-4;
   @apply transition-[transform,opacity] duration-200;
@@ -161,13 +344,272 @@ svg {
   @apply rotate-180;
 }
 
+/* Toolbar filter triggers (time range, column filter): lg when labeled, full pill when icon-only (--compact) */
+.toolbar-filter-trigger {
+  @apply btn btn-soft btn-sm inline-flex h-9 min-h-9 min-w-0 shrink items-center gap-2 rounded-lg border border-base-300/60 bg-base-100/90 px-3 font-normal normal-case shadow-none;
+}
+
+.toolbar-filter-trigger:hover {
+  @apply border-base-300 bg-base-200/55;
+}
+
+.toolbar-filter-trigger--active {
+  @apply border-primary/30 bg-primary/10 text-primary;
+}
+
+.toolbar-filter-trigger--compact {
+  @apply max-w-none shrink-0 rounded-full px-2.5;
+}
+
+/* Field filter only: icon-only compact trigger = soft primary (not time range). */
+.toolbar-filter-trigger--field.toolbar-filter-trigger--compact {
+  @apply btn-soft btn-primary border-primary/25 bg-primary/10 text-primary shadow-none;
+}
+
+.toolbar-filter-trigger--field.toolbar-filter-trigger--compact:hover {
+  @apply border-primary/35 bg-primary/15;
+}
+
+.toolbar-filter-trigger--field.toolbar-filter-trigger--compact
+  .toolbar-filter-trigger__icon {
+  @apply opacity-100;
+}
+
+/* Field filter labeled row: dropdown chevron in a soft-primary circle */
+.toolbar-filter-trigger__dropdown-circle {
+  @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full;
+  @apply border border-primary/25 bg-primary/10 text-primary;
+}
+
+/* Field filter (labeled): cap width (time range is DateTimeFilter, not this class). */
+.toolbar-filter-trigger:not(.toolbar-filter-trigger--compact) {
+  @apply max-w-[min(100%,22rem)];
+}
+
+.toolbar-filter-trigger__label {
+  @apply min-w-0 flex-1 truncate text-left text-sm text-base-content/85;
+}
+
+.toolbar-filter-trigger__icon {
+  @apply inline-flex h-4 w-4 shrink-0 items-center justify-center text-current opacity-80;
+}
+
+.toolbar-filter-trigger__badge {
+  @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-full bg-primary/20 px-1 text-[0.65rem] font-semibold tabular-nums text-primary;
+}
+
+/* Navigation */
+.nav-button {
+  @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
+}
+
+.nav-button-active {
+  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+}
+
+.nav-button-inactive {
+  @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+}
+
+.input {
+  border-color: var(--color-base-300);
+}
+
+/* Unified keyboard focus rings (--focus-ring-* on theme roots). Outline follows border-radius on the same box in modern browsers. */
+.input:focus,
+.input:focus-within {
+  outline: 1px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+/* Invalid Daisy inputs: keep focus ring aligned with error color (see CustomTimeRange). */
+.input.input-error:focus,
+.input.input-error:focus-within {
+  outline-color: var(--color-error);
+}
+
+/* Inline validation text under inputs (role="alert" on the element in markup). */
+.field-error-message {
+  @apply m-0 block w-full min-w-0 text-sm leading-snug text-error;
+}
+
+.btn:focus-visible,
+.btn:has(:focus-visible) {
+  outline-width: var(--focus-ring-width);
+  outline-style: solid;
+  outline-color: var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.nav-button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+:where(
+  input:not(
+    [type='hidden'],
+    [type='checkbox'],
+    [type='radio'],
+    [type='range'],
+    [type='button'],
+    [type='submit'],
+    [type='reset']
+  ),
+  textarea,
+  select
+):focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+a:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: 0.125rem;
+}
+
+summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-field, 0.25rem);
+}
+
+/* Daisy .input shows focus on the wrapper; keep native controls inside from drawing a second ring. */
+.input :where(input, textarea, select):focus,
+.input :where(input, textarea, select):focus-visible {
+  outline: none;
+}
+
+button:focus-visible:not(.btn) {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ── Shared table tokens ──
+   DaisyUI v5 uses --color-* (hex); v3’s --b2 / --p are gone, so zebra/hover/selection
+   must mix from semantic colors. */
+:root {
+  /* Primary data panels (trace list, waterfall, detail): caps scroll height, aligns column resize strips */
+  --panel-body-max-height: min(85vh, calc(100vh - 9rem));
+  --table-row-h: 1.75rem;
+  --table-header-h: 2.25rem;
+  /* SignalToolbar top row + SearchEditor (in-toolbar): same outer min-height (py-1 + row + search card borders) */
+  --toolbar-search-chrome-min-height: calc(
+    var(--table-row-h) + 0.5rem + 0.5rem + 2 * var(--border, 1px)
+  );
+  /* Trace list (and matching search chrome): min width before horizontal scroll */
+  --trace-list-table-min-width: 60rem;
+  --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 55%, transparent);
+  --table-hover-bg: color-mix(in oklab, var(--color-base-200) 70%, transparent);
+  --table-selected-bg: color-mix(
+    in oklab,
+    var(--color-primary) 10%,
+    transparent
+  );
+  /* Waterfall span column tree + nested detail rows (WaterfallTreeGutter) */
+  --waterfall-gutter-col: 22px;
+  --waterfall-gutter-tail: 4px;
+  --waterfall-gutter-hub: 16px;
+
+  /* ── App shell + resizable panels (tune here) ── */
+  --nav-height: 3.5rem; /* keep in sync with HorizontalNav */
+  --resize-bar-hit-width: 0.5rem; /* col-resize in-flow hit strip; line is narrower inside */
+  /* Outer edge of left panel → outer edge of right panel across the splitter */
+  --panel-split-total: 1rem;
+  /* Flex gap between [panel][bar][panel]: (total − bar) / 2 each side */
+  --panel-split-flex-gap: calc(
+    (var(--panel-split-total) - var(--resize-bar-hit-width)) / 2
+  );
+  /* Toolbar + page stacks (decoupled so resizable panels can sit tighter) */
+  --layout-gap: 0.5rem;
+  /* Vertical padding around the toolbar + search block (not between them) */
+  --toolbar-page-pad-y: 0.75rem;
+}
+
+/* Wrap SignalToolbar + SearchEditor: tight internal gap, outer padding top/bottom only */
+.page-toolbar-block {
+  @apply flex min-w-0 w-full flex-col;
+  gap: var(--layout-gap);
+  padding-block: var(--toolbar-page-pad-y);
+  box-sizing: border-box;
+}
+
+/* Same frosted fill as panel chrome: paint this on tbody / field lists, then zebra rows on top */
+.table-body-surface {
+  @apply bg-base-100/80;
+}
+
+/* Split-table: thead stays in flow, tbody scrolls independently.
+   Requires explicit widths on <th>/<td> since colgroup stops working with display:block.
+   The <table> becomes a flex column so tbody can flex-grow into available space. */
+.split-table {
+  display: flex;
+  flex-direction: column;
+}
+.split-table > thead,
+.split-table > tbody {
+  display: block;
+}
+.split-table > tbody {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  scrollbar-width: thin;
+}
+.split-table > thead > tr,
+.split-table > tbody > tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+/* Soften the last zebra stripe so the table doesn't end abruptly. */
+.table-row:nth-child(even):last-child {
+  --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 40%, transparent);
+}
+
+/* DaisyUI .table draws hairlines between rows; we rely on zebra + hover instead */
+.table
+  :where(thead tr :is(th, td), tbody tr :is(th, td), tfoot tr :is(th, td)) {
+  border-bottom: none;
+  border-top: none;
+}
+
 /* Data Table Styles */
+.trace-list-table :where(th, td) {
+  @apply whitespace-nowrap;
+}
+
+/* Root presence column: center header (Daisy table th can default to start). */
+.trace-list-table thead th.table-header-cell--trace-root {
+  @apply text-center;
+}
+
+/* Shared thead / header row fill (trace list, waterfall, any data table). */
+.table-header-surface {
+  box-sizing: border-box;
+  height: var(--table-header-h);
+  min-height: var(--table-header-h);
+  @apply bg-base-200/60 backdrop-blur-sm;
+}
+
+/* Div/popover strips use the same bar height; <thead> keeps table layout (no flex here). */
+.table-header-surface:not(thead) {
+  @apply flex items-center py-1;
+}
+
 .table-header-row {
-  @apply border-b border-base-300/80 bg-base-200/60 backdrop-blur-sm;
+  height: var(--table-header-h);
 }
 
 .table-header-cell {
-  @apply px-4 py-3 text-xs font-semibold tracking-normal text-base-content/55;
+  @apply align-middle px-4 py-3 text-xs font-semibold tracking-normal text-base-content/55;
+}
+
+/* Same text treatment as .table-header-cell; use on form labels / section titles outside <table>. */
+.table-header-typography {
+  @apply text-xs font-semibold tracking-normal text-base-content/55;
 }
 
 .table-header-cell--sortable {
@@ -191,7 +633,7 @@ svg {
 }
 
 .table-cell--checkbox {
-  @apply w-10 py-2 text-center align-middle;
+  @apply w-10 py-1 text-center align-middle;
 }
 
 /* Tight gutter between Trace ID and Root Span (presence) column */
@@ -204,40 +646,270 @@ svg {
 }
 
 .table-cell--trace-id {
-  @apply pl-4 pr-1 py-2 text-sm text-base-content font-mono align-middle whitespace-nowrap;
+  @apply pl-4 pr-1 py-1 text-sm text-base-content font-mono align-middle whitespace-nowrap;
+}
+
+/*
+ * Fixed-layout trace list: ellipsis on a single line (nowrap is on .trace-list-table).
+ * max-width: 0 lets table-fixed + col widths shrink the cell below content min-width.
+ * Ellipsis on td is flaky; inner .trace-list-cell-text is the reliable clip box.
+ */
+.trace-list-table td.table-cell--trace-id,
+.trace-list-table td.trace-list-cell-truncate {
+  max-width: 0;
+}
+
+.trace-list-table .trace-list-cell-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-list-table td.table-cell--count {
+  @apply pl-2 pr-4 text-right;
 }
 
 .table-cell--has-root {
-  @apply pl-1 pr-4 py-2 text-sm text-center text-base-content align-middle whitespace-nowrap;
+  @apply px-2 py-1 text-sm text-center text-base-content align-middle whitespace-nowrap;
 }
 
 .table-row {
-  @apply even:bg-base-200/30 hover:bg-base-200/70 transition-colors duration-150;
+  @apply transition-colors duration-150;
+  height: var(--table-row-h);
+}
+
+.table-row:nth-child(even) {
+  background-color: var(--table-zebra-bg);
+}
+
+.table-row:hover {
+  background-color: var(--table-hover-bg);
+}
+
+.table-row--selected {
+  background-color: var(--table-selected-bg);
 }
 
 .table-cell {
-  @apply px-4 py-2 text-sm text-base-content align-middle;
+  @apply pl-4 pr-4 py-1 text-sm text-base-content align-middle;
 }
 
 .table-cell--right {
-  @apply pl-2 pr-4 py-2 text-sm text-right text-base-content align-middle;
+  @apply pl-2 pr-4 py-1 text-sm text-right text-base-content align-middle;
 }
 
 .table-cell--count {
-  @apply px-4 py-2 text-center text-sm tabular-nums text-base-content align-middle;
+  @apply px-4 py-1 text-right text-sm tabular-nums align-middle;
 }
 
 .table-cell--center {
-  @apply px-4 py-2 text-center;
+  @apply px-4 py-1 text-center;
 }
 
-/* Pagination Styles */
+/* Detail fields: field + colon — same muted tone as waterfall service column. */
+.table-cell--field-name {
+  @apply pl-4 pr-4 py-1 text-left align-middle text-sm font-normal text-base-content/60;
+}
+
+.detail-fields .table-cell--field-name {
+  width: var(--detail-field-col-w);
+}
+
+.detail-fields .table-cell--field-name,
+.detail-fields td.table-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Value column takes remaining width; max-width 0 makes ellipsis work in fixed tables */
+.detail-fields td.table-cell {
+  max-width: 0;
+}
+
+/* Indent nested field names under the caret; value column stays pl-4 like group header rows */
+.detail-fields tr.table-row--nested th.table-cell--field-name {
+  padding-left: calc(1rem + var(--waterfall-gutter-col));
+}
+
+/* ── In-header column resize handle ──
+   Place inside a position:relative <th>. Hit strip straddles the right cell border.
+   The ::after pseudo-element is the visible line; appears on hover / during drag. */
+
+.resize-handle {
+  @apply absolute top-0 bottom-0 flex items-center justify-center cursor-col-resize;
+  right: -3px;
+  width: 7px;
+  z-index: 2;
+}
+
+.resize-handle::after {
+  content: '';
+  width: 0.125rem;
+  min-height: 100%;
+  border-radius: 9999px;
+  background-color: var(--color-neutral);
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    background-color 0.15s;
+}
+
+.resize-handle:hover::after,
+.resize-handle--active::after {
+  opacity: 0.6;
+}
+
+.resize-handle--active::after {
+  background-color: var(--color-primary);
+  opacity: 0.9;
+}
+
+/* ── Shared column-resize system ──
+   One interaction pattern everywhere:
+   • Wrap the table in .col-resize-context (position: relative).
+   • Place .col-resize-bar siblings after the table; set style:left to the column
+     boundary in px from script. Use .col-resize-bar--below-header when the table
+     has a thead so the strip (and visible line) start under the header row.
+   • Put .col-resize-marker inside each cell that borders a bar (th/td) so
+     :has(.col-resize-marker) zeros right padding; the next cell gets 1rem inset-start.
+   • Use .col-resize-bar--in-flow on a flex-row separator (ResizablePanels side-by-side)
+     or .col-resize-bar--row-in-flow for stacked column layout — same __line child. */
+
+.col-resize-context {
+  @apply relative isolate w-full min-h-full;
+}
+
+/* Trace list table: no panel-body-max-height cap (it scrolls inside the page, not a fixed panel). */
+.trace-list-col-resize.col-resize-context {
+  min-height: 0;
+}
+
+/* Scroll region capped like detail / waterfall; use inside flex children with min-h-0 */
+.panel-body-scroll {
+  max-height: min(var(--panel-body-max-height), 100%);
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+/* Marker: kills right padding on its parent cell */
+.col-resize-marker {
+  display: none;
+  pointer-events: none;
+}
+
+:is(th, td):has(.col-resize-marker) {
+  padding-right: 0 !important;
+}
+
+:is(th, td):has(.col-resize-marker) + :is(th, td) {
+  padding-left: 0;
+}
+
+/* z above .waterfall-row:hover (z-20) so the hit strip stays draggable */
+.col-resize-bar {
+  @apply absolute top-0 bottom-0 z-[25] flex cursor-col-resize items-stretch justify-center;
+  right: auto;
+  margin-left: -0.25rem;
+  width: var(--resize-bar-hit-width);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Strip + line start at first body row — keeps thead/tabs clear (matches --table-header-h) */
+.col-resize-bar.col-resize-bar--below-header {
+  top: var(--table-header-h);
+}
+
+.col-resize-bar__line {
+  @apply self-stretch rounded-full;
+  width: 0.125rem;
+  min-height: 100%;
+  background-color: var(--color-neutral);
+  opacity: 0;
+  transition:
+    width 0.15s,
+    background-color 0.15s,
+    opacity 0.15s;
+}
+
+.col-resize-bar--guide::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  height: calc(var(--table-header-h) - 12px);
+  border-radius: 9999px;
+  background-color: color-mix(in oklab, var(--color-base-300) 70%, transparent);
+  pointer-events: none;
+}
+
+.col-resize-bar--guide:hover::before,
+.col-resize-bar--guide.col-resize-bar--active::before {
+  visibility: hidden;
+}
+
+.col-resize-bar:hover .col-resize-bar__line {
+  opacity: 0.6;
+}
+
+.col-resize-bar--active .col-resize-bar__line {
+  width: 0.125rem;
+  background-color: var(--color-primary);
+  opacity: 0.9;
+}
+
+.col-resize-bar:focus-visible {
+  outline: none;
+}
+
+.col-resize-bar:focus-visible .col-resize-bar__line {
+  background-color: var(--color-primary);
+  opacity: 0.9;
+}
+
+/* In-flow flex sibling (not absolute over a table) */
+.col-resize-bar.col-resize-bar--in-flow {
+  @apply relative self-stretch shrink-0;
+  inset: auto;
+  margin-left: 0;
+  z-index: 10;
+}
+
+/* Stacked panels: full-width hit strip, drag adjusts height split (row-resize) */
+.col-resize-bar.col-resize-bar--row-in-flow {
+  @apply relative z-10 shrink-0;
+  inset: auto;
+  display: flex;
+  width: 100%;
+  height: var(--resize-bar-hit-width);
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  cursor: row-resize;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.col-resize-bar--row-in-flow .col-resize-bar__line {
+  align-self: auto;
+  width: 100%;
+  min-width: 0;
+  height: 0.125rem;
+  min-height: 0.125rem;
+}
+
+/* Pagination Styles — rows left, pager cluster centered, delete label + button trailing */
 .pagination-controls {
-  @apply flex items-center justify-between px-4 py-3 bg-base-100 border-t border-base-300;
+  @apply flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 bg-base-100 border-t border-base-300;
 }
 
 .pagination-rows-selector {
-  @apply flex items-center gap-3;
+  @apply flex shrink-0 items-center gap-3;
 }
 
 .pagination-label {
@@ -249,18 +921,12 @@ svg {
   @apply bg-base-100 border border-base-300 hover:bg-base-200;
 }
 
-.pagination-range {
-  @apply text-sm text-base-content/70;
+.pagination-controls__center {
+  @apply flex min-w-0 flex-1 items-center justify-center;
 }
 
-.pagination-nav {
-  @apply flex items-center gap-1;
-}
-
-.pagination-nav-button {
-  @apply btn btn-sm btn-ghost btn-square;
-  @apply disabled:opacity-30 disabled:cursor-not-allowed;
-  @apply hover:bg-base-200;
+.pagination-controls__actions {
+  @apply flex shrink-0 items-center gap-2;
 }
 
 .pagination-popover-option {
@@ -269,4 +935,51 @@ svg {
 
 .pagination-popover-option--selected {
   @apply bg-base-200;
+}
+
+/* ── Group toggle button (collapse/expand in event & link tables) ──
+   Circle-on-hover caret, matching the waterfall gutter button style. */
+.group-toggle {
+  @apply inline-flex cursor-pointer items-center justify-center rounded-full border-0 p-0 leading-none outline-none;
+  width: 1rem;
+  height: 1rem;
+  background: transparent;
+  color: var(--color-primary);
+  transition: background-color 0.1s;
+}
+
+.group-toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.group-toggle:hover {
+  background-color: color-mix(in oklab, var(--color-primary) 15%, transparent);
+}
+
+.group-toggle__caret {
+  width: 1rem;
+  height: 1rem;
+  transition: transform 0.15s;
+}
+
+.group-toggle--open .group-toggle__caret {
+  transform: rotate(90deg);
+}
+
+/* Detail field badges — daisyUI: badge · badge-sm · text-xs · badge-soft · role */
+.badge-type {
+  @apply badge badge-sm text-xs badge-soft badge-secondary;
+}
+
+.badge-origin {
+  @apply badge badge-sm text-xs badge-soft badge-accent;
+}
+
+.badge-root {
+  @apply badge badge-sm text-xs badge-soft badge-primary;
+}
+
+.badge-offset {
+  @apply badge badge-sm text-xs badge-soft badge-warning tabular-nums;
 }

@@ -1,32 +1,28 @@
 <script lang="ts">
-  import { HugeiconsIcon } from '@hugeicons/svelte';
-  import {
-    Copy01Icon,
-    CheckmarkCircle02Icon,
-  } from '@hugeicons/core-free-icons';
+  import { CheckmarkCircleIcon, CopyIcon } from '@/icons'
 
-  export let code: string;
+  export let code: string
 
-  let copied = false;
+  let copied = false
 
   // Process the code for bash commands
-  $: processedCode = processCode(code);
+  $: processedCode = processCode(code)
 
   function processCode(code: string): string {
     return code
       .replace(/^\$ /gm, '<span class="prompt">$</span> ')
-      .replace(/^# (.+)$/gm, '<span class="comment"># $1</span>');
+      .replace(/^# (.+)$/gm, '<span class="comment"># $1</span>')
   }
 
   async function copyToClipboard() {
     try {
-      await navigator.clipboard.writeText(code);
-      copied = true;
+      await navigator.clipboard.writeText(code)
+      copied = true
       setTimeout(() => {
-        copied = false;
-      }, 2000);
+        copied = false
+      }, 2000)
     } catch (err) {
-      console.error('Failed to copy text: ', err);
+      console.error('Failed to copy text: ', err)
     }
   }
 </script>
@@ -38,17 +34,18 @@
       onclick={copyToClipboard}
       data-tip={copied ? 'Copied!' : 'Copy to clipboard'}
     >
-      <HugeiconsIcon
-        icon={copied ? CheckmarkCircle02Icon : Copy01Icon}
-        size={16}
-        className="copy-icon"
-      />
+      {#if copied}
+        <CheckmarkCircleIcon class="copy-icon h-4 w-4" aria-hidden="true" />
+      {:else}
+        <CopyIcon class="copy-icon h-4 w-4" aria-hidden="true" />
+      {/if}
     </button>
   </div>
   <pre><code>{@html processedCode}</code></pre>
 </div>
 
 <style lang="postcss">
+  @reference "../app.css";
   .code-block {
     @apply bg-base-200 rounded-lg border border-base-300;
   }

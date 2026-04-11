@@ -1,66 +1,131 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { router } from 'tinro5';
-  import { telemetryAPI } from '@/services/telemetry-service';
-  import { getTimeContext } from '@/contexts/time-context.svelte';
-  import SignalHeader from '@/components/SignalHeader/SignalHeader.svelte';
-  import { formatTimestamp } from '@/utils/time';
-  import type { MetricData, SearchResultEvent } from '@/types/api-types';
+  import { onMount } from 'svelte'
+  import { router } from 'tinro5'
+  import { telemetryAPI } from '@/services/telemetry-service'
+  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
+  import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
+  import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
+  import { formatTimestamp } from '@/utils/time'
+  import type {
+    MetricData,
+    MetricStats,
+    SearchResultEvent,
+  } from '@/types/api-types'
+  import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
 
-  let timeContext = getTimeContext();
-  let metrics = $state<MetricData[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let mounted = $state(false);
+  let timeContext = getTimeContext()
+  let metrics = $state<MetricData[]>([])
+  let loading = $state(true)
+  let error = $state<string | null>(null)
+  let mounted = $state(false)
+  let searchError = $state<string | null>(null)
+
+  let searchEditorApi = $state<SearchEditorAPI | null>(null)
+  let baselineStats = $state<MetricStats | null>(null)
+  let polledStats = $state<MetricStats | null>(null)
+  const POLL_INTERVAL_MS = 3000
+
+  let refreshIndicatorText = $derived.by(() => {
+    if (!baselineStats || !polledStats) return ''
+    const parts: string[] = []
+    const metricDelta = polledStats.metricCount - baselineStats.metricCount
+    if (metricDelta > 0)
+      parts.push(`+${metricDelta} metric${metricDelta !== 1 ? 's' : ''}`)
+    const dpDelta = polledStats.dataPointCount - baselineStats.dataPointCount
+    if (dpDelta > 0)
+      parts.push(`+${dpDelta} data point${dpDelta !== 1 ? 's' : ''}`)
+    return parts.join(', ')
+  })
 
   async function fetchMetrics() {
     try {
-      loading = true;
-      error = null;
-      let startTime = timeContext.selection.start;
-      let endTime = timeContext.selection.end;
+      loading = true
+      error = null
+      let startTime = timeContext.selection.start
+      let endTime = timeContext.selection.end
       if (timeContext.selection.type === 'preset') {
-        const duration = timeContext.selection.end - timeContext.selection.start;
-        endTime = Date.now();
-        startTime = endTime - duration;
+        const duration = timeContext.selection.end - timeContext.selection.start
+        endTime = Date.now()
+        startTime = endTime - duration
       }
-      metrics = await telemetryAPI.getMetrics(startTime, endTime, undefined);
+      metrics = await telemetryAPI.getMetrics(startTime, endTime, undefined)
+      const s = await telemetryAPI.getStats()
+      baselineStats = s.metrics
+      polledStats = s.metrics
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to load metrics';
+      error = err instanceof Error ? err.message : 'Failed to load metrics'
     } finally {
-      loading = false;
+      loading = false
     }
   }
 
+  function handleRefresh() {
+    searchEditorApi?.clear()
+    fetchMetrics()
+  }
+
   $effect(() => {
-    let _ = timeContext.selection;
+    let _ = timeContext.selection
     if (mounted) {
-      fetchMetrics();
+      fetchMetrics()
     }
-  });
+  })
+
+  $effect(() => {
+    if (!mounted) return
+    const id = setInterval(async () => {
+      try {
+        const s = await telemetryAPI.getStats()
+        polledStats = s.metrics
+      } catch {
+        /* polling failures are silent */
+      }
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  })
 
   onMount(async () => {
-    await fetchMetrics();
-    mounted = true;
-  });
+    await fetchMetrics()
+    mounted = true
+  })
 
   function handleSearchResults(event: SearchResultEvent) {
     if (event.signal === 'metrics' && event.view === 'list') {
-      loading = false;
-      error = null;
-      metrics = event.results;
+      loading = false
+      error = null
+      metrics = event.results
     }
   }
 </script>
 
+{#snippet toolbarTimeRange()}
+  <DateTimeFilter />
+{/snippet}
+
 <!-- MetricsPage.svelte - Metrics visualization page -->
-<div class="min-w-0 py-6">
-  <SignalHeader
-    signal="metrics"
-    view="list"
-    onRefresh={fetchMetrics}
-    onSearchResults={handleSearchResults}
-  />
+<div
+  class="flex min-w-0 w-full flex-col gap-[var(--layout-gap)] overflow-y-auto pb-6 pt-0"
+>
+  <div class="page-toolbar-block">
+    <SignalToolbar
+      signal="metrics"
+      view="list"
+      onRefresh={handleRefresh}
+      trailingFilters={[toolbarTimeRange]}
+      {searchError}
+      {refreshIndicatorText}
+    >
+      <SearchEditor
+        signal="metrics"
+        view="list"
+        inToolbar
+        onSearchResults={handleSearchResults}
+        onSearchError={err => (searchError = err)}
+        onReady={api => (searchEditorApi = api)}
+      />
+    </SignalToolbar>
+  </div>
 
   {#if loading}
     <div class="flex justify-center items-center py-12">
@@ -78,7 +143,7 @@
       </p>
     </div>
   {:else}
-    <div class="space-y-6">
+    <div class="space-y-[var(--layout-gap)]">
       {#each metrics as metric}
         <div class="bg-base-200 border border-base-300 rounded-lg p-6">
           <div class="flex items-center justify-between mb-4">
@@ -121,12 +186,20 @@
                     <div class="flex justify-between">
                       <span>
                         {#if dataPoint.metricType === 'Gauge' || dataPoint.metricType === 'Sum'}
-                          Value: {dataPoint.doubleValue ?? dataPoint.intValue ?? '-'}
+                          Value: {dataPoint.doubleValue ??
+                            dataPoint.intValue ??
+                            '-'}
                         {:else}
                           Count: {dataPoint.count}
                         {/if}
                       </span>
-                      <span>{formatTimestamp(dataPoint.timestamp, timeContext.timezone, 'nanoseconds')}</span>
+                      <span
+                        >{formatTimestamp(
+                          dataPoint.timestamp,
+                          timeContext.timezone,
+                          'nanoseconds'
+                        )}</span
+                      >
                     </div>
                   </div>
                 {/each}

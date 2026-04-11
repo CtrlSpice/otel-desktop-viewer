@@ -8,36 +8,36 @@ import type {
   Stats,
   Exemplar,
   DataPoint,
-} from '@/types/api-types';
-import type { QueryNode } from '@/components/SignalHeader/search/queryTree';
+} from '@/types/api-types'
+import type { QueryNode } from '@/components/SignalToolbar/search/queryTree'
 import type {
   AttributeScope,
   FieldDefinition,
   FieldType,
-} from '@/constants/fields';
-import { getOperatorsForFieldType } from '@/constants/operators';
+} from '@/constants/fields'
+import { getOperatorsForFieldType } from '@/constants/operators'
 
 // JSON-RPC Client
 interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  method: string;
-  params?: any;
-  id: number;
+  jsonrpc: '2.0'
+  method: string
+  params?: any
+  id: number
 }
 
 interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  result?: any;
+  jsonrpc: '2.0'
+  result?: any
   error?: {
-    code: number;
-    message: string;
-  };
-  id: number;
+    code: number
+    message: string
+  }
+  id: number
 }
 
 // Helper function to convert milliseconds to nanoseconds
 function toNanoseconds(milliseconds: number): string {
-  return milliseconds === 0 ? '0' : milliseconds.toString() + '000000';
+  return milliseconds === 0 ? '0' : milliseconds.toString() + '000000'
 }
 
 // Helper function to make typed RPC calls
@@ -47,7 +47,7 @@ async function callRPC(method: string, params?: any): Promise<any> {
     params,
     id: Math.floor(Math.random() * 1000000),
     jsonrpc: '2.0',
-  };
+  }
 
   try {
     const response = await fetch('/rpc', {
@@ -56,21 +56,21 @@ async function callRPC(method: string, params?: any): Promise<any> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),
-    });
+    })
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(`HTTP error! status: ${response.status}`)
     }
 
-    const data: JsonRpcResponse = await response.json();
+    const data: JsonRpcResponse = await response.json()
 
     if (data.error) {
-      throw new Error(`JSON-RPC Error: ${data.error.message}`);
+      throw new Error(`JSON-RPC Error: ${data.error.message}`)
     }
 
-    return data.result;
+    return data.result
   } catch (error) {
-    throw error;
+    throw error
   }
 }
 
@@ -87,11 +87,11 @@ function traceSummaryFromJSON(json: any): TraceSummary {
           endTime: BigInt(json.rootSpan.endTime),
         }
       : undefined,
-  };
+  }
 }
 
 function traceSummariesFromJSON(json: any): TraceSummary[] {
-  return json.map(traceSummaryFromJSON);
+  return json.map(traceSummaryFromJSON)
 }
 
 function traceDataFromJSON(json: any): TraceData {
@@ -114,8 +114,9 @@ function traceDataFromJSON(json: any): TraceData {
         links: spanNode.spanData.links || [],
       },
       depth: spanNode.depth,
+      matched: spanNode.matched ?? true,
     })),
-  };
+  }
 }
 
 function logsFromJSON(json: any): LogData[] {
@@ -123,14 +124,14 @@ function logsFromJSON(json: any): LogData[] {
     ...log,
     timestamp: BigInt(log.timestamp),
     observedTimestamp: BigInt(log.observedTimestamp),
-  }));
+  }))
 }
 
 function exemplarFromJSON(json: any): Exemplar {
   return {
     ...json,
     timestamp: BigInt(json.timestamp),
-  };
+  }
 }
 
 function dataPointFromJSON(json: any): DataPoint {
@@ -139,7 +140,7 @@ function dataPointFromJSON(json: any): DataPoint {
     timestamp: BigInt(json.timestamp),
     startTime: BigInt(json.startTime),
     exemplars: json.exemplars?.map(exemplarFromJSON) ?? [],
-  };
+  }
 }
 
 function metricDataFromJSON(json: any): MetricData {
@@ -147,19 +148,19 @@ function metricDataFromJSON(json: any): MetricData {
     ...json,
     datapoints: json.datapoints?.map(dataPointFromJSON) ?? [],
     received: BigInt(json.received),
-  };
+  }
 }
 
 function metricsFromJSON(json: any): MetricData[] {
-  return json.map(metricDataFromJSON);
+  return json.map(metricDataFromJSON)
 }
 
 function parseNullableBigInt(value: unknown): bigint | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'bigint') return value;
+  if (value === null || value === undefined) return null
+  if (typeof value === 'bigint') return value
   if (typeof value === 'string' || typeof value === 'number')
-    return BigInt(value);
-  throw new Error(`Invalid bigint value: ${String(value)}`);
+    return BigInt(value)
+  throw new Error(`Invalid bigint value: ${String(value)}`)
 }
 
 function statsFromJSON(json: any): Stats {
@@ -176,7 +177,7 @@ function statsFromJSON(json: any): Stats {
       ...json.metrics,
       lastReceived: parseNullableBigInt(json.metrics?.lastReceived),
     },
-  };
+  }
 }
 
 // API Methods
@@ -188,10 +189,10 @@ export let telemetryAPI = {
     startTime: number,
     endTime: number
   ): Promise<FieldDefinition[]> => {
-    const startTimeNs = toNanoseconds(startTime);
-    const endTimeNs = toNanoseconds(endTime);
-    const params = [startTimeNs, endTimeNs];
-    const rawData = await callRPC('getTraceAttributes', params);
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
+    const params = [startTimeNs, endTimeNs]
+    const rawData = await callRPC('getTraceAttributes', params)
 
     // Validate that we received an array
     if (!Array.isArray(rawData)) {
@@ -199,13 +200,28 @@ export let telemetryAPI = {
         'getTraceAttributes: Expected array, got:',
         typeof rawData,
         rawData
-      );
-      return [];
+      )
+      return []
     }
 
     // Convert backend attribute data to FieldDefinition objects
-    const converted = convertAttributesToFieldDefinitions(rawData);
-    return converted;
+    const converted = convertAttributesToFieldDefinitions(rawData)
+    return converted
+  },
+
+  getAttributesByTraceID: async (
+    traceID: string
+  ): Promise<FieldDefinition[]> => {
+    const rawData = await callRPC('getAttributesByTraceID', [traceID])
+    if (!Array.isArray(rawData)) {
+      console.warn(
+        'getAttributesByTraceID: Expected array, got:',
+        typeof rawData,
+        rawData
+      )
+      return []
+    }
+    return convertAttributesToFieldDefinitions(rawData)
   },
 
   searchTraces: async (
@@ -213,26 +229,30 @@ export let telemetryAPI = {
     endTime: number,
     queryTree?: QueryNode
   ): Promise<TraceSummary[]> => {
-    const startTimeNs = toNanoseconds(startTime);
-    const endTimeNs = toNanoseconds(endTime);
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
 
     const params = queryTree
       ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
-      : [startTimeNs, endTimeNs];
-    const rawData = await callRPC('searchTraces', params);
-    return traceSummariesFromJSON(rawData);
+      : [startTimeNs, endTimeNs]
+    const rawData = await callRPC('searchTraces', params)
+    return traceSummariesFromJSON(rawData)
   },
 
-  // TODO: Update when integrating search - will need to add searchTraceSpans endpoint
-  // for filtering spans within a trace by time range and query
-  getTraceByID: async (traceID: string): Promise<TraceData> => {
-    const params = [traceID];
-    const rawData = await callRPC('getTraceByID', params);
-    return traceDataFromJSON(rawData);
+  searchSpans: async (
+    traceID: string,
+    queryTree?: QueryNode
+  ): Promise<TraceData> => {
+    const params = queryTree
+      ? [traceID, convertQueryTreeForBackend(queryTree)]
+      : [traceID]
+    const rawData = await callRPC('searchSpans', params)
+    return traceDataFromJSON(rawData)
   },
 
   clearTraces: () => callRPC('clearTraces', undefined),
-  deleteTraces: (traceIDs: string[]) => callRPC('deleteSpansByTraceID', traceIDs),
+  deleteTraces: (traceIDs: string[]) =>
+    callRPC('deleteSpansByTraceID', traceIDs),
 
   // Log methods
   searchLogs: async (
@@ -240,13 +260,13 @@ export let telemetryAPI = {
     endTime: number,
     queryTree?: QueryNode
   ): Promise<LogData[]> => {
-    const startTimeNs = toNanoseconds(startTime);
-    const endTimeNs = toNanoseconds(endTime);
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
     const params = queryTree
       ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
-      : [startTimeNs, endTimeNs];
-    const rawData = await callRPC('searchLogs', params);
-    return logsFromJSON(rawData);
+      : [startTimeNs, endTimeNs]
+    const rawData = await callRPC('searchLogs', params)
+    return logsFromJSON(rawData)
   },
 
   getLogByID: (logID: string) => callRPC('getLogByID', [logID]),
@@ -259,23 +279,27 @@ export let telemetryAPI = {
     endTime: number,
     queryTree?: QueryNode
   ): Promise<MetricData[]> => {
-    const startTimeNs = toNanoseconds(startTime);
-    const endTimeNs = toNanoseconds(endTime);
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
     const params = queryTree
       ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
-      : [startTimeNs, endTimeNs];
-    const rawData = await callRPC('getMetrics', params);
-    return metricsFromJSON(rawData);
+      : [startTimeNs, endTimeNs]
+    const rawData = await callRPC('getMetrics', params)
+    return metricsFromJSON(rawData)
   },
 
   clearMetrics: () => callRPC('clearMetrics', undefined),
 
   // Stats methods
   getStats: async (): Promise<Stats> => {
-    const rawData = await callRPC('getStats');
-    return statsFromJSON(rawData);
+    const rawData = await callRPC('getStats')
+    return statsFromJSON(rawData)
   },
-};
+
+  getTraceSpanCount: async (traceID: string): Promise<number> => {
+    return await callRPC('getTraceSpanCount', [traceID])
+  },
+}
 
 // Helper function to convert frontend query tree to minimal backend format
 function convertQueryTreeForBackend(queryTree: QueryNode): any {
@@ -287,17 +311,17 @@ function convertQueryTreeForBackend(queryTree: QueryNode): any {
         field: {
           ...(queryTree.query.field.searchScope !== 'global' && {
             name: queryTree.query.field.name,
+            type: queryTree.query.field.type,
           }),
           searchScope: queryTree.query.field.searchScope,
           ...(queryTree.query.field.searchScope === 'attribute' && {
             attributeScope: queryTree.query.field.attributeScope,
-            type: queryTree.query.field.type,
           }),
         },
         fieldOperator: queryTree.query.operator.symbol,
         value: queryTree.query.value,
       },
-    };
+    }
   } else {
     return {
       id: queryTree.id,
@@ -306,7 +330,7 @@ function convertQueryTreeForBackend(queryTree: QueryNode): any {
         logicalOperator: queryTree.group.operator,
         children: queryTree.group.children.map(convertQueryTreeForBackend),
       },
-    };
+    }
   }
 }
 
@@ -322,5 +346,5 @@ function convertAttributesToFieldDefinitions(
       searchScope: 'attribute' as const,
       attributeScope: attr.attributeScope as AttributeScope,
       operators: getOperatorsForFieldType(attr.type as FieldType),
-    }));
+    }))
 }

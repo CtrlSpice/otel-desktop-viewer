@@ -154,7 +154,7 @@ func TestTraceNotFound(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	_, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000000")
+	_, err := spans.SearchSpans(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, spans.ErrTraceIDNotFound)
 }
@@ -200,7 +200,7 @@ func TestClearTraces(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id is not null"))
 }
 
-// getTraceTraceID returns the trace ID from GetTrace JSON (traceID in response is hex string).
+// getTraceTraceID returns the trace ID from SearchSpans JSON (traceID in response is hex string).
 func getTraceTraceID(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
 	var out struct {
@@ -210,7 +210,7 @@ func getTraceTraceID(t *testing.T, raw json.RawMessage) string {
 	return out.TraceID
 }
 
-// getTraceSpansCount returns the number of spans in GetTrace JSON.
+// getTraceSpansCount returns the number of spans in SearchSpans JSON.
 func getTraceSpansCount(t *testing.T, raw json.RawMessage) int {
 	t.Helper()
 	var out struct {
@@ -220,8 +220,8 @@ func getTraceSpansCount(t *testing.T, raw json.RawMessage) int {
 	return len(out.Spans)
 }
 
-// spanDataFromGetTrace returns spanData.name and spanID for the i-th span (depth-first order).
-func spanDataFromGetTrace(t *testing.T, raw json.RawMessage, i int) (name, spanID string) {
+// spanDataFromSearchSpans returns spanData.name and spanID for the i-th span (depth-first order).
+func spanDataFromSearchSpans(t *testing.T, raw json.RawMessage, i int) (name, spanID string) {
 	t.Helper()
 	var out struct {
 		Spans []struct {
@@ -249,7 +249,7 @@ func TestTraceSuite(t *testing.T) {
 	assert.NoError(t, err, "failed to ingest test trace")
 
 	t.Run("TraceHierarchicalStructure", func(t *testing.T) {
-		raw, err := spans.GetTrace(ctx, s.DB(), testTraceID)
+		raw, err := spans.SearchSpans(ctx, s.DB(), testTraceID, nil)
 		assert.NoError(t, err, "failed to get trace")
 		assert.NotEmpty(t, raw)
 
@@ -259,7 +259,7 @@ func TestTraceSuite(t *testing.T) {
 		// Depth-first order: root -> child -> grandchild -> great-grandchild -> child-span-2 -> child2-child -> orphaned -> orphaned-child -> orphaned-grandchild
 		names := []string{"root-operation", "child-operation", "grandchild-operation", "great-grandchild-operation", "child-operation-2", "child2-child-operation", "orphaned-operation", "orphaned-child-operation", "orphaned-grandchild-operation"}
 		for i, want := range names {
-			name, _ := spanDataFromGetTrace(t, raw, i)
+			name, _ := spanDataFromSearchSpans(t, raw, i)
 			assert.Equal(t, want, name, "span index %d", i)
 		}
 	})
@@ -277,15 +277,14 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("TraceNotFound", func(t *testing.T) {
-		_, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000000")
+		_, err := spans.SearchSpans(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", nil)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, spans.ErrTraceIDNotFound)
 	})
 
-	t.Run("GetTraceAcceptsTraceIDWithoutHyphens", func(t *testing.T) {
-		// DuckDB accepts 32-char hex trace ID for lookups; response may be hyphenated or not depending on driver.
-		raw, err := spans.GetTrace(ctx, s.DB(), "00000000000000000000000000000099")
-		assert.NoError(t, err, "GetTrace with 32-char hex trace ID should succeed")
+	t.Run("SearchSpansAcceptsTraceIDWithoutHyphens", func(t *testing.T) {
+		raw, err := spans.SearchSpans(ctx, s.DB(), "00000000000000000000000000000099", nil)
+		assert.NoError(t, err, "SearchSpans with 32-char hex trace ID should succeed")
 		got := getTraceTraceID(t, raw)
 		assert.True(t, got == "00000000-0000-0000-0000-000000000099" || got == "00000000000000000000000000000099",
 			"response traceID should be the same logical UUID (got %q)", got)
@@ -440,6 +439,40 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_SpanID", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q7",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "0000000000000001",
+			},
+		}
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries, "global search for span ID hex should match")
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	t.Run("GlobalSearch_TraceID", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q8",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{SearchScope: "global"},
+				FieldOperator: "CONTAINS",
+				Value:         "00000000000000000000000000000099",
+			},
+		}
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries, "global search for trace ID hex should match")
 		assert.Equal(t, testTraceID, summaries[0].TraceID)
 	})
 
@@ -823,7 +856,7 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 	assert.NoError(t, err)
 
 	testTraceID := "00000000-0000-0000-0000-000000000099"
-	raw, err := spans.GetTrace(ctx, s.DB(), testTraceID)
+	raw, err := spans.SearchSpans(ctx, s.DB(), testTraceID, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, batchSize, getTraceSpansCount(t, raw))
 
@@ -854,7 +887,7 @@ func TestDeleteSpanByID(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	raw, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
+	raw, err := spans.SearchSpans(ctx, s.DB(), "00000000-0000-0000-0000-000000000099", nil)
 	assert.NoError(t, err)
 	assert.Equal(t, 9, getTraceSpansCount(t, raw))
 
@@ -867,7 +900,7 @@ func TestDeleteSpanByID(t *testing.T) {
 	err = spans.DeleteSpanByID(ctx, s.DB(), spanUUID)
 	assert.NoError(t, err)
 
-	raw, err = spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
+	raw, err = spans.SearchSpans(ctx, s.DB(), "00000000-0000-0000-0000-000000000099", nil)
 	assert.NoError(t, err)
 	assert.Equal(t, 8, getTraceSpansCount(t, raw))
 
@@ -887,7 +920,7 @@ func TestDeleteSpansByIDs(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	raw, err := spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
+	raw, err := spans.SearchSpans(ctx, s.DB(), "00000000-0000-0000-0000-000000000099", nil)
 	assert.NoError(t, err)
 	assert.Equal(t, 9, getTraceSpansCount(t, raw))
 
@@ -902,7 +935,7 @@ func TestDeleteSpansByIDs(t *testing.T) {
 	err = spans.DeleteSpansByIDs(ctx, s.DB(), deletedIDs)
 	assert.NoError(t, err)
 
-	raw, err = spans.GetTrace(ctx, s.DB(), "00000000-0000-0000-0000-000000000099")
+	raw, err = spans.SearchSpans(ctx, s.DB(), "00000000-0000-0000-0000-000000000099", nil)
 	assert.NoError(t, err)
 	assert.Equal(t, 6, getTraceSpansCount(t, raw))
 
@@ -948,8 +981,8 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where span_id is not null"))
 }
 
-// TestGetTraceWith32CharHexTraceID verifies that GetTrace finds a trace when given the 32-char hex form (no hyphens).
-func TestGetTraceWith32CharHexTraceID(t *testing.T) {
+// TestSearchSpansWith32CharHexTraceID verifies that SearchSpans finds a trace when given the 32-char hex form (no hyphens).
+func TestSearchSpansWith32CharHexTraceID(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
@@ -959,8 +992,8 @@ func TestGetTraceWith32CharHexTraceID(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	raw, err := spans.GetTrace(ctx, s.DB(), "00000000000000000000000000000099")
-	assert.NoError(t, err, "GetTrace with 32-char hex trace ID should succeed")
+	raw, err := spans.SearchSpans(ctx, s.DB(), "00000000000000000000000000000099", nil)
+	assert.NoError(t, err, "SearchSpans with 32-char hex trace ID should succeed")
 	assert.NotEmpty(t, raw)
 	got := getTraceTraceID(t, raw)
 	assert.True(t, got == "00000000-0000-0000-0000-000000000099" || got == "00000000000000000000000000000099",
