@@ -1,7 +1,38 @@
+<script module lang="ts">
+  import type { TraceData } from '@/types/api-types'
+  import { getServiceName } from '@/utils/resource'
+
+  export type TraceDetailStats = {
+    spanCount: number
+    serviceCount: number
+    errorCount: number
+    exceptionCount: number
+  }
+
+  /** Fold a loaded trace into summary counters (aligned with trace list row semantics). */
+  export function traceDetailStats(data: TraceData): TraceDetailStats {
+    const serviceNames = new Set<string>()
+    let errorCount = 0
+    let exceptionCount = 0
+    for (const { spanData: s } of data.spans) {
+      const name = getServiceName(s.resource)?.trim()
+      if (name) serviceNames.add(name)
+      if (s.statusCode === 'Error') errorCount++
+      if (s.events.some(e => e.name === 'exception')) exceptionCount++
+    }
+    return {
+      spanCount: data.spans.length,
+      serviceCount: serviceNames.size,
+      errorCount,
+      exceptionCount,
+    }
+  }
+</script>
+
 <script lang="ts">
   import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import type { TraceData, SearchResultEvent } from '@/types/api-types'
+  import type { SearchResultEvent } from '@/types/api-types'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -10,12 +41,10 @@
     getTraceListNavIds,
     setTraceListNavIds,
   } from '@/stores/trace-list-nav.svelte'
-  import { sortTraceSummaries } from '@/utils/trace-summary-sort'
-  import { loadTraceListTableState } from '@/utils/trace-list-table-state'
+  import { sortTraceSummaries, loadTraceListTableState } from '@/utils/traces'
   import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
   import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
-  import { traceDetailStats } from '@/utils/trace-detail-stats'
   import DetailView from '@/components/TraceDetails/DetailView/DetailView.svelte'
   import WaterfallView from '@/components/TraceDetails/Waterfall/WaterfallView.svelte'
   import ResizablePanels from '@/components/ResizablePanels.svelte'

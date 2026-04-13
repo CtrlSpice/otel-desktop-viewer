@@ -32,7 +32,7 @@
   import { HelpCircleIcon, CancelIcon } from '@/icons'
 
   import type { SearchEditorAPI } from './search-editor-api'
-  import { parseDuration } from '@/utils/duration'
+  import { parseDuration } from '@/utils/time'
 
   // --- types ---
   type SearchEditorCallbacks = {

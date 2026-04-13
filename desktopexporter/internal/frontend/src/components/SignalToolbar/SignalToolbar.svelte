@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import type { TraceDetailStats } from '@/utils/trace-detail-stats'
+  import type { TraceDetailStats } from '@/pages/TraceDetailPage.svelte'
   import type { TraceListStats } from '@/components/TraceList/trace-list-stats'
   import FieldErrorMessage from '@/components/FieldErrorMessage.svelte'
 

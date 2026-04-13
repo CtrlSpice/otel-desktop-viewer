@@ -1,11 +1,11 @@
 <script lang="ts">
   import { getTimeContext } from '@/contexts/time-context.svelte';
-  import { formatDateTimeRange } from '@/utils/time';
   import {
+    formatDateTimeRange,
     loadRecentTimeRanges,
     MAX_RECENT_TIME_RANGES,
     type RecentTimeRange,
-  } from '@/utils/recent-time-ranges';
+  } from '@/utils/time';
 
   // Get time context
   let ctx = getTimeContext();

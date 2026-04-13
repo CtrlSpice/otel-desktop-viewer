@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { EventData } from '@/types/api-types'
   import SpanField from './SpanField.svelte'
-  import { formatDuration } from '@/utils/duration'
-  import { formatTimestamp } from '@/utils/time'
+  import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
   type Props = {

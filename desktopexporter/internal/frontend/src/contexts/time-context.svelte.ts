@@ -1,6 +1,5 @@
 import { setContext, getContext } from 'svelte';
-import type { Timezone } from '@/utils/time';
-import { recordRecentTimeRange } from '@/utils/recent-time-ranges';
+import { type Timezone, recordRecentTimeRange } from '@/utils/time';
 
 // Base interface with common fields
 interface BaseTimeSelection {

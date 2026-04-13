@@ -1,6 +1,7 @@
 <script module lang="ts">
   import type { SpanNode, SpanData } from '@/types/api-types'
   import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
+  import { getServiceName } from '@/utils/resource'
 
   // --- Shared types ---
 
@@ -72,9 +73,6 @@
     )
   }
 
-  function serviceName(span: SpanData): string | undefined {
-    return span.resource.attributes.find(a => a.key === 'service.name')?.value
-  }
 
   // --- Tree gutter connectors (helpers composed in computeTreeMeta) ---
 
@@ -133,12 +131,12 @@
     multiService: boolean
   ): string | null {
     if (isErrorSpan(span)) return null
-    return multiService ? (serviceName(span) ?? '') : span.name
+    return multiService ? (getServiceName(span.resource) ?? '') : span.name
   }
 
   function isMultiService(spans: SpanNode[]): boolean {
     const services = spans.reduce((acc, n) => {
-      const s = serviceName(n.spanData)
+      const s = getServiceName(n.spanData.resource)
       return s !== undefined ? acc.add(s) : acc
     }, new Set<string>())
     return services.size > 1

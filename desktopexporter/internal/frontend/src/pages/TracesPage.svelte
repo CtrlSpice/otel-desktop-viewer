@@ -6,18 +6,15 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import { formatTimestamp } from '@/utils/time'
-  import { formatDuration, traceSummaryDurationNs } from '@/utils/duration'
+  import { formatTimestamp, formatDuration, traceSummaryDurationNs } from '@/utils/time'
   import {
     compareTraceSummaries,
     type TraceSummarySortColumn,
     type TraceSummarySortDirection,
-  } from '@/utils/trace-summary-sort'
-  import { setTraceListNavIds } from '@/stores/trace-list-nav.svelte'
-  import {
     loadTraceListTableState,
     saveTraceListTableState,
-  } from '@/utils/trace-list-table-state'
+  } from '@/utils/traces'
+  import { setTraceListNavIds } from '@/stores/trace-list-nav.svelte'
   import type {
     TraceSummary,
     SearchResultEvent,

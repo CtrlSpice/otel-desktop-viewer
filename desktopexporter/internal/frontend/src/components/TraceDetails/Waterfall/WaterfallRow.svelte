@@ -1,14 +1,10 @@
 <script lang="ts">
   import type { SpanData } from '@/types/api-types'
   import type { WaterfallRowData } from './WaterfallView.svelte'
-  import { formatDuration } from '@/utils/duration'
+  import { formatDuration } from '@/utils/time'
+  import { getServiceName } from '@/utils/resource'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
   import WaterfallEventDots from './WaterfallEventDots.svelte'
-
-  function getServiceName(span: SpanData): string {
-    const svc = span.resource.attributes.find(a => a.key === 'service.name')
-    return svc?.value ?? 'unknown'
-  }
 
   type Props = {
     row: WaterfallRowData
@@ -38,7 +34,7 @@
 
   let span = $derived(row.spanNode.spanData)
   let durationLabel = $derived(formatDuration(span.endTime - span.startTime))
-  let serviceName = $derived(getServiceName(span))
+  let serviceName = $derived(getServiceName(span.resource) ?? 'unknown')
 
   const MIN_LABEL_INSIDE_PCT = 12
   const LABEL_FLIP_SIDE_PCT = 50
