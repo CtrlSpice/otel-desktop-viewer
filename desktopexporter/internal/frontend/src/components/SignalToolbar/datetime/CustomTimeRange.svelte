@@ -167,7 +167,7 @@
         id="custom-start"
         type="text"
         placeholder="yesterday, 2024-01-01, 2 hours ago"
-        class="input input-bordered input-sm min-w-0 w-full rounded-lg font-mono text-sm"
+        class="input input-bordered input-sm min-w-0 w-full rounded-lg text-sm"
         class:input-error={startInputInvalid}
         aria-invalid={startInputInvalid}
         aria-describedby={customFieldIssue
@@ -184,7 +184,7 @@
           id="custom-end"
           type="text"
           placeholder="e.g., now, 1 hour ago, 2024-01-02"
-          class="input input-bordered input-sm join-item min-w-0 flex-1 rounded-l-lg rounded-r-none font-mono text-sm"
+          class="input input-bordered input-sm join-item min-w-0 flex-1 rounded-l-lg rounded-r-none text-sm"
           class:input-error={endInputInvalid}
           aria-invalid={endInputInvalid}
           aria-describedby={customFieldIssue

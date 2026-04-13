@@ -73,10 +73,6 @@
     @apply py-1;
   }
 
-  .recent-ranges-list > :nth-child(odd) {
-    background-color: var(--table-zebra-bg);
-  }
-
   .recent-range-empty {
     box-sizing: border-box;
     height: var(--table-row-h);

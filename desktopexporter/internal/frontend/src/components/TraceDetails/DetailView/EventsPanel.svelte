@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import type { EventData } from '@/types/api-types'
   import SpanField from './SpanField.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { ArrowDownIcon } from '@/icons'
 
   type Props = {
     events: EventData[]
@@ -13,71 +15,40 @@
 
   let timeContext = getTimeContext()
 
-  let openEvents = $state<Set<number>>(new Set([0]))
+  let expandedIndex = $state<number | null>(0)
+  let headerRows: HTMLTableRowElement[] = []
 
-  function toggle(index: number, e: MouseEvent) {
-    e.stopPropagation()
-    let next = new Set(openEvents)
-    if (next.has(index)) {
-      next.delete(index)
-    } else {
-      next.add(index)
+  function toggle(index: number) {
+    const opening = expandedIndex !== index
+    expandedIndex = opening ? index : null
+    if (opening) {
+      tick().then(() => {
+        headerRows[index]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      })
     }
-    openEvents = next
   }
 </script>
 
 {#each events as event, index}
-  {@const open = openEvents.has(index)}
-  <tr class="table-row">
-    <th scope="row" class="table-cell--field-name">
-      <div class="events-panel__field-name-inner">
-        <button
-          type="button"
-          class="group-toggle"
-          class:group-toggle--open={open}
-          aria-expanded={open}
-          aria-label={open ? `Collapse ${event.name}` : `Expand ${event.name}`}
-          onclick={e => toggle(index, e)}
-        >
-          <svg
-            class="group-toggle__caret"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <circle
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M10 8l4 4-4 4"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-        <span class="events-panel__key"
-          >name<span aria-hidden="true">:</span></span
-        >
-      </div>
-      <span class="col-resize-marker" aria-hidden="true"></span>
-    </th>
-    <td class="table-cell">
-      <div class="events-panel__value-cell">
-        <span class="events-panel__value-text">{event.name}</span>
-        <span class="events-panel__badges">
-          <span class="badge-type">string</span>
-          <span class="badge-offset"
-            >+{formatDuration(event.timestamp - spanStartTime)}</span
-          >
-        </span>
-      </div>
+  {@const open = expandedIndex === index}
+  <tr
+    bind:this={headerRows[index]}
+    class="table-row events-panel__header-row cursor-pointer {open ? 'events-panel__header-row--open' : ''}"
+    onclick={() => toggle(index)}
+    role="button"
+    tabindex="0"
+    onkeydown={e => (e.key === 'Enter' || e.key === ' ') && toggle(index)}
+  >
+    <td class="detail-cell">
+      <span class="events-panel__indicator {open ? 'events-panel__indicator--open' : ''}">
+        <ArrowDownIcon />
+      </span>
+      <span class="detail-cell__key">name:</span>
+      <span class="detail-cell__value">{event.name}</span>
+    </td>
+    <td class="detail-cell--badges">
+      <span class="badge-type">string</span>
+      <span class="badge-offset">+{formatDuration(event.timestamp - spanStartTime)}</span>
     </td>
   </tr>
   {#if open}
@@ -112,23 +83,24 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
-  .events-panel__field-name-inner {
-    @apply flex min-w-0 items-center gap-1.5;
+
+  .events-panel__header-row--open,
+  .events-panel__header-row--open ~ :global(.table-row--nested) {
+    @apply bg-base-200/40;
   }
 
-  .events-panel__key {
-    @apply min-w-0 truncate;
+  .events-panel__indicator {
+    @apply inline-flex align-middle text-base-content/35 transition-all duration-150 mr-1;
+    font-size: 14px;
+    transform: rotate(-90deg);
   }
 
-  .events-panel__value-cell {
-    @apply flex min-w-0 items-center gap-1.5;
+  .events-panel__indicator--open {
+    @apply text-base-content/70;
+    transform: rotate(0deg);
   }
 
-  .events-panel__value-text {
-    @apply min-w-0 flex-1 truncate text-sm text-base-content;
-  }
-
-  .events-panel__badges {
-    @apply flex shrink-0 items-center gap-1;
+  .events-panel__header-row:hover .events-panel__indicator {
+    @apply text-base-content/60;
   }
 </style>

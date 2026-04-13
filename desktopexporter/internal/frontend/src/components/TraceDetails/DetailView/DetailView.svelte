@@ -59,70 +59,6 @@
 
   let timeContext = getTimeContext()
 
-  const DETAIL_FIELDS_COL_KEY = 'detail-fields-col-widths'
-  const DEFAULT_FIELD_COL_PX = 176
-
-  function loadFieldColWidth(): number {
-    if (typeof localStorage === 'undefined') return DEFAULT_FIELD_COL_PX
-    try {
-      const raw = localStorage.getItem(DETAIL_FIELDS_COL_KEY)
-      if (!raw) return DEFAULT_FIELD_COL_PX
-      const o = JSON.parse(raw) as { field?: number; fieldRem?: number }
-      if (typeof o.field === 'number' && o.field > 0) {
-        return Math.round(o.field)
-      }
-      // Brief rem-based save: ~16px per rem at default root
-      if (typeof o.fieldRem === 'number' && o.fieldRem > 0) {
-        return Math.round(o.fieldRem * 16)
-      }
-      return DEFAULT_FIELD_COL_PX
-    } catch {
-      return DEFAULT_FIELD_COL_PX
-    }
-  }
-
-  let fieldColWidthPx = $state(loadFieldColWidth())
-  let detailTableEl = $state<HTMLTableElement | null>(null)
-  let detailDividerDrag = $state(false)
-
-  function saveFieldColWidth() {
-    if (typeof localStorage === 'undefined') return
-    localStorage.setItem(
-      DETAIL_FIELDS_COL_KEY,
-      JSON.stringify({ field: fieldColWidthPx }),
-    )
-  }
-
-  function clampFieldCol(w: number): number {
-    const tableW = detailTableEl?.getBoundingClientRect().width ?? 600
-    return Math.round(Math.max(96, Math.min(Math.max(160, tableW * 0.55), w)))
-  }
-
-  function startResizeFieldCol(e: PointerEvent) {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = fieldColWidthPx
-    const target = e.currentTarget as HTMLElement
-    target.setPointerCapture(e.pointerId)
-    detailDividerDrag = true
-
-    function onMove(ev: PointerEvent) {
-      fieldColWidthPx = clampFieldCol(startW + (ev.clientX - startX))
-    }
-
-    function end() {
-      detailDividerDrag = false
-      target.removeEventListener('pointermove', onMove)
-      target.removeEventListener('pointerup', end)
-      target.removeEventListener('pointercancel', end)
-      saveFieldColWidth()
-    }
-
-    target.addEventListener('pointermove', onMove)
-    target.addEventListener('pointerup', end)
-    target.addEventListener('pointercancel', end)
-  }
-
   // --- Derived span data ---
 
   let isRoot = $derived(!span?.parentSpanID)
@@ -144,12 +80,9 @@
 {#if span}
   <div class="detail-view">
     <div class="detail-view__scroll">
-      <div class="col-resize-context">
         <table
-          bind:this={detailTableEl}
-          class="split-table detail-fields w-full"
+          class="detail-fields w-full"
           aria-label="Span details"
-          style:--detail-field-col-w="{fieldColWidthPx}px"
         >
           <thead class="detail-view__thead table-header-surface">
             <tr class="detail-view__header-row">
@@ -294,18 +227,6 @@
           {/if}
         </tbody>
         </table>
-        <div
-          class="col-resize-bar col-resize-bar--below-header"
-          class:col-resize-bar--active={detailDividerDrag}
-          style:left="{fieldColWidthPx}px"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize field and value columns"
-          onpointerdown={startResizeFieldCol}
-        >
-          <div class="col-resize-bar__line"></div>
-        </div>
-      </div>
     </div>
   </div>
 {:else}
@@ -321,15 +242,11 @@
   }
 
   .detail-view__scroll {
-    @apply flex min-h-0 flex-1 flex-col;
+    @apply flex min-h-0 flex-1 flex-col overflow-auto;
   }
 
-  .detail-view__scroll > :global(.col-resize-context) {
-    @apply flex min-h-0 flex-1 flex-col;
-  }
-
-  :global(.detail-fields) {
-    @apply min-h-0 flex-1;
+  .detail-view__scroll > :global(.detail-fields) {
+    @apply min-h-0;
   }
 
   .detail-view__header-row {

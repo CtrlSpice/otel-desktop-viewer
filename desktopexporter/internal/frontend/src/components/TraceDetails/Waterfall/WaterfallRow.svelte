@@ -184,7 +184,7 @@
   }
 
   .waterfall-row__bar-label {
-    @apply text-[10px] font-mono whitespace-nowrap;
+    @apply text-[10px] tabular-nums whitespace-nowrap;
   }
 
   .waterfall-row__bar-label--inside {

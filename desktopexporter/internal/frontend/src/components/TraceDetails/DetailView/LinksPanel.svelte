@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import type { LinkData } from '@/types/api-types'
   import SpanField from './SpanField.svelte'
   import { router } from 'tinro5'
+  import { ArrowDownIcon } from '@/icons'
 
   type Props = {
     links: LinkData[]
@@ -9,80 +11,47 @@
 
   let { links }: Props = $props()
 
-  let openLinks = $state<Set<number>>(new Set([0]))
+  let expandedIndex = $state<number | null>(0)
+  let headerRows: HTMLTableRowElement[] = []
 
-  function toggle(index: number, e: MouseEvent) {
-    e.stopPropagation()
-    let next = new Set(openLinks)
-    if (next.has(index)) {
-      next.delete(index)
-    } else {
-      next.add(index)
+  function toggle(index: number) {
+    const opening = expandedIndex !== index
+    expandedIndex = opening ? index : null
+    if (opening) {
+      tick().then(() => {
+        headerRows[index]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      })
     }
-    openLinks = next
   }
 </script>
 
 {#each links as link, index}
-  {@const open = openLinks.has(index)}
-  <tr class="table-row">
-    <th scope="row" class="table-cell--field-name">
-      <div class="links-panel__field-name-inner">
-        <button
-          type="button"
-          class="group-toggle"
-          class:group-toggle--open={open}
-          aria-expanded={open}
-          aria-label={open
-            ? `Collapse link ${index + 1}`
-            : `Expand link ${index + 1}`}
-          onclick={e => toggle(index, e)}
-        >
-          <svg
-            class="group-toggle__caret"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <circle
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M10 8l4 4-4 4"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-        <span class="links-panel__key"
-          >traceID<span aria-hidden="true">:</span></span
-        >
-      </div>
-      <span class="col-resize-marker" aria-hidden="true"></span>
-    </th>
-    <td class="table-cell">
-      <div class="links-panel__value-cell">
-        <a
-          class="links-panel__trace-link"
-          href="/trace/{link.traceID}"
-          onclick={e => {
-            e.preventDefault()
-            e.stopPropagation()
-            router.goto(`/trace/${link.traceID}`)
-          }}
-        >
-          {link.traceID}
-        </a>
-        <span class="links-panel__badges">
-          <span class="badge-type">string</span>
-        </span>
-      </div>
+  {@const open = expandedIndex === index}
+  <tr
+    bind:this={headerRows[index]}
+    class="table-row links-panel__header-row cursor-pointer {open ? 'links-panel__header-row--open' : ''}"
+    onclick={() => toggle(index)}
+    role="button"
+    tabindex="0"
+    onkeydown={e => (e.key === 'Enter' || e.key === ' ') && toggle(index)}
+  >
+    <td class="detail-cell">
+      <span class="links-panel__indicator {open ? 'links-panel__indicator--open' : ''}">
+        <ArrowDownIcon />
+      </span>
+      <span class="detail-cell__key">traceID:</span>
+      <a
+        class="link link-primary font-mono"
+        href="/trace/{link.traceID}"
+        onclick={e => {
+          e.preventDefault()
+          e.stopPropagation()
+          router.goto(`/trace/${link.traceID}`)
+        }}
+      >{link.traceID}</a>
+    </td>
+    <td class="detail-cell--badges">
+      <span class="badge-type">string</span>
     </td>
   </tr>
   {#if open}
@@ -119,24 +88,24 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
-  .links-panel__field-name-inner {
-    @apply flex min-w-0 items-center gap-1.5;
+
+  .links-panel__header-row--open,
+  .links-panel__header-row--open ~ :global(.table-row--nested) {
+    @apply bg-base-200/40;
   }
 
-  .links-panel__key {
-    @apply min-w-0 truncate;
+  .links-panel__indicator {
+    @apply inline-flex align-middle text-base-content/35 transition-all duration-150 mr-1;
+    font-size: 14px;
+    transform: rotate(-90deg);
   }
 
-  .links-panel__value-cell {
-    @apply flex min-w-0 items-center gap-1.5;
+  .links-panel__indicator--open {
+    @apply text-base-content/70;
+    transform: rotate(0deg);
   }
 
-  .links-panel__trace-link {
-    @apply min-w-0 flex-1 truncate font-mono text-xs text-primary underline decoration-primary/30 underline-offset-2;
-    @apply hover:decoration-primary/60 hover:text-primary;
-  }
-
-  .links-panel__badges {
-    @apply flex shrink-0 items-center gap-1;
+  .links-panel__header-row:hover .links-panel__indicator {
+    @apply text-base-content/60;
   }
 </style>

@@ -57,9 +57,6 @@
   let rowsPerPageOptions = [10, 25, 50, 100]
   let rowsPerPagePopoverOpen = $state(false)
 
-  // --- state: selection ---
-  let selectedTraceIDs = $state(new Set<string>())
-
   // --- state: polling / refresh indicator ---
   let searchEditorApi = $state<SearchEditorAPI | null>(null)
   let baselineStats = $state<TraceStats | null>(null)
@@ -74,7 +71,6 @@
   } from '@/types/column-sizing'
 
   const cols = {
-    checkbox: { kind: 'fixed', width: 40 } satisfies FixedColumn,
     traceId: {
       kind: 'resizable',
       min: 100,
@@ -98,7 +94,6 @@
     exceptions: { kind: 'fixed', width: 104 } satisfies FixedColumn,
   }
 
-  const COL_CHECKBOX = cols.checkbox.width
   const COL_ROOT_INDICATOR = cols.rootIndicator.width
   const MIN_COL_W = cols.traceId.min
   const MIN_ELASTIC_COL = cols.startTime.min
@@ -107,7 +102,7 @@
     cols.spans.width +
     cols.errors.width +
     cols.exceptions.width
-  const FIXED_TOTAL = COL_CHECKBOX + COL_ROOT_INDICATOR + COL_TRAILING_FIXED
+  const FIXED_TOTAL = COL_ROOT_INDICATOR + COL_TRAILING_FIXED
 
   let traceIdColW = $state(cols.traceId.default)
   let rootNameColW = $state(cols.rootName.default)
@@ -122,10 +117,9 @@
   )
 
   let barLeftPx = $derived({
-    traceId: COL_CHECKBOX + traceIdColW,
-    rootName: COL_CHECKBOX + traceIdColW + COL_ROOT_INDICATOR + rootNameColW,
+    traceId: traceIdColW,
+    rootName: traceIdColW + COL_ROOT_INDICATOR + rootNameColW,
     service:
-      COL_CHECKBOX +
       traceIdColW +
       COL_ROOT_INDICATOR +
       rootNameColW +
@@ -208,21 +202,8 @@
   )
 
   let hasTraceRows = $derived(traceSummaries.length > 0)
-  let someSelected = $derived(selectedTraceIDs.size > 0)
   // --- derived: summary stats — full traceSummaries (not the current page) ---
   let listStats = $derived(traceListStats(traceSummaries))
-
-  let traceDeleteLabel = $derived(
-    someSelected
-      ? `Delete ${selectedTraceIDs.size} trace${selectedTraceIDs.size !== 1 ? 's' : ''}`
-      : 'Delete all traces'
-  )
-
-  let traceDeleteAriaLabel = $derived(
-    someSelected
-      ? `Delete ${selectedTraceIDs.size} selected trace${selectedTraceIDs.size !== 1 ? 's' : ''}`
-      : 'Delete all traces in this time range'
-  )
 
   let refreshIndicatorText = $derived.by(() => {
     if (!baselineStats || !polledStats) return ''
@@ -239,11 +220,6 @@
   // --- effects ---
   $effect(() => {
     saveTraceListTableState({ sortColumn, sortDirection, rowsPerPage })
-  })
-
-  $effect(() => {
-    void sortedTraces
-    selectedTraceIDs = new Set()
   })
 
   $effect(() => {
@@ -367,14 +343,11 @@
     router.goto(`/trace/${traceID}`)
   }
 
-  async function handleDelete() {
+  async function handleDeleteAllTraces() {
     try {
-      if (someSelected) {
-        await telemetryAPI.deleteTraces([...selectedTraceIDs])
-      } else {
-        await telemetryAPI.clearTraces()
-      }
-      selectedTraceIDs = new Set()
+      await telemetryAPI.clearTraces()
+      currentPage = 1
+      setTraceListNavIds([])
       await fetchTraces()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to delete traces'
@@ -459,7 +432,6 @@
               style:min-width="{tableMinWidth}px"
             >
               <colgroup>
-                <col style:width="{COL_CHECKBOX}px" />
                 <col style:width="{traceIdColW}px" />
                 <col style:width="{COL_ROOT_INDICATOR}px" />
                 <col style:width="{rootNameColW}px" />
@@ -472,24 +444,6 @@
               </colgroup>
               <thead class="sticky top-0 z-10 table-header-surface">
                 <tr class="table-header-row">
-                  <th class="table-header-cell table-header-cell--checkbox">
-                    <input
-                      type="checkbox"
-                      class="checkbox checkbox-xs checkbox-primary"
-                      checked={someSelected}
-                      indeterminate={someSelected}
-                      onchange={() => {
-                        if (someSelected) {
-                          selectedTraceIDs = new Set()
-                        } else {
-                          selectedTraceIDs = new Set(
-                            paginatedTraces.map(t => t.traceID)
-                          )
-                        }
-                      }}
-                      aria-label="Select all on this page"
-                    />
-                  </th>
                   <th class="table-header-cell table-header-cell--left">
                     Trace ID
                   </th>
@@ -666,38 +620,13 @@
               <tbody class="table-body-surface">
                 {#each paginatedTraces as trace}
                   <tr
-                    class="table-row cursor-pointer hover:bg-base-200 transition-colors {selectedTraceIDs.has(
-                      trace.traceID
-                    )
-                      ? 'bg-primary/5'
-                      : ''}"
+                    class="table-row cursor-pointer hover:bg-base-200 transition-colors"
                     onclick={() => navigateToTrace(trace.traceID)}
                     role="button"
                     tabindex="0"
                     onkeydown={e =>
                       e.key === 'Enter' && navigateToTrace(trace.traceID)}
                   >
-                    <td
-                      class="table-cell--checkbox"
-                      onclick={e => e.stopPropagation()}
-                      onkeydown={e => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        class="checkbox checkbox-xs checkbox-primary"
-                        checked={selectedTraceIDs.has(trace.traceID)}
-                        onchange={() => {
-                          const next = new Set(selectedTraceIDs)
-                          if (next.has(trace.traceID)) {
-                            next.delete(trace.traceID)
-                          } else {
-                            next.add(trace.traceID)
-                          }
-                          selectedTraceIDs = next
-                        }}
-                        aria-label="Select trace {trace.traceID}"
-                      />
-                    </td>
                     <td class="table-cell--trace-id" title={trace.traceID}>
                       <span class="trace-list-cell-text">{trace.traceID}</span>
                     </td>
@@ -907,20 +836,14 @@
 
             {#if hasTraceRows}
               <div class="pagination-controls__actions">
-                <span
-                  class="pagination-delete-label hidden sm:inline max-w-[12rem] truncate text-sm text-base-content/60"
-                  title={traceDeleteLabel}
-                >
-                  {traceDeleteLabel}
-                </span>
                 <button
                   type="button"
-                  class="btn btn-soft btn-error btn-sm btn-circle"
-                  onclick={handleDelete}
-                  aria-label={traceDeleteAriaLabel}
-                  title={traceDeleteAriaLabel}
+                  class="btn btn-ghost btn-sm text-error"
+                  onclick={handleDeleteAllTraces}
+                  aria-label="Delete all traces"
                 >
-                  <TrashIcon class="h-4 w-4" aria-hidden="true" />
+                  <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
+                  Delete all traces
                 </button>
               </div>
             {/if}

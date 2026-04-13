@@ -53,6 +53,7 @@
     ArrowLeftIcon,
     ArrowRightDoubleIcon,
     ArrowRightIcon,
+    TrashIcon,
   } from '@/icons'
 
   // --- state: route + API ---
@@ -240,13 +241,35 @@
   function goTraceNavLast() {
     if (canGoNext) goTraceByIndex(traceNavTotal - 1)
   }
+
+  async function handleDeleteTrace() {
+    if (!traceID) return
+    const deletedId = traceID
+    const nextIndex = canGoNext ? traceNavIndex + 1
+      : canGoPrev ? traceNavIndex - 1
+      : -1
+    try {
+      await telemetryAPI.deleteTraces([deletedId])
+      const updated = navIds.filter(id => id !== deletedId)
+      setTraceListNavIds(updated)
+      if (nextIndex >= 0 && updated.length > 0) {
+        const clampedIndex = Math.min(nextIndex, updated.length - 1)
+        router.goto(`/trace/${updated[clampedIndex]}`)
+      } else {
+        router.goto('/traces')
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to delete trace'
+      console.error('Error deleting trace:', err)
+    }
+  }
 </script>
 
 {#snippet traceNavFooter()}
-  {#if navIds.length > 0}
-    <div class="pagination-controls">
-      <div class="pagination-rows-selector"></div>
-      <div class="pagination-controls__center">
+  <div class="pagination-controls">
+    <div class="pagination-rows-selector"></div>
+    <div class="pagination-controls__center">
+      {#if navIds.length > 0}
         <div
           class="flex min-w-0 flex-nowrap items-center justify-center gap-1.5"
         >
@@ -292,10 +315,20 @@
             <ArrowRightDoubleIcon class="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-      </div>
-      <div class="pagination-controls__actions"></div>
+      {/if}
     </div>
-  {/if}
+    <div class="pagination-controls__actions">
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-error"
+        onclick={handleDeleteTrace}
+        aria-label="Delete this trace"
+      >
+        <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
+        Delete this trace
+      </button>
+    </div>
+  </div>
 {/snippet}
 
 <div

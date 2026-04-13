@@ -271,6 +271,7 @@ export let telemetryAPI = {
 
   getLogByID: (logID: string) => callRPC('getLogByID', [logID]),
   getLogsByTraceID: (traceID: string) => callRPC('getLogsByTraceID', [traceID]),
+  deleteLogByID: (logId: string) => callRPC('deleteLogByID', [logId]),
   clearLogs: () => callRPC('clearLogs', undefined),
 
   // Metric methods
