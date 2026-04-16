@@ -92,9 +92,7 @@ function idPatternCompletions(
   if (!/^[a-fA-F0-9]+$/.test(hex)) return null
 
   const fields =
-    hex.length === 32
-      ? ['traceID', 'link.traceID']
-      : ['spanID', 'link.spanID']
+    hex.length === 32 ? ['traceID', 'link.traceID'] : ['spanID', 'link.spanID']
 
   const options: Completion[] = fields.map(f => ({
     label: `${f} = ${hex}`,

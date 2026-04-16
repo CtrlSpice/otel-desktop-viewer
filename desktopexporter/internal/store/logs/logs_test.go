@@ -353,6 +353,49 @@ func TestLogSuite(t *testing.T) {
 	})
 }
 
+func TestGetLogAttributes(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	ldata := createTestLogsPdata(baseTime)
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, ldata)
+	})
+	require.NoError(t, err)
+
+	startTime := baseTime - int64(time.Hour)
+	endTime := baseTime + int64(time.Hour)
+	raw, err := logs.GetLogAttributes(ctx, s.DB(), startTime, endTime)
+	assert.NoError(t, err)
+
+	var attributes []struct {
+		Name           string `json:"name"`
+		AttributeScope string `json:"attributeScope"`
+		Type           string `json:"type"`
+	}
+	assert.NoError(t, json.Unmarshal(raw, &attributes))
+	assert.NotEmpty(t, attributes, "should have discovered log attributes")
+
+	byScope := make(map[string][]string)
+	for _, a := range attributes {
+		byScope[a.AttributeScope] = append(byScope[a.AttributeScope], a.Name)
+	}
+
+	assert.Contains(t, byScope["resource"], "service.name")
+	assert.Contains(t, byScope["resource"], "service.version")
+	assert.Contains(t, byScope["log"], "log.string")
+	assert.Contains(t, byScope["log"], "log.int")
+	assert.Contains(t, byScope["log"], "log.float")
+	assert.Contains(t, byScope["log"], "log.bool")
+	assert.Contains(t, byScope["log"], "log.list")
+
+	// Out-of-range query returns empty
+	rawEmpty, err := logs.GetLogAttributes(ctx, s.DB(), 0, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, json.RawMessage("[]"), rawEmpty)
+}
+
 // TestDeleteLogByID verifies that a single log can be deleted by its ID, including child attributes.
 func TestDeleteLogByID(t *testing.T) {
 	s, ctx, teardown := setupStore(t)

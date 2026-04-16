@@ -169,6 +169,29 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 	return json.RawMessage(raw), nil
 }
 
+// GetLogAttributes returns a JSON array of attribute names/scopes/types for logs in the time range.
+func GetLogAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
+	query := `
+		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope, 'type', sub.type::varchar)
+			order by sub.key, sub.scope)) as varchar) as attributes
+		from (
+			select distinct a.key, a.scope, a.type
+			from attributes a
+			inner join logs l on a.log_id = l.id
+			where coalesce(nullif(l.timestamp, 0), l.observed_timestamp) >= ?
+			  and coalesce(nullif(l.timestamp, 0), l.observed_timestamp) <= ?
+		) sub
+	`
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetLogAttributes: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
 // Clear truncates the logs table and all child attributes.
 func Clear(ctx context.Context, db *sql.DB) error {
 	childQueries := []string{

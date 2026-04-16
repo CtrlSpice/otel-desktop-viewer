@@ -105,7 +105,10 @@ export function applyColumnResize(
 
   let neighborIdx = -1
   for (let i = colIndex + 1; i < defs.length; i++) {
-    if (defs[i].flex > 0) { neighborIdx = i; break }
+    if (defs[i].flex > 0) {
+      neighborIdx = i
+      break
+    }
   }
   if (neighborIdx === -1) return currentWidths
 
@@ -113,7 +116,10 @@ export function applyColumnResize(
   const maxShrink = currentWidths[colIndex] - def.min
   const maxGrow = currentWidths[neighborIdx] - neighbor.min
 
-  const delta = Math.max(-maxShrink, Math.min(maxGrow, desiredWidth - currentWidths[colIndex]))
+  const delta = Math.max(
+    -maxShrink,
+    Math.min(maxGrow, desiredWidth - currentWidths[colIndex])
+  )
   if (delta === 0) return currentWidths
 
   const next = [...currentWidths]

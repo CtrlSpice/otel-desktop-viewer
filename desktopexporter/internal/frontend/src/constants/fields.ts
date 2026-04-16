@@ -1,6 +1,6 @@
 // Search field definitions for different signal types
-import { telemetryAPI } from '@/services/telemetry-service';
-import { OPERATORS, type Operator } from './operators';
+import { telemetryAPI } from '@/services/telemetry-service'
+import { OPERATORS, type Operator } from './operators'
 
 // --- Column visibility (shared across signal tables) ---
 
@@ -13,21 +13,21 @@ export type ColumnVisibility = {
 }
 
 export const LOG_COLUMN_DEFAULTS: ColumnVisibility[] = [
-  { fieldId: 'timestamp',  label: 'Timestamp', category: 'pinned' },
-  { fieldId: 'service',    label: 'Service',   category: 'pinned' },
-  { fieldId: 'severity',   label: 'Severity',  category: 'flexible' },
-  { fieldId: 'traceID',    label: 'Trace ID',  category: 'detail' },
-  { fieldId: 'body',       label: 'Body',      category: 'flexible' },
+  { fieldId: 'timestamp', label: 'Timestamp', category: 'pinned' },
+  { fieldId: 'service', label: 'Service', category: 'pinned' },
+  { fieldId: 'severity', label: 'Severity', category: 'flexible' },
+  { fieldId: 'traceID', label: 'Trace ID', category: 'detail' },
+  { fieldId: 'body', label: 'Body', category: 'flexible' },
 ]
 
 export const TRACE_COLUMN_DEFAULTS: ColumnVisibility[] = [
-  { fieldId: 'traceID',        label: 'Trace ID',   category: 'pinned' },
-  { fieldId: 'rootName',       label: 'Root Name',  category: 'pinned' },
-  { fieldId: 'service',        label: 'Service',    category: 'flexible' },
-  { fieldId: 'startTime',      label: 'Start Time', category: 'flexible' },
-  { fieldId: 'duration',       label: 'Duration',   category: 'flexible' },
-  { fieldId: 'spanCount',      label: 'Spans',      category: 'flexible' },
-  { fieldId: 'errorCount',     label: 'Errors',     category: 'flexible' },
+  { fieldId: 'traceID', label: 'Trace ID', category: 'pinned' },
+  { fieldId: 'rootName', label: 'Root Name', category: 'pinned' },
+  { fieldId: 'service', label: 'Service', category: 'flexible' },
+  { fieldId: 'startTime', label: 'Start Time', category: 'flexible' },
+  { fieldId: 'duration', label: 'Duration', category: 'flexible' },
+  { fieldId: 'spanCount', label: 'Spans', category: 'flexible' },
+  { fieldId: 'errorCount', label: 'Errors', category: 'flexible' },
   { fieldId: 'exceptionCount', label: 'Exceptions', category: 'flexible' },
 ]
 
@@ -40,31 +40,31 @@ export type FieldType =
   | 'string[]'
   | 'int64[]'
   | 'float64[]'
-  | 'boolean[]';
+  | 'boolean[]'
 
-export type AttributeScope = 'resource' | 'scope' | 'span' | 'event' | 'link';
+export type AttributeScope = 'resource' | 'scope' | 'span' | 'event' | 'link'
 
 export type FieldDefinition =
   | {
-      name: string;
-      type: FieldType;
-      searchScope: 'field';
-      operators: Operator[];
-      description: string;
+      name: string
+      type: FieldType
+      searchScope: 'field'
+      operators: Operator[]
+      description: string
       /** If set, search autocomplete offers these literals after the operator. */
-      enumValues?: readonly string[];
+      enumValues?: readonly string[]
     }
   | {
-      name: string;
-      type: FieldType;
-      searchScope: 'attribute';
-      attributeScope: AttributeScope;
-      operators: Operator[];
-      description?: string;
+      name: string
+      type: FieldType
+      searchScope: 'attribute'
+      attributeScope: AttributeScope
+      operators: Operator[]
+      description?: string
     }
   | {
-      searchScope: 'global';
-    };
+      searchScope: 'global'
+    }
 
 /** OTLP span kind string names (aligns with pdata). */
 export const SPAN_KIND_ENUM = [
@@ -74,10 +74,10 @@ export const SPAN_KIND_ENUM = [
   'Client',
   'Producer',
   'Consumer',
-] as const;
+] as const
 
 /** OTLP status code string names (aligns with pdata). */
-export const SPAN_STATUS_CODE_ENUM = ['Unset', 'Ok', 'Error'] as const;
+export const SPAN_STATUS_CODE_ENUM = ['Unset', 'Ok', 'Error'] as const
 
 /** Common OpenTelemetry Logs severity text values. */
 export const LOG_SEVERITY_TEXT_ENUM = [
@@ -87,7 +87,7 @@ export const LOG_SEVERITY_TEXT_ENUM = [
   'WARN',
   'ERROR',
   'FATAL',
-] as const;
+] as const
 
 /** Metric instrument / datapoint type strings used in this app’s store and API. */
 export const METRIC_TYPE_ENUM = [
@@ -96,23 +96,23 @@ export const METRIC_TYPE_ENUM = [
   'Sum',
   'Histogram',
   'ExponentialHistogram',
-] as const;
+] as const
 
 // Field suggestions based on signal
 export function getFieldsBySignal(
   signal: 'traces' | 'logs' | 'metrics'
 ): FieldDefinition[] {
-  const baseFields = [...RESOURCE_FIELDS, ...SCOPE_FIELDS];
+  const baseFields = [...RESOURCE_FIELDS, ...SCOPE_FIELDS]
 
   switch (signal) {
     case 'traces':
-      return [...baseFields, ...SPAN_FIELDS];
+      return [...baseFields, ...SPAN_FIELDS]
 
     case 'logs':
-      return [...baseFields, ...LOG_FIELDS];
+      return [...baseFields, ...LOG_FIELDS]
 
     case 'metrics':
-      return [...baseFields, ...METRIC_FIELDS];
+      return [...baseFields, ...METRIC_FIELDS]
   }
 }
 
@@ -120,7 +120,7 @@ export function getFieldsBySignal(
 export function getStaticFieldsForSearch(
   signal: 'traces' | 'logs' | 'metrics'
 ): FieldDefinition[] {
-  return getFieldsBySignal(signal);
+  return getFieldsBySignal(signal)
 }
 
 /** Same searchable field identity (for column filter toggles and detail visibility). */
@@ -128,18 +128,18 @@ export function sameFieldDefinition(
   a: FieldDefinition,
   b: FieldDefinition
 ): boolean {
-  if (a.searchScope !== b.searchScope) return false;
-  if (a.searchScope === 'global' || b.searchScope === 'global') return false;
-  if (!('name' in a) || !('name' in b)) return false;
-  if (a.name !== b.name) return false;
+  if (a.searchScope !== b.searchScope) return false
+  if (a.searchScope === 'global' || b.searchScope === 'global') return false
+  if (!('name' in a) || !('name' in b)) return false
+  if (a.name !== b.name) return false
   if (a.searchScope === 'attribute' && b.searchScope === 'attribute') {
     return (
       'attributeScope' in a &&
       'attributeScope' in b &&
       a.attributeScope === b.attributeScope
-    );
+    )
   }
-  return true;
+  return true
 }
 
 // Function to get dynamic attributes
@@ -154,23 +154,31 @@ export async function getDynamicAttributes(
         const attributes = await telemetryAPI.getTraceAttributes(
           startTime,
           endTime
-        );
-        return attributes;
+        )
+        return attributes
       } catch (error) {
-        console.warn('Failed to load dynamic attributes:', error);
-        return [];
+        console.warn('Failed to load dynamic attributes:', error)
+        return []
       }
 
     case 'logs':
-      console.log('Not implemented yet');
-      return [];
+      try {
+        const attributes = await telemetryAPI.getLogAttributes(
+          startTime,
+          endTime
+        )
+        return attributes
+      } catch (error) {
+        console.warn('Failed to load dynamic log attributes:', error)
+        return []
+      }
 
     case 'metrics':
-      console.log('Not implemented yet');
-      return [];
+      console.log('Not implemented yet')
+      return []
     default:
-      console.log('Unknown signal type: ', signal);
-      return [];
+      console.log('Unknown signal type: ', signal)
+      return []
   }
 }
 
@@ -416,7 +424,7 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     ],
     description: 'Number of link attributes dropped due to limits',
   },
-];
+]
 
 // Log-specific fields
 export const LOG_FIELDS: FieldDefinition[] = [
@@ -541,7 +549,7 @@ export const LOG_FIELDS: FieldDefinition[] = [
     ],
     description: 'Name of the event associated with this log',
   },
-];
+]
 
 // Metric-specific fields
 export const METRIC_FIELDS: FieldDefinition[] = [
@@ -615,7 +623,7 @@ export const METRIC_FIELDS: FieldDefinition[] = [
     ],
     description: 'Timestamp when the metric was received in nanoseconds',
   },
-];
+]
 
 // Instrumentation Scope fields
 export const SCOPE_FIELDS: FieldDefinition[] = [
@@ -659,7 +667,7 @@ export const SCOPE_FIELDS: FieldDefinition[] = [
     ],
     description: 'Number of scope attributes dropped due to limits',
   },
-];
+]
 
 // Resource fields
 export const RESOURCE_FIELDS: FieldDefinition[] = [
@@ -675,4 +683,4 @@ export const RESOURCE_FIELDS: FieldDefinition[] = [
     ],
     description: 'Number of resource attributes dropped due to limits',
   },
-];
+]

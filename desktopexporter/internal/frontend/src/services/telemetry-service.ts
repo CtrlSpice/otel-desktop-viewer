@@ -224,6 +224,27 @@ export let telemetryAPI = {
     return convertAttributesToFieldDefinitions(rawData)
   },
 
+  getLogAttributes: async (
+    startTime: number,
+    endTime: number
+  ): Promise<FieldDefinition[]> => {
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
+    const params = [startTimeNs, endTimeNs]
+    const rawData = await callRPC('getLogAttributes', params)
+
+    if (!Array.isArray(rawData)) {
+      console.warn(
+        'getLogAttributes: Expected array, got:',
+        typeof rawData,
+        rawData
+      )
+      return []
+    }
+
+    return convertAttributesToFieldDefinitions(rawData)
+  },
+
   searchTraces: async (
     startTime: number,
     endTime: number,

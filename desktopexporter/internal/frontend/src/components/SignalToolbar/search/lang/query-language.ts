@@ -1,6 +1,6 @@
-import { LRLanguage, LanguageSupport } from '@codemirror/language';
-import { styleTags, tags as t } from '@lezer/highlight';
-import { parser } from './query.parser';
+import { LRLanguage, LanguageSupport } from '@codemirror/language'
+import { styleTags, tags as t } from '@lezer/highlight'
+import { parser } from './query.parser'
 
 const queryHighlighting = styleTags({
   Field: t.propertyName,
@@ -12,7 +12,7 @@ const queryHighlighting = styleTags({
   Null: t.null,
   'Array/[ Array/]': t.squareBracket,
   'Group/( Group/)': t.paren,
-});
+})
 
 export const queryLanguage = LRLanguage.define({
   name: 'otel-query',
@@ -22,8 +22,8 @@ export const queryLanguage = LRLanguage.define({
   languageData: {
     closeBrackets: { brackets: ['(', '[', '"', "'"] },
   },
-});
+})
 
 export function queryLanguageSupport() {
-  return new LanguageSupport(queryLanguage);
+  return new LanguageSupport(queryLanguage)
 }

@@ -151,7 +151,7 @@
     TrashIcon,
   } from '@/icons'
   import {
-    fixed, flex,
+    flex,
     computeInitialWidths,
     redistributeWidths,
     computeBarPositions,
@@ -335,7 +335,7 @@
   }
 
   function selectLog(logId: string) {
-    selectedLogId = selectedLogId === logId ? null : logId
+    selectedLogId = logId
   }
 
   async function fetchLogs() {
@@ -471,7 +471,6 @@
                   use:tableNav={{
                     rowIdAttr: 'log-id',
                     onSelect: id => { selectedLogId = id },
-                    onActivate: id => selectLog(id),
                   }}
                 >
                   <colgroup>

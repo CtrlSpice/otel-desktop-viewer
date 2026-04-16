@@ -1,5 +1,5 @@
 // Search operators with labels and symbols
-import type { FieldType } from './fields';
+import type { FieldType } from './fields'
 
 export const OPERATORS = {
   EQUALS: { label: 'equals', symbol: '=' },
@@ -19,9 +19,9 @@ export const OPERATORS = {
   // Set Operations
   IN: { label: 'is one of', symbol: 'IN' },
   NOT_IN: { label: 'is not one of', symbol: 'NOT IN' },
-} as const;
+} as const
 
-export type Operator = (typeof OPERATORS)[keyof typeof OPERATORS];
+export type Operator = (typeof OPERATORS)[keyof typeof OPERATORS]
 
 // Get appropriate operators based on field type
 export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
@@ -37,7 +37,7 @@ export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
         OPERATORS.REGEX,
         OPERATORS.IN,
         OPERATORS.NOT_IN,
-      ];
+      ]
 
     case 'int64':
     case 'float64':
@@ -50,7 +50,7 @@ export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
         OPERATORS.LESS_THAN_OR_EQUAL,
         OPERATORS.IN,
         OPERATORS.NOT_IN,
-      ];
+      ]
 
     case 'boolean':
       return [
@@ -58,7 +58,7 @@ export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
         OPERATORS.NOT_EQUALS,
         OPERATORS.IN,
         OPERATORS.NOT_IN,
-      ];
+      ]
 
     case 'string[]':
     case 'int64[]':
@@ -72,10 +72,10 @@ export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
         OPERATORS.NOT_CONTAINS,
         OPERATORS.IN,
         OPERATORS.NOT_IN,
-      ];
+      ]
 
     default:
       // Fallback to basic operators for unknown types
-      return [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS];
+      return [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS]
   }
 }

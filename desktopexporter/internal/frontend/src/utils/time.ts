@@ -1,7 +1,7 @@
-export type Timezone = 'local' | 'UTC';
+export type Timezone = 'local' | 'UTC'
 
-type DateTimeResolution = 'minutes' | 'seconds' | 'milliseconds';
-type TimestampResolution = DateTimeResolution | 'microseconds' | 'nanoseconds';
+type DateTimeResolution = 'minutes' | 'seconds' | 'milliseconds'
+type TimestampResolution = DateTimeResolution | 'microseconds' | 'nanoseconds'
 
 // UI time: number = Unix ms (from Date.now(), time pickers, etc.)
 export function formatDateTime(
@@ -9,7 +9,7 @@ export function formatDateTime(
   timezone: Timezone,
   resolution: DateTimeResolution = 'minutes'
 ): string {
-  return formatWithDate(new Date(ms), timezone, resolution);
+  return formatWithDate(new Date(ms), timezone, resolution)
 }
 
 // Telemetry time: bigint = Unix nanoseconds (from backend OTLP data)
@@ -18,21 +18,23 @@ export function formatTimestamp(
   timezone: Timezone,
   resolution: TimestampResolution = 'nanoseconds'
 ): string {
-  let epochMs = Number(ns / 1_000_000n);
-  let subMs = ns % 1_000_000n;
-  let date = new Date(epochMs);
-  let formatted = formatWithDate(date, timezone, resolution);
+  let epochMs = Number(ns / 1_000_000n)
+  let subMs = ns % 1_000_000n
+  let date = new Date(epochMs)
+  let formatted = formatWithDate(date, timezone, resolution)
 
   if (resolution === 'microseconds') {
-    let micros = Number(subMs).toString().padStart(6, '0');
-    return formatted.replace(/\.\d{3}(\s)/, `.${micros}$1`);
+    let micros = Number(subMs).toString().padStart(6, '0')
+    return formatted.replace(/\.\d{3}(\s)/, `.${micros}$1`)
   }
   if (resolution === 'nanoseconds') {
-    let nanos = Number(subMs).toString().padStart(6, '0');
-    let extraNanos = Number(ns % 1000n).toString().padStart(3, '0');
-    return formatted.replace(/\.\d{3}(\s)/, `.${nanos}${extraNanos}$1`);
+    let nanos = Number(subMs).toString().padStart(6, '0')
+    let extraNanos = Number(ns % 1000n)
+      .toString()
+      .padStart(3, '0')
+    return formatted.replace(/\.\d{3}(\s)/, `.${nanos}${extraNanos}$1`)
   }
-  return formatted;
+  return formatted
 }
 
 function formatWithDate(
@@ -47,36 +49,39 @@ function formatWithDate(
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  };
+  }
 
   switch (resolution) {
     case 'seconds':
-      options.second = '2-digit';
-      break;
+      options.second = '2-digit'
+      break
     case 'milliseconds':
     case 'microseconds':
     case 'nanoseconds':
-      options.second = '2-digit';
-      options.fractionalSecondDigits = 3;
-      break;
+      options.second = '2-digit'
+      options.fractionalSecondDigits = 3
+      break
   }
 
-  let formattedDate: string;
+  let formattedDate: string
   if (timezone === 'UTC') {
-    formattedDate = date.toLocaleString('en-CA', { ...options, timeZone: 'UTC' });
+    formattedDate = date.toLocaleString('en-CA', {
+      ...options,
+      timeZone: 'UTC',
+    })
   } else {
-    formattedDate = date.toLocaleString('en-CA', options);
+    formattedDate = date.toLocaleString('en-CA', options)
   }
 
   if (timezone === 'UTC') {
-    return `${formattedDate} UTC`;
+    return `${formattedDate} UTC`
   }
 
   let tzAbbr =
     new Intl.DateTimeFormat('en', { timeZoneName: 'short' })
       .formatToParts(date)
-      .find(part => part.type === 'timeZoneName')?.value || '';
-  return `${formattedDate} ${tzAbbr}`;
+      .find(part => part.type === 'timeZoneName')?.value || ''
+  return `${formattedDate} ${tzAbbr}`
 }
 
 export function formatDateTimeRange(
@@ -86,27 +91,27 @@ export function formatDateTimeRange(
 ): string {
   // Handle "Show all" case where start is 0 (beginning of time)
   if (start === 0) {
-    return `Before ${formatDateTime(end, timezone, 'seconds')}`;
+    return `Before ${formatDateTime(end, timezone, 'seconds')}`
   }
 
-  let startStr = formatDateTime(start, timezone, 'seconds');
-  let endStr = formatDateTime(end, timezone, 'seconds');
+  let startStr = formatDateTime(start, timezone, 'seconds')
+  let endStr = formatDateTime(end, timezone, 'seconds')
 
   // Extract date and time parts for reuse
-  let startParts = startStr.split(' ');
-  let endParts = endStr.split(' ');
-  let timezoneSuffix = startParts[2] ?? '';
-  let isSameDay = startParts[0] === endParts[0];
+  let startParts = startStr.split(' ')
+  let endParts = endStr.split(' ')
+  let timezoneSuffix = startParts[2] ?? ''
+  let isSameDay = startParts[0] === endParts[0]
 
-  startStr = startStr.replace(timezoneSuffix, '');
-  endStr = endStr.replace(timezoneSuffix, '');
+  startStr = startStr.replace(timezoneSuffix, '')
+  endStr = endStr.replace(timezoneSuffix, '')
 
   if (isSameDay) {
     // Same day: "2024-01-15 14:30:45 - 15:45:30 UTC"
-    return `${startStr} - ${endParts[1]} ${timezoneSuffix}`;
+    return `${startStr} - ${endParts[1]} ${timezoneSuffix}`
   } else {
     // Different days: "2024-01-15 14:30:45 - 2024-01-16 09:15:30 UTC"
-    return `${startStr} - ${endStr} ${timezoneSuffix}`;
+    return `${startStr} - ${endStr} ${timezoneSuffix}`
   }
 }
 
@@ -116,11 +121,11 @@ export function getLocalTimezoneName(): string {
       timeZoneName: 'long',
     })
       .formatToParts(new Date())
-      .find(part => part.type === 'timeZoneName')?.value;
+      .find(part => part.type === 'timeZoneName')?.value
 
-    return timeZoneName || 'Local Time';
+    return timeZoneName || 'Local Time'
   } catch (error) {
-    return 'Local Time';
+    return 'Local Time'
   }
 }
 
@@ -185,16 +190,16 @@ export function parseDuration(input: string): bigint | null {
 
 export function formatDuration(nanoseconds: bigint): string {
   if (nanoseconds >= 1_000_000_000n) {
-    let seconds = Number(nanoseconds) / 1_000_000_000;
-    return `${seconds.toFixed(3)} s`;
+    let seconds = Number(nanoseconds) / 1_000_000_000
+    return `${seconds.toFixed(3)} s`
   } else if (nanoseconds >= 1_000_000n) {
-    let ms = Number(nanoseconds) / 1_000_000;
-    return `${ms.toFixed(3)} ms`;
+    let ms = Number(nanoseconds) / 1_000_000
+    return `${ms.toFixed(3)} ms`
   } else if (nanoseconds >= 1000n) {
-    let μs = Number(nanoseconds) / 1000;
-    return `${μs.toFixed(3)} μs`;
+    let μs = Number(nanoseconds) / 1000
+    return `${μs.toFixed(3)} μs`
   } else {
-    return `${Number(nanoseconds)} ns`;
+    return `${Number(nanoseconds)} ns`
   }
 }
 
@@ -203,39 +208,39 @@ export function getOffset(
   endTime: bigint,
   point: bigint
 ): number {
-  let totalNs = endTime - startTime;
-  if (totalNs <= 0n) return 0;
-  let offsetNs = point - startTime;
-  return Math.floor(Number((offsetNs * 100n) / totalNs));
+  let totalNs = endTime - startTime
+  if (totalNs <= 0n) return 0
+  let offsetNs = point - startTime
+  return Math.floor(Number((offsetNs * 100n) / totalNs))
 }
 
 // --- Recent time ranges (localStorage persistence) ---
 
-const RECENT_STORAGE_KEY = 'datetime-filter-recent';
+const RECENT_STORAGE_KEY = 'datetime-filter-recent'
 
-export const MAX_RECENT_TIME_RANGES = 5;
+export const MAX_RECENT_TIME_RANGES = 5
 
 export type RecentTimeRange = {
-  start: number;
-  end: number;
-  usedAt: number;
-};
+  start: number
+  end: number
+  usedAt: number
+}
 
 export function loadRecentTimeRanges(): RecentTimeRange[] {
   try {
-    const saved = localStorage.getItem(RECENT_STORAGE_KEY);
-    if (!saved) return [];
-    const parsed: unknown = JSON.parse(saved);
-    if (!Array.isArray(parsed)) return [];
-    const rows = parsed as RecentTimeRange[];
-    const sorted = [...rows].sort((a, b) => b.usedAt - a.usedAt);
-    const trimmed = sorted.slice(0, MAX_RECENT_TIME_RANGES);
+    const saved = localStorage.getItem(RECENT_STORAGE_KEY)
+    if (!saved) return []
+    const parsed: unknown = JSON.parse(saved)
+    if (!Array.isArray(parsed)) return []
+    const rows = parsed as RecentTimeRange[]
+    const sorted = [...rows].sort((a, b) => b.usedAt - a.usedAt)
+    const trimmed = sorted.slice(0, MAX_RECENT_TIME_RANGES)
     if (trimmed.length < rows.length) {
-      localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(trimmed));
+      localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(trimmed))
     }
-    return trimmed;
+    return trimmed
   } catch {
-    return [];
+    return []
   }
 }
 
@@ -245,22 +250,22 @@ export function recordRecentTimeRange(
   end: number,
   usedAt: number
 ): void {
-  let recentTimeRanges = loadRecentTimeRanges();
+  let recentTimeRanges = loadRecentTimeRanges()
   const existingIndex = recentTimeRanges.findIndex(
     e => e.start === start && e.end === end
-  );
+  )
 
   if (existingIndex !== -1) {
-    const updated = [...recentTimeRanges];
-    updated[existingIndex] = { ...updated[existingIndex], usedAt };
+    const updated = [...recentTimeRanges]
+    updated[existingIndex] = { ...updated[existingIndex], usedAt }
     recentTimeRanges = updated
       .sort((a, b) => b.usedAt - a.usedAt)
-      .slice(0, MAX_RECENT_TIME_RANGES);
+      .slice(0, MAX_RECENT_TIME_RANGES)
   } else {
     recentTimeRanges = [{ start, end, usedAt }, ...recentTimeRanges]
       .sort((a, b) => b.usedAt - a.usedAt)
-      .slice(0, MAX_RECENT_TIME_RANGES);
+      .slice(0, MAX_RECENT_TIME_RANGES)
   }
 
-  localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(recentTimeRanges));
+  localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(recentTimeRanges))
 }

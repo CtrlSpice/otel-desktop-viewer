@@ -4,7 +4,12 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"Atkinson Hyperlegible Next"', 'system-ui', 'Segoe UI', 'sans-serif'],
+        sans: [
+          '"Atkinson Hyperlegible Next"',
+          'system-ui',
+          'Segoe UI',
+          'sans-serif',
+        ],
         mono: ['"Atkinson Hyperlegible Mono"', 'ui-monospace', 'monospace'],
       },
       boxShadow: {

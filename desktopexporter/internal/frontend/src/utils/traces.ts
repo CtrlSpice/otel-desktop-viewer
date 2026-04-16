@@ -74,15 +74,17 @@ const DEFAULTS: TraceListTableState = {
   rowsPerPage: 25,
 }
 
-const VALID_SORT_COLUMNS: ReadonlySet<string> = new Set<TraceSummarySortColumn>([
-  'serviceName',
-  'rootSpanName',
-  'startTime',
-  'duration',
-  'spanCount',
-  'errorCount',
-  'exceptionCount',
-])
+const VALID_SORT_COLUMNS: ReadonlySet<string> = new Set<TraceSummarySortColumn>(
+  [
+    'serviceName',
+    'rootSpanName',
+    'startTime',
+    'duration',
+    'spanCount',
+    'errorCount',
+    'exceptionCount',
+  ]
+)
 
 const VALID_ROWS_PER_PAGE: ReadonlySet<number> = new Set([10, 25, 50, 100])
 

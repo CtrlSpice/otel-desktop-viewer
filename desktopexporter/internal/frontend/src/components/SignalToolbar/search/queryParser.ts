@@ -1,6 +1,6 @@
-import { type FieldDefinition } from '@/constants/fields';
-import { OPERATORS, type Operator } from '@/constants/operators';
-import { type QueryNode, generateId } from './queryTree';
+import { type FieldDefinition } from '@/constants/fields'
+import { OPERATORS, type Operator } from '@/constants/operators'
+import { type QueryNode, generateId } from './queryTree'
 
 // Token Types For Lexer
 type TokenType =
@@ -13,79 +13,79 @@ type TokenType =
   | 'LBRACKET'
   | 'RBRACKET'
   | 'COMMA'
-  | 'EOF';
+  | 'EOF'
 
 interface Token {
-  type: TokenType;
-  value: string;
-  position: number;
+  type: TokenType
+  value: string
+  position: number
 }
 
 // Tokenizer: Converts Text Into Tokens
 class Lexer {
-  private input: string;
-  private position: number = 0;
-  private current: string = '';
+  private input: string
+  private position: number = 0
+  private current: string = ''
 
   constructor(input: string) {
-    this.input = input;
-    this.current = input[0] || '';
+    this.input = input
+    this.current = input[0] || ''
   }
 
   // Advance To Next Character
   private advance(): void {
-    this.position++;
-    this.current = this.input[this.position] || '';
+    this.position++
+    this.current = this.input[this.position] || ''
   }
 
   // Peek At Next Character Without Advancing
   private peek(offset: number = 1): string {
-    return this.input[this.position + offset] || '';
+    return this.input[this.position + offset] || ''
   }
 
   // Skip Whitespace
   private skipWhitespace(): void {
     while (this.current && /\s/.test(this.current)) {
-      this.advance();
+      this.advance()
     }
   }
 
   // Read A String (quoted or unquoted)
   private readString(): string {
-    let result = '';
-    const quote = this.current;
+    let result = ''
+    const quote = this.current
 
     if (quote === '"' || quote === "'" || quote === '`') {
       // Quoted string (supports single, double, and backtick for template literals)
-      this.advance(); // Skip opening quote
+      this.advance() // Skip opening quote
       while (this.current && this.current !== quote) {
         if (this.current === '\\') {
-          this.advance();
-          const escaped: string = this.current;
+          this.advance()
+          const escaped: string = this.current
           if (escaped) {
             // Handle escape sequences
             if (escaped === 'n') {
-              result += '\n';
+              result += '\n'
             } else if (escaped === 't') {
-              result += '\t';
+              result += '\t'
             } else if (escaped === 'r') {
-              result += '\r';
+              result += '\r'
             } else if (escaped === '\\') {
-              result += '\\';
+              result += '\\'
             } else if (escaped === quote) {
-              result += quote;
+              result += quote
             } else {
-              result += escaped;
+              result += escaped
             }
-            this.advance();
+            this.advance()
           }
         } else {
-          result += this.current;
-          this.advance();
+          result += this.current
+          this.advance()
         }
       }
       if (this.current === quote) {
-        this.advance(); // Skip closing quote
+        this.advance() // Skip closing quote
       }
     } else {
       // Unquoted string - read until whitespace or special char
@@ -94,17 +94,17 @@ class Lexer {
         !/[\s()[\],]/.test(this.current) &&
         !this.isOperatorStart()
       ) {
-        result += this.current;
-        this.advance();
+        result += this.current
+        this.advance()
       }
     }
 
-    return result;
+    return result
   }
 
   // Check If Current Position Starts An Operator
   private isOperatorStart(): boolean {
-    const twoChar = this.current + this.peek();
+    const twoChar = this.current + this.peek()
     return (
       this.current === ':' ||
       this.current === '=' ||
@@ -116,92 +116,92 @@ class Lexer {
       this.current === '$' ||
       twoChar === '^=' ||
       twoChar === '$='
-    );
+    )
   }
 
   // Read An Operator
   private readOperator(): string {
-    const twoChar = this.current + this.peek();
+    const twoChar = this.current + this.peek()
 
     // Check two-character operators first
     if (['!=', '!~', '>=', '<=', '=~', '^=', '$='].includes(twoChar)) {
-      this.advance();
-      this.advance();
-      return twoChar;
+      this.advance()
+      this.advance()
+      return twoChar
     }
 
     // Single character operators
-    const op = this.current;
-    this.advance();
-    return op;
+    const op = this.current
+    this.advance()
+    return op
   }
 
   // Read A Keyword Or Identifier
   private readKeywordOrIdentifier(): string {
-    let result = '';
+    let result = ''
     while (this.current && /[a-zA-Z0-9_.\-]/.test(this.current)) {
-      result += this.current;
-      this.advance();
+      result += this.current
+      this.advance()
     }
-    return result;
+    return result
   }
 
   // Get Next Token
   public nextToken(): Token {
-    this.skipWhitespace();
+    this.skipWhitespace()
 
-    const position = this.position;
+    const position = this.position
 
     // End of input
     if (!this.current) {
-      return { type: 'EOF', value: '', position };
+      return { type: 'EOF', value: '', position }
     }
 
     // Parentheses
     if (this.current === '(') {
-      this.advance();
-      return { type: 'LPAREN', value: '(', position };
+      this.advance()
+      return { type: 'LPAREN', value: '(', position }
     }
     if (this.current === ')') {
-      this.advance();
-      return { type: 'RPAREN', value: ')', position };
+      this.advance()
+      return { type: 'RPAREN', value: ')', position }
     }
 
     // Brackets for arrays
     if (this.current === '[') {
-      this.advance();
-      return { type: 'LBRACKET', value: '[', position };
+      this.advance()
+      return { type: 'LBRACKET', value: '[', position }
     }
     if (this.current === ']') {
-      this.advance();
-      return { type: 'RBRACKET', value: ']', position };
+      this.advance()
+      return { type: 'RBRACKET', value: ']', position }
     }
 
     // Comma
     if (this.current === ',') {
-      this.advance();
-      return { type: 'COMMA', value: ',', position };
+      this.advance()
+      return { type: 'COMMA', value: ',', position }
     }
 
     // Operator
     if (this.isOperatorStart()) {
-      const op = this.readOperator();
-      return { type: 'OPERATOR', value: op, position };
+      const op = this.readOperator()
+      return { type: 'OPERATOR', value: op, position }
     }
 
     // Quoted string (single, double, or backtick)
     if (this.current === '"' || this.current === "'" || this.current === '`') {
-      const value = this.readString();
-      return { type: 'VALUE', value, position };
+      const value = this.readString()
+      return { type: 'VALUE', value, position }
     }
 
     // Keyword or identifier
-    const word = this.readKeywordOrIdentifier();
-    const upperWord = word.toUpperCase();
+    const word = this.readKeywordOrIdentifier()
+    const upperWord = word.toUpperCase()
 
     // Check if it's a logical operator (case-insensitive)
     if (upperWord === 'AND' || upperWord === 'OR') {
-      return { type: 'LOGICAL', value: upperWord, position };
+      return { type: 'LOGICAL', value: upperWord, position }
     }
 
     // Check if it's a keyword operator (case-insensitive: IN, CONTAINS, REGEXP, NOT IN, NOT CONTAINS)
@@ -210,87 +210,87 @@ class Lexer {
       upperWord === 'CONTAINS' ||
       upperWord === 'REGEXP'
     ) {
-      return { type: 'OPERATOR', value: upperWord, position };
+      return { type: 'OPERATOR', value: upperWord, position }
     }
 
     // Handle "NOT IN" and "NOT CONTAINS" as special cases (case-insensitive)
     if (upperWord === 'NOT') {
-      this.skipWhitespace();
-      const next = this.readKeywordOrIdentifier();
-      const upperNext = next.toUpperCase();
+      this.skipWhitespace()
+      const next = this.readKeywordOrIdentifier()
+      const upperNext = next.toUpperCase()
       if (upperNext === 'IN') {
-        return { type: 'OPERATOR', value: 'NOT IN', position };
+        return { type: 'OPERATOR', value: 'NOT IN', position }
       }
       if (upperNext === 'CONTAINS') {
-        return { type: 'OPERATOR', value: 'NOT CONTAINS', position };
+        return { type: 'OPERATOR', value: 'NOT CONTAINS', position }
       }
-      throw new Error(`Unexpected token: NOT ${next}`);
+      throw new Error(`Unexpected token: NOT ${next}`)
     }
 
     // Check for null values (case-insensitive)
     if (upperWord === 'NULL' || upperWord === 'NIL') {
-      return { type: 'VALUE', value: 'NULL', position };
+      return { type: 'VALUE', value: 'NULL', position }
     }
 
     if (word) {
-      return { type: 'FIELD', value: word, position };
+      return { type: 'FIELD', value: word, position }
     }
 
     // Unrecognized character — consume it so we never loop forever.
-    const ch = this.current;
-    this.advance();
-    return { type: 'VALUE', value: ch, position };
+    const ch = this.current
+    this.advance()
+    return { type: 'VALUE', value: ch, position }
   }
 
   // Tokenize entire input
   public tokenize(): Token[] {
-    let tokens: Token[] = [];
-    let token = this.nextToken();
+    let tokens: Token[] = []
+    let token = this.nextToken()
 
     while (token.type !== 'EOF') {
-      tokens.push(token);
-      token = this.nextToken();
+      tokens.push(token)
+      token = this.nextToken()
     }
 
-    return tokens;
+    return tokens
   }
 }
 
 // Parser: Converts Tokens Into QueryNode Tree
 class Parser {
-  private tokens: Token[];
-  private position: number = 0;
-  private availableFields: FieldDefinition[];
+  private tokens: Token[]
+  private position: number = 0
+  private availableFields: FieldDefinition[]
 
   constructor(tokens: Token[], availableFields: FieldDefinition[]) {
-    this.tokens = tokens;
-    this.availableFields = availableFields;
+    this.tokens = tokens
+    this.availableFields = availableFields
   }
 
   // Get Current Token
   private current(): Token | undefined {
-    return this.tokens[this.position];
+    return this.tokens[this.position]
   }
 
   // Advance To Next Token
   private advance(): void {
-    this.position++;
+    this.position++
   }
 
   // Check If Current Token Matches Type
   private check(type: TokenType): boolean {
-    const token = this.current();
-    return token !== undefined && token.type === type;
+    const token = this.current()
+    return token !== undefined && token.type === type
   }
 
   // Consume Token Of Expected Type
   private consume(type: TokenType, message: string): Token {
-    const token = this.current();
+    const token = this.current()
     if (!token || token.type !== type) {
-      throw new Error(message);
+      throw new Error(message)
     }
-    this.advance();
-    return token;
+    this.advance()
+    return token
   }
 
   // Find Field By Name
@@ -300,37 +300,37 @@ class Parser {
       f =>
         f.searchScope !== 'global' &&
         f.name.toLowerCase() === name.toLowerCase()
-    );
+    )
   }
 
   // Find Operator By Symbol
   private findOperator(symbol: string): Operator | undefined {
     for (let op of Object.values(OPERATORS)) {
       if (op.symbol === symbol) {
-        return op;
+        return op
       }
     }
-    return undefined;
+    return undefined
   }
 
   // Parse: query → expression
   public parse(): QueryNode | null {
     if (!this.current()) {
-      return null;
+      return null
     }
-    return this.parseExpression();
+    return this.parseExpression()
   }
 
   // Parse: expression → term ( ( "AND" | "OR" ) term )*
   private parseExpression(): QueryNode {
-    let left = this.parseTerm();
+    let left = this.parseTerm()
 
     while (this.check('LOGICAL')) {
-      const operatorToken = this.current()!;
-      const operator = operatorToken.value as 'AND' | 'OR';
-      this.advance();
+      const operatorToken = this.current()!
+      const operator = operatorToken.value as 'AND' | 'OR'
+      this.advance()
 
-      const right = this.parseTerm();
+      const right = this.parseTerm()
 
       // Create group node
       left = {
@@ -340,34 +340,34 @@ class Parser {
           operator,
           children: [left, right],
         },
-      };
+      }
     }
 
-    return left;
+    return left
   }
 
   // Parse: term → "(" expression ")" | condition
   private parseTerm(): QueryNode {
     // Parenthesized expression
     if (this.check('LPAREN')) {
-      this.advance(); // consume '('
-      const expr = this.parseExpression();
-      this.consume('RPAREN', 'Expected closing parenthesis');
-      return expr;
+      this.advance() // consume '('
+      const expr = this.parseExpression()
+      this.consume('RPAREN', 'Expected closing parenthesis')
+      return expr
     }
 
     // Condition
-    return this.parseCondition();
+    return this.parseCondition()
   }
 
   // Parse: condition → field operator value
   private parseCondition(): QueryNode {
     // Parse field
-    const fieldToken = this.consume('FIELD', 'Expected field name');
-    const field = this.findField(fieldToken.value);
+    const fieldToken = this.consume('FIELD', 'Expected field name')
+    const field = this.findField(fieldToken.value)
 
     if (!field) {
-      throw new Error(`Unknown field: ${fieldToken.value}`);
+      throw new Error(`Unknown field: ${fieldToken.value}`)
     }
 
     // At this point, field cannot be global (findField excludes them)
@@ -375,45 +375,45 @@ class Parser {
     if (field.searchScope === 'global') {
       throw new Error(
         'Internal error: unexpected global field in operator query'
-      );
+      )
     }
 
     // Parse operator
-    const operatorToken = this.consume('OPERATOR', 'Expected operator');
-    const operator = this.findOperator(operatorToken.value);
+    const operatorToken = this.consume('OPERATOR', 'Expected operator')
+    const operator = this.findOperator(operatorToken.value)
 
     if (!operator) {
-      throw new Error(`Unknown operator: ${operatorToken.value}`);
+      throw new Error(`Unknown operator: ${operatorToken.value}`)
     }
 
     // Validate operator is allowed for this field
     if (!field.operators.some(op => op.symbol === operator.symbol)) {
       throw new Error(
         `Operator '${operator.symbol}' is not valid for field '${field.name}'`
-      );
+      )
     }
 
     // Parse value
-    let value: string = '';
+    let value: string = ''
 
     // Check for array value (IN, NOT IN)
     if (this.check('LBRACKET')) {
-      value = this.parseArray();
+      value = this.parseArray()
     } else {
-      const valueToken = this.current();
+      const valueToken = this.current()
       if (
         !valueToken ||
         (valueToken.type !== 'VALUE' && valueToken.type !== 'FIELD')
       ) {
-        throw new Error('Expected value');
+        throw new Error('Expected value')
       }
-      value = valueToken.value;
-      this.advance();
+      value = valueToken.value
+      this.advance()
     }
 
     // Normalize null values
     if (value.toUpperCase() === 'NULL' || value.toUpperCase() === 'NIL') {
-      value = 'NULL';
+      value = 'NULL'
     }
 
     // Create condition node
@@ -425,53 +425,53 @@ class Parser {
         operator,
         value,
       },
-    };
+    }
   }
 
   // Parse: array → "[" value ( "," value )* "]"
   private parseArray(): string {
-    this.consume('LBRACKET', 'Expected [');
+    this.consume('LBRACKET', 'Expected [')
 
-    let values: string[] = [];
+    let values: string[] = []
 
     // Parse first value
     if (!this.check('RBRACKET')) {
-      const valueToken = this.current();
+      const valueToken = this.current()
       if (
         !valueToken ||
         (valueToken.type !== 'VALUE' && valueToken.type !== 'FIELD')
       ) {
-        throw new Error('Expected value in array');
+        throw new Error('Expected value in array')
       }
-      values.push(valueToken.value);
-      this.advance();
+      values.push(valueToken.value)
+      this.advance()
 
       // Parse remaining values
       while (this.check('COMMA')) {
-        this.advance(); // consume comma
-        const valueToken = this.current();
+        this.advance() // consume comma
+        const valueToken = this.current()
         if (
           !valueToken ||
           (valueToken.type !== 'VALUE' && valueToken.type !== 'FIELD')
         ) {
-          throw new Error('Expected value after comma');
+          throw new Error('Expected value after comma')
         }
-        values.push(valueToken.value);
-        this.advance();
+        values.push(valueToken.value)
+        this.advance()
       }
     }
 
-    this.consume('RBRACKET', 'Expected ]');
+    this.consume('RBRACKET', 'Expected ]')
 
-    return `[${values.join(',')}]`;
+    return `[${values.join(',')}]`
   }
 }
 
 // Validation error with position info for the linter
 export interface ValidationError {
-  from: number;
-  to: number;
-  message: string;
+  from: number
+  to: number
+  message: string
 }
 
 // Lightweight validator that collects all errors without building a QueryNode tree
@@ -479,154 +479,219 @@ export function validateQuery(
   input: string,
   availableFields: FieldDefinition[]
 ): ValidationError[] {
-  if (!input.trim()) return [];
+  if (!input.trim()) return []
 
-  let tokens: Token[];
+  let tokens: Token[]
   try {
-    tokens = new Lexer(input).tokenize();
+    tokens = new Lexer(input).tokenize()
   } catch (error) {
-    return [{ from: 0, to: input.length, message: error instanceof Error ? error.message : 'Tokenization failed' }];
+    return [
+      {
+        from: 0,
+        to: input.length,
+        message: error instanceof Error ? error.message : 'Tokenization failed',
+      },
+    ]
   }
 
-  const errors: ValidationError[] = [];
-  let pos = 0;
+  const errors: ValidationError[] = []
+  let pos = 0
 
   function current(): Token | undefined {
-    return tokens[pos];
+    return tokens[pos]
   }
 
   function advance(): void {
-    pos++;
+    pos++
   }
 
   function findField(name: string): FieldDefinition | undefined {
     return availableFields.find(
-      f => f.searchScope !== 'global' && f.name.toLowerCase() === name.toLowerCase()
-    );
+      f =>
+        f.searchScope !== 'global' &&
+        f.name.toLowerCase() === name.toLowerCase()
+    )
   }
 
   function findOperator(symbol: string): Operator | undefined {
     for (let op of Object.values(OPERATORS)) {
-      if (op.symbol === symbol) return op;
+      if (op.symbol === symbol) return op
     }
-    return undefined;
+    return undefined
   }
 
   function tokenEnd(token: Token): number {
-    return token.position + token.value.length;
+    return token.position + token.value.length
   }
 
   function validateExpression(): void {
-    validateTerm();
+    validateTerm()
     while (current()?.type === 'LOGICAL') {
-      advance();
+      advance()
       if (!current() || current()!.type === 'EOF') {
-        const last = tokens[pos - 1];
-        errors.push({ from: last.position, to: tokenEnd(last), message: 'Expected condition after logical operator' });
-        return;
+        const last = tokens[pos - 1]
+        errors.push({
+          from: last.position,
+          to: tokenEnd(last),
+          message: 'Expected condition after logical operator',
+        })
+        return
       }
-      validateTerm();
+      validateTerm()
     }
   }
 
   function validateTerm(): void {
-    const token = current();
-    if (!token) return;
+    const token = current()
+    if (!token) return
 
     if (token.type === 'LPAREN') {
-      advance();
-      validateExpression();
-      const closing = current();
+      advance()
+      validateExpression()
+      const closing = current()
       if (!closing || closing.type !== 'RPAREN') {
-        errors.push({ from: token.position, to: token.position + 1, message: 'Expected closing parenthesis' });
+        errors.push({
+          from: token.position,
+          to: token.position + 1,
+          message: 'Expected closing parenthesis',
+        })
       } else {
-        advance();
+        advance()
       }
-      return;
+      return
     }
 
-    validateCondition();
+    validateCondition()
   }
 
   function validateCondition(): void {
-    const fieldToken = current();
+    const fieldToken = current()
     if (!fieldToken || fieldToken.type !== 'FIELD') {
       if (fieldToken) {
-        errors.push({ from: fieldToken.position, to: tokenEnd(fieldToken), message: 'Expected field name' });
-        advance();
+        errors.push({
+          from: fieldToken.position,
+          to: tokenEnd(fieldToken),
+          message: 'Expected field name',
+        })
+        advance()
       }
-      return;
+      return
     }
 
-    const field = findField(fieldToken.value);
+    const field = findField(fieldToken.value)
     if (!field) {
-      errors.push({ from: fieldToken.position, to: tokenEnd(fieldToken), message: `Unknown field: ${fieldToken.value}` });
+      errors.push({
+        from: fieldToken.position,
+        to: tokenEnd(fieldToken),
+        message: `Unknown field: ${fieldToken.value}`,
+      })
     }
-    advance();
+    advance()
 
-    const opToken = current();
+    const opToken = current()
     if (!opToken || opToken.type !== 'OPERATOR') {
       if (opToken) {
-        errors.push({ from: opToken.position, to: tokenEnd(opToken), message: 'Expected operator' });
+        errors.push({
+          from: opToken.position,
+          to: tokenEnd(opToken),
+          message: 'Expected operator',
+        })
       } else if (fieldToken) {
-        errors.push({ from: fieldToken.position, to: tokenEnd(fieldToken), message: 'Expected operator after field' });
+        errors.push({
+          from: fieldToken.position,
+          to: tokenEnd(fieldToken),
+          message: 'Expected operator after field',
+        })
       }
-      return;
+      return
     }
 
-    const operator = findOperator(opToken.value);
+    const operator = findOperator(opToken.value)
     if (!operator) {
-      errors.push({ from: opToken.position, to: tokenEnd(opToken), message: `Unknown operator: ${opToken.value}` });
-    } else if (field && field.searchScope !== 'global' && !field.operators.some(op => op.symbol === operator.symbol)) {
-      errors.push({ from: opToken.position, to: tokenEnd(opToken), message: `Operator '${operator.symbol}' is not valid for field '${field.name}'` });
+      errors.push({
+        from: opToken.position,
+        to: tokenEnd(opToken),
+        message: `Unknown operator: ${opToken.value}`,
+      })
+    } else if (
+      field &&
+      field.searchScope !== 'global' &&
+      !field.operators.some(op => op.symbol === operator.symbol)
+    ) {
+      errors.push({
+        from: opToken.position,
+        to: tokenEnd(opToken),
+        message: `Operator '${operator.symbol}' is not valid for field '${field.name}'`,
+      })
     }
-    advance();
+    advance()
 
     // Validate value
-    const valToken = current();
-    if (!valToken || (valToken.type !== 'VALUE' && valToken.type !== 'FIELD' && valToken.type !== 'LBRACKET')) {
-      errors.push({ from: opToken.position, to: tokenEnd(opToken), message: 'Expected value' });
-      return;
+    const valToken = current()
+    if (
+      !valToken ||
+      (valToken.type !== 'VALUE' &&
+        valToken.type !== 'FIELD' &&
+        valToken.type !== 'LBRACKET')
+    ) {
+      errors.push({
+        from: opToken.position,
+        to: tokenEnd(opToken),
+        message: 'Expected value',
+      })
+      return
     }
 
     if (valToken.type === 'LBRACKET') {
-      validateArray();
+      validateArray()
     } else {
-      advance();
+      advance()
     }
   }
 
   function validateArray(): void {
-    const openBracket = current()!;
-    advance();
+    const openBracket = current()!
+    advance()
 
     if (current()?.type === 'RBRACKET') {
-      advance();
-      return;
+      advance()
+      return
     }
 
-    const firstVal = current();
+    const firstVal = current()
     if (!firstVal || (firstVal.type !== 'VALUE' && firstVal.type !== 'FIELD')) {
-      errors.push({ from: openBracket.position, to: openBracket.position + 1, message: 'Expected value in array' });
-      return;
+      errors.push({
+        from: openBracket.position,
+        to: openBracket.position + 1,
+        message: 'Expected value in array',
+      })
+      return
     }
-    advance();
+    advance()
 
     while (current()?.type === 'COMMA') {
-      advance();
-      const val = current();
+      advance()
+      const val = current()
       if (!val || (val.type !== 'VALUE' && val.type !== 'FIELD')) {
-        const comma = tokens[pos - 1];
-        errors.push({ from: comma.position, to: tokenEnd(comma), message: 'Expected value after comma' });
-        return;
+        const comma = tokens[pos - 1]
+        errors.push({
+          from: comma.position,
+          to: tokenEnd(comma),
+          message: 'Expected value after comma',
+        })
+        return
       }
-      advance();
+      advance()
     }
 
     if (current()?.type !== 'RBRACKET') {
-      errors.push({ from: openBracket.position, to: openBracket.position + 1, message: 'Expected ]' });
+      errors.push({
+        from: openBracket.position,
+        to: openBracket.position + 1,
+        message: 'Expected ]',
+      })
     } else {
-      advance();
+      advance()
     }
   }
 
@@ -634,18 +699,22 @@ export function validateQuery(
   // will treat this as global text search -- not an error.
   const hasStructuredSyntax = tokens.some(
     t => t.type === 'OPERATOR' || t.type === 'LOGICAL'
-  );
-  if (!hasStructuredSyntax) return [];
+  )
+  if (!hasStructuredSyntax) return []
 
-  validateExpression();
+  validateExpression()
 
   // Check for unconsumed tokens
   if (current() && current()!.type !== 'EOF') {
-    const leftover = current()!;
-    errors.push({ from: leftover.position, to: tokenEnd(leftover), message: `Unexpected token: ${leftover.value}` });
+    const leftover = current()!
+    errors.push({
+      from: leftover.position,
+      to: tokenEnd(leftover),
+      message: `Unexpected token: ${leftover.value}`,
+    })
   }
 
-  return errors;
+  return errors
 }
 
 // Main Parse Function
@@ -654,32 +723,32 @@ export function parseQuery(
   availableFields: FieldDefinition[]
 ): QueryNode | null {
   if (!input.trim()) {
-    return null;
+    return null
   }
 
   try {
-    const lexer = new Lexer(input);
-    const tokens = lexer.tokenize();
-    const parser = new Parser(tokens, availableFields);
-    return parser.parse();
+    const lexer = new Lexer(input)
+    const tokens = lexer.tokenize()
+    const parser = new Parser(tokens, availableFields)
+    return parser.parse()
   } catch (error) {
     // If the input has no operator or logical tokens, it's plain text --
     // treat as global search. Otherwise it's a malformed structured query.
     try {
-      const tokens = new Lexer(input).tokenize();
+      const tokens = new Lexer(input).tokenize()
       const hasStructuredSyntax = tokens.some(
         t => t.type === 'OPERATOR' || t.type === 'LOGICAL'
-      );
+      )
       if (!hasStructuredSyntax) {
-        return createGlobalTextSearch(input.trim());
+        return createGlobalTextSearch(input.trim())
       }
     } catch {
-      return createGlobalTextSearch(input.trim());
+      return createGlobalTextSearch(input.trim())
     }
 
     throw new Error(
       error instanceof Error ? error.message : 'Failed to parse query'
-    );
+    )
   }
 }
 
@@ -695,5 +764,5 @@ function createGlobalTextSearch(input: string): QueryNode {
       operator: OPERATORS.CONTAINS,
       value: input.trim(),
     },
-  };
+  }
 }

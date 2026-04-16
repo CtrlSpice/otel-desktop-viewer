@@ -84,9 +84,7 @@ export function tableNav(node: HTMLElement, opts: TableNavOptions) {
   function getRows(): HTMLElement[] {
     const all = node.querySelectorAll<HTMLElement>(selector())
     if (!current.skipHidden) return Array.from(all)
-    return Array.from(all).filter(
-      r => r.getAttribute('aria-hidden') !== 'true'
-    )
+    return Array.from(all).filter(r => r.getAttribute('aria-hidden') !== 'true')
   }
 
   function focusAndScroll(row: HTMLElement) {
@@ -103,7 +101,7 @@ export function tableNav(node: HTMLElement, opts: TableNavOptions) {
     const focused = document.activeElement as HTMLElement | null
     const currentIdx = focused ? rows.indexOf(focused) : -1
     const currentId =
-      currentIdx >= 0 ? focused!.dataset[dataKey()] ?? null : null
+      currentIdx >= 0 ? (focused!.dataset[dataKey()] ?? null) : null
 
     if (current.onKey?.(e, currentId)) return
 
@@ -116,9 +114,14 @@ export function tableNav(node: HTMLElement, opts: TableNavOptions) {
     }
 
     const step = current.pageStep ?? PAGE_STEP
-    const deltas: Record<string, KeyDelta> = step === PAGE_STEP
-      ? KEY_DELTAS
-      : { ...KEY_DELTAS, PageDown: { kind: 'relative', offset: step }, PageUp: { kind: 'relative', offset: -step } }
+    const deltas: Record<string, KeyDelta> =
+      step === PAGE_STEP
+        ? KEY_DELTAS
+        : {
+            ...KEY_DELTAS,
+            PageDown: { kind: 'relative', offset: step },
+            PageUp: { kind: 'relative', offset: -step },
+          }
 
     const delta = deltas[e.key]
     if (!delta) return

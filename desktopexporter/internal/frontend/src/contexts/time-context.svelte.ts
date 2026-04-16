@@ -1,10 +1,10 @@
-import { setContext, getContext } from 'svelte';
-import { type Timezone, recordRecentTimeRange } from '@/utils/time';
+import { setContext, getContext } from 'svelte'
+import { type Timezone, recordRecentTimeRange } from '@/utils/time'
 
 // Base interface with common fields
 interface BaseTimeSelection {
-  start: number; // Unix timestamp (ms)
-  end: number; // Unix timestamp (ms)
+  start: number // Unix timestamp (ms)
+  end: number // Unix timestamp (ms)
 }
 
 // Type-specific extensions using discriminated unions
@@ -13,7 +13,7 @@ type TimeSelection = BaseTimeSelection &
     | { type: 'preset'; presetIndex: number }
     | { type: 'custom' }
     | { type: 'recent' }
-  );
+  )
 
 /**
  * Unix ms range for search/export APIs.
@@ -34,19 +34,19 @@ export function selectionToQueryRangeMs(
 }
 
 interface TimeContext {
-  selection: TimeSelection;
-  timezone: Timezone;
+  selection: TimeSelection
+  timezone: Timezone
   setSelection: (
     start: number,
     end: number,
     type: 'preset' | 'custom' | 'recent',
     presetIndex?: number
-  ) => void;
-  setTimezone: (timezone: Timezone) => void;
+  ) => void
+  setTimezone: (timezone: Timezone) => void
 }
 
 /** Default preset row index for `PresetTimeRanges` PRESETS (0 = All). */
-const DEFAULT_PRESET_INDEX_ALL = 0;
+const DEFAULT_PRESET_INDEX_ALL = 0
 
 /** Build selection state; `preset` uses `presetIndex ?? DEFAULT_PRESET_INDEX_ALL` when omitted. */
 function timeSelectionFromArgs(
@@ -128,8 +128,8 @@ function createTimeContext(): TimeContext {
 }
 
 export function getTimeContext(): TimeContext {
-  return getContext<TimeContext>('time');
+  return getContext<TimeContext>('time')
 }
 
-export { createTimeContext };
-export type { TimeContext, TimeSelection };
+export { createTimeContext }
+export type { TimeContext, TimeSelection }
