@@ -1,6 +1,7 @@
 <script module lang="ts">
   import type { SpanNode, SpanData } from '@/types/api-types'
   import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
+  import { getServiceName } from '@/utils/resource'
 
   // --- Shared types ---
 
@@ -72,9 +73,6 @@
     )
   }
 
-  function serviceName(span: SpanData): string | undefined {
-    return span.resource.attributes.find(a => a.key === 'service.name')?.value
-  }
 
   // --- Tree gutter connectors (helpers composed in computeTreeMeta) ---
 
@@ -133,12 +131,12 @@
     multiService: boolean
   ): string | null {
     if (isErrorSpan(span)) return null
-    return multiService ? (serviceName(span) ?? '') : span.name
+    return multiService ? (getServiceName(span.resource) ?? '') : span.name
   }
 
   function isMultiService(spans: SpanNode[]): boolean {
     const services = spans.reduce((acc, n) => {
-      const s = serviceName(n.spanData)
+      const s = getServiceName(n.spanData.resource)
       return s !== undefined ? acc.add(s) : acc
     }, new Set<string>())
     return services.size > 1
@@ -204,16 +202,13 @@
 </script>
 
 <script lang="ts">
-  import { tick } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallRow from './WaterfallRow.svelte'
-
-  // --- Keyboard paging ---
-
-  const PAGE_STEP = 8
+  import { tableNav, escapeForSelector } from '@/utils/table-keyboard-nav'
 
   // --- Visibility from collapse state (pure) ---
 
@@ -268,43 +263,53 @@
   let rows = $derived(buildWaterfallRows(spans, bounds))
 
   // --- Column widths (resizable) ---
-  import type { ResizableColumn, ElasticColumn } from '@/types/column-sizing'
+  import {
+    fixed, flex,
+    computeInitialWidths,
+    redistributeWidths,
+    computeBarPositions,
+    applyColumnResize,
+    startColumnResize,
+  } from '@/utils/column-resize'
 
-  const waterfallCols = {
-    span: {
-      kind: 'resizable',
-      min: 140,
-      default: 200,
-    } satisfies ResizableColumn,
-    service: {
-      kind: 'resizable',
-      min: 100,
-      default: 140,
-    } satisfies ResizableColumn,
-    timeline: { kind: 'elastic', min: 240 } satisfies ElasticColumn,
+  const wfCols = [
+    flex('span', 140, 2),
+    flex('service', 100, 1),
+    flex('timeline', 240, 4),
+  ]
+
+  let activeResizeCol = $state<number | null>(null)
+  let colWidths = $state(wfCols.map(d => d.min))
+
+  let spanColWidth = $derived(colWidths[0])
+  let serviceColWidth = $derived(colWidths[1])
+
+  let barPositions = $derived(computeBarPositions(wfCols, colWidths))
+
+  function handleStartResize(colIndex: number, e: PointerEvent) {
+    activeResizeCol = colIndex
+    startColumnResize(
+      wfCols,
+      () => colWidths, colIndex, e,
+      next => { colWidths = next },
+      () => { activeResizeCol = null }
+    )
   }
-
-  const MIN_SPAN_COL = waterfallCols.span.min
-  const MIN_SERVICE_COL = waterfallCols.service.min
-  const MIN_TIMELINE_COL = waterfallCols.timeline.min
-  let spanColWidth = $state(waterfallCols.span.default)
-  let serviceColWidth = $state(waterfallCols.service.default)
-
-  let spanDividerDrag = $state(false)
-  let serviceDividerDrag = $state(false)
-
-  let barLeftPx = $derived({
-    span: spanColWidth,
-    service: spanColWidth + serviceColWidth,
-  })
 
   let scrollContainerEl = $state<HTMLDivElement | null>(null)
   let scrollContainerW = $state(800)
 
   $effect(() => {
     if (!scrollContainerEl) return
+    untrack(() => {
+      colWidths = computeInitialWidths(wfCols, scrollContainerEl!.clientWidth)
+    })
     const ro = new ResizeObserver(entries => {
-      scrollContainerW = entries[0]?.contentRect.width ?? 800
+      const w = entries[0]?.contentRect.width ?? 800
+      scrollContainerW = w
+      if (activeResizeCol === null) {
+        colWidths = redistributeWidths(wfCols, colWidths, w)
+      }
     })
     ro.observe(scrollContainerEl)
     return () => ro.disconnect()
@@ -330,65 +335,6 @@
     )
   )
 
-  function startResizeSpanCol(e: PointerEvent) {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = spanColWidth
-    const target = e.currentTarget as HTMLElement
-    target.setPointerCapture(e.pointerId)
-    spanDividerDrag = true
-
-    function onMove(ev: PointerEvent) {
-      const containerW =
-        gridTableEl?.closest('.waterfall-view__scroll')?.clientWidth ?? Infinity
-      const maxW = containerW - serviceColWidth - MIN_TIMELINE_COL
-      spanColWidth = Math.min(
-        maxW,
-        Math.max(MIN_SPAN_COL, startW + (ev.clientX - startX))
-      )
-    }
-
-    function end() {
-      spanDividerDrag = false
-      target.removeEventListener('pointermove', onMove)
-      target.removeEventListener('pointerup', end)
-      target.removeEventListener('pointercancel', end)
-    }
-
-    target.addEventListener('pointermove', onMove)
-    target.addEventListener('pointerup', end)
-    target.addEventListener('pointercancel', end)
-  }
-
-  function startResizeServiceCol(e: PointerEvent) {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = serviceColWidth
-    const target = e.currentTarget as HTMLElement
-    target.setPointerCapture(e.pointerId)
-    serviceDividerDrag = true
-
-    function onMove(ev: PointerEvent) {
-      const containerW =
-        gridTableEl?.closest('.waterfall-view__scroll')?.clientWidth ?? Infinity
-      const maxW = containerW - spanColWidth - MIN_TIMELINE_COL
-      serviceColWidth = Math.min(
-        maxW,
-        Math.max(MIN_SERVICE_COL, startW + (ev.clientX - startX))
-      )
-    }
-
-    function end() {
-      serviceDividerDrag = false
-      target.removeEventListener('pointermove', onMove)
-      target.removeEventListener('pointerup', end)
-      target.removeEventListener('pointercancel', end)
-    }
-
-    target.addEventListener('pointermove', onMove)
-    target.addEventListener('pointerup', end)
-    target.addEventListener('pointercancel', end)
-  }
 
   // --- Search match annotation ---
 
@@ -432,12 +378,6 @@
 
   let rowVisibilityBySpanId = $derived(
     rowVisibilityMap(spans, parentBySpanId, collapsedParents)
-  )
-
-  let visibleRowIndices = $derived(
-    spans
-      .map((n, i) => (rowVisibilityBySpanId.get(n.spanData.spanID) ? i : -1))
-      .filter((i): i is number => i >= 0)
   )
 
   function toggleCollapse(spanID: string) {
@@ -512,91 +452,28 @@
     if (scrollEl.scrollTop > max) scrollEl.scrollTop = max
   }
 
-  function escapeSpanIdForSelector(spanId: string): string {
-    return typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-      ? CSS.escape(spanId)
-      : spanId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-  }
-
   async function focusRowTr(spanId: string) {
     await tick()
-    const safe = escapeSpanIdForSelector(spanId)
+    const safe = escapeForSelector(spanId)
     gridTableEl
       ?.querySelector<HTMLTableRowElement>(`tr[data-span-id="${safe}"]`)
       ?.focus()
   }
 
-  type KeyDelta =
-    | { kind: 'relative'; offset: number }
-    | { kind: 'absolute'; position: 'first' | 'last' }
+  function handleTreeKeys(e: KeyboardEvent, currentId: string | null): boolean {
+    if (!currentId) return false
 
-  const KEY_DELTAS: Record<string, KeyDelta> = {
-    ArrowDown: { kind: 'relative', offset: 1 },
-    j: { kind: 'relative', offset: 1 },
-    ArrowUp: { kind: 'relative', offset: -1 },
-    k: { kind: 'relative', offset: -1 },
-    PageDown: { kind: 'relative', offset: PAGE_STEP },
-    PageUp: { kind: 'relative', offset: -PAGE_STEP },
-    Home: { kind: 'absolute', position: 'first' },
-    End: { kind: 'absolute', position: 'last' },
-  }
+    const idx = spans.findIndex(n => n.spanData.spanID === currentId)
+    if (idx < 0) return false
 
-  function resolveNextPos(
-    delta: KeyDelta,
-    currentPos: number,
-    lastPos: number
-  ): number {
-    const raw =
-      delta.kind === 'absolute'
-        ? delta.position === 'first'
-          ? 0
-          : lastPos
-        : currentPos + delta.offset
-    return Math.max(0, Math.min(raw, lastPos))
-  }
-
-  function isGridNavTarget(
-    el: HTMLElement | null,
-    table: HTMLElement | null
-  ): boolean {
-    if (!el || !table?.contains(el)) return false
-    if (el.closest('input, textarea, select, [contenteditable="true"]'))
-      return false
-    if (el.closest('button')) return false
-    return true
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (!isGridNavTarget(e.target as HTMLElement | null, gridTableEl)) return
-    if (!spans.length) return
-
-    const vis = visibleRowIndices
-    if (vis.length === 0) return
-
-    const currentIdx =
-      (selectedSpanID ?? '') !== ''
-        ? spans.findIndex(n => n.spanData.spanID === selectedSpanID)
-        : -1
-    const pos = currentIdx >= 0 ? vis.indexOf(currentIdx) : -1
-
-    if (pos < 0) {
-      const firstId = spans[vis[0]].spanData.spanID
-      onSelectSpan(firstId)
-      void focusRowTr(firstId)
-      e.preventDefault()
-      return
-    }
-
-    const currentSpan = spans[currentIdx]
-    const currentId = currentSpan.spanData.spanID
-    const hasChildren = (rows[currentIdx]?.tree.childrenCount ?? 0) > 0
+    const hasChildren = (rows[idx]?.tree.childrenCount ?? 0) > 0
 
     if (e.key === 'ArrowRight' || e.key === 'l') {
       if (hasChildren && collapsedParents.has(currentId)) {
         toggleCollapse(currentId)
         e.preventDefault()
       }
-      return
+      return true
     }
 
     if (e.key === 'ArrowLeft' || e.key === 'h') {
@@ -607,32 +484,13 @@
         if (parentId) {
           onSelectSpan(parentId)
           void focusRowTr(parentId)
-          scrollRowIntoView(parentId)
         }
       }
       e.preventDefault()
-      return
+      return true
     }
 
-    const delta = KEY_DELTAS[e.key]
-    if (!delta) return
-
-    e.preventDefault()
-    const nextPos = resolveNextPos(delta, pos, vis.length - 1)
-    if (nextPos === pos) return
-
-    const nextId = spans[vis[nextPos]!].spanData.spanID
-    onSelectSpan(nextId)
-    void focusRowTr(nextId)
-    scrollRowIntoView(nextId)
-  }
-
-  function scrollRowIntoView(spanID: string) {
-    if (!gridTableEl) return
-    const safe = escapeSpanIdForSelector(spanID)
-    gridTableEl
-      .querySelector(`[data-span-id="${safe}"]`)
-      ?.scrollIntoView({ block: 'nearest' })
+    return false
   }
 </script>
 
@@ -648,7 +506,16 @@
           aria-label="Span waterfall"
           aria-colcount={3}
           tabindex="-1"
-          onkeydown={handleKeydown}
+          use:tableNav={{
+            rowIdAttr: 'span-id',
+            onSelect: id => {
+              onSelectSpan(id)
+              void focusRowTr(id)
+            },
+            pageStep: 8,
+            skipHidden: true,
+            onKey: handleTreeKeys,
+          }}
         >
           <thead class="table-header-surface">
             <WaterfallTimeAxisHeader
@@ -658,18 +525,12 @@
               {spanColWidth}
               {serviceColWidth}
               onResizeSpanCol={w => {
-                const containerW =
-                  gridTableEl?.closest('.waterfall-view__scroll')
-                    ?.clientWidth ?? Infinity
-                const maxW = containerW - serviceColWidth - MIN_TIMELINE_COL
-                spanColWidth = Math.min(maxW, Math.max(MIN_SPAN_COL, w))
+                const next = applyColumnResize(wfCols, colWidths, 0, w)
+                if (next !== colWidths) colWidths = next
               }}
               onResizeServiceCol={w => {
-                const containerW =
-                  gridTableEl?.closest('.waterfall-view__scroll')
-                    ?.clientWidth ?? Infinity
-                const maxW = containerW - spanColWidth - MIN_TIMELINE_COL
-                serviceColWidth = Math.min(maxW, Math.max(MIN_SERVICE_COL, w))
+                const next = applyColumnResize(wfCols, colWidths, 1, w)
+                if (next !== colWidths) colWidths = next
               }}
             />
           </thead>
@@ -694,28 +555,19 @@
             {/each}
           </tbody>
         </table>
-        <div
-          class="col-resize-bar col-resize-bar--guide"
-          class:col-resize-bar--active={spanDividerDrag}
-          style:left="{barLeftPx.span}px"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize span and service columns"
-          onpointerdown={startResizeSpanCol}
-        >
-          <div class="col-resize-bar__line"></div>
-        </div>
-        <div
-          class="col-resize-bar col-resize-bar--guide"
-          class:col-resize-bar--active={serviceDividerDrag}
-          style:left="{barLeftPx.service}px"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize service and timeline columns"
-          onpointerdown={startResizeServiceCol}
-        >
-          <div class="col-resize-bar__line"></div>
-        </div>
+        {#each barPositions as bar}
+          <div
+            class="col-resize-bar col-resize-bar--guide"
+            class:col-resize-bar--active={activeResizeCol === bar.index}
+            style:left="{bar.left}px"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize {wfCols[bar.index].id} column"
+            onpointerdown={e => handleStartResize(bar.index, e)}
+          >
+            <div class="col-resize-bar__line"></div>
+          </div>
+        {/each}
       </div>
     </div>
     {#if footer}

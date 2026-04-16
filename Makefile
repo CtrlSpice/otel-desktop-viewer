@@ -35,6 +35,10 @@ run-go-persist:
 populate-traces:
 	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" bash "$(CURDIR)/scripts/seed-traces.sh"
 
+.PHONY: populate-logs
+populate-logs:
+	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" bash "$(CURDIR)/scripts/seed-logs.sh"
+
 .PHONY: dev-go
 dev-go: kill-port
 	@STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/frontend/dist/) go run . --browser-port 8000 & \
@@ -48,6 +52,7 @@ dev-go: kill-port
 		sleep 1; \
 	done; \
 	$(MAKE) populate-traces; \
+	$(MAKE) populate-logs; \
 	echo "Server running (pid $$PID). Press Ctrl-C to stop."; \
 	wait $$PID
 
@@ -107,12 +112,13 @@ help:
 	@echo "  run-go            - Run server (in-memory, data lost on exit)"
 	@echo "  run-go-persist    - Run server with persistent DB file (data retained)"
 	@echo "  populate-traces   - POST sample traces to OTLP HTTP (default localhost:4318)"
+	@echo "  populate-logs     - POST sample logs to OTLP HTTP (default localhost:4318)"
 	@echo ""
 	@echo "Convenience:"
 	@echo "  build             - Build frontend and Go binary"
 	@echo "  run               - Build frontend, then run server (in-memory)"
 	@echo "  test              - Run Go tests and type check frontend"
-	@echo "  dev-go            - Kill port, start server, seed traces"
+	@echo "  dev-go            - Kill port, start server, seed traces + logs"
 	@echo ""
 	@echo "Other:"
 	@echo "  release-dry-run   - Trigger release workflow (dry run)"

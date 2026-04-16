@@ -37,9 +37,6 @@ function ensureTooltipStyles() {
       gap: 0.5rem;
       box-sizing: border-box;
     }
-    html[data-theme] .cm-tooltip-autocomplete > ul > li:nth-child(odd) {
-      background-color: var(--table-zebra-bg);
-    }
     html[data-theme] .cm-tooltip-autocomplete > ul > li:hover {
       background-color: var(--table-hover-bg);
     }

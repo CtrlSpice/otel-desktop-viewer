@@ -1,14 +1,10 @@
 <script lang="ts">
   import type { SpanData } from '@/types/api-types'
   import type { WaterfallRowData } from './WaterfallView.svelte'
-  import { formatDuration } from '@/utils/duration'
+  import { formatDuration } from '@/utils/time'
+  import { getServiceName } from '@/utils/resource'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
   import WaterfallEventDots from './WaterfallEventDots.svelte'
-
-  function getServiceName(span: SpanData): string {
-    const svc = span.resource.attributes.find(a => a.key === 'service.name')
-    return svc?.value ?? 'unknown'
-  }
 
   type Props = {
     row: WaterfallRowData
@@ -38,7 +34,7 @@
 
   let span = $derived(row.spanNode.spanData)
   let durationLabel = $derived(formatDuration(span.endTime - span.startTime))
-  let serviceName = $derived(getServiceName(span))
+  let serviceName = $derived(getServiceName(span.resource) ?? 'unknown')
 
   const MIN_LABEL_INSIDE_PCT = 12
   const LABEL_FLIP_SIDE_PCT = 50
@@ -52,7 +48,7 @@
 
 <tr
   class="waterfall-row"
-  class:waterfall-row--selected={selected}
+  class:table-row--selected={selected}
   class:waterfall-row--error={row.colorToken === 'error'}
   class:waterfall-row--matched={matched}
   data-span-id={span.spanID}
@@ -151,13 +147,6 @@
     background-color: var(--table-hover-bg);
   }
 
-  .waterfall-row--selected {
-    outline: 1px solid color-mix(in oklab, var(--color-primary) 50%, transparent);
-    outline-offset: -1px;
-    position: relative;
-    z-index: 1;
-  }
-
   .waterfall-row__title {
     @apply min-w-0 flex-1;
   }
@@ -188,7 +177,7 @@
   }
 
   .waterfall-row__bar-label {
-    @apply text-[10px] font-mono whitespace-nowrap;
+    @apply text-[10px] tabular-nums whitespace-nowrap;
   }
 
   .waterfall-row__bar-label--inside {
@@ -238,7 +227,7 @@
   }
 
   .waterfall-row--matched:hover,
-  .waterfall-row--matched.waterfall-row--selected {
+  .waterfall-row--matched:global(.table-row--selected) {
     background-color: color-mix(
       in oklab,
       var(--color-primary) 22%,

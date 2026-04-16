@@ -4,7 +4,7 @@ export function compareByStringField<T>(
   b: T,
   pick: (t: T) => string | undefined
 ): number {
-  return (pick(a) ?? "").localeCompare(pick(b) ?? "")
+  return (pick(a) ?? '').localeCompare(pick(b) ?? '')
 }
 
 /** Compare optional bigint timestamps with `<` / `>`, not subtraction, so large nanosecond values stay exact (no Number coercion). */

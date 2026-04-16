@@ -225,9 +225,9 @@ func TestLogOrdering(t *testing.T) {
 	assert.Len(t, entries, 3)
 
 	// Order: newest first by effective time — 0002 (t+150ms), 0007 (t+100ms), 0001 (t+0)
-	assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
-	assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[1].SpanID)
-	assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[2].SpanID)
+	assert.Equal(t, "0000000000000002", entries[0].SpanID)
+	assert.Equal(t, "0000000000000007", entries[1].SpanID)
+	assert.Equal(t, "0000000000000001", entries[2].SpanID)
 }
 
 // TestEmptyLogs verifies handling of empty log lists and empty store.
@@ -283,9 +283,9 @@ func TestLogSuite(t *testing.T) {
 	t.Run("LogOrdering", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
 		assert.Len(t, entries, 3)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[1].SpanID)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[2].SpanID)
+		assert.Equal(t, "0000000000000002", entries[0].SpanID)
+		assert.Equal(t, "0000000000000007", entries[1].SpanID)
+		assert.Equal(t, "0000000000000001", entries[2].SpanID)
 	})
 
 	t.Run("LogSeverity", func(t *testing.T) {
@@ -351,6 +351,49 @@ func TestLogSuite(t *testing.T) {
 		assert.Equal(t, "event.c", entries[1].EventName)
 		assert.Equal(t, "event.a", entries[2].EventName)
 	})
+}
+
+func TestGetLogAttributes(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	ldata := createTestLogsPdata(baseTime)
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, ldata)
+	})
+	require.NoError(t, err)
+
+	startTime := baseTime - int64(time.Hour)
+	endTime := baseTime + int64(time.Hour)
+	raw, err := logs.GetLogAttributes(ctx, s.DB(), startTime, endTime)
+	assert.NoError(t, err)
+
+	var attributes []struct {
+		Name           string `json:"name"`
+		AttributeScope string `json:"attributeScope"`
+		Type           string `json:"type"`
+	}
+	assert.NoError(t, json.Unmarshal(raw, &attributes))
+	assert.NotEmpty(t, attributes, "should have discovered log attributes")
+
+	byScope := make(map[string][]string)
+	for _, a := range attributes {
+		byScope[a.AttributeScope] = append(byScope[a.AttributeScope], a.Name)
+	}
+
+	assert.Contains(t, byScope["resource"], "service.name")
+	assert.Contains(t, byScope["resource"], "service.version")
+	assert.Contains(t, byScope["log"], "log.string")
+	assert.Contains(t, byScope["log"], "log.int")
+	assert.Contains(t, byScope["log"], "log.float")
+	assert.Contains(t, byScope["log"], "log.bool")
+	assert.Contains(t, byScope["log"], "log.list")
+
+	// Out-of-range query returns empty
+	rawEmpty, err := logs.GetLogAttributes(ctx, s.DB(), 0, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, json.RawMessage("[]"), rawEmpty)
 }
 
 // TestDeleteLogByID verifies that a single log can be deleted by its ID, including child attributes.
@@ -495,7 +538,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
+		assert.Equal(t, "0000000000000002", entries[0].SpanID)
 	})
 
 	t.Run("GlobalSearch_EventName", func(t *testing.T) {
@@ -545,7 +588,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1, "global search for span ID hex should match one log")
-		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
+		assert.Equal(t, "0000000000000002", entries[0].SpanID)
 	})
 
 	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
@@ -595,7 +638,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[0].SpanID)
+		assert.Equal(t, "0000000000000001", entries[0].SpanID)
 	})
 
 	t.Run("Field_TraceID", func(t *testing.T) {
@@ -613,7 +656,7 @@ func TestSearchLogs(t *testing.T) {
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 3, "all three logs share the same trace")
 		for _, e := range entries {
-			assert.Equal(t, "00000000-0000-0000-0000-000000000099", e.TraceID)
+			assert.Equal(t, "00000000000000000000000000000099", e.TraceID)
 		}
 	})
 
@@ -649,7 +692,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[0].SpanID)
+		assert.Equal(t, "0000000000000007", entries[0].SpanID)
 		assert.Contains(t, entries[0].Body, "Operation warning")
 	})
 
@@ -668,7 +711,7 @@ func TestSearchLogs(t *testing.T) {
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
 		assert.Equal(t, "event.a", entries[0].EventName)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[0].SpanID)
+		assert.Equal(t, "0000000000000001", entries[0].SpanID)
 	})
 
 	t.Run("Field_ScopeName", func(t *testing.T) {

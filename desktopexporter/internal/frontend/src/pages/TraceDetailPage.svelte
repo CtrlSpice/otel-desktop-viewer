@@ -1,7 +1,38 @@
+<script module lang="ts">
+  import type { TraceData } from '@/types/api-types'
+  import { getServiceName } from '@/utils/resource'
+
+  export type TraceDetailStats = {
+    spanCount: number
+    serviceCount: number
+    errorCount: number
+    exceptionCount: number
+  }
+
+  /** Fold a loaded trace into summary counters (aligned with trace list row semantics). */
+  export function traceDetailStats(data: TraceData): TraceDetailStats {
+    const serviceNames = new Set<string>()
+    let errorCount = 0
+    let exceptionCount = 0
+    for (const { spanData: s } of data.spans) {
+      const name = getServiceName(s.resource)?.trim()
+      if (name) serviceNames.add(name)
+      if (s.statusCode === 'Error') errorCount++
+      if (s.events.some(e => e.name === 'exception')) exceptionCount++
+    }
+    return {
+      spanCount: data.spans.length,
+      serviceCount: serviceNames.size,
+      errorCount,
+      exceptionCount,
+    }
+  }
+</script>
+
 <script lang="ts">
   import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import type { TraceData, SearchResultEvent } from '@/types/api-types'
+  import type { SearchResultEvent } from '@/types/api-types'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -10,12 +41,10 @@
     getTraceListNavIds,
     setTraceListNavIds,
   } from '@/stores/trace-list-nav.svelte'
-  import { sortTraceSummaries } from '@/utils/trace-summary-sort'
-  import { loadTraceListTableState } from '@/utils/trace-list-table-state'
+  import { sortTraceSummaries, loadTraceListTableState } from '@/utils/traces'
   import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
   import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
-  import { traceDetailStats } from '@/utils/trace-detail-stats'
   import DetailView from '@/components/TraceDetails/DetailView/DetailView.svelte'
   import WaterfallView from '@/components/TraceDetails/Waterfall/WaterfallView.svelte'
   import ResizablePanels from '@/components/ResizablePanels.svelte'
@@ -24,6 +53,7 @@
     ArrowLeftIcon,
     ArrowRightDoubleIcon,
     ArrowRightIcon,
+    TrashIcon,
   } from '@/icons'
 
   // --- state: route + API ---
@@ -211,13 +241,35 @@
   function goTraceNavLast() {
     if (canGoNext) goTraceByIndex(traceNavTotal - 1)
   }
+
+  async function handleDeleteTrace() {
+    if (!traceID) return
+    const deletedId = traceID
+    const nextIndex = canGoNext ? traceNavIndex + 1
+      : canGoPrev ? traceNavIndex - 1
+      : -1
+    try {
+      await telemetryAPI.deleteTraces([deletedId])
+      const updated = navIds.filter(id => id !== deletedId)
+      setTraceListNavIds(updated)
+      if (nextIndex >= 0 && updated.length > 0) {
+        const clampedIndex = Math.min(nextIndex, updated.length - 1)
+        router.goto(`/trace/${updated[clampedIndex]}`)
+      } else {
+        router.goto('/traces')
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to delete trace'
+      console.error('Error deleting trace:', err)
+    }
+  }
 </script>
 
 {#snippet traceNavFooter()}
-  {#if navIds.length > 0}
-    <div class="pagination-controls">
-      <div class="pagination-rows-selector"></div>
-      <div class="pagination-controls__center">
+  <div class="pagination-controls">
+    <div class="pagination-rows-selector"></div>
+    <div class="pagination-controls__center">
+      {#if navIds.length > 0}
         <div
           class="flex min-w-0 flex-nowrap items-center justify-center gap-1.5"
         >
@@ -263,10 +315,20 @@
             <ArrowRightDoubleIcon class="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-      </div>
-      <div class="pagination-controls__actions"></div>
+      {/if}
     </div>
-  {/if}
+    <div class="pagination-controls__actions">
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-error"
+        onclick={handleDeleteTrace}
+        aria-label="Delete this trace"
+      >
+        <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
+        Delete this trace
+      </button>
+    </div>
+  </div>
 {/snippet}
 
 <div

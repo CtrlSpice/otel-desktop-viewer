@@ -32,7 +32,7 @@
   import { HelpCircleIcon, CancelIcon } from '@/icons'
 
   import type { SearchEditorAPI } from './search-editor-api'
-  import { parseDuration } from '@/utils/duration'
+  import { parseDuration } from '@/utils/time'
 
   // --- types ---
   type SearchEditorCallbacks = {
@@ -222,11 +222,8 @@
     let cancelled = false
     const t = window.setTimeout(async () => {
       try {
-        const dynamicAttrs = await getDynamicAttributes(
-          tc.selection.start,
-          tc.selection.end,
-          signal
-        )
+        const { start, end } = selectionToQueryRangeMs(tc.selection, Date.now())
+        const dynamicAttrs = await getDynamicAttributes(start, end, signal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
       } catch (error) {

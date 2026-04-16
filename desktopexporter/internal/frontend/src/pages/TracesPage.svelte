@@ -1,23 +1,20 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import { formatTimestamp } from '@/utils/time'
-  import { formatDuration, traceSummaryDurationNs } from '@/utils/duration'
+  import { formatTimestamp, formatDuration, traceSummaryDurationNs } from '@/utils/time'
   import {
     compareTraceSummaries,
     type TraceSummarySortColumn,
     type TraceSummarySortDirection,
-  } from '@/utils/trace-summary-sort'
-  import { setTraceListNavIds } from '@/stores/trace-list-nav.svelte'
-  import {
     loadTraceListTableState,
     saveTraceListTableState,
-  } from '@/utils/trace-list-table-state'
+  } from '@/utils/traces'
+  import { setTraceListNavIds } from '@/stores/trace-list-nav.svelte'
   import type {
     TraceSummary,
     SearchResultEvent,
@@ -36,6 +33,7 @@
     ArrowRightIcon,
     TrashIcon,
   } from '@/icons'
+  import { tableNav } from '@/utils/table-keyboard-nav'
 
   // --- types (table) ---
   type SortColumn = TraceSummarySortColumn
@@ -60,9 +58,6 @@
   let rowsPerPageOptions = [10, 25, 50, 100]
   let rowsPerPagePopoverOpen = $state(false)
 
-  // --- state: selection ---
-  let selectedTraceIDs = $state(new Set<string>())
-
   // --- state: polling / refresh indicator ---
   let searchEditorApi = $state<SearchEditorAPI | null>(null)
   let baselineStats = $state<TraceStats | null>(null)
@@ -70,114 +65,56 @@
   const POLL_INTERVAL_MS = 3000
 
   // --- state: column resize ---
-  import type {
-    FixedColumn,
-    ResizableColumn,
-    ElasticColumn,
-  } from '@/types/column-sizing'
+  import {
+    fixed, flex,
+    computeInitialWidths,
+    redistributeWidths,
+    computeBarPositions,
+    startColumnResize,
+  } from '@/utils/column-resize'
 
-  const cols = {
-    checkbox: { kind: 'fixed', width: 40 } satisfies FixedColumn,
-    traceId: {
-      kind: 'resizable',
-      min: 100,
-      default: 300,
-    } satisfies ResizableColumn,
-    rootIndicator: { kind: 'fixed', width: 48 } satisfies FixedColumn,
-    rootName: {
-      kind: 'resizable',
-      min: 100,
-      default: 200,
-    } satisfies ResizableColumn,
-    service: {
-      kind: 'resizable',
-      min: 100,
-      default: 200,
-    } satisfies ResizableColumn,
-    startTime: { kind: 'elastic', min: 120 } satisfies ElasticColumn,
-    duration: { kind: 'fixed', width: 128 } satisfies FixedColumn,
-    spans: { kind: 'fixed', width: 88 } satisfies FixedColumn,
-    errors: { kind: 'fixed', width: 88 } satisfies FixedColumn,
-    exceptions: { kind: 'fixed', width: 104 } satisfies FixedColumn,
-  }
+  const traceCols = [
+    flex('traceId', 100, 2),
+    fixed('rootIndicator', 48),
+    flex('rootName', 100, 2),
+    flex('service', 100, 2),
+    flex('startTime', 120, 3),
+    flex('duration', 80, 1),
+    fixed('gap', 24),
+    fixed('spans', 72),
+    fixed('errors', 72),
+    fixed('exceptions', 72),
+  ]
 
-  const COL_CHECKBOX = cols.checkbox.width
-  const COL_ROOT_INDICATOR = cols.rootIndicator.width
-  const MIN_COL_W = cols.traceId.min
-  const MIN_ELASTIC_COL = cols.startTime.min
-  const COL_TRAILING_FIXED =
-    cols.duration.width +
-    cols.spans.width +
-    cols.errors.width +
-    cols.exceptions.width
-  const FIXED_TOTAL = COL_CHECKBOX + COL_ROOT_INDICATOR + COL_TRAILING_FIXED
+  let activeResizeCol = $state<number | null>(null)
+  let tableContainerEl = $state<HTMLDivElement | null>(null)
+  let colWidths = $state(traceCols.map(d => d.min))
 
-  let traceIdColW = $state(cols.traceId.default)
-  let rootNameColW = $state(cols.rootName.default)
-  let serviceColW = $state(cols.service.default)
-  let tableEl = $state<HTMLTableElement | null>(null)
+  let barPositions = $derived(computeBarPositions(traceCols, colWidths))
 
-  type ResizeCol = 'traceId' | 'rootName' | 'service'
-  let activeResizeCol = $state<ResizeCol | null>(null)
-
-  let tableMinWidth = $derived(
-    FIXED_TOTAL + traceIdColW + rootNameColW + serviceColW + MIN_ELASTIC_COL
-  )
-
-  let barLeftPx = $derived({
-    traceId: COL_CHECKBOX + traceIdColW,
-    rootName: COL_CHECKBOX + traceIdColW + COL_ROOT_INDICATOR + rootNameColW,
-    service:
-      COL_CHECKBOX +
-      traceIdColW +
-      COL_ROOT_INDICATOR +
-      rootNameColW +
-      serviceColW,
+  $effect(() => {
+    if (!tableContainerEl) return
+    untrack(() => {
+      colWidths = computeInitialWidths(traceCols, tableContainerEl!.clientWidth)
+    })
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width
+      if (w && activeResizeCol === null) {
+        colWidths = redistributeWidths(traceCols, colWidths, w)
+      }
+    })
+    ro.observe(tableContainerEl)
+    return () => ro.disconnect()
   })
 
-  function startResizeCol(col: ResizeCol, e: PointerEvent) {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW =
-      col === 'traceId'
-        ? traceIdColW
-        : col === 'rootName'
-          ? rootNameColW
-          : serviceColW
-    const target = e.currentTarget as HTMLElement
-    target.setPointerCapture(e.pointerId)
-    activeResizeCol = col
-
-    function onMove(ev: PointerEvent) {
-      const containerW =
-        tableEl?.closest('.overflow-x-auto')?.clientWidth ?? Infinity
-      const others =
-        col === 'traceId'
-          ? rootNameColW + serviceColW
-          : col === 'rootName'
-            ? traceIdColW + serviceColW
-            : traceIdColW + rootNameColW
-      const maxW = containerW - FIXED_TOTAL - MIN_ELASTIC_COL - others
-      const next = Math.min(
-        maxW,
-        Math.max(MIN_COL_W, startW + (ev.clientX - startX))
-      )
-
-      if (col === 'traceId') traceIdColW = next
-      else if (col === 'rootName') rootNameColW = next
-      else serviceColW = next
-    }
-
-    function end() {
-      activeResizeCol = null
-      target.removeEventListener('pointermove', onMove)
-      target.removeEventListener('pointerup', end)
-      target.removeEventListener('pointercancel', end)
-    }
-
-    target.addEventListener('pointermove', onMove)
-    target.addEventListener('pointerup', end)
-    target.addEventListener('pointercancel', end)
+  function handleStartResize(colIndex: number, e: PointerEvent) {
+    activeResizeCol = colIndex
+    startColumnResize(
+      traceCols,
+      () => colWidths, colIndex, e,
+      next => { colWidths = next },
+      () => { activeResizeCol = null }
+    )
   }
 
   /** Dim stats while refetching; stays on briefly after `loading` ends so opacity can animate. */
@@ -211,21 +148,8 @@
   )
 
   let hasTraceRows = $derived(traceSummaries.length > 0)
-  let someSelected = $derived(selectedTraceIDs.size > 0)
   // --- derived: summary stats — full traceSummaries (not the current page) ---
   let listStats = $derived(traceListStats(traceSummaries))
-
-  let traceDeleteLabel = $derived(
-    someSelected
-      ? `Delete ${selectedTraceIDs.size} trace${selectedTraceIDs.size !== 1 ? 's' : ''}`
-      : 'Delete all traces'
-  )
-
-  let traceDeleteAriaLabel = $derived(
-    someSelected
-      ? `Delete ${selectedTraceIDs.size} selected trace${selectedTraceIDs.size !== 1 ? 's' : ''}`
-      : 'Delete all traces in this time range'
-  )
 
   let refreshIndicatorText = $derived.by(() => {
     if (!baselineStats || !polledStats) return ''
@@ -242,11 +166,6 @@
   // --- effects ---
   $effect(() => {
     saveTraceListTableState({ sortColumn, sortDirection, rowsPerPage })
-  })
-
-  $effect(() => {
-    void sortedTraces
-    selectedTraceIDs = new Set()
   })
 
   $effect(() => {
@@ -370,14 +289,11 @@
     router.goto(`/trace/${traceID}`)
   }
 
-  async function handleDelete() {
+  async function handleDeleteAllTraces() {
     try {
-      if (someSelected) {
-        await telemetryAPI.deleteTraces([...selectedTraceIDs])
-      } else {
-        await telemetryAPI.clearTraces()
-      }
-      selectedTraceIDs = new Set()
+      await telemetryAPI.clearTraces()
+      currentPage = 1
+      setTraceListNavIds([])
       await fetchTraces()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to delete traces'
@@ -454,45 +370,22 @@
           ? 'opacity-70'
           : 'opacity-100'}"
       >
-        <div class="flex-1 min-h-0 overflow-x-auto overflow-y-auto">
+        <div class="flex-1 min-h-0 overflow-x-auto overflow-y-auto" bind:this={tableContainerEl}>
           <div class="col-resize-context trace-list-col-resize">
             <table
-              bind:this={tableEl}
               class="trace-list-table table table-fixed table-sm w-full border-collapse"
-              style:min-width="{tableMinWidth}px"
+              use:tableNav={{
+                rowIdAttr: 'trace-id',
+                onSelect: id => navigateToTrace(id),
+              }}
             >
               <colgroup>
-                <col style:width="{COL_CHECKBOX}px" />
-                <col style:width="{traceIdColW}px" />
-                <col style:width="{COL_ROOT_INDICATOR}px" />
-                <col style:width="{rootNameColW}px" />
-                <col style:width="{serviceColW}px" />
-                <col /><!-- Start Time: elastic, absorbs remaining width -->
-                <col style:width="{cols.duration.width}px" />
-                <col style:width="{cols.spans.width}px" />
-                <col style:width="{cols.errors.width}px" />
-                <col style:width="{cols.exceptions.width}px" />
+                {#each colWidths as w}
+                  <col style:width="{w}px" />
+                {/each}
               </colgroup>
               <thead class="sticky top-0 z-10 table-header-surface">
                 <tr class="table-header-row">
-                  <th class="table-header-cell table-header-cell--checkbox">
-                    <input
-                      type="checkbox"
-                      class="checkbox checkbox-xs checkbox-primary"
-                      checked={someSelected}
-                      indeterminate={someSelected}
-                      onchange={() => {
-                        if (someSelected) {
-                          selectedTraceIDs = new Set()
-                        } else {
-                          selectedTraceIDs = new Set(
-                            paginatedTraces.map(t => t.traceID)
-                          )
-                        }
-                      }}
-                      aria-label="Select all on this page"
-                    />
-                  </th>
                   <th class="table-header-cell table-header-cell--left">
                     Trace ID
                   </th>
@@ -595,6 +488,7 @@
                       <span>Duration</span>
                     </div>
                   </th>
+                  <th></th>
                   <th
                     class="table-header-cell table-header-cell--sortable table-header-cell--right group"
                     onclick={() => handleSort('spanCount')}
@@ -669,38 +563,12 @@
               <tbody class="table-body-surface">
                 {#each paginatedTraces as trace}
                   <tr
-                    class="table-row cursor-pointer hover:bg-base-200 transition-colors {selectedTraceIDs.has(
-                      trace.traceID
-                    )
-                      ? 'bg-primary/5'
-                      : ''}"
+                    class="table-row cursor-pointer hover:bg-base-200 transition-colors"
+                    data-trace-id={trace.traceID}
                     onclick={() => navigateToTrace(trace.traceID)}
                     role="button"
                     tabindex="0"
-                    onkeydown={e =>
-                      e.key === 'Enter' && navigateToTrace(trace.traceID)}
                   >
-                    <td
-                      class="table-cell--checkbox"
-                      onclick={e => e.stopPropagation()}
-                      onkeydown={e => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        class="checkbox checkbox-xs checkbox-primary"
-                        checked={selectedTraceIDs.has(trace.traceID)}
-                        onchange={() => {
-                          const next = new Set(selectedTraceIDs)
-                          if (next.has(trace.traceID)) {
-                            next.delete(trace.traceID)
-                          } else {
-                            next.add(trace.traceID)
-                          }
-                          selectedTraceIDs = next
-                        }}
-                        aria-label="Select trace {trace.traceID}"
-                      />
-                    </td>
                     <td class="table-cell--trace-id" title={trace.traceID}>
                       <span class="trace-list-cell-text">{trace.traceID}</span>
                     </td>
@@ -781,6 +649,7 @@
                         >{traceDurationCellLabel(trace)}</span
                       >
                     </td>
+                    <td></td>
                     <td class="table-cell--count">
                       {trace.spanCount}
                     </td>
@@ -802,39 +671,19 @@
                 {/each}
               </tbody>
             </table>
-            <div
-              class="col-resize-bar col-resize-bar--guide"
-              class:col-resize-bar--active={activeResizeCol === 'traceId'}
-              style:left="{barLeftPx.traceId}px"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize Trace ID column"
-              onpointerdown={e => startResizeCol('traceId', e)}
-            >
-              <div class="col-resize-bar__line"></div>
-            </div>
-            <div
-              class="col-resize-bar col-resize-bar--guide"
-              class:col-resize-bar--active={activeResizeCol === 'rootName'}
-              style:left="{barLeftPx.rootName}px"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize Root Span Name column"
-              onpointerdown={e => startResizeCol('rootName', e)}
-            >
-              <div class="col-resize-bar__line"></div>
-            </div>
-            <div
-              class="col-resize-bar col-resize-bar--guide"
-              class:col-resize-bar--active={activeResizeCol === 'service'}
-              style:left="{barLeftPx.service}px"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize Service Name column"
-              onpointerdown={e => startResizeCol('service', e)}
-            >
-              <div class="col-resize-bar__line"></div>
-            </div>
+            {#each barPositions as bar}
+              <div
+                class="col-resize-bar col-resize-bar--guide"
+                class:col-resize-bar--active={activeResizeCol === bar.index}
+                style:left="{bar.left}px"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize {traceCols[bar.index].id} column"
+                onpointerdown={e => handleStartResize(bar.index, e)}
+              >
+                <div class="col-resize-bar__line"></div>
+              </div>
+            {/each}
           </div>
         </div>
 
@@ -910,20 +759,14 @@
 
             {#if hasTraceRows}
               <div class="pagination-controls__actions">
-                <span
-                  class="pagination-delete-label hidden sm:inline max-w-[12rem] truncate text-sm text-base-content/60"
-                  title={traceDeleteLabel}
-                >
-                  {traceDeleteLabel}
-                </span>
                 <button
                   type="button"
-                  class="btn btn-soft btn-error btn-sm btn-circle"
-                  onclick={handleDelete}
-                  aria-label={traceDeleteAriaLabel}
-                  title={traceDeleteAriaLabel}
+                  class="btn btn-ghost btn-sm text-error"
+                  onclick={handleDeleteAllTraces}
+                  aria-label="Delete all traces"
                 >
-                  <TrashIcon class="h-4 w-4" aria-hidden="true" />
+                  <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
+                  Delete all traces
                 </button>
               </div>
             {/if}

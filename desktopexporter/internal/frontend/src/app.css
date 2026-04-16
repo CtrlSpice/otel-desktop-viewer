@@ -395,7 +395,7 @@ svg {
 }
 
 .toolbar-filter-trigger__badge {
-  @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-full bg-primary/20 px-1 text-[0.65rem] font-semibold tabular-nums text-primary;
+  @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
 }
 
 /* Navigation */
@@ -500,7 +500,6 @@ button:focus-visible:not(.btn) {
   );
   /* Trace list (and matching search chrome): min width before horizontal scroll */
   --trace-list-table-min-width: 60rem;
-  --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 55%, transparent);
   --table-hover-bg: color-mix(in oklab, var(--color-base-200) 70%, transparent);
   --table-selected-bg: color-mix(
     in oklab,
@@ -535,7 +534,7 @@ button:focus-visible:not(.btn) {
   box-sizing: border-box;
 }
 
-/* Same frosted fill as panel chrome: paint this on tbody / field lists, then zebra rows on top */
+/* Same frosted fill as panel chrome: paint this on tbody / field lists */
 .table-body-surface {
   @apply bg-base-100/80;
 }
@@ -564,12 +563,7 @@ button:focus-visible:not(.btn) {
   table-layout: fixed;
 }
 
-/* Soften the last zebra stripe so the table doesn't end abruptly. */
-.table-row:nth-child(even):last-child {
-  --table-zebra-bg: color-mix(in oklab, var(--color-base-200) 40%, transparent);
-}
-
-/* DaisyUI .table draws hairlines between rows; we rely on zebra + hover instead */
+/* Suppress DaisyUI hairlines; rows distinguished by hover highlight only */
 .table
   :where(thead tr :is(th, td), tbody tr :is(th, td), tfoot tr :is(th, td)) {
   border-bottom: none;
@@ -680,16 +674,16 @@ button:focus-visible:not(.btn) {
   height: var(--table-row-h);
 }
 
-.table-row:nth-child(even) {
-  background-color: var(--table-zebra-bg);
-}
-
 .table-row:hover {
   background-color: var(--table-hover-bg);
 }
 
 .table-row--selected {
   background-color: var(--table-selected-bg);
+  outline: 1px solid color-mix(in oklab, var(--color-primary) 50%, transparent);
+  outline-offset: -1px;
+  position: relative;
+  z-index: 1;
 }
 
 .table-cell {
@@ -713,25 +707,33 @@ button:focus-visible:not(.btn) {
   @apply pl-4 pr-4 py-1 text-left align-middle text-sm font-normal text-base-content/60;
 }
 
-.detail-fields .table-cell--field-name {
-  width: var(--detail-field-col-w);
-}
-
-.detail-fields .table-cell--field-name,
-.detail-fields td.table-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Value column takes remaining width; max-width 0 makes ellipsis work in fixed tables */
-.detail-fields td.table-cell {
+/* Detail KV cell: [key: value] */
+.detail-cell {
+  @apply py-1 pl-4 pr-2 text-xs align-middle truncate;
   max-width: 0;
 }
 
-/* Indent nested field names under the caret; value column stays pl-4 like group header rows */
-.detail-fields tr.table-row--nested th.table-cell--field-name {
-  padding-left: calc(1rem + var(--waterfall-gutter-col));
+.detail-cell__key {
+  @apply text-base-content/55 mr-1.5;
+}
+
+.detail-cell__value {
+  @apply text-base-content;
+}
+
+/* Badge cell: shrink-to-fit, right-aligned */
+.detail-cell--badges {
+  @apply py-1 pr-4 pl-0 text-xs align-middle whitespace-nowrap text-right;
+  width: 1px;
+}
+
+.detail-cell--badges > * {
+  @apply ml-1;
+}
+
+/* Indent nested rows (events/links children) */
+.detail-fields tr.table-row--nested .detail-cell {
+  padding-left: calc(1rem + var(--waterfall-gutter-col, 0px));
 }
 
 /* ── In-header column resize handle ──
@@ -854,13 +856,13 @@ button:focus-visible:not(.btn) {
 }
 
 .col-resize-bar:hover .col-resize-bar__line {
-  opacity: 0.6;
+  opacity: 0.25;
 }
 
 .col-resize-bar--active .col-resize-bar__line {
   width: 0.125rem;
   background-color: var(--color-primary);
-  opacity: 0.9;
+  opacity: 0.4;
 }
 
 .col-resize-bar:focus-visible {
@@ -937,49 +939,44 @@ button:focus-visible:not(.btn) {
   @apply bg-base-200;
 }
 
-/* ── Group toggle button (collapse/expand in event & link tables) ──
-   Circle-on-hover caret, matching the waterfall gutter button style. */
-.group-toggle {
-  @apply inline-flex cursor-pointer items-center justify-center rounded-full border-0 p-0 leading-none outline-none;
-  width: 1rem;
-  height: 1rem;
-  background: transparent;
-  color: var(--color-primary);
-  transition: background-color 0.1s;
+/* Badges — modern chips: modest radius, tight type (not full pills) */
+.badge {
+  @apply rounded-md font-medium tracking-tight;
 }
 
-.group-toggle:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
+.badge.badge-sm {
+  @apply min-h-[1.25rem] gap-1 px-2 py-0.5 leading-tight;
 }
 
-.group-toggle:hover {
-  background-color: color-mix(in oklab, var(--color-primary) 15%, transparent);
+.badge.badge-xs {
+  @apply min-h-[1.125rem] gap-0.5 px-1.5 py-px text-[0.625rem] leading-none;
 }
 
-.group-toggle__caret {
-  width: 1rem;
-  height: 1rem;
-  transition: transform 0.15s;
+.badge.badge-soft {
+  @apply ring-1 ring-inset ring-base-content/[0.07];
 }
 
-.group-toggle--open .group-toggle__caret {
-  transform: rotate(90deg);
+/* Outline badges (e.g. metric type) — match chip density; Daisy draws the outline */
+.badge.badge-outline {
+  @apply leading-tight;
 }
 
-/* Detail field badges — daisyUI: badge · badge-sm · text-xs · badge-soft · role */
+/*
+ * Detail / toolbar metadata: type · origin · root · offset.
+ * type → accent, origin → primary, root → secondary (Daisy semantic colors).
+ */
 .badge-type {
-  @apply badge badge-sm text-xs badge-soft badge-secondary;
+  @apply badge badge-sm text-xs badge-soft badge-accent leading-tight;
 }
 
 .badge-origin {
-  @apply badge badge-sm text-xs badge-soft badge-accent;
+  @apply badge badge-sm text-xs badge-soft badge-primary leading-tight;
 }
 
 .badge-root {
-  @apply badge badge-sm text-xs badge-soft badge-primary;
+  @apply badge badge-sm text-xs badge-soft badge-secondary leading-tight;
 }
 
 .badge-offset {
-  @apply badge badge-sm text-xs badge-soft badge-warning tabular-nums;
+  @apply badge badge-sm text-xs badge-soft badge-warning tabular-nums leading-tight;
 }
