@@ -5,6 +5,7 @@
     getDynamicAttributes,
     sameFieldDefinition,
     type FieldDefinition,
+    type ColumnVisibility,
   } from '@/constants/fields'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import type { TimeContext } from '@/contexts/time-context.svelte'
@@ -15,9 +16,16 @@
     onToggleField: (field: FieldDefinition) => void
     /** Optional text after the filter icon (e.g. “Columns”). */
     label?: string
+    /** Column visibility metadata -- renders pinned fields as locked. */
+    columnVisibility?: ColumnVisibility[]
   }
 
-  let { signal, selectedFields, onToggleField, label }: Props = $props()
+  let { signal, selectedFields, onToggleField, label, columnVisibility }: Props = $props()
+
+  function getColumnCategory(fieldName: string): ColumnVisibility['category'] | null {
+    if (!columnVisibility) return null
+    return columnVisibility.find(c => c.fieldId === fieldName)?.category ?? null
+  }
 
   let popoverOpen = $state(false)
   let buttonEl = $state<HTMLButtonElement | null>(null)
@@ -144,30 +152,43 @@
       <div class="field-filter__popover-list">
         {#each filterableFields as field (field.name + ':' + field.searchScope)}
           {@const checked = isSelected(field)}
+          {@const category = getColumnCategory(field.name)}
+          {@const pinned = category === 'pinned'}
           <button
             type="button"
             class="field-filter__option"
             class:field-filter__option--selected={checked}
+            class:field-filter__option--pinned={pinned}
+            disabled={pinned}
             onclick={() => onToggleField(field)}
           >
-            <span
-              class="field-filter__checkbox"
-              class:field-filter__checkbox--checked={checked}
-            >
-              {#if checked}
-                <svg
-                  class="h-3 w-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="3"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M5 12l5 5L20 7" />
+            {#if pinned}
+              <span class="field-filter__lock" aria-label="Pinned column">
+                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
-              {/if}
-            </span>
+              </span>
+            {:else}
+              <span
+                class="field-filter__checkbox"
+                class:field-filter__checkbox--checked={checked}
+              >
+                {#if checked}
+                  <svg
+                    class="h-3 w-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M5 12l5 5L20 7" />
+                  </svg>
+                {/if}
+              </span>
+            {/if}
             <span class="field-filter__field-name">{field.name}</span>
             {#if field.searchScope === 'attribute' && 'attributeScope' in field}
               <span class="badge-origin">{field.attributeScope}</span>
@@ -210,6 +231,14 @@
 
   .field-filter__option--selected {
     @apply bg-primary/5;
+  }
+
+  .field-filter__option--pinned {
+    @apply opacity-50 cursor-default;
+  }
+
+  .field-filter__lock {
+    @apply flex h-4 w-4 shrink-0 items-center justify-center text-base-content/40;
   }
 
   .field-filter__checkbox {

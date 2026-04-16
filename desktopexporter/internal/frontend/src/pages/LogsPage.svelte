@@ -87,7 +87,7 @@
 
   type SeverityBand = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
 
-  function severityBand(severityNumber: number): SeverityBand {
+  export function severityBand(severityNumber: number): SeverityBand {
     if (severityNumber <= 4) return 'trace'
     if (severityNumber <= 8) return 'debug'
     if (severityNumber <= 12) return 'info'
@@ -121,10 +121,14 @@
   export function severityBorderClass(severityNumber: number): string {
     return BORDER_CLASS[severityBand(severityNumber)]
   }
+
+  export function severityLabel(severityText: string, severityNumber: number): string {
+    return severityText || severityBand(severityNumber).toUpperCase()
+  }
 </script>
 
 <script lang="ts">
-  import { onMount, tick } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
@@ -136,6 +140,8 @@
   import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
   import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
+  import ResizablePanels from '@/components/ResizablePanels.svelte'
+  import LogDetailPanel from '@/components/LogDetails/LogDetailPanel.svelte'
   import {
     ArrowDownIcon,
     ArrowLeftDoubleIcon,
@@ -144,6 +150,14 @@
     ArrowRightIcon,
     TrashIcon,
   } from '@/icons'
+  import {
+    fixed, flex,
+    computeInitialWidths,
+    redistributeWidths,
+    computeBarPositions,
+    startColumnResize,
+  } from '@/utils/column-resize'
+  import { tableNav } from '@/utils/table-keyboard-nav'
 
   // --- context ---
   let timeContext = getTimeContext()
@@ -164,14 +178,53 @@
   let rowsPerPageOptions = [10, 25, 50, 100]
   let rowsPerPagePopoverOpen = $state(false)
 
-  // --- state: expand ---
-  let expandedLogId = $state<string | null>(null)
+  // --- state: selection ---
+  let selectedLogId = $state<string | null>(null)
 
   // --- state: polling / refresh indicator ---
   let searchEditorApi = $state<SearchEditorAPI | null>(null)
   let baselineLogCount = $state(0)
   let polledLogCount = $state(0)
   const POLL_INTERVAL_MS = 3000
+
+  // --- state: column resize ---
+  const logCols = [
+    flex('timestamp', 120, 2),
+    flex('severity', 70, 1),
+    flex('service', 100, 2),
+    flex('body', 120, 5),
+  ]
+
+  let activeResizeCol = $state<number | null>(null)
+  let logContainerEl = $state<HTMLDivElement | null>(null)
+  let colWidths = $state(logCols.map(d => d.min))
+
+  let barPositions = $derived(computeBarPositions(logCols, colWidths))
+
+  $effect(() => {
+    if (!logContainerEl) return
+    untrack(() => {
+      colWidths = computeInitialWidths(logCols, logContainerEl!.clientWidth)
+    })
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width
+      if (w && activeResizeCol === null) {
+        colWidths = redistributeWidths(logCols, colWidths, w)
+      }
+    })
+    ro.observe(logContainerEl)
+    return () => ro.disconnect()
+  })
+
+  function handleStartResize(colIndex: number, e: PointerEvent) {
+    activeResizeCol = colIndex
+    startColumnResize(
+      logCols,
+      () => colWidths, colIndex, e,
+      next => { colWidths = next },
+      () => { activeResizeCol = null }
+    )
+  }
 
   // --- derived: table rows ---
   let sortedLogs = $derived.by(() => {
@@ -198,6 +251,10 @@
 
   let hasLogRows = $derived(logs.length > 0)
 
+  let selectedLog = $derived(
+    selectedLogId ? sortedLogs.find(l => l.id === selectedLogId) : undefined
+  )
+
   let refreshIndicatorText = $derived.by(() => {
     const delta = polledLogCount - baselineLogCount
     if (delta <= 0) return ''
@@ -210,8 +267,10 @@
   })
 
   $effect(() => {
-    void sortedLogs
-    expandedLogId = null
+    const first = paginatedLogs[0]
+    if (!selectedLogId || !sortedLogs.some(l => l.id === selectedLogId)) {
+      selectedLogId = first?.id ?? null
+    }
   })
 
   $effect(() => {
@@ -275,16 +334,8 @@
     }
   }
 
-  function toggleExpand(logId: string) {
-    const opening = expandedLogId !== logId
-    expandedLogId = opening ? logId : null
-    if (opening) {
-      tick().then(() => {
-        document
-          .querySelector(`[data-log-detail="${logId}"]`)
-          ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-      })
-    }
+  function selectLog(logId: string) {
+    selectedLogId = selectedLogId === logId ? null : logId
   }
 
   async function fetchLogs() {
@@ -320,9 +371,12 @@
   }
 
   async function handleDeleteLog(logId: string) {
+    const idx = paginatedLogs.findIndex(l => l.id === logId)
+    const nextIdx = idx < paginatedLogs.length - 1 ? idx + 1 : idx - 1
+    const nextId = nextIdx >= 0 ? paginatedLogs[nextIdx]?.id ?? null : null
     try {
       await telemetryAPI.deleteLogByID(logId)
-      expandedLogId = null
+      selectedLogId = nextId
       await fetchLogs()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to delete log'
@@ -332,7 +386,7 @@
   async function handleDeleteAllLogs() {
     try {
       await telemetryAPI.clearLogs()
-      expandedLogId = null
+      selectedLogId = null
       currentPage = 1
       await fetchLogs()
     } catch (err) {
@@ -397,315 +451,251 @@
         </p>
       </div>
     {:else}
-      <div
-        class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200 {loading
-          ? 'opacity-70'
-          : 'opacity-100'}"
-      >
-        <div class="flex-1 min-h-0 overflow-x-auto overflow-y-auto">
-          <table class="log-list-table table table-fixed table-sm w-full border-collapse">
-            <colgroup>
-              <col class="log-col-indicator" />
-              <col class="log-col-timestamp" />
-              <col class="log-col-severity" />
-              <col class="log-col-service" />
-              <col />
-            </colgroup>
-            <thead class="sticky top-0 z-10 table-header-surface">
-              <tr class="table-header-row">
-                <th class="table-header-cell"></th>
-                <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                  onclick={() => handleSort('timestamp')}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e => e.key === 'Enter' && handleSort('timestamp')}
+      <div class="min-h-0 flex-1">
+        <ResizablePanels
+          defaultLeftWidth={0.65}
+          minLeftWidth={0.3}
+          minRightWidth={0.2}
+          storageKey="log-detail-panels"
+        >
+          {#snippet leftPanel()}
+            <div
+              class="flex h-full flex-col overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200 {loading
+                ? 'opacity-70'
+                : 'opacity-100'}"
+            >
+              <div class="flex-1 min-h-0 overflow-x-auto overflow-y-auto" bind:this={logContainerEl}>
+                <div class="col-resize-context">
+                <table
+                  class="log-list-table table table-fixed table-sm w-full border-collapse"
+                  use:tableNav={{
+                    rowIdAttr: 'log-id',
+                    onSelect: id => { selectedLogId = id },
+                    onActivate: id => selectLog(id),
+                  }}
                 >
-                  <div class="table-header-sort">
-                    <span class="table-header-sort__label">Timestamp</span>
-                    <span class="table-header-sort__indicator">
-                      <ArrowDownIcon
-                        class="sort-indicator {sortColumn === 'timestamp'
-                          ? 'sort-indicator--active'
-                          : 'sort-indicator--inactive'} {sortColumn ===
-                          'timestamp' && sortDirection === 'asc'
-                          ? 'sort-indicator--asc'
-                          : ''}"
-                        aria-hidden="true"
-                      />
-                    </span>
-                  </div>
-                </th>
-                <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                  onclick={() => handleSort('severity')}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e => e.key === 'Enter' && handleSort('severity')}
-                >
-                  <div class="table-header-sort">
-                    <span class="table-header-sort__label">Severity</span>
-                    <span class="table-header-sort__indicator">
-                      <ArrowDownIcon
-                        class="sort-indicator {sortColumn === 'severity'
-                          ? 'sort-indicator--active'
-                          : 'sort-indicator--inactive'} {sortColumn ===
-                          'severity' && sortDirection === 'asc'
-                          ? 'sort-indicator--asc'
-                          : ''}"
-                        aria-hidden="true"
-                      />
-                    </span>
-                  </div>
-                </th>
-                <th
-                  class="table-header-cell table-header-cell--sortable table-header-cell--left group"
-                  onclick={() => handleSort('service')}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e => e.key === 'Enter' && handleSort('service')}
-                >
-                  <div class="table-header-sort">
-                    <span class="table-header-sort__label">Service</span>
-                    <span class="table-header-sort__indicator">
-                      <ArrowDownIcon
-                        class="sort-indicator {sortColumn === 'service'
-                          ? 'sort-indicator--active'
-                          : 'sort-indicator--inactive'} {sortColumn ===
-                          'service' && sortDirection === 'asc'
-                          ? 'sort-indicator--asc'
-                          : ''}"
-                        aria-hidden="true"
-                      />
-                    </span>
-                  </div>
-                </th>
-                <th class="table-header-cell table-header-cell--left">Body</th>
-              </tr>
-            </thead>
-            <tbody class="table-body-surface">
-              {#each paginatedLogs as log (log.id)}
-                {@const expanded = expandedLogId === log.id}
-                {@const service = getServiceName(log.resource) ?? ''}
-                <tr
-                  class="log-row cursor-pointer transition-colors border-l-2 {severityBorderClass(log.severityNumber)} {expanded ? 'log-row--expanded' : 'hover:bg-base-200'}"
-                  onclick={() => toggleExpand(log.id)}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={e => (e.key === 'Enter' || e.key === ' ') && toggleExpand(log.id)}
-                >
-                  <td class="log-cell log-cell-indicator {expanded ? 'log-cell-indicator--expanded' : ''}">
-                    <ArrowDownIcon />
-                  </td>
-                  <td
-                    class="log-cell truncate text-base-content/80 tabular-nums"
-                    title={formatTimestamp(log.timestamp, timeContext.timezone, 'nanoseconds')}
-                  >
-                    {formatTimestamp(log.timestamp, timeContext.timezone, 'milliseconds')}
-                  </td>
-                  <td class="log-cell">
-                    <span class={severityBadgeClass(log.severityNumber)}>
-                      {log.severityText || severityBand(log.severityNumber).toUpperCase()}
-                    </span>
-                  </td>
-                  <td class="log-cell truncate" title={service}>
-                    {service || '—'}
-                  </td>
-                  <td class="log-cell truncate text-base-content/80" title={log.body}>
-                    {log.body}
-                  </td>
-                </tr>
-
-                {#if expanded}
-                  <tr class="log-detail-row border-l-2 {severityBorderClass(log.severityNumber)}" data-log-detail={log.id}>
-                    <td class="p-0"></td>
-                    <td colspan="4" class="p-0">
-                      <div class="log-detail">
-                        <table class="log-detail__fields detail-fields w-full" aria-label="Log details">
-                          <tbody>
-                            {#if log.body}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">body:</span> <span class="detail-cell__value">{log.body}</span></td>
-                                <td class="detail-cell--badges"><span class="badge-type">{log.bodyType}</span></td>
-                              </tr>
-                            {/if}
-                            {#if log.traceID}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">trace id:</span> <a href="/trace/{log.traceID}" class="link link-primary font-mono" onclick={e => e.stopPropagation()}>{log.traceID}</a></td>
-                                <td class="detail-cell--badges"><span class="badge-type">string</span></td>
-                              </tr>
-                            {/if}
-                            {#if log.spanID}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">span id:</span> <span class="font-mono">{log.spanID}</span></td>
-                                <td class="detail-cell--badges"><span class="badge-type">string</span></td>
-                              </tr>
-                            {/if}
-                            <tr class="table-row">
-                              <td class="detail-cell"><span class="detail-cell__key">severity:</span> {log.severityText} ({log.severityNumber})</td>
-                              <td class="detail-cell--badges"><span class="badge-type">enum</span></td>
-                            </tr>
-                            <tr class="table-row">
-                              <td class="detail-cell"><span class="detail-cell__key">timestamp:</span> <span class="tabular-nums">{formatTimestamp(log.timestamp, timeContext.timezone, 'nanoseconds')}</span></td>
-                              <td class="detail-cell--badges"><span class="badge-type">timestamp</span></td>
-                            </tr>
-                            <tr class="table-row">
-                              <td class="detail-cell"><span class="detail-cell__key">observed timestamp:</span> <span class="tabular-nums">{formatTimestamp(log.observedTimestamp, timeContext.timezone, 'nanoseconds')}</span></td>
-                              <td class="detail-cell--badges"><span class="badge-type">timestamp</span></td>
-                            </tr>
-                            {#if log.eventName}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">event name:</span> {log.eventName}</td>
-                                <td class="detail-cell--badges"><span class="badge-type">string</span></td>
-                              </tr>
-                            {/if}
-                            <tr class="table-row">
-                              <td class="detail-cell"><span class="detail-cell__key">flags:</span> {log.flags}</td>
-                              <td class="detail-cell--badges"><span class="badge-type">uint32</span></td>
-                            </tr>
-                            {#if log.droppedAttributesCount > 0}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">dropped attributes count:</span> {log.droppedAttributesCount}</td>
-                                <td class="detail-cell--badges"><span class="badge-type">uint32</span></td>
-                              </tr>
-                            {/if}
-                            {#each log.attributes as attr}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">{attr.key}:</span> {attr.value}</td>
-                                <td class="detail-cell--badges"><span class="badge-type">{attr.type}</span></td>
-                              </tr>
-                            {/each}
-                            {#each log.resource.attributes as attr}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">{attr.key}:</span> {attr.value}</td>
-                                <td class="detail-cell--badges"><span class="badge-type">{attr.type}</span> <span class="badge-origin">resource</span></td>
-                              </tr>
-                            {/each}
-                            {#if log.scope.name}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">scope name:</span> {log.scope.name}</td>
-                                <td class="detail-cell--badges"><span class="badge-type">string</span> <span class="badge-origin">scope</span></td>
-                              </tr>
-                            {/if}
-                            {#if log.scope.version}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">scope version:</span> {log.scope.version}</td>
-                                <td class="detail-cell--badges"><span class="badge-type">string</span> <span class="badge-origin">scope</span></td>
-                              </tr>
-                            {/if}
-                            {#each log.scope.attributes as attr}
-                              <tr class="table-row">
-                                <td class="detail-cell"><span class="detail-cell__key">{attr.key}:</span> {attr.value}</td>
-                                <td class="detail-cell--badges"><span class="badge-type">{attr.type}</span> <span class="badge-origin">scope</span></td>
-                              </tr>
-                            {/each}
-                          </tbody>
-                        </table>
-                        <div class="log-detail__actions">
-                          <button
-                            type="button"
-                            class="btn btn-ghost btn-sm text-error"
-                            onclick={e => { e.stopPropagation(); handleDeleteLog(log.id) }}
-                            aria-label="Delete this log"
-                          >
-                            <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
-                            Delete this log
-                          </button>
+                  <colgroup>
+                    {#each colWidths as w}
+                      <col style:width="{w}px" />
+                    {/each}
+                  </colgroup>
+                  <thead class="sticky top-0 z-10 table-header-surface">
+                    <tr class="table-header-row">
+                      <th
+                        class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                        onclick={() => handleSort('timestamp')}
+                        role="button"
+                        tabindex="0"
+                        onkeydown={e => e.key === 'Enter' && handleSort('timestamp')}
+                      >
+                        <div class="table-header-sort">
+                          <span class="table-header-sort__label">Timestamp</span>
+                          <span class="table-header-sort__indicator">
+                            <ArrowDownIcon
+                              class="sort-indicator {sortColumn === 'timestamp'
+                                ? 'sort-indicator--active'
+                                : 'sort-indicator--inactive'} {sortColumn ===
+                                'timestamp' && sortDirection === 'asc'
+                                ? 'sort-indicator--asc'
+                                : ''}"
+                              aria-hidden="true"
+                            />
+                          </span>
                         </div>
-                      </div>
-                    </td>
-                  </tr>
-                {/if}
-              {/each}
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Pagination -->
-        {#if sortedLogs.length > 0}
-          <div class="pagination-controls">
-            <div class="pagination-rows-selector">
-              <span class="pagination-label">Rows per page:</span>
-              <button
-                class="pagination-rows-button"
-                popovertarget="log-rows-per-page-popover"
-                style="anchor-name: --log-rows-per-page-anchor"
-              >
-                <span>{rowsPerPage}</span>
-                <svg
-                  class="w-3 h-3 popover-indicator {rowsPerPagePopoverOpen
-                    ? 'popover-indicator--open'
-                    : ''}"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M18 9s-4.419 6-6 6s-6-6-6-6" />
-                </svg>
-              </button>
-            </div>
-
-            <div class="pagination-controls__center">
-              <div
-                class="flex min-w-0 flex-nowrap items-center justify-center gap-1.5"
-              >
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm btn-circle"
-                  disabled={currentPage === 1}
-                  onclick={() => goToPage(1)}
-                  aria-label="First page"
-                >
-                  <ArrowLeftDoubleIcon class="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm btn-circle"
-                  disabled={currentPage === 1}
-                  onclick={() => goToPage(currentPage - 1)}
-                  aria-label="Previous page"
-                >
-                  <ArrowLeftIcon class="h-4 w-4" aria-hidden="true" />
-                </button>
-                <div
-                  class="flex min-h-8 min-w-[10rem] items-center justify-center rounded-lg bg-base-200/50 px-3 text-sm tabular-nums text-base-content/70"
-                >
-                  {startRow}–{endRow} of {sortedLogs.length} logs
+                      </th>
+                      <th
+                        class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                        onclick={() => handleSort('severity')}
+                        role="button"
+                        tabindex="0"
+                        onkeydown={e => e.key === 'Enter' && handleSort('severity')}
+                      >
+                        <div class="table-header-sort">
+                          <span class="table-header-sort__label">Severity</span>
+                          <span class="table-header-sort__indicator">
+                            <ArrowDownIcon
+                              class="sort-indicator {sortColumn === 'severity'
+                                ? 'sort-indicator--active'
+                                : 'sort-indicator--inactive'} {sortColumn ===
+                                'severity' && sortDirection === 'asc'
+                                ? 'sort-indicator--asc'
+                                : ''}"
+                              aria-hidden="true"
+                            />
+                          </span>
+                        </div>
+                      </th>
+                      <th
+                        class="table-header-cell table-header-cell--sortable table-header-cell--left group"
+                        onclick={() => handleSort('service')}
+                        role="button"
+                        tabindex="0"
+                        onkeydown={e => e.key === 'Enter' && handleSort('service')}
+                      >
+                        <div class="table-header-sort">
+                          <span class="table-header-sort__label">Service</span>
+                          <span class="table-header-sort__indicator">
+                            <ArrowDownIcon
+                              class="sort-indicator {sortColumn === 'service'
+                                ? 'sort-indicator--active'
+                                : 'sort-indicator--inactive'} {sortColumn ===
+                                'service' && sortDirection === 'asc'
+                                ? 'sort-indicator--asc'
+                                : ''}"
+                              aria-hidden="true"
+                            />
+                          </span>
+                        </div>
+                      </th>
+                      <th class="table-header-cell table-header-cell--left">Body</th>
+                    </tr>
+                  </thead>
+                  <tbody class="table-body-surface">
+                    {#each paginatedLogs as log (log.id)}
+                      {@const selected = selectedLogId === log.id}
+                      {@const service = getServiceName(log.resource) ?? ''}
+                      <tr
+                        class="log-row cursor-pointer transition-colors border-l-2 {severityBorderClass(log.severityNumber)} {selected ? 'table-row--selected' : 'hover:bg-base-200'}"
+                        data-log-id={log.id}
+                        onclick={() => selectLog(log.id)}
+                        role="button"
+                        tabindex="0"
+                      >
+                        <td
+                          class="log-cell truncate text-base-content/80 tabular-nums"
+                          title={formatTimestamp(log.timestamp, timeContext.timezone, 'nanoseconds')}
+                        >
+                          {formatTimestamp(log.timestamp, timeContext.timezone, 'milliseconds')}
+                        </td>
+                        <td class="log-cell">
+                          <span class={severityBadgeClass(log.severityNumber)}>
+                            {severityLabel(log.severityText, log.severityNumber)}
+                          </span>
+                        </td>
+                        <td class="log-cell truncate" title={service}>
+                          {service || '—'}
+                        </td>
+                        <td class="log-cell text-base-content/80 truncate" title={log.body}>
+                          {log.body}
+                          {#if log.bodyType}
+                            <span class="badge-type ml-1">{log.bodyType}</span>
+                          {/if}
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+                {#each barPositions as bar}
+                  <div
+                    class="col-resize-bar col-resize-bar--guide"
+                    class:col-resize-bar--active={activeResizeCol === bar.index}
+                    style:left="{bar.left}px"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize {logCols[bar.index].id} column"
+                    onpointerdown={e => handleStartResize(bar.index, e)}
+                  >
+                    <div class="col-resize-bar__line"></div>
+                  </div>
+                {/each}
                 </div>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm btn-circle"
-                  disabled={currentPage === totalPages}
-                  onclick={() => goToPage(currentPage + 1)}
-                  aria-label="Next page"
-                >
-                  <ArrowRightIcon class="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm btn-circle"
-                  disabled={currentPage === totalPages}
-                  onclick={() => goToPage(totalPages)}
-                  aria-label="Last page"
-                >
-                  <ArrowRightDoubleIcon class="h-4 w-4" aria-hidden="true" />
-                </button>
               </div>
-            </div>
 
-            {#if hasLogRows}
-              <div class="pagination-controls__actions">
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm text-error"
-                  onclick={handleDeleteAllLogs}
-                  aria-label="Delete all logs"
-                >
-                  <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
-                  Delete all logs
-                </button>
-              </div>
-            {/if}
-          </div>
-        {/if}
+              <!-- Pagination -->
+              {#if sortedLogs.length > 0}
+                <div class="pagination-controls">
+                  <div class="pagination-rows-selector">
+                    <span class="pagination-label">Rows per page:</span>
+                    <button
+                      class="pagination-rows-button"
+                      popovertarget="log-rows-per-page-popover"
+                      style="anchor-name: --log-rows-per-page-anchor"
+                    >
+                      <span>{rowsPerPage}</span>
+                      <svg
+                        class="w-3 h-3 popover-indicator {rowsPerPagePopoverOpen
+                          ? 'popover-indicator--open'
+                          : ''}"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M18 9s-4.419 6-6 6s-6-6-6-6" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div class="pagination-controls__center">
+                    <div
+                      class="flex min-w-0 flex-nowrap items-center justify-center gap-1.5"
+                    >
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-sm btn-circle"
+                        disabled={currentPage === 1}
+                        onclick={() => goToPage(1)}
+                        aria-label="First page"
+                      >
+                        <ArrowLeftDoubleIcon class="h-4 w-4" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-sm btn-circle"
+                        disabled={currentPage === 1}
+                        onclick={() => goToPage(currentPage - 1)}
+                        aria-label="Previous page"
+                      >
+                        <ArrowLeftIcon class="h-4 w-4" aria-hidden="true" />
+                      </button>
+                      <div
+                        class="flex min-h-8 min-w-[10rem] items-center justify-center rounded-lg bg-base-200/50 px-3 text-sm tabular-nums text-base-content/70"
+                      >
+                        {startRow}–{endRow} of {sortedLogs.length} logs
+                      </div>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-sm btn-circle"
+                        disabled={currentPage === totalPages}
+                        onclick={() => goToPage(currentPage + 1)}
+                        aria-label="Next page"
+                      >
+                        <ArrowRightIcon class="h-4 w-4" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-sm btn-circle"
+                        disabled={currentPage === totalPages}
+                        onclick={() => goToPage(totalPages)}
+                        aria-label="Last page"
+                      >
+                        <ArrowRightDoubleIcon class="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {#if hasLogRows}
+                    <div class="pagination-controls__actions">
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-sm text-error"
+                        onclick={handleDeleteAllLogs}
+                        aria-label="Delete all logs"
+                      >
+                        <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
+                        Delete all logs
+                      </button>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/snippet}
+          {#snippet rightPanel()}
+            <div
+              class="h-full overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm"
+            >
+              <LogDetailPanel log={selectedLog} onDelete={handleDeleteLog} />
+            </div>
+          {/snippet}
+        </ResizablePanels>
       </div>
     {/if}
   </div>
@@ -742,70 +732,12 @@
 <style lang="postcss">
   @reference "../app.css";
 
-  .log-col-timestamp {
-    width: 160px;
-  }
-  .log-col-severity {
-    width: 80px;
-  }
-  .log-col-service {
-    width: 140px;
-  }
-  .log-col-indicator {
-    width: 36px;
-  }
-
   .log-row {
     border-left-width: 2px;
   }
 
-  .log-row--expanded {
-    @apply bg-base-200/40;
-  }
-
   .log-cell {
     @apply px-4 py-2 align-middle text-sm;
-  }
-
-  .log-cell-indicator {
-    @apply px-2 text-center text-base-content/35;
-    font-size: 14px;
-    transition: transform 150ms ease, color 150ms ease;
-    transform: rotate(-90deg);
-  }
-
-  .log-cell-indicator--expanded {
-    @apply text-base-content/70;
-    transform: rotate(0deg);
-  }
-
-  .log-row:hover .log-cell-indicator {
-    @apply text-base-content/60;
-  }
-
-  .log-detail-row {
-    @apply bg-base-200/40;
-    border-left-width: 2px;
-  }
-
-  .log-detail {
-    @apply text-sm pb-2;
-  }
-
-  .log-detail__actions {
-    @apply flex items-center justify-end gap-2 pt-1.5 mt-0.5 pr-4;
-  }
-
-  .log-detail__fields {
-    @apply border-collapse text-sm;
-  }
-
-  .log-detail__fields .detail-cell {
-    @apply pl-4;
-  }
-
-  .log-detail__fields .detail-cell--badges {
-    @apply pr-4;
   }
 
   .log-rows-per-page-popover {

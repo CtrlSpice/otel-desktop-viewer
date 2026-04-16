@@ -2,6 +2,35 @@
 import { telemetryAPI } from '@/services/telemetry-service';
 import { OPERATORS, type Operator } from './operators';
 
+// --- Column visibility (shared across signal tables) ---
+
+export type ColumnCategory = 'pinned' | 'flexible' | 'detail'
+
+export type ColumnVisibility = {
+  fieldId: string
+  label: string
+  category: ColumnCategory
+}
+
+export const LOG_COLUMN_DEFAULTS: ColumnVisibility[] = [
+  { fieldId: 'timestamp',  label: 'Timestamp', category: 'pinned' },
+  { fieldId: 'service',    label: 'Service',   category: 'pinned' },
+  { fieldId: 'severity',   label: 'Severity',  category: 'flexible' },
+  { fieldId: 'traceID',    label: 'Trace ID',  category: 'detail' },
+  { fieldId: 'body',       label: 'Body',      category: 'flexible' },
+]
+
+export const TRACE_COLUMN_DEFAULTS: ColumnVisibility[] = [
+  { fieldId: 'traceID',        label: 'Trace ID',   category: 'pinned' },
+  { fieldId: 'rootName',       label: 'Root Name',  category: 'pinned' },
+  { fieldId: 'service',        label: 'Service',    category: 'flexible' },
+  { fieldId: 'startTime',      label: 'Start Time', category: 'flexible' },
+  { fieldId: 'duration',       label: 'Duration',   category: 'flexible' },
+  { fieldId: 'spanCount',      label: 'Spans',      category: 'flexible' },
+  { fieldId: 'errorCount',     label: 'Errors',     category: 'flexible' },
+  { fieldId: 'exceptionCount', label: 'Exceptions', category: 'flexible' },
+]
+
 // OpenTelemetry attribute value types
 export type FieldType =
   | 'string'

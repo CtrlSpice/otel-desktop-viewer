@@ -395,7 +395,7 @@ svg {
 }
 
 .toolbar-filter-trigger__badge {
-  @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-full bg-primary/20 px-1 text-[0.65rem] font-semibold tabular-nums text-primary;
+  @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
 }
 
 /* Navigation */
@@ -680,6 +680,10 @@ button:focus-visible:not(.btn) {
 
 .table-row--selected {
   background-color: var(--table-selected-bg);
+  outline: 1px solid color-mix(in oklab, var(--color-primary) 50%, transparent);
+  outline-offset: -1px;
+  position: relative;
+  z-index: 1;
 }
 
 .table-cell {
@@ -852,13 +856,13 @@ button:focus-visible:not(.btn) {
 }
 
 .col-resize-bar:hover .col-resize-bar__line {
-  opacity: 0.6;
+  opacity: 0.25;
 }
 
 .col-resize-bar--active .col-resize-bar__line {
   width: 0.125rem;
   background-color: var(--color-primary);
-  opacity: 0.9;
+  opacity: 0.4;
 }
 
 .col-resize-bar:focus-visible {
@@ -935,19 +939,44 @@ button:focus-visible:not(.btn) {
   @apply bg-base-200;
 }
 
-/* Detail field badges — daisyUI: badge · badge-sm · text-xs · badge-soft · role */
+/* Badges — modern chips: modest radius, tight type (not full pills) */
+.badge {
+  @apply rounded-md font-medium tracking-tight;
+}
+
+.badge.badge-sm {
+  @apply min-h-[1.25rem] gap-1 px-2 py-0.5 leading-tight;
+}
+
+.badge.badge-xs {
+  @apply min-h-[1.125rem] gap-0.5 px-1.5 py-px text-[0.625rem] leading-none;
+}
+
+.badge.badge-soft {
+  @apply ring-1 ring-inset ring-base-content/[0.07];
+}
+
+/* Outline badges (e.g. metric type) — match chip density; Daisy draws the outline */
+.badge.badge-outline {
+  @apply leading-tight;
+}
+
+/*
+ * Detail / toolbar metadata: type · origin · root · offset.
+ * type → accent, origin → primary, root → secondary (Daisy semantic colors).
+ */
 .badge-type {
-  @apply badge badge-sm text-xs badge-soft badge-secondary;
+  @apply badge badge-sm text-xs badge-soft badge-accent leading-tight;
 }
 
 .badge-origin {
-  @apply badge badge-sm text-xs badge-soft badge-accent;
+  @apply badge badge-sm text-xs badge-soft badge-primary leading-tight;
 }
 
 .badge-root {
-  @apply badge badge-sm text-xs badge-soft badge-primary;
+  @apply badge badge-sm text-xs badge-soft badge-secondary leading-tight;
 }
 
 .badge-offset {
-  @apply badge badge-sm text-xs badge-soft badge-warning tabular-nums;
+  @apply badge badge-sm text-xs badge-soft badge-warning tabular-nums leading-tight;
 }

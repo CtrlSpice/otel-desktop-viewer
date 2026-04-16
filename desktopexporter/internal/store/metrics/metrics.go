@@ -278,8 +278,8 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 			select e.datapoint_id, json_group_array(json_object(
 				'timestamp', e.timestamp,
 				'value', e.value,
-				'traceID', e.trace_id,
-				'spanID', e.span_id,
+				'traceID', replace(e.trace_id::varchar, '-', ''),
+				'spanID', right(replace(e.span_id::varchar, '-', ''), 16),
 				'filteredAttributes', coalesce(
 					(select attrs from exemplar_attrs where exemplar_attrs.exemplar_id = e.id),
 					json('[]')

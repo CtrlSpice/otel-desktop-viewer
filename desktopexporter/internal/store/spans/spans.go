@@ -166,7 +166,7 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 
 	finalQuery := fmt.Sprintf(`%s
 		select cast(coalesce(to_json(list(json_object(
-			'traceID',        sub.trace_id,
+			'traceID',        replace(sub.trace_id::varchar, '-', ''),
 			'rootSpan',       case when sub.service_name is not null then json_object(
 				'serviceName', sub.service_name,
 				'name',        sub.root_name,
@@ -333,7 +333,7 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 		link_data as (
 			select l.span_id,
 				json_group_array(json_object(
-					'traceID', l.trace_id,
+					'traceID', replace(l.trace_id::varchar, '-', ''),
 					'spanID', right(replace(l.linked_span_id::varchar, '-', ''), 16),
 					'traceState', l.trace_state,
 					'droppedAttributesCount', l.dropped_attributes_count,
@@ -348,7 +348,7 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 		ordered_spans as (
 			select json_object(
 					'spanData', json_object(
-						'traceID', st.trace_id,
+						'traceID', replace(st.trace_id::varchar, '-', ''),
 						'traceState', st.trace_state,
 						'spanID', right(replace(st.span_id::varchar, '-', ''), 16),
 						'parentSpanID', case when st.parent_span_id is not null then right(replace(st.parent_span_id::varchar, '-', ''), 16) end,
@@ -392,7 +392,7 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 			when not exists (select 1 from spans where trace_id = (select trace_id from search_params))
 				then null
 			else cast(json_object(
-				'traceID', (select trace_id from search_params),
+				'traceID', replace((select trace_id from search_params)::varchar, '-', ''),
 				'spans', coalesce(to_json(list(span_json order by sort_path)), json('[]'))
 			) as varchar)
 		end as trace

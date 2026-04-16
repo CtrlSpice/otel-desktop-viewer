@@ -92,9 +92,9 @@ func buildTracesForSummaryOrdering(baseTime int64) (ptrace.Traces, string, strin
 	addOneSpan(traces, trace3Hex, span3Hex, "", "root last", baseTime+2*time.Second.Nanoseconds(), baseTime+3*time.Second.Nanoseconds(), "service3")
 
 	return traces,
-		"00000000-0000-0000-0000-000000000001",
-		"00000000-0000-0000-0000-000000000002",
-		"00000000-0000-0000-0000-000000000003"
+		"00000000000000000000000000000001",
+		"00000000000000000000000000000002",
+		"00000000000000000000000000000003"
 }
 
 // searchTracesAll returns SearchTraces with a wide time range and nil query to get "all" summaries.
@@ -242,7 +242,7 @@ func TestTraceSuite(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	testTraceID := "00000000-0000-0000-0000-000000000099"
+	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, traces)
 	})
@@ -285,9 +285,7 @@ func TestTraceSuite(t *testing.T) {
 	t.Run("SearchSpansAcceptsTraceIDWithoutHyphens", func(t *testing.T) {
 		raw, err := spans.SearchSpans(ctx, s.DB(), "00000000000000000000000000000099", nil)
 		assert.NoError(t, err, "SearchSpans with 32-char hex trace ID should succeed")
-		got := getTraceTraceID(t, raw)
-		assert.True(t, got == "00000000-0000-0000-0000-000000000099" || got == "00000000000000000000000000000099",
-			"response traceID should be the same logical UUID (got %q)", got)
+		assert.Equal(t, testTraceID, getTraceTraceID(t, raw))
 	})
 
 	t.Run("AttributeDiscovery", func(t *testing.T) {
@@ -341,7 +339,7 @@ func TestSearchTraces(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	testTraceID := "00000000-0000-0000-0000-000000000099"
+	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, traces)
 	})
@@ -855,7 +853,7 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	testTraceID := "00000000-0000-0000-0000-000000000099"
+	testTraceID := "00000000000000000000000000000099"
 	raw, err := spans.SearchSpans(ctx, s.DB(), testTraceID, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, batchSize, getTraceSpansCount(t, raw))
@@ -959,7 +957,7 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	testTraceID := "00000000-0000-0000-0000-000000000099"
+	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, traces)
 	})
@@ -995,9 +993,7 @@ func TestSearchSpansWith32CharHexTraceID(t *testing.T) {
 	raw, err := spans.SearchSpans(ctx, s.DB(), "00000000000000000000000000000099", nil)
 	assert.NoError(t, err, "SearchSpans with 32-char hex trace ID should succeed")
 	assert.NotEmpty(t, raw)
-	got := getTraceTraceID(t, raw)
-	assert.True(t, got == "00000000-0000-0000-0000-000000000099" || got == "00000000000000000000000000000099",
-		"response traceID should be the same logical UUID (got %q)", got)
+	assert.Equal(t, "00000000000000000000000000000099", getTraceTraceID(t, raw))
 }
 
 // TestDeleteSpansByTraceIDs verifies that spans for multiple traces are deleted, including child rows.
@@ -1006,7 +1002,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	defer teardown()
 
 	traces := createTestTracePdata()
-	testTraceID := "00000000-0000-0000-0000-000000000099"
+	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, traces)
 	})

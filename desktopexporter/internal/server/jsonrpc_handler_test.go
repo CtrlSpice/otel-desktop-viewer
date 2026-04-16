@@ -91,7 +91,7 @@ func createRequest(method string, params any) *jsonrpc2.Request {
 	}
 }
 
-const testTraceIDHex = "00000000-0000-0000-0000-000000000001"
+const testTraceIDHex = "00000000000000000000000000000001"
 
 func TestSearchTraces(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {

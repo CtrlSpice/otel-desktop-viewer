@@ -225,9 +225,9 @@ func TestLogOrdering(t *testing.T) {
 	assert.Len(t, entries, 3)
 
 	// Order: newest first by effective time — 0002 (t+150ms), 0007 (t+100ms), 0001 (t+0)
-	assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
-	assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[1].SpanID)
-	assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[2].SpanID)
+	assert.Equal(t, "0000000000000002", entries[0].SpanID)
+	assert.Equal(t, "0000000000000007", entries[1].SpanID)
+	assert.Equal(t, "0000000000000001", entries[2].SpanID)
 }
 
 // TestEmptyLogs verifies handling of empty log lists and empty store.
@@ -283,9 +283,9 @@ func TestLogSuite(t *testing.T) {
 	t.Run("LogOrdering", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
 		assert.Len(t, entries, 3)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[1].SpanID)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[2].SpanID)
+		assert.Equal(t, "0000000000000002", entries[0].SpanID)
+		assert.Equal(t, "0000000000000007", entries[1].SpanID)
+		assert.Equal(t, "0000000000000001", entries[2].SpanID)
 	})
 
 	t.Run("LogSeverity", func(t *testing.T) {
@@ -495,7 +495,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
+		assert.Equal(t, "0000000000000002", entries[0].SpanID)
 	})
 
 	t.Run("GlobalSearch_EventName", func(t *testing.T) {
@@ -545,7 +545,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1, "global search for span ID hex should match one log")
-		assert.Equal(t, "00000000-0000-0000-0000-000000000002", entries[0].SpanID)
+		assert.Equal(t, "0000000000000002", entries[0].SpanID)
 	})
 
 	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
@@ -595,7 +595,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[0].SpanID)
+		assert.Equal(t, "0000000000000001", entries[0].SpanID)
 	})
 
 	t.Run("Field_TraceID", func(t *testing.T) {
@@ -613,7 +613,7 @@ func TestSearchLogs(t *testing.T) {
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 3, "all three logs share the same trace")
 		for _, e := range entries {
-			assert.Equal(t, "00000000-0000-0000-0000-000000000099", e.TraceID)
+			assert.Equal(t, "00000000000000000000000000000099", e.TraceID)
 		}
 	})
 
@@ -649,7 +649,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000007", entries[0].SpanID)
+		assert.Equal(t, "0000000000000007", entries[0].SpanID)
 		assert.Contains(t, entries[0].Body, "Operation warning")
 	})
 
@@ -668,7 +668,7 @@ func TestSearchLogs(t *testing.T) {
 		entries := parseEntries(raw)
 		assert.Len(t, entries, 1)
 		assert.Equal(t, "event.a", entries[0].EventName)
-		assert.Equal(t, "00000000-0000-0000-0000-000000000001", entries[0].SpanID)
+		assert.Equal(t, "0000000000000001", entries[0].SpanID)
 	})
 
 	t.Run("Field_ScopeName", func(t *testing.T) {

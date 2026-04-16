@@ -158,7 +158,7 @@
               </button>
             </h3>
             {#if metric.datapoints.length > 0}
-              <span class="badge badge-secondary badge-outline"
+              <span class="badge badge-sm text-xs badge-secondary badge-outline"
                 >{metric.datapoints[0].metricType}</span
               >
             {/if}
