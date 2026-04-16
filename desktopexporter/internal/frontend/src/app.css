@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'layerchart/daisyui-5.css';
 @plugin "daisyui" {
   logs: false;
   themes: false;

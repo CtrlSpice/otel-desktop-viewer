@@ -377,6 +377,34 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 	return json.RawMessage(raw), nil
 }
 
+// GetMetricAttributes returns a JSON array of attribute names/scopes/types for metrics
+// that have at least one datapoint in the given time range.
+func GetMetricAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
+	query := `
+		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope, 'type', sub.type::varchar)
+			order by sub.key, sub.scope)) as varchar) as attributes
+		from (
+			select distinct a.key, a.scope, a.type
+			from attributes a
+			inner join metrics m on a.metric_id = m.id
+			where a.datapoint_id is null and a.exemplar_id is null
+			  and exists (
+				select 1 from datapoints d
+				where d.metric_id = m.id
+				  and d.timestamp >= ? and d.timestamp <= ?
+			  )
+		) sub
+	`
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetMetricAttributes: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
 // Clear truncates the metrics table and all child tables.
 func Clear(ctx context.Context, db *sql.DB) error {
 	for _, q := range []string{

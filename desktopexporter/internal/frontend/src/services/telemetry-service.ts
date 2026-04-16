@@ -310,6 +310,30 @@ export let telemetryAPI = {
     return metricsFromJSON(rawData)
   },
 
+  getMetricAttributes: async (
+    startTime: number,
+    endTime: number
+  ): Promise<FieldDefinition[]> => {
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
+    const params = [startTimeNs, endTimeNs]
+    const rawData = await callRPC('getMetricAttributes', params)
+
+    if (!Array.isArray(rawData)) {
+      console.warn(
+        'getMetricAttributes: Expected array, got:',
+        typeof rawData,
+        rawData
+      )
+      return []
+    }
+
+    return convertAttributesToFieldDefinitions(rawData)
+  },
+
+  deleteMetrics: (metricIDs: string[]) =>
+    callRPC('deleteMetricByID', metricIDs),
+
   clearMetrics: () => callRPC('clearMetrics', undefined),
 
   // Stats methods
