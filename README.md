@@ -209,8 +209,7 @@ otel-cli span event --name "another cool thing\!" --attrs "foo=bar" --sockdir $s
 otel-cli span end --sockdir $sockdir
 ```
 
-![otel-cli-example](https://user-images.githubusercontent.com/56372758/217082956-23c60f2d-f882-4c78-a2
-05-f744596fac21.png)
+![otel-cli-example](https://user-images.githubusercontent.com/56372758/217082956-23c60f2d-f882-4c78-a205-f744596fac21.png)
 
 ## Implementation
 
