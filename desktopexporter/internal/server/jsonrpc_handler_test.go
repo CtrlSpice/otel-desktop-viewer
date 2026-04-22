@@ -312,3 +312,47 @@ func TestSearchMetricsInvalidParams(t *testing.T) {
 	assert.Nil(t, result)
 	assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 }
+
+// TestGetDatapointQuantilesInvalidParams covers the parsing/validation paths in
+// getDatapointQuantiles. Happy-path flow + unsupported-type / found-but-wrong
+// type errors are exercised in the metrics package's unit tests; here we just
+// verify the handler's input contract.
+func TestGetDatapointQuantilesInvalidParams(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	cases := []struct {
+		name   string
+		params any
+	}{
+		{"WrongCount", []any{"id-only"}},
+		{"NonStringDatapointID", []any{42, []any{0.5}}},
+		{"NonArrayQuantiles", []any{"abc", "not-an-array"}},
+		{"NonNumberQuantile", []any{"abc", []any{"0.5"}}},
+		{"NegativeQuantile", []any{"abc", []any{-0.1}}},
+		{"AboveOneQuantile", []any{"abc", []any{1.1}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := createRequest("getDatapointQuantiles", c.params)
+			result, err := handler.Handle(context.Background(), req)
+			assert.Nil(t, result)
+			assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+		})
+	}
+}
+
+// TestGetDatapointQuantilesNotFound verifies that an unknown datapoint UUID
+// surfaces ErrDatapointNotFound rather than ErrInternal.
+func TestGetDatapointQuantilesNotFound(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	req := createRequest("getDatapointQuantiles", []any{
+		"00000000-0000-0000-0000-000000000000",
+		[]any{0.5},
+	})
+	result, err := handler.Handle(context.Background(), req)
+	assert.Nil(t, result)
+	assert.Equal(t, ErrDatapointNotFound, err)
+}

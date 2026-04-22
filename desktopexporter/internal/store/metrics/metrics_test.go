@@ -728,6 +728,108 @@ func TestClearMetrics(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id is not null"))
 }
 
+// TestGetDatapointQuantiles exercises the metric_type dispatch and JSON shape
+// of GetDatapointQuantiles. Macro correctness (linear vs log-linear
+// interpolation, edge cases, etc.) is covered in schema_test.go; this test
+// focuses on the Go helper stitching the right macro call together for each
+// datapoint kind and surfacing the typed errors.
+func TestGetDatapointQuantiles(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	err := s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+	})
+	require.NoError(t, err, "ingest test metrics")
+
+	// Index the first datapoint ID for each metric so subtests can ask for the
+	// kind they need by name.
+	metricList := searchMetricsAll(t, s, ctx)
+	dpIDByMetric := make(map[string]string)
+	for _, m := range metricList {
+		name, _ := m["name"].(string)
+		dps, _ := m["datapoints"].([]any)
+		if len(dps) == 0 {
+			continue
+		}
+		dp, _ := dps[0].(map[string]any)
+		if id, ok := dp["id"].(string); ok {
+			dpIDByMetric[name] = id
+		}
+	}
+
+	t.Run("Histogram", func(t *testing.T) {
+		id := dpIDByMetric["histogram_metric"]
+		require.NotEmpty(t, id)
+		raw, err := metrics.GetDatapointQuantiles(ctx, s.DB(), id, []float64{0.5, 0.95, 0.99})
+		require.NoError(t, err)
+
+		var out map[string]any
+		require.NoError(t, json.Unmarshal(raw, &out))
+		assert.Contains(t, out, "0.5")
+		assert.Contains(t, out, "0.95")
+		assert.Contains(t, out, "0.99")
+
+		// bounds=[0.5,1.0,1.5,2.0], counts=[10,20,30,25,15], total=100.
+		// p50 target=50, cumulative=10,30,60,85,100. First acc>=50 is bucket 3
+		// (1.0,1.5]: interp_linear = 1.0 + (1.5-1.0)*(50-30)/30 = 4/3.
+		p50, ok := out["0.5"].(float64)
+		require.True(t, ok, "p50 should be a number, got %T", out["0.5"])
+		assert.InDelta(t, 4.0/3.0, p50, 1e-9)
+
+		// p95 target=95: first acc>=95 is the clamped last bucket (2.0,2.0],
+		// which interpolates to exactly 2.0.
+		p95, ok := out["0.95"].(float64)
+		require.True(t, ok)
+		assert.InDelta(t, 2.0, p95, 1e-9)
+	})
+
+	t.Run("ExponentialHistogram", func(t *testing.T) {
+		id := dpIDByMetric["exponential_histogram_metric"]
+		require.NotEmpty(t, id)
+		raw, err := metrics.GetDatapointQuantiles(ctx, s.DB(), id, []float64{0.5, 0.99})
+		require.NoError(t, err)
+
+		var out map[string]any
+		require.NoError(t, json.Unmarshal(raw, &out))
+		assert.Contains(t, out, "0.5")
+		assert.Contains(t, out, "0.99")
+		// Don't pin exact values here -- exp_hist_quantile correctness is in
+		// schema_test.go. Just confirm both came back as finite numbers.
+		_, ok := out["0.5"].(float64)
+		assert.True(t, ok, "p50 should be a number, got %T", out["0.5"])
+		_, ok = out["0.99"].(float64)
+		assert.True(t, ok, "p99 should be a number, got %T", out["0.99"])
+	})
+
+	t.Run("UnsupportedType_Gauge", func(t *testing.T) {
+		id := dpIDByMetric["gauge_metric"]
+		require.NotEmpty(t, id)
+		_, err := metrics.GetDatapointQuantiles(ctx, s.DB(), id, []float64{0.5})
+		assert.ErrorIs(t, err, metrics.ErrQuantilesNotSupportedForType)
+	})
+
+	t.Run("UnsupportedType_Sum", func(t *testing.T) {
+		id := dpIDByMetric["sum_metric"]
+		require.NotEmpty(t, id)
+		_, err := metrics.GetDatapointQuantiles(ctx, s.DB(), id, []float64{0.5})
+		assert.ErrorIs(t, err, metrics.ErrQuantilesNotSupportedForType)
+	})
+
+	t.Run("DatapointNotFound", func(t *testing.T) {
+		_, err := metrics.GetDatapointQuantiles(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", []float64{0.5})
+		assert.ErrorIs(t, err, metrics.ErrDatapointIDNotFound)
+	})
+
+	t.Run("EmptyQuantiles", func(t *testing.T) {
+		id := dpIDByMetric["histogram_metric"]
+		require.NotEmpty(t, id)
+		raw, err := metrics.GetDatapointQuantiles(ctx, s.DB(), id, nil)
+		assert.NoError(t, err)
+		assert.JSONEq(t, "{}", string(raw))
+	})
+}
+
 // TestIngestMetrics_FlushInterval exercises the flushIntervalMetrics codepath by ingesting
 // more than 100 metrics in one call (flush runs when metricCount % 100 == 0). All metrics
 // have resource and scope attributes; we assert they were flushed correctly.

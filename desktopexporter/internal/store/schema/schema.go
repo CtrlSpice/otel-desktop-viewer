@@ -228,3 +228,179 @@ var IndexCreationQueries = []string{
 	`create index if not exists idx_attributes_metric_hierarchy on attributes(metric_id, datapoint_id, exemplar_id)`,
 	`create index if not exists idx_attributes_key_value on attributes(key, value, type)`,
 }
+
+// Macro creation queries
+// All macros use `create or replace` so re-init on existing databases is safe.
+// Composition (top-level builds on bucket pipelines builds on builders + kernels):
+//
+//	interp_linear / interp_loglin           -- arithmetic kernels
+//	hist_buckets / exp_*_buckets            -- shape-specific bucket builders
+//	bucket_quantile_linear / _loglin        -- shared pipeline (cumulative -> filter -> kernel)
+//	hist_quantile / exp_hist_quantile       -- top-level entry points
+var MacroCreationQueries = []string{
+	// Interpolation kernels.
+	// interp_loglin falls back to linear when lo*hi <= 0 (zero endpoint or sign mismatch)
+	`create or replace macro interp_linear(lo, hi, acc_prev, cnt, target) as (
+		lo + (hi - lo) * (target - acc_prev) / cnt
+	)`,
+
+	`create or replace macro interp_loglin(lo, hi, acc_prev, cnt, target) as (
+		case
+			when lo = 0 or hi = 0 or sign(lo) <> sign(hi)
+				then interp_linear(lo, hi, acc_prev, cnt, target)
+			else lo * pow(hi / lo, (target - acc_prev) / cnt)
+		end
+	)`,
+
+	// Bucket builders. Each emits a list of {lo, hi, cnt} structs in CDF walking order.
+	// Cumulative counts are NOT computed here; bucket_quantile_* adds them.
+
+	// Explicit-bound histogram. counts has len(bounds)+1 entries.
+	// Open extreme buckets (i=1 and i=len(counts)) are clamped to bounds[1] / bounds[end]
+	// so quantile interpolation in those regions returns the boundary value
+	// (Prometheus convention; better than guessing an unbounded width).
+	`create or replace macro hist_buckets(bounds, counts) as (
+		list_transform(counts, lambda c, i: {
+			'lo': case
+					when i = 1 then bounds[1]
+					when i = len(counts) then bounds[len(bounds)]
+					else bounds[i - 1]
+				  end,
+			'hi': case
+					when i = 1 then bounds[1]
+					when i = len(counts) then bounds[len(bounds)]
+					else bounds[i]
+				  end,
+			'cnt': c
+		})
+	)`,
+
+	// Exponential histogram positive region. base = 2^(2^-scale).
+	// Bucket at 1-based position i covers (base^(offset+i-1), base^(offset+i)].
+	`create or replace macro exp_pos_buckets(scale, offset_, counts) as (
+		list_transform(counts, lambda c, i: {
+			'lo': pow(2.0, pow(2.0, -scale) * (offset_ + i - 1)),
+			'hi': pow(2.0, pow(2.0, -scale) * (offset_ + i)),
+			'cnt': c
+		})
+	)`,
+
+	// Exponential histogram negative region, emitted in CDF order (most negative first).
+	// Source bucket at original position j covers [-base^(offset+j), -base^(offset+j-1));
+	// list_reverse walks j from len down to 1 so output is numerically ascending.
+	//
+	// Note: the OTLP wire format treats positives and negatives as independent
+	// (not mirrored), but in practice the negative region is empty for the
+	// common case (latency, byte counts, queue depth, ...). Only signed-value
+	// instruments (temperature deltas, P&L, geo offsets) populate it. We handle
+	// it correctly because the spec allows it and the formula is the same shape
+	// as the positive region with sign-preserving math.
+	`create or replace macro exp_neg_buckets(scale, offset_, counts) as (
+		list_transform(list_reverse(counts), lambda c, i: {
+			'lo': -pow(2.0, pow(2.0, -scale) * (offset_ + len(counts) - i + 1)),
+			'hi': -pow(2.0, pow(2.0, -scale) * (offset_ + len(counts) - i)),
+			'cnt': c
+		})
+	)`,
+
+	// Zero bucket: always emit one entry to keep list_concat type-stable.
+	// A zero-count entry is harmless: the filter step skips it (acc doesn't change).
+	`create or replace macro exp_zero_bucket(zero_count) as (
+		[{'lo': 0.0, 'hi': 0.0, 'cnt': coalesce(zero_count, 0)}]
+	)`,
+
+	// Three-region concat in CDF order: most-negative -> zero -> most-positive.
+	// Nested 2-arg list_concat for portability.
+	`create or replace macro exp_buckets(scale, neg_offset, neg_counts, zero_count, pos_offset, pos_counts) as (
+		list_concat(
+			list_concat(
+				exp_neg_buckets(scale, neg_offset, neg_counts),
+				exp_zero_bucket(zero_count)
+			),
+			exp_pos_buckets(scale, pos_offset, pos_counts)
+		)
+	)`,
+
+	// Shared quantile pipeline:
+	//   1. params:    target = q * total
+	//   2. with_acc:  attach acc_prev / acc to each bucket via list_transform with index
+	//   3. chosen:    first bucket whose acc >= target
+	//   4. interp:    apply linear or log-linear kernel
+	//
+	// O(N^2) cumulative is fine for OTel histograms (N <= 160 buckets).
+	// The two macros are intentionally identical except for the kernel call (option A:
+	// explicit duplication beats runtime indirection through a strategy tag).
+	`create or replace macro bucket_quantile_linear(buckets, q) as (
+		case
+			when buckets is null or len(buckets) = 0 then null
+			when coalesce(list_sum(list_transform(buckets, lambda b: b.cnt)), 0) <= 0 then null
+			else (
+				with
+					params as (
+						select q * list_sum(list_transform(buckets, lambda b: b.cnt)) as target
+					),
+					with_acc as (
+						select list_transform(buckets, lambda b, i: {
+							'lo': b.lo, 'hi': b.hi, 'cnt': b.cnt,
+							'acc_prev': case when i = 1 then 0
+								else list_sum(list_transform(list_slice(buckets, 1, i - 1), lambda x: x.cnt))
+							end,
+							'acc': list_sum(list_transform(list_slice(buckets, 1, i), lambda x: x.cnt))
+						}) as bs
+					),
+					chosen as (
+						select
+							params.target as target,
+							list_filter(with_acc.bs, lambda b: b.acc >= params.target)[1] as b
+						from with_acc, params
+					)
+				select interp_linear(b.lo, b.hi, b.acc_prev, b.cnt, target) from chosen
+			)
+		end
+	)`,
+
+	`create or replace macro bucket_quantile_loglin(buckets, q) as (
+		case
+			when buckets is null or len(buckets) = 0 then null
+			when coalesce(list_sum(list_transform(buckets, lambda b: b.cnt)), 0) <= 0 then null
+			else (
+				with
+					params as (
+						select q * list_sum(list_transform(buckets, lambda b: b.cnt)) as target
+					),
+					with_acc as (
+						select list_transform(buckets, lambda b, i: {
+							'lo': b.lo, 'hi': b.hi, 'cnt': b.cnt,
+							'acc_prev': case when i = 1 then 0
+								else list_sum(list_transform(list_slice(buckets, 1, i - 1), lambda x: x.cnt))
+							end,
+							'acc': list_sum(list_transform(list_slice(buckets, 1, i), lambda x: x.cnt))
+						}) as bs
+					),
+					chosen as (
+						select
+							params.target as target,
+							list_filter(with_acc.bs, lambda b: b.acc >= params.target)[1] as b
+						from with_acc, params
+					)
+				select interp_loglin(b.lo, b.hi, b.acc_prev, b.cnt, target) from chosen
+			)
+		end
+	)`,
+
+	// Top-level convenience macros. All NULL/empty guards live here so callers
+	// just see "give me a quantile, get null if it can't be computed".
+	`create or replace macro hist_quantile(bounds, counts, q) as (
+		case
+			when bounds is null or counts is null or len(bounds) = 0 or len(counts) = 0 then null
+			else bucket_quantile_linear(hist_buckets(bounds, counts), q)
+		end
+	)`,
+
+	`create or replace macro exp_hist_quantile(scale, neg_offset, neg_counts, zero_count, pos_offset, pos_counts, q) as (
+		bucket_quantile_loglin(
+			exp_buckets(scale, neg_offset, neg_counts, zero_count, pos_offset, pos_counts),
+			q
+		)
+	)`,
+}

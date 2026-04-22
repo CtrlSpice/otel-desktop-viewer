@@ -67,6 +67,13 @@ func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 		}
 	}
 
+	// 4) Create macros - queries use CREATE OR REPLACE so reopening is safe
+	for i, query := range schema.MacroCreationQueries {
+		if _, err = db.Exec(query); err != nil {
+			return nil, fmt.Errorf("%w while creating macro %d: %w", ErrStoreInitFailed, i, err)
+		}
+	}
+
 	return &Store{
 		db:   db,
 		conn: conn,

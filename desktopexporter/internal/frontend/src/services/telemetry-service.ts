@@ -331,6 +331,30 @@ export let telemetryAPI = {
     return convertAttributesToFieldDefinitions(rawData)
   },
 
+  // Returns a map of quantile -> interpolated value for a single histogram or
+  // exponential-histogram datapoint. Keys come back as the quantile formatted
+  // by Go's strconv.FormatFloat with -1 precision (e.g. "0.5", "0.95"). A
+  // value of null means the macro declined to interpolate (empty buckets or
+  // total count of zero) -- callers should render it as an em-dash or similar.
+  getDatapointQuantiles: async (
+    datapointID: string,
+    quantiles: number[]
+  ): Promise<Record<string, number | null>> => {
+    const rawData = await callRPC('getDatapointQuantiles', [
+      datapointID,
+      quantiles,
+    ])
+    if (rawData === null || typeof rawData !== 'object') {
+      console.warn(
+        'getDatapointQuantiles: Expected object, got:',
+        typeof rawData,
+        rawData
+      )
+      return {}
+    }
+    return rawData as Record<string, number | null>
+  },
+
   deleteMetrics: (metricIDs: string[]) =>
     callRPC('deleteMetricByID', metricIDs),
 

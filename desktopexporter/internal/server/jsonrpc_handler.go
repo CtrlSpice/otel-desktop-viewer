@@ -52,6 +52,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getLogAttributes(ctx, req)
 	case "getMetricAttributes":
 		return h.getMetricAttributes(ctx, req)
+	case "getDatapointQuantiles":
+		return h.getDatapointQuantiles(ctx, req)
 	case "getAttributesByTraceID":
 		return h.getAttributesByTraceID(ctx, req)
 	case "getStats":
@@ -400,6 +402,56 @@ func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.
 	}
 
 	return attributes, nil
+}
+
+// getDatapointQuantiles returns interpolated quantile values for a histogram or
+// exponential-histogram datapoint. Params: [datapointID string, quantiles []float64].
+// Each quantile must be in [0, 1]. Result is a JSON object keyed by the
+// quantile string (e.g. {"0.5": 1.23, "0.95": null}); null indicates the macro
+// declined to interpolate (empty buckets / total count of zero).
+func (h *JSONRPCHandler) getDatapointQuantiles(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) != 2 {
+		log.Printf("Invalid parameter count: %d (expected 2)", len(params))
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	datapointID, ok := params[0].(string)
+	if !ok {
+		log.Printf("Invalid datapointID type: %T", params[0])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	rawQs, ok := params[1].([]any)
+	if !ok {
+		log.Printf("Invalid quantiles type: %T (expected array)", params[1])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	quantiles := make([]float64, 0, len(rawQs))
+	for i, q := range rawQs {
+		f, ok := q.(float64)
+		if !ok {
+			log.Printf("Invalid quantile[%d] type: %T (expected number)", i, q)
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		if f < 0 || f > 1 {
+			log.Printf("Invalid quantile[%d] value: %v (must be in [0, 1])", i, f)
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		quantiles = append(quantiles, f)
+	}
+
+	result, err := metrics.GetDatapointQuantiles(ctx, h.store.DB(), datapointID, quantiles)
+	if err != nil {
+		log.Printf("Error getting datapoint quantiles: %v", err)
+		return nil, mapStoreError(err)
+	}
+	return result, nil
 }
 
 func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {

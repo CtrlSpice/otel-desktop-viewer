@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
@@ -18,9 +20,11 @@ import (
 )
 
 var (
-	ErrInvalidMetricQuery   = errors.New("invalid metric search query")
-	ErrMetricsStoreInternal = errors.New("metrics store internal error")
-	ErrMetricIDNotFound     = errors.New("metric ID not found")
+	ErrInvalidMetricQuery           = errors.New("invalid metric search query")
+	ErrMetricsStoreInternal         = errors.New("metrics store internal error")
+	ErrMetricIDNotFound             = errors.New("metric ID not found")
+	ErrDatapointIDNotFound          = errors.New("datapoint ID not found")
+	ErrQuantilesNotSupportedForType = errors.New("quantiles are only supported for Histogram and ExponentialHistogram datapoints")
 )
 
 const flushIntervalMetrics = 100
@@ -401,6 +405,60 @@ func GetMetricAttributes(ctx context.Context, db *sql.DB, startTime, endTime int
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// GetDatapointQuantiles returns a JSON object mapping each requested quantile
+// (formatted as a string key, e.g. "0.5") to its interpolated value for the
+// given datapoint. Histogram datapoints use linear interpolation; exponential
+// histograms use log-linear (with a linear fallback in zero/sign-mismatch
+// regions). Quantiles that the macro declines to compute (empty buckets,
+// total count of zero) come back as JSON null.
+//
+// Returns ErrDatapointIDNotFound if no datapoint matches the ID, and
+// ErrQuantilesNotSupportedForType if the datapoint exists but is a Gauge or
+// Sum. Quantile values outside [0, 1] are passed through to the macros, which
+// will produce nonsensical-but-non-erroring results -- callers are expected
+// to validate inputs.
+func GetDatapointQuantiles(ctx context.Context, db *sql.DB, datapointID string, quantiles []float64) (json.RawMessage, error) {
+	if len(quantiles) == 0 {
+		return json.RawMessage("{}"), nil
+	}
+
+	// Build the json_object key/value pairs. Keys are float literals formatted
+	// in Go (safe -- we control the format) so they appear verbatim in the
+	// output. Values dispatch on metric_type: Histogram -> hist_quantile,
+	// ExponentialHistogram -> exp_hist_quantile, anything else -> NULL (which
+	// Go uses to surface ErrQuantilesNotSupportedForType after the scan).
+	pairs := make([]string, 0, len(quantiles))
+	args := make([]any, 0, len(quantiles)*2+1)
+	for _, q := range quantiles {
+		key := strconv.FormatFloat(q, 'f', -1, 64)
+		pairs = append(pairs, fmt.Sprintf(`'%s', case metric_type
+			when 'Histogram' then hist_quantile(explicit_bounds, bucket_counts, ?)
+			when 'ExponentialHistogram' then exp_hist_quantile(scale, negative_bucket_offset, negative_bucket_counts, zero_count, positive_bucket_offset, positive_bucket_counts, ?)
+		end`, key))
+		args = append(args, q, q)
+	}
+	args = append(args, datapointID)
+
+	query := fmt.Sprintf(`
+		select metric_type, cast(to_json(json_object(%s)) as varchar) as quantiles
+		from datapoints
+		where id = ?
+	`, strings.Join(pairs, ", "))
+
+	var metricType string
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&metricType, &raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetDatapointQuantiles: %w: %s", ErrDatapointIDNotFound, datapointID)
+		}
+		return nil, fmt.Errorf("GetDatapointQuantiles: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if metricType != "Histogram" && metricType != "ExponentialHistogram" {
+		return nil, fmt.Errorf("GetDatapointQuantiles: %w: %s", ErrQuantilesNotSupportedForType, metricType)
 	}
 	return json.RawMessage(raw), nil
 }
