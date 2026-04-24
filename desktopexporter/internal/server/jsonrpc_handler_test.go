@@ -356,3 +356,208 @@ func TestGetDatapointQuantilesNotFound(t *testing.T) {
 	assert.Nil(t, result)
 	assert.Equal(t, ErrDatapointNotFound, err)
 }
+
+// TestGetMetricQuantileSeriesInvalidParams covers the handler's input
+// contract: the wrong shape of params should always come back as
+// jsonrpc2.ErrInvalidParams without ever touching the store. Behavior of
+// the underlying SQL pipeline is exercised in the metrics package tests.
+func TestGetMetricQuantileSeriesInvalidParams(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	const startTs = "1700000000000000000"
+	const endTs = "1700000060000000000"
+	cases := []struct {
+		name   string
+		params any
+	}{
+		{"WrongCount", []any{"id-only", []any{0.5}, "per-stream", startTs, endTs}}, // 5
+		{"NonStringMetricID", []any{42, []any{0.5}, "per-stream", startTs, endTs, 100.0}},
+		{"NonArrayQuantiles", []any{"abc", "not-an-array", "per-stream", startTs, endTs, 100.0}},
+		{"NonNumberQuantile", []any{"abc", []any{"0.5"}, "per-stream", startTs, endTs, 100.0}},
+		{"NegativeQuantile", []any{"abc", []any{-0.1}, "per-stream", startTs, endTs, 100.0}},
+		{"AboveOneQuantile", []any{"abc", []any{1.1}, "per-stream", startTs, endTs, 100.0}},
+		{"NonStringMode", []any{"abc", []any{0.5}, 7, startTs, endTs, 100.0}},
+		{"NonStringStartTs", []any{"abc", []any{0.5}, "per-stream", 1700000000000000000, endTs, 100.0}},
+		{"NonStringEndTs", []any{"abc", []any{0.5}, "per-stream", startTs, 1700000060000000000, 100.0}},
+		{"UnparseableStartTs", []any{"abc", []any{0.5}, "per-stream", "not-a-number", endTs, 100.0}},
+		{"NonNumberMaxPoints", []any{"abc", []any{0.5}, "per-stream", startTs, endTs, "100"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := createRequest("getMetricQuantileSeries", c.params)
+			result, err := handler.Handle(context.Background(), req)
+			assert.Nil(t, result)
+			assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+		})
+	}
+}
+
+// TestGetMetricQuantileSeriesValidationDispatch verifies that the helper's
+// own validation errors (invalid time range, invalid maxPoints, bad mode)
+// surface as the right JSON-RPC error codes -- so the frontend can
+// distinguish "your request is malformed" from "your data is in a state we
+// can't aggregate".
+func TestGetMetricQuantileSeriesValidationDispatch(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	t.Run("InvalidTimeRangeMapsTo32011", func(t *testing.T) {
+		// metricID is irrelevant when start/end fail validation up front.
+		req := createRequest("getMetricQuantileSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			[]any{0.5},
+			"per-stream",
+			"1700000060000000000", // start
+			"1700000000000000000", // end < start
+			100.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, ErrInvalidTimeRange, err)
+	})
+
+	t.Run("InvalidMaxPointsMapsTo32012", func(t *testing.T) {
+		req := createRequest("getMetricQuantileSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			[]any{0.5},
+			"per-stream",
+			"1700000000000000000",
+			"1700000060000000000",
+			0.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, ErrInvalidMaxPoints, err)
+	})
+
+	t.Run("InvalidModeMapsToInvalidParams", func(t *testing.T) {
+		// Bad mode is a client-side mistake; we surface it as the standard
+		// InvalidParams rather than a custom code.
+		req := createRequest("getMetricQuantileSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			[]any{0.5},
+			"not-a-real-mode",
+			"1700000000000000000",
+			"1700000060000000000",
+			100.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		// ErrInvalidQuantileSeriesMode short-circuits before any store access,
+		// so ErrMetricNotFound never enters the picture.
+		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+	})
+}
+
+// TestGetMetricQuantileSeriesNotFound verifies that an unknown metric UUID
+// surfaces ErrMetricNotFound rather than ErrInternal. Empty-quantiles
+// short-circuits before any store access, so we send a non-empty list.
+func TestGetMetricQuantileSeriesNotFound(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	req := createRequest("getMetricQuantileSeries", []any{
+		"00000000-0000-0000-0000-000000000000",
+		[]any{0.5},
+		"per-stream",
+		"1700000000000000000",
+		"1700000060000000000",
+		100.0,
+	})
+	result, err := handler.Handle(context.Background(), req)
+	assert.Nil(t, result)
+	assert.Equal(t, ErrMetricNotFound, err)
+}
+
+// ---------------------------------------------------------------------------
+// getMetricBucketSeries handler tests
+// ---------------------------------------------------------------------------
+
+func TestGetMetricBucketSeriesInvalidParams(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	const startTs = "1700000000000000000"
+	const endTs = "1700000060000000000"
+	cases := []struct {
+		name   string
+		params any
+	}{
+		{"WrongCount", []any{"id-only", "per-stream", startTs, endTs}},
+		{"NonStringMetricID", []any{42, "per-stream", startTs, endTs, 100.0}},
+		{"NonStringMode", []any{"abc", 7, startTs, endTs, 100.0}},
+		{"NonStringStartTs", []any{"abc", "per-stream", 1700000000000000000, endTs, 100.0}},
+		{"NonStringEndTs", []any{"abc", "per-stream", startTs, 1700000060000000000, 100.0}},
+		{"UnparseableStartTs", []any{"abc", "per-stream", "not-a-number", endTs, 100.0}},
+		{"NonNumberMaxPoints", []any{"abc", "per-stream", startTs, endTs, "100"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := createRequest("getMetricBucketSeries", c.params)
+			result, err := handler.Handle(context.Background(), req)
+			assert.Nil(t, result)
+			assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+		})
+	}
+}
+
+func TestGetMetricBucketSeriesValidationDispatch(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	t.Run("InvalidTimeRangeMapsTo32011", func(t *testing.T) {
+		req := createRequest("getMetricBucketSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			"per-stream",
+			"1700000060000000000",
+			"1700000000000000000",
+			100.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, ErrInvalidTimeRange, err)
+	})
+
+	t.Run("InvalidMaxPointsMapsTo32012", func(t *testing.T) {
+		req := createRequest("getMetricBucketSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			"per-stream",
+			"1700000000000000000",
+			"1700000060000000000",
+			0.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, ErrInvalidMaxPoints, err)
+	})
+
+	t.Run("InvalidModeMapsToInvalidParams", func(t *testing.T) {
+		req := createRequest("getMetricBucketSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			"not-a-real-mode",
+			"1700000000000000000",
+			"1700000060000000000",
+			100.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+	})
+}
+
+func TestGetMetricBucketSeriesNotFound(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	req := createRequest("getMetricBucketSeries", []any{
+		"00000000-0000-0000-0000-000000000000",
+		"per-stream",
+		"1700000000000000000",
+		"1700000060000000000",
+		100.0,
+	})
+	result, err := handler.Handle(context.Background(), req)
+	assert.Nil(t, result)
+	assert.Equal(t, ErrMetricNotFound, err)
+}

@@ -25,7 +25,21 @@ var (
 	ErrMetricIDNotFound             = errors.New("metric ID not found")
 	ErrDatapointIDNotFound          = errors.New("datapoint ID not found")
 	ErrQuantilesNotSupportedForType = errors.New("quantiles are only supported for Histogram and ExponentialHistogram datapoints")
+	ErrInvalidQuantileSeriesMode    = errors.New("invalid quantile series mode")
+	ErrHistogramBoundsMismatch      = errors.New("aggregated Histogram has datapoints with mismatched explicit_bounds at the same timestamp")
+	ErrInvalidTimeRange             = errors.New("invalid time range: endTs must be greater than startTs")
+	ErrInvalidMaxPoints             = errors.New("invalid maxPoints: must be >= 1")
+	ErrUnspecifiedTemporality           = errors.New("metric has Unspecified aggregation_temporality; cannot safely aggregate over time")
+	ErrBucketSeriesNotSupportedForType = errors.New("bucket series are only supported for Histogram and ExponentialHistogram datapoints")
 )
+
+// histogramBoundsMismatchTag is the literal that aggregated-Histogram SQL
+// raises via `error('histogram_bounds_mismatch')` when it detects mixed
+// explicit_bounds within a timestamp group. We detect it on the Go side
+// with strings.Contains because duckdb-go wraps SQL errors in driver-
+// specific types we don't want to import here -- substring match keeps the
+// coupling to "the literal we chose", which we own on both sides.
+const histogramBoundsMismatchTag = "histogram_bounds_mismatch"
 
 const flushIntervalMetrics = 100
 
@@ -137,7 +151,7 @@ func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, metricID duckd
 		datapointID := duckdb.UUID(uuid.New())
 		if err := appenders["datapoints"].AppendRow(
 			datapointID, metricID, "Gauge", int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
-			doubleVal, intVal, valType, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+			doubleVal, intVal, valType, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
@@ -161,7 +175,7 @@ func ingestSumDatapoints(appenders map[string]*duckdb.Appender, metricID duckdb.
 		if err := appenders["datapoints"].AppendRow(
 			datapointID, metricID, "Sum", int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
 			doubleVal, intVal, valType, sum.IsMonotonic(), sum.AggregationTemporality().String(),
-			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
@@ -185,7 +199,7 @@ func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, metricID d
 			datapointID, metricID, "Histogram", int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
 			nil, nil, nil, nil, hist.AggregationTemporality().String(),
 			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), dp.BucketCounts().AsRaw(), dp.ExplicitBounds().AsRaw(),
-			nil, nil, nil, nil, nil, nil,
+			nil, nil, nil, nil, nil, nil, nil,
 		); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
@@ -210,7 +224,7 @@ func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender,
 			datapointID, metricID, "ExponentialHistogram", int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
 			nil, nil, nil, nil, exp.AggregationTemporality().String(),
 			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), nil, nil,
-			dp.Scale(), dp.ZeroCount(), pos.Offset(), pos.BucketCounts().AsRaw(), neg.Offset(), neg.BucketCounts().AsRaw(),
+			dp.Scale(), dp.ZeroCount(), dp.ZeroThreshold(), pos.Offset(), pos.BucketCounts().AsRaw(), neg.Offset(), neg.BucketCounts().AsRaw(),
 		); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
@@ -280,7 +294,7 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 		),
 		exemplars_agg as (
 			select e.datapoint_id, json_group_array(json_object(
-				'timestamp', e.timestamp,
+				'timestamp', e.timestamp::varchar,
 				'value', e.value,
 				'traceID', replace(e.trace_id::varchar, '-', ''),
 				'spanID', right(replace(e.span_id::varchar, '-', ''), 16),
@@ -310,8 +324,8 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 				json_object(
 					'id', d.id,
 					'metricType', d.metric_type,
-					'timestamp', d.timestamp,
-					'startTime', d.start_time,
+					'timestamp', d.timestamp::varchar,
+					'startTime', d.start_time::varchar,
 					'flags', d.flags,
 					'attributes', coalesce((select attrs from dp_attrs_agg where dp_attrs_agg.datapoint_id = d.id), json('[]')),
 					'exemplars', coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]'))
@@ -345,6 +359,7 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 						'max', d.max,
 						'scale', d.scale,
 						'zeroCount', d.zero_count,
+						'zeroThreshold', d.zero_threshold,
 						'positiveBucketOffset', d.positive_bucket_offset,
 						'positiveBucketCounts', d.positive_bucket_counts,
 						'negativeBucketOffset', d.negative_bucket_offset,
@@ -459,6 +474,878 @@ func GetDatapointQuantiles(ctx context.Context, db *sql.DB, datapointID string, 
 	}
 	if metricType != "Histogram" && metricType != "ExponentialHistogram" {
 		return nil, fmt.Errorf("GetDatapointQuantiles: %w: %s", ErrQuantilesNotSupportedForType, metricType)
+	}
+	return json.RawMessage(raw), nil
+}
+
+// GetMetricQuantileSeries returns a JSON array of one entry per series point
+// for the given metric, with each entry containing the requested quantiles
+// plus merged totals (count/sum/min/max). The shape matches the
+// HistogramTrendChart frontend expectation; see the histogram-trend-chart
+// plan for the full per-point object schema.
+//
+// Time bucketing is adaptive: the helper computes
+// `bucket_ns = max(1ms, (endTs - startTs) / maxPoints)` in DuckDB, snaps each
+// datapoint timestamp to its bucket start, and emits one entry per
+// `(stream, bucket_start)` (per-stream) or per `bucket_start` (aggregated).
+// In effect maxPoints is the chart's pixel width and the result has at most
+// that many output rows. The window is `[startTs, endTs)` (start inclusive,
+// end exclusive).
+//
+// Within-bucket time merging dispatches on the metric's
+// aggregation_temporality:
+//   - Delta: bucket counts sum across time within each (stream, bucket).
+//   - Cumulative: take the latest sample per (stream, bucket) since each
+//     row is already a running total -- summing would double-count.
+//
+// Unspecified temporality is rejected (ErrUnspecifiedTemporality) so we
+// never silently mis-aggregate.
+//
+// Mode controls cross-stream behavior:
+//   - "per-stream": one entry per (bucket_start, attribute set).
+//   - "aggregated": (Histogram only for now; ExpHistogram lands in step 4)
+//     one entry per bucket_start with all streams merged via the alignment
+//     pipeline. Histogram needs uniform explicit_bounds within each bucket.
+//
+// Returns:
+//   - ErrInvalidTimeRange if endTs <= startTs.
+//   - ErrInvalidMaxPoints if maxPoints < 1.
+//   - ErrMetricIDNotFound if the metric has no datapoints at all (across
+//     the whole table, not the window).
+//   - ErrQuantilesNotSupportedForType for Gauge/Sum.
+//   - ErrUnspecifiedTemporality if the metric's aggregation_temporality is
+//     Unspecified.
+//
+// Quantile values the macros decline to compute (empty buckets, zero total
+// count) come back as JSON null. Empty quantile list returns "[]" without
+// touching the database. A window with no datapoints returns "[]".
+func GetMetricQuantileSeries(ctx context.Context, db *sql.DB, metricID string, quantiles []float64, mode string, startTs, endTs int64, maxPoints int) (json.RawMessage, error) {
+	if len(quantiles) == 0 {
+		return json.RawMessage("[]"), nil
+	}
+	if endTs <= startTs {
+		return nil, fmt.Errorf("GetMetricQuantileSeries: %w: startTs=%d endTs=%d", ErrInvalidTimeRange, startTs, endTs)
+	}
+	if maxPoints < 1 {
+		return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %d", ErrInvalidMaxPoints, maxPoints)
+	}
+	// Mode is a static client-supplied string; reject it before touching the
+	// DB so the handler can map it to InvalidParams without a wasted query.
+	if mode != "per-stream" && mode != "aggregated" {
+		return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %q (want per-stream or aggregated)", ErrInvalidQuantileSeriesMode, mode)
+	}
+
+	// Pre-check: confirm the metric has datapoints and figure out its type
+	// + temporality from the first datapoint. All datapoints for a given
+	// metric_id share both (enforced at ingest), so a single sample suffices.
+	// Gauge datapoints carry NULL aggregation_temporality (the schema only
+	// requires it on Sum/Histogram/ExpHistogram), so we scan it as NullString
+	// and only validate it for the histogram types we actually support.
+	var metricType string
+	var temporality sql.NullString
+	err := db.QueryRowContext(ctx,
+		`select metric_type, aggregation_temporality from datapoints where metric_id = ? limit 1`,
+		metricID,
+	).Scan(&metricType, &temporality)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %s", ErrMetricIDNotFound, metricID)
+		}
+		return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if metricType != "Histogram" && metricType != "ExponentialHistogram" {
+		return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %s", ErrQuantilesNotSupportedForType, metricType)
+	}
+	if !temporality.Valid || (temporality.String != "Delta" && temporality.String != "Cumulative") {
+		return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %s", ErrUnspecifiedTemporality, temporality.String)
+	}
+
+	// Mode was validated above; metric_type is Histogram or ExponentialHistogram.
+	if mode == "per-stream" {
+		return getPerStreamQuantileSeries(ctx, db, metricID, quantiles, temporality.String, startTs, endTs, maxPoints)
+	}
+	switch metricType {
+	case "Histogram":
+		return getAggregatedHistogramQuantileSeries(ctx, db, metricID, quantiles, temporality.String, startTs, endTs, maxPoints)
+	case "ExponentialHistogram":
+		return getAggregatedExpHistogramQuantileSeries(ctx, db, metricID, quantiles, temporality.String, startTs, endTs, maxPoints)
+	}
+	return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %s", ErrQuantilesNotSupportedForType, metricType)
+}
+
+// quantileSeriesCTEs is the shared CTE preamble used by every quantile
+// series variant. It defines:
+//
+//   - params: bind-parameter window (start_ts, end_ts) and computed
+//     bucket_ns (clamped to >= 1 ms).
+//   - dp_attrs: per-datapoint attribute array + stable "k=v|k=v" key
+//     (the per-stream identity).
+//   - bucketed: filtered (by metric_id and time window) datapoints with
+//     attached attrs + bucket_start.
+//   - time_merged: per (bucket_start, attrs_key) row, with within-bucket
+//     time merging dispatched on temporality. Delta sums bucket vectors
+//     across time; Cumulative takes the latest sample (each cumulative
+//     row is a running total, summing would double-count).
+//
+// Variants downstream (per-stream final select, aggregated cross-stream
+// merge, aggregated ExpHistogram alignment) all start from `time_merged`.
+// Returns the SQL fragment ending after the time_merged CTE definition
+// (with a trailing comma so callers can append more CTEs cleanly), plus
+// the args slice for the 7 placeholders consumed here:
+// (start_ts, end_ts, end_ts, start_ts, max_points, metric_id, metric_id).
+func quantileSeriesCTEs(metricID string, startTs, endTs int64, maxPoints int, temporality string) (string, []any) {
+	// When the UI sends start_ts=0 ("All" preset), the bucket width would be
+	// computed over the entire epoch-to-now range, collapsing all datapoints
+	// into a single bucket. Clamping to the metric's actual earliest timestamp
+	// keeps the bucketing proportional to the real data span.
+	const cteSharedHead = `
+		with params as (
+			select
+				cast(? as bigint) as start_ts,
+				cast(? as bigint) as end_ts,
+				greatest(1000000::bigint,
+					(cast(? as bigint) - greatest(cast(? as bigint),
+						coalesce((select min(timestamp) from datapoints where metric_id = ?), cast(? as bigint))
+					)) // cast(? as bigint)
+				) as bucket_ns
+		),
+		dp_attrs as (
+			select
+				a.datapoint_id,
+				to_json(list(
+					json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
+					order by a.key
+				)) as attrs,
+				coalesce(string_agg(a.key || '=' || a.value, '|' order by a.key), '') as attrs_key
+			from attributes a
+			where a.datapoint_id in (select id from datapoints where metric_id = ?)
+			  and a.scope = 'datapoint'
+			group by a.datapoint_id
+		),
+		bucketed as (
+			select
+				d.id, d.metric_type, d.timestamp,
+				coalesce(da.attrs_key, '') as attrs_key,
+				da.attrs,
+				d.bucket_counts, d.explicit_bounds,
+				d.scale, d.zero_count, d.zero_threshold,
+				d.positive_bucket_offset, d.positive_bucket_counts,
+				d.negative_bucket_offset, d.negative_bucket_counts,
+				d.count, d.sum, d.min, d.max,
+				(d.timestamp // p.bucket_ns) * p.bucket_ns as bucket_start
+			from datapoints d
+			left join dp_attrs da on da.datapoint_id = d.id
+			cross join params p
+			where d.metric_id = ?
+			  and d.timestamp >= p.start_ts
+			  and d.timestamp <  p.end_ts
+		),`
+
+	// Time-merge CTE differs by temporality. Both group by (bucket_start,
+	// attrs_key) so the downstream shape is identical.
+	const timeMergedDelta = `
+		time_merged as (
+			select
+				bucket_start,
+				attrs_key,
+				any_value(attrs) as attrs,
+				any_value(metric_type) as metric_type,
+				sum_bucket_vectors(list(bucket_counts)) as bucket_counts,
+				any_value(explicit_bounds) as explicit_bounds,
+				any_value(scale) as scale,
+				sum(zero_count) as zero_count,
+				max(zero_threshold) as zero_threshold,
+				any_value(positive_bucket_offset) as positive_bucket_offset,
+				sum_bucket_vectors(list(positive_bucket_counts)) as positive_bucket_counts,
+				any_value(negative_bucket_offset) as negative_bucket_offset,
+				sum_bucket_vectors(list(negative_bucket_counts)) as negative_bucket_counts,
+				sum(count) as count,
+				sum(sum)   as sum,
+				min(min)   as min,
+				max(max)   as max
+			from bucketed
+			group by bucket_start, attrs_key
+		)`
+
+	const timeMergedCumulative = `
+		time_merged as (
+			select
+				bucket_start,
+				attrs_key,
+				arg_max(attrs, timestamp) as attrs,
+				any_value(metric_type) as metric_type,
+				arg_max(bucket_counts, timestamp) as bucket_counts,
+				arg_max(explicit_bounds, timestamp) as explicit_bounds,
+				arg_max(scale, timestamp) as scale,
+				arg_max(zero_count, timestamp) as zero_count,
+				arg_max(zero_threshold, timestamp) as zero_threshold,
+				arg_max(positive_bucket_offset, timestamp) as positive_bucket_offset,
+				arg_max(positive_bucket_counts, timestamp) as positive_bucket_counts,
+				arg_max(negative_bucket_offset, timestamp) as negative_bucket_offset,
+				arg_max(negative_bucket_counts, timestamp) as negative_bucket_counts,
+				arg_max(count, timestamp) as count,
+				arg_max(sum,   timestamp) as sum,
+				arg_max(min,   timestamp) as min,
+				arg_max(max,   timestamp) as max
+			from bucketed
+			group by bucket_start, attrs_key
+		)`
+
+	var timeMerged string
+	switch temporality {
+	case "Cumulative":
+		timeMerged = timeMergedCumulative
+	default: // Delta
+		timeMerged = timeMergedDelta
+	}
+
+	args := []any{startTs, endTs, endTs, startTs, metricID, startTs, maxPoints, metricID, metricID}
+	return cteSharedHead + timeMerged, args
+}
+
+// getPerStreamQuantileSeries renders one entry per (bucket_start, attrs_key)
+// after the shared bucketing + time-merge pipeline. Quantile dispatch is by
+// metric_type (Histogram vs ExponentialHistogram) inside the json_object.
+// The macros may return NULL for a quantile (e.g. empty buckets); that
+// surfaces as JSON null.
+func getPerStreamQuantileSeries(ctx context.Context, db *sql.DB, metricID string, quantiles []float64, temporality string, startTs, endTs int64, maxPoints int) (json.RawMessage, error) {
+	cteSQL, cteArgs := quantileSeriesCTEs(metricID, startTs, endTs, maxPoints, temporality)
+	pairsSQL, quantileArgs := buildPerStreamQuantilePairs(quantiles)
+	args := make([]any, 0, len(cteArgs)+len(quantileArgs))
+	args = append(args, cteArgs...)
+	args = append(args, quantileArgs...)
+
+	query := fmt.Sprintf(`%s
+		select cast(coalesce(to_json(list(json_object(
+			'timestamp', m.bucket_start::varchar,
+			'attributesKey', m.attrs_key,
+			'attributes', coalesce(m.attrs, json('[]')),
+			'quantiles', json_object(%s),
+			'count', m.count,
+			'sum', m.sum,
+			'min', m.min,
+			'max', m.max
+		) order by m.bucket_start, m.attrs_key)), '[]') as varchar) as series
+		from time_merged m
+	`, cteSQL, pairsSQL)
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// getAggregatedHistogramQuantileSeries merges all streams of a Histogram
+// metric per timestamp and returns one entry per timestamp with quantiles
+// computed over the merged bucket vector.
+//
+// Merge math: bucket counts add element-wise (sum_bucket_vectors), totals
+// roll up via sum/min/max aggregates. This is mathematically valid only
+// when every datapoint in a group shares the same explicit_bounds -- so we
+// gate that with count(distinct explicit_bounds) and raise
+// `error('histogram_bounds_mismatch')` from inside a CASE expression when
+// the group has more than one bound shape. CASE is short-circuit, so the
+// happy path doesn't pay for the error branch.
+//
+// The mismatch error is translated to ErrHistogramBoundsMismatch on the
+// Go side via substring match, so the JSON-RPC layer can map it to a
+// user-facing code.
+func getAggregatedHistogramQuantileSeries(ctx context.Context, db *sql.DB, metricID string, quantiles []float64, temporality string, startTs, endTs int64, maxPoints int) (json.RawMessage, error) {
+	cteSQL, cteArgs := quantileSeriesCTEs(metricID, startTs, endTs, maxPoints, temporality)
+	pairsSQL, quantileArgs := buildAggregatedHistogramQuantilePairs(quantiles)
+	args := make([]any, 0, len(cteArgs)+len(quantileArgs))
+	args = append(args, cteArgs...)
+	args = append(args, quantileArgs...)
+
+	// `time_merged` already collapsed within each (stream, bucket); now
+	// `grouped` collapses across streams within each bucket. The bounds
+	// uniformity check fires here -- streams with mismatched explicit_bounds
+	// at the same bucket are unmergeable, so we raise the sentinel error
+	// inside the next CTE's CASE for short-circuit semantics. After the
+	// merge, totals roll up via plain sum/min/max aggregates.
+	query := fmt.Sprintf(`%s,
+		grouped as (
+			select
+				bucket_start,
+				any_value(explicit_bounds) as bounds,
+				count(distinct explicit_bounds) as bound_variants,
+				list(bucket_counts) as bucket_vectors,
+				sum(count) as total_count,
+				sum(sum)   as total_sum,
+				min(min)   as total_min,
+				max(max)   as total_max
+			from time_merged
+			group by bucket_start
+		),
+		merged as (
+			select
+				bucket_start,
+				case
+					when bound_variants > 1 then error('%s')
+					else bounds
+				end as bounds,
+				sum_bucket_vectors(bucket_vectors) as merged_counts,
+				total_count, total_sum, total_min, total_max
+			from grouped
+		)
+		select cast(coalesce(to_json(list(json_object(
+			'timestamp', m.bucket_start::varchar,
+			'attributesKey', '',
+			'attributes', json('[]'),
+			'quantiles', json_object(%s),
+			'count', m.total_count,
+			'sum', m.total_sum,
+			'min', m.total_min,
+			'max', m.total_max
+		) order by m.bucket_start)), '[]') as varchar) as series
+		from merged m
+	`, cteSQL, histogramBoundsMismatchTag, pairsSQL)
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		// DuckDB's error('histogram_bounds_mismatch') surfaces as a generic
+		// driver error wrapping the literal -- match on the tag we own.
+		if strings.Contains(err.Error(), histogramBoundsMismatchTag) {
+			return nil, fmt.Errorf("GetMetricQuantileSeries: %w", ErrHistogramBoundsMismatch)
+		}
+		return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// buildAggregatedHistogramQuantilePairs renders the per-quantile pairs for
+// the aggregated-Histogram select. Unlike the per-stream variant, no
+// metric_type CASE is needed -- the helper is only called after we've
+// confirmed the metric is a Histogram, so every row in `merged` has the
+// same shape. Each quantile contributes one `?` placeholder. Columns come
+// from the `merged m` CTE row.
+func buildAggregatedHistogramQuantilePairs(quantiles []float64) (string, []any) {
+	pairs := make([]string, 0, len(quantiles))
+	args := make([]any, 0, len(quantiles))
+	for _, q := range quantiles {
+		key := strconv.FormatFloat(q, 'f', -1, 64)
+		pairs = append(pairs, fmt.Sprintf(`'%s', hist_quantile(m.bounds, m.merged_counts, ?)`, key))
+		args = append(args, q)
+	}
+	return strings.Join(pairs, ", "), args
+}
+
+// getAggregatedExpHistogramQuantileSeries merges all streams of an
+// ExponentialHistogram per bucket using the full alignment pipeline:
+// downscale every stream to the bucket's minimum scale, left-pad to the
+// bucket's minimum (post-downscale) offset, sum the bucket vectors, then
+// fold buckets at or below the merged zero_threshold's cutoff index back
+// into zero_count. Positive and negative sides run independently with the
+// same shared cutoff (since |bucket k|'s magnitude is symmetric).
+//
+// CTE chain (after the shared bucketing/time_merge preamble):
+//
+//	bucket_targets   -- per bucket: target_scale = min(scale),
+//	                  target_zero_threshold = max(zero_threshold), totals
+//	downscaled       -- per (stream, bucket): pos_ds, neg_ds at target_scale
+//	bucket_offsets   -- per bucket: target_pos_offset, target_neg_offset
+//	padded           -- per (stream, bucket): left-pad to target offsets
+//	summed           -- per bucket: sum_bucket_vectors across streams
+//	folded           -- per bucket: cutoff -> fold_below_cutoff on each side
+//	final            -- per bucket: roll up zero_count + folded amounts
+//
+// The cutoff for a target_zero_threshold T at target_scale s is the largest
+// bucket index k such that the bucket's upper bound 2^((k+1)/2^s) <= T.
+// Algebraically k = floor(log2(T) * 2^s) - 1. When T = 0, cutoff is NULL
+// and fold_below_cutoff is a no-op (folded = 0, counts/offset unchanged).
+func getAggregatedExpHistogramQuantileSeries(ctx context.Context, db *sql.DB, metricID string, quantiles []float64, temporality string, startTs, endTs int64, maxPoints int) (json.RawMessage, error) {
+	cteSQL, cteArgs := quantileSeriesCTEs(metricID, startTs, endTs, maxPoints, temporality)
+	pairsSQL, quantileArgs := buildAggregatedExpHistogramQuantilePairs(quantiles)
+	args := make([]any, 0, len(cteArgs)+len(quantileArgs))
+	args = append(args, cteArgs...)
+	args = append(args, quantileArgs...)
+
+	query := fmt.Sprintf(`%s,
+		bucket_targets as (
+			select
+				bucket_start,
+				min(scale) as target_scale,
+				max(zero_threshold) as target_zero_threshold,
+				sum(zero_count) as base_zero_count,
+				sum(count) as total_count,
+				sum(sum)   as total_sum,
+				min(min)   as total_min,
+				max(max)   as total_max
+			from time_merged
+			group by bucket_start
+		),
+		-- Two-step downscale: first materialize the per-row 'levels' value
+		-- as a plain column, then call the macro. downscale_exp_buckets has
+		-- its own internal CTE, and DuckDB refuses to bind cross-CTE
+		-- correlated arguments into a subquery context. With levels in
+		-- with_levels, every macro argument is a simple column ref.
+		with_levels as (
+			select
+				tm.bucket_start,
+				tm.positive_bucket_counts,
+				tm.positive_bucket_offset,
+				tm.negative_bucket_counts,
+				tm.negative_bucket_offset,
+				tm.scale - bt.target_scale as levels
+			from time_merged tm
+			join bucket_targets bt using (bucket_start)
+		),
+		downscaled as (
+			select
+				bucket_start,
+				downscale_exp_buckets(positive_bucket_counts, positive_bucket_offset, levels) as pos_ds,
+				downscale_exp_buckets(negative_bucket_counts, negative_bucket_offset, levels) as neg_ds
+			from with_levels
+		),
+		bucket_offsets as (
+			select
+				bucket_start,
+				min(pos_ds.offset) as pos_target_offset,
+				min(neg_ds.offset) as neg_target_offset
+			from downscaled
+			group by bucket_start
+		),
+		padded as (
+			select
+				d.bucket_start,
+				pad_left_to_offset(d.pos_ds.counts, d.pos_ds.offset, bo.pos_target_offset) as pos_padded,
+				pad_left_to_offset(d.neg_ds.counts, d.neg_ds.offset, bo.neg_target_offset) as neg_padded
+			from downscaled d
+			join bucket_offsets bo using (bucket_start)
+		),
+		summed as (
+			select
+				bucket_start,
+				sum_bucket_vectors(list(pos_padded)) as pos_summed,
+				sum_bucket_vectors(list(neg_padded)) as neg_summed
+			from padded
+			group by bucket_start
+		),
+		folded as (
+			select
+				bt.bucket_start,
+				bt.target_scale,
+				bt.target_zero_threshold,
+				bt.base_zero_count,
+				bt.total_count, bt.total_sum, bt.total_min, bt.total_max,
+				fold_below_cutoff(
+					s.pos_summed, bo.pos_target_offset,
+					case
+						when bt.target_zero_threshold > 0
+							then cast(floor(log2(bt.target_zero_threshold) * pow(2, bt.target_scale)) as bigint) - 1
+						else null
+					end
+				) as pos_fold,
+				fold_below_cutoff(
+					s.neg_summed, bo.neg_target_offset,
+					case
+						when bt.target_zero_threshold > 0
+							then cast(floor(log2(bt.target_zero_threshold) * pow(2, bt.target_scale)) as bigint) - 1
+						else null
+					end
+				) as neg_fold
+			from bucket_targets bt
+			join bucket_offsets bo using (bucket_start)
+			join summed s         using (bucket_start)
+		),
+		final as (
+			select
+				bucket_start,
+				target_scale,
+				coalesce(pos_fold.offset, 0)               as pos_offset,
+				coalesce(pos_fold.counts, []::bigint[])    as pos_counts,
+				coalesce(neg_fold.offset, 0)               as neg_offset,
+				coalesce(neg_fold.counts, []::bigint[])    as neg_counts,
+				base_zero_count
+					+ coalesce(pos_fold.folded, 0)
+					+ coalesce(neg_fold.folded, 0)         as final_zero_count,
+				total_count, total_sum, total_min, total_max
+			from folded
+		)
+		select cast(coalesce(to_json(list(json_object(
+			'timestamp', m.bucket_start::varchar,
+			'attributesKey', '',
+			'attributes', json('[]'),
+			'quantiles', json_object(%s),
+			'count', m.total_count,
+			'sum', m.total_sum,
+			'min', m.total_min,
+			'max', m.total_max
+		) order by m.bucket_start)), '[]') as varchar) as series
+		from final m
+	`, cteSQL, pairsSQL)
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetMetricQuantileSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// buildAggregatedExpHistogramQuantilePairs renders the per-quantile pairs
+// for the aggregated-ExpHistogram select. Each quantile contributes one `?`
+// placeholder; columns come from the `final m` CTE row.
+func buildAggregatedExpHistogramQuantilePairs(quantiles []float64) (string, []any) {
+	pairs := make([]string, 0, len(quantiles))
+	args := make([]any, 0, len(quantiles))
+	for _, q := range quantiles {
+		key := strconv.FormatFloat(q, 'f', -1, 64)
+		pairs = append(pairs, fmt.Sprintf(`'%s', exp_hist_quantile(m.target_scale, m.neg_offset, m.neg_counts, m.final_zero_count, m.pos_offset, m.pos_counts, ?)`, key))
+		args = append(args, q)
+	}
+	return strings.Join(pairs, ", "), args
+}
+
+// buildPerStreamQuantilePairs renders the comma-separated `'<key>', case ...`
+// pairs that go inside json_object(...) for per-stream quantile selection.
+// Each quantile contributes two `?` placeholders (one for hist_quantile, one
+// for exp_hist_quantile), so the returned args slice is len(quantiles) * 2
+// long and must be appended to whatever trailing args the caller has.
+//
+// Mirrors the dispatch pattern in GetDatapointQuantiles: case on metric_type,
+// route Histogram to hist_quantile and ExponentialHistogram to
+// exp_hist_quantile. Anything else falls through to NULL (callers gate this
+// at the metric_type pre-check, so it shouldn't be reachable in practice).
+// Columns come from the `time_merged m` CTE row.
+func buildPerStreamQuantilePairs(quantiles []float64) (string, []any) {
+	pairs := make([]string, 0, len(quantiles))
+	args := make([]any, 0, len(quantiles)*2)
+	for _, q := range quantiles {
+		key := strconv.FormatFloat(q, 'f', -1, 64)
+		pairs = append(pairs, fmt.Sprintf(`'%s', case m.metric_type
+			when 'Histogram' then hist_quantile(m.explicit_bounds, m.bucket_counts, ?)
+			when 'ExponentialHistogram' then exp_hist_quantile(m.scale, m.negative_bucket_offset, m.negative_bucket_counts, m.zero_count, m.positive_bucket_offset, m.positive_bucket_counts, ?)
+		end`, key))
+		args = append(args, q, q)
+	}
+	return strings.Join(pairs, ", "), args
+}
+
+// GetMetricBucketSeries returns a JSON array of one entry per time bucket
+// for the given metric, with each entry containing the raw bucket vectors
+// plus merged totals (count/sum/min/max). Unlike GetMetricQuantileSeries,
+// no quantile computation is performed -- the caller receives the merged
+// distribution data directly for heatmap rendering.
+//
+// Time bucketing, temporality dispatch, and mode semantics are identical to
+// GetMetricQuantileSeries. See that function's doc comment for details.
+//
+// Returns:
+//   - ErrInvalidTimeRange if endTs <= startTs.
+//   - ErrInvalidMaxPoints if maxPoints < 1.
+//   - ErrMetricIDNotFound if the metric has no datapoints.
+//   - ErrBucketSeriesNotSupportedForType for Gauge/Sum.
+//   - ErrUnspecifiedTemporality if aggregation_temporality is Unspecified.
+//   - ErrHistogramBoundsMismatch if aggregated Histogram has mixed bounds.
+func GetMetricBucketSeries(ctx context.Context, db *sql.DB, metricID string, mode string, startTs, endTs int64, maxPoints int) (json.RawMessage, error) {
+	if endTs <= startTs {
+		return nil, fmt.Errorf("GetMetricBucketSeries: %w: startTs=%d endTs=%d", ErrInvalidTimeRange, startTs, endTs)
+	}
+	if maxPoints < 1 {
+		return nil, fmt.Errorf("GetMetricBucketSeries: %w: %d", ErrInvalidMaxPoints, maxPoints)
+	}
+	if mode != "per-stream" && mode != "aggregated" {
+		return nil, fmt.Errorf("GetMetricBucketSeries: %w: %q (want per-stream or aggregated)", ErrInvalidQuantileSeriesMode, mode)
+	}
+
+	var metricType string
+	var temporality sql.NullString
+	err := db.QueryRowContext(ctx,
+		`select metric_type, aggregation_temporality from datapoints where metric_id = ? limit 1`,
+		metricID,
+	).Scan(&metricType, &temporality)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetMetricBucketSeries: %w: %s", ErrMetricIDNotFound, metricID)
+		}
+		return nil, fmt.Errorf("GetMetricBucketSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if metricType != "Histogram" && metricType != "ExponentialHistogram" {
+		return nil, fmt.Errorf("GetMetricBucketSeries: %w: %s", ErrBucketSeriesNotSupportedForType, metricType)
+	}
+	if !temporality.Valid || (temporality.String != "Delta" && temporality.String != "Cumulative") {
+		return nil, fmt.Errorf("GetMetricBucketSeries: %w: %s", ErrUnspecifiedTemporality, temporality.String)
+	}
+
+	if mode == "per-stream" {
+		return getPerStreamBucketSeries(ctx, db, metricID, metricType, temporality.String, startTs, endTs, maxPoints)
+	}
+	switch metricType {
+	case "Histogram":
+		return getAggregatedHistogramBucketSeries(ctx, db, metricID, temporality.String, startTs, endTs, maxPoints)
+	case "ExponentialHistogram":
+		return getAggregatedExpHistogramBucketSeries(ctx, db, metricID, temporality.String, startTs, endTs, maxPoints)
+	}
+	return nil, fmt.Errorf("GetMetricBucketSeries: %w: %s", ErrBucketSeriesNotSupportedForType, metricType)
+}
+
+// getPerStreamBucketSeries emits one JSON entry per (bucket_start, attrs_key)
+// with the raw bucket vectors and totals. The metric_type determines which
+// fields are populated in the output object.
+func getPerStreamBucketSeries(ctx context.Context, db *sql.DB, metricID, metricType, temporality string, startTs, endTs int64, maxPoints int) (json.RawMessage, error) {
+	cteSQL, cteArgs := quantileSeriesCTEs(metricID, startTs, endTs, maxPoints, temporality)
+
+	var selectSQL string
+	switch metricType {
+	case "Histogram":
+		selectSQL = fmt.Sprintf(`%s
+			select cast(coalesce(to_json(list(json_object(
+				'kind', 'histogram',
+				'timestamp', m.bucket_start::varchar,
+				'attributesKey', m.attrs_key,
+				'attributes', coalesce(m.attrs, json('[]')),
+				'bounds', m.explicit_bounds,
+				'counts', m.bucket_counts,
+				'totals', json_object(
+					'count', m.count,
+					'sum', m.sum,
+					'min', m.min,
+					'max', m.max
+				)
+			) order by m.bucket_start, m.attrs_key)), '[]') as varchar) as series
+			from time_merged m
+		`, cteSQL)
+	case "ExponentialHistogram":
+		selectSQL = fmt.Sprintf(`%s
+			select cast(coalesce(to_json(list(json_object(
+				'kind', 'expHistogram',
+				'timestamp', m.bucket_start::varchar,
+				'attributesKey', m.attrs_key,
+				'attributes', coalesce(m.attrs, json('[]')),
+				'scale', m.scale,
+				'zeroThreshold', m.zero_threshold,
+				'zeroCount', m.zero_count,
+				'positiveOffset', m.positive_bucket_offset,
+				'positiveCounts', m.positive_bucket_counts,
+				'negativeOffset', m.negative_bucket_offset,
+				'negativeCounts', m.negative_bucket_counts,
+				'totals', json_object(
+					'count', m.count,
+					'sum', m.sum,
+					'min', m.min,
+					'max', m.max
+				)
+			) order by m.bucket_start, m.attrs_key)), '[]') as varchar) as series
+			from time_merged m
+		`, cteSQL)
+	}
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, selectSQL, cteArgs...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetMetricBucketSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// getAggregatedHistogramBucketSeries merges all streams of a Histogram
+// metric per timestamp and returns the merged bucket vectors and totals.
+// Uses the same grouped -> merged CTE chain as the quantile variant,
+// including the bounds mismatch check.
+func getAggregatedHistogramBucketSeries(ctx context.Context, db *sql.DB, metricID, temporality string, startTs, endTs int64, maxPoints int) (json.RawMessage, error) {
+	cteSQL, cteArgs := quantileSeriesCTEs(metricID, startTs, endTs, maxPoints, temporality)
+
+	query := fmt.Sprintf(`%s,
+		grouped as (
+			select
+				bucket_start,
+				any_value(explicit_bounds) as bounds,
+				count(distinct explicit_bounds) as bound_variants,
+				list(bucket_counts) as bucket_vectors,
+				sum(count) as total_count,
+				sum(sum)   as total_sum,
+				min(min)   as total_min,
+				max(max)   as total_max
+			from time_merged
+			group by bucket_start
+		),
+		merged as (
+			select
+				bucket_start,
+				case
+					when bound_variants > 1 then error('%s')
+					else bounds
+				end as bounds,
+				sum_bucket_vectors(bucket_vectors) as merged_counts,
+				total_count, total_sum, total_min, total_max
+			from grouped
+		)
+		select cast(coalesce(to_json(list(json_object(
+			'kind', 'histogram',
+			'timestamp', m.bucket_start::varchar,
+			'attributesKey', '',
+			'attributes', json('[]'),
+			'bounds', m.bounds,
+			'counts', m.merged_counts,
+			'totals', json_object(
+				'count', m.total_count,
+				'sum', m.total_sum,
+				'min', m.total_min,
+				'max', m.total_max
+			)
+		) order by m.bucket_start)), '[]') as varchar) as series
+		from merged m
+	`, cteSQL, histogramBoundsMismatchTag)
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, cteArgs...).Scan(&raw); err != nil {
+		if strings.Contains(err.Error(), histogramBoundsMismatchTag) {
+			return nil, fmt.Errorf("GetMetricBucketSeries: %w", ErrHistogramBoundsMismatch)
+		}
+		return nil, fmt.Errorf("GetMetricBucketSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// getAggregatedExpHistogramBucketSeries merges all streams of an
+// ExponentialHistogram per bucket using the full alignment pipeline
+// (downscale, pad, sum, fold) and returns the aligned bucket arrays.
+// Reuses the same CTE chain as the quantile variant but selects the
+// raw vectors from `final` instead of computing quantiles.
+func getAggregatedExpHistogramBucketSeries(ctx context.Context, db *sql.DB, metricID, temporality string, startTs, endTs int64, maxPoints int) (json.RawMessage, error) {
+	cteSQL, cteArgs := quantileSeriesCTEs(metricID, startTs, endTs, maxPoints, temporality)
+
+	query := fmt.Sprintf(`%s,
+		bucket_targets as (
+			select
+				bucket_start,
+				min(scale) as target_scale,
+				max(zero_threshold) as target_zero_threshold,
+				sum(zero_count) as base_zero_count,
+				sum(count) as total_count,
+				sum(sum)   as total_sum,
+				min(min)   as total_min,
+				max(max)   as total_max
+			from time_merged
+			group by bucket_start
+		),
+		with_levels as (
+			select
+				tm.bucket_start,
+				tm.positive_bucket_counts,
+				tm.positive_bucket_offset,
+				tm.negative_bucket_counts,
+				tm.negative_bucket_offset,
+				tm.scale - bt.target_scale as levels
+			from time_merged tm
+			join bucket_targets bt using (bucket_start)
+		),
+		downscaled as (
+			select
+				bucket_start,
+				downscale_exp_buckets(positive_bucket_counts, positive_bucket_offset, levels) as pos_ds,
+				downscale_exp_buckets(negative_bucket_counts, negative_bucket_offset, levels) as neg_ds
+			from with_levels
+		),
+		bucket_offsets as (
+			select
+				bucket_start,
+				min(pos_ds.offset) as pos_target_offset,
+				min(neg_ds.offset) as neg_target_offset
+			from downscaled
+			group by bucket_start
+		),
+		padded as (
+			select
+				d.bucket_start,
+				pad_left_to_offset(d.pos_ds.counts, d.pos_ds.offset, bo.pos_target_offset) as pos_padded,
+				pad_left_to_offset(d.neg_ds.counts, d.neg_ds.offset, bo.neg_target_offset) as neg_padded
+			from downscaled d
+			join bucket_offsets bo using (bucket_start)
+		),
+		summed as (
+			select
+				bucket_start,
+				sum_bucket_vectors(list(pos_padded)) as pos_summed,
+				sum_bucket_vectors(list(neg_padded)) as neg_summed
+			from padded
+			group by bucket_start
+		),
+		folded as (
+			select
+				bt.bucket_start,
+				bt.target_scale,
+				bt.target_zero_threshold,
+				bt.base_zero_count,
+				bt.total_count, bt.total_sum, bt.total_min, bt.total_max,
+				fold_below_cutoff(
+					s.pos_summed, bo.pos_target_offset,
+					case
+						when bt.target_zero_threshold > 0
+							then cast(floor(log2(bt.target_zero_threshold) * pow(2, bt.target_scale)) as bigint) - 1
+						else null
+					end
+				) as pos_fold,
+				fold_below_cutoff(
+					s.neg_summed, bo.neg_target_offset,
+					case
+						when bt.target_zero_threshold > 0
+							then cast(floor(log2(bt.target_zero_threshold) * pow(2, bt.target_scale)) as bigint) - 1
+						else null
+					end
+				) as neg_fold
+			from bucket_targets bt
+			join bucket_offsets bo using (bucket_start)
+			join summed s         using (bucket_start)
+		),
+		final as (
+			select
+				bucket_start,
+				target_scale,
+				target_zero_threshold,
+				coalesce(pos_fold.offset, 0)               as pos_offset,
+				coalesce(pos_fold.counts, []::bigint[])    as pos_counts,
+				coalesce(neg_fold.offset, 0)               as neg_offset,
+				coalesce(neg_fold.counts, []::bigint[])    as neg_counts,
+				base_zero_count
+					+ coalesce(pos_fold.folded, 0)
+					+ coalesce(neg_fold.folded, 0)         as final_zero_count,
+				total_count, total_sum, total_min, total_max
+			from folded
+		)
+		select cast(coalesce(to_json(list(json_object(
+			'kind', 'expHistogram',
+			'timestamp', m.bucket_start::varchar,
+			'attributesKey', '',
+			'attributes', json('[]'),
+			'scale', m.target_scale,
+			'zeroThreshold', m.target_zero_threshold,
+			'zeroCount', m.final_zero_count,
+			'positiveOffset', m.pos_offset,
+			'positiveCounts', m.pos_counts,
+			'negativeOffset', m.neg_offset,
+			'negativeCounts', m.neg_counts,
+			'totals', json_object(
+				'count', m.total_count,
+				'sum', m.total_sum,
+				'min', m.total_min,
+				'max', m.total_max
+			)
+		) order by m.bucket_start)), '[]') as varchar) as series
+		from final m
+	`, cteSQL)
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, cteArgs...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetMetricBucketSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
 	}
 	return json.RawMessage(raw), nil
 }

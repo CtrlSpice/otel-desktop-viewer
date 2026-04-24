@@ -54,6 +54,10 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getMetricAttributes(ctx, req)
 	case "getDatapointQuantiles":
 		return h.getDatapointQuantiles(ctx, req)
+	case "getMetricQuantileSeries":
+		return h.getMetricQuantileSeries(ctx, req)
+	case "getMetricBucketSeries":
+		return h.getMetricBucketSeries(ctx, req)
 	case "getAttributesByTraceID":
 		return h.getAttributesByTraceID(ctx, req)
 	case "getStats":
@@ -449,6 +453,148 @@ func (h *JSONRPCHandler) getDatapointQuantiles(ctx context.Context, req *jsonrpc
 	result, err := metrics.GetDatapointQuantiles(ctx, h.store.DB(), datapointID, quantiles)
 	if err != nil {
 		log.Printf("Error getting datapoint quantiles: %v", err)
+		return nil, mapStoreError(err)
+	}
+	return result, nil
+}
+
+// getMetricQuantileSeries returns one quantile sample per adaptive time
+// bucket for a histogram or exponential-histogram metric. Params:
+//
+//	[metricID string,
+//	 quantiles []float64,                // each in [0, 1]
+//	 mode      string,                   // "per-stream" | "aggregated"
+//	 startTs   string (int64 ns),
+//	 endTs     string (int64 ns),
+//	 maxPoints number]                   // chart pixel width, >= 1
+//
+// Result is a JSON array of points; the helper returns the array as
+// json.RawMessage so the response goes out without a re-marshal round trip.
+// Bucket math (width = max(1ms, (endTs-startTs)/maxPoints), bucket_start =
+// floor(ts/width)*width) lives entirely in the store layer.
+func (h *JSONRPCHandler) getMetricQuantileSeries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) != 6 {
+		log.Printf("Invalid parameter count: %d (expected 6)", len(params))
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	metricID, ok := params[0].(string)
+	if !ok {
+		log.Printf("Invalid metricID type: %T", params[0])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	rawQs, ok := params[1].([]any)
+	if !ok {
+		log.Printf("Invalid quantiles type: %T (expected array)", params[1])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	quantiles := make([]float64, 0, len(rawQs))
+	for i, q := range rawQs {
+		f, ok := q.(float64)
+		if !ok {
+			log.Printf("Invalid quantile[%d] type: %T (expected number)", i, q)
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		if f < 0 || f > 1 {
+			log.Printf("Invalid quantile[%d] value: %v (must be in [0, 1])", i, f)
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		quantiles = append(quantiles, f)
+	}
+
+	mode, ok := params[2].(string)
+	if !ok {
+		log.Printf("Invalid mode type: %T", params[2])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	startTs, err := parseTimestampParam(params[3], "startTs")
+	if err != nil {
+		return nil, err
+	}
+	endTs, err := parseTimestampParam(params[4], "endTs")
+	if err != nil {
+		return nil, err
+	}
+
+	// maxPoints rides as a JSON number; clamp to int via float64. Anything
+	// that isn't a number is a client bug.
+	maxPointsF, ok := params[5].(float64)
+	if !ok {
+		log.Printf("Invalid maxPoints type: %T (expected number)", params[5])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	maxPoints := int(maxPointsF)
+
+	result, err := metrics.GetMetricQuantileSeries(ctx, h.store.DB(), metricID, quantiles, mode, startTs, endTs, maxPoints)
+	if err != nil {
+		log.Printf("Error getting metric quantile series: %v", err)
+		return nil, mapStoreError(err)
+	}
+	return result, nil
+}
+
+// getMetricBucketSeries returns the raw bucket vectors per adaptive time
+// bucket for a histogram or exponential-histogram metric. Params:
+//
+//	[metricID string,
+//	 mode      string,                   // "per-stream" | "aggregated"
+//	 startTs   string (int64 ns),
+//	 endTs     string (int64 ns),
+//	 maxPoints number]                   // chart pixel width, >= 1
+//
+// Result is a JSON array of points with bucket data (bounds/counts for
+// Histogram, scale/offset/counts for ExponentialHistogram) plus totals.
+func (h *JSONRPCHandler) getMetricBucketSeries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) != 5 {
+		log.Printf("Invalid parameter count: %d (expected 5)", len(params))
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	metricID, ok := params[0].(string)
+	if !ok {
+		log.Printf("Invalid metricID type: %T", params[0])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	mode, ok := params[1].(string)
+	if !ok {
+		log.Printf("Invalid mode type: %T", params[1])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	startTs, err := parseTimestampParam(params[2], "startTs")
+	if err != nil {
+		return nil, err
+	}
+	endTs, err := parseTimestampParam(params[3], "endTs")
+	if err != nil {
+		return nil, err
+	}
+
+	maxPointsF, ok := params[4].(float64)
+	if !ok {
+		log.Printf("Invalid maxPoints type: %T (expected number)", params[4])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	maxPoints := int(maxPointsF)
+
+	result, err := metrics.GetMetricBucketSeries(ctx, h.store.DB(), metricID, mode, startTs, endTs, maxPoints)
+	if err != nil {
+		log.Printf("Error getting metric bucket series: %v", err)
 		return nil, mapStoreError(err)
 	}
 	return result, nil

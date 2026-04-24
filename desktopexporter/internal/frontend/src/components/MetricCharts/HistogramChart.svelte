@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BarChart, Line, Text } from 'layerchart'
+  import { BarChart, Line, Text, Tooltip } from 'layerchart'
   import { scaleBand, scaleLinear } from 'd3-scale'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type {
@@ -210,10 +210,32 @@
         y="count"
         yScale={scaleLinear()}
         yNice
-        bandPadding={0.15}
+        bandPadding={0.2}
         padding={{ top: 16, right: 8, bottom: 48, left: 48 }}
         tooltipContext
+        props={{
+          xAxis: {
+            tickLabelProps: {
+              rotate: 315,
+              textAnchor: 'end',
+              verticalAnchor: 'middle',
+              dy: 8,
+            },
+          },
+          yAxis: { format: 'metric' },
+        }}
       >
+        {#snippet tooltip()}
+          <Tooltip.Root>
+            {#snippet children({ data })}
+              <Tooltip.Header class="text-center">{data.label}</Tooltip.Header>
+              <Tooltip.List>
+                <Tooltip.Item label="count" value={data.count} format="integer" />
+              </Tooltip.List>
+            {/snippet}
+          </Tooltip.Root>
+        {/snippet}
+
         {#snippet aboveMarks({ context }: { context: any })}
           {@const xs = context.xScale}
           {@const bw = typeof xs.bandwidth === 'function' ? xs.bandwidth() : 0}

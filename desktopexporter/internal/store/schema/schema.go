@@ -93,6 +93,7 @@ var TableCreationQueries = []string{
 		explicit_bounds double[],
 		scale integer,
 		zero_count ubigint,
+		zero_threshold double,
 		positive_bucket_offset integer,
 		positive_bucket_counts ubigint[],
 		negative_bucket_offset integer,
@@ -107,7 +108,7 @@ var TableCreationQueries = []string{
 				is_monotonic is null and aggregation_temporality is null and
 				count is null and sum is null and min is null and max is null and
 				bucket_counts is null and explicit_bounds is null and
-				scale is null and zero_count is null and
+				scale is null and zero_count is null and zero_threshold is null and
 				positive_bucket_offset is null and positive_bucket_counts is null and
 				negative_bucket_offset is null and negative_bucket_counts is null
 			)
@@ -117,7 +118,7 @@ var TableCreationQueries = []string{
 				value_type is not null and (double_value is not null or int_value is not null) and
 				count is null and sum is null and min is null and max is null and
 				bucket_counts is null and explicit_bounds is null and
-				scale is null and zero_count is null and
+				scale is null and zero_count is null and zero_threshold is null and
 				positive_bucket_offset is null and positive_bucket_counts is null and
 				negative_bucket_offset is null and negative_bucket_counts is null and
 				aggregation_temporality is null
@@ -129,7 +130,7 @@ var TableCreationQueries = []string{
 				is_monotonic is not null and aggregation_temporality is not null and
 				count is null and sum is null and min is null and max is null and
 				bucket_counts is null and explicit_bounds is null and
-				scale is null and zero_count is null and
+				scale is null and zero_count is null and zero_threshold is null and
 				positive_bucket_offset is null and positive_bucket_counts is null and
 				negative_bucket_offset is null and negative_bucket_counts is null
 			)
@@ -140,7 +141,7 @@ var TableCreationQueries = []string{
 				bucket_counts is not null and explicit_bounds is not null and
 				aggregation_temporality is not null and
 				double_value is null and int_value is null and value_type is null and is_monotonic is null and
-				scale is null and zero_count is null and
+				scale is null and zero_count is null and zero_threshold is null and
 				positive_bucket_offset is null and positive_bucket_counts is null and
 				negative_bucket_offset is null and negative_bucket_counts is null
 			)
@@ -148,7 +149,7 @@ var TableCreationQueries = []string{
 		constraint chk_exponential_histogram_fields check (
 			(metric_type != 'ExponentialHistogram') or (
 				count is not null and sum is not null and
-				scale is not null and zero_count is not null and
+				scale is not null and zero_count is not null and zero_threshold is not null and
 				positive_bucket_offset is not null and positive_bucket_counts is not null and
 				negative_bucket_offset is not null and negative_bucket_counts is not null and
 				aggregation_temporality is not null and
@@ -402,5 +403,166 @@ var MacroCreationQueries = []string{
 			exp_buckets(scale, neg_offset, neg_counts, zero_count, pos_offset, pos_counts),
 			q
 		)
+	)`,
+
+	// floor_div: mathematical floor division that rounds toward negative
+	// infinity. SQL's `/` (and DuckDB's integer divide) truncate toward zero,
+	// which is wrong for downscaling exponential histograms with negative
+	// bucket indices: e.g. floor(-3 / 2) = -2 (correct, bucket -3 belongs to
+	// merged group -2), whereas trunc(-3 / 2) = -1 (wrong group).
+	//
+	// Cast through double to handle bigint inputs without integer-overflow
+	// surprises at the boundaries; the floor result is then cast back to
+	// bigint so callers can use it as an array index / offset.
+	`create or replace macro floor_div(a, b) as (
+		cast(floor(cast(a as double) / cast(b as double)) as bigint)
+	)`,
+
+	// downscale_exp_buckets: drop the resolution of an exponential histogram
+	// by `levels` scale steps. A single "level" merges every pair of adjacent
+	// buckets; level k merges 2^k adjacent buckets. Used during cross-stream
+	// aggregation when streams arrive at different scales -- everyone gets
+	// downscaled to the group's minimum scale before bucket-wise summation.
+	//
+	// Returns {offset: bigint, counts: bigint[]}. levels <= 0 (and null/empty
+	// counts) is a no-op: input is returned unchanged. Negative levels would
+	// require *upscaling*, which is not generally possible without losing
+	// information about the original sub-bucket distribution.
+	//
+	// Approach: pair each input count with its 0-based position via list_zip,
+	// then for each output bucket k in [new_offset, last_k] keep the inputs
+	// whose original bucket index (offset_ + position) maps to k under
+	// floor_div, and sum their counts. Single allocation per output bucket.
+	//
+	// Note on list_zip pair access: list_zip returns structs that DuckDB
+	// treats as "unnamed" for .field access -- you have to index positionally
+	// (pair[1], pair[2]) the same way sum_bucket_vectors does. The fields are
+	// 1=count, 2=0-based position.
+	// Implementation note: the macro body must NOT contain a subquery (no
+	// `with`, no `select`). DuckDB refuses to bind subqueries that reference
+	// macro parameters when the macro is called from a SELECT that itself
+	// joins CTEs -- you get "Referenced table X not found! Candidate tables:
+	// params". So the helper values factor / new_offset / last_k get
+	// inlined; verbose but the planner is happy. Each subexpression is pure
+	// arithmetic on the macro's parameters, so DuckDB folds the duplicates.
+	`create or replace macro downscale_exp_buckets(counts, offset_, levels) as (
+		case
+			when counts is null or len(counts) = 0 or levels <= 0
+				then {'offset': offset_, 'counts': counts}
+			else {
+				'offset': floor_div(offset_, cast(pow(2, levels) as bigint)),
+				-- list_sum promotes to HUGEINT; cast back to BIGINT so the
+				-- output type matches the input and downstream macros that
+				-- expect bigint[] (sum_bucket_vectors, exp_pos_buckets, ...)
+				-- don't trip on inferred-type mismatches.
+				'counts': list_transform(
+					range(
+						0,
+						floor_div(offset_ + len(counts) - 1, cast(pow(2, levels) as bigint))
+							- floor_div(offset_, cast(pow(2, levels) as bigint))
+							+ 1
+					),
+					k_off -> cast(
+						coalesce(
+							list_sum(
+								list_transform(
+									list_filter(
+										list_zip(counts, range(0, len(counts))),
+										pair -> floor_div(offset_ + pair[2], cast(pow(2, levels) as bigint))
+											= floor_div(offset_, cast(pow(2, levels) as bigint)) + k_off
+									),
+									pair -> pair[1]
+								)
+							),
+							0
+						)
+						as bigint
+					)
+				)
+			}
+		end
+	)`,
+
+	// fold_below_cutoff: after scale/offset alignment of an exponential
+	// histogram aggregate, fold any leading buckets whose index is <= cutoff
+	// into a single "folded" total. The folded value is intended to be added
+	// back into zero_count by the caller, completing the zero_threshold
+	// reconciliation step described in the histogram-trend-chart plan.
+	//
+	// Returns {counts: bigint[], offset: bigint, folded: bigint}. Where the
+	// inputs trigger a no-op, folded is 0 and counts/offset pass through:
+	//   - counts is NULL or empty
+	//   - cutoff is NULL (signals "no zero_threshold to apply")
+	//   - cutoff < offset_ (no buckets sit at or below the threshold)
+	//
+	// drop_n is capped by len(counts) so a wildly-high cutoff folds the whole
+	// array rather than producing nonsense slices. list_slice in DuckDB is
+	// 1-indexed and end-inclusive; both list_slice calls clamp gracefully on
+	// out-of-range indices, so the cap is defensive rather than load-bearing.
+	`create or replace macro fold_below_cutoff(counts, offset_, cutoff) as (
+		case
+			when counts is null or len(counts) = 0 or cutoff is null or cutoff < offset_
+				then {'counts': counts, 'offset': offset_, 'folded': 0::bigint}
+			else (
+				with d as (
+					select least(cutoff - offset_ + 1, len(counts)) as drop_n
+				)
+				select {
+					'counts': list_slice(counts, drop_n + 1, len(counts)),
+					'offset': offset_ + drop_n,
+					'folded': cast(coalesce(list_sum(list_slice(counts, 1, drop_n)), 0) as bigint)
+				}
+				from d
+			)
+		end
+	)`,
+
+	// pad_left_to_offset: left-pads `counts` with zeros so the first bucket
+	// lines up with `target_offset`. Used during cross-stream exp-histogram
+	// alignment after downscaling: every stream is downscaled to the group's
+	// minimum scale, then padded so every aligned bucket array starts at the
+	// same (minimum) offset.
+	//
+	// Caller invariant is target_offset <= current_offset (you can only ever
+	// extend a bucket array's coverage downward, never trim it). When the
+	// invariant is violated or padding is unnecessary (target == current),
+	// returns counts unchanged. NULL counts pass through.
+	//
+	// Implementation note: DuckDB doesn't have list_repeat(value, n) in this
+	// version, so the zero prefix is built via list_transform(range(0, n)).
+	// The 0::bigint cast keeps the prefix type aligned with bigint[] inputs
+	// so list_concat doesn't fail on a bigint-vs-int mismatch.
+	`create or replace macro pad_left_to_offset(counts, current_offset, target_offset) as (
+		case
+			when counts is null or current_offset <= target_offset then counts
+			else list_concat(
+				list_transform(range(0, current_offset - target_offset), x -> 0::bigint),
+				counts
+			)
+		end
+	)`,
+
+	// Aggregation helper: element-wise sum of a list of equal-length numeric
+	// lists. Used to merge bucket_counts arrays across multiple histogram
+	// streams that share the same explicit_bounds. The caller is responsible
+	// for enforcing the shared-bounds invariant; this macro is intentionally
+	// permissive about length mismatches (zero-pads via list_zip + coalesce)
+	// so a programmer error there yields slightly-off numbers rather than a
+	// crash.
+	//
+	// Returns NULL for NULL or empty input -- DuckDB's list_reduce raises a
+	// hard error on an empty list, so we guard explicitly. NULL slots inside
+	// an element list are coalesced to 0.
+	`create or replace macro sum_bucket_vectors(vectors) as (
+		case
+			when vectors is null or len(vectors) = 0 then null
+			else list_reduce(
+				vectors,
+				(acc, v) -> list_transform(
+					list_zip(acc, v),
+					pair -> coalesce(pair[1], 0) + coalesce(pair[2], 0)
+				)
+			)
+		end
 	)`,
 }

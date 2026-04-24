@@ -22,6 +22,11 @@ const (
 	ErrCodeInvalidQuery                 = -32007
 	ErrCodeDatapointNotFound            = -32008
 	ErrCodeQuantilesNotSupportedForType = -32009
+	ErrCodeHistogramBoundsMismatch      = -32010
+	ErrCodeInvalidTimeRange             = -32011
+	ErrCodeInvalidMaxPoints             = -32012
+	ErrCodeUnspecifiedTemporality           = -32013
+	ErrCodeBucketSeriesNotSupportedForType = -32014
 )
 
 // Custom JSON-RPC errors
@@ -35,6 +40,11 @@ var (
 	ErrInvalidQuery                 = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
 	ErrDatapointNotFound            = jsonrpc2.NewError(ErrCodeDatapointNotFound, "Datapoint not found")
 	ErrQuantilesNotSupportedForType = jsonrpc2.NewError(ErrCodeQuantilesNotSupportedForType, "Quantiles are only supported for Histogram and ExponentialHistogram datapoints")
+	ErrHistogramBoundsMismatch      = jsonrpc2.NewError(ErrCodeHistogramBoundsMismatch, "Aggregated Histogram has datapoints with mismatched explicit_bounds at the same timestamp")
+	ErrInvalidTimeRange             = jsonrpc2.NewError(ErrCodeInvalidTimeRange, "Invalid time range: endTs must be greater than startTs")
+	ErrInvalidMaxPoints             = jsonrpc2.NewError(ErrCodeInvalidMaxPoints, "Invalid maxPoints: must be >= 1")
+	ErrUnspecifiedTemporality           = jsonrpc2.NewError(ErrCodeUnspecifiedTemporality, "Metric has Unspecified aggregation_temporality; cannot safely aggregate over time")
+	ErrBucketSeriesNotSupportedForType = jsonrpc2.NewError(ErrCodeBucketSeriesNotSupportedForType, "Bucket series are only supported for Histogram and ExponentialHistogram datapoints")
 )
 
 // mapStoreError maps store-layer sentinel errors to JSON-RPC errors.
@@ -56,6 +66,20 @@ func mapStoreError(err error) error {
 		return ErrDatapointNotFound
 	case errors.Is(err, metrics.ErrQuantilesNotSupportedForType):
 		return ErrQuantilesNotSupportedForType
+	case errors.Is(err, metrics.ErrBucketSeriesNotSupportedForType):
+		return ErrBucketSeriesNotSupportedForType
+	case errors.Is(err, metrics.ErrHistogramBoundsMismatch):
+		return ErrHistogramBoundsMismatch
+	case errors.Is(err, metrics.ErrInvalidTimeRange):
+		return ErrInvalidTimeRange
+	case errors.Is(err, metrics.ErrInvalidMaxPoints):
+		return ErrInvalidMaxPoints
+	case errors.Is(err, metrics.ErrUnspecifiedTemporality):
+		return ErrUnspecifiedTemporality
+	case errors.Is(err, metrics.ErrInvalidQuantileSeriesMode):
+		// Bad mode string is a client-side mistake; surface as InvalidParams
+		// rather than a custom code so callers see the standard contract.
+		return jsonrpc2.ErrInvalidParams
 	case errors.Is(err, spans.ErrInvalidTraceQuery), errors.Is(err, logs.ErrInvalidLogQuery),
 		errors.Is(err, metrics.ErrInvalidMetricQuery), errors.Is(err, search.ErrInvalidQuery):
 		return ErrInvalidQuery

@@ -5,8 +5,10 @@
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { metricTypeBadgeClass } from '@/utils/metric-type'
+  import { selectionToQueryRangeMs } from '@/contexts/time-context.svelte'
   import MetricTimeSeriesChart from '@/components/MetricCharts/MetricTimeSeriesChart.svelte'
   import HistogramChart from '@/components/MetricCharts/HistogramChart.svelte'
+  import HistogramHeatmap from '@/components/MetricCharts/HistogramHeatmap.svelte'
   import { TrashIcon } from '@/icons'
 
   type Props = {
@@ -23,6 +25,8 @@
   let metricType = $derived(
     metric?.datapoints[0]?.metricType ?? 'Empty'
   )
+
+  let queryRange = $derived(selectionToQueryRangeMs(timeContext.selection, Date.now()))
 
   let latestHistogramDp = $derived.by(() => {
     if (!metric) return undefined
@@ -76,8 +80,19 @@
       <div class="metric-detail-chart">
         {#if metricType === 'Gauge' || metricType === 'Sum'}
           <MetricTimeSeriesChart datapoints={metric.datapoints} />
-        {:else if latestHistogramDp}
-          <HistogramChart datapoint={latestHistogramDp} />
+        {:else if metricType === 'Histogram' || metricType === 'ExponentialHistogram'}
+          <HistogramHeatmap
+            metricID={metric.id}
+            mode="aggregated"
+            startTimeMs={queryRange.start}
+            endTimeMs={queryRange.end}
+            height={250}
+          />
+          {#if latestHistogramDp}
+            <div class="mt-2">
+              <HistogramChart datapoint={latestHistogramDp} />
+            </div>
+          {/if}
         {:else}
           <div class="flex items-center justify-center h-[250px] text-base-content/40 text-sm">
             No chart available for this metric type
