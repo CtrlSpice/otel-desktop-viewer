@@ -8,6 +8,10 @@ import type {
   Stats,
   Exemplar,
   DataPoint,
+  QuantileSeriesMode,
+  QuantileSeriesPoint,
+  BucketSeriesMode,
+  BucketSeriesPoint,
 } from '@/types/api-types'
 import type { QueryNode } from '@/components/SignalToolbar/search/queryTree'
 import type {
@@ -309,6 +313,136 @@ export let telemetryAPI = {
     const rawData = await callRPC('getMetrics', params)
     return metricsFromJSON(rawData)
   },
+
+  getMetricAttributes: async (
+    startTime: number,
+    endTime: number
+  ): Promise<FieldDefinition[]> => {
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
+    const params = [startTimeNs, endTimeNs]
+    const rawData = await callRPC('getMetricAttributes', params)
+
+    if (!Array.isArray(rawData)) {
+      console.warn(
+        'getMetricAttributes: Expected array, got:',
+        typeof rawData,
+        rawData
+      )
+      return []
+    }
+
+    return convertAttributesToFieldDefinitions(rawData)
+  },
+
+  // Returns a map of quantile -> interpolated value for a single histogram or
+  // exponential-histogram datapoint. Keys come back as the quantile formatted
+  // by Go's strconv.FormatFloat with -1 precision (e.g. "0.5", "0.95"). A
+  // value of null means the macro declined to interpolate (empty buckets or
+  // total count of zero) -- callers should render it as an em-dash or similar.
+  getDatapointQuantiles: async (
+    datapointID: string,
+    quantiles: number[]
+  ): Promise<Record<string, number | null>> => {
+    const rawData = await callRPC('getDatapointQuantiles', [
+      datapointID,
+      quantiles,
+    ])
+    if (rawData === null || typeof rawData !== 'object') {
+      console.warn(
+        'getDatapointQuantiles: Expected object, got:',
+        typeof rawData,
+        rawData
+      )
+      return {}
+    }
+    return rawData as Record<string, number | null>
+  },
+
+  // Returns one quantile sample per adaptive time bucket for a histogram
+  // or exponential-histogram metric. The backend computes bucket width as
+  // greatest(1ms, (endTs - startTs) / maxPoints), so callers should pass
+  // maxPoints = chart pixel width. Time params are accepted in ms (matching
+  // searchMetrics et al) and converted to ns strings on the wire to dodge
+  // float64 precision loss for large epoch-ns values.
+  //
+  // Mode controls cross-stream merging:
+  //   - per-stream: one point per (bucket, attribute set)
+  //   - aggregated: one point per bucket with all streams merged (Histogram
+  //     requires uniform explicit_bounds within each bucket; mismatches
+  //     surface as JSON-RPC error code -32010).
+  getMetricQuantileSeries: async (
+    metricID: string,
+    quantiles: number[],
+    mode: QuantileSeriesMode,
+    startTime: number,
+    endTime: number,
+    maxPoints: number
+  ): Promise<QuantileSeriesPoint[]> => {
+    const startTsNs = toNanoseconds(startTime)
+    const endTsNs = toNanoseconds(endTime)
+    const rawData = await callRPC('getMetricQuantileSeries', [
+      metricID,
+      quantiles,
+      mode,
+      startTsNs,
+      endTsNs,
+      maxPoints,
+    ])
+    if (!Array.isArray(rawData)) {
+      console.warn(
+        'getMetricQuantileSeries: Expected array, got:',
+        typeof rawData,
+        rawData
+      )
+      return []
+    }
+    // bucket_start arrives as a JSON number from Go. Funnel it through
+    // BigInt so callers always see the same nanosecond shape as DataPoint.
+    return rawData.map((pt: any) => ({
+      ...pt,
+      timestamp: BigInt(pt.timestamp),
+      attributes: pt.attributes ?? [],
+    })) as QuantileSeriesPoint[]
+  },
+
+  // Returns raw bucket vectors per adaptive time bucket for a histogram or
+  // exponential-histogram metric. Same bucketing and temporality semantics as
+  // getMetricQuantileSeries, but no quantile computation -- callers receive
+  // the merged distribution data directly for heatmap rendering.
+  getMetricBucketSeries: async (
+    metricID: string,
+    mode: BucketSeriesMode,
+    startTime: number,
+    endTime: number,
+    maxPoints: number
+  ): Promise<BucketSeriesPoint[]> => {
+    const startTsNs = toNanoseconds(startTime)
+    const endTsNs = toNanoseconds(endTime)
+    const rawData = await callRPC('getMetricBucketSeries', [
+      metricID,
+      mode,
+      startTsNs,
+      endTsNs,
+      maxPoints,
+    ])
+    if (!Array.isArray(rawData)) {
+      console.warn(
+        'getMetricBucketSeries: Expected array, got:',
+        typeof rawData,
+        rawData
+      )
+      return []
+    }
+    return rawData.map((pt: any) => ({
+      ...pt,
+      timestamp: BigInt(pt.timestamp),
+      attributes: pt.attributes ?? [],
+    })) as BucketSeriesPoint[]
+  },
+
+  deleteMetrics: (metricIDs: string[]) =>
+    callRPC('deleteMetricByID', metricIDs),
 
   clearMetrics: () => callRPC('clearMetrics', undefined),
 

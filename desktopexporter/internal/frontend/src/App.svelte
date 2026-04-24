@@ -2,7 +2,6 @@
   import HorizontalNav from '@/components/HorizontalNav.svelte';
   import HomePage from '@/pages/HomePage.svelte';
   import MetricsPage from '@/pages/MetricsPage.svelte';
-  import MetricsDetailPage from '@/pages/MetricsDetailPage.svelte';
   import LogsPage from '@/pages/LogsPage.svelte';
   import TracesPage from '@/pages/TracesPage.svelte';
   import TraceDetailPage from '@/pages/TraceDetailPage.svelte';
@@ -27,9 +26,6 @@
     <!-- Router: Show different pages based on current route -->
     <Route path="/">
       <HomePage />
-    </Route>
-    <Route path="/metrics/:metricName">
-      <MetricsDetailPage />
     </Route>
     <Route path="/metrics">
       <MetricsPage />

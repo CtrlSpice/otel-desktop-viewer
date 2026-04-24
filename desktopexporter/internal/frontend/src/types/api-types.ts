@@ -162,6 +162,7 @@ export type ExponentialHistogramDataPoint = BaseDataPoint & {
   max: number
   scale: number
   zeroCount: number
+  zeroThreshold: number
   positiveBucketOffset: number
   positiveBucketCounts: number[]
   negativeBucketOffset: number
@@ -224,3 +225,64 @@ export type SearchResultEvent =
   | { signal: 'logs'; view: 'list'; results: LogData[] }
   | { signal: 'metrics'; view: 'list'; results: MetricData[] }
   | { signal: 'metrics'; view: 'detail'; results: MetricData[] }
+
+// Quantile series (trend chart) types. The backend computes adaptive time
+// buckets and emits one point per (bucket, stream) for per-stream mode and
+// one point per bucket for aggregated mode.
+export type QuantileSeriesMode = 'per-stream' | 'aggregated'
+
+// One point in a quantile series. `quantiles` keys are the same float
+// strings produced by Go's strconv.FormatFloat with -1 precision (e.g.
+// "0.5", "0.95"); a value of null means the macro declined to interpolate
+// (empty buckets / total count of zero) and should render as a dash.
+// `attributes` and `attributesKey` are empty/blank for aggregated mode.
+export type QuantileSeriesPoint = {
+  timestamp: bigint
+  attributesKey: string
+  attributes: Attributes
+  quantiles: Record<string, number | null>
+  count: number
+  sum: number
+  min: number | null
+  max: number | null
+}
+
+// Bucket series (heatmap) types. Same adaptive bucketing as quantile series,
+// but the raw bucket vectors are returned instead of computed quantiles.
+export type BucketSeriesMode = 'per-stream' | 'aggregated'
+
+export type BucketSeriesTotals = {
+  count: number
+  sum: number
+  min: number | null
+  max: number | null
+}
+
+export type HistogramBucketPoint = {
+  kind: 'histogram'
+  timestamp: bigint
+  attributesKey: string
+  attributes: Attributes
+  bounds: number[]
+  counts: number[]
+  totals: BucketSeriesTotals
+}
+
+export type ExpHistogramBucketPoint = {
+  kind: 'expHistogram'
+  timestamp: bigint
+  attributesKey: string
+  attributes: Attributes
+  scale: number
+  zeroThreshold: number
+  zeroCount: number
+  positiveOffset: number
+  positiveCounts: number[]
+  negativeOffset: number
+  negativeCounts: number[]
+  totals: BucketSeriesTotals
+}
+
+export type BucketSeriesPoint =
+  | HistogramBucketPoint
+  | ExpHistogramBucketPoint
