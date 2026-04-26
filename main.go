@@ -57,6 +57,7 @@ func runInteractive(params otelcol.CollectorSettings) error {
 func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	var httpPortFlag, grpcPortFlag, browserPortFlag int
 	var hostFlag, dbFlag string
+	var tracesURLPathFlag, metricsURLPathFlag, logsURLPathFlag string
 	var openBrowserFlag bool
 
 	rootCmd := &cobra.Command{
@@ -66,6 +67,9 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 			set.ConfigProviderSettings.ResolverSettings.URIs = []string{
 				`yaml:receivers::otlp::protocols::http::cors::allowed_origins: [https://*,http://*]`,
 				`yaml:receivers::otlp::protocols::http::endpoint: ` + hostFlag + `:` + strconv.Itoa(httpPortFlag),
+				`yaml:receivers::otlp::protocols::http::traces_url_path: ` + tracesURLPathFlag,
+				`yaml:receivers::otlp::protocols::http::metrics_url_path: ` + metricsURLPathFlag,
+				`yaml:receivers::otlp::protocols::http::logs_url_path: ` + logsURLPathFlag,
 				`yaml:receivers::otlp::protocols::grpc::endpoint: ` + hostFlag + `:` + strconv.Itoa(grpcPortFlag),
 				`yaml:exporters::desktop::endpoint: ` + hostFlag + `:` + strconv.Itoa(browserPortFlag),
 				`yaml:exporters::desktop::db: ` + dbFlag,
@@ -100,6 +104,9 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser-port", 8000, "The port number where we expose our data")
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser)")
 	rootCmd.Flags().StringVar(&dbFlag, "db", "", "The path of your database file. Omitting this flag opens DuckDB in in-memory mode, with no data persisted to disk.")
+	rootCmd.Flags().StringVar(&tracesURLPathFlag, "traces-url-path", "/v1/traces", "The URL path on which the OTLP HTTP receiver listens for trace payloads")
+	rootCmd.Flags().StringVar(&metricsURLPathFlag, "metrics-url-path", "/v1/metrics", "The URL path on which the OTLP HTTP receiver listens for metric payloads")
+	rootCmd.Flags().StringVar(&logsURLPathFlag, "logs-url-path", "/v1/logs", "The URL path on which the OTLP HTTP receiver listens for log payloads")
 
 	return rootCmd
 }
