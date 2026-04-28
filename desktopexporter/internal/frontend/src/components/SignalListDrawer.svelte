@@ -1,14 +1,16 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
-  import { ArrowLeftIcon, ArrowRightIcon, ArrowDownIcon } from '@/icons'
+  import { ArrowDownIcon, ArrowUpIcon } from '@/icons'
 
   type SortOption = { value: string; label: string }
 
   type Props<T> = {
     items: T[]
     selectedId: string | null
+    drawerId: string
     icon: Snippet
+    label: string
     count: number
     sortOptions: SortOption[]
     sortValue: string
@@ -18,12 +20,15 @@
     onSelect?: (id: string) => void
     onSortChange?: (value: string, direction: 'asc' | 'desc') => void
     footer?: Snippet
+    children: Snippet
   }
 
   let {
     items,
     selectedId,
+    drawerId,
     icon,
+    label,
     count,
     sortOptions,
     sortValue,
@@ -33,367 +38,236 @@
     onSelect,
     onSortChange,
     footer,
+    children,
   }: Props<any> = $props()
 
-  const COLLAPSED_KEY_SUFFIX = ':collapsed'
-  const WIDTH_KEY_SUFFIX = ':width'
-  const DEFAULT_WIDTH = 320
-  const MIN_WIDTH = 240
-  const MAX_WIDTH = 560
-  const RAIL_WIDTH = 48
+  let drawerOpen = $state(loadOpen())
 
-  let collapsed = $state(loadCollapsed())
-  let drawerWidth = $state(loadWidth())
-  let isDragging = $state(false)
-  let sortDropdownOpen = $state(false)
-
-  function loadCollapsed(): boolean {
-    if (typeof localStorage === 'undefined') return false
-    return localStorage.getItem(storageKey + COLLAPSED_KEY_SUFFIX) === 'true'
+  function loadOpen(): boolean {
+    if (typeof localStorage === 'undefined') return true
+    const v = localStorage.getItem(storageKey + ':open')
+    return v === null ? true : v === 'true'
   }
 
-  function loadWidth(): number {
-    if (typeof localStorage === 'undefined') return DEFAULT_WIDTH
-    const raw = localStorage.getItem(storageKey + WIDTH_KEY_SUFFIX)
-    if (!raw) return DEFAULT_WIDTH
-    const n = parseInt(raw, 10)
-    return n >= MIN_WIDTH && n <= MAX_WIDTH ? n : DEFAULT_WIDTH
-  }
-
-  function saveCollapsed() {
-    if (typeof localStorage === 'undefined') return
-    localStorage.setItem(storageKey + COLLAPSED_KEY_SUFFIX, String(collapsed))
-  }
-
-  function saveWidth() {
-    if (typeof localStorage === 'undefined') return
-    localStorage.setItem(storageKey + WIDTH_KEY_SUFFIX, String(Math.round(drawerWidth)))
-  }
-
-  function toggleCollapsed() {
-    collapsed = !collapsed
-    saveCollapsed()
-  }
-
-  let dragStartX = 0
-  let dragStartWidth = 0
-
-  function handleResizePointerDown(e: PointerEvent) {
-    e.preventDefault()
-    const target = e.currentTarget as HTMLElement
-    target.setPointerCapture(e.pointerId)
-    isDragging = true
-    dragStartX = e.clientX
-    dragStartWidth = drawerWidth
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }
-
-  function handleResizePointerMove(e: PointerEvent) {
-    if (!isDragging) return
-    const delta = e.clientX - dragStartX
-    drawerWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, dragStartWidth + delta))
-  }
-
-  function handleResizePointerUp(e: PointerEvent) {
-    if (!isDragging) return
-    const target = e.currentTarget as HTMLElement
-    target.releasePointerCapture(e.pointerId)
-    isDragging = false
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    saveWidth()
-  }
-
-  function handleSortSelect(value: string) {
-    if (value === sortValue) {
-      onSortChange?.(value, sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      onSortChange?.(value, 'asc')
+  function handleToggleChange(e: Event) {
+    drawerOpen = (e.currentTarget as HTMLInputElement).checked
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(storageKey + ':open', String(drawerOpen))
     }
-    sortDropdownOpen = false
   }
 
   let currentSortLabel = $derived(
     sortOptions.find(o => o.value === sortValue)?.label ?? 'Sort'
   )
+
+  function selectSort(value: string, dir: 'asc' | 'desc') {
+    onSortChange?.(value, dir)
+    // Close the details dropdown after selection
+    const el = document.querySelector('.signal-drawer__sort-dropdown') as HTMLDetailsElement | null
+    if (el) el.open = false
+  }
 </script>
 
-{#if collapsed}
-  <!-- Rail mode -->
-  <button
-    type="button"
-    class="drawer-rail"
-    onclick={toggleCollapsed}
-    aria-label="Expand signal list"
-  >
-    <span class="drawer-rail__icon">
-      {@render icon()}
-    </span>
-    <span class="drawer-rail__count">{count}</span>
-    <ArrowRightIcon class="drawer-rail__chevron" aria-hidden="true" />
-  </button>
-{:else}
-  <!-- Expanded drawer -->
-  <div
-    class="drawer-expanded"
-    style:width="{drawerWidth}px"
-    style:min-width="{drawerWidth}px"
-  >
-    <!-- Header -->
-    <div class="drawer-header">
-      <div class="drawer-sort">
-        <button
-          type="button"
-          class="drawer-sort__trigger"
-          onclick={() => (sortDropdownOpen = !sortDropdownOpen)}
-          aria-expanded={sortDropdownOpen}
+<div class="signal-drawer drawer drawer-open">
+  <input
+    id={drawerId}
+    type="checkbox"
+    class="drawer-toggle"
+    checked={drawerOpen}
+    onchange={handleToggleChange}
+  />
+
+  <div class="drawer-content min-h-0 min-w-0">
+    {@render children()}
+  </div>
+
+  <div class="drawer-side is-drawer-close:overflow-visible">
+    <div
+      class="signal-drawer__panel flex h-full flex-col bg-base-100/95 is-drawer-close:w-14 is-drawer-open:w-72"
+    >
+      <!-- Header: toggle (always visible) + title + sort (open only) -->
+      <div class="signal-drawer__header">
+        <label
+          for={drawerId}
+          class="signal-drawer__toggle is-drawer-close:tooltip is-drawer-close:tooltip-right"
+          data-tip={label}
+          aria-label={drawerOpen ? 'Close sidebar' : 'Open sidebar'}
         >
-          <span class="drawer-sort__label">{currentSortLabel}</span>
-          <ArrowDownIcon
-            class="drawer-sort__chevron {sortDirection === 'asc' ? 'drawer-sort__chevron--asc' : ''}"
-            aria-hidden="true"
-          />
-        </button>
-        {#if sortDropdownOpen}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="drawer-sort__dropdown"
-            onpointerdown={e => e.stopPropagation()}
-          >
+          <span class="signal-drawer__toggle-icon">
+            {@render icon()}
+          </span>
+        </label>
+
+        <details class="dropdown signal-drawer__sort-dropdown is-drawer-close:hidden">
+          <summary class="signal-drawer__sort-trigger">
+            <span class="signal-drawer__sort-prefix">Order by:</span>
+            <span class="signal-drawer__sort-value">{currentSortLabel}</span>
+            {#if sortDirection === 'asc'}
+              <ArrowUpIcon class="signal-drawer__sort-dir-indicator" aria-hidden="true" />
+            {:else}
+              <ArrowDownIcon class="signal-drawer__sort-dir-indicator" aria-hidden="true" />
+            {/if}
+          </summary>
+          <ul class="menu dropdown-content bg-base-100 rounded-box z-50 w-48 p-1 shadow-lg border border-base-300">
             {#each sortOptions as opt (opt.value)}
-              <button
-                type="button"
-                class="drawer-sort__option {opt.value === sortValue ? 'drawer-sort__option--active' : ''}"
-                onclick={() => handleSortSelect(opt.value)}
-              >
-                {opt.label}
-                {#if opt.value === sortValue}
-                  <ArrowDownIcon
-                    class="drawer-sort__option-dir {sortDirection === 'asc' ? 'drawer-sort__option-dir--asc' : ''}"
-                    aria-hidden="true"
-                  />
-                {/if}
-              </button>
+              <li>
+                <button
+                  type="button"
+                  class="signal-drawer__sort-option {opt.value === sortValue ? 'signal-drawer__sort-option--active' : ''}"
+                  onclick={() => selectSort(opt.value, opt.value === sortValue && sortDirection === 'asc' ? 'desc' : 'asc')}
+                >
+                  <span>{opt.label}</span>
+                  {#if opt.value === sortValue}
+                    {#if sortDirection === 'asc'}
+                      <ArrowUpIcon class="signal-drawer__sort-dir" aria-hidden="true" />
+                    {:else}
+                      <ArrowDownIcon class="signal-drawer__sort-dir" aria-hidden="true" />
+                    {/if}
+                  {/if}
+                </button>
+              </li>
             {/each}
-          </div>
+          </ul>
+        </details>
+      </div>
+
+      <!-- Collapsed: count badge -->
+      <div class="signal-drawer__rail-count is-drawer-open:hidden">
+        {count}
+      </div>
+
+      <!-- Expanded: list -->
+      <div class="signal-drawer__body is-drawer-close:hidden">
+        {#if items.length === 0}
+          <div class="signal-drawer__empty">No items</div>
+        {:else}
+          <VirtualList
+            {items}
+            defaultEstimatedItemHeight={52}
+            bufferSize={10}
+            containerClass="signal-drawer__vlist"
+            viewportClass="signal-drawer__vlist-viewport"
+            itemsClass="signal-drawer__vlist-items"
+          >
+            {#snippet renderItem(item)}
+              {@render itemSnippet(item, selectedId === (item as any).id)}
+            {/snippet}
+          </VirtualList>
         {/if}
       </div>
 
-      <button
-        type="button"
-        class="drawer-collapse-btn"
-        onclick={toggleCollapsed}
-        aria-label="Collapse signal list"
-      >
-        <ArrowLeftIcon class="h-4 w-4" aria-hidden="true" />
-      </button>
-    </div>
-
-    <!-- Card list -->
-    <div class="drawer-body">
-      {#if items.length === 0}
-        <div class="drawer-empty">No items</div>
-      {:else}
-        <VirtualList {items} defaultEstimatedItemHeight={88} bufferSize={10}>
-          {#snippet renderItem(item)}
-            {@render itemSnippet(item, selectedId === (item as any).id)}
-          {/snippet}
-        </VirtualList>
+      <!-- Expanded: footer -->
+      {#if footer}
+        <div class="signal-drawer__footer is-drawer-close:hidden">
+          {@render footer()}
+        </div>
       {/if}
     </div>
-
-    <!-- Footer -->
-    {#if footer}
-      <div class="drawer-footer">
-        {@render footer()}
-      </div>
-    {/if}
-
-    <!-- Resize handle -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <div
-      class="drawer-resize-handle"
-      class:drawer-resize-handle--active={isDragging}
-      onpointerdown={handleResizePointerDown}
-      onpointermove={handleResizePointerMove}
-      onpointerup={handleResizePointerUp}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize drawer"
-      tabindex="0"
-    >
-      <div class="drawer-resize-handle__line"></div>
-    </div>
   </div>
-{/if}
-
-{#if sortDropdownOpen}
-  <!-- Backdrop to close dropdown -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="drawer-sort-backdrop"
-    onclick={() => (sortDropdownOpen = false)}
-    onkeydown={e => e.key === 'Escape' && (sortDropdownOpen = false)}
-  ></div>
-{/if}
+</div>
 
 <style lang="postcss">
   @reference "../app.css";
 
-  /* ── Rail (collapsed) ── */
-  .drawer-rail {
-    @apply flex h-full flex-col items-center gap-2 rounded-xl border border-base-300/70 bg-base-100/80 px-2 py-3 shadow-surface-sm backdrop-blur-sm transition-colors;
-    width: 48px;
-    min-width: 48px;
-    cursor: pointer;
+  .signal-drawer {
+    @apply min-h-0 flex-1;
   }
 
-  .drawer-rail:hover {
-    @apply bg-base-200/60;
+  .signal-drawer .drawer-content {
+    @apply flex flex-col;
   }
 
-  .drawer-rail:focus-visible {
-    outline: var(--focus-ring-width) solid var(--focus-ring-color);
-    outline-offset: var(--focus-ring-offset);
+  .signal-drawer__panel {
+    @apply transition-[width] duration-200;
+    border-right: 1px solid color-mix(in oklab, var(--color-base-300) 70%, transparent);
   }
 
-  .drawer-rail__icon {
-    @apply flex h-8 w-8 items-center justify-center text-base-content/70;
+  /* ── Header ── */
+  .signal-drawer__header {
+    @apply flex shrink-0 items-center gap-1 border-b border-base-300/40 px-1.5 py-2;
   }
 
-  .drawer-rail__icon :global(svg) {
-    @apply h-5 w-5;
+  .signal-drawer__toggle {
+    @apply flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-base-content/70 transition-colors hover:bg-base-200/60 hover:text-base-content;
   }
 
-  .drawer-rail__count {
-    @apply text-xs font-semibold tabular-nums text-base-content/60;
+  .signal-drawer__toggle-icon {
+    @apply flex items-center justify-center;
   }
 
-  .drawer-rail :global(.drawer-rail__chevron) {
-    @apply mt-auto h-4 w-4 text-base-content/40;
+  .signal-drawer__toggle-icon :global(svg) {
+    @apply h-4 w-4;
   }
 
-  /* ── Expanded drawer ── */
-  .drawer-expanded {
-    @apply relative flex h-full flex-col overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm;
+  /* ── Sort dropdown ── */
+  .signal-drawer__sort-dropdown {
+    @apply flex-1 min-w-0;
   }
 
-  .drawer-header {
-    @apply flex shrink-0 items-center gap-2 border-b border-base-300/40 px-3 py-2;
+  .signal-drawer__sort-trigger {
+    @apply flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-base-content/70 transition-colors;
+    @apply hover:bg-base-200/60 hover:text-base-content;
+    list-style: none;
   }
 
-  .drawer-sort {
-    @apply relative flex-1 min-w-0;
+  .signal-drawer__sort-trigger::-webkit-details-marker {
+    display: none;
   }
 
-  .drawer-sort__trigger {
-    @apply flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-base-content/70 transition-colors hover:bg-base-200/60 hover:text-base-content;
+  .signal-drawer__sort-prefix {
+    @apply shrink-0 text-base-content/40;
   }
 
-  .drawer-sort__label {
-    @apply min-w-0 truncate;
+  .signal-drawer__sort-value {
+    @apply min-w-0 truncate font-medium;
   }
 
-  .drawer-sort__trigger :global(.drawer-sort__chevron) {
-    @apply h-3 w-3 shrink-0 transition-transform duration-200;
+  .signal-drawer__sort-trigger :global(.signal-drawer__sort-dir-indicator) {
+    @apply ml-auto h-3.5 w-3.5 shrink-0 text-base-content/50;
   }
 
-  .drawer-sort__trigger :global(.drawer-sort__chevron--asc) {
-    @apply rotate-180;
+  .signal-drawer__sort-option {
+    @apply flex w-full items-center justify-between gap-2 text-xs;
   }
 
-  .drawer-sort__dropdown {
-    @apply absolute left-0 top-full z-50 mt-1 w-full min-w-[8rem] rounded-md border border-base-300 bg-base-100 py-1 shadow-lg;
-  }
-
-  .drawer-sort__option {
-    @apply flex w-full items-center justify-between px-3 py-1.5 text-xs text-base-content/80 transition-colors hover:bg-base-200/60;
-  }
-
-  .drawer-sort__option--active {
+  .signal-drawer__sort-option--active {
     @apply text-primary font-medium;
   }
 
-  .drawer-sort__option :global(.drawer-sort__option-dir) {
-    @apply h-3 w-3 shrink-0 text-primary transition-transform duration-200;
+  .signal-drawer__sort-option :global(.signal-drawer__sort-dir) {
+    @apply h-3.5 w-3.5 shrink-0 text-primary;
   }
 
-  .drawer-sort__option :global(.drawer-sort__option-dir--asc) {
-    @apply rotate-180;
+  /* ── Rail count badge (collapsed) ── */
+  .signal-drawer__rail-count {
+    @apply mt-2 self-center rounded-md bg-base-200/70 px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-base-content/60;
   }
 
-  .drawer-collapse-btn {
-    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-base-content/50 transition-colors hover:bg-base-200/60 hover:text-base-content;
-  }
-
-  .drawer-collapse-btn:focus-visible {
-    outline: var(--focus-ring-width) solid var(--focus-ring-color);
-    outline-offset: var(--focus-ring-offset);
-  }
-
-  /* ── Body (virtual scroll) ── */
-  .drawer-body {
+  /* ── Body (list) ── */
+  .signal-drawer__body {
     @apply flex-1 min-h-0 overflow-hidden;
   }
 
-  .drawer-body :global(.virtual-list-wrapper) {
-    @apply h-full;
+  .signal-drawer__body :global(.signal-drawer__vlist) {
+    @apply relative h-full w-full overflow-hidden;
   }
 
-  .drawer-body :global(.virtual-list-viewport) {
-    @apply h-full px-2 py-1;
+  .signal-drawer__body :global(.signal-drawer__vlist-viewport) {
+    @apply absolute inset-0 overflow-y-scroll;
+    -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
   }
 
-  .drawer-body :global(.virtual-list-items > *) {
-    @apply py-0.5;
+  .signal-drawer__body :global(.signal-drawer__vlist-items) {
+    @apply absolute left-0 top-0 w-full;
   }
 
-  .drawer-empty {
+  .signal-drawer__empty {
     @apply flex h-full items-center justify-center text-sm text-base-content/40;
   }
 
   /* ── Footer ── */
-  .drawer-footer {
+  .signal-drawer__footer {
     @apply shrink-0 border-t border-base-300/40 px-3 py-2;
-  }
-
-  /* ── Resize handle ── */
-  .drawer-resize-handle {
-    @apply absolute right-0 top-0 bottom-0 z-10 flex cursor-col-resize items-stretch justify-center;
-    width: 6px;
-    margin-right: -3px;
-  }
-
-  .drawer-resize-handle__line {
-    @apply self-stretch rounded-full;
-    width: 2px;
-    background-color: var(--color-neutral);
-    opacity: 0;
-    transition: opacity 0.15s, background-color 0.15s;
-  }
-
-  .drawer-resize-handle:hover .drawer-resize-handle__line {
-    opacity: 0.3;
-  }
-
-  .drawer-resize-handle--active .drawer-resize-handle__line {
-    background-color: var(--color-primary);
-    opacity: 0.5;
-  }
-
-  .drawer-resize-handle:focus-visible {
-    outline: none;
-  }
-
-  .drawer-resize-handle:focus-visible .drawer-resize-handle__line {
-    background-color: var(--color-primary);
-    opacity: 0.9;
-  }
-
-  /* ── Sort backdrop ── */
-  .drawer-sort-backdrop {
-    @apply fixed inset-0 z-40;
   }
 </style>

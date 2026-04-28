@@ -7,6 +7,7 @@ import ArrowLeftDoubleIcon from './ArrowLeftDoubleIcon.svelte'
 import ArrowLeftIcon from './ArrowLeftIcon.svelte'
 import ArrowRightDoubleIcon from './ArrowRightDoubleIcon.svelte'
 import ArrowRightIcon from './ArrowRightIcon.svelte'
+import ArrowUpIcon from './ArrowUpIcon.svelte'
 import BarChartHorizontalIcon from './BarChartHorizontalIcon.svelte'
 import ChartHistogramIcon from './ChartHistogramIcon.svelte'
 import CancelIcon from './CancelIcon.svelte'
@@ -27,6 +28,7 @@ export {
   ArrowLeftIcon,
   ArrowRightDoubleIcon,
   ArrowRightIcon,
+  ArrowUpIcon,
   BarChartHorizontalIcon,
   CancelIcon,
   ChartHistogramIcon,

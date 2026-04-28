@@ -229,104 +229,119 @@
   <DateTimeFilter />
 {/snippet}
 
-<div
-  class="flex min-h-0 min-w-0 w-full flex-1 flex-col gap-[var(--layout-gap)] pt-0"
->
-  <div class="page-toolbar-block">
-    <SignalToolbar
-      signal="metrics"
-      view="list"
-      onRefresh={handleRefresh}
-      trailingFilters={[toolbarTimeRange]}
-      {searchError}
-      {refreshIndicatorText}
-    >
-      <SearchEditor
-        signal="metrics"
-        view="list"
-        inToolbar
-        onSearchResults={handleSearchResults}
-        onSearchError={err => (searchError = err)}
-        onReady={api => (searchEditorApi = api)}
-      />
-    </SignalToolbar>
-  </div>
+<div class="metrics-page">
+  <SignalListDrawer
+    items={sortedMetrics}
+    selectedId={selectedMetricId}
+    drawerId="signal-drawer"
+    label="Metrics"
+    count={sortedMetrics.length}
+    sortOptions={SORT_OPTIONS}
+    sortValue={sortColumn}
+    {sortDirection}
+    storageKey="metric-drawer"
+    onSelect={selectMetric}
+    onSortChange={handleSortChange}
+  >
+    {#snippet icon()}
+      <ChartHistogramIcon />
+    {/snippet}
 
-  {#if error}
-    <div class="alert alert-error">
-      <span>Error: {error}</span>
-    </div>
-  {/if}
+    {#snippet itemSnippet(metric, selected)}
+      <MetricCard {metric} {selected} onclick={selectMetric} />
+    {/snippet}
 
-  <div class="metrics-layout">
-    {#if loading && !hasMetricRows}
-      <div
-        class="rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center text-base-content/60 shadow-surface-sm backdrop-blur-sm"
-      >
-        Loading metrics…
+    {#snippet footer()}
+      <div class="flex items-center justify-between">
+        <span class="text-xs tabular-nums text-base-content/50">
+          {sortedMetrics.length} metric{sortedMetrics.length !== 1 ? 's' : ''}
+        </span>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs text-error"
+          onclick={handleDeleteAllMetrics}
+          aria-label="Delete all metrics"
+        >
+          <TrashIcon class="h-3 w-3" aria-hidden="true" />
+          Delete all
+        </button>
       </div>
-    {:else if !loading && !hasMetricRows}
-      <div
-        class="rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center shadow-surface-sm backdrop-blur-sm"
-      >
-        <p class="text-base-content/60">No metrics in this time range</p>
-        <p class="mt-2 text-sm text-base-content/50">
-          Send telemetry to the exporter or adjust the time range
-        </p>
+    {/snippet}
+
+    {#snippet children()}
+      <div class="metrics-content">
+        <div class="metrics-content__toolbar">
+          <SignalToolbar
+            signal="metrics"
+            view="list"
+            onRefresh={handleRefresh}
+            trailingFilters={[toolbarTimeRange]}
+            {searchError}
+            {refreshIndicatorText}
+          >
+            <SearchEditor
+              signal="metrics"
+              view="list"
+              inToolbar
+              onSearchResults={handleSearchResults}
+              onSearchError={err => (searchError = err)}
+              onReady={api => (searchEditorApi = api)}
+            />
+          </SignalToolbar>
+        </div>
+
+        <div class="metrics-content__body">
+          {#if error}
+            <div class="alert alert-error">
+              <span>Error: {error}</span>
+            </div>
+          {:else if loading && !hasMetricRows}
+            <div class="metrics-empty">Loading metrics…</div>
+          {:else if !loading && !hasMetricRows}
+            <div class="metrics-empty">
+              <p class="text-base-content/60">No metrics in this time range</p>
+              <p class="mt-2 text-sm text-base-content/50">
+                Send telemetry to the exporter or adjust the time range
+              </p>
+            </div>
+          {:else}
+            <div class="metrics-detail">
+              <MetricDetailPanel
+                metric={selectedMetric}
+                onDelete={handleDeleteMetric}
+              />
+            </div>
+          {/if}
+        </div>
       </div>
-    {:else}
-      <SignalListDrawer
-        items={sortedMetrics}
-        selectedId={selectedMetricId}
-        count={sortedMetrics.length}
-        sortOptions={SORT_OPTIONS}
-        sortValue={sortColumn}
-        {sortDirection}
-        storageKey="metric-drawer"
-        onSelect={selectMetric}
-        onSortChange={handleSortChange}
-      >
-        {#snippet icon()}
-          <ChartHistogramIcon />
-        {/snippet}
-
-        {#snippet itemSnippet(metric, selected)}
-          <MetricCard {metric} {selected} onclick={selectMetric} />
-        {/snippet}
-
-        {#snippet footer()}
-          <div class="flex items-center justify-between">
-            <span class="text-xs tabular-nums text-base-content/50">
-              {sortedMetrics.length} metric{sortedMetrics.length !== 1 ? 's' : ''}
-            </span>
-            <button
-              type="button"
-              class="btn btn-ghost btn-xs text-error"
-              onclick={handleDeleteAllMetrics}
-              aria-label="Delete all metrics"
-            >
-              <TrashIcon class="h-3 w-3" aria-hidden="true" />
-              Delete all
-            </button>
-          </div>
-        {/snippet}
-      </SignalListDrawer>
-
-      <div class="metrics-detail">
-        <MetricDetailPanel metric={selectedMetric} onDelete={handleDeleteMetric} />
-      </div>
-    {/if}
-  </div>
+    {/snippet}
+  </SignalListDrawer>
 </div>
 
 <style lang="postcss">
   @reference "../app.css";
 
-  .metrics-layout {
-    @apply flex min-h-0 flex-1 gap-[var(--layout-gap)];
+  .metrics-page {
+    @apply flex min-h-0 min-w-0 w-full flex-1;
+  }
+
+  .metrics-content {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col;
+  }
+
+  .metrics-content__toolbar {
+    @apply shrink-0 border-b border-base-300/40 bg-base-100/60 px-[var(--layout-gap)] py-2 backdrop-blur-sm;
+  }
+
+  .metrics-content__body {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col p-[var(--layout-gap)];
   }
 
   .metrics-detail {
-    @apply flex-1 min-w-0 overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm;
+    @apply flex-1 min-h-0 min-w-0 overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm;
+  }
+
+  .metrics-empty {
+    @apply rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center text-base-content/60 shadow-surface-sm backdrop-blur-sm;
   }
 </style>

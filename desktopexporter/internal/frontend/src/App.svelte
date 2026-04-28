@@ -13,6 +13,17 @@
   
   // Configure router for history mode
   router.mode.history();
+
+  let currentPath = $state(router.path ?? '/');
+  $effect(() => {
+    const unsubscribe = router.subscribe(route => {
+      currentPath = route.path;
+    });
+    return unsubscribe;
+  });
+
+  // Pages with full-bleed drawer layouts skip the page-padded shell.
+  let isFullBleed = $derived(currentPath === '/metrics');
 </script>
 
 <main
@@ -20,8 +31,12 @@
 >
   <HorizontalNav />
   <div
-    class="mx-auto flex min-h-0 w-full min-w-0 flex-1 flex-col px-4 pb-10 min-[900px]:px-6"
-    style="padding-top: calc(var(--nav-height) + var(--layout-gap));"
+    class="flex min-h-0 w-full min-w-0 flex-1 flex-col {isFullBleed
+      ? ''
+      : 'mx-auto px-4 pb-10 min-[900px]:px-6'}"
+    style={isFullBleed
+      ? 'padding-top: var(--nav-height);'
+      : 'padding-top: calc(var(--nav-height) + var(--layout-gap));'}
   >
     <!-- Router: Show different pages based on current route -->
     <Route path="/">
