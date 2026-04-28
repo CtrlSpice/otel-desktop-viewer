@@ -170,11 +170,16 @@
   @reference "../app.css";
 
   .signal-drawer {
-    @apply min-h-0 flex-1;
+    @apply min-h-0 flex-1 overflow-hidden;
   }
 
   .signal-drawer .drawer-content {
     @apply flex flex-col;
+  }
+
+  .signal-drawer :global(.drawer-side) {
+    @apply h-full;
+    min-height: 0;
   }
 
   .signal-drawer__panel {

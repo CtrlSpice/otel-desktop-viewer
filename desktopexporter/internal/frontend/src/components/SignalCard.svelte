@@ -28,18 +28,17 @@
   onclick={() => onclick?.(id)}
   aria-pressed={selected}
 >
-  {#if badge}
-    <div class="signal-row__badge">
-      {@render badge()}
-    </div>
-  {/if}
-
-  <div class="signal-row__info">
-    <div class="signal-row__title" {title}>{title}</div>
-    {#if subtitle}
-      <div class="signal-row__subtitle">{subtitle}</div>
+  <div class="signal-row__header">
+    <span class="signal-row__title" {title}>{title}</span>
+    {#if badge}
+      <span class="signal-row__badge">
+        {@render badge()}
+      </span>
     {/if}
   </div>
+  {#if subtitle}
+    <div class="signal-row__subtitle">{subtitle}</div>
+  {/if}
 
   {#if spark}
     <div class="signal-row__spark">
@@ -52,7 +51,7 @@
   @reference "../app.css";
 
   .signal-row {
-    @apply flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors duration-100;
+    @apply flex w-full flex-col px-3 py-1.5 text-left transition-colors duration-100;
     @apply hover:bg-base-200/50;
     cursor: pointer;
   }
@@ -71,12 +70,8 @@
     @apply bg-primary/10;
   }
 
-  .signal-row__badge {
-    @apply shrink-0;
-  }
-
-  .signal-row__info {
-    @apply min-w-0 flex-1;
+  .signal-row__header {
+    @apply flex min-w-0 items-baseline gap-1;
   }
 
   .signal-row__title {
@@ -87,7 +82,11 @@
     @apply truncate text-xs text-base-content/50;
   }
 
+  .signal-row__badge {
+    @apply ml-auto shrink-0;
+  }
+
   .signal-row__spark {
-    @apply h-8 w-20 shrink-0 overflow-hidden;
+    @apply mt-1 h-8 w-full overflow-hidden rounded;
   }
 </style>
