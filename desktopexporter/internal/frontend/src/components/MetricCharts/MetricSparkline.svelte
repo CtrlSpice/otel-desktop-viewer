@@ -1,27 +1,21 @@
 <script lang="ts">
   import { AreaChart } from 'layerchart'
-  import type { DataPoint, GaugeDataPoint, SumDataPoint } from '@/types/api-types'
+  import type { SparklinePoint } from '@/types/api-types'
 
   type SparkPoint = { date: number; value: number }
 
   type Props = {
-    datapoints: DataPoint[]
+    points: SparklinePoint[]
     height?: number
     width?: number
   }
 
-  let { datapoints, height = 32, width }: Props = $props()
+  let { points, height = 32, width }: Props = $props()
 
   let sparkData = $derived.by((): SparkPoint[] => {
-    const points: SparkPoint[] = []
-    for (const dp of datapoints) {
-      if (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum') continue
-      const typed = dp as GaugeDataPoint | SumDataPoint
-      const value = typed.doubleValue ?? typed.intValue ?? 0
-      points.push({ date: Number(dp.timestamp / 1_000_000n), value })
-    }
-    points.sort((a, b) => a.date - b.date)
     return points
+      .map((p) => ({ date: Number(p.timestamp / 1_000_000n), value: p.value }))
+      .sort((a, b) => a.date - b.date)
   })
 </script>
 

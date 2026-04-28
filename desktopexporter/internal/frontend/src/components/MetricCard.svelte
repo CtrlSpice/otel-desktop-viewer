@@ -1,40 +1,43 @@
 <script lang="ts">
-  import type { MetricData } from '@/types/api-types'
-  import { getServiceName } from '@/utils/resource'
+  import type { MetricSummary } from '@/types/api-types'
+  import { metricSummaryKey } from '@/types/api-types'
   import { metricTypeBadgeClass, metricTypeLabel } from '@/utils/metric-type'
   import SignalCard from '@/components/SignalCard.svelte'
   import MetricSparkline from '@/components/MetricCharts/MetricSparkline.svelte'
   import MetricSparkbars from '@/components/MetricCharts/MetricSparkbars.svelte'
 
   type Props = {
-    metric: MetricData
+    metric: MetricSummary
     selected?: boolean
     onclick?: (id: string) => void
   }
 
   let { metric, selected = false, onclick }: Props = $props()
 
-  let metricType = $derived(metric.datapoints[0]?.metricType ?? 'Empty')
-  let service = $derived(getServiceName(metric.resource) ?? '')
-  let isHistogramType = $derived(metricType === 'Histogram' || metricType === 'ExponentialHistogram')
+  let key = $derived(metricSummaryKey(metric))
+  let isHistogramType = $derived(
+    metric.metricType === 'Histogram' || metric.metricType === 'ExponentialHistogram'
+  )
 </script>
 
 <SignalCard
-  id={metric.id}
+  id={key}
   {selected}
   title={metric.name}
-  subtitle={service || undefined}
+  subtitle={metric.serviceName || undefined}
   {onclick}
 >
   {#snippet badge()}
-    <span class={metricTypeBadgeClass(metricType)}>{metricTypeLabel(metricType)}</span>
+    <span class={metricTypeBadgeClass(metric.metricType)}>
+      {metricTypeLabel(metric.metricType)}
+    </span>
   {/snippet}
 
   {#snippet spark()}
-    {#if isHistogramType}
-      <MetricSparkbars datapoints={metric.datapoints} />
-    {:else if metricType === 'Gauge' || metricType === 'Sum'}
-      <MetricSparkline datapoints={metric.datapoints} />
+    {#if isHistogramType && metric.sparkbar}
+      <MetricSparkbars buckets={metric.sparkbar} />
+    {:else if metric.sparkline && metric.sparkline.length > 0}
+      <MetricSparkline points={metric.sparkline} />
     {/if}
   {/snippet}
 </SignalCard>

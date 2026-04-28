@@ -1,25 +1,19 @@
 <script lang="ts">
   import { BarChart } from 'layerchart'
-  import type { DataPoint } from '@/types/api-types'
 
   type SparkBar = { index: number; value: number }
 
   type Props = {
-    datapoints: DataPoint[]
+    buckets: number[]
     height?: number
     width?: number
   }
 
-  let { datapoints, height = 32, width }: Props = $props()
+  let { buckets, height = 32, width }: Props = $props()
 
-  let sparkData = $derived.by((): SparkBar[] => {
-    const bars: SparkBar[] = []
-    for (const dp of datapoints) {
-      if (dp.metricType !== 'Histogram' && dp.metricType !== 'ExponentialHistogram') continue
-      bars.push({ index: bars.length, value: dp.count })
-    }
-    return bars
-  })
+  let sparkData = $derived(
+    buckets.map((value, index): SparkBar => ({ index, value }))
+  )
 </script>
 
 {#if sparkData.length >= 1}

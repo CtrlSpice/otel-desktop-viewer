@@ -396,6 +396,377 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 	return json.RawMessage(raw), nil
 }
 
+// SearchSummaries returns lightweight metric summaries grouped by the full OTel
+// metric identity: (name, unit, metricType, scope_name, scope_version, service.name).
+// Description is explicitly non-identifying per the spec and uses any_value.
+// Each summary includes a sparkline (last 30 datapoints for Gauge/Sum) or
+// sparkbar (aggregated bucket counts for Histogram/ExponentialHistogram).
+func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
+	query := `
+		with search_params as (select ? as time_start, ? as time_end),
+		-- Metrics with at least one datapoint in the time range
+		filtered_metrics as (
+			select m.* from metrics m, search_params
+			where exists (
+				select 1 from datapoints d
+				where d.metric_id = m.id
+				  and d.timestamp >= time_start and d.timestamp <= time_end
+			)
+		),
+		-- Extract service.name from resource attributes
+		service_names as (
+			select a.metric_id,
+				a.value as service_name
+			from attributes a
+			where a.metric_id in (select id from filtered_metrics)
+			  and a.scope = 'resource'
+			  and a.key = 'service.name'
+			  and a.datapoint_id is null
+			  and a.exemplar_id is null
+		),
+		-- All datapoints in the time range for filtered metrics
+		filtered_dps as (
+			select d.* from datapoints d
+			inner join filtered_metrics fm on d.metric_id = fm.id, search_params
+			where d.timestamp >= time_start and d.timestamp <= time_end
+		),
+		-- Group metrics by full OTel identity (description is non-identifying)
+		metric_groups as (
+			select
+				m.name,
+				any_value(m.description) as description,
+				m.unit,
+				m.scope_name,
+				m.scope_version,
+				coalesce(sn.service_name, '') as service_name,
+				max(m.received) as received,
+				d.metric_type,
+				coalesce(d.aggregation_temporality, '') as aggregation_temporality,
+				coalesce(d.is_monotonic, false) as is_monotonic
+			from filtered_metrics m
+			inner join filtered_dps d on d.metric_id = m.id
+			left join service_names sn on sn.metric_id = m.id
+			group by m.name, m.unit, d.metric_type, coalesce(d.aggregation_temporality, ''), coalesce(d.is_monotonic, false), m.scope_name, m.scope_version, coalesce(sn.service_name, '')
+		),
+		-- Sparkline data for Gauge/Sum: last 30 datapoints per group
+		sparkline_data as (
+			select
+				m.name, m.unit, sub.metric_type, sub.aggregation_temporality, sub.is_monotonic,
+				m.scope_name, m.scope_version, coalesce(sn.service_name, '') as service_name,
+				to_json(list(json_object(
+					'timestamp', sub.timestamp::varchar,
+					'value', sub.value
+				) order by sub.timestamp asc)) as sparkline
+			from (
+				select
+					d.metric_id,
+					d.metric_type,
+					coalesce(d.aggregation_temporality, '') as aggregation_temporality,
+					coalesce(d.is_monotonic, false) as is_monotonic,
+					d.timestamp,
+					coalesce(d.double_value, d.int_value, 0) as value,
+					row_number() over (
+						partition by m2.name, m2.unit, d.metric_type, coalesce(d.aggregation_temporality, ''), coalesce(d.is_monotonic, false), m2.scope_name, m2.scope_version, coalesce(sn2.service_name, '')
+						order by d.timestamp desc
+					) as rn
+				from filtered_dps d
+				inner join filtered_metrics m2 on d.metric_id = m2.id
+				left join service_names sn2 on sn2.metric_id = m2.id
+				where d.metric_type in ('Gauge', 'Sum')
+			) sub
+			inner join filtered_metrics m on sub.metric_id = m.id
+			left join service_names sn on sn.metric_id = m.id
+			where sub.rn <= 30
+			group by m.name, m.unit, sub.metric_type, sub.aggregation_temporality, sub.is_monotonic, m.scope_name, m.scope_version, coalesce(sn.service_name, '')
+		),
+		-- Sparkbar data for Histogram: aggregate bucket_counts across all datapoints per group
+		hist_sparkbar as (
+			select
+				m.name, m.unit, coalesce(d.aggregation_temporality, '') as aggregation_temporality,
+				m.scope_name, m.scope_version, coalesce(sn.service_name, '') as service_name,
+				sum_bucket_vectors(list(d.bucket_counts)) as sparkbar
+			from filtered_dps d
+			inner join filtered_metrics m on d.metric_id = m.id
+			left join service_names sn on sn.metric_id = m.id
+			where d.metric_type = 'Histogram'
+			  and d.bucket_counts is not null
+			group by m.name, m.unit, coalesce(d.aggregation_temporality, ''), m.scope_name, m.scope_version, coalesce(sn.service_name, '')
+		),
+		-- Sparkbar data for ExponentialHistogram: downscale to common scale, then aggregate
+		exp_hist_streams as (
+			select
+				m.name, m.unit, coalesce(d.aggregation_temporality, '') as aggregation_temporality,
+				m.scope_name, m.scope_version, coalesce(sn.service_name, '') as service_name,
+				d.scale,
+				d.positive_bucket_offset,
+				d.positive_bucket_counts,
+				d.negative_bucket_offset,
+				d.negative_bucket_counts,
+				d.zero_count
+			from filtered_dps d
+			inner join filtered_metrics m on d.metric_id = m.id
+			left join service_names sn on sn.metric_id = m.id
+			where d.metric_type = 'ExponentialHistogram'
+			  and d.positive_bucket_counts is not null
+		),
+		exp_hist_min_scale as (
+			select name, unit, aggregation_temporality, scope_name, scope_version, service_name,
+				min(scale) as min_scale
+			from exp_hist_streams
+			group by name, unit, aggregation_temporality, scope_name, scope_version, service_name
+		),
+		exp_hist_sparkbar as (
+			select
+				s.name, s.unit, s.aggregation_temporality, s.scope_name, s.scope_version, s.service_name,
+				sum_bucket_vectors(list(
+					list_concat(
+						list_concat(
+							coalesce(
+								downscale_exp_buckets(list_reverse(s.negative_bucket_counts), s.negative_bucket_offset, s.scale - ms.min_scale).counts,
+								[]::bigint[]
+							),
+							[coalesce(s.zero_count, 0)::bigint]
+						),
+						coalesce(
+							downscale_exp_buckets(s.positive_bucket_counts, s.positive_bucket_offset, s.scale - ms.min_scale).counts,
+							[]::bigint[]
+						)
+					)
+				)) as sparkbar
+			from exp_hist_streams s
+			inner join exp_hist_min_scale ms
+				on s.name = ms.name
+				and s.unit = ms.unit
+				and s.aggregation_temporality = ms.aggregation_temporality
+				and s.scope_name = ms.scope_name
+				and s.scope_version = ms.scope_version
+				and s.service_name = ms.service_name
+			group by s.name, s.unit, s.aggregation_temporality, s.scope_name, s.scope_version, s.service_name
+		)
+		select cast(coalesce(to_json(list(json_object(
+			'name', mg.name,
+			'description', mg.description,
+			'unit', mg.unit,
+			'metricType', mg.metric_type,
+			'aggregationTemporality', case when mg.aggregation_temporality = '' then null else mg.aggregation_temporality end,
+			'isMonotonic', case when mg.metric_type = 'Sum' then mg.is_monotonic else null end,
+			'serviceName', mg.service_name,
+			'scopeName', mg.scope_name,
+			'scopeVersion', mg.scope_version,
+			'received', mg.received,
+			'sparkline', coalesce(sl.sparkline, null),
+			'sparkbar', coalesce(
+				hs.sparkbar,
+				ehs.sparkbar,
+				null
+			)
+		) order by mg.received desc)), '[]') as varchar) as summaries
+		from metric_groups mg
+		left join sparkline_data sl
+			on sl.name = mg.name and sl.unit = mg.unit
+			and sl.metric_type = mg.metric_type
+			and sl.aggregation_temporality = mg.aggregation_temporality
+			and sl.is_monotonic = mg.is_monotonic
+			and sl.scope_name = mg.scope_name and sl.scope_version = mg.scope_version
+			and sl.service_name = mg.service_name
+		left join hist_sparkbar hs
+			on hs.name = mg.name and hs.unit = mg.unit
+			and hs.aggregation_temporality = mg.aggregation_temporality
+			and hs.scope_name = mg.scope_name and hs.scope_version = mg.scope_version
+			and hs.service_name = mg.service_name
+		left join exp_hist_sparkbar ehs
+			on ehs.name = mg.name and ehs.unit = mg.unit
+			and ehs.aggregation_temporality = mg.aggregation_temporality
+			and ehs.scope_name = mg.scope_name and ehs.scope_version = mg.scope_version
+			and ehs.service_name = mg.service_name
+	`
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// GetMetric returns full MetricData for a single logical metric identified by
+// the full OTel identity: (name, unit, metricType, aggregationTemporality,
+// isMonotonic, scopeName, scopeVersion, serviceName). Multiple DB rows with
+// the same identity are collapsed -- all their datapoints, attributes, and
+// exemplars are merged into one result object.
+//
+// aggregationTemporality and isMonotonic use empty string to match NULL
+// (Gauge has neither property).
+func GetMetric(ctx context.Context, db *sql.DB, name, unit, metricType, aggregationTemporality, isMonotonic, scopeName, scopeVersion, serviceName string, startTime, endTime int64) (json.RawMessage, error) {
+	query := `
+		with search_params as (select ?::bigint as time_start, ?::bigint as time_end),
+		-- Find all metric rows matching the composite key
+		matched_metrics as (
+			select m.* from metrics m, search_params
+			where m.name = ?
+			  and m.unit = ?
+			  and m.scope_name = ?
+			  and m.scope_version = ?
+			  and exists (
+				select 1 from attributes a
+				where a.metric_id = m.id
+				  and a.scope = 'resource'
+				  and a.key = 'service.name'
+				  and a.value = ?
+				  and a.datapoint_id is null
+				  and a.exemplar_id is null
+			  )
+			  and exists (
+				select 1 from datapoints d
+				where d.metric_id = m.id
+				  and d.metric_type = ?
+				  and coalesce(d.aggregation_temporality, '') = ?
+				  and coalesce(cast(d.is_monotonic as varchar), '') = ?
+				  and d.timestamp >= time_start and d.timestamp <= time_end
+			  )
+		),
+		filtered_dps as (
+			select d.* from datapoints d
+			inner join matched_metrics mm on d.metric_id = mm.id, search_params
+			where d.metric_type = ?
+			  and coalesce(d.aggregation_temporality, '') = ?
+			  and coalesce(cast(d.is_monotonic as varchar), '') = ?
+			  and d.timestamp >= time_start and d.timestamp <= time_end
+		),
+		dp_attrs_agg as (
+			select a.datapoint_id, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.datapoint_id in (select id from filtered_dps) and a.scope = 'datapoint'
+			group by a.datapoint_id
+		),
+		exemplar_attrs as (
+			select a.exemplar_id,
+				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.exemplar_id is not null
+				and a.datapoint_id in (select id from filtered_dps)
+				and a.scope = 'exemplar'
+			group by a.exemplar_id
+		),
+		exemplars_agg as (
+			select e.datapoint_id, json_group_array(json_object(
+				'timestamp', e.timestamp::varchar,
+				'value', e.value,
+				'traceID', replace(e.trace_id::varchar, '-', ''),
+				'spanID', right(replace(e.span_id::varchar, '-', ''), 16),
+				'filteredAttributes', coalesce(
+					(select attrs from exemplar_attrs where exemplar_attrs.exemplar_id = e.id),
+					json('[]')
+				)
+			)) as exemplars
+			from exemplars e
+			where e.datapoint_id in (select id from filtered_dps)
+			group by e.datapoint_id
+		),
+		-- Use first matched metric for top-level metadata (they share the same identity)
+		representative as (
+			select * from matched_metrics order by received desc limit 1
+		),
+		metric_res_attrs as (
+			select json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.metric_id in (select id from matched_metrics)
+			  and a.scope = 'resource'
+			  and a.datapoint_id is null
+			  and a.exemplar_id is null
+		),
+		metric_scope_attrs as (
+			select json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.metric_id in (select id from matched_metrics)
+			  and a.scope = 'scope'
+			  and a.datapoint_id is null
+			  and a.exemplar_id is null
+		),
+		datapoints_agg as (
+			select to_json(list(json_merge_patch(
+				json_object(
+					'id', d.id,
+					'metricType', d.metric_type,
+					'timestamp', d.timestamp::varchar,
+					'startTime', d.start_time::varchar,
+					'flags', d.flags,
+					'attributes', coalesce((select attrs from dp_attrs_agg where dp_attrs_agg.datapoint_id = d.id), json('[]')),
+					'exemplars', coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]'))
+				),
+				case d.metric_type
+					when 'Gauge' then json_object(
+						'doubleValue', d.double_value,
+						'intValue', d.int_value,
+						'valueType', d.value_type
+					)
+					when 'Sum' then json_object(
+						'doubleValue', d.double_value,
+						'intValue', d.int_value,
+						'valueType', d.value_type,
+						'isMonotonic', d.is_monotonic,
+						'aggregationTemporality', d.aggregation_temporality
+					)
+					when 'Histogram' then json_object(
+						'count', d.count,
+						'sum', d.sum,
+						'min', d.min,
+						'max', d.max,
+						'bucketCounts', d.bucket_counts,
+						'explicitBounds', d.explicit_bounds,
+						'aggregationTemporality', d.aggregation_temporality
+					)
+					when 'ExponentialHistogram' then json_object(
+						'count', d.count,
+						'sum', d.sum,
+						'min', d.min,
+						'max', d.max,
+						'scale', d.scale,
+						'zeroCount', d.zero_count,
+						'zeroThreshold', d.zero_threshold,
+						'positiveBucketOffset', d.positive_bucket_offset,
+						'positiveBucketCounts', d.positive_bucket_counts,
+						'negativeBucketOffset', d.negative_bucket_offset,
+						'negativeBucketCounts', d.negative_bucket_counts,
+						'aggregationTemporality', d.aggregation_temporality
+					)
+				end
+			) order by d.timestamp desc)) as datapoints
+			from filtered_dps d
+		)
+		select cast(json_object(
+			'id', r.id, 'name', r.name, 'description', r.description, 'unit', r.unit,
+			'resourceDroppedAttributesCount', r.resource_dropped_attributes_count,
+			'resource', json_object(
+				'attributes', coalesce((select attrs from metric_res_attrs), json('[]')),
+				'droppedAttributesCount', r.resource_dropped_attributes_count
+			),
+			'scopeName', r.scope_name, 'scopeVersion', r.scope_version,
+			'scopeDroppedAttributesCount', r.scope_dropped_attributes_count,
+			'scope', json_object(
+				'name', r.scope_name, 'version', r.scope_version,
+				'attributes', coalesce((select attrs from metric_scope_attrs), json('[]')),
+				'droppedAttributesCount', r.scope_dropped_attributes_count
+			),
+			'received', r.received,
+			'datapoints', coalesce((select datapoints from datapoints_agg), json('[]'))
+		) as varchar) as metric
+		from representative r
+	`
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, startTime, endTime, name, unit, scopeName, scopeVersion, serviceName, metricType, aggregationTemporality, isMonotonic, metricType, aggregationTemporality, isMonotonic).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return json.RawMessage("null"), nil
+		}
+		return nil, fmt.Errorf("GetMetric: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil || string(raw) == "null" {
+		return json.RawMessage("null"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
 // GetMetricAttributes returns a JSON array of attribute names/scopes/types for metrics
 // that have at least one datapoint in the given time range.
 func GetMetricAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {

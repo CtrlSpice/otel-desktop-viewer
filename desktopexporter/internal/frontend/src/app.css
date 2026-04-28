@@ -189,6 +189,12 @@ svg {
   stroke-linejoin: round;
 }
 
+/* Remove outline stroke from LayerChart tooltip highlight rects */
+.lc-tooltip-rect {
+  stroke: none;
+  stroke-width: 0;
+}
+
 /* Global button styles */
 .btn {
   @apply transition-[color,background-color,border-color,transform,box-shadow] duration-200 ease-out;

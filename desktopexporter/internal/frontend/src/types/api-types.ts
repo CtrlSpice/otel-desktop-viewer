@@ -191,6 +191,31 @@ export type MetricData = {
   datapoints: DataPoint[]
 }
 
+// Metric summary for sidebar cards (lightweight, grouped by OTel identity)
+export type SparklinePoint = {
+  timestamp: bigint
+  value: number
+}
+
+export type MetricSummary = {
+  name: string
+  description: string
+  unit: string
+  metricType: MetricType
+  aggregationTemporality: string | null
+  isMonotonic: boolean | null
+  serviceName: string
+  scopeName: string
+  scopeVersion: string
+  received: bigint
+  sparkline: SparklinePoint[] | null
+  sparkbar: number[] | null
+}
+
+export function metricSummaryKey(s: MetricSummary): string {
+  return `${s.name}::${s.unit}::${s.metricType}::${s.aggregationTemporality ?? ''}::${s.isMonotonic ?? ''}::${s.scopeName}::${s.scopeVersion}::${s.serviceName}`
+}
+
 // Stats types (homepage summary cards)
 export type TraceStats = {
   traceCount: number

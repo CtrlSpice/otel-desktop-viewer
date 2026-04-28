@@ -11,11 +11,13 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"golang.org/x/exp/jsonrpc2"
 )
@@ -560,4 +562,115 @@ func TestGetMetricBucketSeriesNotFound(t *testing.T) {
 	result, err := handler.Handle(context.Background(), req)
 	assert.Nil(t, result)
 	assert.Equal(t, ErrMetricNotFound, err)
+}
+
+// buildTestMetrics returns pmetric.Metrics with one gauge metric for handler tests.
+func buildTestMetrics() pmetric.Metrics {
+	base := time.Now().UnixNano()
+	m := pmetric.NewMetrics()
+	rm := m.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "test-svc")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("test-scope")
+	sm.Scope().SetVersion("v1.0.0")
+	met := sm.Metrics().AppendEmpty()
+	met.SetName("test.gauge")
+	met.SetDescription("A test gauge")
+	met.SetUnit("bytes")
+	g := met.SetEmptyGauge()
+	dp := g.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(base))
+	dp.SetDoubleValue(42.0)
+	return m
+}
+
+func setupHandlerWithMetrics(t *testing.T) (*JSONRPCHandler, func()) {
+	t.Helper()
+	s, err := store.NewStore(context.Background(), "")
+	require.NoError(t, err)
+	handler := NewJSONRPCHandler(s)
+	ctx := context.Background()
+
+	err = s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTestMetrics())
+	})
+	require.NoError(t, err, "ingest metrics")
+
+	return handler, func() { s.Close() }
+}
+
+func TestSearchMetricSummaries(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		req := createRequest("searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var summaries []map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &summaries))
+		assert.Len(t, summaries, 0)
+	})
+
+	t.Run("With Data", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		req := createRequest("searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var summaries []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &summaries))
+		require.Len(t, summaries, 1, "should return one metric summary")
+		assert.Equal(t, "test.gauge", summaries[0]["name"])
+		assert.Equal(t, "test-svc", summaries[0]["serviceName"])
+		assert.Equal(t, "Gauge", summaries[0]["metricType"])
+		assert.Equal(t, "bytes", summaries[0]["unit"])
+		assert.NotNil(t, summaries[0]["sparkline"], "gauge should have sparkline data")
+	})
+}
+
+func TestGetMetric(t *testing.T) {
+	t.Run("Found", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		req := createRequest("getMetric", []any{
+			"test.gauge", "bytes", "Gauge", "", "", "test-scope", "v1.0.0", "test-svc",
+			"0", strconv.FormatInt(1<<63-1, 10),
+		})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		assert.Equal(t, "test.gauge", metric["name"])
+		assert.Equal(t, "bytes", metric["unit"])
+		dps, _ := metric["datapoints"].([]any)
+		assert.Len(t, dps, 1, "should have one datapoint")
+	})
+
+	t.Run("Not Found", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		req := createRequest("getMetric", []any{
+			"nonexistent.metric", "", "Gauge", "", "", "test-scope", "v1.0.0", "test-svc",
+			"0", strconv.FormatInt(1<<63-1, 10),
+		})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok)
+		assert.Equal(t, "null", string(raw))
+	})
 }

@@ -13,7 +13,7 @@
 
   type Props = {
     metric: MetricData | undefined
-    onDelete: (id: string) => void
+    onDelete?: (id: string) => void
   }
 
   let { metric, onDelete }: Props = $props()
@@ -208,7 +208,7 @@
       <button
         type="button"
         class="btn btn-ghost btn-sm text-error"
-        onclick={() => onDelete(metric.id)}
+        onclick={() => onDelete?.(metric.id)}
         aria-label="Delete this metric"
       >
         <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />

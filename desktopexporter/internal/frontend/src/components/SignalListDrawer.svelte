@@ -17,6 +17,7 @@
     sortDirection: 'asc' | 'desc'
     storageKey: string
     itemSnippet: Snippet<[item: T, selected: boolean]>
+    itemKey?: (item: T) => string
     onSelect?: (id: string) => void
     onSortChange?: (value: string, direction: 'asc' | 'desc') => void
     footer?: Snippet
@@ -35,6 +36,7 @@
     sortDirection,
     storageKey,
     itemSnippet,
+    itemKey = (item: any) => item.id,
     onSelect,
     onSortChange,
     footer,
@@ -150,7 +152,7 @@
             itemsClass="signal-drawer__vlist-items"
           >
             {#snippet renderItem(item)}
-              {@render itemSnippet(item, selectedId === (item as any).id)}
+              {@render itemSnippet(item, selectedId === itemKey(item))}
             {/snippet}
           </VirtualList>
         {/if}

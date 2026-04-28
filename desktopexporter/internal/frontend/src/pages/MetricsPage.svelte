@@ -1,23 +1,18 @@
 <script module lang="ts">
-  import type { MetricData, MetricType } from '@/types/api-types'
+  import type { MetricSummary } from '@/types/api-types'
+  import { metricSummaryKey } from '@/types/api-types'
   import {
     compareByStringField,
-    compareByTimestampField,
   } from '@/utils/compare'
-  import { getServiceName } from '@/utils/resource'
 
   // --- Sort ---
 
-  export type MetricSortColumn = 'name' | 'type' | 'unit' | 'service' | 'datapoints'
+  export type MetricSortColumn = 'name' | 'type' | 'unit' | 'service'
   export type MetricSortDirection = 'asc' | 'desc'
 
-  function getMetricType(m: MetricData): string {
-    return m.datapoints[0]?.metricType ?? 'Empty'
-  }
-
   function compareMetrics(
-    a: MetricData,
-    b: MetricData,
+    a: MetricSummary,
+    b: MetricSummary,
     col: MetricSortColumn,
     dir: MetricSortDirection
   ): number {
@@ -27,16 +22,13 @@
         cmp = compareByStringField(a, b, m => m.name)
         break
       case 'type':
-        cmp = compareByStringField(a, b, m => getMetricType(m))
+        cmp = compareByStringField(a, b, m => m.metricType)
         break
       case 'unit':
         cmp = compareByStringField(a, b, m => m.unit)
         break
       case 'service':
-        cmp = compareByStringField(a, b, m => getServiceName(m.resource))
-        break
-      case 'datapoints':
-        cmp = a.datapoints.length - b.datapoints.length
+        cmp = compareByStringField(a, b, m => m.serviceName)
         break
       default:
         cmp = 0
@@ -46,14 +38,13 @@
       ? dir === 'asc'
         ? cmp
         : -cmp
-      : a.id.localeCompare(b.id)
+      : metricSummaryKey(a).localeCompare(metricSummaryKey(b))
   }
 
   const SORT_OPTIONS = [
     { value: 'name', label: 'Name' },
     { value: 'type', label: 'Type' },
     { value: 'service', label: 'Service' },
-    { value: 'datapoints', label: 'Datapoints' },
   ]
 
   export { metricTypeBadgeClass, metricTypeLabel } from '@/utils/metric-type'
@@ -66,7 +57,7 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import type { SearchResultEvent, MetricStats } from '@/types/api-types'
+  import type { MetricData, MetricStats } from '@/types/api-types'
   import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
   import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
@@ -80,7 +71,7 @@
   let timeContext = getTimeContext()
 
   // --- state: API / list ---
-  let metrics = $state<MetricData[]>([])
+  let metrics = $state<MetricSummary[]>([])
   let loading = $state(true)
   let error = $state<string | null>(null)
   let mounted = $state(false)
@@ -91,7 +82,9 @@
   let sortDirection = $state<MetricSortDirection>('asc')
 
   // --- state: selection ---
-  let selectedMetricId = $state<string | null>(null)
+  let selectedKey = $state<string | null>(null)
+  let selectedMetric = $state<MetricData | undefined>(undefined)
+  let detailLoading = $state(false)
 
   // --- state: polling / refresh indicator ---
   let searchEditorApi = $state<SearchEditorAPI | null>(null)
@@ -110,8 +103,8 @@
 
   let hasMetricRows = $derived(metrics.length > 0)
 
-  let selectedMetric = $derived(
-    selectedMetricId ? sortedMetrics.find(m => m.id === selectedMetricId) : undefined
+  let selectedSummary = $derived(
+    selectedKey ? sortedMetrics.find(m => metricSummaryKey(m) === selectedKey) : undefined
   )
 
   let refreshIndicatorText = $derived.by(() => {
@@ -128,9 +121,19 @@
 
   // --- effects ---
   $effect(() => {
-    if (!selectedMetricId || !sortedMetrics.some(m => m.id === selectedMetricId)) {
-      selectedMetricId = sortedMetrics[0]?.id ?? null
+    if (!selectedKey || !sortedMetrics.some(m => metricSummaryKey(m) === selectedKey)) {
+      const first = sortedMetrics[0]
+      selectedKey = first ? metricSummaryKey(first) : null
     }
+  })
+
+  $effect(() => {
+    const summary = selectedSummary
+    if (!summary) {
+      selectedMetric = undefined
+      return
+    }
+    fetchMetricDetail(summary)
   })
 
   $effect(() => {
@@ -159,8 +162,8 @@
     sortDirection = direction
   }
 
-  function selectMetric(metricId: string) {
-    selectedMetricId = metricId
+  function selectMetric(key: string) {
+    selectedKey = key
   }
 
   async function fetchMetrics() {
@@ -171,7 +174,7 @@
         timeContext.selection,
         Date.now()
       )
-      metrics = await telemetryAPI.getMetrics(startTime, endTime, undefined)
+      metrics = await telemetryAPI.searchMetricSummaries(startTime, endTime)
       const s = await telemetryAPI.getStats()
       baselineStats = s.metrics
       polledStats = s.metrics
@@ -182,36 +185,43 @@
     }
   }
 
+  async function fetchMetricDetail(summary: MetricSummary) {
+    try {
+      detailLoading = true
+      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+        timeContext.selection,
+        Date.now()
+      )
+      selectedMetric = (await telemetryAPI.getMetric(
+        summary.name,
+        summary.unit,
+        summary.metricType,
+        summary.aggregationTemporality ?? '',
+        summary.isMonotonic === null ? '' : String(summary.isMonotonic),
+        summary.scopeName,
+        summary.scopeVersion,
+        summary.serviceName,
+        startTime,
+        endTime
+      )) ?? undefined
+    } catch (err) {
+      console.error('Failed to fetch metric detail:', err)
+      selectedMetric = undefined
+    } finally {
+      detailLoading = false
+    }
+  }
+
   function handleRefresh() {
     searchEditorApi?.clear()
     fetchMetrics()
   }
 
-  function handleSearchResults(event: SearchResultEvent) {
-    if (event.signal === 'metrics' && event.view === 'list') {
-      loading = false
-      error = null
-      metrics = event.results
-    }
-  }
-
-  async function handleDeleteMetric(metricId: string) {
-    const idx = sortedMetrics.findIndex(m => m.id === metricId)
-    const nextIdx = idx < sortedMetrics.length - 1 ? idx + 1 : idx - 1
-    const nextId = nextIdx >= 0 ? sortedMetrics[nextIdx]?.id ?? null : null
-    try {
-      await telemetryAPI.deleteMetrics([metricId])
-      selectedMetricId = nextId
-      await fetchMetrics()
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to delete metric'
-    }
-  }
-
   async function handleDeleteAllMetrics() {
     try {
       await telemetryAPI.clearMetrics()
-      selectedMetricId = null
+      selectedKey = null
+      selectedMetric = undefined
       await fetchMetrics()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to delete metrics'
@@ -232,7 +242,7 @@
 <div class="metrics-page">
   <SignalListDrawer
     items={sortedMetrics}
-    selectedId={selectedMetricId}
+    selectedId={selectedKey}
     drawerId="signal-drawer"
     label="Metrics"
     count={sortedMetrics.length}
@@ -242,6 +252,7 @@
     storageKey="metric-drawer"
     onSelect={selectMetric}
     onSortChange={handleSortChange}
+    itemKey={metricSummaryKey}
   >
     {#snippet icon()}
       <ChartHistogramIcon />
@@ -283,7 +294,6 @@
               signal="metrics"
               view="list"
               inToolbar
-              onSearchResults={handleSearchResults}
               onSearchError={err => (searchError = err)}
               onReady={api => (searchEditorApi = api)}
             />
@@ -306,10 +316,7 @@
             </div>
           {:else}
             <div class="metrics-detail">
-              <MetricDetailPanel
-                metric={selectedMetric}
-                onDelete={handleDeleteMetric}
-              />
+              <MetricDetailPanel metric={selectedMetric} />
             </div>
           {/if}
         </div>

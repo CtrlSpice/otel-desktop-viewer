@@ -212,6 +212,7 @@ var IndexCreationQueries = []string{
 	`create index if not exists idx_logs_traceid on logs(trace_id)`,
 	`create index if not exists idx_logs_severitynumber on logs(severity_number)`,
 	`create index if not exists idx_metrics_name on metrics(name)`,
+	`create index if not exists idx_metrics_identity on metrics(name, unit, scope_name, scope_version)`,
 	`create index if not exists idx_metrics_received on metrics(received)`,
 	`create index if not exists idx_datapoints_type_metric_time on datapoints(metric_type, metric_id, timestamp desc)`,
 	`create index if not exists idx_datapoints_metric_time on datapoints(metric_id, timestamp desc)`,

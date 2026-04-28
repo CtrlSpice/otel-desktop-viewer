@@ -5,6 +5,8 @@ import type {
   TraceSummary,
   LogData,
   MetricData,
+  MetricSummary,
+  SparklinePoint,
   Stats,
   Exemplar,
   DataPoint,
@@ -157,6 +159,26 @@ function metricDataFromJSON(json: any): MetricData {
 
 function metricsFromJSON(json: any): MetricData[] {
   return json.map(metricDataFromJSON)
+}
+
+function sparklinePointFromJSON(json: any): SparklinePoint {
+  return {
+    timestamp: BigInt(json.timestamp),
+    value: json.value,
+  }
+}
+
+function metricSummaryFromJSON(json: any): MetricSummary {
+  return {
+    ...json,
+    received: BigInt(json.received),
+    sparkline: json.sparkline?.map(sparklinePointFromJSON) ?? null,
+    sparkbar: json.sparkbar ?? null,
+  }
+}
+
+function metricSummariesFromJSON(json: any): MetricSummary[] {
+  return json.map(metricSummaryFromJSON)
 }
 
 function parseNullableBigInt(value: unknown): bigint | null {
@@ -312,6 +334,49 @@ export let telemetryAPI = {
       : [startTimeNs, endTimeNs]
     const rawData = await callRPC('getMetrics', params)
     return metricsFromJSON(rawData)
+  },
+
+  searchMetricSummaries: async (
+    startTime: number,
+    endTime: number
+  ): Promise<MetricSummary[]> => {
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
+    const rawData = await callRPC('searchMetricSummaries', [
+      startTimeNs,
+      endTimeNs,
+    ])
+    return metricSummariesFromJSON(rawData)
+  },
+
+  getMetric: async (
+    name: string,
+    unit: string,
+    metricType: string,
+    aggregationTemporality: string,
+    isMonotonic: string,
+    scopeName: string,
+    scopeVersion: string,
+    serviceName: string,
+    startTime: number,
+    endTime: number
+  ): Promise<MetricData | null> => {
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
+    const rawData = await callRPC('getMetric', [
+      name,
+      unit,
+      metricType,
+      aggregationTemporality,
+      isMonotonic,
+      scopeName,
+      scopeVersion,
+      serviceName,
+      startTimeNs,
+      endTimeNs,
+    ])
+    if (rawData === null || rawData === 'null') return null
+    return metricDataFromJSON(rawData)
   },
 
   getMetricAttributes: async (
