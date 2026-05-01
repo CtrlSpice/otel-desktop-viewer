@@ -3,7 +3,6 @@
   import { formatDateTimeRange } from '@/utils/time'
   import TimeRangeFilterBody from './TimeRangeFilterBody.svelte'
 
-  // Get time context
   let ctx = getTimeContext()
   if (!ctx) {
     throw new Error(
@@ -11,212 +10,202 @@
     )
   }
 
-  let dialogOpen = $state(false)
-  let dialogElement = $state<HTMLDialogElement | null>(null)
-  let timeTriggerEl = $state<HTMLButtonElement | null>(null)
+  let popoverEl = $state<HTMLDivElement | null>(null)
+  let popoverOpen = $state(false)
 
-  const POPOVER_MARGIN = 12
-  const POPOVER_GAP = 8
+  const popoverId = `datetime-popover-${Math.random().toString(36).slice(2, 8)}`
+  const anchorName = `--datetime-anchor-${Math.random().toString(36).slice(2, 8)}`
 
-  function positionTimePopover() {
-    let trigger = timeTriggerEl
-    let dialog = dialogElement
-    if (!trigger || !dialog || !dialog.open) return
-
-    let vw = window.innerWidth
-    let vh = window.innerHeight
-    let rect = trigger.getBoundingClientRect()
-    let panelWidth = dialog.getBoundingClientRect().width
-    if (panelWidth < 8) return
-
-    /* Right edges aligned with trigger; clamp so the panel stays on-screen */
-    let left = rect.right - panelWidth
-    left = Math.max(
-      POPOVER_MARGIN,
-      Math.min(left, vw - panelWidth - POPOVER_MARGIN)
-    )
-
-    let top = rect.bottom + POPOVER_GAP
-    /* Leave a reasonable minimum height so presets/custom don’t feel crushed */
-    let maxHeight = Math.max(280, vh - top - POPOVER_MARGIN)
-
-    dialog.style.left = `${left}px`
-    dialog.style.top = `${top}px`
-    dialog.style.right = 'auto'
-    dialog.style.bottom = 'auto'
-    dialog.style.maxHeight = `${maxHeight}px`
-  }
-
-  function openTimePopover() {
-    dialogElement?.showModal()
-    dialogOpen = true
-    requestAnimationFrame(() => {
-      positionTimePopover()
-      requestAnimationFrame(() => positionTimePopover())
-    })
-  }
-
-  // Check if closedby attribute is supported (static check, done once)
-  const supportsClosedBy = 'closedBy' in HTMLDialogElement.prototype
-
-  // Dialog listeners when the element is bound
-  $effect(() => {
-    if (dialogElement) {
-      const handleClose = () => {
-        dialogOpen = dialogElement?.open ?? false
-      }
-
-      const handleCancel = () => {
-        dialogOpen = false
-      }
-
-      // Fallback for browsers without closedby support (e.g., Safari)
-      const handleClickOutside = (event: MouseEvent) => {
-        if (!supportsClosedBy && dialogElement) {
-          const rect = dialogElement.getBoundingClientRect()
-          const isInDialog =
-            rect.top <= event.clientY &&
-            event.clientY <= rect.top + rect.height &&
-            rect.left <= event.clientX &&
-            event.clientX <= rect.left + rect.width
-
-          if (!isInDialog) {
-            dialogElement.close()
-          }
-        }
-      }
-
-      dialogElement.addEventListener('close', handleClose)
-      dialogElement.addEventListener('cancel', handleCancel)
-
-      // Only add click listener if closedby is not supported
-      if (!supportsClosedBy) {
-        dialogElement.addEventListener('click', handleClickOutside)
-      }
-
-      // Update initial state
-      dialogOpen = dialogElement.open
-
-      return () => {
-        dialogElement?.removeEventListener('close', handleClose)
-        dialogElement?.removeEventListener('cancel', handleCancel)
-        if (!supportsClosedBy) {
-          dialogElement?.removeEventListener('click', handleClickOutside)
-        }
-      }
-    }
-  })
-
-  $effect(() => {
-    if (!dialogOpen) return
-    function onResize() {
-      positionTimePopover()
-    }
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  })
-
-  // Track previous time values to detect changes
   let previousStartTime = $state(ctx.selection?.start)
   let previousEndTime = $state(ctx.selection?.end)
 
-  // Close dialog when time selection changes
   $effect(() => {
     const currentStartTime = ctx.selection?.start
     const currentEndTime = ctx.selection?.end
 
-    // Check if time values actually changed
     const startTimeChanged = currentStartTime !== previousStartTime
     const endTimeChanged = currentEndTime !== previousEndTime
 
     if (startTimeChanged || endTimeChanged) {
-      dialogElement?.close()
+      popoverEl?.hidePopover()
     }
 
     previousStartTime = currentStartTime
     previousEndTime = currentEndTime
   })
 
-  // Get display text for current time selection
-  function getDisplayText(): string {
-    if (!ctx?.selection) {
-      return 'Select time range'
+  $effect(() => {
+    if (!popoverEl) return
+    const handleToggle = (e: ToggleEvent) => {
+      popoverOpen = e.newState === 'open'
     }
+    popoverEl.addEventListener('toggle', handleToggle)
+    return () => popoverEl?.removeEventListener('toggle', handleToggle)
+  })
 
-    return formatDateTimeRange(
-      ctx.selection.start,
-      ctx.selection.end,
-      ctx.timezone
-    )
+  function getDisplayText(): string {
+    if (!ctx?.selection) return 'Select time range'
+    return formatDateTimeRange(ctx.selection.start, ctx.selection.end, ctx.timezone)
   }
 
   let displayLabel = $derived(getDisplayText())
+
+  let {
+    class: className = '',
+    triggerVariant = 'icon',
+    inJoin = false,
+  }: { class?: string; triggerVariant?: 'icon' | 'select' | 'dropdown'; inJoin?: boolean } =
+    $props()
 </script>
 
-<!-- Range text + round soft-primary clock trigger on the right -->
-<div class="datetime-filter">
-  <span class="datetime-filter__range-text" title={displayLabel}>
-    {displayLabel}
-  </span>
+{#if triggerVariant === 'select'}
   <button
-    bind:this={timeTriggerEl}
     type="button"
-    class="datetime-filter__trigger btn btn-soft btn-primary btn-sm btn-circle"
-    class:btn-active={dialogOpen}
-    onclick={openTimePopover}
-    aria-expanded={dialogOpen}
+    class="datetime-select-trigger {className}"
+    class:datetime-select-trigger--join={inJoin}
+    class:datetime-select-trigger--open={popoverOpen}
+    popovertarget={popoverId}
+    style:anchor-name={anchorName}
+    aria-expanded={popoverOpen}
+    aria-label={`Change time range, ${displayLabel}`}
+  >
+    <svg
+      class="h-3.5 w-3.5 shrink-0 text-base-content/50"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 8v4l2 2" />
+    </svg>
+    <span class="datetime-filter__range-text">{displayLabel}</span>
+    <svg
+      class="h-3 w-3 shrink-0 text-base-content/40"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  </button>
+{:else if triggerVariant === 'dropdown'}
+  <button
+    type="button"
+    class="datetime-dropdown-trigger {className}"
+    class:datetime-dropdown-trigger--open={popoverOpen}
+    popovertarget={popoverId}
+    style:anchor-name={anchorName}
+    aria-expanded={popoverOpen}
+    aria-label={`Change time range, ${displayLabel}`}
+  >
+    <svg
+      class="h-3.5 w-3.5 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 8v4l2 2" />
+    </svg>
+    <span class="datetime-dropdown-trigger__text">{displayLabel}</span>
+  </button>
+{:else}
+  <button
+    type="button"
+    class={className}
+    popovertarget={popoverId}
+    style:anchor-name={anchorName}
+    aria-expanded={popoverOpen}
     aria-label={`Change time range, ${displayLabel}`}
     title={displayLabel}
   >
-    <span class="datetime-filter__trigger-icon" aria-hidden="true">
-      <svg
-        class="h-4 w-4"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 8v4l2 2" />
-      </svg>
-    </span>
+    <svg
+      class="h-3.5 w-3.5 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 8v4l2 2" />
+    </svg>
   </button>
-</div>
+{/if}
 
-<!-- Dialog Content -->
-<dialog
-  bind:this={dialogElement}
-  id="datetime-dialog"
-  class="datetime-dialog dropdown-content"
-  closedby="any"
+<div
+  bind:this={popoverEl}
+  popover="auto"
+  id={popoverId}
+  class="datetime-popover"
+  style:position-anchor={anchorName}
 >
   <TimeRangeFilterBody />
-</dialog>
+</div>
 
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .datetime-filter {
-    @apply flex min-w-0 max-w-full items-center gap-2;
+  .datetime-select-trigger {
+    @apply flex min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-base-300 bg-base-100 px-2.5 py-1.5 text-xs text-base-content/70 transition-[color,border-color,box-shadow] duration-150;
   }
 
   .datetime-filter__range-text {
-    @apply min-w-0 flex-1 truncate text-left text-sm leading-snug text-base-content/85;
+    @apply min-w-0 flex-1 truncate text-left;
   }
 
-  .datetime-filter__trigger {
-    @apply shrink-0 border-0 shadow-none;
+  .datetime-select-trigger:not(.datetime-select-trigger--join):hover {
+    @apply border-base-content/30 text-base-content;
   }
 
-  .datetime-filter__trigger-icon {
-    @apply inline-flex items-center justify-center text-current;
+  .datetime-select-trigger--open:not(.datetime-select-trigger--join) {
+    @apply border-primary/40 text-primary ring-1 ring-primary/20;
   }
 
-  .datetime-dialog {
+  .datetime-select-trigger:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  /* DaisyUI join row — match app.css .nav-button + .nav-button-inactive (cannot @apply those names in Tailwind v4). */
+  .datetime-select-trigger--join {
+    @apply join-item flex min-h-0 h-[2.25rem] min-w-0 flex-1 items-center justify-start gap-1.5 rounded-none border border-transparent bg-transparent px-2.5 py-0 text-xs font-normal tracking-normal text-base-content/55 shadow-none transition-[color,background-color,box-shadow] duration-200 hover:bg-base-200/80 hover:text-base-content;
+  }
+
+  .datetime-select-trigger--join.datetime-select-trigger--open {
+    @apply z-[1] border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+  }
+
+  /* Dropdown trigger: compact clock + label in a btn-like shape */
+  .datetime-dropdown-trigger {
+    @apply btn btn-xs btn-ghost flex items-center gap-1 text-xs font-normal text-base-content/70 transition-colors duration-150;
+  }
+
+  .datetime-dropdown-trigger:hover {
+    @apply text-base-content;
+  }
+
+  .datetime-dropdown-trigger--open {
+    @apply bg-primary/10 text-primary;
+  }
+
+  .datetime-dropdown-trigger__text {
+    @apply truncate max-w-[10rem];
+  }
+
+  .datetime-popover {
     @apply px-0 pb-2 pt-0;
-    position: fixed;
     margin: 0;
     box-sizing: border-box;
     width: 24rem;
@@ -225,13 +214,9 @@
 
     @apply bg-base-100 rounded-lg text-sm shadow-lg;
     @apply border border-base-300 text-base-content;
-  }
 
-  .datetime-dialog::backdrop {
-    background-color: rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(1px);
-    transition:
-      opacity 0.4s ease-in-out,
-      backdrop-filter 0.4s ease-in-out;
+    inset: unset;
+    top: anchor(bottom, 0);
+    right: anchor(right, 0);
   }
 </style>

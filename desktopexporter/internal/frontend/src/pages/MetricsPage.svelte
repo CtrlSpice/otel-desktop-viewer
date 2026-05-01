@@ -1,9 +1,7 @@
 <script module lang="ts">
   import type { MetricSummary } from '@/types/api-types'
   import { metricSummaryKey } from '@/types/api-types'
-  import {
-    compareByStringField,
-  } from '@/utils/compare'
+  import { compareByStringField } from '@/utils/compare'
 
   // --- Sort ---
 
@@ -57,15 +55,17 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import type { MetricData, MetricStats } from '@/types/api-types'
+  import type {
+    MetricData,
+    MetricStats,
+    SearchResultEvent,
+  } from '@/types/api-types'
   import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
-  import SignalToolbar from '@/components/SignalToolbar/SignalToolbar.svelte'
-  import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
-  import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
   import SignalListDrawer from '@/components/SignalListDrawer.svelte'
+  import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
   import MetricCard from '@/components/MetricCard.svelte'
   import MetricDetailPanel from '@/components/MetricDetails/MetricDetailPanel.svelte'
-  import { ChartHistogramIcon, TrashIcon } from '@/icons'
+  import { TrashIcon } from '@/icons'
 
   // --- context ---
   let timeContext = getTimeContext()
@@ -75,7 +75,6 @@
   let loading = $state(true)
   let error = $state<string | null>(null)
   let mounted = $state(false)
-  let searchError = $state<string | null>(null)
 
   // --- state: sort ---
   let sortColumn = $state<MetricSortColumn>('name')
@@ -104,7 +103,9 @@
   let hasMetricRows = $derived(metrics.length > 0)
 
   let selectedSummary = $derived(
-    selectedKey ? sortedMetrics.find(m => metricSummaryKey(m) === selectedKey) : undefined
+    selectedKey
+      ? sortedMetrics.find(m => metricSummaryKey(m) === selectedKey)
+      : undefined
   )
 
   let refreshIndicatorText = $derived.by(() => {
@@ -114,14 +115,16 @@
     if (metricDelta > 0)
       parts.push(`+${metricDelta} metric${metricDelta !== 1 ? 's' : ''}`)
     const dpDelta = polledStats.dataPointCount - baselineStats.dataPointCount
-    if (dpDelta > 0)
-      parts.push(`+${dpDelta} dp${dpDelta !== 1 ? 's' : ''}`)
+    if (dpDelta > 0) parts.push(`+${dpDelta} dp${dpDelta !== 1 ? 's' : ''}`)
     return parts.join(', ')
   })
 
   // --- effects ---
   $effect(() => {
-    if (!selectedKey || !sortedMetrics.some(m => metricSummaryKey(m) === selectedKey)) {
+    if (
+      !selectedKey ||
+      !sortedMetrics.some(m => metricSummaryKey(m) === selectedKey)
+    ) {
       const first = sortedMetrics[0]
       selectedKey = first ? metricSummaryKey(first) : null
     }
@@ -192,23 +195,32 @@
         timeContext.selection,
         Date.now()
       )
-      selectedMetric = (await telemetryAPI.getMetric(
-        summary.name,
-        summary.unit,
-        summary.metricType,
-        summary.aggregationTemporality ?? '',
-        summary.isMonotonic === null ? '' : String(summary.isMonotonic),
-        summary.scopeName,
-        summary.scopeVersion,
-        summary.serviceName,
-        startTime,
-        endTime
-      )) ?? undefined
+      selectedMetric =
+        (await telemetryAPI.getMetric(
+          summary.name,
+          summary.unit,
+          summary.metricType,
+          summary.aggregationTemporality ?? '',
+          summary.isMonotonic === null ? '' : String(summary.isMonotonic),
+          summary.scopeName,
+          summary.scopeVersion,
+          summary.serviceName,
+          startTime,
+          endTime
+        )) ?? undefined
     } catch (err) {
       console.error('Failed to fetch metric detail:', err)
       selectedMetric = undefined
     } finally {
       detailLoading = false
+    }
+  }
+
+  function handleSearchResults(event: SearchResultEvent) {
+    if (event.signal === 'metrics') {
+      loading = false
+      error = null
+      metrics = event.results as unknown as MetricSummary[]
     }
   }
 
@@ -235,10 +247,6 @@
   })
 </script>
 
-{#snippet toolbarTimeRange()}
-  <DateTimeFilter />
-{/snippet}
-
 <div class="metrics-page">
   <SignalListDrawer
     items={sortedMetrics}
@@ -246,16 +254,45 @@
     drawerId="signal-drawer"
     label="Metrics"
     count={sortedMetrics.length}
-    sortOptions={SORT_OPTIONS}
-    sortValue={sortColumn}
-    {sortDirection}
     storageKey="metric-drawer"
     onSelect={selectMetric}
-    onSortChange={handleSortChange}
+    onRefresh={handleRefresh}
+    refreshPulse={!!refreshIndicatorText}
     itemKey={metricSummaryKey}
   >
-    {#snippet icon()}
-      <ChartHistogramIcon />
+    {#snippet refreshAside()}
+      {refreshIndicatorText}
+    {/snippet}
+    {#snippet drawerChrome()}
+      <DrawerSearchPanel
+        segment="chrome"
+        signal="metrics"
+        sortOptions={SORT_OPTIONS}
+        sortValue={sortColumn}
+        {sortDirection}
+        onSortChange={handleSortChange}
+        onRefresh={handleRefresh}
+        refreshPulse={!!refreshIndicatorText}
+      >
+        {#snippet refreshAside()}
+          {refreshIndicatorText}
+        {/snippet}
+      </DrawerSearchPanel>
+    {/snippet}
+
+    {#snippet drawerSearch()}
+      <DrawerSearchPanel
+        segment="search"
+        signal="metrics"
+        sortOptions={SORT_OPTIONS}
+        sortValue={sortColumn}
+        {sortDirection}
+        onSortChange={handleSortChange}
+        onRefresh={handleRefresh}
+        refreshPulse={!!refreshIndicatorText}
+        onSearchResults={handleSearchResults}
+        onSearchReady={api => (searchEditorApi = api)}
+      />
     {/snippet}
 
     {#snippet itemSnippet(metric, selected)}
@@ -281,25 +318,6 @@
 
     {#snippet children()}
       <div class="metrics-content">
-        <div class="metrics-content__toolbar">
-          <SignalToolbar
-            signal="metrics"
-            view="list"
-            onRefresh={handleRefresh}
-            trailingFilters={[toolbarTimeRange]}
-            {searchError}
-            {refreshIndicatorText}
-          >
-            <SearchEditor
-              signal="metrics"
-              view="list"
-              inToolbar
-              onSearchError={err => (searchError = err)}
-              onReady={api => (searchEditorApi = api)}
-            />
-          </SignalToolbar>
-        </div>
-
         <div class="metrics-content__body">
           {#if error}
             <div class="alert alert-error">
@@ -333,11 +351,7 @@
   }
 
   .metrics-content {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col;
-  }
-
-  .metrics-content__toolbar {
-    @apply shrink-0 border-b border-base-300/40 bg-base-100/60 px-[var(--layout-gap)] py-2 backdrop-blur-sm;
+    @apply relative flex min-h-0 min-w-0 flex-1 flex-col;
   }
 
   .metrics-content__body {

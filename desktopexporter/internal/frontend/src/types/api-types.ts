@@ -243,13 +243,12 @@ export type Stats = {
   metrics: MetricStats
 }
 
-// Discriminated union for search results
+// Discriminated union for search results.
+// `queryTree` is the parsed query that produced these results (undefined when no search active).
 export type SearchResultEvent =
-  | { signal: 'traces'; view: 'list'; results: TraceSummary[] }
-  | { signal: 'traces'; view: 'detail'; results: TraceData }
-  | { signal: 'logs'; view: 'list'; results: LogData[] }
-  | { signal: 'metrics'; view: 'list'; results: MetricData[] }
-  | { signal: 'metrics'; view: 'detail'; results: MetricData[] }
+  | { signal: 'traces'; results: TraceSummary[]; queryTree?: unknown }
+  | { signal: 'logs'; results: LogData[]; queryTree?: unknown }
+  | { signal: 'metrics'; results: MetricData[]; queryTree?: unknown }
 
 // Quantile series (trend chart) types. The backend computes adaptive time
 // buckets and emits one point per (bucket, stream) for per-stream mode and
@@ -308,6 +307,4 @@ export type ExpHistogramBucketPoint = {
   totals: BucketSeriesTotals
 }
 
-export type BucketSeriesPoint =
-  | HistogramBucketPoint
-  | ExpHistogramBucketPoint
+export type BucketSeriesPoint = HistogramBucketPoint | ExpHistogramBucketPoint

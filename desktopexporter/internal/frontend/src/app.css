@@ -282,26 +282,6 @@ svg {
   @apply w-px bg-base-300;
 }
 
-.tabs {
-  @apply grid max-w-full grid-cols-3;
-  min-width: min(100%, 24rem);
-}
-
-.tab {
-  @apply input input-sm items-center cursor-pointer mx-0.5;
-  @apply transition-colors duration-200;
-  @apply hover:bg-base-200;
-  @apply border-transparent;
-  border-left-style: none;
-  border-right-style: none;
-  border-top-style: none;
-}
-
-.tabs input[type='radio'].tab:checked {
-  @apply bg-primary text-primary-content;
-  @apply border-b-2 border-b-primary-content;
-}
-
 /* Sortable thead: caret mirrors alignment — left = title then caret; right (--end) = caret then title.
    Column width = col / resize (not this flex). */
 .table-header-sort {
@@ -418,6 +398,19 @@ svg {
   @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
 }
 
+/* Icon-only: Daisy square ghost buttons (toolbar joins, rails, summaries). */
+.nav-button.nav-button-icon-only {
+  @apply btn btn-ghost btn-neutral btn-sm btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none;
+}
+
+.nav-button.nav-button-icon-only.nav-button-inactive {
+  @apply text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+}
+
+.nav-button.nav-button-icon-only.nav-button-active {
+  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+}
+
 .input {
   border-color: var(--color-base-300);
 }
@@ -519,7 +512,6 @@ button:focus-visible:not(.btn) {
   --waterfall-gutter-hub: 16px;
 
   /* ── App shell + resizable panels (tune here) ── */
-  --nav-height: 3.5rem; /* keep in sync with HorizontalNav */
   --resize-bar-hit-width: 0.5rem; /* col-resize in-flow hit strip; line is narrower inside */
   /* Outer edge of left panel → outer edge of right panel across the splitter */
   --panel-split-total: 1rem;
@@ -531,6 +523,7 @@ button:focus-visible:not(.btn) {
   --layout-gap: 0.5rem;
   /* Vertical padding around the toolbar + search block (not between them) */
   --toolbar-page-pad-y: 0.75rem;
+
 }
 
 /* Wrap SignalToolbar + SearchEditor: tight internal gap, outer padding top/bottom only */
