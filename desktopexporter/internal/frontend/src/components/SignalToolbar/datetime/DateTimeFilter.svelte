@@ -45,7 +45,11 @@
 
   function getDisplayText(): string {
     if (!ctx?.selection) return 'Select time range'
-    return formatDateTimeRange(ctx.selection.start, ctx.selection.end, ctx.timezone)
+    return formatDateTimeRange(
+      ctx.selection.start,
+      ctx.selection.end,
+      ctx.timezone
+    )
   }
 
   let displayLabel = $derived(getDisplayText())
@@ -54,8 +58,11 @@
     class: className = '',
     triggerVariant = 'icon',
     inJoin = false,
-  }: { class?: string; triggerVariant?: 'icon' | 'select' | 'dropdown'; inJoin?: boolean } =
-    $props()
+  }: {
+    class?: string
+    triggerVariant?: 'icon' | 'select' | 'dropdown'
+    inJoin?: boolean
+  } = $props()
 </script>
 
 {#if triggerVariant === 'select'}

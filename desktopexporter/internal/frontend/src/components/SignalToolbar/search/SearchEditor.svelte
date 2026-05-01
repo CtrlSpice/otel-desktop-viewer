@@ -63,12 +63,12 @@
     string,
     (ctx: SearchContext, q?: QueryNode) => () => Promise<any>
   > = {
-    traces: (ctx, q) =>
-      () => telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q),
-    logs: (ctx, q) =>
-      () => telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q),
-    metrics: (ctx, q) =>
-      () => telemetryAPI.getMetrics(ctx.startTime, ctx.endTime, q),
+    traces: (ctx, q) => () =>
+      telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q),
+    logs: (ctx, q) => () =>
+      telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q),
+    metrics: (ctx, q) => () =>
+      telemetryAPI.getMetrics(ctx.startTime, ctx.endTime, q),
   }
 
   /** Build the API call for a signal, or null if unsupported. */
@@ -115,7 +115,9 @@
     filters = [],
   }: SearchEditorProps & { filters?: FilterDescriptor[] } = $props()
 
-  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    /Mac|iPhone|iPad/.test(navigator.userAgent)
   const modKey = isMac ? '⌘' : 'Ctrl'
 
   let timeContext: TimeContext | null = null
@@ -375,7 +377,7 @@
         createQueryLinter(() => availableFields),
         createQueryKeymap(onSubmit),
         ...queryTheme,
-        tooltips({ parent: document.body }),
+        tooltips({ position: 'fixed' }),
         closeBrackets(),
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -431,14 +433,6 @@
           <div class="search-editor-footer__leading min-w-0 flex-1">
             <FieldErrorMessage message={searchError} />
           </div>
-        {:else}
-          <span class="search-editor-footer__leading search-editor-footer__hint">
-            <kbd class="kbd kbd-xs search-editor-footer__kbd">{modKey}</kbd>
-            <span class="search-editor-footer__hint-plus" aria-hidden="true">+</span>
-            <kbd class="kbd kbd-xs search-editor-footer__kbd">Enter</kbd>
-            <span class="search-editor-footer__hint-suffix">to submit</span>
-          </span>
-          <div class="flex-1" aria-hidden="true"></div>
         {/if}
         <div class="join join-horizontal shrink-0">
           <button
@@ -463,8 +457,8 @@
             type="button"
             class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
             onclick={onSubmit}
-            aria-label="Search ({modKey}+Enter)"
-            title="Search ({modKey}+Enter)"
+            aria-label="Search"
+            title="Search"
           >
             <svg
               class="h-3.5 w-3.5 shrink-0"
@@ -737,13 +731,12 @@
   }
 
   .search-editor__footer-actions {
-    @apply absolute bottom-1 left-2 right-2 z-10 flex items-center gap-2;
+    @apply absolute bottom-1 right-2 z-10 flex items-center gap-2;
   }
 
   .search-editor__footer-actions--has-error {
     @apply items-start;
   }
-
 
   /* Shared drawer-footer type scale (hint prose + validation). */
   .search-editor-footer__leading,

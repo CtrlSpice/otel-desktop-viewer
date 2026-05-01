@@ -13,7 +13,7 @@
 </script>
 
 <main
-  class="flex h-screen min-w-0 flex-col bg-base-100 bg-gradient-to-b from-base-100 via-base-100 to-base-200/25 transition-colors duration-300"
+  class="flex h-screen min-w-0 flex-col overflow-hidden bg-base-100 bg-gradient-to-b from-base-100 via-base-100 to-base-200/25 transition-colors duration-300"
 >
   <Route path="/">
     <SignalNavRail>

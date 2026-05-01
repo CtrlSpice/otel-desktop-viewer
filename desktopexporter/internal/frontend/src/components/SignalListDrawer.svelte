@@ -222,7 +222,7 @@
   }
 
   .signal-drawer :global(.drawer-side) {
-    @apply h-full;
+    @apply h-full overflow-hidden;
     min-height: 0;
   }
 

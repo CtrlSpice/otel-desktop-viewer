@@ -521,17 +521,7 @@ button:focus-visible:not(.btn) {
   );
   /* Toolbar + page stacks (decoupled so resizable panels can sit tighter) */
   --layout-gap: 0.5rem;
-  /* Vertical padding around the toolbar + search block (not between them) */
-  --toolbar-page-pad-y: 0.75rem;
 
-}
-
-/* Wrap SignalToolbar + SearchEditor: tight internal gap, outer padding top/bottom only */
-.page-toolbar-block {
-  @apply flex min-w-0 w-full flex-col;
-  gap: var(--layout-gap);
-  padding-block: var(--toolbar-page-pad-y);
-  box-sizing: border-box;
 }
 
 /* Same frosted fill as panel chrome: paint this on tbody / field lists */
