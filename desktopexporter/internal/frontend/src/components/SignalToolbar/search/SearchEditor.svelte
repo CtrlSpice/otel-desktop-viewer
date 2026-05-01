@@ -437,7 +437,7 @@
         <div class="join join-horizontal shrink-0">
           <button
             type="button"
-            class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
+            class="drawer-editor-btn join-item"
             onclick={openHelp}
             aria-label="Search query help"
             title="Search query help"
@@ -446,7 +446,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
+            class="drawer-editor-btn join-item"
             onclick={clearSearch}
             aria-label="Clear search"
             title="Clear search"
@@ -455,7 +455,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
+            class="drawer-editor-btn join-item"
             onclick={onSubmit}
             aria-label="Search"
             title="Search"

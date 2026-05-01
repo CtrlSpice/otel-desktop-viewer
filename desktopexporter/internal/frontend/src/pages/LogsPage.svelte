@@ -24,11 +24,7 @@
           ? a.severityNumber - b.severityNumber
           : compareByStringField(a, b, l => getServiceName(l.resource))
 
-    return cmp !== 0
-      ? dir === 'asc'
-        ? cmp
-        : -cmp
-      : a.id.localeCompare(b.id)
+    return cmp !== 0 ? (dir === 'asc' ? cmp : -cmp) : a.id.localeCompare(b.id)
   }
 
   // --- Severity helpers ---
@@ -45,12 +41,12 @@
   }
 
   const BADGE_CLASS: Record<SeverityBand, string> = {
-    trace: 'badge badge-sm text-xs badge-soft badge-neutral',
-    debug: 'badge badge-sm text-xs badge-soft badge-info',
-    info: 'badge badge-sm text-xs badge-soft badge-success',
-    warn: 'badge badge-sm text-xs badge-soft badge-warning',
-    error: 'badge badge-sm text-xs badge-soft badge-error',
-    fatal: 'badge badge-sm text-xs badge-error',
+    trace: 'badge badge-xs badge-soft badge-neutral',
+    debug: 'badge badge-xs badge-soft badge-info',
+    info: 'badge badge-xs badge-soft badge-success',
+    warn: 'badge badge-xs badge-soft badge-warning',
+    error: 'badge badge-xs badge-soft badge-error',
+    fatal: 'badge badge-xs badge-soft badge-error',
   }
 
   const BORDER_CLASS: Record<SeverityBand, string> = {
@@ -70,7 +66,10 @@
     return BORDER_CLASS[severityBand(severityNumber)]
   }
 
-  export function severityLabel(severityText: string, severityNumber: number): string {
+  export function severityLabel(
+    severityText: string,
+    severityNumber: number
+  ): string {
     return severityText || severityBand(severityNumber).toUpperCase()
   }
 
@@ -250,7 +249,7 @@
     onSelect={selectLog}
     onRefresh={handleRefresh}
     {refreshPulse}
-    itemKey={(l) => l.id}
+    itemKey={l => l.id}
   >
     {#snippet refreshAside()}
       {#if pendingNewLogCount > 0}

@@ -29,13 +29,6 @@
   )
 
   let service = $derived(trace.rootSpan?.serviceName)
-  let subtitle = $derived(
-    service
-      ? startLabel
-        ? `${service} · ${startLabel}`
-        : service
-      : (startLabel || undefined)
-  )
 
   let durationLabel = $derived.by(() => {
     const ns = traceSummaryDurationNs(trace)
@@ -47,7 +40,9 @@
   id={trace.traceID}
   {selected}
   title={trace.rootSpan?.name || trace.traceID}
-  {subtitle}
+  subtitle={service || undefined}
+  timestamp={startLabel || undefined}
+  duration={durationLabel || undefined}
   {onclick}
 >
   {#snippet badge()}
@@ -59,14 +54,9 @@
         {trace.errorCount} err
       </span>
     {/if}
-    {#if durationLabel}
-      <span class="ml-1 text-[0.65rem] tabular-nums text-base-content/50">
-        {durationLabel}
-      </span>
-    {/if}
   {/snippet}
   {#snippet meta()}
-    <span class="text-[0.6rem] font-mono tabular-nums text-base-content/40" title={trace.traceID}>
+    <span class="font-mono tabular-nums text-base-content/45" title={trace.traceID}>
       {trace.traceID}
     </span>
   {/snippet}

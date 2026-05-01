@@ -14,11 +14,26 @@
     icon: Component
   }
 
-  export const HOME_NAV: NavItem = { id: 'home', label: 'Home', path: '/', icon: HomeIcon }
+  export const HOME_NAV: NavItem = {
+    id: 'home',
+    label: 'Home',
+    path: '/',
+    icon: HomeIcon,
+  }
 
   export const NAV_ITEMS: NavItem[] = [
-    { id: 'traces', label: 'Traces', path: '/traces', icon: BarChartHorizontalIcon },
-    { id: 'metrics', label: 'Metrics', path: '/metrics', icon: ChartHistogramIcon },
+    {
+      id: 'traces',
+      label: 'Traces',
+      path: '/traces',
+      icon: BarChartHorizontalIcon,
+    },
+    {
+      id: 'metrics',
+      label: 'Metrics',
+      path: '/metrics',
+      icon: ChartHistogramIcon,
+    },
     { id: 'logs', label: 'Logs', path: '/logs', icon: FirePitIcon },
   ]
 
@@ -60,9 +75,9 @@
       {@const Icon = item.icon}
       <button
         type="button"
-        class="nav-button nav-button-icon-only tooltip tooltip-right {active
-          ? 'nav-button-active'
-          : 'nav-button-inactive'}"
+        class="drawer-tab drawer-tab--icon-only tooltip tooltip-right {active
+          ? 'drawer-tab--active'
+          : 'drawer-tab--inactive'}"
         data-tip={item.label}
         aria-current={active ? 'page' : undefined}
         aria-label={item.label}
@@ -79,7 +94,9 @@
       {@const Icon = item.icon}
       <button
         type="button"
-        class="nav-button {active ? 'nav-button-active' : 'nav-button-inactive'}"
+        class="drawer-tab {active
+          ? 'drawer-tab--active'
+          : 'drawer-tab--inactive'}"
         aria-current={active ? 'page' : undefined}
         onclick={() => goto(item.path)}
       >
@@ -101,7 +118,7 @@
     @apply flex items-center gap-1;
   }
 
-  .drawer-nav-tabs--expanded :global(.nav-button) {
+  .drawer-nav-tabs--expanded :global(.drawer-tab:not(.drawer-tab--icon-only)) {
     @apply px-2 gap-1 text-xs;
   }
 </style>

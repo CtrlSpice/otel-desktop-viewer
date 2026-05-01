@@ -90,7 +90,7 @@
                 <nav class="detail-view__tabs">
                   <button
                     type="button"
-                    class="nav-button {activeTab === 'fields' ? 'nav-button-active' : 'nav-button-inactive'}"
+                    class="detail-tab {activeTab === 'fields' ? 'detail-tab--active' : 'detail-tab--inactive'}"
                     onclick={() => { activeTab = 'fields' }}
                   >
                     <svg viewBox="0 0 24 24" class="w-4 h-4">
@@ -106,7 +106,7 @@
                   </button>
                   <button
                     type="button"
-                    class="nav-button {activeTab === 'events' ? 'nav-button-active' : 'nav-button-inactive'}"
+                    class="detail-tab {activeTab === 'events' ? 'detail-tab--active' : 'detail-tab--inactive'}"
                     onclick={() => { activeTab = 'events' }}
                   >
                     <svg viewBox="0 0 24 24" class="w-4 h-4">
@@ -118,7 +118,7 @@
                   </button>
                   <button
                     type="button"
-                    class="nav-button {activeTab === 'links' ? 'nav-button-active' : 'nav-button-inactive'}"
+                    class="detail-tab {activeTab === 'links' ? 'detail-tab--active' : 'detail-tab--inactive'}"
                     onclick={() => { activeTab = 'links' }}
                   >
                     <svg viewBox="0 0 24 24" class="w-4 h-4">

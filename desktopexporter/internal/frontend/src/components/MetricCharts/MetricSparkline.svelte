@@ -8,9 +8,12 @@
     points: SparklinePoint[]
     height?: number
     width?: number
+    /** Spark stroke/fill — use `metricTypeSeriesColor()` to match type badge */
+    seriesColor?: string
   }
 
-  let { points, height = 32, width }: Props = $props()
+  let { points, height = 32, width, seriesColor = 'var(--color-primary)' }: Props =
+    $props()
 
   let sparkData = $derived.by((): SparkPoint[] => {
     return points
@@ -26,6 +29,14 @@
     y="value"
     axis={false}
     grid={false}
+    series={[
+      {
+        key: 'default',
+        label: 'value',
+        value: 'value',
+        color: seriesColor,
+      },
+    ]}
     props={{
       highlight: { points: { r: 3, class: 'stroke-2 stroke-surface-100' } },
     }}

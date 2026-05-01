@@ -385,30 +385,66 @@ svg {
   @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
 }
 
-/* Navigation */
-.nav-button {
+/* Trace detail panel — Fields | Events | Links (not the signal drawer). */
+.detail-tab {
   @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
 }
 
-.nav-button-active {
+.detail-tab--active {
   @apply bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
 }
 
-.nav-button-inactive {
+.detail-tab--inactive {
   @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
 }
 
-/* Icon-only: Daisy square ghost buttons (toolbar joins, rails, summaries). */
-.nav-button.nav-button-icon-only {
+/* Signal drawer — route tabs (Traces | Metrics | Logs) + collapsed icon rail. */
+.drawer-tab {
+  @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
+}
+
+.drawer-tab--active {
+  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+}
+
+.drawer-tab--inactive {
+  @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+}
+
+.drawer-tab--icon-only {
   @apply btn btn-ghost btn-neutral btn-sm btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none;
 }
 
-.nav-button.nav-button-icon-only.nav-button-inactive {
+.drawer-tab--icon-only.drawer-tab--inactive {
   @apply text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
 }
 
-.nav-button.nav-button-icon-only.nav-button-active {
+.drawer-tab--icon-only.drawer-tab--active {
   @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+}
+
+/* Signal drawer — chrome outside the search editor (home, collapse, collapsed rail open/refresh/theme). */
+.drawer-header-btn {
+  @apply btn btn-ghost btn-neutral btn-sm btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none transition-[color,background-color,box-shadow] duration-200;
+}
+
+.drawer-header-btn--active {
+  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+}
+
+.drawer-header-btn--inactive {
+  @apply text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+}
+
+/* Signal drawer — square controls in the search editor (header join + footer join). */
+.drawer-editor-btn {
+  @apply btn btn-ghost btn-neutral btn-xs btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none;
+}
+
+.detail-tab:focus-visible,
+.drawer-tab:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .input {
@@ -438,11 +474,6 @@ svg {
   outline-width: var(--focus-ring-width);
   outline-style: solid;
   outline-color: var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
-.nav-button:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
 }
 
@@ -521,7 +552,6 @@ button:focus-visible:not(.btn) {
   );
   /* Toolbar + page stacks (decoupled so resizable panels can sit tighter) */
   --layout-gap: 0.5rem;
-
 }
 
 /* Same frosted fill as panel chrome: paint this on tbody / field lists */

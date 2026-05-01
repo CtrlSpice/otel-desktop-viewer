@@ -94,7 +94,7 @@
         <div class="signal-drawer__open-toggle">
           <label
             for={drawerId}
-            class="nav-button nav-button-icon-only nav-button-inactive tooltip tooltip-right cursor-pointer"
+            class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right cursor-pointer"
             data-tip={label}
             aria-label="Open sidebar"
           >
@@ -119,7 +119,7 @@
             {#if onRefresh}
               <button
                 type="button"
-                class="signal-drawer__refresh nav-button nav-button-icon-only nav-button-inactive shrink-0"
+                class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive shrink-0"
                 class:signal-drawer__refresh--has-new-data={refreshPulse}
                 onclick={onRefresh}
                 aria-label={refreshPulse
@@ -152,7 +152,7 @@
                 {@render refreshAside()}
               </div>
             {/if}
-            <ThemeToggle />
+            <ThemeToggle class="drawer-header-btn drawer-header-btn--inactive" />
           </div>
         </div>
       {/if}
@@ -187,7 +187,7 @@
         {:else}
           <VirtualList
             {items}
-            defaultEstimatedItemHeight={52}
+            defaultEstimatedItemHeight={72}
             bufferSize={10}
             containerClass="signal-drawer__vlist"
             viewportClass="signal-drawer__vlist-viewport"
@@ -349,6 +349,11 @@
 
   .signal-drawer__body :global(.signal-drawer__vlist-items) {
     @apply absolute left-0 top-0 w-full;
+  }
+
+  /* Vertical rhythm between cards (padding counts toward measured row height; margin does not). */
+  .signal-drawer__body :global(.signal-drawer__vlist-items > div) {
+    @apply pb-2;
   }
 
   .signal-drawer__empty {

@@ -185,7 +185,7 @@
     outline-offset: var(--focus-ring-offset);
   }
 
-  /* DaisyUI join row — match app.css .nav-button + .nav-button-inactive (cannot @apply those names in Tailwind v4). */
+  /* DaisyUI join row — mirror drawer-editor-btn inactive hover (cannot @apply `.drawer-editor-btn` here). */
   .datetime-select-trigger--join {
     @apply join-item flex min-h-0 h-[2.25rem] min-w-0 flex-1 items-center justify-start gap-1.5 rounded-none border border-transparent bg-transparent px-2.5 py-0 text-xs font-normal tracking-normal text-base-content/55 shadow-none transition-[color,background-color,box-shadow] duration-200 hover:bg-base-200/80 hover:text-base-content;
   }

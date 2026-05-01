@@ -94,8 +94,8 @@
   @reference "../app.css";
 
   /*
-   * Swap stacks icons in one grid cell. `.btn` / `.nav-button` use flex + gap on
-   * the label — override so swap-on/off stay stacked for rotate.
+   * Swap stacks icons in one grid cell. Don't wrap the label in flex layouts that add gap
+   * (e.g. some `.btn` rows); we force grid here so swap-on/off stack for rotate.
    */
   label.theme-toggle-swap {
     display: inline-grid !important;

@@ -32,13 +32,11 @@
     info: 'badge badge-xs badge-soft badge-success',
     warn: 'badge badge-xs badge-soft badge-warning',
     error: 'badge badge-xs badge-soft badge-error',
-    fatal: 'badge badge-xs badge-error',
+    fatal: 'badge badge-xs badge-soft badge-error',
   }
 
   let band = $derived(severityBand(log.severityNumber))
-  let severityTitle = $derived(
-    log.severityText || band.toUpperCase()
-  )
+  let severityTitle = $derived(log.severityText || band.toUpperCase())
 
   let tsLabel = $derived(
     formatTimestamp(log.timestamp, timeContext.timezone, 'milliseconds')
@@ -46,25 +44,22 @@
 
   let service = $derived(getServiceName(log.resource))
 
-  let subtitle = $derived(
-    [service, tsLabel].filter(Boolean).join(' · ')
-  )
-
-  let title = $derived.by(() => {
-    const line = log.body.replace(/\s+/g, ' ').trim()
-    if (!line) return '(empty body)'
-    return line.length > 140 ? `${line.slice(0, 140)}…` : line
-  })
+  let bodyForMeta = $derived.by(() => log.body.trim())
 </script>
 
 <SignalCard
   id={log.id}
   {selected}
-  {title}
-  subtitle={subtitle || undefined}
+  title={service || '(unknown service)'}
+  timestamp={tsLabel || undefined}
   {onclick}
->
-  {#snippet badge()}
+>{#snippet badge()}
     <span class={BADGE_CLASS[band]}>{severityTitle}</span>
+  {/snippet}{#snippet meta()}
+    {#if bodyForMeta}
+      <span class="w-full min-w-0 whitespace-pre-wrap break-words text-base-content/50">
+        {bodyForMeta}
+      </span>
+    {/if}
   {/snippet}
 </SignalCard>
