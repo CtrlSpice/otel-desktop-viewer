@@ -125,9 +125,10 @@
   >
     {#snippet headerActions()}
       <div class="flex w-full items-center">
+        <div class="join join-horizontal">
         <details class="dropdown drawer-search-panel__sort-dropdown shrink-0">
           <summary
-            class="btn btn-ghost btn-xs btn-square drawer-search-panel__sort-summary shrink-0 text-base-content/55 hover:bg-base-200/80 hover:text-base-content"
+            class="btn btn-ghost btn-neutral btn-xs btn-square drawer-search-panel__sort-summary join-item"
             title={`Sort: ${currentSortLabel} (${sortDirection})`}
           >
             <HugeiconsSorting05 class="h-3.5 w-3.5 shrink-0" />
@@ -176,15 +177,16 @@
 
         <DateTimeFilter
           triggerVariant="icon"
-          class="btn btn-ghost btn-xs btn-square shrink-0 text-base-content/55 hover:bg-base-200/80 hover:text-base-content"
+          class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
         />
+        </div>
 
         <div class="flex-1"></div>
 
         {#if onRefresh}
           <button
             type="button"
-            class="btn btn-ghost btn-xs btn-square drawer-search-panel__refresh shrink-0 text-base-content/55 hover:bg-base-200/80 hover:text-base-content"
+            class="btn btn-ghost btn-neutral btn-xs btn-square drawer-search-panel__refresh"
             class:drawer-search-panel__refresh--pulse={refreshPulse}
             onclick={onRefresh}
             aria-label={refreshPulse ? 'Refresh — incoming data pending' : 'Refresh'}

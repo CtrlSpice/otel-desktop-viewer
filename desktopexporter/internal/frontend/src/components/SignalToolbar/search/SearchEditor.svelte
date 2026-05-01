@@ -423,65 +423,64 @@
         </div>
       {/if}
       <div class="editor-mount" bind:this={editorContainer}></div>
-    </div>
-
-    <div
-      class="search-editor-footer"
-      class:search-editor-footer--has-error={!!searchError}
-    >
-      {#if searchError}
-        <div class="search-editor-footer__leading min-w-0 flex-1">
-          <FieldErrorMessage message={searchError} />
-        </div>
-      {:else}
-        <span class="search-editor-footer__leading search-editor-footer__hint">
-          <kbd class="kbd kbd-xs search-editor-footer__kbd">{modKey}</kbd>
-          <span class="search-editor-footer__hint-plus" aria-hidden="true">+</span>
-          <kbd class="kbd kbd-xs search-editor-footer__kbd">Enter</kbd>
-          <span class="search-editor-footer__hint-suffix">to submit</span>
-        </span>
-        <div class="flex-1" aria-hidden="true"></div>
-      {/if}
-      <div class="search-editor-footer__actions join join-horizontal">
-        <button
-          type="button"
-          class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
-          onclick={openHelp}
-          aria-label="Search query help"
-          title="Search query help"
-        >
-          <HelpCircleIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
-          onclick={clearSearch}
-          aria-label="Clear search"
-          title="Clear search"
-        >
-          <CancelIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
-          onclick={onSubmit}
-          aria-label="Search ({modKey}+Enter)"
-          title="Search ({modKey}+Enter)"
-        >
-          <svg
-            class="h-3.5 w-3.5 shrink-0"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.75"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
+      <div
+        class="search-editor__footer-actions"
+        class:search-editor__footer-actions--has-error={!!searchError}
+      >
+        {#if searchError}
+          <div class="search-editor-footer__leading min-w-0 flex-1">
+            <FieldErrorMessage message={searchError} />
+          </div>
+        {:else}
+          <span class="search-editor-footer__leading search-editor-footer__hint">
+            <kbd class="kbd kbd-xs search-editor-footer__kbd">{modKey}</kbd>
+            <span class="search-editor-footer__hint-plus" aria-hidden="true">+</span>
+            <kbd class="kbd kbd-xs search-editor-footer__kbd">Enter</kbd>
+            <span class="search-editor-footer__hint-suffix">to submit</span>
+          </span>
+          <div class="flex-1" aria-hidden="true"></div>
+        {/if}
+        <div class="join join-horizontal shrink-0">
+          <button
+            type="button"
+            class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
+            onclick={openHelp}
+            aria-label="Search query help"
+            title="Search query help"
           >
-            <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
-          </svg>
-        </button>
+            <HelpCircleIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
+            onclick={clearSearch}
+            aria-label="Clear search"
+            title="Clear search"
+          >
+            <CancelIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-neutral btn-xs btn-square join-item"
+            onclick={onSubmit}
+            aria-label="Search ({modKey}+Enter)"
+            title="Search ({modKey}+Enter)"
+          >
+            <svg
+              class="h-3.5 w-3.5 shrink-0"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -721,11 +720,11 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply min-h-[4.75rem] rounded-t-none rounded-b-none border-t-0 py-2;
+    @apply min-h-[4.75rem] rounded-lg py-2;
   }
 
   .search-editor__header-actions {
-    @apply absolute top-1 left-1 right-1 z-10;
+    @apply absolute top-1 left-2 right-2 z-10;
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-editor) {
@@ -734,15 +733,17 @@
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
     padding-top: 2rem;
+    padding-bottom: 2rem;
   }
 
-  .search-editor-footer {
-    @apply flex w-full items-center gap-2 rounded-b-lg border border-t-0 border-base-300 bg-base-200/40 px-2 py-1;
+  .search-editor__footer-actions {
+    @apply absolute bottom-1 left-2 right-2 z-10 flex items-center gap-2;
   }
 
-  .search-editor-footer--has-error {
+  .search-editor__footer-actions--has-error {
     @apply items-start;
   }
+
 
   /* Shared drawer-footer type scale (hint prose + validation). */
   .search-editor-footer__leading,

@@ -73,31 +73,21 @@
     {/each}
   </nav>
 {:else}
-  <div class="drawer-nav-tabs">
-    <div
-      role="tablist"
-      class="tabs tabs-lift tabs-sm w-full"
-      aria-label="Primary"
-    >
-      {#each NAV_ITEMS as item (item.id)}
-        {@const active = isNavItemActive(item.id, currentPath)}
-        {@const Icon = item.icon}
-        <a
-          role="tab"
-          class="tab flex-1 gap-1 no-underline {active ? 'tab-active text-primary' : ''}"
-          href={item.path}
-          aria-current={active ? 'page' : undefined}
-          onclick={(e) => {
-            e.preventDefault()
-            goto(item.path)
-          }}
-        >
-          <Icon class="h-[13px] w-[13px] shrink-0" aria-hidden="true" />
-          <span class="truncate">{item.label}</span>
-        </a>
-      {/each}
-    </div>
-  </div>
+  <nav class="drawer-nav-tabs drawer-nav-tabs--expanded" aria-label="Primary">
+    {#each NAV_ITEMS as item (item.id)}
+      {@const active = isNavItemActive(item.id, currentPath)}
+      {@const Icon = item.icon}
+      <button
+        type="button"
+        class="nav-button {active ? 'nav-button-active' : 'nav-button-inactive'}"
+        aria-current={active ? 'page' : undefined}
+        onclick={() => goto(item.path)}
+      >
+        <Icon class="h-[15px] w-[15px] shrink-0" aria-hidden="true" />
+        <span class="truncate">{item.label}</span>
+      </button>
+    {/each}
+  </nav>
 {/if}
 
 <style lang="postcss">
@@ -107,7 +97,11 @@
     @apply flex flex-col items-center gap-1.5;
   }
 
-  .drawer-nav-tabs:not(.drawer-nav-tabs--collapsed) {
-    @apply flex w-full min-w-0 flex-col;
+  .drawer-nav-tabs--expanded {
+    @apply flex items-center gap-1;
+  }
+
+  .drawer-nav-tabs--expanded :global(.nav-button) {
+    @apply px-2 gap-1 text-xs;
   }
 </style>

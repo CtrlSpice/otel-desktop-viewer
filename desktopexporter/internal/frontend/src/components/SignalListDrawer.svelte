@@ -63,7 +63,9 @@
     }
   }
 
-  let drawerChromeContext = $state<SignalDrawerChrome>({ closeForId: undefined })
+  let drawerChromeContext = $state<SignalDrawerChrome>({
+    closeForId: undefined,
+  })
   setContext(SIGNAL_DRAWER_CHROME_KEY, drawerChromeContext)
   $effect(() => {
     drawerChromeContext.closeForId = drawerOpen ? drawerId : undefined
@@ -158,14 +160,12 @@
       <!-- Expanded: tinted toolbar strip; lift tabs sit on panel surface below (lift needs base-100) -->
       {#if drawerOpen}
         <div class="signal-drawer__chrome-stack is-drawer-close:hidden">
+          <DrawerNavTabs />
           {#if drawerChrome}
             <div class="signal-drawer__toolbar-slot">
               {@render drawerChrome()}
             </div>
           {/if}
-        </div>
-        <div class="signal-drawer__nav-tabs-row is-drawer-close:hidden">
-          <DrawerNavTabs />
         </div>
       {/if}
 
@@ -244,15 +244,15 @@
 
   /* ── Expanded: toolbar-only tint (tabs use lift on panel bg below) ── */
   .signal-drawer__chrome-stack {
-    @apply shrink-0 bg-base-200/55 px-2 pt-2 pb-2;
+    @apply flex shrink-0 items-center gap-1 bg-base-200/55 px-2 py-1;
+  }
+
+  .signal-drawer__chrome-stack :global(.drawer-nav-tabs) {
+    @apply flex-1 min-w-0;
   }
 
   .signal-drawer__toolbar-slot {
-    @apply min-w-0;
-  }
-
-  .signal-drawer__nav-tabs-row {
-    @apply shrink-0 px-2 pb-0 pt-1;
+    @apply shrink-0;
   }
 
   /* ── Header (collapsed only) ── */
@@ -264,7 +264,7 @@
     @apply flex flex-col items-center justify-center gap-1.5 py-2;
   }
 
-  /* Refresh + new-data indicator (same behavior as previous FAB) */
+  /* Refresh + new-data indicator*/
   .signal-drawer__refresh {
     @apply relative rounded-lg;
   }
@@ -324,7 +324,7 @@
 
   /* ── Search block (under tab-content — no top border/rounding needed) ── */
   .signal-drawer__search {
-    @apply shrink-0 border-b border-base-300/40 px-2 pt-0 pb-2;
+    @apply shrink-0 border-b border-base-300/40 bg-base-200/55 px-2 pt-0 pb-2;
   }
 
   /* ── Rail count badge (collapsed) ── */
