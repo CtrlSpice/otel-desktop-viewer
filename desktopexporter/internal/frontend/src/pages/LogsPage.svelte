@@ -268,6 +268,17 @@
         sortValue={sortColumn}
         {sortDirection}
         onSortChange={handleSortChange}
+      />
+    {/snippet}
+
+    {#snippet drawerChromeToolbar()}
+      <DrawerSearchPanel
+        segment="toolbar"
+        signal="logs"
+        sortOptions={SORT_OPTIONS}
+        sortValue={sortColumn}
+        {sortDirection}
+        onSortChange={handleSortChange}
         onRefresh={handleRefresh}
         {refreshPulse}
       >

@@ -714,7 +714,7 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply min-h-[4.75rem] rounded-lg py-2;
+    @apply min-h-[4.75rem] rounded-lg pt-2 pb-0;
   }
 
   .search-editor__header-actions {
@@ -726,8 +726,8 @@
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
-    padding-top: 2rem;
-    padding-bottom: 2rem;
+    padding-top: 1rem;
+    padding-bottom: 1.5rem;
   }
 
   .search-editor__footer-actions {

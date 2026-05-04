@@ -77,7 +77,7 @@
     aria-label={`Change time range, ${displayLabel}`}
   >
     <svg
-      class="h-3.5 w-3.5 shrink-0 text-base-content/50"
+      class="h-[17px] w-[17px] shrink-0 text-base-content/50"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -187,7 +187,7 @@
 
   /* DaisyUI join row — mirror drawer-editor-btn inactive hover (cannot @apply `.drawer-editor-btn` here). */
   .datetime-select-trigger--join {
-    @apply join-item flex min-h-0 h-[2.25rem] min-w-0 flex-1 items-center justify-start gap-1.5 rounded-none border border-transparent bg-transparent px-2.5 py-0 text-xs font-normal tracking-normal text-base-content/55 shadow-none transition-[color,background-color,box-shadow] duration-200 hover:bg-base-200/80 hover:text-base-content;
+    @apply join-item flex min-h-0 h-[2.25rem] min-w-0 flex-1 items-center justify-start gap-2 rounded-none border border-transparent bg-transparent px-2.5 py-0 text-xs font-normal tracking-normal text-base-content/55 shadow-none transition-[color,background-color,box-shadow] duration-200 hover:bg-base-200/80 hover:text-base-content;
   }
 
   .datetime-select-trigger--join.datetime-select-trigger--open {
@@ -224,6 +224,6 @@
 
     inset: unset;
     top: anchor(bottom, 0);
-    right: anchor(right, 0);
+    left: anchor(left, 0);
   }
 </style>

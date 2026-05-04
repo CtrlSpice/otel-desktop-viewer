@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon } from '@/icons'
+  import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, ReloadIcon } from '@/icons'
   import HugeiconsSorting05 from '@/icons/HugeiconsSorting05.svelte'
   import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
   import SearchEditor from '@/components/SignalToolbar/search/SearchEditor.svelte'
@@ -13,10 +13,10 @@
 
   type SortOption = { value: string; label: string }
 
-  type DrawerSearchPanelSegment = 'full' | 'chrome' | 'search'
+  type DrawerSearchPanelSegment = 'full' | 'chrome' | 'toolbar' | 'search'
 
   type Props = {
-    /** `full` = chrome + search (default). Drawer splits into `chrome` then `search` under tabs. */
+    /** `chrome` = home/theme/collapse · `toolbar` = sort/time/refresh · `search` = editor · `full` = all three */
     segment?: DrawerSearchPanelSegment
     signal: 'traces' | 'metrics' | 'logs'
     sortOptions: SortOption[]
@@ -115,121 +115,117 @@
     </div>
   {/if}
 
+  {#if segment === 'full' || segment === 'toolbar'}
+    <!-- Toolbar row: sort · time · refresh -->
+    <div
+      class="drawer-search-panel__toolbar-row"
+      role="toolbar"
+      aria-label="List controls"
+    >
+      <div class="flex w-full min-w-0 items-center gap-1">
+        <div class="join join-horizontal min-w-0 flex-1">
+          <details
+            class="dropdown drawer-search-panel__sort-dropdown shrink-0"
+          >
+            <summary
+              class="drawer-header-btn drawer-header-btn--inactive drawer-search-panel__sort-summary join-item"
+              title={`Sort: ${currentSortLabel} (${sortDirection})`}
+            >
+              <HugeiconsSorting05 class="h-[17px] w-[17px] shrink-0" />
+              <span class="sr-only">
+                Sort by {currentSortLabel},
+                {sortDirection === 'asc' ? 'ascending' : 'descending'}
+              </span>
+            </summary>
+            <ul
+              class="menu dropdown-content z-50 w-48 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
+            >
+              {#each sortOptions as opt (opt.value)}
+                <li>
+                  <button
+                    type="button"
+                    class="drawer-search-panel__sort-option {opt.value ===
+                    sortValue
+                      ? 'drawer-search-panel__sort-option--active'
+                      : ''}"
+                    onclick={() =>
+                      selectSort(
+                        opt.value,
+                        opt.value === sortValue && sortDirection === 'asc'
+                          ? 'desc'
+                          : 'asc'
+                      )}
+                  >
+                    <span>{opt.label}</span>
+                    {#if opt.value === sortValue}
+                      {#if sortDirection === 'asc'}
+                        <ArrowUpIcon
+                          class="drawer-search-panel__sort-dir"
+                          aria-hidden="true"
+                        />
+                      {:else}
+                        <ArrowDownIcon
+                          class="drawer-search-panel__sort-dir"
+                          aria-hidden="true"
+                        />
+                      {/if}
+                    {/if}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          </details>
+
+          <DateTimeFilter
+            triggerVariant="select"
+            inJoin
+            class="min-w-0 flex-1"
+          />
+        </div>
+
+        {#if onRefresh}
+          <button
+            type="button"
+            class="drawer-header-btn drawer-header-btn--inactive drawer-search-panel__refresh shrink-0"
+            class:drawer-search-panel__refresh--pulse={refreshPulse}
+            onclick={onRefresh}
+            aria-label={refreshPulse
+              ? 'Refresh — incoming data pending'
+              : 'Refresh'}
+            title={refreshPulse
+              ? 'New data pending — reload to merge'
+              : 'Refresh'}
+          >
+            {#if refreshPulse}
+              <span
+                class="drawer-search-panel__new-data-dot"
+                aria-hidden="true"
+              ></span>
+            {/if}
+            <ReloadIcon
+              class="relative z-[1] h-[17px] w-[17px] shrink-0"
+              aria-hidden="true"
+            />
+          </button>
+        {/if}
+      </div>
+
+      {#if onRefresh && refreshAside && refreshPulse}
+        <div class="drawer-search-panel__refresh-aside" aria-live="polite">
+          {@render refreshAside()}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   {#if segment === 'full' || segment === 'search'}
-    <!-- Search editor with signal buttons pinned top-right -->
     <SearchEditor
       {signal}
       variant="drawer"
       {onSearchResults}
       {onSearchError}
       onReady={onSearchReady}
-    >
-      {#snippet headerActions()}
-        <div class="flex w-full items-center">
-          <div class="join join-horizontal">
-            <details
-              class="dropdown drawer-search-panel__sort-dropdown shrink-0"
-            >
-              <summary
-                class="drawer-editor-btn drawer-search-panel__sort-summary join-item"
-                title={`Sort: ${currentSortLabel} (${sortDirection})`}
-              >
-                <HugeiconsSorting05 class="h-3.5 w-3.5 shrink-0" />
-                <span class="sr-only">
-                  Sort by {currentSortLabel},
-                  {sortDirection === 'asc' ? 'ascending' : 'descending'}
-                </span>
-              </summary>
-              <ul
-                class="menu dropdown-content z-50 w-48 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
-              >
-                {#each sortOptions as opt (opt.value)}
-                  <li>
-                    <button
-                      type="button"
-                      class="drawer-search-panel__sort-option {opt.value ===
-                      sortValue
-                        ? 'drawer-search-panel__sort-option--active'
-                        : ''}"
-                      onclick={() =>
-                        selectSort(
-                          opt.value,
-                          opt.value === sortValue && sortDirection === 'asc'
-                            ? 'desc'
-                            : 'asc'
-                        )}
-                    >
-                      <span>{opt.label}</span>
-                      {#if opt.value === sortValue}
-                        {#if sortDirection === 'asc'}
-                          <ArrowUpIcon
-                            class="drawer-search-panel__sort-dir"
-                            aria-hidden="true"
-                          />
-                        {:else}
-                          <ArrowDownIcon
-                            class="drawer-search-panel__sort-dir"
-                            aria-hidden="true"
-                          />
-                        {/if}
-                      {/if}
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-            </details>
-
-            <DateTimeFilter
-              triggerVariant="icon"
-              class="drawer-editor-btn join-item"
-            />
-          </div>
-
-          <div class="flex-1"></div>
-
-          {#if onRefresh}
-            <button
-              type="button"
-              class="drawer-editor-btn drawer-search-panel__refresh"
-              class:drawer-search-panel__refresh--pulse={refreshPulse}
-              onclick={onRefresh}
-              aria-label={refreshPulse
-                ? 'Refresh — incoming data pending'
-                : 'Refresh'}
-              title={refreshPulse
-                ? 'New data pending — reload to merge'
-                : 'Refresh'}
-            >
-              {#if refreshPulse}
-                <span
-                  class="drawer-search-panel__new-data-dot"
-                  aria-hidden="true"
-                ></span>
-              {/if}
-              <svg
-                class="relative z-[1] h-3.5 w-3.5 shrink-0"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-            </button>
-          {/if}
-        </div>
-
-        {#if onRefresh && refreshAside && refreshPulse}
-          <div class="drawer-search-panel__refresh-aside" aria-live="polite">
-            {@render refreshAside()}
-          </div>
-        {/if}
-      {/snippet}
-    </SearchEditor>
+    />
   {/if}
 </div>
 
@@ -237,11 +233,15 @@
   @reference "../app.css";
 
   .drawer-search-panel {
-    @apply flex w-full min-w-0 flex-col gap-1.5;
+    @apply flex w-full min-w-0 flex-col gap-1;
   }
 
   .drawer-search-panel__chrome-row {
     @apply flex items-center justify-end gap-1;
+  }
+
+  .drawer-search-panel__toolbar-row {
+    @apply flex min-w-0 w-full flex-col gap-1;
   }
 
   /* Refresh button + pulse animation */

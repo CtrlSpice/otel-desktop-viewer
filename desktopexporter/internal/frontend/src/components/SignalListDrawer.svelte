@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte'
   import { setContext } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
-  import { ArrowRightIcon } from '@/icons'
+  import { ArrowRightIcon, ReloadIcon } from '@/icons'
   import ThemeToggle from '@/components/ThemeToggle.svelte'
   import DrawerNavTabs from '@/components/DrawerNavTabs.svelte'
   import {
@@ -24,6 +24,7 @@
     refreshPulse?: boolean
     refreshAside?: Snippet
     drawerChrome?: Snippet
+    drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     footer?: Snippet
     children: Snippet
@@ -43,6 +44,7 @@
     refreshPulse = false,
     refreshAside,
     drawerChrome,
+    drawerChromeToolbar,
     drawerSearch,
     footer,
     children,
@@ -129,19 +131,10 @@
                   ? 'New data pending — reload to merge'
                   : 'Refresh'}
               >
-                <svg
+                <ReloadIcon
                   class="h-[17px] w-[17px] shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
+                  aria-hidden="true"
+                />
               </button>
             {/if}
             {#if onRefresh && refreshAside && refreshPulse}
@@ -152,7 +145,9 @@
                 {@render refreshAside()}
               </div>
             {/if}
-            <ThemeToggle class="drawer-header-btn drawer-header-btn--inactive" />
+            <ThemeToggle
+              class="drawer-header-btn drawer-header-btn--inactive"
+            />
           </div>
         </div>
       {/if}
@@ -169,9 +164,18 @@
         </div>
       {/if}
 
-      {#if drawerSearch}
-        <div class="signal-drawer__search is-drawer-close:hidden">
-          {@render drawerSearch()}
+      {#if drawerSearch || (drawerOpen && drawerChromeToolbar)}
+        <div class="signal-drawer__search-stack is-drawer-close:hidden">
+          {#if drawerSearch}
+            <div class="signal-drawer__search">
+              {@render drawerSearch()}
+            </div>
+          {/if}
+          {#if drawerOpen && drawerChromeToolbar}
+            <div class="signal-drawer__chrome-toolbar">
+              {@render drawerChromeToolbar()}
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -322,9 +326,22 @@
     word-break: break-word;
   }
 
-  /* ── Search block (under tab-content — no top border/rounding needed) ── */
+  /* ── Search + list-controls stack (gap only, no vertical padding bands) ── */
+  .signal-drawer__search-stack {
+    @apply flex min-w-0 w-full shrink-0 flex-col gap-1 bg-base-200/55 px-2;
+  }
+
   .signal-drawer__search {
-    @apply shrink-0 border-b border-base-300/40 bg-base-200/55 px-2 pt-0 pb-2;
+    @apply min-w-0 w-full shrink-0;
+  }
+
+  /* ── Toolbar row (sort · time · refresh) ── */
+  .signal-drawer__chrome-toolbar {
+    @apply min-w-0 w-full shrink-0;
+  }
+
+  .signal-drawer__chrome-toolbar :global(.drawer-search-panel) {
+    @apply gap-0;
   }
 
   /* ── Rail count badge (collapsed) ── */

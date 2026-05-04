@@ -20,7 +20,9 @@
   }
 
   function toggleTheme() {
-    setTheme(currentTheme === 'rose-pine-dawn' ? 'rose-pine-moon' : 'rose-pine-dawn')
+    setTheme(
+      currentTheme === 'rose-pine-dawn' ? 'rose-pine-moon' : 'rose-pine-dawn'
+    )
   }
 
   onMount(() => {

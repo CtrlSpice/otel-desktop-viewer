@@ -83,9 +83,10 @@
   )
 
   let selectedSpan = $derived(
-    traceData?.spans.find(n => n.spanData.spanID === selectedSpanID)?.spanData ??
-    traceData?.spans[0]?.spanData ??
-    undefined
+    traceData?.spans.find(n => n.spanData.spanID === selectedSpanID)
+      ?.spanData ??
+      traceData?.spans[0]?.spanData ??
+      undefined
   )
 
   let pendingNewTraceCount = $derived.by(() => {
@@ -100,7 +101,9 @@
     return delta > 0 ? delta : 0
   })
 
-  let refreshPulse = $derived(pendingNewTraceCount > 0 || pendingNewSpanCount > 0)
+  let refreshPulse = $derived(
+    pendingNewTraceCount > 0 || pendingNewSpanCount > 0
+  )
 
   // --- effects ---
 
@@ -185,7 +188,10 @@
       traceData = result
       if (queryTree) {
         const firstMatch = result.spans.find(n => n.matched)
-        selectedSpanID = firstMatch?.spanData.spanID ?? result.spans[0]?.spanData.spanID ?? null
+        selectedSpanID =
+          firstMatch?.spanData.spanID ??
+          result.spans[0]?.spanData.spanID ??
+          null
       } else {
         selectedSpanID = result.spans[0]?.spanData.spanID ?? null
       }
@@ -243,7 +249,7 @@
     onSelect={selectTrace}
     onRefresh={handleRefresh}
     {refreshPulse}
-    itemKey={(t) => t.traceID}
+    itemKey={t => t.traceID}
   >
     {#snippet refreshAside()}
       {#if pendingNewTraceCount > 0}
@@ -263,6 +269,17 @@
     {#snippet drawerChrome()}
       <DrawerSearchPanel
         segment="chrome"
+        signal="traces"
+        sortOptions={SORT_OPTIONS}
+        sortValue={sortColumn}
+        {sortDirection}
+        onSortChange={handleSortChange}
+      />
+    {/snippet}
+
+    {#snippet drawerChromeToolbar()}
+      <DrawerSearchPanel
+        segment="toolbar"
         signal="traces"
         sortOptions={SORT_OPTIONS}
         sortValue={sortColumn}

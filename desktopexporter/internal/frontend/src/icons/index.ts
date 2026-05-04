@@ -19,6 +19,7 @@ import GlobalIcon from './GlobalIcon.svelte'
 import HelpCircleIcon from './HelpCircleIcon.svelte'
 import HomeIcon from './HomeIcon.svelte'
 import MoonIcon from './MoonIcon.svelte'
+import ReloadIcon from './Reload.svelte'
 import SunIcon from './SunIcon.svelte'
 import TrashIcon from './TrashIcon.svelte'
 
@@ -40,6 +41,7 @@ export {
   HelpCircleIcon,
   HomeIcon,
   MoonIcon,
+  ReloadIcon,
   SunIcon,
   TrashIcon,
 }
