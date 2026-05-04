@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
+  import { onMount, onDestroy, type Snippet } from 'svelte'
   import {
     EditorView,
     placeholder as cmPlaceholder,
@@ -30,83 +30,53 @@
   import { queryTheme, ensureTooltipStyles } from './lang/theme'
   import { createQueryKeymap } from './lang/keymap'
   import { HelpCircleIcon, CancelIcon } from '@/icons'
+  import FieldErrorMessage from '@/components/FieldErrorMessage.svelte'
 
   import type { SearchEditorAPI } from './search-editor-api'
   import { parseDuration } from '@/utils/time'
 
   // --- types ---
-  type SearchEditorCallbacks = {
+  type SearchEditorProps = {
+    signal: 'traces' | 'metrics' | 'logs'
     onSearchResults?: (event: SearchResultEvent) => void
     /** Toolbar layout: panel chrome on the search wrapper only (not the action row). */
     inToolbar?: boolean
+    /** 'drawer' moves action buttons to a footer row below the editor. */
+    variant?: 'default' | 'drawer'
     /** Called once after mount with imperative handles. */
     onReady?: (api: SearchEditorAPI) => void
     /** Called whenever the search error state changes. */
     onSearchError?: (error: string | null) => void
+    /** Actions pinned top-right inside the editor container (drawer variant only). */
+    headerActions?: Snippet
   }
-
-  type SearchEditorProps =
-    | (SearchEditorCallbacks & {
-        signal: 'traces' | 'metrics' | 'logs'
-        view: 'list'
-      })
-    | (SearchEditorCallbacks & {
-        signal: 'traces'
-        view: 'detail'
-        traceID: string
-      })
-    | (SearchEditorCallbacks & {
-        signal: 'metrics'
-        view: 'detail'
-      })
 
   // --- helpers ---
 
-  type SearchContext =
-    | {
-        view: 'list'
-        signal: 'traces' | 'logs' | 'metrics'
-        startTime: number
-        endTime: number
-      }
-    | { view: 'detail'; signal: 'traces'; traceID: string }
-    | { view: 'detail'; signal: 'metrics'; metricName: string }
+  type SearchContext = {
+    signal: 'traces' | 'logs' | 'metrics'
+    startTime: number
+    endTime: number
+  }
 
   const searchDispatch: Record<
     string,
-    Record<
-      string,
-      (ctx: SearchContext, q?: QueryNode) => (() => Promise<any>) | null
-    >
+    (ctx: SearchContext, q?: QueryNode) => () => Promise<any>
   > = {
-    list: {
-      traces: (ctx, q) =>
-        ctx.view === 'list'
-          ? () => telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q)
-          : null,
-      logs: (ctx, q) =>
-        ctx.view === 'list'
-          ? () => telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q)
-          : null,
-      metrics: (ctx, q) =>
-        ctx.view === 'list'
-          ? () => telemetryAPI.getMetrics(ctx.startTime, ctx.endTime, q)
-          : null,
-    },
-    detail: {
-      traces: (ctx, q) =>
-        'traceID' in ctx
-          ? () => telemetryAPI.searchSpans(ctx.traceID, q)
-          : null,
-    },
+    traces: (ctx, q) => () =>
+      telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q),
+    logs: (ctx, q) => () =>
+      telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q),
+    metrics: (ctx, q) => () =>
+      telemetryAPI.getMetrics(ctx.startTime, ctx.endTime, q),
   }
 
-  /** Build the API call for a signal+view, or null if unsupported. */
+  /** Build the API call for a signal, or null if unsupported. */
   function buildSearchFn(
     ctx: SearchContext,
     queryTree?: QueryNode
   ): (() => Promise<any>) | null {
-    return searchDispatch[ctx.view]?.[ctx.signal]?.(ctx, queryTree) ?? null
+    return searchDispatch[ctx.signal]?.(ctx, queryTree) ?? null
   }
 
   /**
@@ -133,22 +103,22 @@
 
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-  const placeholderSubjects: Record<string, Record<string, string>> = {
-    detail: { traces: 'Spans', metrics: 'Data Points' },
-  }
-
   // --- context ---
   let {
     signal,
-    view,
     onSearchResults,
     inToolbar = false,
+    variant = 'default',
     onReady,
     onSearchError,
+    headerActions,
     filters = [],
-    ...rest
   }: SearchEditorProps & { filters?: FilterDescriptor[] } = $props()
-  let traceID = $derived('traceID' in rest ? rest.traceID : undefined)
+
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    /Mac|iPhone|iPad/.test(navigator.userAgent)
+  const modKey = isMac ? '⌘' : 'Ctrl'
 
   let timeContext: TimeContext | null = null
   try {
@@ -158,7 +128,7 @@
   }
 
   // --- state: editor ---
-  let editorContainer: HTMLDivElement
+  let editorContainer = $state<HTMLDivElement | null>(null)
   let editorView: EditorView | null = null
   let searchError = $state<string | null>(null)
   const placeholderCompartment = new Compartment()
@@ -184,9 +154,7 @@
   // --- derived ---
   let signalLabel = $derived(capitalize(signal))
   let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
-  let placeholderText = $derived(
-    `Search ${placeholderSubjects[view]?.[signal] ?? capitalize(signal)}… (Cmd+Enter to submit)`
-  )
+  let placeholderText = $derived(`search ${signal}...`)
 
   // --- effects ---
 
@@ -198,23 +166,10 @@
     })
   })
 
-  /** Fetch dynamic attributes — by traceID in detail view, by time range in list view. */
+  /** Fetch dynamic attributes by time range. */
   $effect(() => {
     const base = [...staticFieldsList]
     availableFields = base
-
-    if (view === 'detail' && traceID) {
-      let cancelled = false
-      telemetryAPI
-        .getAttributesByTraceID(traceID)
-        .then(attrs => {
-          if (!cancelled) availableFields = [...base, ...attrs]
-        })
-        .catch(err => console.warn('Failed to load trace attributes:', err))
-      return () => {
-        cancelled = true
-      }
-    }
 
     const tc = timeContext
     if (!tc) return
@@ -290,29 +245,30 @@
   // --- handlers ---
 
   /** Build a SearchContext from the current component state. */
-  function currentSearchContext(): SearchContext | null {
+  function currentSearchContext(): SearchContext {
     const { start: startTime, end: endTime } = timeContext
       ? selectionToQueryRangeMs(timeContext.selection, Date.now())
       : { start: 0, end: Date.now() }
 
-    return view === 'list'
-      ? { view, signal, startTime, endTime }
-      : view === 'detail' && signal === 'traces' && traceID
-        ? { view, signal, traceID }
-        : null
+    return { signal, startTime, endTime }
   }
 
   /** Fetch without any search filter and deliver via onSearchResults. */
   function fetchClean() {
     const ctx = currentSearchContext()
-    const fn = ctx ? buildSearchFn(ctx) : null
+    const fn = buildSearchFn(ctx)
     fn?.()
       .then(results => {
-        onSearchResults?.({ signal, view, results } as SearchResultEvent)
+        emitResults(results)
       })
       .catch(err => {
         searchError = 'Search failed: ' + err.message
       })
+  }
+
+  /** Emit results with the query tree attached so consumers can reuse it. */
+  function emitResults(results: any, queryTree?: QueryNode) {
+    onSearchResults?.({ signal, results, queryTree } as SearchResultEvent)
   }
 
   function onSubmit() {
@@ -339,7 +295,7 @@
       }
 
       const searchCtx = currentSearchContext()
-      const searchFn = searchCtx ? buildSearchFn(searchCtx, queryTree) : null
+      const searchFn = buildSearchFn(searchCtx, queryTree)
       if (!searchFn) {
         fetchClean()
         return
@@ -347,14 +303,7 @@
 
       searchFn()
         .then(results => {
-          onSearchResults?.({ signal, view, results } as SearchResultEvent)
-          if (
-            view === 'detail' &&
-            results?.spans?.length > 0 &&
-            results.spans.every((n: any) => !n.matched)
-          ) {
-            searchError = 'No matching spans found'
-          }
+          emitResults(results, queryTree)
         })
         .catch(err => {
           searchError = 'Search failed: ' + err.message
@@ -408,20 +357,13 @@
     onSearchError?.(searchError)
   })
 
-  // Re-fire the current query when navigating between traces in detail view.
-  // The query persists so users can scan across traces for the same pattern;
-  // if nothing matches the new trace, the "zero matches = show all" rule applies.
-  $effect(() => {
-    if (view !== 'detail' || !traceID) return
-    traceID // track changes
-    searchError = null
-    onSubmit()
-  })
-
   // --- lifecycle ---
 
   onMount(() => {
     ensureTooltipStyles()
+
+    const mountEl = editorContainer
+    if (!mountEl) return
 
     const state = EditorState.create({
       doc: '',
@@ -435,18 +377,29 @@
         createQueryLinter(() => availableFields),
         createQueryKeymap(onSubmit),
         ...queryTheme,
-        tooltips({ parent: document.body }),
+        tooltips({ position: 'fixed' }),
         closeBrackets(),
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         placeholderCompartment.of(cmPlaceholder(placeholderText)),
         EditorView.lineWrapping,
+        ...(variant === 'drawer'
+          ? [
+              EditorView.theme({
+                '&': { height: 'auto', minHeight: '4.75rem' },
+                '.cm-scroller': {
+                  overflowY: 'auto',
+                  maxHeight: 'min(42vh, 13rem)',
+                },
+              }),
+            ]
+          : []),
       ],
     })
 
     editorView = new EditorView({
       state,
-      parent: editorContainer,
+      parent: mountEl,
     })
 
     onReady?.({
@@ -460,66 +413,132 @@
   })
 </script>
 
-<div
-  class="search-editor-wrapper"
-  class:search-editor-wrapper--in-toolbar={inToolbar}
->
-  <div
-    class="search-editor-container"
-    class:search-editor-container--error={!!searchError}
-  >
-    <div class="editor-mount" bind:this={editorContainer}></div>
-
-    <div class="search-actions join">
-      <button
-        type="button"
-        class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
-        onclick={openHelp}
-        aria-label="Search query help"
-        title="Search query help"
+{#if variant === 'drawer'}
+  <div class="search-editor-wrapper search-editor-wrapper--drawer">
+    <div
+      class="search-editor-container"
+      class:search-editor-container--error={!!searchError}
+    >
+      {#if headerActions}
+        <div class="search-editor__header-actions">
+          {@render headerActions()}
+        </div>
+      {/if}
+      <div class="editor-mount" bind:this={editorContainer}></div>
+      <div
+        class="search-editor__footer-actions"
+        class:search-editor__footer-actions--has-error={!!searchError}
       >
-        <HelpCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
-        onclick={clearSearch}
-        aria-label="Clear search"
-        title="Clear search"
-      >
-        <CancelIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
-        onclick={onSubmit}
-        aria-label="Search (Cmd+Enter)"
-        title="Search (Cmd+Enter)"
-      >
-        <svg
-          class="h-4 w-4 shrink-0"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
-        </svg>
-      </button>
+        {#if searchError}
+          <div class="search-editor-footer__leading min-w-0 flex-1">
+            <FieldErrorMessage message={searchError} />
+          </div>
+        {/if}
+        <div class="join join-horizontal shrink-0">
+          <button
+            type="button"
+            class="drawer-editor-btn join-item"
+            onclick={openHelp}
+            aria-label="Search query help"
+            title="Search query help"
+          >
+            <HelpCircleIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="drawer-editor-btn join-item"
+            onclick={clearSearch}
+            aria-label="Clear search"
+            title="Clear search"
+          >
+            <CancelIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="drawer-editor-btn join-item"
+            onclick={onSubmit}
+            aria-label="Search"
+            title="Search"
+          >
+            <svg
+              class="h-3.5 w-3.5 shrink-0"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
+{:else}
+  <div
+    class="search-editor-wrapper"
+    class:search-editor-wrapper--in-toolbar={inToolbar}
+  >
+    <div
+      class="search-editor-container"
+      class:search-editor-container--error={!!searchError}
+    >
+      <div class="editor-mount" bind:this={editorContainer}></div>
 
-  <!-- Filter popover (non-toolbar layouts only; toolbar uses SignalToolbar). -->
-  {#if activeFilter && !inToolbar}
-    <div bind:this={filterPopoverEl} class="search-filter-popover">
-      {@render activeFilter.content()}
+      <div class="search-actions join">
+        <button
+          type="button"
+          class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
+          onclick={openHelp}
+          aria-label="Search query help"
+          title="Search query help"
+        >
+          <HelpCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
+          onclick={clearSearch}
+          aria-label="Clear search"
+          title="Clear search"
+        >
+          <CancelIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
+          onclick={onSubmit}
+          aria-label="Search (Cmd+Enter)"
+          title="Search (Cmd+Enter)"
+        >
+          <svg
+            class="h-4 w-4 shrink-0"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
+          </svg>
+        </button>
+      </div>
     </div>
-  {/if}
-</div>
+
+    {#if activeFilter && !inToolbar}
+      <div bind:this={filterPopoverEl} class="search-filter-popover">
+        {@render activeFilter.content()}
+      </div>
+    {/if}
+  </div>
+{/if}
 
 <!-- Help dialog: rendered OUTSIDE .search-editor-container to avoid clipping -->
 <dialog
@@ -532,7 +551,7 @@
     <h2 class="help-dialog-title">Querying Your {signalLabel}</h2>
     <button
       type="button"
-      class="btn btn-ghost btn-sm btn-circle shrink-0 text-base-content/70 hover:text-base-content"
+      class="btn btn-ghost btn-sm btn-square shrink-0 text-base-content/70 hover:text-base-content"
       onclick={() => helpDialogElement?.close()}
       aria-label="Close"
     >
@@ -683,9 +702,122 @@
     line-height: var(--table-row-h);
   }
 
+  .search-editor-wrapper--drawer {
+    @apply min-h-0 flex w-full flex-col gap-0;
+    min-height: unset;
+    line-height: normal;
+  }
+
   .search-editor-wrapper--in-toolbar {
     @apply w-full shrink-0 overflow-visible px-3 py-1;
     box-sizing: border-box;
+  }
+
+  .search-editor-wrapper--drawer .search-editor-container {
+    @apply rounded-lg items-start py-1 pl-3 pr-1;
+    height: auto;
+    min-height: calc(var(--table-row-h) + 0.5rem);
+    max-height: calc(var(--table-row-h) * 6 + 0.5rem);
+    border-color: transparent;
+    background-color: color-mix(
+      in oklab,
+      var(--color-base-100) 60%,
+      transparent
+    );
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    transition:
+      background-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .search-editor-wrapper--drawer
+    .search-editor-container:hover:not(:focus-within) {
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-base-content) 14%, transparent);
+  }
+
+  .search-editor-wrapper--drawer .search-editor-container:focus-within {
+    background-color: var(--color-base-100);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  }
+
+  .search-editor__header-actions {
+    @apply absolute top-1 left-2 right-2 z-10;
+  }
+
+  .search-editor-wrapper--drawer .editor-mount {
+    @apply self-stretch;
+    max-height: calc(var(--table-row-h) * 6);
+  }
+
+  .search-editor-wrapper--drawer .editor-mount :global(.cm-editor) {
+    height: 100%;
+    min-height: var(--table-row-h);
+    max-height: 100%;
+  }
+
+  .search-editor-wrapper--drawer .editor-mount :global(.cm-scroller) {
+    line-height: var(--table-row-h);
+    overflow-y: auto;
+  }
+
+  .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-right: 0.5rem;
+    min-height: var(--table-row-h);
+  }
+
+  .search-editor-wrapper--drawer .search-editor__footer-actions {
+    @apply static ml-auto flex shrink-0 items-center gap-2;
+    inset: auto;
+    height: var(--table-row-h);
+    align-self: flex-end;
+  }
+
+  .search-editor__footer-actions {
+    @apply absolute bottom-1 right-2 z-10 flex items-center gap-2;
+  }
+
+  .search-editor__footer-actions--has-error {
+    @apply items-start;
+  }
+
+  /* Shared drawer-footer type scale (hint prose + validation). */
+  .search-editor-footer__leading,
+  .search-editor-footer__leading :global(.field-error-message) {
+    @apply text-xs leading-snug font-normal;
+  }
+
+  .search-editor-footer__leading :global(.field-error-message) {
+    @apply m-0 text-error;
+  }
+
+  .search-editor-footer__hint {
+    @apply inline-flex shrink-0 select-none items-center gap-1 tracking-tight text-base-content/55;
+  }
+
+  .search-editor-footer__hint-plus {
+    @apply text-base-content/45;
+  }
+
+  .search-editor-footer__hint-suffix {
+    @apply text-base-content/50;
+  }
+
+  /* Match kbd chips to the same line box as the footer copy. */
+  .search-editor-footer__kbd.kbd {
+    font-size: 0.625rem;
+    line-height: 1rem;
+    min-height: 1rem;
+    padding-inline: 0.35rem;
+    padding-block: 0;
+  }
+
+  .search-editor-footer__actions.join {
+    @apply shrink-0;
   }
 
   .search-editor-container {
@@ -696,8 +828,8 @@
   }
 
   .search-editor-container:focus-within {
-    outline: 1px solid var(--color-primary);
-    outline-offset: 1px;
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
   }
 
   .search-editor-container--error {

@@ -11,11 +11,13 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"golang.org/x/exp/jsonrpc2"
 )
@@ -311,4 +313,364 @@ func TestSearchMetricsInvalidParams(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+}
+
+// TestGetDatapointQuantilesInvalidParams covers the parsing/validation paths in
+// getDatapointQuantiles. Happy-path flow + unsupported-type / found-but-wrong
+// type errors are exercised in the metrics package's unit tests; here we just
+// verify the handler's input contract.
+func TestGetDatapointQuantilesInvalidParams(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	cases := []struct {
+		name   string
+		params any
+	}{
+		{"WrongCount", []any{"id-only"}},
+		{"NonStringDatapointID", []any{42, []any{0.5}}},
+		{"NonArrayQuantiles", []any{"abc", "not-an-array"}},
+		{"NonNumberQuantile", []any{"abc", []any{"0.5"}}},
+		{"NegativeQuantile", []any{"abc", []any{-0.1}}},
+		{"AboveOneQuantile", []any{"abc", []any{1.1}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := createRequest("getDatapointQuantiles", c.params)
+			result, err := handler.Handle(context.Background(), req)
+			assert.Nil(t, result)
+			assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+		})
+	}
+}
+
+// TestGetDatapointQuantilesNotFound verifies that an unknown datapoint UUID
+// surfaces ErrDatapointNotFound rather than ErrInternal.
+func TestGetDatapointQuantilesNotFound(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	req := createRequest("getDatapointQuantiles", []any{
+		"00000000-0000-0000-0000-000000000000",
+		[]any{0.5},
+	})
+	result, err := handler.Handle(context.Background(), req)
+	assert.Nil(t, result)
+	assert.Equal(t, ErrDatapointNotFound, err)
+}
+
+// TestGetMetricQuantileSeriesInvalidParams covers the handler's input
+// contract: the wrong shape of params should always come back as
+// jsonrpc2.ErrInvalidParams without ever touching the store. Behavior of
+// the underlying SQL pipeline is exercised in the metrics package tests.
+func TestGetMetricQuantileSeriesInvalidParams(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	const startTs = "1700000000000000000"
+	const endTs = "1700000060000000000"
+	cases := []struct {
+		name   string
+		params any
+	}{
+		{"WrongCount", []any{"id-only", []any{0.5}, "per-stream", startTs, endTs}}, // 5
+		{"NonStringMetricID", []any{42, []any{0.5}, "per-stream", startTs, endTs, 100.0}},
+		{"NonArrayQuantiles", []any{"abc", "not-an-array", "per-stream", startTs, endTs, 100.0}},
+		{"NonNumberQuantile", []any{"abc", []any{"0.5"}, "per-stream", startTs, endTs, 100.0}},
+		{"NegativeQuantile", []any{"abc", []any{-0.1}, "per-stream", startTs, endTs, 100.0}},
+		{"AboveOneQuantile", []any{"abc", []any{1.1}, "per-stream", startTs, endTs, 100.0}},
+		{"NonStringMode", []any{"abc", []any{0.5}, 7, startTs, endTs, 100.0}},
+		{"NonStringStartTs", []any{"abc", []any{0.5}, "per-stream", 1700000000000000000, endTs, 100.0}},
+		{"NonStringEndTs", []any{"abc", []any{0.5}, "per-stream", startTs, 1700000060000000000, 100.0}},
+		{"UnparseableStartTs", []any{"abc", []any{0.5}, "per-stream", "not-a-number", endTs, 100.0}},
+		{"NonNumberMaxPoints", []any{"abc", []any{0.5}, "per-stream", startTs, endTs, "100"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := createRequest("getMetricQuantileSeries", c.params)
+			result, err := handler.Handle(context.Background(), req)
+			assert.Nil(t, result)
+			assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+		})
+	}
+}
+
+// TestGetMetricQuantileSeriesValidationDispatch verifies that the helper's
+// own validation errors (invalid time range, invalid maxPoints, bad mode)
+// surface as the right JSON-RPC error codes -- so the frontend can
+// distinguish "your request is malformed" from "your data is in a state we
+// can't aggregate".
+func TestGetMetricQuantileSeriesValidationDispatch(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	t.Run("InvalidTimeRangeMapsTo32011", func(t *testing.T) {
+		// metricID is irrelevant when start/end fail validation up front.
+		req := createRequest("getMetricQuantileSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			[]any{0.5},
+			"per-stream",
+			"1700000060000000000", // start
+			"1700000000000000000", // end < start
+			100.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, ErrInvalidTimeRange, err)
+	})
+
+	t.Run("InvalidMaxPointsMapsTo32012", func(t *testing.T) {
+		req := createRequest("getMetricQuantileSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			[]any{0.5},
+			"per-stream",
+			"1700000000000000000",
+			"1700000060000000000",
+			0.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, ErrInvalidMaxPoints, err)
+	})
+
+	t.Run("InvalidModeMapsToInvalidParams", func(t *testing.T) {
+		// Bad mode is a client-side mistake; we surface it as the standard
+		// InvalidParams rather than a custom code.
+		req := createRequest("getMetricQuantileSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			[]any{0.5},
+			"not-a-real-mode",
+			"1700000000000000000",
+			"1700000060000000000",
+			100.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		// ErrInvalidQuantileSeriesMode short-circuits before any store access,
+		// so ErrMetricNotFound never enters the picture.
+		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+	})
+}
+
+// TestGetMetricQuantileSeriesNotFound verifies that an unknown metric UUID
+// surfaces ErrMetricNotFound rather than ErrInternal. Empty-quantiles
+// short-circuits before any store access, so we send a non-empty list.
+func TestGetMetricQuantileSeriesNotFound(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	req := createRequest("getMetricQuantileSeries", []any{
+		"00000000-0000-0000-0000-000000000000",
+		[]any{0.5},
+		"per-stream",
+		"1700000000000000000",
+		"1700000060000000000",
+		100.0,
+	})
+	result, err := handler.Handle(context.Background(), req)
+	assert.Nil(t, result)
+	assert.Equal(t, ErrMetricNotFound, err)
+}
+
+// ---------------------------------------------------------------------------
+// getMetricBucketSeries handler tests
+// ---------------------------------------------------------------------------
+
+func TestGetMetricBucketSeriesInvalidParams(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	const startTs = "1700000000000000000"
+	const endTs = "1700000060000000000"
+	cases := []struct {
+		name   string
+		params any
+	}{
+		{"WrongCount", []any{"id-only", "per-stream", startTs, endTs}},
+		{"NonStringMetricID", []any{42, "per-stream", startTs, endTs, 100.0}},
+		{"NonStringMode", []any{"abc", 7, startTs, endTs, 100.0}},
+		{"NonStringStartTs", []any{"abc", "per-stream", 1700000000000000000, endTs, 100.0}},
+		{"NonStringEndTs", []any{"abc", "per-stream", startTs, 1700000060000000000, 100.0}},
+		{"UnparseableStartTs", []any{"abc", "per-stream", "not-a-number", endTs, 100.0}},
+		{"NonNumberMaxPoints", []any{"abc", "per-stream", startTs, endTs, "100"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := createRequest("getMetricBucketSeries", c.params)
+			result, err := handler.Handle(context.Background(), req)
+			assert.Nil(t, result)
+			assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+		})
+	}
+}
+
+func TestGetMetricBucketSeriesValidationDispatch(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	t.Run("InvalidTimeRangeMapsTo32011", func(t *testing.T) {
+		req := createRequest("getMetricBucketSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			"per-stream",
+			"1700000060000000000",
+			"1700000000000000000",
+			100.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, ErrInvalidTimeRange, err)
+	})
+
+	t.Run("InvalidMaxPointsMapsTo32012", func(t *testing.T) {
+		req := createRequest("getMetricBucketSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			"per-stream",
+			"1700000000000000000",
+			"1700000060000000000",
+			0.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, ErrInvalidMaxPoints, err)
+	})
+
+	t.Run("InvalidModeMapsToInvalidParams", func(t *testing.T) {
+		req := createRequest("getMetricBucketSeries", []any{
+			"00000000-0000-0000-0000-000000000000",
+			"not-a-real-mode",
+			"1700000000000000000",
+			"1700000060000000000",
+			100.0,
+		})
+		result, err := handler.Handle(context.Background(), req)
+		assert.Nil(t, result)
+		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+	})
+}
+
+func TestGetMetricBucketSeriesNotFound(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	req := createRequest("getMetricBucketSeries", []any{
+		"00000000-0000-0000-0000-000000000000",
+		"per-stream",
+		"1700000000000000000",
+		"1700000060000000000",
+		100.0,
+	})
+	result, err := handler.Handle(context.Background(), req)
+	assert.Nil(t, result)
+	assert.Equal(t, ErrMetricNotFound, err)
+}
+
+// buildTestMetrics returns pmetric.Metrics with one gauge metric for handler tests.
+func buildTestMetrics() pmetric.Metrics {
+	base := time.Now().UnixNano()
+	m := pmetric.NewMetrics()
+	rm := m.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "test-svc")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("test-scope")
+	sm.Scope().SetVersion("v1.0.0")
+	met := sm.Metrics().AppendEmpty()
+	met.SetName("test.gauge")
+	met.SetDescription("A test gauge")
+	met.SetUnit("bytes")
+	g := met.SetEmptyGauge()
+	dp := g.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(base))
+	dp.SetDoubleValue(42.0)
+	return m
+}
+
+func setupHandlerWithMetrics(t *testing.T) (*JSONRPCHandler, func()) {
+	t.Helper()
+	s, err := store.NewStore(context.Background(), "")
+	require.NoError(t, err)
+	handler := NewJSONRPCHandler(s)
+	ctx := context.Background()
+
+	err = s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTestMetrics())
+	})
+	require.NoError(t, err, "ingest metrics")
+
+	return handler, func() { s.Close() }
+}
+
+func TestSearchMetricSummaries(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		req := createRequest("searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var summaries []map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &summaries))
+		assert.Len(t, summaries, 0)
+	})
+
+	t.Run("With Data", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		req := createRequest("searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var summaries []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &summaries))
+		require.Len(t, summaries, 1, "should return one metric summary")
+		assert.Equal(t, "test.gauge", summaries[0]["name"])
+		assert.Equal(t, "test-svc", summaries[0]["serviceName"])
+		assert.Equal(t, "Gauge", summaries[0]["metricType"])
+		assert.Equal(t, "bytes", summaries[0]["unit"])
+		assert.NotNil(t, summaries[0]["sparkline"], "gauge should have sparkline data")
+	})
+}
+
+func TestGetMetric(t *testing.T) {
+	t.Run("Found", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		req := createRequest("getMetric", []any{
+			"test.gauge", "bytes", "Gauge", "", "", "test-scope", "v1.0.0", "test-svc",
+			"0", strconv.FormatInt(1<<63-1, 10),
+		})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		assert.Equal(t, "test.gauge", metric["name"])
+		assert.Equal(t, "bytes", metric["unit"])
+		dps, _ := metric["datapoints"].([]any)
+		assert.Len(t, dps, 1, "should have one datapoint")
+	})
+
+	t.Run("Not Found", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		req := createRequest("getMetric", []any{
+			"nonexistent.metric", "", "Gauge", "", "", "test-scope", "v1.0.0", "test-svc",
+			"0", strconv.FormatInt(1<<63-1, 10),
+		})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok)
+		assert.Equal(t, "null", string(raw))
+	})
 }

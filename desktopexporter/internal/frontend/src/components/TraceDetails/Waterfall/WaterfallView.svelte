@@ -73,7 +73,6 @@
     )
   }
 
-
   // --- Tree gutter connectors (helpers composed in computeTreeMeta) ---
 
   type DepthList = readonly { depth: number }[]
@@ -264,7 +263,8 @@
 
   // --- Column widths (resizable) ---
   import {
-    fixed, flex,
+    fixed,
+    flex,
     computeInitialWidths,
     redistributeWidths,
     computeBarPositions,
@@ -290,9 +290,15 @@
     activeResizeCol = colIndex
     startColumnResize(
       wfCols,
-      () => colWidths, colIndex, e,
-      next => { colWidths = next },
-      () => { activeResizeCol = null }
+      () => colWidths,
+      colIndex,
+      e,
+      next => {
+        colWidths = next
+      },
+      () => {
+        activeResizeCol = null
+      }
     )
   }
 
@@ -334,7 +340,6 @@
       t => t.offsetPercent
     )
   )
-
 
   // --- Search match annotation ---
 

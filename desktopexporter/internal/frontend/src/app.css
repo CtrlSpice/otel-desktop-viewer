@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'layerchart/daisyui-5.css';
 @plugin "daisyui" {
   logs: false;
   themes: false;
@@ -188,6 +189,12 @@ svg {
   stroke-linejoin: round;
 }
 
+/* Remove outline stroke from LayerChart tooltip highlight rects */
+.lc-tooltip-rect {
+  stroke: none;
+  stroke-width: 0;
+}
+
 /* Global button styles */
 .btn {
   @apply transition-[color,background-color,border-color,transform,box-shadow] duration-200 ease-out;
@@ -273,26 +280,6 @@ svg {
 
 .filter-separator {
   @apply w-px bg-base-300;
-}
-
-.tabs {
-  @apply grid max-w-full grid-cols-3;
-  min-width: min(100%, 24rem);
-}
-
-.tab {
-  @apply input input-sm items-center cursor-pointer mx-0.5;
-  @apply transition-colors duration-200;
-  @apply hover:bg-base-200;
-  @apply border-transparent;
-  border-left-style: none;
-  border-right-style: none;
-  border-top-style: none;
-}
-
-.tabs input[type='radio'].tab:checked {
-  @apply bg-primary text-primary-content;
-  @apply border-b-2 border-b-primary-content;
 }
 
 /* Sortable thead: caret mirrors alignment — left = title then caret; right (--end) = caret then title.
@@ -398,17 +385,79 @@ svg {
   @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
 }
 
-/* Navigation */
-.nav-button {
+/* Trace detail panel — Fields | Events | Links (not the signal drawer). */
+.detail-tab {
   @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
 }
 
-.nav-button-active {
-  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+.detail-tab--active {
+  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10;
 }
 
-.nav-button-inactive {
+.detail-tab--inactive {
   @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+}
+
+/* Signal drawer — route tabs (Traces | Metrics | Logs) + collapsed icon rail. */
+.drawer-tab {
+  @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
+}
+
+.drawer-tab--active {
+  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10;
+}
+
+.drawer-tab--inactive {
+  @apply border border-transparent text-base-content/70 hover:bg-base-200/80 hover:text-primary;
+}
+
+.drawer-tab--icon-only {
+  @apply btn btn-ghost btn-neutral btn-sm btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none;
+}
+
+.drawer-tab--icon-only.drawer-tab--inactive {
+  @apply text-base-content/70 hover:bg-base-200/80 hover:text-primary;
+}
+
+.drawer-tab--icon-only.drawer-tab--active {
+  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
+}
+
+/* Signal drawer — chrome outside the search editor (home, collapse, collapsed rail open/refresh/theme). */
+.drawer-header-btn {
+  @apply btn btn-ghost btn-neutral btn-sm btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none transition-[color,background-color,box-shadow] duration-200;
+  transition-property: color, background-color, box-shadow, transform;
+  transition-duration: 200ms, 200ms, 200ms, 100ms;
+}
+
+.drawer-header-btn:active {
+  @apply translate-y-px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-header-btn:active {
+    transform: none;
+  }
+}
+
+.drawer-header-btn--active,
+.drawer-header-btn[aria-expanded='true'] {
+  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
+}
+
+.drawer-header-btn--inactive {
+  @apply text-base-content/70 hover:bg-base-200 hover:text-primary;
+}
+
+/* Signal drawer — square controls in the search editor (header join + footer join). */
+.drawer-editor-btn {
+  @apply btn btn-ghost btn-neutral btn-xs btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none;
+}
+
+.detail-tab:focus-visible,
+.drawer-tab:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .input {
@@ -438,11 +487,6 @@ svg {
   outline-width: var(--focus-ring-width);
   outline-style: solid;
   outline-color: var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
-.nav-button:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
 }
 
@@ -512,7 +556,6 @@ button:focus-visible:not(.btn) {
   --waterfall-gutter-hub: 16px;
 
   /* ── App shell + resizable panels (tune here) ── */
-  --nav-height: 3.5rem; /* keep in sync with HorizontalNav */
   --resize-bar-hit-width: 0.5rem; /* col-resize in-flow hit strip; line is narrower inside */
   /* Outer edge of left panel → outer edge of right panel across the splitter */
   --panel-split-total: 1rem;
@@ -522,16 +565,6 @@ button:focus-visible:not(.btn) {
   );
   /* Toolbar + page stacks (decoupled so resizable panels can sit tighter) */
   --layout-gap: 0.5rem;
-  /* Vertical padding around the toolbar + search block (not between them) */
-  --toolbar-page-pad-y: 0.75rem;
-}
-
-/* Wrap SignalToolbar + SearchEditor: tight internal gap, outer padding top/bottom only */
-.page-toolbar-block {
-  @apply flex min-w-0 w-full flex-col;
-  gap: var(--layout-gap);
-  padding-block: var(--toolbar-page-pad-y);
-  box-sizing: border-box;
 }
 
 /* Same frosted fill as panel chrome: paint this on tbody / field lists */

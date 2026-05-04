@@ -174,8 +174,16 @@ export async function getDynamicAttributes(
       }
 
     case 'metrics':
-      console.log('Not implemented yet')
-      return []
+      try {
+        const attributes = await telemetryAPI.getMetricAttributes(
+          startTime,
+          endTime
+        )
+        return attributes
+      } catch (error) {
+        console.warn('Failed to load dynamic metric attributes:', error)
+        return []
+      }
     default:
       console.log('Unknown signal type: ', signal)
       return []
