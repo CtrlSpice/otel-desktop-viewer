@@ -73,6 +73,64 @@
   $effect(() => {
     drawerChromeContext.closeForId = drawerOpen ? drawerId : undefined
   })
+
+  // --- auto-scroll the virtual list when the selection changes ---
+  // Only fires when `selectedId` actually changes (not on items reshuffles),
+  // so the user is free to scroll the list independently.
+  type VirtualListRef = {
+    scroll: (options: {
+      index: number
+      smoothScroll?: boolean
+      shouldThrowOnBounds?: boolean
+      align?: 'auto' | 'top' | 'bottom' | 'nearest'
+    }) => Promise<void>
+  }
+  let vlistRef = $state<VirtualListRef | null>(null)
+  let drawerBodyEl = $state<HTMLDivElement | null>(null)
+  let lastScrolledSelection: string | null = null
+
+  $effect(() => {
+    if (!drawerOpen) {
+      lastScrolledSelection = null
+    }
+  })
+
+  // Pixels of breathing room required at top/bottom for an item to count as
+  // "comfortably visible". If a partially-clipped row has at least this much
+  // visible margin from the closest edge, we leave the viewport alone.
+  const VISIBLE_MARGIN_PX = 24
+
+  function isComfortablyVisible(idx: number): boolean {
+    const viewport = drawerBodyEl?.querySelector<HTMLElement>(
+      '.signal-drawer__vlist-viewport'
+    )
+    const row = viewport?.querySelector<HTMLElement>(
+      `[data-original-index="${idx}"]`
+    )
+    if (!viewport || !row) return false
+    const vRect = viewport.getBoundingClientRect()
+    const rRect = row.getBoundingClientRect()
+    return (
+      rRect.top >= vRect.top + VISIBLE_MARGIN_PX &&
+      rRect.bottom <= vRect.bottom - VISIBLE_MARGIN_PX
+    )
+  }
+
+  $effect(() => {
+    const id = selectedId
+    if (!drawerOpen || !vlistRef || !id) return
+    if (id === lastScrolledSelection) return
+    const idx = items.findIndex(item => itemKey(item) === id)
+    if (idx < 0) return
+    lastScrolledSelection = id
+    if (isComfortablyVisible(idx)) return
+    void vlistRef.scroll({
+      index: idx,
+      align: 'auto',
+      smoothScroll: true,
+      shouldThrowOnBounds: false,
+    })
+  })
 </script>
 
 <div class="signal-drawer drawer drawer-open">
@@ -197,11 +255,15 @@
       </div>
 
       <!-- Expanded: list -->
-      <div class="signal-drawer__body is-drawer-close:hidden">
+      <div
+        class="signal-drawer__body is-drawer-close:hidden"
+        bind:this={drawerBodyEl}
+      >
         {#if items.length === 0}
           <div class="signal-drawer__empty">No items</div>
         {:else}
           <VirtualList
+            bind:this={vlistRef}
             {items}
             defaultEstimatedItemHeight={72}
             bufferSize={10}

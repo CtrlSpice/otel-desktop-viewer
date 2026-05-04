@@ -120,13 +120,20 @@
   })
 
   // --- effects ---
+  let lastValidIndex = $state(0)
+
   $effect(() => {
-    if (
-      !selectedKey ||
-      !sortedMetrics.some(m => metricSummaryKey(m) === selectedKey)
-    ) {
-      const first = sortedMetrics[0]
-      selectedKey = first ? metricSummaryKey(first) : null
+    const idx = selectedKey
+      ? sortedMetrics.findIndex(m => metricSummaryKey(m) === selectedKey)
+      : -1
+    if (idx >= 0) {
+      lastValidIndex = idx
+    } else if (sortedMetrics.length > 0) {
+      const fallback =
+        sortedMetrics[Math.min(lastValidIndex, sortedMetrics.length - 1)]
+      selectedKey = fallback ? metricSummaryKey(fallback) : null
+    } else {
+      selectedKey = null
     }
   })
 

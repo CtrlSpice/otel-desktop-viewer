@@ -1,17 +1,17 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import type { LogData } from '@/types/api-types'
   import { severityBand } from '@/pages/LogsPage.svelte'
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { TrashIcon } from '@/icons'
 
   type Props = {
     log: LogData | undefined
-    onDelete: (id: string) => void
+    footer?: Snippet
   }
 
-  let { log, onDelete }: Props = $props()
+  let { log, footer }: Props = $props()
 
   let timeContext = getTimeContext()
 
@@ -119,17 +119,11 @@
         </tbody>
       </table>
     </div>
-    <div class="log-detail-panel__footer">
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-error"
-        onclick={() => onDelete(log.id)}
-        aria-label="Delete this log"
-      >
-        <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
-        Delete this log
-      </button>
-    </div>
+    {#if footer}
+      <div class="log-detail-panel__footer">
+        {@render footer()}
+      </div>
+    {/if}
   </div>
 {:else}
   <div class="log-detail-panel log-detail-panel--empty">
@@ -165,6 +159,15 @@
   }
 
   .log-detail-panel__footer {
-    @apply flex items-center justify-end gap-2 border-t border-base-300/50 px-4 py-2;
+    @apply grid shrink-0 items-center gap-2 border-t border-base-300/50 px-4 py-2;
+    grid-template-columns: 1fr auto 1fr;
+  }
+
+  .log-detail-panel__footer > :global(*:nth-child(2)) {
+    @apply justify-self-center;
+  }
+
+  .log-detail-panel__footer > :global(*:last-child) {
+    @apply justify-self-end;
   }
 </style>

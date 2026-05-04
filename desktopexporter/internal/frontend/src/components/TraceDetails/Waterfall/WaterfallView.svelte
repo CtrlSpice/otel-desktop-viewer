@@ -576,7 +576,9 @@
       </div>
     </div>
     {#if footer}
-      {@render footer()}
+      <div class="waterfall-view__footer">
+        {@render footer()}
+      </div>
     {/if}
   </div>
 </div>
@@ -605,5 +607,18 @@
 
   .waterfall-view__scroll > :global(.col-resize-context) {
     @apply flex min-h-0 flex-1 flex-col;
+  }
+
+  .waterfall-view__footer {
+    @apply grid shrink-0 items-center gap-2 border-t border-base-300/50 px-4 py-2;
+    grid-template-columns: 1fr auto 1fr;
+  }
+
+  .waterfall-view__footer > :global(*:nth-child(2)) {
+    @apply justify-self-center;
+  }
+
+  .waterfall-view__footer > :global(*:last-child) {
+    @apply justify-self-end;
   }
 </style>

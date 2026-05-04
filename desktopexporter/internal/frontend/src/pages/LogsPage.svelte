@@ -93,6 +93,7 @@
   import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
   import LogCard from '@/components/LogCard.svelte'
   import LogDetailPanel from '@/components/LogDetails/LogDetailPanel.svelte'
+  import DetailNav from '@/components/DetailNav.svelte'
   import { TrashIcon } from '@/icons'
 
   // --- context ---
@@ -146,10 +147,19 @@
   )
 
   // --- effects ---
+  let lastValidIndex = $state(0)
+
   $effect(() => {
-    if (!selectedLogId || !sortedLogs.some(l => l.id === selectedLogId)) {
-      const first = sortedLogs[0]
-      selectedLogId = first?.id ?? null
+    const idx = selectedLogId
+      ? sortedLogs.findIndex(l => l.id === selectedLogId)
+      : -1
+    if (idx >= 0) {
+      lastValidIndex = idx
+    } else if (sortedLogs.length > 0) {
+      const fallback = sortedLogs[Math.min(lastValidIndex, sortedLogs.length - 1)]
+      selectedLogId = fallback?.id ?? null
+    } else {
+      selectedLogId = null
     }
   })
 
@@ -181,6 +191,33 @@
 
   function selectLog(logId: string) {
     selectedLogId = logId
+  }
+
+  // --- nav: walk sortedLogs ---
+
+  let selectedIndex = $derived(
+    selectedLogId ? sortedLogs.findIndex(l => l.id === selectedLogId) : -1
+  )
+
+  function selectByOffset(delta: number) {
+    if (selectedIndex < 0 || sortedLogs.length === 0) return
+    const target = Math.max(
+      0,
+      Math.min(sortedLogs.length - 1, selectedIndex + delta)
+    )
+    if (target === selectedIndex) return
+    const next = sortedLogs[target]
+    if (next) selectedLogId = next.id
+  }
+
+  function selectFirst() {
+    const first = sortedLogs[0]
+    if (first) selectedLogId = first.id
+  }
+
+  function selectLast() {
+    const last = sortedLogs[sortedLogs.length - 1]
+    if (last) selectedLogId = last.id
   }
 
   async function fetchLogs() {
@@ -338,7 +375,36 @@
             </div>
           {:else}
             <div class="logs-detail">
-              <LogDetailPanel log={selectedLog} onDelete={handleDeleteLog} />
+              <LogDetailPanel log={selectedLog}>
+                {#snippet footer()}
+                  {#if selectedLog}
+                    {@const log = selectedLog}
+                    <span aria-hidden="true"></span>
+                    <DetailNav
+                      index={selectedIndex}
+                      total={sortedLogs.length}
+                      label="log"
+                      onFirst={selectFirst}
+                      onPrev={() => selectByOffset(-1)}
+                      onNext={() => selectByOffset(1)}
+                      onLast={selectLast}
+                    />
+                    <div
+                      class="tooltip tooltip-left tooltip-error"
+                      data-tip="Delete this log"
+                    >
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-sm btn-square text-error"
+                        onclick={() => handleDeleteLog(log.id)}
+                        aria-label="Delete this log"
+                      >
+                        <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  {/if}
+                {/snippet}
+              </LogDetailPanel>
             </div>
           {/if}
         </div>

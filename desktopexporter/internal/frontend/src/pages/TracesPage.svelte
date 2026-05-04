@@ -35,6 +35,7 @@
   import DetailView from '@/components/TraceDetails/DetailView/DetailView.svelte'
   import WaterfallView from '@/components/TraceDetails/Waterfall/WaterfallView.svelte'
   import ResizablePanels from '@/components/ResizablePanels.svelte'
+  import DetailNav from '@/components/DetailNav.svelte'
   import { TrashIcon } from '@/icons'
 
   // --- context ---
@@ -116,13 +117,19 @@
 
   // --- effects ---
 
+  let lastValidIndex = $state(0)
+
   $effect(() => {
-    if (
-      !selectedTraceId ||
-      !sortedTraces.some(t => t.traceID === selectedTraceId)
-    ) {
-      const first = sortedTraces[0]
-      selectedTraceId = first?.traceID ?? null
+    const idx = selectedTraceId
+      ? sortedTraces.findIndex(t => t.traceID === selectedTraceId)
+      : -1
+    if (idx >= 0) {
+      lastValidIndex = idx
+    } else if (sortedTraces.length > 0) {
+      const fallback = sortedTraces[Math.min(lastValidIndex, sortedTraces.length - 1)]
+      selectedTraceId = fallback?.traceID ?? null
+    } else {
+      selectedTraceId = null
     }
   })
 
@@ -164,6 +171,35 @@
 
   function selectTrace(traceID: string) {
     selectedTraceId = traceID
+  }
+
+  // --- nav: walk sortedTraces ---
+
+  let selectedIndex = $derived(
+    selectedTraceId
+      ? sortedTraces.findIndex(t => t.traceID === selectedTraceId)
+      : -1
+  )
+
+  function selectByOffset(delta: number) {
+    if (selectedIndex < 0 || sortedTraces.length === 0) return
+    const target = Math.max(
+      0,
+      Math.min(sortedTraces.length - 1, selectedIndex + delta)
+    )
+    if (target === selectedIndex) return
+    const next = sortedTraces[target]
+    if (next) selectedTraceId = next.traceID
+  }
+
+  function selectFirst() {
+    const first = sortedTraces[0]
+    if (first) selectedTraceId = first.traceID
+  }
+
+  function selectLast() {
+    const last = sortedTraces[sortedTraces.length - 1]
+    if (last) selectedTraceId = last.traceID
   }
 
   function handleSelectSpan(spanID: string) {
@@ -237,6 +273,21 @@
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to delete traces'
       console.error('Error deleting traces:', err)
+    }
+  }
+
+  async function handleDeleteTrace(traceID: string) {
+    try {
+      await telemetryAPI.deleteTraces([traceID])
+      if (selectedTraceId === traceID) {
+        selectedTraceId = null
+        traceData = null
+        selectedSpanID = null
+      }
+      await fetchTraces()
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to delete trace'
+      console.error('Error deleting trace:', err)
     }
   }
 
@@ -354,7 +405,33 @@
                     {selectedSpanID}
                     onSelectSpan={handleSelectSpan}
                     loading={detailLoading}
-                  />
+                  >
+                    {#snippet footer()}
+                      <span aria-hidden="true"></span>
+                      <DetailNav
+                        index={selectedIndex}
+                        total={sortedTraces.length}
+                        label="trace"
+                        onFirst={selectFirst}
+                        onPrev={() => selectByOffset(-1)}
+                        onNext={() => selectByOffset(1)}
+                        onLast={selectLast}
+                      />
+                      <div
+                        class="tooltip tooltip-left tooltip-error"
+                        data-tip="Delete this trace"
+                      >
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-sm btn-square text-error"
+                          onclick={() => handleDeleteTrace(data.traceID)}
+                          aria-label="Delete this trace"
+                        >
+                          <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </div>
+                    {/snippet}
+                  </WaterfallView>
                 {/snippet}
                 {#snippet rightPanel()}
                   <div
