@@ -714,20 +714,44 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply min-h-[4.75rem] rounded-lg pt-2 pb-0;
+    @apply rounded-lg items-start py-1 pl-3 pr-1;
+    height: auto;
+    min-height: calc(var(--table-row-h) + 0.5rem);
+    max-height: calc(var(--table-row-h) * 6 + 0.5rem);
   }
 
   .search-editor__header-actions {
     @apply absolute top-1 left-2 right-2 z-10;
   }
 
+  .search-editor-wrapper--drawer .editor-mount {
+    @apply self-stretch;
+    max-height: calc(var(--table-row-h) * 6);
+  }
+
   .search-editor-wrapper--drawer .editor-mount :global(.cm-editor) {
-    min-height: 4.25rem;
+    height: 100%;
+    min-height: var(--table-row-h);
+    max-height: 100%;
+  }
+
+  .search-editor-wrapper--drawer .editor-mount :global(.cm-scroller) {
+    line-height: var(--table-row-h);
+    overflow-y: auto;
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
-    padding-top: 1rem;
-    padding-bottom: 1.5rem;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-right: 0.5rem;
+    min-height: var(--table-row-h);
+  }
+
+  .search-editor-wrapper--drawer .search-editor__footer-actions {
+    @apply static ml-auto flex shrink-0 items-center gap-2;
+    inset: auto;
+    height: var(--table-row-h);
+    align-self: flex-end;
   }
 
   .search-editor__footer-actions {
