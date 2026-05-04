@@ -137,7 +137,7 @@
     title={displayLabel}
   >
     <svg
-      class="h-3.5 w-3.5 shrink-0"
+      class="h-[17px] w-[17px] shrink-0"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -177,7 +177,7 @@
   }
 
   .datetime-select-trigger--open:not(.datetime-select-trigger--join) {
-    @apply border-primary/40 text-primary ring-1 ring-primary/20;
+    @apply border-primary/40 text-primary;
   }
 
   .datetime-select-trigger:focus-visible {
@@ -187,11 +187,11 @@
 
   /* DaisyUI join row — mirror drawer-editor-btn inactive hover (cannot @apply `.drawer-editor-btn` here). */
   .datetime-select-trigger--join {
-    @apply join-item flex min-h-0 h-[2.25rem] min-w-0 flex-1 items-center justify-start gap-2 rounded-none border border-transparent bg-transparent px-2.5 py-0 text-xs font-normal tracking-normal text-base-content/55 shadow-none transition-[color,background-color,box-shadow] duration-200 hover:bg-base-200/80 hover:text-base-content;
+    @apply join-item flex min-h-0 h-[2.25rem] min-w-0 flex-1 items-center justify-start gap-2 rounded-none border border-transparent bg-transparent px-2.5 py-0 text-xs font-normal tracking-normal text-base-content/70 shadow-none transition-[color,background-color,box-shadow] duration-200 hover:bg-base-200/80 hover:text-primary;
   }
 
   .datetime-select-trigger--join.datetime-select-trigger--open {
-    @apply z-[1] border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+    @apply z-[1] border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
   }
 
   /* Dropdown trigger: compact clock + label in a btn-like shape */

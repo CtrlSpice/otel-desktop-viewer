@@ -22,7 +22,8 @@
     onSelect?: (id: string) => void
     onRefresh?: () => void
     refreshPulse?: boolean
-    refreshAside?: Snippet
+    /** Plain text for DaisyUI tooltip + screen reader when new data is pending */
+    refreshAsideTip?: string
     drawerChrome?: Snippet
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
@@ -42,7 +43,7 @@
     onSelect,
     onRefresh,
     refreshPulse = false,
-    refreshAside,
+    refreshAsideTip = '',
     drawerChrome,
     drawerChromeToolbar,
     drawerSearch,
@@ -114,35 +115,44 @@
 
       <!-- Collapsed: header controls (refresh, aside, theme toggle) -->
       {#if !drawerOpen}
-        <div class="signal-drawer__header signal-drawer__header--collapsed">
+        <div class="signal-drawer__collapsed-header">
           <div
             class="signal-drawer__header-controls--collapsed flex shrink-0 flex-col items-center gap-1.5"
           >
             {#if onRefresh}
-              <button
-                type="button"
-                class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive shrink-0"
-                class:signal-drawer__refresh--has-new-data={refreshPulse}
-                onclick={onRefresh}
-                aria-label={refreshPulse
-                  ? 'Refresh — incoming data pending'
-                  : 'Refresh'}
-                title={refreshPulse
-                  ? 'New data pending — reload to merge'
-                  : 'Refresh'}
-              >
-                <ReloadIcon
-                  class="h-[17px] w-[17px] shrink-0"
-                  aria-hidden="true"
-                />
-              </button>
-            {/if}
-            {#if onRefresh && refreshAside && refreshPulse}
               <div
-                class="signal-drawer__refresh-aside-row signal-drawer__refresh-aside-row--collapsed"
-                aria-live="polite"
+                class="shrink-0 {refreshPulse && refreshAsideTip
+                  ? 'tooltip tooltip-right tooltip-secondary'
+                  : ''}"
+                data-tip={refreshPulse && refreshAsideTip
+                  ? refreshAsideTip
+                  : undefined}
               >
-                {@render refreshAside()}
+                {#if refreshPulse && refreshAsideTip}
+                  <div class="sr-only" aria-live="polite" aria-atomic="true">
+                    {refreshAsideTip}
+                  </div>
+                {/if}
+                <button
+                  type="button"
+                  class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive"
+                  class:signal-drawer__refresh--has-new-data={refreshPulse}
+                  onclick={onRefresh}
+                  aria-label={refreshPulse
+                    ? `Refresh — ${refreshAsideTip}`
+                    : 'Refresh'}
+                >
+                  {#if refreshPulse}
+                    <span
+                      class="signal-drawer__new-data-dot"
+                      aria-hidden="true"
+                    ></span>
+                  {/if}
+                  <ReloadIcon
+                    class="relative z-[1] h-[17px] w-[17px] shrink-0"
+                    aria-hidden="true"
+                  />
+                </button>
               </div>
             {/if}
             <ThemeToggle
@@ -152,28 +162,30 @@
         </div>
       {/if}
 
-      <!-- Expanded: tinted toolbar strip; lift tabs sit on panel surface below (lift needs base-100) -->
+      <!-- Expanded: unified header panel (tabs + chrome + search + toolbar) -->
       {#if drawerOpen}
-        <div class="signal-drawer__chrome-stack is-drawer-close:hidden">
-          <DrawerNavTabs />
-          {#if drawerChrome}
-            <div class="signal-drawer__toolbar-slot">
-              {@render drawerChrome()}
-            </div>
-          {/if}
-        </div>
-      {/if}
+        <div class="signal-drawer__header is-drawer-close:hidden">
+          <div class="signal-drawer__chrome-stack">
+            <DrawerNavTabs />
+            {#if drawerChrome}
+              <div class="signal-drawer__toolbar-slot">
+                {@render drawerChrome()}
+              </div>
+            {/if}
+          </div>
 
-      {#if drawerSearch || (drawerOpen && drawerChromeToolbar)}
-        <div class="signal-drawer__search-stack is-drawer-close:hidden">
-          {#if drawerSearch}
-            <div class="signal-drawer__search">
-              {@render drawerSearch()}
-            </div>
-          {/if}
-          {#if drawerOpen && drawerChromeToolbar}
-            <div class="signal-drawer__chrome-toolbar">
-              {@render drawerChromeToolbar()}
+          {#if drawerSearch || drawerChromeToolbar}
+            <div class="signal-drawer__search-stack">
+              {#if drawerSearch}
+                <div class="signal-drawer__search">
+                  {@render drawerSearch()}
+                </div>
+              {/if}
+              {#if drawerChromeToolbar}
+                <div class="signal-drawer__chrome-toolbar">
+                  {@render drawerChromeToolbar()}
+                </div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -246,9 +258,24 @@
     @apply shrink-0 px-1.5 pt-2 pb-2;
   }
 
-  /* ── Expanded: toolbar-only tint (tabs use lift on panel bg below) ── */
+  /* ── Expanded: unified header panel ── */
+  .signal-drawer__header {
+    @apply flex w-full min-w-0 shrink-0 flex-col gap-1 px-2 py-1.5
+      border-b border-base-300;
+    background-image: linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--color-base-200) 80%, transparent),
+      color-mix(in oklab, var(--color-base-200) 60%, transparent)
+    );
+    box-shadow:
+      inset 0 1px 0
+        color-mix(in oklab, var(--color-base-100) 60%, transparent),
+      inset 0 -1px 0
+        color-mix(in oklab, var(--color-base-300) 30%, transparent);
+  }
+
   .signal-drawer__chrome-stack {
-    @apply flex shrink-0 items-center gap-1 bg-base-200/55 px-2 py-1;
+    @apply flex shrink-0 items-center gap-1;
   }
 
   .signal-drawer__chrome-stack :global(.drawer-nav-tabs) {
@@ -259,76 +286,76 @@
     @apply shrink-0;
   }
 
-  /* ── Header (collapsed only) ── */
-  .signal-drawer__header {
-    @apply flex w-full min-w-0 shrink-0 px-2 pt-2 pb-1;
+  /* ── Collapsed: header controls ── */
+  .signal-drawer__collapsed-header {
+    @apply flex w-full min-w-0 shrink-0 flex-col items-center justify-center gap-1.5 px-2 py-2;
   }
 
-  .signal-drawer__header--collapsed {
-    @apply flex flex-col items-center justify-center gap-1.5 py-2;
-  }
-
-  /* Refresh + new-data indicator*/
+  /* Refresh + new-data indicator */
   .signal-drawer__refresh {
     @apply relative rounded-lg;
   }
 
-  @keyframes signal-drawer-refresh-new-glow {
+  .signal-drawer__new-data-dot {
+    @apply pointer-events-none absolute bottom-0.5 right-0.5 z-[2] size-2 rounded-full bg-secondary shadow-sm ring-2 ring-base-100/90;
+  }
+
+  @keyframes signal-drawer-new-data-dot-pulse {
     0%,
     100% {
       box-shadow:
-        0 0 0 1px color-mix(in oklab, var(--color-primary) 18%, transparent),
-        0 0 10px color-mix(in oklab, var(--color-primary) 12%, transparent);
+        0 0 0 1px color-mix(in oklab, var(--color-secondary) 18%, transparent),
+        0 0 10px color-mix(in oklab, var(--color-secondary) 12%, transparent);
     }
     50% {
       box-shadow:
-        0 0 0 1px color-mix(in oklab, var(--color-primary) 38%, transparent),
-        0 0 22px color-mix(in oklab, var(--color-primary) 28%, transparent);
+        0 0 0 1px color-mix(in oklab, var(--color-secondary) 38%, transparent),
+        0 0 22px color-mix(in oklab, var(--color-secondary) 28%, transparent);
     }
   }
 
-  .signal-drawer__refresh.signal-drawer__refresh--has-new-data:not(:hover):not(
-      :focus-visible
-    ) {
-    animation: signal-drawer-refresh-new-glow 2.8s ease-in-out infinite;
+  .signal-drawer__refresh.signal-drawer__refresh--has-new-data:not(
+      :hover
+    ):not(:focus-visible)
+    .signal-drawer__new-data-dot {
+    animation: signal-drawer-new-data-dot-pulse 2.8s ease-in-out infinite;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .signal-drawer__refresh.signal-drawer__refresh--has-new-data {
+    .signal-drawer__refresh.signal-drawer__refresh--has-new-data
+      .signal-drawer__new-data-dot {
       animation: none !important;
     }
   }
 
-  /** Full-width row below header controls — counts inline, comma-separated */
-  .signal-drawer__refresh-aside-row {
-    @apply flex min-w-0 flex-wrap items-baseline justify-start gap-y-1 text-xs text-primary/75;
+  .signal-drawer__refresh-hover-wrap {
+    @apply relative;
   }
 
-  .signal-drawer__refresh-aside-row
+  /* Tooltip to the right of the narrow rail refresh button */
+  .signal-drawer__refresh-tooltip {
+    @apply pointer-events-none absolute left-full top-1/2 z-50 ml-1.5 max-w-[min(20rem,calc(100vw-2rem))] -translate-y-1/2 opacity-0 transition-opacity duration-150;
+    @apply rounded-lg border border-base-300 bg-base-100 px-2.5 py-1.5 text-left text-xs text-secondary shadow-lg;
+  }
+
+  .signal-drawer__refresh-hover-wrap:hover .signal-drawer__refresh-tooltip,
+  .signal-drawer__refresh-hover-wrap:focus-within .signal-drawer__refresh-tooltip {
+    @apply opacity-100;
+  }
+
+  .signal-drawer__refresh-tooltip
     :global(.signal-drawer__refresh-aside-pill) {
     @apply inline-flex max-w-full items-center whitespace-nowrap tabular-nums leading-snug;
   }
 
-  .signal-drawer__refresh-aside-row
+  .signal-drawer__refresh-tooltip
     :global(.signal-drawer__refresh-aside-pill:not(:first-child)::before) {
     content: ', ';
   }
 
-  .signal-drawer__refresh-aside-row--collapsed {
-    @apply w-full justify-start px-px;
-    flex-wrap: wrap;
-  }
-
-  .signal-drawer__refresh-aside-row--collapsed
-    :global(.signal-drawer__refresh-aside-pill) {
-    @apply max-w-full text-left text-xs leading-tight;
-    white-space: normal;
-    word-break: break-word;
-  }
-
-  /* ── Search + list-controls stack (gap only, no vertical padding bands) ── */
+  /* ── Search + list-controls stack ── */
   .signal-drawer__search-stack {
-    @apply flex min-w-0 w-full shrink-0 flex-col gap-1 bg-base-200/55 px-2;
+    @apply flex min-w-0 w-full shrink-0 flex-col gap-1;
   }
 
   .signal-drawer__search {

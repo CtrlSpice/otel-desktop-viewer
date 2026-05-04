@@ -391,7 +391,7 @@ svg {
 }
 
 .detail-tab--active {
-  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10;
 }
 
 .detail-tab--inactive {
@@ -404,11 +404,11 @@ svg {
 }
 
 .drawer-tab--active {
-  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10;
 }
 
 .drawer-tab--inactive {
-  @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+  @apply border border-transparent text-base-content/70 hover:bg-base-200/80 hover:text-primary;
 }
 
 .drawer-tab--icon-only {
@@ -416,24 +416,37 @@ svg {
 }
 
 .drawer-tab--icon-only.drawer-tab--inactive {
-  @apply text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+  @apply text-base-content/70 hover:bg-base-200/80 hover:text-primary;
 }
 
 .drawer-tab--icon-only.drawer-tab--active {
-  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
 }
 
 /* Signal drawer — chrome outside the search editor (home, collapse, collapsed rail open/refresh/theme). */
 .drawer-header-btn {
   @apply btn btn-ghost btn-neutral btn-sm btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none transition-[color,background-color,box-shadow] duration-200;
+  transition-property: color, background-color, box-shadow, transform;
+  transition-duration: 200ms, 200ms, 200ms, 100ms;
 }
 
-.drawer-header-btn--active {
-  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+.drawer-header-btn:active {
+  @apply translate-y-px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-header-btn:active {
+    transform: none;
+  }
+}
+
+.drawer-header-btn--active,
+.drawer-header-btn[aria-expanded='true'] {
+  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
 }
 
 .drawer-header-btn--inactive {
-  @apply text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+  @apply text-base-content/70 hover:bg-base-200 hover:text-primary;
 }
 
 /* Signal drawer — square controls in the search editor (header join + footer join). */

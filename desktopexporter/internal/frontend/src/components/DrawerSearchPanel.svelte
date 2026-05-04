@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte'
   import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, ReloadIcon } from '@/icons'
   import HugeiconsSorting05 from '@/icons/HugeiconsSorting05.svelte'
   import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
@@ -25,7 +24,8 @@
     onSortChange?: (value: string, direction: 'asc' | 'desc') => void
     onRefresh?: () => void
     refreshPulse?: boolean
-    refreshAside?: Snippet
+    /** Plain text for DaisyUI tooltip + screen reader when new data is pending */
+    refreshAsideTip?: string
     onSearchResults?: (event: SearchResultEvent) => void
     onSearchError?: (error: string | null) => void
     onSearchReady?: (api: SearchEditorAPI) => void
@@ -40,7 +40,7 @@
     onSortChange,
     onRefresh,
     refreshPulse = false,
-    refreshAside,
+    refreshAsideTip = '',
     onSearchResults,
     onSearchError,
     onSearchReady,
@@ -122,13 +122,13 @@
       role="toolbar"
       aria-label="List controls"
     >
-      <div class="flex w-full min-w-0 items-center gap-1">
-        <div class="join join-horizontal min-w-0 flex-1">
+      <div class="flex w-full min-w-0 items-center justify-between gap-1">
+        <div class="flex items-center gap-1">
           <details
             class="dropdown drawer-search-panel__sort-dropdown shrink-0"
           >
             <summary
-              class="drawer-header-btn drawer-header-btn--inactive drawer-search-panel__sort-summary join-item"
+              class="drawer-header-btn drawer-header-btn--inactive drawer-search-panel__sort-summary"
               title={`Sort: ${currentSortLabel} (${sortDirection})`}
             >
               <HugeiconsSorting05 class="h-[17px] w-[17px] shrink-0" />
@@ -177,44 +177,48 @@
           </details>
 
           <DateTimeFilter
-            triggerVariant="select"
-            inJoin
-            class="min-w-0 flex-1"
+            triggerVariant="icon"
+            class="drawer-header-btn drawer-header-btn--inactive shrink-0"
           />
         </div>
 
         {#if onRefresh}
-          <button
-            type="button"
-            class="drawer-header-btn drawer-header-btn--inactive drawer-search-panel__refresh shrink-0"
-            class:drawer-search-panel__refresh--pulse={refreshPulse}
-            onclick={onRefresh}
-            aria-label={refreshPulse
-              ? 'Refresh — incoming data pending'
-              : 'Refresh'}
-            title={refreshPulse
-              ? 'New data pending — reload to merge'
-              : 'Refresh'}
+          <div
+            class="shrink-0 {refreshPulse && refreshAsideTip
+              ? 'tooltip tooltip-left tooltip-secondary'
+              : ''}"
+            data-tip={refreshPulse && refreshAsideTip
+              ? refreshAsideTip
+              : undefined}
           >
-            {#if refreshPulse}
-              <span
-                class="drawer-search-panel__new-data-dot"
-                aria-hidden="true"
-              ></span>
+            {#if refreshPulse && refreshAsideTip}
+              <div class="sr-only" aria-live="polite" aria-atomic="true">
+                {refreshAsideTip}
+              </div>
             {/if}
-            <ReloadIcon
-              class="relative z-[1] h-[17px] w-[17px] shrink-0"
-              aria-hidden="true"
-            />
-          </button>
+            <button
+              type="button"
+              class="drawer-header-btn drawer-header-btn--inactive drawer-search-panel__refresh"
+              class:drawer-search-panel__refresh--pulse={refreshPulse}
+              onclick={onRefresh}
+              aria-label={refreshPulse
+                ? `Refresh — ${refreshAsideTip}`
+                : 'Refresh'}
+            >
+              {#if refreshPulse}
+                <span
+                  class="drawer-search-panel__new-data-dot"
+                  aria-hidden="true"
+                ></span>
+              {/if}
+              <ReloadIcon
+                class="relative z-[1] h-[17px] w-[17px] shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </div>
         {/if}
       </div>
-
-      {#if onRefresh && refreshAside && refreshPulse}
-        <div class="drawer-search-panel__refresh-aside" aria-live="polite">
-          {@render refreshAside()}
-        </div>
-      {/if}
     </div>
   {/if}
 
@@ -244,54 +248,45 @@
     @apply flex min-w-0 w-full flex-col gap-1;
   }
 
+  .drawer-search-panel__refresh-wrap {
+    @apply relative inline-flex;
+  }
+
   /* Refresh button + pulse animation */
   .drawer-search-panel__refresh {
     @apply relative bg-transparent;
   }
 
   .drawer-search-panel__new-data-dot {
-    @apply pointer-events-none absolute right-0.5 top-0.5 z-[2] size-2 rounded-full bg-primary shadow-sm ring-2 ring-base-100;
+    @apply pointer-events-none absolute bottom-0.5 right-0.5 z-[2] size-2 rounded-full bg-secondary shadow-sm ring-2 ring-base-100/90;
   }
 
-  @keyframes drawer-refresh-pulse {
+  @keyframes drawer-new-data-dot-pulse {
     0%,
     100% {
       box-shadow:
-        0 0 0 1px color-mix(in oklab, var(--color-primary) 18%, transparent),
-        0 0 10px color-mix(in oklab, var(--color-primary) 12%, transparent);
+        0 0 0 1px color-mix(in oklab, var(--color-secondary) 18%, transparent),
+        0 0 10px color-mix(in oklab, var(--color-secondary) 12%, transparent);
     }
     50% {
       box-shadow:
-        0 0 0 1px color-mix(in oklab, var(--color-primary) 38%, transparent),
-        0 0 22px color-mix(in oklab, var(--color-primary) 28%, transparent);
+        0 0 0 1px color-mix(in oklab, var(--color-secondary) 38%, transparent),
+        0 0 22px color-mix(in oklab, var(--color-secondary) 28%, transparent);
     }
   }
 
   .drawer-search-panel__refresh.drawer-search-panel__refresh--pulse:not(
       :hover
-    ):not(:focus-visible) {
-    animation: drawer-refresh-pulse 2.8s ease-in-out infinite;
+    ):not(:focus-visible)
+    .drawer-search-panel__new-data-dot {
+    animation: drawer-new-data-dot-pulse 2.8s ease-in-out infinite;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .drawer-search-panel__refresh.drawer-search-panel__refresh--pulse {
+    .drawer-search-panel__refresh.drawer-search-panel__refresh--pulse
+      .drawer-search-panel__new-data-dot {
       animation: none !important;
     }
-  }
-
-  /* Refresh aside row (pending counts) */
-  .drawer-search-panel__refresh-aside {
-    @apply flex min-w-0 flex-wrap items-baseline justify-start gap-y-1 text-xs text-primary/75;
-  }
-
-  .drawer-search-panel__refresh-aside
-    :global(.signal-drawer__refresh-aside-pill) {
-    @apply inline-flex max-w-full items-center whitespace-nowrap tabular-nums leading-snug;
-  }
-
-  .drawer-search-panel__refresh-aside
-    :global(.signal-drawer__refresh-aside-pill:not(:first-child)::before) {
-    content: ', ';
   }
 
   /* Sort dropdown */
@@ -305,7 +300,7 @@
 
   .drawer-search-panel__sort-dropdown[open]
     > .drawer-search-panel__sort-summary {
-    @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10 ring-1 ring-primary/20;
+    @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
   }
 
   .drawer-search-panel__sort-option {

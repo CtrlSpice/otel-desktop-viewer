@@ -105,6 +105,15 @@
     pendingNewTraceCount > 0 || pendingNewSpanCount > 0
   )
 
+  let refreshAsideTip = $derived.by(() => {
+    const parts: string[] = []
+    if (pendingNewTraceCount > 0)
+      parts.push(`+${pendingNewTraceCount.toLocaleString()} trace${pendingNewTraceCount !== 1 ? 's' : ''}`)
+    if (pendingNewSpanCount > 0)
+      parts.push(`+${pendingNewSpanCount.toLocaleString()} span${pendingNewSpanCount !== 1 ? 's' : ''}`)
+    return parts.join(', ')
+  })
+
   // --- effects ---
 
   $effect(() => {
@@ -249,22 +258,9 @@
     onSelect={selectTrace}
     onRefresh={handleRefresh}
     {refreshPulse}
+    {refreshAsideTip}
     itemKey={t => t.traceID}
   >
-    {#snippet refreshAside()}
-      {#if pendingNewTraceCount > 0}
-        <span class="signal-drawer__refresh-aside-pill">
-          +{pendingNewTraceCount.toLocaleString()}
-          trace{pendingNewTraceCount !== 1 ? 's' : ''}
-        </span>
-      {/if}
-      {#if pendingNewSpanCount > 0}
-        <span class="signal-drawer__refresh-aside-pill">
-          +{pendingNewSpanCount.toLocaleString()}
-          span{pendingNewSpanCount !== 1 ? 's' : ''}
-        </span>
-      {/if}
-    {/snippet}
 
     {#snippet drawerChrome()}
       <DrawerSearchPanel
@@ -287,22 +283,8 @@
         onSortChange={handleSortChange}
         onRefresh={handleRefresh}
         {refreshPulse}
-      >
-        {#snippet refreshAside()}
-          {#if pendingNewTraceCount > 0}
-            <span class="signal-drawer__refresh-aside-pill">
-              +{pendingNewTraceCount.toLocaleString()}
-              trace{pendingNewTraceCount !== 1 ? 's' : ''}
-            </span>
-          {/if}
-          {#if pendingNewSpanCount > 0}
-            <span class="signal-drawer__refresh-aside-pill">
-              +{pendingNewSpanCount.toLocaleString()}
-              span{pendingNewSpanCount !== 1 ? 's' : ''}
-            </span>
-          {/if}
-        {/snippet}
-      </DrawerSearchPanel>
+        {refreshAsideTip}
+      />
     {/snippet}
 
     {#snippet drawerSearch()}

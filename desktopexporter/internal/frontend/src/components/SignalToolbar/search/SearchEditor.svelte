@@ -718,6 +718,29 @@
     height: auto;
     min-height: calc(var(--table-row-h) + 0.5rem);
     max-height: calc(var(--table-row-h) * 6 + 0.5rem);
+    border-color: transparent;
+    background-color: color-mix(
+      in oklab,
+      var(--color-base-100) 60%,
+      transparent
+    );
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    transition:
+      background-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .search-editor-wrapper--drawer
+    .search-editor-container:hover:not(:focus-within) {
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-base-content) 14%, transparent);
+  }
+
+  .search-editor-wrapper--drawer .search-editor-container:focus-within {
+    background-color: var(--color-base-100);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-base-content) 10%, transparent);
   }
 
   .search-editor__header-actions {
@@ -805,8 +828,8 @@
   }
 
   .search-editor-container:focus-within {
-    outline: 1px solid var(--color-primary);
-    outline-offset: 1px;
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
   }
 
   .search-editor-container--error {

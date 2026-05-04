@@ -119,6 +119,6 @@
   }
 
   .drawer-nav-tabs--expanded :global(.drawer-tab:not(.drawer-tab--icon-only)) {
-    @apply px-2 gap-1 text-xs;
+    @apply px-3 gap-1 text-xs;
   }
 </style>

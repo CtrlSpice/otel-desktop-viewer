@@ -139,6 +139,12 @@
 
   let refreshPulse = $derived(pendingNewLogCount > 0)
 
+  let refreshAsideTip = $derived(
+    pendingNewLogCount > 0
+      ? `+${pendingNewLogCount.toLocaleString()} log${pendingNewLogCount !== 1 ? 's' : ''}`
+      : ''
+  )
+
   // --- effects ---
   $effect(() => {
     if (!selectedLogId || !sortedLogs.some(l => l.id === selectedLogId)) {
@@ -249,16 +255,9 @@
     onSelect={selectLog}
     onRefresh={handleRefresh}
     {refreshPulse}
+    {refreshAsideTip}
     itemKey={l => l.id}
   >
-    {#snippet refreshAside()}
-      {#if pendingNewLogCount > 0}
-        <span class="signal-drawer__refresh-aside-pill">
-          +{pendingNewLogCount.toLocaleString()}
-          log{pendingNewLogCount !== 1 ? 's' : ''}
-        </span>
-      {/if}
-    {/snippet}
 
     {#snippet drawerChrome()}
       <DrawerSearchPanel
@@ -281,16 +280,8 @@
         onSortChange={handleSortChange}
         onRefresh={handleRefresh}
         {refreshPulse}
-      >
-        {#snippet refreshAside()}
-          {#if pendingNewLogCount > 0}
-            <span class="signal-drawer__refresh-aside-pill">
-              +{pendingNewLogCount.toLocaleString()}
-              log{pendingNewLogCount !== 1 ? 's' : ''}
-            </span>
-          {/if}
-        {/snippet}
-      </DrawerSearchPanel>
+        {refreshAsideTip}
+      />
     {/snippet}
 
     {#snippet drawerSearch()}

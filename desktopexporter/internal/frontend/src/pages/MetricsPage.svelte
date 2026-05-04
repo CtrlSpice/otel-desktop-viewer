@@ -258,11 +258,9 @@
     onSelect={selectMetric}
     onRefresh={handleRefresh}
     refreshPulse={!!refreshIndicatorText}
+    refreshAsideTip={refreshIndicatorText}
     itemKey={metricSummaryKey}
   >
-    {#snippet refreshAside()}
-      {refreshIndicatorText}
-    {/snippet}
     {#snippet drawerChrome()}
       <DrawerSearchPanel
         segment="chrome"
@@ -284,11 +282,8 @@
         onSortChange={handleSortChange}
         onRefresh={handleRefresh}
         refreshPulse={!!refreshIndicatorText}
-      >
-        {#snippet refreshAside()}
-          {refreshIndicatorText}
-        {/snippet}
-      </DrawerSearchPanel>
+        refreshAsideTip={refreshIndicatorText}
+      />
     {/snippet}
 
     {#snippet drawerSearch()}
