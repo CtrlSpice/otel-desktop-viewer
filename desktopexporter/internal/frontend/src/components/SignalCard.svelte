@@ -130,7 +130,12 @@
     @apply flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-snug text-base-content/45;
   }
 
+  /* Spark slot owns the box (height + clipping) but not the width --
+     sensible width depends on the kind of spark (5-bucket histogram vs
+     long sparkline vs a future log-volume bar) so we let the caller
+     decide. MetricCard pins it to ~96px; logs/traces can pick something
+     different (or full-width) if they ever opt in. */
   .signal-row__spark {
-    @apply h-8 w-full overflow-hidden rounded;
+    @apply h-8 overflow-hidden rounded;
   }
 </style>

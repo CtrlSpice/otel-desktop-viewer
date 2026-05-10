@@ -41,7 +41,7 @@ populate-logs:
 
 .PHONY: populate-metrics
 populate-metrics:
-	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" bash "$(CURDIR)/scripts/seed-metrics.sh"
+	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" perl "$(CURDIR)/scripts/seed.pl" --metrics
 
 .PHONY: dev-go
 dev-go: kill-port

@@ -108,6 +108,34 @@
       : undefined
   )
 
+  // Position of the currently-selected metric in the sorted list.
+  // Powers the DetailNav prev/next/first/last controls in the
+  // MetricDetailPanel footer. Returns -1 when nothing is selected
+  // (DetailNav renders all buttons disabled in that case).
+  let selectedIndex = $derived.by(() => {
+    if (!selectedKey) return -1
+    return sortedMetrics.findIndex(m => metricSummaryKey(m) === selectedKey)
+  })
+
+  function selectByIndex(i: number) {
+    const target = sortedMetrics[i]
+    if (target) selectedKey = metricSummaryKey(target)
+  }
+  function navFirst() {
+    selectByIndex(0)
+  }
+  function navPrev() {
+    if (selectedIndex > 0) selectByIndex(selectedIndex - 1)
+  }
+  function navNext() {
+    if (selectedIndex >= 0 && selectedIndex < sortedMetrics.length - 1) {
+      selectByIndex(selectedIndex + 1)
+    }
+  }
+  function navLast() {
+    selectByIndex(sortedMetrics.length - 1)
+  }
+
   let refreshIndicatorText = $derived.by(() => {
     if (!baselineStats || !polledStats) return ''
     const parts: string[] = []
@@ -347,7 +375,15 @@
             </div>
           {:else}
             <div class="metrics-detail">
-              <MetricDetailPanel metric={selectedMetric} />
+              <MetricDetailPanel
+                metric={selectedMetric}
+                index={selectedIndex}
+                total={sortedMetrics.length}
+                onFirst={navFirst}
+                onPrev={navPrev}
+                onNext={navNext}
+                onLast={navLast}
+              />
             </div>
           {/if}
         </div>
@@ -371,8 +407,13 @@
     @apply flex min-h-0 min-w-0 flex-1 flex-col p-[var(--layout-gap)];
   }
 
+  /*
+   * Sizing only -- chrome (border/bg/rounded/shadow) lives on the
+   * outer .metric-detail-panel inside MetricDetailPanel so the
+   * panel reads as one unified surface across all metric types.
+   */
   .metrics-detail {
-    @apply flex-1 min-h-0 min-w-0 overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm;
+    @apply flex-1 min-h-0 min-w-0;
   }
 
   .metrics-empty {

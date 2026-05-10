@@ -399,8 +399,33 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 // SearchSummaries returns lightweight metric summaries grouped by the full OTel
 // metric identity: (name, unit, metricType, scope_name, scope_version, service.name).
 // Description is explicitly non-identifying per the spec and uses any_value.
+//
 // Each summary includes a sparkline (last 30 datapoints for Gauge/Sum) or
-// sparkbar (aggregated bucket counts for Histogram/ExponentialHistogram).
+// sparkbar (aggregated bucket counts for Histogram/ExponentialHistogram). Both
+// fields are emitted as a SparkOutcome discriminated union:
+//
+//   - JSON null: legitimate empty (no contributing datapoints in range).
+//   - {"kind":"data","value":<T>}: render as a chart on the frontend.
+//   - {"kind":"error","reason":"unspecifiedTemporality"}: the metric uses
+//     AGGREGATION_TEMPORALITY_UNSPECIFIED, which the OTel proto says MUST not
+//     be used. We refuse to invent a meaning for the bars and let the
+//     frontend render the FunError callout.
+//
+// Temporality math (Histogram + ExpHistogram sparkbar):
+//
+//   - Delta: bucket counts are observations-since-last-report. Sum across all
+//     datapoints in the range to get total observations.
+//   - Cumulative: each datapoint is a running total per stream. Naively
+//     summing across N datapoints inflates counts N-fold. Instead, take
+//     arg_max(bucket_counts, timestamp) per stream (latest cumulative
+//     snapshot is the true total for that stream) and then sum across
+//     streams within the metric group.
+//   - Unspecified: emit the error variant; do not compute.
+//
+// Sparkline (Gauge/Sum) math is unaffected by temporality -- the chart
+// shows the value over time, and cumulative/delta semantics are visually
+// honest either way. Unspecified Sum is still rejected for symmetry with
+// the histogram path.
 func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
 	query := `
 		with search_params as (select ? as time_start, ? as time_end),
@@ -430,6 +455,21 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 			inner join filtered_metrics fm on d.metric_id = fm.id, search_params
 			where d.timestamp >= time_start and d.timestamp <= time_end
 		),
+		-- Per-datapoint stream key built from datapoint attributes. Two
+		-- datapoints belong to the same "stream" iff they have identical
+		-- (key, value) attribute sets. Used by the cumulative-temporality
+		-- arg_max-per-stream aggregation. Datapoints with no attributes get
+		-- the empty string, which collapses them all into one stream
+		-- (correct: indistinguishable streams ARE one stream).
+		dp_attrs_keys as (
+			select
+				a.datapoint_id,
+				coalesce(string_agg(a.key || '=' || a.value, '|' order by a.key), '') as attrs_key
+			from attributes a
+			where a.datapoint_id in (select id from filtered_dps)
+			  and a.scope = 'datapoint'
+			group by a.datapoint_id
+		),
 		-- Group metrics by full OTel identity (description is non-identifying)
 		metric_groups as (
 			select
@@ -448,7 +488,10 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 			left join service_names sn on sn.metric_id = m.id
 			group by m.name, m.unit, d.metric_type, coalesce(d.aggregation_temporality, ''), coalesce(d.is_monotonic, false), m.scope_name, m.scope_version, coalesce(sn.service_name, '')
 		),
-		-- Sparkline data for Gauge/Sum: last 30 datapoints per group
+		-- Sparkline data for Gauge/Sum: last 30 datapoints per group.
+		-- Temporality only affects whether we serve the data or refuse: the
+		-- value-vs-time line is honest under both Delta and Cumulative.
+		-- Unspecified is rejected at the metric_groups join below.
 		sparkline_data as (
 			select
 				m.name, m.unit, sub.metric_type, sub.aggregation_temporality, sub.is_monotonic,
@@ -456,7 +499,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 				to_json(list(json_object(
 					'timestamp', sub.timestamp::varchar,
 					'value', sub.value
-				) order by sub.timestamp asc)) as sparkline
+				) order by sub.timestamp asc)) as sparkline_value
 			from (
 				select
 					d.metric_id,
@@ -479,35 +522,104 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 			where sub.rn <= 30
 			group by m.name, m.unit, sub.metric_type, sub.aggregation_temporality, sub.is_monotonic, m.scope_name, m.scope_version, coalesce(sn.service_name, '')
 		),
-		-- Sparkbar data for Histogram: aggregate bucket_counts across all datapoints per group
-		hist_sparkbar as (
+		-- Per-stream Histogram bucket vectors with temporality-aware
+		-- aggregation. Delta sums across timestamps, Cumulative takes the
+		-- latest snapshot. Unspecified streams are excluded here so the
+		-- cross-stream sum below sees only valid data; the metric_group
+		-- still gets an error variant emitted via the temporality check on
+		-- the final select.
+		hist_per_stream as (
 			select
 				m.name, m.unit, coalesce(d.aggregation_temporality, '') as aggregation_temporality,
 				m.scope_name, m.scope_version, coalesce(sn.service_name, '') as service_name,
-				sum_bucket_vectors(list(d.bucket_counts)) as sparkbar
+				coalesce(dak.attrs_key, '') as attrs_key,
+				case
+					when coalesce(d.aggregation_temporality, '') = 'Cumulative'
+						then arg_max(d.bucket_counts, d.timestamp)
+					else sum_bucket_vectors(list(d.bucket_counts))
+				end as bucket_vector
 			from filtered_dps d
 			inner join filtered_metrics m on d.metric_id = m.id
 			left join service_names sn on sn.metric_id = m.id
+			left join dp_attrs_keys dak on dak.datapoint_id = d.id
 			where d.metric_type = 'Histogram'
 			  and d.bucket_counts is not null
-			group by m.name, m.unit, coalesce(d.aggregation_temporality, ''), m.scope_name, m.scope_version, coalesce(sn.service_name, '')
+			  and coalesce(d.aggregation_temporality, '') in ('Delta', 'Cumulative')
+			group by m.name, m.unit, coalesce(d.aggregation_temporality, ''), m.scope_name, m.scope_version, coalesce(sn.service_name, ''), coalesce(dak.attrs_key, '')
 		),
-		-- Sparkbar data for ExponentialHistogram: downscale to common scale, then aggregate
-		exp_hist_streams as (
+		-- Cross-stream sum within each metric group. Element-wise sum of
+		-- the per-stream vectors gives the metric group's total observed
+		-- distribution, regardless of temporality (since we already picked
+		-- the right per-stream value above).
+		hist_sparkbar as (
 			select
-				m.name, m.unit, coalesce(d.aggregation_temporality, '') as aggregation_temporality,
-				m.scope_name, m.scope_version, coalesce(sn.service_name, '') as service_name,
-				d.scale,
-				d.positive_bucket_offset,
-				d.positive_bucket_counts,
-				d.negative_bucket_offset,
-				d.negative_bucket_counts,
-				d.zero_count
-			from filtered_dps d
-			inner join filtered_metrics m on d.metric_id = m.id
-			left join service_names sn on sn.metric_id = m.id
-			where d.metric_type = 'ExponentialHistogram'
-			  and d.positive_bucket_counts is not null
+				name, unit, aggregation_temporality, scope_name, scope_version, service_name,
+				sum_bucket_vectors(list(bucket_vector)) as sparkbar_value
+			from hist_per_stream
+			group by name, unit, aggregation_temporality, scope_name, scope_version, service_name
+		),
+		-- Per-stream ExpHistogram rows -- one row per (metric group, attrs_key)
+		-- after temporality-aware time merging. Cumulative takes the latest
+		-- snapshot per stream, Delta takes one stream-row per source datapoint
+		-- (the downscale + sum below collapses them across time naturally).
+		-- The output schema matches what the existing exp_hist downscale
+		-- pipeline below expects.
+		exp_hist_streams as (
+			select * from (
+				-- Delta: keep every source datapoint as its own row; the
+				-- existing downscale-to-min-scale + sum pipeline collapses
+				-- them across time and across streams in one shot. (Matches
+				-- the previous behavior for Delta exactly.)
+				select
+					m.name, m.unit, coalesce(d.aggregation_temporality, '') as aggregation_temporality,
+					m.scope_name, m.scope_version, coalesce(sn.service_name, '') as service_name,
+					d.scale,
+					d.positive_bucket_offset,
+					d.positive_bucket_counts,
+					d.negative_bucket_offset,
+					d.negative_bucket_counts,
+					d.zero_count
+				from filtered_dps d
+				inner join filtered_metrics m on d.metric_id = m.id
+				left join service_names sn on sn.metric_id = m.id
+				where d.metric_type = 'ExponentialHistogram'
+				  and d.positive_bucket_counts is not null
+				  and coalesce(d.aggregation_temporality, '') = 'Delta'
+				union all
+				-- Cumulative: collapse to one row per stream by picking the
+				-- latest datapoint's bucket vectors via arg_max(... ts).
+				-- Scale and offsets must come from the same datapoint as the
+				-- counts (otherwise downscaling will misalign), so all of
+				-- (scale, offset, counts, zero_count) are arg_max'd against
+				-- the same timestamp.
+				select
+					name, unit, aggregation_temporality, scope_name, scope_version, service_name,
+					arg_max(scale, timestamp) as scale,
+					arg_max(positive_bucket_offset, timestamp) as positive_bucket_offset,
+					arg_max(positive_bucket_counts, timestamp) as positive_bucket_counts,
+					arg_max(negative_bucket_offset, timestamp) as negative_bucket_offset,
+					arg_max(negative_bucket_counts, timestamp) as negative_bucket_counts,
+					arg_max(zero_count, timestamp) as zero_count
+				from (
+					select
+						m.name, m.unit, coalesce(d.aggregation_temporality, '') as aggregation_temporality,
+						m.scope_name, m.scope_version, coalesce(sn.service_name, '') as service_name,
+						coalesce(dak.attrs_key, '') as attrs_key,
+						d.timestamp,
+						d.scale,
+						d.positive_bucket_offset, d.positive_bucket_counts,
+						d.negative_bucket_offset, d.negative_bucket_counts,
+						d.zero_count
+					from filtered_dps d
+					inner join filtered_metrics m on d.metric_id = m.id
+					left join service_names sn on sn.metric_id = m.id
+					left join dp_attrs_keys dak on dak.datapoint_id = d.id
+					where d.metric_type = 'ExponentialHistogram'
+					  and d.positive_bucket_counts is not null
+					  and coalesce(d.aggregation_temporality, '') = 'Cumulative'
+				) cum
+				group by name, unit, aggregation_temporality, scope_name, scope_version, service_name, attrs_key
+			)
 		),
 		exp_hist_min_scale as (
 			select name, unit, aggregation_temporality, scope_name, scope_version, service_name,
@@ -532,7 +644,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 							[]::bigint[]
 						)
 					)
-				)) as sparkbar
+				)) as sparkbar_value
 			from exp_hist_streams s
 			inner join exp_hist_min_scale ms
 				on s.name = ms.name
@@ -543,6 +655,12 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 				and s.service_name = ms.service_name
 			group by s.name, s.unit, s.aggregation_temporality, s.scope_name, s.scope_version, s.service_name
 		)
+		-- Final select wraps each spark in the SparkOutcome union. The
+		-- temporality check fires here so the same join graph handles all
+		-- three states (data / error / null) uniformly. 'Unspecified' on a
+		-- histogram-like type rejects the bar; on a Sum it rejects the line.
+		-- Gauge has NULL temporality (encoded as '') and never enters the
+		-- error branch.
 		select cast(coalesce(to_json(list(json_object(
 			'name', mg.name,
 			'description', mg.description,
@@ -554,12 +672,24 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 			'scopeName', mg.scope_name,
 			'scopeVersion', mg.scope_version,
 			'received', mg.received,
-			'sparkline', coalesce(sl.sparkline, null),
-			'sparkbar', coalesce(
-				hs.sparkbar,
-				ehs.sparkbar,
-				null
-			)
+			'sparkline', case
+				when mg.metric_type not in ('Gauge', 'Sum') then null
+				when mg.metric_type = 'Sum' and mg.aggregation_temporality = 'Unspecified'
+					then json_object('kind', 'error', 'reason', 'unspecifiedTemporality')
+				when sl.sparkline_value is not null
+					then json_object('kind', 'data', 'value', sl.sparkline_value)
+				else null
+			end,
+			'sparkbar', case
+				when mg.metric_type not in ('Histogram', 'ExponentialHistogram') then null
+				when mg.aggregation_temporality = 'Unspecified'
+					then json_object('kind', 'error', 'reason', 'unspecifiedTemporality')
+				when hs.sparkbar_value is not null
+					then json_object('kind', 'data', 'value', hs.sparkbar_value)
+				when ehs.sparkbar_value is not null
+					then json_object('kind', 'data', 'value', ehs.sparkbar_value)
+				else null
+			end
 		) order by mg.received desc)), '[]') as varchar) as summaries
 		from metric_groups mg
 		left join sparkline_data sl
@@ -1400,6 +1530,74 @@ func buildPerStreamQuantilePairs(quantiles []float64) (string, []any) {
 		args = append(args, q, q)
 	}
 	return strings.Join(pairs, ", "), args
+}
+
+// GetMetricAggregatedQuantiles computes a single set of quantile values for
+// a Histogram or ExponentialHistogram metric over the entire [startTs, endTs)
+// window, with all streams merged. Returns one `{q -> value}` JSON object,
+// mirroring GetDatapointQuantiles' return shape so the frontend can share
+// rendering logic between "snapshot of one datapoint" and "aggregate of the
+// whole metric."
+//
+// Approach: reuse GetMetricQuantileSeries(mode='aggregated', maxPoints=1).
+// That path's bucket-width math (`(endTs - startTs) // maxPoints`) reduces to
+// "one bucket spanning the whole window" when maxPoints=1, so the existing
+// time_merged + cross-stream aggregation pipeline produces exactly one
+// output row whose `quantiles` field is the answer. The mathematical
+// guarantee we need ("same quantiles as the per-time-bucket series, just
+// computed once over the full window") falls out for free because we go
+// through the same SQL.
+//
+// Trade-off: we go through one round of JSON encode/decode to unwrap the
+// single-element list. Negligible vs. running the full pipeline.
+//
+// Returns:
+//   - ErrInvalidTimeRange if endTs <= startTs.
+//   - ErrMetricIDNotFound if the metric has no datapoints at all.
+//   - ErrQuantilesNotSupportedForType for Gauge/Sum.
+//   - ErrUnspecifiedTemporality if aggregation_temporality is Unspecified.
+//   - ErrHistogramBoundsMismatch if the Histogram has mixed bounds across
+//     datapoints (per spec, you can't merge mismatched bucket vectors).
+//
+// An empty quantile list returns "{}" without touching the database. A
+// window with no datapoints (but metric exists) also returns "{}" -- the
+// inner series query returns an empty list and we surface it as "no
+// quantiles to compute."
+func GetMetricAggregatedQuantiles(ctx context.Context, db *sql.DB, metricID string, quantiles []float64, startTs, endTs int64) (json.RawMessage, error) {
+	if len(quantiles) == 0 {
+		return json.RawMessage("{}"), nil
+	}
+	if endTs <= startTs {
+		return nil, fmt.Errorf("GetMetricAggregatedQuantiles: %w: startTs=%d endTs=%d", ErrInvalidTimeRange, startTs, endTs)
+	}
+
+	// Delegate to the series query with maxPoints=1: one bucket covering
+	// the whole window means time_merged sees every dp as belonging to the
+	// same bucket_start, then the cross-stream aggregation collapses to a
+	// single output row. All the temporality/type/bounds-mismatch error
+	// paths come along automatically because they live in the same code
+	// path.
+	seriesRaw, err := GetMetricQuantileSeries(ctx, db, metricID, quantiles, "aggregated", startTs, endTs, 1)
+	if err != nil {
+		// Re-wrap so the caller sees this function's name in the error
+		// chain. errors.Is(err, ErrFoo) still works because we wrap with %w.
+		return nil, fmt.Errorf("GetMetricAggregatedQuantiles: %w", err)
+	}
+
+	// seriesRaw is a JSON array of either zero or one element. We need to
+	// pull out just the `quantiles` field. Decoding to a typed struct
+	// keeps the unwrap honest -- if the inner shape changes we'll get a
+	// compile-style failure at decode time.
+	var series []struct {
+		Quantiles json.RawMessage `json:"quantiles"`
+	}
+	if err := json.Unmarshal(seriesRaw, &series); err != nil {
+		return nil, fmt.Errorf("GetMetricAggregatedQuantiles: %w: decode series: %w", ErrMetricsStoreInternal, err)
+	}
+	if len(series) == 0 {
+		return json.RawMessage("{}"), nil
+	}
+	return series[0].Quantiles, nil
 }
 
 // GetMetricBucketSeries returns a JSON array of one entry per time bucket

@@ -23,12 +23,19 @@
 </script>
 
 {#if sparkData.length >= 2}
+  <!-- Sparks live in the drawer alongside dozens of other rows; layerchart's
+       default tooltip + highlight overlay would intercept hover and ghost a
+       Datadog-style popover over the cursor. Disable both so the chart stays
+       purely decorative -- detail interactions live in the MetricDetailPanel,
+       not here. -->
   <AreaChart
     data={sparkData}
     x="date"
     y="value"
     axis={false}
     grid={false}
+    tooltipContext={false}
+    highlight={false}
     series={[
       {
         key: 'default',
@@ -37,9 +44,6 @@
         color: seriesColor,
       },
     ]}
-    props={{
-      highlight: { points: { r: 3, class: 'stroke-2 stroke-surface-100' } },
-    }}
     {height}
     {width}
   />

@@ -5,6 +5,7 @@
   import SignalCard from '@/components/SignalCard.svelte'
   import MetricSparkline from '@/components/MetricCharts/MetricSparkline.svelte'
   import MetricSparkbars from '@/components/MetricCharts/MetricSparkbars.svelte'
+  import UnspecifiedTemporalityCallout from '@/components/MetricDetails/UnspecifiedTemporalityCallout.svelte'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
@@ -29,6 +30,12 @@
   )
 
   let sparkColor = $derived(metricTypeSeriesColor(metric.metricType))
+
+  // The spark slot reads one of two SparkOutcome unions depending on metric
+  // type. Pattern-matching on `kind` lets the template stay flat (no nested
+  // ternaries / guard chains) and gives us a single uniform "error" branch
+  // for whichever FunError reason the backend sent.
+  let activeSpark = $derived(isHistogramType ? metric.sparkbar : metric.sparkline)
 </script>
 
 <SignalCard
@@ -54,10 +61,28 @@
   {/snippet}
 
   {#snippet spark()}
-    {#if isHistogramType && metric.sparkbar}
-      <MetricSparkbars buckets={metric.sparkbar} seriesColor={sparkColor} />
-    {:else if metric.sparkline && metric.sparkline.length > 0}
-      <MetricSparkline points={metric.sparkline} seriesColor={sparkColor} />
-    {/if}
+    <!-- 96px keeps a 5-bucket histogram from smearing into chunky stripes
+         and a 20-point sparkline from going lazy/curvy. The width lives
+         here (not in SignalCard) because logs/traces won't necessarily
+         want the same box. -->
+    <div class="metric-card__spark-box">
+      {#if activeSpark?.kind === 'error'}
+        {#if activeSpark.reason === 'unspecifiedTemporality'}
+          <UnspecifiedTemporalityCallout size="mini" />
+        {/if}
+      {:else if isHistogramType && metric.sparkbar?.kind === 'data'}
+        <MetricSparkbars buckets={metric.sparkbar.value} seriesColor={sparkColor} />
+      {:else if metric.sparkline?.kind === 'data' && metric.sparkline.value.length > 0}
+        <MetricSparkline points={metric.sparkline.value} seriesColor={sparkColor} />
+      {/if}
+    </div>
   {/snippet}
 </SignalCard>
+
+<style lang="postcss">
+  @reference "../app.css";
+
+  .metric-card__spark-box {
+    @apply h-full w-24;
+  }
+</style>

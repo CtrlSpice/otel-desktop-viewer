@@ -197,6 +197,26 @@ export type SparklinePoint = {
   value: number
 }
 
+// Reasons a spark may be omitted in lieu of data. The string discriminant lets
+// the frontend pick the right callout (e.g. the unspecifiedTemporality meme)
+// without coupling to the JSON-RPC error catalogue.
+export type SparkErrorReason = 'unspecifiedTemporality'
+
+// Discriminated union for spark payloads. Mirrors how trace summaries handle
+// a missing root span: the data shape itself encodes the situation, so callers
+// just pattern-match. Three states because we need to distinguish "we refused
+// to compute" from "no data in range".
+//   - { kind: 'data', value }: render as a chart.
+//   - { kind: 'error', reason }: render the FunError leaf for that reason.
+//   - null: legitimate empty (no data in range).
+export type SparkOutcome<T> =
+  | { kind: 'data'; value: T }
+  | { kind: 'error'; reason: SparkErrorReason }
+  | null
+
+export type Sparkline = SparkOutcome<SparklinePoint[]>
+export type Sparkbar = SparkOutcome<number[]>
+
 export type MetricSummary = {
   name: string
   description: string
@@ -208,8 +228,8 @@ export type MetricSummary = {
   scopeName: string
   scopeVersion: string
   received: bigint
-  sparkline: SparklinePoint[] | null
-  sparkbar: number[] | null
+  sparkline: Sparkline
+  sparkbar: Sparkbar
 }
 
 export function metricSummaryKey(s: MetricSummary): string {

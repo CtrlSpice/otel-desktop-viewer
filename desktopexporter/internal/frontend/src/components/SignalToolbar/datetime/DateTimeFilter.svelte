@@ -127,28 +127,34 @@
     <span class="datetime-dropdown-trigger__text">{displayLabel}</span>
   </button>
 {:else}
-  <button
-    type="button"
-    class={className}
-    popovertarget={popoverId}
-    style:anchor-name={anchorName}
-    aria-expanded={popoverOpen}
-    aria-label={`Change time range, ${displayLabel}`}
-    title={displayLabel}
+  <div
+    class="datetime-icon-tooltip-wrap"
+    class:tooltip={!popoverOpen}
+    class:tooltip-right={!popoverOpen}
+    data-tip={displayLabel}
   >
-    <svg
-      class="h-[17px] w-[17px] shrink-0"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
+    <button
+      type="button"
+      class={className}
+      popovertarget={popoverId}
+      style:anchor-name={anchorName}
+      aria-expanded={popoverOpen}
+      aria-label={`Change time range, ${displayLabel}`}
     >
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 8v4l2 2" />
-    </svg>
-  </button>
+      <svg
+        class="h-[17px] w-[17px] shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 8v4l2 2" />
+      </svg>
+    </button>
+  </div>
 {/if}
 
 <div
@@ -163,6 +169,10 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+
+  .datetime-icon-tooltip-wrap {
+    @apply inline-flex shrink-0;
+  }
 
   .datetime-select-trigger {
     @apply flex min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-base-300 bg-base-100 px-2.5 py-1.5 text-xs text-base-content/70 transition-[color,border-color,box-shadow] duration-150;

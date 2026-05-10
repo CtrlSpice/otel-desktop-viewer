@@ -62,6 +62,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getMetricQuantileSeries(ctx, req)
 	case "getMetricBucketSeries":
 		return h.getMetricBucketSeries(ctx, req)
+	case "getMetricAggregatedQuantiles":
+		return h.getMetricAggregatedQuantiles(ctx, req)
 	case "getAttributesByTraceID":
 		return h.getAttributesByTraceID(ctx, req)
 	case "getStats":
@@ -691,6 +693,73 @@ func (h *JSONRPCHandler) getMetricBucketSeries(ctx context.Context, req *jsonrpc
 	result, err := metrics.GetMetricBucketSeries(ctx, h.store.DB(), metricID, mode, startTs, endTs, maxPoints)
 	if err != nil {
 		log.Printf("Error getting metric bucket series: %v", err)
+		return nil, mapStoreError(err)
+	}
+	return result, nil
+}
+
+// getMetricAggregatedQuantiles returns one set of quantile values computed
+// over the entire [startTs, endTs) window for a histogram or
+// exponential-histogram metric, with all streams merged. Mirrors
+// getDatapointQuantiles' return shape (a single `{q -> value}` JSON object)
+// so the same frontend renderer can consume both. Params:
+//
+//	[metricID  string,
+//	 quantiles []float64,                // each in [0, 1]
+//	 startTs   string (int64 ns),
+//	 endTs     string (int64 ns)]
+//
+// No mode (always 'aggregated' under the hood) and no maxPoints (always 1
+// internally so the time-bucket pipeline collapses to a single output row).
+func (h *JSONRPCHandler) getMetricAggregatedQuantiles(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) != 4 {
+		log.Printf("Invalid parameter count: %d (expected 4)", len(params))
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	metricID, ok := params[0].(string)
+	if !ok {
+		log.Printf("Invalid metricID type: %T", params[0])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	rawQs, ok := params[1].([]any)
+	if !ok {
+		log.Printf("Invalid quantiles type: %T (expected array)", params[1])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	quantiles := make([]float64, 0, len(rawQs))
+	for i, q := range rawQs {
+		f, ok := q.(float64)
+		if !ok {
+			log.Printf("Invalid quantile[%d] type: %T (expected number)", i, q)
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		if f < 0 || f > 1 {
+			log.Printf("Invalid quantile[%d] value: %v (must be in [0, 1])", i, f)
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		quantiles = append(quantiles, f)
+	}
+
+	startTs, err := parseTimestampParam(params[2], "startTs")
+	if err != nil {
+		return nil, err
+	}
+	endTs, err := parseTimestampParam(params[3], "endTs")
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := metrics.GetMetricAggregatedQuantiles(ctx, h.store.DB(), metricID, quantiles, startTs, endTs)
+	if err != nil {
+		log.Printf("Error getting metric aggregated quantiles: %v", err)
 		return nil, mapStoreError(err)
 	}
 	return result, nil

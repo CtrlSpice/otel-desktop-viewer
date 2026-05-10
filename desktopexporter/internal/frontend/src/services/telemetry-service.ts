@@ -6,7 +6,11 @@ import type {
   LogData,
   MetricData,
   MetricSummary,
+  Sparkline,
+  Sparkbar,
+  SparkOutcome,
   SparklinePoint,
+  SparkErrorReason,
   Stats,
   Exemplar,
   DataPoint,
@@ -41,6 +45,24 @@ interface JsonRpcResponse {
   id: number
 }
 
+// Error subclass that preserves the JSON-RPC error code so callers can
+// pattern-match on it (e.g. detect ErrCodeUnspecifiedTemporality and render
+// the FunError callout instead of a generic failure UI).
+export class JsonRpcError extends Error {
+  code: number
+  constructor(code: number, message: string) {
+    super(message)
+    this.name = 'JsonRpcError'
+    this.code = code
+  }
+}
+
+// Server error codes that callers care about. Mirrors
+// desktopexporter/internal/server/errors.go. Keep this list small -- only
+// codes the frontend pattern-matches on belong here.
+export const ErrCodeUnspecifiedTemporality = -32013
+export const ErrCodeHistogramBoundsMismatch = -32010
+
 // Helper function to convert milliseconds to nanoseconds
 function toNanoseconds(milliseconds: number): string {
   return milliseconds === 0 ? '0' : milliseconds.toString() + '000000'
@@ -71,7 +93,7 @@ async function callRPC(method: string, params?: any): Promise<any> {
     const data: JsonRpcResponse = await response.json()
 
     if (data.error) {
-      throw new Error(`JSON-RPC Error: ${data.error.message}`)
+      throw new JsonRpcError(data.error.code, data.error.message)
     }
 
     return data.result
@@ -168,12 +190,49 @@ function sparklinePointFromJSON(json: any): SparklinePoint {
   }
 }
 
+// Coerces the wire payload for a sparkline/sparkbar into the SparkOutcome
+// discriminated union. The backend emits one of:
+//   - null (legitimate empty)
+//   - { kind: 'data', value: <T> }
+//   - { kind: 'error', reason: <SparkErrorReason> }
+// We accept legacy untagged arrays as { kind: 'data', value: ... } to keep
+// the deserialiser tolerant of older payloads during rollout.
+function sparkOutcomeFromJSON<T>(
+  raw: unknown,
+  mapValue: (v: any) => T
+): SparkOutcome<T> {
+  if (raw === null || raw === undefined) return null
+  if (Array.isArray(raw)) {
+    return { kind: 'data', value: mapValue(raw) }
+  }
+  if (typeof raw === 'object') {
+    const obj = raw as { kind?: string; value?: any; reason?: string }
+    if (obj.kind === 'data') {
+      return { kind: 'data', value: mapValue(obj.value) }
+    }
+    if (obj.kind === 'error' && typeof obj.reason === 'string') {
+      return { kind: 'error', reason: obj.reason as SparkErrorReason }
+    }
+  }
+  return null
+}
+
+function sparklineFromJSON(raw: unknown): Sparkline {
+  return sparkOutcomeFromJSON<SparklinePoint[]>(raw, v =>
+    (v as any[]).map(sparklinePointFromJSON)
+  )
+}
+
+function sparkbarFromJSON(raw: unknown): Sparkbar {
+  return sparkOutcomeFromJSON<number[]>(raw, v => v as number[])
+}
+
 function metricSummaryFromJSON(json: any): MetricSummary {
   return {
     ...json,
     received: BigInt(json.received),
-    sparkline: json.sparkline?.map(sparklinePointFromJSON) ?? null,
-    sparkbar: json.sparkbar ?? null,
+    sparkline: sparklineFromJSON(json.sparkline),
+    sparkbar: sparkbarFromJSON(json.sparkbar),
   }
 }
 
@@ -504,6 +563,41 @@ export let telemetryAPI = {
       timestamp: BigInt(pt.timestamp),
       attributes: pt.attributes ?? [],
     })) as BucketSeriesPoint[]
+  },
+
+  // Returns one set of quantile values for a histogram/exp-histogram metric
+  // computed across the entire [startTime, endTime) window with all streams
+  // merged. Same return shape as getDatapointQuantiles ("0.5" -> value), so
+  // HistogramChart can consume both. Time params are in ms and converted to
+  // ns strings on the wire (large epoch-ns values won't survive float64).
+  //
+  // Errors mirror getMetricQuantileSeries(mode='aggregated'): unspecified
+  // temporality (-32011), bounds mismatch (-32010), unsupported metric type.
+  // The Aggregated tab's bar chart relies on getMetricBucketSeries succeeding
+  // first; if THAT errors, the chart never renders and this RPC is moot.
+  getMetricAggregatedQuantiles: async (
+    metricID: string,
+    quantiles: number[],
+    startTime: number,
+    endTime: number
+  ): Promise<Record<string, number | null>> => {
+    const startTsNs = toNanoseconds(startTime)
+    const endTsNs = toNanoseconds(endTime)
+    const rawData = await callRPC('getMetricAggregatedQuantiles', [
+      metricID,
+      quantiles,
+      startTsNs,
+      endTsNs,
+    ])
+    if (rawData === null || typeof rawData !== 'object') {
+      console.warn(
+        'getMetricAggregatedQuantiles: Expected object, got:',
+        typeof rawData,
+        rawData
+      )
+      return {}
+    }
+    return rawData as Record<string, number | null>
   },
 
   deleteMetrics: (metricIDs: string[]) =>
