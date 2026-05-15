@@ -13,21 +13,34 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import PaneHeader, { type PaneTab } from '@/components/PaneHeader.svelte'
+  import { ArrowDownIcon } from '@/icons'
   import MetricField from './MetricField.svelte'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
 
-  let activeTab = $state<'details' | 'datapoints'>('details')
+  let activeTab = $state<'fields' | 'datapoints'>('fields')
 
   const tabs: PaneTab[] = [
-    { id: 'details', label: 'Details' },
+    { id: 'fields', label: 'Fields' },
     { id: 'datapoints', label: 'Datapoints' },
   ]
 
-  /* resourceAttrs / scopeAttrs are flattened lists of {key,value,type}
-     for the Fields rendering. They live here because they are only
-     consumed by Fields; the context doesn't need to know about them. */
+  let metricOpen = $state(true)
+  let resourceOpen = $state(true)
+  let scopeOpen = $state(true)
+
+  let metricFieldCount = $derived.by(() => {
+    const m = ctx.metric
+    if (!m) return 0
+    let n = 2 // name + type are always present
+    if (m.description) n++
+    if (m.unit) n++
+    if (ctx.temporality) n++
+    if (ctx.isMonotonic !== null) n++
+    n += 2 // received + datapoint count
+    return n
+  })
   type MetadataAttr = {
     key: string
     value: string
@@ -75,7 +88,7 @@
 
 {#if !ctx.metric}
   <div class="detail-view detail-view--empty">
-    <p class="text-base-content/40 text-sm">Select a metric to view details</p>
+    <p class="text-rp-muted text-sm">Select a metric to view details</p>
   </div>
 {:else}
   {@const metric = ctx.metric}
@@ -84,106 +97,82 @@
       mode="tabs"
       {tabs}
       activeId={activeTab}
-      onSelect={(id) => (activeTab = id as 'details' | 'datapoints')}
+      onSelect={(id) => (activeTab = id as 'fields' | 'datapoints')}
       ariaLabel="Metric detail tabs"
     />
 
     <div class="detail-view__scroll">
-      {#if activeTab === 'details'}
-        <section class="detail-view__section" aria-labelledby="metric-stats-heading">
-          <h2 id="metric-stats-heading" class="detail-view__section-heading">
-            Stats
-          </h2>
-          <p class="detail-view__section-empty">
-            Aggregated stats coming soon
-          </p>
-        </section>
-
-        <section class="detail-view__section" aria-labelledby="metric-fields-heading">
-          <h2 id="metric-fields-heading" class="detail-view__section-heading">
-            Fields
-          </h2>
+      {#if activeTab === 'fields'}
+        <!-- Metric -->
+        <details class="detail-view__group" open={metricOpen}
+          ontoggle={(e) => (metricOpen = (e.currentTarget as HTMLDetailsElement).open)}>
+          <summary class="detail-view__group-heading">
+            <span>Metric</span>
+            <span class="badge badge-xs badge-soft badge-neutral">{metricFieldCount}</span>
+            <ArrowDownIcon class="detail-view__group-caret" aria-hidden="true" />
+          </summary>
           <table class="detail-fields w-full" aria-label="Metric fields">
-            <tbody class="table-body-surface">
-              <MetricField
-                fieldName="name"
-                fieldValue={metric.name}
-                fieldType="string"
-              />
+            <tbody>
+              <MetricField fieldName="name" fieldValue={metric.name} fieldType="string" />
               {#if metric.description}
-                <MetricField
-                  fieldName="description"
-                  fieldValue={metric.description}
-                  fieldType="string"
-                />
+                <MetricField fieldName="description" fieldValue={metric.description} fieldType="string" />
               {/if}
-              <MetricField
-                fieldName="type"
-                fieldValue={ctx.metricType}
-                fieldType="string"
-              />
+              <MetricField fieldName="type" fieldValue={ctx.metricType} fieldType="string" />
               {#if metric.unit}
-                <MetricField
-                  fieldName="unit"
-                  fieldValue={metric.unit}
-                  fieldType="string"
-                />
+                <MetricField fieldName="unit" fieldValue={metric.unit} fieldType="string" />
               {/if}
               {#if ctx.temporality}
-                <MetricField
-                  fieldName="aggregation temporality"
-                  fieldValue={ctx.temporality}
-                  fieldType="string"
-                />
+                <MetricField fieldName="aggregation temporality" fieldValue={ctx.temporality} fieldType="string" />
               {/if}
               {#if ctx.isMonotonic !== null}
-                <MetricField
-                  fieldName="is monotonic"
-                  fieldValue={String(ctx.isMonotonic)}
-                  fieldType="bool"
-                />
+                <MetricField fieldName="is monotonic" fieldValue={String(ctx.isMonotonic)} fieldType="bool" />
               {/if}
               <MetricField
                 fieldName="received"
-                fieldValue={formatTimestamp(
-                  metric.received,
-                  timeContext.timezone,
-                  'milliseconds'
-                )}
+                fieldValue={formatTimestamp(metric.received, timeContext.timezone, 'milliseconds')}
                 fieldType="timestamp"
               />
-              <MetricField
-                fieldName="datapoint count"
-                fieldValue={ctx.totalDatapointCount.toString()}
-                fieldType="uint32"
-              />
+              <MetricField fieldName="datapoint count" fieldValue={ctx.totalDatapointCount.toString()} fieldType="uint32" />
+            </tbody>
+          </table>
+        </details>
+
+        <!-- Resource -->
+        <details class="detail-view__group" open={resourceOpen}
+          ontoggle={(e) => (resourceOpen = (e.currentTarget as HTMLDetailsElement).open)}>
+          <summary class="detail-view__group-heading">
+            <span>Resource</span>
+            <span class="badge badge-xs badge-soft badge-neutral">{resourceAttrs.length}</span>
+            <ArrowDownIcon class="detail-view__group-caret" aria-hidden="true" />
+          </summary>
+          <table class="detail-fields w-full" aria-label="Resource attributes">
+            <tbody>
               {#if metric.resourceDroppedAttributesCount > 0}
-                <MetricField
-                  fieldName="dropped attributes"
-                  fieldValue={metric.resourceDroppedAttributesCount.toString()}
-                  fieldType="uint32"
-                  origin="resource"
-                />
+                <MetricField fieldName="dropped attributes" fieldValue={metric.resourceDroppedAttributesCount.toString()} fieldType="uint32" />
               {/if}
               {#each resourceAttrs as attr (`resource:${attr.key}`)}
-                <MetricField
-                  fieldName={attr.key}
-                  fieldValue={attr.value}
-                  fieldType={attr.type}
-                  origin="resource"
-                />
-              {/each}
-              {#each scopeAttrs as attr (`scope:${attr.key}`)}
-                <MetricField
-                  fieldName={attr.key}
-                  fieldValue={attr.value}
-                  fieldType={attr.type}
-                  origin="scope"
-                />
+                <MetricField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} />
               {/each}
             </tbody>
           </table>
-        </section>
+        </details>
+
+        <!-- Scope -->
+        <details class="detail-view__group" open={scopeOpen}
+          ontoggle={(e) => (scopeOpen = (e.currentTarget as HTMLDetailsElement).open)}>
+          <summary class="detail-view__group-heading">
+            <span>Scope</span>
+            <span class="badge badge-xs badge-soft badge-neutral">{scopeAttrs.length}</span>
+            <ArrowDownIcon class="detail-view__group-caret" aria-hidden="true" />
+          </summary>
+          <table class="detail-fields w-full" aria-label="Scope attributes">
+            <tbody>
+              {#each scopeAttrs as attr (`scope:${attr.key}`)}
+                <MetricField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} />
+              {/each}
+            </tbody>
+          </table>
+        </details>
       {:else}
         <section class="detail-view__section" aria-labelledby="metric-datapoints-heading">
           <h2 id="metric-datapoints-heading" class="detail-view__section-heading">
@@ -229,10 +218,40 @@
   }
 
   .detail-view__section-heading {
-    @apply m-0 text-xs font-semibold uppercase tracking-wide text-base-content/55;
+    @apply m-0 text-xs font-semibold uppercase tracking-wide;
+    color: var(--color-subtle);
   }
 
   .detail-view__section-empty {
-    @apply m-0 text-sm italic text-base-content/40;
+    @apply m-0 text-sm italic;
+    color: var(--color-muted);
+  }
+
+  .detail-view__group {
+    @apply border-b border-base-300/30;
+  }
+
+  .detail-view__group:last-child {
+    @apply border-b-0;
+  }
+
+  .detail-view__group-heading {
+    @apply cursor-pointer select-none list-none px-3 py-2 text-xs font-semibold uppercase tracking-wide flex items-center gap-2;
+    color: var(--color-subtle);
+  }
+
+  .detail-view__group-heading::marker,
+  .detail-view__group-heading::-webkit-details-marker {
+    display: none;
+  }
+
+  .detail-view__group-heading :global(.detail-view__group-caret) {
+    @apply ml-auto h-3.5 w-3.5 transition-transform duration-150;
+    color: var(--color-muted);
+    transform: rotate(-90deg);
+  }
+
+  .detail-view__group[open] > .detail-view__group-heading :global(.detail-view__group-caret) {
+    transform: rotate(0deg);
   }
 </style>

@@ -1,8 +1,12 @@
 import type { MetricType } from '@/types/api-types'
 
+// TODO: unify metric-type badge colours — currently info and accent
+// resolve to the same hex in both Rosé Pine themes, so Gauge and Sum
+// are visually indistinguishable. Pick a dedicated palette that gives
+// each metric type a unique colour in both moon and dawn.
 const METRIC_TYPE_BADGE_CLASS: Record<string, string> = {
   Gauge: 'badge badge-xs badge-soft badge-info',
-  Sum: 'badge badge-xs badge-soft badge-primary',
+  Sum: 'badge badge-xs badge-soft badge-neutral',
   Histogram: 'badge badge-xs badge-soft badge-warning',
   ExponentialHistogram: 'badge badge-xs badge-soft badge-secondary',
   Empty: 'badge badge-xs badge-soft badge-neutral',
@@ -11,7 +15,7 @@ const METRIC_TYPE_BADGE_CLASS: Record<string, string> = {
 /** Stroke/fill color for charts — matches `METRIC_TYPE_BADGE_CLASS` semantics */
 const METRIC_TYPE_SERIES_COLOR: Record<string, string> = {
   Gauge: 'var(--color-info)',
-  Sum: 'var(--color-primary)',
+  Sum: 'var(--color-neutral)',
   Histogram: 'var(--color-warning)',
   ExponentialHistogram: 'var(--color-secondary)',
   Empty: 'var(--color-neutral)',

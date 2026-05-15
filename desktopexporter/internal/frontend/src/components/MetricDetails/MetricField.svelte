@@ -31,18 +31,17 @@
 {#if !hidden}
   <tr class="table-row" class:table-row--nested={nested}>
     <td class="detail-cell">
-      <span class="detail-cell__key">{fieldName}:</span>
+      <span class="detail-cell__key">{fieldName} <span class="detail-cell__type">({fieldType})</span>:</span>
       <span class="detail-cell__value">{fieldValue}</span>
-    </td>
-    <td class="detail-cell--badges">
-      <span class="badge-type">{fieldType}</span>
-      {#if origin}
-        <span class="badge-origin">{origin}</span>
-      {/if}
     </td>
   </tr>
 {/if}
 
 <style lang="postcss">
   @reference "../../app.css";
+
+  .detail-cell__type {
+    color: var(--color-subtle);
+    @apply font-normal;
+  }
 </style>

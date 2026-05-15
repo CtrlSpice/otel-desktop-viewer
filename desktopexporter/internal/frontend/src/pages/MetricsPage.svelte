@@ -51,6 +51,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
+  import { metricTypeBadgeClass, metricTypeLabel } from '@/utils/metric-type'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -359,7 +360,7 @@
 
     {#snippet drawerFooter()}
       <div class="flex items-center justify-between">
-        <span class="text-xs tabular-nums text-base-content/50">
+        <span class="text-xs tabular-nums text-rp-muted">
           {sortedMetrics.length} metric{sortedMetrics.length !== 1 ? 's' : ''}
         </span>
         <button
@@ -383,6 +384,14 @@
            regardless of content state, and DetailNav self-disables
            when there is nothing to navigate. -->
       <div class="metrics-main">
+        {#if selectedSummary}
+          <div class="metrics-main__header">
+            <div class="metrics-main__header-text">
+              <span class="metrics-main__title">{selectedSummary.name}</span>
+              <span class="metrics-main__subtitle">({selectedSummary.serviceName})</span>
+            </div>
+          </div>
+        {/if}
         {#if error}
           <div class="metrics-main__placeholder alert alert-error">
             <span>Error: {error}</span>
@@ -393,8 +402,8 @@
           </div>
         {:else if !loading && !hasMetricRows}
           <div class="metrics-main__placeholder metrics-empty">
-            <p class="text-base-content/60">No metrics in this time range</p>
-            <p class="mt-2 text-sm text-base-content/50">
+            <p class="text-rp-subtle">No metrics in this time range</p>
+            <p class="mt-2 text-sm text-rp-muted">
               Send telemetry to the exporter or adjust the time range
             </p>
           </div>
@@ -466,6 +475,24 @@
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
   }
 
+  .metrics-main__header {
+    @apply flex shrink-0 items-center gap-3 px-3 py-2 bg-base-300 rounded-t-xl;
+  }
+
+  .metrics-main__header-text {
+    @apply flex items-baseline gap-1.5 min-w-0;
+  }
+
+  .metrics-main__title {
+    @apply text-sm font-semibold tracking-tight truncate;
+    color: var(--color-base-content);
+  }
+
+  .metrics-main__subtitle {
+    @apply text-xs truncate;
+    color: var(--color-muted);
+  }
+
   .metrics-main__chart {
     @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-auto;
   }
@@ -488,6 +515,7 @@
   }
 
   .metrics-empty {
-    @apply px-4 py-12 text-center text-base-content/60;
+    @apply px-4 py-12 text-center;
+    color: var(--color-subtle);
   }
 </style>
