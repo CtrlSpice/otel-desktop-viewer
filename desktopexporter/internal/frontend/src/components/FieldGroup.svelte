@@ -38,7 +38,7 @@
   }
 
   .field-group__heading {
-    @apply cursor-pointer select-none list-none px-3 py-2 text-xs font-semibold uppercase tracking-wide flex items-center gap-2;
+    @apply cursor-pointer select-none list-none px-3 py-2 text-sm font-medium flex items-center gap-2;
     color: var(--color-subtle);
   }
 

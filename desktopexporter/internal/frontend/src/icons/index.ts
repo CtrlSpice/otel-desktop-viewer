@@ -18,6 +18,7 @@ import FilterIcon from './FilterIcon.svelte'
 import FirePitIcon from './FirePitIcon.svelte'
 import FocusPointIcon from './FocusPoint.svelte'
 import GlobalIcon from './GlobalIcon.svelte'
+import HandPointingDownIcon from './HandPointingDown.svelte'
 import LeftToRightListBulletIcon from './LeftToRightListBullet.svelte'
 import HelpCircleIcon from './HelpCircleIcon.svelte'
 import HomeIcon from './HomeIcon.svelte'
@@ -44,6 +45,7 @@ export {
   FirePitIcon,
   FocusPointIcon,
   GlobalIcon,
+  HandPointingDownIcon,
   LeftToRightListBulletIcon,
   HelpCircleIcon,
   HomeIcon,

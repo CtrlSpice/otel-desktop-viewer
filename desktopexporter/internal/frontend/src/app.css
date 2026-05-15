@@ -799,7 +799,7 @@ button:focus-visible:not(.btn) {
 
 /* Detail KV cell: [key: value] */
 .detail-cell {
-  @apply py-1 pl-4 pr-2 text-xs align-middle truncate;
+  @apply py-1 pl-4 pr-2 text-sm align-middle truncate;
   max-width: 0;
 }
 
