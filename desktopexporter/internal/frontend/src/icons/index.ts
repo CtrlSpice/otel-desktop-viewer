@@ -16,7 +16,9 @@ import CheckmarkCircleIcon from './CheckmarkCircleIcon.svelte'
 import CopyIcon from './CopyIcon.svelte'
 import FilterIcon from './FilterIcon.svelte'
 import FirePitIcon from './FirePitIcon.svelte'
+import FocusPointIcon from './FocusPoint.svelte'
 import GlobalIcon from './GlobalIcon.svelte'
+import LeftToRightListBulletIcon from './LeftToRightListBullet.svelte'
 import HelpCircleIcon from './HelpCircleIcon.svelte'
 import HomeIcon from './HomeIcon.svelte'
 import MoonIcon from './MoonIcon.svelte'
@@ -40,7 +42,9 @@ export {
   CopyIcon,
   FilterIcon,
   FirePitIcon,
+  FocusPointIcon,
   GlobalIcon,
+  LeftToRightListBulletIcon,
   HelpCircleIcon,
   HomeIcon,
   MoonIcon,

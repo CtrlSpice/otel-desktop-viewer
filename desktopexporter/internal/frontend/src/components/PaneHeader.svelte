@@ -87,7 +87,7 @@
       <button
         type="button"
         role="tab"
-        class="tab flex-1 {active ? 'tab-active [--tab-bg:var(--color-base-200)] text-primary' : ''}"
+        class="tab flex-1 gap-1.5 {active ? 'tab-active [--tab-bg:var(--color-base-200)] text-primary' : ''}"
         aria-selected={active}
         disabled={tab.disabled}
         onclick={() => !tab.disabled && onSelect(tab.id)}

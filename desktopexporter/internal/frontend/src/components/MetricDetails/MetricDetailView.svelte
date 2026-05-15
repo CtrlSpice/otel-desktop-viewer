@@ -13,18 +13,14 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import PaneHeader, { type PaneTab } from '@/components/PaneHeader.svelte'
-  import { ArrowDownIcon } from '@/icons'
+  import FieldGroup from '@/components/FieldGroup.svelte'
+  import { LeftToRightListBulletIcon, FocusPointIcon } from '@/icons'
   import MetricField from './MetricField.svelte'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
 
   let activeTab = $state<'fields' | 'datapoints'>('fields')
-
-  const tabs: PaneTab[] = [
-    { id: 'fields', label: 'Fields' },
-    { id: 'datapoints', label: 'Datapoints' },
-  ]
 
   let metricOpen = $state(true)
   let resourceOpen = $state(true)
@@ -92,6 +88,15 @@
   </div>
 {:else}
   {@const metric = ctx.metric}
+
+  {#snippet fieldsIcon()}<LeftToRightListBulletIcon />{/snippet}
+  {#snippet datapointsIcon()}<FocusPointIcon />{/snippet}
+
+  {@const tabs: PaneTab[] = [
+    { id: 'fields', label: 'Fields', icon: fieldsIcon },
+    { id: 'datapoints', label: 'Datapoints', icon: datapointsIcon },
+  ]}
+
   <div class="detail-view">
     <PaneHeader
       mode="tabs"
@@ -103,14 +108,7 @@
 
     <div class="detail-view__scroll">
       {#if activeTab === 'fields'}
-        <!-- Metric -->
-        <details class="detail-view__group" open={metricOpen}
-          ontoggle={(e) => (metricOpen = (e.currentTarget as HTMLDetailsElement).open)}>
-          <summary class="detail-view__group-heading">
-            <span>Metric</span>
-            <span class="badge badge-xs badge-soft badge-neutral">{metricFieldCount}</span>
-            <ArrowDownIcon class="detail-view__group-caret" aria-hidden="true" />
-          </summary>
+        <FieldGroup label="Metric" count={metricFieldCount} bind:open={metricOpen}>
           <table class="detail-fields w-full" aria-label="Metric fields">
             <tbody>
               <MetricField fieldName="name" fieldValue={metric.name} fieldType="string" />
@@ -135,16 +133,9 @@
               <MetricField fieldName="datapoint count" fieldValue={ctx.totalDatapointCount.toString()} fieldType="uint32" />
             </tbody>
           </table>
-        </details>
+        </FieldGroup>
 
-        <!-- Resource -->
-        <details class="detail-view__group" open={resourceOpen}
-          ontoggle={(e) => (resourceOpen = (e.currentTarget as HTMLDetailsElement).open)}>
-          <summary class="detail-view__group-heading">
-            <span>Resource</span>
-            <span class="badge badge-xs badge-soft badge-neutral">{resourceAttrs.length}</span>
-            <ArrowDownIcon class="detail-view__group-caret" aria-hidden="true" />
-          </summary>
+        <FieldGroup label="Resource" count={resourceAttrs.length} bind:open={resourceOpen}>
           <table class="detail-fields w-full" aria-label="Resource attributes">
             <tbody>
               {#if metric.resourceDroppedAttributesCount > 0}
@@ -155,16 +146,9 @@
               {/each}
             </tbody>
           </table>
-        </details>
+        </FieldGroup>
 
-        <!-- Scope -->
-        <details class="detail-view__group" open={scopeOpen}
-          ontoggle={(e) => (scopeOpen = (e.currentTarget as HTMLDetailsElement).open)}>
-          <summary class="detail-view__group-heading">
-            <span>Scope</span>
-            <span class="badge badge-xs badge-soft badge-neutral">{scopeAttrs.length}</span>
-            <ArrowDownIcon class="detail-view__group-caret" aria-hidden="true" />
-          </summary>
+        <FieldGroup label="Scope" count={scopeAttrs.length} bind:open={scopeOpen}>
           <table class="detail-fields w-full" aria-label="Scope attributes">
             <tbody>
               {#each scopeAttrs as attr (`scope:${attr.key}`)}
@@ -172,7 +156,7 @@
               {/each}
             </tbody>
           </table>
-        </details>
+        </FieldGroup>
       {:else}
         <section class="detail-view__section" aria-labelledby="metric-datapoints-heading">
           <h2 id="metric-datapoints-heading" class="detail-view__section-heading">
@@ -225,33 +209,5 @@
   .detail-view__section-empty {
     @apply m-0 text-sm italic;
     color: var(--color-muted);
-  }
-
-  .detail-view__group {
-    @apply border-b border-base-300/30;
-  }
-
-  .detail-view__group:last-child {
-    @apply border-b-0;
-  }
-
-  .detail-view__group-heading {
-    @apply cursor-pointer select-none list-none px-3 py-2 text-xs font-semibold uppercase tracking-wide flex items-center gap-2;
-    color: var(--color-subtle);
-  }
-
-  .detail-view__group-heading::marker,
-  .detail-view__group-heading::-webkit-details-marker {
-    display: none;
-  }
-
-  .detail-view__group-heading :global(.detail-view__group-caret) {
-    @apply ml-auto h-3.5 w-3.5 transition-transform duration-150;
-    color: var(--color-muted);
-    transform: rotate(-90deg);
-  }
-
-  .detail-view__group[open] > .detail-view__group-heading :global(.detail-view__group-caret) {
-    transform: rotate(0deg);
   }
 </style>
