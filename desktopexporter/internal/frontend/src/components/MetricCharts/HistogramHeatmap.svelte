@@ -29,7 +29,7 @@
     count: number
   }
 
-  // The fetch was lifted up to MetricDetailPanel so the Heatmap and
+  // The fetch was lifted up to MetricViewContext so the Heatmap and
   // Aggregated tabs can share one bucket-series request. This component is
   // now purely a renderer: parent supplies `points` (plus the window range
   // so the axis-tier picker still works), and the parent owns loading /

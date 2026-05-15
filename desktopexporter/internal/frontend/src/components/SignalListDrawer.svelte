@@ -53,6 +53,13 @@
 
   let drawerOpen = $state(loadOpen())
 
+  // When the drawer has no items (e.g. on Home), force-collapse it and hide
+  // the open-toggle. We deliberately skip the localStorage write in that
+  // state so an empty page can't clobber a real preference set on a page
+  // that does have items.
+  let isEmpty = $derived(items.length === 0)
+  let effectivelyOpen = $derived(isEmpty ? false : drawerOpen)
+
   function loadOpen(): boolean {
     if (typeof localStorage === 'undefined') return true
     const v = localStorage.getItem(storageKey + ':open')
@@ -60,6 +67,7 @@
   }
 
   function handleToggleChange(e: Event) {
+    if (isEmpty) return
     drawerOpen = (e.currentTarget as HTMLInputElement).checked
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(storageKey + ':open', String(drawerOpen))
@@ -71,7 +79,7 @@
   })
   setContext(SIGNAL_DRAWER_CHROME_KEY, drawerChromeContext)
   $effect(() => {
-    drawerChromeContext.closeForId = drawerOpen ? drawerId : undefined
+    drawerChromeContext.closeForId = effectivelyOpen ? drawerId : undefined
   })
 
   // --- auto-scroll the virtual list when the selection changes ---
@@ -90,7 +98,7 @@
   let lastScrolledSelection: string | null = null
 
   $effect(() => {
-    if (!drawerOpen) {
+    if (!effectivelyOpen) {
       lastScrolledSelection = null
     }
   })
@@ -118,7 +126,7 @@
 
   $effect(() => {
     const id = selectedId
-    if (!drawerOpen || !vlistRef || !id) return
+    if (!effectivelyOpen || !vlistRef || !id) return
     if (id === lastScrolledSelection) return
     const idx = items.findIndex(item => itemKey(item) === id)
     if (idx < 0) return
@@ -138,7 +146,8 @@
     id={drawerId}
     type="checkbox"
     class="drawer-toggle signal-drawer-toggle"
-    checked={drawerOpen}
+    checked={effectivelyOpen}
+    disabled={isEmpty}
     onchange={handleToggleChange}
   />
 
@@ -150,7 +159,7 @@
     <div
       class="signal-drawer__panel flex h-full flex-col bg-base-100/95 is-drawer-close:w-14 is-drawer-open:w-96"
     >
-      {#if !drawerOpen}
+      {#if !effectivelyOpen && !isEmpty}
         <!-- Collapsed: open-sidebar toggle pinned to the very top -->
         <div class="signal-drawer__open-toggle">
           <label
@@ -164,7 +173,7 @@
         </div>
       {/if}
 
-      {#if !drawerOpen}
+      {#if !effectivelyOpen}
         <!-- Collapsed: primary nav (icons) -->
         <div class="signal-drawer__nav signal-drawer__nav--collapsed">
           <DrawerNavTabs collapsed />
@@ -172,7 +181,7 @@
       {/if}
 
       <!-- Collapsed: header controls (refresh, aside, theme toggle) -->
-      {#if !drawerOpen}
+      {#if !effectivelyOpen}
         <div class="signal-drawer__collapsed-header">
           <div
             class="signal-drawer__header-controls--collapsed flex shrink-0 flex-col items-center gap-1.5"
@@ -221,7 +230,7 @@
       {/if}
 
       <!-- Expanded: unified header panel (tabs + chrome + search + toolbar) -->
-      {#if drawerOpen}
+      {#if effectivelyOpen}
         <div class="signal-drawer__header is-drawer-close:hidden">
           <div class="signal-drawer__chrome-stack">
             <DrawerNavTabs />
@@ -250,32 +259,30 @@
       {/if}
 
       <!-- Collapsed: count badge -->
-      <div class="signal-drawer__rail-count is-drawer-open:hidden">
-        {count}
-      </div>
+      {#if !isEmpty}
+        <div class="signal-drawer__rail-count is-drawer-open:hidden">
+          {count}
+        </div>
+      {/if}
 
       <!-- Expanded: list -->
       <div
         class="signal-drawer__body is-drawer-close:hidden"
         bind:this={drawerBodyEl}
       >
-        {#if items.length === 0}
-          <div class="signal-drawer__empty">No items</div>
-        {:else}
-          <VirtualList
-            bind:this={vlistRef}
-            {items}
-            defaultEstimatedItemHeight={72}
-            bufferSize={10}
-            containerClass="signal-drawer__vlist"
-            viewportClass="signal-drawer__vlist-viewport"
-            itemsClass="signal-drawer__vlist-items"
-          >
-            {#snippet renderItem(item)}
-              {@render itemSnippet(item, selectedId === itemKey(item))}
-            {/snippet}
-          </VirtualList>
-        {/if}
+        <VirtualList
+          bind:this={vlistRef}
+          {items}
+          defaultEstimatedItemHeight={72}
+          bufferSize={10}
+          containerClass="signal-drawer__vlist"
+          viewportClass="signal-drawer__vlist-viewport"
+          itemsClass="signal-drawer__vlist-items"
+        >
+          {#snippet renderItem(item)}
+            {@render itemSnippet(item, selectedId === itemKey(item))}
+          {/snippet}
+        </VirtualList>
       </div>
 
       <!-- Expanded: footer -->
@@ -390,31 +397,6 @@
     }
   }
 
-  .signal-drawer__refresh-hover-wrap {
-    @apply relative;
-  }
-
-  /* Tooltip to the right of the narrow rail refresh button */
-  .signal-drawer__refresh-tooltip {
-    @apply pointer-events-none absolute left-full top-1/2 z-50 ml-1.5 max-w-[min(20rem,calc(100vw-2rem))] -translate-y-1/2 opacity-0 transition-opacity duration-150;
-    @apply rounded-lg border border-base-300 bg-base-100 px-2.5 py-1.5 text-left text-xs text-secondary shadow-lg;
-  }
-
-  .signal-drawer__refresh-hover-wrap:hover .signal-drawer__refresh-tooltip,
-  .signal-drawer__refresh-hover-wrap:focus-within .signal-drawer__refresh-tooltip {
-    @apply opacity-100;
-  }
-
-  .signal-drawer__refresh-tooltip
-    :global(.signal-drawer__refresh-aside-pill) {
-    @apply inline-flex max-w-full items-center whitespace-nowrap tabular-nums leading-snug;
-  }
-
-  .signal-drawer__refresh-tooltip
-    :global(.signal-drawer__refresh-aside-pill:not(:first-child)::before) {
-    content: ', ';
-  }
-
   /* ── Search + list-controls stack ── */
   .signal-drawer__search-stack {
     @apply flex min-w-0 w-full shrink-0 flex-col gap-1;
@@ -462,12 +444,20 @@
     @apply pb-2;
   }
 
-  .signal-drawer__empty {
-    @apply flex h-full items-center justify-center text-sm text-base-content/40;
+  /* ── Footer ──
+     Pinned to --app-footer-height (defined in app.css) so the
+     drawer's bottom strip aligns pixel-for-pixel with the page
+     footer in PageLayout. Vertical padding is replaced by
+     min-height + items-center so the strip doesn't collapse around
+     small controls (btn-xs) or grow with larger ones (btn-sm).
+     The single direct child stretches to fill the row so consumers
+     don't have to remember to add w-full themselves. */
+  .signal-drawer__footer {
+    @apply flex shrink-0 items-center border-t border-base-300/40 px-3;
+    min-height: var(--app-footer-height);
   }
 
-  /* ── Footer ── */
-  .signal-drawer__footer {
-    @apply shrink-0 border-t border-base-300/40 px-3 py-2;
+  .signal-drawer__footer > :global(*) {
+    @apply min-w-0 flex-1;
   }
 </style>

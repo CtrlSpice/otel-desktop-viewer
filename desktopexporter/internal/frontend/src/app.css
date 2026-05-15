@@ -385,7 +385,7 @@ svg {
   @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
 }
 
-/* Trace detail panel — Fields | Events | Links (not the signal drawer). */
+/* Trace detail panel — Fields | Events | Links (and metric histogram tabs). */
 .detail-tab {
   @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
 }
@@ -565,6 +565,25 @@ button:focus-visible:not(.btn) {
   );
   /* Toolbar + page stacks (decoupled so resizable panels can sit tighter) */
   --layout-gap: 0.5rem;
+
+  /*
+   * Unified app-shell footer height. The drawer footer (inside the
+   * SignalListDrawer) and the page footer (PageLayout's pageFooter
+   * slot) both pin to this so the bottom edge reads as a single
+   * horizontal line across drawer + content. Drives min-height; both
+   * footers center their contents so smaller controls (btn-xs) don't
+   * collapse the strip.
+   */
+  --app-footer-height: 2.5rem;
+
+  /*
+   * Pane content header height (for .pane-header). Used by the
+   * metric + trace detail tab strips and any other pane-level
+   * header band. Distinct from --table-header-h (2.25rem) which
+   * sizes table column header rows; pane headers are taller so
+   * they read as a real title bar rather than a table thead.
+   */
+  --pane-header-h: 3rem;
 }
 
 /* Same frosted fill as panel chrome: paint this on tbody / field lists */
@@ -613,19 +632,46 @@ button:focus-visible:not(.btn) {
   @apply text-center;
 }
 
-/* Shared thead / header row fill (trace list, waterfall, any data table). */
-.table-header-surface {
+/*
+ * Shared header band — every "header strip" surface in the app:
+ * table theads (trace list, waterfall, log/metric/trace detail
+ * tables), popover headers, time-range preset strips, and the
+ * per-pane content headers in PageLayout panes.
+ *
+ * Tone: a "warm-neutral" — base-100 nudged ~6% toward primary
+ * (iris). The band reads as a slightly warmer base, not as a
+ * tinted bar, so existing primary-family states (active tabs at
+ * bg-primary/15, focus rings, etc.) still pop with comfortable
+ * contrast against it. The bottom border picks up the same primary
+ * mix at low alpha so the band's edge belongs to the same color
+ * family as its fill instead of dropping a foreign neutral line.
+ * The 1px inset highlight at the top mimics the drawer header's
+ * "lift" without committing to a real shadow.
+ *
+ * Renamed from the misleading `.table-header-surface` (it was never
+ * table-only).
+ */
+.header-surface {
   box-sizing: border-box;
   height: var(--table-header-h);
   min-height: var(--table-header-h);
-  @apply bg-base-200/60 backdrop-blur-sm;
+  background-color: color-mix(
+    in oklab,
+    var(--color-primary) 6%,
+    var(--color-base-100)
+  );
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--color-primary) 18%, transparent);
+  box-shadow: inset 0 1px 0
+    color-mix(in oklab, var(--color-base-100) 70%, transparent);
 }
 
 /* Div/popover strips use the same bar height; <thead> keeps table layout (no flex here). */
-.table-header-surface:not(thead) {
+.header-surface:not(thead) {
   @apply flex items-center py-1;
 }
 
+/*
 .table-header-row {
   height: var(--table-header-h);
 }

@@ -35,7 +35,7 @@
   import DetailView from '@/components/TraceDetails/DetailView/DetailView.svelte'
   import WaterfallView from '@/components/TraceDetails/Waterfall/WaterfallView.svelte'
   import ResizablePanels from '@/components/ResizablePanels.svelte'
-  import DetailNav from '@/components/DetailNav.svelte'
+  import SignalFooter from '@/components/SignalFooter.svelte'
   import { TrashIcon } from '@/icons'
 
   // --- context ---
@@ -407,8 +407,7 @@
                     loading={detailLoading}
                   >
                     {#snippet footer()}
-                      <span aria-hidden="true"></span>
-                      <DetailNav
+                      <SignalFooter
                         index={selectedIndex}
                         total={sortedTraces.length}
                         label="trace"
@@ -416,20 +415,8 @@
                         onPrev={() => selectByOffset(-1)}
                         onNext={() => selectByOffset(1)}
                         onLast={selectLast}
+                        onDelete={() => handleDeleteTrace(data.traceID)}
                       />
-                      <div
-                        class="tooltip tooltip-left tooltip-error"
-                        data-tip="Delete this trace"
-                      >
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-sm btn-square text-error"
-                          onclick={() => handleDeleteTrace(data.traceID)}
-                          aria-label="Delete this trace"
-                        >
-                          <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                      </div>
                     {/snippet}
                   </WaterfallView>
                 {/snippet}

@@ -118,11 +118,18 @@ export type Exemplar = {
   spanID: string | null
 }
 
+// One measurement sample. Attributes do not live here -- they belong
+// to the parent MetricTimeseries, which is what makes a sample "this
+// timeseries' sample" rather than just "a sample of this metric." This
+// matches the OTel data model (Metric -> Timeseries -> NumberDataPoint).
+//
+// Anything we'd describe as "metadata about how the tool grouped this
+// sample" (e.g. attributesKey) is also a timeseries-level concept and
+// lives on MetricTimeseries, not here.
 type BaseDataPoint = {
   id: string
   timestamp: bigint
   startTime: bigint
-  attributes: Attributes
   flags: number
   exemplars: Exemplar[]
 }
@@ -176,6 +183,30 @@ export type DataPoint =
   | HistogramDataPoint
   | ExponentialHistogramDataPoint
 
+// A MetricTimeseries is one (metric, attribute-set) pair: the OTel
+// SDK spec calls this a "metric point" / "timeseries" within a metric
+// stream. All datapoints inside share the same `attributes` (that's
+// what makes them one timeseries). `attributesKey` is the backend's
+// canonical "key=value|..." identity for this attribute set -- a stable
+// id the frontend uses to drive the legend, the chart's per-line
+// keying, and the per-timeseries colour assignment.
+//
+// (Naming note: the SDK spec uses "metric stream" for the whole named
+// series produced by a View -- which corresponds to our `MetricData` /
+// `metric_streams` table. The per-attribute series within it is the
+// "timeseries" / "metric point". We use "timeseries" everywhere in the
+// type layer to avoid colliding with the spec's "metric stream".)
+//
+// Timeseries arrive ordered "newest activity first" (latest dp
+// timestamp desc); datapoints inside a timeseries arrive
+// timestamp-desc as well. Both orderings are guaranteed by the
+// backend SQL.
+export type MetricTimeseries = {
+  attributesKey: string
+  attributes: Attributes
+  datapoints: DataPoint[]
+}
+
 export type MetricData = {
   id: string
   name: string
@@ -188,7 +219,7 @@ export type MetricData = {
   scopeDroppedAttributesCount: number
   scope: ScopeData
   received: bigint
-  datapoints: DataPoint[]
+  timeseries: MetricTimeseries[]
 }
 
 // Metric summary for sidebar cards (lightweight, grouped by OTel identity)
@@ -270,16 +301,21 @@ export type SearchResultEvent =
   | { signal: 'logs'; results: LogData[]; queryTree?: unknown }
   | { signal: 'metrics'; results: MetricData[]; queryTree?: unknown }
 
-// Quantile series (trend chart) types. The backend computes adaptive time
-// buckets and emits one point per (bucket, stream) for per-stream mode and
-// one point per bucket for aggregated mode.
-export type QuantileSeriesMode = 'per-stream' | 'aggregated'
+// Quantile series (trend chart) types. The backend computes adaptive
+// time buckets and emits one point per (bucket, timeseries) for
+// per-attribute mode and one point per bucket for merged mode.
+//
+// Modes mirror the OTel-aligned terminology used elsewhere: a
+// "timeseries" is one per-attribute stream within a metric, so
+// 'per-attribute' returns one point per (bucket, attribute set), and
+// 'merged' folds all timeseries into a single point per bucket.
+export type QuantileSeriesMode = 'per-attribute' | 'merged'
 
 // One point in a quantile series. `quantiles` keys are the same float
 // strings produced by Go's strconv.FormatFloat with -1 precision (e.g.
 // "0.5", "0.95"); a value of null means the macro declined to interpolate
 // (empty buckets / total count of zero) and should render as a dash.
-// `attributes` and `attributesKey` are empty/blank for aggregated mode.
+// `attributes` and `attributesKey` are empty/blank for merged mode.
 export type QuantileSeriesPoint = {
   timestamp: bigint
   attributesKey: string
@@ -293,7 +329,7 @@ export type QuantileSeriesPoint = {
 
 // Bucket series (heatmap) types. Same adaptive bucketing as quantile series,
 // but the raw bucket vectors are returned instead of computed quantiles.
-export type BucketSeriesMode = 'per-stream' | 'aggregated'
+export type BucketSeriesMode = 'per-attribute' | 'merged'
 
 export type BucketSeriesTotals = {
   count: number

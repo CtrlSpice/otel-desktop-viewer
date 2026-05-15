@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -129,6 +130,97 @@ func TestIngestAttributes_EventAndLink(t *testing.T) {
 	assert.True(t, eventNames["event.num"], "should have event attribute event.num")
 	assert.True(t, linkNames["link.attr"], "should have link attribute link.attr")
 	assert.True(t, linkNames["link.num"], "should have link attribute link.num")
+}
+
+// AttrsCanonical: empty map produces the empty string. Callers that
+// need to distinguish "no attributes" from "an attribute set whose
+// canonical form is empty" should additionally check Len()==0; this
+// test pins the empty-input behaviour itself.
+func TestAttrsCanonical_Empty(t *testing.T) {
+	m := pcommon.NewMap()
+	assert.Equal(t, "", ingest.AttrsCanonical(m))
+}
+
+// AttrsCanonical: insertion order doesn't change the output. This is
+// the central guarantee that justifies materialising the canonical
+// form at ingest -- without it, two ingestions of the same logical
+// stream could land in different "stream buckets" depending on the
+// order the attribute keys arrived in the OTLP request.
+func TestAttrsCanonical_OrderIndependent(t *testing.T) {
+	a := pcommon.NewMap()
+	a.PutStr("endpoint", "/users")
+	a.PutInt("status", 200)
+	a.PutStr("method", "GET")
+
+	b := pcommon.NewMap()
+	b.PutInt("status", 200)
+	b.PutStr("method", "GET")
+	b.PutStr("endpoint", "/users")
+
+	assert.Equal(t, ingest.AttrsCanonical(a), ingest.AttrsCanonical(b))
+}
+
+// AttrsCanonical: any change to keys, values, or value types produces a
+// different output. Otherwise two semantically-distinct streams would
+// collide on the same canonical key and group together in queries.
+func TestAttrsCanonical_DistinctOnChange(t *testing.T) {
+	base := pcommon.NewMap()
+	base.PutStr("endpoint", "/users")
+	base.PutInt("status", 200)
+	baseCanon := ingest.AttrsCanonical(base)
+
+	differentValue := pcommon.NewMap()
+	differentValue.PutStr("endpoint", "/orders")
+	differentValue.PutInt("status", 200)
+	assert.NotEqual(t, baseCanon, ingest.AttrsCanonical(differentValue))
+
+	extra := pcommon.NewMap()
+	extra.PutStr("endpoint", "/users")
+	extra.PutInt("status", 200)
+	extra.PutStr("method", "GET")
+	assert.NotEqual(t, baseCanon, ingest.AttrsCanonical(extra))
+
+	// Type changes that produce different formatted strings change the
+	// output. Note: int 200 and double 200.0 happen to format identically
+	// here ("200") because util.ValueToStringAndType uses
+	// strconv.FormatFloat with -1 precision -- so we use bool, which
+	// formats as "true"/"false" and is unambiguously distinguishable
+	// from a numeric or string value.
+	typed := pcommon.NewMap()
+	typed.PutStr("endpoint", "/users")
+	typed.PutBool("status", true)
+	assert.NotEqual(t, baseCanon, ingest.AttrsCanonical(typed))
+}
+
+// AttrsCanonical: same exact map called twice yields the same output.
+// Trivial property, but worth pinning since the underlying iteration
+// order of pcommon.Map is not guaranteed; the function's job is to
+// make that non-determinism invisible.
+func TestAttrsCanonical_Deterministic(t *testing.T) {
+	m := pcommon.NewMap()
+	m.PutStr("a", "1")
+	m.PutStr("b", "2")
+	m.PutStr("c", "3")
+
+	first := ingest.AttrsCanonical(m)
+	for i := 0; i < 10; i++ {
+		assert.Equal(t, first, ingest.AttrsCanonical(m))
+	}
+}
+
+// AttrsCanonical: the output shape is the documented "key=value" pairs
+// joined by "|" with keys sorted ascending. This pins the exact wire
+// format -- the frontend's chart-grouping code matches against this
+// string verbatim, so a silent shape change (e.g. swapping the
+// separator from '|' to ',') would be a cross-stack break.
+func TestAttrsCanonical_Shape(t *testing.T) {
+	m := pcommon.NewMap()
+	m.PutStr("zeta", "z")
+	m.PutInt("alpha", 1)
+	m.PutBool("middle", true)
+
+	got := ingest.AttrsCanonical(m)
+	assert.Equal(t, "alpha=1|middle=true|zeta=z", got)
 }
 
 // TestIngestAttributes_EmptyMaps verifies that spans with no attributes (or empty resource/scope)

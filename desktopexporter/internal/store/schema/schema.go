@@ -6,7 +6,9 @@ var TypeCreationQueries = []string{
 }
 
 // Table creation queries
-// Order matters: spans before events/links, metrics before datapoints, datapoints before exemplars (FK dependencies)
+// Order matters: spans before events/links, metric_streams before metric_ingests
+// before datapoints before exemplars (FK dependencies). attributes references
+// every owner table, so it goes last.
 var TableCreationQueries = []string{
 	`create table if not exists spans (
 		trace_id uuid,
@@ -25,7 +27,18 @@ var TableCreationQueries = []string{
 		dropped_events_count uinteger,
 		dropped_links_count uinteger,
 		status_code varchar,
-		status_message varchar
+		status_message varchar,
+		-- Denormalized cache of the resource attribute service.name (the
+		-- single most-filtered-on column for span search). The source of
+		-- truth is still the attributes row with key='service.name',
+		-- scope='resource'; this column lets DuckDB's columnar storage and
+		-- min-max indexes do equality filtering without a join.
+		--
+		-- NOT NULL with empty-string default: same rationale as
+		-- metric_streams.service_name. The duckdb appender is also
+		-- happier with a plain string column than with nullable typed
+		-- pointers, which it doesn't accept directly.
+		service_name varchar not null default ''
 	)`,
 	`create table if not exists events (
 		id uuid primary key,
@@ -60,22 +73,65 @@ var TableCreationQueries = []string{
 		scope_dropped_attributes_count uinteger,
 		dropped_attributes_count uinteger,
 		flags uinteger,
-		event_name varchar
+		event_name varchar,
+		-- See the matching service_name column on spans for rationale.
+		service_name varchar not null default ''
 	)`,
-	`create table if not exists metrics (
+	// metric_streams is the canonical identity for a logical OTel metric.
+	// Modeled after VictoriaMetrics's IndexDB pattern: every identity-bearing
+	// query (Search, GetMetric, DeleteMetricStream, quantile/bucket series)
+	// joins this table by surrogate UUID instead of reconstructing identity
+	// from per-batch metric rows.
+	//
+	// The UNIQUE constraint on the 8-field tuple is what makes ingest's
+	// find-or-insert correct: two OTLP batches that describe the same
+	// logical stream produce the same id, so all their datapoints live
+	// under one identity.
+	//
+	// service_name is part of identity (two metrics that share name+unit+...
+	// but come from different services are different streams) and also acts
+	// as the denormalized "filter by service" column for SearchSummaries.
+	//
+	// All eight identity columns are NOT NULL with empty-string ("" for
+	// varchars, false for is_monotonic) defaults representing "not
+	// applicable" (Gauge has no temporality/monotonicity, Histogram has
+	// no monotonicity, etc.). This is a deliberate workaround for
+	// DuckDB's standard-SQL behavior that treats two NULL values as
+	// distinct in a UNIQUE constraint, which would defeat the
+	// find-or-insert dedupe at ingest. The semantic distinction between
+	// "unknown" and "not applicable" is borne by metric_type alone --
+	// readers know that a Gauge's is_monotonic is N/A regardless of the
+	// stored value.
+	`create table if not exists metric_streams (
 		id uuid primary key,
-		name varchar,
+		name varchar not null,
+		unit varchar not null default '',
+		metric_type varchar not null,
+		aggregation_temporality varchar not null default '',
+		is_monotonic boolean not null default false,
+		scope_name varchar not null default '',
+		scope_version varchar not null default '',
+		service_name varchar not null default '',
+		unique (name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
+	)`,
+	// metric_ingests records each OTLP batch arrival for a stream. One row
+	// per (stream, batch) -- so a long-lived counter that's reported every
+	// 10s for an hour produces 360 metric_ingests rows pointing at one
+	// metric_streams row. description and dropped-attribute counts can vary
+	// across batches and are NOT identity, so they live here.
+	`create table if not exists metric_ingests (
+		id uuid primary key,
+		stream_id uuid not null,
+		received bigint,
 		description varchar,
-		unit varchar,
 		resource_dropped_attributes_count uinteger,
-		scope_name varchar,
-		scope_version varchar,
 		scope_dropped_attributes_count uinteger,
-		received bigint
+		foreign key (stream_id) references metric_streams(id)
 	)`,
 	`create table if not exists datapoints (
 		id uuid primary key,
-		metric_id uuid not null,
+		stream_id uuid not null,
+		metric_ingest_id uuid not null,
 		metric_type varchar not null,
 		timestamp bigint,
 		start_time bigint,
@@ -83,8 +139,6 @@ var TableCreationQueries = []string{
 		double_value double,
 		int_value bigint,
 		value_type varchar,
-		is_monotonic boolean,
-		aggregation_temporality varchar,
 		count ubigint,
 		sum double,
 		min double,
@@ -98,14 +152,31 @@ var TableCreationQueries = []string{
 		positive_bucket_counts ubigint[],
 		negative_bucket_offset integer,
 		negative_bucket_counts ubigint[],
-		foreign key (metric_id) references metrics(id),
+		-- Canonical "key=value|key=value|..." form of the datapoint's
+		-- attribute set, with keys sorted ascending. Used for grouping
+		-- datapoints by stream-within-stream (same metric, different
+		-- attribute combinations) without a per-query string_agg over
+		-- the attributes table. Computed in Go during the existing
+		-- IngestAttributes pass so we don't iterate the attribute map
+		-- twice. NULL for datapoints with no attributes.
+		--
+		-- Stored as a string (rather than a sha1 digest) so the column
+		-- is self-describing when querying the DB directly, and so the
+		-- frontend's chart-grouping code can compute the same string
+		-- from raw attributes without hashing. Trade-off: variable-
+		-- width column instead of fixed 20-byte. On a local tool with
+		-- bounded retention this is the right side of the bargain.
+		attrs_canonical varchar,
+		foreign key (stream_id) references metric_streams(id),
+		foreign key (metric_ingest_id) references metric_ingests(id),
 		constraint chk_metric_type_valid check (
 			metric_type in ('Gauge', 'Sum', 'Histogram', 'ExponentialHistogram', 'Empty')
 		),
+		-- Per-type column shape. aggregation_temporality / is_monotonic
+		-- are NOT validated here; they live on metric_streams now.
 		constraint chk_empty_fields check (
 			(metric_type != 'Empty') or (
 				double_value is null and int_value is null and value_type is null and
-				is_monotonic is null and aggregation_temporality is null and
 				count is null and sum is null and min is null and max is null and
 				bucket_counts is null and explicit_bounds is null and
 				scale is null and zero_count is null and zero_threshold is null and
@@ -120,14 +191,12 @@ var TableCreationQueries = []string{
 				bucket_counts is null and explicit_bounds is null and
 				scale is null and zero_count is null and zero_threshold is null and
 				positive_bucket_offset is null and positive_bucket_counts is null and
-				negative_bucket_offset is null and negative_bucket_counts is null and
-				aggregation_temporality is null
+				negative_bucket_offset is null and negative_bucket_counts is null
 			)
 		),
 		constraint chk_sum_fields check (
 			(metric_type != 'Sum') or (
 				value_type is not null and (double_value is not null or int_value is not null) and
-				is_monotonic is not null and aggregation_temporality is not null and
 				count is null and sum is null and min is null and max is null and
 				bucket_counts is null and explicit_bounds is null and
 				scale is null and zero_count is null and zero_threshold is null and
@@ -139,8 +208,7 @@ var TableCreationQueries = []string{
 			(metric_type != 'Histogram') or (
 				count is not null and sum is not null and
 				bucket_counts is not null and explicit_bounds is not null and
-				aggregation_temporality is not null and
-				double_value is null and int_value is null and value_type is null and is_monotonic is null and
+				double_value is null and int_value is null and value_type is null and
 				scale is null and zero_count is null and zero_threshold is null and
 				positive_bucket_offset is null and positive_bucket_counts is null and
 				negative_bucket_offset is null and negative_bucket_counts is null
@@ -152,8 +220,7 @@ var TableCreationQueries = []string{
 				scale is not null and zero_count is not null and zero_threshold is not null and
 				positive_bucket_offset is not null and positive_bucket_counts is not null and
 				negative_bucket_offset is not null and negative_bucket_counts is not null and
-				aggregation_temporality is not null and
-				double_value is null and int_value is null and value_type is null and is_monotonic is null and
+				double_value is null and int_value is null and value_type is null and
 				bucket_counts is null and explicit_bounds is null
 			)
 		)
@@ -167,12 +234,18 @@ var TableCreationQueries = []string{
 		span_id uuid,
 		foreign key (datapoint_id) references datapoints(id)
 	)`,
+	// attributes still references every owner table by FK; metric_id is
+	// renamed to metric_ingest_id since the per-batch record (formerly
+	// metrics) is now metric_ingests. The chk_attributes_one_owner
+	// constraint is rewritten with the new column name; the exclusivity
+	// rules are otherwise unchanged. Resource and scope attributes for a
+	// metric live with the metric_ingest row (one set per ingest batch).
 	`create table if not exists attributes (
 		span_id uuid,
 		event_id uuid,
 		link_id uuid,
 		log_id uuid,
-		metric_id uuid,
+		metric_ingest_id uuid,
 		datapoint_id uuid,
 		exemplar_id uuid,
 		scope varchar not null,
@@ -183,27 +256,40 @@ var TableCreationQueries = []string{
 		foreign key (event_id) references events(id),
 		foreign key (link_id) references links(id),
 		foreign key (log_id) references logs(id),
-		foreign key (metric_id) references metrics(id),
+		foreign key (metric_ingest_id) references metric_ingests(id),
 		foreign key (datapoint_id) references datapoints(id),
 		foreign key (exemplar_id) references exemplars(id),
-		unique (span_id, event_id, link_id, log_id, metric_id, datapoint_id, exemplar_id, scope, key),
+		unique (span_id, event_id, link_id, log_id, metric_ingest_id, datapoint_id, exemplar_id, scope, key),
 		constraint chk_attributes_one_owner check (
-			(span_id is not null and event_id is null and link_id is null and log_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
-			(event_id is not null and span_id is not null and link_id is null and log_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
-			(link_id is not null and span_id is not null and event_id is null and log_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
-			(log_id is not null and span_id is null and event_id is null and link_id is null and metric_id is null and datapoint_id is null and exemplar_id is null) or
-			(metric_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and datapoint_id is null and exemplar_id is null) or
-			(datapoint_id is not null and metric_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and exemplar_id is null) or
-			(exemplar_id is not null and datapoint_id is not null and metric_id is not null and span_id is null and event_id is null and link_id is null and log_id is null)
+			(span_id is not null and event_id is null and link_id is null and log_id is null and metric_ingest_id is null and datapoint_id is null and exemplar_id is null) or
+			(event_id is not null and span_id is not null and link_id is null and log_id is null and metric_ingest_id is null and datapoint_id is null and exemplar_id is null) or
+			(link_id is not null and span_id is not null and event_id is null and log_id is null and metric_ingest_id is null and datapoint_id is null and exemplar_id is null) or
+			(log_id is not null and span_id is null and event_id is null and link_id is null and metric_ingest_id is null and datapoint_id is null and exemplar_id is null) or
+			(metric_ingest_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and datapoint_id is null and exemplar_id is null) or
+			(datapoint_id is not null and metric_ingest_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and exemplar_id is null) or
+			(exemplar_id is not null and datapoint_id is not null and metric_ingest_id is not null and span_id is null and event_id is null and link_id is null and log_id is null)
 		)
 	)`,
 }
 
-// Index creation queries
+// Index creation queries.
+//
+// Three categories of changes vs. the pre-normalization schema:
+//
+//  1. Per-owner attribute indexes (idx_attributes_metric, the two
+//     _hierarchy ones) are gone. They existed solely to speed up
+//     identity-reconstruction CTEs that have themselves been deleted
+//     because identity now lives in metric_streams.
+//  2. Old metric indexes (idx_metrics_name/identity/received) are
+//     replaced by the corresponding metric_streams / metric_ingests
+//     indexes, sized for the new access patterns.
+//  3. service_name indexes on spans/logs/metric_streams support direct
+//     columnar filtering for "show me everything from service X" queries.
 var IndexCreationQueries = []string{
 	`create index if not exists idx_spans_traceid on spans(trace_id)`,
 	`create index if not exists idx_spans_starttime on spans(start_time)`,
 	`create index if not exists idx_spans_parentspanid on spans(parent_span_id)`,
+	`create index if not exists idx_spans_service on spans(service_name)`,
 	`create index if not exists idx_events_span on events(span_id)`,
 	`create index if not exists idx_events_timestamp on events(timestamp)`,
 	`create index if not exists idx_links_span on links(span_id)`,
@@ -211,11 +297,13 @@ var IndexCreationQueries = []string{
 	`create index if not exists idx_logs_timestamp on logs(timestamp)`,
 	`create index if not exists idx_logs_traceid on logs(trace_id)`,
 	`create index if not exists idx_logs_severitynumber on logs(severity_number)`,
-	`create index if not exists idx_metrics_name on metrics(name)`,
-	`create index if not exists idx_metrics_identity on metrics(name, unit, scope_name, scope_version)`,
-	`create index if not exists idx_metrics_received on metrics(received)`,
-	`create index if not exists idx_datapoints_type_metric_time on datapoints(metric_type, metric_id, timestamp desc)`,
-	`create index if not exists idx_datapoints_metric_time on datapoints(metric_id, timestamp desc)`,
+	`create index if not exists idx_logs_service on logs(service_name)`,
+	`create index if not exists idx_metric_streams_name on metric_streams(name)`,
+	`create index if not exists idx_metric_streams_service on metric_streams(service_name)`,
+	`create index if not exists idx_metric_ingests_stream_received on metric_ingests(stream_id, received)`,
+	`create index if not exists idx_datapoints_type_stream_time on datapoints(metric_type, stream_id, timestamp desc)`,
+	`create index if not exists idx_datapoints_stream_time on datapoints(stream_id, timestamp desc)`,
+	`create index if not exists idx_datapoints_stream_attrs on datapoints(stream_id, attrs_canonical)`,
 	`create index if not exists idx_datapoints_time on datapoints(timestamp desc)`,
 	`create index if not exists idx_exemplars_datapoint on exemplars(datapoint_id)`,
 	`create index if not exists idx_exemplars_trace on exemplars(trace_id, span_id)`,
@@ -223,11 +311,9 @@ var IndexCreationQueries = []string{
 	`create index if not exists idx_attributes_event on attributes(event_id, key, value, type)`,
 	`create index if not exists idx_attributes_link on attributes(link_id, key, value, type)`,
 	`create index if not exists idx_attributes_log on attributes(log_id, key, value, type)`,
-	`create index if not exists idx_attributes_metric on attributes(metric_id, key, value, type)`,
 	`create index if not exists idx_attributes_datapoint on attributes(datapoint_id, key, value, type)`,
 	`create index if not exists idx_attributes_exemplar on attributes(exemplar_id, key, value, type)`,
-	`create index if not exists idx_attributes_span_hierarchy on attributes(span_id, event_id, link_id)`,
-	`create index if not exists idx_attributes_metric_hierarchy on attributes(metric_id, datapoint_id, exemplar_id)`,
+	`create index if not exists idx_attributes_metric_ingest on attributes(metric_ingest_id, key, value, type)`,
 	`create index if not exists idx_attributes_key_value on attributes(key, value, type)`,
 }
 

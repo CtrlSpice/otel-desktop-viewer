@@ -248,10 +248,6 @@
     @apply flex min-w-0 w-full flex-col gap-1;
   }
 
-  .drawer-search-panel__refresh-wrap {
-    @apply relative inline-flex;
-  }
-
   /* Refresh button + pulse animation */
   .drawer-search-panel__refresh {
     @apply relative bg-transparent;

@@ -48,8 +48,6 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.deleteSpanByID(ctx, req)
 	case "deleteLogByID":
 		return h.deleteLogByID(ctx, req)
-	case "deleteMetricByID":
-		return h.deleteMetricByID(ctx, req)
 	case "getTraceAttributes":
 		return h.getTraceAttributes(ctx, req)
 	case "getLogAttributes":
@@ -62,8 +60,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getMetricQuantileSeries(ctx, req)
 	case "getMetricBucketSeries":
 		return h.getMetricBucketSeries(ctx, req)
-	case "getMetricAggregatedQuantiles":
-		return h.getMetricAggregatedQuantiles(ctx, req)
+	case "getMetricMergedQuantiles":
+		return h.getMetricMergedQuantiles(ctx, req)
 	case "getAttributesByTraceID":
 		return h.getAttributesByTraceID(ctx, req)
 	case "getStats":
@@ -390,29 +388,6 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 	}, nil
 }
 
-// deleteMetricByID deletes one or more specific metrics by their IDs.
-func (h *JSONRPCHandler) deleteMetricByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	if len(params) == 0 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	err := metrics.DeleteMetricsByIDs(ctx, h.store.DB(), params)
-	if err != nil {
-		log.Printf("Error deleting metrics by IDs: %v", err)
-		return nil, mapStoreError(err)
-	}
-
-	return map[string]any{
-		"message": "Metrics deleted successfully",
-		"count":   len(params),
-	}, nil
-}
-
 func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -561,7 +536,7 @@ func (h *JSONRPCHandler) getDatapointQuantiles(ctx context.Context, req *jsonrpc
 //
 //	[metricID string,
 //	 quantiles []float64,                // each in [0, 1]
-//	 mode      string,                   // "per-stream" | "aggregated"
+//	 mode      string,                   // "per-attribute" | "merged"
 //	 startTs   string (int64 ns),
 //	 endTs     string (int64 ns),
 //	 maxPoints number]                   // chart pixel width, >= 1
@@ -643,7 +618,7 @@ func (h *JSONRPCHandler) getMetricQuantileSeries(ctx context.Context, req *jsonr
 // bucket for a histogram or exponential-histogram metric. Params:
 //
 //	[metricID string,
-//	 mode      string,                   // "per-stream" | "aggregated"
+//	 mode      string,                   // "per-attribute" | "merged"
 //	 startTs   string (int64 ns),
 //	 endTs     string (int64 ns),
 //	 maxPoints number]                   // chart pixel width, >= 1
@@ -698,20 +673,21 @@ func (h *JSONRPCHandler) getMetricBucketSeries(ctx context.Context, req *jsonrpc
 	return result, nil
 }
 
-// getMetricAggregatedQuantiles returns one set of quantile values computed
+// getMetricMergedQuantiles returns one set of quantile values computed
 // over the entire [startTs, endTs) window for a histogram or
-// exponential-histogram metric, with all streams merged. Mirrors
-// getDatapointQuantiles' return shape (a single `{q -> value}` JSON object)
-// so the same frontend renderer can consume both. Params:
+// exponential-histogram metric, with all per-attribute timeseries
+// merged. Mirrors getDatapointQuantiles' return shape (a single
+// `{q -> value}` JSON object) so the same frontend renderer can
+// consume both. Params:
 //
 //	[metricID  string,
 //	 quantiles []float64,                // each in [0, 1]
 //	 startTs   string (int64 ns),
 //	 endTs     string (int64 ns)]
 //
-// No mode (always 'aggregated' under the hood) and no maxPoints (always 1
+// No mode (always 'merged' under the hood) and no maxPoints (always 1
 // internally so the time-bucket pipeline collapses to a single output row).
-func (h *JSONRPCHandler) getMetricAggregatedQuantiles(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getMetricMergedQuantiles(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		log.Printf("Failed to unmarshal params: %v", err)
@@ -757,9 +733,9 @@ func (h *JSONRPCHandler) getMetricAggregatedQuantiles(ctx context.Context, req *
 		return nil, err
 	}
 
-	result, err := metrics.GetMetricAggregatedQuantiles(ctx, h.store.DB(), metricID, quantiles, startTs, endTs)
+	result, err := metrics.GetMetricMergedQuantiles(ctx, h.store.DB(), metricID, quantiles, startTs, endTs)
 	if err != nil {
-		log.Printf("Error getting metric aggregated quantiles: %v", err)
+		log.Printf("Error getting metric merged quantiles: %v", err)
 		return nil, mapStoreError(err)
 	}
 	return result, nil

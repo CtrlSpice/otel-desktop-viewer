@@ -93,7 +93,7 @@
   import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
   import LogCard from '@/components/LogCard.svelte'
   import LogDetailPanel from '@/components/LogDetails/LogDetailPanel.svelte'
-  import DetailNav from '@/components/DetailNav.svelte'
+  import SignalFooter from '@/components/SignalFooter.svelte'
   import { TrashIcon } from '@/icons'
 
   // --- context ---
@@ -379,8 +379,7 @@
                 {#snippet footer()}
                   {#if selectedLog}
                     {@const log = selectedLog}
-                    <span aria-hidden="true"></span>
-                    <DetailNav
+                    <SignalFooter
                       index={selectedIndex}
                       total={sortedLogs.length}
                       label="log"
@@ -388,20 +387,8 @@
                       onPrev={() => selectByOffset(-1)}
                       onNext={() => selectByOffset(1)}
                       onLast={selectLast}
+                      onDelete={() => handleDeleteLog(log.id)}
                     />
-                    <div
-                      class="tooltip tooltip-left tooltip-error"
-                      data-tip="Delete this log"
-                    >
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-sm btn-square text-error"
-                        onclick={() => handleDeleteLog(log.id)}
-                        aria-label="Delete this log"
-                      >
-                        <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
-                      </button>
-                    </div>
                   {/if}
                 {/snippet}
               </LogDetailPanel>

@@ -17,16 +17,16 @@
   //   * 'datapoint' (default): fetch via getDatapointQuantiles(datapoint.id).
   //     Right answer for the Snapshot tab where the chart shows ONE specific
   //     datapoint's distribution.
-  //   * 'aggregated': fetch via getMetricAggregatedQuantiles using the
+  //   * 'merged': fetch via getMetricMergedQuantiles using the
   //     `metricID` + `windowStartMs/EndMs` props. Right answer for the
   //     Aggregated tab where the chart shows a synthetic dp built by summing
   //     the metric's bucket vectors across the time window. We can't use
   //     datapoint.id here because that synthetic dp doesn't exist in the DB.
   //   * 'none': skip the fetch entirely. Used when the caller wants the bar
   //     chart without quantile markers (e.g. an error path for the
-  //     aggregated bucket data where we'd want to show "no quantiles
-  //     because we don't have a valid aggregate either").
-  type QuantileSource = 'datapoint' | 'aggregated' | 'none'
+  //     merged bucket data where we'd want to show "no quantiles because
+  //     we don't have a valid merged result either").
+  type QuantileSource = 'datapoint' | 'merged' | 'none'
 
   type Props = {
     datapoint: HistogramDataPoint | ExponentialHistogramDataPoint
@@ -36,11 +36,11 @@
     height?: number
     /** How to source quantile values; see QuantileSource above. */
     quantileSource?: QuantileSource
-    /** Required when quantileSource='aggregated'. Real metrics.id (db key),
+    /** Required when quantileSource='merged'. Real metrics.id (db key),
      * NOT the synthetic id of the assembled `datapoint`. */
     metricID?: string
-    /** Required when quantileSource='aggregated'. Same window as the bucket
-     * series fetch that produced the aggregated `datapoint`. */
+    /** Required when quantileSource='merged'. Same window as the bucket
+     * series fetch that produced the merged `datapoint`. */
     windowStartMs?: number
     windowEndMs?: number
   }
@@ -73,7 +73,7 @@
   // The three branches are kept side-by-side rather than abstracted because
   // they each have distinct fetch shapes and "loading" semantics:
   //   * datapoint: 1 fetch keyed on dp.id
-  //   * aggregated: 1 fetch keyed on metric.id + window
+  //   * merged: 1 fetch keyed on metric.id + window
   //   * none: no fetch; quantiles stays null and rendering skips markers
   $effect(() => {
     const source = quantileSource
@@ -92,28 +92,28 @@
       return
     }
 
-    if (source === 'aggregated') {
-      // Defensive: aggregated mode needs the metric id + window. If a caller
+    if (source === 'merged') {
+      // Defensive: merged mode needs the metric id + window. If a caller
       // forgot, render no markers rather than invoking the RPC with garbage.
       if (!mid || ws === undefined || we === undefined) {
         console.warn(
-          "HistogramChart: quantileSource='aggregated' requires metricID + windowStartMs + windowEndMs"
+          "HistogramChart: quantileSource='merged' requires metricID + windowStartMs + windowEndMs"
         )
         quantiles = {}
         return
       }
       telemetryAPI
-        .getMetricAggregatedQuantiles(mid, QUANTILES, ws, we)
+        .getMetricMergedQuantiles(mid, QUANTILES, ws, we)
         .then(result => {
           if (!cancelled) quantiles = result
         })
         .catch(err => {
           if (cancelled) return
-          // Aggregated quantile fetch failure is non-fatal: the chart
+          // Merged quantile fetch failure is non-fatal: the chart
           // itself is the load-bearing thing, markers are a nice-to-have.
           // Surface to console so the dev sees what went wrong (e.g.
           // bounds mismatch on a malformed metric) but render the bars.
-          console.warn('getMetricAggregatedQuantiles failed:', err)
+          console.warn('getMetricMergedQuantiles failed:', err)
           quantiles = {}
         })
       return () => {

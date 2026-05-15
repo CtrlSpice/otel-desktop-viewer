@@ -75,6 +75,7 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 			"INFO", int32(9),   // SeverityText, SeverityNumber
 			"flush test", "str", // Body, BodyType
 			uint32(0), "scope", "v1", uint32(0), uint32(0), uint32(0), "",
+			"", // ServiceName VARCHAR (NOT NULL, '' = unknown)
 		); err != nil {
 			return err
 		}

@@ -3,13 +3,13 @@ package metrics_test
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
-
-	"database/sql/driver"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
@@ -25,7 +25,7 @@ const maxNano = 1<<63 - 1
 // itself doesn't care about bucket boundaries -- it just wants every fixture
 // timestamp to land in a distinct bucket. With these values bucket_ns is
 // roughly 4 seconds, comfortably finer than any spacing our fixtures use
-// (createTestMetricsPdata spaces by minutes, the aggregated tests use 60s
+// (createTestMetricsPdata spaces by minutes, the merged tests use 60s
 // gaps), so the existing per-row test expectations hold.
 const (
 	testQuantileWindowStartTs int64 = 0
@@ -252,7 +252,7 @@ func TestMetricSuite(t *testing.T) {
 		requireMetric(t, gauge, "gauge_metric")
 		assert.Equal(t, "Current memory usage", gauge["description"])
 		assert.Equal(t, "bytes", gauge["unit"])
-		datapoints, _ := gauge["datapoints"].([]any)
+		datapoints := metricDatapoints(gauge)
 		assert.NotEmpty(t, datapoints)
 		dp0, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp0)
@@ -273,7 +273,7 @@ func TestMetricSuite(t *testing.T) {
 			}
 		}
 		requireMetric(t, m, "gauge_int_metric")
-		datapoints, _ := m["datapoints"].([]any)
+		datapoints := metricDatapoints(m)
 		assert.Len(t, datapoints, 1)
 		dp, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp)
@@ -300,7 +300,7 @@ func TestMetricSuite(t *testing.T) {
 		}
 		requireMetric(t, sum, "sum_metric")
 		assert.Equal(t, "Total requests processed", sum["description"])
-		datapoints, _ := sum["datapoints"].([]any)
+		datapoints := metricDatapoints(sum)
 		assert.NotEmpty(t, datapoints)
 	})
 
@@ -314,7 +314,7 @@ func TestMetricSuite(t *testing.T) {
 			}
 		}
 		requireMetric(t, hist, "histogram_metric")
-		datapoints, _ := hist["datapoints"].([]any)
+		datapoints := metricDatapoints(hist)
 		assert.NotEmpty(t, datapoints)
 		dp, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp)
@@ -332,7 +332,7 @@ func TestMetricSuite(t *testing.T) {
 			}
 		}
 		requireMetric(t, exp, "exponential_histogram_metric")
-		datapoints, _ := exp["datapoints"].([]any)
+		datapoints := metricDatapoints(exp)
 		assert.NotEmpty(t, datapoints)
 		dp, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp)
@@ -363,7 +363,7 @@ func TestMetricSuite(t *testing.T) {
 			}
 		}
 		requireMetric(t, gauge, "gauge_metric")
-		datapoints, _ := gauge["datapoints"].([]any)
+		datapoints := metricDatapoints(gauge)
 		assert.NotEmpty(t, datapoints)
 		dp0, _ := datapoints[0].(map[string]any)
 		exemplars, _ := dp0["exemplars"].([]any)
@@ -631,74 +631,464 @@ func requireMetric(t *testing.T, m map[string]any, name string) {
 	}
 }
 
-// TestDeleteMetricByID verifies that a single metric can be deleted by its ID, including child rows.
-func TestDeleteMetricByID(t *testing.T) {
+// metricDatapoints flattens m["timeseries"][*]["datapoints"][*] into a
+// single []any in the order the SQL emits them: timeseries sorted by
+// latest dp timestamp desc, datapoints within each timeseries sorted
+// by timestamp desc. Tests that don't care about per-timeseries
+// grouping use this to keep their assertions terse; tests that DO care
+// about grouping should walk m["timeseries"] directly.
+func metricDatapoints(m map[string]any) []any {
+	if m == nil {
+		return nil
+	}
+	timeseries, _ := m["timeseries"].([]any)
+	out := make([]any, 0)
+	for _, ts := range timeseries {
+		ts, _ := ts.(map[string]any)
+		if ts == nil {
+			continue
+		}
+		dps, _ := ts["datapoints"].([]any)
+		out = append(out, dps...)
+	}
+	return out
+}
+
+// deleteByIdentity is a thin test helper that resolves the 8-field OTel
+// identity to a stream UUID via metric_streams and then calls
+// DeleteMetricStream. The production JSON-RPC layer does the same
+// resolve-then-delete pattern; we replicate it here so the existing
+// test cases stay readable without needing to spell out streamIDs.
+func deleteByIdentity(t *testing.T, ctx context.Context, db *sql.DB, name, unit, metricType, aggTemporality, isMonotonic, scopeName, scopeVersion, serviceName string) error {
+	t.Helper()
+	const q = `
+		select id::varchar from metric_streams
+		where name = ?
+		  and unit = ?
+		  and metric_type = ?
+		  and aggregation_temporality = ?
+		  and is_monotonic = ?
+		  and scope_name = ?
+		  and scope_version = ?
+		  and service_name = ?
+		limit 1
+	`
+	var streamID string
+	err := db.QueryRowContext(ctx, q,
+		name, unit, metricType, aggTemporality, isMonotonic == "true",
+		scopeName, scopeVersion, serviceName,
+	).Scan(&streamID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return metrics.DeleteMetricStream(ctx, db, streamID)
+}
+
+// TestDeleteMetricStream covers the per-stream cascade. Each subtest
+// ingests a fixture, resolves an identity tuple to a stream UUID, calls
+// DeleteMetricStream, and checks that (a) every row backing that stream
+// is gone and (b) nothing else was touched.
+func TestDeleteMetricStream(t *testing.T) {
+	t.Run("removes a single Gauge by name+unit+scope+service", func(t *testing.T) {
+		s, ctx, teardown := setupStore(t)
+		defer teardown()
+
+		err := s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		})
+		assert.NoError(t, err)
+
+		before := searchMetricsAll(t, s, ctx)
+		assert.Len(t, before, 5)
+
+		// Gauges have no temporality / monotonic; pass empty strings.
+		err = deleteByIdentity(t, ctx, s.DB(),
+			"gauge_metric", "bytes", "Gauge",
+			"", "",
+			"test-scope", "v1.0.0", "test-service",
+		)
+		assert.NoError(t, err)
+
+		after := searchMetricsAll(t, s, ctx)
+		assert.Len(t, after, 4)
+		for _, m := range after {
+			assert.NotEqual(t, "gauge_metric", m["name"])
+		}
+
+		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+			`select count(*) from metric_streams where name = ?`, "gauge_metric"))
+	})
+
+	t.Run("collapses multiple ingestions of the same logical metric", func(t *testing.T) {
+		s, ctx, teardown := setupStore(t)
+		defer teardown()
+
+		// Three independent batches => three metric_ingests rows for the
+		// same logical Gauge, all sharing one metric_streams row.
+		for i := 0; i < 3; i++ {
+			err := s.WithConn(func(conn driver.Conn) error {
+				return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+			})
+			assert.NoError(t, err)
+		}
+
+		// SearchSummaries collapses by identity so we still see 5 rows.
+		assert.Len(t, searchSummariesAll(t, s, ctx), 5)
+		// One stream per logical metric (5), 3 ingests per stream (15).
+		assert.Equal(t, 5, countRows(t, s.DB(), ctx, `select count(*) from metric_streams`))
+		assert.Equal(t, 15, countRows(t, s.DB(), ctx, `select count(*) from metric_ingests`))
+
+		err := deleteByIdentity(t, ctx, s.DB(),
+			"gauge_metric", "bytes", "Gauge",
+			"", "",
+			"test-scope", "v1.0.0", "test-service",
+		)
+		assert.NoError(t, err)
+
+		assert.Len(t, searchSummariesAll(t, s, ctx), 4)
+		// One stream + its three ingests should be gone.
+		assert.Equal(t, 4, countRows(t, s.DB(), ctx, `select count(*) from metric_streams`))
+		assert.Equal(t, 12, countRows(t, s.DB(), ctx, `select count(*) from metric_ingests`))
+		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+			`select count(*) from metric_streams where name = ?`, "gauge_metric"))
+		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+			`select count(*) from datapoints d join metric_streams s on s.id = d.stream_id where s.name = ?`,
+			"gauge_metric"))
+	})
+
+	t.Run("unit discriminates same-name metrics", func(t *testing.T) {
+		s, ctx, teardown := setupStore(t)
+		defer teardown()
+
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "svc")
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("scope")
+		sm.Scope().SetVersion("v1")
+		// Same name, different units.
+		for _, unit := range []string{"bytes", "count"} {
+			m := sm.Metrics().AppendEmpty()
+			m.SetName("requests")
+			m.SetUnit(unit)
+			g := m.SetEmptyGauge()
+			dp := g.DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+			dp.SetIntValue(1)
+		}
+		err := s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, md)
+		})
+		assert.NoError(t, err)
+		assert.Len(t, searchMetricsAll(t, s, ctx), 2)
+
+		// Delete the bytes one — count should survive.
+		err = deleteByIdentity(t, ctx, s.DB(),
+			"requests", "bytes", "Gauge", "", "",
+			"scope", "v1", "svc",
+		)
+		assert.NoError(t, err)
+
+		after := searchMetricsAll(t, s, ctx)
+		assert.Len(t, after, 1)
+		assert.Equal(t, "count", after[0]["unit"])
+	})
+
+	t.Run("service.name discriminates same-name metrics from different services", func(t *testing.T) {
+		s, ctx, teardown := setupStore(t)
+		defer teardown()
+
+		md := pmetric.NewMetrics()
+		for _, svc := range []string{"svc-a", "svc-b"} {
+			rm := md.ResourceMetrics().AppendEmpty()
+			rm.Resource().Attributes().PutStr("service.name", svc)
+			sm := rm.ScopeMetrics().AppendEmpty()
+			sm.Scope().SetName("scope")
+			sm.Scope().SetVersion("v1")
+			m := sm.Metrics().AppendEmpty()
+			m.SetName("requests")
+			m.SetUnit("count")
+			g := m.SetEmptyGauge()
+			dp := g.DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+			dp.SetIntValue(1)
+		}
+		err := s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, md)
+		})
+		assert.NoError(t, err)
+		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
+
+		err = deleteByIdentity(t, ctx, s.DB(),
+			"requests", "count", "Gauge", "", "",
+			"scope", "v1", "svc-a",
+		)
+		assert.NoError(t, err)
+
+		// Summaries expose serviceName at the top level.
+		after := searchSummariesAll(t, s, ctx)
+		assert.Len(t, after, 1)
+		assert.Equal(t, "svc-b", after[0]["serviceName"])
+	})
+
+	t.Run("is_monotonic discriminates Sum metrics", func(t *testing.T) {
+		s, ctx, teardown := setupStore(t)
+		defer teardown()
+
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "svc")
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("scope")
+		sm.Scope().SetVersion("v1")
+		// Same name + unit + temporality, different monotonic flags.
+		for _, monotonic := range []bool{true, false} {
+			m := sm.Metrics().AppendEmpty()
+			m.SetName("requests")
+			m.SetUnit("count")
+			sum := m.SetEmptySum()
+			sum.SetIsMonotonic(monotonic)
+			sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+			dp := sum.DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+			dp.SetIntValue(1)
+		}
+		err := s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, md)
+		})
+		assert.NoError(t, err)
+		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
+
+		err = deleteByIdentity(t, ctx, s.DB(),
+			"requests", "count", "Sum", "Cumulative", "true",
+			"scope", "v1", "svc",
+		)
+		assert.NoError(t, err)
+
+		// isMonotonic is reported by SearchSummaries (not by the Search
+		// detail endpoint, which nests it inside per-datapoint payloads).
+		after := searchSummariesAll(t, s, ctx)
+		assert.Len(t, after, 1)
+		assert.Equal(t, false, after[0]["isMonotonic"])
+	})
+
+	t.Run("no-match identity is a no-op", func(t *testing.T) {
+		s, ctx, teardown := setupStore(t)
+		defer teardown()
+
+		err := s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		})
+		assert.NoError(t, err)
+		assert.Len(t, searchMetricsAll(t, s, ctx), 5)
+
+		err = deleteByIdentity(t, ctx, s.DB(),
+			"nonexistent", "bytes", "Gauge", "", "",
+			"test-scope", "v1.0.0", "test-service",
+		)
+		assert.NoError(t, err)
+		assert.Len(t, searchMetricsAll(t, s, ctx), 5)
+	})
+
+	t.Run("cascade removes attributes, exemplars, datapoints", func(t *testing.T) {
+		s, ctx, teardown := setupStore(t)
+		defer teardown()
+
+		err := s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		})
+		assert.NoError(t, err)
+
+		// Histogram has datapoints with exemplars — pick it.
+		dpBefore := countRows(t, s.DB(), ctx,
+			`select count(*) from datapoints where stream_id in (select id from metric_streams where name = ?)`,
+			"histogram_metric")
+		exBefore := countRows(t, s.DB(), ctx,
+			`select count(*) from exemplars where datapoint_id in (select id from datapoints where stream_id in (select id from metric_streams where name = ?))`,
+			"histogram_metric")
+		attrBefore := countRows(t, s.DB(), ctx,
+			`select count(*) from attributes where metric_ingest_id in (select id from metric_ingests where stream_id in (select id from metric_streams where name = ?))`,
+			"histogram_metric")
+		assert.Greater(t, dpBefore, 0)
+		assert.Greater(t, exBefore, 0)
+		assert.Greater(t, attrBefore, 0)
+
+		err = deleteByIdentity(t, ctx, s.DB(),
+			"histogram_metric", "seconds", "Histogram",
+			"Delta", "",
+			"test-scope", "v1.0.0", "test-service",
+		)
+		assert.NoError(t, err)
+
+		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+			`select count(*) from metric_streams where name = ?`, "histogram_metric"))
+		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+			`select count(*) from datapoints where stream_id in (select id from metric_streams where name = ?)`,
+			"histogram_metric"))
+		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+			`select count(*) from exemplars e where exists (
+				select 1 from datapoints d
+				where d.id = e.datapoint_id
+				  and d.stream_id in (select id from metric_streams where name = ?)
+			)`, "histogram_metric"))
+		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+			`select count(*) from attributes where metric_ingest_id in (select id from metric_ingests where stream_id in (select id from metric_streams where name = ?))`,
+			"histogram_metric"))
+	})
+}
+
+// TestMetricStreams_FindOrInsertIdempotent verifies the contract that
+// matters most for the normalized identity layer: ingesting the same
+// 8-field stream identity across N independent OTLP batches collapses
+// to exactly one metric_streams row. Per-batch context (description,
+// dropped counts, received timestamp) lives on metric_ingests, so we
+// expect N ingest rows but only one stream row, and every datapoint /
+// attribute / exemplar should point at the same stream_id.
+//
+// This test is the find-or-insert mirror of the cascade-delete test:
+// together they pin down the two halves of "identity is canonical."
+func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
-	})
-	assert.NoError(t, err)
-
-	metricList := searchMetricsAll(t, s, ctx)
-	assert.Len(t, metricList, 5)
-
-	targetID, ok := metricList[0]["id"].(string)
-	assert.True(t, ok, "metric ID should be a string")
-	assert.NotEmpty(t, targetID)
-
-	dpBefore := countRows(t, s.DB(), ctx, "select count(*) from datapoints where metric_id = ?", targetID)
-	attrsBefore := countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id = ?", targetID)
-	assert.Greater(t, dpBefore+attrsBefore, 0, "target metric should have child rows")
-
-	err = metrics.DeleteMetricByID(ctx, s.DB(), targetID)
-	assert.NoError(t, err)
-
-	metricList = searchMetricsAll(t, s, ctx)
-	assert.Len(t, metricList, 4)
-	for _, m := range metricList {
-		assert.NotEqual(t, targetID, m["id"])
+	const batches = 5
+	for i := 0; i < batches; i++ {
+		err := s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		})
+		require.NoError(t, err)
 	}
 
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from datapoints where metric_id = ?", targetID))
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id = ?", targetID))
+	// createTestMetricsPdata produces five distinct logical metrics.
+	// Across N batches we should still see exactly five stream rows.
+	assert.Equal(t, 5, countRows(t, s.DB(), ctx,
+		`select count(*) from metric_streams`),
+		"distinct logical metrics should not multiply across batches")
+	assert.Equal(t, 5*batches, countRows(t, s.DB(), ctx,
+		`select count(*) from metric_ingests`),
+		"every batch should add one ingest per metric")
+
+	// Stream ids should be stable across batches: every datapoint's
+	// stream_id must match a metric_streams row, and every per-batch
+	// metric_ingests row pointing at the same logical metric must
+	// resolve to the same stream_id.
+	gaugeStreamRows := countRows(t, s.DB(), ctx,
+		`select count(distinct stream_id) from metric_ingests where stream_id in (
+			select id from metric_streams where name = 'gauge_metric'
+		)`)
+	assert.Equal(t, 1, gaugeStreamRows,
+		"all gauge_metric ingests must share one stream_id")
+
+	// Sanity: cross-table referential integrity holds.
+	orphanDatapoints := countRows(t, s.DB(), ctx,
+		`select count(*) from datapoints d
+		 left join metric_streams s on s.id = d.stream_id
+		 where s.id is null`)
+	assert.Equal(t, 0, orphanDatapoints, "no datapoint may dangle after dedup")
 }
 
-// TestDeleteMetricsByIDs verifies that multiple metrics can be deleted by their IDs, including child rows.
-func TestDeleteMetricsByIDs(t *testing.T) {
+// TestMetricStreams_DistinctIdentitiesStayDistinct guards the inverse
+// of the dedup contract: two metrics that differ in any one of the
+// eight identity fields must produce two metric_streams rows, even when
+// the rest of the tuple matches. We change one field at a time and
+// assert each change yields a fresh stream so a future "be permissive"
+// regression won't silently merge two semantically distinct streams.
+func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
+	mk := func(t *testing.T, mutate func(m pmetric.Metric, scope pcommon.InstrumentationScope, res pcommon.Resource)) pmetric.Metrics {
+		t.Helper()
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "svc-a")
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("scope")
+		sm.Scope().SetVersion("v1")
+		m := sm.Metrics().AppendEmpty()
+		m.SetName("requests")
+		m.SetUnit("count")
+		m.SetEmptySum().SetIsMonotonic(true)
+		m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		dp := m.Sum().DataPoints().AppendEmpty()
+		dp.SetIntValue(1)
+		mutate(m, sm.Scope(), rm.Resource())
+		return md
+	}
+
+	cases := []struct {
+		name   string
+		mutate func(m pmetric.Metric, scope pcommon.InstrumentationScope, res pcommon.Resource)
+	}{
+		{"name", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) { m.SetName("requests_v2") }},
+		{"unit", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) { m.SetUnit("ms") }},
+		{"temporality", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) {
+			m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+		}},
+		{"is_monotonic", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) {
+			m.Sum().SetIsMonotonic(false)
+		}},
+		{"scope_name", func(_ pmetric.Metric, sc pcommon.InstrumentationScope, _ pcommon.Resource) { sc.SetName("scope-b") }},
+		{"scope_version", func(_ pmetric.Metric, sc pcommon.InstrumentationScope, _ pcommon.Resource) { sc.SetVersion("v2") }},
+		{"service_name", func(_ pmetric.Metric, _ pcommon.InstrumentationScope, res pcommon.Resource) {
+			res.Attributes().PutStr("service.name", "svc-b")
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, ctx, teardown := setupStore(t)
+			defer teardown()
+
+			err := s.WithConn(func(conn driver.Conn) error {
+				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pcommon.InstrumentationScope, pcommon.Resource) {}))
+			})
+			require.NoError(t, err)
+
+			err = s.WithConn(func(conn driver.Conn) error {
+				return metrics.Ingest(ctx, conn, mk(t, tc.mutate))
+			})
+			require.NoError(t, err)
+
+			assert.Equal(t, 2, countRows(t, s.DB(), ctx,
+				`select count(*) from metric_streams`),
+				"changing %s should produce a distinct stream", tc.name)
+		})
+	}
+}
+
+// TestMetricStreams_ServiceNameDenormStaysConsistent verifies the
+// invariant that justifies denormalizing service.name as a column
+// alongside its source-of-truth attribute row: for every metric_streams
+// row, the column value must equal the resource attribute value that
+// produced it. If we ever break this (e.g. by writing only the column
+// and dropping the attribute, or by ingesting two batches with
+// inconsistent service names for the same identity), this test will
+// catch it.
+func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	metricList := searchMetricsAll(t, s, ctx)
-	assert.Len(t, metricList, 5)
-
-	idsToDelete := []any{metricList[0]["id"], metricList[1]["id"]}
-	dpBefore := countRows(t, s.DB(), ctx, "select count(*) from datapoints where metric_id in (?, ?)", idsToDelete...)
-	assert.Greater(t, dpBefore, 0, "deleted metrics should have datapoints")
-
-	err = metrics.DeleteMetricsByIDs(ctx, s.DB(), idsToDelete)
-	assert.NoError(t, err)
-
-	metricList = searchMetricsAll(t, s, ctx)
-	assert.Len(t, metricList, 3)
-
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from datapoints where metric_id in (?, ?)", idsToDelete...))
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id in (?, ?)", idsToDelete...))
-}
-
-// TestDeleteMetricsByIDs_Empty verifies that deleting with an empty list is a no-op.
-func TestDeleteMetricsByIDs_Empty(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
-
-	err := metrics.DeleteMetricsByIDs(ctx, s.DB(), []any{})
-	assert.NoError(t, err)
+	// All five fixture metrics share service.name = test-service.
+	// Match the column against the resource attribute by joining
+	// metric_streams -> metric_ingests -> attributes(scope=resource,
+	// key=service.name).
+	mismatches := countRows(t, s.DB(), ctx, `
+		select count(*) from metric_streams s
+		join metric_ingests mi on mi.stream_id = s.id
+		join attributes a
+		     on a.metric_ingest_id = mi.id
+		    and a.scope = 'resource'
+		    and a.key = 'service.name'
+		where s.service_name <> a.value
+	`)
+	assert.Equal(t, 0, mismatches,
+		"metric_streams.service_name must equal the source resource attribute")
 }
 
 // TestEmptyMetrics verifies empty metric list and empty store.
@@ -728,16 +1118,18 @@ func TestClearMetrics(t *testing.T) {
 	metricList := searchMetricsAll(t, s, ctx)
 	assert.Len(t, metricList, 5)
 	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from datapoints"), 0)
-	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id is not null"), 0)
+	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_ingest_id is not null"), 0)
 
 	err = metrics.Clear(ctx, s.DB())
 	assert.NoError(t, err)
 
 	metricList = searchMetricsAll(t, s, ctx)
 	assert.Empty(t, metricList)
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from metric_streams"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from metric_ingests"))
 	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from datapoints"))
 	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from exemplars"))
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_id is not null"))
+	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_ingest_id is not null"))
 }
 
 // TestGetDatapointQuantiles exercises the metric_type dispatch and JSON shape
@@ -760,7 +1152,7 @@ func TestGetDatapointQuantiles(t *testing.T) {
 	dpIDByMetric := make(map[string]string)
 	for _, m := range metricList {
 		name, _ := m["name"].(string)
-		dps, _ := m["datapoints"].([]any)
+		dps := metricDatapoints(m)
 		if len(dps) == 0 {
 			continue
 		}
@@ -842,14 +1234,14 @@ func TestGetDatapointQuantiles(t *testing.T) {
 	})
 }
 
-// TestGetMetricQuantileSeries_PerStream validates the per-stream JSON shape,
+// TestGetMetricQuantileSeries_PerAttribute validates the per-attribute JSON shape,
 // quantile dispatch, ordering, attribute key construction, and error paths
-// of GetMetricQuantileSeries in "per-stream" mode. The fixture only has one
+// of GetMetricQuantileSeries in "per-attribute" mode. The fixture only has one
 // datapoint per histogram metric, so we don't exercise multi-row ordering
 // here -- that lives in a richer fixture once 3b/3c land. Macro correctness
 // (interpolation math) is covered in schema_test.go; we lean on
 // GetDatapointQuantiles' p50=4/3 calc as a sanity-check anchor.
-func TestGetMetricQuantileSeries_PerStream(t *testing.T) {
+func TestGetMetricQuantileSeries_PerAttribute(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
@@ -872,7 +1264,7 @@ func TestGetMetricQuantileSeries_PerStream(t *testing.T) {
 		id := metricIDByName["histogram_metric"]
 		require.NotEmpty(t, id)
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.95, 0.99}, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.95, 0.99}, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -924,7 +1316,7 @@ func TestGetMetricQuantileSeries_PerStream(t *testing.T) {
 		id := metricIDByName["exponential_histogram_metric"]
 		require.NotEmpty(t, id)
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.99}, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.99}, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -948,7 +1340,7 @@ func TestGetMetricQuantileSeries_PerStream(t *testing.T) {
 	t.Run("UnsupportedType_Gauge", func(t *testing.T) {
 		id := metricIDByName["gauge_metric"]
 		require.NotEmpty(t, id)
-		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrQuantilesNotSupportedForType)
 	})
 
@@ -957,12 +1349,12 @@ func TestGetMetricQuantileSeries_PerStream(t *testing.T) {
 		require.NotEmpty(t, id)
 		// gauge/sum fixtures are Cumulative -- the temporality check sits
 		// after the type check, so we still see ErrQuantilesNotSupportedForType.
-		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrQuantilesNotSupportedForType)
 	})
 
 	t.Run("MetricNotFound", func(t *testing.T) {
-		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", []float64{0.5}, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", []float64{0.5}, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrMetricIDNotFound)
 	})
 
@@ -971,7 +1363,7 @@ func TestGetMetricQuantileSeries_PerStream(t *testing.T) {
 		require.NotEmpty(t, id)
 		// Short-circuits before the type pre-check, so it doesn't even need a
 		// real metric -- but use a real one anyway for clarity.
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, nil, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, nil, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		assert.NoError(t, err)
 		assert.JSONEq(t, "[]", string(raw))
 	})
@@ -986,30 +1378,30 @@ func TestGetMetricQuantileSeries_PerStream(t *testing.T) {
 	t.Run("InvalidTimeRange", func(t *testing.T) {
 		id := metricIDByName["histogram_metric"]
 		require.NotEmpty(t, id)
-		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", 100, 100, testQuantileWindowPoints)
+		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", 100, 100, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrInvalidTimeRange, "endTs == startTs is invalid")
-		_, err = metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", 200, 100, testQuantileWindowPoints)
+		_, err = metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", 200, 100, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrInvalidTimeRange, "endTs < startTs is invalid")
 	})
 
 	t.Run("InvalidMaxPoints", func(t *testing.T) {
 		id := metricIDByName["histogram_metric"]
 		require.NotEmpty(t, id)
-		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, 0)
+		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, 0)
 		assert.ErrorIs(t, err, metrics.ErrInvalidMaxPoints, "maxPoints=0 is invalid")
-		_, err = metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, -1)
+		_, err = metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, -1)
 		assert.ErrorIs(t, err, metrics.ErrInvalidMaxPoints, "negative maxPoints is invalid")
 	})
 
-	t.Run("AggregatedExpHistogramSingleStream", func(t *testing.T) {
+	t.Run("MergedExpHistogramSingleTimeseries", func(t *testing.T) {
 		// The shared fixture only has one ExpHistogram datapoint, so the
-		// aggregated path collapses trivially: no downscaling needed (one
+		// merged path collapses trivially: no downscaling needed (one
 		// scale), no offset alignment (one offset), no fold (default
 		// zero_threshold = 0). The dispatch should still wire through
 		// successfully and produce one row with finite quantiles.
 		id := metricIDByName["exponential_histogram_metric"]
 		require.NotEmpty(t, id)
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.99}, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.99}, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1018,7 +1410,7 @@ func TestGetMetricQuantileSeries_PerStream(t *testing.T) {
 		pt := points[0]
 		assert.EqualValues(t, 50, pt["count"])
 		assert.InDelta(t, 10240.0, pt["sum"], 1e-9)
-		// Aggregated mode strips per-stream identity.
+		// Merged mode strips per-attribute identity.
 		assert.Equal(t, "", pt["attributesKey"])
 		quantiles, _ := pt["quantiles"].(map[string]any)
 		_, ok := quantiles["0.5"].(float64)
@@ -1064,20 +1456,20 @@ func TestGetMetricQuantileSeries_UnspecifiedTemporality(t *testing.T) {
 
 	id := findMetricID(t, s, ctx, "hist_unspec_temp")
 
-	_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
-	assert.ErrorIs(t, err, metrics.ErrUnspecifiedTemporality, "per-stream should reject Unspecified")
+	_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+	assert.ErrorIs(t, err, metrics.ErrUnspecifiedTemporality, "per-attribute should reject Unspecified")
 
-	_, err = metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
-	assert.ErrorIs(t, err, metrics.ErrUnspecifiedTemporality, "aggregated should also reject Unspecified")
+	_, err = metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+	assert.ErrorIs(t, err, metrics.ErrUnspecifiedTemporality, "merged should also reject Unspecified")
 }
 
-// TestGetMetricQuantileSeries_PerStreamBucketing exercises the bucketing +
-// temporality dispatch behavior for the per-stream path. It covers both
+// TestGetMetricQuantileSeries_PerAttributeBucketing exercises the bucketing +
+// temporality dispatch behavior for the per-attribute path. It covers both
 // merge strategies (Delta sums, Cumulative picks latest), the half-open
 // time window, and the empty-window case. Each subtest sets startTs/endTs
 // tightly around a known timestamp range so we can also assert bucket
 // boundary inclusivity.
-func TestGetMetricQuantileSeries_PerStreamBucketing(t *testing.T) {
+func TestGetMetricQuantileSeries_PerAttributeBucketing(t *testing.T) {
 	// Bucket size is min(1ms, (endTs-startTs)/maxPoints). With a 60s window
 	// and maxPoints=1, bucket_ns = 60s -- so all our same-stream samples
 	// land in one bucket and we can directly observe the merge behavior.
@@ -1110,7 +1502,7 @@ func TestGetMetricQuantileSeries_PerStreamBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "hist_delta_bucket")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1124,8 +1516,15 @@ func TestGetMetricQuantileSeries_PerStreamBucketing(t *testing.T) {
 		assert.InDelta(t, 0.1, pt["min"], 1e-9)
 		assert.InDelta(t, 3.0, pt["max"], 1e-9)
 
-		// Stream identity preserved.
-		assert.Equal(t, "host=a", pt["attributesKey"])
+		// Stream identity preserved. attributesKey is the canonical
+		// "key=value|key=value|..." form of the datapoint's attribute set
+		// (sorted ascending by key) -- the same string the frontend
+		// computes locally to group raw datapoints, so the two paths
+		// share one identity encoding. All we need to assert here is
+		// that the per-attribute merge produced a single non-empty key.
+		key, _ := pt["attributesKey"].(string)
+		assert.NotEmpty(t, key, "attributesKey should be the canonical k=v|... form")
+		assert.Contains(t, key, "=", "attributesKey should look like key=value|...")
 
 		// p50 over merged buckets [5,7,9] (total 21, target 10.5):
 		//   acc: 5, 12, 21. First acc>=10.5 is bucket 2 (1.0,2.0].
@@ -1161,7 +1560,7 @@ func TestGetMetricQuantileSeries_PerStreamBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "hist_cumul_bucket")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1206,7 +1605,7 @@ func TestGetMetricQuantileSeries_PerStreamBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "hist_boundary")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1239,7 +1638,7 @@ func TestGetMetricQuantileSeries_PerStreamBucketing(t *testing.T) {
 		// Query a future window where no datapoints exist.
 		futureStart := (baseSec + 1_000_000) * int64(time.Second)
 		futureEnd := futureStart + wideWindow
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", futureStart, futureEnd, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", futureStart, futureEnd, onePointMaxPoints)
 		require.NoError(t, err)
 		assert.JSONEq(t, "[]", string(raw))
 	})
@@ -1270,7 +1669,7 @@ func TestGetMetricQuantileSeries_PerStreamBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "exp_delta_bucket")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1307,7 +1706,7 @@ func TestGetMetricQuantileSeries_PerStreamBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "exp_cumul_bucket")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-stream", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "per-attribute", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1321,13 +1720,13 @@ func TestGetMetricQuantileSeries_PerStreamBucketing(t *testing.T) {
 
 // TestExpHistogramZeroThresholdRoundTrip pins the round-trip of the
 // ExpHistogram zero_threshold column. We added the column ahead of the 3c
-// aggregated-ExpHistogram path because the spec's merge rule is:
+// merged-ExpHistogram path because the spec's merge rule is:
 //
 //	"taking the largest zero_threshold of all involved Histograms and merge
 //	the lower buckets of Histograms with a smaller zero_threshold into the
 //	common wider zero bucket"
 //
-// — which only works if we actually carry the per-stream threshold. This
+// — which only works if we actually carry the per-attribute threshold. This
 // test verifies that (a) the default zero_threshold of 0 from pdata makes
 // it through ingest and surfaces in the JSON, and (b) a non-zero value
 // also round-trips intact.
@@ -1391,7 +1790,7 @@ func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
 	zeroThreshold := func(metricName string) any {
 		m, ok := byName[metricName]
 		require.True(t, ok, "metric %s not in search results", metricName)
-		dps, _ := m["datapoints"].([]any)
+		dps := metricDatapoints(m)
 		require.Len(t, dps, 1)
 		dp, _ := dps[0].(map[string]any)
 		require.Contains(t, dp, "zeroThreshold", "zeroThreshold missing from output JSON")
@@ -1411,23 +1810,23 @@ func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
 	assert.InDelta(t, 0.001, gotF, 1e-12)
 }
 
-// makeAggregatedHistogramFixture builds a pmetric.Metrics with one
+// makeMergedHistogramFixture builds a pmetric.Metrics with one
 // Histogram metric (Delta temporality) containing the given datapoints. Used
-// by the aggregated quantile series tests so each subtest can compose its
+// by the merged quantile series tests so each subtest can compose its
 // own scenario (multi-stream, multi-timestamp, bounds mismatch) without
 // perturbing the shared createTestMetricsPdata fixture.
-func makeAggregatedHistogramFixture(name string, dps []histTestDP) pmetric.Metrics {
+func makeMergedHistogramFixture(name string, dps []histTestDP) pmetric.Metrics {
 	return makeHistogramFixtureT(name, pmetric.AggregationTemporalityDelta, dps)
 }
 
 // makeHistogramFixtureT is the temporality-parameterized variant of
-// makeAggregatedHistogramFixture. Bucketing tests use this to exercise both
+// makeMergedHistogramFixture. Bucketing tests use this to exercise both
 // Delta (within-bucket sum) and Cumulative (within-bucket arg_max-latest)
 // dispatch paths.
 func makeHistogramFixtureT(name string, temporality pmetric.AggregationTemporality, dps []histTestDP) pmetric.Metrics {
 	md := pmetric.NewMetrics()
 	rm := md.ResourceMetrics().AppendEmpty()
-	rm.Resource().Attributes().PutStr("service.name", "test-aggregated")
+	rm.Resource().Attributes().PutStr("service.name", "test-merged")
 	sm := rm.ScopeMetrics().AppendEmpty()
 	sm.Scope().SetName("test-scope")
 	m := sm.Metrics().AppendEmpty()
@@ -1529,10 +1928,10 @@ func findMetricID(t *testing.T, s *store.Store, ctx context.Context, name string
 	return ""
 }
 
-// TestGetMetricQuantileSeries_AggregatedHistogram covers the merge math,
-// timestamp ordering, and bounds-mismatch error path of aggregated mode for
+// TestGetMetricQuantileSeries_MergedHistogram covers the merge math,
+// timestamp ordering, and bounds-mismatch error path of merged mode for
 // regular Histograms. ExpHistogram aggregation is in 3c.
-func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
+func TestGetMetricQuantileSeries_MergedHistogram(t *testing.T) {
 	t.Run("MergesStreamsAtSameTimestamp", func(t *testing.T) {
 		s, ctx, teardown := setupStore(t)
 		defer teardown()
@@ -1544,7 +1943,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 		//   A: [10, 20, 30, 25, 15] (n=100)
 		//   B: [ 5, 10, 15, 10, 10] (n=50)
 		//   merged: [15, 30, 45, 35, 25] (n=150)
-		md := makeAggregatedHistogramFixture("agg_hist", []histTestDP{
+		md := makeMergedHistogramFixture("agg_hist", []histTestDP{
 			{timestamp: ts, attrs: map[string]string{"host": "a"},
 				bounds: bounds, counts: []uint64{10, 20, 30, 25, 15},
 				count: 100, sum: 150.0, min: 0.1, max: 2.5},
@@ -1557,7 +1956,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.95}, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.95}, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1565,7 +1964,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 		require.Len(t, points, 1, "two streams at one timestamp -> one merged row")
 
 		pt := points[0]
-		// Aggregated mode strips per-stream identity.
+		// Merged mode strips per-attribute identity.
 		assert.Equal(t, "", pt["attributesKey"])
 		attrs, _ := pt["attributes"].([]any)
 		assert.Empty(t, attrs)
@@ -1592,7 +1991,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 		t1 := time.Unix(1700000000, 0)
 		t2 := time.Unix(1700000060, 0)
 		t3 := time.Unix(1700000120, 0)
-		md := makeAggregatedHistogramFixture("agg_hist_multi", []histTestDP{
+		md := makeMergedHistogramFixture("agg_hist_multi", []histTestDP{
 			// Insert out of order to verify ORDER BY in the SQL.
 			{timestamp: t3, attrs: map[string]string{"host": "a"}, bounds: bounds, counts: []uint64{1, 1}, count: 2, sum: 1.5, min: 0.1, max: 1.5},
 			{timestamp: t1, attrs: map[string]string{"host": "a"}, bounds: bounds, counts: []uint64{2, 0}, count: 2, sum: 0.5, min: 0.1, max: 0.9},
@@ -1604,7 +2003,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist_multi")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1635,7 +2034,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 		// Two datapoints at the same timestamp with different bounds: this
 		// is mathematically not mergeable and should surface as
 		// ErrHistogramBoundsMismatch.
-		md := makeAggregatedHistogramFixture("agg_hist_mismatch", []histTestDP{
+		md := makeMergedHistogramFixture("agg_hist_mismatch", []histTestDP{
 			{timestamp: ts, attrs: map[string]string{"host": "a"},
 				bounds: []float64{1.0}, counts: []uint64{5, 5},
 				count: 10, sum: 5.0, min: 0.1, max: 2.0},
@@ -1648,7 +2047,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist_mismatch")
 
-		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrHistogramBoundsMismatch)
 	})
 
@@ -1661,7 +2060,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 
 		t1 := time.Unix(1700000000, 0)
 		t2 := time.Unix(1700000060, 0)
-		md := makeAggregatedHistogramFixture("agg_hist_drift", []histTestDP{
+		md := makeMergedHistogramFixture("agg_hist_drift", []histTestDP{
 			{timestamp: t1, attrs: map[string]string{"host": "a"},
 				bounds: []float64{1.0}, counts: []uint64{5, 5},
 				count: 10, sum: 5.0, min: 0.1, max: 2.0},
@@ -1674,7 +2073,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist_drift")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1683,14 +2082,14 @@ func TestGetMetricQuantileSeries_AggregatedHistogram(t *testing.T) {
 	})
 }
 
-// TestGetMetricQuantileSeries_AggregatedHistogramBucketing exercises the
-// aggregated-Histogram path under the bucketing layer: multiple samples
+// TestGetMetricQuantileSeries_MergedHistogramBucketing exercises the
+// merged-Histogram path under the bucketing layer: multiple samples
 // from multiple streams within a single bucket must merge first across time
 // (per stream, per the temporality dispatch) and then across streams. Also
 // verifies the bounds-mismatch detection still fires when streams disagree
 // inside a bucket, and that within-stream cumulative samples are not
 // double-counted across the cross-stream sum.
-func TestGetMetricQuantileSeries_AggregatedHistogramBucketing(t *testing.T) {
+func TestGetMetricQuantileSeries_MergedHistogramBucketing(t *testing.T) {
 	const wideWindow = int64(60 * time.Second)
 	const onePointMaxPoints = 1
 
@@ -1723,7 +2122,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogramBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist_delta_bucket")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1731,7 +2130,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogramBucketing(t *testing.T) {
 		require.Len(t, points, 1)
 
 		pt := points[0]
-		// Aggregated mode strips per-stream identity.
+		// Merged mode strips per-attribute identity.
 		assert.Equal(t, "", pt["attributesKey"])
 		// Merged totals across all 4 samples.
 		assert.EqualValues(t, 36, pt["count"])
@@ -1777,7 +2176,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogramBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist_cumul_bucket")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1810,13 +2209,13 @@ func TestGetMetricQuantileSeries_AggregatedHistogramBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist_bucket_mismatch")
 
-		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", startTs, endTs, onePointMaxPoints)
+		_, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", startTs, endTs, onePointMaxPoints)
 		assert.ErrorIs(t, err, metrics.ErrHistogramBoundsMismatch)
 	})
 }
 
-// TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing exercises the
-// aggregated-ExpHistogram path under the bucketing layer: it feeds multiple
+// TestGetMetricQuantileSeries_MergedExpHistogramBucketing exercises the
+// merged-ExpHistogram path under the bucketing layer: it feeds multiple
 // streams (with varying scale, offset, and zero_threshold) through the full
 // alignment pipeline (downscale -> pad_left -> sum -> fold) and verifies
 // that totals roll up correctly and that quantiles come back as finite
@@ -1825,7 +2224,7 @@ func TestGetMetricQuantileSeries_AggregatedHistogramBucketing(t *testing.T) {
 // already covered by macro-level tests in schema_test.go); here we focus
 // on the contract: ordering, counts/sum/min/max conservation across the
 // merge, and dispatch on temporality.
-func TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing(t *testing.T) {
+func TestGetMetricQuantileSeries_MergedExpHistogramBucketing(t *testing.T) {
 	const wideWindow = int64(60 * time.Second)
 	const onePointMaxPoints = 1
 
@@ -1853,7 +2252,7 @@ func TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_exp_same_align")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.95}, "aggregated", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5, 0.95}, "merged", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1861,7 +2260,7 @@ func TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing(t *testing.T) {
 		require.Len(t, points, 1)
 		pt := points[0]
 
-		assert.Equal(t, "", pt["attributesKey"], "aggregated mode strips per-stream identity")
+		assert.Equal(t, "", pt["attributesKey"], "merged mode strips per-attribute identity")
 		// Cross-stream totals are independent of the alignment pipeline.
 		assert.EqualValues(t, 16, pt["count"])
 		assert.InDelta(t, 16.0, pt["sum"], 1e-9)
@@ -1899,7 +2298,7 @@ func TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_exp_mixed_scales")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1941,7 +2340,7 @@ func TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_exp_mixed_offsets")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -1986,7 +2385,7 @@ func TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_exp_fold")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.95}, "aggregated", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.95}, "merged", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -2009,7 +2408,7 @@ func TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing(t *testing.T) {
 	})
 
 	t.Run("CumulativeMultiStreamLatestPerBucketThenSum", func(t *testing.T) {
-		// Cumulative variant: per-stream within-bucket merge takes the
+		// Cumulative variant: per-attribute within-bucket merge takes the
 		// latest sample (arg_max), then cross-stream merge sums. If the
 		// dispatch is wrong (e.g. delta-summing across time first), the
 		// totals would double-count; the assertion catches that.
@@ -2039,7 +2438,7 @@ func TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_exp_cumul")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", startTs, endTs, onePointMaxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", startTs, endTs, onePointMaxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -2081,7 +2480,7 @@ func TestGetMetricQuantileSeries_AggregatedExpHistogramBucketing(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_exp_multi_bucket")
 
-		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "aggregated", startTs, endTs, maxPoints)
+		raw, err := metrics.GetMetricQuantileSeries(ctx, s.DB(), id, []float64{0.5}, "merged", startTs, endTs, maxPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -2160,7 +2559,7 @@ func TestIngestMetrics_FlushInterval(t *testing.T) {
 // GetMetricBucketSeries
 // ---------------------------------------------------------------------------
 
-func TestGetMetricBucketSeries_PerStream(t *testing.T) {
+func TestGetMetricBucketSeries_PerAttribute(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
@@ -2183,7 +2582,7 @@ func TestGetMetricBucketSeries_PerStream(t *testing.T) {
 		id := metricIDByName["histogram_metric"]
 		require.NotEmpty(t, id)
 
-		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -2221,7 +2620,7 @@ func TestGetMetricBucketSeries_PerStream(t *testing.T) {
 		id := metricIDByName["exponential_histogram_metric"]
 		require.NotEmpty(t, id)
 
-		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -2247,19 +2646,19 @@ func TestGetMetricBucketSeries_PerStream(t *testing.T) {
 	t.Run("UnsupportedType_Gauge", func(t *testing.T) {
 		id := metricIDByName["gauge_metric"]
 		require.NotEmpty(t, id)
-		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrBucketSeriesNotSupportedForType)
 	})
 
 	t.Run("UnsupportedType_Sum", func(t *testing.T) {
 		id := metricIDByName["sum_metric"]
 		require.NotEmpty(t, id)
-		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrBucketSeriesNotSupportedForType)
 	})
 
 	t.Run("MetricNotFound", func(t *testing.T) {
-		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrMetricIDNotFound)
 	})
 
@@ -2273,25 +2672,25 @@ func TestGetMetricBucketSeries_PerStream(t *testing.T) {
 	t.Run("InvalidTimeRange", func(t *testing.T) {
 		id := metricIDByName["histogram_metric"]
 		require.NotEmpty(t, id)
-		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-stream", 100, 100, testQuantileWindowPoints)
+		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-attribute", 100, 100, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrInvalidTimeRange, "endTs == startTs is invalid")
-		_, err = metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-stream", 200, 100, testQuantileWindowPoints)
+		_, err = metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-attribute", 200, 100, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrInvalidTimeRange, "endTs < startTs is invalid")
 	})
 
 	t.Run("InvalidMaxPoints", func(t *testing.T) {
 		id := metricIDByName["histogram_metric"]
 		require.NotEmpty(t, id)
-		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, 0)
+		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, 0)
 		assert.ErrorIs(t, err, metrics.ErrInvalidMaxPoints, "maxPoints=0 is invalid")
-		_, err = metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-stream", testQuantileWindowStartTs, testQuantileWindowEndTs, -1)
+		_, err = metrics.GetMetricBucketSeries(ctx, s.DB(), id, "per-attribute", testQuantileWindowStartTs, testQuantileWindowEndTs, -1)
 		assert.ErrorIs(t, err, metrics.ErrInvalidMaxPoints, "negative maxPoints is invalid")
 	})
 
-	t.Run("AggregatedExpHistogramSingleStream", func(t *testing.T) {
+	t.Run("MergedExpHistogramSingleTimeseries", func(t *testing.T) {
 		id := metricIDByName["exponential_histogram_metric"]
 		require.NotEmpty(t, id)
-		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -2308,14 +2707,14 @@ func TestGetMetricBucketSeries_PerStream(t *testing.T) {
 	})
 }
 
-func TestGetMetricBucketSeries_AggregatedHistogram(t *testing.T) {
+func TestGetMetricBucketSeries_MergedHistogram(t *testing.T) {
 	t.Run("MergesStreamsAtSameTimestamp", func(t *testing.T) {
 		s, ctx, teardown := setupStore(t)
 		defer teardown()
 
 		ts := time.Unix(1700000000, 0)
 		bounds := []float64{0.5, 1.0, 1.5, 2.0}
-		md := makeAggregatedHistogramFixture("agg_hist_bs", []histTestDP{
+		md := makeMergedHistogramFixture("agg_hist_bs", []histTestDP{
 			{timestamp: ts, attrs: map[string]string{"host": "a"},
 				bounds: bounds, counts: []uint64{10, 20, 30, 25, 15},
 				count: 100, sum: 150.0, min: 0.1, max: 2.5},
@@ -2328,7 +2727,7 @@ func TestGetMetricBucketSeries_AggregatedHistogram(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist_bs")
 
-		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -2367,7 +2766,7 @@ func TestGetMetricBucketSeries_AggregatedHistogram(t *testing.T) {
 		defer teardown()
 
 		ts := time.Unix(1700000000, 0)
-		md := makeAggregatedHistogramFixture("agg_hist_bs_mismatch", []histTestDP{
+		md := makeMergedHistogramFixture("agg_hist_bs_mismatch", []histTestDP{
 			{timestamp: ts, attrs: map[string]string{"host": "a"},
 				bounds: []float64{1.0}, counts: []uint64{5, 5},
 				count: 10, sum: 5.0, min: 0.1, max: 2.0},
@@ -2380,7 +2779,7 @@ func TestGetMetricBucketSeries_AggregatedHistogram(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist_bs_mismatch")
 
-		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		_, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		assert.ErrorIs(t, err, metrics.ErrHistogramBoundsMismatch)
 	})
 
@@ -2392,7 +2791,7 @@ func TestGetMetricBucketSeries_AggregatedHistogram(t *testing.T) {
 		t1 := time.Unix(1700000000, 0)
 		t2 := time.Unix(1700000060, 0)
 		t3 := time.Unix(1700000120, 0)
-		md := makeAggregatedHistogramFixture("agg_hist_bs_multi", []histTestDP{
+		md := makeMergedHistogramFixture("agg_hist_bs_multi", []histTestDP{
 			{timestamp: t3, attrs: map[string]string{"host": "a"}, bounds: bounds, counts: []uint64{1, 1}, count: 2, sum: 1.5, min: 0.1, max: 1.5},
 			{timestamp: t1, attrs: map[string]string{"host": "a"}, bounds: bounds, counts: []uint64{2, 0}, count: 2, sum: 0.5, min: 0.1, max: 0.9},
 			{timestamp: t2, attrs: map[string]string{"host": "a"}, bounds: bounds, counts: []uint64{1, 2}, count: 3, sum: 4.0, min: 0.5, max: 2.0},
@@ -2403,7 +2802,7 @@ func TestGetMetricBucketSeries_AggregatedHistogram(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_hist_bs_multi")
 
-		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "aggregated", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
+		raw, err := metrics.GetMetricBucketSeries(ctx, s.DB(), id, "merged", testQuantileWindowStartTs, testQuantileWindowEndTs, testQuantileWindowPoints)
 		require.NoError(t, err)
 
 		var points []map[string]any
@@ -2512,7 +2911,7 @@ func TestSearchSummaries_SparkbarTemporality(t *testing.T) {
 		assert.Equal(t, []int64{6, 9, 12}, asInts(t, sparkbar["value"]))
 	})
 
-	t.Run("CumulativeTakesLatestPerStream", func(t *testing.T) {
+	t.Run("CumulativeTakesLatestPerAttribute", func(t *testing.T) {
 		s, ctx, teardown := setupStore(t)
 		defer teardown()
 
@@ -2726,7 +3125,7 @@ func TestSearchSummaries_SparklineTemporality(t *testing.T) {
 // pipeline than the regular Histogram. Same regression: summing cumulative
 // snapshots inflates counts by N.
 func TestSearchSummaries_ExpHistogramTemporality(t *testing.T) {
-	t.Run("CumulativeTakesLatestPerStreamThenDownscaleAndSum", func(t *testing.T) {
+	t.Run("CumulativeTakesLatestPerAttributeThenDownscaleAndSum", func(t *testing.T) {
 		// This fixture is deliberately load-bearing: if any stage of the
 		// SearchSummaries ExpHist pipeline silently regresses, the
 		// assertion below catches it.
@@ -2734,7 +3133,7 @@ func TestSearchSummaries_ExpHistogramTemporality(t *testing.T) {
 		// What it exercises (and what the previous "single stream, scale=0,
 		// no zero, no downscale" version did NOT):
 		//
-		//   1. arg_max-per-stream actually has to discriminate -- 3 dps per
+		//   1. arg_max-per-attribute actually has to discriminate -- 3 dps per
 		//      stream rather than 2.
 		//   2. Two streams are merged, so the cross-stream sum_bucket_vectors
 		//      runs (not a no-op single-stream pass-through).
@@ -2840,9 +3239,9 @@ func TestSearchSummaries_ExpHistogramTemporality(t *testing.T) {
 	})
 }
 
-// TestGetMetricAggregatedQuantiles covers the new "single quantile set
+// TestGetMetricMergedQuantiles covers the new "single quantile set
 // across the whole window" entry point. The function delegates to
-// GetMetricQuantileSeries with maxPoints=1, so all the per-stream merge,
+// GetMetricQuantileSeries with maxPoints=1, so all the per-attribute merge,
 // cross-time merge, temporality, and bounds-mismatch logic is already
 // exercised elsewhere; these tests focus on:
 //
@@ -2853,14 +3252,14 @@ func TestSearchSummaries_ExpHistogramTemporality(t *testing.T) {
 //   - error paths (no datapoints / unsupported type / bounds mismatch /
 //     unspecified temporality) propagate with the same sentinels as the
 //     series query, just wrapped under the new function name.
-func TestGetMetricAggregatedQuantiles(t *testing.T) {
+func TestGetMetricMergedQuantiles(t *testing.T) {
 	// Window-wide constants. Use the same generous window the series tests
 	// use so we don't accidentally exclude any test-fixture timestamps.
 	const startTs = testQuantileWindowStartTs
 	const endTs = testQuantileWindowEndTs
 
 	t.Run("HistogramSingleStreamSingleTimestamp", func(t *testing.T) {
-		// Sanity: one dp, one bucket vector. The aggregated quantile
+		// Sanity: one dp, one bucket vector. The merged quantile
 		// should match what GetDatapointQuantiles would compute on that dp
 		// directly. Anchors against the same p50=4/3 calc the
 		// per-datapoint test uses.
@@ -2868,7 +3267,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		defer teardown()
 
 		ts := time.Unix(1700000000, 0)
-		md := makeAggregatedHistogramFixture("agg_q_single", []histTestDP{
+		md := makeMergedHistogramFixture("agg_q_single", []histTestDP{
 			{timestamp: ts, attrs: map[string]string{"host": "a"},
 				bounds: []float64{0.5, 1.0, 1.5, 2.0},
 				counts: []uint64{10, 20, 30, 25, 15},
@@ -2879,7 +3278,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_q_single")
 
-		raw, err := metrics.GetMetricAggregatedQuantiles(ctx, s.DB(), id, []float64{0.5, 0.95}, startTs, endTs)
+		raw, err := metrics.GetMetricMergedQuantiles(ctx, s.DB(), id, []float64{0.5, 0.95}, startTs, endTs)
 		require.NoError(t, err)
 
 		var out map[string]any
@@ -2915,7 +3314,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		bounds := []float64{1.0}
 		t1 := time.Unix(1700000000, 0)
 		t2 := time.Unix(1700000060, 0)
-		md := makeAggregatedHistogramFixture("agg_q_multi", []histTestDP{
+		md := makeMergedHistogramFixture("agg_q_multi", []histTestDP{
 			{timestamp: t1, attrs: map[string]string{"host": "a"}, bounds: bounds, counts: []uint64{4, 0}, count: 4, sum: 1.0, min: 0.1, max: 0.9},
 			{timestamp: t1, attrs: map[string]string{"host": "b"}, bounds: bounds, counts: []uint64{0, 4}, count: 4, sum: 6.0, min: 1.5, max: 1.5},
 			{timestamp: t2, attrs: map[string]string{"host": "a"}, bounds: bounds, counts: []uint64{2, 2}, count: 4, sum: 4.0, min: 0.5, max: 2.0},
@@ -2926,7 +3325,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_q_multi")
 
-		raw, err := metrics.GetMetricAggregatedQuantiles(ctx, s.DB(), id, []float64{0.5}, startTs, endTs)
+		raw, err := metrics.GetMetricMergedQuantiles(ctx, s.DB(), id, []float64{0.5}, startTs, endTs)
 		require.NoError(t, err)
 
 		var out map[string]any
@@ -2955,7 +3354,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_q_exp")
 
-		raw, err := metrics.GetMetricAggregatedQuantiles(ctx, s.DB(), id, []float64{0.5, 0.99}, startTs, endTs)
+		raw, err := metrics.GetMetricMergedQuantiles(ctx, s.DB(), id, []float64{0.5, 0.99}, startTs, endTs)
 		require.NoError(t, err)
 
 		var out map[string]any
@@ -2973,7 +3372,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		s, ctx, teardown := setupStore(t)
 		defer teardown()
 
-		raw, err := metrics.GetMetricAggregatedQuantiles(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", nil, startTs, endTs)
+		raw, err := metrics.GetMetricMergedQuantiles(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", nil, startTs, endTs)
 		require.NoError(t, err)
 		assert.JSONEq(t, "{}", string(raw))
 	})
@@ -2982,7 +3381,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		s, ctx, teardown := setupStore(t)
 		defer teardown()
 
-		_, err := metrics.GetMetricAggregatedQuantiles(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", []float64{0.5}, startTs, endTs)
+		_, err := metrics.GetMetricMergedQuantiles(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", []float64{0.5}, startTs, endTs)
 		assert.ErrorIs(t, err, metrics.ErrMetricIDNotFound)
 	})
 
@@ -2996,7 +3395,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
 		}))
 		id := findMetricID(t, s, ctx, "gauge_metric")
-		_, err := metrics.GetMetricAggregatedQuantiles(ctx, s.DB(), id, []float64{0.5}, startTs, endTs)
+		_, err := metrics.GetMetricMergedQuantiles(ctx, s.DB(), id, []float64{0.5}, startTs, endTs)
 		assert.ErrorIs(t, err, metrics.ErrQuantilesNotSupportedForType)
 	})
 
@@ -3009,7 +3408,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		defer teardown()
 
 		ts := time.Unix(1700000000, 0)
-		md := makeAggregatedHistogramFixture("agg_q_mismatch", []histTestDP{
+		md := makeMergedHistogramFixture("agg_q_mismatch", []histTestDP{
 			{timestamp: ts, attrs: map[string]string{"host": "a"},
 				bounds: []float64{1.0}, counts: []uint64{5, 5},
 				count: 10, sum: 5.0, min: 0.1, max: 2.0},
@@ -3022,7 +3421,7 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_q_mismatch")
 
-		_, err := metrics.GetMetricAggregatedQuantiles(ctx, s.DB(), id, []float64{0.5}, startTs, endTs)
+		_, err := metrics.GetMetricMergedQuantiles(ctx, s.DB(), id, []float64{0.5}, startTs, endTs)
 		assert.ErrorIs(t, err, metrics.ErrHistogramBoundsMismatch)
 	})
 
@@ -3041,14 +3440,14 @@ func TestGetMetricAggregatedQuantiles(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "agg_q_unspec")
 
-		_, err := metrics.GetMetricAggregatedQuantiles(ctx, s.DB(), id, []float64{0.5}, startTs, endTs)
+		_, err := metrics.GetMetricMergedQuantiles(ctx, s.DB(), id, []float64{0.5}, startTs, endTs)
 		assert.ErrorIs(t, err, metrics.ErrUnspecifiedTemporality)
 	})
 
 	t.Run("InvalidTimeRange", func(t *testing.T) {
 		s, ctx, teardown := setupStore(t)
 		defer teardown()
-		_, err := metrics.GetMetricAggregatedQuantiles(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", []float64{0.5}, 100, 100)
+		_, err := metrics.GetMetricMergedQuantiles(ctx, s.DB(), "00000000-0000-0000-0000-000000000000", []float64{0.5}, 100, 100)
 		assert.ErrorIs(t, err, metrics.ErrInvalidTimeRange)
 	})
 }

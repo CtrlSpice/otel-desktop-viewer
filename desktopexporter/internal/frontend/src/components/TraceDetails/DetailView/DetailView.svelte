@@ -84,7 +84,7 @@
           class="detail-fields w-full"
           aria-label="Span details"
         >
-          <thead class="detail-view__thead table-header-surface">
+          <thead class="detail-view__thead header-surface">
             <tr class="detail-view__header-row">
               <th class="detail-view__th-tabs" colspan="2" scope="colgroup">
                 <nav class="detail-view__tabs">

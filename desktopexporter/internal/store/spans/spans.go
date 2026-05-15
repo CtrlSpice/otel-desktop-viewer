@@ -14,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -26,6 +27,17 @@ var (
 )
 
 const flushIntervalSpans = 50
+
+// resourceServiceName extracts the service.name resource attribute as a
+// plain string, returning "" when not present. This is the same logic
+// used by the metrics package to denormalize service onto metric_streams,
+// kept private here so spans doesn't grow a metrics dependency.
+func resourceServiceName(attrs pcommon.Map) string {
+	if v, ok := attrs.Get("service.name"); ok {
+		return v.AsString()
+	}
+	return ""
+}
 
 // Ingest ingests trace spans from pdata into the spans, events, links, and attributes tables.
 // The caller must hold any required lock on the connection.
@@ -42,6 +54,12 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 	spanCount := 0
 	for _, resourceSpan := range traces.ResourceSpans().All() {
 		resource := resourceSpan.Resource()
+		// Denormalize service.name onto every span row in this resource.
+		// Source of truth is still the resource attribute row written
+		// below; this column is the index target for "filter spans by
+		// service" queries, which would otherwise need a join through
+		// attributes.
+		serviceName := resourceServiceName(resource.Attributes())
 
 		for _, scopeSpan := range resourceSpan.ScopeSpans().All() {
 			scope := scopeSpan.Scope()
@@ -79,6 +97,7 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 					span.DroppedLinksCount(),          // DroppedLinksCount UINTEGER
 					span.Status().Code().String(),     // StatusCode VARCHAR
 					span.Status().Message(),           // StatusMessage VARCHAR
+					serviceName,                       // ServiceName VARCHAR (NOT NULL, '' = unknown)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)

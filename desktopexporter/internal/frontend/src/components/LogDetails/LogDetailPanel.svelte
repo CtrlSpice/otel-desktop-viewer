@@ -22,7 +22,7 @@
   <div class="log-detail-panel">
     <div class="log-detail-panel__scroll">
       <table class="detail-fields w-full" aria-label="Log details">
-        <thead class="table-header-surface">
+        <thead class="header-surface">
           <tr class="table-header-row">
             <th class="table-header-cell table-header-cell--left" colspan="3">
               Log Record
@@ -120,9 +120,7 @@
       </table>
     </div>
     {#if footer}
-      <div class="log-detail-panel__footer">
-        {@render footer()}
-      </div>
+      {@render footer()}
     {/if}
   </div>
 {:else}
@@ -158,16 +156,4 @@
     word-break: break-word;
   }
 
-  .log-detail-panel__footer {
-    @apply grid shrink-0 items-center gap-2 border-t border-base-300/50 px-4 py-2;
-    grid-template-columns: 1fr auto 1fr;
-  }
-
-  .log-detail-panel__footer > :global(*:nth-child(2)) {
-    @apply justify-self-center;
-  }
-
-  .log-detail-panel__footer > :global(*:last-child) {
-    @apply justify-self-end;
-  }
 </style>

@@ -12,10 +12,22 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
-	"github.com/google/uuid"
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/google/uuid"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 )
+
+// resourceServiceName extracts the service.name resource attribute as a
+// plain string, returning "" when not present. Mirrors the same helper
+// in spans / metrics; kept private here so logs doesn't grow a cross-
+// package dependency just for one attribute lookup.
+func resourceServiceName(attrs pcommon.Map) string {
+	if v, ok := attrs.Get("service.name"); ok {
+		return v.AsString()
+	}
+	return ""
+}
 
 var (
 	ErrInvalidLogQuery   = errors.New("invalid log search query")
@@ -40,6 +52,10 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 	logCount := 0
 	for _, resourceLogs := range logs.ResourceLogs().All() {
 		resource := resourceLogs.Resource()
+		// Denormalize service.name onto every log row in this resource;
+		// the resource-attribute row is still written below as the
+		// source of truth. See spans.Ingest for the same pattern.
+		serviceName := resourceServiceName(resource.Attributes())
 
 		for _, scopeLogs := range resourceLogs.ScopeLogs().All() {
 			scope := scopeLogs.Scope()
@@ -78,6 +94,7 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 					log.DroppedAttributesCount(),      // DroppedAttributesCount UINTEGER
 					uint32(log.Flags()),               // Flags UINTEGER
 					log.EventName(),                   // EventName VARCHAR
+					serviceName,                        // ServiceName VARCHAR (NOT NULL, '' = unknown)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)

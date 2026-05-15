@@ -373,17 +373,17 @@ func TestGetMetricQuantileSeriesInvalidParams(t *testing.T) {
 		name   string
 		params any
 	}{
-		{"WrongCount", []any{"id-only", []any{0.5}, "per-stream", startTs, endTs}}, // 5
-		{"NonStringMetricID", []any{42, []any{0.5}, "per-stream", startTs, endTs, 100.0}},
-		{"NonArrayQuantiles", []any{"abc", "not-an-array", "per-stream", startTs, endTs, 100.0}},
-		{"NonNumberQuantile", []any{"abc", []any{"0.5"}, "per-stream", startTs, endTs, 100.0}},
-		{"NegativeQuantile", []any{"abc", []any{-0.1}, "per-stream", startTs, endTs, 100.0}},
-		{"AboveOneQuantile", []any{"abc", []any{1.1}, "per-stream", startTs, endTs, 100.0}},
+		{"WrongCount", []any{"id-only", []any{0.5}, "per-attribute", startTs, endTs}}, // 5
+		{"NonStringMetricID", []any{42, []any{0.5}, "per-attribute", startTs, endTs, 100.0}},
+		{"NonArrayQuantiles", []any{"abc", "not-an-array", "per-attribute", startTs, endTs, 100.0}},
+		{"NonNumberQuantile", []any{"abc", []any{"0.5"}, "per-attribute", startTs, endTs, 100.0}},
+		{"NegativeQuantile", []any{"abc", []any{-0.1}, "per-attribute", startTs, endTs, 100.0}},
+		{"AboveOneQuantile", []any{"abc", []any{1.1}, "per-attribute", startTs, endTs, 100.0}},
 		{"NonStringMode", []any{"abc", []any{0.5}, 7, startTs, endTs, 100.0}},
-		{"NonStringStartTs", []any{"abc", []any{0.5}, "per-stream", 1700000000000000000, endTs, 100.0}},
-		{"NonStringEndTs", []any{"abc", []any{0.5}, "per-stream", startTs, 1700000060000000000, 100.0}},
-		{"UnparseableStartTs", []any{"abc", []any{0.5}, "per-stream", "not-a-number", endTs, 100.0}},
-		{"NonNumberMaxPoints", []any{"abc", []any{0.5}, "per-stream", startTs, endTs, "100"}},
+		{"NonStringStartTs", []any{"abc", []any{0.5}, "per-attribute", 1700000000000000000, endTs, 100.0}},
+		{"NonStringEndTs", []any{"abc", []any{0.5}, "per-attribute", startTs, 1700000060000000000, 100.0}},
+		{"UnparseableStartTs", []any{"abc", []any{0.5}, "per-attribute", "not-a-number", endTs, 100.0}},
+		{"NonNumberMaxPoints", []any{"abc", []any{0.5}, "per-attribute", startTs, endTs, "100"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -409,7 +409,7 @@ func TestGetMetricQuantileSeriesValidationDispatch(t *testing.T) {
 		req := createRequest("getMetricQuantileSeries", []any{
 			"00000000-0000-0000-0000-000000000000",
 			[]any{0.5},
-			"per-stream",
+			"per-attribute",
 			"1700000060000000000", // start
 			"1700000000000000000", // end < start
 			100.0,
@@ -423,7 +423,7 @@ func TestGetMetricQuantileSeriesValidationDispatch(t *testing.T) {
 		req := createRequest("getMetricQuantileSeries", []any{
 			"00000000-0000-0000-0000-000000000000",
 			[]any{0.5},
-			"per-stream",
+			"per-attribute",
 			"1700000000000000000",
 			"1700000060000000000",
 			0.0,
@@ -462,7 +462,7 @@ func TestGetMetricQuantileSeriesNotFound(t *testing.T) {
 	req := createRequest("getMetricQuantileSeries", []any{
 		"00000000-0000-0000-0000-000000000000",
 		[]any{0.5},
-		"per-stream",
+		"per-attribute",
 		"1700000000000000000",
 		"1700000060000000000",
 		100.0,
@@ -486,13 +486,13 @@ func TestGetMetricBucketSeriesInvalidParams(t *testing.T) {
 		name   string
 		params any
 	}{
-		{"WrongCount", []any{"id-only", "per-stream", startTs, endTs}},
-		{"NonStringMetricID", []any{42, "per-stream", startTs, endTs, 100.0}},
+		{"WrongCount", []any{"id-only", "per-attribute", startTs, endTs}},
+		{"NonStringMetricID", []any{42, "per-attribute", startTs, endTs, 100.0}},
 		{"NonStringMode", []any{"abc", 7, startTs, endTs, 100.0}},
-		{"NonStringStartTs", []any{"abc", "per-stream", 1700000000000000000, endTs, 100.0}},
-		{"NonStringEndTs", []any{"abc", "per-stream", startTs, 1700000060000000000, 100.0}},
-		{"UnparseableStartTs", []any{"abc", "per-stream", "not-a-number", endTs, 100.0}},
-		{"NonNumberMaxPoints", []any{"abc", "per-stream", startTs, endTs, "100"}},
+		{"NonStringStartTs", []any{"abc", "per-attribute", 1700000000000000000, endTs, 100.0}},
+		{"NonStringEndTs", []any{"abc", "per-attribute", startTs, 1700000060000000000, 100.0}},
+		{"UnparseableStartTs", []any{"abc", "per-attribute", "not-a-number", endTs, 100.0}},
+		{"NonNumberMaxPoints", []any{"abc", "per-attribute", startTs, endTs, "100"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -511,7 +511,7 @@ func TestGetMetricBucketSeriesValidationDispatch(t *testing.T) {
 	t.Run("InvalidTimeRangeMapsTo32011", func(t *testing.T) {
 		req := createRequest("getMetricBucketSeries", []any{
 			"00000000-0000-0000-0000-000000000000",
-			"per-stream",
+			"per-attribute",
 			"1700000060000000000",
 			"1700000000000000000",
 			100.0,
@@ -524,7 +524,7 @@ func TestGetMetricBucketSeriesValidationDispatch(t *testing.T) {
 	t.Run("InvalidMaxPointsMapsTo32012", func(t *testing.T) {
 		req := createRequest("getMetricBucketSeries", []any{
 			"00000000-0000-0000-0000-000000000000",
-			"per-stream",
+			"per-attribute",
 			"1700000000000000000",
 			"1700000060000000000",
 			0.0,
@@ -554,7 +554,7 @@ func TestGetMetricBucketSeriesNotFound(t *testing.T) {
 
 	req := createRequest("getMetricBucketSeries", []any{
 		"00000000-0000-0000-0000-000000000000",
-		"per-stream",
+		"per-attribute",
 		"1700000000000000000",
 		"1700000060000000000",
 		100.0,
@@ -654,8 +654,17 @@ func TestGetMetric(t *testing.T) {
 		require.NoError(t, json.Unmarshal(raw, &metric))
 		assert.Equal(t, "test.gauge", metric["name"])
 		assert.Equal(t, "bytes", metric["unit"])
-		dps, _ := metric["datapoints"].([]any)
-		assert.Len(t, dps, 1, "should have one datapoint")
+		// MetricData is now grouped by timeseries (per attribute set)
+		// rather than a flat datapoint list. Each timeseries owns the
+		// attributes for its group plus the pure-OTLP datapoints.
+		timeseries, _ := metric["timeseries"].([]any)
+		require.Len(t, timeseries, 1, "should have one timeseries")
+		ts, _ := timeseries[0].(map[string]any)
+		require.NotNil(t, ts, "timeseries must be a JSON object")
+		assert.Contains(t, ts, "attributesKey", "timeseries should expose its grouping key")
+		assert.Contains(t, ts, "attributes", "timeseries should own its attribute set")
+		dps, _ := ts["datapoints"].([]any)
+		assert.Len(t, dps, 1, "should have one datapoint inside the timeseries")
 	})
 
 	t.Run("Not Found", func(t *testing.T) {

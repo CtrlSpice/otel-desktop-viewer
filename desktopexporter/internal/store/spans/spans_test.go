@@ -1280,3 +1280,40 @@ func createTestTracePdata() ptrace.Traces {
 
 	return tr
 }
+
+// TestSpans_ServiceNameDenormStaysConsistent pins down the contract
+// that the spans.service_name column (added as a hot index target for
+// "filter by service" queries) stays in sync with its source-of-truth
+// resource attribute. We ingest a mix of spans -- some with
+// service.name set, some without -- and assert column-vs-attribute
+// equality on every row. A single mismatch means either the ingest
+// path forgot to write the column, or the resource attribute row was
+// dropped, both of which would silently break service filtering.
+func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	traces, _, _, _ := buildTracesForSummaryOrdering(baseTime)
+
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces)
+	})
+	require.NoError(t, err)
+
+	// For every span row that carries a non-empty service_name, there
+	// must be a matching resource attribute row with the same value.
+	// (We use coalesce(a.value, '') because spans without the resource
+	// attribute have a column value of '' and no matching attribute.)
+	var mismatches int
+	require.NoError(t, s.DB().QueryRowContext(ctx, `
+		select count(*) from spans s
+		left join attributes a
+		     on a.span_id = s.span_id
+		    and a.scope = 'resource'
+		    and a.key = 'service.name'
+		where s.service_name <> coalesce(a.value, '')
+	`).Scan(&mismatches))
+	assert.Equal(t, 0, mismatches,
+		"spans.service_name must equal the source resource attribute (or '' when absent)")
+}

@@ -795,31 +795,6 @@
     @apply m-0 text-error;
   }
 
-  .search-editor-footer__hint {
-    @apply inline-flex shrink-0 select-none items-center gap-1 tracking-tight text-base-content/55;
-  }
-
-  .search-editor-footer__hint-plus {
-    @apply text-base-content/45;
-  }
-
-  .search-editor-footer__hint-suffix {
-    @apply text-base-content/50;
-  }
-
-  /* Match kbd chips to the same line box as the footer copy. */
-  .search-editor-footer__kbd.kbd {
-    font-size: 0.625rem;
-    line-height: 1rem;
-    min-height: 1rem;
-    padding-inline: 0.35rem;
-    padding-block: 0;
-  }
-
-  .search-editor-footer__actions.join {
-    @apply shrink-0;
-  }
-
   .search-editor-container {
     @apply input relative flex w-full items-start px-3;
     height: fit-content;

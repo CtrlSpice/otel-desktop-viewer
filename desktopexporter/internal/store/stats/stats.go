@@ -44,9 +44,15 @@ func GetStats(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 				'lastReceived', coalesce(max(nullif(timestamp, 0)), max(observed_timestamp))
 			) from logs),
 			'metrics', (select json_object(
-				'metricCount',    (select count(*) from metrics),
+				-- metricCount is the number of distinct logical streams
+				-- (one per name+unit+type+temporality+monotonic+scope+
+				-- service tuple), so the frontend's "metrics" badge
+				-- shows logical concepts rather than ingest batches.
+				-- metric_ingests is the per-batch table; using its row
+				-- count would inflate by the number of OTLP requests.
+				'metricCount',    (select count(*) from metric_streams),
 				'dataPointCount', count(*),
-				'lastReceived',   (select max(received) from metrics)
+				'lastReceived',   (select max(received) from metric_ingests)
 			) from datapoints)
 		) as varchar) as stats
 	`

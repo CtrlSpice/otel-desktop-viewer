@@ -796,3 +796,32 @@ func TestSearchLogs(t *testing.T) {
 		assert.Equal(t, "test-service", attrMap(entries[0].Resource.Attributes)["service.name"])
 	})
 }
+
+// TestLogs_ServiceNameDenormStaysConsistent mirrors the spans/streams
+// invariant: logs.service_name (the denormalized hot-filter column)
+// must equal the source-of-truth resource attribute value for every
+// log row. If a future change writes only the column, only the
+// attribute, or writes inconsistent values, this test fails. We rely
+// on the standard fixture which stamps service.name = test-service on
+// the resource for every record.
+func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime))
+	})
+	require.NoError(t, err)
+
+	mismatches := countRows(t, s.DB(), ctx, `
+		select count(*) from logs l
+		left join attributes a
+		     on a.log_id = l.id
+		    and a.scope = 'resource'
+		    and a.key = 'service.name'
+		where l.service_name <> coalesce(a.value, '')
+	`)
+	assert.Equal(t, 0, mismatches,
+		"logs.service_name must equal the source resource attribute (or '' when absent)")
+}

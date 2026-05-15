@@ -26,8 +26,8 @@
   <!-- Sparks live in the drawer alongside dozens of other rows; layerchart's
        default tooltip + highlight overlay would intercept hover and ghost a
        Datadog-style popover over the cursor. Disable both so the chart stays
-       purely decorative -- detail interactions live in the MetricDetailPanel,
-       not here. -->
+       purely decorative -- detail interactions live in the metric chart +
+       detail views, not here. -->
   <AreaChart
     data={sparkData}
     x="date"

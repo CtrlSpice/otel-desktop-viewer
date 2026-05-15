@@ -36,7 +36,7 @@
 </script>
 
 <div
-  class="table-header-surface min-w-0 flex-nowrap justify-evenly rounded-t-lg px-2"
+  class="header-surface min-w-0 flex-nowrap justify-evenly rounded-t-lg px-2"
 >
   {#each PRESETS as preset, index}
     {@const selected =

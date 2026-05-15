@@ -5,6 +5,7 @@ import type {
   TraceSummary,
   LogData,
   MetricData,
+  MetricTimeseries,
   MetricSummary,
   Sparkline,
   Sparkbar,
@@ -171,10 +172,24 @@ function dataPointFromJSON(json: any): DataPoint {
   }
 }
 
+// MetricTimeseries owns the attribute set for its group (lifted out
+// of the per-dp objects on the wire). The reviver itself has no
+// BigInts to promote at the timeseries level -- attributesKey is a
+// plain string and attributes are already plain string/string/string
+// trios -- so it's just a recursive call into the timeseries'
+// datapoints to revive their timestamp BigInts.
+function timeseriesFromJSON(json: any): MetricTimeseries {
+  return {
+    attributesKey: json.attributesKey ?? '',
+    attributes: json.attributes ?? [],
+    datapoints: json.datapoints?.map(dataPointFromJSON) ?? [],
+  }
+}
+
 function metricDataFromJSON(json: any): MetricData {
   return {
     ...json,
-    datapoints: json.datapoints?.map(dataPointFromJSON) ?? [],
+    timeseries: json.timeseries?.map(timeseriesFromJSON) ?? [],
     received: BigInt(json.received),
   }
 }
@@ -490,11 +505,11 @@ export let telemetryAPI = {
   // searchMetrics et al) and converted to ns strings on the wire to dodge
   // float64 precision loss for large epoch-ns values.
   //
-  // Mode controls cross-stream merging:
-  //   - per-stream: one point per (bucket, attribute set)
-  //   - aggregated: one point per bucket with all streams merged (Histogram
-  //     requires uniform explicit_bounds within each bucket; mismatches
-  //     surface as JSON-RPC error code -32010).
+  // Mode controls cross-timeseries merging:
+  //   - per-attribute: one point per (bucket, attribute set)
+  //   - merged: one point per bucket with all timeseries merged
+  //     (Histogram requires uniform explicit_bounds within each bucket;
+  //     mismatches surface as JSON-RPC error code -32010).
   getMetricQuantileSeries: async (
     metricID: string,
     quantiles: number[],
@@ -566,16 +581,17 @@ export let telemetryAPI = {
   },
 
   // Returns one set of quantile values for a histogram/exp-histogram metric
-  // computed across the entire [startTime, endTime) window with all streams
-  // merged. Same return shape as getDatapointQuantiles ("0.5" -> value), so
-  // HistogramChart can consume both. Time params are in ms and converted to
-  // ns strings on the wire (large epoch-ns values won't survive float64).
+  // computed across the entire [startTime, endTime) window with all
+  // per-attribute timeseries merged. Same return shape as
+  // getDatapointQuantiles ("0.5" -> value), so HistogramChart can consume
+  // both. Time params are in ms and converted to ns strings on the wire
+  // (large epoch-ns values won't survive float64).
   //
-  // Errors mirror getMetricQuantileSeries(mode='aggregated'): unspecified
+  // Errors mirror getMetricQuantileSeries(mode='merged'): unspecified
   // temporality (-32011), bounds mismatch (-32010), unsupported metric type.
   // The Aggregated tab's bar chart relies on getMetricBucketSeries succeeding
   // first; if THAT errors, the chart never renders and this RPC is moot.
-  getMetricAggregatedQuantiles: async (
+  getMetricMergedQuantiles: async (
     metricID: string,
     quantiles: number[],
     startTime: number,
@@ -583,7 +599,7 @@ export let telemetryAPI = {
   ): Promise<Record<string, number | null>> => {
     const startTsNs = toNanoseconds(startTime)
     const endTsNs = toNanoseconds(endTime)
-    const rawData = await callRPC('getMetricAggregatedQuantiles', [
+    const rawData = await callRPC('getMetricMergedQuantiles', [
       metricID,
       quantiles,
       startTsNs,
@@ -591,7 +607,7 @@ export let telemetryAPI = {
     ])
     if (rawData === null || typeof rawData !== 'object') {
       console.warn(
-        'getMetricAggregatedQuantiles: Expected object, got:',
+        'getMetricMergedQuantiles: Expected object, got:',
         typeof rawData,
         rawData
       )
@@ -599,9 +615,6 @@ export let telemetryAPI = {
     }
     return rawData as Record<string, number | null>
   },
-
-  deleteMetrics: (metricIDs: string[]) =>
-    callRPC('deleteMetricByID', metricIDs),
 
   clearMetrics: () => callRPC('clearMetrics', undefined),
 
