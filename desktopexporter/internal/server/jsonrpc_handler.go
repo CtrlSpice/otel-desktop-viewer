@@ -30,6 +30,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchSpans(ctx, req)
 	case "searchLogs":
 		return h.searchLogs(ctx, req)
+	case "getLog":
+		return h.getLog(ctx, req)
 	case "searchMetrics", "getMetrics":
 		return h.searchMetrics(ctx, req)
 	case "searchMetricSummaries":
@@ -188,6 +190,31 @@ func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 	return "Logs cleared successfully", nil
 }
 
+// getLog returns the full LogData for a single log row identified by
+// its tool-minted UUID (the same id returned in Search summaries).
+func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if len(params) != 1 {
+		log.Printf("Invalid parameter count: %d (expected 1)", len(params))
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	logID, ok := params[0].(string)
+	if !ok {
+		log.Printf("Invalid logID type: %T", params[0])
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	result, err := logs.Get(ctx, h.store.DB(), logID)
+	if err != nil {
+		log.Printf("Error getting log: %v", err)
+		return nil, mapStoreError(err)
+	}
+	return result, nil
+}
+
 func (h *JSONRPCHandler) searchMetrics(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -250,59 +277,24 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 		log.Printf("Failed to unmarshal params: %v", err)
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	if len(params) != 10 {
-		log.Printf("Invalid parameter count: %d (expected 10: name, unit, metricType, aggregationTemporality, isMonotonic, scopeName, scopeVersion, serviceName, startTime, endTime)", len(params))
+	if len(params) != 3 {
+		log.Printf("Invalid parameter count: %d (expected 3: streamId, startTime, endTime)", len(params))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	name, ok := params[0].(string)
+	streamID, ok := params[0].(string)
 	if !ok {
-		log.Printf("Invalid name type: %T", params[0])
+		log.Printf("Invalid streamId type: %T", params[0])
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	unit, ok := params[1].(string)
-	if !ok {
-		log.Printf("Invalid unit type: %T", params[1])
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	metricType, ok := params[2].(string)
-	if !ok {
-		log.Printf("Invalid metricType type: %T", params[2])
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	aggregationTemporality, ok := params[3].(string)
-	if !ok {
-		log.Printf("Invalid aggregationTemporality type: %T", params[3])
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	isMonotonic, ok := params[4].(string)
-	if !ok {
-		log.Printf("Invalid isMonotonic type: %T", params[4])
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	scopeName, ok := params[5].(string)
-	if !ok {
-		log.Printf("Invalid scopeName type: %T", params[5])
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	scopeVersion, ok := params[6].(string)
-	if !ok {
-		log.Printf("Invalid scopeVersion type: %T", params[6])
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	serviceName, ok := params[7].(string)
-	if !ok {
-		log.Printf("Invalid serviceName type: %T", params[7])
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	startTime, err := parseTimestampParam(params[8], "startTime")
+	startTime, err := parseTimestampParam(params[1], "startTime")
 	if err != nil {
 		return nil, err
 	}
-	endTime, err := parseTimestampParam(params[9], "endTime")
+	endTime, err := parseTimestampParam(params[2], "endTime")
 	if err != nil {
 		return nil, err
 	}
-	result, err := metrics.GetMetric(ctx, h.store.DB(), name, unit, metricType, aggregationTemporality, isMonotonic, scopeName, scopeVersion, serviceName, startTime, endTime)
+	result, err := metrics.GetMetric(ctx, h.store.DB(), streamID, startTime, endTime)
 	if err != nil {
 		log.Printf("Error getting metric: %v", err)
 		return nil, mapStoreError(err)

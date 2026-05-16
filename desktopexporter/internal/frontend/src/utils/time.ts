@@ -133,18 +133,12 @@ export function getLocalTimezoneName(): string {
 
 import type { TraceSummary } from '@/types/api-types'
 
-/**
- * Nanoseconds of span coverage for trace list display/sort.
- * Uses the root span when present; when the API starts filling summary from another span
- * (e.g. earliest) if root is missing, centralize that choice here.
- */
+/** Nanoseconds of trace coverage for list display/sort (server-precomputed). */
 export function traceSummaryDurationNs(
   summary: TraceSummary
 ): bigint | undefined {
-  const span = summary.rootSpan
-  if (!span) return undefined
-  const ns = span.endTime - span.startTime
-  return ns >= 0n ? ns : undefined
+  const ns = summary.durationNs
+  return ns !== null && ns >= 0n ? ns : undefined
 }
 
 const DURATION_UNITS: Record<string, bigint> = {
@@ -189,17 +183,42 @@ export function parseDuration(input: string): bigint | null {
 }
 
 export function formatDuration(nanoseconds: bigint): string {
+  const { value, unit } = formatDurationParts(nanoseconds)
+  return unit ? `${value} ${unit}` : value
+}
+
+/** Value + unit for labeled duration display (e.g. drawer cards). */
+export function formatDurationParts(nanoseconds: bigint): {
+  value: string
+  unit: string
+} {
   if (nanoseconds >= 1_000_000_000n) {
-    let seconds = Number(nanoseconds) / 1_000_000_000
-    return `${seconds.toFixed(3)} s`
-  } else if (nanoseconds >= 1_000_000n) {
-    let ms = Number(nanoseconds) / 1_000_000
-    return `${ms.toFixed(3)} ms`
-  } else if (nanoseconds >= 1000n) {
-    let μs = Number(nanoseconds) / 1000
-    return `${μs.toFixed(3)} μs`
-  } else {
-    return `${Number(nanoseconds)} ns`
+    const seconds = Number(nanoseconds) / 1_000_000_000
+    return { value: seconds.toFixed(3), unit: 's' }
+  }
+  if (nanoseconds >= 1_000_000n) {
+    const ms = Number(nanoseconds) / 1_000_000
+    return { value: ms.toFixed(3), unit: 'ms' }
+  }
+  if (nanoseconds >= 1000n) {
+    const μs = Number(nanoseconds) / 1000
+    return { value: μs.toFixed(3), unit: 'μs' }
+  }
+  return { value: String(Number(nanoseconds)), unit: 'ns' }
+}
+
+/** Datetime value + timezone suffix for labeled timestamp display. */
+export function formatTimestampParts(
+  ns: bigint,
+  timezone: Timezone,
+  resolution: TimestampResolution = 'nanoseconds'
+): { value: string; unit: string } {
+  const formatted = formatTimestamp(ns, timezone, resolution)
+  const lastSpace = formatted.lastIndexOf(' ')
+  if (lastSpace === -1) return { value: formatted, unit: '' }
+  return {
+    value: formatted.slice(0, lastSpace),
+    unit: formatted.slice(lastSpace + 1),
   }
 }
 

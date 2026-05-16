@@ -122,7 +122,6 @@ var TableCreationQueries = []string{
 	`create table if not exists metric_ingests (
 		id uuid primary key,
 		stream_id uuid not null,
-		received bigint,
 		description varchar,
 		resource_dropped_attributes_count uinteger,
 		scope_dropped_attributes_count uinteger,
@@ -300,7 +299,7 @@ var IndexCreationQueries = []string{
 	`create index if not exists idx_logs_service on logs(service_name)`,
 	`create index if not exists idx_metric_streams_name on metric_streams(name)`,
 	`create index if not exists idx_metric_streams_service on metric_streams(service_name)`,
-	`create index if not exists idx_metric_ingests_stream_received on metric_ingests(stream_id, received)`,
+	`create index if not exists idx_metric_ingests_stream on metric_ingests(stream_id)`,
 	`create index if not exists idx_datapoints_type_stream_time on datapoints(metric_type, stream_id, timestamp desc)`,
 	`create index if not exists idx_datapoints_stream_time on datapoints(stream_id, timestamp desc)`,
 	`create index if not exists idx_datapoints_stream_attrs on datapoints(stream_id, attrs_canonical)`,

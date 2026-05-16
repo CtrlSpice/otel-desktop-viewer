@@ -1048,6 +1048,14 @@ button:focus-visible:not(.btn) {
   @apply ring-0;
 }
 
+/* Rosé Pine rose token — used for Gauge metric type (not a built-in Daisy semantic). */
+.badge.badge-soft.badge-rose {
+  --badge-color: var(--color-rose);
+  border-color: transparent;
+  background-color: color-mix(in oklab, var(--badge-color) 12%, var(--color-base-100));
+  color: var(--color-rose);
+}
+
 /* Outline badges (e.g. metric type) — match chip density; Daisy draws the outline */
 .badge.badge-outline {
   @apply leading-tight;

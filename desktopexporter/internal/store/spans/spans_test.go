@@ -109,11 +109,14 @@ func searchTracesAll(t *testing.T, s *store.Store, ctx context.Context) []traceS
 }
 
 type traceSummaryJSON struct {
-	TraceID        string        `json:"traceID"`
-	RootSpan       *rootSpanJSON `json:"rootSpan"`
-	SpanCount      float64       `json:"spanCount"` // JSON number
-	ErrorCount     float64       `json:"errorCount"`
-	ExceptionCount float64       `json:"exceptionCount"`
+	TraceID      string        `json:"traceID"`
+	HasRootSpan  bool          `json:"hasRootSpan"`
+	RootSpan     *rootSpanJSON `json:"rootSpan"`
+	StartTime    string        `json:"startTime"`  // varchar-encoded int64 ns
+	DurationNs   *string       `json:"durationNs"` // string-encoded int64 ns; max(end) - min(start) over trace
+	SpanCount    float64       `json:"spanCount"`  // JSON number
+	ServiceCount float64       `json:"serviceCount"`
+	ErrorCount   float64       `json:"errorCount"`
 }
 
 type rootSpanJSON struct {
@@ -147,6 +150,13 @@ func TestTraceSummaryOrdering(t *testing.T) {
 	assert.Nil(t, summaries[2].RootSpan, "trace2 should not have root span")
 	assert.NotNil(t, summaries[1].RootSpan, "trace1 should have root span")
 	assert.NotNil(t, summaries[0].RootSpan, "trace3 should have root span")
+
+	// Orphan trace2: trace bounds from its only span (no root yet).
+	assert.False(t, summaries[2].HasRootSpan)
+	assert.NotNil(t, summaries[2].DurationNs, "orphan trace should have span-bounds duration")
+	const twoSecondsNs = "2000000000"
+	assert.Equal(t, twoSecondsNs, *summaries[2].DurationNs)
+	assert.Equal(t, fmt.Sprintf("%d", baseTime), summaries[2].StartTime)
 }
 
 // TestTraceNotFound verifies error handling for non-existent trace IDs.

@@ -1,14 +1,13 @@
 <script lang="ts">
-  import type { LogData } from '@/types/api-types'
+  import type { LogSummary } from '@/types/api-types'
   import SignalCard from '@/components/SignalCard.svelte'
-  import { formatTimestamp } from '@/utils/time'
+  import { formatTimestampParts } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { getServiceName } from '@/utils/resource'
 
   type SeverityBand = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
 
   type Props = {
-    log: LogData
+    log: LogSummary
     selected?: boolean
     onclick?: (id: string) => void
   }
@@ -38,28 +37,27 @@
   let band = $derived(severityBand(log.severityNumber))
   let severityTitle = $derived(log.severityText || band.toUpperCase())
 
-  let tsLabel = $derived(
-    formatTimestamp(log.timestamp, timeContext.timezone, 'milliseconds')
+  let timestampParts = $derived(
+    formatTimestampParts(log.timestamp, timeContext.timezone, 'milliseconds')
   )
 
-  let service = $derived(getServiceName(log.resource))
-
-  let bodyForMeta = $derived.by(() => log.body.trim())
+  let serviceTitle = $derived(log.serviceName?.trim() || '(unknown service)')
+  let bodyPreview = $derived((log.bodyPreview ?? '').trim())
 </script>
 
 <SignalCard
   id={log.id}
   {selected}
-  title={service || '(unknown service)'}
-  timestamp={tsLabel || undefined}
+  title={serviceTitle}
+  description={bodyPreview || undefined}
+  timeLayout="labeled"
+  timestamp={timestampParts.value}
+  timestampUnit={timestampParts.unit || undefined}
   {onclick}
->{#snippet badge()}
-    <span class={BADGE_CLASS[band]}>{severityTitle}</span>
-  {/snippet}{#snippet meta()}
-    {#if bodyForMeta}
-      <span class="w-full min-w-0 whitespace-pre-wrap break-words text-base-content/50">
-        {bodyForMeta}
-      </span>
-    {/if}
+>
+  {#snippet badge()}
+    <span class="{BADGE_CLASS[band]} tabular-nums" title={severityTitle}>
+      {severityTitle} ({log.severityNumber})
+    </span>
   {/snippet}
 </SignalCard>

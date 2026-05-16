@@ -944,9 +944,9 @@ func TestDeleteMetricStream(t *testing.T) {
 // matters most for the normalized identity layer: ingesting the same
 // 8-field stream identity across N independent OTLP batches collapses
 // to exactly one metric_streams row. Per-batch context (description,
-// dropped counts, received timestamp) lives on metric_ingests, so we
-// expect N ingest rows but only one stream row, and every datapoint /
-// attribute / exemplar should point at the same stream_id.
+// dropped counts) lives on metric_ingests, so we expect N ingest rows
+// but only one stream row, and every datapoint / attribute / exemplar
+// should point at the same stream_id.
 //
 // This test is the find-or-insert mirror of the cascade-delete test:
 // together they pin down the two halves of "identity is canonical."
@@ -2849,216 +2849,13 @@ func findSummary(t *testing.T, summaries []map[string]any, name string) map[stri
 	return nil
 }
 
-// asInts coerces a JSON number array (which json.Unmarshal decodes into
-// []any of float64) into []int64 so we can compare bucket vectors directly.
-func asInts(t *testing.T, raw any) []int64 {
-	t.Helper()
-	arr, ok := raw.([]any)
-	require.True(t, ok, "expected []any, got %T", raw)
-	out := make([]int64, len(arr))
-	for i, v := range arr {
-		f, ok := v.(float64)
-		require.True(t, ok, "bucket value %d not a number: %T", i, v)
-		out[i] = int64(f)
-	}
-	return out
-}
-
-// TestSearchSummaries_SparkbarTemporality covers the three temporality
-// branches of the histogram sparkbar aggregation:
-//
-//   - Delta: bucket counts are observations-since-last-report; sum across
-//     time and across streams.
-//   - Cumulative: bucket counts are running totals per stream; pick the
-//     latest snapshot per stream, then sum across streams. Naively summing
-//     would multiply by N (datapoint count) -- regression of that bug.
-//   - Unspecified: refuse to compute; emit the SparkOutcome "error" variant
-//     so the frontend can render the FunError callout instead of bars.
-func TestSearchSummaries_SparkbarTemporality(t *testing.T) {
-	t.Run("DeltaSumsBucketsAcrossTimeAndStreams", func(t *testing.T) {
+// TestSearchSummaries_CardFields verifies the slim summary projection used
+// by drawer cards: stream id, series count, scalar last value, last seen.
+func TestSearchSummaries_CardFields(t *testing.T) {
+	t.Run("Gauge", func(t *testing.T) {
 		s, ctx, teardown := setupStore(t)
 		defer teardown()
 
-		// Two streams (host=a, host=b), two delta datapoints each. Delta
-		// summing should give:
-		//   stream a: [1,2,3] + [4,5,6] = [5,7,9]
-		//   stream b: [0,1,2] + [1,1,1] = [1,2,3]
-		//   sparkbar (cross-stream sum): [6,9,12]
-		bounds := []float64{1.0, 2.0}
-		ts := time.Unix(1700000000, 0)
-		md := makeHistogramFixtureT("hist_delta_summary", pmetric.AggregationTemporalityDelta, []histTestDP{
-			{timestamp: ts.Add(1 * time.Second), attrs: map[string]string{"host": "a"},
-				bounds: bounds, counts: []uint64{1, 2, 3},
-				count: 6, sum: 7.0, min: 0.5, max: 2.5},
-			{timestamp: ts.Add(2 * time.Second), attrs: map[string]string{"host": "a"},
-				bounds: bounds, counts: []uint64{4, 5, 6},
-				count: 15, sum: 22.0, min: 0.1, max: 3.0},
-			{timestamp: ts.Add(1 * time.Second), attrs: map[string]string{"host": "b"},
-				bounds: bounds, counts: []uint64{0, 1, 2},
-				count: 3, sum: 4.0, min: 0.5, max: 2.5},
-			{timestamp: ts.Add(2 * time.Second), attrs: map[string]string{"host": "b"},
-				bounds: bounds, counts: []uint64{1, 1, 1},
-				count: 3, sum: 3.0, min: 0.1, max: 3.0},
-		})
-		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
-		}))
-
-		summary := findSummary(t, searchSummariesAll(t, s, ctx), "hist_delta_summary")
-		sparkbar, ok := summary["sparkbar"].(map[string]any)
-		require.True(t, ok, "sparkbar should be a SparkOutcome object, got %T", summary["sparkbar"])
-		assert.Equal(t, "data", sparkbar["kind"])
-		assert.Equal(t, []int64{6, 9, 12}, asInts(t, sparkbar["value"]))
-	})
-
-	t.Run("CumulativeTakesLatestPerAttribute", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
-
-		// Two streams, three cumulative datapoints each. Each datapoint is
-		// a running total -- summing all six would inflate by 3x. We want
-		// only the latest snapshot per stream:
-		//   stream a latest = [5, 10, 15]
-		//   stream b latest = [3,  6,  9]
-		//   sparkbar (cross-stream sum) = [8, 16, 24]
-		bounds := []float64{1.0, 2.0}
-		ts := time.Unix(1700000000, 0)
-		md := makeHistogramFixtureT("hist_cumul_summary", pmetric.AggregationTemporalityCumulative, []histTestDP{
-			{timestamp: ts.Add(1 * time.Second), attrs: map[string]string{"host": "a"},
-				bounds: bounds, counts: []uint64{1, 2, 3},
-				count: 6, sum: 7.0, min: 0.5, max: 2.5},
-			{timestamp: ts.Add(2 * time.Second), attrs: map[string]string{"host": "a"},
-				bounds: bounds, counts: []uint64{3, 6, 9},
-				count: 18, sum: 14.0, min: 0.5, max: 3.0},
-			{timestamp: ts.Add(3 * time.Second), attrs: map[string]string{"host": "a"},
-				bounds: bounds, counts: []uint64{5, 10, 15},
-				count: 30, sum: 25.0, min: 0.5, max: 3.0},
-			{timestamp: ts.Add(1 * time.Second), attrs: map[string]string{"host": "b"},
-				bounds: bounds, counts: []uint64{1, 2, 3},
-				count: 6, sum: 7.0, min: 0.5, max: 2.5},
-			{timestamp: ts.Add(2 * time.Second), attrs: map[string]string{"host": "b"},
-				bounds: bounds, counts: []uint64{2, 4, 6},
-				count: 12, sum: 14.0, min: 0.5, max: 3.0},
-			{timestamp: ts.Add(3 * time.Second), attrs: map[string]string{"host": "b"},
-				bounds: bounds, counts: []uint64{3, 6, 9},
-				count: 18, sum: 21.0, min: 0.5, max: 3.0},
-		})
-		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
-		}))
-
-		summary := findSummary(t, searchSummariesAll(t, s, ctx), "hist_cumul_summary")
-		sparkbar, ok := summary["sparkbar"].(map[string]any)
-		require.True(t, ok, "sparkbar should be a SparkOutcome object, got %T", summary["sparkbar"])
-		assert.Equal(t, "data", sparkbar["kind"])
-		// Regression assertion: the buggy "sum every datapoint" path would
-		// have produced [9, 18, 27] (the expected values * 3 datapoints)
-		// summed across streams -- worth calling out so future readers know
-		// what we're guarding against.
-		assert.Equal(t, []int64{8, 16, 24}, asInts(t, sparkbar["value"]),
-			"cumulative should pick latest per stream then sum, not sum-everything")
-	})
-
-	t.Run("UnspecifiedHistogramRefusesWithError", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
-
-		// One Unspecified histogram metric. Per OTel proto MUST not be
-		// used; we refuse to compute and emit the error variant.
-		ts := time.Unix(1700000000, 0)
-		md := pmetric.NewMetrics()
-		rm := md.ResourceMetrics().AppendEmpty()
-		rm.Resource().Attributes().PutStr("service.name", "unspec-temp")
-		sm := rm.ScopeMetrics().AppendEmpty()
-		sm.Scope().SetName("test-scope")
-		m := sm.Metrics().AppendEmpty()
-		m.SetName("hist_unspec_summary")
-		hist := m.SetEmptyHistogram()
-		hist.SetAggregationTemporality(pmetric.AggregationTemporalityUnspecified)
-		dp := hist.DataPoints().AppendEmpty()
-		dp.SetTimestamp(pcommon.Timestamp(ts.UnixNano()))
-		dp.SetCount(10)
-		dp.SetSum(5.0)
-		dp.BucketCounts().FromRaw([]uint64{5, 5})
-		dp.ExplicitBounds().FromRaw([]float64{1.0})
-
-		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
-		}))
-
-		summary := findSummary(t, searchSummariesAll(t, s, ctx), "hist_unspec_summary")
-		sparkbar, ok := summary["sparkbar"].(map[string]any)
-		require.True(t, ok, "sparkbar should be a SparkOutcome object, got %T", summary["sparkbar"])
-		assert.Equal(t, "error", sparkbar["kind"])
-		assert.Equal(t, "unspecifiedTemporality", sparkbar["reason"])
-		_, hasValue := sparkbar["value"]
-		assert.False(t, hasValue, "error variant should not carry a value")
-	})
-
-	t.Run("UnspecifiedDoesNotPoisonOtherMetrics", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
-
-		// One Unspecified histogram side by side with one Delta histogram.
-		// The bad metric must not poison the good one's sparkbar.
-		ts := time.Unix(1700000000, 0)
-		md := pmetric.NewMetrics()
-		rm := md.ResourceMetrics().AppendEmpty()
-		rm.Resource().Attributes().PutStr("service.name", "mixed-temp")
-		sm := rm.ScopeMetrics().AppendEmpty()
-		sm.Scope().SetName("test-scope")
-
-		// Unspecified.
-		mUnspec := sm.Metrics().AppendEmpty()
-		mUnspec.SetName("hist_mixed_unspec")
-		hu := mUnspec.SetEmptyHistogram()
-		hu.SetAggregationTemporality(pmetric.AggregationTemporalityUnspecified)
-		dpu := hu.DataPoints().AppendEmpty()
-		dpu.SetTimestamp(pcommon.Timestamp(ts.UnixNano()))
-		dpu.BucketCounts().FromRaw([]uint64{5, 5})
-		dpu.ExplicitBounds().FromRaw([]float64{1.0})
-
-		// Delta.
-		mDelta := sm.Metrics().AppendEmpty()
-		mDelta.SetName("hist_mixed_delta")
-		hd := mDelta.SetEmptyHistogram()
-		hd.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
-		dpd := hd.DataPoints().AppendEmpty()
-		dpd.SetTimestamp(pcommon.Timestamp(ts.UnixNano()))
-		dpd.BucketCounts().FromRaw([]uint64{2, 3, 4})
-		dpd.ExplicitBounds().FromRaw([]float64{1.0, 2.0})
-
-		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
-		}))
-
-		summaries := searchSummariesAll(t, s, ctx)
-
-		good := findSummary(t, summaries, "hist_mixed_delta")
-		goodBar, ok := good["sparkbar"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "data", goodBar["kind"])
-		assert.Equal(t, []int64{2, 3, 4}, asInts(t, goodBar["value"]))
-
-		bad := findSummary(t, summaries, "hist_mixed_unspec")
-		badBar, ok := bad["sparkbar"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "error", badBar["kind"])
-		assert.Equal(t, "unspecifiedTemporality", badBar["reason"])
-	})
-}
-
-// TestSearchSummaries_SparklineTemporality covers the SparkOutcome wrapping
-// of the Gauge/Sum sparkline plus the Unspecified-Sum rejection. Gauges
-// always have NULL temporality so they never enter the error branch.
-func TestSearchSummaries_SparklineTemporality(t *testing.T) {
-	t.Run("GaugeWrapsValuesInDataKind", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
-
-		// Single Gauge metric with two datapoints. The exact values aren't
-		// asserted -- this test guards the SparkOutcome wrapping shape, not
-		// the (already-tested) sparkline content order.
 		ts := time.Unix(1700000000, 0)
 		md := pmetric.NewMetrics()
 		rm := md.ResourceMetrics().AppendEmpty()
@@ -3066,7 +2863,8 @@ func TestSearchSummaries_SparklineTemporality(t *testing.T) {
 		sm := rm.ScopeMetrics().AppendEmpty()
 		sm.Scope().SetName("test-scope")
 		m := sm.Metrics().AppendEmpty()
-		m.SetName("gauge_summary_test")
+		m.SetName("gauge_card_test")
+		m.SetDescription("Memory used by the process")
 		g := m.SetEmptyGauge()
 		dp1 := g.DataPoints().AppendEmpty()
 		dp1.SetTimestamp(pcommon.Timestamp(ts.UnixNano()))
@@ -3074,170 +2872,42 @@ func TestSearchSummaries_SparklineTemporality(t *testing.T) {
 		dp2 := g.DataPoints().AppendEmpty()
 		dp2.SetTimestamp(pcommon.Timestamp(ts.Add(time.Second).UnixNano()))
 		dp2.SetDoubleValue(2.0)
+		dp2.Attributes().PutStr("host", "a")
 
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 			return metrics.Ingest(ctx, conn, md)
 		}))
 
-		summary := findSummary(t, searchSummariesAll(t, s, ctx), "gauge_summary_test")
-		sparkline, ok := summary["sparkline"].(map[string]any)
-		require.True(t, ok, "sparkline should be a SparkOutcome object, got %T", summary["sparkline"])
-		assert.Equal(t, "data", sparkline["kind"])
-		value, ok := sparkline["value"].([]any)
-		require.True(t, ok, "data variant should carry an array")
-		assert.Len(t, value, 2)
+		summary := findSummary(t, searchSummariesAll(t, s, ctx), "gauge_card_test")
+		assert.NotEmpty(t, summary["id"])
+		assert.Equal(t, "Memory used by the process", summary["description"])
+		assert.EqualValues(t, 2, summary["seriesCount"])
+		assert.InDelta(t, 2.0, summary["lastValue"], 1e-9)
+		assert.NotEmpty(t, summary["lastSeen"])
 	})
 
-	t.Run("UnspecifiedSumRefusesWithError", func(t *testing.T) {
+	t.Run("HistogramOmitsLastValue", func(t *testing.T) {
 		s, ctx, teardown := setupStore(t)
 		defer teardown()
 
-		// Sum metrics can carry Unspecified temporality (Gauges cannot --
-		// pmetric stores temporality only on Sum/Histogram-shaped metrics).
+		bounds := []float64{1.0, 2.0}
 		ts := time.Unix(1700000000, 0)
-		md := pmetric.NewMetrics()
-		rm := md.ResourceMetrics().AppendEmpty()
-		rm.Resource().Attributes().PutStr("service.name", "unspec-sum")
-		sm := rm.ScopeMetrics().AppendEmpty()
-		sm.Scope().SetName("test-scope")
-		m := sm.Metrics().AppendEmpty()
-		m.SetName("sum_unspec_summary")
-		sum := m.SetEmptySum()
-		sum.SetAggregationTemporality(pmetric.AggregationTemporalityUnspecified)
-		dp := sum.DataPoints().AppendEmpty()
-		dp.SetTimestamp(pcommon.Timestamp(ts.UnixNano()))
-		dp.SetDoubleValue(42.0)
-
-		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
-		}))
-
-		summary := findSummary(t, searchSummariesAll(t, s, ctx), "sum_unspec_summary")
-		sparkline, ok := summary["sparkline"].(map[string]any)
-		require.True(t, ok, "sparkline should be a SparkOutcome object, got %T", summary["sparkline"])
-		assert.Equal(t, "error", sparkline["kind"])
-		assert.Equal(t, "unspecifiedTemporality", sparkline["reason"])
-	})
-}
-
-// TestSearchSummaries_ExpHistogramTemporality covers the Cumulative-vs-Delta
-// path for ExpHistograms, which has a more elaborate downscale + alignment
-// pipeline than the regular Histogram. Same regression: summing cumulative
-// snapshots inflates counts by N.
-func TestSearchSummaries_ExpHistogramTemporality(t *testing.T) {
-	t.Run("CumulativeTakesLatestPerAttributeThenDownscaleAndSum", func(t *testing.T) {
-		// This fixture is deliberately load-bearing: if any stage of the
-		// SearchSummaries ExpHist pipeline silently regresses, the
-		// assertion below catches it.
-		//
-		// What it exercises (and what the previous "single stream, scale=0,
-		// no zero, no downscale" version did NOT):
-		//
-		//   1. arg_max-per-attribute actually has to discriminate -- 3 dps per
-		//      stream rather than 2.
-		//   2. Two streams are merged, so the cross-stream sum_bucket_vectors
-		//      runs (not a no-op single-stream pass-through).
-		//   3. Streams use DIFFERENT scales (1 vs 0), so the min-scale +
-		//      downscale_exp_buckets step has to do real work; previously
-		//      `levels = 0` made downscale a no-op.
-		//   4. Non-zero zeroCount on both streams exercises the [...neg,
-		//      zero, ...pos] middle slot.
-		//
-		// Scale-1 positive counts [1, 3, 5, 7] at offset 0 downscale to
-		// scale 0 by halving the index space: indexes 0,1 -> bin 0,
-		// indexes 2,3 -> bin 1, giving [4, 12]. Stream B is already at
-		// scale 0 so its [10, 20] passes through. Cross-stream sum: pos
-		// [14, 32], zero 5, negatives empty -> output [5, 14, 32].
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
-
-		ts := time.Unix(1700000000, 0)
-		md := makeExpHistogramFixtureT("exp_cumul_summary", pmetric.AggregationTemporalityCumulative, []expHistTestDP{
-			// Stream A, scale=1, three cumulative snapshots (ascending
-			// running totals; latest is what should win the arg_max).
-			{
-				timestamp: ts.Add(1 * time.Second),
-				attrs:     map[string]string{"host": "a"},
-				scale:     1, zeroCount: 1, posOffset: 0,
-				posCounts: []uint64{0, 1, 1, 2}, count: 5, sum: 5.0,
-			},
-			{
-				timestamp: ts.Add(2 * time.Second),
-				attrs:     map[string]string{"host": "a"},
-				scale:     1, zeroCount: 1, posOffset: 0,
-				posCounts: []uint64{1, 2, 3, 4}, count: 11, sum: 11.0,
-			},
-			{
-				timestamp: ts.Add(3 * time.Second),
-				attrs:     map[string]string{"host": "a"},
-				scale:     1, zeroCount: 2, posOffset: 0,
-				posCounts: []uint64{1, 3, 5, 7}, count: 18, sum: 18.0,
-			},
-			// Stream B, scale=0, three cumulative snapshots.
-			{
-				timestamp: ts.Add(1 * time.Second),
-				attrs:     map[string]string{"host": "b"},
-				scale:     0, zeroCount: 1, posOffset: 0,
-				posCounts: []uint64{2, 4}, count: 7, sum: 7.0,
-			},
-			{
-				timestamp: ts.Add(2 * time.Second),
-				attrs:     map[string]string{"host": "b"},
-				scale:     0, zeroCount: 2, posOffset: 0,
-				posCounts: []uint64{5, 10}, count: 17, sum: 17.0,
-			},
-			{
-				timestamp: ts.Add(3 * time.Second),
-				attrs:     map[string]string{"host": "b"},
-				scale:     0, zeroCount: 3, posOffset: 0,
-				posCounts: []uint64{10, 20}, count: 33, sum: 33.0,
-			},
+		md := makeHistogramFixtureT("hist_card_test", pmetric.AggregationTemporalityDelta, []histTestDP{
+			{timestamp: ts, attrs: map[string]string{"host": "a"},
+				bounds: bounds, counts: []uint64{1, 2, 3},
+				count: 6, sum: 7.0, min: 0.5, max: 2.5},
 		})
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 			return metrics.Ingest(ctx, conn, md)
 		}))
 
-		summary := findSummary(t, searchSummariesAll(t, s, ctx), "exp_cumul_summary")
-		sparkbar, ok := summary["sparkbar"].(map[string]any)
-		require.True(t, ok, "sparkbar should be a SparkOutcome object, got %T", summary["sparkbar"])
-		assert.Equal(t, "data", sparkbar["kind"])
-		// Expected: [zero=2+3, pos0=4+10, pos1=12+20] = [5, 14, 32].
-		// Naive bug variants produce different numbers:
-		//   - Sum-all-snapshots-then-downscale would be ~3x too large.
-		//   - Skipping downscale would mis-align A's 4 buckets with B's 2.
-		//   - Picking earliest instead of latest would yield smaller totals.
-		assert.Equal(t, []int64{5, 14, 32}, asInts(t, sparkbar["value"]),
-			"cumulative ExpHistogram should pick latest per stream, downscale to common scale, then sum across streams")
-	})
-
-	t.Run("UnspecifiedExpHistogramRefusesWithError", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
-
-		ts := time.Unix(1700000000, 0)
-		md := makeExpHistogramFixtureT("exp_unspec_summary", pmetric.AggregationTemporalityUnspecified, []expHistTestDP{
-			{
-				timestamp: ts,
-				attrs:     map[string]string{"host": "a"},
-				scale:     0,
-				zeroCount: 0,
-				posOffset: 0,
-				posCounts: []uint64{1, 2, 3},
-				count:     6,
-				sum:       6.0,
-			},
-		})
-		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
-		}))
-
-		summary := findSummary(t, searchSummariesAll(t, s, ctx), "exp_unspec_summary")
-		sparkbar, ok := summary["sparkbar"].(map[string]any)
-		require.True(t, ok, "sparkbar should be a SparkOutcome object, got %T", summary["sparkbar"])
-		assert.Equal(t, "error", sparkbar["kind"])
-		assert.Equal(t, "unspecifiedTemporality", sparkbar["reason"])
+		summary := findSummary(t, searchSummariesAll(t, s, ctx), "hist_card_test")
+		assert.NotEmpty(t, summary["id"])
+		assert.EqualValues(t, 1, summary["seriesCount"])
+		assert.Nil(t, summary["lastValue"])
 	})
 }
+
 
 // TestGetMetricMergedQuantiles covers the new "single quantile set
 // across the whole window" entry point. The function delegates to

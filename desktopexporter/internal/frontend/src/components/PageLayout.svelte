@@ -33,9 +33,6 @@
     /** Total item count for the collapsed badge (often
      * `items.length`, but may differ if filtered). */
     count?: number
-    /** localStorage key prefix for persisting drawer open/closed
-     * state. Each page gets its own so they don't collide. */
-    storageKey: string
     itemKey?: (item: T) => string
     /** How each row in the list renders. Optional only because
      * empty-list pages (Home) never call it. */
@@ -44,6 +41,7 @@
     onRefresh?: () => void
     refreshPulse?: boolean
     refreshAsideTip?: string
+    loading?: boolean
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     drawerFooter?: Snippet
@@ -75,13 +73,13 @@
     drawerId,
     drawerLabel,
     count,
-    storageKey,
     itemKey,
     itemSnippet,
     onSelect,
     onRefresh,
     refreshPulse,
     refreshAsideTip,
+    loading,
     drawerChromeToolbar,
     drawerSearch,
     drawerFooter,
@@ -111,13 +109,13 @@
     {drawerId}
     label={drawerLabel}
     count={count ?? items.length}
-    {storageKey}
     itemSnippet={noopItem}
     {itemKey}
     {onSelect}
     {onRefresh}
     {refreshPulse}
     {refreshAsideTip}
+    {loading}
     {drawerChromeToolbar}
     {drawerSearch}
     footer={drawerFooter}

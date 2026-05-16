@@ -1,34 +1,3 @@
-<script lang="ts" module>
-  import type { Attribute } from '@/types/api-types'
-
-  /**
-   * One per-attribute timeseries in the chart. The caller is expected
-   * to have already grouped its datapoints into these timeseries
-   * entries and to pass them in the same order as the chart renders
-   * them, so the n-th legend row's swatch colour matches the n-th
-   * line on the chart (both come from `timeseriesColor(index)`).
-   *
-   * Lives in <script module> so callers can `import { type Timeseries }`
-   * from this .svelte file -- instance-script exports aren't visible
-   * to TS consumers.
-   */
-  export type Timeseries = {
-    /** Stable identifier for this attribute set, used as the bind key.
-     * In practice this is the `attributesKey` (canonical "key=value|..."
-     * string) the backend materialises on every datapoint and bucket-
-     * series point as `attrs_canonical`. The same encoding is used for
-     * Gauge/Sum, Histogram, and ExponentialHistogram timeseries, so a
-     * single legend implementation covers all metric types. */
-    key: string
-    /** Attributes that distinguish this timeseries from siblings. May
-     * be empty for a metric whose datapoints carry no attributes. */
-    attributes: Attribute[]
-    /** Optional sample count or other small annotation shown after the
-     * attribute pairs. Purely informational; not bound. */
-    badge?: string
-  }
-</script>
-
 <script lang="ts">
   import type { SvelteSet } from 'svelte/reactivity'
   import {
@@ -36,6 +5,7 @@
     timeseriesColor,
     timeseriesForegroundColor,
   } from '@/utils/timeseries-palette'
+  import type { Timeseries } from './legend-types'
 
   type Props = {
     timeseries: Timeseries[]

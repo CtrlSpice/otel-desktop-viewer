@@ -379,10 +379,13 @@ sub run_metrics {
             if (exists $metric->{$k}) { $kind = $k; last }
         }
         my $label = sprintf '%-22s %s', $service, $metric->{name};
+        my $desc  = $metric->{description} // '';
+        if (length($desc) > 52) { $desc = substr($desc, 0, 49) . '...' }
         if (defined $err) {
             printf "  [%2d] %-50s %-20s FAIL %s (%s)\n", $i, $label, $kind, $status, $err;
         } else {
             printf "  [%2d] %-50s %-20s %s\n", $i, $label, $kind, $status;
+            printf "       %s\n", $desc if length $desc;
         }
     }
     print "Done. Sent ", scalar(@scenarios), " metrics.\n";

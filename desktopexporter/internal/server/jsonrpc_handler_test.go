@@ -205,7 +205,22 @@ func TestSearchLogs(t *testing.T) {
 		var entries []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &entries))
 		require.Len(t, entries, 1, "searchLogs should return the ingested log")
-		assert.Equal(t, "test log message", entries[0]["body"])
+		// searchLogs now returns LogSummary (lightweight) with
+		// bodyPreview rather than the full body; getLog returns
+		// the full LogData on demand. Verify both shapes here.
+		assert.Equal(t, "test log message", entries[0]["bodyPreview"])
+		assert.Equal(t, false, entries[0]["bodyTruncated"])
+
+		logID, ok := entries[0]["id"].(string)
+		require.True(t, ok, "summary should carry an id for detail fetch")
+		getReq := createRequest("getLog", []string{logID})
+		getResult, getErr := handler.Handle(context.Background(), getReq)
+		assert.NoError(t, getErr)
+		getRaw, ok := getResult.(json.RawMessage)
+		assert.True(t, ok)
+		var full map[string]any
+		assert.NoError(t, json.Unmarshal(getRaw, &full))
+		assert.Equal(t, "test log message", full["body"])
 	})
 }
 
@@ -629,10 +644,13 @@ func TestSearchMetricSummaries(t *testing.T) {
 		require.NoError(t, json.Unmarshal(raw, &summaries))
 		require.Len(t, summaries, 1, "should return one metric summary")
 		assert.Equal(t, "test.gauge", summaries[0]["name"])
+		assert.Equal(t, "A test gauge", summaries[0]["description"])
 		assert.Equal(t, "test-svc", summaries[0]["serviceName"])
 		assert.Equal(t, "Gauge", summaries[0]["metricType"])
 		assert.Equal(t, "bytes", summaries[0]["unit"])
-		assert.NotNil(t, summaries[0]["sparkline"], "gauge should have sparkline data")
+		assert.NotEmpty(t, summaries[0]["id"])
+		assert.NotNil(t, summaries[0]["seriesCount"])
+		assert.NotNil(t, summaries[0]["lastValue"])
 	})
 }
 
@@ -641,9 +659,22 @@ func TestGetMetric(t *testing.T) {
 		handler, teardown := setupHandlerWithMetrics(t)
 		defer teardown()
 
-		req := createRequest("getMetric", []any{
-			"test.gauge", "bytes", "Gauge", "", "", "test-scope", "v1.0.0", "test-svc",
+		summaryReq := createRequest("searchMetricSummaries", []string{
 			"0", strconv.FormatInt(1<<63-1, 10),
+		})
+		summaryResult, err := handler.Handle(context.Background(), summaryReq)
+		require.NoError(t, err)
+		summaryRaw, ok := summaryResult.(json.RawMessage)
+		require.True(t, ok)
+		var summaries []map[string]any
+		require.NoError(t, json.Unmarshal(summaryRaw, &summaries))
+		require.Len(t, summaries, 1)
+		streamID, ok := summaries[0]["id"].(string)
+		require.True(t, ok)
+		require.NotEmpty(t, streamID)
+
+		req := createRequest("getMetric", []any{
+			streamID, "0", strconv.FormatInt(1<<63-1, 10),
 		})
 		result, err := handler.Handle(context.Background(), req)
 
@@ -672,7 +703,7 @@ func TestGetMetric(t *testing.T) {
 		defer teardown()
 
 		req := createRequest("getMetric", []any{
-			"nonexistent.metric", "", "Gauge", "", "", "test-scope", "v1.0.0", "test-svc",
+			"00000000-0000-0000-0000-000000000000",
 			"0", strconv.FormatInt(1<<63-1, 10),
 		})
 		result, err := handler.Handle(context.Background(), req)

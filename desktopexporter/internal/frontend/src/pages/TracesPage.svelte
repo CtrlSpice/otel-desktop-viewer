@@ -305,11 +305,11 @@
     drawerId="signal-drawer"
     label="Traces"
     count={sortedTraces.length}
-    storageKey="trace-drawer"
     onSelect={selectTrace}
     onRefresh={handleRefresh}
     {refreshPulse}
     {refreshAsideTip}
+    {loading}
     itemKey={t => t.traceID}
   >
 
@@ -339,6 +339,23 @@
 
     {#snippet itemSnippet(trace, selected)}
       <TraceCard {trace} {selected} onclick={selectTrace} />
+    {/snippet}
+
+    {#snippet footer()}
+      <div class="flex items-center justify-between">
+        <span class="text-xs tabular-nums text-base-content/50">
+          {sortedTraces.length} trace{sortedTraces.length !== 1 ? 's' : ''}
+        </span>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs text-error"
+          onclick={handleDeleteAllTraces}
+          aria-label="Delete all traces"
+        >
+          <TrashIcon class="h-3 w-3" aria-hidden="true" />
+          Delete all
+        </button>
+      </div>
     {/snippet}
 
     {#snippet children()}

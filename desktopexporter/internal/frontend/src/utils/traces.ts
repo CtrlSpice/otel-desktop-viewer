@@ -15,7 +15,6 @@ export type TraceSummarySortColumn =
   | 'duration'
   | 'spanCount'
   | 'errorCount'
-  | 'exceptionCount'
 
 export type TraceSummarySortDirection = 'asc' | 'desc'
 
@@ -32,14 +31,12 @@ export function compareTraceSummaries(
       : col === 'rootSpanName'
         ? compareByStringField(a, b, t => t.rootSpan?.name)
         : col === 'startTime'
-          ? compareByTimestampField(a, b, t => t.rootSpan?.startTime)
+          ? compareByTimestampField(a, b, t => t.startTime)
           : col === 'duration'
             ? compareByOptionalBigintField(a, b, traceSummaryDurationNs)
             : col === 'spanCount'
               ? a.spanCount - b.spanCount
-              : col === 'errorCount'
-                ? a.errorCount - b.errorCount
-                : a.exceptionCount - b.exceptionCount
+              : a.errorCount - b.errorCount
 
   return cmp !== 0
     ? dir === 'asc'
@@ -82,7 +79,6 @@ const VALID_SORT_COLUMNS: ReadonlySet<string> = new Set<TraceSummarySortColumn>(
     'duration',
     'spanCount',
     'errorCount',
-    'exceptionCount',
   ]
 )
 

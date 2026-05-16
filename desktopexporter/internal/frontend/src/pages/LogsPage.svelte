@@ -1,19 +1,23 @@
 <script module lang="ts">
-  import type { LogData } from '@/types/api-types'
+  import type { LogSummary } from '@/types/api-types'
   import {
     compareByStringField,
     compareByTimestampField,
   } from '@/utils/compare'
-  import { getServiceName } from '@/utils/resource'
 
   // --- Sort ---
 
   export type LogSortColumn = 'timestamp' | 'severity' | 'service'
   export type LogSortDirection = 'asc' | 'desc'
 
+  // The list page now operates on LogSummary (the card-shaped
+  // projection); full LogData for the detail pane is fetched on
+  // demand. serviceName is denormalized onto the summary, so we
+  // sort against it directly instead of digging through resource
+  // attributes.
   function compareLogs(
-    a: LogData,
-    b: LogData,
+    a: LogSummary,
+    b: LogSummary,
     col: LogSortColumn,
     dir: LogSortDirection
   ): number {
@@ -22,7 +26,7 @@
         ? compareByTimestampField(a, b, l => l.timestamp)
         : col === 'severity'
           ? a.severityNumber - b.severityNumber
-          : compareByStringField(a, b, l => getServiceName(l.resource))
+          : compareByStringField(a, b, l => l.serviceName)
 
     return cmp !== 0 ? (dir === 'asc' ? cmp : -cmp) : a.id.localeCompare(b.id)
   }
@@ -87,7 +91,8 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import type { SearchResultEvent } from '@/types/api-types'
+  import type { LogData, SearchResultEvent } from '@/types/api-types'
+  import { createDebouncedDetailFetcher } from '@/utils/debounced-detail-fetcher.svelte'
   import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
   import SignalListDrawer from '@/components/SignalListDrawer.svelte'
   import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
@@ -100,7 +105,7 @@
   let timeContext = getTimeContext()
 
   // --- state: API / list ---
-  let logs = $state<LogData[]>([])
+  let logs = $state<LogSummary[]>([])
   let loading = $state(true)
   let error = $state<string | null>(null)
   let mounted = $state(false)
@@ -110,7 +115,18 @@
   let sortDirection = $state<LogSortDirection>('desc')
 
   // --- state: selection ---
+  //
+  // selectedLogId is the user's pick from the list (the LogSummary
+  // `id`). The detail fetcher round-trips to getLog(id) for the
+  // full LogData on demand, with a debounce that keeps held-arrow
+  // keyboard nav from firing a request per row. Detail loading/
+  // error state lives on the fetcher object, not on the page.
   let selectedLogId = $state<string | null>(null)
+  const detailFetcher = createDebouncedDetailFetcher<string, LogData>({
+    fetch: id => telemetryAPI.getLog(id),
+    keysEqual: (a, b) => a === b,
+    fallbackErrorMessage: 'Failed to load log details',
+  })
 
   // --- state: polling / refresh ---
   let searchEditorApi = $state<SearchEditorAPI | null>(null)
@@ -129,7 +145,11 @@
 
   let hasLogRows = $derived(logs.length > 0)
 
-  let selectedLog = $derived(
+  // The current selection from the list-side perspective: a
+  // LogSummary, used for footer/nav rendering that doesn't need the
+  // full body/attributes. The full LogData for the detail panel
+  // lives in selectedLogDetail (fetched in an effect below).
+  let selectedSummary = $derived(
     selectedLogId ? sortedLogs.find(l => l.id === selectedLogId) : undefined
   )
 
@@ -181,6 +201,14 @@
       }
     }, POLL_INTERVAL_MS)
     return () => clearInterval(id)
+  })
+
+  // Pipe selection into the detail fetcher. The fetcher's $effect
+  // handles the debounce + race-guarded round-trip and exposes
+  // loading/error/data as reactive reads. Single source of truth
+  // remains selectedLogId; the fetcher just mirrors it.
+  $effect(() => {
+    detailFetcher.key = selectedLogId
   })
 
   // --- handlers ---
@@ -288,11 +316,11 @@
     drawerId="log-drawer"
     label="Logs"
     count={sortedLogs.length}
-    storageKey="log-drawer"
     onSelect={selectLog}
     onRefresh={handleRefresh}
     {refreshPulse}
     {refreshAsideTip}
+    {loading}
     itemKey={l => l.id}
   >
 
@@ -324,6 +352,23 @@
       <LogCard {log} {selected} onclick={selectLog} />
     {/snippet}
 
+    {#snippet footer()}
+      <div class="flex items-center justify-between">
+        <span class="text-xs tabular-nums text-base-content/50">
+          {sortedLogs.length} log{sortedLogs.length !== 1 ? 's' : ''}
+        </span>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs text-error"
+          onclick={handleDeleteAllLogs}
+          aria-label="Delete all logs"
+        >
+          <TrashIcon class="h-3 w-3" aria-hidden="true" />
+          Delete all
+        </button>
+      </div>
+    {/snippet}
+
     {#snippet children()}
       <div class="logs-content">
         <div class="logs-content__body">
@@ -342,23 +387,31 @@
             </div>
           {:else}
             <div class="logs-detail">
-              <LogDetailPanel log={selectedLog}>
-                {#snippet footer()}
-                  {#if selectedLog}
-                    {@const log = selectedLog}
-                    <SignalFooter
-                      index={selectedIndex}
-                      total={sortedLogs.length}
-                      label="log"
-                      onFirst={selectFirst}
-                      onPrev={() => selectByOffset(-1)}
-                      onNext={() => selectByOffset(1)}
-                      onLast={selectLast}
-                      onDelete={() => handleDeleteLog(log.id)}
-                    />
-                  {/if}
-                {/snippet}
-              </LogDetailPanel>
+              {#if detailFetcher.loading && !detailFetcher.data}
+                <div class="logs-empty">Loading log details…</div>
+              {:else if detailFetcher.error}
+                <div class="alert alert-error">
+                  <span>Error: {detailFetcher.error}</span>
+                </div>
+              {:else}
+                <LogDetailPanel log={detailFetcher.data ?? undefined}>
+                  {#snippet footer()}
+                    {#if selectedSummary}
+                      {@const log = selectedSummary}
+                      <SignalFooter
+                        index={selectedIndex}
+                        total={sortedLogs.length}
+                        label="log"
+                        onFirst={selectFirst}
+                        onPrev={() => selectByOffset(-1)}
+                        onNext={() => selectByOffset(1)}
+                        onLast={selectLast}
+                        onDelete={() => handleDeleteLog(log.id)}
+                      />
+                    {/if}
+                  {/snippet}
+                </LogDetailPanel>
+              {/if}
             </div>
           {/if}
         </div>

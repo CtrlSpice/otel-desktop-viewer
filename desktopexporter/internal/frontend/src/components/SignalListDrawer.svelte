@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { onMount } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import {
     ArrowRightIcon,
@@ -14,6 +15,10 @@
   import { NAV_ITEMS, isNavItemActive } from '@/components/DrawerNavTabs.svelte'
   import PaneHeader, { type PaneTab } from '@/components/PaneHeader.svelte'
   import { router } from 'tinro5'
+  import {
+    shouldSkipDrawerWidthTransition,
+    syncDrawerOpenPreference,
+  } from '@/utils/signal-drawer-chrome'
 
   type Props<T> = {
     items: T[]
@@ -21,7 +26,6 @@
     drawerId: string
     label: string
     count: number
-    storageKey: string
     itemSnippet: Snippet<[item: T, selected: boolean]>
     itemKey?: (item: T) => string
     onSelect?: (id: string) => void
@@ -29,6 +33,8 @@
     refreshPulse?: boolean
     /** Plain text for DaisyUI tooltip + screen reader when new data is pending */
     refreshAsideTip?: string
+    /** When true, an empty list does not force-collapse the drawer (initial fetch). */
+    loading?: boolean
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     footer?: Snippet
@@ -41,39 +47,61 @@
     drawerId,
     label,
     count,
-    storageKey,
     itemSnippet,
     itemKey = (item: any) => item.id,
     onSelect,
     onRefresh,
     refreshPulse = false,
     refreshAsideTip = '',
+    loading = false,
     drawerChromeToolbar,
     drawerSearch,
     footer,
     children,
   }: Props<any> = $props()
 
-  let drawerOpen = $state(loadOpen())
+  /*
+   * Drawer open/closed is a single global preference shared by every
+   * signal page. Each route mounts its own SignalListDrawer instance,
+   * so they don't share in-memory state -- but they all read/write the
+   * same localStorage key on mount/toggle, which gives "opened on
+   * Traces => still opened on Logs" behavior with no cross-component
+   * plumbing.
+   */
+  const DRAWER_OPEN_KEY = 'signal-drawer:open'
 
-  // When the drawer has no items (e.g. on Home), force-collapse it and hide
-  // the open-toggle. We deliberately skip the localStorage write in that
-  // state so an empty page can't clobber a real preference set on a page
-  // that does have items.
-  let isEmpty = $derived(items.length === 0)
-  let effectivelyOpen = $derived(isEmpty ? false : drawerOpen)
-
-  function loadOpen(): boolean {
+  function loadDrawerOpen(): boolean {
     if (typeof localStorage === 'undefined') return true
-    const v = localStorage.getItem(storageKey + ':open')
+    const v = localStorage.getItem(DRAWER_OPEN_KEY)
     return v === null ? true : v === 'true'
   }
 
+  const initialDrawerOpen = loadDrawerOpen()
+  let drawerOpen = $state(initialDrawerOpen)
+  // Suppress width tween when remounting across signal routes (same preference).
+  let skipWidthTransition = $state(
+    shouldSkipDrawerWidthTransition(initialDrawerOpen)
+  )
+
+  onMount(() => {
+    requestAnimationFrame(() => {
+      skipWidthTransition = false
+    })
+  })
+
+  // Force-collapse only when the list is empty after load — not while the
+  // initial fetch is in flight (otherwise every signal navigation briefly
+  // collapses then re-opens). Toggle stays disabled when truly empty.
+  let isEmpty = $derived(items.length === 0 && !loading)
+  let effectivelyOpen = $derived(isEmpty ? false : drawerOpen)
+
   function handleToggleChange(e: Event) {
     if (isEmpty) return
+    skipWidthTransition = false
     drawerOpen = (e.currentTarget as HTMLInputElement).checked
+    syncDrawerOpenPreference(drawerOpen)
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(storageKey + ':open', String(drawerOpen))
+      localStorage.setItem(DRAWER_OPEN_KEY, String(drawerOpen))
     }
   }
 
@@ -163,7 +191,8 @@
 
   <div class="drawer-side is-drawer-close:overflow-visible">
     <div
-      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-open:w-[28rem] is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
+      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-open:w-[28rem] is-drawer-close:overflow-hidden is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
+      class:signal-drawer__panel--instant={skipWidthTransition}
     >
       {#if !effectivelyOpen}
         <div class="signal-drawer__collapsed-rail">
@@ -342,9 +371,10 @@
         </div>
       {/if}
 
-      <!-- Expanded: list -->
+      <!-- Expanded: list (unmounted when collapsed so footer/count cannot leak) -->
+      {#if effectivelyOpen}
       <div
-        class="signal-drawer__body is-drawer-close:hidden"
+        class="signal-drawer__body"
         bind:this={drawerBodyEl}
       >
         <VirtualList
@@ -361,10 +391,11 @@
           {/snippet}
         </VirtualList>
       </div>
+      {/if}
 
       <!-- Expanded: footer -->
-      {#if footer}
-        <div class="signal-drawer__footer is-drawer-close:hidden">
+      {#if effectivelyOpen && footer}
+        <div class="signal-drawer__footer">
           {@render footer()}
         </div>
       {/if}
@@ -392,6 +423,16 @@
     @apply transition-[width] duration-200;
     border-right: 1px solid
       color-mix(in oklab, var(--color-base-300) 70%, transparent);
+  }
+
+  .signal-drawer__panel--instant {
+    transition: none !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .signal-drawer__panel {
+      transition: none !important;
+    }
   }
 
   /* ── Collapsed: open-sidebar toggle pinned to the top ── */
@@ -510,7 +551,7 @@
      The single direct child stretches to fill the row so consumers
      don't have to remember to add w-full themselves. */
   .signal-drawer__footer {
-    @apply flex shrink-0 items-center border-t border-base-300/40 px-3;
+    @apply flex shrink-0 items-center border-t border-base-300 bg-base-200 px-3;
     min-height: var(--app-footer-height);
   }
 

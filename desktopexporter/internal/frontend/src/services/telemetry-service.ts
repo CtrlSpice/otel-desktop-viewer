@@ -4,14 +4,10 @@ import type {
   TraceData,
   TraceSummary,
   LogData,
+  LogSummary,
   MetricData,
   MetricTimeseries,
   MetricSummary,
-  Sparkline,
-  Sparkbar,
-  SparkOutcome,
-  SparklinePoint,
-  SparkErrorReason,
   Stats,
   Exemplar,
   DataPoint,
@@ -116,6 +112,10 @@ function traceSummaryFromJSON(json: any): TraceSummary {
           endTime: BigInt(json.rootSpan.endTime),
         }
       : undefined,
+    startTime: BigInt(json.startTime),
+    // durationNs arrives as a varchar-encoded int64 (ns precision
+    // would otherwise be clipped by JSON's float64 numbers).
+    durationNs: parseNullableBigInt(json.durationNs),
   }
 }
 
@@ -148,12 +148,28 @@ function traceDataFromJSON(json: any): TraceData {
   }
 }
 
-function logsFromJSON(json: any): LogData[] {
-  return json.map((log: any) => ({
-    ...log,
-    timestamp: BigInt(log.timestamp),
-    observedTimestamp: BigInt(log.observedTimestamp),
-  }))
+// Summary projection returned by searchLogs. Lightweight -- only
+// promote the one bigint field (timestamp); the rest are plain
+// primitives on the wire.
+function logSummaryFromJSON(json: any): LogSummary {
+  return {
+    ...json,
+    timestamp: BigInt(json.timestamp),
+  }
+}
+
+function logSummariesFromJSON(json: any): LogSummary[] {
+  return json.map(logSummaryFromJSON)
+}
+
+// Full log row returned by getLog(id). Promotes both timestamp
+// columns; everything else matches the wire shape.
+function logDataFromJSON(json: any): LogData {
+  return {
+    ...json,
+    timestamp: BigInt(json.timestamp),
+    observedTimestamp: BigInt(json.observedTimestamp),
+  }
 }
 
 function exemplarFromJSON(json: any): Exemplar {
@@ -190,7 +206,6 @@ function metricDataFromJSON(json: any): MetricData {
   return {
     ...json,
     timeseries: json.timeseries?.map(timeseriesFromJSON) ?? [],
-    received: BigInt(json.received),
   }
 }
 
@@ -198,56 +213,12 @@ function metricsFromJSON(json: any): MetricData[] {
   return json.map(metricDataFromJSON)
 }
 
-function sparklinePointFromJSON(json: any): SparklinePoint {
-  return {
-    timestamp: BigInt(json.timestamp),
-    value: json.value,
-  }
-}
-
-// Coerces the wire payload for a sparkline/sparkbar into the SparkOutcome
-// discriminated union. The backend emits one of:
-//   - null (legitimate empty)
-//   - { kind: 'data', value: <T> }
-//   - { kind: 'error', reason: <SparkErrorReason> }
-// We accept legacy untagged arrays as { kind: 'data', value: ... } to keep
-// the deserialiser tolerant of older payloads during rollout.
-function sparkOutcomeFromJSON<T>(
-  raw: unknown,
-  mapValue: (v: any) => T
-): SparkOutcome<T> {
-  if (raw === null || raw === undefined) return null
-  if (Array.isArray(raw)) {
-    return { kind: 'data', value: mapValue(raw) }
-  }
-  if (typeof raw === 'object') {
-    const obj = raw as { kind?: string; value?: any; reason?: string }
-    if (obj.kind === 'data') {
-      return { kind: 'data', value: mapValue(obj.value) }
-    }
-    if (obj.kind === 'error' && typeof obj.reason === 'string') {
-      return { kind: 'error', reason: obj.reason as SparkErrorReason }
-    }
-  }
-  return null
-}
-
-function sparklineFromJSON(raw: unknown): Sparkline {
-  return sparkOutcomeFromJSON<SparklinePoint[]>(raw, v =>
-    (v as any[]).map(sparklinePointFromJSON)
-  )
-}
-
-function sparkbarFromJSON(raw: unknown): Sparkbar {
-  return sparkOutcomeFromJSON<number[]>(raw, v => v as number[])
-}
-
 function metricSummaryFromJSON(json: any): MetricSummary {
   return {
     ...json,
-    received: BigInt(json.received),
-    sparkline: sparklineFromJSON(json.sparkline),
-    sparkbar: sparkbarFromJSON(json.sparkbar),
+    description: json.description ?? '',
+    serviceName: json.serviceName ?? '',
+    lastSeen: BigInt(json.lastSeen),
   }
 }
 
@@ -376,21 +347,29 @@ export let telemetryAPI = {
     callRPC('deleteSpansByTraceID', traceIDs),
 
   // Log methods
+  //
+  // searchLogs returns LogSummary[] -- a card-shaped projection
+  // without bodies/attributes/etc. Use getLog(id) to fetch the
+  // full LogData for one row when the detail pane opens.
   searchLogs: async (
     startTime: number,
     endTime: number,
     queryTree?: QueryNode
-  ): Promise<LogData[]> => {
+  ): Promise<LogSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
     const params = queryTree
       ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
       : [startTimeNs, endTimeNs]
     const rawData = await callRPC('searchLogs', params)
-    return logsFromJSON(rawData)
+    return logSummariesFromJSON(rawData)
   },
 
-  getLogByID: (logID: string) => callRPC('getLogByID', [logID]),
+  getLog: async (logID: string): Promise<LogData> => {
+    const rawData = await callRPC('getLog', [logID])
+    return logDataFromJSON(rawData)
+  },
+
   getLogsByTraceID: (traceID: string) => callRPC('getLogsByTraceID', [traceID]),
   deleteLogByID: (logId: string) => callRPC('deleteLogByID', [logId]),
   clearLogs: () => callRPC('clearLogs', undefined),
@@ -424,31 +403,13 @@ export let telemetryAPI = {
   },
 
   getMetric: async (
-    name: string,
-    unit: string,
-    metricType: string,
-    aggregationTemporality: string,
-    isMonotonic: string,
-    scopeName: string,
-    scopeVersion: string,
-    serviceName: string,
+    streamId: string,
     startTime: number,
     endTime: number
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const rawData = await callRPC('getMetric', [
-      name,
-      unit,
-      metricType,
-      aggregationTemporality,
-      isMonotonic,
-      scopeName,
-      scopeVersion,
-      serviceName,
-      startTimeNs,
-      endTimeNs,
-    ])
+    const rawData = await callRPC('getMetric', [streamId, startTimeNs, endTimeNs])
     if (rawData === null || rawData === 'null') return null
     return metricDataFromJSON(rawData)
   },

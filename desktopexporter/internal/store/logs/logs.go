@@ -122,7 +122,23 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 	return nil
 }
 
-// Search returns logs in the time range matching the optional criteria.
+// bodyPreviewLen is the max character count for the server-truncated
+// body preview returned by Search. Callers that need the full body
+// must fetch the log via Get.
+const bodyPreviewLen = 200
+
+// Search returns log summaries in the time range matching the optional
+// criteria. Each row is a lightweight projection -- enough to render
+// the log card without shipping the full body or attribute set. Use
+// Get(id) to fetch full LogData for a single log on demand.
+//
+// `id` is included in the wire payload because the UI needs a handle
+// for keying, selection, and detail fetches, but it's tool-minted
+// scaffolding (OTLP logs are anonymous) and must never be rendered to
+// users.
+//
+// `bodyPreview` is server-truncated to bodyPreviewLen characters;
+// `bodyTruncated` is true when the original body was longer.
 func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
@@ -144,14 +160,53 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 		filtered as (
 			select l.* from logs l, search_params
 			where %s
-		),
-		log_attrs as (
-			select a.log_id, a.scope, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.log_id in (select id from filtered)
-			group by a.log_id, a.scope
 		)
 		select cast(coalesce(to_json(list(json_object(
+			'id',             l.id,
+			'timestamp',      coalesce(nullif(l.timestamp, 0), l.observed_timestamp),
+			'traceID',        nullif(replace(l.trace_id::varchar, '-', ''), ''),
+			'spanID',         nullif(right(replace(l.span_id::varchar, '-', ''), 16), ''),
+			'severityText',   l.severity_text,
+			'severityNumber', l.severity_number,
+			'serviceName',    l.service_name,
+			'bodyPreview',    substring(l.body, 1, %d),
+			'bodyTruncated',  length(l.body) > %d,
+			'bodyType',       l.body_type
+		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc)), '[]') as varchar) as logs
+		from filtered l`,
+		cteSQL,
+		whereWithTime,
+		bodyPreviewLen,
+		bodyPreviewLen,
+	)
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("Search: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// Get returns the full LogData for a single log identified by its
+// tool-minted UUID. Used by the log-detail pane after a user clicks
+// a card from Search results. Returns ErrLogIDNotFound when no log
+// matches.
+func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error) {
+	query := `
+		with target as (
+			select l.* from logs l where l.id = ?::uuid
+		),
+		log_attrs as (
+			select a.log_id, a.scope,
+				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.log_id in (select id from target)
+			group by a.log_id, a.scope
+		)
+		select cast(json_object(
 			'id', l.id,
 			'timestamp', l.timestamp,
 			'observedTimestamp', l.observed_timestamp,
@@ -167,21 +222,21 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 			'flags', l.flags,
 			'eventName', l.event_name,
 			'attributes', coalesce(log_attrs.attrs, json('[]'))
-		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc)), '[]') as varchar) as logs
-		from filtered l
+		) as varchar) as log
+		from target l
 		left join log_attrs res on res.log_id = l.id and res.scope = 'resource'
 		left join log_attrs scope_attrs on scope_attrs.log_id = l.id and scope_attrs.scope = 'scope'
-		left join log_attrs log_attrs on log_attrs.log_id = l.id and log_attrs.scope = 'log'`,
-		cteSQL,
-		whereWithTime,
-	)
-
+		left join log_attrs log_attrs on log_attrs.log_id = l.id and log_attrs.scope = 'log'
+	`
 	var raw []byte
-	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("Search: %w: %w", ErrLogsStoreInternal, err)
+	if err := db.QueryRowContext(ctx, query, logID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("Get: %w", ErrLogIDNotFound)
+		}
+		return nil, fmt.Errorf("Get: %w: %w", ErrLogsStoreInternal, err)
 	}
 	if raw == nil {
-		return json.RawMessage("[]"), nil
+		return nil, fmt.Errorf("Get: %w", ErrLogIDNotFound)
 	}
 	return json.RawMessage(raw), nil
 }

@@ -36,7 +36,8 @@
     if (m.unit) n++
     if (ctx.temporality) n++
     if (ctx.isMonotonic !== null) n++
-    n += 2 // received + datapoint count
+    if (m.timeseries[0]?.datapoints[0]) n++ // last seen
+    n++ // datapoint count
     return n
   })
   type MetadataAttr = {
@@ -238,15 +239,24 @@
                   fieldType="bool"
                 />
               {/if}
-              <MetricField
-                fieldName="received"
-                fieldValue={formatTimestamp(
-                  metric.received,
-                  timeContext.timezone,
-                  'milliseconds'
-                )}
-                fieldType="timestamp"
-              />
+              {#if metric.timeseries[0]?.datapoints[0]}
+                <!-- "last seen" = the most recent datapoint
+                     timestamp across all timeseries. Free from
+                     the ordering invariant: timeseries arrive
+                     newest-activity-first and each timeseries'
+                     datapoints arrive timestamp-desc, so the
+                     [0][0] element is the metric-wide latest.
+                     Source-derived; honest. -->
+                <MetricField
+                  fieldName="last seen"
+                  fieldValue={formatTimestamp(
+                    metric.timeseries[0].datapoints[0].timestamp,
+                    timeContext.timezone,
+                    'milliseconds'
+                  )}
+                  fieldType="timestamp"
+                />
+              {/if}
               <MetricField
                 fieldName="datapoint count"
                 fieldValue={ctx.totalDatapointCount.toString()}

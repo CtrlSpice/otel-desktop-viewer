@@ -1,12 +1,9 @@
 <script lang="ts">
   import type { MetricSummary } from '@/types/api-types'
   import { metricSummaryKey } from '@/types/api-types'
-  import { metricTypeBadgeClass, metricTypeLabel, metricTypeSeriesColor } from '@/utils/metric-type'
+  import { metricTypeCardBadge } from '@/utils/metric-type'
   import SignalCard from '@/components/SignalCard.svelte'
-  import MetricSparkline from '@/components/MetricCharts/MetricSparkline.svelte'
-  import MetricSparkbars from '@/components/MetricCharts/MetricSparkbars.svelte'
-  import UnspecifiedTemporalityCallout from '@/components/MetricDetails/UnspecifiedTemporalityCallout.svelte'
-  import { formatTimestamp } from '@/utils/time'
+  import { formatTimestampParts } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
   type Props = {
@@ -20,69 +17,87 @@
   const timeContext = getTimeContext()
 
   let key = $derived(metricSummaryKey(metric))
-  let isHistogramType = $derived(
-    metric.metricType === 'Histogram' ||
-      metric.metricType === 'ExponentialHistogram'
+
+  let lastSeenParts = $derived(
+    formatTimestampParts(
+      metric.lastSeen,
+      timeContext.timezone,
+      'milliseconds'
+    )
   )
 
-  let receivedLabel = $derived(
-    formatTimestamp(metric.received, timeContext.timezone, 'milliseconds')
+  let typeBadge = $derived(
+    metricTypeCardBadge(
+      metric.metricType,
+      metric.aggregationTemporality,
+      metric.isMonotonic
+    )
   )
 
-  let sparkColor = $derived(metricTypeSeriesColor(metric.metricType))
+  let description = $derived((metric.description ?? '').trim())
 
-  // The spark slot reads one of two SparkOutcome unions depending on metric
-  // type. Pattern-matching on `kind` lets the template stay flat (no nested
-  // ternaries / guard chains) and gives us a single uniform "error" branch
-  // for whichever FunError reason the backend sent.
-  let activeSpark = $derived(isHistogramType ? metric.sparkbar : metric.sparkline)
+  function formatLastValue(value: number): string {
+    return new Intl.NumberFormat(undefined, {
+      maximumFractionDigits: 6,
+    }).format(value)
+  }
+
+  let lastValueLabel = $derived.by(() => {
+    if (metric.lastValue == null) return null
+    const value = formatLastValue(metric.lastValue)
+    const unit = metric.unit?.trim()
+    return unit ? `${value} ${unit}` : value
+  })
 </script>
 
 <SignalCard
   id={key}
   {selected}
   title={metric.name}
-  subtitle={metric.serviceName || undefined}
-  timestamp={receivedLabel}
+  subtitle={metric.serviceName?.trim() || undefined}
+  description={description || undefined}
+  timeLayout="labeled"
+  timestampLabel="Last seen:"
+  timestamp={lastSeenParts.value}
+  timestampUnit={lastSeenParts.unit || undefined}
   {onclick}
 >
   {#snippet badge()}
-    <span class={metricTypeBadgeClass(metric.metricType)}>
-      {metricTypeLabel(metric.metricType)}
+    <span class={typeBadge.className} title={typeBadge.title}>
+      {typeBadge.label}
+    </span>
+    <span
+      class="badge badge-xs badge-soft badge-neutral tabular-nums"
+      title="{metric.seriesCount} time series in range"
+    >
+      {metric.seriesCount} series
     </span>
   {/snippet}
 
   {#snippet meta()}
-    {#if metric.unit}
-      <span class="tabular-nums text-base-content/40" title={metric.unit}>
-        units: {metric.unit}
+    {#if lastValueLabel}
+      <span class="metric-card__labeled">
+        <span class="signal-row__label">Last value:</span>
+        <span class="metric-card__labeled-value">{lastValueLabel}</span>
       </span>
     {/if}
-  {/snippet}
-
-  {#snippet spark()}
-    <!-- 96px keeps a 5-bucket histogram from smearing into chunky stripes
-         and a 20-point sparkline from going lazy/curvy. The width lives
-         here (not in SignalCard) because logs/traces won't necessarily
-         want the same box. -->
-    <div class="metric-card__spark-box">
-      {#if activeSpark?.kind === 'error'}
-        {#if activeSpark.reason === 'unspecifiedTemporality'}
-          <UnspecifiedTemporalityCallout size="mini" />
-        {/if}
-      {:else if isHistogramType && metric.sparkbar?.kind === 'data'}
-        <MetricSparkbars buckets={metric.sparkbar.value} seriesColor={sparkColor} />
-      {:else if metric.sparkline?.kind === 'data' && metric.sparkline.value.length > 0}
-        <MetricSparkline points={metric.sparkline.value} seriesColor={sparkColor} />
-      {/if}
-    </div>
+    {#if metric.unit && metric.lastValue == null}
+      <span class="metric-card__labeled">
+        <span class="signal-row__label">Units:</span>
+        <span class="metric-card__labeled-value">{metric.unit}</span>
+      </span>
+    {/if}
   {/snippet}
 </SignalCard>
 
 <style lang="postcss">
   @reference "../app.css";
 
-  .metric-card__spark-box {
-    @apply h-full w-24;
+  .metric-card__labeled {
+    @apply inline-flex min-w-0 items-center gap-x-1;
+  }
+
+  .metric-card__labeled-value {
+    @apply truncate leading-none text-base-content;
   }
 </style>

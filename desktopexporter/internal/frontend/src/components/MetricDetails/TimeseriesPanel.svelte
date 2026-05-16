@@ -14,7 +14,7 @@
    *     unchecked row's checkbox is disabled so the palette never wraps.
    */
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
-  import type { Timeseries as PanelTimeseries } from '@/components/MetricCharts/TimeseriesLegend.svelte'
+  import type { Timeseries as PanelTimeseries } from '@/components/MetricCharts/legend-types'
   import {
     MAX_VISIBLE_TIMESERIES,
     timeseriesColor,
@@ -76,58 +76,66 @@
         : attrsTooltip(ts.attributes)}
       {@const hasAttrs = ts.attributes.length > 0}
 
-      <details class="ts-row" class:ts-row--disabled={disabled}>
-        <summary class="ts-row__summary">
-          <label class="ts-row__check-label" title={tooltip}>
-            <input
-              type="checkbox"
-              class="checkbox checkbox-xs ts-row__checkbox"
-              style:--input-color={color}
-              style:color={fg}
-              {checked}
-              {disabled}
-              onclick={(e) => e.stopPropagation()}
-              onchange={(e) =>
-                toggle(ts.key, (e.currentTarget as HTMLInputElement).checked)}
-            />
-          </label>
-
-          <span class="ts-row__attrs">
-            {#if !hasAttrs}
-              <span class="ts-row__attrs-empty">default timeseries</span>
-            {:else}
-              {#each ts.attributes as attr (attr.key)}
-                <span class="ts-row__attr">
-                  <span class="ts-row__attr-key">{attr.key}</span>
-                  <span class="ts-row__attr-eq">=</span>
-                  <span class="ts-row__attr-value">{attr.value}</span>
-                </span>
-              {/each}
-            {/if}
-          </span>
-
-          {#if hasAttrs}
-            <ArrowDownIcon class="ts-row__caret" aria-hidden="true" />
-          {/if}
-        </summary>
+      <!--
+        a11y: checkbox lives as a *sibling* of <details>, not inside
+        <summary>. Having interactive controls (input/label) nested in
+        a <summary> trips screen readers and the keyboard model (Space
+        on the summary toggles the disclosure; Space on a nested
+        checkbox toggles the box -- two different things sharing one
+        rectangle). Pulled out, each control does one thing. We also
+        skip the disclosure entirely for "default timeseries" rows
+        (no attributes -> nothing to expand).
+      -->
+      <div class="ts-row" class:ts-row--disabled={disabled}>
+        <label class="ts-row__check-label" title={tooltip}>
+          <input
+            type="checkbox"
+            class="checkbox checkbox-xs ts-row__checkbox"
+            style:--input-color={color}
+            style:color={fg}
+            {checked}
+            {disabled}
+            onchange={(e) =>
+              toggle(ts.key, (e.currentTarget as HTMLInputElement).checked)}
+          />
+        </label>
 
         {#if hasAttrs}
-          <div class="ts-row__expansion">
-            {#if ts.badge}
-              <div class="ts-row__field">
-                <span class="ts-row__field-key">datapoints:</span>
-                <span class="ts-row__field-value">{ts.badge}</span>
-              </div>
-            {/if}
-            {#each ts.attributes as attr (attr.key)}
-              <div class="ts-row__field">
-                <span class="ts-row__field-key">{attr.key}:</span>
-                <span class="ts-row__field-value">{attr.value}</span>
-              </div>
-            {/each}
+          <details class="ts-row__disclosure">
+            <summary class="ts-row__summary">
+              <span class="ts-row__attrs">
+                {#each ts.attributes as attr (attr.key)}
+                  <span class="ts-row__attr">
+                    <span class="ts-row__attr-key">{attr.key}</span>
+                    <span class="ts-row__attr-eq">=</span>
+                    <span class="ts-row__attr-value">{attr.value}</span>
+                  </span>
+                {/each}
+              </span>
+              <ArrowDownIcon class="ts-row__caret" aria-hidden="true" />
+            </summary>
+
+            <div class="ts-row__expansion">
+              {#if ts.badge}
+                <div class="ts-row__field">
+                  <span class="ts-row__field-key">datapoints:</span>
+                  <span class="ts-row__field-value">{ts.badge}</span>
+                </div>
+              {/if}
+              {#each ts.attributes as attr (attr.key)}
+                <div class="ts-row__field">
+                  <span class="ts-row__field-key">{attr.key}:</span>
+                  <span class="ts-row__field-value">{attr.value}</span>
+                </div>
+              {/each}
+            </div>
+          </details>
+        {:else}
+          <div class="ts-row__attrs ts-row__attrs--static">
+            <span class="ts-row__attrs-empty">default timeseries</span>
           </div>
         {/if}
-      </details>
+      </div>
     {/each}
   </div>
 
@@ -171,7 +179,14 @@
   }
 
   .ts-row {
-    @apply border-b border-base-300/30;
+    /*
+     * Outer flex container -- holds the checkbox (always) and either
+     * a <details> disclosure (when there are attributes to expand)
+     * or a static attrs label (default timeseries). Padding lives
+     * here so the hover/click areas inside don't have to fight the
+     * row's edge spacing.
+     */
+    @apply flex items-stretch border-b border-base-300/30 pl-3;
   }
 
   .ts-row:last-child {
@@ -182,8 +197,36 @@
     @apply opacity-60;
   }
 
+  .ts-row__check-label {
+    /*
+     * The checkbox column. Pads vertically to align with the
+     * summary's text baseline and keeps its own cursor independent
+     * of the disclosure's hover state -- clicking the checkbox is
+     * a separate action from toggling the row open.
+     */
+    @apply flex shrink-0 cursor-pointer items-center pr-2 py-1;
+  }
+
+  .ts-row--disabled .ts-row__check-label {
+    @apply cursor-not-allowed;
+  }
+
+  .ts-row__checkbox {
+    @apply shrink-0;
+  }
+
+  .ts-row__disclosure {
+    /* Take the remaining width so the summary fills the row. */
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+
   .ts-row__summary {
-    @apply flex cursor-pointer select-none list-none items-center gap-2 px-3 py-1;
+    /*
+     * The disclosure trigger. Hover tint stays scoped to this
+     * region (attrs + caret), not the whole row -- the checkbox
+     * column shouldn't paint when you hover the disclosure.
+     */
+    @apply flex cursor-pointer select-none list-none items-center gap-2 pr-3 py-1;
     @apply hover:bg-base-300/30;
   }
 
@@ -196,20 +239,14 @@
     @apply cursor-not-allowed;
   }
 
-  .ts-row__check-label {
-    @apply flex shrink-0 cursor-pointer items-center mr-1;
-  }
-
-  .ts-row--disabled .ts-row__check-label {
-    @apply cursor-not-allowed;
-  }
-
-  .ts-row__checkbox {
-    @apply shrink-0;
-  }
-
   .ts-row__attrs {
     @apply flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 overflow-hidden font-mono text-sm;
+  }
+
+  .ts-row__attrs--static {
+    /* Same look as the summary's attrs row, sans hover/cursor --
+       there's nothing to click for default-timeseries rows. */
+    @apply select-none pr-3 py-1;
   }
 
   .ts-row__attrs-empty {

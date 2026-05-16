@@ -52,7 +52,10 @@ func GetStats(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 				-- count would inflate by the number of OTLP requests.
 				'metricCount',    (select count(*) from metric_streams),
 				'dataPointCount', count(*),
-				'lastReceived',   (select max(received) from metric_ingests)
+				-- lastReceived = latest datapoint timestamp observed
+				-- (source recency), not collector wall-clock arrival.
+				-- Mirrors traces/logs which also use source timestamps.
+				'lastReceived',   max(timestamp)
 			) from datapoints)
 		) as varchar) as stats
 	`

@@ -7,10 +7,18 @@ export type RootSpan = {
 
 export type TraceSummary = {
   traceID: string
+  // hasRootSpan makes the orphaned-trace state explicit so callers
+  // don't have to infer it from a null rootSpan.
+  hasRootSpan: boolean
   rootSpan?: RootSpan
+  // Wall-clock trace bounds: earliest span start and max(end) - min(start)
+  // across all spans (not root-span duration).
+  startTime: bigint
+  durationNs: bigint | null
   spanCount: number
+  // Distinct services that participated in this trace.
+  serviceCount: number
   errorCount: number
-  exceptionCount: number
 }
 
 export type TraceData = {
@@ -100,6 +108,34 @@ export type LogData = {
   droppedAttributesCount: number
   flags: number
   eventName: string
+}
+
+// LogSummary is the lightweight card-shaped projection returned by
+// the searchLogs JSON-RPC method. Full LogData (with body, attributes,
+// resource, scope, etc) is fetched on demand via getLog(id).
+//
+// `id` is a tool-minted UUID -- in the wire payload because the UI
+// needs a handle for keying, selection, and the detail fetch, but it
+// must never be rendered to users (logs have no source-derived id).
+//
+// `timestamp` is the effective time -- the source Timestamp when set,
+// otherwise ObservedTimestamp. The summary doesn't carry observed
+// separately; consumers that need both fall back to the detail row.
+//
+// `bodyPreview` is server-truncated; `bodyTruncated` is true when
+// the original body was longer than the preview limit. Rendering a
+// "… more" affordance is the consumer's call.
+export type LogSummary = {
+  id: string
+  timestamp: bigint
+  traceID: string | null
+  spanID: string | null
+  severityText: string
+  severityNumber: number
+  serviceName: string
+  bodyPreview: string
+  bodyTruncated: boolean
+  bodyType: string
 }
 
 // Metrics types
@@ -218,37 +254,18 @@ export type MetricData = {
   scopeVersion: string
   scopeDroppedAttributesCount: number
   scope: ScopeData
-  received: bigint
   timeseries: MetricTimeseries[]
 }
 
-// Metric summary for sidebar cards (lightweight, grouped by OTel identity)
+// Sparkline point shape used by detail charts (not the drawer summary).
 export type SparklinePoint = {
   timestamp: bigint
   value: number
 }
 
-// Reasons a spark may be omitted in lieu of data. The string discriminant lets
-// the frontend pick the right callout (e.g. the unspecifiedTemporality meme)
-// without coupling to the JSON-RPC error catalogue.
-export type SparkErrorReason = 'unspecifiedTemporality'
-
-// Discriminated union for spark payloads. Mirrors how trace summaries handle
-// a missing root span: the data shape itself encodes the situation, so callers
-// just pattern-match. Three states because we need to distinguish "we refused
-// to compute" from "no data in range".
-//   - { kind: 'data', value }: render as a chart.
-//   - { kind: 'error', reason }: render the FunError leaf for that reason.
-//   - null: legitimate empty (no data in range).
-export type SparkOutcome<T> =
-  | { kind: 'data'; value: T }
-  | { kind: 'error'; reason: SparkErrorReason }
-  | null
-
-export type Sparkline = SparkOutcome<SparklinePoint[]>
-export type Sparkbar = SparkOutcome<number[]>
-
+// Metric summary for sidebar cards (one row per metric stream).
 export type MetricSummary = {
+  id: string
   name: string
   description: string
   unit: string
@@ -256,15 +273,16 @@ export type MetricSummary = {
   aggregationTemporality: string | null
   isMonotonic: boolean | null
   serviceName: string
-  scopeName: string
-  scopeVersion: string
-  received: bigint
-  sparkline: Sparkline
-  sparkbar: Sparkbar
+  // Distinct attribute sets (timeseries) seen in the queried window.
+  seriesCount: number
+  // Most recent scalar value for Gauge/Sum metrics; null for histograms.
+  lastValue: number | null
+  // Timestamp of the most recent in-range datapoint (nanoseconds).
+  lastSeen: bigint
 }
 
 export function metricSummaryKey(s: MetricSummary): string {
-  return `${s.name}::${s.unit}::${s.metricType}::${s.aggregationTemporality ?? ''}::${s.isMonotonic ?? ''}::${s.scopeName}::${s.scopeVersion}::${s.serviceName}`
+  return s.id
 }
 
 // Stats types (homepage summary cards)
@@ -296,9 +314,12 @@ export type Stats = {
 
 // Discriminated union for search results.
 // `queryTree` is the parsed query that produced these results (undefined when no search active).
+// The logs variant carries LogSummary[] -- the lightweight card-shaped
+// projection. Full LogData for a single row is fetched on demand via
+// the getLog(id) JSON-RPC method.
 export type SearchResultEvent =
   | { signal: 'traces'; results: TraceSummary[]; queryTree?: unknown }
-  | { signal: 'logs'; results: LogData[]; queryTree?: unknown }
+  | { signal: 'logs'; results: LogSummary[]; queryTree?: unknown }
   | { signal: 'metrics'; results: MetricData[]; queryTree?: unknown }
 
 // Quantile series (trend chart) types. The backend computes adaptive

@@ -42,8 +42,8 @@ import {
   ErrCodeUnspecifiedTemporality,
   ErrCodeHistogramBoundsMismatch,
 } from '@/services/telemetry-service'
-import { timeseriesToChartTimeseries } from '@/components/MetricCharts/MetricTimeSeriesChart.svelte'
-import type { Timeseries as LegendTimeseries } from '@/components/MetricCharts/TimeseriesLegend.svelte'
+import { timeseriesToChartTimeseries } from '@/components/MetricCharts/chart-types'
+import type { Timeseries as LegendTimeseries } from '@/components/MetricCharts/legend-types'
 import { MAX_VISIBLE_TIMESERIES } from '@/utils/timeseries-palette'
 import {
   getTimeContext,

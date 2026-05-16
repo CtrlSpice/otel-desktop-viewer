@@ -249,18 +249,8 @@
         Date.now()
       )
       selectedMetric =
-        (await telemetryAPI.getMetric(
-          summary.name,
-          summary.unit,
-          summary.metricType,
-          summary.aggregationTemporality ?? '',
-          summary.isMonotonic === null ? '' : String(summary.isMonotonic),
-          summary.scopeName,
-          summary.scopeVersion,
-          summary.serviceName,
-          startTime,
-          endTime
-        )) ?? undefined
+        (await telemetryAPI.getMetric(summary.id, startTime, endTime)) ??
+        undefined
     } catch (err) {
       console.error('Failed to fetch metric detail:', err)
       selectedMetric = undefined
@@ -306,11 +296,11 @@
     selectedId={selectedKey}
     drawerId="signal-drawer"
     drawerLabel="Metrics"
-    storageKey="metric-drawer"
     onSelect={selectMetric}
     onRefresh={handleRefresh}
     refreshPulse={!!refreshIndicatorText}
     refreshAsideTip={refreshIndicatorText}
+    {loading}
     itemKey={metricSummaryKey}
     resizableStorageKey="metric-detail-panels"
   >
@@ -342,6 +332,23 @@
       <MetricCard {metric} {selected} onclick={selectMetric} />
     {/snippet}
 
+    {#snippet drawerFooter()}
+      <div class="flex items-center justify-between">
+        <span class="text-xs tabular-nums text-rp-muted">
+          {sortedMetrics.length} metric{sortedMetrics.length !== 1 ? 's' : ''}
+        </span>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs text-error"
+          onclick={handleDeleteAllMetrics}
+          aria-label="Delete all metrics"
+        >
+          <TrashIcon class="h-3 w-3" aria-hidden="true" />
+          Delete all
+        </button>
+      </div>
+    {/snippet}
+
     {#snippet main()}
       <!-- Page-level error / empty branches replace the chart pane
            entirely; the chart lives here on the happy path and the
@@ -354,8 +361,22 @@
         {#if selectedSummary}
           <div class="metrics-main__header">
             <div class="metrics-main__header-text">
-              <span class="metrics-main__title">{selectedSummary.name}</span>
-              <span class="metrics-main__subtitle">({selectedSummary.serviceName})</span>
+              <div class="metrics-main__header-title-row">
+                <span class="metrics-main__title">{selectedSummary.name}</span>
+                {#if selectedSummary.serviceName?.trim()}
+                  <span class="metrics-main__subtitle">
+                    ({selectedSummary.serviceName.trim()})</span
+                  >
+                {/if}
+              </div>
+              {#if selectedSummary.description?.trim()}
+                <p
+                  class="metrics-main__description"
+                  title={selectedSummary.description}
+                >
+                  {selectedSummary.description.trim()}
+                </p>
+              {/if}
             </div>
           </div>
         {/if}
@@ -447,7 +468,16 @@
   }
 
   .metrics-main__header-text {
-    @apply flex items-baseline gap-1.5 min-w-0;
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+
+  .metrics-main__header-title-row {
+    @apply flex min-w-0 items-baseline gap-1.5;
+  }
+
+  .metrics-main__description {
+    @apply line-clamp-2 text-sm leading-snug;
+    color: var(--color-subtle);
   }
 
   .metrics-main__title {
@@ -456,8 +486,8 @@
   }
 
   .metrics-main__subtitle {
-    @apply text-xs truncate;
-    color: var(--color-muted);
+    @apply truncate text-sm font-normal leading-none;
+    color: var(--color-subtle);
   }
 
   .metrics-main__chart {

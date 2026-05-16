@@ -242,9 +242,9 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 
 	_, err = s.DB().ExecContext(ctx, `
 		insert into metric_ingests
-			(id, stream_id, received, description,
+			(id, stream_id, description,
 			 resource_dropped_attributes_count, scope_dropped_attributes_count)
-		values (gen_random_uuid(), ?::uuid, 0, '', 0, 0)
+		values (gen_random_uuid(), ?::uuid, '', 0, 0)
 	`, streamID)
 	require.NoError(t, err, "inserting a metric_ingests row should succeed")
 

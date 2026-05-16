@@ -183,38 +183,57 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 	}
 
+	// service_name comes from spans.service_name (denormalized at
+	// ingest from the service.name resource attribute) rather than the
+	// attributes table; same value, no per-row attribute lookup.
+	//
+	// `hasRootSpan` makes the orphaned-trace state explicit so consumers
+	// don't have to infer it from a null rootSpan. service_count
+	// surfaces "how many distinct services participated" -- a useful
+	// glance signal for distributed traces. startTime and durationNs
+	// are precomputed from span bounds (min start, max end across every
+	// span in the trace) so the summary always reflects wall-clock
+	// coverage -- not root-span duration, which can be shorter when
+	// children extend beyond the root or when the root arrives late.
+	//
+	// exceptionCount was dropped: exceptions surface as span events in
+	// the trace detail view, so duplicating the count on the summary
+	// is noise.
 	finalQuery := fmt.Sprintf(`%s
 		select cast(coalesce(to_json(list(json_object(
-			'traceID',        replace(sub.trace_id::varchar, '-', ''),
-			'rootSpan',       case when sub.service_name is not null then json_object(
+			'traceID',      replace(sub.trace_id::varchar, '-', ''),
+			'hasRootSpan',  sub.has_root_span,
+			'rootSpan',     case when sub.has_root_span then json_object(
 				'serviceName', sub.service_name,
 				'name',        sub.root_name,
 				'startTime',   sub.root_start_time,
 				'endTime',     sub.root_end_time
 			) end,
-			'spanCount',      sub.span_count,
-			'errorCount',     sub.error_count,
-			'exceptionCount', sub.exception_count
-		) order by
-			coalesce(sub.root_start_time, (select min(s2.start_time) from spans s2 where s2.trace_id = sub.trace_id)) desc
+			'startTime',    sub.trace_start_time::varchar,
+			'durationNs',   case
+				when sub.trace_start_time is not null
+					and sub.trace_end_time is not null
+					then (sub.trace_end_time - sub.trace_start_time)::varchar
+				else null
+			end,
+			'spanCount',    sub.span_count,
+			'serviceCount', sub.service_count,
+			'errorCount',   sub.error_count
+		) order by sub.trace_start_time desc
 		)), '[]') as varchar) as summaries
 		from (
 			select distinct on (s.trace_id)
 				s.trace_id,
-				case when s.parent_span_id is null then (
-					select a.value from attributes a
-					where a.span_id = s.span_id and a.scope = 'resource' and a.key = 'service.name'
-					limit 1
-				) end as service_name,
+				(s.parent_span_id is null) as has_root_span,
+				case when s.parent_span_id is null then nullif(s.service_name, '') end as service_name,
 				case when s.parent_span_id is null then s.name end as root_name,
 				case when s.parent_span_id is null then s.start_time end as root_start_time,
 				case when s.parent_span_id is null then s.end_time end as root_end_time,
+				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
+				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count,
-				count(case when exists(
-					select 1 from events e
-					where e.span_id = s.span_id and e.name = 'exception'
-				) then 1 end) over (partition by s.trace_id) as exception_count
+				count(distinct nullif(s.service_name, '')) over (partition by s.trace_id) as service_count,
+				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
 			from spans s, search_params
 			where %s
 			order by

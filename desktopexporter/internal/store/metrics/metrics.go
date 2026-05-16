@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
@@ -132,12 +131,10 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 				}
 
 				ingestID := duckdb.UUID(uuid.New())
-				received := time.Now().UnixNano()
 
 				if err := appenders["metric_ingests"].AppendRow(
 					ingestID,                          // ID UUID
 					streamID,                          // StreamID UUID
-					received,                          // Received BIGINT
 					metric.Description(),              // Description VARCHAR
 					resource.DroppedAttributesCount(), // ResourceDroppedAttributesCount UINTEGER
 					scope.DroppedAttributesCount(),    // ScopeDroppedAttributesCount UINTEGER
@@ -382,12 +379,17 @@ func numberDataPointValue(dp pmetric.NumberDataPoint) (doubleVal any, intVal any
 // endTime], matching the optional criteria. Each result is one
 // metric_ingests row joined to its metric_streams row, projected as the
 // "metric" shape the frontend expects (the union of identity-from-stream
-// and per-batch fields like description / received / dropped counts).
+// and per-batch fields like description / dropped counts).
 //
 // The per-row granularity is preserved: a long-lived counter that's
 // reported every batch still produces one Search result per batch, just
 // like before. Identity columns (name, unit, ...) are read from
 // metric_streams via the join; the rest comes from metric_ingests.
+//
+// Ordering is by latest datapoint timestamp per ingest (newest data
+// first). This is the source's notion of recency -- when a datapoint
+// was actually observed -- rather than the collector's wall clock at
+// batch arrival.
 func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
@@ -542,6 +544,15 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 			) order by latest_ts desc)) as timeseries
 			from ts_dps_agg
 			group by metric_ingest_id
+		),
+		-- Latest datapoint timestamp per ingest, used to order the
+		-- top-level results "newest data first." We aggregate the
+		-- per-(ingest, timeseries) latest_ts values rather than re-
+		-- scanning filtered_dps -- cheaper and gives the same answer.
+		ingest_latest_dp as (
+			select metric_ingest_id, max(latest_ts) as last_dp_ts
+			from ts_dps_agg
+			group by metric_ingest_id
 		)
 		-- "id" exposed to the frontend is the STREAM id, not the per-
 		-- batch ingest id. Any client-side action that wants to fan out
@@ -554,13 +565,13 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 			'resource', json_object('attributes', coalesce(res.attrs, json('[]')), 'droppedAttributesCount', fi.resource_dropped_attributes_count),
 			'scopeName', fi.scope_name, 'scopeVersion', fi.scope_version, 'scopeDroppedAttributesCount', fi.scope_dropped_attributes_count,
 			'scope', json_object('name', fi.scope_name, 'version', fi.scope_version, 'attributes', coalesce(scope_attrs.attrs, json('[]')), 'droppedAttributesCount', fi.scope_dropped_attributes_count),
-			'received', fi.received,
 			'timeseries', coalesce(ts.timeseries, json('[]'))
-		) order by fi.received desc)), '[]') as varchar) as metrics
+		) order by ild.last_dp_ts desc nulls last)), '[]') as varchar) as metrics
 		from filtered_ingests fi
 		left join ingest_res_attrs res on res.metric_ingest_id = fi.id
 		left join ingest_scope_attrs scope_attrs on scope_attrs.metric_ingest_id = fi.id
-		left join timeseries_agg ts on ts.metric_ingest_id = fi.id`,
+		left join timeseries_agg ts on ts.metric_ingest_id = fi.id
+		left join ingest_latest_dp ild on ild.metric_ingest_id = fi.id`,
 		cteSQL, whereClause,
 	)
 	var raw []byte
@@ -573,48 +584,13 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 	return json.RawMessage(raw), nil
 }
 
-// SearchSummaries returns lightweight metric summaries grouped by the full OTel
-// metric identity: (name, unit, metricType, scope_name, scope_version, service.name).
-// Description is explicitly non-identifying per the spec and uses any_value.
-//
-// Each summary includes a sparkline (last 30 datapoints for Gauge/Sum) or
-// sparkbar (aggregated bucket counts for Histogram/ExponentialHistogram). Both
-// fields are emitted as a SparkOutcome discriminated union:
-//
-//   - JSON null: legitimate empty (no contributing datapoints in range).
-//   - {"kind":"data","value":<T>}: render as a chart on the frontend.
-//   - {"kind":"error","reason":"unspecifiedTemporality"}: the metric uses
-//     AGGREGATION_TEMPORALITY_UNSPECIFIED, which the OTel proto says MUST not
-//     be used. We refuse to invent a meaning for the bars and let the
-//     frontend render the FunError callout.
-//
-// Temporality math (Histogram + ExpHistogram sparkbar):
-//
-//   - Delta: bucket counts are observations-since-last-report. Sum across all
-//     datapoints in the range to get total observations.
-//   - Cumulative: each datapoint is a running total per stream. Naively
-//     summing across N datapoints inflates counts N-fold. Instead, take
-//     arg_max(bucket_counts, timestamp) per stream (latest cumulative
-//     snapshot is the true total for that stream) and then sum across
-//     streams within the metric group.
-//   - Unspecified: emit the error variant; do not compute.
-//
-// Sparkline (Gauge/Sum) math is unaffected by temporality -- the chart
-// shows the value over time, and cumulative/delta semantics are visually
-// honest either way. Unspecified Sum is still rejected for symmetry with
-// the histogram path.
+// SearchSummaries returns lightweight per-stream summaries for the drawer
+// cards: identity fields, description, seriesCount, lastValue (Gauge/Sum),
+// and lastSeen.
+// One row per metric_streams row with at least one in-range datapoint.
 func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
-	// All identity assembly is gone. metric_streams owns identity, so
-	// every per-stream group-by reduces to "group by stream_id" and
-	// every identity column we emit is a direct read of metric_streams.
-	// The cumulative-temporality arg_max trick now keys off
-	// (stream_id, attrs_canonical) -- a (uuid, varchar) composite that's
-	// pre-materialized at ingest time, so we no longer pay for a
-	// string_agg over the attributes table per query.
 	query := `
 		with search_params as (select ? as time_start, ? as time_end),
-		-- Streams with at least one datapoint in the time range. Filtering
-		-- here once means every downstream CTE only sees relevant streams.
 		filtered_streams as (
 			select s.* from metric_streams s, search_params
 			where exists (
@@ -623,158 +599,44 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 				  and d.timestamp >= time_start and d.timestamp <= time_end
 			)
 		),
-		-- All datapoints in the time range for filtered streams.
 		filtered_dps as (
 			select d.* from datapoints d
 			inner join filtered_streams fs on d.stream_id = fs.id, search_params
 			where d.timestamp >= time_start and d.timestamp <= time_end
 		),
-		-- Most recent ingest received-time per stream, used to order the
-		-- summary list. arg_max isn't needed here because received is the
-		-- only column we want -- straight max() does it.
-		stream_received as (
-			select stream_id, max(received) as received
-			from metric_ingests
-			where stream_id in (select id from filtered_streams)
+		stream_latest_dp as (
+			select stream_id, max(timestamp) as last_dp_ts
+			from filtered_dps
 			group by stream_id
 		),
-		-- Most recent description per stream. description can vary across
-		-- batches (per OTel: it's not part of identity), so we pick the
-		-- latest one as the summary value.
+		ingest_latest_dp as (
+			select metric_ingest_id, max(timestamp) as last_dp_ts
+			from filtered_dps
+			group by metric_ingest_id
+		),
 		stream_description as (
-			select stream_id, arg_max(description, received) as description
-			from metric_ingests
-			where stream_id in (select id from filtered_streams)
+			select mi.stream_id,
+				arg_max(mi.description, ild.last_dp_ts) as description
+			from metric_ingests mi
+			inner join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
+			where mi.stream_id in (select id from filtered_streams)
+			group by mi.stream_id
+		),
+		stream_series_count as (
+			select stream_id, count(distinct coalesce(attrs_canonical, '')) as series_count
+			from filtered_dps
 			group by stream_id
 		),
-		-- Sparkline data for Gauge/Sum: last 30 datapoints per stream.
-		sparkline_data as (
-			select
-				sub.stream_id,
-				to_json(list(json_object(
-					'timestamp', sub.timestamp::varchar,
-					'value', sub.value
-				) order by sub.timestamp asc)) as sparkline_value
-			from (
-				select
-					d.stream_id,
-					d.timestamp,
-					coalesce(d.double_value, d.int_value, 0) as value,
-					row_number() over (
-						partition by d.stream_id
-						order by d.timestamp desc
-					) as rn
-				from filtered_dps d
-				where d.metric_type in ('Gauge', 'Sum')
-			) sub
-			where sub.rn <= 30
-			group by sub.stream_id
-		),
-		-- Per-attrs-stream Histogram bucket vectors with temporality-aware
-		-- aggregation. The "stream within a stream" is keyed by
-		-- (stream_id, attrs_canonical) -- the second is NULL-coalesced
-		-- to an empty-string sentinel so all empty-attrs datapoints
-		-- collapse into one bucket like they did under the string_agg
-		-- based key.
-		hist_per_stream as (
+		stream_last_value as (
 			select
 				d.stream_id,
-				coalesce(d.attrs_canonical, '') as attrs_canon,
-				case
-					when fs.aggregation_temporality = 'Cumulative'
-						then arg_max(d.bucket_counts, d.timestamp)
-					else sum_bucket_vectors(list(d.bucket_counts))
-				end as bucket_vector
+				arg_max(coalesce(d.double_value, d.int_value), d.timestamp) as last_value
 			from filtered_dps d
-			inner join filtered_streams fs on d.stream_id = fs.id
-			where d.metric_type = 'Histogram'
-			  and d.bucket_counts is not null
-			  and fs.aggregation_temporality in ('Delta', 'Cumulative')
-			group by d.stream_id, fs.aggregation_temporality, coalesce(d.attrs_canonical, '')
-		),
-		hist_sparkbar as (
-			select
-				stream_id,
-				sum_bucket_vectors(list(bucket_vector)) as sparkbar_value
-			from hist_per_stream
-			group by stream_id
-		),
-		-- ExpHistogram per-stream rows: Delta keeps each source datapoint
-		-- (downscale-and-sum collapses them later), Cumulative collapses
-		-- to one row per attrs-stream via arg_max on the latest timestamp.
-		exp_hist_streams as (
-			select * from (
-				select
-					d.stream_id,
-					d.scale,
-					d.positive_bucket_offset,
-					d.positive_bucket_counts,
-					d.negative_bucket_offset,
-					d.negative_bucket_counts,
-					d.zero_count
-				from filtered_dps d
-				inner join filtered_streams fs on d.stream_id = fs.id
-				where d.metric_type = 'ExponentialHistogram'
-				  and d.positive_bucket_counts is not null
-				  and fs.aggregation_temporality = 'Delta'
-				union all
-				select
-					stream_id,
-					arg_max(scale, timestamp) as scale,
-					arg_max(positive_bucket_offset, timestamp) as positive_bucket_offset,
-					arg_max(positive_bucket_counts, timestamp) as positive_bucket_counts,
-					arg_max(negative_bucket_offset, timestamp) as negative_bucket_offset,
-					arg_max(negative_bucket_counts, timestamp) as negative_bucket_counts,
-					arg_max(zero_count, timestamp) as zero_count
-				from (
-					select
-						d.stream_id,
-						coalesce(d.attrs_canonical, '') as attrs_canon,
-						d.timestamp,
-						d.scale,
-						d.positive_bucket_offset, d.positive_bucket_counts,
-						d.negative_bucket_offset, d.negative_bucket_counts,
-						d.zero_count
-					from filtered_dps d
-					inner join filtered_streams fs on d.stream_id = fs.id
-					where d.metric_type = 'ExponentialHistogram'
-					  and d.positive_bucket_counts is not null
-					  and fs.aggregation_temporality = 'Cumulative'
-				) cum
-				group by stream_id, attrs_canon
-			)
-		),
-		exp_hist_min_scale as (
-			select stream_id, min(scale) as min_scale
-			from exp_hist_streams
-			group by stream_id
-		),
-		exp_hist_sparkbar as (
-			select
-				s.stream_id,
-				sum_bucket_vectors(list(
-					list_concat(
-						list_concat(
-							coalesce(
-								downscale_exp_buckets(list_reverse(s.negative_bucket_counts), s.negative_bucket_offset, s.scale - ms.min_scale).counts,
-								[]::bigint[]
-							),
-							[coalesce(s.zero_count, 0)::bigint]
-						),
-						coalesce(
-							downscale_exp_buckets(s.positive_bucket_counts, s.positive_bucket_offset, s.scale - ms.min_scale).counts,
-							[]::bigint[]
-						)
-					)
-				)) as sparkbar_value
-			from exp_hist_streams s
-			inner join exp_hist_min_scale ms on s.stream_id = ms.stream_id
-			group by s.stream_id
+			where d.metric_type in ('Gauge', 'Sum')
+			group by d.stream_id
 		)
-		-- Final select. The SparkOutcome union variants stay the same;
-		-- the temporality null-encoding is now driven directly by the
-		-- nullable column on metric_streams (no '' marker needed).
 		select cast(coalesce(to_json(list(json_object(
+			'id', cast(fs.id as varchar),
 			'name', fs.name,
 			'description', sd.description,
 			'unit', fs.unit,
@@ -785,34 +647,15 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 				else null
 			end,
 			'serviceName', fs.service_name,
-			'scopeName', fs.scope_name,
-			'scopeVersion', fs.scope_version,
-			'received', sr.received,
-			'sparkline', case
-				when fs.metric_type not in ('Gauge', 'Sum') then null
-				when fs.metric_type = 'Sum' and coalesce(fs.aggregation_temporality, '') = 'Unspecified'
-					then json_object('kind', 'error', 'reason', 'unspecifiedTemporality')
-				when sl.sparkline_value is not null
-					then json_object('kind', 'data', 'value', sl.sparkline_value)
-				else null
-			end,
-			'sparkbar', case
-				when fs.metric_type not in ('Histogram', 'ExponentialHistogram') then null
-				when coalesce(fs.aggregation_temporality, '') = 'Unspecified'
-					then json_object('kind', 'error', 'reason', 'unspecifiedTemporality')
-				when hs.sparkbar_value is not null
-					then json_object('kind', 'data', 'value', hs.sparkbar_value)
-				when ehs.sparkbar_value is not null
-					then json_object('kind', 'data', 'value', ehs.sparkbar_value)
-				else null
-			end
-		) order by sr.received desc)), '[]') as varchar) as summaries
+			'seriesCount', ssc.series_count,
+			'lastValue', slv.last_value,
+			'lastSeen', sldp.last_dp_ts::varchar
+		) order by sldp.last_dp_ts desc nulls last)), '[]') as varchar) as summaries
 		from filtered_streams fs
-		left join stream_received sr on sr.stream_id = fs.id
+		left join stream_latest_dp sldp on sldp.stream_id = fs.id
 		left join stream_description sd on sd.stream_id = fs.id
-		left join sparkline_data sl on sl.stream_id = fs.id
-		left join hist_sparkbar hs on hs.stream_id = fs.id
-		left join exp_hist_sparkbar ehs on ehs.stream_id = fs.id
+		left join stream_series_count ssc on ssc.stream_id = fs.id
+		left join stream_last_value slv on slv.stream_id = fs.id
 	`
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
@@ -824,24 +667,9 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 	return json.RawMessage(raw), nil
 }
 
-// GetMetric returns full MetricData for a single logical metric identified
-// by the 8-field OTel identity. The signature is preserved at the public
-// boundary so JSON-RPC callers don't need to know about stream IDs;
-// internally it resolves the identity to a metric_streams.id once and
-// drives the rest of the query off that surrogate key.
-//
-// aggregationTemporality and isMonotonic use empty string to match NULL
-// (Gauge has neither property; Histogram has no monotonicity).
-func GetMetric(ctx context.Context, db *sql.DB, name, unit, metricType, aggregationTemporality, isMonotonic, scopeName, scopeVersion, serviceName string, startTime, endTime int64) (json.RawMessage, error) {
-	streamID, err := resolveStreamID(ctx, db, name, unit, metricType, aggregationTemporality, isMonotonic, scopeName, scopeVersion, serviceName)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return json.RawMessage("null"), nil
-		}
-		return nil, fmt.Errorf("GetMetric: %w: %w", ErrMetricsStoreInternal, err)
-	}
-
-	// All identity comparison gone -- everything filters by stream_id.
+// GetMetric returns full MetricData for a metric stream in the time window.
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64) (json.RawMessage, error) {
+	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON
 	// projection needs come from the metric_streams row directly via
@@ -906,12 +734,23 @@ func GetMetric(ctx context.Context, db *sql.DB, name, unit, metricType, aggregat
 			where e.datapoint_id in (select id from filtered_dps)
 			group by e.datapoint_id
 		),
+		-- Per-ingest latest datapoint timestamp over the queried window
+		-- -- the recency proxy we use to pick a "representative" ingest
+		-- for description / dropped counts. These per-batch fields can
+		-- drift across ingests; we prefer the most recently-observed
+		-- sender's view (newest data, not newest wall-clock arrival).
+		ingest_latest_dp as (
+			select metric_ingest_id, max(timestamp) as last_dp_ts
+			from filtered_dps
+			group by metric_ingest_id
+		),
 		-- Most recent matched ingest is the source of variable-but-
-		-- non-identifying fields (description, dropped counts, received).
-		-- Per the OTel data model these can drift across batches; we
-		-- prefer the latest sender's view.
+		-- non-identifying fields (description, dropped counts).
 		representative as (
-			select * from matched_ingests order by received desc limit 1
+			select mi.* from matched_ingests mi
+			inner join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
+			order by ild.last_dp_ts desc nulls last
+			limit 1
 		),
 		ingest_res_attrs as (
 			select json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
@@ -1024,7 +863,6 @@ func GetMetric(ctx context.Context, db *sql.DB, name, unit, metricType, aggregat
 				'attributes', coalesce((select attrs from ingest_scope_attrs), json('[]')),
 				'droppedAttributesCount', r.scope_dropped_attributes_count
 			),
-			'received', r.received,
 			'timeseries', coalesce((select timeseries from timeseries_agg), json('[]'))
 		) as varchar) as metric
 		from representative r, stream s
@@ -2607,7 +2445,7 @@ func DeleteMetricStream(ctx context.Context, db *sql.DB, streamID string) error 
 // It runs against the join of metric_ingests m + metric_streams s, so:
 //
 //   - identity columns (name, unit, scope_name, scope_version) come from s
-//   - per-batch columns (description, received, dropped counts) come from m
+//   - per-batch columns (description, dropped counts) come from m
 //   - the time predicate joins through metric_ingests.id
 //
 // Search-level field expressions still use the "m.<col>" / "s.<col>"
@@ -2619,12 +2457,10 @@ func buildMetricSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteS
 
 // metricColumns lists field names the search expression syntax can
 // reference. All identity columns now resolve through metric_streams (s);
-// description / received / *_dropped_attributes_count remain on
-// metric_ingests (m).
+// description / *_dropped_attributes_count remain on metric_ingests (m).
 var metricColumns = map[string]struct{}{
 	"id":                                {},
 	"description":                       {},
-	"received":                          {},
 	"resource_dropped_attributes_count": {},
 	"scope_dropped_attributes_count":    {},
 }
