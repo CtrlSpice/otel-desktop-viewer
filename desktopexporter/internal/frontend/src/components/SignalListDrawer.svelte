@@ -1,14 +1,19 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { setContext } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
-  import { ArrowRightIcon, ReloadIcon } from '@/icons'
+  import {
+    ArrowRightIcon,
+    ReloadIcon,
+    BarChartHorizontalIcon,
+    ChartHistogramIcon,
+    FirePitIcon,
+    HomeIcon,
+  } from '@/icons'
   import ThemeToggle from '@/components/ThemeToggle.svelte'
   import DrawerNavTabs from '@/components/DrawerNavTabs.svelte'
-  import {
-    SIGNAL_DRAWER_CHROME_KEY,
-    type SignalDrawerChrome,
-  } from '@/contexts/signal-drawer-chrome.svelte'
+  import { NAV_ITEMS, isNavItemActive } from '@/components/DrawerNavTabs.svelte'
+  import PaneHeader, { type PaneTab } from '@/components/PaneHeader.svelte'
+  import { router } from 'tinro5'
 
   type Props<T> = {
     items: T[]
@@ -24,7 +29,6 @@
     refreshPulse?: boolean
     /** Plain text for DaisyUI tooltip + screen reader when new data is pending */
     refreshAsideTip?: string
-    drawerChrome?: Snippet
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     footer?: Snippet
@@ -44,7 +48,6 @@
     onRefresh,
     refreshPulse = false,
     refreshAsideTip = '',
-    drawerChrome,
     drawerChromeToolbar,
     drawerSearch,
     footer,
@@ -74,13 +77,16 @@
     }
   }
 
-  let drawerChromeContext = $state<SignalDrawerChrome>({
-    closeForId: undefined,
-  })
-  setContext(SIGNAL_DRAWER_CHROME_KEY, drawerChromeContext)
+  let currentPath = $state(router.path ?? '/')
   $effect(() => {
-    drawerChromeContext.closeForId = effectivelyOpen ? drawerId : undefined
+    const unsubscribe = router.subscribe(route => {
+      currentPath = route.path
+    })
+    return unsubscribe
   })
+  let activeNavId = $derived(
+    NAV_ITEMS.find(n => isNavItemActive(n.id, currentPath))?.id ?? NAV_ITEMS[0].id
+  )
 
   // --- auto-scroll the virtual list when the selection changes ---
   // Only fires when `selectedId` actually changes (not on items reshuffles),
@@ -157,7 +163,7 @@
 
   <div class="drawer-side is-drawer-close:overflow-visible">
     <div
-      class="signal-drawer__panel flex h-full flex-col bg-base-100/95 is-drawer-close:w-14 is-drawer-open:w-96"
+      class="signal-drawer__panel flex h-full flex-col bg-base-200 is-drawer-close:w-14 is-drawer-open:w-[28rem]"
     >
       {#if !effectivelyOpen && !isEmpty}
         <!-- Collapsed: open-sidebar toggle pinned to the very top -->
@@ -168,7 +174,7 @@
             data-tip={label}
             aria-label="Open sidebar"
           >
-            <ArrowRightIcon class="h-[17px] w-[17px]" aria-hidden="true" />
+            <ArrowRightIcon class="h-[17px] w-[17px] animate-[spin-half_200ms_ease-out]" aria-hidden="true" />
           </label>
         </div>
       {/if}
@@ -231,18 +237,89 @@
 
       <!-- Expanded: unified header panel (tabs + chrome + search + toolbar) -->
       {#if effectivelyOpen}
+        {#snippet tracesIcon()}<BarChartHorizontalIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
+        {#snippet metricsIcon()}<ChartHistogramIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
+        {#snippet logsIcon()}<FirePitIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
+        {@const navTabs: PaneTab[] = [
+          { id: 'traces', label: 'Traces', icon: tracesIcon },
+          { id: 'metrics', label: 'Metrics', icon: metricsIcon },
+          { id: 'logs', label: 'Logs', icon: logsIcon },
+        ]}
         <div class="signal-drawer__header is-drawer-close:hidden">
-          <div class="signal-drawer__chrome-stack">
-            <DrawerNavTabs />
-            {#if drawerChrome}
-              <div class="signal-drawer__toolbar-slot">
-                {@render drawerChrome()}
-              </div>
-            {/if}
-          </div>
+          <PaneHeader
+            mode="tabs"
+            tabs={navTabs}
+            activeId={activeNavId}
+            onSelect={(id) => {
+              const item = NAV_ITEMS.find(n => n.id === id)
+              if (item) router.goto(item.path)
+            }}
+            rounded={false}
+            ariaLabel="Primary"
+          >
+            {#snippet right()}
+              <button
+                type="button"
+                class="drawer-header-btn drawer-header-btn--inactive"
+                onclick={() => router.goto('/')}
+                aria-label="Home"
+              >
+                <HomeIcon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
+              </button>
+              <ThemeToggle
+                class="drawer-header-btn drawer-header-btn--inactive"
+              />
+              <label
+                for={drawerId}
+                class="drawer-header-btn drawer-header-btn--inactive cursor-pointer"
+                aria-label="Collapse sidebar"
+              >
+                <ArrowRightIcon
+                  class="h-[17px] w-[17px] shrink-0 transition-transform duration-200 rotate-180"
+                  aria-hidden="true"
+                />
+              </label>
+            {/snippet}
+          </PaneHeader>
 
-          {#if drawerSearch || drawerChromeToolbar}
-            <div class="signal-drawer__search-stack">
+          {#if onRefresh || drawerSearch || drawerChromeToolbar}
+            <div class="signal-drawer__search-row">
+              {#if onRefresh}
+                <div
+                  class="shrink-0 {refreshPulse && refreshAsideTip
+                    ? 'tooltip tooltip-bottom tooltip-secondary'
+                    : ''}"
+                  data-tip={refreshPulse && refreshAsideTip
+                    ? refreshAsideTip
+                    : undefined}
+                >
+                  {#if refreshPulse && refreshAsideTip}
+                    <div class="sr-only" aria-live="polite" aria-atomic="true">
+                      {refreshAsideTip}
+                    </div>
+                  {/if}
+                  <button
+                    type="button"
+                    class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive"
+                    class:signal-drawer__refresh--has-new-data={refreshPulse}
+                    onclick={onRefresh}
+                    aria-label={refreshPulse
+                      ? `Refresh — ${refreshAsideTip}`
+                      : 'Refresh'}
+                  >
+                    {#if refreshPulse}
+                      <span
+                        class="signal-drawer__new-data-dot"
+                        aria-hidden="true"
+                      ></span>
+                    {/if}
+                    <ReloadIcon
+                      class="relative z-[1] h-[17px] w-[17px] shrink-0"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </div>
+              {/if}
               {#if drawerSearch}
                 <div class="signal-drawer__search">
                   {@render drawerSearch()}
@@ -318,6 +395,11 @@
   }
 
   /* ── Collapsed: open-sidebar toggle pinned to the top ── */
+  @keyframes spin-half {
+    from { transform: rotate(180deg); }
+    to { transform: rotate(0deg); }
+  }
+
   .signal-drawer__open-toggle {
     @apply flex shrink-0 items-center justify-center px-1.5 pt-2 pb-1.5;
   }
@@ -329,30 +411,7 @@
 
   /* ── Expanded: unified header panel ── */
   .signal-drawer__header {
-    @apply flex w-full min-w-0 shrink-0 flex-col gap-1 px-2 py-1.5
-      border-b border-base-300;
-    background-image: linear-gradient(
-      to bottom,
-      color-mix(in oklab, var(--color-base-200) 80%, transparent),
-      color-mix(in oklab, var(--color-base-200) 60%, transparent)
-    );
-    box-shadow:
-      inset 0 1px 0
-        color-mix(in oklab, var(--color-base-100) 60%, transparent),
-      inset 0 -1px 0
-        color-mix(in oklab, var(--color-base-300) 30%, transparent);
-  }
-
-  .signal-drawer__chrome-stack {
-    @apply flex shrink-0 items-center gap-1;
-  }
-
-  .signal-drawer__chrome-stack :global(.drawer-nav-tabs) {
-    @apply flex-1 min-w-0;
-  }
-
-  .signal-drawer__toolbar-slot {
-    @apply shrink-0;
+    @apply flex w-full min-w-0 shrink-0 flex-col;
   }
 
   /* ── Collapsed: header controls ── */
@@ -397,18 +456,17 @@
     }
   }
 
-  /* ── Search + list-controls stack ── */
-  .signal-drawer__search-stack {
-    @apply flex min-w-0 w-full shrink-0 flex-col gap-1;
+  /* ── Search + toolbar row (search · sort · time · refresh) ── */
+  .signal-drawer__search-row {
+    @apply flex min-w-0 w-full shrink-0 items-center gap-1 bg-base-200 p-2;
   }
 
   .signal-drawer__search {
-    @apply min-w-0 w-full shrink-0;
+    @apply min-w-0 flex-1;
   }
 
-  /* ── Toolbar row (sort · time · refresh) ── */
   .signal-drawer__chrome-toolbar {
-    @apply min-w-0 w-full shrink-0;
+    @apply shrink-0;
   }
 
   .signal-drawer__chrome-toolbar :global(.drawer-search-panel) {

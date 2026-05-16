@@ -42,6 +42,8 @@
     /** Accessible label for the surrounding region. Defaults to title
      * when present; required for tabs-only mode. */
     ariaLabel?: string
+    /** Apply rounded top corners. Defaults to true. */
+    rounded?: boolean
   }
 
   type TitleProps = CommonProps & {
@@ -69,6 +71,10 @@
 
 <script lang="ts">
   let props: PaneHeaderProps = $props()
+  let roundedClass = $derived(
+    props.rounded !== false ? 'pane-header--rounded' : 'pane-header--flush'
+  )
+  let tabSizeClass = $derived(props.rounded !== false ? 'tabs-sm' : '')
 </script>
 
 {#snippet tabStrip(
@@ -80,14 +86,16 @@
   <div
     role="tablist"
     aria-label={ariaLabel}
-    class="tabs tabs-lift tabs-sm w-full [--tab-border-color:var(--color-primary)]"
+    class="tabs tabs-lift {tabSizeClass} flex-1 [--tab-border-color:var(--color-primary)]"
   >
     {#each tabs as tab (tab.id)}
       {@const active = tab.id === activeId}
       <button
         type="button"
         role="tab"
-        class="tab flex-1 gap-1.5 {active ? 'tab-active [--tab-bg:var(--color-base-200)] text-primary' : ''}"
+        class="tab gap-1.5 px-3 {active
+          ? 'tab-active [--tab-bg:var(--color-base-200)] text-primary'
+          : ''}"
         aria-selected={active}
         disabled={tab.disabled}
         onclick={() => !tab.disabled && onSelect(tab.id)}
@@ -101,12 +109,13 @@
         {/if}
       </button>
     {/each}
+    <span class="pane-header__tab-trail" aria-hidden="true"></span>
   </div>
 {/snippet}
 
 {#if props.mode === 'title'}
   <div
-    class="pane-header pane-header--title"
+    class="pane-header pane-header--title {roundedClass}"
     role="region"
     aria-label={props.ariaLabel ?? props.title}
   >
@@ -116,7 +125,7 @@
     {/if}
   </div>
 {:else if props.mode === 'tabs'}
-  <div class="pane-header pane-header--tabs">
+  <div class="pane-header pane-header--tabs {roundedClass}">
     {@render tabStrip(
       props.tabs,
       props.activeId,
@@ -129,7 +138,7 @@
   </div>
 {:else}
   <div
-    class="pane-header pane-header--title-tabs"
+    class="pane-header pane-header--title-tabs {roundedClass}"
     role="region"
     aria-label={props.ariaLabel ?? props.title}
   >
@@ -161,7 +170,15 @@
    * helper for ad-hoc consumers.
    */
   .pane-header {
-    @apply flex shrink-0 items-end gap-2 px-0.5 pt-0.5 bg-base-300 rounded-t-xl;
+    @apply flex shrink-0 items-end gap-2 px-0.5 pt-0.5 bg-base-300;
+  }
+
+  .pane-header--rounded {
+    @apply rounded-t-xl;
+  }
+
+  .pane-header--flush {
+    @apply pt-1;
   }
 
   /* Title-only: centered vertically since there are no lift tabs. */
@@ -174,10 +191,14 @@
   }
 
   .pane-header__right {
-    @apply ml-auto flex items-center gap-1;
+    @apply ml-auto flex items-center self-center gap-1 px-1;
   }
 
   .pane-header__tab-count {
     @apply text-xs tabular-nums opacity-60;
+  }
+
+  .pane-header__tab-trail {
+    @apply flex-1 self-stretch border-b border-base-300;
   }
 </style>

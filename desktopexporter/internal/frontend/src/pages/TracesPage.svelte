@@ -313,17 +313,6 @@
     itemKey={t => t.traceID}
   >
 
-    {#snippet drawerChrome()}
-      <DrawerSearchPanel
-        segment="chrome"
-        signal="traces"
-        sortOptions={SORT_OPTIONS}
-        sortValue={sortColumn}
-        {sortDirection}
-        onSortChange={handleSortChange}
-      />
-    {/snippet}
-
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel
         segment="toolbar"
@@ -332,9 +321,6 @@
         sortValue={sortColumn}
         {sortDirection}
         onSortChange={handleSortChange}
-        onRefresh={handleRefresh}
-        {refreshPulse}
-        {refreshAsideTip}
       />
     {/snippet}
 
@@ -346,8 +332,6 @@
         sortValue={sortColumn}
         {sortDirection}
         onSortChange={handleSortChange}
-        onRefresh={handleRefresh}
-        {refreshPulse}
         onSearchResults={handleSearchResults}
         onSearchReady={api => (searchEditorApi = api)}
       />

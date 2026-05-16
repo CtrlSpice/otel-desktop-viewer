@@ -314,17 +314,6 @@
     itemKey={metricSummaryKey}
     resizableStorageKey="metric-detail-panels"
   >
-    {#snippet drawerChrome()}
-      <DrawerSearchPanel
-        segment="chrome"
-        signal="metrics"
-        sortOptions={SORT_OPTIONS}
-        sortValue={sortColumn}
-        {sortDirection}
-        onSortChange={handleSortChange}
-      />
-    {/snippet}
-
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel
         segment="toolbar"
@@ -333,9 +322,6 @@
         sortValue={sortColumn}
         {sortDirection}
         onSortChange={handleSortChange}
-        onRefresh={handleRefresh}
-        refreshPulse={!!refreshIndicatorText}
-        refreshAsideTip={refreshIndicatorText}
       />
     {/snippet}
 
@@ -347,8 +333,6 @@
         sortValue={sortColumn}
         {sortDirection}
         onSortChange={handleSortChange}
-        onRefresh={handleRefresh}
-        refreshPulse={!!refreshIndicatorText}
         onSearchResults={handleSearchResults}
         onSearchReady={api => (searchEditorApi = api)}
       />

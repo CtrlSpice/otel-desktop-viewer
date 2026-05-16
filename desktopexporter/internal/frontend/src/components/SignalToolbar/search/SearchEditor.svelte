@@ -434,7 +434,7 @@
             <FieldErrorMessage message={searchError} />
           </div>
         {/if}
-        <div class="join join-horizontal shrink-0">
+        <div class="join join-horizontal shrink-0 rounded-full">
           <button
             type="button"
             class="drawer-editor-btn join-item"
@@ -714,18 +714,12 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply rounded-lg items-start py-1 pl-3 pr-1;
+    @apply rounded-full items-start py-1 pl-3 pr-1;
     height: auto;
     min-height: calc(var(--table-row-h) + 0.5rem);
     max-height: calc(var(--table-row-h) * 6 + 0.5rem);
-    border-color: transparent;
-    background-color: color-mix(
-      in oklab,
-      var(--color-base-100) 60%,
-      transparent
-    );
-    box-shadow: inset 0 0 0 1px
-      color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    background-color: var(--color-base-100);
+    box-shadow: none;
     transition:
       background-color 150ms ease,
       box-shadow 150ms ease;
@@ -733,14 +727,11 @@
 
   .search-editor-wrapper--drawer
     .search-editor-container:hover:not(:focus-within) {
-    box-shadow: inset 0 0 0 1px
-      color-mix(in oklab, var(--color-base-content) 14%, transparent);
+    background-color: var(--color-base-100);
   }
 
   .search-editor-wrapper--drawer .search-editor-container:focus-within {
     background-color: var(--color-base-100);
-    box-shadow: inset 0 0 0 1px
-      color-mix(in oklab, var(--color-base-content) 10%, transparent);
   }
 
   .search-editor__header-actions {

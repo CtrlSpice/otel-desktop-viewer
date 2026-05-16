@@ -44,7 +44,6 @@
     onRefresh?: () => void
     refreshPulse?: boolean
     refreshAsideTip?: string
-    drawerChrome?: Snippet
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     drawerFooter?: Snippet
@@ -83,7 +82,6 @@
     onRefresh,
     refreshPulse,
     refreshAsideTip,
-    drawerChrome,
     drawerChromeToolbar,
     drawerSearch,
     drawerFooter,
@@ -120,7 +118,6 @@
     {onRefresh}
     {refreshPulse}
     {refreshAsideTip}
-    {drawerChrome}
     {drawerChromeToolbar}
     {drawerSearch}
     footer={drawerFooter}
