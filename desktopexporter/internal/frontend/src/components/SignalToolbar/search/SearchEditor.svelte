@@ -382,18 +382,13 @@
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         placeholderCompartment.of(cmPlaceholder(placeholderText)),
-        EditorView.lineWrapping,
-        ...(variant === 'drawer'
-          ? [
-              EditorView.theme({
-                '&': { height: 'auto', minHeight: '4.75rem' },
-                '.cm-scroller': {
-                  overflowY: 'auto',
-                  maxHeight: 'min(42vh, 13rem)',
-                },
-              }),
-            ]
-          : []),
+        // Single-line input: no soft-wrap, swallow Enter (we map it to submit
+        // in createQueryKeymap; the keymap entry wins over Enter inserting a
+        // newline because keymaps run before defaults). Keep horizontal
+        // scroll for long queries instead of growing the editor vertically.
+        EditorState.transactionFilter.of(tr =>
+          tr.newDoc.lines > 1 ? [] : [tr]
+        ),
       ],
     })
 
@@ -512,8 +507,8 @@
           type="button"
           class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
           onclick={onSubmit}
-          aria-label="Search (Cmd+Enter)"
-          title="Search (Cmd+Enter)"
+          aria-label="Search (Enter)"
+          title="Search (Enter)"
         >
           <svg
             class="h-4 w-4 shrink-0"
@@ -678,7 +673,6 @@
     <h3 class="help-section-heading">Keyboard shortcuts</h3>
     <ul class="help-shortcut-list">
       <li>
-        <kbd class="kbd kbd-sm">⌘</kbd>
         <kbd class="kbd kbd-sm">Enter</kbd>
         <span class="help-shortcut-sep">—</span>
         run query
@@ -714,10 +708,9 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply rounded-full items-start py-1 pl-3 pr-1;
+    @apply rounded-full items-center py-1 pl-3 pr-1;
     height: auto;
     min-height: calc(var(--table-row-h) + 0.5rem);
-    max-height: calc(var(--table-row-h) * 6 + 0.5rem);
     background-color: var(--color-base-100);
     box-shadow: none;
     transition:
@@ -740,18 +733,18 @@
 
   .search-editor-wrapper--drawer .editor-mount {
     @apply self-stretch;
-    max-height: calc(var(--table-row-h) * 6);
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-editor) {
-    height: 100%;
+    height: var(--table-row-h);
     min-height: var(--table-row-h);
-    max-height: 100%;
+    max-height: var(--table-row-h);
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-scroller) {
     line-height: var(--table-row-h);
-    overflow-y: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
@@ -759,6 +752,7 @@
     padding-bottom: 0;
     padding-right: 0.5rem;
     min-height: var(--table-row-h);
+    white-space: nowrap;
   }
 
   .search-editor-wrapper--drawer .search-editor__footer-actions {

@@ -13,7 +13,7 @@ export function createQueryKeymap(onSubmit: () => void) {
   }
 
   return keymap.of([
-    { key: 'Mod-Enter', run: submitCommand },
+    { key: 'Enter', run: submitCommand },
     { key: 'Escape', run: blurCommand },
   ])
 }

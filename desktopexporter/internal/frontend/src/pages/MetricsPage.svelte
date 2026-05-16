@@ -342,23 +342,6 @@
       <MetricCard {metric} {selected} onclick={selectMetric} />
     {/snippet}
 
-    {#snippet drawerFooter()}
-      <div class="flex items-center justify-between">
-        <span class="text-xs tabular-nums text-rp-muted">
-          {sortedMetrics.length} metric{sortedMetrics.length !== 1 ? 's' : ''}
-        </span>
-        <button
-          type="button"
-          class="btn btn-ghost btn-xs text-error"
-          onclick={handleDeleteAllMetrics}
-          aria-label="Delete all metrics"
-        >
-          <TrashIcon class="h-3 w-3" aria-hidden="true" />
-          Delete all
-        </button>
-      </div>
-    {/snippet}
-
     {#snippet main()}
       <!-- Page-level error / empty branches replace the chart pane
            entirely; the chart lives here on the happy path and the

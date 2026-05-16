@@ -6,7 +6,7 @@ import type { MetricType } from '@/types/api-types'
 // each metric type a unique colour in both moon and dawn.
 const METRIC_TYPE_BADGE_CLASS: Record<string, string> = {
   Gauge: 'badge badge-xs badge-soft badge-info',
-  Sum: 'badge badge-xs badge-soft badge-neutral',
+  Sum: 'badge badge-xs badge-soft badge-info',
   Histogram: 'badge badge-xs badge-soft badge-warning',
   ExponentialHistogram: 'badge badge-xs badge-soft badge-secondary',
   Empty: 'badge badge-xs badge-soft badge-neutral',
@@ -15,7 +15,7 @@ const METRIC_TYPE_BADGE_CLASS: Record<string, string> = {
 /** Stroke/fill color for charts — matches `METRIC_TYPE_BADGE_CLASS` semantics */
 const METRIC_TYPE_SERIES_COLOR: Record<string, string> = {
   Gauge: 'var(--color-info)',
-  Sum: 'var(--color-neutral)',
+  Sum: 'var(--color-primary)',
   Histogram: 'var(--color-warning)',
   ExponentialHistogram: 'var(--color-secondary)',
   Empty: 'var(--color-neutral)',

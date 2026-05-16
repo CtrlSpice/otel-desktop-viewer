@@ -163,70 +163,77 @@
 
   <div class="drawer-side is-drawer-close:overflow-visible">
     <div
-      class="signal-drawer__panel flex h-full flex-col bg-base-200 is-drawer-close:w-14 is-drawer-open:w-[28rem]"
+      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-open:w-[28rem] is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
     >
-      {#if !effectivelyOpen && !isEmpty}
-        <!-- Collapsed: open-sidebar toggle pinned to the very top -->
-        <div class="signal-drawer__open-toggle">
-          <label
-            for={drawerId}
-            class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right cursor-pointer"
-            data-tip={label}
-            aria-label="Open sidebar"
-          >
-            <ArrowRightIcon class="h-[17px] w-[17px] animate-[spin-half_200ms_ease-out]" aria-hidden="true" />
-          </label>
-        </div>
-      {/if}
-
       {#if !effectivelyOpen}
-        <!-- Collapsed: primary nav (icons) -->
-        <div class="signal-drawer__nav signal-drawer__nav--collapsed">
-          <DrawerNavTabs collapsed />
-        </div>
-      {/if}
+        <div class="signal-drawer__collapsed-rail">
+          <div class="signal-drawer__collapsed-group">
+          {#if isEmpty}
+            <span
+              class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right"
+              data-tip="Send data to populate this drawer"
+              aria-disabled="true"
+            >
+              <ArrowRightIcon
+                class="h-[17px] w-[17px] opacity-40"
+                aria-hidden="true"
+              />
+            </span>
+          {:else}
+            <label
+              for={drawerId}
+              class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right cursor-pointer"
+              data-tip={label}
+              aria-label="Open sidebar"
+            >
+              <ArrowRightIcon
+                class="h-[17px] w-[17px] animate-[spin-half_200ms_ease-out]"
+                aria-hidden="true"
+              />
+            </label>
+          {/if}
+          </div>
 
-      <!-- Collapsed: header controls (refresh, aside, theme toggle) -->
-      {#if !effectivelyOpen}
-        <div class="signal-drawer__collapsed-header">
-          <div
-            class="signal-drawer__header-controls--collapsed flex shrink-0 flex-col items-center gap-1.5"
-          >
+          <div class="signal-drawer__collapsed-sep" aria-hidden="true"></div>
+
+          <div class="signal-drawer__collapsed-group">
+            <DrawerNavTabs collapsed />
+          </div>
+
+          <div class="signal-drawer__collapsed-sep" aria-hidden="true"></div>
+          <div class="signal-drawer__collapsed-group">
             {#if onRefresh}
-              <div
-                class="shrink-0 {refreshPulse && refreshAsideTip
-                  ? 'tooltip tooltip-right tooltip-secondary'
-                  : ''}"
-                data-tip={refreshPulse && refreshAsideTip
-                  ? refreshAsideTip
-                  : undefined}
-              >
-                {#if refreshPulse && refreshAsideTip}
-                  <div class="sr-only" aria-live="polite" aria-atomic="true">
-                    {refreshAsideTip}
-                  </div>
-                {/if}
-                <button
-                  type="button"
-                  class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive"
-                  class:signal-drawer__refresh--has-new-data={refreshPulse}
-                  onclick={onRefresh}
-                  aria-label={refreshPulse
-                    ? `Refresh — ${refreshAsideTip}`
-                    : 'Refresh'}
-                >
-                  {#if refreshPulse}
-                    <span
-                      class="signal-drawer__new-data-dot"
-                      aria-hidden="true"
-                    ></span>
-                  {/if}
-                  <ReloadIcon
-                    class="relative z-[1] h-[17px] w-[17px] shrink-0"
-                    aria-hidden="true"
-                  />
-                </button>
-              </div>
+              <button
+                type="button"
+              class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive {refreshPulse &&
+              refreshAsideTip
+                ? 'tooltip tooltip-right tooltip-secondary'
+                : ''}"
+              data-tip={refreshPulse && refreshAsideTip
+                ? refreshAsideTip
+                : undefined}
+              class:signal-drawer__refresh--has-new-data={refreshPulse}
+              onclick={onRefresh}
+              aria-label={refreshPulse
+                ? `Refresh — ${refreshAsideTip}`
+                : 'Refresh'}
+            >
+              {#if refreshPulse && refreshAsideTip}
+                <div class="sr-only" aria-live="polite" aria-atomic="true">
+                  {refreshAsideTip}
+                </div>
+              {/if}
+              {#if refreshPulse}
+                <span
+                  class="signal-drawer__new-data-dot"
+                  aria-hidden="true"
+                ></span>
+              {/if}
+              <ReloadIcon
+                class="relative z-[1] h-[17px] w-[17px] shrink-0"
+                aria-hidden="true"
+              />
+              </button>
             {/if}
             <ThemeToggle
               class="drawer-header-btn drawer-header-btn--inactive"
@@ -335,13 +342,6 @@
         </div>
       {/if}
 
-      <!-- Collapsed: count badge -->
-      {#if !isEmpty}
-        <div class="signal-drawer__rail-count is-drawer-open:hidden">
-          {count}
-        </div>
-      {/if}
-
       <!-- Expanded: list -->
       <div
         class="signal-drawer__body is-drawer-close:hidden"
@@ -400,13 +400,16 @@
     to { transform: rotate(0deg); }
   }
 
-  .signal-drawer__open-toggle {
-    @apply flex shrink-0 items-center justify-center px-1.5 pt-2 pb-1.5;
+  .signal-drawer__collapsed-rail {
+    @apply flex shrink-0 flex-col items-center gap-2 px-1.5 pt-2;
   }
 
-  /* ── Collapsed: icon rail ── */
-  .signal-drawer__nav--collapsed {
-    @apply shrink-0 px-1.5 pt-2 pb-2;
+  .signal-drawer__collapsed-group {
+    @apply flex flex-col items-center gap-2;
+  }
+
+  .signal-drawer__collapsed-sep {
+    @apply h-px w-8 shrink-0 bg-base-content/15;
   }
 
   /* ── Expanded: unified header panel ── */
@@ -414,14 +417,14 @@
     @apply flex w-full min-w-0 shrink-0 flex-col;
   }
 
-  /* ── Collapsed: header controls ── */
-  .signal-drawer__collapsed-header {
-    @apply flex w-full min-w-0 shrink-0 flex-col items-center justify-center gap-1.5 px-2 py-2;
+  /* Lift tabs use flush pt-1; chrome sits on bottom pad, not flush to the strip. */
+  .signal-drawer__header :global(.pane-header__right) {
+    @apply items-end pb-1.5;
   }
 
   /* Refresh + new-data indicator */
   .signal-drawer__refresh {
-    @apply relative rounded-lg;
+    @apply relative;
   }
 
   .signal-drawer__new-data-dot {
@@ -456,9 +459,10 @@
     }
   }
 
-  /* ── Search + toolbar row (search · sort · time · refresh) ── */
+  /* ── Search + toolbar row (search · sort · time · refresh) ──
+     Top pad = row bottom (pb-2) + signal-row top (py-2) → pt-4 (16px). */
   .signal-drawer__search-row {
-    @apply flex min-w-0 w-full shrink-0 items-center gap-1 bg-base-200 p-2;
+    @apply flex min-w-0 w-full shrink-0 items-center gap-2 bg-base-200 px-2 pb-2 pt-4;
   }
 
   .signal-drawer__search {
@@ -471,11 +475,6 @@
 
   .signal-drawer__chrome-toolbar :global(.drawer-search-panel) {
     @apply gap-0;
-  }
-
-  /* ── Rail count badge (collapsed) ── */
-  .signal-drawer__rail-count {
-    @apply mt-2 self-center rounded-md bg-base-200/70 px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-base-content/60;
   }
 
   /* ── Body (list) ── */

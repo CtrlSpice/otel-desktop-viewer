@@ -130,16 +130,17 @@
   @reference "../app.css";
 
   .drawer-search-panel {
-    @apply flex w-full min-w-0 flex-col gap-1;
+    @apply flex w-full min-w-0 flex-col gap-2;
   }
 
   .drawer-search-panel__toolbar-row {
-    @apply flex min-w-0 items-center gap-1;
+    @apply flex min-w-0 items-center gap-2;
   }
 
   /* Sort dropdown */
   .drawer-search-panel__sort-summary {
     list-style: none;
+    @apply inline-flex items-center justify-center;
   }
 
   .drawer-search-panel__sort-summary::-webkit-details-marker {

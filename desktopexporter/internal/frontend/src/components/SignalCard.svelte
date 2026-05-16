@@ -71,7 +71,7 @@
   @reference "../app.css";
 
   .signal-row {
-    @apply flex w-full flex-col gap-y-1 px-3 py-2.5 text-left text-sm transition-colors duration-100;
+    @apply flex w-full flex-col gap-y-1 px-3 py-2 text-left text-sm transition-colors duration-100;
     @apply hover:bg-base-200/50;
     cursor: pointer;
   }

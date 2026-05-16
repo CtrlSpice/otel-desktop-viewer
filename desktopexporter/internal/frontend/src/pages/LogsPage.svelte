@@ -324,23 +324,6 @@
       <LogCard {log} {selected} onclick={selectLog} />
     {/snippet}
 
-    {#snippet footer()}
-      <div class="flex items-center justify-between">
-        <span class="text-xs tabular-nums text-base-content/50">
-          {sortedLogs.length} log{sortedLogs.length !== 1 ? 's' : ''}
-        </span>
-        <button
-          type="button"
-          class="btn btn-ghost btn-xs text-error"
-          onclick={handleDeleteAllLogs}
-          aria-label="Delete all logs"
-        >
-          <TrashIcon class="h-3 w-3" aria-hidden="true" />
-          Delete all
-        </button>
-      </div>
-    {/snippet}
-
     {#snippet children()}
       <div class="logs-content">
         <div class="logs-content__body">

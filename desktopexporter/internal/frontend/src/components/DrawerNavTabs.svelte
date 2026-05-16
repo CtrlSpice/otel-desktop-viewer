@@ -75,9 +75,9 @@
       {@const Icon = item.icon}
       <button
         type="button"
-        class="drawer-tab drawer-tab--icon-only tooltip tooltip-right {active
-          ? 'drawer-tab--active'
-          : 'drawer-tab--inactive'}"
+        class="drawer-header-btn tooltip tooltip-right {active
+          ? 'drawer-header-btn--active'
+          : 'drawer-header-btn--inactive'}"
         data-tip={item.label}
         aria-current={active ? 'page' : undefined}
         aria-label={item.label}
@@ -111,7 +111,7 @@
   @reference "../app.css";
 
   .drawer-nav-tabs--collapsed {
-    @apply flex flex-col items-center gap-1.5;
+    @apply flex flex-col items-center gap-2;
   }
 
   .drawer-nav-tabs--expanded {

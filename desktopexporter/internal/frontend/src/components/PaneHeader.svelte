@@ -93,7 +93,7 @@
       <button
         type="button"
         role="tab"
-        class="tab gap-1.5 px-3 {active
+        class="tab gap-2 px-3 {active
           ? 'tab-active [--tab-bg:var(--color-base-200)] text-primary'
           : ''}"
         aria-selected={active}
@@ -191,7 +191,7 @@
   }
 
   .pane-header__right {
-    @apply ml-auto flex items-center self-center gap-1 px-1;
+    @apply ml-auto flex items-center gap-2 px-1;
   }
 
   .pane-header__tab-count {
