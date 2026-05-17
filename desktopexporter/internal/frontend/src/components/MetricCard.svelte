@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { MetricSummary } from '@/types/api-types'
   import { metricSummaryKey } from '@/types/api-types'
-  import { metricTypeCardBadge } from '@/utils/metric-type'
   import SignalCard from '@/components/SignalCard.svelte'
+  import SignalBadges from '@/components/SignalBadges.svelte'
   import { formatTimestampParts } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
@@ -23,14 +23,6 @@
       metric.lastSeen,
       timeContext.timezone,
       'milliseconds'
-    )
-  )
-
-  let typeBadge = $derived(
-    metricTypeCardBadge(
-      metric.metricType,
-      metric.aggregationTemporality,
-      metric.isMonotonic
     )
   )
 
@@ -63,15 +55,13 @@
   {onclick}
 >
   {#snippet badge()}
-    <span class={typeBadge.className} title={typeBadge.title}>
-      {typeBadge.label}
-    </span>
-    <span
-      class="badge badge-xs badge-soft badge-neutral tabular-nums"
-      title="{metric.seriesCount} time series in range"
-    >
-      {metric.seriesCount} series
-    </span>
+    <SignalBadges
+      signal="metric"
+      metricType={metric.metricType}
+      aggregationTemporality={metric.aggregationTemporality}
+      isMonotonic={metric.isMonotonic}
+      seriesCount={metric.seriesCount}
+    />
   {/snippet}
 
   {#snippet meta()}

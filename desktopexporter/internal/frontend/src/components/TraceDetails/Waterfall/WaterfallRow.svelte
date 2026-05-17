@@ -82,7 +82,7 @@
     </div>
   </td>
   <td
-    class="waterfall-row__td-service p-0 align-middle text-sm text-base-content/60"
+    class="waterfall-row__td-service p-0 align-middle text-sm"
     title={serviceName}
     style:width="{serviceColWidth}px"
   >
@@ -151,6 +151,10 @@
     @apply min-w-0 flex-1;
   }
 
+  .waterfall-row__td-service {
+    color: var(--color-subtle);
+  }
+
   .waterfall-row__bar-area {
     @apply relative flex items-center;
     height: var(--table-row-h);
@@ -159,7 +163,7 @@
   }
 
   .waterfall-row__bar {
-    @apply absolute z-[1] h-3.5 rounded-sm top-1/2 -translate-y-1/2;
+    @apply absolute z-[1] h-3.5 rounded-full top-1/2 -translate-y-1/2;
     min-width: 2px;
   }
 
@@ -181,7 +185,7 @@
   }
 
   .waterfall-row__bar-label--inside {
-    @apply absolute z-[4] flex h-3.5 min-w-[2px] items-center justify-start overflow-hidden rounded-sm px-1 text-base-100 truncate;
+    @apply absolute z-[4] flex h-3.5 min-w-[2px] items-center justify-start overflow-hidden rounded-full px-1 text-base-100 truncate;
     top: 50%;
     transform: translateY(-50%);
     line-height: 14px;
@@ -189,7 +193,8 @@
   }
 
   .waterfall-row__bar-label--outside {
-    @apply absolute z-[4] text-base-content/60;
+    @apply absolute z-[4];
+    color: var(--color-subtle);
     line-height: 14px;
     top: 50%;
     transform: translateY(-50%);

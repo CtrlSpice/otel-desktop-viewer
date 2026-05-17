@@ -7,6 +7,7 @@
   } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import SignalCard from '@/components/SignalCard.svelte'
+  import SignalBadges from '@/components/SignalBadges.svelte'
 
   type Props = {
     trace: TraceSummary
@@ -51,13 +52,10 @@
   {onclick}
 >
   {#snippet badge()}
-    <span class="badge badge-xs badge-soft badge-neutral tabular-nums">
-      {trace.spanCount} span{trace.spanCount !== 1 ? 's' : ''}
-    </span>
-    {#if trace.errorCount > 0}
-      <span class="badge badge-xs badge-soft badge-error tabular-nums">
-        {trace.errorCount} err
-      </span>
-    {/if}
+    <SignalBadges
+      signal="trace"
+      spanCount={trace.spanCount}
+      errorCount={trace.errorCount}
+    />
   {/snippet}
 </SignalCard>

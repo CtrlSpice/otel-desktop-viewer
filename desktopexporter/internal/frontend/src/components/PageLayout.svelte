@@ -62,6 +62,12 @@
     defaultMainWidth?: number
     minMainWidth?: number
     minDetailWidth?: number
+    /** Absolute pixel floor for the main pane. Use when fixed-size
+     * chrome (e.g. a tab strip) needs guaranteed room regardless of
+     * viewport width. The drag clamps to whichever min is larger. */
+    minMainPx?: number
+    /** Absolute pixel floor for the detail pane. */
+    minDetailPx?: number
     /** Separate localStorage key for the resizable split position
      * (distinct from drawer open/closed). */
     resizableStorageKey?: string
@@ -89,6 +95,8 @@
     defaultMainWidth = 0.7,
     minMainWidth = 0.3,
     minDetailWidth = 0.2,
+    minMainPx,
+    minDetailPx,
     resizableStorageKey,
   }: Props<any> = $props()
 
@@ -127,6 +135,8 @@
             defaultLeftWidth={defaultMainWidth}
             minLeftWidth={minMainWidth}
             minRightWidth={minDetailWidth}
+            minLeftPx={minMainPx}
+            minRightPx={minDetailPx}
             storageKey={resizableStorageKey}
           >
             {#snippet leftPanel()}
@@ -194,10 +204,10 @@
      rounded corners so it reads as a distinct panel against the
      base-100 page background. */
   .page-layout__detail-chrome {
-    @apply h-full overflow-hidden rounded-xl bg-base-200 border border-base-300;
+    @apply h-full min-w-0 overflow-hidden rounded-xl bg-base-200 border border-base-300;
   }
 
   .page-layout__main-chrome {
-    @apply h-full overflow-hidden rounded-xl bg-base-200 border border-base-300;
+    @apply h-full min-w-0 overflow-hidden bg-base-200 border border-base-300;
   }
 </style>

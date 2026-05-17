@@ -303,7 +303,8 @@
   }
 
   .waterfall-time-axis-header__th-label {
-    @apply relative align-middle text-left text-xs font-semibold tracking-normal text-base-content/55;
+    @apply relative align-middle text-left text-xs font-semibold tracking-normal;
+    color: var(--color-subtle);
   }
 
   .waterfall-time-axis-header__th-span {
@@ -316,7 +317,8 @@
   }
 
   .waterfall-time-axis-header__th-ruler {
-    @apply relative min-w-[12rem] align-middle text-xs tracking-normal text-base-content/55;
+    @apply relative min-w-[12rem] align-middle text-xs tracking-normal;
+    color: var(--color-subtle);
     padding-left: 1.25rem;
     padding-right: 1.75rem;
   }
@@ -332,7 +334,8 @@
   }
 
   .waterfall-time-axis-header__tick-label {
-    @apply absolute top-1/2 text-xs tracking-normal text-base-content/55 text-center;
+    @apply absolute top-1/2 text-xs tracking-normal text-center;
+    color: var(--color-subtle);
     width: var(--tick-label-w);
     margin-left: calc(var(--tick-label-w) / -2);
     transform: translateY(-50%);

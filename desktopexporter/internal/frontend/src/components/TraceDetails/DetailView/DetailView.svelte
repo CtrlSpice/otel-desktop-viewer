@@ -185,6 +185,7 @@
       activeId={activeTab}
       onSelect={id => (activeTab = id as Tab)}
       ariaLabel="Span detail tabs"
+      tabLayout="equal"
     />
 
     <div class="detail-view__scroll">

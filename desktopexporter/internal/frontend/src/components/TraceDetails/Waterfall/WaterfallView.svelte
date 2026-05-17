@@ -203,6 +203,8 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte'
   import type { Snippet } from 'svelte'
+  import PaneHeader from '@/components/PaneHeader.svelte'
+  import SignalBadges from '@/components/SignalBadges.svelte'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
@@ -260,6 +262,22 @@
 
   let bounds = $derived(getTraceBounds(spans))
   let rows = $derived(buildWaterfallRows(spans, bounds))
+
+  let headerName = $derived.by(() => {
+    if (spans.length === 0) return 'Trace'
+    const root = spans.find(n => n.depth === 0) ?? spans[0]
+    return root?.spanData.name?.trim() || 'Trace'
+  })
+
+  let headerService = $derived.by(() => {
+    if (spans.length === 0) return ''
+    const root = spans.find(n => n.depth === 0) ?? spans[0]
+    return root ? (getServiceName(root.spanData.resource)?.trim() ?? '') : ''
+  })
+
+  let headerErrorCount = $derived(
+    spans.filter(n => n.spanData.statusCode === 'Error').length
+  )
 
   // --- Column widths (resizable) ---
   import {
@@ -501,6 +519,21 @@
 
 <div class="waterfall-panel">
   <div class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}">
+    <PaneHeader
+      mode="title"
+      title={headerName}
+      subtitle={headerService || undefined}
+      ariaLabel="Trace waterfall"
+      rounded={false}
+    >
+      {#snippet badge()}
+        <SignalBadges
+          signal="trace"
+          spanCount={spans.length}
+          errorCount={headerErrorCount}
+        />
+      {/snippet}
+    </PaneHeader>
     <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
       <div class="col-resize-context">
         <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
@@ -522,7 +555,7 @@
             onKey: handleTreeKeys,
           }}
         >
-          <thead class="header-surface">
+          <thead class="header-surface waterfall-view__thead">
             <WaterfallTimeAxisHeader
               traceDurationNs={bounds.duration}
               {targetTickCount}
@@ -539,7 +572,7 @@
               }}
             />
           </thead>
-          <tbody class="table-body-surface" bind:this={scrollEl}>
+          <tbody bind:this={scrollEl}>
             {#each rows as row (row.spanNode.spanData.spanID)}
               {@const sid = row.spanNode.spanData.spanID}
               <WaterfallRow
@@ -588,19 +621,33 @@
   }
 
   .waterfall-view {
-    @apply flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm transition-opacity duration-200;
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-200 transition-opacity duration-200;
   }
 
   .waterfall-grid {
     @apply min-h-0 flex-1;
   }
 
-  .waterfall-grid:focus-within {
-    @apply rounded-xl ring-1 ring-primary/30;
-  }
-
   .waterfall-view__scroll {
     @apply flex min-h-0 flex-1 flex-col;
+  }
+
+  /* Local override on top of `.header-surface`: drop the warm
+     primary-tinted fill so the thead inherits the panel's
+     bg-base-200, and remove the inset top highlight + primary-mix
+     bottom border that were tuned for a brighter body. The thead
+     keeps its `.header-surface` height + sizing rules but visually
+     merges into the panel surface. */
+  .waterfall-view__thead {
+    background-color: transparent;
+    box-shadow: none;
+    border-bottom-color: transparent;
+    border-radius: 0;
+  }
+
+  .waterfall-view__thead :global(tr),
+  .waterfall-view__thead :global(th) {
+    border-radius: 0;
   }
 
   .waterfall-view__scroll > :global(.col-resize-context) {

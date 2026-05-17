@@ -66,6 +66,7 @@
   import ResizablePanels from '@/components/ResizablePanels.svelte'
   import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
   import MetricCard from '@/components/MetricCard.svelte'
+  import SignalBadges from '@/components/SignalBadges.svelte'
   import MetricChartView from '@/components/MetricDetails/MetricChartView.svelte'
   import MetricDetailView from '@/components/MetricDetails/MetricDetailView.svelte'
   import TimeseriesPanel from '@/components/MetricDetails/TimeseriesPanel.svelte'
@@ -303,6 +304,7 @@
     {loading}
     itemKey={metricSummaryKey}
     resizableStorageKey="metric-detail-panels"
+    minDetailPx={240}
   >
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel
@@ -360,23 +362,21 @@
       <div class="metrics-main">
         {#if selectedSummary}
           <div class="metrics-main__header">
-            <div class="metrics-main__header-text">
-              <div class="metrics-main__header-title-row">
-                <span class="metrics-main__title">{selectedSummary.name}</span>
-                {#if selectedSummary.serviceName?.trim()}
-                  <span class="metrics-main__subtitle">
-                    ({selectedSummary.serviceName.trim()})</span
-                  >
-                {/if}
-              </div>
-              {#if selectedSummary.description?.trim()}
-                <p
-                  class="metrics-main__description"
-                  title={selectedSummary.description}
+            <div class="metrics-main__header-title-row">
+              <span class="metrics-main__title">{selectedSummary.name}</span>
+              {#if selectedSummary.serviceName?.trim()}
+                <span class="metrics-main__subtitle">
+                  ({selectedSummary.serviceName.trim()})</span
                 >
-                  {selectedSummary.description.trim()}
-                </p>
               {/if}
+              <span class="metrics-main__badges">
+                <SignalBadges
+                  signal="metric"
+                  metricType={selectedSummary.metricType}
+                  aggregationTemporality={selectedSummary.aggregationTemporality}
+                  isMonotonic={selectedSummary.isMonotonic}
+                />
+              </span>
             </div>
           </div>
         {/if}
@@ -467,17 +467,8 @@
     @apply flex shrink-0 items-center gap-3 px-3 py-2 bg-base-300 rounded-t-xl;
   }
 
-  .metrics-main__header-text {
-    @apply flex min-w-0 flex-col gap-0.5;
-  }
-
   .metrics-main__header-title-row {
-    @apply flex min-w-0 items-baseline gap-1.5;
-  }
-
-  .metrics-main__description {
-    @apply line-clamp-2 text-sm leading-snug;
-    color: var(--color-subtle);
+    @apply flex min-w-0 flex-nowrap items-baseline gap-1.5 overflow-hidden;
   }
 
   .metrics-main__title {
@@ -488,6 +479,19 @@
   .metrics-main__subtitle {
     @apply truncate text-sm font-normal leading-none;
     color: var(--color-subtle);
+  }
+
+  /* Inline badge cluster after the (service) subtitle. Mirrors the
+     PaneHeader title-row layout so the metric main header reads
+     the same as the trace waterfall header. Badges are upsized to
+     sm (vs. xs on the drawer card) via the daisyUI size CSS vars. */
+  .metrics-main__badges {
+    @apply flex shrink-0 items-center gap-1.5;
+  }
+
+  .metrics-main__badges :global(.badge) {
+    --size: calc(var(--size-selector, 0.25rem) * 5);
+    font-size: 0.75rem;
   }
 
   .metrics-main__chart {

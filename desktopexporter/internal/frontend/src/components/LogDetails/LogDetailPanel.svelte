@@ -2,9 +2,10 @@
   import type { Snippet } from 'svelte'
   import type { LogData } from '@/types/api-types'
   import PaneHeader from '@/components/PaneHeader.svelte'
+  import SignalBadges from '@/components/SignalBadges.svelte'
   import FieldGroup from '@/components/FieldGroup.svelte'
   import LogField from './LogField.svelte'
-  import { severityBand } from '@/pages/LogsPage.svelte'
+  import { severityLabel as buildSeverityLabel } from '@/pages/LogsPage.svelte'
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
@@ -23,7 +24,7 @@
 
   let severityLabel = $derived(
     log
-      ? `${log.severityText || severityBand(log.severityNumber).toUpperCase()} (${log.severityNumber})`
+      ? `${buildSeverityLabel(log.severityText, log.severityNumber)} (${log.severityNumber})`
       : '',
   )
 
@@ -67,7 +68,15 @@
       mode="title"
       title={service || '—'}
       ariaLabel="Log record"
-    />
+    >
+      {#snippet badge()}
+        <SignalBadges
+          signal="log"
+          severityNumber={log.severityNumber}
+          severityText={log.severityText}
+        />
+      {/snippet}
+    </PaneHeader>
 
     <div class="log-detail-panel__scroll">
       <FieldGroup label="Log" count={logFieldCount} bind:open={logOpen}>

@@ -310,6 +310,7 @@
     {loading}
     itemKey={t => t.traceID}
     resizableStorageKey="trace-detail-panels"
+    minDetailPx={352}
   >
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel

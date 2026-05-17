@@ -190,6 +190,7 @@
       activeId={activeTab}
       onSelect={id => (activeTab = id as 'fields' | 'datapoints')}
       ariaLabel="Metric detail tabs"
+      tabLayout="equal"
     />
 
     <div class="detail-view__scroll">

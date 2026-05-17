@@ -6,8 +6,17 @@
     leftPanel: any;
     rightPanel: any;
     defaultLeftWidth?: number;
+    /** Minimum left fraction of the container (0..1). */
     minLeftWidth?: number;
+    /** Minimum right fraction of the container (0..1). */
     minRightWidth?: number;
+    /** Optional absolute pixel floor for the left pane. When set,
+     *  the drag clamps to MAX(fraction floor, pixel floor). Lets
+     *  callers guarantee enough room for fixed-size chrome (e.g.
+     *  a tab strip) regardless of viewport width. */
+    minLeftPx?: number;
+    /** Optional absolute pixel floor for the right pane. */
+    minRightPx?: number;
     storageKey?: string;
     stackBreakpoint?: number;
   };
@@ -18,8 +27,10 @@
     defaultLeftWidth = DEFAULT_LEFT_WIDTH,
     minLeftWidth = 0.3,
     minRightWidth = 0.2,
+    minLeftPx,
+    minRightPx,
     storageKey,
-    stackBreakpoint = 700,
+    stackBreakpoint = 800,
   }: Props = $props();
 
   let leftWidth = $state(DEFAULT_LEFT_WIDTH);
@@ -46,6 +57,46 @@
 
   let stacked = $derived(containerWidth > 0 && containerWidth < stackBreakpoint);
 
+  /* Pixel floors → fractions of the current container (horizontal
+     mode only). The drag clamp uses MAX(fraction floor, pixel-derived
+     floor) so callers can guarantee chrome fits without breaking the
+     existing fraction API. In stacked (vertical) mode the pixel
+     floors are ignored — panes go full-width and a row-resize
+     controls height instead.
+
+     Graceful fallback: when the container is too narrow to honor
+     both pixel floors (minLeftPx + minRightPx > containerWidth), we
+     prefer to keep the right pane's pixel floor and shrink the left
+     to whatever's left. The right pane houses the inspector tab
+     strip, which has a fixed minimum width below which it visibly
+     truncates — main views (waterfall, chart) tolerate narrowness
+     better. If even that's impossible (right floor alone exceeds the
+     container), we drop both pixel floors and fall back to the
+     fraction bounds. */
+  let effectiveMins = $derived.by<{ left: number; right: number }>(() => {
+    if (stacked || containerWidth <= 0) {
+      return { left: minLeftWidth, right: minRightWidth };
+    }
+
+    const leftPxFrac = minLeftPx ? minLeftPx / containerWidth : 0;
+    const rightPxFrac = minRightPx ? minRightPx / containerWidth : 0;
+    let left = Math.max(minLeftWidth, leftPxFrac);
+    let right = Math.max(minRightWidth, rightPxFrac);
+
+    if (left + right <= 1) return { left, right };
+
+    /* Try keeping the right (detail) pixel floor and shrinking left
+       to the remaining space, but never below its fraction floor. */
+    if (right <= 1 - minLeftWidth) {
+      return { left: Math.max(minLeftWidth, 1 - right), right };
+    }
+
+    /* Right floor alone is too big — drop pixel floors entirely. */
+    return { left: minLeftWidth, right: minRightWidth };
+  });
+  let effectiveMinLeft = $derived(effectiveMins.left);
+  let effectiveMinRight = $derived(effectiveMins.right);
+
   $effect(() => {
     if (storageKey) {
       let saved = localStorage.getItem(storageKey);
@@ -53,13 +104,25 @@
         let parsed = parseFloat(saved);
         if (
           !isNaN(parsed) &&
-          parsed >= minLeftWidth &&
-          parsed <= 1 - minRightWidth
+          parsed >= effectiveMinLeft &&
+          parsed <= 1 - effectiveMinRight
         ) {
           leftWidth = parsed;
         }
       }
     }
+  });
+
+  /* Re-clamp the current width whenever the effective minimums move.
+     This catches the viewport-shrink case: if the user makes the
+     window narrow enough that the current split would put one pane
+     below its pixel floor, snap it back to the floor. */
+  $effect(() => {
+    const lo = effectiveMinLeft;
+    const hi = 1 - effectiveMinRight;
+    if (lo > hi) return;
+    if (leftWidth < lo) leftWidth = lo;
+    else if (leftWidth > hi) leftWidth = hi;
   });
 
   function saveWidth() {
@@ -95,7 +158,7 @@
     if (!isDragging) return;
     const currentPos = stacked ? e.clientY : e.clientX;
     const deltaPx = currentPos - dragStartPos;
-    leftWidth = Math.max(minLeftWidth, Math.min(1 - minRightWidth, dragStartWidth + deltaPx / dragFlexSpace));
+    leftWidth = Math.max(effectiveMinLeft, Math.min(1 - effectiveMinRight, dragStartWidth + deltaPx / dragFlexSpace));
   }
 
   function handlePointerUp(e: PointerEvent) {
@@ -115,24 +178,26 @@
 
   function handleKeydown(e: KeyboardEvent) {
     const step = e.shiftKey ? 0.05 : 0.01;
+    const lo = effectiveMinLeft;
+    const hi = 1 - effectiveMinRight;
     if (stacked) {
-      if (e.key === 'ArrowUp' && leftWidth > minLeftWidth) {
+      if (e.key === 'ArrowUp' && leftWidth > lo) {
         e.preventDefault();
-        leftWidth = Math.max(minLeftWidth, leftWidth - step);
+        leftWidth = Math.max(lo, leftWidth - step);
         saveWidth();
-      } else if (e.key === 'ArrowDown' && leftWidth < 1 - minRightWidth) {
+      } else if (e.key === 'ArrowDown' && leftWidth < hi) {
         e.preventDefault();
-        leftWidth = Math.min(1 - minRightWidth, leftWidth + step);
+        leftWidth = Math.min(hi, leftWidth + step);
         saveWidth();
       }
     } else {
-      if (e.key === 'ArrowLeft' && leftWidth > minLeftWidth) {
+      if (e.key === 'ArrowLeft' && leftWidth > lo) {
         e.preventDefault();
-        leftWidth = Math.max(minLeftWidth, leftWidth - step);
+        leftWidth = Math.max(lo, leftWidth - step);
         saveWidth();
-      } else if (e.key === 'ArrowRight' && leftWidth < 1 - minRightWidth) {
+      } else if (e.key === 'ArrowRight' && leftWidth < hi) {
         e.preventDefault();
-        leftWidth = Math.min(1 - minRightWidth, leftWidth + step);
+        leftWidth = Math.min(hi, leftWidth + step);
         saveWidth();
       }
     }
@@ -176,8 +241,8 @@
       role="separator"
       aria-orientation="horizontal"
       aria-valuenow={Math.round(leftWidth * 100)}
-      aria-valuemin={Math.round(minLeftWidth * 100)}
-      aria-valuemax={Math.round((1 - minRightWidth) * 100)}
+      aria-valuemin={Math.round(effectiveMinLeft * 100)}
+      aria-valuemax={Math.round((1 - effectiveMinRight) * 100)}
       tabindex="0"
     >
       <div class="col-resize-bar__line"></div>
@@ -216,8 +281,8 @@
       role="separator"
       aria-orientation="vertical"
       aria-valuenow={Math.round(leftWidth * 100)}
-      aria-valuemin={Math.round(minLeftWidth * 100)}
-      aria-valuemax={Math.round((1 - minRightWidth) * 100)}
+      aria-valuemin={Math.round(effectiveMinLeft * 100)}
+      aria-valuemax={Math.round((1 - effectiveMinRight) * 100)}
       tabindex="0"
     >
       <div class="col-resize-bar__line"></div>
