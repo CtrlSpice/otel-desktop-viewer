@@ -368,32 +368,30 @@
     {/snippet}
 
     {#snippet main()}
-      <div class="logs-main">
-        {#if error}
-          <div class="logs-main__placeholder alert alert-error">
+      {#if error}
+          <div class="logs-page__placeholder alert alert-error">
             <span>Error: {error}</span>
           </div>
         {:else if loading && !hasLogRows}
-          <div class="logs-main__placeholder logs-empty">Loading logs…</div>
+          <div class="logs-page__placeholder logs-empty">Loading logs…</div>
         {:else if !loading && !hasLogRows}
-          <div class="logs-main__placeholder logs-empty">
+          <div class="logs-page__placeholder logs-empty">
             <p class="text-rp-subtle">No logs in this time range</p>
             <p class="mt-2 text-sm text-rp-muted">
               Send telemetry to the exporter or adjust the time range
             </p>
           </div>
         {:else if detailFetcher.loading && !detailFetcher.data}
-          <div class="logs-main__placeholder logs-empty">
+          <div class="logs-page__placeholder logs-empty">
             Loading log details…
           </div>
         {:else if detailFetcher.error}
-          <div class="logs-main__placeholder alert alert-error">
+          <div class="logs-page__placeholder alert alert-error">
             <span>Error: {detailFetcher.error}</span>
           </div>
         {:else}
           <LogDetailPanel log={detailFetcher.data ?? undefined} />
-        {/if}
-      </div>
+      {/if}
     {/snippet}
 
     {#snippet pageFooter()}
@@ -420,11 +418,7 @@
     @apply flex min-h-0 min-w-0 w-full flex-1;
   }
 
-  .logs-main {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
-  }
-
-  .logs-main__placeholder {
+  .logs-page__placeholder {
     @apply m-[var(--layout-gap)];
   }
 

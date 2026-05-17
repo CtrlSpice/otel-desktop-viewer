@@ -358,39 +358,37 @@
     {/snippet}
 
     {#snippet main()}
-      <div class="traces-main">
-        {#if error}
-          <div class="traces-main__placeholder alert alert-error">
-            <span>Error: {error}</span>
-          </div>
-        {:else if loading && !hasTraceRows}
-          <div class="traces-main__placeholder traces-empty">
-            Loading traces…
-          </div>
-        {:else if !loading && !hasTraceRows}
-          <div class="traces-main__placeholder traces-empty">
-            <p class="text-rp-subtle">No traces in this time range</p>
-            <p class="mt-2 text-sm text-rp-muted">
-              Send telemetry to the exporter or adjust the time range
-            </p>
-          </div>
-        {:else if traceData}
-          <WaterfallView
-            spans={traceData.spans}
-            {selectedSpanID}
-            onSelectSpan={handleSelectSpan}
-            loading={detailLoading}
-          />
-        {:else if detailLoading}
-          <div class="traces-main__placeholder traces-empty">
-            Loading trace detail…
-          </div>
-        {:else}
-          <div class="traces-main__placeholder traces-empty">
-            <p class="text-rp-subtle">Select a trace to view details</p>
-          </div>
-        {/if}
-      </div>
+      {#if error}
+        <div class="traces-page__placeholder alert alert-error">
+          <span>Error: {error}</span>
+        </div>
+      {:else if loading && !hasTraceRows}
+        <div class="traces-page__placeholder traces-empty">
+          Loading traces…
+        </div>
+      {:else if !loading && !hasTraceRows}
+        <div class="traces-page__placeholder traces-empty">
+          <p class="text-rp-subtle">No traces in this time range</p>
+          <p class="mt-2 text-sm text-rp-muted">
+            Send telemetry to the exporter or adjust the time range
+          </p>
+        </div>
+      {:else if traceData}
+        <WaterfallView
+          spans={traceData.spans}
+          {selectedSpanID}
+          onSelectSpan={handleSelectSpan}
+          loading={detailLoading}
+        />
+      {:else if detailLoading}
+        <div class="traces-page__placeholder traces-empty">
+          Loading trace detail…
+        </div>
+      {:else}
+        <div class="traces-page__placeholder traces-empty">
+          <p class="text-rp-subtle">Select a trace to view details</p>
+        </div>
+      {/if}
     {/snippet}
 
     {#snippet detail()}
@@ -421,11 +419,7 @@
     @apply flex min-h-0 min-w-0 w-full flex-1;
   }
 
-  .traces-main {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
-  }
-
-  .traces-main__placeholder {
+  .traces-page__placeholder {
     @apply m-[var(--layout-gap)];
   }
 

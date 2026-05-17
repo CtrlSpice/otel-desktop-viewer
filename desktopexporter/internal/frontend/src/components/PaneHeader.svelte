@@ -146,7 +146,7 @@
     <div
       role="tablist"
       aria-label={ariaLabel}
-      class="tabs tabs-lift {tabSizeClass} pane-header__tabs pane-header__tabs--{layout} [--tab-border-color:var(--color-primary)]"
+      class="tabs tabs-lift {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
     >
     {#each tabs as tab (tab.id)}
       {@const active = tab.id === activeId}
@@ -154,7 +154,7 @@
         type="button"
         role="tab"
         class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
-          ? 'tab-active [--tab-bg:var(--color-base-200)] text-primary'
+          ? 'tab-active [--tab-bg:var(--color-base-200)]'
           : ''}"
         aria-selected={active}
         disabled={tab.disabled}

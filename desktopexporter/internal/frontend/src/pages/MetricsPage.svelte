@@ -359,17 +359,16 @@
            snippet below): always present, spans main + detail
            regardless of content state, and DetailNav self-disables
            when there is nothing to navigate. -->
-      <div class="metrics-main">
-        {#if selectedSummary}
-          <div class="metrics-main__header">
-            <div class="metrics-main__header-title-row">
-              <span class="metrics-main__title">{selectedSummary.name}</span>
+      {#if selectedSummary}
+          <div class="metrics-page__header">
+            <div class="metrics-page__header-title-row">
+              <span class="metrics-page__title">{selectedSummary.name}</span>
               {#if selectedSummary.serviceName?.trim()}
-                <span class="metrics-main__subtitle">
+                <span class="metrics-page__subtitle">
                   ({selectedSummary.serviceName.trim()})</span
                 >
               {/if}
-              <span class="metrics-main__badges">
+              <span class="metrics-page__badges">
                 <SignalBadges
                   signal="metric"
                   metricType={selectedSummary.metricType}
@@ -381,15 +380,15 @@
           </div>
         {/if}
         {#if error}
-          <div class="metrics-main__placeholder alert alert-error">
+          <div class="metrics-page__placeholder alert alert-error">
             <span>Error: {error}</span>
           </div>
         {:else if loading && !hasMetricRows}
-          <div class="metrics-main__placeholder metrics-empty">
+          <div class="metrics-page__placeholder metrics-empty">
             Loading metrics…
           </div>
         {:else if !loading && !hasMetricRows}
-          <div class="metrics-main__placeholder metrics-empty">
+          <div class="metrics-page__placeholder metrics-empty">
             <p class="text-rp-subtle">No metrics in this time range</p>
             <p class="mt-2 text-sm text-rp-muted">
               Send telemetry to the exporter or adjust the time range
@@ -402,7 +401,7 @@
                we always want this one stacked even at desktop widths.
                Bottom slot is a placeholder for now -- TimeseriesPanel
                lands in the next step. -->
-          <div class="metrics-main__split">
+          <div class="metrics-page__split">
             <ResizablePanels
               defaultLeftWidth={0.6}
               minLeftWidth={0.25}
@@ -411,7 +410,7 @@
               stackBreakpoint={Number.POSITIVE_INFINITY}
             >
               {#snippet leftPanel()}
-                <div class="metrics-main__chart">
+                <div class="metrics-page__chart">
                   <MetricChartView />
                 </div>
               {/snippet}
@@ -420,8 +419,7 @@
               {/snippet}
             </ResizablePanels>
           </div>
-        {/if}
-      </div>
+      {/if}
     {/snippet}
 
     {#snippet detail()}
@@ -449,34 +447,20 @@
     @apply flex min-h-0 min-w-0 w-full flex-1;
   }
 
-  /*
-   * The PageLayout main slot. Vertical flex column stacking the chart
-   * pane on top and the SignalFooter on the bottom; the chart claims
-   * remaining vertical space while the footer stays anchored.
-   *
-   * Intentionally bare: no border/radius/shadow/bg. The unified layout
-   * is moving toward "single sheet of paper" -- main and detail read
-   * as one continuous surface, separated only by the resizer handle.
-   * The drawer's right border is the one structural seam.
-   */
-  .metrics-main {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
+  .metrics-page__header {
+    @apply flex shrink-0 items-center gap-3 px-3 py-2 bg-base-300;
   }
 
-  .metrics-main__header {
-    @apply flex shrink-0 items-center gap-3 px-3 py-2 bg-base-300 rounded-t-xl;
-  }
-
-  .metrics-main__header-title-row {
+  .metrics-page__header-title-row {
     @apply flex min-w-0 flex-nowrap items-baseline gap-1.5 overflow-hidden;
   }
 
-  .metrics-main__title {
+  .metrics-page__title {
     @apply text-sm font-semibold tracking-tight truncate;
     color: var(--color-base-content);
   }
 
-  .metrics-main__subtitle {
+  .metrics-page__subtitle {
     @apply truncate text-sm font-normal leading-none;
     color: var(--color-subtle);
   }
@@ -485,23 +469,23 @@
      PaneHeader title-row layout so the metric main header reads
      the same as the trace waterfall header. Badges are upsized to
      sm (vs. xs on the drawer card) via the daisyUI size CSS vars. */
-  .metrics-main__badges {
+  .metrics-page__badges {
     @apply flex shrink-0 items-center gap-1.5;
   }
 
-  .metrics-main__badges :global(.badge) {
+  .metrics-page__badges :global(.badge) {
     --size: calc(var(--size-selector, 0.25rem) * 5);
     font-size: 0.75rem;
   }
 
-  .metrics-main__chart {
+  .metrics-page__chart {
     @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-auto;
   }
 
   /* Vertical split host: the ResizablePanels needs a min-sized flex
-     parent so it can claim available height inside the metrics-main
+     parent so it can claim available height inside the metrics-page
      column. Same shrink/min-size discipline as the placeholders. */
-  .metrics-main__split {
+  .metrics-page__split {
     @apply flex-1 min-h-0 min-w-0;
   }
 
@@ -511,7 +495,7 @@
    * Take the full main pane so the surrounding chrome already
    * provides the card framing -- no double-card.
    */
-  .metrics-main__placeholder {
+  .metrics-page__placeholder {
     @apply m-[var(--layout-gap)];
   }
 

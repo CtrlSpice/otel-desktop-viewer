@@ -66,7 +66,7 @@
    * row size is decoupled from whatever buttons live inside.
    */
   .signal-footer {
-    @apply grid shrink-0 items-center gap-2 border-t border-base-300 bg-base-100 px-4;
+    @apply grid shrink-0 items-center gap-2 bg-base-100 px-4;
     grid-template-columns: 1fr auto 1fr;
     min-height: var(--app-footer-height);
   }

@@ -551,7 +551,7 @@
      The single direct child stretches to fill the row so consumers
      don't have to remember to add w-full themselves. */
   .signal-drawer__footer {
-    @apply flex shrink-0 items-center border-t border-base-300 bg-base-200 px-3;
+    @apply flex shrink-0 items-center bg-base-200 px-3;
     min-height: var(--app-footer-height);
   }
 

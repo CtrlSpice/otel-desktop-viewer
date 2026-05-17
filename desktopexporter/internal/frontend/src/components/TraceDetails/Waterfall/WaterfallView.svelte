@@ -517,14 +517,12 @@
   }
 </script>
 
-<div class="waterfall-panel">
-  <div class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}">
+<div class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}">
     <PaneHeader
       mode="title"
       title={headerName}
       subtitle={headerService || undefined}
       ariaLabel="Trace waterfall"
-      rounded={false}
     >
       {#snippet badge()}
         <SignalBadges
@@ -611,14 +609,10 @@
     {#if footer}
       {@render footer()}
     {/if}
-  </div>
 </div>
 
 <style lang="postcss">
   @reference "../../../app.css";
-  .waterfall-panel {
-    @apply h-full;
-  }
 
   .waterfall-view {
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-200 transition-opacity duration-200;

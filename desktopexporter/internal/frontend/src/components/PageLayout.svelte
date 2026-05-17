@@ -186,10 +186,11 @@
      shrink/min-size discipline either way so ResizablePanels can
      collapse past its children's intrinsic widths.
 
-     Inset on all sides gives main+detail breathing room from the
-     drawer's right edge, the top/bottom of the page, and the footer. */
+     Horizontal + top inset gives main+detail breathing room from the
+     drawer's right edge and the top of the page. No bottom pad — panels
+     sit flush against the page footer. */
   .page-layout__region {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2;
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-2 pt-2;
   }
 
   /* Page-level footer strip. Stays anchored at the bottom; never
@@ -204,10 +205,10 @@
      rounded corners so it reads as a distinct panel against the
      base-100 page background. */
   .page-layout__detail-chrome {
-    @apply h-full min-w-0 overflow-hidden rounded-xl bg-base-200 border border-base-300;
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-base-200 border border-base-300;
   }
 
   .page-layout__main-chrome {
-    @apply h-full min-w-0 overflow-hidden bg-base-200 border border-base-300;
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-base-200 border border-base-300;
   }
 </style>
