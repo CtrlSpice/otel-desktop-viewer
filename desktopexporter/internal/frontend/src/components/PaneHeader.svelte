@@ -181,13 +181,18 @@
     @apply pt-1;
   }
 
-  /* Title-only: centered vertically since there are no lift tabs. */
+  /* Title-only: centered vertically since there are no lift tabs.
+     px-3 matches FieldGroup headings and detail row inset. */
   .pane-header--title {
-    @apply items-center py-2;
+    @apply items-center px-3 py-2;
   }
 
   .pane-header__title {
     @apply text-sm font-semibold tracking-tight text-base-content/80;
+  }
+
+  .pane-header--title-tabs .pane-header__title {
+    @apply shrink-0 pl-3;
   }
 
   .pane-header__right {

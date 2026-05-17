@@ -1,10 +1,14 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import type { LogData } from '@/types/api-types'
+  import PaneHeader from '@/components/PaneHeader.svelte'
+  import FieldGroup from '@/components/FieldGroup.svelte'
+  import LogField from './LogField.svelte'
   import { severityBand } from '@/pages/LogsPage.svelte'
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { router } from 'tinro5'
 
   type Props = {
     log: LogData | undefined
@@ -16,116 +20,209 @@
   let timeContext = getTimeContext()
 
   let service = $derived(log ? (getServiceName(log.resource) ?? '') : '')
+
+  let severityLabel = $derived(
+    log
+      ? `${log.severityText || severityBand(log.severityNumber).toUpperCase()} (${log.severityNumber})`
+      : '',
+  )
+
+  let logOpen = $state(true)
+  let resourceOpen = $state(true)
+  let scopeOpen = $state(true)
+
+  let logFieldCount = $derived.by(() => {
+    if (!log) return 0
+    let n = 4
+    if (log.traceID) n++
+    if (log.spanID) n++
+    if (log.body) n++
+    if (log.eventName) n++
+    if (log.droppedAttributesCount > 0) n++
+    n += log.attributes.length
+    return n
+  })
+
+  let resourceFieldCount = $derived.by(() => {
+    if (!log) return 0
+    let n = log.resource.attributes.length
+    if (log.resource.droppedAttributesCount > 0) n++
+    return n
+  })
+
+  let scopeFieldCount = $derived.by(() => {
+    if (!log) return 0
+    let n = 0
+    if (log.scope.name) n++
+    if (log.scope.version) n++
+    n += log.scope.attributes.length
+    if (log.scope.droppedAttributesCount > 0) n++
+    return n
+  })
 </script>
 
 {#if log}
   <div class="log-detail-panel">
+    <PaneHeader
+      mode="title"
+      title={service || '—'}
+      ariaLabel="Log record"
+    />
+
     <div class="log-detail-panel__scroll">
-      <table class="detail-fields w-full" aria-label="Log details">
-        <thead class="header-surface">
-          <tr class="table-header-row">
-            <th class="table-header-cell table-header-cell--left" colspan="3">
-              Log Record
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr class="table-row">
-            <td class="detail-cell" colspan="2"><span class="detail-cell__key">timestamp:</span> <span class="tabular-nums">{formatTimestamp(log.timestamp, timeContext.timezone, 'nanoseconds')}</span></td>
-            <td class="detail-cell--badges"><span class="badge-type">timestamp</span></td>
-          </tr>
-          <tr class="table-row">
-            <td class="detail-cell" colspan="2"><span class="detail-cell__key">observed timestamp:</span> <span class="tabular-nums">{formatTimestamp(log.observedTimestamp, timeContext.timezone, 'nanoseconds')}</span></td>
-            <td class="detail-cell--badges"><span class="badge-type">timestamp</span></td>
-          </tr>
-          <tr class="table-row">
-            <td class="detail-cell" colspan="2">
-              <span class="detail-cell__key">severity:</span>
-              <span class="detail-cell__value">
-                {log.severityText || severityBand(log.severityNumber).toUpperCase()} ({log.severityNumber})
-              </span>
-            </td>
-            <td class="detail-cell--badges"><span class="badge-type">enum</span></td>
-          </tr>
-          <tr class="table-row">
-            <td class="detail-cell" colspan="2"><span class="detail-cell__key">service:</span> {service || '—'}</td>
-            <td class="detail-cell--badges"><span class="badge-type">string</span></td>
-          </tr>
-          {#if log.traceID}
-            <tr class="table-row">
-              <td class="detail-cell" colspan="2"><span class="detail-cell__key">trace id:</span> <a href="/trace/{log.traceID}" class="link link-primary font-mono">{log.traceID}</a></td>
-              <td class="detail-cell--badges"><span class="badge-type">string</span></td>
-            </tr>
-          {/if}
-          {#if log.spanID}
-            <tr class="table-row">
-              <td class="detail-cell" colspan="2"><span class="detail-cell__key">span id:</span> <span class="font-mono">{log.spanID}</span></td>
-              <td class="detail-cell--badges"><span class="badge-type">string</span></td>
-            </tr>
-          {/if}
-          {#if log.body}
-            <tr class="table-row">
-              <td class="log-detail-body__key"><span class="detail-cell__key">body:</span></td>
-              <td class="log-detail-body__value">{log.body}</td>
-              <td class="detail-cell--badges"><span class="badge-type">{log.bodyType}</span></td>
-            </tr>
-          {/if}
-          {#if log.eventName}
-            <tr class="table-row">
-              <td class="detail-cell" colspan="2"><span class="detail-cell__key">event name:</span> {log.eventName}</td>
-              <td class="detail-cell--badges"><span class="badge-type">string</span></td>
-            </tr>
-          {/if}
-          <tr class="table-row">
-            <td class="detail-cell" colspan="2"><span class="detail-cell__key">flags:</span> {log.flags}</td>
-            <td class="detail-cell--badges"><span class="badge-type">uint32</span></td>
-          </tr>
-          {#if log.droppedAttributesCount > 0}
-            <tr class="table-row">
-              <td class="detail-cell" colspan="2"><span class="detail-cell__key">dropped attributes count:</span> {log.droppedAttributesCount}</td>
-              <td class="detail-cell--badges"><span class="badge-type">uint32</span></td>
-            </tr>
-          {/if}
-          {#each log.attributes as attr}
-            <tr class="table-row">
-              <td class="detail-cell" colspan="2"><span class="detail-cell__key">{attr.key}:</span> {attr.value}</td>
-              <td class="detail-cell--badges"><span class="badge-type">{attr.type}</span></td>
-            </tr>
-          {/each}
-          {#each log.resource.attributes as attr}
-            <tr class="table-row">
-              <td class="detail-cell" colspan="2"><span class="detail-cell__key">{attr.key}:</span> {attr.value}</td>
-              <td class="detail-cell--badges"><span class="badge-type">{attr.type}</span> <span class="badge-origin">resource</span></td>
-            </tr>
-          {/each}
-          {#if log.scope.name}
-            <tr class="table-row">
-              <td class="detail-cell" colspan="2"><span class="detail-cell__key">scope name:</span> {log.scope.name}</td>
-              <td class="detail-cell--badges"><span class="badge-type">string</span> <span class="badge-origin">scope</span></td>
-            </tr>
-          {/if}
-          {#if log.scope.version}
-            <tr class="table-row">
-              <td class="detail-cell" colspan="2"><span class="detail-cell__key">scope version:</span> {log.scope.version}</td>
-              <td class="detail-cell--badges"><span class="badge-type">string</span> <span class="badge-origin">scope</span></td>
-            </tr>
-          {/if}
-          {#each log.scope.attributes as attr}
-            <tr class="table-row">
-              <td class="detail-cell" colspan="2"><span class="detail-cell__key">{attr.key}:</span> {attr.value}</td>
-              <td class="detail-cell--badges"><span class="badge-type">{attr.type}</span> <span class="badge-origin">scope</span></td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+      <FieldGroup label="Log" count={logFieldCount} bind:open={logOpen}>
+        <table class="detail-fields w-full" aria-label="Log fields">
+          <tbody>
+            <LogField
+              fieldName="timestamp"
+              fieldType="timestamp"
+              fieldValue={formatTimestamp(
+                log.timestamp,
+                timeContext.timezone,
+                'nanoseconds'
+              )}
+            />
+            <LogField
+              fieldName="observed timestamp"
+              fieldType="timestamp"
+              fieldValue={formatTimestamp(
+                log.observedTimestamp,
+                timeContext.timezone,
+                'nanoseconds'
+              )}
+            />
+            <LogField
+              fieldName="severity"
+              fieldType="enum"
+              fieldValue={severityLabel}
+            />
+            {#if log.traceID}
+              <LogField fieldName="trace id" fieldType="string">
+                {#snippet value()}
+                  <a
+                    class="detail-cell__value link link-primary font-mono"
+                    href="/trace/{log.traceID}"
+                    onclick={e => {
+                      e.preventDefault()
+                      router.goto(`/trace/${log.traceID}`)
+                    }}
+                  >{log.traceID}</a>
+                {/snippet}
+              </LogField>
+            {/if}
+            {#if log.spanID}
+              <LogField
+                fieldName="span id"
+                fieldType="string"
+                fieldValue={log.spanID}
+              />
+            {/if}
+            {#if log.body}
+              <LogField
+                fieldName="body"
+                fieldType={log.bodyType}
+                fieldValue={log.body}
+                multiline
+              />
+            {/if}
+            {#if log.eventName}
+              <LogField
+                fieldName="event name"
+                fieldType="string"
+                fieldValue={log.eventName}
+              />
+            {/if}
+            <LogField
+              fieldName="flags"
+              fieldType="uint32"
+              fieldValue={String(log.flags)}
+            />
+            {#if log.droppedAttributesCount > 0}
+              <LogField
+                fieldName="dropped attributes count"
+                fieldType="uint32"
+                fieldValue={String(log.droppedAttributesCount)}
+              />
+            {/if}
+            {#each log.attributes as attr (attr.key)}
+              <LogField
+                fieldName={attr.key}
+                fieldValue={attr.value}
+                fieldType={attr.type}
+              />
+            {/each}
+          </tbody>
+        </table>
+      </FieldGroup>
+
+      <FieldGroup
+        label="Resource"
+        count={resourceFieldCount}
+        bind:open={resourceOpen}
+      >
+        <table class="detail-fields w-full" aria-label="Resource attributes">
+          <tbody>
+            {#each log.resource.attributes as attr (attr.key)}
+              <LogField
+                fieldName={attr.key}
+                fieldValue={attr.value}
+                fieldType={attr.type}
+              />
+            {/each}
+            {#if log.resource.droppedAttributesCount > 0}
+              <LogField
+                fieldName="dropped attributes count"
+                fieldType="uint32"
+                fieldValue={String(log.resource.droppedAttributesCount)}
+              />
+            {/if}
+          </tbody>
+        </table>
+      </FieldGroup>
+
+      <FieldGroup label="Scope" count={scopeFieldCount} bind:open={scopeOpen}>
+        <table class="detail-fields w-full" aria-label="Scope attributes">
+          <tbody>
+            {#if log.scope.name}
+              <LogField
+                fieldName="scope name"
+                fieldType="string"
+                fieldValue={log.scope.name}
+              />
+            {/if}
+            {#if log.scope.version}
+              <LogField
+                fieldName="scope version"
+                fieldType="string"
+                fieldValue={log.scope.version}
+              />
+            {/if}
+            {#each log.scope.attributes as attr (attr.key)}
+              <LogField
+                fieldName={attr.key}
+                fieldValue={attr.value}
+                fieldType={attr.type}
+              />
+            {/each}
+            {#if log.scope.droppedAttributesCount > 0}
+              <LogField
+                fieldName="dropped attributes count"
+                fieldType="uint32"
+                fieldValue={String(log.scope.droppedAttributesCount)}
+              />
+            {/if}
+          </tbody>
+        </table>
+      </FieldGroup>
     </div>
+
     {#if footer}
       {@render footer()}
     {/if}
   </div>
 {:else}
   <div class="log-detail-panel log-detail-panel--empty">
-    <p class="text-base-content/40 text-sm">Select a log to view details</p>
+    <p class="text-rp-muted text-sm">Select a log to view details</p>
   </div>
 {/if}
 
@@ -133,7 +230,7 @@
   @reference "../../app.css";
 
   .log-detail-panel {
-    @apply flex h-full flex-col overflow-hidden;
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
   }
 
   .log-detail-panel--empty {
@@ -142,18 +239,6 @@
 
   .log-detail-panel__scroll {
     @apply flex-1 min-h-0 overflow-y-auto;
+    scrollbar-width: thin;
   }
-
-  .log-detail-body__key {
-    @apply py-1 pl-4 pr-1 text-xs align-top whitespace-nowrap;
-    width: 1px;
-  }
-
-  .log-detail-body__value {
-    @apply py-1 pr-2 text-xs align-top text-base-content;
-    white-space: normal;
-    overflow-wrap: break-word;
-    word-break: break-word;
-  }
-
 </style>
