@@ -29,12 +29,11 @@
   } from '@/types/api-types'
   import type { QueryNode } from '@/components/SignalToolbar/search/queryTree'
   import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
-  import SignalListDrawer from '@/components/SignalListDrawer.svelte'
+  import PageLayout from '@/components/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
   import TraceCard from '@/components/TraceCard.svelte'
   import DetailView from '@/components/TraceDetails/DetailView/DetailView.svelte'
   import WaterfallView from '@/components/TraceDetails/Waterfall/WaterfallView.svelte'
-  import ResizablePanels from '@/components/ResizablePanels.svelte'
   import SignalFooter from '@/components/SignalFooter.svelte'
   import { TrashIcon } from '@/icons'
 
@@ -299,20 +298,19 @@
 </script>
 
 <div class="traces-page">
-  <SignalListDrawer
+  <PageLayout
     items={sortedTraces}
     selectedId={selectedTraceId}
     drawerId="signal-drawer"
-    label="Traces"
-    count={sortedTraces.length}
+    drawerLabel="Traces"
     onSelect={selectTrace}
     onRefresh={handleRefresh}
     {refreshPulse}
     {refreshAsideTip}
     {loading}
     itemKey={t => t.traceID}
+    resizableStorageKey="trace-detail-panels"
   >
-
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel
         segment="toolbar"
@@ -341,7 +339,7 @@
       <TraceCard {trace} {selected} onclick={selectTrace} />
     {/snippet}
 
-    {#snippet footer()}
+    {#snippet drawerFooter()}
       <div class="flex items-center justify-between">
         <span class="text-xs tabular-nums text-base-content/50">
           {sortedTraces.length} trace{sortedTraces.length !== 1 ? 's' : ''}
@@ -358,72 +356,61 @@
       </div>
     {/snippet}
 
-    {#snippet children()}
-      <div class="traces-content">
-        <div class="traces-content__body">
-          {#if error}
-            <div class="alert alert-error">
-              <span>Error: {error}</span>
-            </div>
-          {:else if loading && !hasTraceRows}
-            <div class="traces-empty">Loading traces…</div>
-          {:else if !loading && !hasTraceRows}
-            <div class="traces-empty">
-              <p class="text-base-content/60">No traces in this time range</p>
-              <p class="mt-2 text-sm text-base-content/50">
-                Send telemetry to the exporter or adjust the time range
-              </p>
-            </div>
-          {:else if traceData}
-            {@const data = traceData}
-            <div class="traces-detail">
-              <ResizablePanels
-                defaultLeftWidth={0.7}
-                minLeftWidth={0.3}
-                minRightWidth={0.2}
-                storageKey="trace-detail-panels"
-              >
-                {#snippet leftPanel()}
-                  <WaterfallView
-                    spans={data.spans}
-                    {selectedSpanID}
-                    onSelectSpan={handleSelectSpan}
-                    loading={detailLoading}
-                  >
-                    {#snippet footer()}
-                      <SignalFooter
-                        index={selectedIndex}
-                        total={sortedTraces.length}
-                        label="trace"
-                        onFirst={selectFirst}
-                        onPrev={() => selectByOffset(-1)}
-                        onNext={() => selectByOffset(1)}
-                        onLast={selectLast}
-                        onDelete={() => handleDeleteTrace(data.traceID)}
-                      />
-                    {/snippet}
-                  </WaterfallView>
-                {/snippet}
-                {#snippet rightPanel()}
-                  <div
-                    class="h-full overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm"
-                  >
-                    <DetailView span={selectedSpan} />
-                  </div>
-                {/snippet}
-              </ResizablePanels>
-            </div>
-          {:else if detailLoading}
-            <div class="traces-empty">Loading trace detail…</div>
-          {:else}
-            <div class="traces-empty">
-              <p class="text-base-content/60">Select a trace to view details</p>
-            </div>
-          {/if}
-        </div>
+    {#snippet main()}
+      <div class="traces-main">
+        {#if error}
+          <div class="traces-main__placeholder alert alert-error">
+            <span>Error: {error}</span>
+          </div>
+        {:else if loading && !hasTraceRows}
+          <div class="traces-main__placeholder traces-empty">
+            Loading traces…
+          </div>
+        {:else if !loading && !hasTraceRows}
+          <div class="traces-main__placeholder traces-empty">
+            <p class="text-rp-subtle">No traces in this time range</p>
+            <p class="mt-2 text-sm text-rp-muted">
+              Send telemetry to the exporter or adjust the time range
+            </p>
+          </div>
+        {:else if traceData}
+          <WaterfallView
+            spans={traceData.spans}
+            {selectedSpanID}
+            onSelectSpan={handleSelectSpan}
+            loading={detailLoading}
+          />
+        {:else if detailLoading}
+          <div class="traces-main__placeholder traces-empty">
+            Loading trace detail…
+          </div>
+        {:else}
+          <div class="traces-main__placeholder traces-empty">
+            <p class="text-rp-subtle">Select a trace to view details</p>
+          </div>
+        {/if}
       </div>
     {/snippet}
-  </SignalListDrawer>
+
+    {#snippet detail()}
+      <DetailView span={selectedSpan} />
+    {/snippet}
+
+    {#snippet pageFooter()}
+      <SignalFooter
+        index={selectedIndex}
+        total={sortedTraces.length}
+        label="trace"
+        onFirst={selectFirst}
+        onPrev={() => selectByOffset(-1)}
+        onNext={() => selectByOffset(1)}
+        onLast={selectLast}
+        onDelete={traceData
+          ? () => handleDeleteTrace(traceData.traceID)
+          : undefined}
+      />
+    {/snippet}
+  </PageLayout>
 </div>
 
 <style lang="postcss">
@@ -433,19 +420,16 @@
     @apply flex min-h-0 min-w-0 w-full flex-1;
   }
 
-  .traces-content {
-    @apply relative flex min-h-0 min-w-0 flex-1 flex-col;
+  .traces-main {
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
   }
 
-  .traces-content__body {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col p-[var(--layout-gap)];
-  }
-
-  .traces-detail {
-    @apply flex-1 min-h-0 min-w-0;
+  .traces-main__placeholder {
+    @apply m-[var(--layout-gap)];
   }
 
   .traces-empty {
-    @apply rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center text-base-content/60 shadow-surface-sm backdrop-blur-sm;
+    @apply px-4 py-12 text-center;
+    color: var(--color-subtle);
   }
 </style>

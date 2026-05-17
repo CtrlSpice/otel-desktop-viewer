@@ -20,6 +20,8 @@ import FocusPointIcon from './FocusPoint.svelte'
 import GlobalIcon from './GlobalIcon.svelte'
 import HandPointingDownIcon from './HandPointingDown.svelte'
 import LeftToRightListBulletIcon from './LeftToRightListBullet.svelte'
+import LinkIcon from './LinkIcon.svelte'
+import StopWatchIcon from './StopWatch.svelte'
 import HelpCircleIcon from './HelpCircleIcon.svelte'
 import HomeIcon from './HomeIcon.svelte'
 import MoonIcon from './MoonIcon.svelte'
@@ -47,6 +49,8 @@ export {
   GlobalIcon,
   HandPointingDownIcon,
   LeftToRightListBulletIcon,
+  LinkIcon,
+  StopWatchIcon,
   HelpCircleIcon,
   HomeIcon,
   MoonIcon,

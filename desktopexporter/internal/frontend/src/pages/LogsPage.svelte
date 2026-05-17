@@ -94,7 +94,7 @@
   import type { LogData, SearchResultEvent } from '@/types/api-types'
   import { createDebouncedDetailFetcher } from '@/utils/debounced-detail-fetcher.svelte'
   import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
-  import SignalListDrawer from '@/components/SignalListDrawer.svelte'
+  import PageLayout from '@/components/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
   import LogCard from '@/components/LogCard.svelte'
   import LogDetailPanel from '@/components/LogDetails/LogDetailPanel.svelte'
@@ -310,12 +310,11 @@
 </script>
 
 <div class="logs-page">
-  <SignalListDrawer
+  <PageLayout
     items={sortedLogs}
     selectedId={selectedLogId}
-    drawerId="log-drawer"
-    label="Logs"
-    count={sortedLogs.length}
+    drawerId="signal-drawer"
+    drawerLabel="Logs"
     onSelect={selectLog}
     onRefresh={handleRefresh}
     {refreshPulse}
@@ -323,7 +322,6 @@
     {loading}
     itemKey={l => l.id}
   >
-
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel
         segment="toolbar"
@@ -352,7 +350,7 @@
       <LogCard {log} {selected} onclick={selectLog} />
     {/snippet}
 
-    {#snippet footer()}
+    {#snippet drawerFooter()}
       <div class="flex items-center justify-between">
         <span class="text-xs tabular-nums text-base-content/50">
           {sortedLogs.length} log{sortedLogs.length !== 1 ? 's' : ''}
@@ -369,55 +367,50 @@
       </div>
     {/snippet}
 
-    {#snippet children()}
-      <div class="logs-content">
-        <div class="logs-content__body">
-          {#if error}
-            <div class="alert alert-error">
-              <span>Error: {error}</span>
-            </div>
-          {:else if loading && !hasLogRows}
-            <div class="logs-empty">Loading logs…</div>
-          {:else if !loading && !hasLogRows}
-            <div class="logs-empty">
-              <p class="text-base-content/60">No logs in this time range</p>
-              <p class="mt-2 text-sm text-base-content/50">
-                Send telemetry to the exporter or adjust the time range
-              </p>
-            </div>
-          {:else}
-            <div class="logs-detail">
-              {#if detailFetcher.loading && !detailFetcher.data}
-                <div class="logs-empty">Loading log details…</div>
-              {:else if detailFetcher.error}
-                <div class="alert alert-error">
-                  <span>Error: {detailFetcher.error}</span>
-                </div>
-              {:else}
-                <LogDetailPanel log={detailFetcher.data ?? undefined}>
-                  {#snippet footer()}
-                    {#if selectedSummary}
-                      {@const log = selectedSummary}
-                      <SignalFooter
-                        index={selectedIndex}
-                        total={sortedLogs.length}
-                        label="log"
-                        onFirst={selectFirst}
-                        onPrev={() => selectByOffset(-1)}
-                        onNext={() => selectByOffset(1)}
-                        onLast={selectLast}
-                        onDelete={() => handleDeleteLog(log.id)}
-                      />
-                    {/if}
-                  {/snippet}
-                </LogDetailPanel>
-              {/if}
-            </div>
-          {/if}
-        </div>
+    {#snippet main()}
+      <div class="logs-main">
+        {#if error}
+          <div class="logs-main__placeholder alert alert-error">
+            <span>Error: {error}</span>
+          </div>
+        {:else if loading && !hasLogRows}
+          <div class="logs-main__placeholder logs-empty">Loading logs…</div>
+        {:else if !loading && !hasLogRows}
+          <div class="logs-main__placeholder logs-empty">
+            <p class="text-rp-subtle">No logs in this time range</p>
+            <p class="mt-2 text-sm text-rp-muted">
+              Send telemetry to the exporter or adjust the time range
+            </p>
+          </div>
+        {:else if detailFetcher.loading && !detailFetcher.data}
+          <div class="logs-main__placeholder logs-empty">
+            Loading log details…
+          </div>
+        {:else if detailFetcher.error}
+          <div class="logs-main__placeholder alert alert-error">
+            <span>Error: {detailFetcher.error}</span>
+          </div>
+        {:else}
+          <LogDetailPanel log={detailFetcher.data ?? undefined} />
+        {/if}
       </div>
     {/snippet}
-  </SignalListDrawer>
+
+    {#snippet pageFooter()}
+      <SignalFooter
+        index={selectedIndex}
+        total={sortedLogs.length}
+        label="log"
+        onFirst={selectFirst}
+        onPrev={() => selectByOffset(-1)}
+        onNext={() => selectByOffset(1)}
+        onLast={selectLast}
+        onDelete={selectedSummary
+          ? () => handleDeleteLog(selectedSummary.id)
+          : undefined}
+      />
+    {/snippet}
+  </PageLayout>
 </div>
 
 <style lang="postcss">
@@ -427,19 +420,16 @@
     @apply flex min-h-0 min-w-0 w-full flex-1;
   }
 
-  .logs-content {
-    @apply relative flex min-h-0 min-w-0 flex-1 flex-col;
+  .logs-main {
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
   }
 
-  .logs-content__body {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col p-[var(--layout-gap)];
-  }
-
-  .logs-detail {
-    @apply flex-1 min-h-0 min-w-0 overflow-hidden rounded-xl border border-base-300/70 bg-base-100/80 shadow-surface-sm backdrop-blur-sm;
+  .logs-main__placeholder {
+    @apply m-[var(--layout-gap)];
   }
 
   .logs-empty {
-    @apply rounded-xl border border-base-300/70 bg-base-100/80 px-4 py-12 text-center text-base-content/60 shadow-surface-sm backdrop-blur-sm;
+    @apply px-4 py-12 text-center;
+    color: var(--color-subtle);
   }
 </style>

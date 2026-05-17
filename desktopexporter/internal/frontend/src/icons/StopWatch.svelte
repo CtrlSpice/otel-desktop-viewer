@@ -1,0 +1,1 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" {...$$props}><!-- Icon from Huge Icons by Hugeicons - undefined --><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M18.01 7.49L19.5 6m1 7.5a8.5 8.5 0 1 1-17 0a8.5 8.5 0 0 1 17 0M14.5 2h-5M12 13.5l3.5-3.5"/></svg>

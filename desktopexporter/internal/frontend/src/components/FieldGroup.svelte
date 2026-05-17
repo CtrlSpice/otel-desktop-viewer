@@ -4,18 +4,23 @@
 
   type Props = {
     label: string
+    /** Optional neutral badge shown before the count (e.g. event offset). */
+    badge?: string
     count?: number
     open?: boolean
     children: Snippet
   }
 
-  let { label, count, open = $bindable(true), children }: Props = $props()
+  let { label, badge, count, open = $bindable(true), children }: Props = $props()
 </script>
 
 <details class="field-group" {open}
   ontoggle={(e) => (open = (e.currentTarget as HTMLDetailsElement).open)}>
   <summary class="field-group__heading">
     <span>{label}</span>
+    {#if badge}
+      <span class="badge badge-xs badge-soft badge-neutral tabular-nums">{badge}</span>
+    {/if}
     {#if count !== undefined}
       <span class="badge badge-xs badge-soft badge-neutral">{count}</span>
     {/if}
