@@ -411,7 +411,7 @@
 {#if variant === 'drawer'}
   <div class="search-editor-wrapper search-editor-wrapper--drawer">
     <div
-      class="search-editor-container"
+      class="search-editor-container typed-field typed-field--pill input"
       class:search-editor-container--error={!!searchError}
     >
       {#if headerActions}
@@ -479,7 +479,7 @@
     class:search-editor-wrapper--in-toolbar={inToolbar}
   >
     <div
-      class="search-editor-container"
+      class="search-editor-container typed-field input"
       class:search-editor-container--error={!!searchError}
     >
       <div class="editor-mount" bind:this={editorContainer}></div>
@@ -708,14 +708,8 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply rounded-full items-center py-1 pl-3 pr-1;
+    @apply items-center py-1;
     height: auto;
-    min-height: calc(var(--table-row-h) + 0.5rem);
-    background-color: var(--color-base-100);
-    box-shadow: none;
-    transition:
-      background-color 150ms ease,
-      box-shadow 150ms ease;
   }
 
   .search-editor-wrapper--drawer
@@ -752,14 +746,23 @@
     padding-bottom: 0;
     padding-right: 0.5rem;
     min-height: var(--table-row-h);
+    line-height: var(--table-row-h);
     white-space: nowrap;
+  }
+
+  .search-editor-wrapper--drawer .editor-mount :global(.cm-line) {
+    line-height: var(--table-row-h);
+  }
+
+  .search-editor-wrapper--drawer .editor-mount :global(.cm-placeholder) {
+    line-height: var(--table-row-h);
   }
 
   .search-editor-wrapper--drawer .search-editor__footer-actions {
     @apply static ml-auto flex shrink-0 items-center gap-2;
     inset: auto;
     height: var(--table-row-h);
-    align-self: flex-end;
+    align-self: center;
   }
 
   .search-editor__footer-actions {
@@ -781,10 +784,8 @@
   }
 
   .search-editor-container {
-    @apply input relative flex w-full items-start px-3;
+    @apply input relative flex w-full items-center;
     height: fit-content;
-    min-height: var(--table-row-h);
-    border-color: var(--color-base-300);
   }
 
   .search-editor-container:focus-within {

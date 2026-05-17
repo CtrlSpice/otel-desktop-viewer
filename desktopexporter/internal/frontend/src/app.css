@@ -289,8 +289,26 @@ svg {
   @apply w-full text-left px-4 py-1 text-sm hover:bg-base-200 focus:bg-base-200 transition-colors flex items-center;
 }
 
-.filter-separator {
-  @apply w-px bg-base-300;
+/* Shared section rules — additive hairline (reads on same fill as the line color).
+   Tapered ends via mask; plus-lighter lifts slightly on base-300 panels. */
+.separator {
+  @apply block h-px w-full shrink-0 border-0;
+  background: color-mix(in oklab, var(--color-base-content) 5%, transparent);
+  mix-blend-mode: plus-lighter;
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 5%,
+    #000 95%,
+    transparent
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 5%,
+    #000 95%,
+    transparent
+  );
 }
 
 /* Sortable thead: caret mirrors alignment — left = title then caret; right (--end) = caret then title.
@@ -434,30 +452,51 @@ svg {
   @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
 }
 
-/* Signal drawer — chrome outside the search editor (home, collapse, collapsed rail open/refresh/theme). */
+/* Pane chrome — small round controls shared by drawer header icons and
+   labeled header pills (time presets, nav rail, …). */
+.chrome-btn,
 .drawer-header-btn {
-  @apply btn btn-circle btn-ghost btn-neutral btn-sm shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none transition-[color,background-color,box-shadow] duration-200;
+  @apply btn btn-circle btn-ghost btn-neutral btn-sm shrink-0 gap-0 border-transparent px-0 py-0 text-xs font-medium tracking-tight shadow-none;
+  color: var(--color-subtle);
   transition-property: color, background-color, box-shadow, transform;
   transition-duration: 200ms, 200ms, 200ms, 100ms;
 }
 
-.drawer-header-btn:active {
-  @apply translate-y-px;
+.chrome-btn:hover,
+.drawer-header-btn:hover {
+  @apply text-base-content;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .drawer-header-btn:active {
-    transform: none;
-  }
-}
-
+.chrome-btn--active,
+.chrome-btn[aria-pressed='true'],
 .drawer-header-btn--active,
 .drawer-header-btn[aria-expanded='true'] {
   @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
 }
 
-.drawer-header-btn--inactive {
-  @apply text-base-content/70 hover:bg-base-200 hover:text-primary;
+.chrome-btn--active:hover,
+.chrome-btn[aria-pressed='true']:hover,
+.drawer-header-btn--active:hover,
+.drawer-header-btn[aria-expanded='true']:hover {
+  @apply border-transparent bg-primary/20 text-primary shadow-sm shadow-primary/10;
+}
+
+.chrome-btn:active,
+.drawer-header-btn:active {
+  @apply translate-y-px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-btn:active,
+  .drawer-header-btn:active {
+    transform: none;
+  }
+}
+
+.chrome-btn:focus-visible,
+.drawer-header-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* Signal drawer — circle controls in the search editor (header join + footer join). */
@@ -473,6 +512,135 @@ svg {
 
 .input {
   border-color: var(--color-base-300);
+}
+
+/* Monospace text-entry chrome — search, custom time range, future type-in surfaces.
+   Add `typed-field` to the control (or its wrapper). Use `typed-field--pill` for
+   rounded-full; wrap join rows in `typed-field-group`. */
+.typed-field {
+  @apply min-h-0 border border-base-300 bg-base-100 px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
+  height: calc(var(--table-row-h) + 0.5rem);
+  min-height: calc(var(--table-row-h) + 0.5rem);
+}
+
+/* Native inputs only — wrapper line-height breaks CodeMirror placeholder layout. */
+input.typed-field,
+textarea.typed-field {
+  line-height: calc(var(--table-row-h) + 0.5rem);
+}
+
+.typed-field::placeholder,
+input.typed-field::placeholder,
+textarea.typed-field::placeholder,
+.typed-field .cm-editor :where(.cm-placeholder) {
+  @apply text-left font-mono text-sm tracking-tight;
+  color: var(--color-subtle);
+  opacity: 1;
+}
+
+.typed-field--pill {
+  @apply rounded-full;
+}
+
+.typed-field-group {
+  @apply overflow-hidden rounded-full border border-base-300;
+}
+
+.typed-field-group > .typed-field {
+  @apply border-none;
+}
+
+/* Prefix/suffix cap in a join row (e.g. Start | input… | Apply). */
+.typed-field-label {
+  @apply join-item flex shrink-0 cursor-pointer items-center justify-start border-none bg-base-100 px-3 py-0 text-left text-xs font-normal font-sans tracking-tight shadow-none;
+  color: var(--color-subtle);
+  height: calc(var(--table-row-h) + 0.5rem);
+  min-height: calc(var(--table-row-h) + 0.5rem);
+}
+
+.typed-field-group > .typed-field-label {
+  @apply rounded-l-full rounded-r-none;
+}
+
+/* Input between label cap and optional action cap. */
+.typed-field-group > .typed-field-label + .typed-field.join-item:not(.typed-field--action) {
+  @apply min-w-0 flex-1 rounded-none pl-0;
+}
+
+/* Label + input only (no trailing action). */
+.typed-field-group
+  > .typed-field-label
+  + .typed-field.join-item:not(.typed-field--action):last-child {
+  @apply rounded-l-none rounded-r-full;
+}
+
+.typed-field-group > .typed-field--action.join-item {
+  @apply rounded-l-none rounded-r-full;
+}
+
+/* Join row: one focus ring around the whole group (label + input + action). */
+.typed-field-group:focus-within {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.typed-field-group:has(> .input-error):focus-within,
+.typed-field-group:has(> .typed-field.input-error):focus-within {
+  outline-color: var(--color-error);
+}
+
+.typed-field-group > :where(.typed-field, input, textarea, select, button):focus,
+.typed-field-group > :where(.typed-field, input, textarea, select, button):focus-visible,
+.typed-field-group:focus-within > .btn:focus-visible {
+  outline: none;
+}
+
+.typed-field-group > .typed-field--apply:focus,
+.typed-field-group > .typed-field--apply:focus-visible {
+  @apply bg-primary text-primary-content;
+}
+
+.typed-field:focus {
+  outline: none;
+}
+
+.typed-field:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.typed-field-group > .typed-field:focus-visible {
+  outline: none;
+}
+
+.typed-field.input-error:focus-visible {
+  outline-color: var(--color-error);
+}
+
+/* Label/action in a group (e.g. Apply) — sans, not mono. */
+.typed-field--action {
+  @apply justify-center font-sans font-semibold;
+}
+
+.typed-field--action.typed-field--apply {
+  @apply bg-primary/10 text-primary;
+}
+
+.typed-field--action.typed-field--apply:hover {
+  @apply bg-primary/15;
+}
+
+/* CodeMirror inside a typed-field surface (search). */
+.typed-field :where(.cm-editor, .cm-content, .cm-line) {
+  @apply text-left font-mono text-sm tracking-tight;
+}
+
+.typed-field :where(.cm-content, .cm-line, .cm-scroller) {
+  line-height: var(--table-row-h);
+}
+
+.typed-field :where(.cm-placeholder) {
+  line-height: var(--table-row-h);
 }
 
 /* Unified keyboard focus rings (--focus-ring-* on theme roots). Outline follows border-radius on the same box in modern browsers. */
@@ -1071,6 +1239,11 @@ button:focus-visible:not(.btn) {
 
 .badge-origin {
   @apply badge badge-sm text-xs badge-soft badge-primary leading-tight;
+}
+
+/* Item / field / tab counts (xs soft primary). */
+.badge-count {
+  @apply badge badge-xs badge-soft badge-primary tabular-nums;
 }
 
 .badge-root {

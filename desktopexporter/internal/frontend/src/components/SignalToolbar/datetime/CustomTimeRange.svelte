@@ -2,7 +2,7 @@
   import * as chrono from 'chrono-node'
   import FieldErrorMessage from '@/components/FieldErrorMessage.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { formatDateTime } from '@/utils/time'
+  import { formatDateTimeMs } from '@/utils/time'
 
   // Get time context
   let ctx = getTimeContext()
@@ -40,12 +40,11 @@
   // Initialize custom text fields when in custom mode
   $effect(() => {
     if (ctx.selection.type === 'custom') {
-      customStartText = formatDateTime(
+      customStartText = formatDateTimeMs(
         ctx.selection.start,
-        ctx.timezone,
-        'seconds'
-      )
-      customEndText = formatDateTime(ctx.selection.end, ctx.timezone, 'seconds')
+        ctx.timezone
+      ).dateTime
+      customEndText = formatDateTimeMs(ctx.selection.end, ctx.timezone).dateTime
       customFieldIssue = null
     } else {
       // Reset fields when selection changes to non-custom type
@@ -150,41 +149,44 @@
   }
 </script>
 
-<div class="min-w-0 w-full">
-  <form
-    onsubmit={e => {
-      e.preventDefault()
-      applyCustom()
-    }}
-  >
-    <fieldset class="fieldset min-w-0 w-full p-3">
-      <legend class="fieldset-legend sr-only">Custom Time Range</legend>
+<form
+  class="min-w-0 w-full"
+  onsubmit={e => {
+    e.preventDefault()
+    applyCustom()
+  }}
+>
+  <fieldset class="fieldset min-w-0 w-full px-0 py-0">
+    <legend class="fieldset-legend sr-only">Custom Time Range</legend>
 
-      <label class="label" for="custom-start">
-        <span class="table-header-typography">Start Time</span>
-      </label>
-      <input
-        id="custom-start"
-        type="text"
-        placeholder="yesterday, 2024-01-01, 2 hours ago"
-        class="input input-bordered input-sm min-w-0 w-full rounded-lg text-sm"
-        class:input-error={startInputInvalid}
-        aria-invalid={startInputInvalid}
-        aria-describedby={customFieldIssue
-          ? 'custom-time-range-error'
-          : undefined}
-        bind:value={customStartText}
-      />
+    <div class="flex min-w-0 w-full flex-col gap-2">
+      <div class="typed-field-group join w-full">
+        <label for="custom-start" class="typed-field-label join-item">
+          Start:<span class="sr-only"> time</span>
+        </label>
+        <input
+          id="custom-start"
+          type="text"
+          placeholder="yesterday, 2024-01-01, 2 hours ago"
+          class="typed-field input input-sm join-item"
+          class:input-error={startInputInvalid}
+          aria-invalid={startInputInvalid}
+          aria-describedby={customFieldIssue
+            ? 'custom-time-range-error'
+            : undefined}
+          bind:value={customStartText}
+        />
+      </div>
 
-      <label class="label" for="custom-end">
-        <span class="table-header-typography">End Time</span>
-      </label>
-      <div class="custom-time-join join w-full">
+      <div class="typed-field-group join w-full">
+        <label for="custom-end" class="typed-field-label join-item">
+          End:<span class="sr-only"> time</span>
+        </label>
         <input
           id="custom-end"
           type="text"
           placeholder="e.g., now, 1 hour ago, 2024-01-02"
-          class="input input-bordered input-sm join-item min-w-0 flex-1 rounded-l-lg rounded-r-none text-sm"
+          class="typed-field input input-sm join-item"
           class:input-error={endInputInvalid}
           aria-invalid={endInputInvalid}
           aria-describedby={customFieldIssue
@@ -194,7 +196,7 @@
         />
         <button
           type="submit"
-          class="btn btn-soft btn-primary btn-sm join-item shrink-0 gap-1 rounded-l-none rounded-r-lg font-semibold"
+          class="typed-field typed-field--action typed-field--apply btn btn-sm join-item shrink-0 gap-1"
           title="Apply"
         >
           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" aria-hidden="true">
@@ -205,27 +207,13 @@
       </div>
 
       {#if customFieldIssue}
-        <div class="mt-1.5">
+        <div>
           <FieldErrorMessage
             id="custom-time-range-error"
             message={customFieldIssue.message}
           />
         </div>
       {/if}
-    </fieldset>
-  </form>
-</div>
-
-<style lang="postcss">
-  @reference "../../../app.css";
-
-  /* Seam: no double border between input and button (same width as input border). */
-  .custom-time-join :global(input.join-item) {
-    border-right-width: 0;
-  }
-
-  /* Soft-primary border to match btn-soft btn-primary (see toolbar-filter-trigger--compact). */
-  .custom-time-join :global(input.join-item + button.join-item) {
-    @apply border border-solid border-primary/25;
-  }
-</style>
+    </div>
+  </fieldset>
+</form>

@@ -13,7 +13,9 @@ import CameraIcon from './Camera.svelte'
 import ChartHistogramIcon from './ChartHistogramIcon.svelte'
 import CancelIcon from './CancelIcon.svelte'
 import CheckmarkCircleIcon from './CheckmarkCircleIcon.svelte'
+import CustomizeIcon from './CustomizeIcon.svelte'
 import CopyIcon from './CopyIcon.svelte'
+import DateTimeIcon from './DateTimeIcon.svelte'
 import FilterIcon from './FilterIcon.svelte'
 import FirePitIcon from './FirePitIcon.svelte'
 import FocusPointIcon from './FocusPoint.svelte'
@@ -42,7 +44,9 @@ export {
   CancelIcon,
   ChartHistogramIcon,
   CheckmarkCircleIcon,
+  CustomizeIcon,
   CopyIcon,
+  DateTimeIcon,
   FilterIcon,
   FirePitIcon,
   FocusPointIcon,

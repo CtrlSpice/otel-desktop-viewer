@@ -106,7 +106,7 @@ export const queryEditorTheme = EditorView.theme({
   },
   '.cm-content': {
     caretColor: qc.iris,
-    padding: '8px 0',
+    padding: '0',
   },
   '.cm-cursor, .cm-dropCursor': {
     borderLeftColor: qc.iris,
@@ -121,9 +121,11 @@ export const queryEditorTheme = EditorView.theme({
     backgroundColor: 'transparent',
   },
   '.cm-placeholder': {
-    color: qc.muted,
-    fontSize: '0.8125rem',
+    color: qc.subtle,
+    fontSize: '14px',
     fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
+    fontStyle: 'normal',
+    lineHeight: 'var(--table-row-h)',
   },
   // Lint diagnostics (render inline in .cm-editor, so EditorView.theme works)
   '.cm-diagnostic-error': {

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { GlobalIcon } from '@/icons'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { getLocalTimezoneName } from '@/utils/time'
-  import PresetTimeRanges from './PresetTimeRanges.svelte'
+  import { getLocalTimezoneName, formatTimezoneLabel } from '@/utils/time'
+  import { GlobalIcon, CustomizeIcon } from '@/icons'
+  import FieldGroup from '@/components/FieldGroup.svelte'
   import CustomTimeRange from './CustomTimeRange.svelte'
   import RecentTimeRanges from './RecentTimeRanges.svelte'
 
@@ -14,57 +14,62 @@
   }
 </script>
 
-<!-- Shared body: presets, custom range, timezone, recents (toolbar popover + DateTimeFilter dialog). -->
-<div class="text-sm">
-  <PresetTimeRanges />
-
-  <div class="min-w-0 w-full">
+<!-- Shared body: custom range, timezone group, recents group. -->
+<div class="flex min-w-0 flex-col text-sm">
+  <FieldGroup label="Custom Range">
+    {#snippet heading()}
+      <CustomizeIcon class="h-3.5 w-3.5 shrink-0 text-base-content/55" />
+      <span>Custom Range</span>
+    {/snippet}
     <CustomTimeRange />
-  </div>
+  </FieldGroup>
 
-  <div class="border-t border-base-300"></div>
-
-  <div class="min-w-0 w-full">
+  <FieldGroup label="Timezone" open={false}>
+    {#snippet heading()}
+      <GlobalIcon class="h-3.5 w-3.5 shrink-0 text-base-content/55" />
+      <span>Timezone</span>
+      <span class="badge-count">{formatTimezoneLabel(ctx.timezone)}</span>
+    {/snippet}
     <button
       type="button"
-      class="timezone-toggle"
-      onclick={() => {
-        ctx.setTimezone(ctx.timezone === 'UTC' ? 'local' : 'UTC')
-      }}
+      class="tz-option"
+      class:tz-option--active={ctx.timezone === 'local'}
+      onclick={() => ctx.setTimezone('local')}
     >
-      <div class="flex min-w-0 items-center gap-1.5 leading-snug">
-        <GlobalIcon class="h-3.5 w-3.5 text-base-content/55" />
-        <span class="table-header-typography min-w-0 truncate">
-          {ctx.timezone === 'UTC'
-            ? 'Coordinated Universal Time UTC'
-            : getLocalTimezoneName()}
-        </span>
-      </div>
-      <div class="flex shrink-0 items-center gap-1 text-sm text-base-content">
-        <span>{ctx.timezone === 'UTC' ? 'UTC+0' : 'Local'}</span>
-        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M8 9l4-4 4 4m0 6l-4 4-4-4"></path>
-        </svg>
-      </div>
+      <span class="min-w-0 flex-1 truncate">{getLocalTimezoneName()}</span>
+      <span class="tz-badge badge-count">{formatTimezoneLabel('local')}</span>
     </button>
-  </div>
+    <button
+      type="button"
+      class="tz-option"
+      class:tz-option--active={ctx.timezone === 'UTC'}
+      onclick={() => ctx.setTimezone('UTC')}
+    >
+      <span class="min-w-0 flex-1 truncate">Coordinated Universal Time</span>
+      <span class="tz-badge badge-count">UTC</span>
+    </button>
+  </FieldGroup>
 
-  <div class="border-t border-base-300"></div>
-
-  <div class="min-w-0 w-full">
-    <RecentTimeRanges />
-  </div>
+  <RecentTimeRanges last />
 </div>
 
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .timezone-toggle {
+  .tz-option {
     box-sizing: border-box;
-    height: var(--table-header-h);
-    min-height: var(--table-header-h);
-    @apply flex w-full cursor-pointer items-center justify-between gap-2 rounded-none border-none bg-transparent px-3 py-1 text-left text-sm transition-colors;
-    @apply text-base-content/90 hover:bg-base-200/90 focus-visible:bg-base-200/90;
+    height: var(--table-row-h);
+    min-height: var(--table-row-h);
+    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none bg-transparent px-3 py-0 text-left text-sm transition-colors;
+    @apply text-base-content/90 hover:bg-base-300/40;
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
+  }
+
+  .tz-option--active {
+    @apply text-primary;
+  }
+
+  .tz-badge {
+    @apply ml-auto shrink-0;
   }
 </style>

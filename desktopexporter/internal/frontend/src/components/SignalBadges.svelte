@@ -61,14 +61,14 @@
   </span>
   {#if props.seriesCount !== undefined}
     <span
-      class="badge badge-xs badge-soft badge-neutral tabular-nums"
+      class="badge-count"
       title="{props.seriesCount} time series in range"
     >
       {props.seriesCount} series
     </span>
   {/if}
 {:else if props.signal === 'trace'}
-  <span class="badge badge-xs badge-soft badge-neutral tabular-nums">
+  <span class="badge-count">
     {props.spanCount} span{props.spanCount !== 1 ? 's' : ''}
   </span>
   {#if props.errorCount > 0}

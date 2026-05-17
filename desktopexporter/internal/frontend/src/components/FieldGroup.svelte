@@ -4,46 +4,68 @@
 
   type Props = {
     label: string
-    /** Optional neutral badge shown before the count (e.g. event offset). */
+    /** Optional snippet replacing the default label text (for icons, rich content). */
+    heading?: Snippet
+    /** Optional badge before the count (e.g. event offset). */
     badge?: string
     count?: number
     open?: boolean
+    /** Suppress the trailing separator (last group in a list). */
+    last?: boolean
     children: Snippet
   }
 
-  let { label, badge, count, open = $bindable(true), children }: Props = $props()
+  let {
+    label,
+    heading,
+    badge,
+    count,
+    open = $bindable(true),
+    last = false,
+    children,
+  }: Props = $props()
 </script>
 
-<details class="field-group" {open}
-  ontoggle={(e) => (open = (e.currentTarget as HTMLDetailsElement).open)}>
+<details
+  class="field-group"
+  {open}
+  ontoggle={e => (open = (e.currentTarget as HTMLDetailsElement).open)}
+>
   <summary class="field-group__heading">
-    <span>{label}</span>
+    {#if heading}
+      {@render heading()}
+    {:else}
+      <span>{label}</span>
+    {/if}
     {#if badge}
-      <span class="badge badge-xs badge-soft badge-neutral tabular-nums">{badge}</span>
+      <span class="badge-count">{badge}</span>
     {/if}
     {#if count !== undefined}
-      <span class="badge badge-xs badge-soft badge-neutral">{count}</span>
+      <span class="badge-count">{count}</span>
     {/if}
     <ArrowDownIcon class="field-group__caret" aria-hidden="true" />
   </summary>
   <div class="field-group__content">
     {@render children()}
   </div>
+  {#if !last}
+    <div class="separator" aria-hidden="true"></div>
+  {/if}
 </details>
 
 <style lang="postcss">
   @reference "../app.css";
 
   .field-group {
-    @apply border-b border-base-300/30;
-  }
-
-  .field-group:last-child {
     @apply border-b-0;
   }
 
+  .field-group__content {
+    @apply px-2 pb-2 pt-0;
+  }
+
   .field-group__heading {
-    @apply cursor-pointer select-none list-none px-3 py-2 text-sm font-medium flex items-center gap-2;
+    @apply cursor-pointer select-none list-none px-3 py-1.5 text-sm font-medium flex items-center gap-2;
     color: var(--color-subtle);
   }
 

@@ -1,13 +1,14 @@
 <script lang="ts">
   import { getTimeContext } from '@/contexts/time-context.svelte';
+  import FieldGroup from '@/components/FieldGroup.svelte';
+  import { DateTimeIcon } from '@/icons';
   import {
-    formatDateTimeRange,
+    formatDateTimeMs,
     loadRecentTimeRanges,
     MAX_RECENT_TIME_RANGES,
     type RecentTimeRange,
   } from '@/utils/time';
 
-  // Get time context
   let ctx = getTimeContext();
   if (!ctx) {
     throw new Error(
@@ -15,9 +16,10 @@
     );
   }
 
+  let { last = false }: { last?: boolean } = $props();
+
   let recentTimeRanges = $state<RecentTimeRange[]>([]);
 
-  // Keep list in sync when selection changes (setSelection writes localStorage recents)
   $effect(() => {
     void ctx.selection.start;
     void ctx.selection.end;
@@ -32,74 +34,69 @@
   }
 </script>
 
-<div class="min-w-0 w-full">
-  <div class="recent-section-heading px-3">
-    <span class="table-header-typography">Recently Used</span>
-  </div>
-  <div class="recent-ranges-list space-y-0">
-    {#if recentTimeRanges.length === 0}
-      <div
-        class="recent-range-empty flex w-full items-center px-3 text-left text-sm text-base-content/60"
-      >
-        No recent time ranges
-      </div>
-    {:else}
-      {#each recentTimeRanges as entry, index}
-        <button
-          class="recent-range-button"
-          class:recent-range-button--active={ctx.selection.type === 'recent' &&
-            entry.start === ctx.selection.start &&
-            entry.end === ctx.selection.end}
-          onclick={() => applyRecentTimeRange(index)}
-        >
-          <span class="min-w-0 truncate">
-            {formatDateTimeRange(entry.start, entry.end, ctx.timezone)}
-          </span>
-        </button>
-      {/each}
+<FieldGroup label="Recently Used" {last}>
+  {#snippet heading()}
+    <DateTimeIcon class="h-3.5 w-3.5 shrink-0 text-base-content/55" />
+    <span>Recently Used</span>
+    {#if recentTimeRanges.length > 0}
+      <span class="badge-count">{recentTimeRanges.length}</span>
     {/if}
-  </div>
-</div>
+  {/snippet}
+  {#if recentTimeRanges.length === 0}
+    <div class="recent-range-empty">
+      No recent time ranges
+    </div>
+  {:else}
+    {#each recentTimeRanges as entry, index}
+      {@const startFmt = formatDateTimeMs(entry.start, ctx.timezone)}
+      {@const endFmt = formatDateTimeMs(entry.end, ctx.timezone)}
+      <button
+        class="recent-range-button"
+        class:recent-range-button--active={ctx.selection.type === 'recent' &&
+          entry.start === ctx.selection.start &&
+          entry.end === ctx.selection.end}
+        onclick={() => applyRecentTimeRange(index)}
+      >
+        <span class="recent-range-label">start:</span>
+        <span class="recent-range-value">{startFmt.dateTime}</span>
+        <span class="recent-range-label">end:</span>
+        <span class="recent-range-value">{endFmt.dateTime}</span>
+      </button>
+    {/each}
+  {/if}
+</FieldGroup>
 
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .recent-section-heading {
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    height: var(--table-header-h);
-    min-height: var(--table-header-h);
-    @apply py-1;
-  }
-
   .recent-range-empty {
-    box-sizing: border-box;
-    height: var(--table-row-h);
-    min-height: var(--table-row-h);
+    @apply py-2 text-sm text-base-content/60;
   }
 
   .recent-range-button {
     box-sizing: border-box;
-    height: var(--table-row-h);
     min-height: var(--table-row-h);
-    @apply flex w-full items-center rounded-none border-none bg-transparent px-3 py-0 text-left text-sm leading-snug;
-    @apply text-base-content/90 transition-colors duration-150;
+    @apply flex w-full items-center gap-1.5 whitespace-nowrap rounded-none border-none bg-transparent px-0 py-0 text-left text-sm leading-snug;
+    @apply text-base-content transition-colors duration-150;
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
     @apply cursor-pointer;
   }
 
   .recent-range-button:hover,
   .recent-range-button:focus-visible {
-    background-color: var(--table-hover-bg);
+    @apply bg-base-300/40;
   }
 
   .recent-range-button--active {
-    @apply bg-primary/20 font-semibold text-primary;
-    @apply ring-1 ring-inset ring-primary/20;
+    @apply text-primary;
   }
 
-  .recent-range-button--active:hover {
-    @apply bg-primary/30;
+  .recent-range-label {
+    @apply inline-block w-[2.5rem] text-right text-xs;
+    color: var(--color-subtle);
+  }
+
+  .recent-range-value {
+    @apply text-xs font-mono tracking-tight tabular-nums;
   }
 </style>

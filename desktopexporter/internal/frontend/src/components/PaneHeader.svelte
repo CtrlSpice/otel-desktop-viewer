@@ -13,6 +13,9 @@
  *   • title-tabs  — flat title on the left + lift tabs on the right.
  *                   Use when the pane has a stable label AND tabs that
  *                   switch a sub-view inside the same pane.
+ *   • toolbar     — chrome strip with no title or lift tabs. Use the
+ *                   `right` snippet for a full-width control row (e.g.
+ *                   time-range preset pills in the datetime popover).
  *
  * tabLayout (for `tabs` and `title-tabs`)
  *   • 'left'   — tabs pack to the start at their intrinsic width and
@@ -47,14 +50,14 @@
 
   export type PaneBadge = {
     label: string
-    /** daisyUI badge classes; defaults to neutral soft xs. */
+    /** daisyUI badge classes; defaults to count badge (primary soft xs). */
     class?: string
   }
 
-  const DEFAULT_BADGE_CLASS = 'badge badge-xs badge-soft badge-neutral'
+  const DEFAULT_BADGE_CLASS = 'badge-count'
 
   type CommonProps = {
-    /** Right-aligned neutral badges (counts, severity, offsets) as
+    /** Right-aligned badges (counts, severity, offsets) as
      *  plain strings. Use for ad-hoc badges where there's no shared
      *  rendering rule. Pinned to the right edge of the strip. */
     badges?: PaneBadge[]
@@ -100,7 +103,16 @@
     tabLayout?: PaneTabLayout
   }
 
-  export type PaneHeaderProps = TitleProps | TabsProps | TitleTabsProps
+  type ToolbarProps = CommonProps & {
+    mode: 'toolbar'
+    ariaLabel: string
+  }
+
+  export type PaneHeaderProps =
+    | TitleProps
+    | TabsProps
+    | TitleTabsProps
+    | ToolbarProps
 </script>
 
 <script lang="ts">
@@ -165,9 +177,7 @@
         {/if}
         {tab.label}
         {#if tab.count !== undefined}
-          <span class="badge badge-xs badge-soft badge-neutral tabular-nums"
-            >{tab.count}</span
-          >
+          <span class="badge-count">{tab.count}</span>
         {/if}
       </button>
     {/each}
@@ -206,6 +216,16 @@
     )}
     {#if props.right}
       <div class="pane-header__right">{@render props.right()}</div>
+    {/if}
+  </div>
+{:else if props.mode === 'toolbar'}
+  <div
+    class="pane-header pane-header--toolbar {roundedClass}"
+    role="toolbar"
+    aria-label={props.ariaLabel}
+  >
+    {#if props.right}
+      <div class="pane-header__toolbar">{@render props.right()}</div>
     {/if}
   </div>
 {:else}
@@ -261,6 +281,14 @@
      px-3 matches FieldGroup headings and detail row inset. */
   .pane-header--title {
     @apply items-center px-3 py-2;
+  }
+
+  .pane-header--toolbar {
+    @apply items-center px-2 py-1.5;
+  }
+
+  .pane-header__toolbar {
+    @apply flex min-w-0 w-full flex-1 items-center;
   }
 
   .pane-header--tabs,

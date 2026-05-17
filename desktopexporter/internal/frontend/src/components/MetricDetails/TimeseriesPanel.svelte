@@ -272,11 +272,6 @@
     @apply truncate text-base-content;
   }
 
-  .ts-row__badge {
-    @apply shrink-0 text-sm tabular-nums;
-    color: var(--color-muted);
-  }
-
   .ts-row__summary :global(.ts-row__caret) {
     @apply ml-auto h-3.5 w-3.5 transition-transform duration-150;
     color: var(--color-muted);

@@ -57,7 +57,7 @@ function temporalityBadge(
     case 'cumulative':
       return { label: 'Σ', title: 'Cumulative', isUnspecified: false }
     case 'unspecified':
-      return { label: '', title: 'Unspecified temporality', isUnspecified: true }
+      return { label: 'Unspecified', title: 'Unspecified temporality', isUnspecified: true }
     default:
       return { label: raw, title: raw, isUnspecified: false }
   }
@@ -65,7 +65,7 @@ function temporalityBadge(
 
 const MONOTONIC_SYMBOL = { label: '↗', title: 'Monotonic' } as const
 
-const UNSPECIFIED_TEMPORALITY_LABEL = 'aggregationTemporality = Unspecified'
+const UNSPECIFIED_TEMPORALITY_TITLE = 'aggregationTemporality = Unspecified'
 
 export type MetricTypeCardBadge = {
   label: string
@@ -85,21 +85,17 @@ export function metricTypeCardBadge(
   if (temporality) titleParts.push(temporality.title)
   if (isMonotonic === true) titleParts.push(MONOTONIC_SYMBOL.title)
 
-  if (temporality?.isUnspecified) {
-    return {
-      label: UNSPECIFIED_TEMPORALITY_LABEL,
-      title: titleParts.join(' · '),
-      className: `${METRIC_TYPE_BADGE_BASE} badge-error`,
-    }
-  }
-
   const labelParts = [metricTypeLabel(metricType)]
   if (temporality?.label) labelParts.push(temporality.label)
   if (isMonotonic === true) labelParts.push(MONOTONIC_SYMBOL.label)
 
   return {
     label: labelParts.join(' '),
-    title: titleParts.join(' · '),
-    className: metricTypeBadgeClass(metricType),
+    title: temporality?.isUnspecified
+      ? `${titleParts.join(' · ')} · ${UNSPECIFIED_TEMPORALITY_TITLE}`
+      : titleParts.join(' · '),
+    className: temporality?.isUnspecified
+      ? `${METRIC_TYPE_BADGE_BASE} badge-error`
+      : metricTypeBadgeClass(metricType),
   }
 }

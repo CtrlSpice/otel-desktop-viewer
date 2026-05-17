@@ -1,43 +1,27 @@
 export type Timezone = 'local' | 'UTC'
 
+export type FormattedDateTime = {
+  dateTime: string
+  timezone: string
+}
+
 type DateTimeResolution = 'minutes' | 'seconds' | 'milliseconds'
 type TimestampResolution = DateTimeResolution | 'microseconds' | 'nanoseconds'
 
-// UI time: number = Unix ms (from Date.now(), time pickers, etc.)
-export function formatDateTime(
-  ms: number,
+/** Short timezone label for UI chrome (UTC, PST, …). */
+export function formatTimezoneLabel(
   timezone: Timezone,
-  resolution: DateTimeResolution = 'minutes'
+  date: Date = new Date()
 ): string {
-  return formatWithDate(new Date(ms), timezone, resolution)
+  if (timezone === 'UTC') return 'UTC'
+  return (
+    new Intl.DateTimeFormat('en', { timeZoneName: 'short' })
+      .formatToParts(date)
+      .find(part => part.type === 'timeZoneName')?.value ?? 'Local'
+  )
 }
 
-// Telemetry time: bigint = Unix nanoseconds (from backend OTLP data)
-export function formatTimestamp(
-  ns: bigint,
-  timezone: Timezone,
-  resolution: TimestampResolution = 'nanoseconds'
-): string {
-  let epochMs = Number(ns / 1_000_000n)
-  let subMs = ns % 1_000_000n
-  let date = new Date(epochMs)
-  let formatted = formatWithDate(date, timezone, resolution)
-
-  if (resolution === 'microseconds') {
-    let micros = Number(subMs).toString().padStart(6, '0')
-    return formatted.replace(/\.\d{3}(\s)/, `.${micros}$1`)
-  }
-  if (resolution === 'nanoseconds') {
-    let nanos = Number(subMs).toString().padStart(6, '0')
-    let extraNanos = Number(ns % 1000n)
-      .toString()
-      .padStart(3, '0')
-    return formatted.replace(/\.\d{3}(\s)/, `.${nanos}${extraNanos}$1`)
-  }
-  return formatted
-}
-
-function formatWithDate(
+function formatWallClock(
   date: Date,
   timezone: Timezone,
   resolution: TimestampResolution
@@ -63,56 +47,78 @@ function formatWithDate(
       break
   }
 
-  let formattedDate: string
   if (timezone === 'UTC') {
-    formattedDate = date.toLocaleString('en-CA', {
-      ...options,
-      timeZone: 'UTC',
-    })
-  } else {
-    formattedDate = date.toLocaleString('en-CA', options)
+    return date.toLocaleString('en-CA', { ...options, timeZone: 'UTC' })
   }
-
-  if (timezone === 'UTC') {
-    return `${formattedDate} UTC`
-  }
-
-  let tzAbbr =
-    new Intl.DateTimeFormat('en', { timeZoneName: 'short' })
-      .formatToParts(date)
-      .find(part => part.type === 'timeZoneName')?.value || ''
-  return `${formattedDate} ${tzAbbr}`
+  return date.toLocaleString('en-CA', options)
 }
 
-export function formatDateTimeRange(
+/** Wall-clock instant to ms precision + short timezone label (split for headers/tables). */
+export function formatDateTimeMs(
+  ms: number,
+  timezone: Timezone
+): FormattedDateTime {
+  const date = new Date(ms)
+  return {
+    dateTime: formatWallClock(date, timezone, 'milliseconds'),
+    timezone: formatTimezoneLabel(timezone, date),
+  }
+}
+
+// UI time: number = Unix ms (from Date.now(), time pickers, etc.)
+export function formatDateTime(
+  ms: number,
+  timezone: Timezone,
+  resolution: DateTimeResolution = 'minutes'
+): string {
+  const date = new Date(ms)
+  const dateTime = formatWallClock(date, timezone, resolution)
+  return `${dateTime} ${formatTimezoneLabel(timezone, date)}`
+}
+
+// Telemetry time: bigint = Unix nanoseconds (from backend OTLP data)
+export function formatTimestamp(
+  ns: bigint,
+  timezone: Timezone,
+  resolution: TimestampResolution = 'nanoseconds'
+): string {
+  let epochMs = Number(ns / 1_000_000n)
+  let subMs = ns % 1_000_000n
+  let date = new Date(epochMs)
+  let formatted = `${formatWallClock(date, timezone, resolution)} ${formatTimezoneLabel(timezone, date)}`
+
+  if (resolution === 'microseconds') {
+    let micros = Number(subMs).toString().padStart(6, '0')
+    return formatted.replace(/\.\d{3}(\s)/, `.${micros}$1`)
+  }
+  if (resolution === 'nanoseconds') {
+    let nanos = Number(subMs).toString().padStart(6, '0')
+    let extraNanos = Number(ns % 1000n)
+      .toString()
+      .padStart(3, '0')
+    return formatted.replace(/\.\d{3}(\s)/, `.${nanos}${extraNanos}$1`)
+  }
+  return formatted
+}
+
+export function formatDateTimeRangeLabel(
   start: number,
   end: number,
-  timezone: Timezone
+  timezone: Timezone,
+  options: { includeTimezone?: boolean } = {}
 ): string {
-  // Handle "Show all" case where start is 0 (beginning of time)
+  const { includeTimezone = false } = options
+  const tz = formatTimezoneLabel(timezone, new Date(end))
+
   if (start === 0) {
-    return `Before ${formatDateTime(end, timezone, 'seconds')}`
+    const range = `Before ${formatDateTimeMs(end, timezone).dateTime}`
+    return includeTimezone ? `${range} ${tz}` : range
   }
 
-  let startStr = formatDateTime(start, timezone, 'seconds')
-  let endStr = formatDateTime(end, timezone, 'seconds')
-
-  // Extract date and time parts for reuse
-  let startParts = startStr.split(' ')
-  let endParts = endStr.split(' ')
-  let timezoneSuffix = startParts[2] ?? ''
-  let isSameDay = startParts[0] === endParts[0]
-
-  startStr = startStr.replace(timezoneSuffix, '')
-  endStr = endStr.replace(timezoneSuffix, '')
-
-  if (isSameDay) {
-    // Same day: "2024-01-15 14:30:45 - 15:45:30 UTC"
-    return `${startStr} - ${endParts[1]} ${timezoneSuffix}`
-  } else {
-    // Different days: "2024-01-15 14:30:45 - 2024-01-16 09:15:30 UTC"
-    return `${startStr} - ${endStr} ${timezoneSuffix}`
-  }
+  const startLabel = formatDateTimeMs(start, timezone).dateTime
+  const endLabel = formatDateTimeMs(end, timezone).dateTime
+  const range = `${startLabel} - ${endLabel}`
+  return includeTimezone ? `${range} ${tz}` : range
 }
 
 export function getLocalTimezoneName(): string {

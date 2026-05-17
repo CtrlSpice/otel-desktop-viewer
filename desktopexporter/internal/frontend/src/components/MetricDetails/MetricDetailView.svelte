@@ -340,7 +340,7 @@
                   {/each}
                   {#if hasExtra}
                     {#if dp.exemplars.length > 0}
-                      <span class="badge badge-xs badge-soft badge-neutral">{dp.exemplars.length} ex</span>
+                      <span class="badge-count">{dp.exemplars.length} ex</span>
                     {/if}
                     {#if dp.flags > 0}
                       <span class="badge badge-xs badge-soft badge-warning">flags</span>
@@ -407,27 +407,6 @@
   .detail-view__scroll {
     @apply flex-1 min-h-0 overflow-y-auto;
     scrollbar-width: thin;
-  }
-
-  /* Section block: heading + content. gap above the content gives
-     the heading room to breathe without manual margin discipline. */
-  .detail-view__section {
-    @apply flex flex-col gap-2 px-3 py-3;
-  }
-
-  .detail-view__section + .detail-view__section {
-    border-top: 1px solid
-      color-mix(in oklab, var(--color-base-300) 30%, transparent);
-  }
-
-  .detail-view__section-heading {
-    @apply m-0 text-sm font-medium;
-    color: var(--color-subtle);
-  }
-
-  .detail-view__section-empty {
-    @apply m-0 text-sm italic;
-    color: var(--color-muted);
   }
 
   /* --- Datapoints tab ------------------------------------------- */

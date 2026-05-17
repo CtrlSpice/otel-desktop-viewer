@@ -57,7 +57,6 @@
       aria-label="List controls"
     >
       <DateTimeFilter
-        triggerVariant="icon"
         class="drawer-header-btn drawer-header-btn--inactive shrink-0"
       />
 

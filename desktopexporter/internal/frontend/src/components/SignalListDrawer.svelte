@@ -13,6 +13,7 @@
   import ThemeToggle from '@/components/ThemeToggle.svelte'
   import DrawerNavTabs from '@/components/DrawerNavTabs.svelte'
   import { NAV_ITEMS, isNavItemActive } from '@/components/DrawerNavTabs.svelte'
+  import DateTimeFilter from '@/components/SignalToolbar/datetime/DateTimeFilter.svelte'
   import PaneHeader, { type PaneTab } from '@/components/PaneHeader.svelte'
   import { router } from 'tinro5'
   import {
@@ -223,14 +224,18 @@
           {/if}
           </div>
 
-          <div class="signal-drawer__collapsed-sep" aria-hidden="true"></div>
+          <div class="separator w-8" aria-hidden="true"></div>
 
           <div class="signal-drawer__collapsed-group">
             <DrawerNavTabs collapsed />
           </div>
 
-          <div class="signal-drawer__collapsed-sep" aria-hidden="true"></div>
+          <div class="separator w-8" aria-hidden="true"></div>
           <div class="signal-drawer__collapsed-group">
+            <DateTimeFilter
+              popoverAnchor="outward"
+              class="drawer-header-btn drawer-header-btn--inactive shrink-0"
+            />
             {#if onRefresh}
               <button
                 type="button"
@@ -447,10 +452,6 @@
 
   .signal-drawer__collapsed-group {
     @apply flex flex-col items-center gap-2;
-  }
-
-  .signal-drawer__collapsed-sep {
-    @apply h-px w-8 shrink-0 bg-base-content/15;
   }
 
   /* ── Expanded: unified header panel ── */
