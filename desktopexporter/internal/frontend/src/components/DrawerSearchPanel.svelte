@@ -60,7 +60,7 @@
     return setupAnchorPopover({
       popover,
       trigger,
-      anchor: 'inward',
+      anchor: 'below-end',
       onOpenChange: open => {
         sortPopoverOpen = open
       },

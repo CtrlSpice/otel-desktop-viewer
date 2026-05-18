@@ -428,7 +428,10 @@
             <ResizablePanels
               defaultLeftWidth={0.6}
               minLeftWidth={0.25}
-              minRightWidth={0.2}
+              minRightWidth={0.15}
+              minLeftPx={200}
+              minRightPx={128}
+              maxRightPx={320}
               storageKey="metrics:vsplit"
               stackBreakpoint={Number.POSITIVE_INFINITY}
               stackedResizeHandle="panel-header"

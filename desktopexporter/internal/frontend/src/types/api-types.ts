@@ -1,8 +1,6 @@
 export type RootSpan = {
   serviceName: string
   name: string
-  startTime: bigint
-  endTime: bigint
 }
 
 export type TraceSummary = {
@@ -16,8 +14,6 @@ export type TraceSummary = {
   startTime: bigint
   durationNs: bigint | null
   spanCount: number
-  // Distinct services that participated in this trace.
-  serviceCount: number
   errorCount: number
 }
 
@@ -122,20 +118,16 @@ export type LogData = {
 // otherwise ObservedTimestamp. The summary doesn't carry observed
 // separately; consumers that need both fall back to the detail row.
 //
-// `bodyPreview` is server-truncated; `bodyTruncated` is true when
-// the original body was longer than the preview limit. Rendering a
-// "… more" affordance is the consumer's call.
+// `bodyPreview` is server-truncated to the first N characters.
+// Full body, traceID, spanID, and bodyType are available on LogData
+// (fetched on demand for the detail pane).
 export type LogSummary = {
   id: string
   timestamp: bigint
-  traceID: string | null
-  spanID: string | null
   severityText: string
   severityNumber: number
   serviceName: string
   bodyPreview: string
-  bodyTruncated: boolean
-  bodyType: string
 }
 
 // Metrics types

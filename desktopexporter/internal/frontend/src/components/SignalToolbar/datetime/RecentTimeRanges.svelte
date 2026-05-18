@@ -57,9 +57,8 @@
           entry.end === ctx.selection.end}
         onclick={() => applyRecentTimeRange(index)}
       >
-        <span class="recent-range-label">start:</span>
         <span class="recent-range-value">{startFmt.dateTime}</span>
-        <span class="recent-range-label">end:</span>
+        <span class="recent-range-sep" aria-hidden="true">-</span>
         <span class="recent-range-value">{endFmt.dateTime}</span>
       </button>
     {/each}
@@ -91,12 +90,12 @@
     @apply text-primary;
   }
 
-  .recent-range-label {
-    @apply inline-block w-[2.5rem] text-right text-xs;
-    color: var(--color-subtle);
-  }
-
   .recent-range-value {
     @apply text-xs font-mono tracking-tight tabular-nums;
+  }
+
+  .recent-range-sep {
+    @apply text-xs;
+    color: var(--color-subtle);
   }
 </style>

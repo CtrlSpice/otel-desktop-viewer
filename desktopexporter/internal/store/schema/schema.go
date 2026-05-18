@@ -131,7 +131,6 @@ var TableCreationQueries = []string{
 		id uuid primary key,
 		stream_id uuid not null,
 		metric_ingest_id uuid not null,
-		metric_type varchar not null,
 		timestamp bigint,
 		start_time bigint,
 		flags uinteger,
@@ -167,62 +166,7 @@ var TableCreationQueries = []string{
 		-- bounded retention this is the right side of the bargain.
 		attrs_canonical varchar,
 		foreign key (stream_id) references metric_streams(id),
-		foreign key (metric_ingest_id) references metric_ingests(id),
-		constraint chk_metric_type_valid check (
-			metric_type in ('Gauge', 'Sum', 'Histogram', 'ExponentialHistogram', 'Empty')
-		),
-		-- Per-type column shape. aggregation_temporality / is_monotonic
-		-- are NOT validated here; they live on metric_streams now.
-		constraint chk_empty_fields check (
-			(metric_type != 'Empty') or (
-				double_value is null and int_value is null and value_type is null and
-				count is null and sum is null and min is null and max is null and
-				bucket_counts is null and explicit_bounds is null and
-				scale is null and zero_count is null and zero_threshold is null and
-				positive_bucket_offset is null and positive_bucket_counts is null and
-				negative_bucket_offset is null and negative_bucket_counts is null
-			)
-		),
-		constraint chk_gauge_fields check (
-			(metric_type != 'Gauge') or (
-				value_type is not null and (double_value is not null or int_value is not null) and
-				count is null and sum is null and min is null and max is null and
-				bucket_counts is null and explicit_bounds is null and
-				scale is null and zero_count is null and zero_threshold is null and
-				positive_bucket_offset is null and positive_bucket_counts is null and
-				negative_bucket_offset is null and negative_bucket_counts is null
-			)
-		),
-		constraint chk_sum_fields check (
-			(metric_type != 'Sum') or (
-				value_type is not null and (double_value is not null or int_value is not null) and
-				count is null and sum is null and min is null and max is null and
-				bucket_counts is null and explicit_bounds is null and
-				scale is null and zero_count is null and zero_threshold is null and
-				positive_bucket_offset is null and positive_bucket_counts is null and
-				negative_bucket_offset is null and negative_bucket_counts is null
-			)
-		),
-		constraint chk_histogram_fields check (
-			(metric_type != 'Histogram') or (
-				count is not null and sum is not null and
-				bucket_counts is not null and explicit_bounds is not null and
-				double_value is null and int_value is null and value_type is null and
-				scale is null and zero_count is null and zero_threshold is null and
-				positive_bucket_offset is null and positive_bucket_counts is null and
-				negative_bucket_offset is null and negative_bucket_counts is null
-			)
-		),
-		constraint chk_exponential_histogram_fields check (
-			(metric_type != 'ExponentialHistogram') or (
-				count is not null and sum is not null and
-				scale is not null and zero_count is not null and zero_threshold is not null and
-				positive_bucket_offset is not null and positive_bucket_counts is not null and
-				negative_bucket_offset is not null and negative_bucket_counts is not null and
-				double_value is null and int_value is null and value_type is null and
-				bucket_counts is null and explicit_bounds is null
-			)
-		)
+		foreign key (metric_ingest_id) references metric_ingests(id)
 	)`,
 	`create table if not exists exemplars (
 		id uuid primary key,
@@ -300,7 +244,6 @@ var IndexCreationQueries = []string{
 	`create index if not exists idx_metric_streams_name on metric_streams(name)`,
 	`create index if not exists idx_metric_streams_service on metric_streams(service_name)`,
 	`create index if not exists idx_metric_ingests_stream on metric_ingests(stream_id)`,
-	`create index if not exists idx_datapoints_type_stream_time on datapoints(metric_type, stream_id, timestamp desc)`,
 	`create index if not exists idx_datapoints_stream_time on datapoints(stream_id, timestamp desc)`,
 	`create index if not exists idx_datapoints_stream_attrs on datapoints(stream_id, attrs_canonical)`,
 	`create index if not exists idx_datapoints_time on datapoints(timestamp desc)`,

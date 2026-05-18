@@ -105,13 +105,7 @@ async function callRPC(method: string, params?: any): Promise<any> {
 function traceSummaryFromJSON(json: any): TraceSummary {
   return {
     ...json,
-    rootSpan: json.rootSpan
-      ? {
-          ...json.rootSpan,
-          startTime: BigInt(json.rootSpan.startTime),
-          endTime: BigInt(json.rootSpan.endTime),
-        }
-      : undefined,
+    rootSpan: json.rootSpan ?? undefined,
     startTime: BigInt(json.startTime),
     // durationNs arrives as a varchar-encoded int64 (ns precision
     // would otherwise be clipped by JSON's float64 numbers).

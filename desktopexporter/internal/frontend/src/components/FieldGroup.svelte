@@ -14,6 +14,8 @@
     open?: boolean
     /** Suppress the trailing separator (last group in a list). */
     last?: boolean
+    /** When set, parent owns `open` (e.g. a Set membership). */
+    onOpenChange?: (open: boolean) => void
     children: Snippet
   }
 
@@ -25,8 +27,14 @@
     count,
     open = $bindable(true),
     last = false,
+    onOpenChange,
     children,
   }: Props = $props()
+
+  function setOpen(next: boolean) {
+    if (onOpenChange) onOpenChange(next)
+    else open = next
+  }
 </script>
 
 {#if headerAction}
@@ -38,7 +46,7 @@
         class="field-group__caret-btn"
         aria-expanded={open}
         aria-label="{open ? 'Collapse' : 'Expand'} {label}"
-        onclick={() => (open = !open)}
+        onclick={() => setOpen(!open)}
       >
         <ArrowDownIcon class="field-group__caret" aria-hidden="true" />
       </button>
@@ -56,7 +64,8 @@
   <details
     class="field-group"
     {open}
-    ontoggle={e => (open = (e.currentTarget as HTMLDetailsElement).open)}
+    ontoggle={e =>
+      setOpen((e.currentTarget as HTMLDetailsElement).open)}
   >
     <summary class="field-group__heading">
       {#if heading}
@@ -86,14 +95,19 @@
 
   .field-group {
     @apply border-b-0;
+    --fg-inline: 0.75rem;
   }
 
+  /* Content aligns with heading inset (icon or label). */
   .field-group__content {
-    @apply px-2 pb-2 pt-0;
+    padding-inline-start: var(--fg-inline);
+    padding-inline-end: var(--fg-inline);
+    @apply pb-2 pt-0;
   }
 
   .field-group__header-row {
-    @apply flex items-center gap-1.5 px-2 py-1.5;
+    padding-inline: var(--fg-inline);
+    @apply flex items-center gap-1.5 py-1.5;
   }
 
   .field-group__header-row :global(.field-group__caret) {
@@ -116,7 +130,8 @@
   }
 
   .field-group__heading {
-    @apply cursor-pointer select-none list-none px-3 py-1.5 text-sm font-medium flex items-center gap-2;
+    padding-inline: var(--fg-inline);
+    @apply cursor-pointer select-none list-none py-1.5 text-sm font-medium flex items-center gap-2;
     color: var(--color-subtle);
   }
 

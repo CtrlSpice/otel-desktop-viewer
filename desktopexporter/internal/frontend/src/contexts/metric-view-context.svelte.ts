@@ -46,11 +46,22 @@ import { timeseriesToChartTimeseries } from '@/components/MetricCharts/chart-typ
 import type { Timeseries as LegendTimeseries } from '@/components/MetricCharts/legend-types'
 import { MAX_VISIBLE_TIMESERIES } from '@/utils/timeseries-palette'
 import {
+  reconcileTimeseriesVisible,
+  resolveTimeseriesVisible,
+  savePersistedTimeseriesVisible,
+  visibleKeyListsEqual,
+} from '@/utils/metric-timeseries-visible'
+import {
   getTimeContext,
   selectionToQueryRangeMs,
 } from '@/contexts/time-context.svelte'
 
 const KEY = 'metric-view'
+
+// Per-series LTTB budget for the line chart. Below this count the raw
+// samples are rendered; above it we downsample keeping first+last and
+// picking the most visually significant point per bucket.
+const CHART_POINTS_PER_SERIES = 2000
 
 // --- Types --------------------------------------------------------
 
@@ -129,6 +140,8 @@ export interface MetricViewContext {
    * sole writer is still us. */
   setGaugeSumVisible(next: SvelteSet<string>): void
   setHistogramVisible(next: SvelteSet<string>): void
+  /** Toggle chart visibility and persist immediately. */
+  toggleTimeseriesVisible(key: string, checked: boolean): void
   /** Toggle selection + (optionally) expansion + force the snapshot
    * tab on histograms. Single entry point used by both the chart
    * (heatmap clicks) and the detail view (datapoint row clicks). */
@@ -156,6 +169,9 @@ export function createMetricViewContext(
     gaugeSumVisible: new SvelteSet<string>(),
     histogramVisible: new SvelteSet<string>(),
   })
+
+  /** Histogram visibility is seeded once per stream id (bucket fetch). */
+  let histogramVisibleSeededForStreamId: string | null = null
 
   const bucketState = $state({
     bucketSeries: null as BucketSeriesPoint[] | null,
@@ -232,7 +248,9 @@ export function createMetricViewContext(
     if (!m || (metricType !== 'Gauge' && metricType !== 'Sum')) {
       return { chartTimeseries: [], keys: [] as string[] }
     }
-    return timeseriesToChartTimeseries(m.timeseries)
+    return timeseriesToChartTimeseries(m.timeseries, {
+      downsampleTo: CHART_POINTS_PER_SERIES,
+    })
   })
 
   const gaugeSumLegendTimeseries = $derived.by((): LegendTimeseries[] => {
@@ -347,10 +365,10 @@ export function createMetricViewContext(
   const visibleBucketSeries = $derived.by(() => {
     const series = bucketState.bucketSeries
     if (!series) return null
-    if (view.histogramVisible.size === histogramTimeseriesGroups.length) {
-      return series
-    }
-    return series.filter(pt => view.histogramVisible.has(pt.attributesKey))
+    const total = histogramTimeseriesGroups.length
+    if (total === 0) return []
+    if (view.histogramVisible.size === total) return series
+    return series.filter((pt) => view.histogramVisible.has(pt.attributesKey))
   })
 
   const aggregatedDatapoint = $derived.by(():
@@ -442,11 +460,12 @@ export function createMetricViewContext(
   // (1) Reset per-metric view state when the metric identity changes.
   // Reading metric.id (not the object) ties the effect to the right
   // dependency; internal updates to the metric (e.g. polling) won't
-  // fire this. The visible-key sets are also re-seeded here from the
-  // first-N-keys-of-the-new-metric default.
+  // fire this. Visible keys are restored from localStorage (per metric
+  // stream id) when possible.
   $effect(() => {
     const m = getMetric()
-    void m?.id
+    const streamId = m?.id
+    void streamId
 
     view.selectedDatapointId = null
     view.expandedDatapoints.clear()
@@ -455,22 +474,65 @@ export function createMetricViewContext(
 
     const gsKeys = gaugeSumGroups.keys
     view.gaugeSumVisible = new SvelteSet(
-      gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
+      streamId
+        ? resolveTimeseriesVisible(gsKeys, streamId)
+        : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
     )
     // Histogram visible is re-seeded by a separate effect because its
     // candidate keys come from bucketSeries (asynchronous), not from
     // the metric directly.
+    histogramVisibleSeededForStreamId = null
     view.histogramVisible = new SvelteSet()
   })
 
-  // (2) Re-seed histogram visible-set whenever the bucket-series fetch
-  // returns. We can't seed it in the metric-identity effect because
-  // bucketSeries arrives later.
+  // (2) Seed histogram visibility once per stream when bucket keys arrive.
+  // Do not use size === 0 as "unseeded" — an empty set is valid after the
+  // user unchecks every series.
   $effect(() => {
-    const keys = histogramTimeseriesGroups.map(g => g.key)
+    const m = getMetric()
+    const streamId = m?.id
+    const keys = histogramTimeseriesGroups.map((g) => g.key)
+    if (!streamId || keys.length === 0) return
+    if (histogramVisibleSeededForStreamId === streamId) return
+    view.histogramVisible = new SvelteSet(
+      resolveTimeseriesVisible(keys, streamId)
+    )
+    histogramVisibleSeededForStreamId = streamId
+  })
+
+  // (2b) Same metric stream, new telemetry: prune stale attribute keys and
+  // re-resolve if the visible set is empty.
+  $effect(() => {
+    const m = getMetric()
+    const streamId = m?.id
+    if (!streamId) return
+
+    if (metricType === 'Gauge' || metricType === 'Sum') {
+      const keys = gaugeSumGroups.keys
+      void keys.join('\0')
+      const next = reconcileTimeseriesVisible(
+        view.gaugeSumVisible,
+        keys,
+        streamId
+      )
+      if (!visibleKeyListsEqual(view.gaugeSumVisible, next)) {
+        view.gaugeSumVisible = new SvelteSet(next)
+      }
+      return
+    }
+
+    if (!isHistogramKind) return
+    const keys = histogramTimeseriesGroups.map((g) => g.key)
     if (keys.length === 0) return
-    if (view.histogramVisible.size > 0) return
-    view.histogramVisible = new SvelteSet(keys.slice(0, MAX_VISIBLE_TIMESERIES))
+    void keys.join('\0')
+    const next = reconcileTimeseriesVisible(
+      view.histogramVisible,
+      keys,
+      streamId
+    )
+    if (!visibleKeyListsEqual(view.histogramVisible, next)) {
+      view.histogramVisible = new SvelteSet(next)
+    }
   })
 
   // (3) Bucket-series fetch. Per-attribute (full breakdown for the
@@ -553,6 +615,23 @@ export function createMetricViewContext(
 
   function setHistogramVisible(next: SvelteSet<string>) {
     view.histogramVisible = next
+  }
+
+  function toggleTimeseriesVisible(key: string, checked: boolean) {
+    const streamId = getMetric()?.id
+    if (isHistogramKind) {
+      const next = new SvelteSet(view.histogramVisible)
+      if (checked) next.add(key)
+      else next.delete(key)
+      view.histogramVisible = next
+      if (streamId) savePersistedTimeseriesVisible(streamId, next)
+      return
+    }
+    const next = new SvelteSet(view.gaugeSumVisible)
+    if (checked) next.add(key)
+    else next.delete(key)
+    view.gaugeSumVisible = next
+    if (streamId) savePersistedTimeseriesVisible(streamId, next)
   }
 
   function onDatapointClick(dp: DataPoint) {
@@ -696,6 +775,7 @@ export function createMetricViewContext(
     setActiveHistogramTab,
     setGaugeSumVisible,
     setHistogramVisible,
+    toggleTimeseriesVisible,
     onDatapointClick,
     onHeatmapSelect,
   }

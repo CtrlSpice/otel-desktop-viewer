@@ -60,7 +60,7 @@
     box-sizing: border-box;
     height: var(--table-row-h);
     min-height: var(--table-row-h);
-    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none bg-transparent px-3 py-0 text-left text-sm transition-colors;
+    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-left text-sm transition-colors;
     @apply text-base-content/90 hover:bg-base-300/40;
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
   }

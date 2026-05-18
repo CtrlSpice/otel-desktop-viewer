@@ -9,6 +9,7 @@ import type {
   MetricTimeseries,
   SumDataPoint,
 } from '@/types/api-types'
+import { downsampleLTTB } from '@/utils/metric-downsample'
 
 export type ChartPoint = { date: Date; value: number }
 
@@ -44,7 +45,8 @@ export type ChartTimeseries = {
  * monotonically-increasing x values to draw a connected line.
  */
 export function timeseriesToChartTimeseries(
-  timeseries: MetricTimeseries[]
+  timeseries: MetricTimeseries[],
+  opts?: { downsampleTo?: number },
 ): {
   chartTimeseries: ChartTimeseries[]
   /** Convenience: same `key` strings the timeseries have, in the
@@ -56,7 +58,7 @@ export function timeseriesToChartTimeseries(
   const keys: string[] = []
 
   for (const ts of timeseries) {
-    const points: ChartPoint[] = []
+    let points: ChartPoint[] = []
     for (const dp of ts.datapoints) {
       if (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum') continue
       const typed = dp as GaugeDataPoint | SumDataPoint
@@ -65,6 +67,9 @@ export function timeseriesToChartTimeseries(
       points.push({ date: new Date(t), value })
     }
     points.sort((a, b) => a.date.getTime() - b.date.getTime())
+    if (opts?.downsampleTo) {
+      points = downsampleLTTB(points, opts.downsampleTo)
+    }
     chartTimeseries.push({
       key: ts.attributesKey,
       label: ts.attributesKey === '' ? 'default' : ts.attributesKey,

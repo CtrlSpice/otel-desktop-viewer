@@ -109,21 +109,18 @@ func searchTracesAll(t *testing.T, s *store.Store, ctx context.Context) []traceS
 }
 
 type traceSummaryJSON struct {
-	TraceID      string        `json:"traceID"`
-	HasRootSpan  bool          `json:"hasRootSpan"`
-	RootSpan     *rootSpanJSON `json:"rootSpan"`
-	StartTime    string        `json:"startTime"`  // varchar-encoded int64 ns
-	DurationNs   *string       `json:"durationNs"` // string-encoded int64 ns; max(end) - min(start) over trace
-	SpanCount    float64       `json:"spanCount"`  // JSON number
-	ServiceCount float64       `json:"serviceCount"`
-	ErrorCount   float64       `json:"errorCount"`
+	TraceID     string        `json:"traceID"`
+	HasRootSpan bool          `json:"hasRootSpan"`
+	RootSpan    *rootSpanJSON `json:"rootSpan"`
+	StartTime   string        `json:"startTime"`  // varchar-encoded int64 ns
+	DurationNs  *string       `json:"durationNs"` // string-encoded int64 ns; max(end) - min(start) over trace
+	SpanCount   float64       `json:"spanCount"`   // JSON number
+	ErrorCount  float64       `json:"errorCount"`
 }
 
 type rootSpanJSON struct {
 	ServiceName string `json:"serviceName"`
 	Name        string `json:"name"`
-	StartTime   int64  `json:"startTime"`
-	EndTime     int64  `json:"endTime"`
 }
 
 // TestTraceSummaryOrdering verifies that trace summaries are ordered by start time (newest first).

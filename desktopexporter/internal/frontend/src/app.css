@@ -126,9 +126,15 @@ html[data-theme='rose-pine-dawn'] {
    text-base  = Text  (e0def4 moon / 575279 dawn) — primary reading
    text-subtle = Subtle (908caa moon / 797593 dawn) — secondary/label
    text-muted  = Muted  (6e6a86 moon / 9893a5 dawn) — de-emphasized */
-.text-rp-base   { color: var(--color-base-content); }
-.text-rp-subtle { color: var(--color-subtle); }
-.text-rp-muted  { color: var(--color-muted); }
+.text-rp-base {
+  color: var(--color-base-content);
+}
+.text-rp-subtle {
+  color: var(--color-subtle);
+}
+.text-rp-muted {
+  color: var(--color-muted);
+}
 
 @layer base {
   html {
@@ -371,12 +377,18 @@ svg {
 }
 
 .anchor-popover::backdrop {
-  background-color: rgb(0 0 0 / 0.12);
+  background-color: rgb(0 0 0 / 0.15);
   backdrop-filter: blur(1px);
 }
 
 .anchor-popover--anchored {
   position: fixed;
+}
+
+/* Hide until JS positions (avoids wrong anchor flash on open). */
+.anchor-popover--anchored:popover-open:not(.anchor-popover--positioned) {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* flex only while open — unconditional flex overrides UA display:none on closed popovers. */
@@ -390,7 +402,7 @@ svg {
 }
 
 .anchor-popover--wide {
-  width: 30rem;
+  width: 25rem;
   max-width: calc(100vw - 1.5rem);
   max-height: min(85vh, calc(100vh - 2rem));
 }
@@ -625,7 +637,9 @@ textarea.typed-field::placeholder,
 }
 
 /* Input between label cap and optional action cap. */
-.typed-field-group > .typed-field-label + .typed-field.join-item:not(.typed-field--action) {
+.typed-field-group
+  > .typed-field-label
+  + .typed-field.join-item:not(.typed-field--action) {
   @apply min-w-0 flex-1 rounded-none pl-0;
 }
 
@@ -651,8 +665,10 @@ textarea.typed-field::placeholder,
   outline-color: var(--color-error);
 }
 
-.typed-field-group > :where(.typed-field, input, textarea, select, button):focus,
-.typed-field-group > :where(.typed-field, input, textarea, select, button):focus-visible,
+.typed-field-group
+  > :where(.typed-field, input, textarea, select, button):focus,
+.typed-field-group
+  > :where(.typed-field, input, textarea, select, button):focus-visible,
 .typed-field-group:focus-within > .btn:focus-visible {
   outline: none;
 }
@@ -1197,7 +1213,8 @@ button:focus-visible:not(.btn) {
    hover, focus, or drag. Cursor and keyboard resize unchanged. */
 .col-resize-bar.col-resize-bar--in-flow:hover .col-resize-bar__line,
 .col-resize-bar.col-resize-bar--in-flow:focus-visible .col-resize-bar__line,
-.col-resize-bar.col-resize-bar--in-flow.col-resize-bar--active .col-resize-bar__line {
+.col-resize-bar.col-resize-bar--in-flow.col-resize-bar--active
+  .col-resize-bar__line {
   opacity: 0;
 }
 
@@ -1288,7 +1305,11 @@ button:focus-visible:not(.btn) {
 .badge.badge-soft.badge-rose {
   --badge-color: var(--color-rose);
   border-color: transparent;
-  background-color: color-mix(in oklab, var(--badge-color) 12%, var(--color-base-100));
+  background-color: color-mix(
+    in oklab,
+    var(--badge-color) 12%,
+    var(--color-base-100)
+  );
   color: var(--color-rose);
 }
 

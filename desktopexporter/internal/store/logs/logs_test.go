@@ -181,16 +181,12 @@ func getLogFull(t *testing.T, s *store.Store, ctx context.Context, id string) lo
 // `id` is in the wire payload but never rendered to users (tool-
 // minted UUID for keying/selection/detail-fetch only).
 type logSummaryJSON struct {
-	ID             string  `json:"id"`
-	Timestamp      int64   `json:"timestamp"`
-	TraceID        *string `json:"traceID"`
-	SpanID         *string `json:"spanID"`
-	SeverityText   string  `json:"severityText"`
-	SeverityNumber int32   `json:"severityNumber"`
-	ServiceName    string  `json:"serviceName"`
-	BodyPreview    string  `json:"bodyPreview"`
-	BodyTruncated  bool    `json:"bodyTruncated"`
-	BodyType       string  `json:"bodyType"`
+	ID             string `json:"id"`
+	Timestamp      int64  `json:"timestamp"`
+	SeverityText   string `json:"severityText"`
+	SeverityNumber int32  `json:"severityNumber"`
+	ServiceName    string `json:"serviceName"`
+	BodyPreview    string `json:"bodyPreview"`
 }
 
 // logEntryJSON mirrors the full LogData shape returned by logs.Get.
@@ -256,20 +252,12 @@ func TestLogOrdering(t *testing.T) {
 	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 3)
 
-	// Order: newest first by effective time — 0002 (t+150ms), 0007 (t+100ms), 0001 (t+0)
-	assert.Equal(t, "0000000000000002", spanIDOrEmpty(entries[0].SpanID))
-	assert.Equal(t, "0000000000000007", spanIDOrEmpty(entries[1].SpanID))
-	assert.Equal(t, "0000000000000001", spanIDOrEmpty(entries[2].SpanID))
+	// Order: newest first by effective time — ERROR (t+150ms), WARN (t+100ms), INFO (t+0)
+	assert.Equal(t, "ERROR", entries[0].SeverityText)
+	assert.Equal(t, "WARN", entries[1].SeverityText)
+	assert.Equal(t, "INFO", entries[2].SeverityText)
 }
 
-// spanIDOrEmpty unwraps the nullable SpanID for tests that want plain
-// string comparison against the fixture's known span IDs.
-func spanIDOrEmpty(p *string) string {
-	if p == nil {
-		return ""
-	}
-	return *p
-}
 
 // TestEmptyLogs verifies handling of empty log lists and empty store.
 func TestEmptyLogs(t *testing.T) {
@@ -324,9 +312,9 @@ func TestLogSuite(t *testing.T) {
 	t.Run("LogOrdering", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
 		assert.Len(t, entries, 3)
-		assert.Equal(t, "0000000000000002", spanIDOrEmpty(entries[0].SpanID))
-		assert.Equal(t, "0000000000000007", spanIDOrEmpty(entries[1].SpanID))
-		assert.Equal(t, "0000000000000001", spanIDOrEmpty(entries[2].SpanID))
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
+		assert.Equal(t, "WARN", entries[1].SeverityText)
+		assert.Equal(t, "INFO", entries[2].SeverityText)
 	})
 
 	t.Run("LogSeverity", func(t *testing.T) {
@@ -343,9 +331,7 @@ func TestLogSuite(t *testing.T) {
 		// lives on the detail fetch (TestLogBodyFromDetail below).
 		entries := searchLogsAll(t, s, ctx)
 		assert.Equal(t, "Operation failed", entries[0].BodyPreview)
-		assert.False(t, entries[0].BodyTruncated)
 		assert.Equal(t, "Operation warning", entries[1].BodyPreview)
-		assert.False(t, entries[1].BodyTruncated)
 	})
 
 	t.Run("LogBodyFromDetail", func(t *testing.T) {
@@ -624,7 +610,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "0000000000000002", spanIDOrEmpty(entries[0].SpanID))
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
 	})
 
 	t.Run("GlobalSearch_EventName", func(t *testing.T) {
@@ -678,7 +664,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1, "global search for span ID hex should match one log")
-		assert.Equal(t, "0000000000000002", spanIDOrEmpty(entries[0].SpanID))
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
 	})
 
 	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
@@ -728,7 +714,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "0000000000000001", spanIDOrEmpty(entries[0].SpanID))
+		assert.Equal(t, "INFO", entries[0].SeverityText)
 	})
 
 	t.Run("Field_TraceID", func(t *testing.T) {
@@ -745,10 +731,6 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3, "all three logs share the same trace")
-		for _, e := range entries {
-			assert.NotNil(t, e.TraceID)
-			assert.Equal(t, "00000000000000000000000000000099", *e.TraceID)
-		}
 	})
 
 	t.Run("Field_SeverityNumber", func(t *testing.T) {
@@ -787,7 +769,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "0000000000000007", spanIDOrEmpty(entries[0].SpanID))
+		assert.Equal(t, "WARN", entries[0].SeverityText)
 		assert.Contains(t, entries[0].BodyPreview, "Operation warning")
 	})
 
@@ -805,7 +787,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "0000000000000001", spanIDOrEmpty(entries[0].SpanID))
+		assert.Equal(t, "INFO", entries[0].SeverityText)
 		full := getLogFull(t, s, ctx, entries[0].ID)
 		assert.Equal(t, "event.a", full.EventName)
 	})

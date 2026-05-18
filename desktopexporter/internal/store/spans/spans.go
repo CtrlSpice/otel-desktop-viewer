@@ -188,26 +188,19 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 	// attributes table; same value, no per-row attribute lookup.
 	//
 	// `hasRootSpan` makes the orphaned-trace state explicit so consumers
-	// don't have to infer it from a null rootSpan. service_count
-	// surfaces "how many distinct services participated" -- a useful
-	// glance signal for distributed traces. startTime and durationNs
-	// are precomputed from span bounds (min start, max end across every
-	// span in the trace) so the summary always reflects wall-clock
-	// coverage -- not root-span duration, which can be shorter when
-	// children extend beyond the root or when the root arrives late.
-	//
-	// exceptionCount was dropped: exceptions surface as span events in
-	// the trace detail view, so duplicating the count on the summary
-	// is noise.
+	// don't have to infer it from a null rootSpan. rootSpan carries only
+	// serviceName + name (the root span's timing is not useful for
+	// summary display -- trace-level startTime and durationNs are
+	// computed from the min/max across ALL spans). startTime and
+	// durationNs are precomputed from span bounds so the summary always
+	// reflects wall-clock coverage.
 	finalQuery := fmt.Sprintf(`%s
 		select cast(coalesce(to_json(list(json_object(
 			'traceID',      replace(sub.trace_id::varchar, '-', ''),
 			'hasRootSpan',  sub.has_root_span,
 			'rootSpan',     case when sub.has_root_span then json_object(
 				'serviceName', sub.service_name,
-				'name',        sub.root_name,
-				'startTime',   sub.root_start_time,
-				'endTime',     sub.root_end_time
+				'name',        sub.root_name
 			) end,
 			'startTime',    sub.trace_start_time::varchar,
 			'durationNs',   case
@@ -217,7 +210,6 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 				else null
 			end,
 			'spanCount',    sub.span_count,
-			'serviceCount', sub.service_count,
 			'errorCount',   sub.error_count
 		) order by sub.trace_start_time desc
 		)), '[]') as varchar) as summaries
@@ -227,12 +219,9 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 				(s.parent_span_id is null) as has_root_span,
 				case when s.parent_span_id is null then nullif(s.service_name, '') end as service_name,
 				case when s.parent_span_id is null then s.name end as root_name,
-				case when s.parent_span_id is null then s.start_time end as root_start_time,
-				case when s.parent_span_id is null then s.end_time end as root_end_time,
 				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
 				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
-				count(distinct nullif(s.service_name, '')) over (partition by s.trace_id) as service_count,
 				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
 			from spans s, search_params
 			where %s

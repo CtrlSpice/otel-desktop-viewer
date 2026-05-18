@@ -26,6 +26,10 @@
     minLeftPx?: number;
     /** Optional absolute pixel floor for the right pane. */
     minRightPx?: number;
+    /** Optional absolute pixel ceiling for the left pane. */
+    maxLeftPx?: number;
+    /** Optional absolute pixel ceiling for the right pane. */
+    maxRightPx?: number;
     storageKey?: string;
     stackBreakpoint?: number;
   };
@@ -39,6 +43,8 @@
     minRightWidth = 0.2,
     minLeftPx,
     minRightPx,
+    maxLeftPx,
+    maxRightPx,
     storageKey,
     stackBreakpoint = 800,
   }: Props = $props();
@@ -55,6 +61,7 @@
   let containerRef = $state<HTMLDivElement | null>(null);
   let dividerRef = $state<HTMLElement | null>(null);
   let containerWidth = $state(0);
+  let containerHeight = $state(0);
 
   /** Matches CSS `gap` on the flex container (`--panel-split-flex-gap`). */
   function panelSplitGapPx(): number {
@@ -92,7 +99,7 @@
       return Math.round(effectiveMinLeft * 100)
     },
     get ariaMax() {
-      return Math.round((1 - effectiveMinRight) * 100)
+      return Math.round(effectiveMaxLeft * 100)
     },
   }
 
@@ -100,45 +107,53 @@
     setContext(PANEL_SPLIT_RESIZE_KEY, panelSplitResizeCtx)
   }
 
-  /* Pixel floors → fractions of the current container (horizontal
-     mode only). The drag clamp uses MAX(fraction floor, pixel-derived
-     floor) so callers can guarantee chrome fits without breaking the
-     existing fraction API. In stacked (vertical) mode the pixel
-     floors are ignored — panes go full-width and a row-resize
-     controls height instead.
-
-     Graceful fallback: when the container is too narrow to honor
-     both pixel floors (minLeftPx + minRightPx > containerWidth), we
-     prefer to keep the right pane's pixel floor and shrink the left
-     to whatever's left. The right pane houses the inspector tab
-     strip, which has a fixed minimum width below which it visibly
-     truncates — main views (waterfall, chart) tolerate narrowness
-     better. If even that's impossible (right floor alone exceeds the
-     container), we drop both pixel floors and fall back to the
-     fraction bounds. */
-  let effectiveMins = $derived.by<{ left: number; right: number }>(() => {
-    if (stacked || containerWidth <= 0) {
-      return { left: minLeftWidth, right: minRightWidth };
+  /* Pixel floors/ceilings → fractions of the container axis (width
+     when side-by-side, height when stacked). Graceful fallback when
+     both pixel floors exceed the container: prefer the right pane's
+     floor (detail strip / timeseries list). */
+  let splitBounds = $derived.by(() => {
+    const dim = stacked ? containerHeight : containerWidth;
+    if (dim <= 0) {
+      return {
+        minLeft: minLeftWidth,
+        minRight: minRightWidth,
+        maxLeft: 1 - minRightWidth,
+      };
     }
 
-    const leftPxFrac = minLeftPx ? minLeftPx / containerWidth : 0;
-    const rightPxFrac = minRightPx ? minRightPx / containerWidth : 0;
-    let left = Math.max(minLeftWidth, leftPxFrac);
-    let right = Math.max(minRightWidth, rightPxFrac);
+    const leftPxFrac = minLeftPx ? minLeftPx / dim : 0;
+    const rightPxFrac = minRightPx ? minRightPx / dim : 0;
+    let minLeft = Math.max(minLeftWidth, leftPxFrac);
+    let minRight = Math.max(minRightWidth, rightPxFrac);
 
-    if (left + right <= 1) return { left, right };
-
-    /* Try keeping the right (detail) pixel floor and shrinking left
-       to the remaining space, but never below its fraction floor. */
-    if (right <= 1 - minLeftWidth) {
-      return { left: Math.max(minLeftWidth, 1 - right), right };
+    if (maxRightPx) {
+      minLeft = Math.max(minLeft, 1 - maxRightPx / dim);
     }
 
-    /* Right floor alone is too big — drop pixel floors entirely. */
-    return { left: minLeftWidth, right: minRightWidth };
+    let maxLeft = 1 - minRight;
+    if (maxLeftPx) {
+      maxLeft = Math.min(maxLeft, maxLeftPx / dim);
+    }
+
+    if (minLeft + minRight > 1) {
+      if (minRight <= 1 - minLeftWidth) {
+        minLeft = Math.max(minLeftWidth, 1 - minRight);
+      } else {
+        minLeft = minLeftWidth;
+        minRight = minRightWidth;
+        maxLeft = 1 - minRight;
+        if (maxLeftPx) maxLeft = Math.min(maxLeft, maxLeftPx / dim);
+        if (maxRightPx) minLeft = Math.max(minLeft, 1 - maxRightPx / dim);
+      }
+    }
+
+    if (minLeft > maxLeft) maxLeft = minLeft;
+
+    return { minLeft, minRight, maxLeft };
   });
-  let effectiveMinLeft = $derived(effectiveMins.left);
-  let effectiveMinRight = $derived(effectiveMins.right);
+  let effectiveMinLeft = $derived(splitBounds.minLeft);
+  let effectiveMinRight = $derived(splitBounds.minRight);
+  let effectiveMaxLeft = $derived(splitBounds.maxLeft);
 
   $effect(() => {
     if (storageKey) {
@@ -148,7 +163,7 @@
         if (
           !isNaN(parsed) &&
           parsed >= effectiveMinLeft &&
-          parsed <= 1 - effectiveMinRight
+          parsed <= effectiveMaxLeft
         ) {
           leftWidth = parsed;
         }
@@ -162,7 +177,7 @@
      below its pixel floor, snap it back to the floor. */
   $effect(() => {
     const lo = effectiveMinLeft;
-    const hi = 1 - effectiveMinRight;
+    const hi = effectiveMaxLeft;
     if (lo > hi) return;
     if (leftWidth < lo) leftWidth = lo;
     else if (leftWidth > hi) leftWidth = hi;
@@ -186,7 +201,7 @@
     const deltaPx = currentPos - dragStartPos;
     leftWidth = Math.max(
       effectiveMinLeft,
-      Math.min(1 - effectiveMinRight, dragStartWidth + deltaPx / dragFlexSpace)
+      Math.min(effectiveMaxLeft, dragStartWidth + deltaPx / dragFlexSpace)
     );
   }
 
@@ -271,7 +286,7 @@
   function handleKeydown(e: KeyboardEvent) {
     const step = e.shiftKey ? 0.05 : 0.01;
     const lo = effectiveMinLeft;
-    const hi = 1 - effectiveMinRight;
+    const hi = effectiveMaxLeft;
     if (stacked) {
       if (e.key === 'ArrowUp' && leftWidth > lo) {
         e.preventDefault();
@@ -300,6 +315,7 @@
     const ro = new ResizeObserver(entries => {
       for (const entry of entries) {
         containerWidth = entry.contentRect.width;
+        containerHeight = entry.contentRect.height;
       }
     });
     ro.observe(containerRef);
@@ -335,7 +351,7 @@
         aria-orientation="horizontal"
         aria-valuenow={Math.round(leftWidth * 100)}
         aria-valuemin={Math.round(effectiveMinLeft * 100)}
-        aria-valuemax={Math.round((1 - effectiveMinRight) * 100)}
+        aria-valuemax={Math.round(effectiveMaxLeft * 100)}
         tabindex="0"
       >
         <div class="col-resize-bar__line"></div>
@@ -376,7 +392,7 @@
       aria-orientation="vertical"
       aria-valuenow={Math.round(leftWidth * 100)}
       aria-valuemin={Math.round(effectiveMinLeft * 100)}
-      aria-valuemax={Math.round((1 - effectiveMinRight) * 100)}
+      aria-valuemax={Math.round(effectiveMaxLeft * 100)}
       tabindex="0"
     >
       <div class="col-resize-bar__line"></div>

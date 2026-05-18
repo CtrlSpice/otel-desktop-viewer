@@ -68,10 +68,10 @@
 
   let {
     class: className = '',
-    popoverAnchor = 'inward',
+    popoverAnchor = 'below-end',
   }: {
     class?: string
-    /** inward = below trigger (open drawer); outward = right of trigger (collapsed rail, 1.5rem gap). */
+    /** below-end = below trigger, right-aligned (open drawer); outward = right of trigger (collapsed rail). */
     popoverAnchor?: PopoverAnchor
   } = $props()
 </script>

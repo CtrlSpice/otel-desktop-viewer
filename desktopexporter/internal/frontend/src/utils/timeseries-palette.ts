@@ -56,6 +56,14 @@ const TIMESERIES_PALETTE: readonly string[] = [
 export const MAX_VISIBLE_TIMESERIES = TIMESERIES_PALETTE.length
 
 /**
+ * How many timeseries to auto-select on first load (before the user
+ * has made any explicit choices). Lower than MAX_VISIBLE_TIMESERIES
+ * so the initial chart is readable; the user can manually check more
+ * up to the palette cap.
+ */
+export const DEFAULT_VISIBLE_TIMESERIES = 5
+
+/**
  * Colour for the n-th visible timeseries in a chart, by position in
  * the legend (0-indexed). Wraps with a modulo so callers that exceed
  * MAX_VISIBLE_TIMESERIES still get a colour rather than `undefined`,

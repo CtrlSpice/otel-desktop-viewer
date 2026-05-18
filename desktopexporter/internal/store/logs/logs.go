@@ -137,8 +137,7 @@ const bodyPreviewLen = 200
 // scaffolding (OTLP logs are anonymous) and must never be rendered to
 // users.
 //
-// `bodyPreview` is server-truncated to bodyPreviewLen characters;
-// `bodyTruncated` is true when the original body was longer.
+// `bodyPreview` is server-truncated to bodyPreviewLen characters.
 func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
@@ -164,19 +163,14 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 		select cast(coalesce(to_json(list(json_object(
 			'id',             l.id,
 			'timestamp',      coalesce(nullif(l.timestamp, 0), l.observed_timestamp),
-			'traceID',        nullif(replace(l.trace_id::varchar, '-', ''), ''),
-			'spanID',         nullif(right(replace(l.span_id::varchar, '-', ''), 16), ''),
 			'severityText',   l.severity_text,
 			'severityNumber', l.severity_number,
 			'serviceName',    l.service_name,
-			'bodyPreview',    substring(l.body, 1, %d),
-			'bodyTruncated',  length(l.body) > %d,
-			'bodyType',       l.body_type
+			'bodyPreview',    substring(l.body, 1, %d)
 		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc)), '[]') as varchar) as logs
 		from filtered l`,
 		cteSQL,
 		whereWithTime,
-		bodyPreviewLen,
 		bodyPreviewLen,
 	)
 
