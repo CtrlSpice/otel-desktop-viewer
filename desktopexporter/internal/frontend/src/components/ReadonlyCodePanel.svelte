@@ -103,11 +103,11 @@
   @reference "../app.css";
 
   .readonly-code-panel {
-    @apply relative w-full overflow-hidden rounded-lg border border-base-300 bg-base-100;
+    @apply relative w-full overflow-hidden rounded-xl border border-base-300 bg-base-100;
   }
 
   .readonly-code-panel--embedded {
-    @apply rounded-none border-0;
+    @apply rounded-none rounded-b-xl border-0;
   }
 
   .readonly-code-panel__toolbar {

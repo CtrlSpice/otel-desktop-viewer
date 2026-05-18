@@ -360,6 +360,68 @@ svg {
   @apply rotate-180;
 }
 
+/* Anchor popovers — native popover, fixed to trigger, dimmed backdrop (datetime, sort, …). */
+.anchor-popover {
+  @apply overflow-hidden px-0 pb-0 pt-0;
+  margin: 0;
+  box-sizing: border-box;
+  @apply rounded-xl bg-base-200 text-sm text-base-content;
+  @apply border border-base-300 shadow-surface;
+  inset: unset;
+}
+
+.anchor-popover::backdrop {
+  background-color: rgb(0 0 0 / 0.12);
+  backdrop-filter: blur(1px);
+}
+
+.anchor-popover--anchored {
+  position: fixed;
+}
+
+/* flex only while open — unconditional flex overrides UA display:none on closed popovers. */
+.anchor-popover:popover-open {
+  @apply flex flex-col;
+}
+
+.anchor-popover__body {
+  @apply min-h-0 flex-1 overflow-y-auto py-2;
+  overscroll-behavior: contain;
+}
+
+.anchor-popover--wide {
+  width: 30rem;
+  max-width: calc(100vw - 1.5rem);
+  max-height: min(85vh, calc(100vh - 2rem));
+}
+
+.anchor-popover--menu {
+  width: 12rem;
+  max-width: calc(100vw - 1.5rem);
+}
+
+.anchor-popover-menu {
+  @apply flex min-h-0 flex-1 flex-col gap-0 p-1;
+}
+
+.anchor-popover-menu__option {
+  @apply flex w-full items-center justify-between gap-2 rounded-lg border-none bg-transparent px-3 py-2 text-left text-xs text-base-content transition-colors duration-150;
+  @apply cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
+}
+
+.anchor-popover-menu__option:hover,
+.anchor-popover-menu__option:focus-visible {
+  @apply bg-base-300/40;
+}
+
+.anchor-popover-menu__option--active {
+  @apply font-medium text-primary;
+}
+
+.anchor-popover-menu__option-icon {
+  @apply h-3.5 w-3.5 shrink-0 text-primary;
+}
+
 /* Toolbar filter triggers (time range, column filter): lg when labeled, full pill when icon-only (--compact) */
 .toolbar-filter-trigger {
   @apply btn btn-soft btn-sm inline-flex h-9 min-h-9 min-w-0 shrink items-center gap-2 rounded-lg border border-base-300/60 bg-base-100/90 px-3 font-normal normal-case shadow-none;

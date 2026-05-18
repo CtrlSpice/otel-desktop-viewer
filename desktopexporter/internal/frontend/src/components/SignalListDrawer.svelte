@@ -461,7 +461,7 @@
 
   /* Lift tabs use flush pt-1; chrome sits on bottom pad, not flush to the strip. */
   .signal-drawer__header :global(.pane-header__right) {
-    @apply items-end pb-1.5;
+    @apply items-end gap-2 pr-2 pb-1.5 pl-0;
   }
 
   /* Refresh + new-data indicator */
@@ -512,7 +512,12 @@
   }
 
   .signal-drawer__chrome-toolbar {
-    @apply shrink-0;
+    @apply flex shrink-0 items-center justify-end gap-2;
+  }
+
+  .signal-drawer__search
+    :global(.search-editor-wrapper--drawer .search-editor__footer-actions) {
+    @apply ml-auto shrink-0 gap-2;
   }
 
   .signal-drawer__chrome-toolbar :global(.drawer-search-panel) {

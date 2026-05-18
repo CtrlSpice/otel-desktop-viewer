@@ -419,6 +419,20 @@
           {@render headerActions()}
         </div>
       {/if}
+      <span class="search-editor__leading-icon" aria-hidden="true">
+        <svg
+          class="h-3.5 w-3.5 shrink-0"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
+        </svg>
+      </span>
       <div class="editor-mount" bind:this={editorContainer}></div>
       <div
         class="search-editor__footer-actions"
@@ -447,27 +461,6 @@
             title="Clear search"
           >
             <CancelIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            class="drawer-editor-btn join-item"
-            onclick={onSubmit}
-            aria-label="Search"
-            title="Search"
-          >
-            <svg
-              class="h-3.5 w-3.5 shrink-0"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
-            </svg>
           </button>
         </div>
       </div>
@@ -708,8 +701,13 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply items-center py-1;
+    @apply items-center gap-1.5 py-1 pl-4 pr-2;
     height: auto;
+  }
+
+  .search-editor-wrapper--drawer .search-editor__leading-icon {
+    @apply flex shrink-0 items-center;
+    color: var(--color-subtle);
   }
 
   .search-editor-wrapper--drawer
@@ -744,6 +742,7 @@
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
     padding-top: 0;
     padding-bottom: 0;
+    padding-left: 0;
     padding-right: 0.5rem;
     min-height: var(--table-row-h);
     line-height: var(--table-row-h);
