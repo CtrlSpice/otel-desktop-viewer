@@ -9,6 +9,8 @@
     value?: Snippet
     multiline?: boolean
     hidden?: boolean
+    /** Show `(type)` after the field name. Defaults to true. */
+    showType?: boolean
   }
 
   let {
@@ -18,6 +20,7 @@
     value,
     multiline = false,
     hidden = false,
+    showType = true,
   }: Props = $props()
 </script>
 
@@ -25,7 +28,8 @@
   <tr class="table-row" class:log-field--multiline={multiline}>
     <td class="detail-cell" class:log-field__cell--multiline={multiline}>
       <span class="detail-cell__key">
-        {fieldName} <span class="detail-cell__type">({fieldType})</span>:
+        {fieldName}{#if showType}
+          {' '}<span class="detail-cell__type">({fieldType})</span>{/if}:
       </span>
       {#if value}
         {@render value()}

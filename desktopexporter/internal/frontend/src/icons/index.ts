@@ -23,6 +23,7 @@ import GlobalIcon from './GlobalIcon.svelte'
 import HandPointingDownIcon from './HandPointingDown.svelte'
 import LeftToRightListBulletIcon from './LeftToRightListBullet.svelte'
 import LinkIcon from './LinkIcon.svelte'
+import LogIcon from './LogIcon.svelte'
 import StopWatchIcon from './StopWatch.svelte'
 import HelpCircleIcon from './HelpCircleIcon.svelte'
 import HomeIcon from './HomeIcon.svelte'
@@ -54,6 +55,7 @@ export {
   HandPointingDownIcon,
   LeftToRightListBulletIcon,
   LinkIcon,
+  LogIcon,
   StopWatchIcon,
   HelpCircleIcon,
   HomeIcon,

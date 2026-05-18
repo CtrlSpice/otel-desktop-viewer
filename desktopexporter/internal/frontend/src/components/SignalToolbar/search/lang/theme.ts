@@ -70,20 +70,7 @@ function ensureTooltipStyles() {
   document.head.appendChild(style)
 }
 
-// Theme-aware colors: DaisyUI --color-* plus --color-rose / --color-subtle (app.css)
-const qc = {
-  base: 'var(--color-base-100)',
-  surface: 'var(--color-base-200)',
-  overlay: 'var(--color-base-300)',
-  muted: 'var(--color-neutral)',
-  subtle: 'var(--color-subtle)',
-  text: 'var(--color-base-content)',
-  iris: 'var(--color-primary)',
-  foam: 'var(--color-accent)',
-  gold: 'var(--color-warning)',
-  rose: 'var(--color-rose)',
-  love: 'var(--color-error)',
-}
+import { editorColors as qc } from '@/components/codemirror/editor-colors'
 
 const queryHighlightStyle = HighlightStyle.define([
   { tag: t.propertyName, color: qc.foam },

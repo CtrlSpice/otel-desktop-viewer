@@ -7,7 +7,7 @@
     ReloadIcon,
     BarChartHorizontalIcon,
     ChartHistogramIcon,
-    FirePitIcon,
+    LogIcon,
     HomeIcon,
   } from '@/icons'
   import ThemeToggle from '@/components/ThemeToggle.svelte'
@@ -280,7 +280,7 @@
       {#if effectivelyOpen}
         {#snippet tracesIcon()}<BarChartHorizontalIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
         {#snippet metricsIcon()}<ChartHistogramIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
-        {#snippet logsIcon()}<FirePitIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
+        {#snippet logsIcon()}<LogIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
         {@const navTabs: PaneTab[] = [
           { id: 'traces', label: 'Traces', icon: tracesIcon },
           { id: 'metrics', label: 'Metrics', icon: metricsIcon },

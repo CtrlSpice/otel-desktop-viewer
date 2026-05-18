@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, type Component } from 'svelte'
   import {
     BarChartHorizontalIcon,
     ChartHistogramIcon,
-    FirePitIcon,
+    CheckmarkCircleIcon,
+    CopyIcon,
+    LogIcon,
   } from '@/icons'
-  import CodeBlock from '@/components/CodeBlock.svelte'
+  import ReadonlyCodePanel from '@/components/ReadonlyCodePanel.svelte'
+  import FieldGroup from '@/components/FieldGroup.svelte'
+  import LogField from '@/components/LogDetails/LogField.svelte'
+  import PageLayout from '@/components/PageLayout.svelte'
+  import PaneHeader, { type PaneTab } from '@/components/PaneHeader.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { Stats } from '@/types/api-types'
   import luluImage from '@/assets/images/lulu.png'
@@ -13,7 +19,41 @@
 
   const POLL_INTERVAL_MS = 5000
 
+  const OTLP_SNIPPETS = {
+    http: `$ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+$ export OTEL_TRACES_EXPORTER="otlp"
+$ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"`,
+    grpc: `$ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+$ export OTEL_TRACES_EXPORTER="otlp"
+$ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
+  } as const
+
+  type EndpointTab = keyof typeof OTLP_SNIPPETS
+
+  function isEndpointTab(id: string): id is EndpointTab {
+    return id in OTLP_SNIPPETS
+  }
+
+  const ENDPOINT_TABS: PaneTab[] = [
+    { id: 'http', label: 'HTTP' },
+    { id: 'grpc', label: 'gRPC' },
+  ]
+
   let stats = $state<Stats | null>(null)
+  let endpointTab = $state<EndpointTab>('http')
+  let endpointCopied = $state(false)
+
+  async function copyEndpointSnippet() {
+    try {
+      await navigator.clipboard.writeText(OTLP_SNIPPETS[endpointTab])
+      endpointCopied = true
+      setTimeout(() => {
+        endpointCopied = false
+      }, 2000)
+    } catch (e) {
+      console.error('Failed to copy text:', e)
+    }
+  }
 
   async function fetchStats() {
     try {
@@ -43,184 +83,103 @@
   })
 </script>
 
-<!-- HomePage.svelte - The welcome/landing page -->
-<div class="mx-auto min-w-0 max-w-[88rem] py-6">
-  <!-- Header Section -->
-  <header class="mb-10">
-    <div
-      class="flex flex-col items-center gap-8 text-center min-[1100px]:flex-row min-[1100px]:items-center min-[1100px]:gap-10 min-[1100px]:text-left"
-    >
-      <img
-        src={luluImage}
-        alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen."
-        class="h-48 w-48 shrink-0 object-contain drop-shadow-sm min-[1100px]:h-64 min-[1100px]:w-64"
-      />
-      <div class="min-w-0 py-2">
-        <p
-          class="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary/80"
-        >
-          Local-first telemetry
-        </p>
-        <h1
-          class="mb-3 text-3xl font-semibold leading-tight tracking-tight text-base-content min-[1100px]:text-4xl"
-        >
-          OpenTelemetry Desktop Viewer
-        </h1>
-        <p class="max-w-xl text-base leading-relaxed text-base-content/65">
-          Collect, visualize, and query your OpenTelemetry data locally —
-          without shipping it to the cloud.
-        </p>
-      </div>
-    </div>
-  </header>
-
-  <!-- Summary Sections -->
-  <div class="summary-grid">
-    <!-- Traces Summary -->
-    <div class="summary-card">
-      <div class="summary-header">
-        <div class="summary-icon">
-          <span class="text-secondary" aria-hidden="true">
-            <BarChartHorizontalIcon class="h-[18px] w-[18px]" />
-          </span>
-        </div>
-        <h3 class="summary-title">Traces</h3>
-      </div>
-      <div class="summary-stats">
-        <div class="summary-stat">
-          <span class="summary-label">Traces</span>
-          <span class="summary-value">{stats?.traces.traceCount ?? 0}</span>
-        </div>
-        <div class="summary-stat">
-          <span class="summary-label">Spans</span>
-          <span class="summary-value">{stats?.traces.spanCount ?? 0}</span>
-        </div>
-        <div class="summary-stat">
-          <span class="summary-label">Services</span>
-          <span class="summary-value">{stats?.traces.serviceCount ?? 0}</span>
-        </div>
-        <div class="summary-stat">
-          <span class="summary-label">Errors</span>
-          <span class="summary-value">{stats?.traces.errorCount ?? 0}</span>
-        </div>
-        <div class="summary-stat">
-          <span class="summary-label">Last Received</span>
-          <span class="summary-value"
-            >{formatRelativeTime(stats?.traces.lastReceived ?? null)}</span
+<div class="home-page">
+  <PageLayout
+    items={[]}
+    selectedId={null}
+    drawerId="signal-drawer"
+    drawerLabel="Home"
+    resizableStorageKey="home-panels"
+    defaultMainWidth={0.58}
+    minDetailPx={280}
+  >
+    {#snippet main()}
+      <div class="home-page__main">
+        <header class="mb-6">
+          <div
+            class="flex flex-col items-center gap-8 text-center min-[1100px]:flex-row min-[1100px]:items-center min-[1100px]:gap-10 min-[1100px]:text-left"
           >
-        </div>
-      </div>
-      <div class="summary-footer">
-        <a href="/traces" class="summary-link">View all traces →</a>
-      </div>
-    </div>
+            <img
+              src={luluImage}
+              alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen."
+              class="h-48 w-48 shrink-0 object-contain drop-shadow-sm min-[1100px]:h-64 min-[1100px]:w-64"
+            />
+            <div class="min-w-0 py-2">
+              <p
+                class="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary/80"
+              >
+                Local-first telemetry
+              </p>
+              <h1
+                class="mb-3 text-base font-semibold leading-tight tracking-tight text-base-content"
+              >
+                OpenTelemetry Desktop Viewer
+              </h1>
+              <p class="home-hero__lede max-w-xl text-base leading-relaxed">
+                Collect, visualize, and query your OpenTelemetry data locally —
+                without shipping it to the cloud.
+              </p>
+            </div>
+          </div>
+        </header>
 
-    <!-- Metrics Summary -->
-    <div class="summary-card">
-      <div class="summary-header">
-        <div class="summary-icon">
-          <span class="text-secondary" aria-hidden="true">
-            <ChartHistogramIcon class="h-[18px] w-[18px]" />
-          </span>
-        </div>
-        <h3 class="summary-title">Metrics</h3>
-      </div>
-      <div class="summary-stats">
-        <div class="summary-stat">
-          <span class="summary-label">Metrics</span>
-          <span class="summary-value">{stats?.metrics.metricCount ?? 0}</span>
-        </div>
-        <div class="summary-stat">
-          <span class="summary-label">Data Points</span>
-          <span class="summary-value">{stats?.metrics.dataPointCount ?? 0}</span
-          >
-        </div>
-        <div class="summary-stat">
-          <span class="summary-label">Last Received</span>
-          <span class="summary-value"
-            >{formatRelativeTime(stats?.metrics.lastReceived ?? null)}</span
-          >
-        </div>
-      </div>
-      <div class="summary-footer">
-        <a href="/metrics" class="summary-link">View all metrics →</a>
-      </div>
-    </div>
+        <section class="section home-endpoint-section">
+          <h2 class="section-title">Configure your OTLP exporter</h2>
+          <p class="section-description">
+            Point your OpenTelemetry SDK, collector, or agent at this viewer with
+            the OTLP exporter settings below. Copy the variables for your protocol,
+            then paste them into a terminal session, a <code class="home-inline-code">.env</code>
+            file, or wherever you usually set environment variables for the process
+            that exports telemetry.
+          </p>
+          <div class="home-endpoint-chrome">
+            <PaneHeader
+              mode="tabs"
+              tabs={ENDPOINT_TABS}
+              activeId={endpointTab}
+              onSelect={id => {
+                if (isEndpointTab(id)) endpointTab = id
+              }}
+              ariaLabel="OTLP endpoint protocol"
+            >
+              {#snippet right()}
+                <button
+                  type="button"
+                  class="drawer-header-btn"
+                  onclick={copyEndpointSnippet}
+                  title={endpointCopied ? 'Copied!' : 'Copy snippet'}
+                  aria-label={endpointCopied ? 'Copied' : 'Copy snippet'}
+                >
+                  {#if endpointCopied}
+                    <CheckmarkCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {:else}
+                    <CopyIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {/if}
+                </button>
+              {/snippet}
+            </PaneHeader>
+            <div class="home-endpoint-chrome__body">
+              <ReadonlyCodePanel code={OTLP_SNIPPETS[endpointTab]} embedded />
+            </div>
+          </div>
+        </section>
 
-    <!-- Logs Summary -->
-    <div class="summary-card">
-      <div class="summary-header">
-        <div class="summary-icon">
-          <span class="text-secondary" aria-hidden="true">
-            <FirePitIcon class="h-[18px] w-[18px]" />
-          </span>
-        </div>
-        <h3 class="summary-title">Logs</h3>
-      </div>
-      <div class="summary-stats">
-        <div class="summary-stat">
-          <span class="summary-label">Logs</span>
-          <span class="summary-value">{stats?.logs.logCount ?? 0}</span>
-        </div>
-        <div class="summary-stat">
-          <span class="summary-label">Errors</span>
-          <span class="summary-value">{stats?.logs.errorCount ?? 0}</span>
-        </div>
-        <div class="summary-stat">
-          <span class="summary-label">Last Received</span>
-          <span class="summary-value"
-            >{formatRelativeTime(stats?.logs.lastReceived ?? null)}</span
-          >
-        </div>
-      </div>
-      <div class="summary-footer">
-        <a href="/logs" class="summary-link">View all logs →</a>
-      </div>
-    </div>
-  </div>
-
-  <!-- Configuration Section -->
-  <div class="section">
-    <h2 class="section-title">Configure your OTLP exporter</h2>
-
-    <!-- HTTP Configuration -->
-    <div class="config-group">
-      <h3 class="config-subtitle">HTTP Endpoint</h3>
-      <CodeBlock
-        code={`$ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
-$ export OTEL_TRACES_EXPORTER="otlp"
-$ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"`}
-      />
-    </div>
-
-    <!-- GRPC Configuration -->
-    <div class="config-group">
-      <h3 class="config-subtitle">GRPC Endpoint</h3>
-      <CodeBlock
-        code={`$ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
-$ export OTEL_TRACES_EXPORTER="otlp"
-$ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`}
-      />
-    </div>
-  </div>
-
-  <!-- Example Section -->
-  <div class="section">
-    <h2 class="section-title">Example with otel-cli</h2>
-    <p class="section-description">
-      If you have
-      <a
-        href="https://github.com/equinix-labs/otel-cli"
-        class="external-link"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        otel-cli
-      </a>
-      installed, you can send example data:
-    </p>
-    <CodeBlock
-      code={`# start the desktop viewer
+        <section class="section">
+          <h2 class="section-title">Example with otel-cli</h2>
+          <p class="section-description">
+            If you have
+            <a
+              href="https://github.com/equinix-labs/otel-cli"
+              class="external-link"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              otel-cli
+            </a>
+            installed, you can send example data:
+          </p>
+          <ReadonlyCodePanel
+            code={`# start the desktop viewer
 $ otel-desktop-viewer
 
 # configure otel-cli
@@ -228,134 +187,266 @@ $ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 # generate spans!
 $ otel-cli exec --service my-service --name "curl google" curl https://google.com`}
-    />
-  </div>
+          />
+        </section>
+      </div>
+    {/snippet}
 
-  <!-- Footer -->
-  <div class="footer">
-    <p class="footer-text">
-      Made with
-      <img src={axolotlImage} alt="axolotl emoji" class="footer-icon" />
-      by
-      <a
-        href="https://github.com/CtrlSpice"
-        class="footer-link"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Mila Ardath
-      </a>
-      , with Artwork by
-      <a
-        href="https://cbatesonart.artstation.com/"
-        class="footer-link"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Chelsey Bateson
-      </a>
-    </p>
-  </div>
+    {#snippet detail()}
+      <div class="home-page__detail">
+        <PaneHeader mode="title" title="Overview" ariaLabel="Overview" />
+
+        <div class="home-page__detail-scroll">
+        {#snippet signalOverviewHeader(
+          href: string,
+          label: string,
+          Icon: Component,
+          count: number
+        )}
+          <div class="home-summary__header">
+            <a
+              {href}
+              class="home-summary__icon-link"
+              aria-label="View all {label.toLowerCase()}"
+            >
+              <Icon class="h-4 w-4 shrink-0" aria-hidden="true" />
+            </a>
+            <span class="home-summary__title">{label}</span>
+            <span class="badge-count home-summary__badge">{count}</span>
+          </div>
+        {/snippet}
+
+        <FieldGroup label="Traces">
+          {#snippet headerAction()}
+            {@render signalOverviewHeader(
+              '/traces',
+              'Traces',
+              BarChartHorizontalIcon,
+              stats?.traces.traceCount ?? 0
+            )}
+          {/snippet}
+          <table class="detail-fields w-full" aria-label="Traces overview">
+            <tbody>
+              <LogField
+                fieldName="spans"
+                fieldType="uint32"
+                showType={false}
+                fieldValue={String(stats?.traces.spanCount ?? 0)}
+              />
+              <LogField
+                fieldName="services"
+                fieldType="uint32"
+                showType={false}
+                fieldValue={String(stats?.traces.serviceCount ?? 0)}
+              />
+              <LogField
+                fieldName="errors"
+                fieldType="uint32"
+                showType={false}
+                fieldValue={String(stats?.traces.errorCount ?? 0)}
+              />
+              <LogField
+                fieldName="last received"
+                fieldType="string"
+                showType={false}
+                fieldValue={formatRelativeTime(stats?.traces.lastReceived ?? null)}
+              />
+            </tbody>
+          </table>
+        </FieldGroup>
+
+        <FieldGroup label="Metrics">
+          {#snippet headerAction()}
+            {@render signalOverviewHeader(
+              '/metrics',
+              'Metrics',
+              ChartHistogramIcon,
+              stats?.metrics.metricCount ?? 0
+            )}
+          {/snippet}
+          <table class="detail-fields w-full" aria-label="Metrics overview">
+            <tbody>
+              <LogField
+                fieldName="data points"
+                fieldType="uint32"
+                showType={false}
+                fieldValue={String(stats?.metrics.dataPointCount ?? 0)}
+              />
+              <LogField
+                fieldName="last received"
+                fieldType="string"
+                showType={false}
+                fieldValue={formatRelativeTime(stats?.metrics.lastReceived ?? null)}
+              />
+            </tbody>
+          </table>
+        </FieldGroup>
+
+        <FieldGroup label="Logs" last>
+          {#snippet headerAction()}
+            {@render signalOverviewHeader(
+              '/logs',
+              'Logs',
+              LogIcon,
+              stats?.logs.logCount ?? 0
+            )}
+          {/snippet}
+          <table class="detail-fields w-full" aria-label="Logs overview">
+            <tbody>
+              <LogField
+                fieldName="errors"
+                fieldType="uint32"
+                showType={false}
+                fieldValue={String(stats?.logs.errorCount ?? 0)}
+              />
+              <LogField
+                fieldName="last received"
+                fieldType="string"
+                showType={false}
+                fieldValue={formatRelativeTime(stats?.logs.lastReceived ?? null)}
+              />
+            </tbody>
+          </table>
+        </FieldGroup>
+        </div>
+
+        <p class="home-detail__coming-soon">more coming soon…</p>
+      </div>
+    {/snippet}
+
+    {#snippet pageFooter()}
+      <div class="home-page__footer">
+        <p class="home-page__footer-text">
+          Made with
+          <img src={axolotlImage} alt="axolotl emoji" class="home-page__footer-icon" />
+          by
+          <a
+            href="https://github.com/CtrlSpice"
+            class="home-page__footer-link"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Mila Ardath
+          </a>
+          , with Artwork by
+          <a
+            href="https://cbatesonart.artstation.com/"
+            class="home-page__footer-link"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Chelsey Bateson
+          </a>
+        </p>
+      </div>
+    {/snippet}
+  </PageLayout>
 </div>
 
 <style lang="postcss">
   @reference "../app.css";
-  /* Summary Cards */
-  .summary-grid {
-    @apply mb-10 grid gap-5;
-    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+
+  .home-page {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col;
   }
 
-  .summary-card {
-    @apply flex flex-col rounded-2xl border border-base-300/60 bg-base-200/40 p-5 shadow-surface-sm backdrop-blur-sm transition-[border-color,box-shadow] duration-200;
+  .home-page__main {
+    @apply min-h-0 flex-1 overflow-y-auto px-4 py-4 min-[900px]:px-6;
   }
 
-  .summary-card:hover {
-    @apply border-base-300 shadow-surface;
+  .home-page__detail {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden text-sm;
   }
 
-  .summary-header {
-    @apply mb-5 flex items-center gap-3;
+  .home-page__detail-scroll {
+    @apply min-h-0 flex-1 overflow-y-auto py-2;
+    scrollbar-width: thin;
   }
 
-  .summary-icon {
-    @apply flex h-10 w-10 items-center justify-center rounded-xl bg-secondary/15 text-secondary ring-1 ring-secondary/20;
+  .home-detail__coming-soon {
+    @apply shrink-0 px-3 pb-3 pt-1 text-center text-sm italic;
+    color: var(--color-muted);
   }
 
-  .summary-title {
-    @apply text-lg font-semibold tracking-tight;
+  .home-summary__header {
+    @apply flex min-w-0 flex-1 items-center gap-2;
   }
 
-  .summary-stats {
-    @apply flex-grow space-y-2.5;
+  .home-summary__icon-link {
+    @apply btn btn-soft btn-primary btn-sm btn-circle h-8 w-8 min-h-8 shrink-0 border-transparent bg-primary/10 text-primary no-underline shadow-none;
   }
 
-  .summary-stat {
-    @apply flex items-baseline justify-between gap-3 text-sm;
+  .home-summary__icon-link:hover {
+    @apply border-transparent bg-primary/15 text-primary;
   }
 
-  .summary-label {
-    @apply text-base-content/60;
+  .home-summary__title {
+    @apply truncate text-sm font-medium;
+    color: var(--color-subtle);
   }
 
-  .summary-value {
-    @apply tabular-nums font-medium tracking-tight text-base-content;
-    transition: opacity 150ms ease;
+  .home-summary__badge {
+    @apply ml-auto shrink-0;
   }
 
-  .summary-footer {
-    @apply mt-auto border-t border-base-300/70 pt-4;
-  }
-
-  .summary-link {
-    @apply text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/85 hover:underline;
-  }
-
-  /* Sections */
   .section {
-    @apply mb-8;
+    @apply mb-5;
   }
 
   .section-title {
-    @apply mb-5 text-2xl font-semibold tracking-tight;
+    @apply mb-3 text-base font-semibold tracking-tight text-base-content;
+  }
+
+  .home-hero__lede,
+  .section-description {
+    color: var(--color-subtle);
   }
 
   .section-description {
-    @apply mb-6 max-w-2xl leading-relaxed text-base-content/65;
+    @apply mb-4 max-w-2xl leading-relaxed;
   }
 
-  /* Configuration */
-  .config-group {
-    @apply space-y-4 mb-8;
+  .home-inline-code {
+    @apply rounded bg-base-300/60 px-1 py-0.5 font-mono text-[0.9em] text-base-content/80;
   }
 
-  .config-group:last-child {
-    @apply mb-0;
+  .home-endpoint-section .section-title {
+    @apply mb-2;
   }
 
-  .config-subtitle {
-    @apply text-lg font-medium;
+  .home-endpoint-section .section-description {
+    @apply max-w-none;
   }
 
-  /* Links */
+  .home-endpoint-chrome {
+    @apply overflow-hidden rounded-xl border border-base-300 bg-base-200;
+  }
+
+  .home-endpoint-chrome :global(.pane-header__tab.tab-active) {
+    --tab-bg: var(--color-base-100);
+  }
+
+  .home-endpoint-chrome__body {
+    @apply bg-base-100;
+  }
+
   .external-link {
     @apply link link-primary;
   }
 
-  /* Footer */
-  .footer {
-    @apply border-t border-base-300 pt-8 flex justify-center;
+  .home-page__footer {
+    @apply flex min-h-[var(--app-footer-height)] shrink-0 items-center justify-center bg-base-100 px-4;
   }
 
-  .footer-text {
-    @apply text-sm text-base-content/60 text-center block;
+  .home-page__footer-text {
+    @apply text-center text-sm text-base-content/60;
   }
 
-  .footer-icon {
-    @apply inline w-5 h-5 mx-1;
+  .home-page__footer-icon {
+    @apply mx-0.5 inline-block h-[1em] w-[1em] max-h-3.5 max-w-3.5 align-middle object-contain;
   }
 
-  .footer-link {
+  .home-page__footer-link {
     @apply link link-primary;
   }
 </style>

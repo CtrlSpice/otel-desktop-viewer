@@ -3,7 +3,6 @@
   import MetricsPage from '@/pages/MetricsPage.svelte'
   import LogsPage from '@/pages/LogsPage.svelte'
   import TracesPage from '@/pages/TracesPage.svelte'
-  import SignalNavRail from '@/components/SignalNavRail.svelte'
   import { Route, router } from 'tinro5'
   import { createTimeContext } from '@/contexts/time-context.svelte'
 
@@ -16,11 +15,7 @@
   class="flex h-screen min-w-0 flex-col overflow-hidden bg-base-100 transition-colors duration-300"
 >
   <Route path="/">
-    <SignalNavRail>
-      <div class="mx-auto w-full max-w-[88rem] px-4 pb-10 pt-[var(--layout-gap)] min-[900px]:px-6">
-        <HomePage />
-      </div>
-    </SignalNavRail>
+    <HomePage />
   </Route>
   <Route path="/metrics">
     <MetricsPage />

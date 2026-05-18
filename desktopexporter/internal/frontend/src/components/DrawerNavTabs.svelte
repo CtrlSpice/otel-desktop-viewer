@@ -4,7 +4,7 @@
     HomeIcon,
     BarChartHorizontalIcon,
     ChartHistogramIcon,
-    FirePitIcon,
+    LogIcon,
   } from '@/icons'
 
   export type NavItem = {
@@ -34,7 +34,7 @@
       path: '/metrics',
       icon: ChartHistogramIcon,
     },
-    { id: 'logs', label: 'Logs', path: '/logs', icon: FirePitIcon },
+    { id: 'logs', label: 'Logs', path: '/logs', icon: LogIcon },
   ]
 
   const ACTIVE_RULES: Record<string, (p: string) => boolean> = {
