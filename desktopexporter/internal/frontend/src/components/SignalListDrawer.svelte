@@ -447,7 +447,8 @@
   }
 
   .signal-drawer__collapsed-rail {
-    @apply flex shrink-0 flex-col items-center gap-2 px-1.5 pt-2;
+    @apply flex shrink-0 flex-col items-center gap-2 px-1.5;
+    padding-top: var(--layout-gap);
   }
 
   .signal-drawer__collapsed-group {
@@ -459,9 +460,21 @@
     @apply flex w-full min-w-0 shrink-0 flex-col;
   }
 
-  /* Lift tabs use flush pt-1; chrome sits on bottom pad, not flush to the strip. */
+  /* Top inset on the header bar (matches page-layout__region). */
+  .signal-drawer__header :global(.pane-header.pane-header--flush) {
+    @apply relative;
+    padding-top: var(--layout-gap);
+  }
+
+  /* Chrome vertically centered on the full header strip; tabs stay below. */
   .signal-drawer__header :global(.pane-header__right) {
-    @apply items-end gap-2 pr-2 pb-1.5 pl-0;
+    @apply absolute inset-y-0 right-0 z-10 flex items-center gap-2 pr-2;
+    height: auto;
+    margin: 0;
+  }
+
+  .signal-drawer__header :global(.pane-header__tab-scroll) {
+    padding-right: 7rem;
   }
 
   /* Refresh + new-data indicator */

@@ -1,11 +1,21 @@
 <script module lang="ts">
   import type { MetricSummary } from '@/types/api-types'
   import { metricSummaryKey } from '@/types/api-types'
-  import { compareByStringField } from '@/utils/compare'
+  import {
+    compareByStringField,
+    compareByTimestampField,
+  } from '@/utils/compare'
 
   // --- Sort ---
 
-  export type MetricSortColumn = 'name' | 'type' | 'unit' | 'service'
+  export type MetricSortColumn =
+    | 'name'
+    | 'metricType'
+    | 'serviceName'
+    | 'description'
+    | 'dataPointCount'
+    | 'seriesCount'
+    | 'lastSeen'
   export type MetricSortDirection = 'asc' | 'desc'
 
   function compareMetrics(
@@ -19,14 +29,23 @@
       case 'name':
         cmp = compareByStringField(a, b, m => m.name)
         break
-      case 'type':
+      case 'metricType':
         cmp = compareByStringField(a, b, m => m.metricType)
         break
-      case 'unit':
-        cmp = compareByStringField(a, b, m => m.unit)
-        break
-      case 'service':
+      case 'serviceName':
         cmp = compareByStringField(a, b, m => m.serviceName)
+        break
+      case 'description':
+        cmp = compareByStringField(a, b, m => m.description)
+        break
+      case 'dataPointCount':
+        cmp = a.dataPointCount - b.dataPointCount
+        break
+      case 'seriesCount':
+        cmp = a.seriesCount - b.seriesCount
+        break
+      case 'lastSeen':
+        cmp = compareByTimestampField(a, b, m => m.lastSeen)
         break
       default:
         cmp = 0
@@ -40,9 +59,13 @@
   }
 
   const SORT_OPTIONS = [
+    { value: 'lastSeen', label: 'Last Seen' },
     { value: 'name', label: 'Name' },
-    { value: 'type', label: 'Type' },
-    { value: 'service', label: 'Service' },
+    { value: 'metricType', label: 'Type' },
+    { value: 'serviceName', label: 'Service Name' },
+    { value: 'description', label: 'Description' },
+    { value: 'dataPointCount', label: 'Datapoint Count' },
+    { value: 'seriesCount', label: 'Timeseries Count' },
   ]
 
   export { metricTypeBadgeClass, metricTypeLabel } from '@/utils/metric-type'
@@ -84,8 +107,8 @@
   let mounted = $state(false)
 
   // --- state: sort ---
-  let sortColumn = $state<MetricSortColumn>('name')
-  let sortDirection = $state<MetricSortDirection>('asc')
+  let sortColumn = $state<MetricSortColumn>('lastSeen')
+  let sortDirection = $state<MetricSortDirection>('desc')
 
   // --- state: selection ---
   let selectedKey = $state<string | null>(null)
@@ -408,6 +431,7 @@
               minRightWidth={0.2}
               storageKey="metrics:vsplit"
               stackBreakpoint={Number.POSITIVE_INFINITY}
+              stackedResizeHandle="panel-header"
             >
               {#snippet leftPanel()}
                 <div class="metrics-page__chart">
@@ -488,7 +512,6 @@
   .metrics-page__split {
     @apply flex-1 min-h-0 min-w-0;
   }
-
 
   /*
    * Page-level placeholder branches (error / loading / empty list).

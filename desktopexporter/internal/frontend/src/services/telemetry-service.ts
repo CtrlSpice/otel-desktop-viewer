@@ -218,6 +218,8 @@ function metricSummaryFromJSON(json: any): MetricSummary {
     ...json,
     description: json.description ?? '',
     serviceName: json.serviceName ?? '',
+    seriesCount: Number(json.seriesCount ?? 0),
+    dataPointCount: Number(json.dataPointCount ?? 0),
     lastSeen: BigInt(json.lastSeen),
   }
 }

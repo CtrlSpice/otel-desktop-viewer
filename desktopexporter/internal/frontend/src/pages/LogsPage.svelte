@@ -7,7 +7,11 @@
 
   // --- Sort ---
 
-  export type LogSortColumn = 'timestamp' | 'severity' | 'service'
+  export type LogSortColumn =
+    | 'timestamp'
+    | 'severity'
+    | 'service'
+    | 'body'
   export type LogSortDirection = 'asc' | 'desc'
 
   // The list page now operates on LogSummary (the card-shaped
@@ -26,7 +30,9 @@
         ? compareByTimestampField(a, b, l => l.timestamp)
         : col === 'severity'
           ? a.severityNumber - b.severityNumber
-          : compareByStringField(a, b, l => l.serviceName)
+          : col === 'body'
+            ? compareByStringField(a, b, l => l.bodyPreview)
+            : compareByStringField(a, b, l => l.serviceName)
 
     return cmp !== 0 ? (dir === 'asc' ? cmp : -cmp) : a.id.localeCompare(b.id)
   }
@@ -79,8 +85,9 @@
 
   const SORT_OPTIONS = [
     { value: 'timestamp', label: 'Timestamp' },
+    { value: 'body', label: 'Body' },
+    { value: 'service', label: 'Service Name' },
     { value: 'severity', label: 'Severity' },
-    { value: 'service', label: 'Service' },
   ]
 </script>
 

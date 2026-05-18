@@ -8,9 +8,10 @@
   const SORT_OPTIONS = [
     { value: 'startTime', label: 'Start Time' },
     { value: 'duration', label: 'Duration' },
-    { value: 'rootSpanName', label: 'Root Span' },
-    { value: 'serviceName', label: 'Service' },
-    { value: 'spanCount', label: 'Spans' },
+    { value: 'rootSpanName', label: 'Root Span Name' },
+    { value: 'serviceName', label: 'Service Name' },
+    { value: 'spanCount', label: 'Span Count' },
+    { value: 'errorCount', label: 'Error Count' },
   ]
 </script>
 

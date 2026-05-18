@@ -121,7 +121,7 @@
     {#if timeseries.length === 0}
       No datapoints to chart
     {:else if visibleKeys.size === 0}
-      No timeseries selected — pick one or more in the legend
+      Nothing to see here — select a timeseries below
     {:else}
       No datapoints in selected timeseries
     {/if}

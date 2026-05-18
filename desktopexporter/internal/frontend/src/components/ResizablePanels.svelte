@@ -1,10 +1,19 @@
 <script lang="ts">
+  import { setContext } from 'svelte'
+  import {
+    PANEL_SPLIT_RESIZE_KEY,
+    type PanelSplitResizeContext,
+  } from '@/contexts/panel-split-resize-context.svelte'
+
   /** Default split when no prop / storage; keep in sync with prop default below */
   const DEFAULT_LEFT_WIDTH = 0.7;
 
   type Props = {
     leftPanel: any;
     rightPanel: any;
+    /** Stacked layout only: use the bottom panel header as the resize
+     *  handle instead of a separate divider strip. */
+    stackedResizeHandle?: 'bar' | 'panel-header'
     defaultLeftWidth?: number;
     /** Minimum left fraction of the container (0..1). */
     minLeftWidth?: number;
@@ -24,6 +33,7 @@
   let {
     leftPanel,
     rightPanel,
+    stackedResizeHandle = 'bar',
     defaultLeftWidth = DEFAULT_LEFT_WIDTH,
     minLeftWidth = 0.3,
     minRightWidth = 0.2,
@@ -43,7 +53,7 @@
     appliedInitialDefault = true;
   });
   let containerRef = $state<HTMLDivElement | null>(null);
-  let dividerRef = $state<HTMLDivElement | null>(null);
+  let dividerRef = $state<HTMLElement | null>(null);
   let containerWidth = $state(0);
 
   /** Matches CSS `gap` on the flex container (`--panel-split-flex-gap`). */
@@ -55,7 +65,40 @@
     return Number.isFinite(px) ? px : 8;
   }
 
-  let stacked = $derived(containerWidth > 0 && containerWidth < stackBreakpoint);
+  let stacked = $derived(containerWidth > 0 && containerWidth < stackBreakpoint)
+  let usePanelHeaderResize = $derived(
+    stacked && stackedResizeHandle === 'panel-header'
+  )
+  let stackedGapClass = $derived(
+    usePanelHeaderResize ? 'gap-0' : 'gap-[var(--panel-split-flex-gap)]'
+  )
+
+  const panelSplitResizeCtx: PanelSplitResizeContext = {
+    registerHandle(el) {
+      dividerRef = el
+    },
+    onPointerDown: handlePointerDown,
+    onPointerMove: handlePointerMove,
+    onPointerUp: handlePointerUp,
+    onDoubleClick: handleDoubleClick,
+    onKeydown: handleKeydown,
+    get isDragging() {
+      return isDragging
+    },
+    get ariaNow() {
+      return Math.round(leftWidth * 100)
+    },
+    get ariaMin() {
+      return Math.round(effectiveMinLeft * 100)
+    },
+    get ariaMax() {
+      return Math.round((1 - effectiveMinRight) * 100)
+    },
+  }
+
+  if (stackedResizeHandle === 'panel-header') {
+    setContext(PANEL_SPLIT_RESIZE_KEY, panelSplitResizeCtx)
+  }
 
   /* Pixel floors → fractions of the current container (horizontal
      mode only). The drag clamp uses MAX(fraction floor, pixel-derived
@@ -143,11 +186,18 @@
     dragStartPos = stacked ? e.clientY : e.clientX;
     dragStartWidth = leftWidth;
 
-    if (containerRef && dividerRef) {
-      const g = panelSplitGapPx();
+    if (containerRef) {
       const rect = containerRef.getBoundingClientRect();
-      const divSize = stacked ? dividerRef.offsetHeight : dividerRef.offsetWidth;
-      dragFlexSpace = Math.max(1, (stacked ? rect.height : rect.width) - divSize - 2 * g);
+      if (stacked && usePanelHeaderResize) {
+        dragFlexSpace = Math.max(1, rect.height);
+      } else if (dividerRef) {
+        const g = panelSplitGapPx();
+        const divSize = stacked ? dividerRef.offsetHeight : dividerRef.offsetWidth;
+        dragFlexSpace = Math.max(
+          1,
+          (stacked ? rect.height : rect.width) - divSize - 2 * g
+        );
+      }
     }
 
     document.body.style.cursor = stacked ? 'row-resize' : 'col-resize';
@@ -217,39 +267,41 @@
 
 {#if stacked}
   <div
-    class="flex h-full w-full flex-col gap-[var(--panel-split-flex-gap)]"
+    class="flex h-full w-full flex-col {stackedGapClass}"
     bind:this={containerRef}
   >
     <div
-      class="panel-shell min-h-0 overflow-hidden rounded-xl"
+      class="panel-shell min-h-0 overflow-hidden rounded-t-xl rounded-b-none"
       style="flex: {leftWidth} 1 0px"
     >
       {@render leftPanel()}
     </div>
 
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      bind:this={dividerRef}
-      class="col-resize-bar col-resize-bar--row-in-flow"
-      class:col-resize-bar--active={isDragging}
-      onpointerdown={handlePointerDown}
-      onpointermove={handlePointerMove}
-      onpointerup={handlePointerUp}
-      ondblclick={handleDoubleClick}
-      onkeydown={handleKeydown}
-      role="separator"
-      aria-orientation="horizontal"
-      aria-valuenow={Math.round(leftWidth * 100)}
-      aria-valuemin={Math.round(effectiveMinLeft * 100)}
-      aria-valuemax={Math.round((1 - effectiveMinRight) * 100)}
-      tabindex="0"
-    >
-      <div class="col-resize-bar__line"></div>
-    </div>
+    {#if !usePanelHeaderResize}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        bind:this={dividerRef}
+        class="col-resize-bar col-resize-bar--row-in-flow"
+        class:col-resize-bar--active={isDragging}
+        onpointerdown={handlePointerDown}
+        onpointermove={handlePointerMove}
+        onpointerup={handlePointerUp}
+        ondblclick={handleDoubleClick}
+        onkeydown={handleKeydown}
+        role="separator"
+        aria-orientation="horizontal"
+        aria-valuenow={Math.round(leftWidth * 100)}
+        aria-valuemin={Math.round(effectiveMinLeft * 100)}
+        aria-valuemax={Math.round((1 - effectiveMinRight) * 100)}
+        tabindex="0"
+      >
+        <div class="col-resize-bar__line"></div>
+      </div>
+    {/if}
 
     <div
-      class="panel-shell min-h-0 overflow-hidden rounded-xl"
+      class="panel-shell min-h-0 overflow-hidden rounded-t-none rounded-b-xl"
       style="flex: {1 - leftWidth} 1 0px"
     >
       {@render rightPanel()}

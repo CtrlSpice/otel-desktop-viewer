@@ -23,14 +23,6 @@
   // rows stay enabled so the user can always uncheck and free a slot.
   let capReached = $derived(visibleKeys.size >= MAX_VISIBLE_TIMESERIES)
 
-  // Visible-set floor (min). When exactly one row is checked, that
-  // row's checkbox is locked so the chart can't go fully blank. Pairs
-  // with capReached above; together they enforce 1 <= visible <= 10.
-  // The min-1 rule is communicated per-row via a tooltip rather than
-  // a global banner because there's only ever one row affected at a
-  // time -- a banner would be louder than the situation warrants.
-  let isLastChecked = $derived(visibleKeys.size === 1)
-
   function toggle(key: string, checked: boolean) {
     if (checked) {
       visibleKeys.add(key)
@@ -58,14 +50,11 @@
   <ul class="timeseries-legend__list">
     {#each timeseries as ts, i (ts.key)}
       {@const checked = visibleKeys.has(ts.key)}
-      {@const disabledByCap = !checked && capReached}
-      {@const disabledByFloor = checked && isLastChecked}
-      {@const disabled = disabledByCap || disabledByFloor}
+      {@const disabled = !checked && capReached}
       {@const color = timeseriesColor(i)}
       {@const fg = timeseriesForegroundColor(i)}
-      {@const tooltip = disabledByFloor
-        ? 'At least one timeseries must remain selected'
-        : ts.attributes.length === 0
+      {@const tooltip =
+        ts.attributes.length === 0
           ? 'default'
           : ts.attributes.map((a) => `${a.key}=${a.value}`).join(', ')}
       <li

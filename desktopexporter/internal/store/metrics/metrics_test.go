@@ -2882,6 +2882,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 		assert.NotEmpty(t, summary["id"])
 		assert.Equal(t, "Memory used by the process", summary["description"])
 		assert.EqualValues(t, 2, summary["seriesCount"])
+		assert.EqualValues(t, 2, summary["dataPointCount"])
 		assert.InDelta(t, 2.0, summary["lastValue"], 1e-9)
 		assert.NotEmpty(t, summary["lastSeen"])
 	})
@@ -2904,6 +2905,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 		summary := findSummary(t, searchSummariesAll(t, s, ctx), "hist_card_test")
 		assert.NotEmpty(t, summary["id"])
 		assert.EqualValues(t, 1, summary["seriesCount"])
+		assert.EqualValues(t, 1, summary["dataPointCount"])
 		assert.Nil(t, summary["lastValue"])
 	})
 }

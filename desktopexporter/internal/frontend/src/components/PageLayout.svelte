@@ -190,7 +190,9 @@
      drawer's right edge and the top of the page. No bottom pad — panels
      sit flush against the page footer. */
   .page-layout__region {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-2 pt-2;
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
+    padding-inline: var(--layout-gap);
+    padding-top: var(--layout-gap);
   }
 
   /* Page-level footer strip. Stays anchored at the bottom; never

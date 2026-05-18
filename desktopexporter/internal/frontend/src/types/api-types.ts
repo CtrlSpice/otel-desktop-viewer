@@ -275,6 +275,8 @@ export type MetricSummary = {
   serviceName: string
   // Distinct attribute sets (timeseries) seen in the queried window.
   seriesCount: number
+  // In-range datapoints for this metric stream.
+  dataPointCount: number
   // Most recent scalar value for Gauge/Sum metrics; null for histograms.
   lastValue: number | null
   // Timestamp of the most recent in-range datapoint (nanoseconds).

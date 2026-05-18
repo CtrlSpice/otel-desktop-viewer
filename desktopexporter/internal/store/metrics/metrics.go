@@ -627,6 +627,11 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 			from filtered_dps
 			group by stream_id
 		),
+		stream_datapoint_count as (
+			select stream_id, count(*) as datapoint_count
+			from filtered_dps
+			group by stream_id
+		),
 		stream_last_value as (
 			select
 				d.stream_id,
@@ -648,6 +653,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 			end,
 			'serviceName', fs.service_name,
 			'seriesCount', ssc.series_count,
+			'dataPointCount', sdc.datapoint_count,
 			'lastValue', slv.last_value,
 			'lastSeen', sldp.last_dp_ts::varchar
 		) order by sldp.last_dp_ts desc nulls last)), '[]') as varchar) as summaries
@@ -655,6 +661,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 		left join stream_latest_dp sldp on sldp.stream_id = fs.id
 		left join stream_description sd on sd.stream_id = fs.id
 		left join stream_series_count ssc on ssc.stream_id = fs.id
+		left join stream_datapoint_count sdc on sdc.stream_id = fs.id
 		left join stream_last_value slv on slv.stream_id = fs.id
 	`
 	var raw []byte

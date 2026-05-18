@@ -796,16 +796,14 @@ button:focus-visible:not(.btn) {
   --waterfall-gutter-tail: 4px;
   --waterfall-gutter-hub: 16px;
 
-  /* ── App shell + resizable panels (tune here) ── */
-  --resize-bar-hit-width: 0.5rem; /* col-resize in-flow hit strip; line is narrower inside */
-  /* Outer edge of left panel → outer edge of right panel across the splitter */
-  --panel-split-total: 1rem;
-  /* Flex gap between [panel][bar][panel]: (total − bar) / 2 each side */
+  /* ── App shell spacing (tune here) ── */
+  --layout-gap: 0.75rem;
+  /* Main/detail split: gap equals the invisible hit strip (no flex gutter). */
+  --resize-bar-hit-width: 0.75rem;
+  --panel-split-total: 0.75rem;
   --panel-split-flex-gap: calc(
     (var(--panel-split-total) - var(--resize-bar-hit-width)) / 2
   );
-  /* Toolbar + page stacks (decoupled so resizable panels can sit tighter) */
-  --layout-gap: 0.5rem;
 
   /*
    * Unified app-shell footer height. The drawer footer (inside the
@@ -1193,6 +1191,14 @@ button:focus-visible:not(.btn) {
 .col-resize-bar:focus-visible .col-resize-bar__line {
   background-color: var(--color-primary);
   opacity: 0.9;
+}
+
+/* Main + detail split (PageLayout): hit strip only — no visible line on
+   hover, focus, or drag. Cursor and keyboard resize unchanged. */
+.col-resize-bar.col-resize-bar--in-flow:hover .col-resize-bar__line,
+.col-resize-bar.col-resize-bar--in-flow:focus-visible .col-resize-bar__line,
+.col-resize-bar.col-resize-bar--in-flow.col-resize-bar--active .col-resize-bar__line {
+  opacity: 0;
 }
 
 /* In-flow flex sibling (not absolute over a table) */
