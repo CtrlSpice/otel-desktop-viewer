@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { setContext } from 'svelte'
+  import { onDestroy, setContext } from 'svelte'
   import {
     PANEL_SPLIT_RESIZE_KEY,
     type PanelSplitResizeContext,
@@ -177,11 +177,57 @@
   let dragStartPos = 0;
   let dragStartWidth = 0;
   let dragFlexSpace = 1;
+  let activePointerId: number | null = null;
+  let captureEl: HTMLElement | null = null;
+
+  function onWindowPointerMove(e: PointerEvent) {
+    if (!isDragging || e.pointerId !== activePointerId) return;
+    const currentPos = stacked ? e.clientY : e.clientX;
+    const deltaPx = currentPos - dragStartPos;
+    leftWidth = Math.max(
+      effectiveMinLeft,
+      Math.min(1 - effectiveMinRight, dragStartWidth + deltaPx / dragFlexSpace)
+    );
+  }
+
+  function endDrag() {
+    if (!isDragging) return;
+    const pointerId = activePointerId;
+    const el = captureEl;
+    isDragging = false;
+    activePointerId = null;
+    captureEl = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    window.removeEventListener('pointermove', onWindowPointerMove);
+    window.removeEventListener('pointerup', onWindowPointerEnd);
+    window.removeEventListener('pointercancel', onWindowPointerEnd);
+    if (el && pointerId !== null) {
+      try {
+        el.releasePointerCapture(pointerId);
+      } catch {
+        /* capture already released */
+      }
+    }
+    saveWidth();
+  }
+
+  function onWindowPointerEnd(e: PointerEvent) {
+    if (!isDragging || e.pointerId !== activePointerId) return;
+    endDrag();
+  }
 
   function handlePointerDown(e: PointerEvent) {
+    if (isDragging) return;
     e.preventDefault();
     const target = e.currentTarget as HTMLElement;
-    target.setPointerCapture(e.pointerId);
+    captureEl = target;
+    activePointerId = e.pointerId;
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore — window listeners still end the drag */
+    }
     isDragging = true;
     dragStartPos = stacked ? e.clientY : e.clientX;
     dragStartWidth = leftWidth;
@@ -202,24 +248,20 @@
 
     document.body.style.cursor = stacked ? 'row-resize' : 'col-resize';
     document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onWindowPointerMove);
+    window.addEventListener('pointerup', onWindowPointerEnd);
+    window.addEventListener('pointercancel', onWindowPointerEnd);
   }
 
   function handlePointerMove(e: PointerEvent) {
-    if (!isDragging) return;
-    const currentPos = stacked ? e.clientY : e.clientX;
-    const deltaPx = currentPos - dragStartPos;
-    leftWidth = Math.max(effectiveMinLeft, Math.min(1 - effectiveMinRight, dragStartWidth + deltaPx / dragFlexSpace));
+    onWindowPointerMove(e);
   }
 
   function handlePointerUp(e: PointerEvent) {
-    if (!isDragging) return;
-    const target = e.currentTarget as HTMLElement;
-    target.releasePointerCapture(e.pointerId);
-    isDragging = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    saveWidth();
+    onWindowPointerEnd(e);
   }
+
+  onDestroy(endDrag);
 
   function handleDoubleClick() {
     leftWidth = defaultLeftWidth;
