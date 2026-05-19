@@ -1,6 +1,6 @@
 /** Shared DaisyUI palette tokens for CodeMirror surfaces. */
 export const editorColors = {
-  base: 'var(--color-base-100)',
+  base: 'var(--color-base-300)',
   surface: 'var(--color-base-200)',
   overlay: 'var(--color-base-300)',
   muted: 'var(--color-neutral)',

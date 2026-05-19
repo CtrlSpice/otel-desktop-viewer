@@ -452,11 +452,7 @@
   @reference "../../app.css";
 
   .histogram-stats {
-    @apply flex flex-wrap gap-x-4 gap-y-1 px-2 py-2 text-xs text-base-content/70;
-  }
-
-  .histogram-stats strong {
-    @apply text-base-content tabular-nums;
+    @apply flex flex-wrap gap-x-4 gap-y-1 px-2 py-2;
   }
 
   .histogram-measure {

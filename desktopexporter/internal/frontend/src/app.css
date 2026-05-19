@@ -6,10 +6,66 @@
 }
 @config "../tailwind.config.js";
 
-/* Rosé Pine + DaisyUI 5 semantic tokens */
+/* Shared DaisyUI chrome — identical across all three Rosé Pine variants */
+:root {
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+  --focus-ring-width: 1px;
+  --focus-ring-offset: 1px;
+  --focus-ring-color: var(--color-primary);
+}
+
+/*
+ * Rosé Pine theme mapping
+ *
+ * RP base    → base-100      RP pine  → secondary, success
+ * RP surface → base-200      RP foam  → accent, info
+ * RP overlay → base-300      RP iris  → primary
+ * RP text    → base-content  RP love  → error
+ * RP muted   → neutral       RP gold  → warning
+ *
+ * -content colours use RP base (dark) or RP base (dawn).
+ * Custom vars: --color-rose, --color-subtle, --color-muted.
+ */
+
+/* ── Rosé Pine (OG) ── */
+html[data-theme='rose-pine'] {
+  color-scheme: dark;
+  --color-rose: #ebbcba;
+  --color-subtle: #908caa;
+  --color-muted: #6e6a86;
+  --color-base-100: #191724;
+  --color-base-200: #1f1d2e;
+  --color-base-300: #26233a;
+  --color-base-content: #e0def4;
+  --color-primary: #c4a7e7;
+  --color-primary-content: #191724;
+  --color-secondary: #31748f;
+  --color-secondary-content: #e0def4;
+  --color-accent: #9ccfd8;
+  --color-accent-content: #191724;
+  --color-neutral: #6e6a86;
+  --color-neutral-content: #e0def4;
+  --color-info: #9ccfd8;
+  --color-info-content: #191724;
+  --color-success: #31748f;
+  --color-success-content: #e0def4;
+  --color-warning: #f6c177;
+  --color-warning-content: #191724;
+  --color-error: #eb6f92;
+  --color-error-content: #e0def4;
+}
+
+/* ── Rosé Pine Moon ── */
 html[data-theme='rose-pine-moon'] {
   color-scheme: dark;
-  --color-rose: #ea9ab2;
+  --color-rose: #ea9a97;
   --color-subtle: #908caa;
   --color-muted: #6e6a86;
   --color-base-100: #232136;
@@ -32,19 +88,9 @@ html[data-theme='rose-pine-moon'] {
   --color-warning-content: #232136;
   --color-error: #eb6f92;
   --color-error-content: #e0def4;
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 1;
-  --noise: 0;
-  --focus-ring-width: 1px;
-  --focus-ring-offset: 1px;
-  --focus-ring-color: var(--color-primary);
 }
 
+/* ── Rosé Pine Dawn ── */
 html[data-theme='rose-pine-dawn'] {
   color-scheme: light;
   --color-rose: #d7827e;
@@ -70,56 +116,6 @@ html[data-theme='rose-pine-dawn'] {
   --color-warning-content: #faf4ed;
   --color-error: #b4637a;
   --color-error-content: #faf4ed;
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 1;
-  --noise: 0;
-  --focus-ring-width: 1px;
-  --focus-ring-offset: 1px;
-  --focus-ring-color: var(--color-primary);
-}
-
-/* Default theme until JS sets data-theme (matches rose-pine-moon as default app theme) */
-:root {
-  color-scheme: dark;
-  --color-rose: #ea9ab2;
-  --color-subtle: #908caa;
-  --color-muted: #6e6a86;
-  --color-base-100: #232136;
-  --color-base-200: #2a273f;
-  --color-base-300: #393552;
-  --color-base-content: #e0def4;
-  --color-primary: #c4a7e7;
-  --color-primary-content: #232136;
-  --color-secondary: #3e8fb0;
-  --color-secondary-content: #e0def4;
-  --color-accent: #9ccfd8;
-  --color-accent-content: #232136;
-  --color-neutral: #6e6a86;
-  --color-neutral-content: #e0def4;
-  --color-info: #9ccfd8;
-  --color-info-content: #232136;
-  --color-success: #3e8fb0;
-  --color-success-content: #e0def4;
-  --color-warning: #f6c177;
-  --color-warning-content: #232136;
-  --color-error: #eb6f92;
-  --color-error-content: #e0def4;
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 1;
-  --noise: 0;
-  --focus-ring-width: 1px;
-  --focus-ring-offset: 1px;
-  --focus-ring-color: var(--color-primary);
 }
 
 /* Rosé Pine text hierarchy utilities.
@@ -134,6 +130,61 @@ html[data-theme='rose-pine-dawn'] {
 }
 .text-rp-muted {
   color: var(--color-muted);
+}
+
+/* Metric charts: axis chrome text (not tooltips) — xs + subtle */
+.metric-chart-view :where(.lc-axis-tick-label, .lc-axis-label) {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 400;
+  fill: var(--color-subtle);
+  stroke: none;
+}
+
+.metric-chart-view :where(.quantile-label) {
+  font-size: 0.75rem;
+}
+
+.metric-chart-view .histogram-stats {
+  font-size: 0.75rem;
+  color: var(--color-subtle);
+}
+
+.metric-chart-view .histogram-stats strong {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-subtle);
+}
+
+.metric-chart-view .heatmap-legend {
+  font-size: 0.75rem;
+  color: var(--color-subtle);
+}
+
+.metric-chart-view .metric-chart-view__subtitle {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+}
+
+.metric-chart-view .metric-chart-view__subtitle .tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Metric detail charts: layerchart strokes use --stroke-color when unset. */
+.metric-chart-view
+  :where(
+    .lc-grid-x-rule,
+    .lc-grid-y-rule,
+    .lc-grid-x-end-rule,
+    .lc-grid-y-end-rule,
+    .lc-axis-grid
+  ) {
+  --stroke-color: color-mix(in oklab, var(--color-base-300) 50%, transparent);
+}
+
+.metric-chart-view
+  :where(.lc-axis-rule, .lc-axis-tick, .lc-rule-x-line, .lc-rule-y-line) {
+  --stroke-color: var(--color-base-300);
 }
 
 @layer base {

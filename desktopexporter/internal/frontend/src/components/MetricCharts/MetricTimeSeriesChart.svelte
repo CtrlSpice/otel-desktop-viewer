@@ -1,6 +1,9 @@
 <script lang="ts">
   import { LineChart, Line, Text } from 'layerchart'
   import { scaleTime } from 'd3-scale'
+  import ChartTimeRangeHeader from '@/components/MetricCharts/ChartTimeRangeHeader.svelte'
+  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { formatChartAxisTime } from '@/utils/chart-time-axis'
   import { timeseriesColor } from '@/utils/timeseries-palette'
   import type { ChartTimeseries } from './chart-types'
 
@@ -28,6 +31,8 @@
     height = 250,
     highlightedTimestamp = null,
   }: Props = $props()
+
+  const timeContext = getTimeContext()
 
   // Build the layerchart series array on the fly. Each entry carries
   // its own pre-grouped data so we don't re-traverse on every chart
@@ -63,55 +68,72 @@
     }
     return new Date(Number(highlightedTimestamp / 1_000_000n))
   })
+
+  let timeExtent = $derived.by((): { startMs: number; endMs: number } | null => {
+    let min = Infinity
+    let max = -Infinity
+    for (const ts of chartSeries) {
+      for (const p of ts.data) {
+        const t = p.date.getTime()
+        if (t < min) min = t
+        if (t > max) max = t
+      }
+    }
+    if (!Number.isFinite(min)) return null
+    return { startMs: min, endMs: max }
+  })
 </script>
 
-{#if visiblePointCount > 0}
-  <div class="metric-time-series-chart" style:height="{height}px">
-    <LineChart
-      x="date"
-      y="value"
-      xScale={scaleTime()}
-      yNice
-      padding={{ top: 16, right: 8, bottom: 64, left: 48 }}
-      tooltipContext
-      series={chartSeries}
-      props={{
-        xAxis: {
-          tickLabelProps: {
-            rotate: 315,
-            textAnchor: 'end',
-            verticalAnchor: 'middle',
-            dy: 8,
+{#if visiblePointCount > 0 && timeExtent}
+  <div class="metric-time-series-chart">
+    <ChartTimeRangeHeader
+      startMs={timeExtent.startMs}
+      endMs={timeExtent.endMs}
+    />
+    <div class="metric-time-series-chart__plot" style:height="{height}px">
+      <LineChart
+        x="date"
+        y="value"
+        xScale={scaleTime()}
+        yNice
+        padding={{ top: 16, right: 8, bottom: 36, left: 48 }}
+        tooltipContext
+        series={chartSeries}
+        props={{
+          xAxis: {
+            format: (tick: Date) =>
+              formatChartAxisTime(tick, timeContext.timezone),
+            tickLabelProps: { dy: 4 },
           },
-        },
-      }}
-    >
-      {#snippet aboveMarks({ context }: { context: any })}
-        {#if highlightDate}
-          {@const px = context.xScale(highlightDate)}
-          {@const yTop = context.yRange[1]}
-          {@const yBot = context.yRange[0]}
-          <g class="highlight-marker">
-            <Line
-              x1={px}
-              x2={px}
-              y1={yTop}
-              y2={yBot}
-              class="highlight-rule"
-            />
-            <Text
-              value="selected"
-              x={px}
-              y={yTop}
-              dy={-2}
-              textAnchor="middle"
-              verticalAnchor="end"
-              class="highlight-label"
-            />
-          </g>
-        {/if}
-      {/snippet}
-    </LineChart>
+        }}
+      >
+        {#snippet aboveMarks({ context }: { context: any })}
+          {#if highlightDate}
+            {@const px = context.xScale(highlightDate)}
+            {@const yTop = context.yRange[1]}
+            {@const yBot = context.yRange[0]}
+            <g class="highlight-marker">
+              <Line
+                x1={px}
+                x2={px}
+                y1={yTop}
+                y2={yBot}
+                class="highlight-rule"
+              />
+              <Text
+                value="selected"
+                x={px}
+                y={yTop}
+                dy={-2}
+                textAnchor="middle"
+                verticalAnchor="end"
+                class="highlight-label"
+              />
+            </g>
+          {/if}
+        {/snippet}
+      </LineChart>
+    </div>
   </div>
 {:else}
   <div
@@ -135,6 +157,10 @@
     @apply w-full overflow-hidden rounded-lg;
   }
 
+  .metric-time-series-chart__plot {
+    @apply w-full;
+  }
+
   .highlight-marker :global(.highlight-rule) {
     stroke: var(--color-primary);
     stroke-width: 1.5;
@@ -149,4 +175,3 @@
     pointer-events: none;
   }
 </style>
-

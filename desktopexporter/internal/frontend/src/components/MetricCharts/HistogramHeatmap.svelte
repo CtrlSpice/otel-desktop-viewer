@@ -12,8 +12,10 @@
     legendBinEdges,
   } from '@/utils/heatmap-palette'
   import { themeSignal } from '@/utils/theme-signal.svelte'
+  import ChartTimeRangeHeader from '@/components/MetricCharts/ChartTimeRangeHeader.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { formatDateTime, type Timezone } from '@/utils/time'
+  import { formatChartAxisTime } from '@/utils/chart-time-axis'
+  import { formatDateTime } from '@/utils/time'
 
   const timeContext = getTimeContext()
 
@@ -42,9 +44,7 @@
   // user can scan-locate which column corresponds to the active snapshot.
   type Props = {
     points: BucketSeriesPoint[]
-    /** Window in ms; used only to pick the axis-tier (seconds vs date),
-     * not for fetching. Same window the parent passed to
-     * getMetricBucketSeries. */
+    /** Query window in ms (same range passed to getMetricBucketSeries). */
     windowStartMs: number
     windowEndMs: number
     height?: number
@@ -67,96 +67,7 @@
     return Number(ts / 1_000_000n)
   }
 
-  // --- Time formatting -------------------------------------------------
-  //
-  // Two surfaces care about timestamps:
-  //
-  //   * Axis labels: short strings, lots of them, no room for the
-  //     full date+timezone-suffix that the project's standard
-  //     formatDateTime returns. We pick a tier of precision based on
-  //     the chart's TIME RANGE, so a 30-second heatmap shows seconds,
-  //     a 7-day heatmap shows just dates, and the in-between cases
-  //     get exactly the precision they need to disambiguate samples
-  //     from each other. Crucially, ranges that span midnight (or
-  //     longer) include the date in every label, which is the actual
-  //     fix for the "two days, both labelled 14:25:00" footgun the
-  //     numeric-keying change exposed.
-  //
-  //   * Tooltip: only ever one shown at a time, the user is asking
-  //     for precision, so we delegate to the project-standard
-  //     formatDateTime with millisecond resolution and timezone tag.
-  //     Stays consistent with how trace/log details show timestamps.
-  //
-  // The axis helper uses Intl.DateTimeFormat.formatToParts() so we
-  // can assemble the string from raw parts (no locale-dependent
-  // commas, no "May 9, 14:25"). 'en-US' is the locale only because
-  // it gives the part shapes we want; the timezone is the user's
-  // choice (timeContext.timezone), so 'UTC' selection swaps the
-  // numbers correctly. If we ever want to honour the user's locale
-  // for month names, swap 'en-US' for navigator.language here.
-
-  type AxisTier = 'seconds' | 'minutes' | 'datetime' | 'date'
-  const HOUR_MS = 60 * 60 * 1000
-  const DAY_MS = 24 * HOUR_MS
-  const WEEK_MS = 7 * DAY_MS
-
-  function pickAxisTier(spanMs: number): AxisTier {
-    if (spanMs < HOUR_MS) return 'seconds'
-    if (spanMs < DAY_MS) return 'minutes'
-    if (spanMs < WEEK_MS) return 'datetime'
-    return 'date'
-  }
-
-  function intlOptionsFor(
-    tier: AxisTier,
-    timezone: Timezone
-  ): Intl.DateTimeFormatOptions {
-    const base: Intl.DateTimeFormatOptions = { hour12: false }
-    if (timezone === 'UTC') base.timeZone = 'UTC'
-    switch (tier) {
-      case 'seconds':
-        return { ...base, hour: '2-digit', minute: '2-digit', second: '2-digit' }
-      case 'minutes':
-        return { ...base, hour: '2-digit', minute: '2-digit' }
-      case 'datetime':
-        return {
-          ...base,
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }
-      case 'date':
-        return { ...base, month: 'short', day: 'numeric' }
-    }
-  }
-
-  function formatAxisTime(
-    ms: number,
-    timezone: Timezone,
-    tier: AxisTier
-  ): string {
-    const fmt = new Intl.DateTimeFormat('en-US', intlOptionsFor(tier, timezone))
-    const parts = fmt.formatToParts(new Date(ms))
-    const grab = (t: Intl.DateTimeFormatPartTypes) =>
-      parts.find(p => p.type === t)?.value ?? ''
-    const hh = grab('hour')
-    const mm = grab('minute')
-    const ss = grab('second')
-    const mon = grab('month')
-    const day = grab('day')
-    switch (tier) {
-      case 'seconds':
-        return `${hh}:${mm}:${ss}`
-      case 'minutes':
-        return `${hh}:${mm}`
-      case 'datetime':
-        return `${mon} ${day} ${hh}:${mm}`
-      case 'date':
-        return `${mon} ${day}`
-    }
-  }
-
+  // Time range is shown in ChartTimeRangeHeader above the plot.
   // Tooltip header uses the project-standard datetime formatter at
   // millisecond resolution. Includes the timezone suffix so the user
   // can always tell whether they're looking at local or UTC.
@@ -300,62 +211,18 @@
     return v.toFixed(1)
   }
 
-  // X-axis labelling strategy:
-  //   * One TICK per data column (full ruler -- every datapoint the
-  //     backend returned gets its own tick on the bottom edge so the
-  //     user can see "yes, my data has N samples").
-  //   * Labels are thinned so they don't overlap. Density is driven by
-  //     chart width: each rotated label needs ~PIXELS_PER_LABEL of
-  //     horizontal room (we rotate 315 degrees, see <Axis> below).
-  //     Number labelable = max(2, floor(width / PIXELS_PER_LABEL)).
-  //     We then walk timeDomain and pick `labelable` indices spaced
-  //     evenly via Math.round(i * (n-1) / (labelable-1)) so the first
-  //     and last samples are ALWAYS labelled and the middle ones land
-  //     at uniform positions.
-  //
-  // Y-axis stays on the older mod-N ticks-and-labels-together approach
-  // -- bucket edges are numeric values, not times, and changing both
-  // axes in one pass risked too many moving parts. Defer.
-  const PIXELS_PER_LABEL = 60
-
-  let labelableTimestamps = $derived.by(() => {
-    const n = timeDomain.length
-    if (n === 0) return new Set<number>()
-    const budget = chartWidth > 0
-      ? Math.max(2, Math.floor(chartWidth / PIXELS_PER_LABEL))
-      : 8
-    if (n <= budget) return new Set(timeDomain)
-    const set = new Set<number>()
-    for (let i = 0; i < budget; i++) {
-      const idx = Math.round((i * (n - 1)) / (budget - 1))
-      set.add(timeDomain[idx])
-    }
-    return set
-  })
-
-  // Tier picked once per render based on the requested heatmap window
-  // (NOT the data span -- a 7-day window with one cluster of data
-  // still wants date-aware labels because the user is asking about
-  // 7 days). Reactive via $derived so changing the time picker
-  // re-tiers labels immediately.
-  let axisTier = $derived(pickAxisTier(windowEndMs - windowStartMs))
-
-  // Tick label formatter for layerchart's <Axis format={...}>. Receives
-  // each tick's domain value (a timestamp number, since we changed
-  // HeatmapDatum.time to number above). Returns the formatted clock
-  // string for "labelable" timestamps and an empty string otherwise --
-  // the tick mark itself still renders, only the text is suppressed.
-  function formatTimeTick(value: unknown): string {
-    if (typeof value !== 'number') return ''
-    if (!labelableTimestamps.has(value)) return ''
-    return formatAxisTime(value, timeContext.timezone, axisTier)
-  }
-
   let visibleBucketTicks = $derived.by(() => {
     const n = bucketDomain.length
     if (n <= 8) return bucketDomain
     const step = Math.ceil(n / 7)
     return bucketDomain.filter((_, i) => i % step === 0)
+  })
+
+  let visibleTimeTicks = $derived.by(() => {
+    const n = timeDomain.length
+    if (n <= 8) return timeDomain
+    const step = Math.ceil(n / 7)
+    return timeDomain.filter((_, i) => i % step === 0)
   })
 
   // --- Cell aspect clamping ---
@@ -371,7 +238,7 @@
   // that "plot area = container minus padding" math stays honest.
   const PAD_TOP = 8
   const PAD_RIGHT = 8
-  const PAD_BOTTOM = 48
+  const PAD_BOTTOM = 28
   const PAD_LEFT = 56
 
   // Floor under cell height so a 200-bucket ExpHist doesn't smush rows
@@ -475,16 +342,18 @@
     No bucket data in range
   </div>
 {:else}
-  <!-- Outer wrapper measures container width via bind:clientWidth so the
-       cell-aspect math has a real number to work with. Inner scroll
-       wrapper is fixed to the requested height; if the chart grows past
-       the container in either direction (too many time bins -> wider,
-       too many buckets -> taller), this is what scrolls. -->
-  <div
-    class="heatmap-measure"
-    style:height="{height}px"
-    bind:clientWidth={containerWidth}
-  >
+  <div class="heatmap-chart">
+    <ChartTimeRangeHeader startMs={windowStartMs} endMs={windowEndMs} />
+    <!-- Outer wrapper measures container width via bind:clientWidth so the
+         cell-aspect math has a real number to work with. Inner scroll
+         wrapper is fixed to the requested height; if the chart grows past
+         the container in either direction (too many time bins -> wider,
+         too many buckets -> taller), this is what scrolls. -->
+    <div
+      class="heatmap-measure"
+      style:height="{height}px"
+      bind:clientWidth={containerWidth}
+    >
     <div class="heatmap-scroll" style:height="{height}px">
       <!-- onclick lives on the wrapper (not on each Cell) because Cell
            iterates internally and doesn't surface the bound datum on the
@@ -528,20 +397,13 @@
           tooltipContext={{ mode: 'band' }}
         >
           <Layer>
-            <!-- Full-density tick ruler: one tick per data column. The
-                 `format` callback decides which ticks ALSO get a text
-                 label (returning '' suppresses just the text). -->
             <Axis
               placement="bottom"
               rule
-              ticks={timeDomain}
-              format={formatTimeTick}
-              tickLabelProps={{
-                rotate: 315,
-                textAnchor: 'end',
-                verticalAnchor: 'middle',
-                dy: 8,
-              }}
+              ticks={visibleTimeTicks}
+              format={(tick: number) =>
+                formatChartAxisTime(tick, timeContext.timezone)}
+              tickLabelProps={{ dy: 4 }}
             />
             <Axis placement="left" rule ticks={visibleBucketTicks} />
             <Cell x="time" y="bucket" fill="count" />
@@ -594,10 +456,15 @@
       {formatLegendEdge(legendEdges[legendEdges.length - 1])}
     </span>
   </div>
+  </div>
 {/if}
 
 <style lang="postcss">
   @reference "../../app.css";
+
+  .heatmap-chart {
+    @apply w-full overflow-hidden rounded-lg;
+  }
 
   .heatmap-measure {
     @apply w-full;
@@ -640,7 +507,7 @@
   }
 
   .heatmap-legend {
-    @apply mt-2 flex items-center justify-center gap-2 px-2 text-[0.65rem] text-base-content/55;
+    @apply mt-2 flex items-center justify-center gap-2 px-2;
   }
 
   .heatmap-legend__edge {

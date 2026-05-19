@@ -137,8 +137,8 @@
         {:else if ctx.activeHistogramTab === 'snapshot'}
           {#if ctx.activeHistogramDp}
             <div class="metric-chart-view__subtitle">
-              <span class="text-base-content/55 text-xs">datapoint at</span>
-              <span class="text-base-content text-xs tabular-nums">
+              <span>datapoint at</span>
+              <span class="tabular-nums">
                 {formatTimestamp(
                   ctx.activeHistogramDp.timestamp,
                   timeContext.timezone,
@@ -163,14 +163,7 @@
 {/snippet}
 
 {#snippet timeSeriesChartSlot()}
-  <!-- Section label mirrors the tab strip's vertical position so the
-       chart row's pixel height is the same for Gauge/Sum as for
-       histograms. Keeps the bottom split panels from reflowing when
-       the user navigates between metric types. The visibility legend
-       used to live in a fixed-width column on the right; that role
-       moved to TimeseriesPanel in the bottom of the main split. -->
   <div class="metric-chart-view">
-    <div class="metric-chart-view__section-label">Time series</div>
     <div class="metric-chart-view__row">
       <div class="metric-chart-view__body">
         <MetricTimeSeriesChart
@@ -259,12 +252,5 @@
       padding-bottom: 0.25rem;
       font-size: 0.75rem;
     }
-  }
-
-  /* Section label for Gauge/Sum. Same vertical baseline as the tab
-     strip so swapping metric types doesn't shift the chart's
-     vertical position. */
-  .metric-chart-view__section-label {
-    @apply px-2 py-1.5 text-xs font-medium text-base-content/55 border-b border-base-300/40;
   }
 </style>

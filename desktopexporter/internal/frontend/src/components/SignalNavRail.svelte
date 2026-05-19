@@ -13,7 +13,7 @@
       <DrawerNavTabs collapsed />
     </div>
     <div class="nav-rail__footer">
-      <ThemeToggle />
+      <ThemeToggle class="drawer-header-btn drawer-header-btn--inactive" />
     </div>
   </aside>
 

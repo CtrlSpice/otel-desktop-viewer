@@ -1,7 +1,8 @@
 // Heatmap colour ramp generator. Hand-tuned 8-stop sequential ramps, no
-// interpolation. Two ramps keyed off `html[data-theme]`:
-//   - rose-pine-moon: dark violet through mauve into love (#eb6f92).
-//   - rose-pine-dawn: surface (#f2e9e1) through rose mauve into amethyst (#907aa9).
+// interpolation. Three ramps keyed off `html[data-theme]`:
+//   - rose-pine:      overlay (#26233a) through mauve into love (#eb6f92).
+//   - rose-pine-moon: overlay (#393552) through mauve into love (#eb6f92).
+//   - rose-pine-dawn: overlay (#f2e9e1) through rose mauve into amethyst (#907aa9).
 // Visually monotonic steps so equal count bands read as equal visual
 // steps -- the reason heatmaps work as a chart, not just decoration.
 
@@ -11,10 +12,20 @@ const MIN_STEPS = 3
 // stops so we cap at that and let adaptiveStepCount round down.
 const MAX_STEPS = 8
 
-// 8-stop ramp for the dark (Rosé Pine Moon) theme. Base -> love along
-// a near-monochromatic violet-to-pink curve. Each stop is a deliberate
-// hex value rather than a programmatic interpolation -- the goal is
-// that this ramp READS as "designed", not "generated".
+// 8-stop ramp for Rosé Pine OG (darkest). Overlay -> love.
+const OG_RAMP: readonly string[] = [
+  '#26233a',
+  '#3d3460',
+  '#5a3e72',
+  '#7a4880',
+  '#96528a',
+  '#b45c90',
+  '#d26592',
+  '#eb6f92', // love (warm pink)
+] as const
+
+// 8-stop ramp for Rosé Pine Moon. Overlay -> love along
+// a near-monochromatic violet-to-pink curve.
 const MOON_RAMP: readonly string[] = [
   '#393552',
   '#4d3e63',
@@ -40,7 +51,9 @@ const DAWN_RAMP: readonly string[] = [
 ] as const
 
 function rampForDataTheme(theme: string): readonly string[] {
-  return theme === 'rose-pine-dawn' ? DAWN_RAMP : MOON_RAMP
+  if (theme === 'rose-pine-dawn') return DAWN_RAMP
+  if (theme === 'rose-pine') return OG_RAMP
+  return MOON_RAMP
 }
 
 /**

@@ -27,6 +27,7 @@ import LogIcon from './LogIcon.svelte'
 import StopWatchIcon from './StopWatch.svelte'
 import HelpCircleIcon from './HelpCircleIcon.svelte'
 import HomeIcon from './HomeIcon.svelte'
+import FallingStarIcon from './FallingStarIcon.svelte'
 import MoonIcon from './MoonIcon.svelte'
 import ReloadIcon from './Reload.svelte'
 import SunIcon from './SunIcon.svelte'
@@ -59,6 +60,7 @@ export {
   StopWatchIcon,
   HelpCircleIcon,
   HomeIcon,
+  FallingStarIcon,
   MoonIcon,
   ReloadIcon,
   SunIcon,
