@@ -1,6 +1,15 @@
 <script lang="ts">
-  import { Chart, Cell, Axis, Highlight, Layer, Rect, Tooltip } from 'layerchart'
-  import { scaleBand, scaleQuantize } from 'd3-scale'
+  import {
+    Chart,
+    Cell,
+    Axis,
+    Highlight,
+    Layer,
+    Legend,
+    Rect,
+    Tooltip,
+  } from 'layerchart'
+  import { scaleBand, scaleOrdinal, scaleQuantize } from 'd3-scale'
   import type {
     BucketSeriesPoint,
     HistogramBucketPoint,
@@ -12,9 +21,13 @@
     legendBinEdges,
   } from '@/utils/heatmap-palette'
   import { themeSignal } from '@/utils/theme-signal.svelte'
-  import ChartTimeRangeHeader from '@/components/MetricCharts/ChartTimeRangeHeader.svelte'
+  import MetricChartEmpty from '@/components/MetricChartEmpty.svelte'
+  import {
+    axisCount,
+    axisTime,
+    chartPadding,
+  } from '@/components/MetricChartPlot.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { formatChartAxisTime } from '@/utils/chart-time-axis'
   import { formatDateTime } from '@/utils/time'
 
   const timeContext = getTimeContext()
@@ -67,7 +80,6 @@
     return Number(ts / 1_000_000n)
   }
 
-  // Time range is shown in ChartTimeRangeHeader above the plot.
   // Tooltip header uses the project-standard datetime formatter at
   // millisecond resolution. Includes the timezone suffix so the user
   // can always tell whether they're looking at local or UTC.
@@ -112,7 +124,10 @@
         } else if (i < bounds.length) {
           label = formatBound((bounds[i - 1] + bounds[i]) / 2)
         } else {
-          label = bounds.length > 0 ? `≥${formatBound(bounds[bounds.length - 1])}` : '0'
+          label =
+            bounds.length > 0
+              ? `≥${formatBound(bounds[bounds.length - 1])}`
+              : '0'
         }
         data.push({ time, bucket: label, count: counts[i] })
       }
@@ -120,7 +135,9 @@
     return data
   }
 
-  function buildExpHistogramData(pts: ExpHistogramBucketPoint[]): HeatmapDatum[] {
+  function buildExpHistogramData(
+    pts: ExpHistogramBucketPoint[]
+  ): HeatmapDatum[] {
     const data: HeatmapDatum[] = []
     for (const pt of pts) {
       const time = tsToMs(pt.timestamp)
@@ -133,13 +150,21 @@
       for (let i = 0; i < pt.positiveCounts.length; i++) {
         const idx = pt.positiveOffset + i
         const mid = (Math.pow(base, idx) + Math.pow(base, idx + 1)) / 2
-        data.push({ time, bucket: formatBound(mid), count: pt.positiveCounts[i] })
+        data.push({
+          time,
+          bucket: formatBound(mid),
+          count: pt.positiveCounts[i],
+        })
       }
 
       for (let i = 0; i < pt.negativeCounts.length; i++) {
         const idx = pt.negativeOffset + i
         const mid = (-Math.pow(base, idx + 1) + -Math.pow(base, idx)) / 2
-        data.push({ time, bucket: formatBound(mid), count: pt.negativeCounts[i] })
+        data.push({
+          time,
+          bucket: formatBound(mid),
+          count: pt.negativeCounts[i],
+        })
       }
     }
     return data
@@ -203,13 +228,19 @@
     return getHeatmapSwatches(swatchSteps, themeSignal.value)
   })
 
-  let legendEdges = $derived(legendBinEdges(maxCount, swatchSteps))
+  let legendLabels = $derived.by(() => {
+    const edges = legendBinEdges(maxCount, swatchSteps)
+    return swatches.map((_, i) => {
+      const lo = Math.round(edges[i])
+      const hi = Math.round(edges[i + 1])
+      const close = i === swatches.length - 1 ? ']' : ')'
+      return `[${lo}\u2009–\u2009${hi}${close}`
+    })
+  })
 
-  function formatLegendEdge(v: number): string {
-    if (v >= 1000) return v.toExponential(1)
-    if (Number.isInteger(v)) return v.toString()
-    return v.toFixed(1)
-  }
+  let legendScale = $derived(
+    scaleOrdinal<string, string>().domain(legendLabels).range(swatches)
+  )
 
   let visibleBucketTicks = $derived.by(() => {
     const n = bucketDomain.length
@@ -234,13 +265,6 @@
   // the wrapper scrolls (horizontally for too-wide, vertically for
   // too-many-buckets) instead of stretching/squishing.
 
-  // Chart padding values must match the <Chart padding={...} /> below so
-  // that "plot area = container minus padding" math stays honest.
-  const PAD_TOP = 8
-  const PAD_RIGHT = 8
-  const PAD_BOTTOM = 28
-  const PAD_LEFT = 56
-
   // Floor under cell height so a 200-bucket ExpHist doesn't smush rows
   // into 1px slivers. Used both to clamp aspect and to decide whether the
   // chart needs to grow taller than its container (and scroll).
@@ -250,10 +274,8 @@
   // 0 before mount.
   let containerWidth = $state(0)
 
-  // Plot area dimensions (excluding axis padding) computed from the
-  // measured container width and the prop-driven container height.
-  let plotWidth = $derived(Math.max(0, containerWidth - PAD_LEFT - PAD_RIGHT))
-  let plotHeightContainer = $derived(Math.max(0, height - PAD_TOP - PAD_BOTTOM))
+  let plotWidth = $derived(Math.max(0, containerWidth))
+  let plotHeightContainer = $derived(Math.max(0, height))
 
   // Natural cell height in the container: the plot area divided by bucket
   // count, but never below MIN_CELL_HEIGHT. When MIN_CELL_HEIGHT is the
@@ -275,24 +297,19 @@
     return Math.max(minW, Math.min(maxW, natural))
   })
 
-  // Total chart dimensions including padding. If the natural plot width
-  // exceeds container plot width, chartWidth will exceed containerWidth
-  // and the wrapper scrolls horizontally. Same for chartHeight.
   let chartWidth = $derived.by(() => {
     if (timeDomain.length === 0 || containerWidth === 0) return containerWidth
     const naturalPlot = targetCellWidth * timeDomain.length
-    return Math.max(containerWidth, naturalPlot + PAD_LEFT + PAD_RIGHT)
+    return Math.max(containerWidth, naturalPlot)
   })
 
   let chartHeight = $derived.by(() => {
     if (bucketDomain.length === 0) return height
     const naturalPlot = cellHeight * bucketDomain.length
-    return Math.max(height, naturalPlot + PAD_TOP + PAD_BOTTOM)
+    return Math.max(height, naturalPlot)
   })
 
-  // Plot area width inside the chart (excluding axis padding). Used both
-  // by the click-to-select handler and the selection-highlight rect.
-  let plotChartWidth = $derived(Math.max(0, chartWidth - PAD_LEFT - PAD_RIGHT))
+  let plotChartWidth = $derived(Math.max(0, chartWidth))
 
   // Effective cell width as the band scale would resolve it. timeDomain
   // length is the divisor: same math layerchart does internally for
@@ -303,18 +320,10 @@
     return plotChartWidth / timeDomain.length
   })
 
-  // Click router: figure out which time-band the user hit and forward
-  // that timestamp to the parent's onSelect handler. The math mirrors
-  // layerchart's band scale (which is why we need exact PAD_LEFT and
-  // plotChartWidth -- any drift between this and the chart's internal
-  // sizing puts the click index off by one). currentTarget is the
-  // wrapper div; offsetX is relative to its content box, which starts
-  // at the chart's (0,0) since the chart fills the wrapper.
   function handleHeatmapClick(event: MouseEvent) {
     if (!onSelect || timeDomain.length === 0 || effectiveCellWidth <= 0) return
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    const localX = event.clientX - rect.left
-    const plotX = localX - PAD_LEFT
+    const plotX = event.clientX - rect.left
     if (plotX < 0 || plotX > plotChartWidth) return
     const idx = Math.floor(plotX / effectiveCellWidth)
     if (idx < 0 || idx >= timeDomain.length) return
@@ -327,7 +336,8 @@
   // a translucent fill + thin border so it reads as "this column is
   // selected" without obscuring the cells underneath.
   let selectedColumnX = $derived.by(() => {
-    if (selectedTimestamp === null || selectedTimestamp === undefined) return null
+    if (selectedTimestamp === null || selectedTimestamp === undefined)
+      return null
     const idx = timeDomain.indexOf(selectedTimestamp)
     if (idx < 0) return null
     return idx * effectiveCellWidth
@@ -335,15 +345,9 @@
 </script>
 
 {#if heatmapData.length === 0}
-  <div
-    class="flex items-center justify-center text-base-content/40 text-sm"
-    style:height="{height}px"
-  >
-    No bucket data in range
-  </div>
+  <MetricChartEmpty {height} message="No bucket data in range" />
 {:else}
-  <div class="heatmap-chart">
-    <ChartTimeRangeHeader startMs={windowStartMs} endMs={windowEndMs} />
+  <div class="heatmap-chart metric-chart-view">
     <!-- Outer wrapper measures container width via bind:clientWidth so the
          cell-aspect math has a real number to work with. Inner scroll
          wrapper is fixed to the requested height; if the chart grows past
@@ -354,8 +358,8 @@
       style:height="{height}px"
       bind:clientWidth={containerWidth}
     >
-    <div class="heatmap-scroll" style:height="{height}px">
-      <!-- onclick lives on the wrapper (not on each Cell) because Cell
+      <div class="heatmap-scroll" style:height="{height}px">
+        <!-- onclick lives on the wrapper (not on each Cell) because Cell
            iterates internally and doesn't surface the bound datum on the
            click event. Resolving from offsetX -> band index keeps the
            per-cell binding implicit, and we don't have to fight the
@@ -364,98 +368,96 @@
            is passed (Gauge/Sum case). svelte-ignore is needed because
            the compiler can't statically prove role is set in the
            tabindex=0 branch (we wire both via the same onSelect prop). -->
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        class="heatmap-wrapper"
-        class:heatmap-wrapper--clickable={!!onSelect}
-        style:width="{chartWidth}px"
-        style:height="{chartHeight}px"
-        onclick={handleHeatmapClick}
-        onkeydown={(e) => {
-          if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
-            e.preventDefault()
-          }
-        }}
-        role={onSelect ? 'button' : undefined}
-        tabindex={onSelect ? 0 : undefined}
-      >
-        <Chart
-          data={heatmapData}
-          x="time"
-          xScale={scaleBand().padding(0)}
-          xDomain={timeDomain}
-          y="bucket"
-          yScale={scaleBand().padding(0)}
-          yDomain={bucketDomain}
-          c="count"
-          cScale={scaleQuantize()}
-          cDomain={countDomain}
-          cRange={swatches}
-          padding={{ top: PAD_TOP, right: PAD_RIGHT, bottom: PAD_BOTTOM, left: PAD_LEFT }}
-          width={chartWidth}
-          height={chartHeight}
-          tooltipContext={{ mode: 'band' }}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div
+          class="heatmap-wrapper"
+          class:heatmap-wrapper--clickable={!!onSelect}
+          style:width="{chartWidth}px"
+          style:height="{chartHeight}px"
+          onclick={handleHeatmapClick}
+          onkeydown={e => {
+            if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault()
+            }
+          }}
+          role={onSelect ? 'button' : undefined}
+          tabindex={onSelect ? 0 : undefined}
         >
-          <Layer>
-            <Axis
-              placement="bottom"
-              rule
-              ticks={visibleTimeTicks}
-              format={(tick: number) =>
-                formatChartAxisTime(tick, timeContext.timezone)}
-              tickLabelProps={{ dy: 4 }}
-            />
-            <Axis placement="left" rule ticks={visibleBucketTicks} />
-            <Cell x="time" y="bucket" fill="count" />
-            {#if selectedColumnX !== null}
-              <!-- Persistent selection ring around the active column.
+          <Chart
+            data={heatmapData}
+            x="time"
+            xScale={scaleBand().padding(0)}
+            xDomain={timeDomain}
+            y="bucket"
+            yScale={scaleBand().padding(0)}
+            yDomain={bucketDomain}
+            c="count"
+            cScale={scaleQuantize()}
+            cDomain={countDomain}
+            cRange={swatches}
+            width={chartWidth}
+            height={chartHeight}
+            padding={chartPadding}
+            tooltipContext={{ mode: 'band' }}
+          >
+            <Layer>
+              <Axis
+                placement="bottom"
+                {...axisTime(timeContext.timezone)}
+                ticks={visibleTimeTicks}
+              />
+              <Axis
+                placement="left"
+                {...axisCount()}
+                ticks={visibleBucketTicks}
+              />
+              <Cell x="time" y="bucket" fill="count" />
+              {#if selectedColumnX !== null}
+                <!-- Persistent selection ring around the active column.
                    Rendered before <Highlight> so the hover highlight
                    still wins visually when the user is mousing over a
                    different column. Pixel mode + plot-area coords. -->
-              <Rect
-                x={selectedColumnX}
-                y={0}
-                width={effectiveCellWidth}
-                height={chartHeight - PAD_TOP - PAD_BOTTOM}
-                class="heatmap-selection"
-              />
-            {/if}
-            <Highlight area />
-          </Layer>
-          <Tooltip.Root>
-            {#snippet children({ data }: { data: HeatmapDatum })}
-              <Tooltip.Header class="text-center">{formatTooltipTime(data.time)}</Tooltip.Header>
-              <Tooltip.List>
-                <Tooltip.Item label="bucket" value={data.bucket} />
-                <Tooltip.Separator />
-                <Tooltip.Item label="count" value={data.count} format="integer" />
-              </Tooltip.List>
-            {/snippet}
-          </Tooltip.Root>
-        </Chart>
+                <Rect
+                  x={selectedColumnX}
+                  y={0}
+                  width={effectiveCellWidth}
+                  height={chartHeight}
+                  class="heatmap-selection"
+                />
+              {/if}
+              <Highlight area />
+            </Layer>
+            <Tooltip.Root>
+              {#snippet children({ data }: { data: HeatmapDatum })}
+                <Tooltip.Header class="text-center"
+                  >{formatTooltipTime(data.time)}</Tooltip.Header
+                >
+                <Tooltip.List>
+                  <Tooltip.Item label="bucket" value={data.bucket} />
+                  <Tooltip.Separator />
+                  <Tooltip.Item
+                    label="count"
+                    value={data.count}
+                    format="integer"
+                  />
+                </Tooltip.List>
+              {/snippet}
+            </Tooltip.Root>
+            <Legend
+              scale={legendScale}
+              placement="bottom"
+              variant="swatches"
+              classes={{
+                root: 'px-2 rounded-full',
+                title: 'text-xs',
+                label: 'text-xs text-rp-subtle',
+                tick: 'stroke-base-200',
+              }}
+            />
+          </Chart>
+        </div>
       </div>
     </div>
-  </div>
-
-  <!-- Legend strip: same swatch array the heatmap uses, plus bin edge
-       labels so a colour can be translated back to a count range. Without
-       this the heatmap is just "warm = more", which is fine for ambient
-       awareness but useless for actual analysis. -->
-  <div class="heatmap-legend" aria-label="Heatmap legend">
-    <span class="heatmap-legend__edge tabular-nums">{formatLegendEdge(legendEdges[0])}</span>
-    <div class="heatmap-legend__swatches">
-      {#each swatches as swatch, i (i)}
-        <span
-          class="heatmap-legend__swatch"
-          style:background-color={swatch}
-          title={`${formatLegendEdge(legendEdges[i])} – ${formatLegendEdge(legendEdges[i + 1])}`}
-        ></span>
-      {/each}
-    </div>
-    <span class="heatmap-legend__edge tabular-nums">
-      {formatLegendEdge(legendEdges[legendEdges.length - 1])}
-    </span>
-  </div>
   </div>
 {/if}
 
@@ -463,7 +465,7 @@
   @reference "../../app.css";
 
   .heatmap-chart {
-    @apply w-full overflow-hidden rounded-lg;
+    @apply w-full;
   }
 
   .heatmap-measure {
@@ -476,7 +478,7 @@
      Just the heatmap scrolls -- the surrounding detail panel stays
      reachable so the metadata table never disappears off the bottom. */
   .heatmap-scroll {
-    @apply w-full overflow-auto rounded-lg;
+    @apply w-full overflow-auto;
   }
 
   .heatmap-wrapper :global(.lc-rect) {
@@ -504,21 +506,5 @@
     stroke: var(--color-primary, #eb6f92);
     stroke-width: 2;
     pointer-events: none;
-  }
-
-  .heatmap-legend {
-    @apply mt-2 flex items-center justify-center gap-2 px-2;
-  }
-
-  .heatmap-legend__edge {
-    @apply shrink-0;
-  }
-
-  .heatmap-legend__swatches {
-    @apply flex h-2 max-w-[16rem] flex-1 overflow-hidden rounded-full;
-  }
-
-  .heatmap-legend__swatch {
-    @apply h-full flex-1;
   }
 </style>

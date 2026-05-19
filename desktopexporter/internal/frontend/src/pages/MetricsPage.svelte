@@ -94,7 +94,11 @@
   import MetricDetailView from '@/components/MetricDetails/MetricDetailView.svelte'
   import TimeseriesPanel from '@/components/MetricDetails/TimeseriesPanel.svelte'
   import SignalFooter from '@/components/SignalFooter.svelte'
-  import { createMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import PaneHeader from '@/components/PaneHeader.svelte'
+  import {
+    createMetricViewContext,
+    getMetricViewContext,
+  } from '@/contexts/metric-view-context.svelte'
   import { TrashIcon } from '@/icons'
 
   // --- context ---
@@ -124,6 +128,7 @@
   // metrics; the factory's effects re-seed per-metric state when the
   // metric.id changes.
   createMetricViewContext(() => selectedMetric)
+  const metricCtx = getMetricViewContext()
 
   // --- state: polling / refresh indicator ---
   let searchEditorApi = $state<SearchEditorAPI | null>(null)
@@ -147,6 +152,34 @@
       ? sortedMetrics.find(m => metricSummaryKey(m) === selectedKey)
       : undefined
   )
+
+  let chartTimeRange = $derived.by(():
+    | { startMs: number; endMs: number }
+    | undefined => {
+    const summary = selectedSummary
+    if (!summary) return undefined
+    if (summary.metricType === 'Gauge' || summary.metricType === 'Sum') {
+      let min = Infinity
+      let max = -Infinity
+      for (const ts of metricCtx.gaugeSumChartTimeseries) {
+        for (const p of ts.points) {
+          const t = p.date.getTime()
+          if (t < min) min = t
+          if (t > max) max = t
+        }
+      }
+      if (!Number.isFinite(min)) return undefined
+      return { startMs: min, endMs: max }
+    }
+    if (summary.metricType === 'Histogram') {
+      const qr = selectionToQueryRangeMs(
+        timeContext.selection,
+        Date.now()
+      )
+      return { startMs: qr.start, endMs: qr.end }
+    }
+    return undefined
+  })
 
   // Position of the currently-selected metric in the sorted list.
   // Powers the DetailNav prev/next/first/last controls in the
@@ -383,24 +416,23 @@
            regardless of content state, and DetailNav self-disables
            when there is nothing to navigate. -->
       {#if selectedSummary}
-          <div class="metrics-page__header">
-            <div class="metrics-page__header-title-row">
-              <span class="metrics-page__title">{selectedSummary.name}</span>
-              {#if selectedSummary.serviceName?.trim()}
-                <span class="metrics-page__subtitle">
-                  ({selectedSummary.serviceName.trim()})</span
-                >
-              {/if}
-              <span class="metrics-page__badges">
-                <SignalBadges
-                  signal="metric"
-                  metricType={selectedSummary.metricType}
-                  aggregationTemporality={selectedSummary.aggregationTemporality}
-                  isMonotonic={selectedSummary.isMonotonic}
-                />
-              </span>
-            </div>
-          </div>
+          <PaneHeader
+            mode="title"
+            title={selectedSummary.name}
+            subtitle={selectedSummary.serviceName?.trim() || undefined}
+            timeRange={chartTimeRange}
+            rounded={false}
+            ariaLabel="Metric chart"
+          >
+            {#snippet badge()}
+              <SignalBadges
+                signal="metric"
+                metricType={selectedSummary.metricType}
+                aggregationTemporality={selectedSummary.aggregationTemporality}
+                isMonotonic={selectedSummary.isMonotonic}
+              />
+            {/snippet}
+          </PaneHeader>
         {/if}
         {#if error}
           <div class="metrics-page__placeholder alert alert-error">
@@ -472,37 +504,6 @@
 
   .metrics-page {
     @apply flex min-h-0 min-w-0 w-full flex-1;
-  }
-
-  .metrics-page__header {
-    @apply flex shrink-0 items-center gap-3 px-3 py-2 bg-base-300;
-  }
-
-  .metrics-page__header-title-row {
-    @apply flex min-w-0 flex-nowrap items-baseline gap-1.5 overflow-hidden;
-  }
-
-  .metrics-page__title {
-    @apply text-sm font-semibold tracking-tight truncate;
-    color: var(--color-base-content);
-  }
-
-  .metrics-page__subtitle {
-    @apply truncate text-sm font-normal leading-none;
-    color: var(--color-subtle);
-  }
-
-  /* Inline badge cluster after the (service) subtitle. Mirrors the
-     PaneHeader title-row layout so the metric main header reads
-     the same as the trace waterfall header. Badges are upsized to
-     sm (vs. xs on the drawer card) via the daisyUI size CSS vars. */
-  .metrics-page__badges {
-    @apply flex shrink-0 items-center gap-1.5;
-  }
-
-  .metrics-page__badges :global(.badge) {
-    --size: calc(var(--size-selector, 0.25rem) * 5);
-    font-size: 0.75rem;
   }
 
   .metrics-page__chart {

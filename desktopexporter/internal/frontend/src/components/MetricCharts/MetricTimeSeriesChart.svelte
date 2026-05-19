@@ -1,9 +1,13 @@
 <script lang="ts">
   import { LineChart, Line, Text } from 'layerchart'
   import { scaleTime } from 'd3-scale'
-  import ChartTimeRangeHeader from '@/components/MetricCharts/ChartTimeRangeHeader.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { formatChartAxisTime } from '@/utils/chart-time-axis'
+  import MetricChartEmpty from '@/components/MetricChartEmpty.svelte'
+  import MetricChartPlot, {
+    axisTime,
+    axisValue,
+    chartPadding,
+  } from '@/components/MetricChartPlot.svelte'
   import { timeseriesColor } from '@/utils/timeseries-palette'
   import type { ChartTimeseries } from './chart-types'
 
@@ -23,6 +27,8 @@
      * x-coordinate so a click on the datapoints list visually
      * anchors to its point. */
     highlightedTimestamp?: bigint | null
+    /** Metric unit for the y-axis label (e.g. "ms", "bytes"). */
+    unit?: string
   }
 
   let {
@@ -30,6 +36,7 @@
     visibleKeys,
     height = 250,
     highlightedTimestamp = null,
+    unit = '',
   }: Props = $props()
 
   const timeContext = getTimeContext()
@@ -47,7 +54,7 @@
         data: ts.points,
         color: timeseriesColor(i),
       }))
-      .filter((ts) => visibleKeys.has(ts.key))
+      .filter(ts => visibleKeys.has(ts.key))
   })
 
   // Total visible point count -- if every series is empty (or all
@@ -69,42 +76,23 @@
     return new Date(Number(highlightedTimestamp / 1_000_000n))
   })
 
-  let timeExtent = $derived.by((): { startMs: number; endMs: number } | null => {
-    let min = Infinity
-    let max = -Infinity
-    for (const ts of chartSeries) {
-      for (const p of ts.data) {
-        const t = p.date.getTime()
-        if (t < min) min = t
-        if (t > max) max = t
-      }
-    }
-    if (!Number.isFinite(min)) return null
-    return { startMs: min, endMs: max }
-  })
+  let yAxisLabel = $derived(unit.trim() || 'value')
 </script>
 
-{#if visiblePointCount > 0 && timeExtent}
+{#if visiblePointCount > 0}
   <div class="metric-time-series-chart">
-    <ChartTimeRangeHeader
-      startMs={timeExtent.startMs}
-      endMs={timeExtent.endMs}
-    />
-    <div class="metric-time-series-chart__plot" style:height="{height}px">
+    <MetricChartPlot {height}>
       <LineChart
         x="date"
         y="value"
         xScale={scaleTime()}
         yNice
-        padding={{ top: 16, right: 8, bottom: 36, left: 48 }}
+        padding={chartPadding}
         tooltipContext
         series={chartSeries}
         props={{
-          xAxis: {
-            format: (tick: Date) =>
-              formatChartAxisTime(tick, timeContext.timezone),
-            tickLabelProps: { dy: 4 },
-          },
+          xAxis: axisTime(timeContext.timezone),
+          yAxis: axisValue(yAxisLabel),
         }}
       >
         {#snippet aboveMarks({ context }: { context: any })}
@@ -112,7 +100,7 @@
             {@const px = context.xScale(highlightDate)}
             {@const yTop = context.yRange[1]}
             {@const yBot = context.yRange[0]}
-            <g class="highlight-marker">
+            <g>
               <Line
                 x1={px}
                 x2={px}
@@ -133,45 +121,23 @@
           {/if}
         {/snippet}
       </LineChart>
-    </div>
+    </MetricChartPlot>
   </div>
 {:else}
-  <div
-    class="flex items-center justify-center text-base-content/40 text-sm"
-    style:height="{height}px"
-  >
-    {#if timeseries.length === 0}
-      No datapoints to chart
-    {:else if visibleKeys.size === 0}
-      Nothing to see here — select a timeseries below
-    {:else}
-      No datapoints in selected timeseries
-    {/if}
-  </div>
+  <MetricChartEmpty
+    {height}
+    message={timeseries.length === 0
+      ? 'No datapoints to chart'
+      : visibleKeys.size === 0
+        ? 'Nothing to see here — select a timeseries below'
+        : 'No datapoints in selected timeseries'}
+  />
 {/if}
 
 <style lang="postcss">
   @reference "../../app.css";
 
   .metric-time-series-chart {
-    @apply w-full overflow-hidden rounded-lg;
-  }
-
-  .metric-time-series-chart__plot {
-    @apply w-full;
-  }
-
-  .highlight-marker :global(.highlight-rule) {
-    stroke: var(--color-primary);
-    stroke-width: 1.5;
-    stroke-dasharray: 4 3;
-    opacity: 0.85;
-  }
-
-  .highlight-marker :global(.highlight-label) {
-    fill: var(--color-primary);
-    font-size: 10px;
-    font-weight: 600;
-    pointer-events: none;
+    @apply w-full rounded-lg;
   }
 </style>

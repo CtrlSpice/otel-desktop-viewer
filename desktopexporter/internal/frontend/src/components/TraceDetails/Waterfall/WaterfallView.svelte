@@ -263,6 +263,16 @@
   let bounds = $derived(getTraceBounds(spans))
   let rows = $derived(buildWaterfallRows(spans, bounds))
 
+  let traceTimeRange = $derived.by(():
+    | { startMs: number; endMs: number }
+    | undefined => {
+    if (spans.length === 0) return undefined
+    return {
+      startMs: Number(bounds.start / 1_000_000n),
+      endMs: Number(bounds.end / 1_000_000n),
+    }
+  })
+
   let headerName = $derived.by(() => {
     if (spans.length === 0) return 'Trace'
     const root = spans.find(n => n.depth === 0) ?? spans[0]
@@ -522,6 +532,7 @@
       mode="title"
       title={headerName}
       subtitle={headerService || undefined}
+      timeRange={traceTimeRange}
       ariaLabel="Trace waterfall"
     >
       {#snippet badge()}

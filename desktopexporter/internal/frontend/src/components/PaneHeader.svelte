@@ -36,6 +36,13 @@
    *   header (bg-base-200 pane body). The header itself is bg-base-300.
    */
   import type { Snippet } from 'svelte'
+  import ChartTimeRangeHeader from '@/components/MetricCharts/ChartTimeRangeHeader.svelte'
+  import PaneTimestampHeader from '@/components/PaneTimestampHeader.svelte'
+
+  export type PaneTimeRange = {
+    startMs: number
+    endMs: number
+  }
 
   export type PaneTab = {
     id: string
@@ -74,6 +81,12 @@
     ariaLabel?: string
     /** Apply rounded top corners. Defaults to true. */
     rounded?: boolean
+    /** Optional chart/query window shown on its own line below the
+     *  title or tab strip. */
+    timeRange?: PaneTimeRange
+    /** Optional single timestamp (ms) on its own line below the title
+     *  or tab strip (e.g. log record time). */
+    timestampMs?: number
   }
 
   type TitleProps = CommonProps & {
@@ -121,7 +134,25 @@
     props.rounded !== false ? 'pane-header--rounded' : 'pane-header--flush'
   )
   let tabSizeClass = $derived(props.rounded !== false ? 'tabs-sm' : '')
+  let stackedClass = $derived(
+    props.timeRange !== undefined || props.timestampMs !== undefined
+      ? 'pane-header--stacked'
+      : ''
+  )
 </script>
+
+{#snippet metaRow()}
+  <div class="pane-header__time-range">
+    {#if props.timeRange}
+      <ChartTimeRangeHeader
+        startMs={props.timeRange.startMs}
+        endMs={props.timeRange.endMs}
+      />
+    {:else if props.timestampMs !== undefined}
+      <PaneTimestampHeader timestampMs={props.timestampMs} />
+    {/if}
+  </div>
+{/snippet}
 
 {#snippet badgeStrip(badges: PaneBadge[])}
   {#each badges as badge (badge.label)}
@@ -190,10 +221,11 @@
 
 {#if props.mode === 'title'}
   <div
-    class="pane-header pane-header--title {roundedClass}"
+    class="pane-header pane-header--title {roundedClass} {stackedClass}"
     role="region"
     aria-label={props.ariaLabel ?? props.title}
   >
+    <div class="pane-header__top">
     <div class="pane-header__title-row">
       <span class="pane-header__title">{props.title}</span>
       {#if props.subtitle?.trim()}
@@ -204,18 +236,27 @@
     {#if props.right}
       <div class="pane-header__right">{@render props.right()}</div>
     {/if}
+    </div>
+    {#if props.timeRange !== undefined || props.timestampMs !== undefined}
+      {@render metaRow()}
+    {/if}
   </div>
 {:else if props.mode === 'tabs'}
-  <div class="pane-header pane-header--tabs {roundedClass}">
-    {@render tabStrip(
-      props.tabs,
-      props.activeId,
-      props.onSelect,
-      props.ariaLabel ?? 'Pane tabs',
-      props.tabLayout ?? 'left'
-    )}
-    {#if props.right}
-      <div class="pane-header__right">{@render props.right()}</div>
+  <div class="pane-header pane-header--tabs {roundedClass} {stackedClass}">
+    <div class="pane-header__top pane-header__top--tabs">
+      {@render tabStrip(
+        props.tabs,
+        props.activeId,
+        props.onSelect,
+        props.ariaLabel ?? 'Pane tabs',
+        props.tabLayout ?? 'left'
+      )}
+      {#if props.right}
+        <div class="pane-header__right">{@render props.right()}</div>
+      {/if}
+    </div>
+    {#if props.timeRange !== undefined || props.timestampMs !== undefined}
+      {@render metaRow()}
     {/if}
   </div>
 {:else if props.mode === 'toolbar'}
@@ -230,23 +271,28 @@
   </div>
 {:else}
   <div
-    class="pane-header pane-header--title-tabs {roundedClass}"
+    class="pane-header pane-header--title-tabs {roundedClass} {stackedClass}"
     role="region"
     aria-label={props.ariaLabel ?? props.title}
   >
-    <div class="pane-header__title-row pane-header__title-row--tabs">
-      <span class="pane-header__title">{props.title}</span>
-      {@render badgeBlock(props.badges, props.badge)}
+    <div class="pane-header__top pane-header__top--title-tabs">
+      <div class="pane-header__title-row pane-header__title-row--tabs">
+        <span class="pane-header__title">{props.title}</span>
+        {@render badgeBlock(props.badges, props.badge)}
+      </div>
+      {@render tabStrip(
+        props.tabs,
+        props.activeId,
+        props.onSelect,
+        props.ariaLabel ?? `${props.title} tabs`,
+        props.tabLayout ?? 'left'
+      )}
+      {#if props.right}
+        <div class="pane-header__right">{@render props.right()}</div>
+      {/if}
     </div>
-    {@render tabStrip(
-      props.tabs,
-      props.activeId,
-      props.onSelect,
-      props.ariaLabel ?? `${props.title} tabs`,
-      props.tabLayout ?? 'left'
-    )}
-    {#if props.right}
-      <div class="pane-header__right">{@render props.right()}</div>
+    {#if props.timeRange !== undefined || props.timestampMs !== undefined}
+      {@render metaRow()}
     {/if}
   </div>
 {/if}
@@ -281,6 +327,31 @@
      px-3 matches FieldGroup headings and detail row inset. */
   .pane-header--title {
     @apply items-center px-3 py-2;
+  }
+
+  .pane-header--stacked {
+    @apply flex-col items-stretch gap-0;
+  }
+
+  .pane-header--stacked.pane-header--title {
+    @apply items-stretch py-2 pb-0;
+  }
+
+  .pane-header__top {
+    @apply flex min-w-0 w-full flex-nowrap items-center gap-2;
+  }
+
+  .pane-header__top--tabs,
+  .pane-header__top--title-tabs {
+    @apply items-end;
+  }
+
+  .pane-header--title-tabs .pane-header__top--title-tabs {
+    @apply min-w-0 flex-1;
+  }
+
+  .pane-header__time-range {
+    @apply w-full pb-1.5 text-xs;
   }
 
   .pane-header--toolbar {

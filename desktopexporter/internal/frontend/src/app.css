@@ -96,9 +96,9 @@ html[data-theme='rose-pine-dawn'] {
   --color-rose: #d7827e;
   --color-subtle: #797593;
   --color-muted: #9893a5;
-  --color-base-100: #faf4ed;
-  --color-base-200: #fffaf3;
-  --color-base-300: #f2e9e1;
+  --color-base-100: #f2e9e1;
+  --color-base-200: #faf4ed;
+  --color-base-300: #fffaf3;
   --color-base-content: #575279;
   --color-primary: #907aa9;
   --color-primary-content: #faf4ed;
@@ -141,9 +141,6 @@ html[data-theme='rose-pine-dawn'] {
   stroke: none;
 }
 
-.metric-chart-view :where(.quantile-label) {
-  font-size: 0.75rem;
-}
 
 .metric-chart-view .histogram-stats {
   font-size: 0.75rem;
@@ -185,6 +182,34 @@ html[data-theme='rose-pine-dawn'] {
 .metric-chart-view
   :where(.lc-axis-rule, .lc-axis-tick, .lc-rule-x-line, .lc-rule-y-line) {
   --stroke-color: var(--color-base-300);
+}
+
+.metric-chart-view :where(.highlight-rule) {
+  stroke: var(--color-primary);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+
+.metric-chart-view :where(.highlight-label) {
+  fill: var(--color-primary);
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.metric-chart-view :where(.quantile-line) {
+  stroke: var(--marker-color, currentColor);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  opacity: 0.75;
+}
+
+.metric-chart-view :where(.quantile-label) {
+  fill: var(--marker-color, currentColor);
+  font-size: 0.75rem;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 @layer base {

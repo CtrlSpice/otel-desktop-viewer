@@ -170,6 +170,7 @@
           timeseries={ctx.gaugeSumChartTimeseries}
           visibleKeys={ctx.gaugeSumVisible}
           highlightedTimestamp={ctx.highlightedTimestamp}
+          unit={ctx.metric!.unit}
         />
       </div>
     </div>

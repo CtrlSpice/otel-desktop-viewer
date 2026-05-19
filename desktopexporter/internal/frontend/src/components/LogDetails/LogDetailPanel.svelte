@@ -67,6 +67,7 @@
     <PaneHeader
       mode="title"
       title={service || '—'}
+      timestampMs={Number(log.timestamp / 1_000_000n)}
       ariaLabel="Log record"
     >
       {#snippet badge()}

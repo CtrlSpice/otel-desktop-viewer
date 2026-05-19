@@ -1,6 +1,12 @@
 <script lang="ts">
-  import { BarChart, Line, Text, Tooltip } from 'layerchart'
+  import { Axis, BarChart, Line, Text, Tooltip } from 'layerchart'
   import { scaleBand, scaleLinear } from 'd3-scale'
+  import MetricChartEmpty from '@/components/MetricChartEmpty.svelte'
+  import MetricChartPlot, {
+    axisBuckets,
+    axisCount,
+    chartPadding,
+  } from '@/components/MetricChartPlot.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { metricTypeSeriesColor } from '@/utils/metric-type'
   import type {
@@ -210,6 +216,27 @@
     }
   })
 
+  let statsLines = $derived.by(() => {
+    const lines: { label: string; value: string }[] = [
+      { label: 'count', value: String(stats.count) },
+      { label: 'sum', value: stats.sum.toFixed(2) },
+      { label: 'min', value: stats.min.toFixed(2) },
+      { label: 'max', value: stats.max.toFixed(2) },
+    ]
+    for (const { key, label } of QUANTILE_LABELS) {
+      lines.push({ label, value: formatQuantile(key) })
+    }
+    if (datapoint.metricType === 'ExponentialHistogram') {
+      lines.push({ label: 'scale', value: String(datapoint.scale) })
+      lines.push({ label: 'zeros', value: String(datapoint.zeroCount) })
+    }
+    return lines
+  })
+
+  let statsLabel = $derived(
+    statsLines.map(s => `${s.label}: ${s.value}`).join('\n')
+  )
+
   type QuantileMark = {
     key: string
     label: string
@@ -336,27 +363,9 @@
     return `${pct.toFixed(2)}%`
   }
 
-  // Axis titles. Pulled into derived so the unit drives both ends without
-  // template-side string splicing.
-  let xAxisTitle = $derived(unit ? `value (${unit})` : 'value')
-  const yAxisTitle = 'count'
 </script>
 
 <div>
-  <div class="histogram-stats">
-    <span>count: <strong>{stats.count}</strong></span>
-    <span>sum: <strong>{stats.sum.toFixed(2)}</strong></span>
-    <span>min: <strong>{stats.min.toFixed(2)}</strong></span>
-    <span>max: <strong>{stats.max.toFixed(2)}</strong></span>
-    {#each QUANTILE_LABELS as { key, label } (key)}
-      <span>{label}: <strong>{formatQuantile(key)}</strong></span>
-    {/each}
-    {#if datapoint.metricType === 'ExponentialHistogram'}
-      <span>scale: <strong>{datapoint.scale}</strong></span>
-      <span>zeros: <strong>{datapoint.zeroCount}</strong></span>
-    {/if}
-  </div>
-
   {#if buckets.length > 0}
     <!-- Outer measurement wrapper sets the scroll viewport; inner sized
          wrapper holds the chart at its natural width so the scroll bar
@@ -367,10 +376,10 @@
       bind:clientWidth={parentWidth}
     >
       <div class="histogram-chart-scroll" style:height="{height}px">
-        <div
+        <MetricChartPlot
           class="histogram-chart"
-          style:height="{height}px"
-          style:width="{chartWidth}px"
+          {height}
+          width={chartWidth}
         >
           <BarChart
             data={buckets}
@@ -379,21 +388,13 @@
             y="count"
             yScale={scaleLinear()}
             yNice
+            padding={chartPadding}
             bandPadding={0.2}
-            padding={{ top: 16, right: 8, bottom: 64, left: 64 }}
             tooltipContext
             props={{
               bars: { fill: barColor, fillOpacity: 0.85 },
-              xAxis: {
-                title: xAxisTitle,
-                tickLabelProps: {
-                  rotate: 315,
-                  textAnchor: 'end',
-                  verticalAnchor: 'middle',
-                  dy: 8,
-                },
-              },
-              yAxis: { title: yAxisTitle, format: 'metric' },
+              xAxis: axisBuckets(unit),
+              yAxis: axisCount(),
             }}
           >
             {#snippet tooltip()}
@@ -436,24 +437,25 @@
                   />
                 </g>
               {/each}
+              <Axis
+                placement="right"
+                label={statsLabel}
+                labelPlacement="start"
+                ticks={0}
+                labelProps={{ class: 'stat-label' }}
+              />
             {/snippet}
           </BarChart>
-        </div>
+        </MetricChartPlot>
       </div>
     </div>
   {:else}
-    <div class="flex items-center justify-center text-base-content/40 text-sm" style:height="{height}px">
-      No buckets to chart
-    </div>
+    <MetricChartEmpty {height} message="No buckets to chart" />
   {/if}
 </div>
 
 <style lang="postcss">
   @reference "../../app.css";
-
-  .histogram-stats {
-    @apply flex flex-wrap gap-x-4 gap-y-1 px-2 py-2;
-  }
 
   .histogram-measure {
     @apply w-full;
@@ -467,25 +469,12 @@
     @apply w-full overflow-x-auto overflow-y-hidden rounded-lg;
   }
 
-  .histogram-chart {
-    /* width set inline; height inherited from parent. */
-  }
-
   .quantile-marker {
     pointer-events: auto;
   }
 
-  .quantile-marker :global(.quantile-line) {
-    stroke: var(--marker-color, currentColor);
-    stroke-width: 1.5;
-    stroke-dasharray: 4 3;
-    opacity: 0.75;
-  }
-
-  .quantile-marker :global(.quantile-label) {
-    fill: var(--marker-color, currentColor);
-    font-size: 10px;
-    font-weight: 600;
-    pointer-events: none;
+  :global(.stat-label) {
+    font-size: 0.75rem;
+    fill: var(--color-muted);
   }
 </style>

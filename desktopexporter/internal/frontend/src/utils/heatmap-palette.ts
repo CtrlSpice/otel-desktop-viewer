@@ -6,7 +6,7 @@
 // Visually monotonic steps so equal count bands read as equal visual
 // steps -- the reason heatmaps work as a chart, not just decoration.
 
-const MIN_STEPS = 3
+const MIN_STEPS = 1
 // Cap matches the ramp length. Asking for more swatches would have to
 // either repeat colours or interpolate; we explicitly chose 8 hand-tuned
 // stops so we cap at that and let adaptiveStepCount round down.
@@ -92,6 +92,7 @@ export function getHeatmapSwatches(steps: number, dataTheme = ''): string[] {
   const ramp = rampForDataTheme(dataTheme)
   const safeSteps = Math.max(MIN_STEPS, Math.min(MAX_STEPS, Math.floor(steps)))
   if (safeSteps === ramp.length) return [...ramp]
+  if (safeSteps === 1) return [ramp[ramp.length - 1]]
   const out: string[] = new Array(safeSteps)
   for (let i = 0; i < safeSteps; i++) {
     const srcIdx = Math.round((i * (ramp.length - 1)) / (safeSteps - 1))
