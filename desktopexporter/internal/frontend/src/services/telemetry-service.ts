@@ -16,7 +16,7 @@ import type {
   BucketSeriesMode,
   BucketSeriesPoint,
 } from '@/types/api-types'
-import type { QueryNode } from '@/components/SignalToolbar/search/queryTree'
+import type { QueryNode } from '@/components/shared/Search/queryTree'
 import type {
   AttributeScope,
   FieldDefinition,

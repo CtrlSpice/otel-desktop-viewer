@@ -7,11 +7,11 @@
     CopyIcon,
     LogIcon,
   } from '@/icons'
-  import ReadonlyCodePanel from '@/components/ReadonlyCodePanel.svelte'
-  import FieldGroup from '@/components/FieldGroup.svelte'
-  import LogField from '@/components/LogDetails/LogField.svelte'
-  import PageLayout from '@/components/PageLayout.svelte'
-  import PaneHeader, { type PaneTab } from '@/components/PaneHeader.svelte'
+  import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
+  import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import LogField from '@/components/logs/LogField.svelte'
+  import PageLayout from '@/components/shared/PageLayout.svelte'
+  import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { Stats } from '@/types/api-types'
   import luluImage from '@/assets/images/lulu.png'

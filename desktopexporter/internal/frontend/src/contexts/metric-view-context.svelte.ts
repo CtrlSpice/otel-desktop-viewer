@@ -42,11 +42,11 @@ import {
   ErrCodeUnspecifiedTemporality,
   ErrCodeHistogramBoundsMismatch,
 } from '@/services/telemetry-service'
-import { timeseriesToChartTimeseries } from '@/components/MetricCharts/chart-types'
-import type { Timeseries as LegendTimeseries } from '@/components/MetricCharts/legend-types'
+import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
+import type { LegendTimeseries } from '@/types/metric-chart-types'
 import { categoricalPalette } from '@/utils/chart-palette'
-import { metricTypeStem } from '@/utils/metric-type'
-import { themeSignal } from '@/utils/theme-signal.svelte'
+import { metricTypeStem } from '@/components/metrics/utils/metric-type'
+import { themeSignal } from '@/state/theme.svelte'
 import {
   DEFAULT_VISIBLE_TIMESERIES,
   MAX_VISIBLE_TIMESERIES,
@@ -54,14 +54,71 @@ import {
   resolveTimeseriesVisible,
   savePersistedTimeseriesVisible,
   visibleKeyListsEqual,
-} from '@/utils/metric-timeseries-visible'
-import {
-  acquireColor,
-  releaseColor,
-  seedColorAssignments,
-  syncColorAssignments,
-  type TimeseriesColorByKey,
-} from '@/utils/timeseries-color-slots'
+} from '@/components/metrics/utils/metric-timeseries-visible'
+/** Checked timeseries key → assigned colour from the rotated pool. */
+type TimeseriesColorByKey = Map<string, string>
+
+/**
+ * Assign colours from a stem-rotated pool (from `categoricalPalette`)
+ * to an initial visible set. Walks `legendOrder` so slot-filling
+ * follows list order; the first assigned key gets `pool[0]` (the
+ * metric type's stem colour).
+ */
+function seedColorAssignments(
+  pool: readonly string[],
+  visibleKeys: ReadonlySet<string>,
+  legendOrder: readonly string[]
+): TimeseriesColorByKey {
+  const out: TimeseriesColorByKey = new Map()
+  let i = 0
+  for (const key of legendOrder) {
+    if (!visibleKeys.has(key)) continue
+    if (i >= pool.length) break
+    out.set(key, pool[i++]!)
+  }
+  return out
+}
+
+/** First unused colour in `pool` order (pool[0] is the metric-type stem). */
+function acquireColor(
+  pool: readonly string[],
+  assigned: TimeseriesColorByKey,
+  key: string
+): string | null {
+  const existing = assigned.get(key)
+  if (existing !== undefined) return existing
+  const used = new Set(assigned.values())
+  for (const color of pool) {
+    if (!used.has(color)) {
+      assigned.set(key, color)
+      return color
+    }
+  }
+  return null
+}
+
+function releaseColor(
+  assigned: TimeseriesColorByKey,
+  key: string
+): void {
+  assigned.delete(key)
+}
+
+/** Drop unchecked keys; acquire for newly visible keys in legend order. */
+function syncColorAssignments(
+  pool: readonly string[],
+  assigned: TimeseriesColorByKey,
+  visibleKeys: ReadonlySet<string>,
+  legendOrder: readonly string[]
+): void {
+  for (const key of [...assigned.keys()]) {
+    if (!visibleKeys.has(key)) assigned.delete(key)
+  }
+  for (const key of legendOrder) {
+    if (!visibleKeys.has(key)) continue
+    acquireColor(pool, assigned, key)
+  }
+}
 import {
   getTimeContext,
   selectionToQueryRangeMs,

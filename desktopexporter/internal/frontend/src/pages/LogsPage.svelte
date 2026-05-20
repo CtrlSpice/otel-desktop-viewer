@@ -37,52 +37,6 @@
     return cmp !== 0 ? (dir === 'asc' ? cmp : -cmp) : a.id.localeCompare(b.id)
   }
 
-  // --- Severity helpers ---
-
-  type SeverityBand = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
-
-  export function severityBand(severityNumber: number): SeverityBand {
-    if (severityNumber <= 4) return 'trace'
-    if (severityNumber <= 8) return 'debug'
-    if (severityNumber <= 12) return 'info'
-    if (severityNumber <= 16) return 'warn'
-    if (severityNumber <= 20) return 'error'
-    return 'fatal'
-  }
-
-  const BADGE_CLASS: Record<SeverityBand, string> = {
-    trace: 'badge badge-xs badge-soft badge-neutral',
-    debug: 'badge badge-xs badge-soft badge-info',
-    info: 'badge badge-xs badge-soft badge-success',
-    warn: 'badge badge-xs badge-soft badge-warning',
-    error: 'badge badge-xs badge-soft badge-error',
-    fatal: 'badge badge-xs badge-soft badge-error',
-  }
-
-  const BORDER_CLASS: Record<SeverityBand, string> = {
-    trace: 'border-l-neutral/40',
-    debug: 'border-l-info/40',
-    info: 'border-l-success/40',
-    warn: 'border-l-warning/40',
-    error: 'border-l-error/40',
-    fatal: 'border-l-error',
-  }
-
-  export function severityBadgeClass(severityNumber: number): string {
-    return BADGE_CLASS[severityBand(severityNumber)]
-  }
-
-  export function severityBorderClass(severityNumber: number): string {
-    return BORDER_CLASS[severityBand(severityNumber)]
-  }
-
-  export function severityLabel(
-    severityText: string,
-    severityNumber: number
-  ): string {
-    return severityText || severityBand(severityNumber).toUpperCase()
-  }
-
   const SORT_OPTIONS = [
     { value: 'timestamp', label: 'Timestamp' },
     { value: 'body', label: 'Body' },
@@ -99,13 +53,13 @@
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import type { LogData, SearchResultEvent } from '@/types/api-types'
-  import { createDebouncedDetailFetcher } from '@/utils/debounced-detail-fetcher.svelte'
-  import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
-  import PageLayout from '@/components/PageLayout.svelte'
-  import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
-  import LogCard from '@/components/LogCard.svelte'
-  import LogDetailPanel from '@/components/LogDetails/LogDetailPanel.svelte'
-  import SignalFooter from '@/components/SignalFooter.svelte'
+  import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
+  import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
+  import PageLayout from '@/components/shared/PageLayout.svelte'
+  import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
+  import LogCard from '@/components/logs/LogCard.svelte'
+  import LogDetailPanel from '@/components/logs/LogDetailView.svelte'
+  import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { TrashIcon } from '@/icons'
 
   // --- context ---

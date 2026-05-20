@@ -68,13 +68,13 @@
     { value: 'seriesCount', label: 'Timeseries Count' },
   ]
 
-  export { metricTypeBadgeClass, metricTypeLabel } from '@/utils/metric-type'
+  export { metricTypeBadgeClass, metricTypeLabel } from '@/components/metrics/utils/metric-type'
 </script>
 
 <script lang="ts">
   import { onMount } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import { metricTypeBadgeClass, metricTypeLabel } from '@/utils/metric-type'
+  import { metricTypeBadgeClass, metricTypeLabel } from '@/components/metrics/utils/metric-type'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -84,17 +84,17 @@
     MetricStats,
     SearchResultEvent,
   } from '@/types/api-types'
-  import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
-  import PageLayout from '@/components/PageLayout.svelte'
-  import ResizablePanels from '@/components/ResizablePanels.svelte'
-  import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
-  import MetricCard from '@/components/MetricCard.svelte'
-  import SignalBadges from '@/components/SignalBadges.svelte'
-  import MetricChartView from '@/components/MetricDetails/MetricChartView.svelte'
-  import MetricDetailView from '@/components/MetricDetails/MetricDetailView.svelte'
-  import TimeseriesPanel from '@/components/MetricDetails/TimeseriesPanel.svelte'
-  import SignalFooter from '@/components/SignalFooter.svelte'
-  import PaneHeader from '@/components/PaneHeader.svelte'
+  import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
+  import PageLayout from '@/components/shared/PageLayout.svelte'
+  import ResizablePanels from '@/components/shared/ResizablePanels.svelte'
+  import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
+  import MetricCard from '@/components/metrics/MetricCard.svelte'
+  import SignalBadges from '@/components/shared/SignalBadges.svelte'
+  import MetricChartView from '@/components/metrics/Charts/MetricChartView.svelte'
+  import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
+  import TimeseriesPanel from '@/components/metrics/Detail/TimeseriesPanel.svelte'
+  import SignalFooter from '@/components/shared/SignalFooter.svelte'
+  import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import {
     createMetricViewContext,
     getMetricViewContext,

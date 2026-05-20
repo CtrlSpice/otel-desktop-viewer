@@ -1,9 +1,48 @@
 <script module lang="ts">
   import {
-    compareTraceSummaries,
-    type TraceSummarySortColumn,
-    type TraceSummarySortDirection,
-  } from '@/utils/traces'
+    compareByOptionalBigintField,
+    compareByStringField,
+    compareByTimestampField,
+  } from '@/utils/compare'
+  import { traceSummaryDurationNs } from '@/utils/time'
+  import type { TraceSummary } from '@/types/api-types'
+
+  export type TraceSummarySortColumn =
+    | 'serviceName'
+    | 'rootSpanName'
+    | 'startTime'
+    | 'duration'
+    | 'spanCount'
+    | 'errorCount'
+
+  export type TraceSummarySortDirection = 'asc' | 'desc'
+
+  /** Primary key by column + direction; tie-break on trace ID. */
+  function compareTraceSummaries(
+    a: TraceSummary,
+    b: TraceSummary,
+    col: TraceSummarySortColumn,
+    dir: TraceSummarySortDirection
+  ): number {
+    const cmp =
+      col === 'serviceName'
+        ? compareByStringField(a, b, t => t.rootSpan?.serviceName)
+        : col === 'rootSpanName'
+          ? compareByStringField(a, b, t => t.rootSpan?.name)
+          : col === 'startTime'
+            ? compareByTimestampField(a, b, t => t.startTime)
+            : col === 'duration'
+              ? compareByOptionalBigintField(a, b, traceSummaryDurationNs)
+              : col === 'spanCount'
+                ? a.spanCount - b.spanCount
+                : a.errorCount - b.errorCount
+
+    return cmp !== 0
+      ? dir === 'asc'
+        ? cmp
+        : -cmp
+      : a.traceID.localeCompare(b.traceID)
+  }
 
   const SORT_OPTIONS = [
     { value: 'startTime', label: 'Start Time' },
@@ -23,19 +62,18 @@
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import type {
-    TraceSummary,
     TraceData,
     SearchResultEvent,
     TraceStats,
   } from '@/types/api-types'
-  import type { QueryNode } from '@/components/SignalToolbar/search/queryTree'
-  import type { SearchEditorAPI } from '@/components/SignalToolbar/search/search-editor-api'
-  import PageLayout from '@/components/PageLayout.svelte'
-  import DrawerSearchPanel from '@/components/DrawerSearchPanel.svelte'
-  import TraceCard from '@/components/TraceCard.svelte'
-  import DetailView from '@/components/TraceDetails/DetailView/DetailView.svelte'
-  import WaterfallView from '@/components/TraceDetails/Waterfall/WaterfallView.svelte'
-  import SignalFooter from '@/components/SignalFooter.svelte'
+  import type { QueryNode } from '@/components/shared/Search/queryTree'
+  import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
+  import PageLayout from '@/components/shared/PageLayout.svelte'
+  import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
+  import TraceCard from '@/components/traces/TraceCard.svelte'
+  import DetailView from '@/components/traces/Detail/TraceDetailView.svelte'
+  import WaterfallView from '@/components/traces/Waterfall/WaterfallView.svelte'
+  import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { TrashIcon } from '@/icons'
 
   // --- context ---
@@ -291,6 +329,14 @@
     }
   }
 
+  // Wrapped form for the footer's onDelete: SignalFooter expects a
+  // 0-arg callback. We bind the currently selected trace ID inside the
+  // function (not at the prop site) so TS's narrowing on the truthy
+  // check holds when the callback eventually fires.
+  function deleteSelectedTrace() {
+    if (traceData) handleDeleteTrace(traceData.traceID)
+  }
+
   // --- lifecycle ---
   onMount(async () => {
     await fetchTraces()
@@ -405,9 +451,7 @@
         onPrev={() => selectByOffset(-1)}
         onNext={() => selectByOffset(1)}
         onLast={selectLast}
-        onDelete={traceData
-          ? () => handleDeleteTrace(traceData.traceID)
-          : undefined}
+        onDelete={traceData ? deleteSelectedTrace : undefined}
       />
     {/snippet}
   </PageLayout>
