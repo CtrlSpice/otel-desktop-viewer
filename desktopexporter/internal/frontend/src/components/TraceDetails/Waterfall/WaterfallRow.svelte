@@ -49,7 +49,7 @@
 <tr
   class="waterfall-row"
   class:table-row--selected={selected}
-  class:waterfall-row--error={row.colorToken === 'error'}
+  class:waterfall-row--error={row.isError}
   class:waterfall-row--matched={matched}
   data-span-id={span.spanID}
   style:visibility={visible ? 'visible' : 'collapse'}
@@ -68,7 +68,7 @@
       <WaterfallTreeGutter
         depth={row.spanNode.depth}
         tree={row.tree}
-        colorToken={row.colorToken}
+        color={row.color}
         {subtreeCollapsed}
         {onToggleExpand}
       />
@@ -92,9 +92,10 @@
   <td class="waterfall-row__td-bar p-0 align-middle">
     <div class="waterfall-row__bar-area">
       <div
-        class="waterfall-row__bar waterfall-bar--{row.colorToken}"
+        class="waterfall-row__bar"
         style:left="{row.offsetPercent}%"
         style:width="{row.widthPercent}%"
+        style:background-color={row.color}
       ></div>
       <div class="waterfall-row__bar-grid" aria-hidden="true">
         {#each barGridPercents as p}
@@ -105,7 +106,7 @@
         <div class="waterfall-row__event-markers">
           <WaterfallEventDots
             markers={row.eventMarkers}
-            colorToken={row.colorToken}
+            color={row.color}
           />
         </div>
       {/if}
@@ -198,25 +199,6 @@
     line-height: 14px;
     top: 50%;
     transform: translateY(-50%);
-  }
-
-  .waterfall-bar--gold {
-    background-color: var(--color-warning);
-  }
-  .waterfall-bar--pine {
-    background-color: var(--color-secondary);
-  }
-  .waterfall-bar--foam {
-    background-color: var(--color-accent);
-  }
-  .waterfall-bar--iris {
-    background-color: var(--color-primary);
-  }
-  .waterfall-bar--rose {
-    background-color: var(--color-rose);
-  }
-  .waterfall-bar--error {
-    background-color: var(--color-error);
   }
 
   .waterfall-row--error .waterfall-row__title {

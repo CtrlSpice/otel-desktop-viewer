@@ -1,43 +1,24 @@
-// Single source of truth for chart colors.
+// Single source of truth for chart colors. Two flavours live here:
 //
-// Categorical (series-identity) accessors are placeholders for now -- everything
-// returns primary so we can rebuild the categorical palette step by step without
-// scattering colour choices across components. Each chart consumer (metric
-// timeseries, waterfall bars, histogram fills, ...) should call into one of the
-// `chartColor*` functions below instead of hardcoding `var(--color-...)` so the
-// next palette pass only edits this file.
+//   - `categoricalPalette()` -- series-identity colours for line charts,
+//     histogram heatmap legends, and trace waterfall bars. Walks the five
+//     Rosé Pine stem waypoints (pine/foam/gold/rose/iris) in HCL hue order,
+//     rotated so the caller's `start` stem lands at slot 0.
 //
-// `chartErrorColor()` is intentionally separate from the categorical rotation
-// -- rose/error stays reserved for "this datum is an error" semantics
-// (e.g. error spans in the waterfall) and must never appear in the regular
-// series rotation, even when categorical colours get filled in later.
+//   - `heatmapSwatches()` -- smooth count ramp for the histogram heatmap.
+//     Endpoints are per-theme literal hex; HCL interpolation keeps the
+//     middle stops on a clean hue arc rather than drifting through
+//     grey/purple the way sRGB does for dark-to-saturated pairs. Try
+//     `interpolateLab` if HCL hue arcs ever look wrong; sRGB
+//     (`interpolateRgb`) is generally too muddy for these endpoints.
 //
-// `heatmapSwatches()` returns a smooth, theme-aware count ramp -- different
-// job from categorical series. Endpoints are per-theme literal hex; we
-// interpolate in HCL (hue/chroma/lightness) so the middle stops stay along
-// a clean hue arc rather than drifting through grey/purple the way sRGB
-// interpolation does for dark-to-saturated pairs. Try `interpolateLab` if
-// HCL hue arcs ever look wrong; sRGB (`interpolateRgb`) is generally too
-// muddy for these endpoints.
+// Error colouring (e.g. error spans in the waterfall) is intentionally
+// *not* in this file -- callers reach for `var(--color-error)` directly so
+// the error semantic stays anchored to the daisyUI token rather than
+// shadowed by a palette function. Keeps the categorical pool free of
+// reserved hues.
 
 import { interpolateHcl } from 'd3-interpolate'
-
-/** Categorical colour for the n-th series (0-indexed). Wraps modulo so callers
- *  past the eventual palette size still get a colour. For now: always primary. */
-export function chartColor(_index: number): string {
-  return 'var(--color-primary)'
-}
-
-/** Foreground that reads against `chartColor(index)` (legend swatches, checkmarks). */
-export function chartForeground(_index: number): string {
-  return 'var(--color-primary-content)'
-}
-
-/** Reserved for error-state datapoints (e.g. error spans). Not part of the
- *  categorical rotation -- never returned by `chartColor()`. */
-export function chartErrorColor(): string {
-  return 'var(--color-error)'
-}
 
 // Per-theme heatmap endpoints. base-200 on the cold end so the lowest swatch
 // blends into the chart surface; the "hot" end varies by theme so the ramp
@@ -216,18 +197,6 @@ export function categoricalPalette(
 /** Neutral swatch / unchecked-checkbox colour. */
 export function chartNeutral(): string {
   return 'var(--color-neutral)'
-}
-
-/** Palette slot for a series index. Wraps modulo palette length so row
- *  25 and row 5 share slot 5 when the palette has 10 entries -- the
- *  legend can list more streams than palette slots, but only 10 can be
- *  checked at once and each checked row still gets a stable hue. */
-export function categoricalColorAt(
-  palette: readonly string[],
-  index: number
-): string {
-  if (palette.length === 0) return chartNeutral()
-  return palette[index % palette.length]!
 }
 
 // On-swatch glyph colour (checkbox tick, etc.) for a categorical-palette

@@ -7,22 +7,21 @@
 </script>
 
 <script lang="ts">
-  import type { WaterfallRowData } from './WaterfallView.svelte'
-
-  /** Same as `row.colorToken` — derived so palette changes never desync from the row type. */
-  type BarColorToken = WaterfallRowData['colorToken']
-
   type SegmentKind = 'none' | 'passthrough' | 'tee' | 'elbow'
 
   type Props = {
     depth: number
     tree: TreeConnectorMeta
-    colorToken: BarColorToken
+    /** Concrete colour (palette HCL or `--color-*` var). Threaded into the
+     *  `--tree-accent` custom property so the button states (expanded /
+     *  collapsed / leaf) can mix against it. Error spans already pass
+     *  `--color-error` here, so no separate `isError` branch is needed. */
+    color: string
     subtreeCollapsed: boolean
     onToggleExpand: () => void
   }
 
-  let { depth, tree, colorToken, subtreeCollapsed, onToggleExpand }: Props =
+  let { depth, tree, color, subtreeCollapsed, onToggleExpand }: Props =
     $props()
 
   let hasChildren = $derived(tree.childrenCount > 0)
@@ -56,6 +55,7 @@
 <div
   class="gutter"
   style:width="calc({depth + 1} * var(--waterfall-gutter-col) + var(--waterfall-gutter-tail))"
+  style:--tree-accent={color}
 >
   {#each segments as kind, d}
     <div
@@ -92,7 +92,7 @@
       {/if}
       <button
         type="button"
-        class="gutter__btn gutter__btn--{colorToken} gutter__btn--hub shrink-0"
+        class="gutter__btn gutter__btn--hub shrink-0"
         class:gutter__btn--expanded={!subtreeCollapsed}
         class:gutter__btn--collapsed={subtreeCollapsed}
         aria-expanded={!subtreeCollapsed}
@@ -119,7 +119,7 @@
     {:else}
       <button
         type="button"
-        class="gutter__btn gutter__btn--{colorToken} gutter__btn--leaf shrink-0"
+        class="gutter__btn gutter__btn--leaf shrink-0"
         tabindex="-1"
         aria-disabled="true"
         aria-label="No child spans"
@@ -238,26 +238,8 @@
     font-size: 8px;
   }
 
-  /* ───── Color tokens ───── */
-
-  .gutter__btn--gold {
-    --tree-accent: var(--color-warning);
-  }
-  .gutter__btn--pine {
-    --tree-accent: var(--color-secondary);
-  }
-  .gutter__btn--foam {
-    --tree-accent: var(--color-accent);
-  }
-  .gutter__btn--iris {
-    --tree-accent: var(--color-primary);
-  }
-  .gutter__btn--rose {
-    --tree-accent: var(--color-rose);
-  }
-  .gutter__btn--error {
-    --tree-accent: var(--color-error);
-  }
+  /* `--tree-accent` is set inline on `.gutter` from the row's colour
+     (palette HCL or `--color-error`). All button states mix against it. */
 
   /* ───── Button states ───── */
 

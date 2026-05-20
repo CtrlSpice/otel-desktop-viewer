@@ -2,6 +2,8 @@
   import type { SpanNode, SpanData } from '@/types/api-types'
   import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
   import { getServiceName } from '@/utils/resource'
+  import { categoricalPalette } from '@/utils/chart-palette'
+  import { themeSignal } from '@/utils/theme-signal.svelte'
 
   // --- Shared types ---
 
@@ -12,15 +14,34 @@
   }
 
   // --- Categorical coloring ---
+  //
+  // Categorical key per span: span.name in single-service traces, service
+  // name in multi-service traces. Error spans are coloured by a separate
+  // semantic token (`--color-error`) and never participate in the rotation.
+  //
+  // Colours come from `categoricalPalette()` -- same HCL-interpolated arc
+  // the metric charts use. We anchor the start stem to `iris` so the first
+  // span (root, in a well-formed trace) lands on `--color-primary`, then
+  // walks iris→pine→foam→gold→rose for subsequent keys. Palette size is
+  // `max(uniqueKeys, 5)` so traces with many services get distinct
+  // midpoints; small traces still hit the five named stems exactly.
 
-  const CATEGORICAL_TOKENS = ['iris', 'pine', 'gold', 'rose', 'foam'] as const
-  export type CategoricalToken = (typeof CATEGORICAL_TOKENS)[number]
+  /** Minimum palette size: the five named stems, so single-service traces
+   *  with only 1-2 keys still land on iris/pine/etc. exactly rather than
+   *  a degenerate interpolation. */
+  const MIN_TRACE_PALETTE = 5
 
   export type EventMarker = { percent: number; name: string }
 
   export type WaterfallRowData = {
     spanNode: SpanNode
-    colorToken: CategoricalToken | 'error'
+    /** CSS-ready colour string for the bar / gutter / event dot.
+     *  Error spans pass `--color-error` via CSS var to preserve semantic
+     *  theming; non-error spans get a concrete HCL colour from the palette. */
+    color: string
+    /** Whether this row is an error span. Consumers branch on this for the
+     *  matched/error tinting (which uses semantic vars, not the palette). */
+    isError: boolean
     offsetPercent: number
     widthPercent: number
     tree: TreeConnectorMeta
@@ -141,62 +162,67 @@
     return services.size > 1
   }
 
-  /** Build a Map<key, token> by folding spans in order, assigning the next token on first encounter. */
+  /** Build a Map<key, color> by folding spans in order. The palette is
+   *  sized to the unique-key count (min 5), so every categorical key gets
+   *  its own colour up to whatever services/span-names the trace contains.
+   *  Iris is the start stem -- first key seen → iris → --color-primary. */
   function buildColorMap(
     spans: SpanNode[],
-    keyFn: (s: SpanData) => string | null
-  ): Map<string, CategoricalToken> {
-    return spans.reduce<{ map: Map<string, CategoricalToken>; next: number }>(
-      ({ map, next }, node) => {
-        const k = keyFn(node.spanData)
-        if (k === null || map.has(k)) return { map, next }
-        return {
-          map: new Map([
-            ...map,
-            [k, CATEGORICAL_TOKENS[next % CATEGORICAL_TOKENS.length]],
-          ]),
-          next: next + 1,
-        }
-      },
-      { map: new Map(), next: 0 }
-    ).map
+    keyFn: (s: SpanData) => string | null,
+    theme: string
+  ): Map<string, string> {
+    const orderedKeys = spans.reduce<string[]>((acc, node) => {
+      const k = keyFn(node.spanData)
+      if (k !== null && !acc.includes(k)) acc.push(k)
+      return acc
+    }, [])
+    const palette = categoricalPalette(
+      Math.max(orderedKeys.length, MIN_TRACE_PALETTE),
+      'iris',
+      theme
+    )
+    return new Map(orderedKeys.map((k, i) => [k, palette[i]!]))
   }
 
-  function colorTokenFor(
-    key: string | null,
-    colorMap: Map<string, CategoricalToken>
-  ): CategoricalToken | 'error' {
-    return key === null ? 'error' : (colorMap.get(key) ?? CATEGORICAL_TOKENS[0])
-  }
-
-  /** Palette tokens are assigned in first-seen order of categorical keys. */
+  /** Palette is assigned in first-seen order of categorical keys; error
+   *  spans short-circuit to `--color-error` so the semantic colour wins
+   *  over the rotation. */
   export function buildWaterfallRows(
     spans: SpanNode[],
-    bounds: TraceBounds
+    bounds: TraceBounds,
+    theme: string
   ): WaterfallRowData[] {
     const multi = isMultiService(spans)
     const keyFn = (s: SpanData) => categoricalKeyFor(s, multi)
-    const colorMap = buildColorMap(spans, keyFn)
+    const colorMap = buildColorMap(spans, keyFn, theme)
     const treeMeta = computeTreeMeta(spans)
 
-    return spans.map((node, i) => ({
-      spanNode: node,
-      colorToken: colorTokenFor(keyFn(node.spanData), colorMap),
-      offsetPercent: getOffsetPercent(
-        bounds.start,
-        bounds.duration,
-        node.spanData.startTime
-      ),
-      widthPercent: getWidthPercent(
-        bounds.duration,
-        node.spanData.endTime - node.spanData.startTime
-      ),
-      tree: treeMeta[i]!,
-      eventMarkers: node.spanData.events.map(e => ({
-        percent: getOffsetPercent(bounds.start, bounds.duration, e.timestamp),
-        name: e.name,
-      })),
-    }))
+    return spans.map((node, i) => {
+      const key = keyFn(node.spanData)
+      const isError = key === null
+      const color = isError
+        ? 'var(--color-error)'
+        : (colorMap.get(key) ?? 'var(--color-primary)')
+      return {
+        spanNode: node,
+        color,
+        isError,
+        offsetPercent: getOffsetPercent(
+          bounds.start,
+          bounds.duration,
+          node.spanData.startTime
+        ),
+        widthPercent: getWidthPercent(
+          bounds.duration,
+          node.spanData.endTime - node.spanData.startTime
+        ),
+        tree: treeMeta[i]!,
+        eventMarkers: node.spanData.events.map(e => ({
+          percent: getOffsetPercent(bounds.start, bounds.duration, e.timestamp),
+          name: e.name,
+        })),
+      }
+    })
   }
 </script>
 
@@ -261,7 +287,7 @@
   }: Props = $props()
 
   let bounds = $derived(getTraceBounds(spans))
-  let rows = $derived(buildWaterfallRows(spans, bounds))
+  let rows = $derived(buildWaterfallRows(spans, bounds, themeSignal.value))
 
   let traceTimeRange = $derived.by(():
     | { startMs: number; endMs: number }

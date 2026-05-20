@@ -1,18 +1,22 @@
 <script lang="ts">
-  import type { EventMarker, CategoricalToken } from './WaterfallView.svelte'
+  import type { EventMarker } from './WaterfallView.svelte'
 
   type Props = {
     markers: EventMarker[]
-    colorToken: CategoricalToken | 'error'
+    /** Concrete colour for the marker (palette HCL or `--color-error`).
+     *  Threaded into `--marker-color` for both the dot's fill/border mix
+     *  and the tooltip border. */
+    color: string
   }
 
-  let { markers, colorToken }: Props = $props()
+  let { markers, color }: Props = $props()
 </script>
 
 {#each markers as marker}
   <span
-    class="event-marker event-marker--{colorToken}"
+    class="event-marker"
     style:left="{marker.percent}%"
+    style:--marker-color={color}
     data-tooltip={marker.name}
     aria-label="Event: {marker.name}"
   ></span>
@@ -20,6 +24,10 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+  /* `--marker-color` is set inline per marker from the row's colour
+     (palette HCL or `--color-error`); the fill mix, border, and tooltip
+     border all read from it so the dot stays themed without a per-token
+     CSS variant. */
   .event-marker {
     @apply absolute z-0 rounded-full;
     width: 11px;
@@ -28,6 +36,8 @@
     transform: translate(-50%, -50%);
     pointer-events: auto;
     border: 1px solid;
+    background-color: color-mix(in srgb, var(--marker-color) 40%, white);
+    border-color: color-mix(in srgb, var(--marker-color) 80%, black);
   }
 
   .event-marker::before {
@@ -39,36 +49,5 @@
 
   .event-marker:hover::before {
     @apply opacity-100;
-  }
-
-  .event-marker--iris {
-    --marker-color: var(--color-primary);
-    background-color: color-mix(in srgb, var(--color-primary) 40%, white);
-    border-color: color-mix(in srgb, var(--color-primary) 80%, black);
-  }
-  .event-marker--pine {
-    --marker-color: var(--color-secondary);
-    background-color: color-mix(in srgb, var(--color-secondary) 40%, white);
-    border-color: color-mix(in srgb, var(--color-secondary) 80%, black);
-  }
-  .event-marker--gold {
-    --marker-color: var(--color-warning);
-    background-color: color-mix(in srgb, var(--color-warning) 40%, white);
-    border-color: color-mix(in srgb, var(--color-warning) 80%, black);
-  }
-  .event-marker--rose {
-    --marker-color: var(--color-rose);
-    background-color: color-mix(in srgb, var(--color-rose) 40%, white);
-    border-color: color-mix(in srgb, var(--color-rose) 80%, black);
-  }
-  .event-marker--foam {
-    --marker-color: var(--color-accent);
-    background-color: color-mix(in srgb, var(--color-accent) 40%, white);
-    border-color: color-mix(in srgb, var(--color-accent) 80%, black);
-  }
-  .event-marker--error {
-    --marker-color: var(--color-error);
-    background-color: color-mix(in srgb, var(--color-error) 40%, white);
-    border-color: color-mix(in srgb, var(--color-error) 80%, black);
   }
 </style>
