@@ -10,11 +10,8 @@
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import type { Timeseries as PanelTimeseries } from '@/components/MetricCharts/legend-types'
   import type { MetricTimeseries } from '@/types/api-types'
-  import {
-    MAX_VISIBLE_TIMESERIES,
-    timeseriesColor,
-    timeseriesForegroundColor,
-  } from '@/utils/timeseries-palette'
+  import { MAX_VISIBLE_TIMESERIES } from '@/utils/metric-timeseries-visible'
+  import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import FieldGroup from '@/components/FieldGroup.svelte'
   import MetricField from '@/components/MetricDetails/MetricField.svelte'
   import { getContext } from 'svelte'
@@ -51,7 +48,9 @@
     return new Map(m.timeseries.map((ts) => [ts.attributesKey, ts]))
   })
 
-  let capReached = $derived(visibleKeys.size >= MAX_VISIBLE_TIMESERIES)
+  let capReached = $derived(
+    !ctx.isHistogramKind && visibleKeys.size >= MAX_VISIBLE_TIMESERIES
+  )
   let visibleCount = $derived(
     rows.filter((r) => visibleKeys.has(r.key)).length
   )
@@ -123,21 +122,32 @@
       ></div>
     {/if}
     <span class="ts-panel__title">Timeseries</span>
-    <span
-      class="ts-panel__count"
-      class:ts-panel__count--cap={capReached}
-    >
-      {visibleCount} / {rows.length} visible
-    </span>
+    <div class="ts-panel__header-end">
+      <span
+        class="ts-panel__count"
+        class:ts-panel__count--cap={capReached}
+      >
+        {visibleCount} / {rows.length} visible
+      </span>
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs ts-panel__uncheck-all"
+        disabled={visibleCount === 0}
+        onclick={() => ctx.clearAllTimeseriesVisible()}
+      >
+        Uncheck all
+      </button>
+    </div>
   </div>
 
   <div class="ts-panel__list">
     {#each rows as ts, i (ts.key)}
       {@const checked = visibleKeys.has(ts.key)}
-      {@const disabled = !checked && capReached}
-      {@const colorIdx = ctx.timeseriesColorIndex.get(ts.key) ?? i}
-      {@const color = timeseriesColor(colorIdx)}
-      {@const fg = timeseriesForegroundColor(colorIdx)}
+      {@const checkboxDisabled = !checked && capReached}
+      {@const seriesColor = ctx.timeseriesColorByKey.get(ts.key)}
+      {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
+      {@const fg =
+        checked && seriesColor ? readableTextColor(seriesColor) : chartNeutral()}
       {@const hasAttrs = ts.attributes.length > 0}
       {@const rowHeaderAttrs = headerAttrs(ts.attributes)}
       {@const tooltip = attrsTooltip(ts.attributes)}
@@ -148,7 +158,7 @@
       {@const isLast = i === rows.length - 1 && !capReached}
 
       {#if hasAttrs}
-        <div class="ts-row-wrap" class:ts-row-wrap--disabled={disabled}>
+        <div class="ts-row-wrap">
         <FieldGroup
           label={headerLabel}
           open={expanded}
@@ -156,14 +166,18 @@
           last={isLast}
         >
           {#snippet headerAction()}
-            <label class="ts-row__check-label" title={tooltip}>
+            <label
+              class="ts-row__check-label"
+              class:ts-row__check-label--disabled={checkboxDisabled}
+              title={tooltip}
+            >
               <input
                 type="checkbox"
-                class="checkbox checkbox-xs ts-row__checkbox"
+                class="checkbox checkbox-xs checkbox-soft ts-row__checkbox"
                 style:--input-color={color}
                 style:color={fg}
                 {checked}
-                {disabled}
+                disabled={checkboxDisabled}
                 onchange={(e) =>
                   toggle(
                     ts.key,
@@ -204,17 +218,20 @@
       {:else}
         <div
           class="ts-row ts-row--plain"
-          class:ts-row--disabled={disabled}
           class:ts-row--last={isLast}
         >
-          <label class="ts-row__check-label" title={tooltip}>
+          <label
+            class="ts-row__check-label"
+            class:ts-row__check-label--disabled={checkboxDisabled}
+            title={tooltip}
+          >
             <input
               type="checkbox"
-              class="checkbox checkbox-xs ts-row__checkbox"
+              class="checkbox checkbox-xs checkbox-soft ts-row__checkbox"
               style:--input-color={color}
               style:color={fg}
               {checked}
-              {disabled}
+              disabled={checkboxDisabled}
               onchange={(e) =>
                 toggle(ts.key, (e.currentTarget as HTMLInputElement).checked)}
             />
@@ -231,7 +248,7 @@
     {/each}
   </div>
 
-  {#if capReached}
+  {#if capReached && !ctx.isHistogramKind}
     <p class="ts-panel__cap-note">
       Cap of {MAX_VISIBLE_TIMESERIES} timeseries reached. Uncheck one to enable
       another.
@@ -261,9 +278,17 @@
     color: var(--color-base-content);
   }
 
+  .ts-panel__header-end {
+    @apply flex shrink-0 items-center gap-2;
+  }
+
   .ts-panel__count {
     @apply shrink-0 text-sm tabular-nums;
     color: var(--color-subtle);
+  }
+
+  .ts-panel__uncheck-all {
+    @apply shrink-0;
   }
 
   .ts-panel__count--cap {
@@ -294,22 +319,6 @@
     @apply border-b-0;
   }
 
-  .ts-row--plain.ts-row--disabled {
-    @apply opacity-60;
-  }
-
-  .ts-row--plain.ts-row--disabled .ts-row__check-label {
-    @apply cursor-not-allowed;
-  }
-
-  .ts-row-wrap--disabled {
-    @apply opacity-60;
-  }
-
-  .ts-row-wrap--disabled :global(.field-group__caret-btn) {
-    @apply pointer-events-none;
-  }
-
   .ts-panel :global(.field-group__header-row) {
     @apply min-h-[var(--table-row-h)] min-w-0 flex-1 items-center gap-2 py-0;
   }
@@ -322,8 +331,8 @@
     @apply flex shrink-0 cursor-pointer items-center py-1 pr-2;
   }
 
-  .ts-row-wrap--disabled .ts-row__check-label {
-    @apply cursor-not-allowed;
+  .ts-row__check-label--disabled {
+    @apply cursor-not-allowed opacity-60;
   }
 
   .ts-row__checkbox {

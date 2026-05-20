@@ -25,10 +25,10 @@
   import HistogramHeatmap from '@/components/MetricCharts/HistogramHeatmap.svelte'
   import UnspecifiedTemporalityCallout from '@/components/MetricDetails/UnspecifiedTemporalityCallout.svelte'
   import {
-    CameraIcon,
-    ChartHistogramIcon,
-    TemperatureIcon,
-  } from '@/icons'
+    DEFAULT_METRIC_CHART_HEIGHT,
+    MIN_METRIC_CHART_HEIGHT,
+  } from '@/components/MetricChartPlot.svelte'
+  import { CameraIcon, ChartHistogramIcon, TemperatureIcon } from '@/icons'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
@@ -39,6 +39,15 @@
   // cheap.
   let queryRange = $derived(
     selectionToQueryRangeMs(timeContext.selection, Date.now())
+  )
+
+  /** Plot area inside the chart pane (flex slot below tabs / subtitle). */
+  let plotHostHeight = $state(0)
+
+  let plotHeight = $derived(
+    plotHostHeight > 0
+      ? Math.max(MIN_METRIC_CHART_HEIGHT, Math.floor(plotHostHeight))
+      : DEFAULT_METRIC_CHART_HEIGHT
   )
 </script>
 
@@ -57,14 +66,15 @@
 {/snippet}
 
 {#snippet histogramChartSlot()}
-  <!-- Three tabs share this slot. The tab strip keeps the chart frame
-       a constant pixel height regardless of which view is active so
-       the bottom split panels don't reflow when the user switches
-       tabs. Errors and loading states are unified across tabs because
-       they all derive from the same fetches (bucket series + aggregated
-       point). -->
-  <div class="metric-chart-view">
-    <div class="metric-chart-view__tabs" role="tablist" aria-label="Histogram views">
+  <!-- Three tabs share this slot. The tab strip is fixed height; the
+       plot host below flex-fills the chart pane and drives SVG height
+       via bind:clientHeight. -->
+  <div class="metric-chart-view metric-chart-view--fill">
+    <div
+      class="metric-chart-view__tabs"
+      role="tablist"
+      aria-label="Histogram views"
+    >
       <button
         type="button"
         role="tab"
@@ -102,7 +112,22 @@
         <span>Snapshot</span>
       </button>
     </div>
-    <div class="metric-chart-view__row">
+    {#if ctx.activeHistogramTab === 'snapshot' && ctx.activeHistogramDp}
+      <div class="metric-chart-view__subtitle">
+        <span>datapoint at</span>
+        <span class="tabular-nums">
+          {formatTimestamp(
+            ctx.activeHistogramDp.timestamp,
+            timeContext.timezone,
+            'milliseconds'
+          )}
+        </span>
+      </div>
+    {/if}
+    <div
+      class="metric-chart-view__plot-host"
+      bind:clientHeight={plotHostHeight}
+    >
       <div class="metric-chart-view__body">
         {#if ctx.activeHistogramTab === 'heatmap'}
           {#if ctx.bucketSeriesError}
@@ -114,7 +139,7 @@
               points={ctx.visibleBucketSeries}
               windowStartMs={queryRange.start}
               windowEndMs={queryRange.end}
-              height={250}
+              height={plotHeight}
               onSelect={ctx.onHeatmapSelect}
               selectedTimestamp={ctx.heatmapSelectedTimestamp}
             />
@@ -132,24 +157,16 @@
               metricID={ctx.metric!.id}
               windowStartMs={queryRange.start}
               windowEndMs={queryRange.end}
+              height={plotHeight}
             />
           {/if}
         {:else if ctx.activeHistogramTab === 'snapshot'}
           {#if ctx.activeHistogramDp}
-            <div class="metric-chart-view__subtitle">
-              <span>datapoint at</span>
-              <span class="tabular-nums">
-                {formatTimestamp(
-                  ctx.activeHistogramDp.timestamp,
-                  timeContext.timezone,
-                  'milliseconds'
-                )}
-              </span>
-            </div>
             <HistogramChart
               datapoint={ctx.activeHistogramDp}
               unit={ctx.metric!.unit}
               quantileSource="datapoint"
+              height={plotHeight}
             />
           {:else}
             <div class="metric-chart-view__placeholder">
@@ -163,16 +180,18 @@
 {/snippet}
 
 {#snippet timeSeriesChartSlot()}
-  <div class="metric-chart-view">
-    <div class="metric-chart-view__row">
-      <div class="metric-chart-view__body">
-        <MetricTimeSeriesChart
-          timeseries={ctx.gaugeSumChartTimeseries}
-          visibleKeys={ctx.gaugeSumVisible}
-          highlightedTimestamp={ctx.highlightedTimestamp}
-          unit={ctx.metric!.unit}
-        />
-      </div>
+  <div class="metric-chart-view metric-chart-view--fill">
+    <div
+      class="metric-chart-view__plot-host"
+      bind:clientHeight={plotHostHeight}
+    >
+      <MetricTimeSeriesChart
+        timeseries={ctx.gaugeSumChartTimeseries}
+        visibleKeys={ctx.gaugeSumVisible}
+        highlightedTimestamp={ctx.highlightedTimestamp}
+        unit={ctx.metric!.unit}
+        height={plotHeight}
+      />
     </div>
   </div>
 {/snippet}
@@ -185,7 +204,7 @@
   <!-- FunError takes the entire chart row. The detail pane (Fields /
        Datapoints) still renders independently because it consumes
        different data; this branch only blanks the chart. -->
-  <div class="metric-chart-view">
+  <div class="metric-chart-view metric-chart-view--fill">
     <UnspecifiedTemporalityCallout size="full" />
   </div>
 {:else if ctx.isHistogramKind}
@@ -193,9 +212,14 @@
 {:else if ctx.metricType === 'Gauge' || ctx.metricType === 'Sum'}
   {@render timeSeriesChartSlot()}
 {:else}
-  <div class="metric-chart-view">
-    <div class="metric-chart-view__placeholder">
-      No chart available for this metric type
+  <div class="metric-chart-view metric-chart-view--fill">
+    <div
+      class="metric-chart-view__plot-host"
+      bind:clientHeight={plotHostHeight}
+    >
+      <div class="metric-chart-view__placeholder">
+        No chart available for this metric type
+      </div>
     </div>
   </div>
 {/if}
@@ -207,44 +231,41 @@
      chart keeps its requested height; the detail pane below claims
      the remaining vertical space. */
   .metric-chart-view {
-    @apply shrink-0 px-2 py-3;
+    @apply shrink-0 p-2;
+  }
+
+  /* Histogram + time-series chart panes flex-grow into the chart pane
+     so the SVG plot can be measured against the full available height.
+     min-h-0 + overflow-hidden contains layerchart's measured size --
+     without it a horizontal scrollbar at the bottom would push the
+     wrapper taller than the pane and the measurement loop would
+     escape the panel. */
+  .metric-chart-view--fill {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
   }
 
   .metric-chart-view--empty {
     @apply flex h-full items-center justify-center;
   }
 
-  .metric-chart-view__row {
-    @apply mt-2 flex items-stretch gap-3;
+  .metric-chart-view__plot-host {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col;
   }
 
-  /* Chart body claims remaining width; min-w-0 lets it shrink past
-     intrinsic content size when the legend column claims its share. */
   .metric-chart-view__body {
-    @apply mt-2 min-w-0 flex-1;
-    /* Override the mt-2 above when inside __row, which already
-       supplies the top spacing. Doubling would push the chart down. */
-    margin-top: 0;
+    @apply flex min-h-0 min-w-0 flex-1 flex-col;
   }
 
   .metric-chart-view__placeholder {
-    @apply flex items-center justify-center text-base-content/40 text-sm;
-    height: 250px;
+    @apply flex min-h-0 flex-1 items-center justify-center text-base-content/40 text-sm;
   }
 
-  /* Inline subtitle for the Snapshot tab. Sits right under the tab
-     strip and tells the user WHICH datapoint they're looking at --
-     critical context now that the chart only shows one snapshot at a
-     time. */
   .metric-chart-view__subtitle {
-    @apply mt-1 mb-1 flex items-baseline gap-2 px-2;
+    @apply mb-1 mt-1 flex shrink-0 items-baseline gap-2 px-2;
   }
 
-  /* Histogram view tabs -- same pill treatment as Trace DetailView
-     (detail-tab / detail-tab--active from app.css). Three controls
-     share width evenly. */
   .metric-chart-view__tabs {
-    @apply flex w-full flex-nowrap items-center gap-1 px-1;
+    @apply flex w-full shrink-0 flex-nowrap items-center gap-1 px-1;
 
     & > :global(button) {
       flex: 1 1 0%;

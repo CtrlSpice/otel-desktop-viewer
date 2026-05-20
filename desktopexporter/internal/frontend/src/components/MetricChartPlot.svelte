@@ -10,6 +10,12 @@
     dy: 8,
   } as const
 
+  /** Fallback plot height (px) before the chart pane is measured. */
+  export const DEFAULT_METRIC_CHART_HEIGHT = 300
+
+  /** Floor for fluid chart height when the pane is measured. */
+  export const MIN_METRIC_CHART_HEIGHT = 280
+
   /** Shared plot inset for line, bar, and heatmap charts. */
   export const chartPadding = {
     top: 24,

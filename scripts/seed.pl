@@ -140,53 +140,166 @@ sub _scenarios {
             }));
         },
 
-        # ----- Sum (cumulative monotonic): request count, 30min, GET stream -----
+        # ----- Sum (cumulative monotonic): request count, 30min, fan-out
+        #       across method × route × status_class (30 streams). Each
+        #       stream gets its own diurnal-modulated rate; the higher-
+        #       traffic routes have larger baselines, and one stream gets
+        #       a noticeable bump so a couple of legend rows stand out
+        #       from the baseline pack. Cumulative => each stream runs
+        #       its own accumulator independently. -----
         sub {
             my $duration = 30 * 60;
-            # Cumulative => running total. Synthesise a per-step rate
-            # then accumulate.
-            my $rate = noisy(
-                compose(constant(120), diurnal({ amplitude => 30, period_s => 86400 })),
-                0.05, $rng,
+            my $step     = 60;
+            # (method, baseline_rps, share_of_5xx, route_weight)
+            my @methods = (
+                { name => 'GET',  base => 90, err_pct => 0.012 },
+                { name => 'POST', base => 35, err_pct => 0.028 },
+                { name => 'PUT',  base => 8,  err_pct => 0.045 },
             );
-            my @raw = sample($rate, 0, $duration, 60);
-            my $running = 14_000;
-            my @pts;
-            for my $p (@raw) {
-                $running += $p->{value} * 60;   # value is per-second
-                push @pts, { t_s => $now_s - $duration + $p->{t_s}, value => $running };
+            my @routes = (
+                { name => '/api/v2/orders',   weight => 1.3 },
+                { name => '/api/v2/products', weight => 1.0 },
+                { name => '/api/v2/users',    weight => 0.7 },
+                { name => '/api/v2/checkout', weight => 0.5 },
+                { name => '/api/v2/auth',     weight => 1.6 },
+            );
+            my @statuses = (
+                { name => '2xx', share_of_total => 1.0 },   # 1 - err_pct applied below
+                { name => '5xx', share_of_total => 1.0 },   # err_pct applied below
+            );
+
+            my @streams;
+            for my $m (@methods) {
+                for my $r (@routes) {
+                    for my $s (@statuses) {
+                        # Effective per-second rate for this stream.
+                        my $share = $s->{name} eq '5xx' ? $m->{err_pct} : (1 - $m->{err_pct});
+                        my $rps   = $m->{base} * $r->{weight} * $share;
+
+                        # Per-stream shape: own baseline + diurnal phase
+                        # offset (route-derived) + independent noise draw.
+                        my $rate = noisy(
+                            compose(
+                                constant($rps),
+                                diurnal({
+                                    amplitude => $rps * 0.25,
+                                    period_s  => 86400,
+                                    phase_s   => -3600 * ($r->{weight} - 1),
+                                }),
+                            ),
+                            0.08,
+                            $rng,
+                        );
+                        my @raw = sample($rate, 0, $duration, $step);
+
+                        # Cumulative accumulator. Each stream starts at a
+                        # different running total so the chart isn't all
+                        # bunched at the same y-intercept.
+                        my $running = int(1_000 + $rps * 600);
+                        my @pts;
+                        for my $p (@raw) {
+                            $running += $p->{value} * $step;
+                            push @pts, {
+                                t_s   => $now_s - $duration + $p->{t_s},
+                                value => $running,
+                            };
+                        }
+
+                        push @streams, {
+                            attributes => [
+                                attr('http.method',       $m->{name}),
+                                attr('http.route',        $r->{name}),
+                                attr('http.status_class', $s->{name}),
+                            ],
+                            points => \@pts,
+                        };
+                    }
+                }
             }
-            return ('api-gateway', sum_metric({
+
+            return ('api-gateway', sum_metric_streams({
                 name        => 'http.server.request.count',
                 unit        => '{requests}',
-                description => 'Total HTTP requests received',
-                points      => \@pts,
-                step_s      => 60,
+                description => 'Total HTTP requests received, by method/route/status',
+                step_s      => $step,
                 temporality => AGG_CUMULATIVE,
                 monotonic   => 1,
-                attributes  => [ attr('http.method', 'GET') ],
-            }));
+            }, \@streams));
         },
 
-        # ----- Sum (delta): error count per minute, last hour, with a spike -----
+        # ----- Sum (delta): error count per minute, last hour, fan-out
+        #       across service × error_class (12 streams). Most streams
+        #       are quiet noise; two get clear incident spikes so the
+        #       chart has both a busy "everything's fine" baseline and
+        #       a couple of obvious offenders. Delta semantics: each
+        #       point is the count *in* that minute, not running total. -----
         sub {
             my $duration = 60 * 60;
-            my $shape = clamp(noisy(
-                compose(
-                    constant(2),
-                    incident({ baseline => 0, peak => 24, start_s => 1800, ramp_s => 60, hold_s => 240, recovery_s => 360 }),
-                ), 0.2, $rng,
-            ), 0, undef);
-            my @pts = _absolute($now_s, $duration, sample($shape, 0, $duration, 60));
-            return ('payment-service', sum_metric({
+            my $step     = 60;
+            my @services = qw(api-gateway payment-service notification-service shipping-service);
+            my @classes  = qw(5xx timeout dependency);   # error class
+
+            # Pick two (service, class) pairs to spike. Indices into the
+            # 4 × 3 = 12 grid; the rest get plain noisy baselines.
+            my %spikes = (
+                'payment-service|timeout'    => {
+                    peak => 18, start_s => 1500, ramp_s => 60, hold_s => 240, recovery_s => 480,
+                },
+                'api-gateway|5xx'            => {
+                    peak => 12, start_s => 2700, ramp_s => 90, hold_s => 180, recovery_s => 600,
+                },
+            );
+
+            my @streams;
+            for my $svc (@services) {
+                for my $cls (@classes) {
+                    # Per-stream baseline: 5xx is loudest, timeout
+                    # moderate, dependency rare. Scale by service so the
+                    # payment-service is twitchier than shipping.
+                    my $base = ($cls eq '5xx'     ? 3
+                              : $cls eq 'timeout' ? 1.5
+                              :                     0.7);
+                    $base *= ($svc eq 'payment-service'      ? 1.4
+                             : $svc eq 'api-gateway'         ? 1.1
+                             : $svc eq 'notification-service'? 0.8
+                             :                                  0.6);
+
+                    my @parts = (constant($base));
+                    if (my $sp = $spikes{"$svc|$cls"}) {
+                        push @parts, incident({
+                            baseline   => 0,
+                            peak       => $sp->{peak},
+                            start_s    => $sp->{start_s},
+                            ramp_s     => $sp->{ramp_s},
+                            hold_s     => $sp->{hold_s},
+                            recovery_s => $sp->{recovery_s},
+                        });
+                    }
+
+                    my $shape = clamp(
+                        noisy(compose(@parts), 0.25, $rng),
+                        0, undef,
+                    );
+                    my @pts = _absolute($now_s, $duration, sample($shape, 0, $duration, $step));
+
+                    push @streams, {
+                        attributes => [
+                            attr('service.name', $svc),
+                            attr('error.class',  $cls),
+                        ],
+                        points => \@pts,
+                    };
+                }
+            }
+
+            return ('api-gateway', sum_metric_streams({
                 name        => 'http.server.error.count',
                 unit        => '{errors}',
-                description => '5xx responses per interval',
-                points      => \@pts,
-                step_s      => 60,
+                description => 'Server-side errors per interval, by service/class',
+                step_s      => $step,
                 temporality => AGG_DELTA,
                 monotonic   => 1,
-            }));
+            }, \@streams));
         },
 
         # ----- Sum: UNSPECIFIED temporality -- exercises the fun error.

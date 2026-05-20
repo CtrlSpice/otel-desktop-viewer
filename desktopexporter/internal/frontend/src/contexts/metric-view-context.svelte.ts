@@ -44,13 +44,24 @@ import {
 } from '@/services/telemetry-service'
 import { timeseriesToChartTimeseries } from '@/components/MetricCharts/chart-types'
 import type { Timeseries as LegendTimeseries } from '@/components/MetricCharts/legend-types'
-import { MAX_VISIBLE_TIMESERIES } from '@/utils/timeseries-palette'
+import { categoricalPalette } from '@/utils/chart-palette'
+import { metricTypeStem } from '@/utils/metric-type'
+import { themeSignal } from '@/utils/theme-signal.svelte'
 import {
+  DEFAULT_VISIBLE_TIMESERIES,
+  MAX_VISIBLE_TIMESERIES,
   reconcileTimeseriesVisible,
   resolveTimeseriesVisible,
   savePersistedTimeseriesVisible,
   visibleKeyListsEqual,
 } from '@/utils/metric-timeseries-visible'
+import {
+  acquireColor,
+  releaseColor,
+  seedColorAssignments,
+  syncColorAssignments,
+  type TimeseriesColorByKey,
+} from '@/utils/timeseries-color-slots'
 import {
   getTimeContext,
   selectionToQueryRangeMs,
@@ -128,7 +139,11 @@ export interface MetricViewContext {
 
   // -- Detail view wiring --
   readonly filteredTimeseries: MetricData['timeseries']
-  readonly timeseriesColorIndex: Map<string, number>
+  /** Checked timeseries → colour from the stem-rotated pool. Unchecked rows
+   *  have no entry; their checkbox uses neutral. */
+  readonly timeseriesColorByKey: TimeseriesColorByKey
+  /** Stem-rotated 10-colour pool (`pool[0]` = metric-type stem). */
+  readonly timeseriesChartColors: string[]
   readonly legendFilterActive: boolean
 
   // -- Methods --
@@ -142,6 +157,8 @@ export interface MetricViewContext {
   setHistogramVisible(next: SvelteSet<string>): void
   /** Toggle chart visibility and persist immediately. */
   toggleTimeseriesVisible(key: string, checked: boolean): void
+  /** Uncheck every timeseries and release all colour assignments. */
+  clearAllTimeseriesVisible(): void
   /** Toggle selection + (optionally) expansion + force the snapshot
    * tab on histograms. Single entry point used by both the chart
    * (heatmap clicks) and the detail view (datapoint row clicks). */
@@ -168,6 +185,7 @@ export function createMetricViewContext(
     activeHistogramTab: 'heatmap' as HistogramTab,
     gaugeSumVisible: new SvelteSet<string>(),
     histogramVisible: new SvelteSet<string>(),
+    timeseriesColorByKey: new Map<string, string>() as TimeseriesColorByKey,
   })
 
   /** Histogram visibility is seeded once per stream id (bucket fetch). */
@@ -443,17 +461,72 @@ export function createMetricViewContext(
     return m.timeseries.filter(ts => filter.has(ts.attributesKey))
   })
 
-  const timeseriesColorIndex = $derived.by((): Map<string, number> => {
-    const idx = new Map<string, number>()
+  const legendOrderKeys = $derived.by((): string[] => {
     if (metricType === 'Gauge' || metricType === 'Sum') {
-      gaugeSumLegendTimeseries.forEach((ts, i) => idx.set(ts.key, i))
-    } else if (isHistogramKind) {
-      histogramTimeseriesGroups.forEach((g, i) => idx.set(g.key, i))
+      return gaugeSumLegendTimeseries.map((ts) => ts.key)
     }
-    return idx
+    if (isHistogramKind) {
+      return histogramTimeseriesGroups.map((g) => g.key)
+    }
+    return []
+  })
+
+  const timeseriesChartColors = $derived.by(() => {
+    const stem = metricTypeStem(metricType)
+    const theme = themeSignal.value
+    if (isHistogramKind) {
+      const n = Math.max(
+        legendOrderKeys.length,
+        view.histogramVisible.size,
+        1
+      )
+      return categoricalPalette(n, stem, theme)
+    }
+    return categoricalPalette(MAX_VISIBLE_TIMESERIES, stem, theme)
   })
 
   const legendFilterActive = $derived(visibleDpCanonicalKeys !== null)
+
+  function currentVisibleKeys(): SvelteSet<string> {
+    return isHistogramKind ? view.histogramVisible : view.gaugeSumVisible
+  }
+
+  function replaceColorAssignments(next: TimeseriesColorByKey) {
+    view.timeseriesColorByKey = next
+  }
+
+  /** Seed assignments when visible keys exist but the map is empty (e.g.
+   *  telemetry arrived after the metric-reset effect ran with no keys). */
+  function ensureColorAssignments(
+    visible: ReadonlySet<string>,
+    legendKeys: readonly string[]
+  ) {
+    if (visible.size === 0) {
+      replaceColorAssignments(new Map())
+      return
+    }
+    // Important: we cannot short-circuit on `view.timeseriesColorByKey.size > 0`.
+    // On a metric switch, effect (2b) can fire before effect (1) has re-seeded
+    // the colour map, so the map is non-empty but full of the *previous*
+    // metric's keys. A size-only check would skip the reseed and leave the new
+    // metric's series rendering neutral (visible-but-uncoloured) until the
+    // next toggle. Only short-circuit when every currently-visible key already
+    // has a colour assignment.
+    let allAssigned = true
+    for (const key of visible) {
+      if (!view.timeseriesColorByKey.has(key)) {
+        allAssigned = false
+        break
+      }
+    }
+    if (allAssigned) return
+    const pool = categoricalPalette(
+      MAX_VISIBLE_TIMESERIES,
+      metricTypeStem(metricType),
+      themeSignal.value
+    )
+    replaceColorAssignments(seedColorAssignments(pool, visible, legendKeys))
+  }
 
   // -- Effects (the only mutating side-channels) --
 
@@ -473,14 +546,22 @@ export function createMetricViewContext(
     view.activeHistogramTab = 'heatmap'
 
     const gsKeys = gaugeSumGroups.keys
-    view.gaugeSumVisible = new SvelteSet(
+    const gsVisible = new SvelteSet(
       streamId
         ? resolveTimeseriesVisible(gsKeys, streamId)
         : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
     )
+    view.gaugeSumVisible = gsVisible
+    const pool = categoricalPalette(
+      MAX_VISIBLE_TIMESERIES,
+      metricTypeStem(metricType),
+      themeSignal.value
+    )
+    replaceColorAssignments(seedColorAssignments(pool, gsVisible, gsKeys))
     // Histogram visible is re-seeded by a separate effect because its
     // candidate keys come from bucketSeries (asynchronous), not from
-    // the metric directly.
+    // the metric directly. Do not clear colour assignments here -- that
+    // would wipe the gauge/sum seed we just wrote above.
     histogramVisibleSeededForStreamId = null
     view.histogramVisible = new SvelteSet()
   })
@@ -494,9 +575,16 @@ export function createMetricViewContext(
     const keys = histogramTimeseriesGroups.map((g) => g.key)
     if (!streamId || keys.length === 0) return
     if (histogramVisibleSeededForStreamId === streamId) return
-    view.histogramVisible = new SvelteSet(
-      resolveTimeseriesVisible(keys, streamId)
+    const histVisible = new SvelteSet(
+      resolveTimeseriesVisible(keys, streamId, DEFAULT_VISIBLE_TIMESERIES, null)
     )
+    view.histogramVisible = histVisible
+    const pool = categoricalPalette(
+      Math.max(keys.length, 1),
+      metricTypeStem(metricType),
+      themeSignal.value
+    )
+    replaceColorAssignments(seedColorAssignments(pool, histVisible, keys))
     histogramVisibleSeededForStreamId = streamId
   })
 
@@ -510,13 +598,24 @@ export function createMetricViewContext(
     if (metricType === 'Gauge' || metricType === 'Sum') {
       const keys = gaugeSumGroups.keys
       void keys.join('\0')
-      const next = reconcileTimeseriesVisible(
-        view.gaugeSumVisible,
-        keys,
-        streamId
-      )
+      // Effect (1) may have run before gaugeSumGroups.keys settled (metric
+      // selection + data flow are not synchronous), leaving an empty
+      // gaugeSumVisible against non-empty keys. Re-resolve from persisted
+      // / defaults so the user doesn't have to reload to see a colour on
+      // a single-default-series chart.
+      const needsInitialSeed =
+        view.gaugeSumVisible.size === 0 && keys.length > 0
+      const next = needsInitialSeed
+        ? resolveTimeseriesVisible(keys, streamId)
+        : reconcileTimeseriesVisible(view.gaugeSumVisible, keys, streamId)
       if (!visibleKeyListsEqual(view.gaugeSumVisible, next)) {
-        view.gaugeSumVisible = new SvelteSet(next)
+        const visible = new SvelteSet(next)
+        view.gaugeSumVisible = visible
+        const assigned = new Map(view.timeseriesColorByKey)
+        syncColorAssignments(timeseriesChartColors, assigned, visible, keys)
+        replaceColorAssignments(assigned)
+      } else {
+        ensureColorAssignments(view.gaugeSumVisible, keys)
       }
       return
     }
@@ -528,10 +627,17 @@ export function createMetricViewContext(
     const next = reconcileTimeseriesVisible(
       view.histogramVisible,
       keys,
-      streamId
+      streamId,
+      null
     )
     if (!visibleKeyListsEqual(view.histogramVisible, next)) {
-      view.histogramVisible = new SvelteSet(next)
+      const visible = new SvelteSet(next)
+      view.histogramVisible = visible
+      const assigned = new Map(view.timeseriesColorByKey)
+      syncColorAssignments(timeseriesChartColors, assigned, visible, keys)
+      replaceColorAssignments(assigned)
+    } else {
+      ensureColorAssignments(view.histogramVisible, keys)
     }
   })
 
@@ -619,6 +725,23 @@ export function createMetricViewContext(
 
   function toggleTimeseriesVisible(key: string, checked: boolean) {
     const streamId = getMetric()?.id
+    let pool = timeseriesChartColors
+    const assigned = new Map(view.timeseriesColorByKey)
+    if (checked) {
+      if (acquireColor(pool, assigned, key) === null) {
+        if (!isHistogramKind) return
+        pool = categoricalPalette(
+          Math.max(pool.length, assigned.size + 1, legendOrderKeys.length),
+          metricTypeStem(metricType),
+          themeSignal.value
+        )
+        if (acquireColor(pool, assigned, key) === null) return
+      }
+    } else {
+      releaseColor(assigned, key)
+    }
+    replaceColorAssignments(assigned)
+
     if (isHistogramKind) {
       const next = new SvelteSet(view.histogramVisible)
       if (checked) next.add(key)
@@ -632,6 +755,18 @@ export function createMetricViewContext(
     else next.delete(key)
     view.gaugeSumVisible = next
     if (streamId) savePersistedTimeseriesVisible(streamId, next)
+  }
+
+  function clearAllTimeseriesVisible() {
+    replaceColorAssignments(new Map())
+    const streamId = getMetric()?.id
+    if (isHistogramKind) {
+      view.histogramVisible = new SvelteSet()
+      if (streamId) savePersistedTimeseriesVisible(streamId, view.histogramVisible)
+      return
+    }
+    view.gaugeSumVisible = new SvelteSet()
+    if (streamId) savePersistedTimeseriesVisible(streamId, view.gaugeSumVisible)
   }
 
   function onDatapointClick(dp: DataPoint) {
@@ -764,8 +899,11 @@ export function createMetricViewContext(
     get filteredTimeseries() {
       return filteredTimeseries
     },
-    get timeseriesColorIndex() {
-      return timeseriesColorIndex
+    get timeseriesColorByKey() {
+      return view.timeseriesColorByKey
+    },
+    get timeseriesChartColors() {
+      return timeseriesChartColors
     },
     get legendFilterActive() {
       return legendFilterActive
@@ -776,6 +914,7 @@ export function createMetricViewContext(
     setGaugeSumVisible,
     setHistogramVisible,
     toggleTimeseriesVisible,
+    clearAllTimeseriesVisible,
     onDatapointClick,
     onHeatmapSelect,
   }

@@ -42,6 +42,8 @@ use Exporter qw(import);
 use Math::Trig qw(pi);
 use List::Util qw(sum0);
 
+use ScreamingSnake;
+
 use constant TAU => 2 * pi;
 
 our @EXPORT_OK = qw(
@@ -240,4 +242,4 @@ sub sample {
     return @out;
 }
 
-'This is the way.';
+THE_END();

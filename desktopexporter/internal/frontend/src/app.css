@@ -44,6 +44,12 @@ html[data-theme='rose-pine'] {
   --color-base-200: #1f1d2e;
   --color-base-300: #26233a;
   --color-base-content: #e0def4;
+  /* Theme-aware glyph colours for sitting on top of chart swatches.
+     readableTextColor() in chart-palette.ts picks one based on swatch
+     luminance. Independent of base-content so they stay correct on
+     saturated palette colours regardless of dark/light theme. */
+  --color-on-light: #1f1d2e;
+  --color-on-dark: #e0def4;
   --color-primary: #c4a7e7;
   --color-primary-content: #191724;
   --color-secondary: #31748f;
@@ -72,6 +78,8 @@ html[data-theme='rose-pine-moon'] {
   --color-base-200: #2a273f;
   --color-base-300: #393552;
   --color-base-content: #e0def4;
+  --color-on-light: #232136;
+  --color-on-dark: #e0def4;
   --color-primary: #c4a7e7;
   --color-primary-content: #232136;
   --color-secondary: #3e8fb0;
@@ -100,6 +108,8 @@ html[data-theme='rose-pine-dawn'] {
   --color-base-200: #faf4ed;
   --color-base-300: #fffaf3;
   --color-base-content: #575279;
+  --color-on-light: #575279;
+  --color-on-dark: #faf4ed;
   --color-primary: #907aa9;
   --color-primary-content: #faf4ed;
   --color-secondary: #286983;

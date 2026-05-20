@@ -2,20 +2,21 @@
   import { LineChart, Line, Text } from 'layerchart'
   import { scaleTime } from 'd3-scale'
   import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import MetricChartEmpty from '@/components/MetricChartEmpty.svelte'
   import MetricChartPlot, {
     axisTime,
     axisValue,
     chartPadding,
+    DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/MetricChartPlot.svelte'
-  import { timeseriesColor } from '@/utils/timeseries-palette'
+  import { chartNeutral } from '@/utils/chart-palette'
   import type { ChartTimeseries } from './chart-types'
 
   type Props = {
-    /** Pre-grouped timeseries. The Nth entry's colour is
-     * `timeseriesColor(N)`, matching the TimeseriesLegend's positional
-     * colouring -- so legend row N's swatch is the same colour as
-     * chart line N. */
+    /** Pre-grouped timeseries. The Nth entry's colour is read from
+     * `ctx.timeseriesChartColors[N]` (same array the legend swatches
+     * use), so legend row N's swatch always matches chart line N. */
     timeseries: ChartTimeseries[]
     /** Set of timeseries keys currently checked in the legend.
      * Timeseries not in this set are filtered out before being passed
@@ -34,26 +35,35 @@
   let {
     timeseries,
     visibleKeys,
-    height = 250,
+    height = DEFAULT_METRIC_CHART_HEIGHT,
     highlightedTimestamp = null,
     unit = '',
   }: Props = $props()
+
+  // Palette + colour-index map come from the metric view context so the
+  // legend and the chart can never disagree. The chart used to build its
+  // own palette here; that produced two callsites that could drift on
+  // theme switch or metric-type change.
+  const ctx = getMetricViewContext()
 
   const timeContext = getTimeContext()
 
   // Build the layerchart series array on the fly. Each entry carries
   // its own pre-grouped data so we don't re-traverse on every chart
-  // re-render. Colour comes from the timeseries' index in the *full*
-  // list (not the visible list), so toggling one off and on doesn't
-  // shift colours of its neighbours.
+  // re-render. Colour is looked up via the context's colour-index map
+  // (keyed by attributesKey), not by position in this prop's array --
+  // so toggling visibility never shifts a line's colour and the legend
+  // swatch at `colorIdx` always matches chart line at `colorIdx`.
   let chartSeries = $derived.by(() => {
     return timeseries
-      .map((ts, i) => ({
-        key: ts.key,
-        label: ts.label,
-        data: ts.points,
-        color: timeseriesColor(i),
-      }))
+      .map(ts => {
+        return {
+          key: ts.key,
+          label: ts.label,
+          data: ts.points,
+          color: ctx.timeseriesColorByKey.get(ts.key) ?? chartNeutral(),
+        }
+      })
       .filter(ts => visibleKeys.has(ts.key))
   })
 

@@ -42,6 +42,8 @@ use HTTP::Tiny;
 use JSON::PP;
 use Time::HiRes qw(time);
 
+use ScreamingSnake;
+
 our @EXPORT_OK = qw(
     now_ns
     resource_attrs
@@ -240,4 +242,4 @@ sub send_payload {
     return ($res->{status} // 0, $err);
 }
 
-'Make it so!';
+THE_END();

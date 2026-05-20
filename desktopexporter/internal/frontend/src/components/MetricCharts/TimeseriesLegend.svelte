@@ -1,11 +1,15 @@
 <script lang="ts">
   import type { SvelteSet } from 'svelte/reactivity'
-  import {
-    MAX_VISIBLE_TIMESERIES,
-    timeseriesColor,
-    timeseriesForegroundColor,
-  } from '@/utils/timeseries-palette'
+  import { MAX_VISIBLE_TIMESERIES } from '@/utils/metric-timeseries-visible'
+  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import type { Timeseries } from './legend-types'
+
+  // Currently not mounted anywhere -- TimeseriesPanel.svelte hosts the
+  // live legend rows. Kept in sync with that component's colour wiring
+  // so reviving this component doesn't bring back the old hardcoded
+  // palette by accident.
+  const ctx = getMetricViewContext()
 
   type Props = {
     timeseries: Timeseries[]
@@ -51,8 +55,10 @@
     {#each timeseries as ts, i (ts.key)}
       {@const checked = visibleKeys.has(ts.key)}
       {@const disabled = !checked && capReached}
-      {@const color = timeseriesColor(i)}
-      {@const fg = timeseriesForegroundColor(i)}
+      {@const seriesColor = ctx.timeseriesColorByKey.get(ts.key)}
+      {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
+      {@const fg =
+        checked && seriesColor ? readableTextColor(seriesColor) : chartNeutral()}
       {@const tooltip =
         ts.attributes.length === 0
           ? 'default'

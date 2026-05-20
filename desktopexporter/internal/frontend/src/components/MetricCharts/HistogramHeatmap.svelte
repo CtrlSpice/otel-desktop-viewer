@@ -9,7 +9,7 @@
     Rect,
     Tooltip,
   } from 'layerchart'
-  import { scaleBand, scaleOrdinal, scaleQuantize } from 'd3-scale'
+  import { scaleBand, scaleOrdinal, scaleThreshold } from 'd3-scale'
   import type {
     BucketSeriesPoint,
     HistogramBucketPoint,
@@ -17,15 +17,16 @@
   } from '@/types/api-types'
   import {
     adaptiveStepCount,
-    getHeatmapSwatches,
     legendBinEdges,
   } from '@/utils/heatmap-palette'
+  import { heatmapSwatches } from '@/utils/chart-palette'
   import { themeSignal } from '@/utils/theme-signal.svelte'
   import MetricChartEmpty from '@/components/MetricChartEmpty.svelte'
   import {
     axisCount,
     axisTime,
     chartPadding,
+    DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/MetricChartPlot.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { formatDateTime } from '@/utils/time'
@@ -71,7 +72,7 @@
     points,
     windowStartMs,
     windowEndMs,
-    height = 300,
+    height = DEFAULT_METRIC_CHART_HEIGHT,
     onSelect,
     selectedTimestamp = null,
   }: Props = $props()
@@ -209,37 +210,63 @@
     return m
   })
 
-  let countDomain = $derived([0, maxCount] as [number, number])
-
-  // Adaptive step count: more distinct cell values -> more swatches, capped
-  // at 9. Sparse data with only a handful of distinct values gets a smaller
-  // ramp so the legend has fewer indistinguishable bins.
-  let distinctCounts = $derived.by(() => {
+  // Adaptive step count over the **non-zero** distinct values. 0 isn't part
+  // of the active ramp -- it's its own swatch (base-200, matches the chart
+  // surface), and the heatmap colour scale (scaleThreshold below) maps any
+  // value < 1 to that swatch. So a chart that's all zeros and a single
+  // positive value still gets a sensible 1-step ramp.
+  let distinctNonZeroCounts = $derived.by(() => {
     const seen = new Set<number>()
-    for (const d of heatmapData) seen.add(d.count)
+    for (const d of heatmapData) if (d.count > 0) seen.add(d.count)
     return seen.size
   })
 
-  let swatchSteps = $derived(adaptiveStepCount(distinctCounts))
+  let swatchSteps = $derived(adaptiveStepCount(distinctNonZeroCounts))
 
-  // Recompute swatches when step count or theme changes (moon vs dawn
-  // use different hand-tuned ramps in heatmap-palette.ts).
+  // Active-range swatches only -- 0 is the "empty" swatch, prepended below.
   let swatches = $derived.by(() => {
-    return getHeatmapSwatches(swatchSteps, themeSignal.value)
+    return heatmapSwatches(swatchSteps, themeSignal.value)
   })
 
+  // Threshold breakpoints over (0, maxCount]. scaleThreshold returns
+  // range[0] for any input < domain[0], so domain[0] = 1 means
+  // "count === 0 -> empty swatch" and the rest of the range covers
+  // positive counts uniformly.
+  let cellColorThresholds = $derived.by(() => {
+    if (swatchSteps <= 0 || maxCount <= 0) return [1]
+    const out: number[] = new Array(swatchSteps)
+    out[0] = 1
+    for (let i = 1; i < swatchSteps; i++) {
+      out[i] = (i * maxCount) / swatchSteps
+    }
+    return out
+  })
+
+  // Empty swatch (matches chart surface) + active ramp; length = thresholds + 1.
+  let cellColorRange = $derived(['var(--color-base-200)', ...swatches])
+
+  // Legend labels mirror the threshold structure: '0' first, then '(prev - next]'
+  // for each active swatch. legendBinEdges divides [0, max] into swatchSteps slots;
+  // we treat the first slot as (0 - max/N], etc.
   let legendLabels = $derived.by(() => {
     const edges = legendBinEdges(maxCount, swatchSteps)
-    return swatches.map((_, i) => {
-      const lo = Math.round(edges[i])
+    const labels: string[] = ['0']
+    for (let i = 0; i < swatches.length; i++) {
+      const lo = i === 0 ? 0 : Math.round(edges[i])
       const hi = Math.round(edges[i + 1])
       const close = i === swatches.length - 1 ? ']' : ')'
-      return `[${lo}\u2009–\u2009${hi}${close}`
-    })
+      labels.push(`(${lo}\u2009–\u2009${hi}${close}`)
+    }
+    return labels
   })
 
+  // Legend skips the '0' swatch entirely -- empty cells already read as
+  // "nothing happened" because they match the chart surface, so the legend
+  // only documents the active (positive-count) buckets.
   let legendScale = $derived(
-    scaleOrdinal<string, string>().domain(legendLabels).range(swatches)
+    scaleOrdinal<string, string>()
+      .domain(legendLabels.slice(1))
+      .range(cellColorRange.slice(1))
   )
 
   let visibleBucketTicks = $derived.by(() => {
@@ -256,75 +283,40 @@
     return timeDomain.filter((_, i) => i % step === 0)
   })
 
-  // --- Cell aspect clamping ---
+  // --- Cell sizing ---
   //
-  // Without intervention scaleBand divides the available pixels evenly,
-  // which gives stripey wide cells for sparse time data and hairline cells
-  // for dense data. We aim for roughly square cells, clamped to a
-  // [0.5x, 2x] aspect. When the natural chart size exceeds the container,
-  // the wrapper scrolls (horizontally for too-wide, vertically for
-  // too-many-buckets) instead of stretching/squishing.
+  // Time columns: fixed TIME_COLUMN_WIDTH; scroll horizontally when wide.
+  // Bucket rows: share the pane height evenly (ExpHist compresses, no
+  // vertical scroll).
 
-  // Floor under cell height so a 200-bucket ExpHist doesn't smush rows
-  // into 1px slivers. Used both to clamp aspect and to decide whether the
-  // chart needs to grow taller than its container (and scroll).
-  const MIN_CELL_HEIGHT = 6
+  /** Fixed time-column width in the plot area (px). */
+  const TIME_COLUMN_WIDTH = 16
+  const PLOT_INSET_X = chartPadding.left + chartPadding.right
+  const PLOT_INSET_Y = chartPadding.top + chartPadding.bottom
 
   // clientWidth of the outer measurement wrapper. Bound below; starts at
   // 0 before mount.
   let containerWidth = $state(0)
 
-  let plotWidth = $derived(Math.max(0, containerWidth))
-  let plotHeightContainer = $derived(Math.max(0, height))
-
-  // Natural cell height in the container: the plot area divided by bucket
-  // count, but never below MIN_CELL_HEIGHT. When MIN_CELL_HEIGHT is the
-  // binding constraint the plot has to grow taller than the container,
-  // and the wrapper scrolls.
-  let cellHeight = $derived.by(() => {
-    if (bucketDomain.length === 0) return MIN_CELL_HEIGHT
-    return Math.max(MIN_CELL_HEIGHT, plotHeightContainer / bucketDomain.length)
-  })
-
-  // Target cell width: clamp to [0.5x, 2x] cell height. Anything wider
-  // than 2x looks like a stripe; anything narrower than 0.5x looks like a
-  // hairline.
-  let targetCellWidth = $derived.by(() => {
-    if (timeDomain.length === 0) return cellHeight
-    const natural = plotWidth / timeDomain.length
-    const minW = 0.5 * cellHeight
-    const maxW = 2 * cellHeight
-    return Math.max(minW, Math.min(maxW, natural))
-  })
+  let plotHeightAvailable = $derived(
+    Math.max(0, height - PLOT_INSET_Y)
+  )
 
   let chartWidth = $derived.by(() => {
-    if (timeDomain.length === 0 || containerWidth === 0) return containerWidth
-    const naturalPlot = targetCellWidth * timeDomain.length
-    return Math.max(containerWidth, naturalPlot)
+    if (timeDomain.length === 0) return Math.max(containerWidth, 1)
+    return TIME_COLUMN_WIDTH * timeDomain.length + PLOT_INSET_X
   })
 
-  let chartHeight = $derived.by(() => {
-    if (bucketDomain.length === 0) return height
-    const naturalPlot = cellHeight * bucketDomain.length
-    return Math.max(height, naturalPlot)
-  })
+  let chartHeight = $derived(height)
 
-  let plotChartWidth = $derived(Math.max(0, chartWidth))
-
-  // Effective cell width as the band scale would resolve it. timeDomain
-  // length is the divisor: same math layerchart does internally for
-  // scaleBand. Avoids reaching into the chart context just to read
-  // bandwidth() (which would mean nesting another component).
-  let effectiveCellWidth = $derived.by(() => {
-    if (timeDomain.length === 0) return 0
-    return plotChartWidth / timeDomain.length
-  })
+  let effectiveCellWidth = TIME_COLUMN_WIDTH
 
   function handleHeatmapClick(event: MouseEvent) {
     if (!onSelect || timeDomain.length === 0 || effectiveCellWidth <= 0) return
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    const plotX = event.clientX - rect.left
-    if (plotX < 0 || plotX > plotChartWidth) return
+    const plotX = event.clientX - rect.left - chartPadding.left
+    const plotW = TIME_COLUMN_WIDTH * timeDomain.length
+    if (plotX < 0 || plotX > plotW) return
     const idx = Math.floor(plotX / effectiveCellWidth)
     if (idx < 0 || idx >= timeDomain.length) return
     onSelect(timeDomain[idx])
@@ -340,7 +332,7 @@
       return null
     const idx = timeDomain.indexOf(selectedTimestamp)
     if (idx < 0) return null
-    return idx * effectiveCellWidth
+    return chartPadding.left + idx * effectiveCellWidth
   })
 </script>
 
@@ -348,11 +340,8 @@
   <MetricChartEmpty {height} message="No bucket data in range" />
 {:else}
   <div class="heatmap-chart metric-chart-view">
-    <!-- Outer wrapper measures container width via bind:clientWidth so the
-         cell-aspect math has a real number to work with. Inner scroll
-         wrapper is fixed to the requested height; if the chart grows past
-         the container in either direction (too many time bins -> wider,
-         too many buckets -> taller), this is what scrolls. -->
+    <!-- Outer wrapper measures width; height is fixed to the chart pane.
+         Horizontal scroll only when there are many time columns. -->
     <div
       class="heatmap-measure"
       style:height="{height}px"
@@ -392,9 +381,9 @@
             yScale={scaleBand().padding(0)}
             yDomain={bucketDomain}
             c="count"
-            cScale={scaleQuantize()}
-            cDomain={countDomain}
-            cRange={swatches}
+            cScale={scaleThreshold()}
+            cDomain={cellColorThresholds}
+            cRange={cellColorRange}
             width={chartWidth}
             height={chartHeight}
             padding={chartPadding}
@@ -419,9 +408,9 @@
                    different column. Pixel mode + plot-area coords. -->
                 <Rect
                   x={selectedColumnX}
-                  y={0}
+                  y={chartPadding.top}
                   width={effectiveCellWidth}
-                  height={chartHeight}
+                  height={plotHeightAvailable}
                   class="heatmap-selection"
                 />
               {/if}
@@ -445,10 +434,10 @@
             </Tooltip.Root>
             <Legend
               scale={legendScale}
-              placement="bottom"
+              placement="top-left"
               variant="swatches"
               classes={{
-                root: 'px-2 rounded-full',
+                root: 'heatmap-legend px-2 rounded-full',
                 title: 'text-xs',
                 label: 'text-xs text-rp-subtle',
                 tick: 'stroke-base-200',
@@ -469,16 +458,12 @@
   }
 
   .heatmap-measure {
-    @apply w-full;
+    @apply w-full overflow-hidden;
   }
 
-  /* Scrolls in both axes when the chart grows past its container.
-     Horizontal scroll = too many time bins (clamped at minCellWidth).
-     Vertical scroll = too many buckets (clamped at minCellHeight).
-     Just the heatmap scrolls -- the surrounding detail panel stays
-     reachable so the metadata table never disappears off the bottom. */
+  /* Tall bucket grids stay clipped to the pane; only pan sideways in time. */
   .heatmap-scroll {
-    @apply w-full overflow-auto;
+    @apply w-full overflow-x-auto overflow-y-hidden;
   }
 
   .heatmap-wrapper :global(.lc-rect) {

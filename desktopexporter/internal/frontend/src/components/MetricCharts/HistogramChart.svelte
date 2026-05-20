@@ -6,6 +6,7 @@
     axisBuckets,
     axisCount,
     chartPadding,
+    DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/MetricChartPlot.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { metricTypeSeriesColor } from '@/utils/metric-type'
@@ -54,7 +55,7 @@
   let {
     datapoint,
     unit = '',
-    height = 250,
+    height = DEFAULT_METRIC_CHART_HEIGHT,
     quantileSource = 'datapoint',
     metricID,
     windowStartMs,
@@ -184,7 +185,9 @@
     return result
   }
 
-  function buildExpHistogramBuckets(dp: ExponentialHistogramDataPoint): Bucket[] {
+  function buildExpHistogramBuckets(
+    dp: ExponentialHistogramDataPoint
+  ): Bucket[] {
     const result: Bucket[] = []
     const base = Math.pow(2, Math.pow(2, -dp.scale))
 
@@ -362,7 +365,6 @@
     if (pct >= 10) return `${pct.toFixed(1)}%`
     return `${pct.toFixed(2)}%`
   }
-
 </script>
 
 <div>
@@ -376,11 +378,7 @@
       bind:clientWidth={parentWidth}
     >
       <div class="histogram-chart-scroll" style:height="{height}px">
-        <MetricChartPlot
-          class="histogram-chart"
-          {height}
-          width={chartWidth}
-        >
+        <MetricChartPlot class="histogram-chart" {height} width={chartWidth}>
           <BarChart
             data={buckets}
             x="label"
@@ -400,10 +398,19 @@
             {#snippet tooltip()}
               <Tooltip.Root>
                 {#snippet children({ data }: { data: Bucket })}
-                  <Tooltip.Header class="text-center">{formatBucketRange(data)}</Tooltip.Header>
+                  <Tooltip.Header class="text-center"
+                    >{formatBucketRange(data)}</Tooltip.Header
+                  >
                   <Tooltip.List>
-                    <Tooltip.Item label="count" value={data.count} format="integer" />
-                    <Tooltip.Item label="of total" value={formatPct(data.count)} />
+                    <Tooltip.Item
+                      label="count"
+                      value={data.count}
+                      format="integer"
+                    />
+                    <Tooltip.Item
+                      label="of total"
+                      value={formatPct(data.count)}
+                    />
                   </Tooltip.List>
                 {/snippet}
               </Tooltip.Root>
@@ -411,7 +418,8 @@
 
             {#snippet aboveMarks({ context }: { context: any })}
               {@const xs = context.xScale}
-              {@const bw = typeof xs.bandwidth === 'function' ? xs.bandwidth() : 0}
+              {@const bw =
+                typeof xs.bandwidth === 'function' ? xs.bandwidth() : 0}
               {@const yTop = context.yRange[1]}
               {@const yBot = context.yRange[0]}
               {#each quantileMarks as m (m.key)}
@@ -476,5 +484,6 @@
   :global(.stat-label) {
     font-size: 0.75rem;
     fill: var(--color-muted);
+    color: var(--color-muted);
   }
 </style>

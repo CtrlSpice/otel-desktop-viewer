@@ -410,6 +410,6 @@
 <style lang="postcss">
   @reference "../app.css";
   .panel-shell {
-    @apply min-h-0;
+    @apply flex min-h-0 flex-col;
   }
 </style>

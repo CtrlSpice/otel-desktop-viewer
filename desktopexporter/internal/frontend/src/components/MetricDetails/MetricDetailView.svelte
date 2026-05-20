@@ -12,8 +12,8 @@
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import { chartNeutral } from '@/utils/chart-palette'
   import type { DataPoint } from '@/types/api-types'
-  import { timeseriesColor } from '@/utils/timeseries-palette'
   import PaneHeader, { type PaneTab } from '@/components/PaneHeader.svelte'
   import FieldGroup from '@/components/FieldGroup.svelte'
   import { LeftToRightListBulletIcon, HandPointingDownIcon } from '@/icons'
@@ -86,7 +86,7 @@
 
   type FlatDatapoint = {
     dp: DataPoint
-    colorIndex: number
+    seriesColor: string
   }
 
   let flatDatapoints = $derived.by((): FlatDatapoint[] => {
@@ -94,9 +94,10 @@
     if (ts.length === 0) return []
     const items: FlatDatapoint[] = []
     for (const series of ts) {
-      const colorIdx = ctx.timeseriesColorIndex.get(series.attributesKey) ?? 0
+      const seriesColor =
+        ctx.timeseriesColorByKey.get(series.attributesKey) ?? chartNeutral()
       for (const dp of series.datapoints) {
-        items.push({ dp, colorIndex: colorIdx })
+        items.push({ dp, seriesColor })
       }
     }
     items.sort((a, b) => {
@@ -314,7 +315,7 @@
       {:else}
         <table class="dp-list" aria-label="Datapoints">
           <tbody>
-            {#each flatDatapoints as { dp, colorIndex } (dp.id)}
+            {#each flatDatapoints as { dp, seriesColor } (dp.id)}
               {@const selected = ctx.selectedDatapointId === dp.id}
               {@const hasExtra = dp.flags > 0 || dp.exemplars.length > 0}
               {@const expanded = hasExtra && ctx.expandedDatapoints.has(dp.id)}
@@ -328,7 +329,7 @@
                 <td class="dp-list__td dp-list__td--swatch">
                   <span
                     class="dp-list__swatch"
-                    style:background-color={timeseriesColor(colorIndex)}
+                    style:background-color={seriesColor}
                     aria-hidden="true"
                   ></span>
                 </td>

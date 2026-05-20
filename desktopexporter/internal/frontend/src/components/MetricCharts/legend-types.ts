@@ -10,7 +10,8 @@ import type { Attribute } from '@/types/api-types'
  * to have already grouped its datapoints into these timeseries
  * entries and to pass them in the same order as the chart renders
  * them, so the n-th legend row's swatch colour matches the n-th
- * line on the chart (both come from `timeseriesColor(index)`).
+ * line on the chart. Checked rows use `ctx.timeseriesColorByKey.get(key)`
+ * (a colour from the stem-rotated pool); unchecked rows use neutral.
  */
 export type Timeseries = {
   /** Stable identifier for this attribute set, used as the bind key.

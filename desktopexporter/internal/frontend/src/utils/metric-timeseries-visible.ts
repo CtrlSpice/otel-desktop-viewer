@@ -1,7 +1,18 @@
-import {
-  DEFAULT_VISIBLE_TIMESERIES,
-  MAX_VISIBLE_TIMESERIES,
-} from '@/utils/timeseries-palette'
+/**
+ * Maximum number of timeseries that can be visible (checked) at once
+ * for gauge/sum line charts. The legend disables further checkboxes
+ * once this many are selected. Histogram metrics are uncapped — the
+ * heatmap can show every attribute breakdown at once.
+ */
+export const MAX_VISIBLE_TIMESERIES = 10
+
+/**
+ * How many timeseries to auto-select on first load (before the user
+ * has made any explicit choices). Lower than MAX_VISIBLE_TIMESERIES
+ * so the initial chart is readable; the user can manually check more
+ * up to the cap.
+ */
+export const DEFAULT_VISIBLE_TIMESERIES = 5
 
 const STORAGE_PREFIX = 'metrics:timeseries-visible:'
 
@@ -45,16 +56,16 @@ export function savePersistedTimeseriesVisible(
 export function resolveTimeseriesVisible(
   currentKeys: readonly string[],
   metricStreamId: string,
-  maxVisible: number = DEFAULT_VISIBLE_TIMESERIES
+  initialVisible: number = DEFAULT_VISIBLE_TIMESERIES,
+  maxChecked: number | null = MAX_VISIBLE_TIMESERIES
 ): string[] {
   const persisted = loadPersistedTimeseriesVisible(metricStreamId)
   if (persisted !== null) {
     const current = new Set(currentKeys)
-    return persisted
-      .filter((k) => current.has(k))
-      .slice(0, MAX_VISIBLE_TIMESERIES)
+    const kept = persisted.filter((k) => current.has(k))
+    return maxChecked === null ? kept : kept.slice(0, maxChecked)
   }
-  return currentKeys.slice(0, maxVisible)
+  return currentKeys.slice(0, initialVisible)
 }
 
 /** Drop keys no longer present after a refresh; re-seed only when stale. */
@@ -62,14 +73,20 @@ export function reconcileTimeseriesVisible(
   visible: ReadonlySet<string>,
   currentKeys: readonly string[],
   metricStreamId: string,
+  maxChecked: number | null = MAX_VISIBLE_TIMESERIES
 ): string[] {
   const current = new Set(currentKeys)
   const hadStale = [...visible].some((k) => !current.has(k))
-  const kept = [...visible]
-    .filter((k) => current.has(k))
-    .slice(0, MAX_VISIBLE_TIMESERIES)
-  if (kept.length > 0 || !hadStale) return kept
-  return resolveTimeseriesVisible(currentKeys, metricStreamId)
+  const kept = [...visible].filter((k) => current.has(k))
+  const capped =
+    maxChecked === null ? kept : kept.slice(0, maxChecked)
+  if (capped.length > 0 || !hadStale) return capped
+  return resolveTimeseriesVisible(
+    currentKeys,
+    metricStreamId,
+    DEFAULT_VISIBLE_TIMESERIES,
+    maxChecked
+  )
 }
 
 export function visibleKeyListsEqual(

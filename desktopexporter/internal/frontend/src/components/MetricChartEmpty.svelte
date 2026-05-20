@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { DEFAULT_METRIC_CHART_HEIGHT } from '@/components/MetricChartPlot.svelte'
+
   type Props = {
     height?: number
     message: string
   }
 
-  let { height = 250, message }: Props = $props()
+  let { height = DEFAULT_METRIC_CHART_HEIGHT, message }: Props = $props()
 </script>
 
 <div

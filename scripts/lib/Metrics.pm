@@ -26,6 +26,7 @@ use warnings;
 use Exporter qw(import);
 use List::Util qw(sum0 min max);
 
+use ScreamingSnake;
 use OTLP qw(
     SIGNAL_METRICS
     attr
@@ -40,6 +41,10 @@ our @EXPORT_OK = qw(
     sum_metric
     histogram_metric
     exphist_metric
+    gauge_metric_streams
+    sum_metric_streams
+    histogram_metric_streams
+    exphist_metric_streams
     send_metric
     AGG_DELTA
     AGG_CUMULATIVE
@@ -270,6 +275,33 @@ sub _datapoints_from_points {
     return \@dps;
 }
 
+# Multi-stream variant: $streams is an arrayref of { attributes => [...],
+# points => [...] } records, one per attribute-distinguished stream. All
+# streams share the same metric-level meta (name, unit, temporality,
+# step, builder-specific extras like bounds/scale) -- the spec carries
+# those once. Each stream's attrs are *merged with* any base attributes
+# on the spec so callers can keep cross-stream tags (e.g. resource hints)
+# in one place.
+sub _datapoints_from_streams {
+    my ($spec, $streams, $builder, %extra) = @_;
+    my $step       = $spec->{step_s} // 60;
+    my $base_attrs = $spec->{attributes} // [];
+    my @dps;
+    for my $s (@$streams) {
+        my $attrs = [ @$base_attrs, @{ $s->{attributes} // [] } ];
+        for my $p (@{ $s->{points} }) {
+            push @dps, $builder->(
+                t_s        => $p->{t_s},
+                start_s    => $p->{t_s} - $step,
+                value      => $p->{value},
+                attributes => $attrs,
+                %extra,
+            );
+        }
+    }
+    return \@dps;
+}
+
 sub gauge_metric {
     my ($spec) = @_;
     return {
@@ -324,6 +356,79 @@ sub exphist_metric {
 }
 
 # ----------------------------------------------------------------------------
+# Multi-stream constructors
+#
+# Same metric kinds, but each takes an arrayref of $streams instead of a
+# single `points` list. Each stream contributes its own attribute set
+# and its own samples, all merged into one dataPoints array. The result
+# is one OTLP metric carrying many attribute-distinguished timeseries --
+# what the frontend renders as a multi-coloured chart with one legend
+# row per stream.
+#
+# Stream record shape:
+#   { attributes => \@otlp_attrs, points => \@{t_s,value}_pairs }
+#
+# Base spec carries the metric-level fields exactly like the
+# single-stream constructors (name, unit, description, step_s,
+# temporality, monotonic, bounds, scale). `attributes` on the base
+# spec, if present, are merged into every stream (useful for tags
+# shared by every datapoint, e.g. service.namespace).
+# ----------------------------------------------------------------------------
+
+sub gauge_metric_streams {
+    my ($spec, $streams) = @_;
+    return {
+        _meta($spec),
+        gauge => {
+            dataPoints => _datapoints_from_streams($spec, $streams, \&_number_datapoint),
+        },
+    };
+}
+
+sub sum_metric_streams {
+    my ($spec, $streams) = @_;
+    return {
+        _meta($spec),
+        sum => {
+            dataPoints             => _datapoints_from_streams($spec, $streams, \&_number_datapoint),
+            aggregationTemporality => ($spec->{temporality} // AGG_CUMULATIVE) + 0,
+            isMonotonic            => $spec->{monotonic} ? \1 : \0,
+        },
+    };
+}
+
+sub histogram_metric_streams {
+    my ($spec, $streams) = @_;
+    my $bounds = $spec->{bounds} // [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0];
+    return {
+        _meta($spec),
+        histogram => {
+            dataPoints => _datapoints_from_streams($spec, $streams, \&_histogram_datapoint,
+                bounds       => $bounds,
+                sample_count => $spec->{sample_count} // 200,
+                spread       => $spec->{spread}       // 0.4,
+            ),
+            aggregationTemporality => ($spec->{temporality} // AGG_DELTA) + 0,
+        },
+    };
+}
+
+sub exphist_metric_streams {
+    my ($spec, $streams) = @_;
+    return {
+        _meta($spec),
+        exponentialHistogram => {
+            dataPoints => _datapoints_from_streams($spec, $streams, \&_exphist_datapoint,
+                scale        => $spec->{scale}        // 3,
+                sample_count => $spec->{sample_count} // 200,
+                spread       => $spec->{spread}       // 0.4,
+            ),
+            aggregationTemporality => ($spec->{temporality} // AGG_DELTA) + 0,
+        },
+    };
+}
+
+# ----------------------------------------------------------------------------
 # Sender
 # ----------------------------------------------------------------------------
 
@@ -361,4 +466,4 @@ sub bucket_dist {
     return [ map { int($total * $_ / $sum + 0.5) } @raw ];
 }
 
-'So say we all!';
+THE_END();

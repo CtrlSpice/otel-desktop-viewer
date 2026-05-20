@@ -507,7 +507,7 @@
   }
 
   .metrics-page__chart {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-auto;
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
   }
 
   /* Vertical split host: the ResizablePanels needs a min-sized flex
