@@ -66,6 +66,11 @@ html[data-theme='rose-pine'] {
   --color-warning-content: #191724;
   --color-error: #eb6f92;
   --color-error-content: #e0def4;
+  --waterfall-bar-opacity: 1;
+  --waterfall-bar-label-color: var(--color-base-200);
+  /* Ticks are the bar hue lightened by mixing toward white. */
+  --waterfall-tick-mix-target: white;
+  --waterfall-tick-mix-strength: 45%;
 }
 
 /* ── Rosé Pine Moon ── */
@@ -96,6 +101,10 @@ html[data-theme='rose-pine-moon'] {
   --color-warning-content: #232136;
   --color-error: #eb6f92;
   --color-error-content: #e0def4;
+  --waterfall-bar-opacity: 1;
+  --waterfall-bar-label-color: var(--color-base-200);
+  --waterfall-tick-mix-target: white;
+  --waterfall-tick-mix-strength: 45%;
 }
 
 /* ── Rosé Pine Dawn ── */
@@ -126,6 +135,12 @@ html[data-theme='rose-pine-dawn'] {
   --color-warning-content: #faf4ed;
   --color-error: #b4637a;
   --color-error-content: #faf4ed;
+  --waterfall-bar-opacity: 0.5;
+  --waterfall-bar-label-color: var(--color-base-content);
+  /* Ticks lighten the bar hue toward white, matching the dark themes'
+     "punched-out highlight" feel rather than an inked dip. */
+  --waterfall-tick-mix-target: white;
+  --waterfall-tick-mix-strength: 60%;
 }
 
 /* Rosé Pine text hierarchy utilities.
