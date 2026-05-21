@@ -14,6 +14,7 @@
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import MetricField from '@/components/metrics/Detail/MetricField.svelte'
+  import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
   import { getContext } from 'svelte'
   import type { SvelteSet } from 'svelte/reactivity'
   import {
@@ -51,10 +52,6 @@
   let capReached = $derived(
     !ctx.isHistogramKind && visibleKeys.size >= MAX_VISIBLE_TIMESERIES
   )
-  let visibleCount = $derived(
-    rows.filter((r) => visibleKeys.has(r.key)).length
-  )
-
   /** Attribute keys that differ across rows (stable regardless of checkbox). */
   let differingAttrKeys = $derived.by((): Set<string> | null => {
     if (rows.length < 2) return null
@@ -123,16 +120,10 @@
     {/if}
     <span class="ts-panel__title">Timeseries</span>
     <div class="ts-panel__header-end">
-      <span
-        class="ts-panel__count"
-        class:ts-panel__count--cap={capReached}
-      >
-        {visibleCount} / {rows.length} visible
-      </span>
       <button
         type="button"
         class="btn btn-ghost btn-xs ts-panel__uncheck-all"
-        disabled={visibleCount === 0}
+        disabled={visibleKeys.size === 0}
         onclick={() => ctx.clearAllTimeseriesVisible()}
       >
         Uncheck all
@@ -156,6 +147,11 @@
       {@const metricTs = timeseriesByKey.get(ts.key)}
       {@const expanded = ctx.expandedTimeseries.has(ts.key)}
       {@const isLast = i === rows.length - 1 && !capReached}
+      {@const sparklinePoints = ctx.sparklineByKey.get(ts.key) ?? []}
+      {@const sparklineColor =
+        checked && seriesColor ? seriesColor : chartNeutral()}
+      {@const sparklineSuppressed =
+        ctx.isHistogramKind || ctx.isUnspecifiedTemporality}
 
       {#if hasAttrs}
         <div class="ts-row-wrap">
@@ -192,9 +188,14 @@
                   <span class="detail-cell__value">{attr.value}</span>
                 </span>
               {/each}
+              {#if ts.badge}
+                <span class="ts-row__badge badge-count">{ts.badge}</span>
+              {/if}
             </div>
-            {#if ts.badge}
-              <span class="ts-row__badge badge-count">{ts.badge}</span>
+            {#if sparklineSuppressed}
+              <span class="ts-row__sparkline-placeholder" aria-hidden="true"></span>
+            {:else}
+              <Sparkline points={sparklinePoints} color={sparklineColor} />
             {/if}
           {/snippet}
 
@@ -236,9 +237,16 @@
                 toggle(ts.key, (e.currentTarget as HTMLInputElement).checked)}
             />
           </label>
-          <span class="ts-row__default-label">default series</span>
-          {#if ts.badge}
-            <span class="ts-row__badge badge-count">{ts.badge}</span>
+          <span class="ts-row__label-group">
+            <span class="ts-row__default-label">default series</span>
+            {#if ts.badge}
+              <span class="ts-row__badge badge-count">{ts.badge}</span>
+            {/if}
+          </span>
+          {#if sparklineSuppressed}
+            <span class="ts-row__sparkline-placeholder" aria-hidden="true"></span>
+          {:else}
+            <Sparkline points={sparklinePoints} color={sparklineColor} />
           {/if}
         </div>
         {#if !isLast}
@@ -279,20 +287,11 @@
   }
 
   .ts-panel__header-end {
-    @apply flex shrink-0 items-center gap-2;
-  }
-
-  .ts-panel__count {
-    @apply shrink-0 text-sm tabular-nums;
-    color: var(--color-subtle);
+    @apply flex min-w-0 shrink-0 items-center gap-3;
   }
 
   .ts-panel__uncheck-all {
     @apply shrink-0;
-  }
-
-  .ts-panel__count--cap {
-    @apply font-semibold text-warning;
   }
 
   .ts-panel__list {
@@ -307,12 +306,12 @@
     @apply flex min-h-[var(--table-row-h)] items-center gap-2 border-b border-base-300/30 text-sm;
   }
 
-  .ts-row--plain .ts-row__default-label {
-    @apply min-w-0 flex-1;
+  .ts-row__label-group {
+    @apply flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5;
   }
 
-  .ts-row--plain .ts-row__badge {
-    @apply ml-auto shrink-0;
+  .ts-row--plain .ts-row__default-label {
+    @apply min-w-0;
   }
 
   .ts-row--plain.ts-row--last {
@@ -354,6 +353,18 @@
 
   .ts-row__badge {
     @apply shrink-0;
+  }
+
+  /* Placeholder slot for rows where we can't (or shouldn't) draw a
+     sparkline -- histograms (need sparkbars), or unspecified
+     temporality (we don't know whether to plot raw or deltas).
+     Matches the Sparkline default dimensions (128 × 18) so row
+     composition stays consistent with gauge/sum rows. */
+  .ts-row__sparkline-placeholder {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 128px;
+    height: 18px;
   }
 
   .ts-fields-empty {

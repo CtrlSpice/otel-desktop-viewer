@@ -87,6 +87,10 @@
     /** Optional single timestamp (ms) on its own line below the title
      *  or tab strip (e.g. log record time). */
     timestampMs?: number
+    /** Optional right-aligned controls on the second header row (below
+     *  the title). Renders beside `timeRange` / `timestampMs` when
+     *  those are set, or alone on that row when they are not. */
+    metaRight?: Snippet
   }
 
   type TitleProps = CommonProps & {
@@ -135,21 +139,28 @@
   )
   let tabSizeClass = $derived(props.rounded !== false ? 'tabs-sm' : '')
   let stackedClass = $derived(
-    props.timeRange !== undefined || props.timestampMs !== undefined
+    props.timeRange !== undefined ||
+      props.timestampMs !== undefined ||
+      props.metaRight !== undefined
       ? 'pane-header--stacked'
       : ''
   )
 </script>
 
 {#snippet metaRow()}
-  <div class="pane-header__time-range">
-    {#if props.timeRange}
-      <ChartTimeRangeHeader
-        startMs={props.timeRange.startMs}
-        endMs={props.timeRange.endMs}
-      />
-    {:else if props.timestampMs !== undefined}
-      <PaneTimestampHeader timestampMs={props.timestampMs} />
+  <div class="pane-header__meta-row">
+    <div class="pane-header__time-range">
+      {#if props.timeRange}
+        <ChartTimeRangeHeader
+          startMs={props.timeRange.startMs}
+          endMs={props.timeRange.endMs}
+        />
+      {:else if props.timestampMs !== undefined}
+        <PaneTimestampHeader timestampMs={props.timestampMs} />
+      {/if}
+    </div>
+    {#if props.metaRight}
+      <div class="pane-header__meta-right">{@render props.metaRight()}</div>
     {/if}
   </div>
 {/snippet}
@@ -237,7 +248,7 @@
       <div class="pane-header__right">{@render props.right()}</div>
     {/if}
     </div>
-    {#if props.timeRange !== undefined || props.timestampMs !== undefined}
+    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
       {@render metaRow()}
     {/if}
   </div>
@@ -255,7 +266,7 @@
         <div class="pane-header__right">{@render props.right()}</div>
       {/if}
     </div>
-    {#if props.timeRange !== undefined || props.timestampMs !== undefined}
+    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
       {@render metaRow()}
     {/if}
   </div>
@@ -291,7 +302,7 @@
         <div class="pane-header__right">{@render props.right()}</div>
       {/if}
     </div>
-    {#if props.timeRange !== undefined || props.timestampMs !== undefined}
+    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
       {@render metaRow()}
     {/if}
   </div>
@@ -350,8 +361,16 @@
     @apply min-w-0 flex-1;
   }
 
+  .pane-header__meta-row {
+    @apply flex w-full min-w-0 items-center justify-between gap-2 pb-1.5;
+  }
+
   .pane-header__time-range {
-    @apply w-full pb-1.5 text-xs;
+    @apply min-w-0 flex-1 text-xs;
+  }
+
+  .pane-header__meta-right {
+    @apply ml-auto flex shrink-0 items-center gap-2;
   }
 
   .pane-header--toolbar {
@@ -409,7 +428,7 @@
   }
 
   .pane-header__right {
-    @apply ml-auto flex shrink-0 items-center gap-2 px-1;
+    @apply ml-auto flex shrink-0 items-center gap-2;
   }
 
   /* flex-1 + width:0 lets this shrink inside the header. Scroll

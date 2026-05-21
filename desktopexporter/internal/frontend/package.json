@@ -44,6 +44,7 @@
     "@types/d3-interpolate": "^3.0.4",
     "@types/d3-scale": "^4.0.9",
     "@types/d3-scale-chromatic": "^3.1.0",
+    "@types/d3-shape": "^3.1.8",
     "@types/node": "^24.3.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",

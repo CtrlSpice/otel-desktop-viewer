@@ -43,15 +43,47 @@ import {
   ErrCodeHistogramBoundsMismatch,
 } from '@/services/telemetry-service'
 import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
-import type { LegendTimeseries } from '@/types/metric-chart-types'
-import { categoricalPalette } from '@/utils/chart-palette'
+import {
+  AGG_KEY_ALL,
+  AGG_KEY_SELECTED,
+  AGG_KEY_TOTAL,
+  aggregateRate,
+  aggregateRaw,
+  aggregateSelectedAndAll,
+  availableAggregationViews,
+  defaultAggregationViewFor,
+  isCumulativeTemporality,
+  overlayAverage,
+  overlayMax,
+  overlayMin,
+  overlayTotal,
+  type AggregateLineKey,
+  type AggregateResult,
+  type AggregationView,
+  type ResetIndicesByKey,
+  type SumOverlay,
+} from '@/components/metrics/utils/aggregation'
+import type {
+  ChartPoint,
+  ChartTimeseries,
+  LegendTimeseries,
+} from '@/types/metric-chart-types'
+import {
+  AGG_COLOR_ALL,
+  AGG_COLOR_SELECTED,
+  categoricalPalette,
+} from '@/utils/chart-palette'
 import { metricTypeStem } from '@/components/metrics/utils/metric-type'
 import { themeSignal } from '@/state/theme.svelte'
 import {
   DEFAULT_VISIBLE_TIMESERIES,
   MAX_VISIBLE_TIMESERIES,
+  loadPersistedAggregationView,
+  loadPersistedShowAllSeriesAggregate,
   reconcileTimeseriesVisible,
   resolveTimeseriesVisible,
+  savePersistedAggregationView,
+  savePersistedShowAllSeriesAggregate,
   savePersistedTimeseriesVisible,
   visibleKeyListsEqual,
 } from '@/components/metrics/utils/metric-timeseries-visible'
@@ -174,6 +206,42 @@ export interface MetricViewContext {
   readonly gaugeSumLegendTimeseries: LegendTimeseries[]
   readonly gaugeSumVisible: SvelteSet<string>
   readonly highlightedTimestamp: bigint | null
+  /** Attributes key of the timeseries owning `selectedDatapoint`, or
+   *  `null` when nothing is selected. Used by the chart to draw the
+   *  selection dot in the right series's color. */
+  readonly selectedSeriesKey: string | null
+
+  // -- Sum-view wiring (Sum metrics only; Gauge ignores these) --
+  /** Current view selection: 'raw' | 'sum' | 'avg' | 'rate'. */
+  readonly aggregationView: AggregationView
+  /** Which view options the dropdown should offer (varies by metric
+   *  type, temporality, monotonicity, and series count). Always
+   *  contains at least 'raw'. */
+  readonly availableAggregationViews: AggregationView[]
+  /** Post-view series the chart actually plots. Raw mode: per-series
+   *  visibility-filtered lines. Aggregated modes: raw lines plus up to
+   *  two cross-timeseries lines (Selected, All). */
+  readonly transformedGaugeSumChartTimeseries: ChartTimeseries[]
+  /** Which aggregate line keys are present (for legend rendering).
+   *  Empty when aggregationView === 'raw'. */
+  readonly aggregatePresentKeys: AggregateLineKey[]
+  /** Whether the optional all-series aggregate line is shown. */
+  readonly showAllSeriesAggregate: boolean
+  /** Show the all-series aggregate toggle in the chart header. */
+  readonly showAllSeriesAggregateToggleVisible: boolean
+  /** Reset markers per series, indexed into the transformed (visible)
+   * series' output points. Only populated in raw mode. */
+  readonly sumResetIndicesByKey: ResetIndicesByKey
+  /** Toggled set of horizontal reference-line overlays. */
+  readonly sumOverlays: SvelteSet<SumOverlay>
+  /** Overlay y-values. Only populated in raw mode; aggregated views
+   *  tell the story directly via the aggregate lines. */
+  readonly sumOverlayValues: Record<
+    SumOverlay,
+    { visible: number | undefined; all: number | undefined }
+  >
+  /** Overlays the UI should render pills for. Empty on aggregated views. */
+  readonly availableSumOverlays: SumOverlay[]
 
   // -- Histogram chart wiring --
   readonly histogramLegendTimeseries: LegendTimeseries[]
@@ -202,11 +270,21 @@ export interface MetricViewContext {
   /** Stem-rotated 10-colour pool (`pool[0]` = metric-type stem). */
   readonly timeseriesChartColors: string[]
   readonly legendFilterActive: boolean
+  /** Per-row sparkline points, keyed by `attributesKey`. Reflects the
+   *  current AggregationView (rate vs raw bucketing). Covers every
+   *  candidate series, not just visible ones — unchecked rows still
+   *  need a shape so users can spot offenders they haven't checked.
+   *  Empty for histogram metrics (placeholder slot in the panel). */
+  readonly sparklineByKey: ReadonlyMap<string, readonly ChartPoint[]>
 
   // -- Methods --
   /** Toggle per-timeseries expansion (TimeseriesPanel chevron). */
   toggleTimeseriesExpanded(key: string): void
   setActiveHistogramTab(tab: HistogramTab): void
+  setAggregationView(next: AggregationView): void
+  setShowAllSeriesAggregate(next: boolean): void
+  /** Toggle a Sum overlay (min / max / avg / total) on or off. */
+  toggleSumOverlay(overlay: SumOverlay): void
   /** Replace the visible-set for the Gauge/Sum legend. The legend
    * keeps a `bind:visibleKeys` model; we expose a setter so the
    * sole writer is still us. */
@@ -243,6 +321,16 @@ export function createMetricViewContext(
     gaugeSumVisible: new SvelteSet<string>(),
     histogramVisible: new SvelteSet<string>(),
     timeseriesColorByKey: new Map<string, string>() as TimeseriesColorByKey,
+    // Aggregation-view state. `aggregationView` defaults to 'raw' (Gauge metrics never
+    // touch this); the per-metric reset effect re-derives the smart
+    // default from (temporality, isMonotonic) when the user navigates
+    // between metrics. `sumOverlays` is the toggled set of horizontal
+    // reference lines (min / max / avg / total). Both are intentionally
+    // chart-scoped: when histograms grow their own overlays we'll add
+    // `histogramOverlays` next to this, not generalize prematurely.
+    aggregationView: 'raw' as AggregationView,
+    showAllSeriesAggregate: false,
+    sumOverlays: new SvelteSet<SumOverlay>(),
   })
 
   /** Histogram visibility is seeded once per stream id (bucket fetch). */
@@ -338,6 +426,213 @@ export function createMetricViewContext(
     }))
   })
 
+  // -- Sum view transformations --
+  //
+  // Two modes:
+  //   - Raw (aggregationView === 'raw'): per-series lines, visibility-filtered.
+  //     Same as before; the chart gets N lines for the checked series.
+  //   - Aggregated (sum/avg/rate): up to 2 cross-timeseries aggregate
+  //     lines (Selected, All) via aggregateSelectedAndAll(). Collapse
+  //     rules: selected empty → one "All" line; selected covers all →
+  //     one "Total" line; otherwise 2.
+
+  const SUM_AUTO_BUCKET_COUNT_CAP = 120
+
+  /** Shared bucket count for rate-view raw lines AND cross-series
+   *  aggregates so their staircases align.
+   *
+   *  Mirrors `combinePool`'s formula: target ≈ allPoints / poolSize
+   *  (= average points per series), capped at the chart-resolution
+   *  cap. When per-series `aggregateRate` and pooled aggregate both
+   *  receive this as `bucketCount`, they end up with the same N
+   *  buckets over (effectively) the same time span — the visible
+   *  series all share the metric's scrape cadence in practice.
+   *
+   *  Only meaningful when aggregationView is aggregated; raw view ignores
+   *  bucketCount entirely. */
+  const sharedBucketCount = $derived.by((): number => {
+    const all = gaugeSumGroups.chartTimeseries
+    if (all.length === 0) return SUM_AUTO_BUCKET_COUNT_CAP
+    let total = 0
+    for (const s of all) total += s.points.length
+    if (total === 0) return SUM_AUTO_BUCKET_COUNT_CAP
+    const target = Math.ceil(total / Math.max(all.length, 1))
+    return Math.min(SUM_AUTO_BUCKET_COUNT_CAP, Math.max(1, target))
+  })
+
+  /** Per-series lines for the visibility-filtered set.
+   *
+   *  - In Raw / Sum / Avg views: pass through unchanged. The raw
+   *    cumulative climb (or untouched gauge sample) is what the user
+   *    wants alongside the cross-series aggregate.
+   *  - In Rate view: convert each visible series into its own
+   *    per-series rate (Prometheus's `rate()` for one series).
+   *    Otherwise the cumulative raw lines dwarf the aggregate-rate
+   *    lines and the rate looks flat. Per-series rate keeps every
+   *    line in the same units (events/sec) so the y-axis fits
+   *    naturally and you can see *which* series is contributing to
+   *    the aggregate rate. Bucket count is shared with the
+   *    aggregate so step boundaries line up. */
+  const rawTransformed = $derived.by(() => {
+    const all = gaugeSumGroups.chartTimeseries
+    if (all.length === 0) return { series: [] as ChartTimeseries[], resets: new Map() as ResetIndicesByKey }
+    const visible = all.filter(s => view.gaugeSumVisible.has(s.key))
+    const cumulative = metricType === 'Sum' && isCumulativeTemporality(temporality)
+    if (view.aggregationView === 'rate') {
+      return aggregateRate(visible, { cumulative, bucketCount: sharedBucketCount })
+    }
+    return aggregateRaw(visible, { cumulative, bucketCount: SUM_AUTO_BUCKET_COUNT_CAP })
+  })
+
+  /** Per-series points for the row-level sparkline in TimeseriesPanel,
+   *  keyed by attributesKey.
+   *
+   *  Runs over EVERY candidate series (not just visible) so unchecked
+   *  rows still get a shape to scan — the whole point of sparklines is
+   *  to surface the offender you haven't checked yet.
+   *
+   *  Transform follows the current aggregationView:
+   *    - 'rate'                  → per-series rate (matches the main
+   *                                chart's per-series rate transform).
+   *    - 'raw' / 'sum' / 'avg'   → bucketed raw values. Sum/Avg are
+   *                                cross-series aggregations that
+   *                                don't apply per row, so a row's
+   *                                own sparkline stays in raw units.
+   *
+   *  Histogram metrics return an empty map — TimeseriesPanel renders
+   *  a placeholder slot for histogram rows until per-series sparkbar
+   *  data is wired up. */
+  const sparklineByKey = $derived.by((): ReadonlyMap<string, readonly ChartPoint[]> => {
+    if (isHistogramKind) return new Map()
+    // Unspecified temporality means we can't tell whether the values
+    // are running totals or per-interval counts -- the same numbers
+    // mean two very different lines depending on which it is. The
+    // main chart blanks itself + shows UnspecifiedTemporalityCallout
+    // for the same reason; sparklines should follow that lead rather
+    // than guessing.
+    if (isUnspecifiedTemporality) return new Map()
+    const all = gaugeSumGroups.chartTimeseries
+    if (all.length === 0) return new Map()
+    const cumulative = metricType === 'Sum' && isCumulativeTemporality(temporality)
+    const transformed =
+      view.aggregationView === 'rate'
+        ? aggregateRate(all, { cumulative, bucketCount: sharedBucketCount })
+        : aggregateRaw(all, { cumulative, bucketCount: SUM_AUTO_BUCKET_COUNT_CAP })
+    const out = new Map<string, readonly ChartPoint[]>()
+    for (const s of transformed.series) out.set(s.key, s.points)
+    return out
+  })
+
+  /** Aggregated mode: Selected + All cross-timeseries lines. */
+  const aggregatedTransformed = $derived.by((): AggregateResult => {
+    const all = gaugeSumGroups.chartTimeseries
+    if (all.length === 0) return { lines: [], presentKeys: [] }
+    const selected = all.filter(s => view.gaugeSumVisible.has(s.key))
+    const v = view.aggregationView as 'sum' | 'avg' | 'rate'
+    const opts = {
+      cumulative: metricType === 'Sum' && isCumulativeTemporality(temporality),
+      bucketCount: sharedBucketCount,
+    }
+    return aggregateSelectedAndAll(selected, all, v, opts)
+  })
+
+  /** Which aggregate line keys are present (for legend + color slots).
+   *  Suppressed when N=1 because the "All series" aggregate would just
+   *  be a duplicate of the single raw line. With 0–1 checked, omit
+   *  Selected — only All (or Total when every series is checked).
+   *  All is omitted unless the user has toggled it on. */
+  const aggregatePresentKeys = $derived.by((): AggregateLineKey[] => {
+    if (view.aggregationView === 'raw') return []
+    if (gaugeSumGroups.keys.length < 2) return []
+    let keys = aggregatedTransformed.presentKeys
+    if (rawTransformed.series.length < 2) {
+      keys = keys.filter(k => k !== AGG_KEY_SELECTED)
+    }
+    if (!view.showAllSeriesAggregate) {
+      keys = keys.filter(k => k !== AGG_KEY_ALL)
+    }
+    return keys
+  })
+
+  /** Show the optional all-series aggregate toggle in the chart header. */
+  const showAllSeriesAggregateToggleVisible = $derived.by((): boolean => {
+    if (view.aggregationView === 'raw') return false
+    if (gaugeSumGroups.keys.length < 2) return false
+    const all = gaugeSumGroups.chartTimeseries
+    if (all.length === 0) return false
+    const selectedCount = all.filter(s => view.gaugeSumVisible.has(s.key)).length
+    // All series checked → aggregate collapses to Total; nothing extra
+    // to toggle.
+    return selectedCount !== all.length
+  })
+
+  /** Final post-view series the chart actually plots.
+   *
+   *  - Raw mode: per-series visibility-filtered lines.
+   *  - Aggregated + fewer than 2 timeseries on the metric: raw only
+   *    (aggregate menu options are hidden anyway).
+   *  - Aggregated + 0–1 checked: checked raw lines + All (or Total
+   *    when all are checked). No Selected aggregate — it duplicates
+   *    the lone raw line. Check a second series to add Selected.
+   *  - Aggregated + 2+ checked: raw lines + Selected; All only when
+   *    toggled on via showAllSeriesAggregate.
+   *
+   *  Raw lines are placed first so aggregates draw on top in the
+   *  chart's natural render order. */
+  const transformedGaugeSumChartTimeseries = $derived.by((): ChartTimeseries[] => {
+    if (view.aggregationView === 'raw') return rawTransformed.series
+    if (gaugeSumGroups.keys.length < 2) return rawTransformed.series
+    const selectedCount = rawTransformed.series.length
+    let aggLines = aggregatedTransformed.lines
+    if (selectedCount < 2) {
+      aggLines = aggLines.filter(l => l.key !== AGG_KEY_SELECTED)
+    }
+    if (!view.showAllSeriesAggregate) {
+      aggLines = aggLines.filter(l => l.key !== AGG_KEY_ALL)
+    }
+    return [...rawTransformed.series, ...aggLines]
+  })
+
+  /** Reset markers — only relevant in raw mode. */
+  const sumResetIndicesByKey = $derived.by((): ResetIndicesByKey => {
+    if (view.aggregationView !== 'raw') return new Map()
+    return rawTransformed.resets
+  })
+
+  /** Overlay values — only relevant in raw mode; aggregated views
+   *  tell the story directly via Selected/Other/All lines. */
+  type OverlayPair = { visible: number | undefined; all: number | undefined }
+  const sumOverlayValues = $derived.by((): Record<SumOverlay, OverlayPair> => {
+    if (view.aggregationView !== 'raw') {
+      const empty = { visible: undefined, all: undefined }
+      return { min: empty, max: empty, avg: empty, total: empty }
+    }
+    const v = rawTransformed.series
+    return {
+      min: { visible: overlayMin(v), all: undefined },
+      max: { visible: overlayMax(v), all: undefined },
+      avg: { visible: overlayAverage(v), all: undefined },
+      total: { visible: overlayTotal(v), all: undefined },
+    }
+  })
+
+  const availableSumOverlays = $derived.by((): SumOverlay[] => {
+    if (view.aggregationView !== 'raw') return []
+    return ['min', 'max', 'avg', 'total']
+  })
+
+  /** Which AggregationView options the dropdown should offer. Driven by metric
+   *  type + shape + series count. See availableAggregationViews() in
+   *  aggregation.ts for the rules. */
+  const availableAggregationViewsList = $derived.by((): AggregationView[] => {
+    return availableAggregationViews(
+      metricType,
+      temporality,
+      isMonotonic,
+      gaugeSumGroups.keys.length
+    )
+  })
+
   // -- Selection-derived values --
   const selectedDatapoint = $derived.by((): DataPoint | undefined => {
     const m = getMetric()
@@ -352,6 +647,22 @@ export function createMetricViewContext(
     const dp = selectedDatapoint
     if (dp && (dp.metricType === 'Gauge' || dp.metricType === 'Sum')) {
       return dp.timestamp
+    }
+    return null
+  })
+
+  /** Attributes key of the timeseries that owns `selectedDatapoint`, or
+   *  `null` when nothing is selected. The chart uses this to draw a
+   *  colored dot on the selection rule at the selected series's value,
+   *  and to flag which row in the mini-legend is "the one you picked"
+   *  vs. aggregates shown alongside for comparison. */
+  const selectedSeriesKey = $derived.by((): string | null => {
+    const id = view.selectedDatapointId
+    if (id === null) return null
+    const m = getMetric()
+    if (!m) return null
+    for (const ts of m.timeseries) {
+      if (ts.datapoints.some((dp) => dp.id === id)) return ts.attributesKey
     }
     return null
   })
@@ -595,12 +906,32 @@ export function createMetricViewContext(
   $effect(() => {
     const m = getMetric()
     const streamId = m?.id
-    void streamId
 
     view.selectedDatapointId = null
     view.expandedDatapoints.clear()
     view.expandedTimeseries.clear()
     view.activeHistogramTab = 'heatmap'
+
+    // Sum view + overlays reset per metric. Persisted choice wins when
+    // it's still allowed for this metric's current shape; otherwise we
+    // fall back to the smart default (cumulative Sum → Rate, else Raw).
+    // Gauge metrics never read aggregationView, so the value here is don't-care
+    // for them; the menu component checks metricType before rendering.
+    const persistedAggregationView = streamId
+      ? loadPersistedAggregationView(streamId, availableAggregationViewsList)
+      : null
+    view.aggregationView =
+      persistedAggregationView ??
+      defaultAggregationViewFor(
+        metricType,
+        temporality,
+        isMonotonic,
+        gaugeSumGroups.keys.length
+      )
+    view.sumOverlays.clear()
+    view.showAllSeriesAggregate = streamId
+      ? loadPersistedShowAllSeriesAggregate(streamId)
+      : false
 
     const gsKeys = gaugeSumGroups.keys
     const gsVisible = new SvelteSet(
@@ -698,6 +1029,49 @@ export function createMetricViewContext(
     }
   })
 
+  // (2c) Auto-clear selection when its owning timeseries goes hidden.
+  //
+  // The datapoints panel scopes what's shown by the visible set, so a
+  // selectedDatapointId pointing at a hidden timeseries becomes an
+  // orphan: invisible in the list, but still wired up to chart markers,
+  // detail pane, etc. Snap it to null whenever its timeseries is no
+  // longer in the active visibility filter (gaugeSumVisible for
+  // Gauge/Sum, histogramVisible for histograms). Works for all four
+  // metric kinds because the only thing that varies is which set we
+  // consult.
+  $effect(() => {
+    const id = view.selectedDatapointId
+    if (id === null) return
+
+    const m = getMetric()
+    if (!m) return
+
+    let ownerKey: string | null = null
+    for (const ts of m.timeseries) {
+      if (ts.datapoints.some((dp) => dp.id === id)) {
+        ownerKey = ts.attributesKey
+        break
+      }
+    }
+    if (ownerKey === null) {
+      // Stale id (data refresh dropped the datapoint). Clear so the
+      // detail pane doesn't render against ghost data.
+      view.selectedDatapointId = null
+      return
+    }
+
+    const visible =
+      metricType === 'Gauge' || metricType === 'Sum'
+        ? view.gaugeSumVisible
+        : isHistogramKind
+          ? view.histogramVisible
+          : null
+    if (visible === null) return
+    if (!visible.has(ownerKey)) {
+      view.selectedDatapointId = null
+    }
+  })
+
   // (3) Bucket-series fetch. Per-attribute (full breakdown for the
   // heatmap legend) AND merged single-bucket (for the Aggregated tab)
   // are issued in parallel because they share the same window but
@@ -759,6 +1133,29 @@ export function createMetricViewContext(
     }
   })
 
+  // (4) Coerce the current AggregationView back to the smart default when it
+  // leaves the available set. Triggers on series-count changes (e.g.
+  // polling drops the metric from N=5 to N=1, hiding Sum/Avg) and on
+  // shape changes (rare, but defensible). Reads availableAggregationViewsList
+  // reactively; only writes when there's a real mismatch so we don't
+  // fight the user's choice.
+  $effect(() => {
+    const allowed = availableAggregationViewsList
+    if (allowed.includes(view.aggregationView)) return
+    const next = defaultAggregationViewFor(
+      metricType,
+      temporality,
+      isMonotonic,
+      gaugeSumGroups.keys.length
+    )
+    view.aggregationView = next
+    // Persist the coerced value too: otherwise localStorage keeps the
+    // stale (now-invalid) choice and we re-coerce on every load until
+    // the user touches the menu.
+    const streamId = getMetric()?.id
+    if (streamId) savePersistedAggregationView(streamId, next)
+  })
+
   // -- Methods --
   function toggleTimeseriesExpanded(key: string) {
     if (view.expandedTimeseries.has(key)) {
@@ -770,6 +1167,26 @@ export function createMetricViewContext(
 
   function setActiveHistogramTab(tab: HistogramTab) {
     view.activeHistogramTab = tab
+  }
+
+  function setAggregationView(next: AggregationView) {
+    view.aggregationView = next
+    const streamId = getMetric()?.id
+    if (streamId) savePersistedAggregationView(streamId, next)
+  }
+
+  function setShowAllSeriesAggregate(next: boolean) {
+    view.showAllSeriesAggregate = next
+    const streamId = getMetric()?.id
+    if (streamId) savePersistedShowAllSeriesAggregate(streamId, next)
+  }
+
+  function toggleSumOverlay(overlay: SumOverlay) {
+    if (view.sumOverlays.has(overlay)) {
+      view.sumOverlays.delete(overlay)
+    } else {
+      view.sumOverlays.add(overlay)
+    }
   }
 
   function setGaugeSumVisible(next: SvelteSet<string>) {
@@ -918,6 +1335,40 @@ export function createMetricViewContext(
     get highlightedTimestamp() {
       return highlightedTimestamp
     },
+    get selectedSeriesKey() {
+      return selectedSeriesKey
+    },
+
+    get aggregationView() {
+      return view.aggregationView
+    },
+    get availableAggregationViews() {
+      return availableAggregationViewsList
+    },
+    get transformedGaugeSumChartTimeseries() {
+      return transformedGaugeSumChartTimeseries
+    },
+    get aggregatePresentKeys() {
+      return aggregatePresentKeys
+    },
+    get showAllSeriesAggregate() {
+      return view.showAllSeriesAggregate
+    },
+    get showAllSeriesAggregateToggleVisible() {
+      return showAllSeriesAggregateToggleVisible
+    },
+    get sumResetIndicesByKey() {
+      return sumResetIndicesByKey
+    },
+    get sumOverlays() {
+      return view.sumOverlays
+    },
+    get sumOverlayValues() {
+      return sumOverlayValues
+    },
+    get availableSumOverlays() {
+      return availableSumOverlays
+    },
 
     get histogramLegendTimeseries() {
       return histogramLegendTimeseries
@@ -957,7 +1408,12 @@ export function createMetricViewContext(
       return filteredTimeseries
     },
     get timeseriesColorByKey() {
-      return view.timeseriesColorByKey
+      if (view.aggregationView === 'raw') return view.timeseriesColorByKey
+      const merged = new Map(view.timeseriesColorByKey)
+      merged.set(AGG_KEY_SELECTED, AGG_COLOR_SELECTED)
+      merged.set(AGG_KEY_ALL, AGG_COLOR_ALL)
+      merged.set(AGG_KEY_TOTAL, AGG_COLOR_SELECTED)
+      return merged
     },
     get timeseriesChartColors() {
       return timeseriesChartColors
@@ -965,9 +1421,15 @@ export function createMetricViewContext(
     get legendFilterActive() {
       return legendFilterActive
     },
+    get sparklineByKey() {
+      return sparklineByKey
+    },
 
     toggleTimeseriesExpanded,
     setActiveHistogramTab,
+    setAggregationView,
+    setShowAllSeriesAggregate,
+    toggleSumOverlay,
     setGaugeSumVisible,
     setHistogramVisible,
     toggleTimeseriesVisible,

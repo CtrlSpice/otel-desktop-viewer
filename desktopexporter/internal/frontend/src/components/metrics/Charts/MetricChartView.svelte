@@ -185,12 +185,27 @@
       class="metric-chart-view__plot-host"
       bind:clientHeight={plotHostHeight}
     >
+      <!-- transformedGaugeSumChartTimeseries is the post-view, already
+           visibility-filtered set: the context applies the current
+           AggregationView (Raw / Sum / Avg / Rate) and bucketing, then drops
+           the timeseries the user has unchecked in the legend. The
+           chart trusts this array and renders every entry; the parent
+           also resolves the empty-state copy here, since only the
+           parent can distinguish "no series at all" from "all
+           unchecked" (the chart only sees the post-filter slice). -->
       <MetricTimeSeriesChart
-        timeseries={ctx.gaugeSumChartTimeseries}
-        visibleKeys={ctx.gaugeSumVisible}
+        timeseries={ctx.transformedGaugeSumChartTimeseries}
         highlightedTimestamp={ctx.highlightedTimestamp}
+        selectedSeriesKey={ctx.selectedSeriesKey}
         unit={ctx.metric!.unit}
         height={plotHeight}
+        colorByKey={ctx.timeseriesColorByKey}
+        aggregationView={ctx.aggregationView}
+        emptyMessage={ctx.gaugeSumChartTimeseries.length === 0
+          ? 'No datapoints to chart'
+          : ctx.gaugeSumVisible.size === 0
+            ? 'Nothing to see here — select a timeseries below'
+            : 'No datapoints in selected timeseries'}
       />
     </div>
   </div>

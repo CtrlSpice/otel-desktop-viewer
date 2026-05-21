@@ -1,5 +1,6 @@
 <script module lang="ts">
   import { formatChartAxisTime } from '@/components/metrics/utils/chart-time-axis'
+  import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
   import type { Timezone } from '@/utils/time'
 
   const rotatedX = { rotate: 315, textAnchor: 'end' } as const
@@ -28,7 +29,12 @@
     return {
       label: label.trim() || 'value',
       rule: true as const,
-      format: 'metric' as const,
+      // Custom formatter: SI prefixes at BOTH ends of the range (k/M
+      // for big numbers, m/µ/n for small). LayerChart's built-in
+      // 'metric' style only handles the big end and renders sub-unit
+      // values as '0' or scientific notation, which is unhelpful for
+      // a debugging tool that surfaces things like 0.0004 errors/sec.
+      format: (value: number) => formatMetricValue(value),
     }
   }
 

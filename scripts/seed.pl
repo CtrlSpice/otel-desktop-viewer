@@ -100,6 +100,59 @@ sub _scenarios {
             }));
         },
 
+        # ----- Gauge: multi-series CPU utilisation, 8 cores on one host,
+        #       last 4h, 30s step. Each core gets its own diurnal phase
+        #       offset and noise draw so they wobble independently; two
+        #       cores carry a heavier baseline (think "pinned worker
+        #       threads") and one gets a mid-window incident bump. Good
+        #       for exercising per-series toggles + the All / Selected
+        #       aggregate lines on a Gauge. -----
+        sub {
+            my $duration = 4 * 3600;
+            my $step     = 30;
+            my @cores;
+            for my $i (0 .. 7) {
+                # Heavier baseline on cores 0-1 (the "pinned" pair),
+                # lighter idle baseline on the rest.
+                my $base = ($i < 2) ? 0.55 : 0.30;
+                my @parts = (
+                    constant($base),
+                    diurnal({
+                        amplitude => 0.12,
+                        period_s  => 86400,
+                        # Spread phases so cores don't all peak together.
+                        phase_s   => -2 * 3600 + $i * 600,
+                    }),
+                );
+                # One core takes a mid-window load spike.
+                if ($i == 3) {
+                    push @parts, incident({
+                        baseline   => 0,
+                        peak       => 0.35,
+                        start_s    => 5400,
+                        ramp_s     => 90,
+                        hold_s     => 600,
+                        recovery_s => 900,
+                    });
+                }
+                my $shape = clamp(noisy(compose(@parts), 0.08, $rng), 0, 1);
+                my @pts = _absolute($now_s, $duration, sample($shape, 0, $duration, $step));
+                push @cores, {
+                    attributes => [
+                        attr('host.name', 'worker-01'),
+                        attr('cpu.core',  "core-$i"),
+                    ],
+                    points => \@pts,
+                };
+            }
+            return ('worker-pool', gauge_metric_streams({
+                name        => 'system.cpu.utilization.per_core',
+                unit        => '1',
+                description => 'Per-core CPU utilisation on worker-01',
+                step_s      => $step,
+            }, \@cores));
+        },
+
         # ----- Gauge: memory creep + small noise, last 6h -----
         sub {
             my $duration = 6 * 3600;

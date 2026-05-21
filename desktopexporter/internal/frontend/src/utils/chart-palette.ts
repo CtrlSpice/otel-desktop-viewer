@@ -199,6 +199,10 @@ export function chartNeutral(): string {
   return 'var(--color-neutral)'
 }
 
+/** Aggregate line colours: Checked → primary, All → secondary. */
+export const AGG_COLOR_SELECTED = 'var(--color-primary)'
+export const AGG_COLOR_ALL = 'var(--color-secondary)'
+
 // On-swatch glyph colour (checkbox tick, etc.) for a categorical-palette
 // entry. The legend swatches use the same colours as the chart lines, which
 // span pine through gold/foam (light) through rose toward iris -- some are

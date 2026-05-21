@@ -215,11 +215,31 @@ html[data-theme='rose-pine-dawn'] {
   opacity: 0.85;
 }
 
-.metric-chart-view :where(.highlight-label) {
-  fill: var(--color-primary);
-  font-size: 10px;
-  font-weight: 600;
+/* Selection dot halo: surface-colored ring drawn underneath the
+   colored dot so it stays readable against overlapping series. Larger
+   ring on the user-selected series so the eye finds it first when
+   multiple aggregates also drop dots. */
+.metric-chart-view :where(.selection-dot-halo) {
+  fill: var(--color-surface-100, white);
+  stroke: var(--color-surface-100, white);
+  stroke-width: 1;
   pointer-events: none;
+}
+
+.metric-chart-view :where(.selection-dot-halo--selected) {
+  stroke: var(--color-primary);
+  stroke-width: 1.5;
+}
+
+.metric-chart-view :where(.selection-dot) {
+  pointer-events: none;
+}
+
+.metric-chart-view :where(.selection-dot--selected) {
+  /* Slightly heavier outline so the user-picked series reads as
+     "the one" amongst the aggregate dots. */
+  stroke: var(--color-surface-100, white);
+  stroke-width: 1.5;
 }
 
 .metric-chart-view :where(.quantile-line) {
@@ -234,6 +254,19 @@ html[data-theme='rose-pine-dawn'] {
   font-size: 0.75rem;
   font-weight: 600;
   pointer-events: none;
+}
+
+/* Pinned selection legend (ChartSelectionLegend): Pine/Moon use RP base
+   (--color-base-100); Dawn uses RP overlay (--color-base-300) so the
+   card reads as an elevated panel on the lighter chart surface. */
+.metric-chart-view :where(.chart-selection-legend) {
+  background-color: var(--color-base-100);
+}
+
+html[data-theme='rose-pine-dawn']
+  .metric-chart-view
+  :where(.chart-selection-legend) {
+  background-color: var(--color-base-300);
 }
 
 @layer base {

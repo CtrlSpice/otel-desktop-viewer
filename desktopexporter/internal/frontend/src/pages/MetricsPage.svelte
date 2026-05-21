@@ -72,7 +72,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { metricTypeBadgeClass, metricTypeLabel } from '@/components/metrics/utils/metric-type'
   import {
@@ -95,6 +95,8 @@
   import TimeseriesPanel from '@/components/metrics/Detail/TimeseriesPanel.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import AggregationViewMenu from '@/components/metrics/Charts/AggregationViewMenu.svelte'
+  import AllSeriesAggregateToggle from '@/components/metrics/Charts/AllSeriesAggregateToggle.svelte'
   import {
     createMetricViewContext,
     getMetricViewContext,
@@ -240,13 +242,26 @@
     }
   })
 
+  // Re-fetch metric detail ONLY when the selected metric's identity
+  // changes -- not when the summary object reference churns. Polling
+  // rebuilds `metrics` (and therefore `sortedMetrics`/`selectedSummary`)
+  // every few seconds with fresh object references; if we depended on
+  // the summary object directly the effect would re-fetch on every
+  // poll, which would also re-fire the context's per-metric reset and
+  // clobber per-metric view state (e.g. AggregationView, legend selections).
+  // We read the *id* reactively (stable per metric) and grab the
+  // current summary via untrack so its identity churn doesn't count
+  // as a dep.
   $effect(() => {
-    const summary = selectedSummary
-    if (!summary) {
+    const id = selectedSummary
+      ? metricSummaryKey(selectedSummary)
+      : null
+    if (!id) {
       selectedMetric = undefined
       return
     }
-    fetchMetricDetail(summary)
+    const summary = untrack(() => selectedSummary)
+    if (summary) fetchMetricDetail(summary)
   })
 
   $effect(() => {
@@ -431,6 +446,16 @@
                 aggregationTemporality={selectedSummary.aggregationTemporality}
                 isMonotonic={selectedSummary.isMonotonic}
               />
+            {/snippet}
+            {#snippet right()}
+              {#if selectedSummary.metricType === 'Sum' || selectedSummary.metricType === 'Gauge'}
+                <AggregationViewMenu />
+              {/if}
+            {/snippet}
+            {#snippet metaRight()}
+              {#if selectedSummary.metricType === 'Sum' || selectedSummary.metricType === 'Gauge'}
+                <AllSeriesAggregateToggle />
+              {/if}
             {/snippet}
           </PaneHeader>
         {/if}
