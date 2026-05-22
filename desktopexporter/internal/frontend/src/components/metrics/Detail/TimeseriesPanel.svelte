@@ -11,6 +11,8 @@
   import type { LegendTimeseries as PanelTimeseries } from '@/types/metric-chart-types'
   import type { MetricTimeseries } from '@/types/api-types'
   import { MAX_VISIBLE_TIMESERIES } from '@/components/metrics/utils/metric-timeseries-visible'
+  import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
+  import type { SeriesStat } from '@/components/metrics/utils/aggregation'
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import MetricField from '@/components/metrics/Detail/MetricField.svelte'
@@ -98,6 +100,27 @@
     return null
   }
 
+  const STAT_LABEL: Record<SeriesStat, string> = {
+    min: 'min',
+    max: 'max',
+    avg: 'avg',
+    total: 'Σ',
+  }
+
+  function statBadgeTitle(stat: SeriesStat, value: number): string {
+    const unit = ctx.metric?.unit ?? ''
+    const formatted = formatMetricValue(value)
+    if (ctx.aggregationView === 'rate') {
+      const rateUnit =
+        unit.trim() === '' || unit === '1' ? '/s' : `${unit.trim()}/s`
+      return `${stat} ${formatted}${rateUnit ? ` ${rateUnit}` : ''}`
+    }
+    if (unit.trim() && unit !== '1') {
+      return `${stat} ${formatted} ${unit.trim()}`
+    }
+    return `${stat} ${formatted}`
+  }
+
   $effect(() => {
     ctx.metric?.id
     expandedDatapointSections.clear()
@@ -105,7 +128,7 @@
 
   $effect(() => {
     const dpId = ctx.selectedDatapointId
-    if (!dpId) return
+    if (!dpId || ctx.selectionSource === 'chart') return
 
     const seriesKey = seriesKeyForDatapointId(dpId)
     if (seriesKey) {
@@ -146,6 +169,10 @@
         checked && seriesColor ? seriesColor : chartNeutral()}
       {@const sparklineSuppressed =
         ctx.isHistogramKind || ctx.isUnspecifiedTemporality}
+      {@const rowStats = ctx.seriesStatsByKey.get(ts.key)}
+      {@const statBadges = ctx.availableSeriesStatBadges}
+      {@const showStatBadges =
+        !sparklineSuppressed && statBadges.length > 0 && rowStats !== undefined}
 
       <div class="ts-row-wrap">
         <FieldGroup
@@ -185,6 +212,24 @@
                   <span class="ts-row__default-label">default series</span>
                 {/if}
               </div>
+              {#if showStatBadges}
+                <div class="ts-row__stats" aria-label="Series stats">
+                  {#each statBadges as stat (stat)}
+                    {@const value = rowStats[stat]}
+                    {#if value !== undefined}
+                      <span
+                        class="ts-row__stat-badge"
+                        title={statBadgeTitle(stat, value)}
+                      >
+                        <span class="ts-row__stat-label">{STAT_LABEL[stat]}</span>
+                        <span class="ts-row__stat-value"
+                          >{formatMetricValue(value)}</span
+                        >
+                      </span>
+                    {/if}
+                  {/each}
+                </div>
+              {/if}
               {#if !sparklineSuppressed}
                 <div class="ts-row__sparkline">
                   <Sparkline
@@ -302,7 +347,7 @@
 
   .ts-row__title-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, 128px);
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 128px);
     align-items: center;
     gap: 0.5rem;
     min-height: var(--table-row-h);
@@ -310,7 +355,7 @@
   }
 
   .ts-row__title-row--no-sparkline {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .ts-row__sparkline {
@@ -345,6 +390,26 @@
   .ts-row__default-label {
     @apply text-sm italic;
     color: var(--color-muted);
+  }
+
+  .ts-row__stats {
+    @apply flex min-w-0 shrink flex-wrap items-center justify-end gap-0.5;
+  }
+
+  .ts-row__stat-badge {
+    @apply badge badge-xs tabular-nums leading-tight ring-0;
+    color: var(--color-base-content);
+    background-color: var(--color-base-200);
+    border: none;
+    max-width: 100%;
+  }
+
+  .ts-row__stat-label {
+    @apply mr-0.5 text-[0.625rem] font-semibold uppercase opacity-55;
+  }
+
+  .ts-row__stat-value {
+    @apply font-medium;
   }
 
   .ts-fields-empty {

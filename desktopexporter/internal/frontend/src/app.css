@@ -256,17 +256,142 @@ html[data-theme='rose-pine-dawn'] {
   pointer-events: none;
 }
 
-/* Pinned selection legend (ChartSelectionLegend): Pine/Moon use RP base
-   (--color-base-100); Dawn uses RP overlay (--color-base-300) so the
-   card reads as an elevated panel on the lighter chart surface. */
+.metric-chart-view :where(.series-stat-line) {
+  stroke: var(--marker-color, currentColor);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  opacity: 0.65;
+}
+
+.metric-chart-view :where(.series-stat-dot) {
+  pointer-events: none;
+  stroke: var(--color-surface-100, white);
+  stroke-width: 1.25;
+}
+
+.metric-chart-view :where(.series-stat-overlay) {
+  pointer-events: none;
+}
+
+/* Pinned selection legend + stat point labels (ChartSelectionLegend). */
 .metric-chart-view :where(.chart-selection-legend) {
+  pointer-events: none;
+  @apply rounded-md border border-base-300 text-base-content;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  min-width: 10rem;
+  max-width: 18rem;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 2px 6px rgb(0 0 0 / 0.06);
   background-color: var(--color-base-100);
+}
+
+.metric-chart-view :where(.chart-selection-legend--stat) {
+  width: max-content;
+  min-width: max-content;
+  max-width: none;
+  padding: 0.25rem 0.4rem;
+}
+
+.metric-chart-view :where(.chart-selection-legend--stat .chart-selection-legend__rows) {
+  grid-template-columns: auto auto auto;
+  width: max-content;
+}
+
+.metric-chart-view :where(.chart-selection-legend--stat .chart-selection-legend__label) {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.metric-chart-view :where(.chart-selection-legend--stat .chart-selection-legend__value) {
+  min-width: max-content;
+}
+
+.metric-chart-view :where(.chart-time-range-legend) {
+  @apply flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 border-0 bg-transparent text-xs leading-snug shadow-none;
+}
+
+.metric-chart-view :where(.chart-time-range-legend__prefix) {
+  @apply shrink-0 font-medium;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+
+.metric-chart-view :where(.chart-time-range-legend__value) {
+  @apply tabular-nums whitespace-nowrap;
 }
 
 html[data-theme='rose-pine-dawn']
   .metric-chart-view
   :where(.chart-selection-legend) {
   background-color: var(--color-base-300);
+}
+
+html[data-theme='rose-pine-dawn']
+  .metric-chart-view
+  :where(.chart-time-range-legend) {
+  background-color: transparent;
+}
+
+.metric-chart-view :where(.chart-selection-legend__timestamp) {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+  margin-bottom: 0.3rem;
+}
+
+.metric-chart-view :where(.chart-selection-legend__rows) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: 0.4rem;
+  row-gap: 0.18rem;
+  align-items: baseline;
+}
+
+.metric-chart-view :where(.chart-selection-legend__row) {
+  display: contents;
+}
+
+.metric-chart-view
+  :where(
+    .chart-selection-legend__row--primary .chart-selection-legend__label,
+    .chart-selection-legend__row--primary .chart-selection-legend__value
+  ) {
+  font-weight: 600;
+}
+
+.metric-chart-view :where(.chart-selection-legend__dot) {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background-color: var(--color);
+  align-self: center;
+}
+
+.metric-chart-view :where(.chart-selection-legend__glyph) {
+  font-size: 0.85em;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.85;
+  margin-right: 0.25rem;
+}
+
+.metric-chart-view :where(.chart-selection-legend__label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-chart-view :where(.chart-selection-legend__value) {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
 }
 
 @layer base {
@@ -1466,6 +1591,22 @@ button:focus-visible:not(.btn) {
 /* Item / field / tab counts (xs soft primary). */
 .badge-count {
   @apply badge badge-xs badge-soft badge-primary tabular-nums;
+}
+
+/* Series min / max / avg chips (detail rows + chart overlays). */
+.series-stat-badge {
+  @apply badge badge-xs inline-flex max-w-full items-baseline tabular-nums leading-tight ring-0;
+  color: var(--color-base-content);
+  background-color: var(--color-base-200);
+  border: none;
+}
+
+.series-stat-badge__label {
+  @apply mr-0.5 text-[0.625rem] font-semibold uppercase opacity-55;
+}
+
+.series-stat-badge__value {
+  @apply font-medium;
 }
 
 .badge-root {

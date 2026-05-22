@@ -1,9 +1,9 @@
 <script lang="ts">
   /*
    * Optional toggle for the all-series aggregate line. Sits in the
-   * chart meta row between the PaneHeader and the plot. The checked-series
-   * aggregate is always on when applicable; this control only gates
-   * the second line that spans every series on the metric.
+   * chart control bar below the plot. The checked-series aggregate is
+   * always on when applicable; this control only gates the second line
+   * that spans every series on the metric.
    */
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { aggregateAllToggleLabel } from '@/components/metrics/utils/aggregation'

@@ -28,6 +28,8 @@
     DEFAULT_METRIC_CHART_HEIGHT,
     MIN_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
+  import MetricChartControlBar from '@/components/metrics/Charts/MetricChartControlBar.svelte'
+  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import { CameraIcon, ChartHistogramIcon, TemperatureIcon } from '@/icons'
 
   const ctx = getMetricViewContext()
@@ -124,6 +126,15 @@
         </span>
       </div>
     {/if}
+    {#if ctx.chartDataTimeRange}
+      <div class="metric-chart-view__chart-header">
+        <ChartTimeRangeHeader
+          startMs={ctx.chartDataTimeRange.startMs}
+          endMs={ctx.chartDataTimeRange.endMs}
+          variant="legend"
+        />
+      </div>
+    {/if}
     <div
       class="metric-chart-view__plot-host"
       bind:clientHeight={plotHostHeight}
@@ -201,6 +212,9 @@
         height={plotHeight}
         colorByKey={ctx.timeseriesColorByKey}
         aggregationView={ctx.aggregationView}
+        showStatOverlays={ctx.showSelectionStatOverlays}
+        timeRange={ctx.chartDataTimeRange ?? null}
+        onChartPointClick={ctx.onChartPointClick}
         emptyMessage={ctx.gaugeSumChartTimeseries.length === 0
           ? 'No datapoints to chart'
           : ctx.gaugeSumVisible.size === 0
@@ -208,6 +222,7 @@
             : 'No datapoints in selected timeseries'}
       />
     </div>
+    <MetricChartControlBar />
   </div>
 {/snippet}
 
@@ -277,6 +292,10 @@
 
   .metric-chart-view__subtitle {
     @apply mb-1 mt-1 flex shrink-0 items-baseline gap-2 px-2;
+  }
+
+  .metric-chart-view__chart-header {
+    @apply flex shrink-0 px-1 pb-1 pt-0.5;
   }
 
   .metric-chart-view__tabs {

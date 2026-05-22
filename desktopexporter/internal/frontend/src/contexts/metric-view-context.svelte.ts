@@ -57,10 +57,14 @@ import {
   overlayMax,
   overlayMin,
   overlayTotal,
+  availableSeriesStatBadges,
+  seriesStatsFromPoints,
   type AggregateLineKey,
   type AggregateResult,
   type AggregationView,
   type ResetIndicesByKey,
+  type SeriesStat,
+  type SeriesStats,
   type SumOverlay,
 } from '@/components/metrics/utils/aggregation'
 import type {
@@ -190,6 +194,10 @@ export interface MetricViewContext {
 
   // -- Selection / view state --
   readonly selectedDatapointId: string | null
+  /** Where the current datapoint selection came from. Chart clicks
+   *  drive the plot overlay only; detail-pane scroll/expand waits for
+   *  unified routing. */
+  readonly selectionSource: 'chart' | 'detail' | null
   readonly expandedDatapoints: SvelteSet<string>
   /** Per-timeseries expansion (keyed by attributesKey). Used by the
    * TimeseriesPanel to reveal an inline datapoints table under a
@@ -227,8 +235,14 @@ export interface MetricViewContext {
   readonly aggregatePresentKeys: AggregateLineKey[]
   /** Whether the optional all-series aggregate line is shown. */
   readonly showAllSeriesAggregate: boolean
-  /** Show the all-series aggregate toggle in the chart header. */
+  /** Show the all-series aggregate toggle in the chart control bar. */
   readonly showAllSeriesAggregateToggleVisible: boolean
+  /** Whether min / max / avg selection overlays render on the chart. */
+  readonly showSelectionStatOverlays: boolean
+  /** Show the stat overlay toggle in the chart control bar. */
+  readonly showChartStatOverlaysToggleVisible: boolean
+  /** Start/end of data plotted in the chart (gauge/sum points or histogram window). */
+  readonly chartDataTimeRange: { startMs: number; endMs: number } | undefined
   /** Reset markers per series, indexed into the transformed (visible)
    * series' output points. Only populated in raw mode. */
   readonly sumResetIndicesByKey: ResetIndicesByKey
@@ -270,12 +284,16 @@ export interface MetricViewContext {
   /** Stem-rotated 10-colour pool (`pool[0]` = metric-type stem). */
   readonly timeseriesChartColors: string[]
   readonly legendFilterActive: boolean
-  /** Per-row sparkline points, keyed by `attributesKey`. Reflects the
+  /** Post-view chart points per Series tab row, keyed by `attributesKey`.
+   *  Shared source for sparklines and row stat badges. Reflects the
    *  current AggregationView (rate vs raw bucketing). Covers every
-   *  candidate series, not just visible ones — unchecked rows still
-   *  need a shape so users can spot offenders they haven't checked.
-   *  Empty for histogram metrics (placeholder slot in the panel). */
+   *  candidate series, not just visible ones. Empty for histogram /
+   *  unspecified temporality. */
   readonly sparklineByKey: ReadonlyMap<string, readonly ChartPoint[]>
+  /** Min / max / avg / (sometimes) total per row, from {@link sparklineByKey}. */
+  readonly seriesStatsByKey: ReadonlyMap<string, SeriesStats>
+  /** Which stat badges TimeseriesPanel should render for this metric/view. */
+  readonly availableSeriesStatBadges: readonly SeriesStat[]
 
   // -- Methods --
   /** Toggle per-timeseries expansion (TimeseriesPanel chevron). */
@@ -283,6 +301,7 @@ export interface MetricViewContext {
   setActiveHistogramTab(tab: HistogramTab): void
   setAggregationView(next: AggregationView): void
   setShowAllSeriesAggregate(next: boolean): void
+  setShowSelectionStatOverlays(next: boolean): void
   /** Toggle a Sum overlay (min / max / avg / total) on or off. */
   toggleSumOverlay(overlay: SumOverlay): void
   /** Replace the visible-set for the Gauge/Sum legend. The legend
@@ -301,6 +320,9 @@ export interface MetricViewContext {
   /** Heatmap clicks land on a bucket-start ms; resolve to a real
    * datapoint inside the bucket window. */
   onHeatmapSelect(timestampMs: number): void
+  /** Time-series chart point click: resolve series + x to a datapoint
+   * and sync selection with the Series tab. Aggregate lines are ignored. */
+  onChartPointClick(seriesKey: string, clickedAt: Date): void
 }
 
 // --- Factory ------------------------------------------------------
@@ -315,6 +337,7 @@ export function createMetricViewContext(
   // on this context.
   const view = $state({
     selectedDatapointId: null as string | null,
+    selectionSource: null as 'chart' | 'detail' | null,
     expandedDatapoints: new SvelteSet<string>(),
     expandedTimeseries: new SvelteSet<string>(),
     activeHistogramTab: 'heatmap' as HistogramTab,
@@ -330,6 +353,7 @@ export function createMetricViewContext(
     // `histogramOverlays` next to this, not generalize prematurely.
     aggregationView: 'raw' as AggregationView,
     showAllSeriesAggregate: false,
+    showSelectionStatOverlays: true,
     sumOverlays: new SvelteSet<SumOverlay>(),
   })
 
@@ -483,12 +507,10 @@ export function createMetricViewContext(
     return aggregateRaw(visible, { cumulative, bucketCount: SUM_AUTO_BUCKET_COUNT_CAP })
   })
 
-  /** Per-series points for the row-level sparkline in TimeseriesPanel,
-   *  keyed by attributesKey.
+  /** Post-view chart points for each Series tab row (`attributesKey`).
    *
    *  Runs over EVERY candidate series (not just visible) so unchecked
-   *  rows still get a shape to scan — the whole point of sparklines is
-   *  to surface the offender you haven't checked yet.
+   *  rows still get a shape and stats to scan.
    *
    *  Transform follows the current aggregationView:
    *    - 'rate'                  → per-series rate (matches the main
@@ -496,19 +518,19 @@ export function createMetricViewContext(
    *    - 'raw' / 'sum' / 'avg'   → bucketed raw values. Sum/Avg are
    *                                cross-series aggregations that
    *                                don't apply per row, so a row's
-   *                                own sparkline stays in raw units.
+   *                                own line stays in raw units.
    *
    *  Histogram metrics return an empty map — TimeseriesPanel renders
    *  a placeholder slot for histogram rows until per-series sparkbar
-   *  data is wired up. */
-  const sparklineByKey = $derived.by((): ReadonlyMap<string, readonly ChartPoint[]> => {
+   *  data is wired up. Sparklines and stat badges both read this map. */
+  const seriesRowPointsByKey = $derived.by((): ReadonlyMap<string, readonly ChartPoint[]> => {
     if (isHistogramKind) return new Map()
     // Unspecified temporality means we can't tell whether the values
     // are running totals or per-interval counts -- the same numbers
     // mean two very different lines depending on which it is. The
     // main chart blanks itself + shows UnspecifiedTemporalityCallout
-    // for the same reason; sparklines should follow that lead rather
-    // than guessing.
+    // for the same reason; row projections should follow that lead
+    // rather than guessing.
     if (isUnspecifiedTemporality) return new Map()
     const all = gaugeSumGroups.chartTimeseries
     if (all.length === 0) return new Map()
@@ -520,6 +542,23 @@ export function createMetricViewContext(
     const out = new Map<string, readonly ChartPoint[]>()
     for (const s of transformed.series) out.set(s.key, s.points)
     return out
+  })
+
+  const seriesStatsByKey = $derived.by((): ReadonlyMap<string, SeriesStats> => {
+    const out = new Map<string, SeriesStats>()
+    for (const [key, points] of seriesRowPointsByKey) {
+      out.set(key, seriesStatsFromPoints(points))
+    }
+    return out
+  })
+
+  const availableSeriesStatBadgesList = $derived.by((): SeriesStat[] => {
+    if (isHistogramKind || isUnspecifiedTemporality) return []
+    return availableSeriesStatBadges({
+      metricType,
+      temporality,
+      aggregationView: view.aggregationView,
+    })
   })
 
   /** Aggregated mode: Selected + All cross-timeseries lines. */
@@ -553,7 +592,7 @@ export function createMetricViewContext(
     return keys
   })
 
-  /** Show the optional all-series aggregate toggle in the chart header. */
+  /** Show the optional all-series aggregate toggle in the chart control bar. */
   const showAllSeriesAggregateToggleVisible = $derived.by((): boolean => {
     if (view.aggregationView === 'raw') return false
     if (gaugeSumGroups.keys.length < 2) return false
@@ -563,6 +602,33 @@ export function createMetricViewContext(
     // All series checked → aggregate collapses to Total; nothing extra
     // to toggle.
     return selectedCount !== all.length
+  })
+
+  const showChartStatOverlaysToggleVisible = $derived.by((): boolean => {
+    return metricType === 'Gauge' || metricType === 'Sum'
+  })
+
+  const chartDataTimeRange = $derived.by(():
+    | { startMs: number; endMs: number }
+    | undefined => {
+    if (isHistogramKind) {
+      const qr = selectionToQueryRangeMs(timeContext.selection, Date.now())
+      return { startMs: qr.start, endMs: qr.end }
+    }
+    if (metricType === 'Gauge' || metricType === 'Sum') {
+      let min = Infinity
+      let max = -Infinity
+      for (const ts of gaugeSumGroups.chartTimeseries) {
+        for (const p of ts.points) {
+          const t = p.date.getTime()
+          if (t < min) min = t
+          if (t > max) max = t
+        }
+      }
+      if (!Number.isFinite(min)) return undefined
+      return { startMs: min, endMs: max }
+    }
+    return undefined
   })
 
   /** Final post-view series the chart actually plots.
@@ -899,6 +965,7 @@ export function createMetricViewContext(
     const streamId = m?.id
 
     view.selectedDatapointId = null
+    view.selectionSource = null
     view.expandedDatapoints.clear()
     view.expandedTimeseries.clear()
     view.activeHistogramTab = 'heatmap'
@@ -920,6 +987,7 @@ export function createMetricViewContext(
         gaugeSumGroups.keys.length
       )
     view.sumOverlays.clear()
+    view.showSelectionStatOverlays = true
     view.showAllSeriesAggregate = streamId
       ? loadPersistedShowAllSeriesAggregate(streamId)
       : false
@@ -1048,6 +1116,7 @@ export function createMetricViewContext(
       // Stale id (data refresh dropped the datapoint). Clear so the
       // detail pane doesn't render against ghost data.
       view.selectedDatapointId = null
+      view.selectionSource = null
       return
     }
 
@@ -1060,6 +1129,7 @@ export function createMetricViewContext(
     if (visible === null) return
     if (!visible.has(ownerKey)) {
       view.selectedDatapointId = null
+      view.selectionSource = null
     }
   })
 
@@ -1172,6 +1242,10 @@ export function createMetricViewContext(
     if (streamId) savePersistedShowAllSeriesAggregate(streamId, next)
   }
 
+  function setShowSelectionStatOverlays(next: boolean) {
+    view.showSelectionStatOverlays = next
+  }
+
   function toggleSumOverlay(overlay: SumOverlay) {
     if (view.sumOverlays.has(overlay)) {
       view.sumOverlays.delete(overlay)
@@ -1235,8 +1309,12 @@ export function createMetricViewContext(
   }
 
   function onDatapointClick(dp: DataPoint) {
+    view.selectionSource = 'detail'
     view.selectedDatapointId =
       view.selectedDatapointId === dp.id ? null : dp.id
+    if (view.selectedDatapointId === null) {
+      view.selectionSource = null
+    }
     if (isHistogramKind && view.selectedDatapointId !== null) {
       view.activeHistogramTab = 'snapshot'
     }
@@ -1266,12 +1344,53 @@ export function createMetricViewContext(
     for (const ts of m.timeseries) {
       for (const dp of ts.datapoints) {
         if (dp.timestamp >= bucketStart && dp.timestamp < bucketEnd) {
+          view.selectionSource = 'detail'
           view.selectedDatapointId = dp.id
           view.activeHistogramTab = 'snapshot'
           view.expandedTimeseries.add(ts.attributesKey)
           return
         }
       }
+    }
+  }
+
+  function onChartPointClick(seriesKey: string, clickedAt: Date) {
+    if (
+      seriesKey === AGG_KEY_SELECTED ||
+      seriesKey === AGG_KEY_ALL ||
+      seriesKey === AGG_KEY_TOTAL
+    ) {
+      return
+    }
+    const m = getMetric()
+    if (!m) return
+    const ts = m.timeseries.find(t => t.attributesKey === seriesKey)
+    if (!ts || ts.datapoints.length === 0) return
+
+    const targetMs = clickedAt.getTime()
+    const targetNs = BigInt(targetMs) * 1_000_000n
+
+    for (const dp of ts.datapoints) {
+      if (dp.timestamp === targetNs) {
+        view.selectionSource = 'chart'
+        view.selectedDatapointId = dp.id
+        return
+      }
+    }
+
+    let best: DataPoint | undefined
+    let bestDist = Infinity
+    for (const dp of ts.datapoints) {
+      const ms = Number(dp.timestamp / 1_000_000n)
+      const dist = Math.abs(ms - targetMs)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = dp
+      }
+    }
+    if (best) {
+      view.selectionSource = 'chart'
+      view.selectedDatapointId = best.id
     }
   }
 
@@ -1300,6 +1419,9 @@ export function createMetricViewContext(
 
     get selectedDatapointId() {
       return view.selectedDatapointId
+    },
+    get selectionSource() {
+      return view.selectionSource
     },
     get expandedDatapoints() {
       return view.expandedDatapoints
@@ -1347,6 +1469,15 @@ export function createMetricViewContext(
     },
     get showAllSeriesAggregateToggleVisible() {
       return showAllSeriesAggregateToggleVisible
+    },
+    get showSelectionStatOverlays() {
+      return view.showSelectionStatOverlays
+    },
+    get showChartStatOverlaysToggleVisible() {
+      return showChartStatOverlaysToggleVisible
+    },
+    get chartDataTimeRange() {
+      return chartDataTimeRange
     },
     get sumResetIndicesByKey() {
       return sumResetIndicesByKey
@@ -1413,13 +1544,20 @@ export function createMetricViewContext(
       return legendFilterActive
     },
     get sparklineByKey() {
-      return sparklineByKey
+      return seriesRowPointsByKey
+    },
+    get seriesStatsByKey() {
+      return seriesStatsByKey
+    },
+    get availableSeriesStatBadges() {
+      return availableSeriesStatBadgesList
     },
 
     toggleTimeseriesExpanded,
     setActiveHistogramTab,
     setAggregationView,
     setShowAllSeriesAggregate,
+    setShowSelectionStatOverlays,
     toggleSumOverlay,
     setGaugeSumVisible,
     setHistogramVisible,
@@ -1427,6 +1565,7 @@ export function createMetricViewContext(
     clearAllTimeseriesVisible,
     onDatapointClick,
     onHeatmapSelect,
+    onChartPointClick,
   }
 
   setContext(KEY, ctx)

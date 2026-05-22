@@ -93,8 +93,6 @@
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
-  import AllSeriesAggregateToggle from '@/components/metrics/Charts/AllSeriesAggregateToggle.svelte'
-  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
   import { aggregationViewTabs } from '@/components/metrics/utils/aggregation-view-tabs'
   import {
@@ -155,34 +153,6 @@
       : undefined
   )
 
-  let chartTimeRange = $derived.by(():
-    | { startMs: number; endMs: number }
-    | undefined => {
-    const summary = selectedSummary
-    if (!summary) return undefined
-    if (summary.metricType === 'Gauge' || summary.metricType === 'Sum') {
-      let min = Infinity
-      let max = -Infinity
-      for (const ts of metricCtx.gaugeSumChartTimeseries) {
-        for (const p of ts.points) {
-          const t = p.date.getTime()
-          if (t < min) min = t
-          if (t > max) max = t
-        }
-      }
-      if (!Number.isFinite(min)) return undefined
-      return { startMs: min, endMs: max }
-    }
-    if (summary.metricType === 'Histogram') {
-      const qr = selectionToQueryRangeMs(
-        timeContext.selection,
-        Date.now()
-      )
-      return { startMs: qr.start, endMs: qr.end }
-    }
-    return undefined
-  })
-
   let chartAggregationTabs = $derived(
     aggregationViewTabs(metricCtx.availableAggregationViews)
   )
@@ -191,11 +161,6 @@
     (selectedSummary?.metricType === 'Sum' ||
       selectedSummary?.metricType === 'Gauge') &&
       chartAggregationTabs.length > 1
-  )
-
-  let showChartMetaRow = $derived(
-    chartTimeRange !== undefined ||
-      metricCtx.showAllSeriesAggregateToggleVisible
   )
 
   // Position of the currently-selected metric in the sorted list.
@@ -477,23 +442,6 @@
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
           </PaneHeader>
         {/if}
-
-        {#if showChartMetaRow}
-          <div class="metrics-page__chart-meta">
-            <div class="metrics-page__chart-meta-range">
-              {#if chartTimeRange}
-                <ChartTimeRangeHeader
-                  startMs={chartTimeRange.startMs}
-                  endMs={chartTimeRange.endMs}
-                  class="py-0"
-                />
-              {/if}
-            </div>
-            <div class="metrics-page__chart-meta-right">
-              <AllSeriesAggregateToggle />
-            </div>
-          </div>
-        {/if}
       {/if}
         {#if error}
           <div class="metrics-page__placeholder alert alert-error">
@@ -540,18 +488,6 @@
 
   .metrics-page {
     @apply flex min-h-0 min-w-0 w-full flex-1 flex-col;
-  }
-
-  .metrics-page__chart-meta {
-    @apply flex min-w-0 shrink-0 items-center justify-between gap-2 px-3 py-1.5;
-  }
-
-  .metrics-page__chart-meta-range {
-    @apply min-w-0 flex-1;
-  }
-
-  .metrics-page__chart-meta-right {
-    @apply ml-auto flex shrink-0 items-center gap-2;
   }
 
   .metrics-page__chart {

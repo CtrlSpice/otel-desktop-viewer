@@ -754,3 +754,53 @@ export function overlayTotal(series: ChartTimeseries[]): number | undefined {
   }
   return count === 0 ? undefined : total
 }
+
+/** Which stat badges to show on a single series row. */
+export type SeriesStat = 'min' | 'max' | 'avg' | 'total'
+
+export type SeriesStats = {
+  min?: number
+  max?: number
+  avg?: number
+  total?: number
+}
+
+/** Min / max / mean / sum over one series' chart points (post-view). */
+export function seriesStatsFromPoints(
+  points: readonly ChartPoint[]
+): SeriesStats {
+  if (points.length === 0) return {}
+
+  let min: number | undefined
+  let max: number | undefined
+  let sum = 0
+  for (const p of points) {
+    if (min === undefined || p.value < min) min = p.value
+    if (max === undefined || p.value > max) max = p.value
+    sum += p.value
+  }
+  return {
+    min,
+    max,
+    avg: sum / points.length,
+    total: sum,
+  }
+}
+
+/** Opinionated badge set for TimeseriesPanel rows (matches chart view). */
+export function availableSeriesStatBadges(opts: {
+  metricType: string
+  temporality: string
+  aggregationView: AggregationView
+}): SeriesStat[] {
+  const badges: SeriesStat[] = ['min', 'max', 'avg']
+  // Window total: Sum + Delta + raw only — not Gauge, cumulative raw, or rate.
+  if (
+    opts.metricType === 'Sum' &&
+    opts.temporality === 'Delta' &&
+    opts.aggregationView === 'raw'
+  ) {
+    badges.push('total')
+  }
+  return badges
+}
