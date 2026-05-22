@@ -86,17 +86,17 @@
   } from '@/types/api-types'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
   import PageLayout from '@/components/shared/PageLayout.svelte'
-  import ResizablePanels from '@/components/shared/ResizablePanels.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
   import MetricCard from '@/components/metrics/MetricCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import MetricChartView from '@/components/metrics/Charts/MetricChartView.svelte'
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
-  import TimeseriesPanel from '@/components/metrics/Detail/TimeseriesPanel.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
-  import AggregationViewMenu from '@/components/metrics/Charts/AggregationViewMenu.svelte'
   import AllSeriesAggregateToggle from '@/components/metrics/Charts/AllSeriesAggregateToggle.svelte'
+  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
+  import type { AggregationView } from '@/components/metrics/utils/aggregation'
+  import { aggregationViewTabs } from '@/components/metrics/utils/aggregation-view-tabs'
   import {
     createMetricViewContext,
     getMetricViewContext,
@@ -183,8 +183,22 @@
     return undefined
   })
 
+  let chartAggregationTabs = $derived(
+    aggregationViewTabs(metricCtx.availableAggregationViews)
+  )
+
+  let showChartAggregationTabs = $derived(
+    (selectedSummary?.metricType === 'Sum' ||
+      selectedSummary?.metricType === 'Gauge') &&
+      chartAggregationTabs.length > 1
+  )
+
+  let showChartMetaRow = $derived(
+    chartTimeRange !== undefined ||
+      metricCtx.showAllSeriesAggregateToggleVisible
+  )
+
   // Position of the currently-selected metric in the sorted list.
-  // Powers the DetailNav prev/next/first/last controls in the
   // SignalFooter that lives in PageLayout's pageFooter slot
   // (page-level chrome spanning main + detail). Returns -1 when
   // nothing is selected (DetailNav renders all buttons disabled in
@@ -375,7 +389,7 @@
     {loading}
     itemKey={metricSummaryKey}
     resizableStorageKey="metric-detail-panels"
-    minDetailPx={240}
+    minDetailPx={352}
   >
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel
@@ -425,40 +439,62 @@
     {#snippet main()}
       <!-- Page-level error / empty branches replace the chart pane
            entirely; the chart lives here on the happy path and the
-           detail pane (Fields/Datapoints) renders alongside. The
+           detail pane (Fields/Series) renders alongside. The
            SignalFooter is now page-level chrome (see pageFooter
            snippet below): always present, spans main + detail
            regardless of content state, and DetailNav self-disables
            when there is nothing to navigate. -->
       {#if selectedSummary}
+        {#snippet metricChartHeaderBadge()}
+          <SignalBadges
+            signal="metric"
+            metricType={selectedSummary.metricType}
+            aggregationTemporality={selectedSummary.aggregationTemporality}
+            isMonotonic={selectedSummary.isMonotonic}
+          />
+        {/snippet}
+
+        {#if showChartAggregationTabs}
+          <PaneHeader
+            mode="title-tabs"
+            title={selectedSummary.name}
+            subtitle={selectedSummary.serviceName?.trim() || undefined}
+            tabs={chartAggregationTabs}
+            activeId={metricCtx.aggregationView}
+            onSelect={id =>
+              metricCtx.setAggregationView(id as AggregationView)}
+            ariaLabel="Metric chart"
+          >
+            {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
+          </PaneHeader>
+        {:else}
           <PaneHeader
             mode="title"
             title={selectedSummary.name}
             subtitle={selectedSummary.serviceName?.trim() || undefined}
-            timeRange={chartTimeRange}
-            rounded={false}
             ariaLabel="Metric chart"
           >
-            {#snippet badge()}
-              <SignalBadges
-                signal="metric"
-                metricType={selectedSummary.metricType}
-                aggregationTemporality={selectedSummary.aggregationTemporality}
-                isMonotonic={selectedSummary.isMonotonic}
-              />
-            {/snippet}
-            {#snippet right()}
-              {#if selectedSummary.metricType === 'Sum' || selectedSummary.metricType === 'Gauge'}
-                <AggregationViewMenu />
-              {/if}
-            {/snippet}
-            {#snippet metaRight()}
-              {#if selectedSummary.metricType === 'Sum' || selectedSummary.metricType === 'Gauge'}
-                <AllSeriesAggregateToggle />
-              {/if}
-            {/snippet}
+            {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
           </PaneHeader>
         {/if}
+
+        {#if showChartMetaRow}
+          <div class="metrics-page__chart-meta">
+            <div class="metrics-page__chart-meta-range">
+              {#if chartTimeRange}
+                <ChartTimeRangeHeader
+                  startMs={chartTimeRange.startMs}
+                  endMs={chartTimeRange.endMs}
+                  class="py-0"
+                />
+              {/if}
+            </div>
+            <div class="metrics-page__chart-meta-right">
+              <AllSeriesAggregateToggle />
+            </div>
+          </div>
+        {/if}
+      {/if}
         {#if error}
           <div class="metrics-page__placeholder alert alert-error">
             <span>Error: {error}</span>
@@ -475,33 +511,8 @@
             </p>
           </div>
         {:else}
-          <!-- Vertical split: chart on top, timeseries panel on bottom.
-               stackBreakpoint=Infinity forces the stacked (vertical-
-               resize) variant of ResizablePanels regardless of width;
-               we always want this one stacked even at desktop widths.
-               Bottom slot is a placeholder for now -- TimeseriesPanel
-               lands in the next step. -->
-          <div class="metrics-page__split">
-            <ResizablePanels
-              defaultLeftWidth={0.6}
-              minLeftWidth={0.25}
-              minRightWidth={0.15}
-              minLeftPx={200}
-              minRightPx={128}
-              maxRightPx={320}
-              storageKey="metrics:vsplit"
-              stackBreakpoint={Number.POSITIVE_INFINITY}
-              stackedResizeHandle="panel-header"
-            >
-              {#snippet leftPanel()}
-                <div class="metrics-page__chart">
-                  <MetricChartView />
-                </div>
-              {/snippet}
-              {#snippet rightPanel()}
-                <TimeseriesPanel />
-              {/snippet}
-            </ResizablePanels>
+          <div class="metrics-page__chart">
+            <MetricChartView />
           </div>
       {/if}
     {/snippet}
@@ -528,18 +539,23 @@
   @reference "../app.css";
 
   .metrics-page {
-    @apply flex min-h-0 min-w-0 w-full flex-1;
+    @apply flex min-h-0 min-w-0 w-full flex-1 flex-col;
+  }
+
+  .metrics-page__chart-meta {
+    @apply flex min-w-0 shrink-0 items-center justify-between gap-2 px-3 py-1.5;
+  }
+
+  .metrics-page__chart-meta-range {
+    @apply min-w-0 flex-1;
+  }
+
+  .metrics-page__chart-meta-right {
+    @apply ml-auto flex shrink-0 items-center gap-2;
   }
 
   .metrics-page__chart {
     @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
-  }
-
-  /* Vertical split host: the ResizablePanels needs a min-sized flex
-     parent so it can claim available height inside the metrics-page
-     column. Same shrink/min-size discipline as the placeholders. */
-  .metrics-page__split {
-    @apply flex-1 min-h-0 min-w-0;
   }
 
   /*

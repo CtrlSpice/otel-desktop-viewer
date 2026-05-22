@@ -10,7 +10,7 @@
    * lifecycle: those live in MetricViewContext. The chart view is a
    * pure renderer of the context's derivations and a thin invoker of
    * its methods (setActiveHistogramTab, onHeatmapSelect). The same
-   * context is read by MetricDetailView for the Fields/Datapoints
+   * context is read by MetricDetailView for the Fields/Series
    * pane, so both panes stay in lockstep without prop chains.
    */
   import {
@@ -217,7 +217,7 @@
   </div>
 {:else if ctx.isUnspecifiedTemporality}
   <!-- FunError takes the entire chart row. The detail pane (Fields /
-       Datapoints) still renders independently because it consumes
+       Series) still renders independently because it consumes
        different data; this branch only blanks the chart. -->
   <div class="metric-chart-view metric-chart-view--fill">
     <UnspecifiedTemporalityCallout size="full" />

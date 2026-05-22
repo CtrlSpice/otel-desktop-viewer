@@ -51,6 +51,13 @@ export type FormatMetricValueOptions = {
   maxSignificantDigits?: number
 }
 
+export type FormatMetricValuePlainOptions = FormatMetricValueOptions & {
+  /** OTLP metric unit appended after the number (skipped when empty or "1"). */
+  unit?: string
+  /** Maximum fractional digits. Defaults to 6 for detail rows. */
+  maxFractionDigits?: number
+}
+
 /**
  * Strip trailing zeros + trailing decimal point from a fixed-precision
  * string. "1.230" -> "1.23"; "1.000" -> "1"; "100" -> "100".
@@ -99,4 +106,21 @@ export function formatMetricValue(
   // small numbers); rare enough that it doesn't justify another prefix
   // table entry.
   return sign + formatMantissa(abs, sigDigits)
+}
+
+/** Plain decimal + optional OTLP unit for detail rows. Avoids SI
+ *  suffixes (m, k) and scientific notation in contexts where the axis
+ *  does not disambiguate scale. Charts keep {@link formatMetricValue}. */
+export function formatMetricValuePlain(
+  value: number | null | undefined,
+  options: FormatMetricValuePlainOptions = {}
+): string {
+  if (value === null || value === undefined) return ''
+  if (!Number.isFinite(value)) return String(value)
+
+  const maxFrac = options.maxFractionDigits ?? 6
+  const number = trimTrailingZeros(value.toFixed(maxFrac))
+  const unit = options.unit?.trim()
+  if (!unit || unit === '1') return number
+  return `${number} ${unit}`
 }

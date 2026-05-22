@@ -1,6 +1,6 @@
 /*
  * MetricViewContext: per-metric reactive state that BOTH the chart
- * view (main) and the detail view (Fields/Datapoints) need to read
+ * view (main) and the detail view (Fields/Series) need to read
  * and, in some cases, write. Modeled on time-context.svelte.ts:
  * the page calls `createMetricViewContext(...)` once at mount,
  * children call `getMetricViewContext()` to read derivations and
@@ -194,7 +194,7 @@ export interface MetricViewContext {
   /** Per-timeseries expansion (keyed by attributesKey). Used by the
    * TimeseriesPanel to reveal an inline datapoints table under a
    * row. Independent of expandedDatapoints (which keys per-datapoint
-   * exemplar expansion in the legacy detail tab). */
+   * exemplar expansion within SeriesDatapointList). */
   readonly expandedTimeseries: SvelteSet<string>
   readonly activeHistogramTab: HistogramTab
   readonly selectedDatapoint: DataPoint | undefined
@@ -422,7 +422,6 @@ export function createMetricViewContext(
     return m.timeseries.map(ts => ({
       key: ts.attributesKey,
       attributes: ts.attributes,
-      badge: `${ts.datapoints.length} dp${ts.datapoints.length === 1 ? '' : 's'}`,
     }))
   })
 
@@ -734,18 +733,10 @@ export function createMetricViewContext(
   const histogramLegendTimeseries = $derived.by((): LegendTimeseries[] => {
     const m = getMetric()
     if (!m) return []
-    const datapointsByKey = new Map<string, number>()
-    for (const ts of m.timeseries) {
-      datapointsByKey.set(ts.attributesKey, ts.datapoints.length)
-    }
-    return histogramTimeseriesGroups.map(g => {
-      const count = datapointsByKey.get(g.key) ?? 0
-      return {
-        key: g.key,
-        attributes: g.attributes,
-        badge: `${count} dp${count === 1 ? '' : 's'}`,
-      }
-    })
+    return histogramTimeseriesGroups.map(g => ({
+      key: g.key,
+      attributes: g.attributes,
+    }))
   })
 
   const visibleBucketSeries = $derived.by(() => {
@@ -1269,7 +1260,7 @@ export function createMetricViewContext(
     const bucketStart = BigInt(timestampMs) * 1_000_000n
     const bucketEnd = BigInt(timestampMs + bucketWidthMs) * 1_000_000n
     // Walk per-timeseries (not allDatapoints) so we can also expand
-    // the owning timeseries in the bottom panel for the user. The
+    // the owning timeseries in the Series tab for the user. The
     // panel watches expandedTimeseries + selectedDatapointId to
     // scroll + highlight the matching row (step-4 sync).
     for (const ts of m.timeseries) {

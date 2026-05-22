@@ -1,7 +1,7 @@
 <script lang="ts">
   /*
    * Optional toggle for the all-series aggregate line. Sits in the
-   * chart PaneHeader beside AggregationViewMenu. The checked-series
+   * chart meta row between the PaneHeader and the plot. The checked-series
    * aggregate is always on when applicable; this control only gates
    * the second line that spans every series on the metric.
    */

@@ -466,9 +466,8 @@ export type AggregateLineKey =
 
 /** Checkbox label for the optional all-series aggregate toggle. */
 export function aggregateAllToggleLabel(view: AggregationView): string {
-  const glyph = aggregateViewSymbol(view)
-  if (!glyph) return 'Show metric aggregate'
-  return `Show metric ${glyph}`
+  if (view === 'raw') return 'Show aggregate across all series'
+  return aggregateScopeLabelTitle(view, 'all')
 }
 
 /** Label for a synthetic aggregate line key in tooltips / legend. */

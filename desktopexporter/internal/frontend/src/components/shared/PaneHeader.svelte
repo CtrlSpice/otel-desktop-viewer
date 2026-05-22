@@ -22,6 +22,8 @@
  *                a flexible trail fills the remaining space. Use for
  *                primary nav strips (e.g. the drawer) where a `right`
  *                slot needs to be pushed all the way to the edge.
+ *   • 'right'  — tabs pack to the end; a lead spacer pushes them over.
+ *                Use with `title-tabs` (title left, tabs right). No trail.
  *   • 'equal'  — tabs share the row evenly, each taking 1fr of the
  *                tablist. Use for inspector tab strips (Fields /
  *                Events / Links) so labels line up across panes.
@@ -100,8 +102,8 @@
     subtitle?: string
   }
 
-  /** Tab strip layout. Defaults to 'left'. */
-  export type PaneTabLayout = 'left' | 'equal'
+  /** Tab strip layout. Defaults to 'left'. Title-tabs defaults to 'right'. */
+  export type PaneTabLayout = 'left' | 'equal' | 'right'
 
   type TabsProps = CommonProps & {
     mode: 'tabs'
@@ -114,6 +116,8 @@
   type TitleTabsProps = CommonProps & {
     mode: 'title-tabs'
     title: string
+    /** Optional service name shown as "(service)" after the title. */
+    subtitle?: string
     tabs: PaneTab[]
     activeId: string
     onSelect: (id: string) => void
@@ -202,6 +206,9 @@
       aria-label={ariaLabel}
       class="tabs tabs-lift {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
     >
+    {#if layout === 'right'}
+      <span class="pane-header__tab-lead" aria-hidden="true"></span>
+    {/if}
     {#each tabs as tab (tab.id)}
       {@const active = tab.id === activeId}
       <button
@@ -289,6 +296,9 @@
     <div class="pane-header__top pane-header__top--title-tabs">
       <div class="pane-header__title-row pane-header__title-row--tabs">
         <span class="pane-header__title">{props.title}</span>
+        {#if props.subtitle?.trim()}
+          <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
+        {/if}
         {@render badgeBlock(props.badges, props.badge)}
       </div>
       {@render tabStrip(
@@ -296,7 +306,7 @@
         props.activeId,
         props.onSelect,
         props.ariaLabel ?? `${props.title} tabs`,
-        props.tabLayout ?? 'left'
+        props.tabLayout ?? 'right'
       )}
       {#if props.right}
         <div class="pane-header__right">{@render props.right()}</div>
@@ -423,8 +433,46 @@
     font-size: 0.75rem;
   }
 
+  /* Left layout (drawer / tabs-only): tabs pack to the start at intrinsic
+     width, a flexible trail fills the remaining space so a `right` slot
+     can be pushed to the edge. Title-tabs uses its own rules below. */
+  .pane-header:not(.pane-header--title-tabs) :global(.tabs.pane-header__tabs--left) {
+    display: inline-flex !important;
+    width: max-content !important;
+    min-width: 100%;
+  }
+
+  .pane-header:not(.pane-header--title-tabs) :global(.tabs.pane-header__tabs--left > .tab) {
+    flex: 0 0 auto !important;
+    min-width: max-content;
+  }
+
+  /* Title-tabs: title on the left; tab strip fills the rest of the row
+     and uses the 'right' tab layout (lead spacer + tabs). */
   .pane-header--title-tabs .pane-header__title-row--tabs {
-    @apply min-w-0 max-w-[45%] shrink pl-3;
+    @apply min-w-0 max-w-[55%] shrink self-center pl-3;
+    flex: 0 1 auto;
+  }
+
+  .pane-header--title-tabs .pane-header__tab-scroll {
+    @apply min-h-0 min-w-0 flex-1;
+    width: 0;
+  }
+
+  /* Right layout: lead spacer pushes tabs to the end. */
+  .pane-header :global(.tabs.pane-header__tabs--right) {
+    display: flex !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .pane-header__tab-lead {
+    @apply min-w-0 flex-1 self-stretch;
+  }
+
+  .pane-header :global(.tabs.pane-header__tabs--right > .tab) {
+    flex: 0 0 auto !important;
+    min-width: max-content;
   }
 
   .pane-header__right {
@@ -445,6 +493,10 @@
     scrollbar-width: thin;
   }
 
+  .pane-header__tab-scroll--right {
+    @apply overflow-hidden;
+  }
+
   .pane-header__tab-scroll--equal {
     @apply overflow-hidden;
   }
@@ -461,21 +513,6 @@
   .pane-header :global(.tabs.pane-header__tabs > .tab) {
     flex-wrap: nowrap !important;
     white-space: nowrap;
-  }
-
-  /* Left layout: tabs pack to the start at intrinsic width, a
-     flexible trail fills the remaining space so a `right` slot
-     can be pushed to the edge. The strip can grow past 100% and
-     scroll inside .pane-header__tab-scroll--left. */
-  .pane-header :global(.tabs.pane-header__tabs--left) {
-    display: inline-flex !important;
-    width: max-content !important;
-    min-width: 100%;
-  }
-
-  .pane-header :global(.tabs.pane-header__tabs--left > .tab) {
-    flex: 0 0 auto !important;
-    min-width: max-content;
   }
 
   /* Equal layout: each tab gets 1fr of the row. No trail; no
