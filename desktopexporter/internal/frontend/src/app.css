@@ -114,8 +114,8 @@ html[data-theme='rose-pine-dawn'] {
   --color-subtle: #797593;
   --color-muted: #9893a5;
   --color-base-100: #f2e9e1;
-  --color-base-200: #faf4ed;
-  --color-base-300: #fffaf3;
+  --color-base-200: #f8f1ea;
+  --color-base-300: #fffff9;
   --color-base-content: #575279;
   --color-on-light: #575279;
   --color-on-dark: #faf4ed;
@@ -213,6 +213,10 @@ html[data-theme='rose-pine-dawn'] {
   stroke-width: 1.5;
   stroke-dasharray: 4 3;
   opacity: 0.85;
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    stroke-width 0.12s ease;
 }
 
 /* Selection dot halo: surface-colored ring drawn underneath the
@@ -259,8 +263,29 @@ html[data-theme='rose-pine-dawn'] {
 .metric-chart-view :where(.series-stat-line) {
   stroke: var(--marker-color, currentColor);
   stroke-width: 1;
-  stroke-dasharray: 3 4;
-  opacity: 0.65;
+  stroke-dasharray: 4 3;
+  opacity: 0.75;
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    stroke-width 0.12s ease;
+}
+
+.metric-chart-view
+  :where(
+    .series-stat-overlay:has(.series-stat-hitbox:hover) .series-stat-line,
+    .series-stat-overlay:has(.series-stat-hitbox:hover) .highlight-rule
+  ) {
+  opacity: 1;
+  stroke-width: 1.5;
+}
+
+.metric-chart-view :where(.series-stat-hitbox) {
+  fill: transparent;
+  stroke: none;
+  stroke-width: 0;
+  pointer-events: all;
+  cursor: default;
 }
 
 .metric-chart-view :where(.series-stat-dot) {
@@ -271,6 +296,21 @@ html[data-theme='rose-pine-dawn'] {
 
 .metric-chart-view :where(.series-stat-overlay) {
   pointer-events: none;
+}
+
+.metric-chart-view :where(.series-stat-marker) {
+  pointer-events: none;
+}
+
+.metric-chart-view :where(.series-stat-line-group) {
+  pointer-events: none;
+}
+
+.metric-chart-view :where(.series-stat-hitbox--line) {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: all;
 }
 
 /* Pinned selection legend + stat point labels (ChartSelectionLegend). */
@@ -288,29 +328,47 @@ html[data-theme='rose-pine-dawn'] {
   background-color: var(--color-base-100);
 }
 
-.metric-chart-view :where(.chart-selection-legend--stat) {
+.metric-chart-view :where(.chart-selection-legend--stat:not(.chart-time-range-legend)) {
   width: max-content;
   min-width: max-content;
   max-width: none;
   padding: 0.25rem 0.4rem;
+  @apply border border-base-300;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 2px 6px rgb(0 0 0 / 0.06);
+  background-color: var(--color-base-100);
 }
 
-.metric-chart-view :where(.chart-selection-legend--stat .chart-selection-legend__rows) {
+.metric-chart-view
+  :where(.chart-selection-legend--stat .chart-selection-legend__rows) {
   grid-template-columns: auto auto auto;
   width: max-content;
 }
 
-.metric-chart-view :where(.chart-selection-legend--stat .chart-selection-legend__label) {
+.metric-chart-view
+  :where(.chart-selection-legend--stat .chart-selection-legend__label) {
   overflow: visible;
   text-overflow: clip;
 }
 
-.metric-chart-view :where(.chart-selection-legend--stat .chart-selection-legend__value) {
+.metric-chart-view
+  :where(.chart-selection-legend--stat .chart-selection-legend__value) {
   min-width: max-content;
 }
 
 .metric-chart-view :where(.chart-time-range-legend) {
-  @apply flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 border-0 bg-transparent text-xs leading-snug shadow-none;
+  @apply flex flex-col gap-y-0.5 border-0 bg-transparent text-xs leading-snug shadow-none;
+  min-width: max-content;
+  max-width: none;
+  width: max-content;
+}
+
+.metric-chart-view :where(.chart-time-range-legend__row) {
+  display: flex;
+  align-items: baseline;
+  column-gap: 0.375rem;
+  white-space: nowrap;
 }
 
 .metric-chart-view :where(.chart-time-range-legend__prefix) {
@@ -320,6 +378,33 @@ html[data-theme='rose-pine-dawn'] {
 
 .metric-chart-view :where(.chart-time-range-legend__value) {
   @apply tabular-nums whitespace-nowrap;
+}
+
+html[data-theme='rose-pine-dawn']
+  .metric-chart-view
+  :where(
+    .lc-grid-x-rule,
+    .lc-grid-y-rule,
+    .lc-grid-x-end-rule,
+    .lc-grid-y-end-rule,
+    .lc-axis-grid
+  ) {
+  --stroke-color: color-mix(in oklab, var(--color-neutral) 50%, transparent);
+}
+
+html[data-theme='rose-pine-dawn']
+  .metric-chart-view
+  :where(.lc-axis-rule, .lc-axis-tick, .lc-rule-x-line, .lc-rule-y-line) {
+  --stroke-color: var(--color-neutral);
+}
+
+html[data-theme='rose-pine-dawn']
+  .metric-chart-view
+  :where(
+    .chart-selection-legend,
+    .chart-selection-legend--stat:not(.chart-time-range-legend)
+  ) {
+  border-color: var(--color-neutral);
 }
 
 html[data-theme='rose-pine-dawn']
@@ -388,6 +473,45 @@ html[data-theme='rose-pine-dawn']
 }
 
 .metric-chart-view :where(.chart-selection-legend__value) {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.metric-chart-view :where(.chart-aggregate-summary) {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0.3rem 0 0;
+  border-top: 1px solid
+    color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: 0.4rem;
+  row-gap: 0.18rem;
+  align-items: baseline;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.metric-chart-view :where(.chart-aggregate-summary__row) {
+  display: contents;
+}
+
+.metric-chart-view :where(.chart-aggregate-summary__line) {
+  width: 1.125rem;
+  align-self: center;
+  border-top: 2px dashed var(--agg-color, var(--color-primary));
+}
+
+.metric-chart-view :where(.chart-aggregate-summary__label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklab, var(--color-base-content) 80%, transparent);
+}
+
+.metric-chart-view :where(.chart-aggregate-summary__value) {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   text-align: right;
@@ -752,11 +876,11 @@ svg {
 }
 
 .detail-tab--active {
-  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10;
+  @apply bg-primary/15 text-base-content shadow-sm shadow-primary/10;
 }
 
 .detail-tab--inactive {
-  @apply border border-transparent text-base-content/55 hover:bg-base-200/80 hover:text-base-content;
+  @apply border border-transparent text-primary hover:bg-base-200/80;
 }
 
 /* Signal drawer — route tabs (Traces | Metrics | Logs) + collapsed icon rail. */
@@ -765,11 +889,11 @@ svg {
 }
 
 .drawer-tab--active {
-  @apply bg-primary/15 text-primary shadow-sm shadow-primary/10;
+  @apply bg-primary/15 text-base-content shadow-sm shadow-primary/10;
 }
 
 .drawer-tab--inactive {
-  @apply border border-transparent text-base-content/70 hover:bg-base-200/80 hover:text-primary;
+  @apply border border-transparent text-primary hover:bg-base-200/80;
 }
 
 .drawer-tab--icon-only {
@@ -777,11 +901,20 @@ svg {
 }
 
 .drawer-tab--icon-only.drawer-tab--inactive {
-  @apply text-base-content/70 hover:bg-base-200/80 hover:text-primary;
+  @apply text-primary hover:bg-base-200/80;
 }
 
 .drawer-tab--icon-only.drawer-tab--active {
-  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
+  @apply border-transparent bg-primary/15 text-base-content shadow-sm shadow-primary/10;
+}
+
+/* Pane lift tabs — inactive = primary, active = base text. */
+.pane-header :where(.tab:not(.tab-active)) {
+  color: var(--color-primary);
+}
+
+.pane-header :where(.tab.tab-active) {
+  color: var(--color-base-content);
 }
 
 /* Pane chrome — small round controls shared by drawer header icons and

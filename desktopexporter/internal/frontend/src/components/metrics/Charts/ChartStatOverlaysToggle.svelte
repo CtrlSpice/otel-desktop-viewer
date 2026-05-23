@@ -9,7 +9,12 @@
 </script>
 
 {#if ctx.showChartStatOverlaysToggleVisible}
-  <label class="chart-stat-overlays-toggle" title="Show min, max, and avg overlays">
+  <label
+    class="chart-stat-overlays-toggle"
+    title={ctx.rateSlopeOverlayAvailable
+      ? 'Show min, max, and rate slope overlays'
+      : 'Show min, max, and avg overlays'}
+  >
     <input
       type="checkbox"
       class="checkbox checkbox-xs checkbox-soft chart-stat-overlays-toggle__checkbox"

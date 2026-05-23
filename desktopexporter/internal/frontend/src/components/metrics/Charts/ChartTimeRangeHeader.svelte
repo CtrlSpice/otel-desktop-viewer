@@ -32,10 +32,14 @@
     class="chart-selection-legend chart-selection-legend--stat chart-time-range-legend {className}"
     aria-label="Chart time range"
   >
-    <span class="chart-time-range-legend__prefix">start:</span>
-    <span class="chart-time-range-legend__value">{startLabel}</span>
-    <span class="chart-time-range-legend__prefix">end:</span>
-    <span class="chart-time-range-legend__value">{endLabel}</span>
+    <div class="chart-time-range-legend__row">
+      <span class="chart-time-range-legend__prefix">start:</span>
+      <span class="chart-time-range-legend__value">{startLabel}</span>
+    </div>
+    <div class="chart-time-range-legend__row">
+      <span class="chart-time-range-legend__prefix">end:</span>
+      <span class="chart-time-range-legend__value">{endLabel}</span>
+    </div>
   </div>
 {:else}
   <div

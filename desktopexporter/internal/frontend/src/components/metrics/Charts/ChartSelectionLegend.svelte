@@ -25,6 +25,8 @@
 </script>
 
 <script lang="ts">
+  import type { AggregateSummaryRow } from '@/components/metrics/utils/aggregation'
+  import ChartAggregateSummaryRows from '@/components/metrics/Charts/ChartAggregateSummaryRows.svelte'
   /*
    * ChartSelectionLegend: a small floating card showing the timestamp
    * of a clicked datapoint plus per-series values at that x. Sits in
@@ -47,37 +49,47 @@
      *  card (caller can also conditionally render the component, but
      *  this lets the component own its own emptiness gracefully). */
     rows: readonly SelectionLegendRow[]
+    /** Optional aggregate summary rows at the bottom (dashed-line
+     *  markers matching Selected / All aggregate lines). */
+    aggregateRows?: readonly AggregateSummaryRow[]
   }
 
-  let { timestamp, rows }: Props = $props()
+  let { timestamp, rows, aggregateRows = [] }: Props = $props()
 </script>
 
-{#if rows.length > 0}
+{#if rows.length > 0 || aggregateRows.length > 0}
   <div class="chart-selection-legend" aria-live="polite">
-    <div class="chart-selection-legend__timestamp">{timestamp}</div>
-    <ul class="chart-selection-legend__rows">
-      {#each rows as row (row.key)}
-        <li
-          class="chart-selection-legend__row"
-          class:chart-selection-legend__row--primary={row.isPrimary}
-        >
-          <span
-            class="chart-selection-legend__dot"
-            style:--color={row.color}
-            aria-hidden="true"
-          ></span>
-          <span class="chart-selection-legend__label">
-            {#if row.glyph}<span
-                class="chart-selection-legend__glyph"
-                title={row.glyphTitle ?? undefined}
-                aria-label={row.glyphTitle ?? undefined}
-              >{row.glyph}</span>
-            {/if}{row.label}
-          </span>
-          <span class="chart-selection-legend__value">{row.valueText}</span>
-        </li>
-      {/each}
-    </ul>
+    {#if timestamp}
+      <div class="chart-selection-legend__timestamp">{timestamp}</div>
+    {/if}
+    {#if rows.length > 0}
+      <ul class="chart-selection-legend__rows">
+        {#each rows as row (row.key)}
+          <li
+            class="chart-selection-legend__row"
+            class:chart-selection-legend__row--primary={row.isPrimary}
+          >
+            <span
+              class="chart-selection-legend__dot"
+              style:--color={row.color}
+              aria-hidden="true"
+            ></span>
+            <span class="chart-selection-legend__label">
+              {#if row.glyph}<span
+                  class="chart-selection-legend__glyph"
+                  title={row.glyphTitle ?? undefined}
+                  aria-label={row.glyphTitle ?? undefined}
+                >{row.glyph}</span>
+              {/if}{row.label}
+            </span>
+            <span class="chart-selection-legend__value">{row.valueText}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if aggregateRows.length > 0}
+      <ChartAggregateSummaryRows rows={aggregateRows} />
+    {/if}
   </div>
 {/if}
 

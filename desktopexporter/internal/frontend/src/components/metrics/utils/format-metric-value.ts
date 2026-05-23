@@ -111,6 +111,19 @@ export function formatMetricValue(
 /** Plain decimal + optional OTLP unit for detail rows. Avoids SI
  *  suffixes (m, k) and scientific notation in contexts where the axis
  *  does not disambiguate scale. Charts keep {@link formatMetricValue}. */
+/** Rate slope (Δrate/Δt) with optional OTLP unit suffix. */
+export function formatRateSlopeValue(
+  value: number | null | undefined,
+  unit?: string,
+  options: FormatMetricValueOptions = {}
+): string {
+  if (value === null || value === undefined) return ''
+  const formatted = formatMetricValue(value, options)
+  const trimmed = unit?.trim()
+  if (!trimmed || trimmed === '1') return `${formatted}/s²`
+  return `${formatted} ${trimmed}/s²`
+}
+
 export function formatMetricValuePlain(
   value: number | null | undefined,
   options: FormatMetricValuePlainOptions = {}

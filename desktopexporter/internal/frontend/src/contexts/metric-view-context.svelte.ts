@@ -53,19 +53,17 @@ import {
   availableAggregationViews,
   defaultAggregationViewFor,
   isCumulativeTemporality,
-  overlayAverage,
-  overlayMax,
-  overlayMin,
-  overlayTotal,
   availableSeriesStatBadges,
+  availableRateSlopeOverlay,
+  rateSlopeAtPoint,
   seriesStatsFromPoints,
+  resampleSeriesToBucketCenters,
   type AggregateLineKey,
   type AggregateResult,
   type AggregationView,
   type ResetIndicesByKey,
   type SeriesStat,
   type SeriesStats,
-  type SumOverlay,
 } from '@/components/metrics/utils/aggregation'
 import type {
   ChartPoint,
@@ -241,21 +239,15 @@ export interface MetricViewContext {
   readonly showSelectionStatOverlays: boolean
   /** Show the stat overlay toggle in the chart control bar. */
   readonly showChartStatOverlaysToggleVisible: boolean
+  /** Sum + cumulative + monotonic + rate: offer rate slope at selection. */
+  readonly rateSlopeOverlayAvailable: boolean
+  /** Rate slope (Δrate/Δt) at the selected bucket, or undefined. */
+  readonly selectedRateSlope: number | undefined
   /** Start/end of data plotted in the chart (gauge/sum points or histogram window). */
   readonly chartDataTimeRange: { startMs: number; endMs: number } | undefined
   /** Reset markers per series, indexed into the transformed (visible)
    * series' output points. Only populated in raw mode. */
   readonly sumResetIndicesByKey: ResetIndicesByKey
-  /** Toggled set of horizontal reference-line overlays. */
-  readonly sumOverlays: SvelteSet<SumOverlay>
-  /** Overlay y-values. Only populated in raw mode; aggregated views
-   *  tell the story directly via the aggregate lines. */
-  readonly sumOverlayValues: Record<
-    SumOverlay,
-    { visible: number | undefined; all: number | undefined }
-  >
-  /** Overlays the UI should render pills for. Empty on aggregated views. */
-  readonly availableSumOverlays: SumOverlay[]
 
   // -- Histogram chart wiring --
   readonly histogramLegendTimeseries: LegendTimeseries[]
@@ -302,8 +294,6 @@ export interface MetricViewContext {
   setAggregationView(next: AggregationView): void
   setShowAllSeriesAggregate(next: boolean): void
   setShowSelectionStatOverlays(next: boolean): void
-  /** Toggle a Sum overlay (min / max / avg / total) on or off. */
-  toggleSumOverlay(overlay: SumOverlay): void
   /** Replace the visible-set for the Gauge/Sum legend. The legend
    * keeps a `bind:visibleKeys` model; we expose a setter so the
    * sole writer is still us. */
@@ -347,14 +337,11 @@ export function createMetricViewContext(
     // Aggregation-view state. `aggregationView` defaults to 'raw' (Gauge metrics never
     // touch this); the per-metric reset effect re-derives the smart
     // default from (temporality, isMonotonic) when the user navigates
-    // between metrics. `sumOverlays` is the toggled set of horizontal
-    // reference lines (min / max / avg / total). Both are intentionally
-    // chart-scoped: when histograms grow their own overlays we'll add
-    // `histogramOverlays` next to this, not generalize prematurely.
+    // between metrics. When histograms grow their own overlays we'll add
+    // histogram-specific state next to this, not generalize prematurely.
     aggregationView: 'raw' as AggregationView,
     showAllSeriesAggregate: false,
     showSelectionStatOverlays: true,
-    sumOverlays: new SvelteSet<SumOverlay>(),
   })
 
   /** Histogram visibility is seeded once per stream id (bucket fetch). */
@@ -608,6 +595,16 @@ export function createMetricViewContext(
     return metricType === 'Gauge' || metricType === 'Sum'
   })
 
+  const rateSlopeOverlayAvailable = $derived.by((): boolean => {
+    if (isHistogramKind || isUnspecifiedTemporality) return false
+    return availableRateSlopeOverlay({
+      metricType,
+      temporality,
+      isMonotonic,
+      aggregationView: view.aggregationView,
+    })
+  })
+
   const chartDataTimeRange = $derived.by(():
     | { startMs: number; endMs: number }
     | undefined => {
@@ -643,7 +640,10 @@ export function createMetricViewContext(
    *    toggled on via showAllSeriesAggregate.
    *
    *  Raw lines are placed first so aggregates draw on top in the
-   *  chart's natural render order. */
+   *  chart's natural render order. When aggregates are present, raw
+   *  series are resampled onto the aggregate bucket-center grid so
+   *  bisect-x tooltips and highlight dots share one x axis instead of
+   *  flickering between scrape timestamps and bucket midpoints. */
   const transformedGaugeSumChartTimeseries = $derived.by((): ChartTimeseries[] => {
     if (view.aggregationView === 'raw') return rawTransformed.series
     if (gaugeSumGroups.keys.length < 2) return rawTransformed.series
@@ -655,35 +655,19 @@ export function createMetricViewContext(
     if (!view.showAllSeriesAggregate) {
       aggLines = aggLines.filter(l => l.key !== AGG_KEY_ALL)
     }
-    return [...rawTransformed.series, ...aggLines]
+    if (aggLines.length === 0) return rawTransformed.series
+
+    const centers = aggLines[0]!.points.map(p => p.date)
+    const alignedRaw = rawTransformed.series.map(s =>
+      resampleSeriesToBucketCenters(s, centers)
+    )
+    return [...alignedRaw, ...aggLines]
   })
 
   /** Reset markers — only relevant in raw mode. */
   const sumResetIndicesByKey = $derived.by((): ResetIndicesByKey => {
     if (view.aggregationView !== 'raw') return new Map()
     return rawTransformed.resets
-  })
-
-  /** Overlay values — only relevant in raw mode; aggregated views
-   *  tell the story directly via Selected/Other/All lines. */
-  type OverlayPair = { visible: number | undefined; all: number | undefined }
-  const sumOverlayValues = $derived.by((): Record<SumOverlay, OverlayPair> => {
-    if (view.aggregationView !== 'raw') {
-      const empty = { visible: undefined, all: undefined }
-      return { min: empty, max: empty, avg: empty, total: empty }
-    }
-    const v = rawTransformed.series
-    return {
-      min: { visible: overlayMin(v), all: undefined },
-      max: { visible: overlayMax(v), all: undefined },
-      avg: { visible: overlayAverage(v), all: undefined },
-      total: { visible: overlayTotal(v), all: undefined },
-    }
-  })
-
-  const availableSumOverlays = $derived.by((): SumOverlay[] => {
-    if (view.aggregationView !== 'raw') return []
-    return ['min', 'max', 'avg', 'total']
   })
 
   /** Which AggregationView options the dropdown should offer. Driven by metric
@@ -730,6 +714,16 @@ export function createMetricViewContext(
       if (ts.datapoints.some((dp) => dp.id === id)) return ts.attributesKey
     }
     return null
+  })
+
+  const selectedRateSlope = $derived.by((): number | undefined => {
+    if (!rateSlopeOverlayAvailable) return undefined
+    const key = selectedSeriesKey
+    if (!key || highlightedTimestamp === null) return undefined
+    const series = transformedGaugeSumChartTimeseries.find((s) => s.key === key)
+    if (!series) return undefined
+    const at = new Date(Number(highlightedTimestamp / 1_000_000n))
+    return rateSlopeAtPoint(series.points, at)
   })
 
   // -- Histogram chart wiring --
@@ -986,7 +980,6 @@ export function createMetricViewContext(
         isMonotonic,
         gaugeSumGroups.keys.length
       )
-    view.sumOverlays.clear()
     view.showSelectionStatOverlays = true
     view.showAllSeriesAggregate = streamId
       ? loadPersistedShowAllSeriesAggregate(streamId)
@@ -1246,14 +1239,6 @@ export function createMetricViewContext(
     view.showSelectionStatOverlays = next
   }
 
-  function toggleSumOverlay(overlay: SumOverlay) {
-    if (view.sumOverlays.has(overlay)) {
-      view.sumOverlays.delete(overlay)
-    } else {
-      view.sumOverlays.add(overlay)
-    }
-  }
-
   function setGaugeSumVisible(next: SvelteSet<string>) {
     view.gaugeSumVisible = next
   }
@@ -1476,20 +1461,17 @@ export function createMetricViewContext(
     get showChartStatOverlaysToggleVisible() {
       return showChartStatOverlaysToggleVisible
     },
+    get rateSlopeOverlayAvailable() {
+      return rateSlopeOverlayAvailable
+    },
+    get selectedRateSlope() {
+      return selectedRateSlope
+    },
     get chartDataTimeRange() {
       return chartDataTimeRange
     },
     get sumResetIndicesByKey() {
       return sumResetIndicesByKey
-    },
-    get sumOverlays() {
-      return view.sumOverlays
-    },
-    get sumOverlayValues() {
-      return sumOverlayValues
-    },
-    get availableSumOverlays() {
-      return availableSumOverlays
     },
 
     get histogramLegendTimeseries() {
@@ -1558,7 +1540,6 @@ export function createMetricViewContext(
     setAggregationView,
     setShowAllSeriesAggregate,
     setShowSelectionStatOverlays,
-    toggleSumOverlay,
     setGaugeSumVisible,
     setHistogramVisible,
     toggleTimeseriesVisible,

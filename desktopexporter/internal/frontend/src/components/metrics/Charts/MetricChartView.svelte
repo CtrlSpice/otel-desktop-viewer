@@ -213,6 +213,7 @@
         colorByKey={ctx.timeseriesColorByKey}
         aggregationView={ctx.aggregationView}
         showStatOverlays={ctx.showSelectionStatOverlays}
+        selectedRateSlope={ctx.selectedRateSlope}
         timeRange={ctx.chartDataTimeRange ?? null}
         onChartPointClick={ctx.onChartPointClick}
         emptyMessage={ctx.gaugeSumChartTimeseries.length === 0

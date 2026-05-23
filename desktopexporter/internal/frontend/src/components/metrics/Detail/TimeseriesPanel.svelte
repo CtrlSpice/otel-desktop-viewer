@@ -2,8 +2,8 @@
   /*
    * TimeseriesPanel: per-series rows in the detail pane Series tab.
    * One FieldGroup per timeseries. The header row carries the visibility
-   * checkbox, inline attribute label, and sparkline on one row;
-   * expand for attribute fields and a nested Datapoints section.
+   * checkbox, inline attribute label, and sparkline on the first row;
+   * stat badges on a second row when shown. Expand for attribute fields and a nested Datapoints section.
    */
   import { tick } from 'svelte'
   import { SvelteSet } from 'svelte/reactivity'
@@ -182,61 +182,57 @@
           last={isLast}
         >
           {#snippet headerAction()}
-            <div
-              class="ts-row__title-row"
-              class:ts-row__title-row--no-sparkline={sparklineSuppressed}
-            >
-              <label
-                class="ts-row__check-label"
-                class:ts-row__check-label--disabled={checkboxDisabled}
-                title={tooltip}
+            <div class="ts-row__header">
+              <div
+                class="ts-row__title-row"
+                class:ts-row__title-row--no-sparkline={sparklineSuppressed}
               >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-xs checkbox-soft ts-row__checkbox"
-                  style:--input-color={color}
-                  style:color={fg}
-                  {checked}
-                  disabled={checkboxDisabled}
-                  onchange={(e) =>
-                    toggle(
-                      ts.key,
-                      (e.currentTarget as HTMLInputElement).checked
-                    )}
-                />
-              </label>
-              <div class="ts-row__attrs" title={tooltip}>
-                {#if hasAttrs}
-                  <span class="ts-row__attrs-text">{attrsTooltip(rowHeaderAttrs)}</span>
-                {:else}
-                  <span class="ts-row__default-label">default series</span>
+                <label
+                  class="ts-row__check-label"
+                  class:ts-row__check-label--disabled={checkboxDisabled}
+                  title={tooltip}
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-soft ts-row__checkbox"
+                    style:--input-color={color}
+                    style:color={fg}
+                    {checked}
+                    disabled={checkboxDisabled}
+                    onchange={(e) =>
+                      toggle(
+                        ts.key,
+                        (e.currentTarget as HTMLInputElement).checked
+                      )}
+                  />
+                </label>
+                <div class="ts-row__attrs" title={tooltip}>
+                  {#if hasAttrs}
+                    <span class="ts-row__attrs-text">{attrsTooltip(rowHeaderAttrs)}</span>
+                  {:else}
+                    <span class="ts-row__default-label">default series</span>
+                  {/if}
+                </div>
+                {#if !sparklineSuppressed}
+                  <div class="ts-row__sparkline">
+                    <Sparkline
+                      points={sparklinePoints}
+                      color={sparklineColor}
+                      width={128}
+                    />
+                  </div>
                 {/if}
               </div>
               {#if showStatBadges}
-                <div class="ts-row__stats" aria-label="Series stats">
+                <div class="ts-row__stats-row" aria-label="Series stats">
                   {#each statBadges as stat (stat)}
                     {@const value = rowStats[stat]}
                     {#if value !== undefined}
-                      <span
-                        class="ts-row__stat-badge"
-                        title={statBadgeTitle(stat, value)}
-                      >
-                        <span class="ts-row__stat-label">{STAT_LABEL[stat]}</span>
-                        <span class="ts-row__stat-value"
-                          >{formatMetricValue(value)}</span
-                        >
+                      <span class="badge-count" title={statBadgeTitle(stat, value)}>
+                        {STAT_LABEL[stat]} {formatMetricValue(value)}
                       </span>
                     {/if}
                   {/each}
-                </div>
-              {/if}
-              {#if !sparklineSuppressed}
-                <div class="ts-row__sparkline">
-                  <Sparkline
-                    points={sparklinePoints}
-                    color={sparklineColor}
-                    width={128}
-                  />
                 </div>
               {/if}
             </div>
@@ -345,17 +341,22 @@
     grid-row: 1;
   }
 
+  .ts-row__header {
+    @apply flex min-w-0 w-full flex-col gap-0.5;
+  }
+
   .ts-row__title-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 128px);
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 128px);
     align-items: center;
     gap: 0.5rem;
     min-height: var(--table-row-h);
     min-width: 0;
+    width: 100%;
   }
 
   .ts-row__title-row--no-sparkline {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .ts-row__sparkline {
@@ -365,6 +366,11 @@
 
   .ts-row__sparkline :global(.sparkline) {
     @apply block h-[18px] w-full max-w-[128px];
+  }
+
+  .ts-row__stats-row {
+    @apply flex min-w-0 flex-wrap items-center gap-0.5;
+    padding-left: var(--ts-content-inset);
   }
 
   .ts-row__check-label {
@@ -383,33 +389,14 @@
     @apply min-w-0 overflow-hidden py-1;
   }
 
-  .ts-row__attrs-text {
+  .ts-row__attrs-text,
+  .ts-row__default-label {
     @apply block truncate text-sm;
   }
 
   .ts-row__default-label {
-    @apply text-sm italic;
+    @apply italic;
     color: var(--color-muted);
-  }
-
-  .ts-row__stats {
-    @apply flex min-w-0 shrink flex-wrap items-center justify-end gap-0.5;
-  }
-
-  .ts-row__stat-badge {
-    @apply badge badge-xs tabular-nums leading-tight ring-0;
-    color: var(--color-base-content);
-    background-color: var(--color-base-200);
-    border: none;
-    max-width: 100%;
-  }
-
-  .ts-row__stat-label {
-    @apply mr-0.5 text-[0.625rem] font-semibold uppercase opacity-55;
-  }
-
-  .ts-row__stat-value {
-    @apply font-medium;
   }
 
   .ts-fields-empty {

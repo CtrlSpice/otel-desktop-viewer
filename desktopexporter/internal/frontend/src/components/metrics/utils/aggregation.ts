@@ -85,9 +85,6 @@ export function aggregateScopeLabelTitle(
     : `Show ${kind} across all series`
 }
 
-/** Optional horizontal reference lines overlaid on the chart. */
-export type SumOverlay = 'min' | 'max' | 'avg' | 'total'
-
 /** Per-series reset markers (indices into the OUTPUT points array). */
 export type ResetIndicesByKey = Map<string, number[]>
 
@@ -258,6 +255,26 @@ export function bucketize(
   return { buckets, bucketCenters, bucketSeconds: bucketMs / 1000 }
 }
 
+/** Last bucket index that received at least one source point. */
+function lastBucketWithDataIndex(buckets: readonly ChartPoint[][]): number {
+  let last = -1
+  for (let i = 0; i < buckets.length; i++) {
+    if (buckets[i]!.length > 0) last = i
+  }
+  return last
+}
+
+/** Sum/rate emit one point per bucket; drop trailing empty tails so
+ *  step-after lines end at the last real bucket instead of diving to 0. */
+function trimTrailingEmptyBucketPoints(
+  points: ChartPoint[],
+  buckets: readonly ChartPoint[][]
+): ChartPoint[] {
+  const last = lastBucketWithDataIndex(buckets)
+  if (last < 0) return []
+  return points.slice(0, last + 1)
+}
+
 // Internal: project one timeseries' points to delta-space if
 // `cumulative` is true, otherwise pass through. Centralizes the
 // reset bookkeeping so every per-view aggregation handles cumulative
@@ -328,7 +345,7 @@ export function aggregateSum(
       for (const p of bucket) total += p.value
       return { date: bucketCenters[i]!, value: total }
     })
-    out.push({ ...s, points })
+    out.push({ ...s, points: trimTrailingEmptyBucketPoints(points, buckets) })
     if (work.resets.length > 0) {
       // Map reset indices from delta-space to bucket-space: a reset
       // at delta index `r` shows up in the bucket that contains that
@@ -434,7 +451,7 @@ export function aggregateRate(
       for (const p of bucket) total += p.value
       return { date: bucketCenters[i]!, value: total / bucketSeconds }
     })
-    out.push({ ...s, points })
+    out.push({ ...s, points: trimTrailingEmptyBucketPoints(points, buckets) })
     if (work.resets.length > 0) {
       const bucketResets: number[] = []
       for (const r of work.resets) {
@@ -482,6 +499,56 @@ export function aggregateLineLabel(
     case AGG_KEY_ALL:
       return aggregateScopeLabel(view, 'all') ?? 'all'
   }
+}
+
+/** Human scope name for aggregate summary lines, e.g. "selected series". */
+export function aggregateSummaryScopeLabel(key: AggregateLineKey): string {
+  switch (key) {
+    case AGG_KEY_ALL:
+      return 'all series'
+    case AGG_KEY_SELECTED:
+    case AGG_KEY_TOTAL:
+      return 'selected series'
+  }
+}
+
+/** Human-readable row label, e.g. "selected series μ". */
+export function aggregateSummaryRowLabel(
+  key: AggregateLineKey,
+  view: AggregationView
+): string {
+  const scope = aggregateSummaryScopeLabel(key)
+  const glyph = aggregateViewSymbol(view)
+  return glyph ? `${scope} ${glyph}` : scope
+}
+
+export type AggregateSummaryRow = {
+  key: AggregateLineKey
+  /** Primary = selected/total aggregate; secondary = all-series line. */
+  variant: 'primary' | 'secondary'
+  label: string
+  valueText: string
+}
+
+/** Build ordered aggregate summary rows for tooltip + selection legend. */
+export function buildAggregateSummaryRows(
+  keys: readonly AggregateLineKey[],
+  view: AggregationView,
+  valueAt: (key: AggregateLineKey) => number | undefined,
+  formatValue: (value: number) => string
+): AggregateSummaryRow[] {
+  const rows: AggregateSummaryRow[] = []
+  for (const key of keys) {
+    const value = valueAt(key)
+    if (value === undefined || !Number.isFinite(value)) continue
+    rows.push({
+      key,
+      variant: key === AGG_KEY_ALL ? 'secondary' : 'primary',
+      label: aggregateSummaryRowLabel(key, view),
+      valueText: formatValue(value),
+    })
+  }
+  return rows
 }
 
 export type AggregateResult = {
@@ -637,7 +704,9 @@ function combinePool(
     }
   }
 
-  return { key, label, points }
+  const trimmed =
+    view === 'avg' ? points : trimTrailingEmptyBucketPoints(points, buckets)
+  return { key, label, points: trimmed }
 }
 
 /**
@@ -664,7 +733,10 @@ export function resampleSeriesToBucketCenters(
         (centers.length - 1)
       : 60_000
 
-  const resampled: ChartPoint[] = centers.map((center, i) => {
+  const resampled: ChartPoint[] = []
+  let lastWithData = -1
+  for (let i = 0; i < centers.length; i++) {
+    const center = centers[i]!
     const lo =
       i === 0
         ? center.getTime() - step / 2
@@ -678,82 +750,17 @@ export function resampleSeriesToBucketCenters(
       const t = p.date.getTime()
       if (t >= lo && t < hi) last = p
     }
-    return { date: center, value: last?.value ?? 0 }
-  })
-
-  return { ...series, points: resampled }
-}
-
-// --- 5. Overlay reductions -------------------------------------------
-
-/**
- * Lowest y-value across ALL visible series' points. Returns undefined
- * when the union is empty so the caller can decide not to draw the
- * line. Designed to be reusable for histogram charts later: they call
- * the same function on their own ChartTimeseries-shaped input.
- */
-export function overlayMin(series: ChartTimeseries[]): number | undefined {
-  let lo: number | undefined
-  for (const s of series) {
-    for (const p of s.points) {
-      if (lo === undefined || p.value < lo) lo = p.value
-    }
+    if (last !== undefined) lastWithData = resampled.length
+    resampled.push({ date: center, value: last?.value ?? 0 })
   }
-  return lo
+
+  return {
+    ...series,
+    points: lastWithData >= 0 ? resampled.slice(0, lastWithData + 1) : [],
+  }
 }
 
-/**
- * Highest y-value across ALL visible series' points. Symmetric with
- * overlayMin; same reusability notes.
- */
-export function overlayMax(series: ChartTimeseries[]): number | undefined {
-  let hi: number | undefined
-  for (const s of series) {
-    for (const p of s.points) {
-      if (hi === undefined || p.value > hi) hi = p.value
-    }
-  }
-  return hi
-}
-
-/**
- * Arithmetic mean of all values across all visible series. Returns
- * undefined when the union is empty so the caller can decide not to
- * draw the line. Note this is the mean of POST-VIEW values: on a Sum
- * chart you're getting the mean of per-bucket sums; on a Rate chart
- * the mean of per-bucket rates. That's intentional -- the overlay
- * annotates whatever the chart is currently showing.
- */
-export function overlayAverage(series: ChartTimeseries[]): number | undefined {
-  let total = 0
-  let count = 0
-  for (const s of series) {
-    for (const p of s.points) {
-      total += p.value
-      count++
-    }
-  }
-  return count === 0 ? undefined : total / count
-}
-
-/**
- * Sum of all values across all visible series, post-view. On a Sum
- * chart this gives the grand total of all per-bucket sums (i.e. the
- * window total). On a Rate chart it sums rates, which is rarely
- * meaningful -- the UI should probably hide the Total overlay when
- * the view is Rate, but the math here stays neutral.
- */
-export function overlayTotal(series: ChartTimeseries[]): number | undefined {
-  let total = 0
-  let count = 0
-  for (const s of series) {
-    for (const p of s.points) {
-      total += p.value
-      count++
-    }
-  }
-  return count === 0 ? undefined : total
-}
+// --- 5. Series stats -------------------------------------------------
 
 /** Which stat badges to show on a single series row. */
 export type SeriesStat = 'min' | 'max' | 'avg' | 'total'
@@ -793,7 +800,12 @@ export function availableSeriesStatBadges(opts: {
   temporality: string
   aggregationView: AggregationView
 }): SeriesStat[] {
-  const badges: SeriesStat[] = ['min', 'max', 'avg']
+  const badges: SeriesStat[] = ['min', 'max']
+  // Mean rate over the window is rarely actionable; chart uses slope at
+  // selection instead. Other views keep avg.
+  if (opts.aggregationView !== 'rate') {
+    badges.push('avg')
+  }
   // Window total: Sum + Delta + raw only — not Gauge, cumulative raw, or rate.
   if (
     opts.metricType === 'Sum' &&
@@ -803,4 +815,82 @@ export function availableSeriesStatBadges(opts: {
     badges.push('total')
   }
   return badges
+}
+
+/** Compact label for rate-slope overlay chips. */
+export function rateSlopeViewSymbol(): string {
+  return 'slope'
+}
+
+/** Whether the chart should offer a rate-slope annotation at selection. */
+export function availableRateSlopeOverlay(opts: {
+  metricType: string
+  temporality: string
+  isMonotonic: boolean | null
+  aggregationView: AggregationView
+}): boolean {
+  return (
+    opts.metricType === 'Sum' &&
+    isCumulativeTemporality(opts.temporality) &&
+    opts.isMonotonic === true &&
+    opts.aggregationView === 'rate'
+  )
+}
+
+export type RateSlopeBucketSegment = {
+  slope: number
+  from: ChartPoint
+  to: ChartPoint
+}
+
+/**
+ * Slope segment for the displayed rate series at `at`: Δrate/Δt between
+ * the bucket nearest the selection and the previous bucket.
+ */
+export function rateSlopeBucketSegment(
+  ratePoints: readonly ChartPoint[],
+  at: Date
+): RateSlopeBucketSegment | undefined {
+  if (ratePoints.length < 2) return undefined
+
+  const sorted = [...ratePoints].sort(
+    (a, b) => a.date.getTime() - b.date.getTime()
+  )
+  const atMs = at.getTime()
+
+  let pointIdx = 0
+  let bestDist = Infinity
+  for (let i = 0; i < sorted.length; i++) {
+    const dist = Math.abs(sorted[i]!.date.getTime() - atMs)
+    if (dist < bestDist) {
+      bestDist = dist
+      pointIdx = i
+    }
+  }
+  if (pointIdx < 1) return undefined
+
+  const from = sorted[pointIdx - 1]!
+  const to = sorted[pointIdx]!
+  const dtSec = (to.date.getTime() - from.date.getTime()) / 1000
+  if (dtSec <= 0) return undefined
+  if (!Number.isFinite(from.value) || !Number.isFinite(to.value)) {
+    return undefined
+  }
+
+  return {
+    slope: (to.value - from.value) / dtSec,
+    from,
+    to,
+  }
+}
+
+/**
+ * Slope of the displayed rate series at `at`. See
+ * {@link rateSlopeBucketSegment}.
+ */
+export function rateSlopeAtPoint(
+  ratePoints: readonly ChartPoint[],
+  at: Date
+): number | undefined {
+  return rateSlopeBucketSegment(ratePoints, at)?.slope
 }

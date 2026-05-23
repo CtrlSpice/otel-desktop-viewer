@@ -103,9 +103,7 @@
     },
   }
 
-  if (stackedResizeHandle === 'panel-header') {
-    setContext(PANEL_SPLIT_RESIZE_KEY, panelSplitResizeCtx)
-  }
+  setContext(PANEL_SPLIT_RESIZE_KEY, panelSplitResizeCtx)
 
   /* Pixel floors/ceilings → fractions of the container axis (width
      when side-by-side, height when stacked). Graceful fallback when
