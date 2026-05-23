@@ -1,10 +1,9 @@
 <script lang="ts">
   /*
    * MetricChartView is the "main" pane on the metrics page. It owns
-   * the chart surface (one of three: histogram tabs, time-series chart,
-   * or an unspecified-temporality callout), the per-chart legend
-   * column, and the placeholder for metric types that don't have a
-   * native chart yet.
+   * the chart surface (histogram views, time-series chart, or an
+   * unspecified-temporality callout). Histogram view tabs live in the
+   * metrics page PaneHeader, same as Gauge/Sum aggregation tabs.
    *
    * It does NOT own selection, filters, fetches, or the bucket-series
    * lifecycle: those live in MetricViewContext. The chart view is a
@@ -19,7 +18,6 @@
   } from '@/contexts/metric-view-context.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { selectionToQueryRangeMs } from '@/contexts/time-context.svelte'
-  import { formatTimestamp } from '@/utils/time'
   import MetricTimeSeriesChart from '@/components/metrics/Charts/MetricTimeSeriesChart.svelte'
   import HistogramChart from '@/components/metrics/Charts/HistogramChart.svelte'
   import HistogramHeatmap from '@/components/metrics/Charts/HistogramHeatmap.svelte'
@@ -29,11 +27,51 @@
     MIN_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import MetricChartControlBar from '@/components/metrics/Charts/MetricChartControlBar.svelte'
+  import HistogramQuantileControlBar from '@/components/metrics/Charts/HistogramQuantileControlBar.svelte'
+  import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
-  import { CameraIcon, ChartHistogramIcon, TemperatureIcon } from '@/icons'
+  import ChartSelectionLegend from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
+  import { formatDateTime } from '@/utils/time'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
+
+  function onQuantileChartKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return
+    if (ctx.activeHistogramTab !== 'quantiles') return
+    if (!ctx.quantileDrillDownActive) return
+    ctx.clearQuantileDrillDown()
+  }
+
+  let quantileHighlightedTimestamp = $derived.by((): bigint | null => {
+    if (ctx.activeHistogramTab !== 'quantiles') return null
+    const ms = ctx.heatmapSelectedTimestamp
+    if (ms === null) return null
+    return BigInt(ms) * 1_000_000n
+  })
+
+  let snapshotSelectionTimestamp = $derived.by((): string => {
+    if (ctx.activeHistogramTab !== 'snapshot') return ''
+    const dp = ctx.activeHistogramDp
+    if (!dp) return ''
+    return formatDateTime(
+      Number(dp.timestamp / 1_000_000n),
+      timeContext.timezone,
+      'milliseconds'
+    )
+  })
+
+  let quantileEmptyMessage = $derived.by((): string => {
+    if (ctx.bucketSeriesError) return 'Cannot chart quantiles for this metric'
+    if (ctx.histogramTimeseriesCount === 0) return 'No datapoints to chart'
+    if (ctx.histogramVisible.size === 0) {
+      return 'Nothing to see here — select a timeseries below'
+    }
+    if (ctx.activeQuantileOverlays.size === 0) {
+      return 'Enable at least one quantile overlay'
+    }
+    return 'No quantile data in range'
+  })
 
   // Time window for the chart (used by histogram heatmap + aggregated
   // chart bounds). Re-derived here rather than read from the context
@@ -53,6 +91,8 @@
   )
 </script>
 
+<svelte:window onkeydown={onQuantileChartKeydown} />
+
 {#snippet bucketSeriesErrorMessage(err: BucketSeriesError)}
   <div class="metric-chart-view__placeholder text-error/70">
     {#if err.kind === 'unspecified'}
@@ -68,86 +108,41 @@
 {/snippet}
 
 {#snippet histogramChartSlot()}
-  <!-- Three tabs share this slot. The tab strip is fixed height; the
-       plot host below flex-fills the chart pane and drives SVG height
-       via bind:clientHeight. -->
   <div class="metric-chart-view metric-chart-view--fill">
-    <div
-      class="metric-chart-view__tabs"
-      role="tablist"
-      aria-label="Histogram views"
-    >
-      <button
-        type="button"
-        role="tab"
-        class="detail-tab {ctx.activeHistogramTab === 'heatmap'
-          ? 'detail-tab--active'
-          : 'detail-tab--inactive'}"
-        aria-selected={ctx.activeHistogramTab === 'heatmap'}
-        onclick={() => ctx.setActiveHistogramTab('heatmap')}
-      >
-        <TemperatureIcon class="w-4 h-4 shrink-0" />
-        <span>Heatmap</span>
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="detail-tab {ctx.activeHistogramTab === 'aggregated'
-          ? 'detail-tab--active'
-          : 'detail-tab--inactive'}"
-        aria-selected={ctx.activeHistogramTab === 'aggregated'}
-        onclick={() => ctx.setActiveHistogramTab('aggregated')}
-      >
-        <ChartHistogramIcon class="w-4 h-4 shrink-0" />
-        <span>Aggregated</span>
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="detail-tab {ctx.activeHistogramTab === 'snapshot'
-          ? 'detail-tab--active'
-          : 'detail-tab--inactive'}"
-        aria-selected={ctx.activeHistogramTab === 'snapshot'}
-        onclick={() => ctx.setActiveHistogramTab('snapshot')}
-      >
-        <CameraIcon class="w-4 h-4 shrink-0" />
-        <span>Snapshot</span>
-      </button>
-    </div>
-    {#if ctx.activeHistogramTab === 'snapshot' && ctx.activeHistogramDp}
-      <div class="metric-chart-view__subtitle">
-        <span>datapoint at</span>
-        <span class="tabular-nums">
-          {formatTimestamp(
-            ctx.activeHistogramDp.timestamp,
-            timeContext.timezone,
-            'milliseconds'
-          )}
-        </span>
-      </div>
-    {/if}
-    {#if ctx.chartDataTimeRange}
-      <div class="metric-chart-view__chart-header">
-        <ChartTimeRangeHeader
-          startMs={ctx.chartDataTimeRange.startMs}
-          endMs={ctx.chartDataTimeRange.endMs}
-          variant="legend"
-        />
-      </div>
-    {/if}
     <div
       class="metric-chart-view__plot-host"
       bind:clientHeight={plotHostHeight}
     >
+      {#if ctx.chartDataTimeRange || snapshotSelectionTimestamp}
+        <div class="metric-chart-view__header">
+          {#if ctx.chartDataTimeRange}
+            <ChartTimeRangeHeader
+              startMs={ctx.chartDataTimeRange.startMs}
+              endMs={ctx.chartDataTimeRange.endMs}
+              variant="legend"
+            />
+          {/if}
+          {#if snapshotSelectionTimestamp}
+            <div class="metric-chart-view__selection-legend">
+              <ChartSelectionLegend
+                timestamp={snapshotSelectionTimestamp}
+                rows={[]}
+              />
+            </div>
+          {/if}
+        </div>
+      {/if}
       <div class="metric-chart-view__body">
         {#if ctx.activeHistogramTab === 'heatmap'}
           {#if ctx.bucketSeriesError}
             {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
-          {:else if ctx.bucketSeriesLoading || ctx.visibleBucketSeries === null}
-            <div class="metric-chart-view__placeholder">Loading heatmap…</div>
+          {:else if ctx.heatmapBucketSeries === null}
+            <div class="metric-chart-view__placeholder">No histogram data</div>
+          {:else if ctx.heatmapBucketSeries.length === 0}
+            <MetricChartEmpty height={plotHeight} message="No bucket data in range" />
           {:else}
             <HistogramHeatmap
-              points={ctx.visibleBucketSeries}
+              points={ctx.heatmapBucketSeries}
               windowStartMs={queryRange.start}
               windowEndMs={queryRange.end}
               height={plotHeight}
@@ -155,19 +150,34 @@
               selectedTimestamp={ctx.heatmapSelectedTimestamp}
             />
           {/if}
+        {:else if ctx.activeHistogramTab === 'quantiles'}
+          {#if ctx.bucketSeriesError}
+            {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
+          {:else if ctx.quantileChartTimeseries.length === 0}
+            <MetricChartEmpty height={plotHeight} message={quantileEmptyMessage} />
+          {:else}
+            <MetricTimeSeriesChart
+              timeseries={ctx.quantileChartTimeseries}
+              highlightedTimestamp={quantileHighlightedTimestamp}
+              unit={ctx.metric!.unit}
+              height={plotHeight}
+              colorByKey={ctx.quantileColorByKey}
+              aggregationView="raw"
+              showStatOverlays={false}
+              onChartPointClick={ctx.onQuantileChartPointClick}
+              emptyMessage={quantileEmptyMessage}
+              useQuantileLineStyle={true}
+            />
+          {/if}
         {:else if ctx.activeHistogramTab === 'aggregated'}
           {#if ctx.aggregatedError}
             {@render bucketSeriesErrorMessage(ctx.aggregatedError)}
-          {:else if ctx.aggregatedLoading || !ctx.aggregatedDatapoint}
-            <div class="metric-chart-view__placeholder">Loading aggregate…</div>
+          {:else if !ctx.aggregatedDatapoint}
+            <div class="metric-chart-view__placeholder">No aggregate in range</div>
           {:else}
             <HistogramChart
               datapoint={ctx.aggregatedDatapoint}
               unit={ctx.metric!.unit}
-              quantileSource="merged"
-              metricID={ctx.metric!.id}
-              windowStartMs={queryRange.start}
-              windowEndMs={queryRange.end}
               height={plotHeight}
             />
           {/if}
@@ -176,7 +186,6 @@
             <HistogramChart
               datapoint={ctx.activeHistogramDp}
               unit={ctx.metric!.unit}
-              quantileSource="datapoint"
               height={plotHeight}
             />
           {:else}
@@ -187,6 +196,9 @@
         {/if}
       </div>
     </div>
+    {#if ctx.activeHistogramTab === 'quantiles'}
+      <HistogramQuantileControlBar />
+    {/if}
   </div>
 {/snippet}
 
@@ -283,31 +295,20 @@
     @apply flex min-h-0 min-w-0 flex-1 flex-col;
   }
 
+  .metric-chart-view__header {
+    @apply flex shrink-0 items-start justify-between gap-2 px-1 pb-1 pt-0.5;
+  }
+
+  .metric-chart-view__selection-legend {
+    @apply ml-auto shrink-0;
+    pointer-events: none;
+  }
+
   .metric-chart-view__body {
     @apply flex min-h-0 min-w-0 flex-1 flex-col;
   }
 
   .metric-chart-view__placeholder {
     @apply flex min-h-0 flex-1 items-center justify-center text-base-content/40 text-sm;
-  }
-
-  .metric-chart-view__subtitle {
-    @apply mb-1 mt-1 flex shrink-0 items-baseline gap-2 px-2;
-  }
-
-  .metric-chart-view__chart-header {
-    @apply flex shrink-0 px-1 pb-1 pt-0.5;
-  }
-
-  .metric-chart-view__tabs {
-    @apply flex w-full shrink-0 flex-nowrap items-center gap-1 px-1;
-
-    & > :global(button) {
-      flex: 1 1 0%;
-      justify-content: center;
-      padding-top: 0.25rem;
-      padding-bottom: 0.25rem;
-      font-size: 0.75rem;
-    }
   }
 </style>

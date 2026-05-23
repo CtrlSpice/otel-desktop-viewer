@@ -149,6 +149,7 @@
       ? 'pane-header--stacked'
       : ''
   )
+
 </script>
 
 {#snippet metaRow()}
@@ -200,7 +201,9 @@
   ariaLabel: string,
   layout: PaneTabLayout
 )}
-  <div class="pane-header__tab-scroll pane-header__tab-scroll--{layout}">
+  <div
+    class="pane-header__tab-scroll pane-header__tab-scroll--{layout}"
+  >
     <div
       role="tablist"
       aria-label={ariaLabel}
@@ -219,12 +222,15 @@
           : ''}"
         aria-selected={active}
         disabled={tab.disabled}
+        title={tab.label}
         onclick={() => !tab.disabled && onSelect(tab.id)}
       >
         {#if tab.icon}
-          {@render tab.icon()}
+          <span class="pane-header__tab-icon shrink-0">
+            {@render tab.icon()}
+          </span>
         {/if}
-        {tab.label}
+        <span class="pane-header__tab-label">{tab.label}</span>
         {#if tab.count !== undefined}
           <span class="badge-count">{tab.count}</span>
         {/if}

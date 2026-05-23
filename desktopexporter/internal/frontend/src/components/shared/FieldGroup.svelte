@@ -12,8 +12,6 @@
     badge?: string
     count?: number
     open?: boolean
-    /** Suppress the trailing separator (last group in a list). */
-    last?: boolean
     /** When set, parent owns `open` (e.g. a Set membership). */
     onOpenChange?: (open: boolean) => void
     children: Snippet
@@ -26,7 +24,6 @@
     badge,
     count,
     open = $bindable(true),
-    last = false,
     onOpenChange,
     children,
   }: Props = $props()
@@ -56,9 +53,6 @@
         {@render children()}
       </div>
     {/if}
-    {#if !last}
-      <div class="separator" aria-hidden="true"></div>
-    {/if}
   </div>
 {:else}
   <details
@@ -84,9 +78,6 @@
     <div class="field-group__content">
       {@render children()}
     </div>
-    {#if !last}
-      <div class="separator" aria-hidden="true"></div>
-    {/if}
   </details>
 {/if}
 

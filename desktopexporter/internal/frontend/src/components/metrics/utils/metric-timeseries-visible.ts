@@ -10,6 +10,7 @@
  *     visibleKeys: string[],
  *     aggregationView?: AggregationView,
  *     showAllSeriesAggregate?: boolean
+ *     showAllSeriesQuantileAggregate?: boolean
  *   }
  *
  * Optional fields are omitted from disk when undefined/false-default.
@@ -39,6 +40,7 @@ type PersistedMetricView = {
   visibleKeys: string[]
   aggregationView?: AggregationView
   showAllSeriesAggregate?: boolean
+  showAllSeriesQuantileAggregate?: boolean
 }
 
 const VALID_AGGREGATION_VIEWS: ReadonlySet<AggregationView> = new Set([
@@ -77,7 +79,15 @@ function loadPersistedView(
     const sa = obj.showAllSeriesAggregate
     const showAllSeriesAggregate =
       typeof sa === 'boolean' ? sa : undefined
-    return { visibleKeys, aggregationView, showAllSeriesAggregate }
+    const sq = obj.showAllSeriesQuantileAggregate
+    const showAllSeriesQuantileAggregate =
+      typeof sq === 'boolean' ? sq : undefined
+    return {
+      visibleKeys,
+      aggregationView,
+      showAllSeriesAggregate,
+      showAllSeriesQuantileAggregate,
+    }
   } catch {
     return null
   }
@@ -90,6 +100,9 @@ function serializePersistedView(view: PersistedMetricView): string {
   }
   if (view.showAllSeriesAggregate === true) {
     payload.showAllSeriesAggregate = true
+  }
+  if (view.showAllSeriesQuantileAggregate === true) {
+    payload.showAllSeriesQuantileAggregate = true
   }
   return JSON.stringify(payload)
 }
@@ -119,6 +132,10 @@ function mergePersistedView(
       'showAllSeriesAggregate' in patch
         ? patch.showAllSeriesAggregate
         : existing?.showAllSeriesAggregate,
+    showAllSeriesQuantileAggregate:
+      'showAllSeriesQuantileAggregate' in patch
+        ? patch.showAllSeriesQuantileAggregate
+        : existing?.showAllSeriesQuantileAggregate,
   }
 }
 
@@ -170,6 +187,27 @@ export function savePersistedShowAllSeriesAggregate(
       showAllSeriesAggregate,
     })
   )
+}
+
+/** Persist whether the optional all-series quantile lines are shown. */
+export function savePersistedShowAllSeriesQuantileAggregate(
+  metricStreamId: string,
+  showAllSeriesQuantileAggregate: boolean
+): void {
+  const existing = loadPersistedView(metricStreamId)
+  writePersistedView(
+    metricStreamId,
+    mergePersistedView(existing, {
+      visibleKeys: existing?.visibleKeys ?? [],
+      showAllSeriesQuantileAggregate,
+    })
+  )
+}
+
+export function loadPersistedShowAllSeriesQuantileAggregate(
+  metricStreamId: string
+): boolean {
+  return loadPersistedView(metricStreamId)?.showAllSeriesQuantileAggregate === true
 }
 
 /**

@@ -9,7 +9,6 @@ import ArrowRightDoubleIcon from './ArrowRightDoubleIcon.svelte'
 import ArrowRightIcon from './ArrowRightIcon.svelte'
 import ArrowUpIcon from './ArrowUpIcon.svelte'
 import BarChartHorizontalIcon from './BarChartHorizontalIcon.svelte'
-import CameraIcon from './Camera.svelte'
 import ChartHistogramIcon from './ChartHistogramIcon.svelte'
 import CancelIcon from './CancelIcon.svelte'
 import CheckmarkCircleIcon from './CheckmarkCircleIcon.svelte'
@@ -31,7 +30,6 @@ import FallingStarIcon from './FallingStarIcon.svelte'
 import MoonIcon from './MoonIcon.svelte'
 import ReloadIcon from './Reload.svelte'
 import SunIcon from './SunIcon.svelte'
-import TemperatureIcon from './TemperatureIcon.svelte'
 import TrashIcon from './TrashIcon.svelte'
 
 export {
@@ -42,7 +40,6 @@ export {
   ArrowRightIcon,
   ArrowUpIcon,
   BarChartHorizontalIcon,
-  CameraIcon,
   CancelIcon,
   ChartHistogramIcon,
   CheckmarkCircleIcon,
@@ -64,6 +61,5 @@ export {
   MoonIcon,
   ReloadIcon,
   SunIcon,
-  TemperatureIcon,
   TrashIcon,
 }

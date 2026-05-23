@@ -11,12 +11,11 @@
  *     (selection, expansion, active histogram tab, legend visibility).
  *   - Everything else is `$derived` from (metric, that cell, time
  *     window). No second source of truth.
- *   - The bucket-series fetch (Histogram / ExponentialHistogram) is
- *     owned here too, because both panes care about its result and
- *     the chart's tab state is tied to its loading state.
- *   - `$effect` is used in exactly two places: (1) reset per-metric
- *     view state when the metric identity changes; (2) drive the
- *     bucket-series fetch. Everywhere else is pure derivation.
+ *   - Histogram heatmap / summary are derived client-side from the same
+ *     getMetric payload as Gauge/Sum (no bucket-series RPC).
+ *   - `$effect` is used for: (1) reset per-metric view state when the
+ *     metric identity changes; (2) seed / reconcile legend visibility.
+ *     Everywhere else is pure derivation.
  *
  * The factory takes a getter for the current `metric` rather than a
  * value, so the context object's identity stays stable for the page
@@ -31,18 +30,27 @@ import type {
   DataPoint,
   HistogramDataPoint,
   ExponentialHistogramDataPoint,
-  BucketSeriesPoint,
-  HistogramBucketPoint,
-  ExpHistogramBucketPoint,
   Attributes,
 } from '@/types/api-types'
-import {
-  telemetryAPI,
-  JsonRpcError,
-  ErrCodeUnspecifiedTemporality,
-  ErrCodeHistogramBoundsMismatch,
-} from '@/services/telemetry-service'
 import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
+import {
+  buildHistogramTimeMergedSeries,
+  buildMergedQuantileSeries,
+  buildPerSeriesQuantileSeries,
+  DEFAULT_HISTOGRAM_QUANTILES,
+  histogramSliceAtTimestamp,
+  histogramSliceToDatapoint,
+  isHistogramAggregationError,
+  isQuantileLineKey,
+  mergeHistogramSlicesAcrossTime,
+  mergeHistogramWindowSummary,
+  parseQuantileLineKey,
+  QUANTILE_COLORS,
+  QUANTILE_LINE_KEY_SELECTED,
+  quantileKeyFromValue,
+  type HistogramAggregationError,
+  type HistogramSlicePoint,
+} from '@/components/metrics/utils/histogram-aggregation'
 import {
   AGG_KEY_ALL,
   AGG_KEY_SELECTED,
@@ -82,10 +90,12 @@ import {
   MAX_VISIBLE_TIMESERIES,
   loadPersistedAggregationView,
   loadPersistedShowAllSeriesAggregate,
+  loadPersistedShowAllSeriesQuantileAggregate,
   reconcileTimeseriesVisible,
   resolveTimeseriesVisible,
   savePersistedAggregationView,
   savePersistedShowAllSeriesAggregate,
+  savePersistedShowAllSeriesQuantileAggregate,
   savePersistedTimeseriesVisible,
   visibleKeyListsEqual,
 } from '@/components/metrics/utils/metric-timeseries-visible'
@@ -167,7 +177,7 @@ const CHART_POINTS_PER_SERIES = 2000
 
 // --- Types --------------------------------------------------------
 
-export type HistogramTab = 'heatmap' | 'aggregated' | 'snapshot'
+export type HistogramTab = 'heatmap' | 'quantiles' | 'aggregated' | 'snapshot'
 
 export type BucketSeriesError =
   | { kind: 'unspecified'; message: string }
@@ -253,20 +263,26 @@ export interface MetricViewContext {
   readonly histogramLegendTimeseries: LegendTimeseries[]
   readonly histogramTimeseriesCount: number
   readonly histogramVisible: SvelteSet<string>
-  readonly visibleBucketSeries: BucketSeriesPoint[] | null
-  readonly bucketSeriesLoading: boolean
+  readonly heatmapBucketSeries: HistogramSlicePoint[] | null
   readonly bucketSeriesError: BucketSeriesError | null
   readonly aggregatedDatapoint:
     | HistogramDataPoint
     | ExponentialHistogramDataPoint
     | undefined
-  readonly aggregatedLoading: boolean
   readonly aggregatedError: BucketSeriesError | null
   readonly activeHistogramDp:
     | HistogramDataPoint
     | ExponentialHistogramDataPoint
     | undefined
   readonly heatmapSelectedTimestamp: number | null
+  readonly quantileChartTimeseries: ChartTimeseries[]
+  readonly quantileColorByKey: TimeseriesColorByKey
+  readonly quantileDrillDownActive: boolean
+  readonly quantileDrillDownKey: string | null
+  readonly quantileDrillDownLabel: string | null
+  readonly activeQuantileOverlays: SvelteSet<string>
+  readonly showAllSeriesQuantileAggregate: boolean
+  readonly showAllSeriesQuantileAggregateToggleVisible: boolean
 
   // -- Detail view wiring --
   readonly filteredTimeseries: MetricData['timeseries']
@@ -313,6 +329,11 @@ export interface MetricViewContext {
   /** Time-series chart point click: resolve series + x to a datapoint
    * and sync selection with the Series tab. Aggregate lines are ignored. */
   onChartPointClick(seriesKey: string, clickedAt: Date): void
+  /** Quantiles tab: drill merged percentile or jump to snapshot. */
+  onQuantileChartPointClick(seriesKey: string, clickedAt: Date): void
+  setActiveQuantileOverlay(quantileKey: string, active: boolean): void
+  setShowAllSeriesQuantileAggregate(next: boolean): void
+  clearQuantileDrillDown(): void
 }
 
 // --- Factory ------------------------------------------------------
@@ -331,6 +352,7 @@ export function createMetricViewContext(
     expandedDatapoints: new SvelteSet<string>(),
     expandedTimeseries: new SvelteSet<string>(),
     activeHistogramTab: 'heatmap' as HistogramTab,
+    selectedHistogramBucketStart: null as bigint | null,
     gaugeSumVisible: new SvelteSet<string>(),
     histogramVisible: new SvelteSet<string>(),
     timeseriesColorByKey: new Map<string, string>() as TimeseriesColorByKey,
@@ -341,25 +363,23 @@ export function createMetricViewContext(
     // histogram-specific state next to this, not generalize prematurely.
     aggregationView: 'raw' as AggregationView,
     showAllSeriesAggregate: false,
+    showAllSeriesQuantileAggregate: false,
     showSelectionStatOverlays: true,
+    quantileDrillDown: null as { quantileKey: string } | null,
+    activeQuantileOverlays: new SvelteSet(
+      DEFAULT_HISTOGRAM_QUANTILES.map(q => quantileKeyFromValue(q))
+    ),
   })
 
-  /** Histogram visibility is seeded once per stream id (bucket fetch). */
+  /** Histogram visibility is seeded once per stream id. */
   let histogramVisibleSeededForStreamId: string | null = null
 
-  const bucketState = $state({
-    bucketSeries: null as BucketSeriesPoint[] | null,
-    bucketSeriesLoading: false,
-    bucketSeriesError: null as BucketSeriesError | null,
-    aggregatedPoint: null as BucketSeriesPoint | null,
-    aggregatedLoading: false,
-    aggregatedError: null as BucketSeriesError | null,
-  })
-
   // -- Pure derivations of `metric` --
-  const metricType = $derived<MetricType>(
-    getMetric()?.timeseries[0]?.datapoints[0]?.metricType ?? 'Empty'
-  )
+  const metricType = $derived.by((): MetricType => {
+    const m = getMetric()
+    if (m?.metricType) return m.metricType
+    return m?.timeseries[0]?.datapoints[0]?.metricType ?? 'Empty'
+  })
 
   function* allDatapoints(
     m: MetricData | undefined
@@ -371,7 +391,9 @@ export function createMetricViewContext(
   }
 
   const temporality = $derived.by(() => {
-    for (const dp of allDatapoints(getMetric())) {
+    const m = getMetric()
+    if (m?.aggregationTemporality) return m.aggregationTemporality
+    for (const dp of allDatapoints(m)) {
       const t = (dp as { aggregationTemporality?: string }).aggregationTemporality
       if (t) return t
     }
@@ -380,7 +402,9 @@ export function createMetricViewContext(
 
   const isMonotonic = $derived.by((): boolean | null => {
     if (metricType !== 'Sum') return null
-    for (const dp of allDatapoints(getMetric())) {
+    const m = getMetric()
+    if (m?.isMonotonic != null) return m.isMonotonic
+    for (const dp of allDatapoints(m)) {
       if (dp.metricType === 'Sum') return dp.isMonotonic
     }
     return null
@@ -744,7 +768,162 @@ export function createMetricViewContext(
     return best
   })
 
+  const histogramTimeseriesGroups = $derived.by(
+    (): HistogramTimeseriesGroup[] => {
+      const m = getMetric()
+      if (!m || !isHistogramKind) return []
+      const startNs = BigInt(queryRange.start) * 1_000_000n
+      const endNs = BigInt(queryRange.end) * 1_000_000n
+      return m.timeseries.map(ts => {
+        let pointCount = 0
+        for (const dp of ts.datapoints) {
+          if (
+            dp.metricType !== 'Histogram' &&
+            dp.metricType !== 'ExponentialHistogram'
+          ) {
+            continue
+          }
+          if (dp.timestamp >= startNs && dp.timestamp < endNs) pointCount++
+        }
+        return {
+          key: ts.attributesKey,
+          attributes: ts.attributes,
+          pointCount,
+        }
+      })
+    }
+  )
+
+  const histogramVisibleKeys = $derived.by((): Set<string> | null => {
+    if (view.histogramVisible.size === histogramTimeseriesGroups.length) {
+      return null
+    }
+    return view.histogramVisible
+  })
+
+  const histogramAggregation = $derived.by(() => {
+    const m = getMetric()
+    const empty = {
+      perAttribute: [] as HistogramSlicePoint[],
+      heatmap: [] as HistogramSlicePoint[],
+      summary: null as HistogramSlicePoint | null,
+      error: null as BucketSeriesError | null,
+      aggregatedError: null as BucketSeriesError | null,
+    }
+    if (!m || !isHistogramKind) return empty
+    if (isUnspecifiedTemporality) {
+      const err = histogramAggregationErrorToBucketSeriesError({
+        kind: 'unspecified',
+        message: 'Aggregation temporality is Unspecified',
+      })
+      return { ...empty, error: err, aggregatedError: err }
+    }
+
+    const startNs = BigInt(queryRange.start) * 1_000_000n
+    const endNs = BigInt(queryRange.end) * 1_000_000n
+    const perAttribute = buildHistogramTimeMergedSeries(
+      m.timeseries,
+      startNs,
+      endNs,
+      100,
+      temporality
+    )
+    if ('kind' in perAttribute) {
+      const err = histogramAggregationErrorToBucketSeriesError(perAttribute)
+      return { ...empty, error: err, aggregatedError: err }
+    }
+
+    const heatmapResult = mergeHistogramSlicesAcrossTime(
+      perAttribute,
+      histogramVisibleKeys
+    )
+    if ('kind' in heatmapResult) {
+      const err = histogramAggregationErrorToBucketSeriesError(heatmapResult)
+      return {
+        perAttribute,
+        heatmap: [],
+        summary: null,
+        error: err,
+        aggregatedError: err,
+      }
+    }
+
+    const summaryResult = mergeHistogramWindowSummary(
+      perAttribute,
+      histogramVisibleKeys,
+      temporality
+    )
+    if (isHistogramAggregationError(summaryResult)) {
+      const err = histogramAggregationErrorToBucketSeriesError(summaryResult)
+      return {
+        perAttribute,
+        heatmap: heatmapResult,
+        summary: null,
+        error: null,
+        aggregatedError: err,
+      }
+    }
+
+    return {
+      perAttribute,
+      heatmap: heatmapResult,
+      summary: summaryResult,
+      error: null,
+      aggregatedError: null,
+    }
+  })
+
+  // Badge counts raw datapoints in the current window (same source as
+  // the inline expanded table in TimeseriesPanel and as the Gauge/Sum
+  // branch above), NOT heatmap time buckets.
+  const histogramLegendTimeseries = $derived.by((): LegendTimeseries[] => {
+    const m = getMetric()
+    if (!m) return []
+    return histogramTimeseriesGroups.map(g => ({
+      key: g.key,
+      attributes: g.attributes,
+    }))
+  })
+
+  const heatmapBucketSeries = $derived.by((): HistogramSlicePoint[] | null => {
+    if (!isHistogramKind) return null
+    if (histogramAggregation.error) return []
+    return histogramAggregation.heatmap
+  })
+
+  const aggregatedDatapoint = $derived.by(():
+    | HistogramDataPoint
+    | ExponentialHistogramDataPoint
+    | undefined => {
+    const m = getMetric()
+    const summary = histogramAggregation.summary
+    if (!m || !summary) return undefined
+    return histogramSliceToDatapoint(
+      summary,
+      `${m.id}:aggregated`,
+      temporality || 'Delta'
+    )
+  })
+
   const activeHistogramDp = $derived.by(() => {
+    const m = getMetric()
+    if (!m || !isHistogramKind) return undefined
+
+    if (view.selectedHistogramBucketStart !== null) {
+      const slice = histogramSliceAtTimestamp(
+        histogramAggregation.perAttribute,
+        view.selectedHistogramBucketStart,
+        histogramVisibleKeys
+      )
+      if (slice && !isHistogramAggregationError(slice)) {
+        return histogramSliceToDatapoint(
+          slice,
+          `${m.id}:slice:${slice.timestamp.toString()}`,
+          temporality || 'Delta'
+        )
+      }
+    }
+
     const dp = selectedDatapoint
     if (
       dp &&
@@ -756,105 +935,114 @@ export function createMetricViewContext(
   })
 
   const heatmapSelectedTimestamp = $derived.by((): number | null => {
+    if (view.selectedHistogramBucketStart !== null) {
+      return Number(view.selectedHistogramBucketStart / 1_000_000n)
+    }
     const dp = selectedDatapoint ?? latestHistogramDp
     if (!dp) return null
     return Number(dp.timestamp / 1_000_000n)
   })
 
-  const histogramTimeseriesGroups = $derived.by(
-    (): HistogramTimeseriesGroup[] => {
-      const series = bucketState.bucketSeries
-      if (!series || series.length === 0) return []
-      const byKey = new Map<string, HistogramTimeseriesGroup>()
-      const order: string[] = []
-      for (const pt of series) {
-        const key = pt.attributesKey
-        const existing = byKey.get(key)
-        if (existing) {
-          existing.pointCount += 1
-        } else {
-          byKey.set(key, { key, attributes: pt.attributes, pointCount: 1 })
-          order.push(key)
+  const showAllSeriesQuantileAggregateToggleVisible = $derived.by((): boolean => {
+    if (!isHistogramKind) return false
+    if (histogramTimeseriesGroups.length < 2) return false
+    if (histogramVisibleKeys === null) return false
+    return view.histogramVisible.size > 0
+  })
+
+  const quantileDrillDownActive = $derived(view.quantileDrillDown !== null)
+
+  const quantileDrillDownKey = $derived(view.quantileDrillDown?.quantileKey ?? null)
+
+  const quantileDrillDownLabel = $derived.by((): string | null => {
+    const drill = view.quantileDrillDown
+    if (!drill) return null
+    const pill =
+      drill.quantileKey === '0.5'
+        ? 'p50'
+        : drill.quantileKey === '0.95'
+          ? 'p95'
+          : drill.quantileKey === '0.99'
+            ? 'p99'
+            : drill.quantileKey
+    return pill
+  })
+
+  const quantileChartTimeseries = $derived.by((): ChartTimeseries[] => {
+    if (!isHistogramKind || histogramAggregation.error) return []
+    const perAttribute = histogramAggregation.perAttribute
+    if (!Array.isArray(perAttribute) || perAttribute.length === 0) return []
+
+    const activeQuantiles = DEFAULT_HISTOGRAM_QUANTILES.filter(q =>
+      view.activeQuantileOverlays.has(quantileKeyFromValue(q))
+    )
+    if (activeQuantiles.length === 0) return []
+
+    const drillKey = view.quantileDrillDown?.quantileKey ?? null
+    const drillLines: ChartTimeseries[] = []
+    const mergedLines: ChartTimeseries[] = []
+
+    for (const q of activeQuantiles) {
+      const qKey = quantileKeyFromValue(q)
+      if (drillKey === qKey) {
+        drillLines.push(
+          ...buildPerSeriesQuantileSeries(
+            perAttribute,
+            q,
+            histogramVisibleKeys
+          )
+        )
+        continue
+      }
+
+      const selected = buildMergedQuantileSeries(
+        perAttribute,
+        [q],
+        'selected',
+        histogramVisibleKeys
+      )
+      if (!isHistogramAggregationError(selected)) {
+        mergedLines.push(...selected)
+      }
+    }
+
+    if (
+      view.showAllSeriesQuantileAggregate &&
+      showAllSeriesQuantileAggregateToggleVisible
+    ) {
+      for (const q of activeQuantiles) {
+        const qKey = quantileKeyFromValue(q)
+        if (drillKey === qKey) continue
+        const all = buildMergedQuantileSeries(
+          perAttribute,
+          [q],
+          'all',
+          null
+        )
+        if (!isHistogramAggregationError(all)) {
+          mergedLines.push(...all)
         }
       }
-      return order.map(k => byKey.get(k)!)
     }
-  )
 
-  // Badge counts raw datapoints in the current window (same source as
-  // the inline expanded table in TimeseriesPanel and as the Gauge/Sum
-  // branch above), NOT bucket-series points -- the latter is bounded
-  // by the heatmap step grid (~100 buckets) and would diverge from
-  // what the user sees when they expand the row. We still walk the
-  // bucket series for the timeseries *order* (newest-active first,
-  // matching the heatmap row order); per-key counts come from the
-  // metric record. Timeseries with no raw datapoints in the window
-  // are still listed (count 0) so the row count matches the heatmap.
-  const histogramLegendTimeseries = $derived.by((): LegendTimeseries[] => {
-    const m = getMetric()
-    if (!m) return []
-    return histogramTimeseriesGroups.map(g => ({
-      key: g.key,
-      attributes: g.attributes,
-    }))
+    return [...drillLines, ...mergedLines]
   })
 
-  const visibleBucketSeries = $derived.by(() => {
-    const series = bucketState.bucketSeries
-    if (!series) return null
-    const total = histogramTimeseriesGroups.length
-    if (total === 0) return []
-    if (view.histogramVisible.size === total) return series
-    return series.filter((pt) => view.histogramVisible.has(pt.attributesKey))
-  })
-
-  const aggregatedDatapoint = $derived.by(():
-    | HistogramDataPoint
-    | ExponentialHistogramDataPoint
-    | undefined => {
-    const point = bucketState.aggregatedPoint
-    const m = getMetric()
-    if (!point || !m) return undefined
-    const id = `${m.id}:aggregated`
-    if (point.kind === 'histogram') {
-      const p = point as HistogramBucketPoint
-      return {
-        id,
-        metricType: 'Histogram',
-        timestamp: p.timestamp,
-        startTime: p.timestamp,
-        flags: 0,
-        exemplars: [],
-        count: p.totals.count,
-        sum: p.totals.sum,
-        min: p.totals.min ?? 0,
-        max: p.totals.max ?? 0,
-        explicitBounds: p.bounds,
-        bucketCounts: p.counts,
-        aggregationTemporality: temporality || 'Delta',
+  const quantileColorByKey = $derived.by((): TimeseriesColorByKey => {
+    const merged = new Map(view.timeseriesColorByKey)
+    for (const { key } of DEFAULT_HISTOGRAM_QUANTILES.map(q => ({
+      key: quantileKeyFromValue(q),
+    }))) {
+      const color = QUANTILE_COLORS[key]
+      if (color) {
+        merged.set(`${QUANTILE_LINE_KEY_SELECTED}${key}`, color)
       }
     }
-    const p = point as ExpHistogramBucketPoint
-    return {
-      id,
-      metricType: 'ExponentialHistogram',
-      timestamp: p.timestamp,
-      startTime: p.timestamp,
-      flags: 0,
-      exemplars: [],
-      count: p.totals.count,
-      sum: p.totals.sum,
-      min: p.totals.min ?? 0,
-      max: p.totals.max ?? 0,
-      scale: p.scale,
-      zeroCount: p.zeroCount,
-      zeroThreshold: p.zeroThreshold,
-      positiveBucketOffset: p.positiveOffset,
-      positiveBucketCounts: p.positiveCounts,
-      negativeBucketOffset: p.negativeOffset,
-      negativeBucketCounts: p.negativeCounts,
-      aggregationTemporality: temporality || 'Delta',
+    for (const q of DEFAULT_HISTOGRAM_QUANTILES) {
+      const key = quantileKeyFromValue(q)
+      merged.set(`__quantile:all:${key}`, AGG_COLOR_ALL)
     }
+    return merged
   })
 
   // -- Detail-view wiring (legend filter coupling) --
@@ -960,6 +1148,7 @@ export function createMetricViewContext(
 
     view.selectedDatapointId = null
     view.selectionSource = null
+    view.selectedHistogramBucketStart = null
     view.expandedDatapoints.clear()
     view.expandedTimeseries.clear()
     view.activeHistogramTab = 'heatmap'
@@ -984,6 +1173,13 @@ export function createMetricViewContext(
     view.showAllSeriesAggregate = streamId
       ? loadPersistedShowAllSeriesAggregate(streamId)
       : false
+    view.showAllSeriesQuantileAggregate = streamId
+      ? loadPersistedShowAllSeriesQuantileAggregate(streamId)
+      : false
+    view.quantileDrillDown = null
+    view.activeQuantileOverlays = new SvelteSet(
+      DEFAULT_HISTOGRAM_QUANTILES.map(q => quantileKeyFromValue(q))
+    )
 
     const gsKeys = gaugeSumGroups.keys
     const gsVisible = new SvelteSet(
@@ -998,15 +1194,14 @@ export function createMetricViewContext(
       themeSignal.value
     )
     replaceColorAssignments(seedColorAssignments(pool, gsVisible, gsKeys))
-    // Histogram visible is re-seeded by a separate effect because its
-    // candidate keys come from bucketSeries (asynchronous), not from
-    // the metric directly. Do not clear colour assignments here -- that
+    // Histogram visible is re-seeded by a separate effect when series
+    // keys are known. Do not clear colour assignments here -- that
     // would wipe the gauge/sum seed we just wrote above.
     histogramVisibleSeededForStreamId = null
     view.histogramVisible = new SvelteSet()
   })
 
-  // (2) Seed histogram visibility once per stream when bucket keys arrive.
+  // (2) Seed histogram visibility once per stream when series keys arrive.
   // Do not use size === 0 as "unseeded" — an empty set is valid after the
   // user unchecks every series.
   $effect(() => {
@@ -1126,68 +1321,7 @@ export function createMetricViewContext(
     }
   })
 
-  // (3) Bucket-series fetch. Per-attribute (full breakdown for the
-  // heatmap legend) AND merged single-bucket (for the Aggregated tab)
-  // are issued in parallel because they share the same window but
-  // differ only in maxPoints. cancelled flag stops late responses
-  // from a prior metric clobbering the current state.
-  $effect(() => {
-    const m = getMetric()
-    const id = m?.id
-    const t = metricType
-    const start = queryRange.start
-    const end = queryRange.end
-
-    if (!id || (t !== 'Histogram' && t !== 'ExponentialHistogram')) {
-      bucketState.bucketSeries = null
-      bucketState.bucketSeriesError = null
-      bucketState.bucketSeriesLoading = false
-      bucketState.aggregatedPoint = null
-      bucketState.aggregatedError = null
-      bucketState.aggregatedLoading = false
-      return
-    }
-
-    let cancelled = false
-    bucketState.bucketSeries = null
-    bucketState.bucketSeriesError = null
-    bucketState.bucketSeriesLoading = true
-    bucketState.aggregatedPoint = null
-    bucketState.aggregatedError = null
-    bucketState.aggregatedLoading = true
-
-    telemetryAPI
-      .getMetricBucketSeries(id, 'per-attribute', start, end, 100)
-      .then(result => {
-        if (cancelled) return
-        bucketState.bucketSeries = result
-        bucketState.bucketSeriesLoading = false
-      })
-      .catch(err => {
-        if (cancelled) return
-        bucketState.bucketSeriesLoading = false
-        bucketState.bucketSeriesError = categorizeBucketSeriesError(err)
-      })
-
-    telemetryAPI
-      .getMetricBucketSeries(id, 'merged', start, end, 1)
-      .then(result => {
-        if (cancelled) return
-        bucketState.aggregatedPoint = result.length > 0 ? result[0] : null
-        bucketState.aggregatedLoading = false
-      })
-      .catch(err => {
-        if (cancelled) return
-        bucketState.aggregatedLoading = false
-        bucketState.aggregatedError = categorizeBucketSeriesError(err)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  })
-
-  // (4) Coerce the current AggregationView back to the smart default when it
+  // (3) Coerce the current AggregationView back to the smart default when it
   // leaves the available set. Triggers on series-count changes (e.g.
   // polling drops the metric from N=5 to N=1, hiding Sum/Avg) and on
   // shape changes (rare, but defensible). Reads availableAggregationViewsList
@@ -1210,6 +1344,14 @@ export function createMetricViewContext(
     if (streamId) savePersistedAggregationView(streamId, next)
   })
 
+  $effect(() => {
+    void view.histogramVisible.size
+    void [...view.histogramVisible].join('\0')
+    if (view.quantileDrillDown !== null) {
+      view.quantileDrillDown = null
+    }
+  })
+
   // -- Methods --
   function toggleTimeseriesExpanded(key: string) {
     if (view.expandedTimeseries.has(key)) {
@@ -1220,6 +1362,9 @@ export function createMetricViewContext(
   }
 
   function setActiveHistogramTab(tab: HistogramTab) {
+    if (tab !== 'quantiles' && view.quantileDrillDown !== null) {
+      view.quantileDrillDown = null
+    }
     view.activeHistogramTab = tab
   }
 
@@ -1233,6 +1378,29 @@ export function createMetricViewContext(
     view.showAllSeriesAggregate = next
     const streamId = getMetric()?.id
     if (streamId) savePersistedShowAllSeriesAggregate(streamId, next)
+  }
+
+  function setShowAllSeriesQuantileAggregate(next: boolean) {
+    view.showAllSeriesQuantileAggregate = next
+    const streamId = getMetric()?.id
+    if (streamId) savePersistedShowAllSeriesQuantileAggregate(streamId, next)
+  }
+
+  function setActiveQuantileOverlay(quantileKey: string, active: boolean) {
+    const next = new SvelteSet(view.activeQuantileOverlays)
+    if (active) {
+      next.add(quantileKey)
+    } else {
+      next.delete(quantileKey)
+      if (view.quantileDrillDown?.quantileKey === quantileKey) {
+        view.quantileDrillDown = null
+      }
+    }
+    view.activeQuantileOverlays = next
+  }
+
+  function clearQuantileDrillDown() {
+    view.quantileDrillDown = null
   }
 
   function setShowSelectionStatOverlays(next: boolean) {
@@ -1295,6 +1463,7 @@ export function createMetricViewContext(
 
   function onDatapointClick(dp: DataPoint) {
     view.selectionSource = 'detail'
+    view.selectedHistogramBucketStart = null
     view.selectedDatapointId =
       view.selectedDatapointId === dp.id ? null : dp.id
     if (view.selectedDatapointId === null) {
@@ -1313,30 +1482,10 @@ export function createMetricViewContext(
   }
 
   function onHeatmapSelect(timestampMs: number) {
-    const m = getMetric()
-    if (!m) return
-    // Bucket width matches the backend: max(1ms, (end-start)/100).
-    const bucketWidthMs = Math.max(
-      1,
-      Math.floor((queryRange.end - queryRange.start) / 100)
-    )
-    const bucketStart = BigInt(timestampMs) * 1_000_000n
-    const bucketEnd = BigInt(timestampMs + bucketWidthMs) * 1_000_000n
-    // Walk per-timeseries (not allDatapoints) so we can also expand
-    // the owning timeseries in the Series tab for the user. The
-    // panel watches expandedTimeseries + selectedDatapointId to
-    // scroll + highlight the matching row (step-4 sync).
-    for (const ts of m.timeseries) {
-      for (const dp of ts.datapoints) {
-        if (dp.timestamp >= bucketStart && dp.timestamp < bucketEnd) {
-          view.selectionSource = 'detail'
-          view.selectedDatapointId = dp.id
-          view.activeHistogramTab = 'snapshot'
-          view.expandedTimeseries.add(ts.attributesKey)
-          return
-        }
-      }
-    }
+    view.selectionSource = 'chart'
+    view.selectedHistogramBucketStart = BigInt(timestampMs) * 1_000_000n
+    view.selectedDatapointId = null
+    view.activeHistogramTab = 'snapshot'
   }
 
   function onChartPointClick(seriesKey: string, clickedAt: Date) {
@@ -1377,6 +1526,32 @@ export function createMetricViewContext(
       view.selectionSource = 'chart'
       view.selectedDatapointId = best.id
     }
+  }
+
+  function onQuantileChartPointClick(seriesKey: string, clickedAt: Date) {
+    const parsed = parseQuantileLineKey(seriesKey)
+    if (parsed?.scope === 'selected') {
+      if (view.quantileDrillDown?.quantileKey === parsed.quantileKey) {
+        view.quantileDrillDown = null
+      } else {
+        view.quantileDrillDown = { quantileKey: parsed.quantileKey }
+      }
+      view.selectionSource = 'chart'
+      view.selectedHistogramBucketStart =
+        BigInt(clickedAt.getTime()) * 1_000_000n
+      view.selectedDatapointId = null
+      return
+    }
+
+    if (isQuantileLineKey(seriesKey)) {
+      return
+    }
+
+    view.selectionSource = 'chart'
+    view.selectedHistogramBucketStart =
+      BigInt(clickedAt.getTime()) * 1_000_000n
+    view.selectedDatapointId = null
+    view.activeHistogramTab = 'snapshot'
   }
 
   const ctx: MetricViewContext = {
@@ -1483,29 +1658,47 @@ export function createMetricViewContext(
     get histogramVisible() {
       return view.histogramVisible
     },
-    get visibleBucketSeries() {
-      return visibleBucketSeries
-    },
-    get bucketSeriesLoading() {
-      return bucketState.bucketSeriesLoading
+    get heatmapBucketSeries() {
+      return heatmapBucketSeries
     },
     get bucketSeriesError() {
-      return bucketState.bucketSeriesError
+      return histogramAggregation.error
     },
     get aggregatedDatapoint() {
       return aggregatedDatapoint
     },
-    get aggregatedLoading() {
-      return bucketState.aggregatedLoading
-    },
     get aggregatedError() {
-      return bucketState.aggregatedError
+      return histogramAggregation.aggregatedError
     },
     get activeHistogramDp() {
       return activeHistogramDp
     },
     get heatmapSelectedTimestamp() {
       return heatmapSelectedTimestamp
+    },
+    get quantileChartTimeseries() {
+      return quantileChartTimeseries
+    },
+    get quantileColorByKey() {
+      return quantileColorByKey
+    },
+    get quantileDrillDownActive() {
+      return quantileDrillDownActive
+    },
+    get quantileDrillDownKey() {
+      return quantileDrillDownKey
+    },
+    get quantileDrillDownLabel() {
+      return quantileDrillDownLabel
+    },
+    get activeQuantileOverlays() {
+      return view.activeQuantileOverlays
+    },
+    get showAllSeriesQuantileAggregate() {
+      return view.showAllSeriesQuantileAggregate
+    },
+    get showAllSeriesQuantileAggregateToggleVisible() {
+      return showAllSeriesQuantileAggregateToggleVisible
     },
 
     get filteredTimeseries() {
@@ -1547,6 +1740,10 @@ export function createMetricViewContext(
     onDatapointClick,
     onHeatmapSelect,
     onChartPointClick,
+    onQuantileChartPointClick,
+    setActiveQuantileOverlay,
+    setShowAllSeriesQuantileAggregate,
+    clearQuantileDrillDown,
   }
 
   setContext(KEY, ctx)
@@ -1557,17 +1754,8 @@ export function getMetricViewContext(): MetricViewContext {
   return getContext<MetricViewContext>(KEY)
 }
 
-function categorizeBucketSeriesError(err: unknown): BucketSeriesError {
-  if (err instanceof JsonRpcError) {
-    if (err.code === ErrCodeUnspecifiedTemporality) {
-      return { kind: 'unspecified', message: err.message }
-    }
-    if (err.code === ErrCodeHistogramBoundsMismatch) {
-      return { kind: 'boundsMismatch', message: err.message }
-    }
-  }
-  return {
-    kind: 'other',
-    message: err instanceof Error ? err.message : String(err),
-  }
+function histogramAggregationErrorToBucketSeriesError(
+  err: HistogramAggregationError
+): BucketSeriesError {
+  return err
 }

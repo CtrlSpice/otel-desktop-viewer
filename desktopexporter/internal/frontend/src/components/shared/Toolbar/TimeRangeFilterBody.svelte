@@ -50,7 +50,7 @@
     </button>
   </FieldGroup>
 
-  <RecentTimeRanges last />
+  <RecentTimeRanges />
 </div>
 
 <style lang="postcss">

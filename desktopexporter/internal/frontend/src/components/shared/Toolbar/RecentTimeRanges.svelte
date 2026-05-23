@@ -16,8 +16,6 @@
     );
   }
 
-  let { last = false }: { last?: boolean } = $props();
-
   let recentTimeRanges = $state<RecentTimeRange[]>([]);
 
   $effect(() => {
@@ -34,7 +32,7 @@
   }
 </script>
 
-<FieldGroup label="Recently Used" {last}>
+<FieldGroup label="Recently Used">
   {#snippet heading()}
     <DateTimeIcon class="h-3.5 w-3.5 shrink-0 text-base-content/55" />
     <span>Recently Used</span>

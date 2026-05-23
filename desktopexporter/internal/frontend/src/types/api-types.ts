@@ -240,6 +240,12 @@ export type MetricData = {
   name: string
   description: string
   unit: string
+  /** Stream-level type from metric_streams (getMetric only). */
+  metricType?: MetricType
+  /** Stream-level temporality; null for Gauge. */
+  aggregationTemporality?: string | null
+  /** Stream-level monotonic flag; null except Sum. */
+  isMonotonic?: boolean | null
   resourceDroppedAttributesCount: number
   resource: ResourceData
   scopeName: string
@@ -315,67 +321,3 @@ export type SearchResultEvent =
   | { signal: 'traces'; results: TraceSummary[]; queryTree?: unknown }
   | { signal: 'logs'; results: LogSummary[]; queryTree?: unknown }
   | { signal: 'metrics'; results: MetricData[]; queryTree?: unknown }
-
-// Quantile series (trend chart) types. The backend computes adaptive
-// time buckets and emits one point per (bucket, timeseries) for
-// per-attribute mode and one point per bucket for merged mode.
-//
-// Modes mirror the OTel-aligned terminology used elsewhere: a
-// "timeseries" is one per-attribute stream within a metric, so
-// 'per-attribute' returns one point per (bucket, attribute set), and
-// 'merged' folds all timeseries into a single point per bucket.
-export type QuantileSeriesMode = 'per-attribute' | 'merged'
-
-// One point in a quantile series. `quantiles` keys are the same float
-// strings produced by Go's strconv.FormatFloat with -1 precision (e.g.
-// "0.5", "0.95"); a value of null means the macro declined to interpolate
-// (empty buckets / total count of zero) and should render as a dash.
-// `attributes` and `attributesKey` are empty/blank for merged mode.
-export type QuantileSeriesPoint = {
-  timestamp: bigint
-  attributesKey: string
-  attributes: Attributes
-  quantiles: Record<string, number | null>
-  count: number
-  sum: number
-  min: number | null
-  max: number | null
-}
-
-// Bucket series (heatmap) types. Same adaptive bucketing as quantile series,
-// but the raw bucket vectors are returned instead of computed quantiles.
-export type BucketSeriesMode = 'per-attribute' | 'merged'
-
-export type BucketSeriesTotals = {
-  count: number
-  sum: number
-  min: number | null
-  max: number | null
-}
-
-export type HistogramBucketPoint = {
-  kind: 'histogram'
-  timestamp: bigint
-  attributesKey: string
-  attributes: Attributes
-  bounds: number[]
-  counts: number[]
-  totals: BucketSeriesTotals
-}
-
-export type ExpHistogramBucketPoint = {
-  kind: 'expHistogram'
-  timestamp: bigint
-  attributesKey: string
-  attributes: Attributes
-  scale: number
-  zeroThreshold: number
-  zeroCount: number
-  positiveOffset: number
-  positiveCounts: number[]
-  negativeOffset: number
-  negativeCounts: number[]
-  totals: BucketSeriesTotals
-}
-
-export type BucketSeriesPoint = HistogramBucketPoint | ExpHistogramBucketPoint

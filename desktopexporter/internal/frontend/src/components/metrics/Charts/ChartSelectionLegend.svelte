@@ -57,7 +57,7 @@
   let { timestamp, rows, aggregateRows = [] }: Props = $props()
 </script>
 
-{#if rows.length > 0 || aggregateRows.length > 0}
+{#if timestamp || rows.length > 0 || aggregateRows.length > 0}
   <div class="chart-selection-legend" aria-live="polite">
     {#if timestamp}
       <div class="chart-selection-legend__timestamp">{timestamp}</div>

@@ -8,8 +8,8 @@
     chartPadding,
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
-  import { telemetryAPI } from '@/services/telemetry-service'
   import { metricTypeSeriesColor } from '@/components/metrics/utils/metric-type'
+  import { histogramQuantilesForDatapoint } from '@/components/metrics/utils/histogram-aggregation'
   import type {
     HistogramDataPoint,
     ExponentialHistogramDataPoint,
@@ -20,46 +20,18 @@
   // markers within their bar.
   type Bucket = { label: string; count: number; lo: number; hi: number }
 
-  // Where the p50/p95/p99 markers' values come from:
-  //   * 'datapoint' (default): fetch via getDatapointQuantiles(datapoint.id).
-  //     Right answer for the Snapshot tab where the chart shows ONE specific
-  //     datapoint's distribution.
-  //   * 'merged': fetch via getMetricMergedQuantiles using the
-  //     `metricID` + `windowStartMs/EndMs` props. Right answer for the
-  //     Aggregated tab where the chart shows a synthetic dp built by summing
-  //     the metric's bucket vectors across the time window. We can't use
-  //     datapoint.id here because that synthetic dp doesn't exist in the DB.
-  //   * 'none': skip the fetch entirely. Used when the caller wants the bar
-  //     chart without quantile markers (e.g. an error path for the
-  //     merged bucket data where we'd want to show "no quantiles because
-  //     we don't have a valid merged result either").
-  type QuantileSource = 'datapoint' | 'merged' | 'none'
-
   type Props = {
     datapoint: HistogramDataPoint | ExponentialHistogramDataPoint
     /** Metric `unit` for axis labelling (e.g. "ms", "bytes"). Optional;
      * the x-axis title shows just "value" when unit is empty. */
     unit?: string
     height?: number
-    /** How to source quantile values; see QuantileSource above. */
-    quantileSource?: QuantileSource
-    /** Required when quantileSource='merged'. Real metrics.id (db key),
-     * NOT the synthetic id of the assembled `datapoint`. */
-    metricID?: string
-    /** Required when quantileSource='merged'. Same window as the bucket
-     * series fetch that produced the merged `datapoint`. */
-    windowStartMs?: number
-    windowEndMs?: number
   }
 
   let {
     datapoint,
     unit = '',
     height = DEFAULT_METRIC_CHART_HEIGHT,
-    quantileSource = 'datapoint',
-    metricID,
-    windowStartMs,
-    windowEndMs,
   }: Props = $props()
 
   // Hardcoded for now; the plan defers configurable quantiles to a future pass.
@@ -71,82 +43,10 @@
     { key: '0.99', label: 'p99' },
   ]
 
-  let quantiles = $state<Record<string, number | null> | null>(null)
-
-  // Lazy fetch keyed on (source, datapoint id, metric id, window). Cleanup
-  // function flips a closure-scoped flag so responses arriving after a prop
-  // change get dropped rather than overwriting the now-stale state.
-  //
-  // The three branches are kept side-by-side rather than abstracted because
-  // they each have distinct fetch shapes and "loading" semantics:
-  //   * datapoint: 1 fetch keyed on dp.id
-  //   * merged: 1 fetch keyed on metric.id + window
-  //   * none: no fetch; quantiles stays null and rendering skips markers
-  $effect(() => {
-    const source = quantileSource
-    const dpId = datapoint.id
-    const mid = metricID
-    const ws = windowStartMs
-    const we = windowEndMs
-    let cancelled = false
-    quantiles = null
-
-    if (source === 'none') {
-      // Fast-path: no fetch, no markers. Setting quantiles to {} (not null)
-      // tells the marker logic "we tried, there's just nothing" so the
-      // chart renders without the loading-shaped em-dash placeholders.
-      quantiles = {}
-      return
-    }
-
-    if (source === 'merged') {
-      // Defensive: merged mode needs the metric id + window. If a caller
-      // forgot, render no markers rather than invoking the RPC with garbage.
-      if (!mid || ws === undefined || we === undefined) {
-        console.warn(
-          "HistogramChart: quantileSource='merged' requires metricID + windowStartMs + windowEndMs"
-        )
-        quantiles = {}
-        return
-      }
-      telemetryAPI
-        .getMetricMergedQuantiles(mid, QUANTILES, ws, we)
-        .then(result => {
-          if (!cancelled) quantiles = result
-        })
-        .catch(err => {
-          if (cancelled) return
-          // Merged quantile fetch failure is non-fatal: the chart
-          // itself is the load-bearing thing, markers are a nice-to-have.
-          // Surface to console so the dev sees what went wrong (e.g.
-          // bounds mismatch on a malformed metric) but render the bars.
-          console.warn('getMetricMergedQuantiles failed:', err)
-          quantiles = {}
-        })
-      return () => {
-        cancelled = true
-      }
-    }
-
-    // 'datapoint' (default).
-    telemetryAPI
-      .getDatapointQuantiles(dpId, QUANTILES)
-      .then(result => {
-        if (!cancelled) quantiles = result
-      })
-      .catch(err => {
-        if (cancelled) return
-        console.warn('getDatapointQuantiles failed:', err)
-        quantiles = {}
-      })
-    return () => {
-      cancelled = true
-    }
-  })
+  let quantiles = $derived(histogramQuantilesForDatapoint(datapoint, QUANTILES))
 
   // Loading: '…'. NULL or missing key (empty buckets / total=0): em-dash.
   function formatQuantile(key: string): string {
-    if (quantiles === null) return '…'
     const v = quantiles[key]
     if (v === null || v === undefined) return '—'
     return v.toFixed(2)
@@ -281,7 +181,6 @@
   }
 
   let quantileMarks = $derived.by((): QuantileMark[] => {
-    if (!quantiles) return []
     const marks: QuantileMark[] = []
     for (const { key, label } of QUANTILE_LABELS) {
       const v = quantiles[key]

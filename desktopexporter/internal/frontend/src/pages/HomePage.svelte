@@ -282,7 +282,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
           </table>
         </FieldGroup>
 
-        <FieldGroup label="Logs" last>
+        <FieldGroup label="Logs">
           {#snippet headerAction()}
             {@render signalOverviewHeader(
               '/logs',

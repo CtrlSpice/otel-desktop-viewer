@@ -95,9 +95,11 @@
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
   import { aggregationViewTabs } from '@/components/metrics/utils/aggregation-view-tabs'
+  import { histogramViewTabs } from '@/components/metrics/utils/histogram-view-tabs'
   import {
     createMetricViewContext,
     getMetricViewContext,
+    type HistogramTab,
   } from '@/contexts/metric-view-context.svelte'
   import { TrashIcon } from '@/icons'
 
@@ -161,6 +163,21 @@
     (selectedSummary?.metricType === 'Sum' ||
       selectedSummary?.metricType === 'Gauge') &&
       chartAggregationTabs.length > 1
+  )
+
+  let showChartHistogramTabs = $derived(
+    selectedSummary?.metricType === 'Histogram' ||
+      selectedSummary?.metricType === 'ExponentialHistogram'
+  )
+
+  let showChartTitleTabs = $derived(
+    showChartAggregationTabs || showChartHistogramTabs
+  )
+
+  let showChartHeaderMeta = $derived(
+    showChartHistogramTabs &&
+      metricCtx.activeHistogramTab === 'quantiles' &&
+      metricCtx.quantileDrillDownActive
   )
 
   // Position of the currently-selected metric in the sorted list.
@@ -409,7 +426,7 @@
            snippet below): always present, spans main + detail
            regardless of content state, and DetailNav self-disables
            when there is nothing to navigate. -->
-      {#if selectedSummary}
+        {#if selectedSummary}
         {#snippet metricChartHeaderBadge()}
           <SignalBadges
             signal="metric"
@@ -419,15 +436,43 @@
           />
         {/snippet}
 
-        {#if showChartAggregationTabs}
+        {@const histogramChartTabs = histogramViewTabs()}
+
+        {#snippet chartHeaderMetaRight()}
+          {#if showChartHistogramTabs && metricCtx.activeHistogramTab === 'quantiles' && metricCtx.quantileDrillDownActive && metricCtx.quantileDrillDownLabel}
+            <span class="text-xs text-base-content/70">
+              Showing {metricCtx.quantileDrillDownLabel} per series
+            </span>
+            <button
+              type="button"
+              class="link link-hover text-xs"
+              onclick={() => metricCtx.clearQuantileDrillDown()}
+            >
+              Merged view
+            </button>
+            <span class="text-base-content/50 text-xs">· Esc</span>
+          {/if}
+        {/snippet}
+
+        {#if showChartTitleTabs}
           <PaneHeader
             mode="title-tabs"
             title={selectedSummary.name}
             subtitle={selectedSummary.serviceName?.trim() || undefined}
-            tabs={chartAggregationTabs}
-            activeId={metricCtx.aggregationView}
-            onSelect={id =>
-              metricCtx.setAggregationView(id as AggregationView)}
+            tabs={showChartAggregationTabs
+              ? chartAggregationTabs
+              : histogramChartTabs}
+            activeId={showChartAggregationTabs
+              ? metricCtx.aggregationView
+              : metricCtx.activeHistogramTab}
+            onSelect={id => {
+              if (showChartAggregationTabs) {
+                metricCtx.setAggregationView(id as AggregationView)
+              } else {
+                metricCtx.setActiveHistogramTab(id as HistogramTab)
+              }
+            }}
+            metaRight={showChartHeaderMeta ? chartHeaderMetaRight : undefined}
             ariaLabel="Metric chart"
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}

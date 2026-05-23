@@ -146,7 +146,7 @@
 
 <div class="ts-panel" role="region" aria-label="Timeseries">
   <div class="ts-panel__list">
-    {#each rows as ts, i (ts.key)}
+    {#each rows as ts (ts.key)}
       {@const checked = visibleKeys.has(ts.key)}
       {@const checkboxDisabled = !checked && capReached}
       {@const seriesColor = ctx.timeseriesColorByKey.get(ts.key)}
@@ -163,7 +163,6 @@
       {@const metricTs = timeseriesByKey.get(ts.key)}
       {@const expanded = ctx.expandedTimeseries.has(ts.key)}
       {@const datapointsOpen = expandedDatapointSections.has(ts.key)}
-      {@const isLast = i === rows.length - 1 && !capReached}
       {@const sparklinePoints = ctx.sparklineByKey.get(ts.key) ?? []}
       {@const sparklineColor =
         checked && seriesColor ? seriesColor : chartNeutral()}
@@ -179,7 +178,6 @@
           label={headerLabel}
           open={expanded}
           onOpenChange={(open) => setTimeseriesOpen(ts.key, open)}
-          last={isLast}
         >
           {#snippet headerAction()}
             <div class="ts-row__header">
@@ -257,7 +255,6 @@
               count={metricTs.datapoints.length}
               open={datapointsOpen}
               onOpenChange={(open) => setDatapointsOpen(ts.key, open)}
-              last
             >
               <SeriesDatapointList datapoints={metricTs.datapoints} flush />
             </FieldGroup>

@@ -10,11 +10,7 @@
     Tooltip,
   } from 'layerchart'
   import { scaleBand, scaleOrdinal, scaleThreshold } from 'd3-scale'
-  import type {
-    BucketSeriesPoint,
-    HistogramBucketPoint,
-    ExpHistogramBucketPoint,
-  } from '@/types/api-types'
+  import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
   import {
     adaptiveStepCount,
     legendBinEdges,
@@ -57,8 +53,8 @@
   // switches tabs. selectedTimestamp drives a column highlight so the
   // user can scan-locate which column corresponds to the active snapshot.
   type Props = {
-    points: BucketSeriesPoint[]
-    /** Query window in ms (same range passed to getMetricBucketSeries). */
+    points: HistogramSlicePoint[]
+    /** Query window in ms (same range passed to getMetric). */
     windowStartMs: number
     windowEndMs: number
     height?: number
@@ -99,14 +95,15 @@
     if (points.length === 0) return []
     const first = points[0]
     if (first.kind === 'histogram') {
-      return buildHistogramData(points as HistogramBucketPoint[])
+      return buildHistogramData(points)
     }
-    return buildExpHistogramData(points as ExpHistogramBucketPoint[])
+    return buildExpHistogramData(points)
   })
 
-  function buildHistogramData(pts: HistogramBucketPoint[]): HeatmapDatum[] {
+  function buildHistogramData(pts: HistogramSlicePoint[]): HeatmapDatum[] {
     const data: HeatmapDatum[] = []
     for (const pt of pts) {
+      if (pt.kind !== 'histogram') continue
       const time = tsToMs(pt.timestamp)
       const bounds = pt.bounds
       const counts = pt.counts
@@ -136,11 +133,10 @@
     return data
   }
 
-  function buildExpHistogramData(
-    pts: ExpHistogramBucketPoint[]
-  ): HeatmapDatum[] {
+  function buildExpHistogramData(pts: HistogramSlicePoint[]): HeatmapDatum[] {
     const data: HeatmapDatum[] = []
     for (const pt of pts) {
+      if (pt.kind !== 'expHistogram') continue
       const time = tsToMs(pt.timestamp)
       const base = Math.pow(2, Math.pow(2, -pt.scale))
 
@@ -434,7 +430,7 @@
             </Tooltip.Root>
             <Legend
               scale={legendScale}
-              placement="top-left"
+              placement="bottom"
               variant="swatches"
               classes={{
                 root: 'heatmap-legend px-2 rounded-full',
