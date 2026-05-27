@@ -1,0 +1,97 @@
+name: Bug Report
+description: For reporting the bug, you see
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Something broke? Tell me about it.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      placeholder: You see what has happened was...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How do I make it happen again?
+      description: Numbered steps are great. "I clicked something and then it broke everything" is a start too.
+      placeholder: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: signal
+    attributes:
+      label: Where did this show up?
+      options:
+        - label: Traces
+        - label: Metrics
+        - label: Logs
+        - label: UI / frontend
+        - label: Not sure / general
+
+  - type: input
+    id: version
+    attributes:
+      label: axolot(e)l version
+      placeholder: e.g. v0.5.0
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. macOS 15.4, Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: input
+    id: instrumentation
+    attributes:
+      label: How are you sending telemetry?
+      description: Skip if this isn't about incoming data.
+      placeholder: e.g. OTel Go SDK, OpenTelemetry Collector, bargeboard, etc.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Paste whatever looks useful — terminal output, browser console, app logs. I'll format it.
+      render: shell
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else?
+      description: Screenshots, config snippets, related issues.
+
+  - type: textarea
+    id: dad-joke
+    attributes:
+      label: Tell me a dad joke
+      description: Optional at your own risk.
+      placeholder: "Why did the axolotl get into observability? It wanted to keep an eye on things. It has four."
+
+  - type: checkboxes
+    id: coc
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow this project's [Code of Conduct](../blob/main/CODE_OF_CONDUCT.md).
+          required: true

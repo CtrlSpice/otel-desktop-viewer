@@ -1,0 +1,56 @@
+name: Feature Request
+description: What's missing? What's awkward?
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Got an idea? Tell me about it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do? What's in the way?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would make this better for you?
+      description: Rough idea is fine. Even "I'm not sure but this bit feels weird" is helpful.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: signal
+    attributes:
+      label: Where would this live?
+      options:
+        - label: Traces
+        - label: Metrics
+        - label: Logs
+        - label: Cross-signal
+        - label: Not sure / general
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else?
+      description: Prior art, related issues, mockups, or context that might help.
+
+  - type: textarea
+    id: dad-joke
+    attributes:
+      label: Tell me a dad joke
+      description: Optional at your own risk.
+      placeholder: "Why did the axolotl get into observability? It wanted to keep an eye on things. It has four."
+
+  - type: checkboxes
+    id: coc
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow this project's [Code of Conduct](../blob/main/CODE_OF_CONDUCT.md).
+          required: true
