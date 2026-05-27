@@ -1,16 +1,20 @@
 export type RootSpan = {
   serviceName: string
   name: string
-  startTime: bigint
-  endTime: bigint
 }
 
 export type TraceSummary = {
   traceID: string
+  // hasRootSpan makes the orphaned-trace state explicit so callers
+  // don't have to infer it from a null rootSpan.
+  hasRootSpan: boolean
   rootSpan?: RootSpan
+  // Wall-clock trace bounds: earliest span start and max(end) - min(start)
+  // across all spans (not root-span duration).
+  startTime: bigint
+  durationNs: bigint | null
   spanCount: number
   errorCount: number
-  exceptionCount: number
 }
 
 export type TraceData = {
@@ -102,6 +106,30 @@ export type LogData = {
   eventName: string
 }
 
+// LogSummary is the lightweight card-shaped projection returned by
+// the searchLogs JSON-RPC method. Full LogData (with body, attributes,
+// resource, scope, etc) is fetched on demand via getLog(id).
+//
+// `id` is a tool-minted UUID -- in the wire payload because the UI
+// needs a handle for keying, selection, and the detail fetch, but it
+// must never be rendered to users (logs have no source-derived id).
+//
+// `timestamp` is the effective time -- the source Timestamp when set,
+// otherwise ObservedTimestamp. The summary doesn't carry observed
+// separately; consumers that need both fall back to the detail row.
+//
+// `bodyPreview` is server-truncated to the first N characters.
+// Full body, traceID, spanID, and bodyType are available on LogData
+// (fetched on demand for the detail pane).
+export type LogSummary = {
+  id: string
+  timestamp: bigint
+  severityText: string
+  severityNumber: number
+  serviceName: string
+  bodyPreview: string
+}
+
 // Metrics types
 export type MetricType =
   | 'Empty'
@@ -118,11 +146,18 @@ export type Exemplar = {
   spanID: string | null
 }
 
+// One measurement sample. Attributes do not live here -- they belong
+// to the parent MetricTimeseries, which is what makes a sample "this
+// timeseries' sample" rather than just "a sample of this metric." This
+// matches the OTel data model (Metric -> Timeseries -> NumberDataPoint).
+//
+// Anything we'd describe as "metadata about how the tool grouped this
+// sample" (e.g. attributesKey) is also a timeseries-level concept and
+// lives on MetricTimeseries, not here.
 type BaseDataPoint = {
   id: string
   timestamp: bigint
   startTime: bigint
-  attributes: Attributes
   flags: number
   exemplars: Exemplar[]
 }
@@ -162,6 +197,7 @@ export type ExponentialHistogramDataPoint = BaseDataPoint & {
   max: number
   scale: number
   zeroCount: number
+  zeroThreshold: number
   positiveBucketOffset: number
   positiveBucketCounts: number[]
   negativeBucketOffset: number
@@ -175,19 +211,78 @@ export type DataPoint =
   | HistogramDataPoint
   | ExponentialHistogramDataPoint
 
+// A MetricTimeseries is one (metric, attribute-set) pair: the OTel
+// SDK spec calls this a "metric point" / "timeseries" within a metric
+// stream. All datapoints inside share the same `attributes` (that's
+// what makes them one timeseries). `attributesKey` is the backend's
+// canonical "key=value|..." identity for this attribute set -- a stable
+// id the frontend uses to drive the legend, the chart's per-line
+// keying, and the per-timeseries colour assignment.
+//
+// (Naming note: the SDK spec uses "metric stream" for the whole named
+// series produced by a View -- which corresponds to our `MetricData` /
+// `metric_streams` table. The per-attribute series within it is the
+// "timeseries" / "metric point". We use "timeseries" everywhere in the
+// type layer to avoid colliding with the spec's "metric stream".)
+//
+// Timeseries arrive ordered "newest activity first" (latest dp
+// timestamp desc); datapoints inside a timeseries arrive
+// timestamp-desc as well. Both orderings are guaranteed by the
+// backend SQL.
+export type MetricTimeseries = {
+  attributesKey: string
+  attributes: Attributes
+  datapoints: DataPoint[]
+}
+
 export type MetricData = {
   id: string
   name: string
   description: string
   unit: string
+  /** Stream-level type from metric_streams (getMetric only). */
+  metricType?: MetricType
+  /** Stream-level temporality; null for Gauge. */
+  aggregationTemporality?: string | null
+  /** Stream-level monotonic flag; null except Sum. */
+  isMonotonic?: boolean | null
   resourceDroppedAttributesCount: number
   resource: ResourceData
   scopeName: string
   scopeVersion: string
   scopeDroppedAttributesCount: number
   scope: ScopeData
-  received: bigint
-  datapoints: DataPoint[]
+  timeseries: MetricTimeseries[]
+}
+
+// Sparkline point shape used by detail charts (not the drawer summary).
+export type SparklinePoint = {
+  timestamp: bigint
+  value: number
+}
+
+// Metric summary for sidebar cards (one row per metric stream).
+export type MetricSummary = {
+  id: string
+  name: string
+  description: string
+  unit: string
+  metricType: MetricType
+  aggregationTemporality: string | null
+  isMonotonic: boolean | null
+  serviceName: string
+  // Distinct attribute sets (timeseries) seen in the queried window.
+  seriesCount: number
+  // In-range datapoints for this metric stream.
+  dataPointCount: number
+  // Most recent scalar value for Gauge/Sum metrics; null for histograms.
+  lastValue: number | null
+  // Timestamp of the most recent in-range datapoint (nanoseconds).
+  lastSeen: bigint
+}
+
+export function metricSummaryKey(s: MetricSummary): string {
+  return s.id
 }
 
 // Stats types (homepage summary cards)
@@ -217,10 +312,12 @@ export type Stats = {
   metrics: MetricStats
 }
 
-// Discriminated union for search results
+// Discriminated union for search results.
+// `queryTree` is the parsed query that produced these results (undefined when no search active).
+// The logs variant carries LogSummary[] -- the lightweight card-shaped
+// projection. Full LogData for a single row is fetched on demand via
+// the getLog(id) JSON-RPC method.
 export type SearchResultEvent =
-  | { signal: 'traces'; view: 'list'; results: TraceSummary[] }
-  | { signal: 'traces'; view: 'detail'; results: TraceData }
-  | { signal: 'logs'; view: 'list'; results: LogData[] }
-  | { signal: 'metrics'; view: 'list'; results: MetricData[] }
-  | { signal: 'metrics'; view: 'detail'; results: MetricData[] }
+  | { signal: 'traces'; results: TraceSummary[]; queryTree?: unknown }
+  | { signal: 'logs'; results: LogSummary[]; queryTree?: unknown }
+  | { signal: 'metrics'; results: MetricData[]; queryTree?: unknown }

@@ -11,11 +11,13 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"golang.org/x/exp/jsonrpc2"
 )
@@ -203,7 +205,21 @@ func TestSearchLogs(t *testing.T) {
 		var entries []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &entries))
 		require.Len(t, entries, 1, "searchLogs should return the ingested log")
-		assert.Equal(t, "test log message", entries[0]["body"])
+		// searchLogs now returns LogSummary (lightweight) with
+		// bodyPreview rather than the full body; getLog returns
+		// the full LogData on demand. Verify both shapes here.
+		assert.Equal(t, "test log message", entries[0]["bodyPreview"])
+
+		logID, ok := entries[0]["id"].(string)
+		require.True(t, ok, "summary should carry an id for detail fetch")
+		getReq := createRequest("getLog", []string{logID})
+		getResult, getErr := handler.Handle(context.Background(), getReq)
+		assert.NoError(t, getErr)
+		getRaw, ok := getResult.(json.RawMessage)
+		assert.True(t, ok)
+		var full map[string]any
+		assert.NoError(t, json.Unmarshal(getRaw, &full))
+		assert.Equal(t, "test log message", full["body"])
 	})
 }
 
@@ -311,4 +327,141 @@ func TestSearchMetricsInvalidParams(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+}
+
+
+// buildTestMetrics returns pmetric.Metrics with one gauge metric for handler tests.
+func buildTestMetrics() pmetric.Metrics {
+	base := time.Now().UnixNano()
+	m := pmetric.NewMetrics()
+	rm := m.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "test-svc")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("test-scope")
+	sm.Scope().SetVersion("v1.0.0")
+	met := sm.Metrics().AppendEmpty()
+	met.SetName("test.gauge")
+	met.SetDescription("A test gauge")
+	met.SetUnit("bytes")
+	g := met.SetEmptyGauge()
+	dp := g.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(base))
+	dp.SetDoubleValue(42.0)
+	return m
+}
+
+func setupHandlerWithMetrics(t *testing.T) (*JSONRPCHandler, func()) {
+	t.Helper()
+	s, err := store.NewStore(context.Background(), "")
+	require.NoError(t, err)
+	handler := NewJSONRPCHandler(s)
+	ctx := context.Background()
+
+	err = s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTestMetrics())
+	})
+	require.NoError(t, err, "ingest metrics")
+
+	return handler, func() { s.Close() }
+}
+
+func TestSearchMetricSummaries(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		req := createRequest("searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var summaries []map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &summaries))
+		assert.Len(t, summaries, 0)
+	})
+
+	t.Run("With Data", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		req := createRequest("searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var summaries []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &summaries))
+		require.Len(t, summaries, 1, "should return one metric summary")
+		assert.Equal(t, "test.gauge", summaries[0]["name"])
+		assert.Equal(t, "A test gauge", summaries[0]["description"])
+		assert.Equal(t, "test-svc", summaries[0]["serviceName"])
+		assert.Equal(t, "Gauge", summaries[0]["metricType"])
+		assert.Equal(t, "bytes", summaries[0]["unit"])
+		assert.NotEmpty(t, summaries[0]["id"])
+		assert.NotNil(t, summaries[0]["seriesCount"])
+		assert.NotNil(t, summaries[0]["lastValue"])
+	})
+}
+
+func TestGetMetric(t *testing.T) {
+	t.Run("Found", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		summaryReq := createRequest("searchMetricSummaries", []string{
+			"0", strconv.FormatInt(1<<63-1, 10),
+		})
+		summaryResult, err := handler.Handle(context.Background(), summaryReq)
+		require.NoError(t, err)
+		summaryRaw, ok := summaryResult.(json.RawMessage)
+		require.True(t, ok)
+		var summaries []map[string]any
+		require.NoError(t, json.Unmarshal(summaryRaw, &summaries))
+		require.Len(t, summaries, 1)
+		streamID, ok := summaries[0]["id"].(string)
+		require.True(t, ok)
+		require.NotEmpty(t, streamID)
+
+		req := createRequest("getMetric", []any{
+			streamID, "0", strconv.FormatInt(1<<63-1, 10),
+		})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		assert.Equal(t, "test.gauge", metric["name"])
+		assert.Equal(t, "bytes", metric["unit"])
+		// MetricData is now grouped by timeseries (per attribute set)
+		// rather than a flat datapoint list. Each timeseries owns the
+		// attributes for its group plus the pure-OTLP datapoints.
+		timeseries, _ := metric["timeseries"].([]any)
+		require.Len(t, timeseries, 1, "should have one timeseries")
+		ts, _ := timeseries[0].(map[string]any)
+		require.NotNil(t, ts, "timeseries must be a JSON object")
+		assert.Contains(t, ts, "attributesKey", "timeseries should expose its grouping key")
+		assert.Contains(t, ts, "attributes", "timeseries should own its attribute set")
+		dps, _ := ts["datapoints"].([]any)
+		assert.Len(t, dps, 1, "should have one datapoint inside the timeseries")
+	})
+
+	t.Run("Not Found", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		req := createRequest("getMetric", []any{
+			"00000000-0000-0000-0000-000000000000",
+			"0", strconv.FormatInt(1<<63-1, 10),
+		})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok)
+		assert.Equal(t, "null", string(raw))
+	})
 }

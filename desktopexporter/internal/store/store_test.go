@@ -224,21 +224,39 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	// chk_metric_type_valid rejects unknown metric_type values.
+	// chk_metric_type_valid rejects unknown metric_type values. The
+	// FK chain is now stream -> ingest -> datapoint; we have to seed
+	// both parent rows before the chk_metric_type_valid violation will
+	// fire on the datapoint insert.
 	_, err = s.DB().ExecContext(ctx, `
-		insert into metrics (id, name, description, unit, resource_dropped_attributes_count,
-			scope_name, scope_version, scope_dropped_attributes_count, received)
-		values (gen_random_uuid(), 'test', '', '', 0, '', '', 0, 0)
+		insert into metric_streams
+			(id, name, unit, metric_type, aggregation_temporality,
+			 is_monotonic, scope_name, scope_version, service_name)
+		values (gen_random_uuid(), 'test', '', 'Gauge', '', false, '', '', '')
 	`)
-	require.NoError(t, err, "inserting a metric row should succeed")
+	require.NoError(t, err, "inserting a metric_streams row should succeed")
 
-	var metricID string
-	require.NoError(t, s.DB().QueryRowContext(ctx, "select id from metrics where name = 'test'").Scan(&metricID))
+	var streamID string
+	require.NoError(t, s.DB().QueryRowContext(ctx,
+		"select id::varchar from metric_streams where name = 'test'").Scan(&streamID))
 
 	_, err = s.DB().ExecContext(ctx, `
-		insert into datapoints (id, metric_id, metric_type, timestamp, start_time, flags)
-		values (gen_random_uuid(), ?, 'InvalidType', 0, 0, 0)
-	`, metricID)
+		insert into metric_ingests
+			(id, stream_id, description,
+			 resource_dropped_attributes_count, scope_dropped_attributes_count)
+		values (gen_random_uuid(), ?::uuid, '', 0, 0)
+	`, streamID)
+	require.NoError(t, err, "inserting a metric_ingests row should succeed")
+
+	var ingestID string
+	require.NoError(t, s.DB().QueryRowContext(ctx,
+		"select id::varchar from metric_ingests where stream_id = ?::uuid", streamID).Scan(&ingestID))
+
+	_, err = s.DB().ExecContext(ctx, `
+		insert into datapoints
+			(id, stream_id, metric_ingest_id, metric_type, timestamp, start_time, flags)
+		values (gen_random_uuid(), ?::uuid, ?::uuid, 'InvalidType', 0, 0, 0)
+	`, streamID, ingestID)
 	assert.Error(t, err, "inserting a datapoint with invalid metric_type should violate chk_metric_type_valid")
 }
 

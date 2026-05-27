@@ -14,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -26,6 +27,17 @@ var (
 )
 
 const flushIntervalSpans = 50
+
+// resourceServiceName extracts the service.name resource attribute as a
+// plain string, returning "" when not present. This is the same logic
+// used by the metrics package to denormalize service onto metric_streams,
+// kept private here so spans doesn't grow a metrics dependency.
+func resourceServiceName(attrs pcommon.Map) string {
+	if v, ok := attrs.Get("service.name"); ok {
+		return v.AsString()
+	}
+	return ""
+}
 
 // Ingest ingests trace spans from pdata into the spans, events, links, and attributes tables.
 // The caller must hold any required lock on the connection.
@@ -42,6 +54,12 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 	spanCount := 0
 	for _, resourceSpan := range traces.ResourceSpans().All() {
 		resource := resourceSpan.Resource()
+		// Denormalize service.name onto every span row in this resource.
+		// Source of truth is still the resource attribute row written
+		// below; this column is the index target for "filter spans by
+		// service" queries, which would otherwise need a join through
+		// attributes.
+		serviceName := resourceServiceName(resource.Attributes())
 
 		for _, scopeSpan := range resourceSpan.ScopeSpans().All() {
 			scope := scopeSpan.Scope()
@@ -79,6 +97,7 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 					span.DroppedLinksCount(),          // DroppedLinksCount UINTEGER
 					span.Status().Code().String(),     // StatusCode VARCHAR
 					span.Status().Message(),           // StatusMessage VARCHAR
+					serviceName,                       // ServiceName VARCHAR (NOT NULL, '' = unknown)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
@@ -164,38 +183,46 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 	}
 
+	// service_name comes from spans.service_name (denormalized at
+	// ingest from the service.name resource attribute) rather than the
+	// attributes table; same value, no per-row attribute lookup.
+	//
+	// `hasRootSpan` makes the orphaned-trace state explicit so consumers
+	// don't have to infer it from a null rootSpan. rootSpan carries only
+	// serviceName + name (the root span's timing is not useful for
+	// summary display -- trace-level startTime and durationNs are
+	// computed from the min/max across ALL spans). startTime and
+	// durationNs are precomputed from span bounds so the summary always
+	// reflects wall-clock coverage.
 	finalQuery := fmt.Sprintf(`%s
 		select cast(coalesce(to_json(list(json_object(
-			'traceID',        replace(sub.trace_id::varchar, '-', ''),
-			'rootSpan',       case when sub.service_name is not null then json_object(
+			'traceID',      replace(sub.trace_id::varchar, '-', ''),
+			'hasRootSpan',  sub.has_root_span,
+			'rootSpan',     case when sub.has_root_span then json_object(
 				'serviceName', sub.service_name,
-				'name',        sub.root_name,
-				'startTime',   sub.root_start_time,
-				'endTime',     sub.root_end_time
+				'name',        sub.root_name
 			) end,
-			'spanCount',      sub.span_count,
-			'errorCount',     sub.error_count,
-			'exceptionCount', sub.exception_count
-		) order by
-			coalesce(sub.root_start_time, (select min(s2.start_time) from spans s2 where s2.trace_id = sub.trace_id)) desc
+			'startTime',    sub.trace_start_time::varchar,
+			'durationNs',   case
+				when sub.trace_start_time is not null
+					and sub.trace_end_time is not null
+					then (sub.trace_end_time - sub.trace_start_time)::varchar
+				else null
+			end,
+			'spanCount',    sub.span_count,
+			'errorCount',   sub.error_count
+		) order by sub.trace_start_time desc
 		)), '[]') as varchar) as summaries
 		from (
 			select distinct on (s.trace_id)
 				s.trace_id,
-				case when s.parent_span_id is null then (
-					select a.value from attributes a
-					where a.span_id = s.span_id and a.scope = 'resource' and a.key = 'service.name'
-					limit 1
-				) end as service_name,
+				(s.parent_span_id is null) as has_root_span,
+				case when s.parent_span_id is null then nullif(s.service_name, '') end as service_name,
 				case when s.parent_span_id is null then s.name end as root_name,
-				case when s.parent_span_id is null then s.start_time end as root_start_time,
-				case when s.parent_span_id is null then s.end_time end as root_end_time,
+				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
+				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count,
-				count(case when exists(
-					select 1 from events e
-					where e.span_id = s.span_id and e.name = 'exception'
-				) then 1 end) over (partition by s.trace_id) as exception_count
+				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
 			from spans s, search_params
 			where %s
 			order by
@@ -722,10 +749,10 @@ func mapTraceGlobalExpressions() ([]string, error) {
 			from attributes a
 			where a.span_id = s.span_id and (
 				a.key {COND} or a.value {COND} or
-				(a.type = 'string[]' AND list_contains(CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
-				(a.type = 'int64[]' AND list_contains(CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
-				(a.type = 'float64[]' AND list_contains(CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
-				(a.type = 'boolean[]' AND list_contains(CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+				(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
+				(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
+				(a.type = 'float64[]' AND list_contains(TRY_CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
+				(a.type = 'boolean[]' AND list_contains(TRY_CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
 			)
 		)`,
 	}, nil

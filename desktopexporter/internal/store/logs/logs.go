@@ -12,10 +12,22 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
-	"github.com/google/uuid"
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/google/uuid"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 )
+
+// resourceServiceName extracts the service.name resource attribute as a
+// plain string, returning "" when not present. Mirrors the same helper
+// in spans / metrics; kept private here so logs doesn't grow a cross-
+// package dependency just for one attribute lookup.
+func resourceServiceName(attrs pcommon.Map) string {
+	if v, ok := attrs.Get("service.name"); ok {
+		return v.AsString()
+	}
+	return ""
+}
 
 var (
 	ErrInvalidLogQuery   = errors.New("invalid log search query")
@@ -40,6 +52,10 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 	logCount := 0
 	for _, resourceLogs := range logs.ResourceLogs().All() {
 		resource := resourceLogs.Resource()
+		// Denormalize service.name onto every log row in this resource;
+		// the resource-attribute row is still written below as the
+		// source of truth. See spans.Ingest for the same pattern.
+		serviceName := resourceServiceName(resource.Attributes())
 
 		for _, scopeLogs := range resourceLogs.ScopeLogs().All() {
 			scope := scopeLogs.Scope()
@@ -78,6 +94,7 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 					log.DroppedAttributesCount(),      // DroppedAttributesCount UINTEGER
 					uint32(log.Flags()),               // Flags UINTEGER
 					log.EventName(),                   // EventName VARCHAR
+					serviceName,                        // ServiceName VARCHAR (NOT NULL, '' = unknown)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
@@ -105,7 +122,22 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 	return nil
 }
 
-// Search returns logs in the time range matching the optional criteria.
+// bodyPreviewLen is the max character count for the server-truncated
+// body preview returned by Search. Callers that need the full body
+// must fetch the log via Get.
+const bodyPreviewLen = 200
+
+// Search returns log summaries in the time range matching the optional
+// criteria. Each row is a lightweight projection -- enough to render
+// the log card without shipping the full body or attribute set. Use
+// Get(id) to fetch full LogData for a single log on demand.
+//
+// `id` is included in the wire payload because the UI needs a handle
+// for keying, selection, and detail fetches, but it's tool-minted
+// scaffolding (OTLP logs are anonymous) and must never be rendered to
+// users.
+//
+// `bodyPreview` is server-truncated to bodyPreviewLen characters.
 func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
@@ -127,14 +159,48 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 		filtered as (
 			select l.* from logs l, search_params
 			where %s
-		),
-		log_attrs as (
-			select a.log_id, a.scope, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.log_id in (select id from filtered)
-			group by a.log_id, a.scope
 		)
 		select cast(coalesce(to_json(list(json_object(
+			'id',             l.id,
+			'timestamp',      coalesce(nullif(l.timestamp, 0), l.observed_timestamp),
+			'severityText',   l.severity_text,
+			'severityNumber', l.severity_number,
+			'serviceName',    l.service_name,
+			'bodyPreview',    substring(l.body, 1, %d)
+		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc)), '[]') as varchar) as logs
+		from filtered l`,
+		cteSQL,
+		whereWithTime,
+		bodyPreviewLen,
+	)
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("Search: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// Get returns the full LogData for a single log identified by its
+// tool-minted UUID. Used by the log-detail pane after a user clicks
+// a card from Search results. Returns ErrLogIDNotFound when no log
+// matches.
+func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error) {
+	query := `
+		with target as (
+			select l.* from logs l where l.id = ?::uuid
+		),
+		log_attrs as (
+			select a.log_id, a.scope,
+				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
+			from attributes a
+			where a.log_id in (select id from target)
+			group by a.log_id, a.scope
+		)
+		select cast(json_object(
 			'id', l.id,
 			'timestamp', l.timestamp,
 			'observedTimestamp', l.observed_timestamp,
@@ -150,21 +216,21 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 			'flags', l.flags,
 			'eventName', l.event_name,
 			'attributes', coalesce(log_attrs.attrs, json('[]'))
-		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc)), '[]') as varchar) as logs
-		from filtered l
+		) as varchar) as log
+		from target l
 		left join log_attrs res on res.log_id = l.id and res.scope = 'resource'
 		left join log_attrs scope_attrs on scope_attrs.log_id = l.id and scope_attrs.scope = 'scope'
-		left join log_attrs log_attrs on log_attrs.log_id = l.id and log_attrs.scope = 'log'`,
-		cteSQL,
-		whereWithTime,
-	)
-
+		left join log_attrs log_attrs on log_attrs.log_id = l.id and log_attrs.scope = 'log'
+	`
 	var raw []byte
-	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("Search: %w: %w", ErrLogsStoreInternal, err)
+	if err := db.QueryRowContext(ctx, query, logID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("Get: %w", ErrLogIDNotFound)
+		}
+		return nil, fmt.Errorf("Get: %w: %w", ErrLogsStoreInternal, err)
 	}
 	if raw == nil {
-		return json.RawMessage("[]"), nil
+		return nil, fmt.Errorf("Get: %w", ErrLogIDNotFound)
 	}
 	return json.RawMessage(raw), nil
 }
@@ -344,10 +410,10 @@ func mapLogGlobalExpressions() ([]string, error) {
 			FROM attributes a
 			WHERE a.log_id = l.id AND (
 				a.key {COND} OR a.value {COND} OR
-				(a.type = 'string[]' AND list_contains(CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
-				(a.type = 'int64[]' AND list_contains(CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
-				(a.type = 'float64[]' AND list_contains(CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
-				(a.type = 'boolean[]' AND list_contains(CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+				(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
+				(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
+				(a.type = 'float64[]' AND list_contains(TRY_CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
+				(a.type = 'boolean[]' AND list_contains(TRY_CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
 			)
 		)`,
 	}, nil

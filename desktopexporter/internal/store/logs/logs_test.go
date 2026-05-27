@@ -153,17 +153,45 @@ func createTestLogsPdataN(baseTime int64, n int) plog.Logs {
 	return logs
 }
 
-// searchLogsAll returns logs.Search with a wide time range and nil query to get all logs.
-func searchLogsAll(t *testing.T, s *store.Store, ctx context.Context) []logEntryJSON {
+// searchLogsAll returns logs.Search with a wide time range and nil query to get all log summaries.
+func searchLogsAll(t *testing.T, s *store.Store, ctx context.Context) []logSummaryJSON {
 	t.Helper()
 	const maxNano = 1<<63 - 1
 	raw, err := logs.Search(ctx, s.DB(), 0, maxNano, nil)
 	assert.NoError(t, err)
-	var entries []logEntryJSON
+	var entries []logSummaryJSON
 	assert.NoError(t, json.Unmarshal(raw, &entries))
 	return entries
 }
 
+// getLogFull fetches the full LogData for one log via logs.Get and
+// unmarshals it into the rich fixture struct used by the detail-
+// shape assertions below.
+func getLogFull(t *testing.T, s *store.Store, ctx context.Context, id string) logEntryJSON {
+	t.Helper()
+	raw, err := logs.Get(ctx, s.DB(), id)
+	assert.NoError(t, err)
+	var entry logEntryJSON
+	assert.NoError(t, json.Unmarshal(raw, &entry))
+	return entry
+}
+
+// logSummaryJSON mirrors the shape that logs.Search now returns:
+// lightweight card-shaped projection without bodies/attributes/etc.
+// `id` is in the wire payload but never rendered to users (tool-
+// minted UUID for keying/selection/detail-fetch only).
+type logSummaryJSON struct {
+	ID             string `json:"id"`
+	Timestamp      int64  `json:"timestamp"`
+	SeverityText   string `json:"severityText"`
+	SeverityNumber int32  `json:"severityNumber"`
+	ServiceName    string `json:"serviceName"`
+	BodyPreview    string `json:"bodyPreview"`
+}
+
+// logEntryJSON mirrors the full LogData shape returned by logs.Get.
+// Used by tests that assert on detail-page fields (body, attributes,
+// resource, scope, flags, eventName, dropped counts, etc).
 type logEntryJSON struct {
 	ID                     string          `json:"id"`
 	Timestamp              int64           `json:"timestamp"`
@@ -224,11 +252,12 @@ func TestLogOrdering(t *testing.T) {
 	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 3)
 
-	// Order: newest first by effective time — 0002 (t+150ms), 0007 (t+100ms), 0001 (t+0)
-	assert.Equal(t, "0000000000000002", entries[0].SpanID)
-	assert.Equal(t, "0000000000000007", entries[1].SpanID)
-	assert.Equal(t, "0000000000000001", entries[2].SpanID)
+	// Order: newest first by effective time — ERROR (t+150ms), WARN (t+100ms), INFO (t+0)
+	assert.Equal(t, "ERROR", entries[0].SeverityText)
+	assert.Equal(t, "WARN", entries[1].SeverityText)
+	assert.Equal(t, "INFO", entries[2].SeverityText)
 }
+
 
 // TestEmptyLogs verifies handling of empty log lists and empty store.
 func TestEmptyLogs(t *testing.T) {
@@ -283,9 +312,9 @@ func TestLogSuite(t *testing.T) {
 	t.Run("LogOrdering", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
 		assert.Len(t, entries, 3)
-		assert.Equal(t, "0000000000000002", entries[0].SpanID)
-		assert.Equal(t, "0000000000000007", entries[1].SpanID)
-		assert.Equal(t, "0000000000000001", entries[2].SpanID)
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
+		assert.Equal(t, "WARN", entries[1].SeverityText)
+		assert.Equal(t, "INFO", entries[2].SeverityText)
 	})
 
 	t.Run("LogSeverity", func(t *testing.T) {
@@ -297,46 +326,80 @@ func TestLogSuite(t *testing.T) {
 		assert.Equal(t, int32(plog.SeverityNumberInfo), entries[2].SeverityNumber)
 	})
 
-	t.Run("LogBody", func(t *testing.T) {
+	t.Run("LogBodyPreviewFromSummary", func(t *testing.T) {
+		// Summary carries server-truncated bodyPreview; full body
+		// lives on the detail fetch (TestLogBodyFromDetail below).
 		entries := searchLogsAll(t, s, ctx)
-		assert.Equal(t, "Operation failed", entries[0].Body)
-		assert.Equal(t, "Operation warning", entries[1].Body)
-		assert.Contains(t, entries[2].Body, "Operation started")
+		assert.Equal(t, "Operation failed", entries[0].BodyPreview)
+		assert.Equal(t, "Operation warning", entries[1].BodyPreview)
+	})
+
+	t.Run("LogBodyFromDetail", func(t *testing.T) {
+		entries := searchLogsAll(t, s, ctx)
+		full0 := getLogFull(t, s, ctx, entries[0].ID)
+		assert.Equal(t, "Operation failed", full0.Body)
+		full1 := getLogFull(t, s, ctx, entries[1].ID)
+		assert.Equal(t, "Operation warning", full1.Body)
+		full2 := getLogFull(t, s, ctx, entries[2].ID)
+		assert.Contains(t, full2.Body, "Operation started")
+	})
+
+	t.Run("LogServiceNameFromSummary", func(t *testing.T) {
+		// service_name is denormalized onto every log row and
+		// surfaced directly on the summary; tests don't need to
+		// dig through resource attributes.
+		entries := searchLogsAll(t, s, ctx)
+		for _, e := range entries {
+			assert.Equal(t, "test-service", e.ServiceName)
+		}
 	})
 
 	t.Run("LogTimestamp", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
-		assert.Equal(t, int64(0), entries[0].Timestamp)
-		assert.Equal(t, baseTime+150*int64(time.Millisecond), entries[0].ObservedTimestamp)
+		// Summary `timestamp` is coalesced: prefers Timestamp,
+		// falls back to ObservedTimestamp when timestamp = 0.
+		// Entry 0 (the ERROR with Timestamp=0) therefore reports
+		// the observed_timestamp on the summary.
+		assert.Equal(t, baseTime+150*int64(time.Millisecond), entries[0].Timestamp)
 		assert.NotZero(t, entries[1].Timestamp)
 		assert.NotZero(t, entries[2].Timestamp)
+
+		// Full LogData preserves both fields separately.
+		full0 := getLogFull(t, s, ctx, entries[0].ID)
+		assert.Equal(t, int64(0), full0.Timestamp)
+		assert.Equal(t, baseTime+150*int64(time.Millisecond), full0.ObservedTimestamp)
 	})
 
 	t.Run("LogResource", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
-		resMap := attrMap(entries[0].Resource.Attributes)
+		full0 := getLogFull(t, s, ctx, entries[0].ID)
+		resMap := attrMap(full0.Resource.Attributes)
 		assert.Equal(t, "test-service", resMap["service.name"])
 		assert.Equal(t, "1.0.0", resMap["service.version"])
-		assert.Equal(t, uint32(0), entries[2].Resource.DroppedAttributesCount)
+		full2 := getLogFull(t, s, ctx, entries[2].ID)
+		assert.Equal(t, uint32(0), full2.Resource.DroppedAttributesCount)
 	})
 
 	t.Run("LogScope", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
 		for i := range entries {
-			assert.Equal(t, "test-scope", entries[i].Scope.Name)
-			assert.Equal(t, "v1.0.0", entries[i].Scope.Version)
+			full := getLogFull(t, s, ctx, entries[i].ID)
+			assert.Equal(t, "test-scope", full.Scope.Name)
+			assert.Equal(t, "v1.0.0", full.Scope.Version)
 		}
 	})
 
 	t.Run("LogAttributes", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
-		attrs0 := attrMap(entries[0].Attributes)
+		full0 := getLogFull(t, s, ctx, entries[0].ID)
+		attrs0 := attrMap(full0.Attributes)
 		assert.Equal(t, "log-b", attrs0["log.string"])
 		assert.Equal(t, "24", attrs0["log.int"])
 		assert.Equal(t, "2.71", attrs0["log.float"])
 		assert.Equal(t, "false", attrs0["log.bool"])
 
-		attrs2 := attrMap(entries[2].Attributes)
+		full2 := getLogFull(t, s, ctx, entries[2].ID)
+		attrs2 := attrMap(full2.Attributes)
 		assert.Equal(t, "log-a", attrs2["log.string"])
 		assert.Equal(t, "42", attrs2["log.int"])
 		assert.Equal(t, "3.14", attrs2["log.float"])
@@ -345,11 +408,20 @@ func TestLogSuite(t *testing.T) {
 
 	t.Run("LogMetadata", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
-		assert.Equal(t, uint32(1), entries[0].DroppedAttributesCount)
-		assert.Equal(t, uint32(1), entries[0].Flags)
-		assert.Equal(t, "event.b", entries[0].EventName)
-		assert.Equal(t, "event.c", entries[1].EventName)
-		assert.Equal(t, "event.a", entries[2].EventName)
+		full0 := getLogFull(t, s, ctx, entries[0].ID)
+		assert.Equal(t, uint32(1), full0.DroppedAttributesCount)
+		assert.Equal(t, uint32(1), full0.Flags)
+		assert.Equal(t, "event.b", full0.EventName)
+		full1 := getLogFull(t, s, ctx, entries[1].ID)
+		assert.Equal(t, "event.c", full1.EventName)
+		full2 := getLogFull(t, s, ctx, entries[2].ID)
+		assert.Equal(t, "event.a", full2.EventName)
+	})
+
+	t.Run("LogGetNotFound", func(t *testing.T) {
+		_, err := logs.Get(ctx, s.DB(), "00000000-0000-0000-0000-000000000000")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, logs.ErrLogIDNotFound)
 	})
 }
 
@@ -479,13 +551,13 @@ func TestIngestLogs_FlushInterval(t *testing.T) {
 	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, batchSize)
 
-	// Find entries by log.index so we don't depend on result order.
-	byIndex := make(map[string]*logEntryJSON)
-	for i := range entries {
-		e := &entries[i]
-		m := attrMap(e.Attributes)
-		idx := m["log.index"]
-		byIndex[idx] = e
+	// Summaries don't carry attributes; fetch each row's full
+	// LogData via logs.Get and key the resulting map by log.index.
+	byIndex := make(map[string]logEntryJSON)
+	for _, e := range entries {
+		full := getLogFull(t, s, ctx, e.ID)
+		m := attrMap(full.Attributes)
+		byIndex[m["log.index"]] = full
 	}
 
 	// Assert attributes on first (before any flush), 99th (before flush at 100), 100th (at flush), 249th (after multiple flushes).
@@ -518,8 +590,8 @@ func TestSearchLogs(t *testing.T) {
 	startTime := baseTime - 24*int64(time.Hour)
 	endTime := baseTime + 24*int64(time.Hour)
 
-	parseEntries := func(raw json.RawMessage) []logEntryJSON {
-		var e []logEntryJSON
+	parseSummaries := func(raw json.RawMessage) []logSummaryJSON {
+		var e []logSummaryJSON
 		assert.NoError(t, json.Unmarshal(raw, &e))
 		return e
 	}
@@ -536,12 +608,15 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "0000000000000002", entries[0].SpanID)
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
 	})
 
 	t.Run("GlobalSearch_EventName", func(t *testing.T) {
+		// eventName isn't on the summary, but searching for it
+		// against the full log row still works -- we just need
+		// to fetch the matched log's detail to verify the field.
 		query := &search.QueryNode{
 			ID:   "q2",
 			Type: "condition",
@@ -553,9 +628,10 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.NotEmpty(t, entries)
-		assert.Equal(t, "event.a", entries[0].EventName)
+		full := getLogFull(t, s, ctx, entries[0].ID)
+		assert.Equal(t, "event.a", full.EventName)
 	})
 
 	t.Run("GlobalSearch_TraceID", func(t *testing.T) {
@@ -570,7 +646,7 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3, "global search for trace ID hex should match all logs")
 	})
 
@@ -586,9 +662,9 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1, "global search for span ID hex should match one log")
-		assert.Equal(t, "0000000000000002", entries[0].SpanID)
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
 	})
 
 	t.Run("GlobalSearch_NoResults", func(t *testing.T) {
@@ -603,7 +679,7 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Empty(t, entries)
 	})
 
@@ -619,7 +695,7 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
 		assert.Equal(t, "ERROR", entries[0].SeverityText)
 	})
@@ -636,9 +712,9 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "0000000000000001", entries[0].SpanID)
+		assert.Equal(t, "INFO", entries[0].SeverityText)
 	})
 
 	t.Run("Field_TraceID", func(t *testing.T) {
@@ -653,11 +729,8 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3, "all three logs share the same trace")
-		for _, e := range entries {
-			assert.Equal(t, "00000000000000000000000000000099", e.TraceID)
-		}
 	})
 
 	t.Run("Field_SeverityNumber", func(t *testing.T) {
@@ -672,13 +745,17 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
 		assert.Equal(t, "ERROR", entries[0].SeverityText)
 		assert.Equal(t, int32(17), entries[0].SeverityNumber)
 	})
 
 	t.Run("Field_Body", func(t *testing.T) {
+		// Search predicate runs against the full body column; the
+		// summary only carries the preview. The fixture's body
+		// fits in 200 chars so we can verify against bodyPreview
+		// without a detail fetch.
 		query := &search.QueryNode{
 			ID:   "q5d",
 			Type: "condition",
@@ -690,10 +767,10 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "0000000000000007", entries[0].SpanID)
-		assert.Contains(t, entries[0].Body, "Operation warning")
+		assert.Equal(t, "WARN", entries[0].SeverityText)
+		assert.Contains(t, entries[0].BodyPreview, "Operation warning")
 	})
 
 	t.Run("Field_EventName", func(t *testing.T) {
@@ -708,10 +785,11 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "event.a", entries[0].EventName)
-		assert.Equal(t, "0000000000000001", entries[0].SpanID)
+		assert.Equal(t, "INFO", entries[0].SeverityText)
+		full := getLogFull(t, s, ctx, entries[0].ID)
+		assert.Equal(t, "event.a", full.EventName)
 	})
 
 	t.Run("Field_ScopeName", func(t *testing.T) {
@@ -726,11 +804,11 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3)
-		for _, e := range entries {
-			assert.Equal(t, "test-scope", e.Scope.Name)
-		}
+		// scope.name lives on the full row; assert via one detail fetch.
+		full := getLogFull(t, s, ctx, entries[0].ID)
+		assert.Equal(t, "test-scope", full.Scope.Name)
 	})
 
 	t.Run("Field_ScopeVersion", func(t *testing.T) {
@@ -745,11 +823,10 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3)
-		for _, e := range entries {
-			assert.Equal(t, "v1.0.0", e.Scope.Version)
-		}
+		full := getLogFull(t, s, ctx, entries[0].ID)
+		assert.Equal(t, "v1.0.0", full.Scope.Version)
 	})
 
 	t.Run("Attribute_LogString", func(t *testing.T) {
@@ -769,9 +846,10 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
-		assert.Equal(t, "log-b", attrMap(entries[0].Attributes)["log.string"])
+		full := getLogFull(t, s, ctx, entries[0].ID)
+		assert.Equal(t, "log-b", attrMap(full.Attributes)["log.string"])
 	})
 
 	t.Run("Attribute_Resource", func(t *testing.T) {
@@ -791,8 +869,39 @@ func TestSearchLogs(t *testing.T) {
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
-		entries := parseEntries(raw)
+		entries := parseSummaries(raw)
 		assert.NotEmpty(t, entries)
-		assert.Equal(t, "test-service", attrMap(entries[0].Resource.Attributes)["service.name"])
+		// service_name is denormalized onto the summary too, so
+		// no detail fetch needed for the value assertion.
+		assert.Equal(t, "test-service", entries[0].ServiceName)
 	})
+}
+
+// TestLogs_ServiceNameDenormStaysConsistent mirrors the spans/streams
+// invariant: logs.service_name (the denormalized hot-filter column)
+// must equal the source-of-truth resource attribute value for every
+// log row. If a future change writes only the column, only the
+// attribute, or writes inconsistent values, this test fails. We rely
+// on the standard fixture which stamps service.name = test-service on
+// the resource for every record.
+func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	baseTime := time.Now().UnixNano()
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime))
+	})
+	require.NoError(t, err)
+
+	mismatches := countRows(t, s.DB(), ctx, `
+		select count(*) from logs l
+		left join attributes a
+		     on a.log_id = l.id
+		    and a.scope = 'resource'
+		    and a.key = 'service.name'
+		where l.service_name <> coalesce(a.value, '')
+	`)
+	assert.Equal(t, 0, mismatches,
+		"logs.service_name must equal the source resource attribute (or '' when absent)")
 }
