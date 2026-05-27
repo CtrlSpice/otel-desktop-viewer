@@ -48,7 +48,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: axolot(e)l version
+      label: otel-desktop-viewer version
       placeholder: e.g. v0.5.0
     validations:
       required: true
