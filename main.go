@@ -6,6 +6,7 @@ package main
 
 import (
 	"log"
+	"net"
 	"strconv"
 	"time"
 
@@ -63,11 +64,16 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 		Use:     set.BuildInfo.Command,
 		Version: set.BuildInfo.Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Format the host for use in endpoint addresses.
+			// IPv6 addresses must be wrapped in brackets for net.JoinHostPort
+			// and YAML values containing special characters need quoting.
+			endpoint := formatEndpoint(hostFlag)
+
 			set.ConfigProviderSettings.ResolverSettings.URIs = []string{
 				`yaml:receivers::otlp::protocols::http::cors::allowed_origins: [https://*,http://*]`,
-				`yaml:receivers::otlp::protocols::http::endpoint: ` + hostFlag + `:` + strconv.Itoa(httpPortFlag),
-				`yaml:receivers::otlp::protocols::grpc::endpoint: ` + hostFlag + `:` + strconv.Itoa(grpcPortFlag),
-				`yaml:exporters::desktop::endpoint: ` + hostFlag + `:` + strconv.Itoa(browserPortFlag),
+				`yaml:receivers::otlp::protocols::http::endpoint: "` + endpoint(httpPortFlag) + `"`,
+				`yaml:receivers::otlp::protocols::grpc::endpoint: "` + endpoint(grpcPortFlag) + `"`,
+				`yaml:exporters::desktop::endpoint: "` + endpoint(browserPortFlag) + `"`,
 				`yaml:exporters::desktop::db: ` + dbFlag,
 				`yaml:service::pipelines::traces::receivers: [otlp]`,
 				`yaml:service::pipelines::traces::exporters: [desktop]`,
@@ -82,7 +88,8 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 				go func() {
 					// Wait a bit for the server to come up to avoid a 404 as a first experience
 					time.Sleep(300 * time.Millisecond)
-					browser.OpenURL("http://" + hostFlag + `:` + strconv.Itoa(browserPortFlag) + "/")
+					browserHost := browserHostFor(hostFlag)
+					browser.OpenURL("http://" + browserHost + ":" + strconv.Itoa(browserPortFlag) + "/")
 				}()
 			}
 
@@ -98,8 +105,27 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().IntVar(&grpcPortFlag, "grpc", 4317, "The port number on which we listen for OTLP grpc payloads")
 	rootCmd.Flags().BoolVar(&openBrowserFlag, "open-browser", true, "Open the browser automatically on launch")
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser-port", 8000, "The port number where we expose our data")
-	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser)")
+	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser). Use '::' or '0.0.0.0' to listen on all interfaces.")
 	rootCmd.Flags().StringVar(&dbFlag, "db", "", "The path of your database file. Omitting this flag opens DuckDB in in-memory mode, with no data persisted to disk.")
 
 	return rootCmd
+}
+
+// formatEndpoint returns a function that produces a properly formatted
+// host:port string for the given host. IPv6 addresses are wrapped in
+// brackets so that net.Dial / net.Listen can parse them correctly.
+func formatEndpoint(host string) func(port int) string {
+	return func(port int) string {
+		return net.JoinHostPort(host, strconv.Itoa(port))
+	}
+}
+
+// browserHostFor returns the host string to use when opening the browser.
+// Wildcard addresses (0.0.0.0, ::) are replaced with localhost because
+// browsers cannot connect to wildcard addresses directly.
+func browserHostFor(host string) string {
+	if host == "0.0.0.0" || host == "::" || host == "[::]" {
+		return "localhost"
+	}
+	return host
 }
