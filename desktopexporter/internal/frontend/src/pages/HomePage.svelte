@@ -101,7 +101,7 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
           >
             <img
               src={luluImage}
-              alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu Axol'Otel the First, valiant adventurer and observability queen."
+              alt="A pink axolotl is striking a heroic pose while gazing at a field of stars through a telescope. Her name is Lulu the First, valiant adventurer and observability queen."
               class="h-48 w-48 shrink-0 object-contain drop-shadow-sm min-[1100px]:h-64 min-[1100px]:w-64"
             />
             <div class="min-w-0 py-2">
