@@ -5,21 +5,25 @@
     Axis,
     Highlight,
     Layer,
-    Legend,
     Rect,
     Tooltip,
   } from 'layerchart'
-  import { scaleBand, scaleOrdinal, scaleThreshold } from 'd3-scale'
+  import { scaleBand, scaleThreshold } from 'd3-scale'
   import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
+  import { computeHeatmapColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import {
-    adaptiveStepCount,
-    legendBinEdges,
-  } from '@/components/metrics/utils/heatmap-palette'
-  import { heatmapSwatches } from '@/utils/chart-palette'
+    computeHeatmapLayout,
+    computeHeatmapPlotHeight,
+  } from '@/components/metrics/utils/heatmap-layout'
+  import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
   import { themeSignal } from '@/state/theme.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
+  import ChartSelectionLegend from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
+  import { histogramColumnSelectionLegendRows } from '@/components/metrics/utils/heatmap-column-selection'
+  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
+  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import {
-    axisCount,
+    axisBucketBounds,
     axisTime,
     chartPadding,
     DEFAULT_METRIC_CHART_HEIGHT,
@@ -28,6 +32,7 @@
   import { formatDateTime } from '@/utils/time'
 
   const timeContext = getTimeContext()
+  const ctx = getMetricViewContext()
 
   // `time` is the raw bucket-start timestamp in milliseconds. We
   // intentionally do NOT pre-format it here -- a formatted string
@@ -38,40 +43,44 @@
   type HeatmapDatum = {
     time: number
     bucket: string
+    /** Numeric sort key for the y band scale (low → high). */
+    bucketOrder: number
     count: number
   }
 
   // The fetch was lifted up to MetricViewContext so the Heatmap and
   // Aggregated tabs can share one bucket-series request. This component is
-  // now purely a renderer: parent supplies `points` (plus the window range
-  // so the axis-tier picker still works), and the parent owns loading /
-  // error / temporality-callout states.
+  // now purely a renderer: parent supplies `points`, and the parent owns
+  // loading / error / temporality-callout states.
   //
-  // selectedTimestamp + onSelect implement the heatmap-click ->
-  // snapshot-tab interaction: clicking a Cell calls onSelect with that
-  // column's timestamp; the parent resolves it to a datapoint id and
-  // switches tabs. selectedTimestamp drives a column highlight so the
-  // user can scan-locate which column corresponds to the active snapshot.
+  // selectedTimestamp + onSelect: click toggles column selection on the
+  // heatmap tab (see MetricViewContext.onHeatmapSelect).
   type Props = {
     points: HistogramSlicePoint[]
-    /** Query window in ms (same range passed to getMetric). */
-    windowStartMs: number
-    windowEndMs: number
     height?: number
+    timeRange?: { startMs: number; endMs: number } | null
     /** Click handler. Receives the bucket-start timestamp in ms. */
     onSelect?: (timestampMs: number) => void
     /** When set, the matching column gets a highlight. ms timestamp. */
     selectedTimestamp?: number | null
+    /** Bottom inset inside the LayerChart plot (room for x-axis labels). */
+    plotPaddingBottom?: number
+    /** Metric unit for bucket-bound y-axis labelling (e.g. "ms"). */
+    unit?: string
   }
 
   let {
     points,
-    windowStartMs,
-    windowEndMs,
     height = DEFAULT_METRIC_CHART_HEIGHT,
+    timeRange = null,
     onSelect,
     selectedTimestamp = null,
+    plotPaddingBottom = chartPadding.bottom,
+    unit = '',
   }: Props = $props()
+
+  let plotAreaHeight = $state(0)
+  let plotBoxHeight = $derived(plotAreaHeight > 0 ? plotAreaHeight : height)
 
   function tsToMs(ts: bigint): number {
     return Number(ts / 1_000_000n)
@@ -117,17 +126,22 @@
         // buckets inside its offset range; this brings Histogram in line.
         if (counts[i] === 0) continue
         let label: string
+        let bucketOrder: number
         if (i === 0) {
           label = bounds.length > 0 ? `≤${formatBound(bounds[0])}` : '0'
+          bucketOrder = bounds.length > 0 ? bounds[0]! : 0
         } else if (i < bounds.length) {
-          label = formatBound((bounds[i - 1] + bounds[i]) / 2)
+          bucketOrder = (bounds[i - 1]! + bounds[i]!) / 2
+          label = formatBound(bucketOrder)
         } else {
+          bucketOrder =
+            bounds.length > 0 ? bounds[bounds.length - 1]! : 0
           label =
             bounds.length > 0
               ? `≥${formatBound(bounds[bounds.length - 1])}`
               : '0'
         }
-        data.push({ time, bucket: label, count: counts[i] })
+        data.push({ time, bucket: label, bucketOrder, count: counts[i] })
       }
     }
     return data
@@ -138,29 +152,27 @@
     for (const pt of pts) {
       if (pt.kind !== 'expHistogram') continue
       const time = tsToMs(pt.timestamp)
-      const base = Math.pow(2, Math.pow(2, -pt.scale))
-
-      if (pt.zeroCount > 0) {
-        data.push({ time, bucket: '0', count: pt.zeroCount })
-      }
-
-      for (let i = 0; i < pt.positiveCounts.length; i++) {
-        const idx = pt.positiveOffset + i
-        const mid = (Math.pow(base, idx) + Math.pow(base, idx + 1)) / 2
+      const buckets = expBuckets(
+        pt.scale,
+        pt.negativeOffset,
+        pt.negativeCounts,
+        pt.zeroCount,
+        pt.positiveOffset,
+        pt.positiveCounts
+      )
+      for (const bucket of buckets) {
+        if (bucket.cnt === 0) continue
+        const bucketOrder =
+          bucket.lo === bucket.hi ? bucket.lo : (bucket.lo + bucket.hi) / 2
+        const label =
+          bucket.lo === bucket.hi && bucket.lo === 0
+            ? '0'
+            : formatBound(bucketOrder)
         data.push({
           time,
-          bucket: formatBound(mid),
-          count: pt.positiveCounts[i],
-        })
-      }
-
-      for (let i = 0; i < pt.negativeCounts.length; i++) {
-        const idx = pt.negativeOffset + i
-        const mid = (-Math.pow(base, idx + 1) + -Math.pow(base, idx)) / 2
-        data.push({
-          time,
-          bucket: formatBound(mid),
-          count: pt.negativeCounts[i],
+          bucket: label,
+          bucketOrder,
+          count: bucket.cnt,
         })
       }
     }
@@ -186,15 +198,17 @@
   })
 
   let bucketDomain = $derived.by(() => {
-    const seen = new Set<string>()
-    const ordered: string[] = []
+    const orderByLabel = new Map<string, number>()
     for (const d of heatmapData) {
-      if (!seen.has(d.bucket)) {
-        seen.add(d.bucket)
-        ordered.push(d.bucket)
+      const prev = orderByLabel.get(d.bucket)
+      if (prev === undefined || d.bucketOrder < prev) {
+        orderByLabel.set(d.bucket, d.bucketOrder)
       }
     }
-    return ordered.reverse()
+    return [...orderByLabel.entries()]
+      .sort((a, b) => a[1] - b[1])
+      .map(([label]) => label)
+      .reverse()
   })
 
   // Anchor cDomain at 0 (not min) so blank-ish cells visually correspond to
@@ -217,53 +231,16 @@
     return seen.size
   })
 
-  let swatchSteps = $derived(adaptiveStepCount(distinctNonZeroCounts))
-
-  // Active-range swatches only -- 0 is the "empty" swatch, prepended below.
-  let swatches = $derived.by(() => {
-    return heatmapSwatches(swatchSteps, themeSignal.value)
-  })
-
-  // Threshold breakpoints over (0, maxCount]. scaleThreshold returns
-  // range[0] for any input < domain[0], so domain[0] = 1 means
-  // "count === 0 -> empty swatch" and the rest of the range covers
-  // positive counts uniformly.
-  let cellColorThresholds = $derived.by(() => {
-    if (swatchSteps <= 0 || maxCount <= 0) return [1]
-    const out: number[] = new Array(swatchSteps)
-    out[0] = 1
-    for (let i = 1; i < swatchSteps; i++) {
-      out[i] = (i * maxCount) / swatchSteps
-    }
-    return out
-  })
-
-  // Empty swatch (matches chart surface) + active ramp; length = thresholds + 1.
-  let cellColorRange = $derived(['var(--color-base-200)', ...swatches])
-
-  // Legend labels mirror the threshold structure: '0' first, then '(prev - next]'
-  // for each active swatch. legendBinEdges divides [0, max] into swatchSteps slots;
-  // we treat the first slot as (0 - max/N], etc.
-  let legendLabels = $derived.by(() => {
-    const edges = legendBinEdges(maxCount, swatchSteps)
-    const labels: string[] = ['0']
-    for (let i = 0; i < swatches.length; i++) {
-      const lo = i === 0 ? 0 : Math.round(edges[i])
-      const hi = Math.round(edges[i + 1])
-      const close = i === swatches.length - 1 ? ']' : ')'
-      labels.push(`(${lo}\u2009–\u2009${hi}${close}`)
-    }
-    return labels
-  })
-
-  // Legend skips the '0' swatch entirely -- empty cells already read as
-  // "nothing happened" because they match the chart surface, so the legend
-  // only documents the active (positive-count) buckets.
-  let legendScale = $derived(
-    scaleOrdinal<string, string>()
-      .domain(legendLabels.slice(1))
-      .range(cellColorRange.slice(1))
+  let colorScale = $derived.by(() =>
+    computeHeatmapColorScale({
+      maxCount,
+      distinctNonZeroCount: distinctNonZeroCounts,
+      theme: themeSignal.value,
+    })
   )
+
+  let cellColorThresholds = $derived(colorScale.thresholds)
+  let cellColorRange = $derived(colorScale.range)
 
   let visibleBucketTicks = $derived.by(() => {
     const n = bucketDomain.length
@@ -281,167 +258,203 @@
 
   // --- Cell sizing ---
   //
-  // Time columns: fixed TIME_COLUMN_WIDTH; scroll horizontally when wide.
-  // Bucket rows: share the pane height evenly (ExpHist compresses, no
-  // vertical scroll).
+  // Fluid columns: fill available width when sparse, scale down to 8px min,
+  // then scroll horizontally when even 8px columns overflow.
 
-  /** Fixed time-column width in the plot area (px). */
-  const TIME_COLUMN_WIDTH = 16
-  const PLOT_INSET_X = chartPadding.left + chartPadding.right
-  const PLOT_INSET_Y = chartPadding.top + chartPadding.bottom
-
-  // clientWidth of the outer measurement wrapper. Bound below; starts at
-  // 0 before mount.
-  let containerWidth = $state(0)
-
-  let plotHeightAvailable = $derived(
-    Math.max(0, height - PLOT_INSET_Y)
-  )
-
-  let chartWidth = $derived.by(() => {
-    if (timeDomain.length === 0) return Math.max(containerWidth, 1)
-    return TIME_COLUMN_WIDTH * timeDomain.length + PLOT_INSET_X
+  let heatmapPlotPadding = $derived({
+    top: chartPadding.top,
+    left: chartPadding.left,
+    right: chartPadding.right,
+    bottom: plotPaddingBottom,
   })
 
-  let chartHeight = $derived(height)
+  let PLOT_INSET_X = $derived(
+    heatmapPlotPadding.left + heatmapPlotPadding.right
+  )
+  let PLOT_INSET_Y = $derived(
+    heatmapPlotPadding.top + heatmapPlotPadding.bottom
+  )
 
-  let effectiveCellWidth = TIME_COLUMN_WIDTH
+  let containerWidth = $state(0)
+
+  /** Scroll viewport width — measured on the plot area. */
+  let plotContainerWidth = $derived(Math.max(containerWidth, 0))
+
+  let maxPlotHeight = $derived(
+    Math.max(0, plotBoxHeight - PLOT_INSET_Y)
+  )
+
+  let baseLayout = $derived.by(() =>
+    computeHeatmapLayout({
+      containerWidth: Math.max(plotContainerWidth, 1),
+      plotInsetX: PLOT_INSET_X,
+      columnCount: timeDomain.length,
+    })
+  )
+
+  let plotHeight = $derived.by(() =>
+    computeHeatmapPlotHeight({ maxPlotHeight })
+  )
+
+  let heatmapLayout = $derived(baseLayout)
+
+  let chartRenderHeight = $derived(plotBoxHeight)
+
+  let scrollChartWidth = $derived(heatmapLayout.chartWidth)
+  let columnPitch = $derived(heatmapLayout.columnPitch)
+  let plotWidth = $derived(heatmapLayout.plotWidth)
+  let heatmapScrolls = $derived(
+    containerWidth > 0 && scrollChartWidth > plotContainerWidth
+  )
+
+  let xBandScale = $derived(scaleBand().paddingOuter(0).padding(0))
+
+  let yBandScale = $derived(scaleBand().paddingOuter(0).padding(0))
 
   function handleHeatmapClick(event: MouseEvent) {
-    if (!onSelect || timeDomain.length === 0 || effectiveCellWidth <= 0) return
+    if (!onSelect || timeDomain.length === 0 || columnPitch <= 0) return
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    const plotX = event.clientX - rect.left - chartPadding.left
-    const plotW = TIME_COLUMN_WIDTH * timeDomain.length
-    if (plotX < 0 || plotX > plotW) return
-    const idx = Math.floor(plotX / effectiveCellWidth)
+    const plotX = event.clientX - rect.left - heatmapPlotPadding.left
+    if (plotX < 0 || plotX > plotWidth) return
+    const idx = Math.floor(plotX / columnPitch)
     if (idx < 0 || idx >= timeDomain.length) return
     onSelect(timeDomain[idx])
   }
 
-  // Persistent column highlight for the active selection. Resolved to
-  // the band's pixel x by the band's own index (same math as the click
-  // router, run in reverse). Rendered as a <Rect> in the SVG layer with
-  // a translucent fill + thin border so it reads as "this column is
-  // selected" without obscuring the cells underneath.
   let selectedColumnX = $derived.by(() => {
     if (selectedTimestamp === null || selectedTimestamp === undefined)
       return null
     const idx = timeDomain.indexOf(selectedTimestamp)
     if (idx < 0) return null
-    return chartPadding.left + idx * effectiveCellWidth
+    return idx * columnPitch
   })
+
+  let columnSelectionTimestamp = $derived.by((): string => {
+    const sel = ctx.heatmapColumnSelection
+    if (!sel) return ''
+    return formatDateTime(sel.timestampMs, timeContext.timezone, 'milliseconds')
+  })
+
+  let columnSelectionRowColumns = $derived.by(() => {
+    const sel = ctx.heatmapColumnSelection
+    if (!sel) return []
+    return histogramColumnSelectionLegendRows(sel, unit)
+  })
+
+  let hasColumnSelectionSummary = $derived(
+    columnSelectionRowColumns.some(column => column.length > 0)
+  )
 </script>
 
 {#if heatmapData.length === 0}
   <MetricChartEmpty {height} message="No bucket data in range" />
 {:else}
-  <div class="heatmap-chart metric-chart-view">
-    <!-- Outer wrapper measures width; height is fixed to the chart pane.
-         Horizontal scroll only when there are many time columns. -->
-    <div
-      class="heatmap-measure"
-      style:height="{height}px"
-      bind:clientWidth={containerWidth}
-    >
-      <div class="heatmap-scroll" style:height="{height}px">
-        <!-- onclick lives on the wrapper (not on each Cell) because Cell
-           iterates internally and doesn't surface the bound datum on the
-           click event. Resolving from offsetX -> band index keeps the
-           per-cell binding implicit, and we don't have to fight the
-           chart context boundary. role="button" + tabindex make it
-           keyboard/AT reachable; the listener is no-op when no onSelect
-           is passed (Gauge/Sum case). svelte-ignore is needed because
-           the compiler can't statically prove role is set in the
-           tabindex=0 branch (we wire both via the same onSelect prop). -->
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <div
-          class="heatmap-wrapper"
-          class:heatmap-wrapper--clickable={!!onSelect}
-          style:width="{chartWidth}px"
-          style:height="{chartHeight}px"
-          onclick={handleHeatmapClick}
-          onkeydown={e => {
-            if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
-              e.preventDefault()
-            }
-          }}
-          role={onSelect ? 'button' : undefined}
-          tabindex={onSelect ? 0 : undefined}
-        >
-          <Chart
-            data={heatmapData}
-            x="time"
-            xScale={scaleBand().padding(0)}
-            xDomain={timeDomain}
-            y="bucket"
-            yScale={scaleBand().padding(0)}
-            yDomain={bucketDomain}
-            c="count"
-            cScale={scaleThreshold()}
-            cDomain={cellColorThresholds}
-            cRange={cellColorRange}
-            width={chartWidth}
-            height={chartHeight}
-            padding={chartPadding}
-            tooltipContext={{ mode: 'band' }}
-          >
-            <Layer>
-              <Axis
-                placement="bottom"
-                {...axisTime(timeContext.timezone)}
-                ticks={visibleTimeTicks}
+  <div class="metric-heatmap-chart" style:height="{height}px">
+    {#if timeRange || onSelect}
+      <div class="metric-heatmap-chart__header">
+        {#if timeRange}
+          <ChartTimeRangeHeader
+            startMs={timeRange.startMs}
+            endMs={timeRange.endMs}
+            variant="legend"
+          />
+        {/if}
+        {#if onSelect}
+          <div class="metric-heatmap-chart__selection-legend">
+            {#if hasColumnSelectionSummary}
+              <ChartSelectionLegend
+                variant="columns"
+                timestamp={columnSelectionTimestamp}
+                rowColumns={columnSelectionRowColumns}
               />
-              <Axis
-                placement="left"
-                {...axisCount()}
-                ticks={visibleBucketTicks}
-              />
-              <Cell x="time" y="bucket" fill="count" />
-              {#if selectedColumnX !== null}
-                <!-- Persistent selection ring around the active column.
-                   Rendered before <Highlight> so the hover highlight
-                   still wins visually when the user is mousing over a
-                   different column. Pixel mode + plot-area coords. -->
-                <Rect
-                  x={selectedColumnX}
-                  y={chartPadding.top}
-                  width={effectiveCellWidth}
-                  height={plotHeightAvailable}
-                  class="heatmap-selection"
-                />
-              {/if}
-              <Highlight area />
-            </Layer>
-            <Tooltip.Root>
-              {#snippet children({ data }: { data: HeatmapDatum })}
-                <Tooltip.Header class="text-center"
-                  >{formatTooltipTime(data.time)}</Tooltip.Header
-                >
-                <Tooltip.List>
-                  <Tooltip.Item label="bucket" value={data.bucket} />
-                  <Tooltip.Separator />
-                  <Tooltip.Item
-                    label="count"
-                    value={data.count}
-                    format="integer"
-                  />
-                </Tooltip.List>
-              {/snippet}
-            </Tooltip.Root>
-            <Legend
-              scale={legendScale}
-              placement="bottom"
-              variant="swatches"
-              classes={{
-                root: 'heatmap-legend px-2 rounded-full',
-                title: 'text-xs',
-                label: 'text-xs text-rp-subtle',
-                tick: 'stroke-base-200',
-              }}
-            />
-          </Chart>
-        </div>
+            {/if}
+          </div>
+        {/if}
       </div>
+    {/if}
+    <div
+      class="metric-heatmap-chart__plot"
+      bind:clientWidth={containerWidth}
+      bind:clientHeight={plotAreaHeight}
+    >
+        <div
+          class="heatmap-scroll"
+          class:heatmap-scroll--active={heatmapScrolls}
+        >
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
+            class="heatmap-wrapper"
+            class:heatmap-wrapper--clickable={!!onSelect}
+            style:width="{scrollChartWidth}px"
+            style:height="{chartRenderHeight}px"
+            onclick={handleHeatmapClick}
+            onkeydown={e => {
+              if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault()
+              }
+            }}
+            role={onSelect ? 'button' : undefined}
+            tabindex={onSelect ? 0 : undefined}
+          >
+            <Chart
+              data={heatmapData}
+              x="time"
+              xScale={xBandScale}
+              xDomain={timeDomain}
+              y="bucket"
+              yScale={yBandScale}
+              yDomain={bucketDomain}
+              c="count"
+              cScale={scaleThreshold()}
+              cDomain={cellColorThresholds}
+              cRange={cellColorRange}
+              width={scrollChartWidth}
+              height={chartRenderHeight}
+              padding={heatmapPlotPadding}
+              tooltipContext={{ mode: 'band' }}
+            >
+              <Layer>
+                <Axis
+                  placement="bottom"
+                  {...axisTime(timeContext.timezone)}
+                  ticks={visibleTimeTicks}
+                />
+                <Axis
+                  placement="left"
+                  {...axisBucketBounds(unit)}
+                  ticks={visibleBucketTicks}
+                />
+                <Cell x="time" y="bucket" fill="count" />
+                {#if selectedColumnX !== null}
+                  <Rect
+                    x={selectedColumnX}
+                    y={0}
+                    width={columnPitch}
+                    height={maxPlotHeight}
+                    class="heatmap-selection"
+                  />
+                {/if}
+                <Highlight area={{ class: 'heatmap-hover-column' }} axis="x" />
+              </Layer>
+              <Tooltip.Root>
+                {#snippet children({ data }: { data: HeatmapDatum })}
+                  <Tooltip.Header class="text-center"
+                    >{formatTooltipTime(data.time)}</Tooltip.Header
+                  >
+                  <Tooltip.List>
+                    <Tooltip.Item label="bucket" value={data.bucket} />
+                    <Tooltip.Separator />
+                    <Tooltip.Item
+                      label="count"
+                      value={data.count}
+                      format="integer"
+                    />
+                  </Tooltip.List>
+                {/snippet}
+              </Tooltip.Root>
+            </Chart>
+          </div>
+        </div>
     </div>
   </div>
 {/if}
@@ -449,17 +462,83 @@
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .heatmap-chart {
-    @apply w-full;
+  .metric-heatmap-chart {
+    @apply flex min-h-0 w-full min-w-0 flex-col;
   }
 
-  .heatmap-measure {
-    @apply w-full overflow-hidden;
+  .metric-heatmap-chart__header {
+    @apply flex shrink-0 items-start justify-between gap-2 px-1 pb-1 pt-0.5;
   }
 
-  /* Tall bucket grids stay clipped to the pane; only pan sideways in time. */
+  .metric-heatmap-chart__header :global(.chart-time-range-legend__prefix) {
+    color: var(--color-subtle);
+  }
+
+  .metric-heatmap-chart__header :global(.chart-time-range-legend__value) {
+    @apply text-base-content;
+  }
+
+  .metric-heatmap-chart__selection-legend {
+    /* Reserve stats card height so the plot does not shift on select. */
+    @apply ml-auto shrink-0;
+    min-height: 4rem;
+    pointer-events: none;
+  }
+
+  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend--columns) {
+    width: max-content;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__columns) {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .metric-heatmap-chart__selection-legend
+    :global(.chart-selection-legend__column + .chart-selection-legend__column) {
+    border-left: 1px solid
+      color-mix(in oklab, var(--color-base-300) 70%, transparent);
+    margin-left: 0.55rem;
+    padding-left: 0.55rem;
+  }
+
+  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__rows) {
+    grid-template-columns: auto auto;
+    column-gap: 0.35rem;
+    row-gap: 0.12rem;
+    min-width: 0;
+  }
+
+  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__dot) {
+    display: none;
+  }
+
+  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__label) {
+    color: var(--color-subtle);
+  }
+
+  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__label::after) {
+    content: ':';
+  }
+
+  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__value) {
+    @apply text-base-content;
+  }
+
+  .metric-heatmap-chart__plot {
+    @apply relative min-h-0 min-w-0 flex-1 overflow-hidden;
+  }
+
   .heatmap-scroll {
-    @apply w-full overflow-x-auto overflow-y-hidden;
+    @apply h-full min-w-0 overflow-x-hidden overflow-y-hidden;
+  }
+
+  .heatmap-scroll--active {
+    @apply overflow-x-auto;
   }
 
   .heatmap-wrapper :global(.lc-rect) {
@@ -476,6 +555,12 @@
   }
   .heatmap-wrapper--clickable:focus-visible {
     @apply outline outline-2 outline-offset-2 outline-primary/60;
+  }
+
+  /* Full-column hover band (Highlight axis="x"). */
+  .heatmap-wrapper :global(.heatmap-hover-column) {
+    --fill-color: color-mix(in oklab, var(--color-primary, #eb6f92) 14%, transparent);
+    pointer-events: none;
   }
 
   /* Persistent selection ring drawn over the active column. Stroke-only

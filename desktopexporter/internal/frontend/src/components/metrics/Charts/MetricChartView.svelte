@@ -19,40 +19,33 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { selectionToQueryRangeMs } from '@/contexts/time-context.svelte'
   import MetricTimeSeriesChart from '@/components/metrics/Charts/MetricTimeSeriesChart.svelte'
+  import MetricQuantileAreaChart from '@/components/metrics/Charts/MetricQuantileAreaChart.svelte'
   import HistogramChart from '@/components/metrics/Charts/HistogramChart.svelte'
   import HistogramHeatmap from '@/components/metrics/Charts/HistogramHeatmap.svelte'
   import UnspecifiedTemporalityCallout from '@/components/metrics/Detail/UnspecifiedTemporalityCallout.svelte'
   import {
     DEFAULT_METRIC_CHART_HEIGHT,
     MIN_METRIC_CHART_HEIGHT,
+    chartPadding,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import MetricChartControlBar from '@/components/metrics/Charts/MetricChartControlBar.svelte'
   import HistogramQuantileControlBar from '@/components/metrics/Charts/HistogramQuantileControlBar.svelte'
+  import HistogramHeatmapControlBar from '@/components/metrics/Charts/HistogramHeatmapControlBar.svelte'
+  import HistogramChartControlBar from '@/components/metrics/Charts/HistogramChartControlBar.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
-  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
-  import ChartSelectionLegend from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
   import { formatDateTime } from '@/utils/time'
+  import { QUANTILE_LABELS } from '@/components/metrics/utils/histogram-aggregation'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
 
-  function onQuantileChartKeydown(e: KeyboardEvent) {
-    if (e.key !== 'Escape') return
-    if (ctx.activeHistogramTab !== 'quantiles') return
-    if (!ctx.quantileDrillDownActive) return
-    ctx.clearQuantileDrillDown()
-  }
+  let activeQuantileKeys = $derived(
+    QUANTILE_LABELS.map(q => q.key).filter(k => ctx.activeQuantileOverlays.has(k))
+  )
 
-  let quantileHighlightedTimestamp = $derived.by((): bigint | null => {
-    if (ctx.activeHistogramTab !== 'quantiles') return null
-    const ms = ctx.heatmapSelectedTimestamp
-    if (ms === null) return null
-    return BigInt(ms) * 1_000_000n
-  })
-
-  let snapshotSelectionTimestamp = $derived.by((): string => {
-    if (ctx.activeHistogramTab !== 'snapshot') return ''
-    const dp = ctx.activeHistogramDp
+  let histogramBucketTimestamp = $derived.by((): string => {
+    if (ctx.histogramScope !== 'bucket') return ''
+    const dp = ctx.histogramChartDatapoint
     if (!dp) return ''
     return formatDateTime(
       Number(dp.timestamp / 1_000_000n),
@@ -61,14 +54,18 @@
     )
   })
 
+  let histogramEmptyMessage = $derived.by((): string => {
+    if (ctx.histogramScope === 'bucket') {
+      return 'Select a datapoint'
+    }
+    return 'No aggregate in range'
+  })
+
   let quantileEmptyMessage = $derived.by((): string => {
     if (ctx.bucketSeriesError) return 'Cannot chart quantiles for this metric'
     if (ctx.histogramTimeseriesCount === 0) return 'No datapoints to chart'
     if (ctx.histogramVisible.size === 0) {
       return 'Nothing to see here — select a timeseries below'
-    }
-    if (ctx.activeQuantileOverlays.size === 0) {
-      return 'Enable at least one quantile overlay'
     }
     return 'No quantile data in range'
   })
@@ -91,8 +88,6 @@
   )
 </script>
 
-<svelte:window onkeydown={onQuantileChartKeydown} />
-
 {#snippet bucketSeriesErrorMessage(err: BucketSeriesError)}
   <div class="metric-chart-view__placeholder text-error/70">
     {#if err.kind === 'unspecified'}
@@ -113,91 +108,66 @@
       class="metric-chart-view__plot-host"
       bind:clientHeight={plotHostHeight}
     >
-      {#if ctx.chartDataTimeRange || snapshotSelectionTimestamp}
-        <div class="metric-chart-view__header">
-          {#if ctx.chartDataTimeRange}
-            <ChartTimeRangeHeader
-              startMs={ctx.chartDataTimeRange.startMs}
-              endMs={ctx.chartDataTimeRange.endMs}
-              variant="legend"
-            />
-          {/if}
-          {#if snapshotSelectionTimestamp}
-            <div class="metric-chart-view__selection-legend">
-              <ChartSelectionLegend
-                timestamp={snapshotSelectionTimestamp}
-                rows={[]}
-              />
-            </div>
-          {/if}
-        </div>
-      {/if}
-      <div class="metric-chart-view__body">
-        {#if ctx.activeHistogramTab === 'heatmap'}
-          {#if ctx.bucketSeriesError}
-            {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
-          {:else if ctx.heatmapBucketSeries === null}
-            <div class="metric-chart-view__placeholder">No histogram data</div>
-          {:else if ctx.heatmapBucketSeries.length === 0}
-            <MetricChartEmpty height={plotHeight} message="No bucket data in range" />
-          {:else}
-            <HistogramHeatmap
-              points={ctx.heatmapBucketSeries}
-              windowStartMs={queryRange.start}
-              windowEndMs={queryRange.end}
-              height={plotHeight}
-              onSelect={ctx.onHeatmapSelect}
-              selectedTimestamp={ctx.heatmapSelectedTimestamp}
-            />
-          {/if}
-        {:else if ctx.activeHistogramTab === 'quantiles'}
-          {#if ctx.bucketSeriesError}
-            {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
-          {:else if ctx.quantileChartTimeseries.length === 0}
-            <MetricChartEmpty height={plotHeight} message={quantileEmptyMessage} />
-          {:else}
-            <MetricTimeSeriesChart
-              timeseries={ctx.quantileChartTimeseries}
-              highlightedTimestamp={quantileHighlightedTimestamp}
-              unit={ctx.metric!.unit}
-              height={plotHeight}
-              colorByKey={ctx.quantileColorByKey}
-              aggregationView="raw"
-              showStatOverlays={false}
-              onChartPointClick={ctx.onQuantileChartPointClick}
-              emptyMessage={quantileEmptyMessage}
-              useQuantileLineStyle={true}
-            />
-          {/if}
-        {:else if ctx.activeHistogramTab === 'aggregated'}
-          {#if ctx.aggregatedError}
-            {@render bucketSeriesErrorMessage(ctx.aggregatedError)}
-          {:else if !ctx.aggregatedDatapoint}
-            <div class="metric-chart-view__placeholder">No aggregate in range</div>
-          {:else}
-            <HistogramChart
-              datapoint={ctx.aggregatedDatapoint}
-              unit={ctx.metric!.unit}
-              height={plotHeight}
-            />
-          {/if}
-        {:else if ctx.activeHistogramTab === 'snapshot'}
-          {#if ctx.activeHistogramDp}
-            <HistogramChart
-              datapoint={ctx.activeHistogramDp}
-              unit={ctx.metric!.unit}
-              height={plotHeight}
-            />
-          {:else}
-            <div class="metric-chart-view__placeholder">
-              No datapoint selected
-            </div>
-          {/if}
+      {#if ctx.activeHistogramTab === 'heatmap'}
+        {#if ctx.bucketSeriesError}
+          {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
+        {:else if ctx.heatmapBucketSeries === null}
+          <div class="metric-chart-view__placeholder">No histogram data</div>
+        {:else if ctx.heatmapBucketSeries.length === 0}
+          <MetricChartEmpty height={plotHeight} message="No bucket data in range" />
+        {:else}
+          <HistogramHeatmap
+            points={ctx.heatmapBucketSeries}
+            height={plotHeight}
+            unit={ctx.metric!.unit}
+            timeRange={ctx.chartDataTimeRange ?? null}
+            plotPaddingBottom={chartPadding.bottom}
+            onSelect={ctx.onHeatmapSelect}
+            selectedTimestamp={ctx.heatmapSelectedTimestamp}
+          />
         {/if}
-      </div>
+      {:else if ctx.activeHistogramTab === 'quantiles'}
+        {#if ctx.bucketSeriesError}
+          {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
+        {:else if ctx.quantileChartTimeseries.length === 0}
+          <MetricChartEmpty height={plotHeight} message={quantileEmptyMessage} />
+        {:else}
+          <MetricQuantileAreaChart
+            timeseries={ctx.quantileChartTimeseries}
+            activeQuantileKeys={activeQuantileKeys}
+            unit={ctx.metric!.unit}
+            height={plotHeight}
+            timeRange={ctx.chartDataTimeRange ?? null}
+            colorByKey={ctx.timeseriesColorByKey}
+            onChartPointClick={ctx.onQuantileChartPointClick}
+            emptyMessage={quantileEmptyMessage}
+          />
+        {/if}
+      {:else if ctx.activeHistogramTab === 'histogram'}
+        {#if ctx.histogramChartError}
+          {@render bucketSeriesErrorMessage(ctx.histogramChartError)}
+        {:else if !ctx.histogramChartDatapoint}
+          <MetricChartEmpty height={plotHeight} message={histogramEmptyMessage} />
+        {:else}
+          <HistogramChart
+            datapoint={ctx.histogramChartDatapoint}
+            unit={ctx.metric!.unit}
+            height={plotHeight}
+            timeRange={ctx.histogramScope === 'window'
+              ? (ctx.chartDataTimeRange ?? null)
+              : null}
+            selectionTimestamp={histogramBucketTimestamp}
+            enableValueBucketPin={ctx.histogramScope === 'window'}
+          />
+        {/if}
+      {/if}
     </div>
     {#if ctx.activeHistogramTab === 'quantiles'}
       <HistogramQuantileControlBar />
+    {:else if ctx.activeHistogramTab === 'heatmap'}
+      <HistogramHeatmapControlBar />
+    {:else if ctx.activeHistogramTab === 'histogram'}
+      <HistogramChartControlBar />
     {/if}
   </div>
 {/snippet}
@@ -292,19 +262,6 @@
   }
 
   .metric-chart-view__plot-host {
-    @apply flex min-h-0 min-w-0 flex-1 flex-col;
-  }
-
-  .metric-chart-view__header {
-    @apply flex shrink-0 items-start justify-between gap-2 px-1 pb-1 pt-0.5;
-  }
-
-  .metric-chart-view__selection-legend {
-    @apply ml-auto shrink-0;
-    pointer-events: none;
-  }
-
-  .metric-chart-view__body {
     @apply flex min-h-0 min-w-0 flex-1 flex-col;
   }
 

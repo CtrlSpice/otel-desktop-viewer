@@ -7,6 +7,9 @@ import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 import {
   expHistQuantileRecord,
   histQuantileRecord,
+  bucketExtents,
+  expBuckets,
+  histBuckets,
 } from '@/components/metrics/utils/histogram-quantile'
 import {
   HistogramBoundsMismatchError,
@@ -97,6 +100,38 @@ function totalsFromDp(
   }
 }
 
+/** Min/max from populated bucket bounds; count/sum stay on OTLP summary fields. */
+export function histogramSliceBucketExtents(
+  slice: HistogramSlicePoint
+): { min: number; max: number } | null {
+  if (slice.kind === 'histogram') {
+    return bucketExtents(histBuckets(slice.bounds, slice.counts))
+  }
+  return bucketExtents(
+    expBuckets(
+      slice.scale,
+      slice.negativeOffset,
+      slice.negativeCounts,
+      slice.zeroCount,
+      slice.positiveOffset,
+      slice.positiveCounts
+    )
+  )
+}
+
+function withBucketDerivedMinMax(slice: HistogramSlicePoint): HistogramSlicePoint {
+  const extents = histogramSliceBucketExtents(slice)
+  if (!extents) return slice
+  return {
+    ...slice,
+    totals: {
+      ...slice.totals,
+      min: extents.min,
+      max: extents.max,
+    },
+  }
+}
+
 function mergeHistogramSliceDelta(
   dps: (HistogramDataPoint | ExponentialHistogramDataPoint)[]
 ): HistogramSlicePoint | null {
@@ -109,20 +144,20 @@ function mergeHistogramSliceDelta(
     const bounds = first.explicitBounds
     const vectors = dps.map(dp => (dp as HistogramDataPoint).bucketCounts)
     const counts = sumBucketVectors(vectors) ?? []
-    return {
+    return withBucketDerivedMinMax({
       kind: 'histogram',
       timestamp,
       attributesKey: '',
       bounds,
       counts,
       totals: rollupHistogramTotals(dps.map(totalsFromDp)),
-    }
+    })
   }
 
   const expDps = dps as ExponentialHistogramDataPoint[]
   const posVectors = expDps.map(dp => dp.positiveBucketCounts)
   const negVectors = expDps.map(dp => dp.negativeBucketCounts)
-  return {
+  return withBucketDerivedMinMax({
     kind: 'expHistogram',
     timestamp,
     attributesKey: '',
@@ -134,7 +169,7 @@ function mergeHistogramSliceDelta(
     negativeOffset: expDps[0]!.negativeBucketOffset,
     negativeCounts: sumBucketVectors(negVectors) ?? [],
     totals: rollupHistogramTotals(dps.map(totalsFromDp)),
-  }
+  })
 }
 
 function mergeHistogramSliceCumulative(
@@ -246,7 +281,7 @@ function filterVisibleSlices(
 function mergeSlicesAtTimestamp(
   slices: HistogramSlicePoint[]
 ): HistogramSlicePoint {
-  if (slices.length === 1) return slices[0]!
+  if (slices.length === 1) return withBucketDerivedMinMax(slices[0]!)
   const timestamp = slices[0]!.timestamp
   const first = slices[0]!
 
@@ -256,14 +291,14 @@ function mergeSlicesAtTimestamp(
       const merged = mergeExplicitHistogramVectors(
         histSlices.map(s => ({ bounds: s.bounds, counts: s.counts }))
       )
-      return {
+      return withBucketDerivedMinMax({
         kind: 'histogram',
         timestamp,
         attributesKey: '',
         bounds: merged.bounds,
         counts: merged.counts,
         totals: rollupHistogramTotals(histSlices.map(s => s.totals)),
-      }
+      })
     } catch (e) {
       if (e instanceof HistogramBoundsMismatchError) throw e
       throw e
@@ -284,7 +319,7 @@ function mergeSlicesAtTimestamp(
     wires,
     rollupHistogramTotals(expSlices.map(s => s.totals))
   )
-  return {
+  return withBucketDerivedMinMax({
     kind: 'expHistogram',
     timestamp,
     attributesKey: '',
@@ -301,7 +336,7 @@ function mergeSlicesAtTimestamp(
       min: merged.min,
       max: merged.max,
     },
-  }
+  })
 }
 
 /** Merge visible per-attribute slices per timestamp (heatmap column). */
@@ -369,14 +404,14 @@ export function mergeHistogramWindowSummary(
           counts: (s as Extract<HistogramSlicePoint, { kind: 'histogram' }>).counts,
         }))
       )
-      return {
+      return withBucketDerivedMinMax({
         kind: 'histogram',
         timestamp: visible[visible.length - 1]!.timestamp,
         attributesKey: '',
         bounds: merged.bounds,
         counts: merged.counts,
         totals: rollupHistogramTotals(visible.map(s => s.totals)),
-      }
+      })
     } catch (e) {
       if (e instanceof HistogramBoundsMismatchError) {
         return { kind: 'boundsMismatch', message: e.message }
@@ -399,7 +434,7 @@ export function mergeHistogramWindowSummary(
     wires,
     rollupHistogramTotals(expVisible.map(s => s.totals))
   )
-  return {
+  return withBucketDerivedMinMax({
     kind: 'expHistogram',
     timestamp: visible[visible.length - 1]!.timestamp,
     attributesKey: '',
@@ -416,7 +451,7 @@ export function mergeHistogramWindowSummary(
       min: merged.min,
       max: merged.max,
     },
-  }
+  })
 }
 
 /** Slice at a heatmap column timestamp (visible series merged). */
@@ -465,14 +500,7 @@ export function minHistogramTimestampInWindow(
 
 export const DEFAULT_HISTOGRAM_QUANTILES = [0.5, 0.95, 0.99] as const
 
-export const QUANTILE_LINE_KEY_SELECTED = '__quantile:selected:'
-export const QUANTILE_LINE_KEY_ALL = '__quantile:all:'
-
-export const QUANTILE_COLORS: Record<string, string> = {
-  '0.5': 'var(--color-info)',
-  '0.95': 'var(--color-warning)',
-  '0.99': 'var(--color-error)',
-}
+export const QUANTILE_SERIES_KEY_SEP = '\0q:'
 
 export const QUANTILE_LABELS: { key: string; label: string }[] = [
   { key: '0.5', label: 'p50' },
@@ -484,46 +512,26 @@ export function quantileKeyFromValue(q: number): string {
   return String(q)
 }
 
-export function quantileLineKey(
-  scope: 'selected' | 'all',
-  quantileKey: string
-): string {
-  return scope === 'selected'
-    ? `${QUANTILE_LINE_KEY_SELECTED}${quantileKey}`
-    : `${QUANTILE_LINE_KEY_ALL}${quantileKey}`
+/** Default quantile overlay when opening the Quantiles tab (p50). */
+export const DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY = quantileKeyFromValue(0.5)
+
+export function quantileSeriesKey(seriesKey: string, quantileKey: string): string {
+  return `${seriesKey}${QUANTILE_SERIES_KEY_SEP}${quantileKey}`
 }
 
-export function isQuantileLineKey(key: string): boolean {
-  return (
-    key.startsWith(QUANTILE_LINE_KEY_SELECTED) ||
-    key.startsWith(QUANTILE_LINE_KEY_ALL)
-  )
-}
-
-export function parseQuantileLineKey(
+export function parseQuantileSeriesKey(
   key: string
-): { scope: 'selected' | 'all'; quantileKey: string } | null {
-  if (key.startsWith(QUANTILE_LINE_KEY_SELECTED)) {
-    return {
-      scope: 'selected',
-      quantileKey: key.slice(QUANTILE_LINE_KEY_SELECTED.length),
-    }
+): { seriesKey: string; quantileKey: string } | null {
+  const idx = key.indexOf(QUANTILE_SERIES_KEY_SEP)
+  if (idx === -1) return null
+  return {
+    seriesKey: key.slice(0, idx),
+    quantileKey: key.slice(idx + QUANTILE_SERIES_KEY_SEP.length),
   }
-  if (key.startsWith(QUANTILE_LINE_KEY_ALL)) {
-    return {
-      scope: 'all',
-      quantileKey: key.slice(QUANTILE_LINE_KEY_ALL.length),
-    }
-  }
-  return null
 }
 
-export function quantileLineLabel(
-  quantileKey: string,
-  scope: 'selected' | 'all'
-): string {
-  const pill = QUANTILE_LABELS.find(q => q.key === quantileKey)?.label ?? quantileKey
-  return scope === 'selected' ? `${pill} · checked` : `${pill} · all`
+export function quantileLabelForKey(quantileKey: string): string {
+  return QUANTILE_LABELS.find(q => q.key === quantileKey)?.label ?? quantileKey
 }
 
 export function sliceQuantileValue(
@@ -553,28 +561,30 @@ function quantilePointsFromMergedSlices(
   return points
 }
 
-/** Merged quantile lines over adaptive time buckets (selected or all series). */
-export function buildMergedQuantileSeries(
+/** Per-visible-series quantile lines for each active percentile overlay. */
+export function buildVisibleSeriesQuantileChartTimeseries(
   perAttributeSlices: HistogramSlicePoint[],
   quantiles: readonly number[],
-  scope: 'selected' | 'all',
   visibleKeys: Set<string> | null
-): ChartTimeseries[] | HistogramAggregationError {
-  const merged = mergeHistogramSlicesAcrossTime(
-    perAttributeSlices,
-    scope === 'all' ? null : visibleKeys
-  )
-  if (isHistogramAggregationError(merged)) return merged
-
-  const slices = merged as HistogramSlicePoint[]
-  return quantiles.map(q => {
+): ChartTimeseries[] {
+  const out: ChartTimeseries[] = []
+  for (const q of quantiles) {
     const quantileKey = quantileKeyFromValue(q)
-    return {
-      key: quantileLineKey(scope, quantileKey),
-      label: quantileLineLabel(quantileKey, scope),
-      points: quantilePointsFromMergedSlices(slices, q),
+    const pill = quantileLabelForKey(quantileKey)
+    for (const line of buildPerSeriesQuantileSeries(
+      perAttributeSlices,
+      q,
+      visibleKeys
+    )) {
+      out.push({
+        key: quantileSeriesKey(line.key, quantileKey),
+        label: `${line.label} · ${pill}`,
+        points: line.points,
+      })
     }
-  })
+  }
+  out.sort((a, b) => a.key.localeCompare(b.key))
+  return out
 }
 
 /** Per-visible-series quantile line for one percentile. */
@@ -606,36 +616,37 @@ export function histogramSliceToDatapoint(
   id: string,
   temporality: string
 ): HistogramDataPoint | ExponentialHistogramDataPoint {
+  const normalized = withBucketDerivedMinMax(slice)
   const base = {
     id,
-    timestamp: slice.timestamp,
-    startTime: slice.timestamp,
+    timestamp: normalized.timestamp,
+    startTime: normalized.timestamp,
     flags: 0,
     exemplars: [],
-    count: slice.totals.count,
-    sum: slice.totals.sum,
-    min: slice.totals.min,
-    max: slice.totals.max,
+    count: normalized.totals.count,
+    sum: normalized.totals.sum,
+    min: normalized.totals.min,
+    max: normalized.totals.max,
     aggregationTemporality: temporality,
   }
-  if (slice.kind === 'histogram') {
+  if (normalized.kind === 'histogram') {
     return {
       ...base,
       metricType: 'Histogram',
-      explicitBounds: slice.bounds,
-      bucketCounts: slice.counts,
+      explicitBounds: normalized.bounds,
+      bucketCounts: normalized.counts,
     }
   }
   return {
     ...base,
     metricType: 'ExponentialHistogram',
-    scale: slice.scale,
-    zeroCount: slice.zeroCount,
-    zeroThreshold: slice.zeroThreshold,
-    positiveBucketOffset: slice.positiveOffset,
-    positiveBucketCounts: slice.positiveCounts,
-    negativeBucketOffset: slice.negativeOffset,
-    negativeBucketCounts: slice.negativeCounts,
+    scale: normalized.scale,
+    zeroCount: normalized.zeroCount,
+    zeroThreshold: normalized.zeroThreshold,
+    positiveBucketOffset: normalized.positiveOffset,
+    positiveBucketCounts: normalized.positiveCounts,
+    negativeBucketOffset: normalized.negativeOffset,
+    negativeBucketCounts: normalized.negativeCounts,
   }
 }
 

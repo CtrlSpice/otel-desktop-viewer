@@ -26,7 +26,7 @@ import { interpolateHcl } from 'd3-interpolate'
 const HEATMAP_ENDPOINTS: Record<string, readonly [string, string]> = {
   'rose-pine': ['#1f1d2e', '#eb6f92'], // base-200 → error (love)
   'rose-pine-moon': ['#2a273f', '#eb6f92'], // base-200 → error (love)
-  'rose-pine-dawn': ['#faf4ed', '#b4637a'], // base-200 → error (love)
+  'rose-pine-dawn': ['#faf4ed', '#907aa9'], // base-200 → primary (iris)
 }
 const DEFAULT_HEATMAP_ENDPOINTS = HEATMAP_ENDPOINTS['rose-pine-moon']
 

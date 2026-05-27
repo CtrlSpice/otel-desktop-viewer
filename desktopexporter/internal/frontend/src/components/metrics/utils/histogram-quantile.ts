@@ -108,6 +108,39 @@ export function expBuckets(
   ]
 }
 
+/** Lower bound of a populated bucket for min/max display. */
+function bucketLoForExtent(b: HistBucket): number {
+  if (Number.isFinite(b.lo)) return b.lo
+  // (-∞, hi] underflow — finite lower bound unknown; use 0 for non-negative metrics.
+  return 0
+}
+
+/** Upper bound of a populated bucket for min/max display. */
+function bucketHiForExtent(b: HistBucket): number {
+  if (Number.isFinite(b.hi)) return b.hi
+  // [lo, +∞) overflow
+  return b.lo
+}
+
+/** Min/max over populated bucket bounds (ignores OTLP summary fields). */
+export function bucketExtents(
+  buckets: HistBucket[]
+): { min: number; max: number } | null {
+  let min = Infinity
+  let max = -Infinity
+  let found = false
+  for (const b of buckets) {
+    if (b.cnt <= 0) continue
+    found = true
+    const lo = bucketLoForExtent(b)
+    const hi = bucketHiForExtent(b)
+    if (lo < min) min = lo
+    if (hi > max) max = hi
+  }
+  if (!found || !Number.isFinite(min) || !Number.isFinite(max)) return null
+  return { min, max }
+}
+
 function bucketTotal(buckets: HistBucket[]): number {
   let total = 0
   for (const b of buckets) total += b.cnt

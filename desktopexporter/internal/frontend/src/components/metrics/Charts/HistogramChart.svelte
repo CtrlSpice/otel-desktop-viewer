@@ -1,7 +1,11 @@
 <script lang="ts">
-  import { Axis, BarChart, Line, Text, Tooltip } from 'layerchart'
+  import { BarChart, Line, Rect, Tooltip, scaleInvert } from 'layerchart'
   import { scaleBand, scaleLinear } from 'd3-scale'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
+  import ChartSelectionLegend, {
+    type SelectionLegendRow,
+  } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
+  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import MetricChartPlot, {
     axisBuckets,
     axisCount,
@@ -10,6 +14,8 @@
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import { metricTypeSeriesColor } from '@/components/metrics/utils/metric-type'
   import { histogramQuantilesForDatapoint } from '@/components/metrics/utils/histogram-aggregation'
+  import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
+  import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
   import type {
     HistogramDataPoint,
     ExponentialHistogramDataPoint,
@@ -26,13 +32,24 @@
      * the x-axis title shows just "value" when unit is empty. */
     unit?: string
     height?: number
+    timeRange?: { startMs: number; endMs: number } | null
+    /** Formatted snapshot timestamp for snapshot-scope header. */
+    selectionTimestamp?: string
+    /** Whole-window mode: click a column to pin bucket summary in the header. */
+    enableValueBucketPin?: boolean
   }
 
   let {
     datapoint,
     unit = '',
     height = DEFAULT_METRIC_CHART_HEIGHT,
+    timeRange = null,
+    selectionTimestamp = '',
+    enableValueBucketPin = false,
   }: Props = $props()
+
+  let plotAreaHeight = $state(0)
+  let pinnedBucketLabel = $state<string | null>(null)
 
   // Hardcoded for now; the plan defers configurable quantiles to a future pass.
   // Keys must match Go's strconv.FormatFloat(q, 'f', -1, 64) output.
@@ -45,18 +62,32 @@
 
   let quantiles = $derived(histogramQuantilesForDatapoint(datapoint, QUANTILES))
 
-  // Loading: '…'. NULL or missing key (empty buckets / total=0): em-dash.
-  function formatQuantile(key: string): string {
-    const v = quantiles[key]
-    if (v === null || v === undefined) return '—'
-    return v.toFixed(2)
-  }
-
   let buckets = $derived.by((): Bucket[] => {
     if (datapoint.metricType === 'Histogram') {
       return buildHistogramBuckets(datapoint)
     }
     return buildExpHistogramBuckets(datapoint)
+  })
+
+  let pinnedBucket = $derived.by((): Bucket | null => {
+    if (!pinnedBucketLabel) return null
+    return buckets.find(b => b.label === pinnedBucketLabel) ?? null
+  })
+
+  let pinDatapointId = $state<string | undefined>(undefined)
+
+  $effect(() => {
+    const id = datapoint.id
+    if (pinDatapointId !== undefined && pinDatapointId !== id) {
+      pinnedBucketLabel = null
+    }
+    pinDatapointId = id
+  })
+
+  $effect(() => {
+    if (!enableValueBucketPin) {
+      pinnedBucketLabel = null
+    }
   })
 
   function buildHistogramBuckets(dp: HistogramDataPoint): Bucket[] {
@@ -88,57 +119,31 @@
   function buildExpHistogramBuckets(
     dp: ExponentialHistogramDataPoint
   ): Bucket[] {
-    const result: Bucket[] = []
-    const base = Math.pow(2, Math.pow(2, -dp.scale))
-
-    if (dp.zeroCount > 0) {
-      result.push({ label: '0', count: dp.zeroCount, lo: 0, hi: 0 })
-    }
-
-    for (let i = 0; i < dp.positiveBucketCounts.length; i++) {
-      const idx = dp.positiveBucketOffset + i
-      const lo = Math.pow(base, idx)
-      const hi = Math.pow(base, idx + 1)
-      result.push({
-        label: `(${lo.toPrecision(3)}, ${hi.toPrecision(3)}]`,
-        count: dp.positiveBucketCounts[i],
-        lo,
-        hi,
-      })
-    }
-
-    return result
+    return expBuckets(
+      dp.scale,
+      dp.negativeBucketOffset,
+      dp.negativeBucketCounts,
+      dp.zeroCount,
+      dp.positiveBucketOffset,
+      dp.positiveBucketCounts
+    ).map(b => ({
+      label:
+        b.lo === b.hi && b.lo === 0
+          ? '0'
+          : `(${formatBucketBound(b.lo)}, ${formatBucketBound(b.hi)}]`,
+      count: b.cnt,
+      lo: b.lo,
+      hi: b.hi,
+    }))
   }
 
-  let stats = $derived.by(() => {
-    return {
-      count: datapoint.count,
-      sum: datapoint.sum,
-      min: datapoint.min,
-      max: datapoint.max,
-    }
-  })
-
-  let statsLines = $derived.by(() => {
-    const lines: { label: string; value: string }[] = [
-      { label: 'count', value: String(stats.count) },
-      { label: 'sum', value: stats.sum.toFixed(2) },
-      { label: 'min', value: stats.min.toFixed(2) },
-      { label: 'max', value: stats.max.toFixed(2) },
-    ]
-    for (const { key, label } of QUANTILE_LABELS) {
-      lines.push({ label, value: formatQuantile(key) })
-    }
-    if (datapoint.metricType === 'ExponentialHistogram') {
-      lines.push({ label: 'scale', value: String(datapoint.scale) })
-      lines.push({ label: 'zeros', value: String(datapoint.zeroCount) })
-    }
-    return lines
-  })
-
-  let statsLabel = $derived(
-    statsLines.map(s => `${s.label}: ${s.value}`).join('\n')
-  )
+  function formatBucketBound(v: number): string {
+    if (!Number.isFinite(v)) return v > 0 ? '+∞' : '-∞'
+    if (v === 0) return '0'
+    if (Math.abs(v) >= 1000) return v.toExponential(1)
+    if (Math.abs(v) < 0.01) return v.toExponential(1)
+    return v.toPrecision(3)
+  }
 
   type QuantileMark = {
     key: string
@@ -199,6 +204,74 @@
     return marks
   })
 
+  const QUANTILE_ORDER: Record<string, number> = {
+    '0.5': 0,
+    '0.95': 1,
+    '0.99': 2,
+  }
+
+  let quantileLabelPlacements = $derived.by(() => {
+    const ctx = chartContext
+    if (!ctx || quantileMarks.length === 0) return []
+
+    const xs = ctx.xScale
+    const ys = ctx.yScale
+    const bw = typeof xs.bandwidth === 'function' ? xs.bandwidth() : 0
+    const plotLeft = ctx.padding.left
+    const plotTop = ctx.padding.top
+    const plotCeiling = ctx.yRange[1] + plotTop + 4
+    const STAGGER_PX = 32
+    const COLLIDE_PX = 88
+
+    type Draft = {
+      key: string
+      statLabel: string
+      valueText: string
+      color: string
+      title: string
+      left: number
+      top: number
+      sortOrder: number
+    }
+
+    const drafts: Draft[] = quantileMarks.map(m => {
+      const bucket = buckets[m.bucketIndex]
+      const x0 = xs(bucket.label)
+      const px = (x0 ?? 0) + bw * m.fraction
+      const valueText = formatQuantileValue(m.value)
+      return {
+        key: m.key,
+        statLabel: m.label,
+        valueText,
+        color: m.color,
+        title: `${m.label} ${valueText}`,
+        left: px + plotLeft,
+        top: ys(bucket.count) + plotTop,
+        sortOrder: QUANTILE_ORDER[m.key] ?? 0,
+      }
+    })
+
+    drafts.sort((a, b) => a.left - b.left || a.sortOrder - b.sortOrder)
+
+    for (let i = 0; i < drafts.length; i++) {
+      let top = drafts[i].top
+      for (let j = 0; j < i; j++) {
+        if (drafts[i].left - drafts[j].left < COLLIDE_PX) {
+          top = Math.min(top, drafts[j].top - STAGGER_PX)
+        }
+      }
+      drafts[i].top = Math.max(top, plotCeiling)
+    }
+
+    return drafts.map(({ sortOrder: _sortOrder, ...mark }) => mark)
+  })
+
+  function formatQuantileValue(v: number): string {
+    const formatted = formatMetricValue(v)
+    const u = unit.trim()
+    return u ? `${formatted} ${u}` : formatted
+  }
+
   // Bar colour mirrors the metric-type badge so a glance at the chart
   // matches the colour you saw on the card. Histogram = warning, ExpHist
   // = secondary.
@@ -216,6 +289,11 @@
   const MIN_CHART_WIDTH = 280
 
   let parentWidth = $state(0)
+  let chartContext = $state<any>(undefined)
+
+  let chartRenderHeight = $derived(
+    plotAreaHeight > 0 ? plotAreaHeight : height
+  )
 
   let chartWidth = $derived.by(() => {
     const natural = buckets.length * BAR_SLOT_WIDTH
@@ -223,6 +301,34 @@
     if (parentWidth <= 0) return lower
     return Math.max(parentWidth, natural)
   })
+
+  function handlePlotClick(event: MouseEvent) {
+    if (!enableValueBucketPin || !chartContext || buckets.length === 0) return
+    const root = (event.currentTarget as HTMLElement).querySelector(
+      '.lc-root-container'
+    )
+    if (!root) return
+    const rect = root.getBoundingClientRect()
+    const pointX = event.clientX - rect.left
+    const pointY = event.clientY - rect.top
+    const { padding, xScale, xRange, yRange } = chartContext
+
+    // Same plot coords as layerchart tooltip band mode (TooltipContext bisect-band).
+    const plotX = pointX - padding.left
+    const plotY = pointY - padding.top
+    const xMin = Math.min(xRange[0], xRange[1])
+    const xMax = Math.max(xRange[0], xRange[1])
+    const yMin = Math.min(yRange[0], yRange[1])
+    const yMax = Math.max(yRange[0], yRange[1])
+    if (plotX < xMin || plotX > xMax || plotY < yMin || plotY > yMax) return
+
+    const label = scaleInvert(xScale, plotX)
+    if (label == null) return
+    const bucket = buckets.find(b => b.label === label)
+    if (!bucket) return
+    pinnedBucketLabel =
+      pinnedBucketLabel === bucket.label ? null : bucket.label
+  }
 
   // --- Tooltip helpers ---
 
@@ -250,8 +356,7 @@
   // what the chart shows and "% of total" would never reach 100%, even
   // when one rendered bar holds every visible observation. Summing the
   // visible buckets keeps the percentages internally consistent with the
-  // chart in front of the user; the raw datapoint.count is still shown
-  // in the stats row above for the absolute number.
+  // chart in front of the user.
   let visibleTotal = $derived.by(() => {
     let t = 0
     for (const b of buckets) t += b.count
@@ -264,36 +369,100 @@
     if (pct >= 10) return `${pct.toFixed(1)}%`
     return `${pct.toFixed(2)}%`
   }
+
+  let valuePinLegendRows = $derived.by((): SelectionLegendRow[] => {
+    if (!pinnedBucket) return []
+    return [
+      {
+        key: 'count',
+        color: 'var(--color-base-content)',
+        label: 'count',
+        valueText: String(pinnedBucket.count),
+      },
+      {
+        key: 'share',
+        color: 'var(--color-base-content)',
+        label: 'of total',
+        valueText: formatPct(pinnedBucket.count),
+      },
+    ]
+  })
 </script>
 
-<div>
-  {#if buckets.length > 0}
-    <!-- Outer measurement wrapper sets the scroll viewport; inner sized
-         wrapper holds the chart at its natural width so the scroll bar
-         only appears when the natural width exceeds the parent. -->
+{#if buckets.length > 0}
+  <div
+    class="metric-histogram-bar-chart"
+    class:metric-histogram-bar-chart--value-pin={enableValueBucketPin}
+    style:height="{height}px"
+  >
+    {#if timeRange || selectionTimestamp || (enableValueBucketPin && pinnedBucket)}
+      <div class="metric-histogram-bar-chart__header">
+        {#if timeRange}
+          <ChartTimeRangeHeader
+            startMs={timeRange.startMs}
+            endMs={timeRange.endMs}
+            variant="legend"
+          />
+        {/if}
+        <div class="metric-histogram-bar-chart__header-end">
+          {#if selectionTimestamp}
+            <ChartSelectionLegend timestamp={selectionTimestamp} rows={[]} />
+          {/if}
+          {#if enableValueBucketPin && pinnedBucket}
+            <div class="metric-histogram-bar-chart__value-pin-legend" aria-live="polite">
+              <ChartSelectionLegend
+                timestamp={formatBucketRange(pinnedBucket)}
+                rows={valuePinLegendRows}
+              />
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
     <div
-      class="histogram-measure"
-      style:height="{height}px"
+      class="metric-histogram-bar-chart__plot"
       bind:clientWidth={parentWidth}
+      bind:clientHeight={plotAreaHeight}
     >
-      <div class="histogram-chart-scroll" style:height="{height}px">
-        <MetricChartPlot class="histogram-chart" {height} width={chartWidth}>
-          <BarChart
-            data={buckets}
-            x="label"
-            xScale={scaleBand()}
-            y="count"
-            yScale={scaleLinear()}
-            yNice
-            padding={chartPadding}
-            bandPadding={0.2}
-            tooltipContext
-            props={{
-              bars: { fill: barColor, fillOpacity: 0.85 },
-              xAxis: axisBuckets(unit),
-              yAxis: axisCount(),
-            }}
+      <div class="histogram-chart-scroll">
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div
+          class="histogram-chart-wrapper"
+          class:histogram-chart-wrapper--clickable={enableValueBucketPin}
+          style:width="{chartWidth}px"
+          style:height="{chartRenderHeight}px"
+          onclick={handlePlotClick}
+          role={enableValueBucketPin ? 'button' : undefined}
+          tabindex={enableValueBucketPin ? 0 : undefined}
+        >
+          <MetricChartPlot
+            class="histogram-chart"
+            height={chartRenderHeight}
+            width={chartWidth}
           >
+            <BarChart
+              bind:context={chartContext}
+              data={buckets}
+              x="label"
+              xScale={scaleBand()}
+              y="count"
+              yScale={scaleLinear()}
+              yNice
+              padding={chartPadding}
+              bandPadding={0.2}
+              tooltipContext
+              highlight={{ area: true }}
+              props={{
+                bars: {
+                  fill: barColor,
+                  fillOpacity: 'var(--metric-bar-fill-opacity, 0.85)',
+                  stroke: 'var(--color-base-300)',
+                  strokeWidth: 1,
+                },
+                xAxis: axisBuckets(unit),
+                yAxis: axisCount(),
+              }}
+            >
             {#snippet tooltip()}
               <Tooltip.Root>
                 {#snippet children({ data }: { data: Bucket })}
@@ -321,11 +490,27 @@
                 typeof xs.bandwidth === 'function' ? xs.bandwidth() : 0}
               {@const yTop = context.yRange[1]}
               {@const yBot = context.yRange[0]}
+              {#if pinnedBucket}
+                {@const step =
+                  typeof xs.step === 'function' ? xs.step() : bw}
+                {@const outer =
+                  typeof xs.padding === 'function'
+                    ? (xs.padding() * step) / 2
+                    : 0}
+                {@const x0 = xs(pinnedBucket.label)}
+                <Rect
+                  x={x0 != null ? x0 - outer : 0}
+                  y={Math.min(yTop, yBot)}
+                  width={step}
+                  height={Math.abs(yBot - yTop)}
+                  class="value-bucket-pin-highlight"
+                />
+              {/if}
               {#each quantileMarks as m (m.key)}
                 {@const x0 = xs(buckets[m.bucketIndex].label)}
                 {@const px = x0 + bw * m.fraction}
                 <g class="quantile-marker" style:--marker-color={m.color}>
-                  <title>{m.label}: {m.value.toFixed(2)}</title>
+                  <title>{m.label} {formatQuantileValue(m.value)}</title>
                   <Line
                     x1={px}
                     x2={px}
@@ -333,39 +518,91 @@
                     y2={yBot}
                     class="quantile-line"
                   />
-                  <Text
-                    value={m.label}
-                    x={px}
-                    y={yTop}
-                    dy={-2}
-                    textAnchor="middle"
-                    verticalAnchor="end"
-                    class="quantile-label"
-                  />
                 </g>
               {/each}
-              <Axis
-                placement="right"
-                label={statsLabel}
-                labelPlacement="start"
-                ticks={0}
-                labelProps={{ class: 'stat-label' }}
-              />
             {/snippet}
           </BarChart>
+          {#each quantileLabelPlacements as mark (mark.key)}
+            <div
+              class="series-stat-tooltip series-stat-tooltip--above"
+              style:left="{mark.left}px"
+              style:top="{mark.top}px"
+              title={mark.title}
+              aria-hidden="true"
+            >
+              <div class="chart-selection-legend chart-selection-legend--stat">
+                <ul class="chart-selection-legend__rows">
+                  <li class="chart-selection-legend__row">
+                    <span
+                      class="chart-selection-legend__dot"
+                      style:--color={mark.color}
+                      aria-hidden="true"
+                    ></span>
+                    <span class="chart-selection-legend__label"
+                      >{mark.statLabel}</span
+                    >
+                    <span class="chart-selection-legend__value"
+                      >{mark.valueText}</span
+                    >
+                  </li>
+                </ul>
+              </div>
+            </div>
+          {/each}
         </MetricChartPlot>
+        </div>
       </div>
     </div>
-  {:else}
-    <MetricChartEmpty {height} message="No buckets to chart" />
-  {/if}
-</div>
+  </div>
+{:else}
+  <MetricChartEmpty {height} message="No buckets to chart" />
+{/if}
 
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .histogram-measure {
-    @apply w-full;
+  .metric-histogram-bar-chart {
+    @apply flex min-h-0 w-full min-w-0 flex-col;
+  }
+
+  .metric-histogram-bar-chart--value-pin :global(.lc-bars-bar) {
+    opacity: 1 !important;
+  }
+
+  .metric-histogram-bar-chart__header {
+    @apply flex shrink-0 items-start justify-between gap-2 px-1 pb-1 pt-0.5;
+  }
+
+  .metric-histogram-bar-chart__header-end {
+    @apply ml-auto flex shrink-0 flex-col items-end gap-1;
+    pointer-events: none;
+  }
+
+  .metric-histogram-bar-chart__value-pin-legend :global(.chart-selection-legend__rows) {
+    grid-template-columns: auto auto;
+    column-gap: 0.35rem;
+    row-gap: 0.12rem;
+  }
+
+  .metric-histogram-bar-chart__value-pin-legend :global(.chart-selection-legend__dot) {
+    display: none;
+  }
+
+  .metric-histogram-bar-chart__value-pin-legend :global(.chart-selection-legend__label) {
+    color: var(--color-subtle);
+  }
+
+  .metric-histogram-bar-chart__value-pin-legend
+    :global(.chart-selection-legend__label::after) {
+    content: ':';
+  }
+
+  .metric-histogram-bar-chart__value-pin-legend :global(.chart-selection-legend__value) {
+    @apply text-base-content;
+  }
+
+  .metric-histogram-bar-chart__plot {
+    @apply relative min-h-0 min-w-0 flex-1 overflow-hidden;
   }
 
   /* Horizontal scroll appears only when the natural chart width
@@ -373,16 +610,36 @@
      threshold the inner .histogram-chart sits at parent width and
      no scroll bar appears. */
   .histogram-chart-scroll {
-    @apply w-full overflow-x-auto overflow-y-hidden rounded-lg;
+    @apply h-full w-full overflow-x-auto overflow-y-hidden rounded-lg;
+  }
+
+  .histogram-chart-wrapper--clickable {
+    cursor: pointer;
+  }
+
+  .histogram-chart-wrapper--clickable:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* Match heatmap: hover band must not eat column clicks. */
+  .histogram-chart-wrapper--clickable :global(.lc-highlight-area) {
+    pointer-events: none;
+  }
+
+  .series-stat-tooltip {
+    position: absolute;
+    pointer-events: none;
+    z-index: 2;
+    width: max-content;
+    max-width: none;
+  }
+
+  .series-stat-tooltip--above {
+    transform: translate(-50%, calc(-100% - 8px));
   }
 
   .quantile-marker {
-    pointer-events: auto;
-  }
-
-  :global(.stat-label) {
-    font-size: 0.75rem;
-    fill: var(--color-muted);
-    color: var(--color-muted);
+    pointer-events: none;
   }
 </style>

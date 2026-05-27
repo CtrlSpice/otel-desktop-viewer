@@ -109,12 +109,11 @@
     <span class="col-resize-marker" aria-hidden="true"></span>
   </td>
   <td class="waterfall-row__td-bar p-0 align-middle">
-    <div class="waterfall-row__bar-area">
+    <div class="waterfall-row__bar-area" style:--bar-color={row.color}>
       <div
         class="waterfall-row__bar"
         style:left="{row.offsetPercent}%"
         style:width="{row.widthPercent}%"
-        style:--bar-color={row.color}
       >
         {#if barEventMarkers.length > 0}
           <div class="waterfall-row__event-dots">
@@ -188,16 +187,16 @@
 
   .waterfall-row__bar-area {
     @apply relative flex items-center;
+    --waterfall-bar-height: 0.875rem;
     height: var(--table-row-h);
     margin-left: 1.25rem;
     margin-right: 1.75rem;
   }
 
-  /* `--bar-color` is set inline from the palette; opacity and inside-label
-     colour come from theme vars in app.css (`--waterfall-bar-opacity`,
-     `--waterfall-bar-label-color`). */
+  /* `--bar-color` on the bar area tints the span pill. */
   .waterfall-row__bar {
-    @apply absolute z-[1] h-3.5 rounded-full top-1/2 -translate-y-1/2 border-0 overflow-hidden;
+    @apply absolute z-[1] rounded-full top-1/2 -translate-y-1/2 border-0 overflow-hidden;
+    height: var(--waterfall-bar-height);
     min-width: 2px;
     background-color: var(--bar-color);
     opacity: var(--waterfall-bar-opacity, 0.7);
@@ -237,24 +236,24 @@
   }
 
   .waterfall-row__bar-label {
-    @apply text-[10px] tabular-nums whitespace-nowrap;
+    @apply pointer-events-none;
   }
 
   .waterfall-row__bar-label--inside {
-    @apply absolute z-[4] flex h-3.5 min-w-[2px] items-center justify-start overflow-hidden rounded-full px-1 truncate;
+    @apply absolute z-[4] flex min-w-0 items-center justify-start overflow-hidden
+           truncate px-0.5 text-[9px] tabular-nums leading-none rounded-full;
     top: 50%;
+    height: var(--waterfall-bar-height);
+    max-height: var(--waterfall-bar-height);
     transform: translateY(-50%);
-    line-height: 14px;
-    pointer-events: none;
-    color: var(--waterfall-bar-label-color, var(--color-base-content));
+    color: var(--waterfall-bar-label-color, var(--color-base-200));
   }
 
   .waterfall-row__bar-label--outside {
-    @apply absolute z-[4];
-    color: var(--color-subtle);
-    line-height: 14px;
+    @apply absolute z-[4] text-[9px] tabular-nums whitespace-nowrap leading-none;
     top: 50%;
     transform: translateY(-50%);
+    color: var(--color-subtle);
   }
 
   .waterfall-row--error .waterfall-row__title {

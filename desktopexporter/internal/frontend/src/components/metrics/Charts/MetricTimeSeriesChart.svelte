@@ -31,9 +31,6 @@
     rateSlopeBucketSegment,
     seriesStatsFromPoints,
   } from '@/components/metrics/utils/aggregation'
-  import {
-    QUANTILE_LINE_KEY_ALL,
-  } from '@/components/metrics/utils/histogram-aggregation'
   import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
   /** Render order inside the Totals section: checked → all. */
@@ -143,8 +140,6 @@
     /** Chart point click → caller resolves to a datapoint and syncs
      *  the Series tab. Aggregate synthetic lines should no-op upstream. */
     onChartPointClick?: (seriesKey: string, clickedAt: Date) => void
-    /** Step-after curves + dashed all-series lines for histogram quantiles. */
-    useQuantileLineStyle?: boolean
   }
 
   let {
@@ -160,7 +155,6 @@
     selectedRateSlope = undefined,
     timeRange = null,
     onChartPointClick,
-    useQuantileLineStyle = false,
   }: Props = $props()
 
   const timeContext = getTimeContext()
@@ -188,15 +182,9 @@
     curve: curveStepAfter,
   } as const
 
-  const QUANTILE_STEP_PROPS = {
-    curve: curveStepAfter,
-  } as const
-
   function seriesLineProps(key: string): Record<string, unknown> {
     if (isAggregateKey(key)) return { props: AGG_LINE_PROPS }
-    if (!useQuantileLineStyle) return {}
-    if (key.startsWith(QUANTILE_LINE_KEY_ALL)) return { props: AGG_LINE_PROPS }
-    return { props: QUANTILE_STEP_PROPS }
+    return {}
   }
 
   let chartSeries = $derived.by(() => {

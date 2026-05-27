@@ -174,12 +174,6 @@
     showChartAggregationTabs || showChartHistogramTabs
   )
 
-  let showChartHeaderMeta = $derived(
-    showChartHistogramTabs &&
-      metricCtx.activeHistogramTab === 'quantiles' &&
-      metricCtx.quantileDrillDownActive
-  )
-
   // Position of the currently-selected metric in the sorted list.
   // SignalFooter that lives in PageLayout's pageFooter slot
   // (page-level chrome spanning main + detail). Returns -1 when
@@ -438,22 +432,6 @@
 
         {@const histogramChartTabs = histogramViewTabs()}
 
-        {#snippet chartHeaderMetaRight()}
-          {#if showChartHistogramTabs && metricCtx.activeHistogramTab === 'quantiles' && metricCtx.quantileDrillDownActive && metricCtx.quantileDrillDownLabel}
-            <span class="text-xs text-base-content/70">
-              Showing {metricCtx.quantileDrillDownLabel} per series
-            </span>
-            <button
-              type="button"
-              class="link link-hover text-xs"
-              onclick={() => metricCtx.clearQuantileDrillDown()}
-            >
-              Merged view
-            </button>
-            <span class="text-base-content/50 text-xs">· Esc</span>
-          {/if}
-        {/snippet}
-
         {#if showChartTitleTabs}
           <PaneHeader
             mode="title-tabs"
@@ -472,7 +450,6 @@
                 metricCtx.setActiveHistogramTab(id as HistogramTab)
               }
             }}
-            metaRight={showChartHeaderMeta ? chartHeaderMetaRight : undefined}
             ariaLabel="Metric chart"
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}

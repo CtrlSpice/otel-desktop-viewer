@@ -229,13 +229,38 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte'
   import type { Snippet } from 'svelte'
+  import VirtualList from '@humanspeak/svelte-virtual-list'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallRow from './WaterfallRow.svelte'
-  import { tableNav, escapeForSelector } from '@/components/shared/utils/table-keyboard-nav'
+  import {
+    escapeForSelector,
+    resolveNextPos,
+    type KeyDelta,
+  } from '@/components/shared/utils/table-keyboard-nav'
+  import {
+    buildChildrenBySpanId,
+    computeAutoCollapsedParents,
+    computeSearchCollapsedParents,
+  } from './waterfall-auto-collapse'
+
+  const WATERFALL_ROW_HEIGHT_PX = 28
+  const GRID_PAGE_STEP = 8
+  const VISIBLE_MARGIN_PX = 24
+
+  const KEY_DELTAS: Record<string, KeyDelta> = {
+    ArrowDown: { kind: 'relative', offset: 1 },
+    j: { kind: 'relative', offset: 1 },
+    ArrowUp: { kind: 'relative', offset: -1 },
+    k: { kind: 'relative', offset: -1 },
+    PageDown: { kind: 'relative', offset: GRID_PAGE_STEP },
+    PageUp: { kind: 'relative', offset: -GRID_PAGE_STEP },
+    Home: { kind: 'absolute', position: 'first' },
+    End: { kind: 'absolute', position: 'last' },
+  }
 
   // --- Visibility from collapse state (pure) ---
 
@@ -447,85 +472,137 @@
     void clampScroll()
   }
 
-  let childrenBySpanId = $derived(() => {
-    const map = new Map<string, string[]>()
-    for (const n of spans) {
-      const pid = n.spanData.parentSpanID
-      if (pid) {
-        const list = map.get(pid)
-        if (list) list.push(n.spanData.spanID)
-        else map.set(pid, [n.spanData.spanID])
-      }
-    }
-    return map
-  })
+  let childrenBySpanId = $derived.by(() => buildChildrenBySpanId(spans))
 
-  function hasRelevantDescendant(
-    sid: string,
-    children: Map<string, string[]>,
-    relevant: Set<string>
-  ): boolean {
-    const kids = children.get(sid)
-    if (!kids) return false
-    for (const kid of kids) {
-      if (relevant.has(kid)) return true
-      if (hasRelevantDescendant(kid, children, relevant)) return true
-    }
-    return false
-  }
+  let visibleRows = $derived.by(() =>
+    rows.filter(
+      row =>
+        rowVisibilityBySpanId.get(row.spanNode.spanData.spanID) ?? true
+    )
+  )
 
-  // Auto-collapse irrelevant branches when search results arrive; reset when cleared.
+  let rowBySpanId = $derived.by(
+    () => new Map(rows.map(row => [row.spanNode.spanData.spanID, row]))
+  )
+
+  // Auto-collapse (depth/subtree hybrid) or search-driven collapse.
   $effect(() => {
     if (hasActiveSearch) {
-      const relevant = new Set([...matchedIDs, ...ancestorsOfMatched])
-      const children = childrenBySpanId()
-      const toCollapse = new Set<string>()
-      for (const node of spans) {
-        const sid = node.spanData.spanID
-        const hasKids = (children.get(sid)?.length ?? 0) > 0
-        if (!hasKids) continue
-        if (!relevant.has(sid)) {
-          toCollapse.add(sid)
-        } else if (
-          matchedIDs.has(sid) &&
-          !hasRelevantDescendant(sid, children, relevant)
-        ) {
-          toCollapse.add(sid)
-        }
-      }
-      collapsedParents = toCollapse
-    } else {
-      collapsedParents = new Set()
+      collapsedParents = computeSearchCollapsedParents(
+        spans,
+        matchedIDs,
+        ancestorsOfMatched,
+        childrenBySpanId
+      )
+      return
     }
+    if (spans.length === 0) {
+      collapsedParents = new Set()
+      return
+    }
+    collapsedParents = computeAutoCollapsedParents(spans, childrenBySpanId)
+  })
+
+  type VirtualListRef = {
+    scroll: (options: {
+      index: number
+      smoothScroll?: boolean
+      shouldThrowOnBounds?: boolean
+      align?: 'auto' | 'top' | 'bottom' | 'nearest'
+    }) => Promise<void>
+  }
+
+  let vlistRef = $state<VirtualListRef | null>(null)
+  let lastScrolledSelection: string | null = null
+
+  function visibleRowIndex(spanId: string): number {
+    return visibleRows.findIndex(
+      row => row.spanNode.spanData.spanID === spanId
+    )
+  }
+
+  function isComfortablyVisible(idx: number): boolean {
+    const viewport = scrollContainerEl?.querySelector<HTMLElement>(
+      '.waterfall-vlist-viewport'
+    )
+    const row = viewport?.querySelector<HTMLElement>(
+      `[data-original-index="${idx}"]`
+    )
+    if (!viewport || !row) return false
+    const vRect = viewport.getBoundingClientRect()
+    const rRect = row.getBoundingClientRect()
+    return (
+      rRect.top >= vRect.top + VISIBLE_MARGIN_PX &&
+      rRect.bottom <= vRect.bottom - VISIBLE_MARGIN_PX
+    )
+  }
+
+  $effect(() => {
+    const id = selectedSpanID
+    if (!vlistRef || !id) return
+    if (id === lastScrolledSelection) return
+    const idx = visibleRowIndex(id)
+    if (idx < 0) return
+    lastScrolledSelection = id
+    if (isComfortablyVisible(idx)) return
+    void vlistRef.scroll({
+      index: idx,
+      align: 'auto',
+      smoothScroll: true,
+      shouldThrowOnBounds: false,
+    })
+  })
+
+  $effect(() => {
+    if (!selectedSpanID) lastScrolledSelection = null
   })
 
   // --- Focus & keyboard on the grid ---
 
-  let scrollEl = $state<HTMLTableSectionElement | null>(null)
-  let gridTableEl = $state<HTMLTableElement | null>(null)
+  let gridHostEl = $state<HTMLDivElement | null>(null)
 
-  async function clampScroll() {
-    await tick()
-    if (!scrollEl) return
-    const max = scrollEl.scrollHeight - scrollEl.clientHeight
-    if (scrollEl.scrollTop > max) scrollEl.scrollTop = max
+  async function scrollRowIntoView(spanId: string) {
+    const idx = visibleRowIndex(spanId)
+    if (idx >= 0 && vlistRef) {
+      await vlistRef.scroll({
+        index: idx,
+        align: 'nearest',
+        smoothScroll: false,
+        shouldThrowOnBounds: false,
+      })
+    }
   }
 
   async function focusRowTr(spanId: string) {
+    await scrollRowIntoView(spanId)
     await tick()
     const safe = escapeForSelector(spanId)
-    gridTableEl
+    scrollContainerEl
       ?.querySelector<HTMLTableRowElement>(`tr[data-span-id="${safe}"]`)
       ?.focus()
+  }
+
+  function shouldHandleGridKey(el: HTMLElement | null): boolean {
+    if (!el || !gridHostEl?.contains(el)) return false
+    if (el.closest('input, textarea, select, [contenteditable="true"]'))
+      return false
+    if (el.closest('button')) return false
+    return true
+  }
+
+  function navigateVisibleRow(nextIdx: number) {
+    const row = visibleRows[nextIdx]
+    if (!row) return
+    const id = row.spanNode.spanData.spanID
+    onSelectSpan(id)
+    void focusRowTr(id)
   }
 
   function handleTreeKeys(e: KeyboardEvent, currentId: string | null): boolean {
     if (!currentId) return false
 
-    const idx = spans.findIndex(n => n.spanData.spanID === currentId)
-    if (idx < 0) return false
-
-    const hasChildren = (rows[idx]?.tree.childrenCount ?? 0) > 0
+    const row = rowBySpanId.get(currentId)
+    const hasChildren = (row?.tree.childrenCount ?? 0) > 0
 
     if (e.key === 'ArrowRight' || e.key === 'l') {
       if (hasChildren && collapsedParents.has(currentId)) {
@@ -551,6 +628,59 @@
 
     return false
   }
+
+  function handleGridKeydown(e: KeyboardEvent) {
+    if (!shouldHandleGridKey(e.target as HTMLElement | null)) return
+    if (visibleRows.length === 0) return
+
+    const focused = document.activeElement as HTMLElement | null
+    const focusedId =
+      focused?.dataset.spanId ??
+      (selectedSpanID && focused?.closest(`tr[data-span-id]`)
+        ? selectedSpanID
+        : null)
+
+    if (handleTreeKeys(e, focusedId ?? selectedSpanID)) return
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      const id = focusedId ?? selectedSpanID
+      if (id) {
+        e.preventDefault()
+        onSelectSpan(id)
+        void focusRowTr(id)
+      }
+      return
+    }
+
+    const delta = KEY_DELTAS[e.key]
+    if (!delta) return
+
+    e.preventDefault()
+
+    const currentIdx =
+      focusedId != null ? visibleRowIndex(focusedId) : selectedSpanID
+        ? visibleRowIndex(selectedSpanID)
+        : -1
+
+    if (currentIdx < 0) {
+      navigateVisibleRow(0)
+      return
+    }
+
+    const nextIdx = resolveNextPos(delta, currentIdx, visibleRows.length - 1)
+    if (nextIdx === currentIdx) return
+    navigateVisibleRow(nextIdx)
+  }
+
+  async function clampScroll() {
+    await tick()
+    const viewport = scrollContainerEl?.querySelector<HTMLElement>(
+      '.waterfall-vlist-viewport'
+    )
+    if (!viewport) return
+    const max = viewport.scrollHeight - viewport.clientHeight
+    if (viewport.scrollTop > max) viewport.scrollTop = max
+  }
 </script>
 
 <div class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}">
@@ -570,25 +700,9 @@
       {/snippet}
     </PaneHeader>
     <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
-      <div class="col-resize-context">
-        <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+      <div class="col-resize-context waterfall-view__grid-host">
         <table
-          bind:this={gridTableEl}
-          class="split-table waterfall-grid table table-sm w-full min-w-[36rem] border-collapse"
-          role="grid"
-          aria-label="Span waterfall"
-          aria-colcount={3}
-          tabindex="-1"
-          use:tableNav={{
-            rowIdAttr: 'span-id',
-            onSelect: id => {
-              onSelectSpan(id)
-              void focusRowTr(id)
-            },
-            pageStep: 8,
-            skipHidden: true,
-            onKey: handleTreeKeys,
-          }}
+          class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
         >
           <thead class="header-surface waterfall-view__thead">
             <WaterfallTimeAxisHeader
@@ -607,14 +721,32 @@
               }}
             />
           </thead>
-          <tbody bind:this={scrollEl}>
-            {#each rows as row (row.spanNode.spanData.spanID)}
+        </table>
+        <div
+          bind:this={gridHostEl}
+          class="waterfall-view__vlist-host"
+          role="grid"
+          aria-label="Span waterfall"
+          aria-colcount={3}
+          tabindex="-1"
+          onkeydown={handleGridKeydown}
+        >
+          <VirtualList
+            bind:this={vlistRef}
+            items={visibleRows}
+            defaultEstimatedItemHeight={WATERFALL_ROW_HEIGHT_PX}
+            bufferSize={12}
+            containerClass="waterfall-vlist"
+            viewportClass="waterfall-vlist-viewport"
+            itemsClass="waterfall-vlist-items"
+          >
+            {#snippet renderItem(row)}
               {@const sid = row.spanNode.spanData.spanID}
               <WaterfallRow
                 {row}
                 {barGridPercents}
                 selected={sid === selectedSpanID}
-                visible={rowVisibilityBySpanId.get(sid) ?? true}
+                visible={true}
                 subtreeCollapsed={collapsedParents.has(sid)}
                 matched={hasActiveSearch && matchedIDs.has(sid)}
                 {spanColWidth}
@@ -625,9 +757,9 @@
                 }}
                 onToggleExpand={() => toggleCollapse(sid)}
               />
-            {/each}
-          </tbody>
-        </table>
+            {/snippet}
+          </VirtualList>
+        </div>
         {#each barPositions as bar}
           <div
             class="col-resize-bar col-resize-bar--guide"
@@ -655,10 +787,6 @@
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-200 transition-opacity duration-200;
   }
 
-  .waterfall-grid {
-    @apply min-h-0 flex-1;
-  }
-
   .waterfall-view__scroll {
     @apply flex min-h-0 flex-1 flex-col;
   }
@@ -683,6 +811,44 @@
 
   .waterfall-view__scroll > :global(.col-resize-context) {
     @apply flex min-h-0 flex-1 flex-col;
+  }
+
+  .waterfall-view__grid-host {
+    @apply flex min-h-0 flex-1 flex-col;
+  }
+
+  .waterfall-view__header-table {
+    @apply shrink-0;
+  }
+
+  .waterfall-view__vlist-host {
+    @apply relative min-h-0 flex-1 overflow-hidden outline-none;
+  }
+
+  .waterfall-view__vlist-host :global(.waterfall-vlist) {
+    @apply relative h-full w-full overflow-hidden;
+  }
+
+  .waterfall-view__vlist-host :global(.waterfall-vlist-viewport) {
+    @apply absolute inset-0 overflow-y-scroll;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .waterfall-view__vlist-host :global(.waterfall-vlist-items) {
+    @apply absolute left-0 top-0 w-full;
+  }
+
+  /* Match `.split-table > tbody > tr`: each virtual row is its own
+     fixed-layout table so columns line up with the header row. */
+  .waterfall-view__vlist-host :global(.waterfall-vlist-items > div) {
+    @apply w-full;
+  }
+
+  .waterfall-view__vlist-host :global(tr.waterfall-row) {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
   }
 
 </style>

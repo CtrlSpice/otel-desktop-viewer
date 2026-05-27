@@ -8,8 +8,7 @@ export const HISTOGRAM_VIEW_TAB_OPTIONS: ReadonlyArray<{
 }> = [
   { id: 'heatmap', label: 'Heatmap' },
   { id: 'quantiles', label: 'Quantiles' },
-  { id: 'aggregated', label: 'Aggregated' },
-  { id: 'snapshot', label: 'Snapshot' },
+  { id: 'histogram', label: 'Histogram' },
 ]
 
 export function histogramViewTabOptions(): typeof HISTOGRAM_VIEW_TAB_OPTIONS {

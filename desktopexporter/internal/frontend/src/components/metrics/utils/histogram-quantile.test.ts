@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  bucketExtents,
   bucketQuantileLinear,
   bucketQuantileLoglin,
   expHistQuantile,
@@ -107,5 +108,27 @@ describe('end-to-end merged quantile', () => {
   it('hist_quantile on sum_bucket_vectors', () => {
     const merged = [0, 80, 100, 20, 0]
     expect(histQuantile([1, 2, 5, 10], merged, 0.5)).toBeCloseTo(2.6, 9)
+  })
+})
+
+describe('bucketExtents', () => {
+  it('derives min/max from populated explicit buckets', () => {
+    expect(
+      bucketExtents(histBuckets([10, 20, 50], [5, 0, 10, 0]))
+    ).toEqual({ min: 10, max: 50 })
+  })
+
+  it('uses populated exp bucket bounds instead of OTLP summary fields', () => {
+    const scale = 3
+    const base = Math.pow(2, Math.pow(2, -scale))
+    const center = 830
+    const centerIdx = Math.floor(Math.log(center) / Math.log(base))
+    const offset = centerIdx - 4
+    const counts = [1, 2, 40, 80, 40, 20, 10, 5, 2]
+    const extents = bucketExtents(expPosBuckets(scale, offset, counts))
+    const lo = Math.pow(base, offset)
+    expect(extents?.min).toBeCloseTo(lo, 0)
+    expect(extents?.min).toBeGreaterThan(166)
+    expect(extents?.max).toBeCloseTo(Math.pow(base, offset + counts.length), 0)
   })
 })

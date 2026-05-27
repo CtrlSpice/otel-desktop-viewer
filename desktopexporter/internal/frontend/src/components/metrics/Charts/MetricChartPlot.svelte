@@ -49,11 +49,18 @@
 
   /** Bucket bounds on the bottom x-axis (histogram bar chart). */
   export function axisBuckets(unit: string) {
+    return {
+      ...axisBucketBounds(unit),
+      tickLabelProps: rotatedXBand,
+    }
+  }
+
+  /** Bucket bound rows on the heatmap y-axis (color encodes count). */
+  export function axisBucketBounds(unit: string) {
     const trimmed = unit.trim()
     return {
       label: trimmed ? `value (${trimmed})` : 'value',
       rule: true as const,
-      tickLabelProps: rotatedXBand,
     }
   }
 

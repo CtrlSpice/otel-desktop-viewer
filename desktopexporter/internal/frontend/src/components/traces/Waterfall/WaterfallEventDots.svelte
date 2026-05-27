@@ -36,22 +36,19 @@
 <style lang="postcss">
   @reference "../../../app.css";
 
-  /* Vertical event ticks (not dots) — short, narrow bars centred on the
-     row so they read against the wide span pill behind them. */
+  /* Event dots centred on the timeline position. */
   .event-marker {
-    @apply absolute;
-    width: 3px;
-    height: 14px;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    @apply absolute top-1/2 -translate-x-1/2 -translate-y-1/2;
   }
 
-  /* Tick is the bar's colour mixed toward a per-theme target colour
+  /* Dot uses the bar colour mixed toward a per-theme target colour
      (`--waterfall-tick-mix-target`) by `--waterfall-tick-mix-strength`.
      Today all themes lighten toward white; flip the target to black to
      darken instead (saturation dip vs highlight). */
   .event-marker--dot {
-    @apply rounded-sm border-0 pointer-events-none;
+    @apply rounded-full border-0 pointer-events-none;
+    width: var(--waterfall-bar-height, 0.875rem);
+    height: var(--waterfall-bar-height, 0.875rem);
     background-color: color-mix(
       in srgb,
       var(--marker-color),
@@ -60,19 +57,16 @@
     );
   }
 
-  /* Invisible hit target sized larger than the visible tick so hover is
-     forgiving in both axes. Wider (11px) to clear the bar's rounded caps
-     for first/last events, taller (22px) so the hover area extends a few
-     pixels above and below the 14px bar. Tooltip paints in the z-20
-     layer above bar labels. */
+  /* Invisible hit target sized larger than the visible dot so hover is
+     forgiving. Tooltip paints in the z-20 layer above bar labels. */
   .event-marker--tooltip-target {
-    @apply rounded-sm border-0 pointer-events-auto;
-    width: 11px;
-    height: 22px;
+    @apply rounded-full border-0 pointer-events-auto;
+    width: var(--waterfall-bar-height, 0.875rem);
+    height: var(--waterfall-bar-height, 0.875rem);
     background: transparent;
   }
 
-  /* Tooltip floats to the side of the tick — right when the event sits
+  /* Tooltip floats to the side of the dot — right when the event sits
      in the left half of the row, left when it sits in the right half —
      so it never escapes the timeline horizontally and doesn't need to
      fight other rows vertically. Side is set by data-side on the
