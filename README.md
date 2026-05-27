@@ -255,6 +255,10 @@ Her name is **Lulu Axol'Otel**. She is very pink, and I love her.
 
 More seriously, I like to give my [side projects](https://github.com/CtrlSpice/bumblebee-consolematch) an [animal theme](https://github.com/CtrlSpice/yak-vs-yak) to add a little aesthetic interest on what otherwise might be fairly plain applications.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+
 ## License
 
 Apache 2.0, see LICENSE
