@@ -123,8 +123,8 @@ homebrew_casks:
   - name: otel-desktop-viewer
     ids:
       - homebrew-archive
-    # Skip alpha/beta/rc on the public tap unless HOMEBREW_PUBLISH_PRERELEASE=true in CI.
-    skip_upload: '{{ if and .Prerelease (ne .Env.HOMEBREW_PUBLISH_PRERELEASE "true") }}true{{ end }}'
+    # Skip alpha/beta/rc on the public tap unless PRERELEASE_PUBLISH=true in CI.
+    skip_upload: '{{ if and .Prerelease (ne .Env.PRERELEASE_PUBLISH "true") }}true{{ end }}'
     repository:
       owner: CtrlSpice
       name: homebrew-otel-desktop-viewer
@@ -136,4 +136,41 @@ homebrew_casks:
       To start the viewer, run:
         otel-desktop-viewer
 
+dockers:
+  - id: linux_amd64
+    ids:
+      - linux_amd64
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile.release
+    use: buildx
+    image_templates:
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Tag }}-amd64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64"
+    skip_push: '{{ if and .Prerelease (ne .Env.PRERELEASE_PUBLISH "true") }}true{{ end }}'
+  - id: linux_arm64
+    ids:
+      - linux_arm64
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+    image_templates:
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Tag }}-arm64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64"
+    skip_push: '{{ if and .Prerelease (ne .Env.PRERELEASE_PUBLISH "true") }}true{{ end }}'
+
+docker_manifests:
+  - name_template: "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Tag }}-amd64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:{{ .Tag }}-arm64"
+    skip_push: '{{ if and .Prerelease (ne .Env.PRERELEASE_PUBLISH "true") }}true{{ end }}'
+  - name_template: "ghcr.io/ctrlspice/otel-desktop-viewer:latest"
+    image_templates:
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64"
+      - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64"
+    skip_push: '{{ if and .Prerelease (ne .Env.PRERELEASE_PUBLISH "true") }}true{{ end }}'
 
