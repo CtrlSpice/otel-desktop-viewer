@@ -5,19 +5,34 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      test_mode:
-        description: 'Run in test mode (no notifications)'
-        required: true
-        default: true
-        type: boolean
 permissions:
   contents: write
   id-token: write
   packages: write
   actions: write
 jobs:
+  build-frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktopexporter/internal/frontend/package-lock.json
+      - name: Build embedded frontend
+        run: make build-ts
+      - name: Upload embedded frontend
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedded-frontend
+          path: desktopexporter/internal/server/static/
+          retention-days: 1
+
   prepare:
+    needs: build-frontend
     strategy:
       matrix:
         include:
@@ -29,7 +44,7 @@ jobs:
             build_id: macos_arm64
             goos: darwin
             goarch: arm64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             build_id: linux_amd64
             goos: linux
             goarch: amd64
@@ -47,6 +62,11 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Download embedded frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: embedded-frontend
+          path: desktopexporter/internal/server/static/
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -75,17 +95,22 @@ jobs:
           # Use GGOOS/GGOARCH to filter targets with partial.by: target
           args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
-          # GitHub Personal Access Token for repository access
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-          # GoReleaser Pro license key for module publishing
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
-          # Container Registry PAT for Docker image publishing
-          CR_PAT: ${{ secrets.CR_PAT }}
-          # Enable CGO for DuckDB bindings
           CGO_ENABLED: 1
-          # Filter targets by OS and architecture
           GGOOS: ${{ matrix.goos }}
           GGOARCH: ${{ matrix.goarch }}
+      - name: Verify GoReleaser partial artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="dist/${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [[ ! -d "$dir" ]] || [[ -z "$(find "$dir" -type f | head -1)" ]]; then
+            echo "::error::GoReleaser did not produce partial artifacts in $dir"
+            find dist -type f 2>/dev/null || true
+            exit 1
+          fi
+          echo "Partial artifacts ready in $dir:"
+          find "$dir" -type f | head -20
       - name: Cache GoReleaser contexts
         uses: actions/cache@v4
         with:
@@ -97,7 +122,7 @@ jobs:
 
   release:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -133,6 +158,51 @@ jobs:
           path: dist/windows_amd64
           key: windows-amd64-${{ github.sha }}
           enableCrossOsArchive: true
+      - name: Verify restored GoReleaser partial artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            darwin_amd64
+            darwin_arm64
+            linux_amd64
+            linux_arm64
+            windows_amd64
+          )
+          missing=()
+          for target in "${targets[@]}"; do
+            dir="dist/${target}"
+            if [[ ! -d "$dir" ]] || [[ -z "$(find "$dir" -type f 2>/dev/null | head -1)" ]]; then
+              missing+=("$target")
+            fi
+          done
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error::Missing or empty GoReleaser partial artifacts (cache miss?): ${missing[*]}"
+            find dist -type f 2>/dev/null || true
+            exit 1
+          fi
+          echo "All partial artifacts restored:"
+          find dist -type f | head -50
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            otel-desktop-viewer
+            homebrew-otel-desktop-viewer
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ steps.release-app-token.outputs.token }}
       - name: Complete release
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -140,9 +210,7 @@ jobs:
           version: v2.11.2
           args: continue --merge
         env:
-          # GitHub Personal Access Token for repository access
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-          # GoReleaser Pro license key for module publishing
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
-          # Container Registry PAT for Docker image publishing
-          CR_PAT: ${{ secrets.CR_PAT }}
+          # Set repo variable PRERELEASE_PUBLISH=true to push alpha/beta/rc to Homebrew and GHCR.
+          PRERELEASE_PUBLISH: ${{ vars.PRERELEASE_PUBLISH }}

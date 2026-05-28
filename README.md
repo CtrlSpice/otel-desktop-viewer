@@ -15,7 +15,8 @@ It is written in Go as a custom exporter on top of the [OpenTelemetry Collector]
 #### via Homebrew Cask
 
 ```bash
-brew install --cask ctrlspice/tap/otel-desktop-viewer
+brew tap ctrlspice/otel-desktop-viewer
+brew install --cask otel-desktop-viewer
 ```
 
 #### via `go install`
@@ -85,21 +86,27 @@ Running the CLI opens a browser tab to `localhost:8000` and starts OTLP receiver
 
 You can run otel-desktop-viewer using Docker without installing Go or building locally.
 
-Pull from GitHub Container Registry:
+Pull from GitHub Container Registry (auto-selects your architecture):
 
 ```bash
-# For AMD64 (most common)
+docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest
+docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest
+```
+
+Or pin a specific version:
+
+```bash
+docker pull ghcr.io/ctrlspice/otel-desktop-viewer:v0.3.0
+```
+
+Explicit per-arch tags are also available:
+
+```bash
 docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64
-docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64
-```
-
-```bash
-# For ARM64 (Apple Silicon, etc.)
 docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64
-docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64
 ```
 
-Or build locally:
+Or build locally from source:
 
 ```bash
 docker build --tag otel-desktop-viewer:latest .
@@ -117,7 +124,7 @@ services:
     # Add your app configuration here
 
   otel-desktop-viewer:
-    image: ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64 # Use latest-arm64 for ARM64 systems
+    image: ghcr.io/ctrlspice/otel-desktop-viewer:latest
     ports:
       - "8000:8000"
       - "4317:4317"
