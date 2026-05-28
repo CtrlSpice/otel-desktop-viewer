@@ -1,4 +1,4 @@
-FROM golang:1.24 AS golang
+FROM golang:1.26 AS golang
 
 # Install build and runtime dependencies for CGO
 RUN apt-get update && apt-get install -y \
