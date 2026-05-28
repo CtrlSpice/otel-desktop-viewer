@@ -95,7 +95,6 @@ jobs:
           # Use GGOOS/GGOARCH to filter targets with partial.by: target
           args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
           CGO_ENABLED: 1
           GGOOS: ${{ matrix.goos }}
@@ -184,6 +183,16 @@ jobs:
           fi
           echo "All partial artifacts restored:"
           find dist -type f | head -50
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            otel-desktop-viewer
+            homebrew-otel-desktop-viewer
       - name: Complete release
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -191,7 +200,7 @@ jobs:
           version: v2.11.2
           args: continue --merge
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
           # Set repo variable HOMEBREW_PUBLISH_PRERELEASE=true to push alpha/beta/rc to the tap.
           HOMEBREW_PUBLISH_PRERELEASE: ${{ vars.HOMEBREW_PUBLISH_PRERELEASE }}
