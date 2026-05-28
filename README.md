@@ -15,7 +15,8 @@ It is written in Go as a custom exporter on top of the [OpenTelemetry Collector]
 #### via Homebrew Cask
 
 ```bash
-brew install --cask ctrlspice/tap/otel-desktop-viewer
+brew tap ctrlspice/otel-desktop-viewer
+brew install --cask otel-desktop-viewer
 ```
 
 #### via `go install`

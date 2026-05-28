@@ -85,7 +85,7 @@ test: test-go validate-ts
 
 .PHONY: release-dry-run
 release-dry-run:
-	gh workflow run "Release" --ref $$(git branch --show-current) -f test_mode=true
+	gh workflow run "Release" --ref $$(git branch --show-current)
 
 .PHONY: kill-port
 kill-port:

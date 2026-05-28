@@ -123,11 +123,13 @@ homebrew_casks:
   - name: otel-desktop-viewer
     ids:
       - homebrew-archive
+    # Skip alpha/beta/rc on the public tap unless HOMEBREW_PUBLISH_PRERELEASE=true in CI.
+    skip_upload: '{{ if and .Prerelease (ne .Env.HOMEBREW_PUBLISH_PRERELEASE "true") }}true{{ end }}'
     repository:
       owner: CtrlSpice
       name: homebrew-otel-desktop-viewer
     directory: Casks
-    description: "otel-desktop-viewer is a CLI tool for receiving OpenTelemetry traces while working on your local machine. Logs and metrics coming soon!"
+    description: "otel-desktop-viewer is a CLI tool for receiving OpenTelemetry traces, metrics, and logs on your local machine."
     homepage: "https://github.com/CtrlSpice/otel-desktop-viewer"
     license: "Apache-2.0"
     caveats: |
