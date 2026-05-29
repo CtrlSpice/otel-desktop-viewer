@@ -103,6 +103,8 @@ jobs:
           GGOOS: ${{ matrix.goos }}
           GGOARCH: ${{ matrix.goarch }}
           PRERELEASE_PUBLISH: ${{ vars.PRERELEASE_PUBLISH }}
+          FURY_ACCOUNT: ${{ vars.FURY_ACCOUNT }}
+          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
       - name: Verify GoReleaser partial artifact
         shell: bash
         run: |
@@ -216,5 +218,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
-          # Set repo variable PRERELEASE_PUBLISH=true to push alpha/beta/rc to Homebrew and GHCR.
+          # Set repo variable PRERELEASE_PUBLISH=true to push alpha/beta/rc to Homebrew, GHCR, and GemFury.
           PRERELEASE_PUBLISH: ${{ vars.PRERELEASE_PUBLISH }}
+          FURY_ACCOUNT: ${{ vars.FURY_ACCOUNT }}
+          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}

@@ -200,3 +200,10 @@ docker_manifests:
       - "ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64"
     skip_push: '{{ if and .Prerelease (ne .Env.PRERELEASE_PUBLISH "true") }}true{{ end }}'
 
+gemfury:
+  - account: "{{ .Env.FURY_ACCOUNT }}"
+    disable: '{{ if and .Prerelease (ne .Env.PRERELEASE_PUBLISH "true") }}true{{ end }}'
+    formats:
+      - deb
+      - rpm
+
