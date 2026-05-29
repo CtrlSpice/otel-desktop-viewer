@@ -29,8 +29,8 @@ dist-ssr/
 .env.test.local
 .env.production.local
 
-# Logs
-logs
+# Runtime log output (not src/components/logs/)
+/logs/
 *.log
 
 # Runtime data
