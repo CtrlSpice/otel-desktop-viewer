@@ -22,6 +22,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: desktopexporter/internal/frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: desktopexporter/internal/frontend
       - name: Build embedded frontend
         run: make build-ts
       - name: Upload embedded frontend
