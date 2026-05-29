@@ -22,6 +22,7 @@ fi
 root_tag="$version"
 sub_tag="desktopexporter/${version}"
 module="github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
+remote="${RELEASE_REMOTE:-origin}"
 
 if [[ -n "$(git status --porcelain)" ]]; then
 	echo "Commit or stash changes before releasing." >&2
@@ -30,6 +31,7 @@ fi
 
 if git rev-parse "$sub_tag" >/dev/null 2>&1; then
 	echo "Tag ${sub_tag} already exists." >&2
+	echo "Delete it with: git tag -d ${sub_tag}" >&2
 	exit 1
 fi
 if git rev-parse "$root_tag" >/dev/null 2>&1; then
@@ -37,8 +39,9 @@ if git rev-parse "$root_tag" >/dev/null 2>&1; then
 	exit 1
 fi
 
-echo "→ tag ${sub_tag} (temporary, for go get)"
+echo "→ tag and push ${sub_tag} (go get resolves from ${remote}, not local tags)"
 git tag "$sub_tag"
+git push "$remote" "$sub_tag"
 
 echo "→ bump root require to ${module}@${version}"
 export GOPROXY=direct
@@ -51,8 +54,9 @@ if [[ -n "$(git status --porcelain)" ]]; then
 	git add go.mod go.sum go.work go.work.sum desktopexporter/go.mod desktopexporter/go.sum 2>/dev/null || true
 	git add go.mod go.sum
 	git commit -m "chore: bump desktopexporter to ${version}"
-	echo "→ move ${sub_tag} to bump commit"
+	echo "→ move ${sub_tag} to bump commit and re-push"
 	git tag -f "$sub_tag"
+	git push -f "$remote" "$sub_tag"
 fi
 
 echo "→ tag ${root_tag}"
@@ -65,4 +69,4 @@ echo "  ${sub_tag}"
 echo "  ${root_tag}"
 echo ""
 echo "Push to publish:"
-echo "  git push origin ${sub_tag} ${root_tag}"
+echo "  git push ${remote} ${root_tag}"
