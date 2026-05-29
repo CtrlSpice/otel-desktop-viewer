@@ -17,7 +17,7 @@ Not sure where to start? Open an issue and say hello. Small fixes are great firs
 
 | Tool | Version / notes |
 |------|-----------------|
-| [Go](https://go.dev/) | 1.26 (see `go.mod`; repo uses `go.work`) |
+| [Go](https://go.dev/) | 1.26 (see `go.mod`) |
 | [Node.js](https://nodejs.org/) + npm | For the Svelte frontend |
 | CGO | Required — DuckDB bindings need a C toolchain |
 | Windows | [MSYS2 UCRT64](https://www.msys2.org/) + GCC (see [README](README.md#getting-started)) |
@@ -87,7 +87,7 @@ make stop
 
 ```
 main.go, components.go     # Collector entry (OCB-generated — edit carefully)
-desktopexporter/           # Custom desktop exporter module
+desktopexporter/           # Custom desktop exporter
   internal/server/         # HTTP + JSON-RPC
   internal/store/          # DuckDB ingest and search
   internal/frontend/         # Svelte 5 UI

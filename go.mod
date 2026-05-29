@@ -3,18 +3,25 @@ module github.com/CtrlSpice/otel-desktop-viewer
 go 1.26
 
 require (
-	github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.3.0
+	github.com/duckdb/duckdb-go/v2 v2.10500.0
+	github.com/google/uuid v1.6.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
+	github.com/rs/cors v1.11.1
 	github.com/spf13/cobra v1.9.1
+	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/collector/component v1.32.0
 	go.opentelemetry.io/collector/confmap v1.32.0
 	go.opentelemetry.io/collector/confmap/provider/envprovider v1.32.0
 	go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.32.0
 	go.opentelemetry.io/collector/connector v0.126.0
+	go.opentelemetry.io/collector/consumer v1.32.0
+	go.opentelemetry.io/collector/exporter v0.126.0
 	go.opentelemetry.io/collector/extension v1.32.0
 	go.opentelemetry.io/collector/otelcol v0.126.0
+	go.opentelemetry.io/collector/pdata v1.32.0
 	go.opentelemetry.io/collector/processor/batchprocessor v0.126.0
 	go.opentelemetry.io/collector/receiver/otlpreceiver v0.126.0
+	golang.org/x/exp/jsonrpc2 v0.0.0-20250808145144-a408d31f581a
 	golang.org/x/sys v0.40.0
 )
 
@@ -30,7 +37,6 @@ require (
 	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10500.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10500.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10500.0 // indirect
-	github.com/duckdb/duckdb-go/v2 v2.10500.0 // indirect
 	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/foxboron/go-tpm-keyfiles v0.0.0-20250520203025-c3c3a4ec1653 // indirect
@@ -45,7 +51,6 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/go-tpm v0.9.5 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -69,10 +74,8 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.64.0 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
-	github.com/rs/cors v1.11.1 // indirect
 	github.com/shirou/gopsutil/v4 v4.25.4 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
@@ -95,11 +98,9 @@ require (
 	go.opentelemetry.io/collector/confmap/xconfmap v0.126.0 // indirect
 	go.opentelemetry.io/collector/connector/connectortest v0.126.0 // indirect
 	go.opentelemetry.io/collector/connector/xconnector v0.126.0 // indirect
-	go.opentelemetry.io/collector/consumer v1.32.0 // indirect
 	go.opentelemetry.io/collector/consumer/consumererror v0.126.0 // indirect
 	go.opentelemetry.io/collector/consumer/consumertest v0.126.0 // indirect
 	go.opentelemetry.io/collector/consumer/xconsumer v0.126.0 // indirect
-	go.opentelemetry.io/collector/exporter v0.126.0 // indirect
 	go.opentelemetry.io/collector/exporter/exportertest v0.126.0 // indirect
 	go.opentelemetry.io/collector/exporter/xexporter v0.126.0 // indirect
 	go.opentelemetry.io/collector/extension/extensionauth v1.32.0 // indirect
@@ -111,7 +112,6 @@ require (
 	go.opentelemetry.io/collector/internal/fanoutconsumer v0.126.0 // indirect
 	go.opentelemetry.io/collector/internal/sharedcomponent v0.126.0 // indirect
 	go.opentelemetry.io/collector/internal/telemetry v0.126.0 // indirect
-	go.opentelemetry.io/collector/pdata v1.32.0 // indirect
 	go.opentelemetry.io/collector/pdata/pprofile v0.126.0 // indirect
 	go.opentelemetry.io/collector/pdata/testdata v0.126.0 // indirect
 	go.opentelemetry.io/collector/pipeline v0.126.0 // indirect
@@ -154,7 +154,6 @@ require (
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/exp/event v0.0.0-20250718183923-645b1fa84792 // indirect
-	golang.org/x/exp/jsonrpc2 v0.0.0-20250808145144-a408d31f581a // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect

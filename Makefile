@@ -87,11 +87,6 @@ test: test-go validate-ts
 release-dry-run:
 	gh workflow run "Release" --ref $$(git branch --show-current)
 
-.PHONY: release-go-modules
-release-go-modules:
-	@test -n "$(VERSION)" || (echo "Usage: make release-go-modules VERSION=v0.3.0" && exit 1)
-	@./scripts/release-go-modules.sh "$(VERSION)"
-
 .PHONY: kill-port
 kill-port:
 	@echo "Killing process on port 8888..."
@@ -133,6 +128,5 @@ help:
 	@echo ""
 	@echo "Other:"
 	@echo "  release-dry-run      - Trigger release workflow (dry run)"
-	@echo "  release-go-modules   - Tag desktopexporter/VERSION and VERSION for go install + GoReleaser"
 	@echo "  kill-port            - Kill process on port 8888"
 	@echo "  stop              - Stop Go server and Vite dev server"

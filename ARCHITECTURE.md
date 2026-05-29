@@ -49,7 +49,7 @@ otel-desktop-viewer/
 ├── main.go                    # CLI entry; builds inline collector config from flags
 ├── main_others.go / main_windows.go
 ├── components.go              # OCB-generated component registry
-├── desktopexporter/           # Custom exporter Go module
+├── desktopexporter/           # Custom exporter package
 │   ├── factory.go             # Exporter factory + shared-component wiring
 │   ├── exporter.go            # pushTraces / pushMetrics / pushLogs
 │   └── internal/
@@ -61,7 +61,7 @@ otel-desktop-viewer/
 └── ARCHITECTURE.md
 ```
 
-The root module builds the collector binary. `desktopexporter/` is a nested Go module (see `go.work`). The frontend builds into `desktopexporter/internal/server/static/` for production embed.
+The root module builds the collector binary. The frontend builds into `desktopexporter/internal/server/static/` for production embed.
 
 ## Collector binary
 

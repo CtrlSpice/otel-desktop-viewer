@@ -1,8 +1,5 @@
 version: 2
 
-monorepo:
-  tag_prefix: v
-
 partial:
   by: target
 
@@ -11,8 +8,7 @@ env:
 
 before:
   hooks:
-    - cmd: go work sync
-    - cmd: sh -c "go mod tidy && cd desktopexporter && go mod tidy"
+    - cmd: go mod tidy
 
 builds:
   - id: macos_amd64
