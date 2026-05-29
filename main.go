@@ -7,7 +7,9 @@ package main
 import (
 	"log"
 	"net"
+	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pkg/browser"
@@ -19,13 +21,28 @@ import (
 	"go.opentelemetry.io/collector/otelcol"
 )
 
-var version = "dev" // This will be set by ldflags during build
+var version = "dev" // overridden by ldflags in release builds
+
+func buildVersion() string {
+	if version != "dev" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return version
+	}
+	modVersion := info.Main.Version
+	if modVersion == "" || modVersion == "(devel)" {
+		return version
+	}
+	return strings.TrimPrefix(modVersion, "v")
+}
 
 func main() {
 	info := component.BuildInfo{
 		Command:     "otel-desktop-viewer",
 		Description: "Collector distribution that allows developers to visualize their OTel data locally",
-		Version:     version,
+		Version:     buildVersion(),
 	}
 
 	set := otelcol.CollectorSettings{
