@@ -1,5 +1,8 @@
 version: 2
 
+monorepo:
+  tag_prefix: v
+
 partial:
   by: target
 
