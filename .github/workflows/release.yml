@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -25,7 +25,7 @@ jobs:
       - name: Build embedded frontend
         run: make build-ts
       - name: Upload embedded frontend
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: embedded-frontend
           path: desktopexporter/internal/server/static/
@@ -63,7 +63,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Download embedded frontend
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: embedded-frontend
           path: desktopexporter/internal/server/static/
@@ -88,10 +88,10 @@ jobs:
           echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
       - name: Run GoReleaser
         id: goreleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
-          version: v2.11.2
+          version: v2.16.0
           # Use GGOOS/GGOARCH to filter targets with partial.by: target
           args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
@@ -112,7 +112,7 @@ jobs:
           echo "Partial artifacts ready in $dir:"
           find "$dir" -type f | head -20
       - name: Cache GoReleaser contexts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dist/${{ matrix.goos }}_${{ matrix.goarch }}
           key: ${{ matrix.goos }}-${{ matrix.goarch }}-${{ github.sha }}
@@ -133,27 +133,27 @@ jobs:
         with:
           go-version: '1.26'
       - name: Restore GoReleaser build artifacts (darwin-amd64)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dist/darwin_amd64
           key: darwin-amd64-${{ github.sha }}
       - name: Restore GoReleaser build artifacts (darwin-arm64)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dist/darwin_arm64
           key: darwin-arm64-${{ github.sha }}
       - name: Restore GoReleaser build artifacts (linux-amd64)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dist/linux_amd64
           key: linux-amd64-${{ github.sha }}
       - name: Restore GoReleaser build artifacts (linux-arm64)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dist/linux_arm64
           key: linux-arm64-${{ github.sha }}
       - name: Restore GoReleaser build artifacts (windows-amd64)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dist/windows_amd64
           key: windows-amd64-${{ github.sha }}
@@ -194,20 +194,20 @@ jobs:
             otel-desktop-viewer
             homebrew-otel-desktop-viewer
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ steps.release-app-token.outputs.token }}
       - name: Complete release
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
-          version: v2.11.2
+          version: v2.16.0
           args: continue --merge
         env:
           GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
