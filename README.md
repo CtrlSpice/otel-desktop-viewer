@@ -1,29 +1,119 @@
 # otel-desktop-viewer
 
-`otel-desktop-viewer` is a CLI tool for receiving OpenTelemetry **traces, metrics, and logs** on your local machine. It helps you visualize and explore telemetry without sending it to a vendor. Its goals are to be easy to install, have minimal dependencies, and stay fast.
-
-It is written in Go as a custom exporter on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector).
-
-~~Also, it has a dark mode~~ Y'all. I added another dark mode. It has **two** dark modes now.
-
 <p align="center">
+  Hello there.
   <img src="docs/lulu.png" alt="Lulu the First — a pink axolotl striking a heroic pose while gazing at a field of stars through a telescope" width="480">
 </p>
 
-## Getting started
+`otel-desktop-viewer` is a CLI tool for exploring your OpenTelemetry traces, metrics, and logs locally. Built in Go on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector), with a DuckDB backend and a Svelte web UI.
 
-#### via Homebrew Cask
+~~Also, it has a dark mode~~  
+Y'all.  
+I added another dark mode.  
+It has **two** dark modes now.
+
+## Table of Contents
+
+- [Screenshots](#screenshots)
+- [Getting Started](#getting-started)
+  - [Via Homebrew Cask](#via-homebrew-cask)
+  - [Via GitHub Releases](#via-github-releases)
+  - [Via apt / dnf (Linux)](#via-apt--dnf-linux)
+  - [Via `go install`](#via-go-install)
+  - [Via Docker](#via-docker)
+- [Docker Compose](#docker-compose)
+- [Command Line Options](#command-line-options)
+- [Configuring Your OpenTelemetry SDK](#configuring-your-opentelemetry-sdk)
+- [Example With `otel-cli`](#example-with-otel-cli)
+- [Implementation](#implementation)
+- [What's With the Axolotl??](#whats-with-the-axolotl)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Screenshots
+
+### Traces
+
+![Traces view](docs/screenshots/traces.png)
+
+### Metrics
+
+![Metrics view](docs/screenshots/metrics.png)
+
+### Logs
+
+![Logs view](docs/screenshots/logs.png)
+
+## Getting Started
+
+Pick your preferred install method. Once it's running, the UI is at `localhost:8000` with OTLP receivers on `localhost:4317` (gRPC) and `localhost:4318` (HTTP).
+
+#### Via Homebrew Cask
+
+Easiest install on macOS.
 
 ```bash
 brew tap ctrlspice/otel-desktop-viewer
 brew install --cask otel-desktop-viewer
 ```
 
-#### via `go install`
+#### Via GitHub Releases
 
-Make sure you have [go](https://go.dev/) installed.
+Download a pre-built binary for your platform from [Releases](https://github.com/CtrlSpice/otel-desktop-viewer/releases).
 
-**Note**: This requires CGO compilation due to DuckDB dependencies.
+| Platform | Architecture          | File                                      |
+| -------- | --------------------- | ----------------------------------------- |
+| macOS    | Apple Silicon (M1–M4) | `otel-desktop-viewer_darwin_arm64.tar.gz` |
+| macOS    | Intel                 | `otel-desktop-viewer_darwin_amd64.tar.gz` |
+| Linux    | x86_64                | `otel-desktop-viewer_linux_amd64.tar.gz`  |
+| Linux    | arm64                 | `otel-desktop-viewer_linux_arm64.tar.gz`  |
+| Windows  | x86_64                | `otel-desktop-viewer_windows_amd64.zip`   |
+
+On Windows, unzip the archive and run `otel-desktop-viewer.exe`.
+
+```bash
+# example: macOS Apple Silicon
+curl -LO https://github.com/CtrlSpice/otel-desktop-viewer/releases/latest/download/otel-desktop-viewer_darwin_arm64.tar.gz
+tar xzf otel-desktop-viewer_darwin_arm64.tar.gz
+./otel-desktop-viewer
+```
+
+#### Via apt / dnf (Linux)
+
+`.deb` and `.rpm` packages for Linux, published to [GemFury](https://gemfury.com/) with each stable release.
+
+**Debian / Ubuntu:**
+
+```bash
+curl -fsSL https://apt.fury.io/ctrlspice/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/fury.gpg
+echo "deb [signed-by=/usr/share/keyrings/fury.gpg] https://apt.fury.io/ctrlspice/ * *" \
+  | sudo tee /etc/apt/sources.list.d/fury.list
+sudo apt update
+sudo apt install otel-desktop-viewer
+```
+
+**Fedora / RHEL:**
+
+```bash
+sudo tee /etc/yum.repos.d/fury.repo <<EOF
+[fury]
+name=Gemfury Repo
+baseurl=https://yum.fury.io/ctrlspice/
+enabled=1
+gpgcheck=0
+EOF
+sudo dnf install otel-desktop-viewer
+```
+
+#### Via `go install`
+
+Building from source? You'll need Go with CGO enabled.
+
+```bash
+go version
+go env CGO_ENABLED   # should print 1
+gcc --version        # or cc --version
+```
 
 **On Windows**: You'll need MSYS2 for CGO compilation:
 
@@ -63,7 +153,9 @@ Make sure you have [go](https://go.dev/) installed.
    g++ --version
    ```
 
-**On Linux/macOS**: CGO should work out of the box.
+**On Linux/macOS**: Usually fine if the checks above pass.
+
+`@latest` resolves to the newest **stable** tag on the Go module proxy — not alpha/beta releases. Pin a version explicitly (e.g. `@v0.3.0`) or use a [GitHub Release](#via-github-releases) binary to avoid compiling locally.
 
 ```bash
 # install the CLI tool
@@ -80,9 +172,7 @@ otel-desktop-viewer
 export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
-Running the CLI opens a browser tab to `localhost:8000` and starts OTLP receivers on `localhost:4318` (HTTP) and `localhost:4317` (gRPC).
-
-#### via Docker
+#### Via Docker
 
 You can run otel-desktop-viewer using Docker without installing Go or building locally.
 
@@ -115,7 +205,7 @@ docker run -p 8000:8000 -p 4317:4317 -p 4318:4318 otel-desktop-viewer:latest
 
 ## Docker Compose
 
-If your application is also running in Docker:
+Running your app in Compose? Add the viewer as a service and export OTLP to `otel-desktop-viewer:4318` (HTTP) or `otel-desktop-viewer:4317` (gRPC).
 
 ```yaml
 services:
@@ -131,9 +221,9 @@ services:
       - "4318:4318"
 ```
 
-Your app can export to `otel-desktop-viewer:4318` (HTTP) or `otel-desktop-viewer:4317` (gRPC).
+## Command Line Options
 
-## Command line options
+Telemetry is stored in memory by default. Use `--db` to persist to a file.
 
 ```bash
 Flags:
@@ -147,15 +237,13 @@ Flags:
   -v, --version            version for otel-desktop-viewer
 ```
 
-Persist telemetry to disk:
-
 ```bash
 otel-desktop-viewer --db ./telemetry.duckdb
 ```
 
-## Configuring your OpenTelemetry SDK
+## Configuring Your OpenTelemetry SDK
 
-Configure an OTLP exporter to send to `http://localhost:4318` (HTTP) or `http://localhost:4317` (gRPC).
+Point your app's OTLP exporter at the viewer. Send to `http://localhost:4318` (HTTP) or `http://localhost:4317` (gRPC).
 
 If your SDK supports [configuration via environment variables](https://opentelemetry.io/docs/concepts/sdk-configuration/otlp-exporter-configuration/), you can use:
 
@@ -175,15 +263,7 @@ export OTEL_LOGS_EXPORTER="otlp"
 export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
 ```
 
-## Screenshots
-
-![Traces view](docs/screenshots/traces.png)
-
-![Metrics view](docs/screenshots/metrics.png)
-
-![Logs view](docs/screenshots/logs.png)
-
-## Example with `otel-cli`
+## Example With `otel-cli`
 
 If you have [`otel-cli`](https://github.com/equinix-labs/otel-cli) installed, it is a great way to send rich test traces from shell scripts. otel-cli supports span kinds, attributes, events, trace propagation, and background spans—much more than a single `exec` wrapper.
 
@@ -256,7 +336,7 @@ The CLI is a custom OpenTelemetry Collector distribution. A `desktop` exporter:
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for a full system overview.
 
-## What's with the axolotl??
+## What's With the Axolotl??
 
 Her name is **Lulu Axol'Otel**. She is very pink, and I love her.
 
