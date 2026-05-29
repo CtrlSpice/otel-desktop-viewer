@@ -89,6 +89,16 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
+      - name: Set up Docker Buildx
+        if: matrix.goos == 'linux'
+        uses: docker/setup-buildx-action@v4
+      - name: Log in to GitHub Container Registry
+        if: matrix.goos == 'linux'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Run GoReleaser
         id: goreleaser
         uses: goreleaser/goreleaser-action@v7
@@ -98,6 +108,7 @@ jobs:
           # Use GGOOS/GGOARCH to filter targets with partial.by: target
           args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
           CGO_ENABLED: 1
           GGOOS: ${{ matrix.goos }}
