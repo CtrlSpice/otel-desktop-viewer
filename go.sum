@@ -1,3 +1,5 @@
+github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.3.0 h1:VbBP/Av5MXzqqX9DMuQg8x0z5aZM7vDOBch/rjT/3Nk=
+github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.3.0/go.mod h1:t84yRgIG0MlOUgwtmr5r+AfVk4YZXUzqg7TQjT/gM6A=
 github.com/andybalholm/brotli v1.2.0 h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
 github.com/andybalholm/brotli v1.2.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/apache/arrow-go/v18 v18.5.1 h1:yaQ6zxMGgf9YCYw4/oaeOU3AULySDlAYDOcnr4LdHdI=

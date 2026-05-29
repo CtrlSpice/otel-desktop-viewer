@@ -2,9 +2,8 @@ module github.com/CtrlSpice/otel-desktop-viewer
 
 go 1.26
 
-
 require (
-	github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.2.2
+	github.com/CtrlSpice/otel-desktop-viewer/desktopexporter v0.3.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.9.1
 	go.opentelemetry.io/collector/component v1.32.0
