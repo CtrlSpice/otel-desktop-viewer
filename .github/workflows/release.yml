@@ -102,6 +102,7 @@ jobs:
           CGO_ENABLED: 1
           GGOOS: ${{ matrix.goos }}
           GGOARCH: ${{ matrix.goarch }}
+          PRERELEASE_PUBLISH: ${{ vars.PRERELEASE_PUBLISH }}
       - name: Verify GoReleaser partial artifact
         shell: bash
         run: |
