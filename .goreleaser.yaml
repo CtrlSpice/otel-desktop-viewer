@@ -144,6 +144,22 @@ release:
     ---
     Released by [CtrlSpice](https://github.com/CtrlSpice) using [GoReleaser](https://github.com/goreleaser/goreleaser).
 
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids:
+        - macos_amd64
+        - macos_arm64
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
+
 homebrew_casks:
   - name: otel-desktop-viewer
     ids:
