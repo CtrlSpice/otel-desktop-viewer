@@ -1,0 +1,3 @@
+# Vite build output embedded by Go (//go:embed). Excluded from GitHub
+# language stats so the repo bar reflects source, not minified bundles.
+desktopexporter/internal/server/static/** linguist-generated=true
