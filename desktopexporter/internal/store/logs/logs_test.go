@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -176,13 +177,22 @@ func getLogFull(t *testing.T, s *store.Store, ctx context.Context, id string) lo
 	return entry
 }
 
+// parseWireTimestamp decodes a varchar-encoded int64 nanosecond timestamp
+// from the JSON wire format.
+func parseWireTimestamp(t *testing.T, s string) int64 {
+	t.Helper()
+	n, err := strconv.ParseInt(s, 10, 64)
+	require.NoError(t, err)
+	return n
+}
+
 // logSummaryJSON mirrors the shape that logs.Search now returns:
 // lightweight card-shaped projection without bodies/attributes/etc.
 // `id` is in the wire payload but never rendered to users (tool-
 // minted UUID for keying/selection/detail-fetch only).
 type logSummaryJSON struct {
 	ID             string `json:"id"`
-	Timestamp      int64  `json:"timestamp"`
+	Timestamp      string `json:"timestamp"` // varchar-encoded int64 ns
 	SeverityText   string `json:"severityText"`
 	SeverityNumber int32  `json:"severityNumber"`
 	ServiceName    string `json:"serviceName"`
@@ -194,8 +204,8 @@ type logSummaryJSON struct {
 // resource, scope, flags, eventName, dropped counts, etc).
 type logEntryJSON struct {
 	ID                     string          `json:"id"`
-	Timestamp              int64           `json:"timestamp"`
-	ObservedTimestamp      int64           `json:"observedTimestamp"`
+	Timestamp              string          `json:"timestamp"`         // varchar-encoded int64 ns
+	ObservedTimestamp      string          `json:"observedTimestamp"` // varchar-encoded int64 ns
 	TraceID                string          `json:"traceID"`
 	SpanID                 string          `json:"spanID"`
 	SeverityText           string          `json:"severityText"`
@@ -360,14 +370,14 @@ func TestLogSuite(t *testing.T) {
 		// falls back to ObservedTimestamp when timestamp = 0.
 		// Entry 0 (the ERROR with Timestamp=0) therefore reports
 		// the observed_timestamp on the summary.
-		assert.Equal(t, baseTime+150*int64(time.Millisecond), entries[0].Timestamp)
-		assert.NotZero(t, entries[1].Timestamp)
-		assert.NotZero(t, entries[2].Timestamp)
+		assert.Equal(t, baseTime+150*int64(time.Millisecond), parseWireTimestamp(t, entries[0].Timestamp))
+		assert.NotEmpty(t, entries[1].Timestamp)
+		assert.NotEmpty(t, entries[2].Timestamp)
 
 		// Full LogData preserves both fields separately.
 		full0 := getLogFull(t, s, ctx, entries[0].ID)
-		assert.Equal(t, int64(0), full0.Timestamp)
-		assert.Equal(t, baseTime+150*int64(time.Millisecond), full0.ObservedTimestamp)
+		assert.Equal(t, int64(0), parseWireTimestamp(t, full0.Timestamp))
+		assert.Equal(t, baseTime+150*int64(time.Millisecond), parseWireTimestamp(t, full0.ObservedTimestamp))
 	})
 
 	t.Run("LogResource", func(t *testing.T) {

@@ -61,19 +61,19 @@ type traceStatsJSON struct {
 	SpanCount    float64 `json:"spanCount"`
 	ServiceCount float64 `json:"serviceCount"`
 	ErrorCount   float64 `json:"errorCount"`
-	LastReceived *int64  `json:"lastReceived"`
+	LastReceived *string `json:"lastReceived"`
 }
 
 type logStatsJSON struct {
 	LogCount     float64 `json:"logCount"`
 	ErrorCount   float64 `json:"errorCount"`
-	LastReceived *int64  `json:"lastReceived"`
+	LastReceived *string `json:"lastReceived"`
 }
 
 type metricStatsJSON struct {
 	MetricCount    float64 `json:"metricCount"`
 	DataPointCount float64 `json:"dataPointCount"`
-	LastReceived   *int64  `json:"lastReceived"`
+	LastReceived   *string `json:"lastReceived"`
 }
 
 func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {

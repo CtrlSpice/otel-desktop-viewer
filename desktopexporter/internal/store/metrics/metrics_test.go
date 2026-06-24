@@ -204,10 +204,10 @@ func createTestMetricsPdata() pmetric.Metrics {
 	return metrics
 }
 
-// searchMetricsAll returns metrics.Search with wide time range and nil query; parses JSON to slice of maps.
+// searchMetricsAll returns metrics.SearchSummaries with wide time range and nil query; parses JSON to slice of maps.
 func searchMetricsAll(t *testing.T, s *store.Store, ctx context.Context) []map[string]any {
 	t.Helper()
-	raw, err := metrics.Search(ctx, s.DB(), 0, maxNano, nil)
+	raw, err := metrics.SearchSummaries(ctx, s.DB(), 0, maxNano, nil)
 	assert.NoError(t, err)
 	var out []map[string]any
 	assert.NoError(t, json.Unmarshal(raw, &out))
@@ -216,7 +216,7 @@ func searchMetricsAll(t *testing.T, s *store.Store, ctx context.Context) []map[s
 
 func searchSummariesAll(t *testing.T, s *store.Store, ctx context.Context) []map[string]any {
 	t.Helper()
-	raw, err := metrics.SearchSummaries(ctx, s.DB(), 0, maxNano)
+	raw, err := metrics.SearchSummaries(ctx, s.DB(), 0, maxNano, nil)
 	require.NoError(t, err)
 	var out []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &out))
@@ -232,6 +232,18 @@ func findSummary(t *testing.T, summaries []map[string]any, name string) map[stri
 	}
 	t.Fatalf("summary %q not found", name)
 	return nil
+}
+
+// getMetricFullByName resolves a stream id via SearchSummaries and fetches
+// full MetricData via GetMetric (timeseries, datapoints, resource, scope).
+func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name string) map[string]any {
+	t.Helper()
+	id := findMetricID(t, s, ctx, name)
+	raw, err := metrics.GetMetric(ctx, s.DB(), id, 0, maxNano)
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	return m
 }
 
 // TestMetricSuite runs tests on ingested metrics using SearchMetrics (DB-generated JSON).
@@ -261,14 +273,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("GaugeMetric", func(t *testing.T) {
-		metrics := searchMetricsAll(t, s, ctx)
-		var gauge map[string]any
-		for _, m := range metrics {
-			if m["name"] == "gauge_metric" {
-				gauge = m
-				break
-			}
-		}
+		gauge := getMetricFullByName(t, s, ctx, "gauge_metric")
 		requireMetric(t, gauge, "gauge_metric")
 		assert.Equal(t, "Current memory usage", gauge["description"])
 		assert.Equal(t, "bytes", gauge["unit"])
@@ -284,14 +289,7 @@ func TestMetricSuite(t *testing.T) {
 
 	t.Run("GaugeIntMetric", func(t *testing.T) {
 		// Covers numberDataPointValue Int branch: return nil, dp.IntValue(), typeStr
-		metrics := searchMetricsAll(t, s, ctx)
-		var m map[string]any
-		for _, metric := range metrics {
-			if metric["name"] == "gauge_int_metric" {
-				m = metric
-				break
-			}
-		}
+		m := getMetricFullByName(t, s, ctx, "gauge_int_metric")
 		requireMetric(t, m, "gauge_int_metric")
 		datapoints := metricDatapoints(m)
 		assert.Len(t, datapoints, 1)
@@ -310,14 +308,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("SumMetric", func(t *testing.T) {
-		metrics := searchMetricsAll(t, s, ctx)
-		var sum map[string]any
-		for _, m := range metrics {
-			if m["name"] == "sum_metric" {
-				sum = m
-				break
-			}
-		}
+		sum := getMetricFullByName(t, s, ctx, "sum_metric")
 		requireMetric(t, sum, "sum_metric")
 		assert.Equal(t, "Total requests processed", sum["description"])
 		datapoints := metricDatapoints(sum)
@@ -325,14 +316,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("HistogramMetric", func(t *testing.T) {
-		metrics := searchMetricsAll(t, s, ctx)
-		var hist map[string]any
-		for _, m := range metrics {
-			if m["name"] == "histogram_metric" {
-				hist = m
-				break
-			}
-		}
+		hist := getMetricFullByName(t, s, ctx, "histogram_metric")
 		requireMetric(t, hist, "histogram_metric")
 		datapoints := metricDatapoints(hist)
 		assert.NotEmpty(t, datapoints)
@@ -343,14 +327,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("ExponentialHistogramMetric", func(t *testing.T) {
-		metrics := searchMetricsAll(t, s, ctx)
-		var exp map[string]any
-		for _, m := range metrics {
-			if m["name"] == "exponential_histogram_metric" {
-				exp = m
-				break
-			}
-		}
+		exp := getMetricFullByName(t, s, ctx, "exponential_histogram_metric")
 		requireMetric(t, exp, "exponential_histogram_metric")
 		datapoints := metricDatapoints(exp)
 		assert.NotEmpty(t, datapoints)
@@ -361,27 +338,23 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("MetricResourceAndScope", func(t *testing.T) {
-		metrics := searchMetricsAll(t, s, ctx)
-		for i, m := range metrics {
+		for _, name := range []string{
+			"gauge_metric", "gauge_int_metric", "sum_metric",
+			"histogram_metric", "exponential_histogram_metric",
+		} {
+			m := getMetricFullByName(t, s, ctx, name)
 			resource, _ := m["resource"].(map[string]any)
-			assert.NotNil(t, resource, "metric %d resource", i)
+			assert.NotNil(t, resource, "metric %s resource", name)
 			scope, _ := m["scope"].(map[string]any)
-			assert.NotNil(t, scope, "metric %d scope", i)
-			assert.Equal(t, "test-scope", scope["name"], "metric %d scope name", i)
-			assert.Equal(t, "v1.0.0", scope["version"], "metric %d scope version", i)
+			assert.NotNil(t, scope, "metric %s scope", name)
+			assert.Equal(t, "test-scope", scope["name"], "metric %s scope name", name)
+			assert.Equal(t, "v1.0.0", scope["version"], "metric %s scope version", name)
 		}
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
 		assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from exemplars"), 0, "exemplars should be ingested")
-		metrics := searchMetricsAll(t, s, ctx)
-		var gauge map[string]any
-		for _, m := range metrics {
-			if m["name"] == "gauge_metric" {
-				gauge = m
-				break
-			}
-		}
+		gauge := getMetricFullByName(t, s, ctx, "gauge_metric")
 		requireMetric(t, gauge, "gauge_metric")
 		datapoints := metricDatapoints(gauge)
 		assert.NotEmpty(t, datapoints)
@@ -412,24 +385,13 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-service",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
 		assert.Len(t, metrics, 5, "should find all metrics for service name test-service")
 		for i, m := range metrics {
-			resource, _ := m["resource"].(map[string]any)
-			assert.NotNil(t, resource, "metric %d resource", i)
-			attrs, _ := resource["attributes"].([]any)
-			var serviceName string
-			for _, a := range attrs {
-				kv, _ := a.(map[string]any)
-				if k, _ := kv["key"].(string); k == "service.name" {
-					serviceName, _ = kv["value"].(string)
-					break
-				}
-			}
-			assert.Equal(t, "test-service", serviceName, "metric %d resource service.name", i)
+			assert.Equal(t, "test-service", m["serviceName"], "metric %d serviceName", i)
 		}
 	})
 
@@ -448,7 +410,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "gauge_metric",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -466,7 +428,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "memory",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -484,7 +446,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "bytes",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -507,14 +469,11 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-scope",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
 		assert.Len(t, metrics, 5)
-		for _, m := range metrics {
-			assert.Equal(t, "test-scope", m["scopeName"])
-		}
 	})
 
 	t.Run("Field_scopeName", func(t *testing.T) {
@@ -527,7 +486,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-scope",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -544,14 +503,11 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "v1.0.0",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
 		assert.Len(t, metrics, 5)
-		for _, m := range metrics {
-			assert.Equal(t, "v1.0.0", m["scopeVersion"])
-		}
 	})
 
 	t.Run("Field_scopeVersion", func(t *testing.T) {
@@ -564,7 +520,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "v1.0.0",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -582,7 +538,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "0",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -600,7 +556,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "memory",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -618,7 +574,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-service",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -635,7 +591,7 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "nonexistent-metric-xyz",
 			},
 		}
-		raw, err := metrics.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -1202,9 +1158,9 @@ func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
 	}))
 
 	byName := make(map[string]map[string]any)
-	for _, m := range searchMetricsAll(t, s, ctx) {
-		name, _ := m["name"].(string)
-		byName[name] = m
+	for _, summary := range searchMetricsAll(t, s, ctx) {
+		name, _ := summary["name"].(string)
+		byName[name] = getMetricFullByName(t, s, ctx, name)
 	}
 
 	// Helper: pull the first datapoint from a metric and return its
@@ -1366,18 +1322,9 @@ func TestIngestMetrics_FlushInterval(t *testing.T) {
 	metrics := searchMetricsAll(t, s, ctx)
 	assert.Len(t, metrics, batchSize)
 
-	// Find metrics by name so we can assert attributes on first, 99th, 100th, 101st
-	byName := make(map[string]map[string]any)
-	for i := range metrics {
-		m := metrics[i]
-		if name, ok := m["name"].(string); ok {
-			byName[name] = m
-		}
-	}
 	for _, idx := range []int{0, 99, 100} {
 		name := "flush_metric_" + fmt.Sprintf("%d", idx)
-		m, ok := byName[name]
-		assert.True(t, ok, "metric %s", name)
+		m := getMetricFullByName(t, s, ctx, name)
 		resource, _ := m["resource"].(map[string]any)
 		assert.NotNil(t, resource)
 		attrs, _ := resource["attributes"].([]any)

@@ -325,7 +325,7 @@
     if (event.signal === 'metrics') {
       loading = false
       error = null
-      metrics = event.results as unknown as MetricSummary[]
+      metrics = event.results
     }
   }
 

@@ -36,12 +36,12 @@ func GetStats(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 						and a.event_id is null and a.link_id is null
 				),
 				'errorCount',   count(*) filter (where status_code = 'Error'),
-				'lastReceived', max(start_time)
+				'lastReceived', cast(max(start_time) as varchar)
 			) from spans),
 			'logs', (select json_object(
 				'logCount',     count(*),
 				'errorCount',   count(*) filter (where severity_number >= 17),
-				'lastReceived', coalesce(max(nullif(timestamp, 0)), max(observed_timestamp))
+				'lastReceived', cast(coalesce(max(nullif(timestamp, 0)), max(observed_timestamp)) as varchar)
 			) from logs),
 			'metrics', (select json_object(
 				-- metricCount is the number of distinct logical streams
@@ -55,7 +55,7 @@ func GetStats(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 				-- lastReceived = latest datapoint timestamp observed
 				-- (source recency), not collector wall-clock arrival.
 				-- Mirrors traces/logs which also use source timestamps.
-				'lastReceived',   max(timestamp)
+				'lastReceived',   cast(max(timestamp) as varchar)
 			) from datapoints)
 		) as varchar) as stats
 	`

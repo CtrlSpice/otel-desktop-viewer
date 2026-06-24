@@ -32,8 +32,6 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchLogs(ctx, req)
 	case "getLog":
 		return h.getLog(ctx, req)
-	case "searchMetrics", "getMetrics":
-		return h.searchMetrics(ctx, req)
 	case "searchMetricSummaries":
 		return h.searchMetricSummaries(ctx, req)
 	case "getMetric":
@@ -207,7 +205,7 @@ func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any
 	return result, nil
 }
 
-func (h *JSONRPCHandler) searchMetrics(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		log.Printf("Failed to unmarshal params: %v", err)
@@ -229,33 +227,7 @@ func (h *JSONRPCHandler) searchMetrics(ctx context.Context, req *jsonrpc2.Reques
 	if len(params) == 3 {
 		query = params[2]
 	}
-	result, err := metrics.Search(ctx, h.store.DB(), startTime, endTime, query)
-	if err != nil {
-		log.Printf("Error searching metrics: %v", err)
-		return nil, mapStoreError(err)
-	}
-	return result, nil
-}
-
-func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	if len(params) != 2 {
-		log.Printf("Invalid parameter count: %d (expected 2)", len(params))
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	startTime, err := parseTimestampParam(params[0], "startTime")
-	if err != nil {
-		return nil, err
-	}
-	endTime, err := parseTimestampParam(params[1], "endTime")
-	if err != nil {
-		return nil, err
-	}
-	summaries, err := metrics.SearchSummaries(ctx, h.store.DB(), startTime, endTime)
+	summaries, err := metrics.SearchSummaries(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
 		log.Printf("Error searching metric summaries: %v", err)
 		return nil, mapStoreError(err)

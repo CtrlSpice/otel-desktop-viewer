@@ -68,7 +68,7 @@
     logs: (ctx, q) => () =>
       telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q),
     metrics: (ctx, q) => () =>
-      telemetryAPI.getMetrics(ctx.startTime, ctx.endTime, q),
+      telemetryAPI.searchMetricSummaries(ctx.startTime, ctx.endTime, q),
   }
 
   /** Build the API call for a signal, or null if unsupported. */

@@ -1,6 +1,7 @@
 <script module lang="ts">
   import type { SpanNode, SpanData } from '@/types/api-types'
   import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
+  import { parseBigInt } from '@/utils/bigint'
   import { getServiceName } from '@/utils/resource'
   import { categoricalPalette } from '@/utils/chart-palette'
   import { themeSignal } from '@/state/theme.svelte'
@@ -53,14 +54,18 @@
       return { start: 0n, end: 0n, duration: 0n }
     }
     const seed = {
-      start: spans[0].spanData.startTime,
-      end: spans[0].spanData.endTime,
+      start: parseBigInt(spans[0].spanData.startTime),
+      end: parseBigInt(spans[0].spanData.endTime),
     }
     const { start, end } = spans.reduce(
-      (acc, node) => ({
-        start: ((a, b) => (a < b ? a : b))(acc.start, node.spanData.startTime),
-        end: ((a, b) => (a > b ? a : b))(acc.end, node.spanData.endTime),
-      }),
+      (acc, node) => {
+        const st = parseBigInt(node.spanData.startTime)
+        const en = parseBigInt(node.spanData.endTime)
+        return {
+          start: st < acc.start ? st : acc.start,
+          end: en > acc.end ? en : acc.end,
+        }
+      },
       seed
     )
     return { start, end, duration: end - start }
@@ -210,15 +215,20 @@
         offsetPercent: getOffsetPercent(
           bounds.start,
           bounds.duration,
-          node.spanData.startTime
+          parseBigInt(node.spanData.startTime)
         ),
         widthPercent: getWidthPercent(
           bounds.duration,
-          node.spanData.endTime - node.spanData.startTime
+          parseBigInt(node.spanData.endTime) -
+            parseBigInt(node.spanData.startTime)
         ),
         tree: treeMeta[i]!,
         eventMarkers: node.spanData.events.map(e => ({
-          percent: getOffsetPercent(bounds.start, bounds.duration, e.timestamp),
+          percent: getOffsetPercent(
+            bounds.start,
+            bounds.duration,
+            parseBigInt(e.timestamp)
+          ),
           name: e.name,
         })),
       }

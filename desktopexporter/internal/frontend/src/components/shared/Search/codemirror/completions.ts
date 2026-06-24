@@ -45,27 +45,6 @@ function findAncestor(node: SyntaxNode, name: string): SyntaxNode | null {
   return null
 }
 
-function logCompletionDebug(
-  context: CompletionContext,
-  node: SyntaxNode
-): void {
-  if (!import.meta.env.DEV) return
-  const parents: string[] = []
-  let p: SyntaxNode | null = node
-  for (let i = 0; i < 10 && p; i++) {
-    parents.push(p.name)
-    p = p.parent
-  }
-  const lo = Math.max(0, context.pos - 48)
-  const hi = Math.min(context.state.doc.length, context.pos + 12)
-  console.debug('[search completion]', {
-    pos: context.pos,
-    node: node.name,
-    parents,
-    snippet: context.state.sliceDoc(lo, hi),
-  })
-}
-
 function getValueNode(comparison: SyntaxNode): SyntaxNode | null {
   return (
     comparison.getChild(ValueTerm) ??
@@ -115,7 +94,6 @@ export function createQueryCompletionSource(
   ): CompletionResult | null {
     const tree = syntaxTree(context.state)
     const node = tree.resolveInner(context.pos, -1)
-    logCompletionDebug(context, node)
 
     // Only offer id-shape completions at the top level (not inside a Comparison).
     const comparison = findAncestor(node, 'Comparison')

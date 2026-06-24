@@ -185,7 +185,7 @@ export async function getDynamicAttributes(
         return []
       }
     default:
-      console.log('Unknown signal type: ', signal)
+      console.warn('Unknown signal type: ', signal)
       return []
   }
 }

@@ -338,7 +338,7 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 			select e.span_id,
 				to_json(list(json_object(
 					'name', e.name,
-					'timestamp', e.timestamp,
+					'timestamp', e.timestamp::varchar,
 					'droppedAttributesCount', e.dropped_attributes_count,
 					'attributes', coalesce(ea.attributes, json('[]'))
 				) order by e.timestamp)) as events
@@ -381,8 +381,8 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 						'parentSpanID', case when st.parent_span_id is not null then right(replace(st.parent_span_id::varchar, '-', ''), 16) end,
 						'name', st.name,
 						'kind', st.kind,
-						'startTime', st.start_time,
-						'endTime', st.end_time,
+						'startTime', st.start_time::varchar,
+						'endTime', st.end_time::varchar,
 						'attributes', coalesce(sa_span.attributes, json('[]')),
 						'events', coalesce(ed.events, json('[]')),
 						'links', coalesce(ld.links, json('[]')),
