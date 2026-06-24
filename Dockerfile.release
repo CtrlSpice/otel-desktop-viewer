@@ -1,4 +1,9 @@
-FROM debian:bookworm-slim
+# Runtime image for the released binary. The CGO binary is compiled on the
+# ubuntu-24.04 / ubuntu-24.04-arm runners (glibc 2.39), and CGO binaries require
+# the runtime glibc to be >= the build glibc. ubuntu:24.04 matches the build
+# glibc exactly. Keep this base and the build runners on the same Ubuntu release
+# so the glibc floors stay aligned (see .github/workflows/release.yml).
+FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

@@ -71,6 +71,8 @@ Download a pre-built binary for your platform from [Releases](https://github.com
 
 On Windows, unzip the archive and run `otel-desktop-viewer.exe`.
 
+> **Linux:** release binaries require **glibc 2.39 or newer** (Ubuntu 24.04+, Debian 13+, Fedora 40+). This applies to the tarballs, the `.deb`/`.rpm` packages, and the Docker images.
+
 ```bash
 # example: macOS Apple Silicon
 curl -LO https://github.com/CtrlSpice/otel-desktop-viewer/releases/latest/download/otel-desktop-viewer_darwin_arm64.tar.gz
