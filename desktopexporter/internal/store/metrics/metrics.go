@@ -19,11 +19,8 @@ import (
 )
 
 var (
-	ErrInvalidMetricQuery     = errors.New("invalid metric search query")
-	ErrMetricsStoreInternal   = errors.New("metrics store internal error")
-	ErrMetricIDNotFound       = errors.New("metric ID not found")
-	ErrInvalidTimeRange       = errors.New("invalid time range: endTs must be greater than startTs")
-	ErrUnspecifiedTemporality = errors.New("metric has Unspecified aggregation_temporality; cannot safely aggregate over time")
+	ErrInvalidMetricQuery   = errors.New("invalid metric search query")
+	ErrMetricsStoreInternal = errors.New("metrics store internal error")
 )
 
 const flushIntervalMetrics = 100
@@ -486,230 +483,40 @@ func numberDataPointValue(dp pmetric.NumberDataPoint) (doubleVal any, intVal any
 	}
 }
 
-// Search returns metrics that have at least one datapoint in [startTime,
-// endTime], matching the optional criteria. Each result is one
-// metric_ingests row joined to its metric_streams row, projected as the
-// "metric" shape the frontend expects (the union of identity-from-stream
-// and per-batch fields like description / dropped counts).
+// SearchSummaries returns lightweight per-stream summaries for the drawer
+// cards: identity fields, description, seriesCount, lastValue (Gauge/Sum),
+// and lastSeen. One row per metric_streams row that has at least one
+// in-range datapoint and matches the optional search criteria.
 //
-// The per-row granularity is preserved: a long-lived counter that's
-// reported every batch still produces one Search result per batch, just
-// like before. Identity columns (name, unit, ...) are read from
-// metric_streams via the join; the rest comes from metric_ingests.
-//
-// Ordering is by latest datapoint timestamp per ingest (newest data
-// first). This is the source's notion of recency -- when a datapoint
-// was actually observed -- rather than the collector's wall clock at
-// batch arrival.
-func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
+// Filtering reuses buildMetricSQL -- the same query builder the (now
+// removed) full Search used -- so the WHERE clause is evaluated at the
+// metric_ingests (per-batch) level: a stream appears if any of its
+// ingests match. The summary aggregation then runs over the matched
+// streams' in-range datapoints, identical to before.
+func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("Search: %w: %w", ErrInvalidMetricQuery, err)
+			return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 		}
 	}
 	cteSQL, whereClause, args, err := buildMetricSQL(searchTree, startTime, endTime)
 	if err != nil {
-		return nil, fmt.Errorf("Search: %w: %w", ErrInvalidMetricQuery, err)
+		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 	}
-	// filtered_ingests is the new per-batch row source. Field mapper
-	// expressions written against alias "m" still work because the join
-	// resolves identity columns through "s". WHERE predicates on the old
-	// identity columns (m.name, m.unit, ...) are rewritten by the field
-	// mapper to s.name, s.unit, ... -- see metricFieldMapper.
-	finalQuery := fmt.Sprintf(`%s,
+
+	query := fmt.Sprintf(`%s,
 		filtered_ingests as (
-			select m.*, s.name, s.unit, s.metric_type, s.aggregation_temporality, s.is_monotonic,
-				s.scope_name, s.scope_version, s.service_name
+			select m.id, m.stream_id
 			from metric_ingests m
 			inner join metric_streams s on s.id = m.stream_id, search_params
 			where %s
 		),
-		-- Datapoints inherit aggregation_temporality / is_monotonic from
-		-- the stream (single source of truth per the OTel data model), so
-		-- the per-type JSON projection below references fi.<field> rather
-		-- than re-joining metric_streams.
-		filtered_dps as (
-			select d.*,
-				fi.metric_type as metric_type,
-				fi.aggregation_temporality as aggregation_temporality,
-				fi.is_monotonic as is_monotonic
-			from datapoints d
-			inner join filtered_ingests fi on d.metric_ingest_id = fi.id, search_params
-			where d.timestamp >= time_start and d.timestamp <= time_end
-		),
-		dp_attrs_agg as (
-			select a.datapoint_id, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.datapoint_id in (select id from filtered_dps) and a.scope = 'datapoint'
-			group by a.datapoint_id
-		),
-		exemplar_attrs as (
-			select a.exemplar_id,
-				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.exemplar_id is not null
-				and a.datapoint_id in (select id from filtered_dps)
-				and a.scope = 'exemplar'
-			group by a.exemplar_id
-		),
-		exemplars_agg as (
-			select e.datapoint_id, json_group_array(json_object(
-				'timestamp', e.timestamp::varchar,
-				'value', e.value,
-				'traceID', replace(e.trace_id::varchar, '-', ''),
-				'spanID', right(replace(e.span_id::varchar, '-', ''), 16),
-				'filteredAttributes', coalesce(
-					(select attrs from exemplar_attrs where exemplar_attrs.exemplar_id = e.id),
-					json('[]')
-				)
-			)) as exemplars
-			from exemplars e
-			where e.datapoint_id in (select id from filtered_dps)
-			group by e.datapoint_id
-		),
-		ingest_res_attrs as (
-			select a.metric_ingest_id, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.metric_ingest_id in (select id from filtered_ingests) and a.scope = 'resource' and a.datapoint_id is null and a.exemplar_id is null
-			group by a.metric_ingest_id
-		),
-		ingest_scope_attrs as (
-			select a.metric_ingest_id, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.metric_ingest_id in (select id from filtered_ingests) and a.scope = 'scope' and a.datapoint_id is null and a.exemplar_id is null
-			group by a.metric_ingest_id
-		),
-		-- One row per (ingest, attribute-set). Same lift-attributes-out
-		-- pattern as GetMetric, but here we keep the extra
-		-- metric_ingest_id grouping because Search returns per-ingest
-		-- result rows. attribute_sample picks any one dp's attributes
-		-- from the group -- they're identical by the grouping criterion.
-		ts_dps_agg as (
-			select
-				d.metric_ingest_id,
-				coalesce(d.attrs_canonical, '') as attrs_key,
-				any_value(coalesce((select attrs from dp_attrs_agg where dp_attrs_agg.datapoint_id = d.id), json('[]'))) as attributes_sample,
-				max(d.timestamp) as latest_ts,
-				to_json(list(json_merge_patch(
-					json_object(
-						'id', d.id,
-						'metricType', d.metric_type,
-						'timestamp', d.timestamp::varchar,
-						'startTime', d.start_time::varchar,
-						'flags', d.flags,
-						'exemplars', coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]'))
-					),
-					case d.metric_type
-						when 'Gauge' then json_object(
-							'doubleValue', d.double_value,
-							'intValue', d.int_value,
-							'valueType', d.value_type
-						)
-						when 'Sum' then json_object(
-							'doubleValue', d.double_value,
-							'intValue', d.int_value,
-							'valueType', d.value_type,
-							'isMonotonic', d.is_monotonic,
-							'aggregationTemporality', d.aggregation_temporality
-						)
-						when 'Histogram' then json_object(
-							'count', d.count,
-							'sum', d.sum,
-							'min', d.min,
-							'max', d.max,
-							'bucketCounts', d.bucket_counts,
-							'explicitBounds', d.explicit_bounds,
-							'aggregationTemporality', d.aggregation_temporality
-						)
-						when 'ExponentialHistogram' then json_object(
-							'count', d.count,
-							'sum', d.sum,
-							'min', d.min,
-							'max', d.max,
-							'scale', d.scale,
-							'zeroCount', d.zero_count,
-							'zeroThreshold', d.zero_threshold,
-							'positiveBucketOffset', d.positive_bucket_offset,
-							'positiveBucketCounts', d.positive_bucket_counts,
-							'negativeBucketOffset', d.negative_bucket_offset,
-							'negativeBucketCounts', d.negative_bucket_counts,
-							'aggregationTemporality', d.aggregation_temporality
-						)
-					end
-				) order by d.timestamp desc)) as datapoints
-			from filtered_dps d
-			group by d.metric_ingest_id, coalesce(d.attrs_canonical, '')
-		),
-		-- Roll the per-(ingest, timeseries) rows up into one
-		-- timeseries[] per ingest. Timeseries within an ingest are
-		-- ordered by latest dp timestamp desc -- mirrors GetMetric and
-		-- gives the search-results UI a "newest activity first" feel
-		-- by default.
-		timeseries_agg as (
-			select metric_ingest_id, to_json(list(json_object(
-				'attributesKey', attrs_key,
-				'attributes', attributes_sample,
-				'datapoints', datapoints
-			) order by latest_ts desc)) as timeseries
-			from ts_dps_agg
-			group by metric_ingest_id
-		),
-		-- Latest datapoint timestamp per ingest, used to order the
-		-- top-level results "newest data first." We aggregate the
-		-- per-(ingest, timeseries) latest_ts values rather than re-
-		-- scanning filtered_dps -- cheaper and gives the same answer.
-		ingest_latest_dp as (
-			select metric_ingest_id, max(latest_ts) as last_dp_ts
-			from ts_dps_agg
-			group by metric_ingest_id
-		)
-		-- "id" exposed to the frontend is the STREAM id, not the per-
-		-- batch ingest id. Any client-side action that wants to fan out
-		-- across all batches of a metric (quantile-series, bucket-series,
-		-- delete) keys off this. The actual ingest UUID stays available
-		-- as ingestId for callers that care about provenance.
-		select cast(coalesce(to_json(list(json_object(
-			'id', fi.stream_id, 'ingestId', fi.id, 'name', fi.name, 'description', fi.description, 'unit', fi.unit,
-			'resourceDroppedAttributesCount', fi.resource_dropped_attributes_count,
-			'resource', json_object('attributes', coalesce(res.attrs, json('[]')), 'droppedAttributesCount', fi.resource_dropped_attributes_count),
-			'scopeName', fi.scope_name, 'scopeVersion', fi.scope_version, 'scopeDroppedAttributesCount', fi.scope_dropped_attributes_count,
-			'scope', json_object('name', fi.scope_name, 'version', fi.scope_version, 'attributes', coalesce(scope_attrs.attrs, json('[]')), 'droppedAttributesCount', fi.scope_dropped_attributes_count),
-			'timeseries', coalesce(ts.timeseries, json('[]'))
-		) order by ild.last_dp_ts desc nulls last)), '[]') as varchar) as metrics
-		from filtered_ingests fi
-		left join ingest_res_attrs res on res.metric_ingest_id = fi.id
-		left join ingest_scope_attrs scope_attrs on scope_attrs.metric_ingest_id = fi.id
-		left join timeseries_agg ts on ts.metric_ingest_id = fi.id
-		left join ingest_latest_dp ild on ild.metric_ingest_id = fi.id`,
-		cteSQL, whereClause,
-	)
-	var raw []byte
-	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("Search: %w: %w", ErrMetricsStoreInternal, err)
-	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
-}
-
-// SearchSummaries returns lightweight per-stream summaries for the drawer
-// cards: identity fields, description, seriesCount, lastValue (Gauge/Sum),
-// and lastSeen.
-// One row per metric_streams row with at least one in-range datapoint.
-func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
-	query := `
-		with search_params as (select ? as time_start, ? as time_end),
 		filtered_streams as (
-			select s.* from metric_streams s, search_params
-			where exists (
-				select 1 from datapoints d
-				where d.stream_id = s.id
-				  and d.timestamp >= time_start and d.timestamp <= time_end
-			)
+			select s.* from metric_streams s
+			where s.id in (select distinct stream_id from filtered_ingests)
 		),
 		filtered_dps as (
 			select d.* from datapoints d
@@ -776,9 +583,9 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64) 
 		left join stream_series_count ssc on ssc.stream_id = fs.id
 		left join stream_datapoint_count sdc on sdc.stream_id = fs.id
 		left join stream_last_value slv on slv.stream_id = fs.id
-	`
+	`, cteSQL, whereClause)
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrMetricsStoreInternal, err)
 	}
 	if raw == nil {
@@ -1074,328 +881,6 @@ func GetMetricAttributes(ctx context.Context, db *sql.DB, startTime, endTime int
 		return json.RawMessage("[]"), nil
 	}
 	return json.RawMessage(raw), nil
-}
-
-// GetMetricSummary returns derived summary statistics for a metric over a
-// time window. The shape is uniform across kinds: a top-level object
-// with `kind` (and `isMonotonic` for Sum) plus a `timeseries` array.
-// Each timeseries entry carries its own per-attribute window-level
-// aggregates, so the frontend can match them up with the chart legend
-// by `attributesKey` instead of having to re-aggregate data it already
-// rendered:
-//
-//   - Gauge        → { kind, timeseries: [{ attributesKey, current, min, max, lastReceived }, ...] }
-//   - Sum          → { kind, isMonotonic, timeseries: [{ attributesKey, current, delta, min, max, lastReceived }, ...] }
-//   - Histogram    → { kind, timeseries: [{ attributesKey: "__merged__", count, sum, min, max, quantiles, lastReceived }] }
-//   - ExpHistogram → { kind, timeseries: [{ attributesKey: "__merged__", count, sum, min, max, quantiles, lastReceived }] }
-//
-// Why per-timeseries for Gauge/Sum: aggregating `current`/`min`/`max`
-// across per-attribute timeseries of a Gauge or Sum is meaningless --
-// "current" would just pick whichever attribute combination reported
-// last, and "min/max" would mix unrelated time series. We hand the
-// frontend the per-timeseries rows and let it display whatever the
-// user's legend selection is asking for.
-//
-// Why merged for Histograms: bucket vectors merge cleanly across
-// timeseries, so a single "merged distribution" summary genuinely
-// answers "what's the overall p99 in this window across all
-// attributes." Per-timeseries histogram summaries aren't produced
-// today; the heatmap UI has no single-timeseries-selection mode yet,
-// so there's no place to render them.
-//
-// For Sum, `delta` is reset-aware on Cumulative timeseries (see
-// `getSumSummary` for the run-detection logic) and a plain `sum(value)`
-// per timeseries on Delta timeseries. `current`/`min`/`max` are
-// observed values, not increments, so they don't need reset adjustment.
-//
-// `isMonotonic` is a metric-level Sum property, so it lives at the top
-// of the response (not on each timeseries). Gauge and Histogram omit it.
-//
-// `lastReceived` is the timestamp of each timeseries' most recent
-// datapoint in the window, in nanoseconds. A timeseries with no
-// datapoints in the window is simply omitted from `timeseries`; the
-// empty array is the "no data in window" signal.
-//
-// Returns:
-//   - ErrInvalidTimeRange if endTs <= startTs.
-//   - ErrMetricIDNotFound if the metric stream doesn't exist.
-//   - ErrUnspecifiedTemporality (Histogram/ExpHist/Sum with Unspecified).
-//   - Empty window (metric exists, no datapoints in range): returns the
-//     uniform shape with `timeseries: []`. The frontend renders "no data
-//     in window" instead of fabricated zeros.
-func GetMetricSummary(ctx context.Context, db *sql.DB, metricID string, startTs, endTs int64) (json.RawMessage, error) {
-	if endTs <= startTs {
-		return nil, fmt.Errorf("GetMetricSummary: %w: startTs=%d endTs=%d", ErrInvalidTimeRange, startTs, endTs)
-	}
-
-	// Pre-check: same single-row lookup the bucket-series and metric
-	// fetches do. Need metric_type to dispatch and is_monotonic +
-	// aggregation_temporality for the Sum branch.
-	var metricType string
-	var temporality sql.NullString
-	var isMonotonic sql.NullBool
-	err := db.QueryRowContext(ctx,
-		`select metric_type, aggregation_temporality, is_monotonic
-		   from metric_streams
-		  where id = ?::uuid`,
-		metricID,
-	).Scan(&metricType, &temporality, &isMonotonic)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("GetMetricSummary: %w: %s", ErrMetricIDNotFound, metricID)
-		}
-		return nil, fmt.Errorf("GetMetricSummary: %w: %w", ErrMetricsStoreInternal, err)
-	}
-
-	switch metricType {
-	case "Gauge":
-		return getGaugeSummary(ctx, db, metricID, startTs, endTs)
-	case "Sum":
-		return getSumSummary(ctx, db, metricID, temporality.String, isMonotonic.Bool, startTs, endTs)
-	case "Histogram", "ExponentialHistogram":
-		return getHistogramSummary(ctx, db, metricID, metricType, startTs, endTs)
-	}
-	return nil, fmt.Errorf("GetMetricSummary: %w: %s", ErrMetricsStoreInternal, metricType)
-}
-
-// getGaugeSummary: per-timeseries latest value + min/max across the window.
-//
-// We group by attrs_canonical because aggregating Gauge values across
-// per-attribute timeseries is meaningless -- "current" would pick
-// whichever timeseries reported last, and min/max would mix unrelated
-// series. Each per-attribute timeseries gets its own summary row; the
-// frontend matches these up with chart legend entries by `attributesKey`.
-//
-// `value` resolves to whichever of double_value/int_value is set: the
-// ingest pipeline guarantees exactly one of the two is non-null for
-// Gauge/Sum, so coalescing in this order produces the original number.
-//
-// Empty window returns `{"kind":"gauge","timeseries":[]}` -- the frontend
-// renders "no data in window" rather than fabricated zeros.
-func getGaugeSummary(ctx context.Context, db *sql.DB, metricID string, startTs, endTs int64) (json.RawMessage, error) {
-	const q = `
-		with vals as (
-			select
-				coalesce(attrs_canonical, '') as attrs_key,
-				timestamp,
-				coalesce(double_value, int_value::double) as value
-			from datapoints
-			where stream_id = ?::uuid
-			  and timestamp >= ?::bigint
-			  and timestamp <  ?::bigint
-		),
-		per_ts as (
-			select
-				attrs_key,
-				arg_max(value, timestamp) as current,
-				min(value) as min_v,
-				max(value) as max_v,
-				max(timestamp) as last_ts
-			from vals
-			group by attrs_key
-		)
-		select cast(json_object(
-			'kind', 'gauge',
-			'timeseries', coalesce((
-				select json_group_array(json_object(
-					'attributesKey', attrs_key,
-					'current',       current,
-					'min',           min_v,
-					'max',           max_v,
-					'lastReceived',  cast(last_ts as varchar)
-				))
-				from per_ts
-			), json('[]'))
-		) as varchar)`
-	var raw []byte
-	if err := db.QueryRowContext(ctx, q, metricID, startTs, endTs).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetMetricSummary: %w: %w", ErrMetricsStoreInternal, err)
-	}
-	return json.RawMessage(raw), nil
-}
-
-// getSumSummary computes per-timeseries window-level aggregates
-// (current value, delta, min, max) for a Sum metric. Like Gauge,
-// summing across per-attribute timeseries is meaningless for Sum --
-// "current" would pick whichever timeseries reported last, and
-// "min/max across the window" only makes sense within a single
-// timeseries. Each per-attribute timeseries gets its own summary row;
-// the frontend matches these up with chart legend entries by
-// `attributesKey`. `isMonotonic` is a metric-level property (one bool
-// per metric, not per timeseries), so it lives at the top level
-// alongside `kind` and `timeseries`.
-//
-// The interesting case is `delta` for Cumulative temporality, which has
-// to account for counter resets. A reset happens when an exporter
-// process restarts (or otherwise re-initialises a counter): the
-// counter resumes from zero, and `last - first` over the whole window
-// would either undercount (positive but smaller than the real total)
-// or even go negative (the naive value at the end is below the value
-// at the start because of the restart).
-//
-// OTel signals a reset via `start_time`: every dp carries the start
-// time of its accumulation period, so `start_time` changing within a
-// timeseries marks a new accumulation. We also defensively detect
-// "soft resets" -- samples where the value dropped below the previous
-// one without a corresponding `start_time` change, which can happen
-// with buggy exporters or counters that overflow. Either condition
-// begins a new "run" within the timeseries.
-//
-// Per run, the contribution to delta is `max(value) - min(value)`
-// within that run. For a timeseries' first run, this is the same as
-// "what we observed accumulate during the window," which matches
-// Prometheus's increase() and OTel's specified semantics for the
-// "started observing mid-flight" case.
-//
-// Per-timeseries delta = sum(per-run deltas) across that timeseries'
-// runs. `current`, `min`, `max` are window-level over raw values per
-// timeseries (no reset adjustment needed -- they're observed values,
-// not increments).
-//
-// For temporality='Delta', each datapoint IS an increment, so the
-// per-timeseries delta is just `sum(value)` per timeseries, no reset
-// handling required.
-//
-// Unspecified temporality: errors. Without knowing whether each value
-// is a delta or a running total, we can't compute "delta over window"
-// or "current value" without lying.
-//
-// Empty window returns `{"kind":"sum","isMonotonic":...,"timeseries":[]}`.
-func getSumSummary(ctx context.Context, db *sql.DB, metricID, temporality string, isMonotonic bool, startTs, endTs int64) (json.RawMessage, error) {
-	if temporality != "Delta" && temporality != "Cumulative" {
-		return nil, fmt.Errorf("GetMetricSummary: %w: %s", ErrUnspecifiedTemporality, temporality)
-	}
-
-	// per_ts_delta is a CTE keyed by attrs_key giving each per-attribute
-	// timeseries' window delta. The two temporality paths produce the
-	// same shape (one row per attrs_key with a `delta` column) so the
-	// outer per_ts join doesn't need to know which path ran.
-	var perTsDeltaCTE string
-	switch temporality {
-	case "Delta":
-		// Each dp is its own increment. Per-timeseries window delta is
-		// just the sum of that timeseries' dps in the window.
-		perTsDeltaCTE = `
-		per_ts_delta as (
-			select attrs_key, coalesce(sum(value), 0) as delta
-			from vals
-			group by attrs_key
-		)`
-	case "Cumulative":
-		// Reset-aware per-timeseries delta. `runs` tags each sample with
-		// a run_id derived from the cumulative count of "this is a new
-		// run" boundaries within attrs_key, then per_run takes max - min
-		// within each run, and per_ts_delta sums across runs within each
-		// attrs_key. Boundary cases:
-		//   - first sample in a timeseries (lag(...) over w is null)
-		//   - start_time changed (exporter signalled a reset)
-		//   - value went down (soft reset -- defensive)
-		perTsDeltaCTE = `
-		runs as (
-			select
-				attrs_key,
-				value,
-				sum(case
-					when lag(value) over w is null then 1
-					when start_time <> lag(start_time) over w then 1
-					when value < lag(value) over w then 1
-					else 0
-				end) over (
-					partition by attrs_key order by timestamp
-					rows between unbounded preceding and current row
-				) as run_id
-			from vals
-			window w as (partition by attrs_key order by timestamp)
-		),
-		per_run as (
-			select attrs_key, run_id, max(value) - min(value) as run_delta
-			from runs
-			group by attrs_key, run_id
-		),
-		per_ts_delta as (
-			select attrs_key, coalesce(sum(run_delta), 0) as delta
-			from per_run
-			group by attrs_key
-		)`
-	}
-
-	q := fmt.Sprintf(`
-		with vals as (
-			select
-				coalesce(attrs_canonical, '') as attrs_key,
-				timestamp,
-				start_time,
-				coalesce(double_value, int_value::double) as value
-			from datapoints
-			where stream_id = ?::uuid
-			  and timestamp >= ?::bigint
-			  and timestamp <  ?::bigint
-		),%s,
-		per_ts as (
-			select
-				v.attrs_key,
-				arg_max(v.value, v.timestamp) as current,
-				min(v.value) as min_v,
-				max(v.value) as max_v,
-				max(v.timestamp) as last_ts,
-				any_value(d.delta) as delta
-			from vals v
-			left join per_ts_delta d using (attrs_key)
-			group by v.attrs_key
-		)
-		select cast(json_object(
-			'kind', 'sum',
-			'isMonotonic', ?::boolean,
-			'timeseries', coalesce((
-				select json_group_array(json_object(
-					'attributesKey', attrs_key,
-					'current',       current,
-					'delta',         delta,
-					'min',           min_v,
-					'max',           max_v,
-					'lastReceived',  cast(last_ts as varchar)
-				))
-				from per_ts
-			), json('[]'))
-		) as varchar)`, perTsDeltaCTE)
-	var raw []byte
-	if err := db.QueryRowContext(ctx, q, metricID, startTs, endTs, isMonotonic).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetMetricSummary: %w: %w", ErrMetricsStoreInternal, err)
-	}
-	return json.RawMessage(raw), nil
-}
-
-// MergedTimeseriesKey is the synthetic `attributesKey` used for the
-// single merged-distribution entry returned by histogram summaries.
-// Real canonical keys always contain `=`, so this sentinel is
-// unambiguous. Frontend code can treat any timeseries with this key as
-// "this is the cross-timeseries merge, not a real per-attribute series."
-const MergedTimeseriesKey = "__merged__"
-
-// getHistogramSummary returns an empty histogram summary shape. Merged
-// distribution + quantiles are computed client-side from getMetric raw
-// datapoints (same contract as the chart Aggregated tab). When a
-// getMetricSummary RPC lands, the frontend will own histogram rollup.
-func getHistogramSummary(ctx context.Context, db *sql.DB, metricID, metricType string, startTs, endTs int64) (json.RawMessage, error) {
-	_ = ctx
-	_ = db
-	_ = metricID
-	_ = startTs
-	_ = endTs
-
-	kind := "histogram"
-	if metricType == "ExponentialHistogram" {
-		kind = "expHistogram"
-	}
-	out := map[string]any{
-		"kind":       kind,
-		"timeseries": []any{},
-	}
-	raw, err := json.Marshal(out)
-	if err != nil {
-		return nil, fmt.Errorf("GetMetricSummary: %w: encode summary: %w", ErrMetricsStoreInternal, err)
-	}
-	return raw, nil
 }
 
 // Clear truncates the metrics table and all child tables.

@@ -149,7 +149,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 			assert.Len(t, logEntries, 3, "should have three logs")
 
-			metricsRaw, err := metrics.Search(ctx, s.DB(), 0, 1<<63-1, nil)
+			metricsRaw, err := metrics.SearchSummaries(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve metrics")
 			var metricEntries []any
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
@@ -174,7 +174,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, err, "should be able to retrieve logs after reopening")
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 
-			metricsRaw, err = metrics.Search(ctx, s.DB(), 0, 1<<63-1, nil)
+			metricsRaw, err = metrics.SearchSummaries(ctx, s.DB(), 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve metrics after reopening")
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
 

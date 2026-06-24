@@ -162,7 +162,7 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 		)
 		select cast(coalesce(to_json(list(json_object(
 			'id',             l.id,
-			'timestamp',      coalesce(nullif(l.timestamp, 0), l.observed_timestamp),
+			'timestamp',      cast(coalesce(nullif(l.timestamp, 0), l.observed_timestamp) as varchar),
 			'severityText',   l.severity_text,
 			'severityNumber', l.severity_number,
 			'serviceName',    l.service_name,
@@ -202,8 +202,8 @@ func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error)
 		)
 		select cast(json_object(
 			'id', l.id,
-			'timestamp', l.timestamp,
-			'observedTimestamp', l.observed_timestamp,
+			'timestamp', l.timestamp::varchar,
+			'observedTimestamp', l.observed_timestamp::varchar,
 			'traceID', replace(l.trace_id::varchar, '-', ''),
 			'spanID', right(replace(l.span_id::varchar, '-', ''), 16),
 			'severityText', l.severity_text,

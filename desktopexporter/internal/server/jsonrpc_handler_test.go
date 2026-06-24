@@ -317,12 +317,12 @@ func TestSearchLogsInvalidParams(t *testing.T) {
 	assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 }
 
-// TestSearchMetricsInvalidParams ensures searchMetrics with wrong param count returns ErrInvalidParams.
-func TestSearchMetricsInvalidParams(t *testing.T) {
+// TestSearchMetricSummariesInvalidParams ensures searchMetricSummaries with wrong param count returns ErrInvalidParams.
+func TestSearchMetricSummariesInvalidParams(t *testing.T) {
 	handler, teardown := setupHandler(t)
 	defer teardown()
 
-	req := createRequest("searchMetrics", []string{"0"}) // only one param
+	req := createRequest("searchMetricSummaries", []string{"0"}) // only one param
 	result, err := handler.Handle(context.Background(), req)
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -402,6 +402,33 @@ func TestSearchMetricSummaries(t *testing.T) {
 		assert.NotEmpty(t, summaries[0]["id"])
 		assert.NotNil(t, summaries[0]["seriesCount"])
 		assert.NotNil(t, summaries[0]["lastValue"])
+	})
+
+	t.Run("With Query", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		query := map[string]any{
+			"id":   "q1",
+			"type": "condition",
+			"query": map[string]any{
+				"field":          map[string]any{"name": "name", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "test.gauge",
+			},
+		}
+		req := createRequest("searchMetricSummaries", []any{
+			"0", strconv.FormatInt(1<<63-1, 10), query,
+		})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var summaries []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &summaries))
+		require.Len(t, summaries, 1)
+		assert.Equal(t, "test.gauge", summaries[0]["name"])
 	})
 }
 

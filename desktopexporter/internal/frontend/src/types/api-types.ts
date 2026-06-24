@@ -320,4 +320,4 @@ export type Stats = {
 export type SearchResultEvent =
   | { signal: 'traces'; results: TraceSummary[]; queryTree?: unknown }
   | { signal: 'logs'; results: LogSummary[]; queryTree?: unknown }
-  | { signal: 'metrics'; results: MetricData[]; queryTree?: unknown }
+  | { signal: 'metrics'; results: MetricSummary[]; queryTree?: unknown }

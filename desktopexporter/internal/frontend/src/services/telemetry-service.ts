@@ -12,6 +12,7 @@ import type {
   Exemplar,
   DataPoint,
 } from '@/types/api-types'
+import { parseBigInt, parseNullableBigInt } from '@/utils/bigint'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
 import type {
   AttributeScope,
@@ -39,8 +40,8 @@ interface JsonRpcResponse {
 }
 
 // Error subclass that preserves the JSON-RPC error code so callers can
-// pattern-match on it (e.g. detect ErrCodeUnspecifiedTemporality and render
-// the FunError callout instead of a generic failure UI).
+// pattern-match on it to render a specific callout instead of a generic
+// failure UI.
 export class JsonRpcError extends Error {
   code: number
   constructor(code: number, message: string) {
@@ -49,11 +50,6 @@ export class JsonRpcError extends Error {
     this.code = code
   }
 }
-
-// Server error codes that callers care about. Mirrors
-// desktopexporter/internal/server/errors.go. Keep this list small -- only
-// codes the frontend pattern-matches on belong here.
-export const ErrCodeUnspecifiedTemporality = -32013
 
 // Helper function to convert milliseconds to nanoseconds
 function toNanoseconds(milliseconds: number): string {
@@ -101,7 +97,7 @@ function traceSummaryFromJSON(json: any): TraceSummary {
   return {
     ...json,
     rootSpan: json.rootSpan ?? undefined,
-    startTime: BigInt(json.startTime),
+    startTime: parseBigInt(json.startTime),
     // durationNs arrives as a varchar-encoded int64 (ns precision
     // would otherwise be clipped by JSON's float64 numbers).
     durationNs: parseNullableBigInt(json.durationNs),
@@ -118,15 +114,12 @@ function traceDataFromJSON(json: any): TraceData {
     spans: json.spans.map((spanNode: any) => ({
       spanData: {
         ...spanNode.spanData,
-        startTime: BigInt(spanNode.spanData.startTime),
-        endTime: BigInt(spanNode.spanData.endTime),
+        startTime: parseBigInt(spanNode.spanData.startTime),
+        endTime: parseBigInt(spanNode.spanData.endTime),
         events: spanNode.spanData.events
           ? spanNode.spanData.events.map((event: any) => ({
               ...event,
-              timestamp:
-                event.timestamp && event.timestamp !== undefined
-                  ? BigInt(event.timestamp)
-                  : undefined,
+              timestamp: parseBigInt(event.timestamp),
             }))
           : [],
         links: spanNode.spanData.links || [],
@@ -143,7 +136,7 @@ function traceDataFromJSON(json: any): TraceData {
 function logSummaryFromJSON(json: any): LogSummary {
   return {
     ...json,
-    timestamp: BigInt(json.timestamp),
+    timestamp: parseBigInt(json.timestamp),
   }
 }
 
@@ -156,23 +149,23 @@ function logSummariesFromJSON(json: any): LogSummary[] {
 function logDataFromJSON(json: any): LogData {
   return {
     ...json,
-    timestamp: BigInt(json.timestamp),
-    observedTimestamp: BigInt(json.observedTimestamp),
+    timestamp: parseBigInt(json.timestamp),
+    observedTimestamp: parseBigInt(json.observedTimestamp),
   }
 }
 
 function exemplarFromJSON(json: any): Exemplar {
   return {
     ...json,
-    timestamp: BigInt(json.timestamp),
+    timestamp: parseBigInt(json.timestamp),
   }
 }
 
 function dataPointFromJSON(json: any): DataPoint {
   return {
     ...json,
-    timestamp: BigInt(json.timestamp),
-    startTime: BigInt(json.startTime),
+    timestamp: parseBigInt(json.timestamp),
+    startTime: parseBigInt(json.startTime),
     exemplars: json.exemplars?.map(exemplarFromJSON) ?? [],
   }
 }
@@ -204,10 +197,6 @@ function metricDataFromJSON(json: any): MetricData {
   }
 }
 
-function metricsFromJSON(json: any): MetricData[] {
-  return json.map(metricDataFromJSON)
-}
-
 function metricSummaryFromJSON(json: any): MetricSummary {
   return {
     ...json,
@@ -215,20 +204,12 @@ function metricSummaryFromJSON(json: any): MetricSummary {
     serviceName: json.serviceName ?? '',
     seriesCount: Number(json.seriesCount ?? 0),
     dataPointCount: Number(json.dataPointCount ?? 0),
-    lastSeen: BigInt(json.lastSeen),
+    lastSeen: parseBigInt(json.lastSeen),
   }
 }
 
 function metricSummariesFromJSON(json: any): MetricSummary[] {
   return json.map(metricSummaryFromJSON)
-}
-
-function parseNullableBigInt(value: unknown): bigint | null {
-  if (value === null || value === undefined) return null
-  if (typeof value === 'bigint') return value
-  if (typeof value === 'string' || typeof value === 'number')
-    return BigInt(value)
-  throw new Error(`Invalid bigint value: ${String(value)}`)
 }
 
 function statsFromJSON(json: any): Stats {
@@ -372,30 +353,17 @@ export let telemetryAPI = {
   clearLogs: () => callRPC('clearLogs', undefined),
 
   // Metric methods
-  getMetrics: async (
+  searchMetricSummaries: async (
     startTime: number,
     endTime: number,
     queryTree?: QueryNode
-  ): Promise<MetricData[]> => {
+  ): Promise<MetricSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
     const params = queryTree
       ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
       : [startTimeNs, endTimeNs]
-    const rawData = await callRPC('getMetrics', params)
-    return metricsFromJSON(rawData)
-  },
-
-  searchMetricSummaries: async (
-    startTime: number,
-    endTime: number
-  ): Promise<MetricSummary[]> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
-    const rawData = await callRPC('searchMetricSummaries', [
-      startTimeNs,
-      endTimeNs,
-    ])
+    const rawData = await callRPC('searchMetricSummaries', params)
     return metricSummariesFromJSON(rawData)
   },
 
