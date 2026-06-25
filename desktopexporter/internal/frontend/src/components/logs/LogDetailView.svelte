@@ -9,7 +9,7 @@
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { router } from 'tinro5'
+  import { navigateToItem } from '@/utils/url-state'
 
   type Props = {
     log: LogData | undefined
@@ -111,10 +111,10 @@
                 {#snippet value()}
                   <a
                     class="detail-cell__value link link-primary font-mono"
-                    href="/trace/{log.traceID}"
+                    href="/traces/{log.traceID}"
                     onclick={e => {
                       e.preventDefault()
-                      router.goto(`/trace/${log.traceID}`)
+                      navigateToItem('traces', log.traceID)
                     }}
                   >{log.traceID}</a>
                 {/snippet}

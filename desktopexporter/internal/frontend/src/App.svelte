@@ -17,13 +17,13 @@
   <Route path="/">
     <HomePage />
   </Route>
-  <Route path="/metrics">
+  <Route path="/metrics/*">
     <MetricsPage />
   </Route>
-  <Route path="/logs">
+  <Route path="/logs/*">
     <LogsPage />
   </Route>
-  <Route path="/traces">
+  <Route path="/traces/*">
     <TracesPage />
   </Route>
 </main>

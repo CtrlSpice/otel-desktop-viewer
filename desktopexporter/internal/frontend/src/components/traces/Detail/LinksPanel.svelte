@@ -2,7 +2,7 @@
   import type { LinkData } from '@/types/api-types'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import SpanField from './SpanField.svelte'
-  import { router } from 'tinro5'
+  import { navigateToItem } from '@/utils/url-state'
 
   type Props = {
     links: LinkData[]
@@ -29,10 +29,10 @@
             </span>
             <a
               class="detail-cell__value link link-primary font-mono"
-              href="/trace/{link.traceID}"
+              href="/traces/{link.traceID}"
               onclick={e => {
                 e.preventDefault()
-                router.goto(`/trace/${link.traceID}`)
+                navigateToItem('traces', link.traceID)
               }}
             >{link.traceID}</a>
           </td>

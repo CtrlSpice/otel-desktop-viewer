@@ -47,11 +47,13 @@
 
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
+  import { signalIdFromPath, navigateToItem } from '@/utils/url-state'
   import type { LogData, SearchResultEvent } from '@/types/api-types'
   import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
@@ -65,6 +67,15 @@
   // --- context ---
   let timeContext = getTimeContext()
 
+  // --- URL is the source of truth for the selected log (`/logs/<id>`) ---
+  let currentPath = $state(router.path ?? '/')
+  $effect(() => {
+    const unsubscribe = router.subscribe(route => {
+      currentPath = route.path
+    })
+    return unsubscribe
+  })
+
   // --- state: API / list ---
   let logs = $state<LogSummary[]>([])
   let loading = $state(true)
@@ -75,14 +86,14 @@
   let sortColumn = $state<LogSortColumn>('timestamp')
   let sortDirection = $state<LogSortDirection>('desc')
 
-  // --- state: selection ---
+  // --- selection (derived from URL) ---
   //
   // selectedLogId is the user's pick from the list (the LogSummary
-  // `id`). The detail fetcher round-trips to getLog(id) for the
-  // full LogData on demand, with a debounce that keeps held-arrow
-  // keyboard nav from firing a request per row. Detail loading/
+  // `id`), read from the route path. The detail fetcher round-trips to
+  // getLog(id) for the full LogData on demand, with a debounce that keeps
+  // held-arrow keyboard nav from firing a request per row. Detail loading/
   // error state lives on the fetcher object, not on the page.
-  let selectedLogId = $state<string | null>(null)
+  let selectedLogId = $derived(signalIdFromPath('logs', currentPath))
   const detailFetcher = createDebouncedDetailFetcher<string, LogData>({
     fetch: id => telemetryAPI.getLog(id),
     keysEqual: (a, b) => a === b,
@@ -130,17 +141,19 @@
   // --- effects ---
   let lastValidIndex = $state(0)
 
+  // Guarded behind mounted + !loading so a URL-provided id (shared link) is
+  // never replaced before the list has finished fetching.
   $effect(() => {
-    const idx = selectedLogId
-      ? sortedLogs.findIndex(l => l.id === selectedLogId)
-      : -1
+    if (!mounted || loading) return
+    const id = selectedLogId
+    const idx = id ? sortedLogs.findIndex(l => l.id === id) : -1
     if (idx >= 0) {
       lastValidIndex = idx
     } else if (sortedLogs.length > 0) {
       const fallback = sortedLogs[Math.min(lastValidIndex, sortedLogs.length - 1)]
-      selectedLogId = fallback?.id ?? null
-    } else {
-      selectedLogId = null
+      if (fallback) navigateToItem('logs', fallback.id, { replace: true })
+    } else if (id) {
+      navigateToItem('logs', null, { replace: true })
     }
   })
 
@@ -179,7 +192,7 @@
   }
 
   function selectLog(logId: string) {
-    selectedLogId = logId
+    navigateToItem('logs', logId, { replace: true })
   }
 
   // --- nav: walk sortedLogs ---
@@ -196,17 +209,17 @@
     )
     if (target === selectedIndex) return
     const next = sortedLogs[target]
-    if (next) selectedLogId = next.id
+    if (next) navigateToItem('logs', next.id, { replace: true })
   }
 
   function selectFirst() {
     const first = sortedLogs[0]
-    if (first) selectedLogId = first.id
+    if (first) navigateToItem('logs', first.id, { replace: true })
   }
 
   function selectLast() {
     const last = sortedLogs[sortedLogs.length - 1]
-    if (last) selectedLogId = last.id
+    if (last) navigateToItem('logs', last.id, { replace: true })
   }
 
   async function fetchLogs() {
@@ -245,7 +258,7 @@
     try {
       await telemetryAPI.deleteLogByID(logId)
       if (selectedLogId === logId) {
-        selectedLogId = null
+        navigateToItem('logs', null, { replace: true })
       }
       await fetchLogs()
     } catch (err) {
@@ -256,7 +269,7 @@
   async function handleDeleteAllLogs() {
     try {
       await telemetryAPI.clearLogs()
-      selectedLogId = null
+      navigateToItem('logs', null, { replace: true })
       await fetchLogs()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to delete logs'
