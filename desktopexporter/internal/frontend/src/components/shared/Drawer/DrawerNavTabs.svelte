@@ -39,7 +39,7 @@
 
   const ACTIVE_RULES: Record<string, (p: string) => boolean> = {
     home: p => p === '/',
-    traces: p => p === '/traces' || p.startsWith('/trace/'),
+    traces: p => p === '/traces' || p.startsWith('/traces/'),
     metrics: p => p === '/metrics' || p.startsWith('/metrics/'),
     logs: p => p === '/logs' || p.startsWith('/logs/'),
   }
@@ -51,6 +51,7 @@
 
 <script lang="ts">
   import { router } from 'tinro5'
+  import { navigateToSignal, type SignalName } from '@/utils/url-state'
 
   type Props = {
     collapsed?: boolean
@@ -65,7 +66,9 @@
     return unsubscribe
   })
 
-  const goto = (path: string) => router.goto(path)
+  // NAV_ITEMS are all signal tabs, so navigate through the helper to carry the
+  // active time window across signals.
+  const goto = (item: NavItem) => navigateToSignal(item.id as SignalName)
 </script>
 
 {#if collapsed}
@@ -81,7 +84,7 @@
         data-tip={item.label}
         aria-current={active ? 'page' : undefined}
         aria-label={item.label}
-        onclick={() => goto(item.path)}
+        onclick={() => goto(item)}
       >
         <Icon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
       </button>
@@ -98,7 +101,7 @@
           ? 'drawer-tab--active'
           : 'drawer-tab--inactive'}"
         aria-current={active ? 'page' : undefined}
-        onclick={() => goto(item.path)}
+        onclick={() => goto(item)}
       >
         <Icon class="h-[15px] w-[15px] shrink-0" aria-hidden="true" />
         <span class="truncate">{item.label}</span>

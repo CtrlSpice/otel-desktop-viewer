@@ -33,11 +33,11 @@ run-go-persist:
 
 .PHONY: populate-traces
 populate-traces:
-	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" bash "$(CURDIR)/scripts/seed-traces.sh"
+	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" perl "$(CURDIR)/scripts/seed.pl" --traces
 
 .PHONY: populate-logs
 populate-logs:
-	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" bash "$(CURDIR)/scripts/seed-logs.sh"
+	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" perl "$(CURDIR)/scripts/seed.pl" --logs
 
 .PHONY: populate-metrics
 populate-metrics:
@@ -117,7 +117,7 @@ help:
 	@echo "  run-go            - Run server (in-memory, data lost on exit)"
 	@echo "  run-go-persist    - Run server with persistent DB file (data retained)"
 	@echo "  populate-traces   - POST sample traces to OTLP HTTP (default localhost:4318)"
-	@echo "  populate-logs     - POST sample logs to OTLP HTTP (default localhost:4318)"
+	@echo "  populate-logs     - POST sample logs to OTLP HTTP (run after populate-traces to link logs to real traces)"
 	@echo "  populate-metrics  - POST sample metrics to OTLP HTTP (default localhost:4318)"
 	@echo ""
 	@echo "Convenience:"
