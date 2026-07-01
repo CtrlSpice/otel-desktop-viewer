@@ -23,7 +23,7 @@
   <Route path="/logs">
     <LogsPage />
   </Route>
-  <Route path="/traces">
+  <Route path="/traces/*">
     <TracesPage />
   </Route>
 </main>
