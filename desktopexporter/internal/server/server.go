@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/rs/cors"
@@ -47,20 +49,16 @@ func (s *Server) Start() error {
 func (s *Server) initHandler() error {
 	mux := http.NewServeMux()
 
-	// Handle specific routes first (checked before catch-all)
-	mux.HandleFunc("GET /traces/{id}", s.indexHandler)
 	mux.HandleFunc("POST /rpc", s.rpcHandler)
 
-	// Then handle static files (catches everything else)
-	if s.staticDir != "" {
-		mux.Handle("/", http.FileServer(http.Dir(s.staticDir)))
-	} else {
-		staticContent, err := fs.Sub(assets, "static")
-		if err != nil {
-			return err
-		}
-		mux.Handle("/", http.FileServerFS(staticContent))
+	// Single-page app: serve a static asset when one exists at the request path,
+	// otherwise fall back to index.html so client-side routes (/traces,
+	// /traces/{id}, /metrics, /logs) resolve on hard load, refresh, and shared links.
+	fsys, err := s.staticFS()
+	if err != nil {
+		return err
 	}
+	mux.Handle("/", spaHandler(fsys))
 
 	// CORS for the Vite frontend
 	c := cors.New(cors.Options{
@@ -72,20 +70,41 @@ func (s *Server) initHandler() error {
 	return nil
 }
 
-// indexHandler serves the frontend application.
-// Uses STATIC_ASSETS_DIR for development, embedded assets for production.
-func (s *Server) indexHandler(writer http.ResponseWriter, request *http.Request) {
+// staticFS returns the filesystem holding the built frontend: the on-disk
+// STATIC_ASSETS_DIR in development, or the embedded assets in production.
+func (s *Server) staticFS() (fs.FS, error) {
 	if s.staticDir != "" {
-		http.ServeFile(writer, request, s.staticDir+"/index.html")
-	} else {
-		bytes, err := assets.ReadFile("static/index.html")
+		return os.DirFS(s.staticDir), nil
+	}
+	return fs.Sub(assets, "static")
+}
+
+// spaHandler serves the single-page app. A GET/HEAD for an existing file is served
+// as-is; any other GET/HEAD path falls back to index.html so the client router owns
+// the route (e.g. a deep-linked /traces/{id} or a refreshed /metrics). Non-GET
+// requests fall through to the file server.
+func spaHandler(fsys fs.FS) http.Handler {
+	fileServer := http.FileServerFS(fsys)
+	serveIndex := func(writer http.ResponseWriter) {
+		bytes, err := fs.ReadFile(fsys, "index.html")
 		if err != nil {
-			log.Printf("Error reading static assets: %v", err)
+			log.Printf("Error reading index.html: %v", err)
 			http.Error(writer, "Failed to load page", http.StatusInternalServerError)
 			return
 		}
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 		writer.Write(bytes)
 	}
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodGet || request.Method == http.MethodHead {
+			name := strings.TrimPrefix(path.Clean(request.URL.Path), "/")
+			if info, err := fs.Stat(fsys, name); name == "" || err != nil || info.IsDir() {
+				serveIndex(writer)
+				return
+			}
+		}
+		fileServer.ServeHTTP(writer, request)
+	})
 }
 
 func (s *Server) rpcHandler(writer http.ResponseWriter, request *http.Request) {
