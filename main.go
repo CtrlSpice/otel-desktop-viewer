@@ -73,7 +73,7 @@ func runInteractive(params otelcol.CollectorSettings) error {
 }
 
 func newCommand(set otelcol.CollectorSettings) *cobra.Command {
-	var httpPortFlag, grpcPortFlag, browserPortFlag int
+	var httpPortFlag, grpcPortFlag, browserPortFlag, metricsPortFlag int
 	var hostFlag, dbFlag string
 	var openBrowserFlag bool
 
@@ -98,6 +98,12 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 				`yaml:service::pipelines::metrics::exporters: [desktop]`,
 				`yaml:service::pipelines::logs::receivers: [otlp]`,
 				`yaml:service::pipelines::logs::exporters: [desktop]`,
+				// Expose the collector's own Prometheus self-telemetry on a configurable
+				// port instead of the hardcoded default (:8888), which is a common port
+				// to already have in use. Setting the reader explicitly overrides the
+				// collector default.
+				`yaml:service::telemetry::metrics::readers: [{pull: {exporter: {prometheus: {host: "` +
+					hostFlag + `", port: ` + strconv.Itoa(metricsPortFlag) + `}}}}]`,
 			}
 			set.ConfigProviderSettings.ResolverSettings.DefaultScheme = "env"
 
@@ -122,6 +128,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().IntVar(&grpcPortFlag, "grpc", 4317, "The port number on which we listen for OTLP grpc payloads")
 	rootCmd.Flags().BoolVar(&openBrowserFlag, "open-browser", true, "Open the browser automatically on launch")
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser-port", 8000, "The port number where we expose our data")
+	rootCmd.Flags().IntVar(&metricsPortFlag, "metrics-port", 8888, "The port number for the collector's internal Prometheus self-telemetry metrics")
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser). Use '::' or '0.0.0.0' to listen on all interfaces.")
 	rootCmd.Flags().StringVar(&dbFlag, "db", "", "The path of your database file. Omitting this flag opens DuckDB in in-memory mode, with no data persisted to disk.")
 

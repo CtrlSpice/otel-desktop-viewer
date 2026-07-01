@@ -234,6 +234,7 @@ Flags:
       --grpc int           OTLP gRPC listen port (default 4317)
       --host string        Host for OTLP receivers and the web UI (default localhost)
       --http int           OTLP HTTP listen port (default 4318)
+      --metrics-port int   Port for the collector's internal Prometheus self-telemetry (default 8888)
       --open-browser       Open the browser on launch (default true)
   -h, --help               help for otel-desktop-viewer
   -v, --version            version for otel-desktop-viewer
