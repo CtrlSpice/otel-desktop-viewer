@@ -62,6 +62,12 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
+  import {
+    signalIdFromPath,
+    navigateToItem,
+    getSpanFromQuery,
+    setSpanInQuery,
+  } from '@/utils/url-state'
   import type {
     TraceData,
     SearchResultEvent,
@@ -80,6 +86,19 @@
   // --- context ---
   let timeContext = getTimeContext()
 
+  // --- URL is the source of truth for the selected trace + span ---
+  // `/traces/<traceID>?span=<spanID>`. Reading from the router keeps deep links
+  // and back/forward in sync; every selection change is a navigate (below).
+  let currentPath = $state(router.path ?? '/')
+  let currentQuery = $state<Record<string, string>>({})
+  $effect(() => {
+    const unsubscribe = router.subscribe(route => {
+      currentPath = route.path
+      currentQuery = route.query
+    })
+    return unsubscribe
+  })
+
   // --- state: API / list ---
   let traceSummaries = $state<TraceSummary[]>([])
   let loading = $state(true)
@@ -90,21 +109,10 @@
   let sortColumn = $state<TraceSummarySortColumn>('startTime')
   let sortDirection = $state<TraceSummarySortDirection>('desc')
 
-  // --- deep linking: the selected trace lives in the URL as /traces/{id} ---
-  // Parse the id out of a path; null for the bare /traces list.
-  function traceIdFromPath(p: string): string | null {
-    const m = /^\/traces\/(.+)$/.exec(p)
-    return m ? decodeURIComponent(m[1]) : null
-  }
-
-  // --- state: selection + detail ---
-  // Initialize from the current URL (not null) so a hard-loaded /traces/{id} selects
-  // that trace on mount, before any router subscription fires — and so the reflect
-  // effect below sees state and URL already in agreement (no spurious navigation).
-  let currentPath = $state(location.pathname)
-  let selectedTraceId = $state<string | null>(traceIdFromPath(location.pathname))
+  // --- selection + detail (selection derived from URL) ---
+  let selectedTraceId = $derived(signalIdFromPath('traces', currentPath))
+  let selectedSpanID = $derived(currentQuery.span ?? null)
   let traceData = $state<TraceData | null>(null)
-  let selectedSpanID = $state<string | null>(null)
   let detailLoading = $state(false)
 
   // --- state: active search query (for span highlighting in waterfall) ---
@@ -167,49 +175,34 @@
 
   // --- effects ---
 
-  // URL -> selection. subscribe() fires immediately with the current route and again
-  // on every navigation (nav clicks, browser back/forward), keeping the selection in
-  // sync with the address bar. Returned from onMount so it unsubscribes on unmount.
-  onMount(() =>
-    router.subscribe(route => {
-      currentPath = route.path
-      const id = traceIdFromPath(route.path)
-      if (id !== selectedTraceId) selectedTraceId = id
-    })
-  )
-
-  // selection -> URL. Reflect the current selection into the path so a trace is
-  // shareable and survives a refresh, and so browser back/forward walks the traces
-  // you visited. Guarded on currentPath so this never fights the subscription above
-  // (no feedback loop).
-  $effect(() => {
-    const target = selectedTraceId
-      ? `/traces/${encodeURIComponent(selectedTraceId)}`
-      : '/traces'
-    if (currentPath !== target) router.goto(target)
-  })
-
   let lastValidIndex = $state(0)
 
+  // Auto-select a trace when none (or an out-of-range id) is selected. Guarded
+  // behind mounted + !loading so a URL-provided id is never clobbered before
+  // the list has finished fetching (shared-link load ordering).
   $effect(() => {
-    const idx = selectedTraceId
-      ? sortedTraces.findIndex(t => t.traceID === selectedTraceId)
-      : -1
+    if (!mounted || loading) return
+    const id = selectedTraceId
+    const idx = id ? sortedTraces.findIndex(t => t.traceID === id) : -1
     if (idx >= 0) {
       lastValidIndex = idx
     } else if (sortedTraces.length > 0) {
-      const fallback = sortedTraces[Math.min(lastValidIndex, sortedTraces.length - 1)]
-      selectedTraceId = fallback?.traceID ?? null
-    } else {
-      selectedTraceId = null
+      const fallback =
+        sortedTraces[Math.min(lastValidIndex, sortedTraces.length - 1)]
+      if (fallback) navigateToItem('traces', fallback.traceID, { replace: true })
+    } else if (id) {
+      navigateToItem('traces', null, { replace: true })
     }
   })
 
   $effect(() => {
     const summary = selectedSummary
     if (!summary) {
+      // Don't tear down the detail view while the list is still loading -- a
+      // shared link's trace id may simply not be in the list yet.
+      if (!mounted || loading) return
       traceData = null
-      selectedSpanID = null
+      setSpanInQuery(null)
       return
     }
     fetchTraceDetail(summary.traceID, activeQueryTree)
@@ -242,7 +235,8 @@
   }
 
   function selectTrace(traceID: string) {
-    selectedTraceId = traceID
+    // Explicit click is navigational: push so back returns to the prior trace.
+    navigateToItem('traces', traceID, { replace: false })
   }
 
   // --- nav: walk sortedTraces ---
@@ -261,21 +255,22 @@
     )
     if (target === selectedIndex) return
     const next = sortedTraces[target]
-    if (next) selectedTraceId = next.traceID
+    if (next) navigateToItem('traces', next.traceID, { replace: true })
   }
 
   function selectFirst() {
     const first = sortedTraces[0]
-    if (first) selectedTraceId = first.traceID
+    if (first) navigateToItem('traces', first.traceID, { replace: true })
   }
 
   function selectLast() {
     const last = sortedTraces[sortedTraces.length - 1]
-    if (last) selectedTraceId = last.traceID
+    if (last) navigateToItem('traces', last.traceID, { replace: true })
   }
 
   function handleSelectSpan(spanID: string) {
-    selectedSpanID = spanID
+    // Clicking a span is navigational: push so back returns to the prior span.
+    setSpanInQuery(spanID, { push: true })
   }
 
   async function fetchTraces() {
@@ -303,19 +298,23 @@
       detailLoading = true
       const result = await telemetryAPI.searchSpans(traceID, queryTree)
       traceData = result
+      const spanIds = result.spans.map(n => n.spanData.spanID)
+      const urlSpan = getSpanFromQuery()
+      let desired: string | null
       if (queryTree) {
         const firstMatch = result.spans.find(n => n.matched)
-        selectedSpanID =
-          firstMatch?.spanData.spanID ??
-          result.spans[0]?.spanData.spanID ??
-          null
+        desired = firstMatch?.spanData.spanID ?? spanIds[0] ?? null
+      } else if (urlSpan && spanIds.includes(urlSpan)) {
+        // Honor a span carried by a shared/deep link.
+        desired = urlSpan
       } else {
-        selectedSpanID = result.spans[0]?.spanData.spanID ?? null
+        desired = spanIds[0] ?? null
       }
+      if (desired !== urlSpan) setSpanInQuery(desired)
     } catch (err) {
       console.error('Failed to fetch trace detail:', err)
       traceData = null
-      selectedSpanID = null
+      setSpanInQuery(null)
     } finally {
       detailLoading = false
     }
@@ -338,9 +337,8 @@
   async function handleDeleteAllTraces() {
     try {
       await telemetryAPI.clearTraces()
-      selectedTraceId = null
+      navigateToItem('traces', null, { replace: true })
       traceData = null
-      selectedSpanID = null
       await fetchTraces()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to delete traces'
@@ -352,9 +350,8 @@
     try {
       await telemetryAPI.deleteTraces([traceID])
       if (selectedTraceId === traceID) {
-        selectedTraceId = null
+        navigateToItem('traces', null, { replace: true })
         traceData = null
-        selectedSpanID = null
       }
       await fetchTraces()
     } catch (err) {

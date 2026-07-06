@@ -73,12 +73,14 @@
 
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
+  import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { metricTypeBadgeClass, metricTypeLabel } from '@/components/metrics/utils/metric-type'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
+  import { signalIdFromPath, navigateToItem } from '@/utils/url-state'
   import type {
     MetricData,
     MetricStats,
@@ -106,6 +108,15 @@
   // --- context ---
   let timeContext = getTimeContext()
 
+  // --- URL is the source of truth for the selected metric (`/metrics/<id>`) ---
+  let currentPath = $state(router.path ?? '/')
+  $effect(() => {
+    const unsubscribe = router.subscribe(route => {
+      currentPath = route.path
+    })
+    return unsubscribe
+  })
+
   // --- state: API / list ---
   let metrics = $state<MetricSummary[]>([])
   let loading = $state(true)
@@ -116,8 +127,8 @@
   let sortColumn = $state<MetricSortColumn>('lastSeen')
   let sortDirection = $state<MetricSortDirection>('desc')
 
-  // --- state: selection ---
-  let selectedKey = $state<string | null>(null)
+  // --- selection (derived from URL) ---
+  let selectedKey = $derived(signalIdFromPath('metrics', currentPath))
   let selectedMetric = $state<MetricData | undefined>(undefined)
   let detailLoading = $state(false)
 
@@ -186,7 +197,7 @@
 
   function selectByIndex(i: number) {
     const target = sortedMetrics[i]
-    if (target) selectedKey = metricSummaryKey(target)
+    if (target) navigateToItem('metrics', metricSummaryKey(target), { replace: true })
   }
   function navFirst() {
     selectByIndex(0)
@@ -217,18 +228,22 @@
   // --- effects ---
   let lastValidIndex = $state(0)
 
+  // Guarded behind mounted + !loading so a URL-provided id (shared link) is
+  // never replaced before the list has finished fetching.
   $effect(() => {
-    const idx = selectedKey
-      ? sortedMetrics.findIndex(m => metricSummaryKey(m) === selectedKey)
-      : -1
+    if (!mounted || loading) return
+    const id = selectedKey
+    const idx = id ? sortedMetrics.findIndex(m => metricSummaryKey(m) === id) : -1
     if (idx >= 0) {
       lastValidIndex = idx
     } else if (sortedMetrics.length > 0) {
       const fallback =
         sortedMetrics[Math.min(lastValidIndex, sortedMetrics.length - 1)]
-      selectedKey = fallback ? metricSummaryKey(fallback) : null
-    } else {
-      selectedKey = null
+      if (fallback) {
+        navigateToItem('metrics', metricSummaryKey(fallback), { replace: true })
+      }
+    } else if (id) {
+      navigateToItem('metrics', null, { replace: true })
     }
   })
 
@@ -281,7 +296,8 @@
   }
 
   function selectMetric(key: string) {
-    selectedKey = key
+    // Explicit click is navigational: push so back returns to the prior metric.
+    navigateToItem('metrics', key, { replace: false })
   }
 
   async function fetchMetrics() {
@@ -337,7 +353,7 @@
   async function handleDeleteAllMetrics() {
     try {
       await telemetryAPI.clearMetrics()
-      selectedKey = null
+      navigateToItem('metrics', null, { replace: true })
       selectedMetric = undefined
       await fetchMetrics()
     } catch (err) {

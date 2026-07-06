@@ -35,6 +35,7 @@
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
   import { router } from 'tinro5'
+  import { navigateToSignal, type SignalName } from '@/utils/url-state'
 
   type Props<T> = {
     items: T[]
@@ -308,7 +309,8 @@
             activeId={activeNavId}
             onSelect={(id) => {
               const item = NAV_ITEMS.find(n => n.id === id)
-              if (item) router.goto(item.path)
+              // Switching signal is navigational: push (back returns to prior).
+              if (item) navigateToSignal(item.id as SignalName, { replace: false })
             }}
             rounded={false}
             ariaLabel="Primary"

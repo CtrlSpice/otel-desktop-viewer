@@ -1,5 +1,7 @@
 import { setContext, getContext } from 'svelte'
+import { router } from 'tinro5'
 import { type Timezone, recordRecentTimeRange } from '@/utils/time'
+import { readTimeQuery, writeTimeQuery } from '@/utils/url-state'
 
 // Base interface with common fields
 interface BaseTimeSelection {
@@ -86,14 +88,47 @@ function loadTimeSelection(raw: string | null, nowMs: number): TimeSelection {
   )
 }
 
-/** Read/write localStorage; hold reactive selection + timezone. */
+function parseTimezone(value: string | null): Timezone | null {
+  return value === 'local' || value === 'UTC' ? value : null
+}
+
+/**
+ * Read/write localStorage; hold reactive selection + timezone.
+ *
+ * The active window is also mirrored to the URL so a link shared alongside the
+ * DuckDB snapshot reopens the same range. Precedence on load is URL > localStorage
+ * > default. The URL is only written when the user changes the window (not on
+ * load), so users who never touch the picker keep their live localStorage preset.
+ */
 function createTimeContext(): TimeContext {
   const savedSelection = localStorage.getItem('time-selection')
   const savedTimezone = localStorage.getItem('time-timezone') as Timezone | null
 
   const now = Date.now()
-  let selection = $state<TimeSelection>(loadTimeSelection(savedSelection, now))
-  let timezone = $state<Timezone>(savedTimezone ?? 'local')
+  const urlTime = readTimeQuery()
+
+  let selection = $state<TimeSelection>(
+    urlTime
+      ? timeSelectionFromArgs(urlTime.start, urlTime.end, 'custom')
+      : loadTimeSelection(savedSelection, now)
+  )
+  let timezone = $state<Timezone>(
+    parseTimezone(urlTime?.tz ?? null) ?? savedTimezone ?? 'local'
+  )
+
+  // Remember the window we last pushed to the URL so the router subscription can
+  // tell our own (frozen) writes apart from external changes (back/forward,
+  // shared links). Presets stay live in memory while the URL holds a frozen
+  // absolute snapshot, so we must not treat that mismatch as an external edit.
+  let lastWrittenWindow: { start: number; end: number } | null = urlTime
+    ? { start: urlTime.start, end: urlTime.end }
+    : null
+
+  function syncUrl() {
+    const range = selectionToQueryRangeMs(selection, Date.now())
+    lastWrittenWindow = range
+    writeTimeQuery({ start: range.start, end: range.end, tz: timezone })
+  }
 
   function setSelection(
     start: number,
@@ -105,12 +140,37 @@ function createTimeContext(): TimeContext {
     selection = timeSelectionFromArgs(start, end, type, presetIndex)
     localStorage.setItem('time-selection', JSON.stringify(selection))
     recordRecentTimeRange(start, end, now)
+    syncUrl()
   }
 
   function setTimezone(newTimezone: Timezone) {
     timezone = newTimezone
     localStorage.setItem('time-timezone', newTimezone)
+    syncUrl()
   }
+
+  // Adopt the window from the URL on external changes only. An external change
+  // is one whose absolute bounds differ from what we last wrote, so item
+  // navigation (which leaves the time query untouched) and our own writes are
+  // both ignored — no feedback loop, no clobbering live presets.
+  $effect(() => {
+    const unsubscribe = router.subscribe(() => {
+      const fromUrl = readTimeQuery()
+      if (!fromUrl) return
+      if (
+        lastWrittenWindow &&
+        fromUrl.start === lastWrittenWindow.start &&
+        fromUrl.end === lastWrittenWindow.end
+      ) {
+        return
+      }
+      lastWrittenWindow = { start: fromUrl.start, end: fromUrl.end }
+      selection = timeSelectionFromArgs(fromUrl.start, fromUrl.end, 'custom')
+      const tz = parseTimezone(fromUrl.tz)
+      if (tz) timezone = tz
+    })
+    return unsubscribe
+  })
 
   const timeContext: TimeContext = {
     get selection() {

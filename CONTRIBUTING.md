@@ -75,7 +75,7 @@ make populate-logs
 make populate-metrics
 ```
 
-Scripts live in `scripts/`. Override the endpoint with `OTLP_ENDPOINT=http://host:4318` if needed.
+Seeding is driven by `scripts/seed.pl` (`--traces`, `--logs`, `--metrics`, `--all`). Run `populate-traces` before `populate-logs` so a handful of log records link to traces that actually exist (the UI's log → trace deep link). Override the endpoint with `OTLP_ENDPOINT=http://host:4318` if needed.
 
 ### Stop dev servers
 
