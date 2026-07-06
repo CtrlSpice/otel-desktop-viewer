@@ -42,6 +42,27 @@ func TestIndexHandler(t *testing.T) {
 	assert.Contains(t, res.Header.Get("Content-Type"), "text/html")
 }
 
+// Client-side routes have no matching file on disk; the server must fall back to
+// index.html so a hard load, refresh, or shared deep link boots the SPA (which then
+// owns the route). Without this, a refreshed /traces or a shared /traces/{id} 404s.
+func TestSPAFallback(t *testing.T) {
+	testServer, teardown := setupServer(t)
+	defer teardown()
+
+	for _, path := range []string{"/traces", "/traces/abc123def456", "/metrics", "/logs"} {
+		res, err := http.Get(testServer.URL + path)
+		require.NoErrorf(t, err, "GET %s", path)
+		body, err := io.ReadAll(res.Body)
+		res.Body.Close()
+		require.NoErrorf(t, err, "read body for %s", path)
+
+		assert.Equalf(t, http.StatusOK, res.StatusCode, "GET %s status", path)
+		assert.Containsf(t, res.Header.Get("Content-Type"), "text/html", "GET %s content-type", path)
+		assert.Containsf(t, strings.ToLower(string(body)), "<!doctype html",
+			"GET %s should serve index.html", path)
+	}
+}
+
 func TestRPCHandlerInvalidJSON(t *testing.T) {
 	testServer, teardown := setupServer(t)
 	defer teardown()

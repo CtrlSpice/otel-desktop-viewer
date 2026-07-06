@@ -56,6 +56,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
@@ -89,8 +90,19 @@
   let sortColumn = $state<TraceSummarySortColumn>('startTime')
   let sortDirection = $state<TraceSummarySortDirection>('desc')
 
+  // --- deep linking: the selected trace lives in the URL as /traces/{id} ---
+  // Parse the id out of a path; null for the bare /traces list.
+  function traceIdFromPath(p: string): string | null {
+    const m = /^\/traces\/(.+)$/.exec(p)
+    return m ? decodeURIComponent(m[1]) : null
+  }
+
   // --- state: selection + detail ---
-  let selectedTraceId = $state<string | null>(null)
+  // Initialize from the current URL (not null) so a hard-loaded /traces/{id} selects
+  // that trace on mount, before any router subscription fires — and so the reflect
+  // effect below sees state and URL already in agreement (no spurious navigation).
+  let currentPath = $state(location.pathname)
+  let selectedTraceId = $state<string | null>(traceIdFromPath(location.pathname))
   let traceData = $state<TraceData | null>(null)
   let selectedSpanID = $state<string | null>(null)
   let detailLoading = $state(false)
@@ -154,6 +166,28 @@
   })
 
   // --- effects ---
+
+  // URL -> selection. subscribe() fires immediately with the current route and again
+  // on every navigation (nav clicks, browser back/forward), keeping the selection in
+  // sync with the address bar. Returned from onMount so it unsubscribes on unmount.
+  onMount(() =>
+    router.subscribe(route => {
+      currentPath = route.path
+      const id = traceIdFromPath(route.path)
+      if (id !== selectedTraceId) selectedTraceId = id
+    })
+  )
+
+  // selection -> URL. Reflect the current selection into the path so a trace is
+  // shareable and survives a refresh, and so browser back/forward walks the traces
+  // you visited. Guarded on currentPath so this never fights the subscription above
+  // (no feedback loop).
+  $effect(() => {
+    const target = selectedTraceId
+      ? `/traces/${encodeURIComponent(selectedTraceId)}`
+      : '/traces'
+    if (currentPath !== target) router.goto(target)
+  })
 
   let lastValidIndex = $state(0)
 
