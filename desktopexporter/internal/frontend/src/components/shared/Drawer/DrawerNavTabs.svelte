@@ -68,7 +68,9 @@
 
   // NAV_ITEMS are all signal tabs, so navigate through the helper to carry the
   // active time window across signals.
-  const goto = (item: NavItem) => navigateToSignal(item.id as SignalName)
+  // Switching signal is navigational: push so back returns to the prior signal.
+  const goto = (item: NavItem) =>
+    navigateToSignal(item.id as SignalName, { replace: false })
 </script>
 
 {#if collapsed}

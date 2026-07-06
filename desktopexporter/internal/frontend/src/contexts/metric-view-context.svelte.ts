@@ -22,7 +22,7 @@
  * lifetime even as the user navigates between metrics. (The
  * underlying `selectedMetric` cell lives on MetricsPage.)
  */
-import { setContext, getContext } from 'svelte'
+import { setContext, getContext, untrack } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import type {
   MetricData,
@@ -101,74 +101,19 @@ import {
   savePersistedTimeseriesVisible,
   visibleKeyListsEqual,
 } from '@/components/metrics/utils/metric-timeseries-visible'
-/** Checked timeseries key → assigned colour from the rotated pool. */
-type TimeseriesColorByKey = Map<string, string>
-
-/**
- * Assign colours from a stem-rotated pool (from `categoricalPalette`)
- * to an initial visible set. Walks `legendOrder` so slot-filling
- * follows list order; the first assigned key gets `pool[0]` (the
- * metric type's stem colour).
- */
-function seedColorAssignments(
-  pool: readonly string[],
-  visibleKeys: ReadonlySet<string>,
-  legendOrder: readonly string[]
-): TimeseriesColorByKey {
-  const out: TimeseriesColorByKey = new Map()
-  let i = 0
-  for (const key of legendOrder) {
-    if (!visibleKeys.has(key)) continue
-    if (i >= pool.length) break
-    out.set(key, pool[i++]!)
-  }
-  return out
-}
-
-/** First unused colour in `pool` order (pool[0] is the metric-type stem). */
-function acquireColor(
-  pool: readonly string[],
-  assigned: TimeseriesColorByKey,
-  key: string
-): string | null {
-  const existing = assigned.get(key)
-  if (existing !== undefined) return existing
-  const used = new Set(assigned.values())
-  for (const color of pool) {
-    if (!used.has(color)) {
-      assigned.set(key, color)
-      return color
-    }
-  }
-  return null
-}
-
-function releaseColor(
-  assigned: TimeseriesColorByKey,
-  key: string
-): void {
-  assigned.delete(key)
-}
-
-/** Drop unchecked keys; acquire for newly visible keys in legend order. */
-function syncColorAssignments(
-  pool: readonly string[],
-  assigned: TimeseriesColorByKey,
-  visibleKeys: ReadonlySet<string>,
-  legendOrder: readonly string[]
-): void {
-  for (const key of [...assigned.keys()]) {
-    if (!visibleKeys.has(key)) assigned.delete(key)
-  }
-  for (const key of legendOrder) {
-    if (!visibleKeys.has(key)) continue
-    acquireColor(pool, assigned, key)
-  }
-}
+import {
+  acquireColor,
+  releaseColor,
+  seedColorAssignments,
+  syncColorAssignments,
+  type TimeseriesColorByKey,
+} from '@/components/metrics/utils/metric-timeseries-colors'
 import {
   getTimeContext,
   selectionToQueryRangeMs,
 } from '@/contexts/time-context.svelte'
+import { router } from 'tinro5'
+import { readMetricViewQuery, setMetricViewParams } from '@/utils/url-state'
 
 const KEY = 'metric-view'
 
@@ -381,6 +326,71 @@ export function createMetricViewContext(
 
   /** Histogram visibility is seeded once per stream id. */
   let histogramVisibleSeededForStreamId: string | null = null
+
+  // --- URL <-> metric sub-view sync ---------------------------------
+  //
+  // The selected metric lives in the path (`/metrics/<id>`, owned by
+  // MetricsPage); these four item-scoped query params carry the sub-view so a
+  // shared snapshot link and the browser back/forward buttons restore it:
+  //   agg=<aggregationView>   htab=<activeHistogramTab>
+  //   hscope=<histogramScope> dp=<selectedDatapointId>
+  // Tab/datapoint picks push a history entry (navigational); aggregation/scope
+  // adjustments replace (silent). `lastWrittenMetricUrl` lets the router
+  // subscription tell our own writes apart from external (back/forward,
+  // shared-link) changes so we don't fight ourselves. The heatmap/quantile
+  // bucket selection stays transient (not a stable datapoint id) and is out of
+  // the URL this iteration.
+  let lastWrittenMetricUrl = ''
+
+  function metricUrlSnapshot(): string {
+    const q = readMetricViewQuery()
+    return JSON.stringify([q.agg, q.htab, q.hscope, q.dp])
+  }
+
+  // Apply the URL's sub-view params on top of whatever defaults are already in
+  // `view`, validating each against the current metric so a stale or shared
+  // link can't select something that no longer exists.
+  function applyMetricUrlToView(): void {
+    const q = readMetricViewQuery()
+
+    if (
+      q.agg &&
+      availableAggregationViewsList.includes(q.agg as AggregationView)
+    ) {
+      view.aggregationView = q.agg as AggregationView
+    }
+    if (q.htab === 'heatmap' || q.htab === 'quantiles' || q.htab === 'histogram') {
+      view.activeHistogramTab = q.htab
+    }
+    if (q.hscope === 'window' || q.hscope === 'bucket') {
+      view.histogramScope = q.hscope
+    }
+    if (q.dp) {
+      let matches = false
+      for (const dp of allDatapoints(getMetric())) {
+        if (dp.id === q.dp) {
+          matches = true
+          break
+        }
+      }
+      view.selectedDatapointId = matches ? q.dp : null
+      view.selectionSource = matches ? 'detail' : null
+    } else {
+      view.selectedDatapointId = null
+      view.selectionSource = null
+    }
+  }
+
+  // Write the patch to the URL and remember it so the router subscription
+  // ignores the echo from our own write. `push` adds a history entry; the
+  // default replaces in place.
+  function writeMetricUrl(
+    patch: Partial<Record<'agg' | 'htab' | 'hscope' | 'dp', string | null>>,
+    push: boolean
+  ): void {
+    setMetricViewParams(patch, { push })
+    lastWrittenMetricUrl = metricUrlSnapshot()
+  }
 
   // -- Pure derivations of `metric` --
   const metricType = $derived.by((): MetricType => {
@@ -1158,6 +1168,31 @@ export function createMetricViewContext(
     // would wipe the gauge/sum seed we just wrote above.
     histogramVisibleSeededForStreamId = null
     view.histogramVisible = new SvelteSet()
+
+    // URL > the per-metric defaults set above. Runs on metric change so a
+    // shared deep link (or back/forward into this metric) restores the
+    // sub-view, validated against the freshly loaded metric. `untrack` keeps
+    // the router query out of this effect's deps — otherwise a time-window
+    // write (start/end) would re-trigger the whole per-metric reset.
+    untrack(() => {
+      applyMetricUrlToView()
+      lastWrittenMetricUrl = metricUrlSnapshot()
+    })
+  })
+
+  // (1b) Re-apply the sub-view when the URL's metric params change out from
+  // under us — i.e. browser back/forward, or a shared link landing on the
+  // current metric. The `lastWrittenMetricUrl` guard skips the echo from our
+  // own writes (and time-window writes leave these four params untouched, so
+  // they no-op here). Mirrors time-context's router subscription.
+  $effect(() => {
+    const unsubscribe = router.subscribe(() => {
+      const snapshot = metricUrlSnapshot()
+      if (snapshot === lastWrittenMetricUrl) return
+      lastWrittenMetricUrl = snapshot
+      applyMetricUrlToView()
+    })
+    return unsubscribe
   })
 
   // (2) Seed histogram visibility once per stream when series keys arrive.
@@ -1314,16 +1349,23 @@ export function createMetricViewContext(
 
   function setActiveHistogramTab(tab: HistogramTab) {
     view.activeHistogramTab = tab
+    // Switching tabs is navigational: push so back returns to the prior tab.
+    writeMetricUrl({ htab: tab }, true)
   }
 
   function setHistogramScope(scope: HistogramScope) {
     view.histogramScope = scope
+    // An adjustment, not navigation: replace so back doesn't step on it.
+    writeMetricUrl({ hscope: scope }, false)
   }
 
   function setAggregationView(next: AggregationView) {
     view.aggregationView = next
     const streamId = getMetric()?.id
     if (streamId) savePersistedAggregationView(streamId, next)
+    // An adjustment, not navigation: replace (and localStorage still remembers
+    // it per metric).
+    writeMetricUrl({ agg: next }, false)
   }
 
   function setShowAllSeriesAggregate(next: boolean) {
@@ -1416,6 +1458,21 @@ export function createMetricViewContext(
         view.expandedDatapoints.add(dp.id)
       }
     }
+    // A datapoint pick is navigational: push so back returns to the prior
+    // selection. For histograms the pick also moves the tab/scope, so carry
+    // those in the same history entry.
+    if (isHistogramKind) {
+      writeMetricUrl(
+        {
+          dp: view.selectedDatapointId,
+          htab: view.activeHistogramTab,
+          hscope: view.histogramScope,
+        },
+        true
+      )
+    } else {
+      writeMetricUrl({ dp: view.selectedDatapointId }, true)
+    }
   }
 
   function onHeatmapSelect(timestampMs: number) {
@@ -1460,6 +1517,7 @@ export function createMetricViewContext(
       if (dp.timestamp === targetNs) {
         view.selectionSource = 'chart'
         view.selectedDatapointId = dp.id
+        writeMetricUrl({ dp: dp.id }, true)
         return
       }
     }
@@ -1477,6 +1535,7 @@ export function createMetricViewContext(
     if (best) {
       view.selectionSource = 'chart'
       view.selectedDatapointId = best.id
+      writeMetricUrl({ dp: best.id }, true)
     }
   }
 

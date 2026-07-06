@@ -296,7 +296,8 @@
   }
 
   function selectMetric(key: string) {
-    navigateToItem('metrics', key, { replace: true })
+    // Explicit click is navigational: push so back returns to the prior metric.
+    navigateToItem('metrics', key, { replace: false })
   }
 
   async function fetchMetrics() {

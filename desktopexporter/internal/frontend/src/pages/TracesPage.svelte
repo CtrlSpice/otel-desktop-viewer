@@ -235,7 +235,8 @@
   }
 
   function selectTrace(traceID: string) {
-    navigateToItem('traces', traceID, { replace: true })
+    // Explicit click is navigational: push so back returns to the prior trace.
+    navigateToItem('traces', traceID, { replace: false })
   }
 
   // --- nav: walk sortedTraces ---
@@ -268,7 +269,8 @@
   }
 
   function handleSelectSpan(spanID: string) {
-    setSpanInQuery(spanID)
+    // Clicking a span is navigational: push so back returns to the prior span.
+    setSpanInQuery(spanID, { push: true })
   }
 
   async function fetchTraces() {

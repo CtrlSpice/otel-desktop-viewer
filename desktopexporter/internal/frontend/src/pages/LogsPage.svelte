@@ -192,7 +192,8 @@
   }
 
   function selectLog(logId: string) {
-    navigateToItem('logs', logId, { replace: true })
+    // Explicit click is navigational: push so back returns to the prior log.
+    navigateToItem('logs', logId, { replace: false })
   }
 
   // --- nav: walk sortedLogs ---
