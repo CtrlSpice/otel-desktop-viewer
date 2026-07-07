@@ -47,13 +47,13 @@
 
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import { signalIdFromPath, navigateToItem } from '@/utils/url-state'
+  import { useRoute } from '@/state/route.svelte'
   import type { LogData, SearchResultEvent } from '@/types/api-types'
   import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
@@ -68,13 +68,7 @@
   let timeContext = getTimeContext()
 
   // --- URL is the source of truth for the selected log (`/logs/<id>`) ---
-  let currentPath = $state(router.path ?? '/')
-  $effect(() => {
-    const unsubscribe = router.subscribe(route => {
-      currentPath = route.path
-    })
-    return unsubscribe
-  })
+  const route = useRoute()
 
   // --- state: API / list ---
   let logs = $state<LogSummary[]>([])
@@ -93,7 +87,7 @@
   // getLog(id) for the full LogData on demand, with a debounce that keeps
   // held-arrow keyboard nav from firing a request per row. Detail loading/
   // error state lives on the fetcher object, not on the page.
-  let selectedLogId = $derived(signalIdFromPath('logs', currentPath))
+  let selectedLogId = $derived(signalIdFromPath('logs', route.path))
   const detailFetcher = createDebouncedDetailFetcher<string, LogData>({
     fetch: id => telemetryAPI.getLog(id),
     keysEqual: (a, b) => a === b,

@@ -7,9 +7,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
@@ -23,7 +21,6 @@ var assets embed.FS
 type Server struct {
 	server         http.Server
 	jsonrpcHandler *JSONRPCHandler
-	staticDir      string
 }
 
 func NewServer(endpoint string, store *store.Store) (*Server, error) {
@@ -32,7 +29,6 @@ func NewServer(endpoint string, store *store.Store) (*Server, error) {
 			Addr: endpoint,
 		},
 		jsonrpcHandler: NewJSONRPCHandler(store),
-		staticDir:      getStaticDir(),
 	}
 
 	if err := s.initHandler(); err != nil {
@@ -54,7 +50,7 @@ func (s *Server) initHandler() error {
 	// Single-page app: serve a static asset when one exists at the request path,
 	// otherwise fall back to index.html so client-side routes (/traces,
 	// /traces/{id}, /metrics, /logs) resolve on hard load, refresh, and shared links.
-	fsys, err := s.staticFS()
+	fsys, err := staticFS()
 	if err != nil {
 		return err
 	}
@@ -70,18 +66,14 @@ func (s *Server) initHandler() error {
 	return nil
 }
 
-// staticFS returns the filesystem holding the built frontend: the on-disk
-// STATIC_ASSETS_DIR in development, or the embedded assets in production.
-func (s *Server) staticFS() (fs.FS, error) {
-	if s.staticDir != "" {
-		return os.DirFS(s.staticDir), nil
-	}
+func staticFS() (fs.FS, error) {
 	return fs.Sub(assets, "static")
 }
 
 // spaHandler serves the single-page app. A GET/HEAD for an existing file is served
-// as-is; any other GET/HEAD path falls back to index.html so the client router owns
-// the route (e.g. a deep-linked /traces/{id} or a refreshed /metrics). Non-GET
+// as-is. Extension-less paths with no matching file fall back to index.html so the
+// client router owns the route (e.g. a deep-linked /traces/{id} or a refreshed
+// /metrics). Paths with a file extension that do not exist 404 normally. Non-GET
 // requests fall through to the file server.
 func spaHandler(fsys fs.FS) http.Handler {
 	fileServer := http.FileServerFS(fsys)
@@ -99,8 +91,10 @@ func spaHandler(fsys fs.FS) http.Handler {
 		if request.Method == http.MethodGet || request.Method == http.MethodHead {
 			name := strings.TrimPrefix(path.Clean(request.URL.Path), "/")
 			if info, err := fs.Stat(fsys, name); name == "" || err != nil || info.IsDir() {
-				serveIndex(writer)
-				return
+				if path.Ext(name) == "" {
+					serveIndex(writer)
+					return
+				}
 			}
 		}
 		fileServer.ServeHTTP(writer, request)
@@ -155,16 +149,6 @@ func sendJSONRPCResponse(writer http.ResponseWriter, id jsonrpc2.ID, result any,
 
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Write(bytes)
-}
-
-// getStaticDir returns the path to the static assets directory for development.
-// Set STATIC_ASSETS_DIR to point at the frontend build output (e.g. frontend/dist).
-// Returns empty string if not set (uses embedded assets).
-func getStaticDir() string {
-	if dir, ok := os.LookupEnv("STATIC_ASSETS_DIR"); ok {
-		return filepath.Clean(dir)
-	}
-	return ""
 }
 
 func (s *Server) Close() error {

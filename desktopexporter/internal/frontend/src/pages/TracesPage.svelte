@@ -56,7 +56,6 @@
 
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
@@ -68,6 +67,7 @@
     getSpanFromQuery,
     setSpanInQuery,
   } from '@/utils/url-state'
+  import { useRoute } from '@/state/route.svelte'
   import type {
     TraceData,
     SearchResultEvent,
@@ -87,17 +87,8 @@
   let timeContext = getTimeContext()
 
   // --- URL is the source of truth for the selected trace + span ---
-  // `/traces/<traceID>?span=<spanID>`. Reading from the router keeps deep links
-  // and back/forward in sync; every selection change is a navigate (below).
-  let currentPath = $state(router.path ?? '/')
-  let currentQuery = $state<Record<string, string>>({})
-  $effect(() => {
-    const unsubscribe = router.subscribe(route => {
-      currentPath = route.path
-      currentQuery = route.query
-    })
-    return unsubscribe
-  })
+  // `/traces/<traceID>?span=<spanID>`. Every selection change is a navigate (below).
+  const route = useRoute()
 
   // --- state: API / list ---
   let traceSummaries = $state<TraceSummary[]>([])
@@ -110,8 +101,8 @@
   let sortDirection = $state<TraceSummarySortDirection>('desc')
 
   // --- selection + detail (selection derived from URL) ---
-  let selectedTraceId = $derived(signalIdFromPath('traces', currentPath))
-  let selectedSpanID = $derived(currentQuery.span ?? null)
+  let selectedTraceId = $derived(signalIdFromPath('traces', route.path))
+  let selectedSpanID = $derived(route.query.span ?? null)
   let traceData = $state<TraceData | null>(null)
   let detailLoading = $state(false)
 

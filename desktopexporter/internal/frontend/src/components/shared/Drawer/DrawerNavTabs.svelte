@@ -50,21 +50,15 @@
 </script>
 
 <script lang="ts">
-  import { router } from 'tinro5'
   import { navigateToSignal, type SignalName } from '@/utils/url-state'
+  import { useRoute } from '@/state/route.svelte'
 
   type Props = {
     collapsed?: boolean
   }
   let { collapsed = false }: Props = $props()
 
-  let currentPath = $state(router.path ?? '/')
-  $effect(() => {
-    const unsubscribe = router.subscribe(route => {
-      currentPath = route.path
-    })
-    return unsubscribe
-  })
+  const route = useRoute()
 
   // NAV_ITEMS are all signal tabs, so navigate through the helper to carry the
   // active time window across signals.
@@ -76,7 +70,7 @@
 {#if collapsed}
   <nav class="drawer-nav-tabs drawer-nav-tabs--collapsed" aria-label="Primary">
     {#each NAV_ITEMS as item (item.id)}
-      {@const active = isNavItemActive(item.id, currentPath)}
+      {@const active = isNavItemActive(item.id, route.path)}
       {@const Icon = item.icon}
       <button
         type="button"
@@ -95,7 +89,7 @@
 {:else}
   <nav class="drawer-nav-tabs drawer-nav-tabs--expanded" aria-label="Primary">
     {#each NAV_ITEMS as item (item.id)}
-      {@const active = isNavItemActive(item.id, currentPath)}
+      {@const active = isNavItemActive(item.id, route.path)}
       {@const Icon = item.icon}
       <button
         type="button"

@@ -73,7 +73,6 @@
 
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
-  import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { metricTypeBadgeClass, metricTypeLabel } from '@/components/metrics/utils/metric-type'
   import {
@@ -81,6 +80,7 @@
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import { signalIdFromPath, navigateToItem } from '@/utils/url-state'
+  import { useRoute } from '@/state/route.svelte'
   import type {
     MetricData,
     MetricStats,
@@ -109,13 +109,7 @@
   let timeContext = getTimeContext()
 
   // --- URL is the source of truth for the selected metric (`/metrics/<id>`) ---
-  let currentPath = $state(router.path ?? '/')
-  $effect(() => {
-    const unsubscribe = router.subscribe(route => {
-      currentPath = route.path
-    })
-    return unsubscribe
-  })
+  const route = useRoute()
 
   // --- state: API / list ---
   let metrics = $state<MetricSummary[]>([])
@@ -128,7 +122,7 @@
   let sortDirection = $state<MetricSortDirection>('desc')
 
   // --- selection (derived from URL) ---
-  let selectedKey = $derived(signalIdFromPath('metrics', currentPath))
+  let selectedKey = $derived(signalIdFromPath('metrics', route.path))
   let selectedMetric = $state<MetricData | undefined>(undefined)
   let detailLoading = $state(false)
 

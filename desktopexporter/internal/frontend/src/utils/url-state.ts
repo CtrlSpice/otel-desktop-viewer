@@ -37,9 +37,34 @@ const ITEM_SCOPED_PARAMS: Record<SignalName, string[]> = {
   logs: [],
 }
 
+/** Snapshot of the current tinro5 route (sync or reactive). */
+export type RouteSnapshot = {
+  path: string
+  query: Record<string, string>
+}
+
 /** Snapshot of the current query as a plain object we can safely mutate. */
 function currentQuery(): Record<string, string> {
-  return { ...(router.location.query.get() as Record<string, string>) }
+  return { ...readCurrentRoute().query }
+}
+
+/**
+ * Imperative read of path + query. tinro5 exposes these on subscribe callbacks,
+ * not as router.path — one sync subscribe avoids first-frame jitter in useRoute().
+ */
+export function readCurrentRoute(): RouteSnapshot {
+  let path = '/'
+  let query: Record<string, string> = {}
+  const unsub = router.subscribe(route => {
+    path = route.path
+    query = route.query
+  })
+  unsub()
+  return { path, query }
+}
+
+function currentPath(): string {
+  return readCurrentRoute().path
 }
 
 /**
@@ -56,7 +81,7 @@ function writeParam(
     const query = currentQuery()
     if (value) query[name] = value
     else delete query[name]
-    router.goto((router.path ?? '/') + buildSearch(query), false)
+    router.goto(currentPath() + buildSearch(query), false)
     return
   }
   if (value) {
@@ -180,7 +205,7 @@ export function setMetricViewParams(
     else delete query[name]
   }
   if (opts.push) {
-    router.goto((router.path ?? '/') + buildSearch(query), false)
+    router.goto(currentPath() + buildSearch(query), false)
   } else {
     router.location.query.replace(query)
   }

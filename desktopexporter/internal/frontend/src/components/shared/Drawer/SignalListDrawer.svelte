@@ -36,6 +36,7 @@
   import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
   import { router } from 'tinro5'
   import { navigateToSignal, type SignalName } from '@/utils/url-state'
+  import { useRoute } from '@/state/route.svelte'
 
   type Props<T> = {
     items: T[]
@@ -122,15 +123,9 @@
     }
   }
 
-  let currentPath = $state(router.path ?? '/')
-  $effect(() => {
-    const unsubscribe = router.subscribe(route => {
-      currentPath = route.path
-    })
-    return unsubscribe
-  })
+  const route = useRoute()
   let activeNavId = $derived(
-    NAV_ITEMS.find(n => isNavItemActive(n.id, currentPath))?.id ?? NAV_ITEMS[0].id
+    NAV_ITEMS.find(n => isNavItemActive(n.id, route.path))?.id ?? NAV_ITEMS[0].id
   )
 
   // --- auto-scroll the virtual list when the selection changes ---
