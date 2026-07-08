@@ -123,7 +123,7 @@ function parseTimeQuery(
  */
 function createTimeContext(): TimeContext {
   const savedSelection = localStorage.getItem('time-selection')
-  const savedTimezone = localStorage.getItem('time-timezone') as Timezone | null
+  const savedTz = localStorage.getItem('time-tz')
 
   const now = Date.now()
   const urlTime = parseTimeQuery(readRoute().query)
@@ -133,7 +133,7 @@ function createTimeContext(): TimeContext {
       ? timeSelectionFromArgs(urlTime.start, urlTime.end, 'custom')
       : loadTimeSelection(savedSelection, now)
   )
-  let tz = $state<Timezone>(parseTimezone(savedTimezone) ?? 'local')
+  let tz = $state<Timezone>(parseTimezone(savedTz) ?? 'local')
 
   // Remember the window we last pushed to the URL so the router subscription can
   // tell our own (frozen) writes apart from external changes (back/forward,
@@ -170,7 +170,7 @@ function createTimeContext(): TimeContext {
 
   function setTz(newTz: Timezone) {
     tz = newTz
-    localStorage.setItem('time-timezone', newTz)
+    localStorage.setItem('time-tz', newTz)
   }
 
   // Adopt the window from the URL on external changes only. An external change
