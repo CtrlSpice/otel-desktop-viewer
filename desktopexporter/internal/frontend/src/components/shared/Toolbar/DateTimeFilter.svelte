@@ -60,7 +60,7 @@
     const label = formatDateTimeRangeLabel(
       ctx.selection.start,
       ctx.selection.end,
-      ctx.timezone,
+      ctx.tz,
       { includeTimezone: true }
     )
     return `Change time range, ${label}`

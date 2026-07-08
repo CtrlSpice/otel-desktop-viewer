@@ -35,7 +35,7 @@
           fieldName="timestamp"
           fieldValue={formatTimestamp(
             event.timestamp,
-            timeContext.timezone,
+            timeContext.tz,
             'nanoseconds'
           )}
           fieldType="timestamp"

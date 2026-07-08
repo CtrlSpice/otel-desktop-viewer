@@ -1,7 +1,11 @@
 import { setContext, getContext } from 'svelte'
-import { router } from 'tinro5'
 import { type Timezone, recordRecentTimeRange } from '@/utils/time'
-import { readTimeQuery, writeTimeQuery } from '@/utils/url-state'
+import {
+  navigateCurrentRoute,
+  readRoute,
+  subscribeToRoute,
+  withQueryPatch,
+} from '@/route'
 
 // Base interface with common fields
 interface BaseTimeSelection {
@@ -37,14 +41,14 @@ export function selectionToQueryRangeMs(
 
 interface TimeContext {
   selection: TimeSelection
-  timezone: Timezone
+  tz: Timezone
   setSelection: (
     start: number,
     end: number,
     type: 'preset' | 'custom' | 'recent',
     presetIndex?: number
   ) => void
-  setTimezone: (timezone: Timezone) => void
+  setTz: (tz: Timezone) => void
 }
 
 /** Default preset row index for `PresetTimeRanges` PRESETS (0 = All). */
@@ -92,8 +96,25 @@ function parseTimezone(value: string | null): Timezone | null {
   return value === 'local' || value === 'UTC' ? value : null
 }
 
+/** Parse `start`/`end` from the route query (Unix ms). */
+function parseTimeQuery(
+  query: Record<string, string>
+): { start: number; end: number } | null {
+  const start = Number(query.start)
+  const end = Number(query.end)
+  if (
+    !query.start ||
+    !query.end ||
+    !Number.isFinite(start) ||
+    !Number.isFinite(end)
+  ) {
+    return null
+  }
+  return { start, end }
+}
+
 /**
- * Read/write localStorage; hold reactive selection + timezone.
+ * Read/write localStorage; hold reactive selection + tz.
  *
  * The active window is also mirrored to the URL so a link shared alongside the
  * DuckDB snapshot reopens the same range. Precedence on load is URL > localStorage
@@ -105,16 +126,14 @@ function createTimeContext(): TimeContext {
   const savedTimezone = localStorage.getItem('time-timezone') as Timezone | null
 
   const now = Date.now()
-  const urlTime = readTimeQuery()
+  const urlTime = parseTimeQuery(readRoute().query)
 
   let selection = $state<TimeSelection>(
     urlTime
       ? timeSelectionFromArgs(urlTime.start, urlTime.end, 'custom')
       : loadTimeSelection(savedSelection, now)
   )
-  let timezone = $state<Timezone>(
-    parseTimezone(urlTime?.tz ?? null) ?? savedTimezone ?? 'local'
-  )
+  let tz = $state<Timezone>(parseTimezone(savedTimezone) ?? 'local')
 
   // Remember the window we last pushed to the URL so the router subscription can
   // tell our own (frozen) writes apart from external changes (back/forward,
@@ -127,7 +146,13 @@ function createTimeContext(): TimeContext {
   function syncUrl() {
     const range = selectionToQueryRangeMs(selection, Date.now())
     lastWrittenWindow = range
-    writeTimeQuery({ start: range.start, end: range.end, tz: timezone })
+    navigateCurrentRoute(
+      withQueryPatch(readRoute().query, {
+        start: String(range.start),
+        end: String(range.end),
+      }),
+      { replace: true }
+    )
   }
 
   function setSelection(
@@ -143,10 +168,9 @@ function createTimeContext(): TimeContext {
     syncUrl()
   }
 
-  function setTimezone(newTimezone: Timezone) {
-    timezone = newTimezone
-    localStorage.setItem('time-timezone', newTimezone)
-    syncUrl()
+  function setTz(newTz: Timezone) {
+    tz = newTz
+    localStorage.setItem('time-timezone', newTz)
   }
 
   // Adopt the window from the URL on external changes only. An external change
@@ -154,8 +178,8 @@ function createTimeContext(): TimeContext {
   // navigation (which leaves the time query untouched) and our own writes are
   // both ignored — no feedback loop, no clobbering live presets.
   $effect(() => {
-    const unsubscribe = router.subscribe(() => {
-      const fromUrl = readTimeQuery()
+    const unsubscribe = subscribeToRoute(() => {
+      const fromUrl = parseTimeQuery(readRoute().query)
       if (!fromUrl) return
       if (
         lastWrittenWindow &&
@@ -166,8 +190,6 @@ function createTimeContext(): TimeContext {
       }
       lastWrittenWindow = { start: fromUrl.start, end: fromUrl.end }
       selection = timeSelectionFromArgs(fromUrl.start, fromUrl.end, 'custom')
-      const tz = parseTimezone(fromUrl.tz)
-      if (tz) timezone = tz
     })
     return unsubscribe
   })
@@ -176,11 +198,11 @@ function createTimeContext(): TimeContext {
     get selection() {
       return selection
     },
-    get timezone() {
-      return timezone
+    get tz() {
+      return tz
     },
     setSelection,
-    setTimezone,
+    setTz,
   }
 
   setContext('time', timeContext)

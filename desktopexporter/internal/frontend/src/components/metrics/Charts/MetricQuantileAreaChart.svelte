@@ -151,7 +151,7 @@
   let selectionTimestamp = $derived.by((): string => {
     const sel = ctx.quantilePointSelection
     if (!sel) return ''
-    return formatDateTime(sel.timestampMs, timeContext.timezone, 'milliseconds')
+    return formatDateTime(sel.timestampMs, timeContext.tz, 'milliseconds')
   })
 
   let unitSuffix = $derived(unit.trim() ? ` ${unit.trim()}` : '')
@@ -341,7 +341,7 @@
           onPointClick={handlePointClick}
           onTooltipClick={handleTooltipClick}
           props={{
-            xAxis: axisTime(timeContext.timezone),
+            xAxis: axisTime(timeContext.tz),
             yAxis: axisValue(yAxisLabel),
           }}
         >
@@ -351,7 +351,7 @@
               xDate != null
                 ? formatDateTime(
                     xDate.getTime(),
-                    timeContext.timezone,
+                    timeContext.tz,
                     'milliseconds'
                   )
                 : undefined}

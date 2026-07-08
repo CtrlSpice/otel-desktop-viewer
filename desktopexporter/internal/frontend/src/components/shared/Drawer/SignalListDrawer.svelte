@@ -34,9 +34,8 @@
   import { NAV_ITEMS, isNavItemActive } from '@/components/shared/Drawer/DrawerNavTabs.svelte'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
-  import { router } from 'tinro5'
-  import { navigateToSignal, type SignalName } from '@/utils/url-state'
-  import { useRoute } from '@/state/route.svelte'
+  import { navigate, navigateToSignal, type SignalName } from '@/route'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
 
   type Props<T> = {
     items: T[]
@@ -123,9 +122,9 @@
     }
   }
 
-  const route = useRoute()
+  const routeContext = getRouteContext()
   let activeNavId = $derived(
-    NAV_ITEMS.find(n => isNavItemActive(n.id, route.path))?.id ?? NAV_ITEMS[0].id
+    NAV_ITEMS.find(n => isNavItemActive(n.id, routeContext.route.path))?.id ?? NAV_ITEMS[0].id
   )
 
   // --- auto-scroll the virtual list when the selection changes ---
@@ -314,7 +313,7 @@
               <button
                 type="button"
                 class="drawer-header-btn drawer-header-btn--inactive"
-                onclick={() => router.goto('/')}
+                onclick={() => navigate('/')}
                 aria-label="Home"
               >
                 <HomeIcon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />

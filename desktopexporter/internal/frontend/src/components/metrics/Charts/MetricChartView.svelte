@@ -49,7 +49,7 @@
     if (!dp) return ''
     return formatDateTime(
       Number(dp.timestamp / 1_000_000n),
-      timeContext.timezone,
+      timeContext.tz,
       'milliseconds'
     )
   })

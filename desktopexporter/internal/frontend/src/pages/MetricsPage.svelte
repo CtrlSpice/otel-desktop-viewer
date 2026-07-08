@@ -79,8 +79,8 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import { signalIdFromPath, navigateToItem } from '@/utils/url-state'
-  import { useRoute } from '@/state/route.svelte'
+  import { signalIdFromPath, navigateToItem } from '@/route'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
   import type {
     MetricData,
     MetricStats,
@@ -109,7 +109,7 @@
   let timeContext = getTimeContext()
 
   // --- URL is the source of truth for the selected metric (`/metrics/<id>`) ---
-  const route = useRoute()
+  const routeContext = getRouteContext()
 
   // --- state: API / list ---
   let metrics = $state<MetricSummary[]>([])
@@ -122,7 +122,7 @@
   let sortDirection = $state<MetricSortDirection>('desc')
 
   // --- selection (derived from URL) ---
-  let selectedKey = $derived(signalIdFromPath('metrics', route.path))
+  let selectedKey = $derived(signalIdFromPath('metrics', routeContext.route.path))
   let selectedMetric = $state<MetricData | undefined>(undefined)
   let detailLoading = $state(false)
 

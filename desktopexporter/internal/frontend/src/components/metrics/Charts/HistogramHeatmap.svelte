@@ -90,7 +90,7 @@
   // millisecond resolution. Includes the timezone suffix so the user
   // can always tell whether they're looking at local or UTC.
   function formatTooltipTime(ms: number): string {
-    return formatDateTime(ms, timeContext.timezone, 'milliseconds')
+    return formatDateTime(ms, timeContext.tz, 'milliseconds')
   }
 
   function formatBound(v: number): string {
@@ -332,7 +332,7 @@
   let columnSelectionTimestamp = $derived.by((): string => {
     const sel = ctx.heatmapColumnSelection
     if (!sel) return ''
-    return formatDateTime(sel.timestampMs, timeContext.timezone, 'milliseconds')
+    return formatDateTime(sel.timestampMs, timeContext.tz, 'milliseconds')
   })
 
   let columnSelectionRowColumns = $derived.by(() => {
@@ -416,7 +416,7 @@
               <Layer>
                 <Axis
                   placement="bottom"
-                  {...axisTime(timeContext.timezone)}
+                  {...axisTime(timeContext.tz)}
                   ticks={visibleTimeTicks}
                 />
                 <Axis

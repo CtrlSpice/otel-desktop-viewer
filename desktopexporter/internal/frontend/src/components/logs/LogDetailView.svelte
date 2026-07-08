@@ -9,7 +9,7 @@
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { navigateToItem } from '@/utils/url-state'
+  import { navigateToItem } from '@/route'
 
   type Props = {
     log: LogData | undefined
@@ -88,7 +88,7 @@
               fieldType="timestamp"
               fieldValue={formatTimestamp(
                 log.timestamp,
-                timeContext.timezone,
+                timeContext.tz,
                 'nanoseconds'
               )}
             />
@@ -97,7 +97,7 @@
               fieldType="timestamp"
               fieldValue={formatTimestamp(
                 log.observedTimestamp,
-                timeContext.timezone,
+                timeContext.tz,
                 'nanoseconds'
               )}
             />

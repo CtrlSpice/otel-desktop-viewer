@@ -66,8 +66,8 @@
     navigateToItem,
     getSpanFromQuery,
     setSpanInQuery,
-  } from '@/utils/url-state'
-  import { useRoute } from '@/state/route.svelte'
+  } from '@/route'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
   import type {
     TraceData,
     SearchResultEvent,
@@ -88,7 +88,7 @@
 
   // --- URL is the source of truth for the selected trace + span ---
   // `/traces/<traceID>?span=<spanID>`. Every selection change is a navigate (below).
-  const route = useRoute()
+  const routeContext = getRouteContext()
 
   // --- state: API / list ---
   let traceSummaries = $state<TraceSummary[]>([])
@@ -101,8 +101,8 @@
   let sortDirection = $state<TraceSummarySortDirection>('desc')
 
   // --- selection + detail (selection derived from URL) ---
-  let selectedTraceId = $derived(signalIdFromPath('traces', route.path))
-  let selectedSpanID = $derived(route.query.span ?? null)
+  let selectedTraceId = $derived(signalIdFromPath('traces', routeContext.route.path))
+  let selectedSpanID = $derived(routeContext.route.query.span ?? null)
   let traceData = $state<TraceData | null>(null)
   let detailLoading = $state(false)
 

@@ -175,7 +175,7 @@
                   fieldName="last seen"
                   fieldValue={formatTimestamp(
                     metric.timeseries[0].datapoints[0].timestamp,
-                    timeContext.timezone,
+                    timeContext.tz,
                     'milliseconds'
                   )}
                   fieldType="timestamp"

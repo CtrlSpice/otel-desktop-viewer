@@ -50,15 +50,15 @@
 </script>
 
 <script lang="ts">
-  import { navigateToSignal, type SignalName } from '@/utils/url-state'
-  import { useRoute } from '@/state/route.svelte'
+  import { navigateToSignal, type SignalName } from '@/route'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
 
   type Props = {
     collapsed?: boolean
   }
   let { collapsed = false }: Props = $props()
 
-  const route = useRoute()
+  const routeContext = getRouteContext()
 
   // NAV_ITEMS are all signal tabs, so navigate through the helper to carry the
   // active time window across signals.
@@ -70,7 +70,7 @@
 {#if collapsed}
   <nav class="drawer-nav-tabs drawer-nav-tabs--collapsed" aria-label="Primary">
     {#each NAV_ITEMS as item (item.id)}
-      {@const active = isNavItemActive(item.id, route.path)}
+      {@const active = isNavItemActive(item.id, routeContext.route.path)}
       {@const Icon = item.icon}
       <button
         type="button"
@@ -89,7 +89,7 @@
 {:else}
   <nav class="drawer-nav-tabs drawer-nav-tabs--expanded" aria-label="Primary">
     {#each NAV_ITEMS as item (item.id)}
-      {@const active = isNavItemActive(item.id, route.path)}
+      {@const active = isNavItemActive(item.id, routeContext.route.path)}
       {@const Icon = item.icon}
       <button
         type="button"

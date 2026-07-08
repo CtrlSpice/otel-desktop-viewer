@@ -20,10 +20,10 @@
   const timeContext = getTimeContext()
 
   let startLabel = $derived(
-    formatDateTime(startMs, timeContext.timezone, 'milliseconds')
+    formatDateTime(startMs, timeContext.tz, 'milliseconds')
   )
   let endLabel = $derived(
-    formatDateTime(endMs, timeContext.timezone, 'milliseconds')
+    formatDateTime(endMs, timeContext.tz, 'milliseconds')
   )
 </script>
 

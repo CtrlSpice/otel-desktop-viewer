@@ -21,7 +21,7 @@
   let lastSeenParts = $derived(
     formatTimestampParts(
       metric.lastSeen,
-      timeContext.timezone,
+      timeContext.tz,
       'milliseconds'
     )
   )

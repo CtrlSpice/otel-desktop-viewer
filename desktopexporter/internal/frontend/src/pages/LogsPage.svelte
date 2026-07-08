@@ -52,8 +52,8 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import { signalIdFromPath, navigateToItem } from '@/utils/url-state'
-  import { useRoute } from '@/state/route.svelte'
+  import { signalIdFromPath, navigateToItem } from '@/route'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
   import type { LogData, SearchResultEvent } from '@/types/api-types'
   import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
@@ -68,7 +68,7 @@
   let timeContext = getTimeContext()
 
   // --- URL is the source of truth for the selected log (`/logs/<id>`) ---
-  const route = useRoute()
+  const routeContext = getRouteContext()
 
   // --- state: API / list ---
   let logs = $state<LogSummary[]>([])
@@ -87,7 +87,7 @@
   // getLog(id) for the full LogData on demand, with a debounce that keeps
   // held-arrow keyboard nav from firing a request per row. Detail loading/
   // error state lives on the fetcher object, not on the page.
-  let selectedLogId = $derived(signalIdFromPath('logs', route.path))
+  let selectedLogId = $derived(signalIdFromPath('logs', routeContext.route.path))
   const detailFetcher = createDebouncedDetailFetcher<string, LogData>({
     fetch: id => telemetryAPI.getLog(id),
     keysEqual: (a, b) => a === b,

@@ -224,7 +224,7 @@ Domain errors map to JSON-RPC error codes in `internal/server/errors.go` (e.g. `
 |-------|--------|
 | Framework | Svelte 5 (runes: `$state`, `$derived`, `$effect`) |
 | Build | Vite 7 |
-| Routing | tinro5 (history mode) |
+| Routing | First-party (History API, `src/route/`) |
 | Styling | Tailwind CSS 4 + DaisyUI 5 |
 | Components | bits-ui |
 | Search UI | CodeMirror 6 + Lezer grammar (`SignalToolbar/search/lang/`) |
@@ -242,7 +242,7 @@ Domain errors map to JSON-RPC error codes in `internal/server/errors.go` (e.g. `
 | `/logs`, `/logs/{id}` | Log list and detail |
 | `/metrics`, `/metrics/{id}` | Metric summaries, charts, detail panels |
 
-Selection and sub-view state (span, metric datapoint/tab, time window) live in the URL via `utils/url-state.ts`. The server serves `index.html` for extension-less client routes on hard load and refresh.
+Selection and sub-view state (span, metric datapoint/tab, time window) live in the URL via `src/route/`. The server serves `index.html` for extension-less client routes on hard load and refresh.
 
 ### State management
 

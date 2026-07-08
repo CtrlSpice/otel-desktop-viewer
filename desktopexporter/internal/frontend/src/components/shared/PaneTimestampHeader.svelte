@@ -12,7 +12,7 @@
   const timeContext = getTimeContext()
 
   let timestampLabel = $derived(
-    formatDateTime(timestampMs, timeContext.timezone, 'milliseconds')
+    formatDateTime(timestampMs, timeContext.tz, 'milliseconds')
   )
 </script>
 

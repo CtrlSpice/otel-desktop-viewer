@@ -42,9 +42,9 @@
     if (ctx.selection.type === 'custom') {
       customStartText = formatDateTimeMs(
         ctx.selection.start,
-        ctx.timezone
+        ctx.tz
       ).dateTime
-      customEndText = formatDateTimeMs(ctx.selection.end, ctx.timezone).dateTime
+      customEndText = formatDateTimeMs(ctx.selection.end, ctx.tz).dateTime
       customFieldIssue = null
     } else {
       // Reset fields when selection changes to non-custom type

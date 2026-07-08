@@ -36,7 +36,7 @@
   function formatDatapointTime(timestamp: bigint): string {
     return formatDateTimeMs(
       Number(timestamp / 1_000_000n),
-      timeContext.timezone
+      timeContext.tz
     ).dateTime
   }
 

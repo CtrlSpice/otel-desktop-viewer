@@ -202,14 +202,14 @@
               {#if detailSearchFieldVisible(columnFilter, 'startTime')}
                 <SpanField
                   fieldName="start time"
-                  fieldValue={formatTimestamp(span.startTime, timeContext.timezone, 'nanoseconds')}
+                  fieldValue={formatTimestamp(span.startTime, timeContext.tz, 'nanoseconds')}
                   fieldType="timestamp"
                 />
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'endTime')}
                 <SpanField
                   fieldName="end time"
-                  fieldValue={formatTimestamp(span.endTime, timeContext.timezone, 'nanoseconds')}
+                  fieldValue={formatTimestamp(span.endTime, timeContext.tz, 'nanoseconds')}
                   fieldType="timestamp"
                 />
               {/if}
