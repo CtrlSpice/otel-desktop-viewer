@@ -86,6 +86,7 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
 <div class="home-page">
   <PageLayout
     items={[]}
+    railOnly
     selectedId={null}
     drawerId="signal-drawer"
     drawerLabel="Home"
