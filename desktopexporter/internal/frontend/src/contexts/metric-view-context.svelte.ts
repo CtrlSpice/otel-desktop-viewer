@@ -341,12 +341,11 @@ export function createMetricViewContext(
   //   agg=<aggregationView>   htab=<activeHistogramTab>
   //   hscope=<histogramScope> dp=<selectedDatapointId>
   // Tab/datapoint picks push a history entry (navigational); aggregation/scope
-  // adjustments replace (silent). `lastWrittenMetricUrl` lets the router
-  // subscription tell our own writes apart from external (back/forward,
-  // shared-link) changes so we don't fight ourselves. The heatmap/quantile
-  // bucket selection stays transient (not a stable datapoint id) and is out of
-  // the URL this iteration.
-  let lastWrittenMetricUrl = ''
+  // adjustments replace (silent). The router subscription reconciles by value:
+  // it applies the URL to the view only when the two disagree, so the echo of
+  // our own writes (URL already equals view) is skipped without any "was that
+  // me?" bookkeeping. The heatmap/quantile bucket selection stays transient
+  // (not a stable datapoint id) and is out of the URL this iteration.
 
   function metricParseContext(): MetricViewParseContext {
     const datapointIds = new Set<string>()
@@ -401,12 +400,7 @@ export function createMetricViewContext(
   }
 
   function writeMetricUrl(push: boolean): void {
-    const q = viewStateToMetricViewQuery()
-    // Set the echo guard BEFORE navigating: navigate() notifies route
-    // listeners synchronously, and our own subscription must see the
-    // updated value to skip the echo of this write.
-    lastWrittenMetricUrl = JSON.stringify(q)
-    setMetricViewQuery(q, { push })
+    setMetricViewQuery(viewStateToMetricViewQuery(), { push })
   }
 
   // -- Pure derivations of `metric` --
@@ -1193,20 +1187,19 @@ export function createMetricViewContext(
     // write (start/end) would re-trigger the whole per-metric reset.
     untrack(() => {
       applyMetricUrlToView()
-      lastWrittenMetricUrl = metricUrlSnapshot()
     })
   })
 
-  // (1b) Re-apply the sub-view when the URL's metric params change out from
-  // under us — i.e. browser back/forward, or a shared link landing on the
-  // current metric. The `lastWrittenMetricUrl` guard skips the echo from our
-  // own writes (and time-window writes leave these four params untouched, so
-  // they no-op here). Mirrors time-context's router subscription.
+  // (1b) Re-apply the sub-view when the URL's metric params disagree with the
+  // view — i.e. browser back/forward, a shared link landing on the current
+  // metric, or another module stripping our params. Reconciles by value:
+  // after our own writes the URL already equals the view, so the synchronous
+  // echo from navigate() is a no-op here.
   $effect(() => {
     const unsubscribe = subscribeToRoute(() => {
-      const snapshot = metricUrlSnapshot()
-      if (snapshot === lastWrittenMetricUrl) return
-      lastWrittenMetricUrl = snapshot
+      if (metricUrlSnapshot() === JSON.stringify(viewStateToMetricViewQuery())) {
+        return
+      }
       applyMetricUrlToView()
     })
     return unsubscribe
