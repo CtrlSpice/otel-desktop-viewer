@@ -402,8 +402,11 @@ export function createMetricViewContext(
 
   function writeMetricUrl(push: boolean): void {
     const q = viewStateToMetricViewQuery()
-    setMetricViewQuery(q, { push })
+    // Set the echo guard BEFORE navigating: navigate() notifies route
+    // listeners synchronously, and our own subscription must see the
+    // updated value to skip the echo of this write.
     lastWrittenMetricUrl = JSON.stringify(q)
+    setMetricViewQuery(q, { push })
   }
 
   // -- Pure derivations of `metric` --
