@@ -4,6 +4,19 @@ import { SIGNAL_ITEM_QUERY_PARAMS } from './query-params'
 
 export type SignalName = 'traces' | 'metrics' | 'logs'
 
+/**
+ * How a URL write interacts with browser history.
+ *
+ * - `'push'` — new history entry; back returns to the previous URL.
+ *   For navigation: selecting an item, switching signals, picking a tab.
+ * - `'replace'` — overwrite the current entry; invisible to back.
+ *   For adjustments: tweaking aggregation, scope, or the time window.
+ *
+ * The same vocabulary flows through every layer (router, query modules,
+ * contexts) so the mode is never re-encoded or inverted along the way.
+ */
+export type HistoryMode = 'push' | 'replace'
+
 export type Route = {
   path: string
   query: Record<string, string>
@@ -150,12 +163,12 @@ export function subscribeToRoute(onChange: () => void): () => void {
  * Updates the browser history entry for the current tab.
  *
  * @param to - destination URL (path plus optional search)
- * @param opts.replace - use `replaceState` instead of `pushState`
+ * @param mode - {@link HistoryMode}; defaults to `'push'`
  *
  * @remarks Notifies route listeners after writing history.
  */
-export function navigate(to: string, opts: { replace?: boolean } = {}): void {
-  history[opts.replace ? 'replaceState' : 'pushState'](null, '', to)
+export function navigate(to: string, mode: HistoryMode = 'push'): void {
+  history[mode === 'replace' ? 'replaceState' : 'pushState'](null, '', to)
   notifyRouteListeners()
 }
 
@@ -163,16 +176,16 @@ export function navigate(to: string, opts: { replace?: boolean } = {}): void {
  * Navigates on the current path with an updated query.
  *
  * @param query - full query object for the current pathname
- * @param opts.replace - use `replaceState` instead of `pushState`
+ * @param mode - {@link HistoryMode}; defaults to `'push'`
  *
  * @remarks Reads the live route, then delegates to {@link navigate}.
  */
 export function navigateCurrentRoute(
   query: Record<string, string>,
-  opts: { replace?: boolean } = {}
+  mode: HistoryMode = 'push'
 ): void {
   const route = readRoute()
-  navigate(route.path + buildSearch(query), opts)
+  navigate(route.path + buildSearch(query), mode)
 }
 
 /**
@@ -180,33 +193,33 @@ export function navigateCurrentRoute(
  *
  * @param signal - traces, metrics, or logs
  * @param id - item id, or `null` for the list path
- * @param opts.replace - use `replaceState` instead of `pushState`
+ * @param mode - {@link HistoryMode}; defaults to `'push'`
  *
  * @remarks Clears all signal item-scoped params (span, metric view) and preserves the time window.
  */
 export function navigateToItem(
   signal: SignalName,
   id: string | null,
-  opts: { replace?: boolean } = {}
+  mode: HistoryMode = 'push'
 ): void {
   const route = readRoute()
   const query = withoutParams(route.query, SIGNAL_ITEM_QUERY_PARAMS)
   const base = signalPath(signal)
   const path = id ? `${base}/${encodeURIComponent(id)}` : base
-  navigate(path + buildSearch(query), { replace: opts.replace ?? false })
+  navigate(path + buildSearch(query), mode)
 }
 
 /**
  * Navigates to the bare signal list path.
  *
  * @param signal - traces, metrics, or logs
- * @param opts.replace - use `replaceState` instead of `pushState`
+ * @param mode - {@link HistoryMode}; defaults to `'push'`
  *
  * @example `navigateToSignal('traces')` → `/traces?start=...&end=...`
  */
 export function navigateToSignal(
   signal: SignalName,
-  opts: { replace?: boolean } = {}
+  mode: HistoryMode = 'push'
 ): void {
-  navigateToItem(signal, null, opts)
+  navigateToItem(signal, null, mode)
 }

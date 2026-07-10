@@ -1,4 +1,9 @@
-import { navigateCurrentRoute, readRoute, withoutParams } from './router'
+import {
+  navigateCurrentRoute,
+  readRoute,
+  withoutParams,
+  type HistoryMode,
+} from './router'
 import { METRIC_VIEW_PARAMS, type MetricViewParam } from './query-params'
 
 export type { MetricViewParam }
@@ -144,6 +149,27 @@ export function parseMetricViewQuery(
 }
 
 /**
+ * Field-by-field equality for metric sub-view unions.
+ *
+ * @param a - first metric sub-view
+ * @param b - second metric sub-view
+ * @returns true when kind and every kind-specific field match
+ *
+ * @remarks Structural comparison
+ * not broken by key-order drift between parse and serialize
+ */
+export function metricViewQueriesEqual(
+  a: MetricViewQuery,
+  b: MetricViewQuery
+): boolean {
+  if (a.dp !== b.dp) return false
+  if (a.kind === 'histogram') {
+    return b.kind === 'histogram' && a.htab === b.htab && a.hscope === b.hscope
+  }
+  return b.kind === 'timeseries' && a.agg === b.agg
+}
+
+/**
  * Serializes a metric sub-view union to URL query keys for its kind.
  *
  * @param q - validated metric sub-view
@@ -185,14 +211,14 @@ export function mergeRouteQueryWithMetricView(
  * Writes the full metric sub-view to the current route query.
  *
  * @param q - validated metric sub-view
- * @param opts.push - use `pushState` instead of `replaceState`
+ * @param mode - {@link HistoryMode}; defaults to `'replace'` (param adjustment)
  *
  * @remarks Replaces all metric params atomically and preserves non-metric query keys.
  */
 export function setMetricViewQuery(
   q: MetricViewQuery,
-  opts: { push?: boolean } = {}
+  mode: HistoryMode = 'replace'
 ): void {
   const query = mergeRouteQueryWithMetricView(readRoute().query, q)
-  navigateCurrentRoute(query, { replace: !opts.push })
+  navigateCurrentRoute(query, mode)
 }

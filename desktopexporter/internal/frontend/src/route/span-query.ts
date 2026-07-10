@@ -2,6 +2,7 @@ import {
   navigateCurrentRoute,
   readRoute,
   withQueryPatch,
+  type HistoryMode,
 } from './router'
 import { SPAN_PARAM } from './query-params'
 
@@ -20,14 +21,12 @@ export function getSpanFromQuery(): string | null {
  * Sets or clears the trace span param on the current route.
  *
  * @param spanID - span id, or `null` to clear
- * @param opts.push - use `pushState` for explicit span picks
- *
- * @remarks Defaults to `replaceState`.
+ * @param mode - {@link HistoryMode}; defaults to `'replace'` (param adjustment)
  */
 export function setSpanInQuery(
   spanID: string | null,
-  opts: { push?: boolean } = {}
+  mode: HistoryMode = 'replace'
 ): void {
   const query = withQueryPatch(readRoute().query, { [SPAN_PARAM]: spanID })
-  navigateCurrentRoute(query, { replace: !opts.push })
+  navigateCurrentRoute(query, mode)
 }

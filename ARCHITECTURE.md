@@ -244,12 +244,15 @@ Domain errors map to JSON-RPC error codes in `internal/server/errors.go` (e.g. `
 
 Selection and sub-view state (span, metric datapoint/tab, time window) live in the URL via `src/route/`. The server serves `index.html` for extension-less client routes on hard load and refresh.
 
+Every URL write takes an explicit `HistoryMode` (`'push' | 'replace'`, defined in `src/route/router.ts`): navigation — selecting an item, switching signals, picking a tab — pushes so the back button retraces steps; adjustments — aggregation, scope, time window — replace so history isn't flooded. The mode flows through all layers (router → query modules → contexts) without re-encoding.
+
 ### State management
 
 No global store library. State uses Svelte **context modules** (`.svelte.ts`) and page-local `$state`:
 
 | Context | Scope |
 |---------|-------|
+| `route-context.svelte.ts` | Reactive view of the current URL (path + query) |
 | `time-context.svelte.ts` | App-wide time range and timezone |
 | `metric-view-context.svelte.ts` | Per-metrics-page chart aggregation, heatmaps, legend |
 | `panel-split-resize-context.svelte.ts` | Resizable panel preferences |

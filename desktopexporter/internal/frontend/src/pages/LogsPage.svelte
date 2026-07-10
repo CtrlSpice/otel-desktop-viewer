@@ -145,9 +145,9 @@
       lastValidIndex = idx
     } else if (sortedLogs.length > 0) {
       const fallback = sortedLogs[Math.min(lastValidIndex, sortedLogs.length - 1)]
-      if (fallback) navigateToItem('logs', fallback.id, { replace: true })
+      if (fallback) navigateToItem('logs', fallback.id, 'replace')
     } else if (id) {
-      navigateToItem('logs', null, { replace: true })
+      navigateToItem('logs', null, 'replace')
     }
   })
 
@@ -187,7 +187,7 @@
 
   function selectLog(logId: string) {
     // Explicit click is navigational: push so back returns to the prior log.
-    navigateToItem('logs', logId, { replace: false })
+    navigateToItem('logs', logId)
   }
 
   // --- nav: walk sortedLogs ---
@@ -204,17 +204,17 @@
     )
     if (target === selectedIndex) return
     const next = sortedLogs[target]
-    if (next) navigateToItem('logs', next.id, { replace: true })
+    if (next) navigateToItem('logs', next.id, 'replace')
   }
 
   function selectFirst() {
     const first = sortedLogs[0]
-    if (first) navigateToItem('logs', first.id, { replace: true })
+    if (first) navigateToItem('logs', first.id, 'replace')
   }
 
   function selectLast() {
     const last = sortedLogs[sortedLogs.length - 1]
-    if (last) navigateToItem('logs', last.id, { replace: true })
+    if (last) navigateToItem('logs', last.id, 'replace')
   }
 
   async function fetchLogs() {
@@ -253,7 +253,7 @@
     try {
       await telemetryAPI.deleteLogByID(logId)
       if (selectedLogId === logId) {
-        navigateToItem('logs', null, { replace: true })
+        navigateToItem('logs', null, 'replace')
       }
       await fetchLogs()
     } catch (err) {
@@ -264,7 +264,7 @@
   async function handleDeleteAllLogs() {
     try {
       await telemetryAPI.clearLogs()
-      navigateToItem('logs', null, { replace: true })
+      navigateToItem('logs', null, 'replace')
       await fetchLogs()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to delete logs'

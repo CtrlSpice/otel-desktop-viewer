@@ -311,7 +311,7 @@
             onSelect={(id) => {
               const item = NAV_ITEMS.find(n => n.id === id)
               // Switching signal is navigational: push (back returns to prior).
-              if (item) navigateToSignal(item.id as SignalName, { replace: false })
+              if (item) navigateToSignal(item.id as SignalName)
             }}
             rounded={false}
             ariaLabel="Primary"

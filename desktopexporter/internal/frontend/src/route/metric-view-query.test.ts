@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   mergeRouteQueryWithMetricView,
+  metricViewQueriesEqual,
   metricViewQueryToParams,
   parseMetricViewQuery,
   type MetricViewQuery,
@@ -62,6 +63,62 @@ describe('parseMetricViewQuery', () => {
       hscope: 'window',
       dp: null,
     })
+  })
+})
+
+describe('metricViewQueriesEqual', () => {
+  const timeseries: MetricViewQuery = {
+    kind: 'timeseries',
+    agg: 'rate',
+    dp: 'dp-1',
+  }
+  const histogram: MetricViewQuery = {
+    kind: 'histogram',
+    htab: 'quantiles',
+    hscope: 'bucket',
+    dp: 'dp-h1',
+  }
+
+  it('matches identical timeseries queries', () => {
+    expect(metricViewQueriesEqual(timeseries, { ...timeseries })).toBe(true)
+  })
+
+  it('matches identical histogram queries', () => {
+    expect(metricViewQueriesEqual(histogram, { ...histogram })).toBe(true)
+  })
+
+  it('rejects cross-kind comparison', () => {
+    expect(metricViewQueriesEqual(timeseries, histogram)).toBe(false)
+  })
+
+  it('rejects differing dp', () => {
+    expect(
+      metricViewQueriesEqual(timeseries, { ...timeseries, dp: 'dp-2' })
+    ).toBe(false)
+  })
+
+  it('rejects differing agg', () => {
+    expect(
+      metricViewQueriesEqual(timeseries, { ...timeseries, agg: null })
+    ).toBe(false)
+  })
+
+  it('rejects differing histogram tab or scope', () => {
+    expect(
+      metricViewQueriesEqual(histogram, { ...histogram, htab: 'heatmap' })
+    ).toBe(false)
+    expect(
+      metricViewQueriesEqual(histogram, { ...histogram, hscope: 'window' })
+    ).toBe(false)
+  })
+
+  it('is insensitive to property order', () => {
+    const reordered = {
+      dp: 'dp-1',
+      agg: 'rate',
+      kind: 'timeseries',
+    } as MetricViewQuery
+    expect(metricViewQueriesEqual(timeseries, reordered)).toBe(true)
   })
 })
 

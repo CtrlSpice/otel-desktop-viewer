@@ -64,7 +64,7 @@
   // active time window across signals.
   // Switching signal is navigational: push so back returns to the prior signal.
   const goto = (item: NavItem) =>
-    navigateToSignal(item.id as SignalName, { replace: false })
+    navigateToSignal(item.id as SignalName)
 </script>
 
 {#if collapsed}

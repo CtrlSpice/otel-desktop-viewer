@@ -191,7 +191,7 @@
 
   function selectByIndex(i: number) {
     const target = sortedMetrics[i]
-    if (target) navigateToItem('metrics', metricSummaryKey(target), { replace: true })
+    if (target) navigateToItem('metrics', metricSummaryKey(target), 'replace')
   }
   function navFirst() {
     selectByIndex(0)
@@ -234,10 +234,10 @@
       const fallback =
         sortedMetrics[Math.min(lastValidIndex, sortedMetrics.length - 1)]
       if (fallback) {
-        navigateToItem('metrics', metricSummaryKey(fallback), { replace: true })
+        navigateToItem('metrics', metricSummaryKey(fallback), 'replace')
       }
     } else if (id) {
-      navigateToItem('metrics', null, { replace: true })
+      navigateToItem('metrics', null, 'replace')
     }
   })
 
@@ -291,7 +291,7 @@
 
   function selectMetric(key: string) {
     // Explicit click is navigational: push so back returns to the prior metric.
-    navigateToItem('metrics', key, { replace: false })
+    navigateToItem('metrics', key)
   }
 
   async function fetchMetrics() {
@@ -347,7 +347,7 @@
   async function handleDeleteAllMetrics() {
     try {
       await telemetryAPI.clearMetrics()
-      navigateToItem('metrics', null, { replace: true })
+      navigateToItem('metrics', null, 'replace')
       selectedMetric = undefined
       await fetchMetrics()
     } catch (err) {

@@ -113,10 +113,12 @@ import {
   selectionToQueryRangeMs,
 } from '@/contexts/time-context.svelte'
 import {
+  metricViewQueriesEqual,
   parseMetricViewQuery,
   readRoute,
   setMetricViewQuery,
   subscribeToRoute,
+  type HistoryMode,
   type MetricViewParseContext,
   type MetricViewQuery,
 } from '@/route'
@@ -373,11 +375,6 @@ export function createMetricViewContext(
     }
   }
 
-  function metricUrlSnapshot(): string {
-    const q = parseMetricViewQuery(readRoute().query, metricParseContext())
-    return JSON.stringify(q)
-  }
-
   function applyMetricUrlToView(): void {
     const q = parseMetricViewQuery(readRoute().query, metricParseContext())
 
@@ -399,8 +396,8 @@ export function createMetricViewContext(
     }
   }
 
-  function writeMetricUrl(push: boolean): void {
-    setMetricViewQuery(viewStateToMetricViewQuery(), { push })
+  function writeMetricUrl(mode: HistoryMode): void {
+    setMetricViewQuery(viewStateToMetricViewQuery(), mode)
   }
 
   // -- Pure derivations of `metric` --
@@ -1197,9 +1194,8 @@ export function createMetricViewContext(
   // echo from navigate() is a no-op here.
   $effect(() => {
     const unsubscribe = subscribeToRoute(() => {
-      if (metricUrlSnapshot() === JSON.stringify(viewStateToMetricViewQuery())) {
-        return
-      }
+      const fromUrl = parseMetricViewQuery(readRoute().query, metricParseContext())
+      if (metricViewQueriesEqual(fromUrl, viewStateToMetricViewQuery())) return
       applyMetricUrlToView()
     })
     return unsubscribe
@@ -1359,23 +1355,21 @@ export function createMetricViewContext(
 
   function setActiveHistogramTab(tab: HistogramTab) {
     view.activeHistogramTab = tab
-    // Switching tabs is navigational: push so back returns to the prior tab.
-    writeMetricUrl(true)
+    // Back returns to the prior tab.
+    writeMetricUrl('push')
   }
 
   function setHistogramScope(scope: HistogramScope) {
     view.histogramScope = scope
-    // An adjustment, not navigation: replace so back doesn't step on it.
-    writeMetricUrl(false)
+    writeMetricUrl('replace')
   }
 
   function setAggregationView(next: AggregationView) {
     view.aggregationView = next
     const streamId = getMetric()?.id
     if (streamId) savePersistedAggregationView(streamId, next)
-    // An adjustment, not navigation: replace (and localStorage still remembers
-    // it per metric).
-    writeMetricUrl(false)
+    // localStorage still remembers it per metric.
+    writeMetricUrl('replace')
   }
 
   function setShowAllSeriesAggregate(next: boolean) {
@@ -1468,10 +1462,9 @@ export function createMetricViewContext(
         view.expandedDatapoints.add(dp.id)
       }
     }
-    // A datapoint pick is navigational: push so back returns to the prior
-    // selection. For histograms the pick also moves the tab/scope, so carry
-    // those in the same history entry.
-    writeMetricUrl(true)
+    // Back returns to the prior selection. For histograms the pick also
+    // moves the tab/scope, so carry those in the same history entry.
+    writeMetricUrl('push')
   }
 
   function onHeatmapSelect(timestampMs: number) {
@@ -1516,7 +1509,7 @@ export function createMetricViewContext(
       if (dp.timestamp === targetNs) {
         view.selectionSource = 'chart'
         view.selectedDatapointId = dp.id
-        writeMetricUrl(true)
+        writeMetricUrl('push')
         return
       }
     }
@@ -1534,7 +1527,7 @@ export function createMetricViewContext(
     if (best) {
       view.selectionSource = 'chart'
       view.selectedDatapointId = best.id
-      writeMetricUrl(true)
+      writeMetricUrl('push')
     }
   }
 

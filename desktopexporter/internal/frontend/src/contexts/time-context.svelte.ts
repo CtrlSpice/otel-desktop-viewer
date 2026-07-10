@@ -135,23 +135,24 @@ function createTimeContext(): TimeContext {
   )
   let tz = $state<Timezone>(parseTimezone(savedTz) ?? 'local')
 
-  // Remember the window we last pushed to the URL so the router subscription can
-  // tell our own (frozen) writes apart from external changes (back/forward,
-  // shared links). Presets stay live in memory while the URL holds a frozen
-  // absolute snapshot, so we must not treat that mismatch as an external edit.
-  let lastWrittenWindow: { start: number; end: number } | null = urlTime
+  // The absolute window currently frozen in the URL. Presets stay live in
+  // memory (duration anchored to now) while the URL holds this fixed
+  // start/end snapshot, so the two legitimately disagree — the router
+  // subscription compares against this, not the live selection, to tell
+  // external changes (back/forward, shared links) from our own writes.
+  let urlWindowSnapshot: { start: number; end: number } | null = urlTime
     ? { start: urlTime.start, end: urlTime.end }
     : null
 
   function syncUrl() {
     const range = selectionToQueryRangeMs(selection, Date.now())
-    lastWrittenWindow = range
+    urlWindowSnapshot = range
     navigateCurrentRoute(
       withQueryPatch(readRoute().query, {
         start: String(range.start),
         end: String(range.end),
       }),
-      { replace: true }
+      'replace'
     )
   }
 
@@ -182,13 +183,13 @@ function createTimeContext(): TimeContext {
       const fromUrl = parseTimeQuery(readRoute().query)
       if (!fromUrl) return
       if (
-        lastWrittenWindow &&
-        fromUrl.start === lastWrittenWindow.start &&
-        fromUrl.end === lastWrittenWindow.end
+        urlWindowSnapshot &&
+        fromUrl.start === urlWindowSnapshot.start &&
+        fromUrl.end === urlWindowSnapshot.end
       ) {
         return
       }
-      lastWrittenWindow = { start: fromUrl.start, end: fromUrl.end }
+      urlWindowSnapshot = { start: fromUrl.start, end: fromUrl.end }
       selection = timeSelectionFromArgs(fromUrl.start, fromUrl.end, 'custom')
     })
     return unsubscribe
