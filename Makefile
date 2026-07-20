@@ -18,7 +18,7 @@ test-go:
 
 .PHONY: run-go
 run-go:
-	STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/frontend/dist/) go run . --browser-port 8000
+	go run . --browser-port 8000
 
 .PHONY: dev-ts
 dev-ts:
@@ -29,7 +29,7 @@ dev-ts:
 
 .PHONY: run-go-persist
 run-go-persist:
-	STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/frontend/dist/) go run . --db duck.db
+	go run . --db duck.db
 
 .PHONY: populate-traces
 populate-traces:
@@ -45,7 +45,7 @@ populate-metrics:
 
 .PHONY: dev-go
 dev-go: kill-port
-	@STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/frontend/dist/) go run . --browser-port 8000 & \
+	@go run . --browser-port 8000 & \
 	PID=$$!; \
 	echo "Waiting for server (pid $$PID) to start..."; \
 	for i in $$(seq 1 30); do \
@@ -78,7 +78,7 @@ build: build-ts build-go
 
 .PHONY: run
 run: build-ts
-	STATIC_ASSETS_DIR=$(abspath ./desktopexporter/internal/frontend/dist/) go run . --browser-port 8000
+	go run . --browser-port 8000
 
 .PHONY: test
 test: test-go validate-ts

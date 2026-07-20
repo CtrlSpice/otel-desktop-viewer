@@ -16,7 +16,7 @@
   const timeContext = getTimeContext()
 
   let timestampParts = $derived(
-    formatTimestampParts(log.timestamp, timeContext.timezone, 'milliseconds')
+    formatTimestampParts(log.timestamp, timeContext.tz, 'milliseconds')
   )
 
   let serviceTitle = $derived(log.serviceName?.trim() || '(unknown service)')

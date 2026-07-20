@@ -34,8 +34,8 @@
   import { NAV_ITEMS, isNavItemActive } from '@/components/shared/Drawer/DrawerNavTabs.svelte'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
-  import { router } from 'tinro5'
-  import { navigateToSignal, type SignalName } from '@/utils/url-state'
+  import { navigate, navigateToSignal, type SignalName } from '@/route'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
 
   type Props<T> = {
     items: T[]
@@ -50,8 +50,13 @@
     refreshPulse?: boolean
     /** Plain text for DaisyUI tooltip + screen reader when new data is pending */
     refreshAsideTip?: string
-    /** When true, an empty list does not force-collapse the drawer (initial fetch). */
+    /** When true, an empty list shows a loading gap instead of the empty state (initial fetch). */
     loading?: boolean
+    /** Page has no list at all (Home): force-collapse into a thin nav rail
+     * and disable the expand toggle. Zero *results* on a list page should
+     * NOT set this — the drawer stays open with an empty state so the
+     * search and time filters remain reachable. */
+    railOnly?: boolean
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     footer?: Snippet
@@ -71,6 +76,7 @@
     refreshPulse = false,
     refreshAsideTip = '',
     loading = false,
+    railOnly = false,
     drawerChromeToolbar,
     drawerSearch,
     footer,
@@ -106,14 +112,15 @@
     })
   })
 
-  // Force-collapse only when the list is empty after load — not while the
-  // initial fetch is in flight (otherwise every signal navigation briefly
-  // collapses then re-opens). Toggle stays disabled when truly empty.
-  let isEmpty = $derived(items.length === 0 && !loading)
-  let effectivelyOpen = $derived(isEmpty ? false : drawerOpen)
+  // Only rail-only pages (Home) force-collapse. A list page with zero
+  // results keeps the drawer open and shows an empty state instead —
+  // otherwise the search bar and time filter needed to broaden the query
+  // are unreachable from the collapsed rail.
+  let effectivelyOpen = $derived(railOnly ? false : drawerOpen)
+  let showEmptyState = $derived(items.length === 0 && !loading)
 
   function handleToggleChange(e: Event) {
-    if (isEmpty) return
+    if (railOnly) return
     skipWidthTransition = false
     drawerOpen = (e.currentTarget as HTMLInputElement).checked
     syncDrawerOpenPreference(drawerOpen)
@@ -122,15 +129,9 @@
     }
   }
 
-  let currentPath = $state(router.path ?? '/')
-  $effect(() => {
-    const unsubscribe = router.subscribe(route => {
-      currentPath = route.path
-    })
-    return unsubscribe
-  })
+  const routeContext = getRouteContext()
   let activeNavId = $derived(
-    NAV_ITEMS.find(n => isNavItemActive(n.id, currentPath))?.id ?? NAV_ITEMS[0].id
+    NAV_ITEMS.find(n => isNavItemActive(n.id, routeContext.route.path))?.id ?? NAV_ITEMS[0].id
   )
 
   // --- auto-scroll the virtual list when the selection changes ---
@@ -198,7 +199,7 @@
     type="checkbox"
     class="drawer-toggle signal-drawer-toggle"
     checked={effectivelyOpen}
-    disabled={isEmpty}
+    disabled={railOnly}
     onchange={handleToggleChange}
   />
 
@@ -214,7 +215,7 @@
       {#if !effectivelyOpen}
         <div class="signal-drawer__collapsed-rail">
           <div class="signal-drawer__collapsed-group">
-          {#if isEmpty}
+          {#if railOnly}
             <span
               class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right"
               data-tip="Send data to populate this drawer"
@@ -310,7 +311,7 @@
             onSelect={(id) => {
               const item = NAV_ITEMS.find(n => n.id === id)
               // Switching signal is navigational: push (back returns to prior).
-              if (item) navigateToSignal(item.id as SignalName, { replace: false })
+              if (item) navigateToSignal(item.id as SignalName)
             }}
             rounded={false}
             ariaLabel="Primary"
@@ -319,7 +320,7 @@
               <button
                 type="button"
                 class="drawer-header-btn drawer-header-btn--inactive"
-                onclick={() => router.goto('/')}
+                onclick={() => navigate('/')}
                 aria-label="Home"
               >
                 <HomeIcon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
@@ -399,19 +400,28 @@
         class="signal-drawer__body"
         bind:this={drawerBodyEl}
       >
-        <VirtualList
-          bind:this={vlistRef}
-          {items}
-          defaultEstimatedItemHeight={72}
-          bufferSize={10}
-          containerClass="signal-drawer__vlist"
-          viewportClass="signal-drawer__vlist-viewport"
-          itemsClass="signal-drawer__vlist-items"
-        >
-          {#snippet renderItem(item)}
-            {@render itemSnippet(item, selectedId === itemKey(item))}
-          {/snippet}
-        </VirtualList>
+        {#if showEmptyState}
+          <div class="signal-drawer__empty" role="status">
+            <p class="signal-drawer__empty-title">No {label.toLowerCase()} found</p>
+            <p class="signal-drawer__empty-hint">
+              Try widening the time range or clearing the search.
+            </p>
+          </div>
+        {:else}
+          <VirtualList
+            bind:this={vlistRef}
+            {items}
+            defaultEstimatedItemHeight={72}
+            bufferSize={10}
+            containerClass="signal-drawer__vlist"
+            viewportClass="signal-drawer__vlist-viewport"
+            itemsClass="signal-drawer__vlist-items"
+          >
+            {#snippet renderItem(item)}
+              {@render itemSnippet(item, selectedId === itemKey(item))}
+            {/snippet}
+          </VirtualList>
+        {/if}
       </div>
       {/if}
 
@@ -557,6 +567,19 @@
   /* ── Body (list) ── */
   .signal-drawer__body {
     @apply flex-1 min-h-0 overflow-hidden;
+  }
+
+  /* ── Empty state (zero results with filters still reachable above) ── */
+  .signal-drawer__empty {
+    @apply flex h-full flex-col items-center justify-center gap-1 px-6 text-center;
+  }
+
+  .signal-drawer__empty-title {
+    @apply text-sm font-medium text-base-content/70;
+  }
+
+  .signal-drawer__empty-hint {
+    @apply text-xs text-base-content/50;
   }
 
   .signal-drawer__body :global(.signal-drawer__vlist) {

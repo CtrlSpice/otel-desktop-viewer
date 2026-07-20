@@ -73,14 +73,14 @@
 
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
-  import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { metricTypeBadgeClass, metricTypeLabel } from '@/components/metrics/utils/metric-type'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import { signalIdFromPath, navigateToItem } from '@/utils/url-state'
+  import { signalIdFromPath, navigateToItem } from '@/route'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
   import type {
     MetricData,
     MetricStats,
@@ -109,13 +109,7 @@
   let timeContext = getTimeContext()
 
   // --- URL is the source of truth for the selected metric (`/metrics/<id>`) ---
-  let currentPath = $state(router.path ?? '/')
-  $effect(() => {
-    const unsubscribe = router.subscribe(route => {
-      currentPath = route.path
-    })
-    return unsubscribe
-  })
+  const routeContext = getRouteContext()
 
   // --- state: API / list ---
   let metrics = $state<MetricSummary[]>([])
@@ -128,7 +122,7 @@
   let sortDirection = $state<MetricSortDirection>('desc')
 
   // --- selection (derived from URL) ---
-  let selectedKey = $derived(signalIdFromPath('metrics', currentPath))
+  let selectedKey = $derived(signalIdFromPath('metrics', routeContext.route.path))
   let selectedMetric = $state<MetricData | undefined>(undefined)
   let detailLoading = $state(false)
 
@@ -197,7 +191,7 @@
 
   function selectByIndex(i: number) {
     const target = sortedMetrics[i]
-    if (target) navigateToItem('metrics', metricSummaryKey(target), { replace: true })
+    if (target) navigateToItem('metrics', metricSummaryKey(target), 'replace')
   }
   function navFirst() {
     selectByIndex(0)
@@ -240,10 +234,10 @@
       const fallback =
         sortedMetrics[Math.min(lastValidIndex, sortedMetrics.length - 1)]
       if (fallback) {
-        navigateToItem('metrics', metricSummaryKey(fallback), { replace: true })
+        navigateToItem('metrics', metricSummaryKey(fallback), 'replace')
       }
     } else if (id) {
-      navigateToItem('metrics', null, { replace: true })
+      navigateToItem('metrics', null, 'replace')
     }
   })
 
@@ -297,7 +291,7 @@
 
   function selectMetric(key: string) {
     // Explicit click is navigational: push so back returns to the prior metric.
-    navigateToItem('metrics', key, { replace: false })
+    navigateToItem('metrics', key)
   }
 
   async function fetchMetrics() {
@@ -353,7 +347,7 @@
   async function handleDeleteAllMetrics() {
     try {
       await telemetryAPI.clearMetrics()
-      navigateToItem('metrics', null, { replace: true })
+      navigateToItem('metrics', null, 'replace')
       selectedMetric = undefined
       await fetchMetrics()
     } catch (err) {

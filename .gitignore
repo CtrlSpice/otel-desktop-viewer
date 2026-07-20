@@ -1,6 +1,7 @@
 .DS_Store
 .cursor/
 .claude/
+.clinerules/
 otel-desktop-viewer
 desktopexporter/internal/frontend-legacy/
 .vscode/

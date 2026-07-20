@@ -12,9 +12,6 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-  optimizeDeps: {
-    exclude: ['tinro5'],
-  },
   server: {
     port: 3001, // Fixed port for v2 frontend
     strictPort: true, // Fail if port is in use instead of trying another

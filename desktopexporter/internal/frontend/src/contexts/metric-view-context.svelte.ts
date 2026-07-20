@@ -112,8 +112,16 @@ import {
   getTimeContext,
   selectionToQueryRangeMs,
 } from '@/contexts/time-context.svelte'
-import { router } from 'tinro5'
-import { readMetricViewQuery, setMetricViewParams } from '@/utils/url-state'
+import {
+  metricViewQueriesEqual,
+  parseMetricViewQuery,
+  readRoute,
+  setMetricViewQuery,
+  subscribeToRoute,
+  type HistoryMode,
+  type MetricViewParseContext,
+  type MetricViewQuery,
+} from '@/route'
 
 const KEY = 'metric-view'
 
@@ -335,61 +343,61 @@ export function createMetricViewContext(
   //   agg=<aggregationView>   htab=<activeHistogramTab>
   //   hscope=<histogramScope> dp=<selectedDatapointId>
   // Tab/datapoint picks push a history entry (navigational); aggregation/scope
-  // adjustments replace (silent). `lastWrittenMetricUrl` lets the router
-  // subscription tell our own writes apart from external (back/forward,
-  // shared-link) changes so we don't fight ourselves. The heatmap/quantile
-  // bucket selection stays transient (not a stable datapoint id) and is out of
-  // the URL this iteration.
-  let lastWrittenMetricUrl = ''
+  // adjustments replace (silent). The router subscription reconciles by value:
+  // it applies the URL to the view only when the two disagree, so the echo of
+  // our own writes (URL already equals view) is skipped without any "was that
+  // me?" bookkeeping. The heatmap/quantile bucket selection stays transient
+  // (not a stable datapoint id) and is out of the URL this iteration.
 
-  function metricUrlSnapshot(): string {
-    const q = readMetricViewQuery()
-    return JSON.stringify([q.agg, q.htab, q.hscope, q.dp])
+  function metricParseContext(): MetricViewParseContext {
+    const datapointIds = new Set<string>()
+    for (const dp of allDatapoints(getMetric())) datapointIds.add(dp.id)
+    return {
+      isHistogramKind,
+      allowedAggs: availableAggregationViewsList,
+      datapointIds,
+    }
   }
 
-  // Apply the URL's sub-view params on top of whatever defaults are already in
-  // `view`, validating each against the current metric so a stale or shared
-  // link can't select something that no longer exists.
-  function applyMetricUrlToView(): void {
-    const q = readMetricViewQuery()
+  function viewStateToMetricViewQuery(): MetricViewQuery {
+    if (isHistogramKind) {
+      return {
+        kind: 'histogram',
+        htab: view.activeHistogramTab,
+        hscope: view.histogramScope,
+        dp: view.selectedDatapointId,
+      }
+    }
+    return {
+      kind: 'timeseries',
+      agg: view.aggregationView === 'raw' ? null : view.aggregationView,
+      dp: view.selectedDatapointId,
+    }
+  }
 
-    if (
-      q.agg &&
-      availableAggregationViewsList.includes(q.agg as AggregationView)
-    ) {
-      view.aggregationView = q.agg as AggregationView
-    }
-    if (q.htab === 'heatmap' || q.htab === 'quantiles' || q.htab === 'histogram') {
+  function applyMetricUrlToView(): void {
+    const q = parseMetricViewQuery(readRoute().query, metricParseContext())
+
+    if (q.kind === 'timeseries') {
+      if (q.agg) {
+        view.aggregationView = q.agg as AggregationView
+      }
+    } else {
       view.activeHistogramTab = q.htab
-    }
-    if (q.hscope === 'window' || q.hscope === 'bucket') {
       view.histogramScope = q.hscope
     }
+
     if (q.dp) {
-      let matches = false
-      for (const dp of allDatapoints(getMetric())) {
-        if (dp.id === q.dp) {
-          matches = true
-          break
-        }
-      }
-      view.selectedDatapointId = matches ? q.dp : null
-      view.selectionSource = matches ? 'detail' : null
+      view.selectedDatapointId = q.dp
+      view.selectionSource = 'detail'
     } else {
       view.selectedDatapointId = null
       view.selectionSource = null
     }
   }
 
-  // Write the patch to the URL and remember it so the router subscription
-  // ignores the echo from our own write. `push` adds a history entry; the
-  // default replaces in place.
-  function writeMetricUrl(
-    patch: Partial<Record<'agg' | 'htab' | 'hscope' | 'dp', string | null>>,
-    push: boolean
-  ): void {
-    setMetricViewParams(patch, { push })
-    lastWrittenMetricUrl = metricUrlSnapshot()
+  function writeMetricUrl(mode: HistoryMode): void {
+    setMetricViewQuery(viewStateToMetricViewQuery(), mode)
   }
 
   // -- Pure derivations of `metric` --
@@ -1176,20 +1184,18 @@ export function createMetricViewContext(
     // write (start/end) would re-trigger the whole per-metric reset.
     untrack(() => {
       applyMetricUrlToView()
-      lastWrittenMetricUrl = metricUrlSnapshot()
     })
   })
 
-  // (1b) Re-apply the sub-view when the URL's metric params change out from
-  // under us — i.e. browser back/forward, or a shared link landing on the
-  // current metric. The `lastWrittenMetricUrl` guard skips the echo from our
-  // own writes (and time-window writes leave these four params untouched, so
-  // they no-op here). Mirrors time-context's router subscription.
+  // (1b) Re-apply the sub-view when the URL's metric params disagree with the
+  // view — i.e. browser back/forward, a shared link landing on the current
+  // metric, or another module stripping our params. Reconciles by value:
+  // after our own writes the URL already equals the view, so the synchronous
+  // echo from navigate() is a no-op here.
   $effect(() => {
-    const unsubscribe = router.subscribe(() => {
-      const snapshot = metricUrlSnapshot()
-      if (snapshot === lastWrittenMetricUrl) return
-      lastWrittenMetricUrl = snapshot
+    const unsubscribe = subscribeToRoute(() => {
+      const fromUrl = parseMetricViewQuery(readRoute().query, metricParseContext())
+      if (metricViewQueriesEqual(fromUrl, viewStateToMetricViewQuery())) return
       applyMetricUrlToView()
     })
     return unsubscribe
@@ -1349,23 +1355,21 @@ export function createMetricViewContext(
 
   function setActiveHistogramTab(tab: HistogramTab) {
     view.activeHistogramTab = tab
-    // Switching tabs is navigational: push so back returns to the prior tab.
-    writeMetricUrl({ htab: tab }, true)
+    // Back returns to the prior tab.
+    writeMetricUrl('push')
   }
 
   function setHistogramScope(scope: HistogramScope) {
     view.histogramScope = scope
-    // An adjustment, not navigation: replace so back doesn't step on it.
-    writeMetricUrl({ hscope: scope }, false)
+    writeMetricUrl('replace')
   }
 
   function setAggregationView(next: AggregationView) {
     view.aggregationView = next
     const streamId = getMetric()?.id
     if (streamId) savePersistedAggregationView(streamId, next)
-    // An adjustment, not navigation: replace (and localStorage still remembers
-    // it per metric).
-    writeMetricUrl({ agg: next }, false)
+    // localStorage still remembers it per metric.
+    writeMetricUrl('replace')
   }
 
   function setShowAllSeriesAggregate(next: boolean) {
@@ -1458,21 +1462,9 @@ export function createMetricViewContext(
         view.expandedDatapoints.add(dp.id)
       }
     }
-    // A datapoint pick is navigational: push so back returns to the prior
-    // selection. For histograms the pick also moves the tab/scope, so carry
-    // those in the same history entry.
-    if (isHistogramKind) {
-      writeMetricUrl(
-        {
-          dp: view.selectedDatapointId,
-          htab: view.activeHistogramTab,
-          hscope: view.histogramScope,
-        },
-        true
-      )
-    } else {
-      writeMetricUrl({ dp: view.selectedDatapointId }, true)
-    }
+    // Back returns to the prior selection. For histograms the pick also
+    // moves the tab/scope, so carry those in the same history entry.
+    writeMetricUrl('push')
   }
 
   function onHeatmapSelect(timestampMs: number) {
@@ -1517,7 +1509,7 @@ export function createMetricViewContext(
       if (dp.timestamp === targetNs) {
         view.selectionSource = 'chart'
         view.selectedDatapointId = dp.id
-        writeMetricUrl({ dp: dp.id }, true)
+        writeMetricUrl('push')
         return
       }
     }
@@ -1535,7 +1527,7 @@ export function createMetricViewContext(
     if (best) {
       view.selectionSource = 'chart'
       view.selectedDatapointId = best.id
-      writeMetricUrl({ dp: best.id }, true)
+      writeMetricUrl('push')
     }
   }
 

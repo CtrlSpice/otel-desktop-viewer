@@ -28,13 +28,13 @@
     {#snippet heading()}
       <GlobalIcon class="h-3.5 w-3.5 shrink-0 text-base-content/55" />
       <span>Timezone</span>
-      <span class="badge-count">{formatTimezoneLabel(ctx.timezone)}</span>
+      <span class="badge-count">{formatTimezoneLabel(ctx.tz)}</span>
     {/snippet}
     <button
       type="button"
       class="tz-option"
-      class:tz-option--active={ctx.timezone === 'local'}
-      onclick={() => ctx.setTimezone('local')}
+      class:tz-option--active={ctx.tz === 'local'}
+      onclick={() => ctx.setTz('local')}
     >
       <span class="min-w-0 flex-1 truncate">{getLocalTimezoneName()}</span>
       <span class="tz-badge badge-count">{formatTimezoneLabel('local')}</span>
@@ -42,8 +42,8 @@
     <button
       type="button"
       class="tz-option"
-      class:tz-option--active={ctx.timezone === 'UTC'}
-      onclick={() => ctx.setTimezone('UTC')}
+      class:tz-option--active={ctx.tz === 'UTC'}
+      onclick={() => ctx.setTz('UTC')}
     >
       <span class="min-w-0 flex-1 truncate">Coordinated Universal Time</span>
       <span class="tz-badge badge-count">UTC</span>

@@ -47,13 +47,13 @@
 
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import { signalIdFromPath, navigateToItem } from '@/utils/url-state'
+  import { signalIdFromPath, navigateToItem } from '@/route'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
   import type { LogData, SearchResultEvent } from '@/types/api-types'
   import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
@@ -68,13 +68,7 @@
   let timeContext = getTimeContext()
 
   // --- URL is the source of truth for the selected log (`/logs/<id>`) ---
-  let currentPath = $state(router.path ?? '/')
-  $effect(() => {
-    const unsubscribe = router.subscribe(route => {
-      currentPath = route.path
-    })
-    return unsubscribe
-  })
+  const routeContext = getRouteContext()
 
   // --- state: API / list ---
   let logs = $state<LogSummary[]>([])
@@ -93,7 +87,7 @@
   // getLog(id) for the full LogData on demand, with a debounce that keeps
   // held-arrow keyboard nav from firing a request per row. Detail loading/
   // error state lives on the fetcher object, not on the page.
-  let selectedLogId = $derived(signalIdFromPath('logs', currentPath))
+  let selectedLogId = $derived(signalIdFromPath('logs', routeContext.route.path))
   const detailFetcher = createDebouncedDetailFetcher<string, LogData>({
     fetch: id => telemetryAPI.getLog(id),
     keysEqual: (a, b) => a === b,
@@ -151,9 +145,9 @@
       lastValidIndex = idx
     } else if (sortedLogs.length > 0) {
       const fallback = sortedLogs[Math.min(lastValidIndex, sortedLogs.length - 1)]
-      if (fallback) navigateToItem('logs', fallback.id, { replace: true })
+      if (fallback) navigateToItem('logs', fallback.id, 'replace')
     } else if (id) {
-      navigateToItem('logs', null, { replace: true })
+      navigateToItem('logs', null, 'replace')
     }
   })
 
@@ -193,7 +187,7 @@
 
   function selectLog(logId: string) {
     // Explicit click is navigational: push so back returns to the prior log.
-    navigateToItem('logs', logId, { replace: false })
+    navigateToItem('logs', logId)
   }
 
   // --- nav: walk sortedLogs ---
@@ -210,17 +204,17 @@
     )
     if (target === selectedIndex) return
     const next = sortedLogs[target]
-    if (next) navigateToItem('logs', next.id, { replace: true })
+    if (next) navigateToItem('logs', next.id, 'replace')
   }
 
   function selectFirst() {
     const first = sortedLogs[0]
-    if (first) navigateToItem('logs', first.id, { replace: true })
+    if (first) navigateToItem('logs', first.id, 'replace')
   }
 
   function selectLast() {
     const last = sortedLogs[sortedLogs.length - 1]
-    if (last) navigateToItem('logs', last.id, { replace: true })
+    if (last) navigateToItem('logs', last.id, 'replace')
   }
 
   async function fetchLogs() {
@@ -259,7 +253,7 @@
     try {
       await telemetryAPI.deleteLogByID(logId)
       if (selectedLogId === logId) {
-        navigateToItem('logs', null, { replace: true })
+        navigateToItem('logs', null, 'replace')
       }
       await fetchLogs()
     } catch (err) {
@@ -270,7 +264,7 @@
   async function handleDeleteAllLogs() {
     try {
       await telemetryAPI.clearLogs()
-      navigateToItem('logs', null, { replace: true })
+      navigateToItem('logs', null, 'replace')
       await fetchLogs()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to delete logs'

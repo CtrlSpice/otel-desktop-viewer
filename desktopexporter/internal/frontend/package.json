@@ -34,9 +34,7 @@
     "d3-interpolate": "^3.0.1",
     "daisyui": "^5.5.19",
     "layerchart": "^2.0.0-next.54",
-    "svelte": "^5.0.0",
-    "svelte-routing": "^2.0.0",
-    "tinro5": "^0.0.10"
+    "svelte": "^5.0.0"
   },
   "devDependencies": {
     "@lezer/generator": "^1.8.0",

@@ -63,6 +63,17 @@ func TestSPAFallback(t *testing.T) {
 	}
 }
 
+func TestMissingAsset404(t *testing.T) {
+	testServer, teardown := setupServer(t)
+	defer teardown()
+
+	res, err := http.Get(testServer.URL + "/assets/stale-hash.js")
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, res.StatusCode)
+}
+
 func TestRPCHandlerInvalidJSON(t *testing.T) {
 	testServer, teardown := setupServer(t)
 	defer teardown()

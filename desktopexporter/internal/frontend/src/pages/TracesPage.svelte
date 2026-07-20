@@ -56,7 +56,6 @@
 
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { router } from 'tinro5'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
@@ -67,7 +66,9 @@
     navigateToItem,
     getSpanFromQuery,
     setSpanInQuery,
-  } from '@/utils/url-state'
+    SPAN_PARAM,
+  } from '@/route'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
   import type {
     TraceData,
     SearchResultEvent,
@@ -87,17 +88,8 @@
   let timeContext = getTimeContext()
 
   // --- URL is the source of truth for the selected trace + span ---
-  // `/traces/<traceID>?span=<spanID>`. Reading from the router keeps deep links
-  // and back/forward in sync; every selection change is a navigate (below).
-  let currentPath = $state(router.path ?? '/')
-  let currentQuery = $state<Record<string, string>>({})
-  $effect(() => {
-    const unsubscribe = router.subscribe(route => {
-      currentPath = route.path
-      currentQuery = route.query
-    })
-    return unsubscribe
-  })
+  // `/traces/<traceID>?span=<spanID>`. Every selection change is a navigate (below).
+  const routeContext = getRouteContext()
 
   // --- state: API / list ---
   let traceSummaries = $state<TraceSummary[]>([])
@@ -110,8 +102,8 @@
   let sortDirection = $state<TraceSummarySortDirection>('desc')
 
   // --- selection + detail (selection derived from URL) ---
-  let selectedTraceId = $derived(signalIdFromPath('traces', currentPath))
-  let selectedSpanID = $derived(currentQuery.span ?? null)
+  let selectedTraceId = $derived(signalIdFromPath('traces', routeContext.route.path))
+  let selectedSpanID = $derived(routeContext.route.query[SPAN_PARAM] ?? null)
   let traceData = $state<TraceData | null>(null)
   let detailLoading = $state(false)
 
@@ -189,9 +181,9 @@
     } else if (sortedTraces.length > 0) {
       const fallback =
         sortedTraces[Math.min(lastValidIndex, sortedTraces.length - 1)]
-      if (fallback) navigateToItem('traces', fallback.traceID, { replace: true })
+      if (fallback) navigateToItem('traces', fallback.traceID, 'replace')
     } else if (id) {
-      navigateToItem('traces', null, { replace: true })
+      navigateToItem('traces', null, 'replace')
     }
   })
 
@@ -236,7 +228,7 @@
 
   function selectTrace(traceID: string) {
     // Explicit click is navigational: push so back returns to the prior trace.
-    navigateToItem('traces', traceID, { replace: false })
+    navigateToItem('traces', traceID)
   }
 
   // --- nav: walk sortedTraces ---
@@ -255,22 +247,22 @@
     )
     if (target === selectedIndex) return
     const next = sortedTraces[target]
-    if (next) navigateToItem('traces', next.traceID, { replace: true })
+    if (next) navigateToItem('traces', next.traceID, 'replace')
   }
 
   function selectFirst() {
     const first = sortedTraces[0]
-    if (first) navigateToItem('traces', first.traceID, { replace: true })
+    if (first) navigateToItem('traces', first.traceID, 'replace')
   }
 
   function selectLast() {
     const last = sortedTraces[sortedTraces.length - 1]
-    if (last) navigateToItem('traces', last.traceID, { replace: true })
+    if (last) navigateToItem('traces', last.traceID, 'replace')
   }
 
   function handleSelectSpan(spanID: string) {
     // Clicking a span is navigational: push so back returns to the prior span.
-    setSpanInQuery(spanID, { push: true })
+    setSpanInQuery(spanID, 'push')
   }
 
   async function fetchTraces() {
@@ -337,7 +329,7 @@
   async function handleDeleteAllTraces() {
     try {
       await telemetryAPI.clearTraces()
-      navigateToItem('traces', null, { replace: true })
+      navigateToItem('traces', null, 'replace')
       traceData = null
       await fetchTraces()
     } catch (err) {
@@ -350,7 +342,7 @@
     try {
       await telemetryAPI.deleteTraces([traceID])
       if (selectedTraceId === traceID) {
-        navigateToItem('traces', null, { replace: true })
+        navigateToItem('traces', null, 'replace')
         traceData = null
       }
       await fetchTraces()

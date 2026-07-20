@@ -4,9 +4,10 @@
    *
    * Owns:
    *   1. The SignalListDrawer (the left rail with nav/theme + optional
-   *      item list/search/footer). Always rendered. When `items` is
-   *      empty (e.g. on Home) the drawer force-collapses and acts as
-   *      a thin nav rail.
+   *      item list/search/footer). Always rendered. `railOnly` pages
+   *      (Home) force-collapse it into a thin nav rail; list pages with
+   *      zero results keep it open and show an empty state so search and
+   *      time filters stay reachable.
    *   2. The content area: a `main` snippet (required) with an
    *      optional `detail` snippet that, when present, splits the
    *      content area into a horizontally resizable main+detail pair
@@ -23,9 +24,12 @@
 
   type Props<T> = {
     // ── Drawer (forwarded to SignalListDrawer) ─────────────────────
-    /** Items rendered in the drawer list. Pass `[]` for pages with
-     * no list (Home) -- the drawer will force-collapse. */
+    /** Items rendered in the drawer list. Pass `[]` together with
+     * `railOnly` for pages with no list (Home). On list pages an
+     * empty array renders the drawer's empty state instead. */
     items: T[]
+    /** Force-collapse the drawer into a thin nav rail (Home). */
+    railOnly?: boolean
     selectedId: string | null
     drawerId: string
     /** Tooltip label on the collapsed open-drawer button. */
@@ -75,6 +79,7 @@
 
   let {
     items,
+    railOnly,
     selectedId,
     drawerId,
     drawerLabel,
@@ -100,7 +105,7 @@
     resizableStorageKey,
   }: Props<any> = $props()
 
-  // No-op snippet for SignalListDrawer when items is empty -- the
+  // No-op snippet for railOnly pages (Home) that render no list -- the
   // drawer's effectivelyOpen=false guarantees this never renders,
   // but the prop is required so we satisfy the type.
   const noopItem: Snippet<[item: any, selected: boolean]> = $derived(
@@ -113,6 +118,7 @@
 <div class="page-layout">
   <SignalListDrawer
     {items}
+    {railOnly}
     {selectedId}
     {drawerId}
     label={drawerLabel}

@@ -643,7 +643,7 @@
     if (highlightDate === null) return ''
     return formatDateTime(
       highlightDate.getTime(),
-      timeContext.timezone,
+      timeContext.tz,
       'milliseconds'
     )
   })
@@ -712,7 +712,7 @@
         onPointClick={handlePointClick}
         onTooltipClick={handleTooltipClick}
         props={{
-          xAxis: axisTime(timeContext.timezone),
+          xAxis: axisTime(timeContext.tz),
           yAxis: axisValue(yAxisLabel),
         }}
       >
@@ -733,7 +733,7 @@
             )}
           {@const headerLabel =
             xDate != null
-              ? formatDateTime(xDate.getTime(), timeContext.timezone, 'milliseconds')
+              ? formatDateTime(xDate.getTime(), timeContext.tz, 'milliseconds')
               : undefined}
           <Tooltip.Root {context}>
             {#snippet children()}

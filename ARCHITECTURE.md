@@ -20,7 +20,7 @@ flowchart TB
   end
 
   subgraph serve [Serving]
-    Browser[Browser] -->|GET /| Static[Embedded or dev static assets]
+    Browser[Browser] -->|GET /| Static[Embedded static assets]
     Browser -->|POST /rpc| RPC[JSON-RPC handler]
     RPC --> Query[Search / get SQL]
     Query --> DuckDB
@@ -186,15 +186,14 @@ Global search casts scalar fields to strings and searches attribute key/value pa
 | Route | Handler |
 |-------|---------|
 | `POST /rpc` | JSON-RPC 2.0 (`golang.org/x/exp/jsonrpc2`) |
-| `GET /traces/{id}` | Serves `index.html` (SPA fallback for client-side routing) |
-| `GET /*` | Static files (embedded `static/` or `STATIC_ASSETS_DIR`) |
+| `GET /*` | Embedded static files; extension-less unknown paths fall back to `index.html` for client-side routing |
 
 CORS is enabled for local dev (Vite on port 3001).
 
 **Static assets**
 
-- **Production**: embedded via `//go:embed static` after `make build-ts`
-- **Development**: set `STATIC_ASSETS_DIR` to `frontend/dist` (Makefile `run-go` / `dev-go` do this)
+- Embedded via `//go:embed static` after `make build-ts`
+- Frontend iteration uses the Vite dev server (`make dev-ts` on port 3001), which proxies `/rpc` to the Go server
 
 ### JSON-RPC methods
 
@@ -225,7 +224,7 @@ Domain errors map to JSON-RPC error codes in `internal/server/errors.go` (e.g. `
 |-------|--------|
 | Framework | Svelte 5 (runes: `$state`, `$derived`, `$effect`) |
 | Build | Vite 7 |
-| Routing | tinro5 (history mode) |
+| Routing | First-party (History API, `src/route/`) |
 | Styling | Tailwind CSS 4 + DaisyUI 5 |
 | Components | bits-ui |
 | Search UI | CodeMirror 6 + Lezer grammar (`SignalToolbar/search/lang/`) |
@@ -239,11 +238,13 @@ Domain errors map to JSON-RPC error codes in `internal/server/errors.go` (e.g. `
 | Route | Page |
 |-------|------|
 | `/` | Home — onboarding, OTLP setup snippets, stats |
-| `/traces` | Trace list, waterfall, span detail |
-| `/logs` | Log list and detail |
-| `/metrics` | Metric summaries, charts, detail panels |
+| `/traces`, `/traces/{id}` | Trace list, waterfall, span detail |
+| `/logs`, `/logs/{id}` | Log list and detail |
+| `/metrics`, `/metrics/{id}` | Metric summaries, charts, detail panels |
 
-The server exposes `GET /traces/{id}` as an SPA fallback, but the frontend does not register a matching tinro route today—deep links to individual traces rely on in-app navigation.
+Selection and sub-view state (span, metric datapoint/tab, time window) live in the URL via `src/route/`. The server serves `index.html` for extension-less client routes on hard load and refresh.
+
+Every URL write takes an explicit `HistoryMode` (`'push' | 'replace'`, defined in `src/route/router.ts`): navigation — selecting an item, switching signals, picking a tab — pushes so the back button retraces steps; adjustments — aggregation, scope, time window — replace so history isn't flooded. The mode flows through all layers (router → query modules → contexts) without re-encoding.
 
 ### State management
 
@@ -251,6 +252,7 @@ No global store library. State uses Svelte **context modules** (`.svelte.ts`) an
 
 | Context | Scope |
 |---------|-------|
+| `route-context.svelte.ts` | Reactive view of the current URL (path + query) |
 | `time-context.svelte.ts` | App-wide time range and timezone |
 | `metric-view-context.svelte.ts` | Per-metrics-page chart aggregation, heatmaps, legend |
 | `panel-split-resize-context.svelte.ts` | Resizable panel preferences |
@@ -337,7 +339,6 @@ These appear in older notes or collector capabilities but are **not** part of th
 - `--config` YAML file exposed on the CLI (inline flag-built config only)
 - `batch` processor in default pipelines
 - `exporterhelper.WithRetry()` on the desktop exporter
-- Frontend route for `/traces/:id` deep linking
 
 ## Related files
 

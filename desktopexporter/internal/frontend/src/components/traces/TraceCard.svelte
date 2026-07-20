@@ -22,7 +22,7 @@
   let startParts = $derived(
     formatTimestampParts(
       trace.startTime,
-      timeContext.timezone,
+      timeContext.tz,
       'milliseconds'
     )
   )

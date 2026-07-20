@@ -46,8 +46,8 @@
     </div>
   {:else}
     {#each recentTimeRanges as entry, index}
-      {@const startFmt = formatDateTimeMs(entry.start, ctx.timezone)}
-      {@const endFmt = formatDateTimeMs(entry.end, ctx.timezone)}
+      {@const startFmt = formatDateTimeMs(entry.start, ctx.tz)}
+      {@const endFmt = formatDateTimeMs(entry.end, ctx.tz)}
       <button
         class="recent-range-button"
         class:recent-range-button--active={ctx.selection.type === 'recent' &&

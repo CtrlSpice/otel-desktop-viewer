@@ -2,7 +2,7 @@
   import type { LinkData } from '@/types/api-types'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import SpanField from './SpanField.svelte'
-  import { navigateToItem } from '@/utils/url-state'
+  import { navigateToItem } from '@/route'
 
   type Props = {
     links: LinkData[]
