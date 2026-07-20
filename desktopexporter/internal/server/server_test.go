@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -98,6 +99,30 @@ func TestRPCHandlerInvalidJSON(t *testing.T) {
 	assert.NotNil(t, response["error"])
 	errorObj := response["error"].(map[string]any)
 	assert.Equal(t, float64(-32700), errorObj["code"]) // Parse error code
+}
+
+func TestRPCHandlerOversizedBody(t *testing.T) {
+	testServer, teardown := setupServer(t)
+	defer teardown()
+
+	oversized := make([]byte, maxRPCRequestBodyBytes+1)
+	res, err := http.Post(fmt.Sprintf("%s/rpc", testServer.URL), "application/json", bytes.NewReader(oversized))
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	assert.Equal(t, http.StatusOK, res.StatusCode) // JSON-RPC always returns 200
+
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	var response map[string]any
+	err = json.Unmarshal(body, &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, "2.0", response["jsonrpc"])
+	assert.NotNil(t, response["error"])
+	errorObj := response["error"].(map[string]any)
+	assert.Equal(t, float64(-32600), errorObj["code"]) // Invalid Request code
 }
 
 func TestRPCHandlerInvalidRequest(t *testing.T) {

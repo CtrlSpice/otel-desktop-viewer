@@ -2,6 +2,7 @@ package server
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -17,6 +18,12 @@ import (
 
 //go:embed static
 var assets embed.FS
+
+// maxRPCRequestBodyBytes caps how much of an /rpc request body we will read.
+// JSON-RPC requests in this app are small (a method name and a few params), so
+// 1 MB is generous headroom while preventing a buggy or malicious client from
+// exhausting memory with an unbounded body.
+const maxRPCRequestBodyBytes = 1 << 20 // 1 MB
 
 type Server struct {
 	server         http.Server
@@ -102,8 +109,14 @@ func spaHandler(fsys fs.FS) http.Handler {
 }
 
 func (s *Server) rpcHandler(writer http.ResponseWriter, request *http.Request) {
-	body, err := io.ReadAll(request.Body)
+	limited := http.MaxBytesReader(writer, request.Body, maxRPCRequestBodyBytes)
+	body, err := io.ReadAll(limited)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, fmt.Errorf("%w: request body too large", jsonrpc2.ErrInvalidRequest))
+			return
+		}
 		sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInternal)
 		return
 	}
