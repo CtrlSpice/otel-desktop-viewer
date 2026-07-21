@@ -51,9 +51,15 @@ func mustDecodeSpanID(s string) [8]byte {
 }
 
 type statsJSON struct {
-	Traces  traceStatsJSON  `json:"traces"`
-	Logs    logStatsJSON    `json:"logs"`
-	Metrics metricStatsJSON `json:"metrics"`
+	Storage storageStatsJSON `json:"storage"`
+	Traces  traceStatsJSON   `json:"traces"`
+	Logs    logStatsJSON     `json:"logs"`
+	Metrics metricStatsJSON  `json:"metrics"`
+}
+
+type storageStatsJSON struct {
+	SizeBytes    float64 `json:"sizeBytes"`
+	MaxSizeBytes float64 `json:"maxSizeBytes"`
 }
 
 type traceStatsJSON struct {
@@ -78,7 +84,9 @@ type metricStatsJSON struct {
 
 func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {
 	t.Helper()
-	raw, err := stats.GetStats(ctx, s.DB())
+	sizeBytes, err := s.SizeBytes(ctx)
+	require.NoError(t, err)
+	raw, err := stats.GetStats(ctx, s.DB(), sizeBytes, s.RetentionCap())
 	require.NoError(t, err)
 	var result statsJSON
 	require.NoError(t, json.Unmarshal(raw, &result))

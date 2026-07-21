@@ -21,9 +21,26 @@ var (
 )
 
 type Store struct {
-	db   *sql.DB
-	conn driver.Conn
-	mu   sync.Mutex
+	db     *sql.DB
+	conn   driver.Conn
+	dbPath string // empty means in-memory mode
+	mu     sync.Mutex
+
+	// retentionCapBytes is the store size cap enforced by EnforceRetention
+	// and reported by getStats. 0 means retention is disabled. Set once via
+	// SetRetentionCap before the store is shared; read without locking.
+	retentionCapBytes int64
+}
+
+// SetRetentionCap sets the store size cap in bytes. Call before the store is
+// shared across goroutines.
+func (s *Store) SetRetentionCap(bytes int64) {
+	s.retentionCapBytes = bytes
+}
+
+// RetentionCap returns the store size cap in bytes; 0 means disabled.
+func (s *Store) RetentionCap() int64 {
+	return s.retentionCapBytes
 }
 
 // NewStore creates a new store for the given database path.
@@ -75,8 +92,9 @@ func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 	}
 
 	return &Store{
-		db:   db,
-		conn: conn,
+		db:     db,
+		conn:   conn,
+		dbPath: dbPath,
 	}, nil
 }
 

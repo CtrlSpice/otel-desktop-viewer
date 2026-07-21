@@ -485,7 +485,13 @@ func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Re
 }
 
 func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
-	result, err := stats.GetStats(ctx, h.store.DB())
+	sizeBytes, err := h.store.SizeBytes(ctx)
+	if err != nil {
+		log.Printf("Error measuring store size: %v", err)
+		return nil, mapStoreError(err)
+	}
+
+	result, err := stats.GetStats(ctx, h.store.DB(), sizeBytes, h.store.RetentionCap())
 	if err != nil {
 		log.Printf("Error getting stats: %v", err)
 		return nil, mapStoreError(err)
