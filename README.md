@@ -268,6 +268,50 @@ export OTEL_LOGS_EXPORTER="otlp"
 export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
 ```
 
+### Declarative configuration
+
+SDKs that support [declarative configuration](https://opentelemetry.io/docs/languages/sdk-configuration/declarative-configuration) can use a YAML file instead. Save this as `otel-config.yaml`:
+
+```yaml
+file_format: "1.1"
+
+resource:
+  attributes:
+    - name: service.name
+      value: my-service
+
+tracer_provider:
+  processors:
+    - batch:
+        exporter:
+          otlp_http:
+            endpoint: http://localhost:4318/v1/traces
+
+meter_provider:
+  readers:
+    - periodic:
+        exporter:
+          otlp_http:
+            endpoint: http://localhost:4318/v1/metrics
+
+logger_provider:
+  processors:
+    - batch:
+        exporter:
+          otlp_http:
+            endpoint: http://localhost:4318/v1/logs
+```
+
+Then point your app at it:
+
+```bash
+export OTEL_CONFIG_FILE=/path/to/otel-config.yaml
+```
+
+> [!NOTE]
+> When a config file is used, SDKs ignore the traditional `OTEL_*` environment
+> variables entirely (aside from `${VAR}` substitution inside the file itself).
+
 ## Example With `otel-cli`
 
 If you have [`otel-cli`](https://github.com/equinix-labs/otel-cli) installed, it is a great way to send rich test traces from shell scripts. otel-cli supports span kinds, attributes, events, trace propagation, and background spans—much more than a single `exec` wrapper.
