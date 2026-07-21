@@ -74,7 +74,7 @@ func runInteractive(params otelcol.CollectorSettings) error {
 
 func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	var httpPortFlag, grpcPortFlag, browserPortFlag int
-	var hostFlag, dbFlag string
+	var hostFlag, dbFlag, dbMaxSizeFlag string
 	var openBrowserFlag bool
 
 	rootCmd := &cobra.Command{
@@ -92,6 +92,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 				`yaml:receivers::otlp::protocols::grpc::endpoint: "` + endpoint(grpcPortFlag) + `"`,
 				`yaml:exporters::desktop::endpoint: "` + endpoint(browserPortFlag) + `"`,
 				`yaml:exporters::desktop::db: ` + dbFlag,
+				`yaml:exporters::desktop::db_max_size: "` + dbMaxSizeFlag + `"`,
 				`yaml:service::pipelines::traces::receivers: [otlp]`,
 				`yaml:service::pipelines::traces::exporters: [desktop]`,
 				`yaml:service::pipelines::metrics::receivers: [otlp]`,
@@ -124,6 +125,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser-port", 8000, "The port number where we expose our data")
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser). Use '::' or '0.0.0.0' to listen on all interfaces.")
 	rootCmd.Flags().StringVar(&dbFlag, "db", "", "The path of your database file. Omitting this flag opens DuckDB in in-memory mode, with no data persisted to disk.")
+	rootCmd.Flags().StringVar(&dbMaxSizeFlag, "db-max-size", "", "Maximum size of the telemetry store (e.g. 512MB, 2GB). The oldest telemetry is pruned once the limit is reached. Use 0 to disable pruning. Defaults to 512MB in in-memory mode and 2GB with a database file.")
 
 	return rootCmd
 }

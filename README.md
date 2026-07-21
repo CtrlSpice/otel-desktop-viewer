@@ -229,18 +229,21 @@ Telemetry is stored in memory by default. Use `--db` to persist to a file.
 
 ```bash
 Flags:
-      --browser-port int   Port for the web UI and JSON-RPC API (default 8000)
-      --db string          DuckDB file path (default: in-memory)
-      --grpc int           OTLP gRPC listen port (default 4317)
-      --host string        Host for OTLP receivers and the web UI (default localhost)
-      --http int           OTLP HTTP listen port (default 4318)
-      --open-browser       Open the browser on launch (default true)
-  -h, --help               help for otel-desktop-viewer
-  -v, --version            version for otel-desktop-viewer
+      --browser-port int     Port for the web UI and JSON-RPC API (default 8000)
+      --db string            DuckDB file path (default: in-memory)
+      --db-max-size string   Store size cap, e.g. 512MB or 2GB; oldest telemetry
+                             is pruned past it. 0 disables pruning.
+                             (default: 512MB in-memory, 2GB with --db)
+      --grpc int             OTLP gRPC listen port (default 4317)
+      --host string          Host for OTLP receivers and the web UI (default localhost)
+      --http int             OTLP HTTP listen port (default 4318)
+      --open-browser         Open the browser on launch (default true)
+  -h, --help                 help for otel-desktop-viewer
+  -v, --version              version for otel-desktop-viewer
 ```
 
 ```bash
-otel-desktop-viewer --db ./telemetry.duckdb
+otel-desktop-viewer --db ./telemetry.duckdb --db-max-size 4GB
 ```
 
 ## Configuring Your OpenTelemetry SDK
