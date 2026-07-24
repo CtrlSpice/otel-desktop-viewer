@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      opentelemetry:
+        patterns:
+          - "go.opentelemetry.io/*"
+
+  - package-ecosystem: npm
+    directory: /desktopexporter/internal/frontend
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # svelte-check can't run the Go-based TS 7 compiler; expected to be
+      # unblocked by TS 7.1 (~Oct 2026). Remove once svelte-check supports it.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
