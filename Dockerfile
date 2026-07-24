@@ -14,7 +14,9 @@ COPY . .
 # Build the application from source
 RUN go build -o otel-desktop-viewer .
 
-FROM debian:latest
+# Full image (not slim): the duckdb-go cgo runtime needs the complete
+# library surface, which slim variants have broken before.
+FROM debian:13
 
 # Copy runtime dependencies from build stage
 COPY --from=golang /usr/lib/*/libstdc++.so.6* /usr/lib/
