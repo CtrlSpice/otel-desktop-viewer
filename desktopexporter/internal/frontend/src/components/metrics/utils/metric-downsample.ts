@@ -13,7 +13,7 @@ import type { ChartPoint } from '@/types/metric-chart-types'
  */
 export function downsampleLTTB(
   points: ChartPoint[],
-  threshold: number,
+  threshold: number
 ): ChartPoint[] {
   const len = points.length
   if (threshold >= len || threshold < 3) return points
@@ -32,16 +32,13 @@ export function downsampleLTTB(
     // Current bucket range (indices into `points`, skipping the
     // already-selected first element).
     const buckStart = Math.floor(bucket * bucketSize) + 1
-    const buckEnd = Math.min(
-      Math.floor((bucket + 1) * bucketSize) + 1,
-      len - 1,
-    )
+    const buckEnd = Math.min(Math.floor((bucket + 1) * bucketSize) + 1, len - 1)
 
     // Next bucket average (the "C" vertex of each candidate triangle).
     const nextBuckStart = buckEnd
     const nextBuckEnd = Math.min(
       Math.floor((bucket + 2) * bucketSize) + 1,
-      len - 1,
+      len - 1
     )
     let avgX = 0
     let avgY = 0
@@ -64,7 +61,7 @@ export function downsampleLTTB(
     for (let j = buckStart; j < buckEnd; j++) {
       const area = Math.abs(
         (ax - avgX) * (points[j].value - ay) -
-          (ax - points[j].date.getTime()) * (avgY - ay),
+          (ax - points[j].date.getTime()) * (avgY - ay)
       )
       if (area > maxArea) {
         maxArea = area

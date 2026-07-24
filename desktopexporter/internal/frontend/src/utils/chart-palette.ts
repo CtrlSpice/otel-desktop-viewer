@@ -161,9 +161,13 @@ export function categoricalPalette(
   // sequence* (not the colour loop) -- so start=gold gives
   // gold→rose→iris→pine→foam.
   const startIdx = WAYPOINT_ORDER.indexOf(start)
-  const rotated = startIdx >= 0
-    ? [...WAYPOINT_ORDER.slice(startIdx), ...WAYPOINT_ORDER.slice(0, startIdx)]
-    : [...WAYPOINT_ORDER]
+  const rotated =
+    startIdx >= 0
+      ? [
+          ...WAYPOINT_ORDER.slice(startIdx),
+          ...WAYPOINT_ORDER.slice(0, startIdx),
+        ]
+      : [...WAYPOINT_ORDER]
 
   const waypointCount = rotated.length
   const segmentCount = waypointCount - 1
@@ -253,4 +257,3 @@ function parseRgbLike(s: string): [number, number, number] | null {
   if (!m) return null
   return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)]
 }
-

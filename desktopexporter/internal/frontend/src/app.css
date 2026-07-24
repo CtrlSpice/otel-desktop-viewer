@@ -340,7 +340,8 @@ html[data-theme='rose-pine-dawn'] .metric-chart-view {
   background-color: var(--color-base-100);
 }
 
-.metric-chart-view :where(.chart-selection-legend--stat:not(.chart-time-range-legend)) {
+.metric-chart-view
+  :where(.chart-selection-legend--stat:not(.chart-time-range-legend)) {
   width: max-content;
   min-width: max-content;
   max-width: none;

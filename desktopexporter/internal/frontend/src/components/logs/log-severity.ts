@@ -3,12 +3,7 @@
 // import severity helpers without reaching into a page module.
 
 export type SeverityBand =
-  | 'trace'
-  | 'debug'
-  | 'info'
-  | 'warn'
-  | 'error'
-  | 'fatal'
+  'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
 
 export function severityBand(severityNumber: number): SeverityBand {
   if (severityNumber <= 4) return 'trace'

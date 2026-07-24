@@ -80,9 +80,7 @@ describe('computeAutoCollapsedParents', () => {
     const spans = [
       spanNode('root', null, 0),
       spanNode('err', 'root', 1, 'Error'),
-      ...Array.from({ length: 14 }, (_, i) =>
-        spanNode(`leaf-${i}`, 'err', 2)
-      ),
+      ...Array.from({ length: 14 }, (_, i) => spanNode(`leaf-${i}`, 'err', 2)),
     ]
     const children = buildChildrenBySpanId(spans)
     const collapsed = computeAutoCollapsedParents(spans, children, {

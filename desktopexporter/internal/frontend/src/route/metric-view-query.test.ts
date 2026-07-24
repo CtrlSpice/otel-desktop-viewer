@@ -56,7 +56,10 @@ describe('parseMetricViewQuery', () => {
   })
 
   it('defaults invalid histogram enums', () => {
-    const q = parseMetricViewQuery({ htab: 'nope', hscope: 'nope' }, histogramCtx)
+    const q = parseMetricViewQuery(
+      { htab: 'nope', hscope: 'nope' },
+      histogramCtx
+    )
     expect(q).toEqual({
       kind: 'histogram',
       htab: 'heatmap',

@@ -1,8 +1,5 @@
 import type { MetricType } from '@/types/api-types'
-import {
-  categoricalPalette,
-  type CategoricalStem,
-} from '@/utils/chart-palette'
+import { categoricalPalette, type CategoricalStem } from '@/utils/chart-palette'
 import { themeSignal } from '@/state/theme.svelte'
 
 // Single source of truth: metric type → categorical palette stem. Drives both
@@ -45,9 +42,7 @@ export function metricTypeBadgeTone(metricType: MetricType | string): string {
   return stem ? STEM_TO_BADGE[stem] : 'badge-neutral'
 }
 
-export function metricTypeBadgeClass(
-  metricType: MetricType | string
-): string {
+export function metricTypeBadgeClass(metricType: MetricType | string): string {
   return `${METRIC_TYPE_BADGE_BASE} ${metricTypeBadgeTone(metricType)}`
 }
 
@@ -85,7 +80,11 @@ function temporalityBadge(
     case 'cumulative':
       return { label: 'Σ', title: 'Cumulative', isUnspecified: false }
     case 'unspecified':
-      return { label: 'Unspecified', title: 'Unspecified temporality', isUnspecified: true }
+      return {
+        label: 'Unspecified',
+        title: 'Unspecified temporality',
+        isUnspecified: true,
+      }
     default:
       return { label: raw, title: raw, isUnspecified: false }
   }

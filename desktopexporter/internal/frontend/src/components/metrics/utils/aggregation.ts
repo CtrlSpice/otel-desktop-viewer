@@ -16,10 +16,7 @@
 // Delta temporality -- that determines whether cumulativeToDeltas runs
 // first.
 
-import type {
-  ChartPoint,
-  ChartTimeseries,
-} from '@/types/metric-chart-types'
+import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
 // --- 1. Types + shape predicates --------------------------------------
 
@@ -180,9 +177,10 @@ export function availableAggregationViews(
  *
  * `resets` contains indices into the OUTPUT array, not the input.
  */
-export function cumulativeToDeltas(
+export function cumulativeToDeltas(points: ChartPoint[]): {
   points: ChartPoint[]
-): { points: ChartPoint[]; resets: number[] } {
+  resets: number[]
+} {
   const out: ChartPoint[] = []
   const resets: number[] = []
   for (let i = 1; i < points.length; i++) {
@@ -230,8 +228,7 @@ export function bucketize(
     const firstMs = points[0]!.date.getTime()
     const lastMs = points[points.length - 1]!.date.getTime()
     const span = lastMs - firstMs
-    const avgIntervalMs =
-      points.length > 1 ? span / (points.length - 1) : 0
+    const avgIntervalMs = points.length > 1 ? span / (points.length - 1) : 0
     return {
       buckets: points.map(p => [p]),
       bucketCenters: points.map(p => p.date),
@@ -438,11 +435,10 @@ export function aggregateRate(
   const out: ChartTimeseries[] = []
   for (const s of series) {
     const work = toWorkingPoints(s.points, opts.cumulative)
-    const {
-      buckets,
-      bucketCenters,
-      bucketSeconds,
-    } = bucketize(work.points, opts.bucketCount)
+    const { buckets, bucketCenters, bucketSeconds } = bucketize(
+      work.points,
+      opts.bucketCount
+    )
     const points: ChartPoint[] = buckets.map((bucket, i) => {
       if (bucketSeconds === 0) {
         return { date: bucketCenters[i]!, value: 0 }
@@ -477,9 +473,7 @@ export const AGG_KEY_ALL = '__agg:all__'
 export const AGG_KEY_TOTAL = '__agg:total__'
 
 export type AggregateLineKey =
-  | typeof AGG_KEY_SELECTED
-  | typeof AGG_KEY_ALL
-  | typeof AGG_KEY_TOTAL
+  typeof AGG_KEY_SELECTED | typeof AGG_KEY_ALL | typeof AGG_KEY_TOTAL
 
 /** Checkbox label for the optional all-series aggregate toggle. */
 export function aggregateAllToggleLabel(view: AggregationView): string {
@@ -599,11 +593,23 @@ export function aggregateSelectedAndAll(
   const lines: ChartTimeseries[] = []
   const presentKeys: AggregateLineKey[] = []
 
-  const selLine = combinePool(selected, AGG_KEY_SELECTED, 'Selected', view, opts)
-  if (selLine) { lines.push(selLine); presentKeys.push(AGG_KEY_SELECTED) }
+  const selLine = combinePool(
+    selected,
+    AGG_KEY_SELECTED,
+    'Selected',
+    view,
+    opts
+  )
+  if (selLine) {
+    lines.push(selLine)
+    presentKeys.push(AGG_KEY_SELECTED)
+  }
 
   const allLine = combinePool(all, AGG_KEY_ALL, 'All', view, opts)
-  if (allLine) { lines.push(allLine); presentKeys.push(AGG_KEY_ALL) }
+  if (allLine) {
+    lines.push(allLine)
+    presentKeys.push(AGG_KEY_ALL)
+  }
 
   return { lines, presentKeys }
 }

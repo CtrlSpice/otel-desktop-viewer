@@ -30,7 +30,7 @@ function formatChartAxisDate(ms: number, timezone: Timezone): string {
 /** Time-of-day labels for chart x-axis ticks (date lives in the range header). */
 export function formatChartAxisTime(
   value: Date | number,
-  timezone: Timezone,
+  timezone: Timezone
 ): string {
   const ms = value instanceof Date ? value.getTime() : value
   const opts: Intl.DateTimeFormatOptions = {
@@ -47,7 +47,7 @@ export function formatChartAxisTime(
 export function getChartTimeRangeLabels(
   startMs: number,
   endMs: number,
-  timezone: Timezone,
+  timezone: Timezone
 ): ChartTimeRangeLabels {
   const start = formatChartAxisDate(startMs, timezone)
   if (calendarDayKey(startMs, timezone) === calendarDayKey(endMs, timezone)) {

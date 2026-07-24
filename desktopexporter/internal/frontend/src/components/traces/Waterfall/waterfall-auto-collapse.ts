@@ -8,8 +8,7 @@ export const WATERFALL_AUTO_COLLAPSE_SUBTREE_SIZE = 12
 
 export function isErrorSpan(span: SpanData): boolean {
   return (
-    span.statusCode === 'Error' ||
-    span.events.some(e => e.name === 'exception')
+    span.statusCode === 'Error' || span.events.some(e => e.name === 'exception')
   )
 }
 
@@ -84,10 +83,7 @@ export function computeAutoCollapsedParents(
     const kids = childrenBySpanId.get(id)
     if (!kids || kids.length === 0) continue
     if (isErrorSpan(node.spanData) || subtreeHasError(id)) continue
-    if (
-      node.depth >= depthThreshold ||
-      subtreeSize(id) >= sizeThreshold
-    ) {
+    if (node.depth >= depthThreshold || subtreeSize(id) >= sizeThreshold) {
       collapsed.add(id)
     }
   }

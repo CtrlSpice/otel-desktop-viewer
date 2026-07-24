@@ -28,7 +28,12 @@ describe('sumBucketVectors', () => {
     expect(v).toEqual([12, 15, 18])
   })
   it('zero-pads mismatched lengths', () => {
-    expect(sumBucketVectors([[1, 2, 3], [4, 5]])![2]).toBe(3)
+    expect(
+      sumBucketVectors([
+        [1, 2, 3],
+        [4, 5],
+      ])![2]
+    ).toBe(3)
   })
   it('empty input returns null', () => {
     expect(sumBucketVectors([])).toBeNull()

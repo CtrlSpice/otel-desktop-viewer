@@ -55,9 +55,7 @@ export function metricViewStorageKey(metricStreamId: string): string {
   return `${STORAGE_PREFIX}${metricStreamId}`
 }
 
-function loadPersistedView(
-  metricStreamId: string
-): PersistedMetricView | null {
+function loadPersistedView(metricStreamId: string): PersistedMetricView | null {
   if (typeof localStorage === 'undefined') return null
   try {
     const raw = localStorage.getItem(metricViewStorageKey(metricStreamId))
@@ -77,8 +75,7 @@ function loadPersistedView(
         ? (av as AggregationView)
         : undefined
     const sa = obj.showAllSeriesAggregate
-    const showAllSeriesAggregate =
-      typeof sa === 'boolean' ? sa : undefined
+    const showAllSeriesAggregate = typeof sa === 'boolean' ? sa : undefined
     const sq = obj.showAllSeriesQuantileAggregate
     const showAllSeriesQuantileAggregate =
       typeof sq === 'boolean' ? sq : undefined
@@ -120,7 +117,9 @@ function writePersistedView(
 
 function mergePersistedView(
   existing: PersistedMetricView | null,
-  patch: Partial<PersistedMetricView> & Pick<PersistedMetricView, 'visibleKeys'> | { visibleKeys?: string[] }
+  patch:
+    | (Partial<PersistedMetricView> & Pick<PersistedMetricView, 'visibleKeys'>)
+    | { visibleKeys?: string[] }
 ): PersistedMetricView {
   return {
     visibleKeys: patch.visibleKeys ?? existing?.visibleKeys ?? [],
@@ -207,7 +206,9 @@ export function savePersistedShowAllSeriesQuantileAggregate(
 export function loadPersistedShowAllSeriesQuantileAggregate(
   metricStreamId: string
 ): boolean {
-  return loadPersistedView(metricStreamId)?.showAllSeriesQuantileAggregate === true
+  return (
+    loadPersistedView(metricStreamId)?.showAllSeriesQuantileAggregate === true
+  )
 }
 
 /**
@@ -245,7 +246,7 @@ export function resolveTimeseriesVisible(
   const persisted = loadPersistedView(metricStreamId)?.visibleKeys ?? null
   if (persisted !== null) {
     const current = new Set(currentKeys)
-    const kept = persisted.filter((k) => current.has(k))
+    const kept = persisted.filter(k => current.has(k))
     return maxChecked === null ? kept : kept.slice(0, maxChecked)
   }
   return currentKeys.slice(0, initialVisible)
@@ -259,10 +260,9 @@ export function reconcileTimeseriesVisible(
   maxChecked: number | null = MAX_VISIBLE_TIMESERIES
 ): string[] {
   const current = new Set(currentKeys)
-  const hadStale = [...visible].some((k) => !current.has(k))
-  const kept = [...visible].filter((k) => current.has(k))
-  const capped =
-    maxChecked === null ? kept : kept.slice(0, maxChecked)
+  const hadStale = [...visible].some(k => !current.has(k))
+  const kept = [...visible].filter(k => current.has(k))
+  const capped = maxChecked === null ? kept : kept.slice(0, maxChecked)
   if (capped.length > 0 || !hadStale) return capped
   return resolveTimeseriesVisible(
     currentKeys,

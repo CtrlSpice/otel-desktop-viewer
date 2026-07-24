@@ -54,7 +54,11 @@ export function quantilePointSelectionAt(
   for (const seriesKey of visible) {
     const slice = sliceAtTimestamp(perAttributeSlices, timestampNs, seriesKey)
     if (!slice) continue
-    const dp = histogramSliceToDatapoint(slice, `quantile:${seriesKey}`, temporality)
+    const dp = histogramSliceToDatapoint(
+      slice,
+      `quantile:${seriesKey}`,
+      temporality
+    )
     const quantiles: Record<string, number | null> = {}
     const record = histogramQuantilesForDatapoint(dp)
     for (const { key } of QUANTILE_LABELS) {
