@@ -374,7 +374,11 @@ export let telemetryAPI = {
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const rawData = await callRPC('getMetric', [streamId, startTimeNs, endTimeNs])
+    const rawData = await callRPC('getMetric', [
+      streamId,
+      startTimeNs,
+      endTimeNs,
+    ])
     if (rawData === null || rawData === 'null') return null
     return metricDataFromJSON(rawData)
   },

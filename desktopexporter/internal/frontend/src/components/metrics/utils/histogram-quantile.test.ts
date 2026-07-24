@@ -26,14 +26,16 @@ describe('interp kernels', () => {
 
 describe('hist_quantile', () => {
   it('p50 on bucket boundary', () => {
-    expect(
-      histQuantile([1, 2, 5, 10], [0, 50, 50, 0, 0], 0.5)
-    ).toBeCloseTo(2, 9)
+    expect(histQuantile([1, 2, 5, 10], [0, 50, 50, 0, 0], 0.5)).toBeCloseTo(
+      2,
+      9
+    )
   })
   it('p95 in unbounded tail', () => {
-    expect(
-      histQuantile([1, 2, 5, 10], [0, 10, 20, 30, 40], 0.95)
-    ).toBeCloseTo(10, 9)
+    expect(histQuantile([1, 2, 5, 10], [0, 10, 20, 30, 40], 0.95)).toBeCloseTo(
+      10,
+      9
+    )
   })
   it('empty bounds returns null', () => {
     expect(histQuantile([], [], 0.5)).toBeNull()
@@ -113,9 +115,10 @@ describe('end-to-end merged quantile', () => {
 
 describe('bucketExtents', () => {
   it('derives min/max from populated explicit buckets', () => {
-    expect(
-      bucketExtents(histBuckets([10, 20, 50], [5, 0, 10, 0]))
-    ).toEqual({ min: 10, max: 50 })
+    expect(bucketExtents(histBuckets([10, 20, 50], [5, 0, 10, 0]))).toEqual({
+      min: 10,
+      max: 50,
+    })
   })
 
   it('uses populated exp bucket bounds instead of OTLP summary fields', () => {

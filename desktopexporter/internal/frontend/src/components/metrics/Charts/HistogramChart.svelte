@@ -455,7 +455,9 @@
               props={{
                 bars: {
                   fill: barColor,
-                  fillOpacity: 'var(--metric-bar-fill-opacity, 0.85)',
+                  // layerchart 2.0 types fillOpacity as number, so set the
+                  // CSS var via the style attribute instead.
+                  style: 'fill-opacity: var(--metric-bar-fill-opacity, 0.85)',
                   stroke: 'var(--color-base-300)',
                   strokeWidth: 1,
                 },

@@ -132,11 +132,7 @@ export type LogSummary = {
 
 // Metrics types
 export type MetricType =
-  | 'Empty'
-  | 'Gauge'
-  | 'Sum'
-  | 'Histogram'
-  | 'ExponentialHistogram'
+  'Empty' | 'Gauge' | 'Sum' | 'Histogram' | 'ExponentialHistogram'
 
 export type Exemplar = {
   timestamp: bigint

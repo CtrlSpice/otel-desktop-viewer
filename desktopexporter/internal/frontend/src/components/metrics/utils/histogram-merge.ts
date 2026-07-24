@@ -126,9 +126,14 @@ export type MergedExpHistogramWire = ExpHistogramWire & {
   max: number
 }
 
-function expPositiveCutoff(targetZeroThreshold: number, targetScale: number): number | null {
+function expPositiveCutoff(
+  targetZeroThreshold: number,
+  targetScale: number
+): number | null {
   if (targetZeroThreshold <= 0) return null
-  return Math.floor(Math.log2(targetZeroThreshold) * Math.pow(2, targetScale)) - 1
+  return (
+    Math.floor(Math.log2(targetZeroThreshold) * Math.pow(2, targetScale)) - 1
+  )
 }
 
 /** Cross-series exponential histogram merge (ports merged exp SQL pipeline). */
@@ -177,8 +182,10 @@ export function mergeExpHistogramStreams(
     padLeftToOffset(d.neg.counts, d.neg.offset, negTargetOffset)
   )
 
-  const posSummed = sumBucketVectors(posPadded.filter((v): v is number[] => v != null)) ?? []
-  const negSummed = sumBucketVectors(negPadded.filter((v): v is number[] => v != null)) ?? []
+  const posSummed =
+    sumBucketVectors(posPadded.filter((v): v is number[] => v != null)) ?? []
+  const negSummed =
+    sumBucketVectors(negPadded.filter((v): v is number[] => v != null)) ?? []
 
   const posCutoff = expPositiveCutoff(targetZeroThreshold, targetScale)
   const negCutoff = expPositiveCutoff(targetZeroThreshold, targetScale)

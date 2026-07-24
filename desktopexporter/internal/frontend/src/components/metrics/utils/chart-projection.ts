@@ -9,10 +9,7 @@ import type {
   MetricTimeseries,
   SumDataPoint,
 } from '@/types/api-types'
-import type {
-  ChartPoint,
-  ChartTimeseries,
-} from '@/types/metric-chart-types'
+import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 import { downsampleLTTB } from '@/components/metrics/utils/metric-downsample'
 
 /**
@@ -29,7 +26,7 @@ import { downsampleLTTB } from '@/components/metrics/utils/metric-downsample'
  */
 export function timeseriesToChartTimeseries(
   timeseries: MetricTimeseries[],
-  opts?: { downsampleTo?: number },
+  opts?: { downsampleTo?: number }
 ): {
   chartTimeseries: ChartTimeseries[]
   /** Convenience: same `key` strings the timeseries have, in the

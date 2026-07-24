@@ -23,8 +23,7 @@ export type HistogramMetricViewQuery = {
 }
 
 export type MetricViewQuery =
-  | TimeseriesMetricViewQuery
-  | HistogramMetricViewQuery
+  TimeseriesMetricViewQuery | HistogramMetricViewQuery
 
 export type MetricViewParseContext = {
   isHistogramKind: boolean

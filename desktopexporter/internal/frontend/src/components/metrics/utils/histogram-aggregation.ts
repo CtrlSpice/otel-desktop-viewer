@@ -119,7 +119,9 @@ export function histogramSliceBucketExtents(
   )
 }
 
-function withBucketDerivedMinMax(slice: HistogramSlicePoint): HistogramSlicePoint {
+function withBucketDerivedMinMax(
+  slice: HistogramSlicePoint
+): HistogramSlicePoint {
   const extents = histogramSliceBucketExtents(slice)
   if (!extents) return slice
   return {
@@ -232,7 +234,10 @@ export function buildHistogramTimeMergedSeries(
   }
 
   const bucketNs = histogramBucketNs(startTsNs, endTsNs, minDataTs, maxPoints)
-  const groups = new Map<string, (HistogramDataPoint | ExponentialHistogramDataPoint)[]>()
+  const groups = new Map<
+    string,
+    (HistogramDataPoint | ExponentialHistogramDataPoint)[]
+  >()
 
   for (const ts of timeseries) {
     for (const dp of ts.datapoints) {
@@ -286,7 +291,10 @@ function mergeSlicesAtTimestamp(
   const first = slices[0]!
 
   if (first.kind === 'histogram') {
-    const histSlices = slices as Extract<HistogramSlicePoint, { kind: 'histogram' }>[]
+    const histSlices = slices as Extract<
+      HistogramSlicePoint,
+      { kind: 'histogram' }
+    >[]
     try {
       const merged = mergeExplicitHistogramVectors(
         histSlices.map(s => ({ bounds: s.bounds, counts: s.counts }))
@@ -305,7 +313,10 @@ function mergeSlicesAtTimestamp(
     }
   }
 
-  const expSlices = slices as Extract<HistogramSlicePoint, { kind: 'expHistogram' }>[]
+  const expSlices = slices as Extract<
+    HistogramSlicePoint,
+    { kind: 'expHistogram' }
+  >[]
   const wires: ExpHistogramWire[] = expSlices.map(s => ({
     scale: s.scale,
     zeroCount: s.zeroCount,
@@ -400,8 +411,10 @@ export function mergeHistogramWindowSummary(
     try {
       const merged = mergeExplicitHistogramVectors(
         visible.map(s => ({
-          bounds: (s as Extract<HistogramSlicePoint, { kind: 'histogram' }>).bounds,
-          counts: (s as Extract<HistogramSlicePoint, { kind: 'histogram' }>).counts,
+          bounds: (s as Extract<HistogramSlicePoint, { kind: 'histogram' }>)
+            .bounds,
+          counts: (s as Extract<HistogramSlicePoint, { kind: 'histogram' }>)
+            .counts,
         }))
       )
       return withBucketDerivedMinMax({
@@ -420,7 +433,10 @@ export function mergeHistogramWindowSummary(
     }
   }
 
-  const expVisible = visible as Extract<HistogramSlicePoint, { kind: 'expHistogram' }>[]
+  const expVisible = visible as Extract<
+    HistogramSlicePoint,
+    { kind: 'expHistogram' }
+  >[]
   const wires: ExpHistogramWire[] = expVisible.map(s => ({
     scale: s.scale,
     zeroCount: s.zeroCount,
@@ -515,7 +531,10 @@ export function quantileKeyFromValue(q: number): string {
 /** Default quantile overlay when opening the Quantiles tab (p50). */
 export const DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY = quantileKeyFromValue(0.5)
 
-export function quantileSeriesKey(seriesKey: string, quantileKey: string): string {
+export function quantileSeriesKey(
+  seriesKey: string,
+  quantileKey: string
+): string {
   return `${seriesKey}${QUANTILE_SERIES_KEY_SEP}${quantileKey}`
 }
 
@@ -542,7 +561,6 @@ export function sliceQuantileValue(
   const record = histogramQuantilesForDatapoint(dp, [quantile])
   return record[quantileKeyFromValue(quantile)] ?? null
 }
-
 
 function quantilePointsFromMergedSlices(
   slices: HistogramSlicePoint[],
@@ -655,11 +673,9 @@ export function histogramQuantilesForDatapoint(
   quantiles: readonly number[] = DEFAULT_HISTOGRAM_QUANTILES
 ): Record<string, number | null> {
   if (dp.metricType === 'Histogram') {
-    return histQuantileRecord(
-      dp.explicitBounds,
-      dp.bucketCounts,
-      [...quantiles]
-    )
+    return histQuantileRecord(dp.explicitBounds, dp.bucketCounts, [
+      ...quantiles,
+    ])
   }
   return expHistQuantileRecord(
     dp.scale,
@@ -671,4 +687,3 @@ export function histogramQuantilesForDatapoint(
     [...quantiles]
   )
 }
-

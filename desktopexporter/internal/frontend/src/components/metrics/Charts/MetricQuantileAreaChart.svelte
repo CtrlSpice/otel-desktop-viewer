@@ -266,21 +266,25 @@
     onChartPointClick(seriesKey ?? '', date, quantileKey)
   }
 
+  // layerchart 2.0 stable invokes onPointClick with { point, data } (no
+  // `series`): `point.seriesKey` identifies the series and `point.data` is
+  // the highlighted { x, y } pair, while `data` is the raw tooltip datum.
   function handlePointClick(
     e: MouseEvent,
     details: {
-      data: { data?: ChartPoint; date?: Date }
-      series: { key: string }
+      data: unknown
+      point?: { seriesKey?: string; data?: unknown }
     }
   ) {
-    const row = details.data?.data ?? details.data
-    const date = row?.date ?? chartPointDate(details.data)
+    const date =
+      chartPointDate(details.point?.data) ?? chartPointDate(details.data)
     if (!date) return
     e.stopPropagation()
-    const meta = lineMetaByKey.get(details.series.key)
+    const key = details.point?.seriesKey ?? ''
+    const meta = lineMetaByKey.get(key)
     dispatchPointClick(
       date,
-      meta?.seriesKey ?? details.series.key,
+      meta?.seriesKey ?? key,
       meta?.quantileKey ?? null
     )
   }
