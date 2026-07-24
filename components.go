@@ -10,11 +10,17 @@ import (
 	"go.opentelemetry.io/collector/otelcol"
 	batchprocessor "go.opentelemetry.io/collector/processor/batchprocessor"
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"
+	"go.opentelemetry.io/collector/service/telemetry/otelconftelemetry"
 )
 
 func components() (otelcol.Factories, error) {
 	var err error
 	factories := otelcol.Factories{}
+
+	// Required since collector v0.135: the service telemetry providers
+	// (logger, metrics, traces for the collector itself) come from an
+	// explicit factory instead of being built implicitly.
+	factories.Telemetry = otelconftelemetry.NewFactory()
 
 	factories.Extensions, err = otelcol.MakeFactoryMap[extension.Factory]()
 	if err != nil {
@@ -29,7 +35,7 @@ func components() (otelcol.Factories, error) {
 		return otelcol.Factories{}, err
 	}
 	factories.ReceiverModules = make(map[component.Type]string, len(factories.Receivers))
-	factories.ReceiverModules[otlpreceiver.NewFactory().Type()] = "go.opentelemetry.io/collector/receiver/otlpreceiver v0.125.0"
+	factories.ReceiverModules[otlpreceiver.NewFactory().Type()] = "go.opentelemetry.io/collector/receiver/otlpreceiver v0.156.0"
 
 	factories.Exporters, err = otelcol.MakeFactoryMap(
 		desktopexporter.NewFactory(),
@@ -47,7 +53,7 @@ func components() (otelcol.Factories, error) {
 		return otelcol.Factories{}, err
 	}
 	factories.ProcessorModules = make(map[component.Type]string, len(factories.Processors))
-	factories.ProcessorModules[batchprocessor.NewFactory().Type()] = "go.opentelemetry.io/collector/processor/batchprocessor v0.125.0"
+	factories.ProcessorModules[batchprocessor.NewFactory().Type()] = "go.opentelemetry.io/collector/processor/batchprocessor v0.156.0"
 
 	factories.Connectors, err = otelcol.MakeFactoryMap[connector.Factory]()
 	if err != nil {
