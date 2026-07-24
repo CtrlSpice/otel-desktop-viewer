@@ -134,7 +134,7 @@ jobs:
           echo "Partial artifacts ready in $dir:"
           find "$dir" -type f | head -20
       - name: Cache GoReleaser contexts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: dist/${{ matrix.goos }}_${{ matrix.goarch }}
           key: ${{ matrix.goos }}-${{ matrix.goarch }}-${{ github.sha }}
@@ -155,27 +155,27 @@ jobs:
         with:
           go-version: '1.26'
       - name: Restore GoReleaser build artifacts (darwin-amd64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: dist/darwin_amd64
           key: darwin-amd64-${{ github.sha }}
       - name: Restore GoReleaser build artifacts (darwin-arm64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: dist/darwin_arm64
           key: darwin-arm64-${{ github.sha }}
       - name: Restore GoReleaser build artifacts (linux-amd64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: dist/linux_amd64
           key: linux-amd64-${{ github.sha }}
       - name: Restore GoReleaser build artifacts (linux-arm64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: dist/linux_arm64
           key: linux-arm64-${{ github.sha }}
       - name: Restore GoReleaser build artifacts (windows-amd64)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: dist/windows_amd64
           key: windows-amd64-${{ github.sha }}
