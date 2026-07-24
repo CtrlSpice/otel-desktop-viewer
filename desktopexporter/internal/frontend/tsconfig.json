@@ -7,7 +7,6 @@
     "resolveJsonModule": true,
     "allowJs": true,
     "isolatedModules": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
