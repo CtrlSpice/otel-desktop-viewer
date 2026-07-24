@@ -26,7 +26,7 @@ require (
 	go.opentelemetry.io/collector/receiver/otlpreceiver v0.156.0
 	go.opentelemetry.io/collector/service v0.156.0
 	golang.org/x/exp/jsonrpc2 v0.0.0-20250808145144-a408d31f581a
-	golang.org/x/sys v0.46.0
+	golang.org/x/sys v0.47.0
 )
 
 require (
