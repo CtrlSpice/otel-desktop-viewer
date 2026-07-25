@@ -42,10 +42,8 @@
     selectedId: string | null
     drawerId: string
     label: string
-    count: number
     itemSnippet: Snippet<[item: T, selected: boolean]>
     itemKey?: (item: T) => string
-    onSelect?: (id: string) => void
     onRefresh?: () => void
     refreshPulse?: boolean
     /** Plain text for DaisyUI tooltip + screen reader when new data is pending */
@@ -68,10 +66,8 @@
     selectedId,
     drawerId,
     label,
-    count,
     itemSnippet,
     itemKey = (item: any) => item.id,
-    onSelect,
     onRefresh,
     refreshPulse = false,
     refreshAsideTip = '',

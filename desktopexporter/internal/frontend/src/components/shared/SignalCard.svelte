@@ -28,7 +28,6 @@
     lead?: Snippet
     meta?: Snippet
     onclick?: (id: string) => void
-    children?: Snippet
   }
 
   let {
