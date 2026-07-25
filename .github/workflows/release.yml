@@ -71,7 +71,7 @@ jobs:
           name: embedded-frontend
           path: desktopexporter/internal/server/static/
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: '1.26'
       - name: Tidy Go module
@@ -151,7 +151,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: '1.26'
       - name: Restore GoReleaser build artifacts (darwin-amd64)
