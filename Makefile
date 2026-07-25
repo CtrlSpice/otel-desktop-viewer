@@ -63,7 +63,7 @@ dev-go: kill-port
 
 .PHONY: build-ts
 build-ts:
-	cd desktopexporter/internal/frontend && npm run build && cp -r dist/* ../../internal/server/static/
+	cd desktopexporter/internal/frontend && npm run build && rm -rf ../../internal/server/static/* && cp -r dist/* ../../internal/server/static/
 
 .PHONY: format-ts
 format-ts:
