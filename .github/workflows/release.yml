@@ -66,7 +66,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Download embedded frontend
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: embedded-frontend
           path: desktopexporter/internal/server/static/
