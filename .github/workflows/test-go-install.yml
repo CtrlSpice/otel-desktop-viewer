@@ -3,6 +3,9 @@ name: Test Go Install
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test-go-install-windows:
     runs-on: windows-latest
