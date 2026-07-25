@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/svelte'
+import { screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import DrawerSearchPanel from './DrawerSearchPanel.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -10,8 +10,9 @@ const sortOptions = [
   { value: 'duration', label: 'Duration' },
 ]
 
-// The popover JS API comes from the shared polyfill in src/test/setup.ts.
-// These tests query the sort menu with `hidden: true` rather than opening it.
+// The popover JS API (methods + popovertarget invokers) comes from the shared
+// polyfill in src/test/setup.ts, so these tests open the sort menu the way a
+// user would: by clicking the trigger.
 
 function renderPanel(props: Record<string, unknown> = {}) {
   setTestUrl('/traces')
@@ -22,6 +23,11 @@ function renderPanel(props: Record<string, unknown> = {}) {
     sortDirection: 'desc',
     ...props,
   })
+}
+
+async function openSortMenu() {
+  await userEvent.click(screen.getByRole('button', { name: /^Sort by/ }))
+  return screen.getByRole('menu', { name: 'Sort by' })
 }
 
 describe('DrawerSearchPanel toolbar segment', () => {
@@ -62,37 +68,50 @@ describe('DrawerSearchPanel toolbar segment', () => {
     expect(
       screen.getByRole('button', { name: 'Sort by Duration, descending' })
     ).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      screen.queryByRole('menu', { name: 'Sort by' })
+    ).not.toBeInTheDocument()
   })
 
-  it('lists every sort option in a sort menu', () => {
+  it('opens the sort menu from the trigger and reports it expanded', async () => {
     renderPanel({ segment: 'toolbar' })
-    const menu = screen.getByRole('menu', { name: 'Sort by', hidden: true })
-    expect(menu).toBeInTheDocument()
+    const menu = await openSortMenu()
+    expect(menu).toBeVisible()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Sort by/ })).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      )
+    )
+  })
+
+  it('lists every sort option in the open sort menu', async () => {
+    renderPanel({ segment: 'toolbar' })
+    await openSortMenu()
     for (const option of sortOptions) {
       expect(
-        screen.getByRole('menuitemradio', {
-          name: option.label,
-          hidden: true,
-        })
+        screen.getByRole('menuitemradio', { name: option.label })
       ).toBeInTheDocument()
     }
   })
 
-  it('checks only the sort option currently in use', () => {
+  it('checks only the sort option currently in use', async () => {
     renderPanel({ segment: 'toolbar' })
+    await openSortMenu()
     expect(
-      screen.getByRole('menuitemradio', { name: 'Duration', hidden: true })
+      screen.getByRole('menuitemradio', { name: 'Duration' })
     ).toHaveAttribute('aria-checked', 'true')
     expect(
-      screen.getByRole('menuitemradio', { name: 'Start time', hidden: true })
+      screen.getByRole('menuitemradio', { name: 'Start time' })
     ).toHaveAttribute('aria-checked', 'false')
   })
 
   it('requests ascending order when a different field is chosen', async () => {
     const onSortChange = vi.fn()
     renderPanel({ segment: 'toolbar', onSortChange })
+    await openSortMenu()
     await userEvent.click(
-      screen.getByRole('menuitemradio', { name: 'Start time', hidden: true })
+      screen.getByRole('menuitemradio', { name: 'Start time' })
     )
     expect(onSortChange).toHaveBeenCalledWith('time', 'asc')
   })
@@ -100,8 +119,9 @@ describe('DrawerSearchPanel toolbar segment', () => {
   it('flips a descending field to ascending when it is chosen again', async () => {
     const onSortChange = vi.fn()
     renderPanel({ segment: 'toolbar', onSortChange })
+    await openSortMenu()
     await userEvent.click(
-      screen.getByRole('menuitemradio', { name: 'Duration', hidden: true })
+      screen.getByRole('menuitemradio', { name: 'Duration' })
     )
     expect(onSortChange).toHaveBeenCalledWith('duration', 'asc')
   })
@@ -113,10 +133,28 @@ describe('DrawerSearchPanel toolbar segment', () => {
       sortDirection: 'asc',
       onSortChange,
     })
+    await openSortMenu()
     await userEvent.click(
-      screen.getByRole('menuitemradio', { name: 'Duration', hidden: true })
+      screen.getByRole('menuitemradio', { name: 'Duration' })
     )
     expect(onSortChange).toHaveBeenCalledWith('duration', 'desc')
+  })
+
+  it('closes the sort menu after a choice is made', async () => {
+    renderPanel({ segment: 'toolbar' })
+    await openSortMenu()
+    await userEvent.click(
+      screen.getByRole('menuitemradio', { name: 'Start time' })
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Sort by/ })).toHaveAttribute(
+        'aria-expanded',
+        'false'
+      )
+    )
+    expect(
+      screen.queryByRole('menu', { name: 'Sort by' })
+    ).not.toBeInTheDocument()
   })
 
   it('leaves out the query editor', () => {

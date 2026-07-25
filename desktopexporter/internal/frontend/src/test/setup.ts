@@ -150,6 +150,25 @@ if (
     setPopoverOpen(this, open)
     return open
   }
+
+  // Declarative invokers (button popovertarget=...) are part of the same
+  // missing API. Default action is toggle, per spec. Light dismiss is NOT
+  // implemented; close popovers explicitly in tests when it matters.
+  document.addEventListener('click', event => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const invoker = target.closest('button[popovertarget]')
+    if (!invoker || (invoker as HTMLButtonElement).disabled) return
+    const id = invoker.getAttribute('popovertarget')
+    const popover = id ? document.getElementById(id) : null
+    if (!(popover instanceof HTMLElement) || !popover.hasAttribute('popover')) {
+      return
+    }
+    const action = invoker.getAttribute('popovertargetaction') ?? 'toggle'
+    if (action === 'show') popover.showPopover()
+    else if (action === 'hide') popover.hidePopover()
+    else popover.togglePopover()
+  })
 }
 
 // time-context persists selections to localStorage; clear between tests so
