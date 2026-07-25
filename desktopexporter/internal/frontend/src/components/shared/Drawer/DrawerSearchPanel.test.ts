@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import DrawerSearchPanel from './DrawerSearchPanel.svelte'
@@ -10,15 +10,8 @@ const sortOptions = [
   { value: 'duration', label: 'Duration' },
 ]
 
-// jsdom ships the popover UA styles but not the popover JS API, so the sort
-// menu can never be opened here: it stays in the DOM, hidden. Tests reach it
-// with `hidden: true`, and this stand-in keeps the component's close call from
-// throwing when an option is chosen.
-beforeAll(() => {
-  if (typeof HTMLElement.prototype.hidePopover !== 'function') {
-    HTMLElement.prototype.hidePopover = () => {}
-  }
-})
+// The popover JS API comes from the shared polyfill in src/test/setup.ts.
+// These tests query the sort menu with `hidden: true` rather than opening it.
 
 function renderPanel(props: Record<string, unknown> = {}) {
   setTestUrl('/traces')

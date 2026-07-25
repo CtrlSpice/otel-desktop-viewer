@@ -1,31 +1,11 @@
 // @vitest-environment jsdom
-import {
-  describe,
-  expect,
-  it,
-  vi,
-  beforeAll,
-  beforeEach,
-  afterEach,
-} from 'vitest'
+import { describe, expect, it, vi, afterEach } from 'vitest'
 import { screen, fireEvent, waitFor } from '@testing-library/svelte'
 import { tick } from 'svelte'
 import DateTimeFilter from './DateTimeFilter.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
-class FakeToggleEvent extends Event {
-  newState: 'open' | 'closed'
-  constructor(type: string, init: { newState: 'open' | 'closed' }) {
-    super(type, { bubbles: true })
-    this.newState = init.newState
-  }
-}
-
-const original = {
-  showPopover: HTMLElement.prototype.showPopover,
-  hidePopover: HTMLElement.prototype.hidePopover,
-  togglePopover: HTMLElement.prototype.togglePopover,
-}
+// The popover JS API comes from the shared polyfill in src/test/setup.ts.
 
 function getPopover() {
   return document.querySelector('[popover="auto"]') as HTMLElement
@@ -36,41 +16,7 @@ function renderComponent() {
   return renderWithContexts(DateTimeFilter)
 }
 
-beforeAll(() => {
-  if (typeof window.requestAnimationFrame === 'undefined') {
-    window.requestAnimationFrame = () => 0
-    globalThis.requestAnimationFrame = window.requestAnimationFrame
-  }
-  if (typeof window.cancelAnimationFrame === 'undefined') {
-    window.cancelAnimationFrame = () => undefined
-    globalThis.cancelAnimationFrame = window.cancelAnimationFrame
-  }
-})
-
-beforeEach(() => {
-  HTMLElement.prototype.showPopover = function () {
-    this.removeAttribute('popover')
-    this.dispatchEvent(new FakeToggleEvent('toggle', { newState: 'open' }))
-  }
-  HTMLElement.prototype.hidePopover = function () {
-    this.setAttribute('popover', 'auto')
-    this.dispatchEvent(new FakeToggleEvent('toggle', { newState: 'closed' }))
-  }
-  HTMLElement.prototype.togglePopover = function () {
-    const isOpen = !this.hasAttribute('popover')
-    if (isOpen) {
-      this.hidePopover()
-    } else {
-      this.showPopover()
-    }
-    return !isOpen
-  }
-})
-
 afterEach(() => {
-  HTMLElement.prototype.showPopover = original.showPopover
-  HTMLElement.prototype.hidePopover = original.hidePopover
-  HTMLElement.prototype.togglePopover = original.togglePopover
   vi.useRealTimers()
 })
 

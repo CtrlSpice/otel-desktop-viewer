@@ -97,6 +97,61 @@ if (
   }
 }
 
+// jsdom ships the popover UA stylesheet but not the popover JS API. This
+// polyfill keeps real semantics: the `popover` attribute is never touched (it
+// declares popover-ness, it is not open state). Open state lives in a WeakSet,
+// visibility is forced with inline display (jsdom's UA sheet hides [popover]
+// and can never match :popover-open), and beforetoggle/toggle events carry
+// spec-shaped newState/oldState.
+if (
+  typeof HTMLElement !== 'undefined' &&
+  typeof HTMLElement.prototype.showPopover !== 'function'
+) {
+  const openPopovers = new WeakSet<HTMLElement>()
+
+  class ToggleEventPolyfill extends Event {
+    readonly newState: string
+    readonly oldState: string
+    constructor(type: string, init: { newState: string; oldState: string }) {
+      super(type)
+      this.newState = init.newState
+      this.oldState = init.oldState
+    }
+  }
+
+  const setPopoverOpen = (el: HTMLElement, open: boolean): void => {
+    const oldState = openPopovers.has(el) ? 'open' : 'closed'
+    const newState = open ? 'open' : 'closed'
+    if (oldState === newState) return
+    el.dispatchEvent(
+      new ToggleEventPolyfill('beforetoggle', { newState, oldState })
+    )
+    if (open) {
+      openPopovers.add(el)
+      el.style.display = 'block'
+    } else {
+      openPopovers.delete(el)
+      el.style.removeProperty('display')
+    }
+    el.dispatchEvent(new ToggleEventPolyfill('toggle', { newState, oldState }))
+  }
+
+  HTMLElement.prototype.showPopover = function () {
+    setPopoverOpen(this, true)
+  }
+  HTMLElement.prototype.hidePopover = function () {
+    setPopoverOpen(this, false)
+  }
+  HTMLElement.prototype.togglePopover = function (
+    this: HTMLElement,
+    force?: boolean
+  ) {
+    const open = force ?? !openPopovers.has(this)
+    setPopoverOpen(this, open)
+    return open
+  }
+}
+
 // time-context persists selections to localStorage; clear between tests so
 // component tests stay order-independent.
 afterEach(() => {
