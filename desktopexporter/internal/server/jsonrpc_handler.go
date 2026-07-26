@@ -8,11 +8,11 @@ import (
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
-	"github.com/google/uuid"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/stats"
+	"github.com/google/uuid"
 	"golang.org/x/exp/jsonrpc2"
 )
 
@@ -538,7 +538,10 @@ func parseIDParam(param any, invalidIDErr error, normalize func(string) (string,
 // normalizeUUID validates a 128-bit entity ID (trace IDs: 32-char hex on the
 // wire; log IDs: tool-minted dashed UUIDs; both stored in uuid columns) and
 // returns it in canonical dashed form. Accepts 32-char hex and
-// UUID-with-dashes.
+// UUID-with-dashes. The length gate is NOT redundant with uuid.Parse: it
+// exists to reject the braced {...} and urn:uuid: forms Parse would
+// otherwise accept, keeping the API surface at exactly the two shapes we
+// serve.
 func normalizeUUID(s string) (string, error) {
 	if len(s) != 32 && len(s) != 36 {
 		return "", fmt.Errorf("ID must be 32-char hex or a dashed UUID, got %d chars", len(s))

@@ -349,6 +349,10 @@ func TestDeleteParamValidation(t *testing.T) {
 				assert.Equal(t, tc.invalidErr, err)
 			})
 
+			// Both spellings must pass validation. Note `count` is the
+			// number of IDs supplied, not rows deleted (the store is empty
+			// here, and these two spellings normalize to the same UUID);
+			// functional round-trips live in TestDeleteSpanByID and friends.
 			t.Run("Valid Hex And UUID Forms", func(t *testing.T) {
 				result, err := handler.Handle(ctx, createRequest(tc.method, []string{
 					testTraceIDHex,
@@ -438,7 +442,6 @@ func TestSearchMetricSummariesInvalidParams(t *testing.T) {
 	assert.Nil(t, result)
 	assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 }
-
 
 func TestGetStats(t *testing.T) {
 	handler, teardown := setupHandlerWithData(t)
@@ -771,7 +774,7 @@ func TestSearchMetricSummaries(t *testing.T) {
 			"id":   "q1",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "name", "searchScope": "field"},
+				"field":         map[string]any{"name": "name", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "test.gauge",
 			},

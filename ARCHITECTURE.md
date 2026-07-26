@@ -212,7 +212,7 @@ CORS is enabled for local dev (Vite on port 3001).
 | `clearTraces` / `clearLogs` / `clearMetrics` | Delete all data for a signal |
 | `deleteSpansByTraceID` / `deleteSpanByID` / `deleteLogByID` | Targeted deletes |
 
-Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The API has one not-found convention: requesting a specific entity that does not exist returns an error (`-32001` trace, `-32002` log, `-32003` metric, `-32006` span), never a `null` result. Invalid IDs likewise return dedicated codes (`-32004` trace, `-32005` log, `-32008` span, `-32009` metric stream) rather than surfacing as internal errors — on read paths and delete paths alike. The frontend service layer (`telemetry-service.ts`) translates these codes into whatever shape its callers want (e.g. `getMetric` returns `null` on `-32003`).
+Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The API has one not-found convention: requesting a specific entity that does not exist returns an error (`-32001` trace, `-32002` log, `-32003` metric, `-32006` span), never a `null` result. (Caveat: `getMetric` currently returns `-32003` both for an unknown stream and for a known stream with no datapoints in the requested window — the two are not yet distinguished.) Invalid ID *params* likewise return dedicated codes (`-32004` trace, `-32005` log, `-32008` span, `-32009` metric stream) rather than surfacing as internal errors, on read and delete paths alike; IDs embedded inside search query trees are not yet validated the same way. The frontend service layer (`telemetry-service.ts`) translates these codes into whatever shape its callers want (e.g. `getMetric` returns `null` on `-32003`).
 
 ## Frontend
 

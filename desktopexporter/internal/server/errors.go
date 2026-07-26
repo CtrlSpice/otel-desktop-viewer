@@ -17,12 +17,12 @@ import (
 // returns the matching *NotFound error below -- never a null result. The
 // frontend service layer decides how each surfaces in the UI.
 const (
-	ErrCodeTraceNotFound  = -32001
-	ErrCodeLogNotFound    = -32002
-	ErrCodeMetricNotFound = -32003
-	ErrCodeInvalidTraceID = -32004
-	ErrCodeInvalidLogID   = -32005
-	ErrCodeSpanNotFound   = -32006
+	ErrCodeTraceNotFound   = -32001
+	ErrCodeLogNotFound     = -32002
+	ErrCodeMetricNotFound  = -32003
+	ErrCodeInvalidTraceID  = -32004
+	ErrCodeInvalidLogID    = -32005
+	ErrCodeSpanNotFound    = -32006
 	ErrCodeInvalidQuery    = -32007
 	ErrCodeInvalidSpanID   = -32008
 	ErrCodeInvalidStreamID = -32009
@@ -30,12 +30,12 @@ const (
 
 // Custom JSON-RPC errors
 var (
-	ErrTraceNotFound  = jsonrpc2.NewError(ErrCodeTraceNotFound, "Trace not found")
-	ErrLogsNotFound   = jsonrpc2.NewError(ErrCodeLogNotFound, "Log not found")
-	ErrMetricNotFound = jsonrpc2.NewError(ErrCodeMetricNotFound, "Metric not found")
-	ErrInvalidTraceID = jsonrpc2.NewError(ErrCodeInvalidTraceID, "Invalid trace ID")
-	ErrInvalidLogID   = jsonrpc2.NewError(ErrCodeInvalidLogID, "Invalid log ID")
-	ErrSpanNotFound   = jsonrpc2.NewError(ErrCodeSpanNotFound, "Span not found")
+	ErrTraceNotFound   = jsonrpc2.NewError(ErrCodeTraceNotFound, "Trace not found")
+	ErrLogsNotFound    = jsonrpc2.NewError(ErrCodeLogNotFound, "Log not found")
+	ErrMetricNotFound  = jsonrpc2.NewError(ErrCodeMetricNotFound, "Metric not found")
+	ErrInvalidTraceID  = jsonrpc2.NewError(ErrCodeInvalidTraceID, "Invalid trace ID")
+	ErrInvalidLogID    = jsonrpc2.NewError(ErrCodeInvalidLogID, "Invalid log ID")
+	ErrSpanNotFound    = jsonrpc2.NewError(ErrCodeSpanNotFound, "Span not found")
 	ErrInvalidQuery    = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
 	ErrInvalidSpanID   = jsonrpc2.NewError(ErrCodeInvalidSpanID, "Invalid span ID")
 	ErrInvalidStreamID = jsonrpc2.NewError(ErrCodeInvalidStreamID, "Invalid metric stream ID")
