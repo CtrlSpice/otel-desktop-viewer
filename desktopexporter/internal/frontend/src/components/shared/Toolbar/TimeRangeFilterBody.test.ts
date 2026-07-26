@@ -31,10 +31,19 @@ describe('TimeRangeFilterBody', () => {
 
   it('switches the timezone from local to UTC', () => {
     renderComponent()
+    // Exact name: on a UTC machine the local option's accessible name also
+    // starts with "Coordinated Universal Time" (plus its "(Local)" marker).
     fireEvent.click(
-      screen.getByRole('button', { name: /Coordinated Universal Time/i })
+      screen.getByRole('button', { name: 'Coordinated Universal Time UTC' })
     )
     expect(localStorage.getItem('time-tz')).toBe('UTC')
+  })
+
+  it('marks the machine timezone option as local', () => {
+    renderComponent()
+    expect(
+      screen.getByRole('button', { name: /\(Local\)/ })
+    ).toBeInTheDocument()
   })
 
   it('applies a custom range through the embedded form', () => {

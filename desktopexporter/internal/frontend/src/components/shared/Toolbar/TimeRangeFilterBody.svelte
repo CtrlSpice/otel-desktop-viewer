@@ -36,7 +36,9 @@
       class:tz-option--active={ctx.tz === 'local'}
       onclick={() => ctx.setTz('local')}
     >
-      <span class="min-w-0 flex-1 truncate">{getLocalTimezoneName()}</span>
+      <!-- "(Local)" disambiguates from the UTC row when the machine timezone
+           is itself UTC, and flags that this option follows the machine. -->
+      <span class="min-w-0 flex-1 truncate">{getLocalTimezoneName()} (Local)</span>
       <span class="tz-badge badge-count">{formatTimezoneLabel('local')}</span>
     </button>
     <button
