@@ -853,4 +853,42 @@ func TestGetMetric(t *testing.T) {
 		assert.Equal(t, ErrMetricNotFound, err,
 			"not-found must use the shared error convention, not a null result")
 	})
+
+	// A known stream queried over a window with no datapoints is NOT a
+	// not-found: it returns valid MetricData with an empty timeseries list.
+	// Only an unknown stream ID gets ErrMetricNotFound (see subtest above).
+	t.Run("Known Stream, Empty Window", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		summaryReq := createRequest("searchMetricSummaries", []string{
+			"0", strconv.FormatInt(1<<63-1, 10),
+		})
+		summaryResult, err := handler.Handle(context.Background(), summaryReq)
+		require.NoError(t, err)
+		summaryRaw, ok := summaryResult.(json.RawMessage)
+		require.True(t, ok)
+		var summaries []map[string]any
+		require.NoError(t, json.Unmarshal(summaryRaw, &summaries))
+		require.Len(t, summaries, 1)
+		streamID, ok := summaries[0]["id"].(string)
+		require.True(t, ok)
+
+		// Test data is timestamped time.Now(); the window [0, 1] ns is
+		// guaranteed to miss it.
+		req := createRequest("getMetric", []any{streamID, "0", "1"})
+		result, err := handler.Handle(context.Background(), req)
+
+		require.NoError(t, err,
+			"an empty window on a known stream must not be treated as not-found")
+		raw, ok := result.(json.RawMessage)
+		require.True(t, ok, "Expected json.RawMessage, got %T", result)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		assert.Equal(t, "test.gauge", metric["name"])
+		assert.Equal(t, "bytes", metric["unit"])
+		timeseries, ok := metric["timeseries"].([]any)
+		require.True(t, ok, "timeseries must be a JSON array, got %T", metric["timeseries"])
+		assert.Empty(t, timeseries)
+	})
 }
