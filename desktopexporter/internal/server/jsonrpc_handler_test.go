@@ -412,6 +412,255 @@ func TestSearchMetricSummariesInvalidParams(t *testing.T) {
 }
 
 
+func TestGetStats(t *testing.T) {
+	handler, teardown := setupHandlerWithData(t)
+	defer teardown()
+
+	result, err := handler.Handle(context.Background(), createRequest("getStats", nil))
+
+	assert.NoError(t, err)
+	raw, ok := result.(json.RawMessage)
+	require.True(t, ok, "Expected json.RawMessage, got %T", result)
+	var stats struct {
+		Storage struct {
+			SizeBytes float64 `json:"sizeBytes"`
+		} `json:"storage"`
+		Traces struct {
+			TraceCount float64 `json:"traceCount"`
+			SpanCount  float64 `json:"spanCount"`
+		} `json:"traces"`
+		Logs struct {
+			LogCount float64 `json:"logCount"`
+		} `json:"logs"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &stats))
+	assert.Equal(t, float64(1), stats.Traces.TraceCount)
+	assert.Equal(t, float64(1), stats.Traces.SpanCount)
+	assert.Equal(t, float64(1), stats.Logs.LogCount)
+}
+
+func TestClearLogs(t *testing.T) {
+	handler, teardown := setupHandlerWithData(t)
+	defer teardown()
+	ctx := context.Background()
+
+	result, err := handler.Handle(ctx, createRequest("clearLogs", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, "Logs cleared successfully", result)
+
+	searchResult, err := handler.Handle(ctx, createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
+	assert.NoError(t, err)
+	raw, ok := searchResult.(json.RawMessage)
+	require.True(t, ok)
+	var entries []map[string]any
+	assert.NoError(t, json.Unmarshal(raw, &entries))
+	assert.Len(t, entries, 0)
+}
+
+func TestClearMetrics(t *testing.T) {
+	handler, teardown := setupHandlerWithMetrics(t)
+	defer teardown()
+	ctx := context.Background()
+
+	result, err := handler.Handle(ctx, createRequest("clearMetrics", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, "Metrics cleared successfully", result)
+
+	searchResult, err := handler.Handle(ctx, createRequest("searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
+	assert.NoError(t, err)
+	raw, ok := searchResult.(json.RawMessage)
+	require.True(t, ok)
+	var summaries []map[string]any
+	assert.NoError(t, json.Unmarshal(raw, &summaries))
+	assert.Len(t, summaries, 0)
+}
+
+func TestGetLogNotFound(t *testing.T) {
+	handler, teardown := setupHandlerWithData(t)
+	defer teardown()
+
+	req := createRequest("getLog", []string{"00000000-0000-0000-0000-0000000000aa"})
+	result, err := handler.Handle(context.Background(), req)
+
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Equal(t, ErrLogsNotFound, err)
+}
+
+func TestDeleteSpansByTraceID(t *testing.T) {
+	handler, teardown := setupHandlerWithData(t)
+	defer teardown()
+	ctx := context.Background()
+
+	result, err := handler.Handle(ctx, createRequest("deleteSpansByTraceID", []string{testTraceIDHex}))
+	assert.NoError(t, err)
+	response, ok := result.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, 1, response["count"])
+
+	searchResult, err := handler.Handle(ctx, createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
+	assert.NoError(t, err)
+	raw, ok := searchResult.(json.RawMessage)
+	require.True(t, ok)
+	var summaries []map[string]any
+	assert.NoError(t, json.Unmarshal(raw, &summaries))
+	assert.Len(t, summaries, 0, "trace should be gone after delete")
+}
+
+func TestDeleteSpanByID(t *testing.T) {
+	handler, teardown := setupHandlerWithData(t)
+	defer teardown()
+	ctx := context.Background()
+
+	// The API serves span IDs in 16-char hex wire form; delete must round-trip it.
+	result, err := handler.Handle(ctx, createRequest("deleteSpanByID", []string{"0000000000000001"}))
+	assert.NoError(t, err)
+	response, ok := result.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, 1, response["count"])
+
+	searchResult, err := handler.Handle(ctx, createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
+	assert.NoError(t, err)
+	raw, ok := searchResult.(json.RawMessage)
+	require.True(t, ok)
+	var summaries []map[string]any
+	assert.NoError(t, json.Unmarshal(raw, &summaries))
+	assert.Len(t, summaries, 0, "the trace's only span should be gone after delete")
+}
+
+func TestDeleteLogByID(t *testing.T) {
+	handler, teardown := setupHandlerWithData(t)
+	defer teardown()
+	ctx := context.Background()
+
+	searchResult, err := handler.Handle(ctx, createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
+	require.NoError(t, err)
+	raw, ok := searchResult.(json.RawMessage)
+	require.True(t, ok)
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal(raw, &entries))
+	require.Len(t, entries, 1)
+	logID, ok := entries[0]["id"].(string)
+	require.True(t, ok)
+
+	result, err := handler.Handle(ctx, createRequest("deleteLogByID", []string{logID}))
+	assert.NoError(t, err)
+	response, ok := result.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, 1, response["count"])
+
+	getResult, err := handler.Handle(ctx, createRequest("getLog", []string{logID}))
+	assert.Nil(t, getResult)
+	assert.Equal(t, ErrLogsNotFound, err, "deleted log should be gone")
+}
+
+// assertAttributeDiscovery unmarshals an attribute-discovery result and checks
+// that service.name is reported as a string resource attribute.
+func assertAttributeDiscovery(t *testing.T, result any) {
+	t.Helper()
+	raw, ok := result.(json.RawMessage)
+	require.True(t, ok, "Expected json.RawMessage, got %T", result)
+	var attrs []struct {
+		Name           string `json:"name"`
+		AttributeScope string `json:"attributeScope"`
+		Type           string `json:"type"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &attrs))
+	for _, a := range attrs {
+		if a.Name == "service.name" && a.AttributeScope == "resource" {
+			assert.Equal(t, "string", a.Type)
+			return
+		}
+	}
+	t.Errorf("service.name resource attribute not found in %s", string(raw))
+}
+
+func timeRangeParams() []string {
+	now := time.Now().UnixNano()
+	return []string{
+		strconv.FormatInt(now-24*time.Hour.Nanoseconds(), 10),
+		strconv.FormatInt(now+24*time.Hour.Nanoseconds(), 10),
+	}
+}
+
+func TestGetLogAttributes(t *testing.T) {
+	t.Run("With Data", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getLogAttributes", timeRangeParams()))
+		assert.NoError(t, err)
+		assertAttributeDiscovery(t, result)
+	})
+
+	t.Run("Invalid Parameters", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getLogAttributes", []string{"123"}))
+		assert.Nil(t, result)
+		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+	})
+}
+
+func TestGetMetricAttributes(t *testing.T) {
+	t.Run("With Data", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getMetricAttributes", timeRangeParams()))
+		assert.NoError(t, err)
+		assertAttributeDiscovery(t, result)
+	})
+
+	t.Run("Invalid Parameters", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getMetricAttributes", []string{"123"}))
+		assert.Nil(t, result)
+		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+	})
+}
+
+func TestGetAttributesByTraceID(t *testing.T) {
+	t.Run("With Data", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getAttributesByTraceID", []string{testTraceIDHex}))
+		assert.NoError(t, err)
+		assertAttributeDiscovery(t, result)
+	})
+
+	t.Run("Invalid Parameters", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getAttributesByTraceID", []any{42}))
+		assert.Nil(t, result)
+		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+	})
+}
+
+func TestGetTraceSpanCount(t *testing.T) {
+	handler, teardown := setupHandlerWithData(t)
+	defer teardown()
+	ctx := context.Background()
+
+	t.Run("With Data", func(t *testing.T) {
+		result, err := handler.Handle(ctx, createRequest("getTraceSpanCount", []string{testTraceIDHex}))
+		assert.NoError(t, err)
+		assert.Equal(t, int64(1), result)
+	})
+
+	t.Run("Unknown Trace", func(t *testing.T) {
+		result, err := handler.Handle(ctx, createRequest("getTraceSpanCount", []string{"00000000-0000-0000-0000-0000000000aa"}))
+		assert.NoError(t, err)
+		assert.Equal(t, int64(0), result)
+	})
+}
+
 // buildTestMetrics returns pmetric.Metrics with one gauge metric for handler tests.
 func buildTestMetrics() pmetric.Metrics {
 	base := time.Now().UnixNano()
