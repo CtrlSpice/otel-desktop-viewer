@@ -339,11 +339,19 @@ export function createMetricViewContext(
   //   agg=<aggregationView>   htab=<activeHistogramTab>
   //   hscope=<histogramScope> dp=<selectedDatapointId>
   // Tab/datapoint picks push a history entry (navigational); aggregation/scope
-  // adjustments replace (silent). The router subscription reconciles by value:
-  // it applies the URL to the view only when the two disagree, so the echo of
-  // our own writes (URL already equals view) is skipped without any "was that
-  // me?" bookkeeping. The heatmap/quantile bucket selection stays transient
-  // (not a stable datapoint id) and is out of the URL this iteration.
+  // adjustments replace (silent). The heatmap/quantile bucket selection stays
+  // transient (not a stable datapoint id) and is out of the URL this iteration.
+  //
+  // Reconciliation mirrors time-context's snapshot pattern: the view and the
+  // URL legitimately disagree when the aggregation is a smart default or a
+  // localStorage restore (those are never written to the URL), so the router
+  // subscription compares the URL against the last sub-view we wrote/applied
+  // -- not against the live view. Only a mismatch there is an external change
+  // (back/forward, shared link, another module stripping our params).
+
+  // The metric sub-view currently frozen in the URL. Null until the
+  // per-metric effect first applies the URL.
+  let urlMetricViewSnapshot: MetricViewQuery | null = null
 
   function metricParseContext(): MetricViewParseContext {
     const datapointIds = new Set<string>()
@@ -371,12 +379,26 @@ export function createMetricViewContext(
     }
   }
 
-  function applyMetricUrlToView(): void {
+  /**
+   * Applies the URL's metric sub-view to the view state.
+   *
+   * `resetMissingAgg` picks the semantics for an absent `agg` param
+   * (`q.agg` is pre-validated: null when missing or invalid):
+   * - `false` (metric load): keep the smart default / persisted choice the
+   *   per-metric effect just set. A bare URL carries no opinion on load.
+   * - `true` (external navigation): reset to 'raw'. The serializer omits
+   *   `agg` for 'raw', so on back/forward an absent param IS the state the
+   *   user navigated to (#235).
+   */
+  function applyMetricUrlToView(resetMissingAgg: boolean): void {
     const q = parseMetricViewQuery(readRoute().query, metricParseContext())
+    urlMetricViewSnapshot = q
 
     if (q.kind === 'timeseries') {
       if (q.agg) {
         view.aggregationView = q.agg as AggregationView
+      } else if (resetMissingAgg) {
+        view.aggregationView = 'raw'
       }
     } else {
       view.activeHistogramTab = q.htab
@@ -393,7 +415,9 @@ export function createMetricViewContext(
   }
 
   function writeMetricUrl(mode: HistoryMode): void {
-    setMetricViewQuery(viewStateToMetricViewQuery(), mode)
+    const q = viewStateToMetricViewQuery()
+    urlMetricViewSnapshot = q
+    setMetricViewQuery(q, mode)
   }
 
   // -- Pure derivations of `metric` --
@@ -1202,23 +1226,30 @@ export function createMetricViewContext(
     // the router query out of this effect's deps — otherwise a time-window
     // write (start/end) would re-trigger the whole per-metric reset.
     untrack(() => {
-      applyMetricUrlToView()
+      applyMetricUrlToView(false)
     })
   })
 
   // (1b) Re-apply the sub-view when the URL's metric params disagree with the
-  // view — i.e. browser back/forward, a shared link landing on the current
-  // metric, or another module stripping our params. Reconciles by value:
-  // after our own writes the URL already equals the view, so the synchronous
-  // echo from navigate() is a no-op here.
+  // last sub-view we wrote or applied (the snapshot) — i.e. browser
+  // back/forward, a shared link landing on the current metric, or another
+  // module stripping our params. Comparing against the snapshot (not the live
+  // view) keeps unrelated query writes (e.g. the time window) from clobbering
+  // a smart-default aggregation that was never mirrored to the URL, while our
+  // own writes are skipped as a no-op echo.
   $effect(() => {
     const unsubscribe = subscribeToRoute(() => {
       const fromUrl = parseMetricViewQuery(
         readRoute().query,
         metricParseContext()
       )
-      if (metricViewQueriesEqual(fromUrl, viewStateToMetricViewQuery())) return
-      applyMetricUrlToView()
+      if (
+        urlMetricViewSnapshot &&
+        metricViewQueriesEqual(fromUrl, urlMetricViewSnapshot)
+      ) {
+        return
+      }
+      applyMetricUrlToView(true)
     })
     return unsubscribe
   })
