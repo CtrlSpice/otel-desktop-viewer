@@ -16,8 +16,9 @@ task_list.txt
 # Added by goreleaser init:
 dist/
 
-# V2 Frontend
-desktopexporter/internal/frontend/node_modules/
+# V2 Frontend (node_modules ignored everywhere: stray tool runs can mint
+# one outside the frontend directory)
+node_modules/
 desktopexporter/internal/frontend/dist/
 desktopexporter/internal/frontend/.vite/
 desktopexporter/internal/frontend/*.local
