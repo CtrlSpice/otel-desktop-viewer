@@ -293,6 +293,88 @@ func TestGetTraceAttributes(t *testing.T) {
 	})
 }
 
+// TestDeleteParamValidation covers the ID validation shared by the three
+// delete methods: bad params must return the signal-specific invalid-ID code
+// (or ErrInvalidParams for malformed arrays), never reach SQL and surface as
+// an internal error.
+func TestDeleteParamValidation(t *testing.T) {
+	cases := []struct {
+		method     string
+		invalidErr error
+	}{
+		{"deleteSpansByTraceID", ErrInvalidTraceID},
+		{"deleteSpanByID", ErrInvalidSpanID},
+		{"deleteLogByID", ErrInvalidLogID},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			handler, teardown := setupHandler(t)
+			defer teardown()
+			ctx := context.Background()
+
+			t.Run("Empty Array", func(t *testing.T) {
+				result, err := handler.Handle(ctx, createRequest(tc.method, []string{}))
+				assert.Nil(t, result)
+				assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+			})
+
+			t.Run("Non-Array Params", func(t *testing.T) {
+				result, err := handler.Handle(ctx, createRequest(tc.method, "not-an-array"))
+				assert.Nil(t, result)
+				assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+			})
+
+			t.Run("Non-String Element", func(t *testing.T) {
+				result, err := handler.Handle(ctx, createRequest(tc.method, []any{42}))
+				assert.Nil(t, result)
+				assert.Equal(t, tc.invalidErr, err)
+			})
+
+			t.Run("Null Element", func(t *testing.T) {
+				result, err := handler.Handle(ctx, createRequest(tc.method, []any{nil}))
+				assert.Nil(t, result)
+				assert.Equal(t, tc.invalidErr, err)
+			})
+
+			t.Run("Malformed ID", func(t *testing.T) {
+				result, err := handler.Handle(ctx, createRequest(tc.method, []string{"definitely-not-a-uuid"}))
+				assert.Nil(t, result)
+				assert.Equal(t, tc.invalidErr, err)
+			})
+
+			t.Run("One Bad Apple", func(t *testing.T) {
+				result, err := handler.Handle(ctx, createRequest(tc.method, []any{testTraceIDHex, "nope"}))
+				assert.Nil(t, result)
+				assert.Equal(t, tc.invalidErr, err)
+			})
+
+			t.Run("Valid Hex And UUID Forms", func(t *testing.T) {
+				result, err := handler.Handle(ctx, createRequest(tc.method, []string{
+					testTraceIDHex,
+					"00000000-0000-0000-0000-000000000001",
+				}))
+				assert.NoError(t, err)
+				response, ok := result.(map[string]any)
+				require.True(t, ok, "expected map response, got %T", result)
+				assert.Equal(t, 2, response["count"])
+			})
+
+			// Span payloads carry 16-char hex span IDs (OTLP wire form);
+			// only deleteSpanByID accepts them.
+			t.Run("16-Hex Wire Form", func(t *testing.T) {
+				result, err := handler.Handle(ctx, createRequest(tc.method, []string{"0000000000000001"}))
+				if tc.method == "deleteSpanByID" {
+					assert.NoError(t, err)
+				} else {
+					assert.Nil(t, result)
+					assert.Equal(t, tc.invalidErr, err)
+				}
+			})
+		})
+	}
+}
+
 func TestMethodNotFound(t *testing.T) {
 	handler, teardown := setupHandler(t)
 	defer teardown()

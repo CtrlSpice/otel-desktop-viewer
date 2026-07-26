@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/google/uuid"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
@@ -277,70 +279,55 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 
 // deleteSpansByTraceID deletes all spans for one or more traces.
 func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	if len(params) == 0 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	err := spans.DeleteSpansByTraceIDs(ctx, h.store.DB(), params)
+	traceIDs, err := parseIDParams(req, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := spans.DeleteSpansByTraceIDs(ctx, h.store.DB(), traceIDs); err != nil {
 		log.Printf("Error deleting spans by trace IDs: %v", err)
 		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
 		"message": "Spans deleted successfully",
-		"count":   len(params),
+		"count":   len(traceIDs),
 	}, nil
 }
 
 // deleteSpanByID deletes one or more specific spans by their IDs.
 func (h *JSONRPCHandler) deleteSpanByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	if len(params) == 0 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	err := spans.DeleteSpansByIDs(ctx, h.store.DB(), params)
+	spanIDs, err := parseIDParams(req, ErrInvalidSpanID, normalizeSpanID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := spans.DeleteSpansByIDs(ctx, h.store.DB(), spanIDs); err != nil {
 		log.Printf("Error deleting spans by IDs: %v", err)
 		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
 		"message": "Spans deleted successfully",
-		"count":   len(params),
+		"count":   len(spanIDs),
 	}, nil
 }
 
 // deleteLogByID deletes one or more specific logs by their IDs.
 func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	if len(params) == 0 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	err := logs.DeleteLogsByIDs(ctx, h.store.DB(), params)
+	logIDs, err := parseIDParams(req, ErrInvalidLogID, normalizeUUID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := logs.DeleteLogsByIDs(ctx, h.store.DB(), logIDs); err != nil {
 		log.Printf("Error deleting logs by IDs: %v", err)
 		return nil, mapStoreError(err)
 	}
 
 	return map[string]any{
 		"message": "Logs deleted successfully",
-		"count":   len(params),
+		"count":   len(logIDs),
 	}, nil
 }
 
@@ -497,6 +484,67 @@ func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 		return nil, mapStoreError(err)
 	}
 	return result, nil
+}
+
+// parseIDParams unmarshals a request's params as a non-empty array of entity
+// IDs, validating and normalizing each element with the given normalize
+// function. A malformed array returns ErrInvalidParams; a malformed element
+// returns invalidIDErr (the signal-specific -3200x code). Previously these
+// params went straight into SQL, where a non-string or non-UUID value became
+// a DB cast error reported as a generic internal error.
+func parseIDParams(req *jsonrpc2.Request, invalidIDErr error, normalize func(string) (string, error)) ([]any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		log.Printf("Failed to unmarshal params: %v", err)
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	if len(params) == 0 {
+		log.Printf("Invalid parameter count: 0 (expected at least 1 ID)")
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	ids := make([]any, 0, len(params))
+	for _, param := range params {
+		s, ok := param.(string)
+		if !ok {
+			log.Printf("Invalid ID type: %T (expected string)", param)
+			return nil, invalidIDErr
+		}
+		id, err := normalize(s)
+		if err != nil {
+			log.Printf("Invalid ID %q: %v", s, err)
+			return nil, invalidIDErr
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// normalizeUUID validates a 128-bit entity ID (trace IDs: 32-char hex on the
+// wire; log IDs: tool-minted dashed UUIDs; both stored in uuid columns) and
+// returns it in canonical dashed form. Accepts 32-char hex and
+// UUID-with-dashes.
+func normalizeUUID(s string) (string, error) {
+	if len(s) != 32 && len(s) != 36 {
+		return "", fmt.Errorf("ID must be 32-char hex or a dashed UUID, got %d chars", len(s))
+	}
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
+}
+
+// normalizeSpanID additionally accepts the 16-char hex span ID the API serves
+// in span payloads (OTLP span IDs are 8 bytes). Ingest zero-pads those into
+// the low bytes of the span_id uuid column, so the same padding is applied
+// here before the lookup.
+func normalizeSpanID(s string) (string, error) {
+	if len(s) == 16 {
+		return normalizeUUID("0000000000000000" + s)
+	}
+	return normalizeUUID(s)
 }
 
 // parseTimestampParam parses a timestamp parameter that must be a JSON string
