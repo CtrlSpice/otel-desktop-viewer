@@ -12,6 +12,21 @@ import type {
   Exemplar,
   DataPoint,
 } from '@/types/api-types'
+import type {
+  JsonAttributeDefinition,
+  JsonDataPoint,
+  JsonDeleteResult,
+  JsonExemplar,
+  JsonLogData,
+  JsonLogSummary,
+  JsonMetricData,
+  JsonMetricSummary,
+  JsonMetricTimeseries,
+  JsonStats,
+  JsonTraceData,
+  JsonTraceSummary,
+  BackendQueryNode,
+} from '@/types/wire-types'
 import { parseBigInt, parseNullableBigInt } from '@/utils/bigint'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
 import type {
@@ -25,13 +40,13 @@ import { getOperatorsForFieldType } from '@/constants/operators'
 interface JsonRpcRequest {
   jsonrpc: '2.0'
   method: string
-  params?: any
+  params?: unknown
   id: number
 }
 
 interface JsonRpcResponse {
   jsonrpc: '2.0'
-  result?: any
+  result?: unknown
   error?: {
     code: number
     message: string
@@ -59,8 +74,10 @@ function toNanoseconds(milliseconds: number): string {
   return milliseconds === 0 ? '0' : milliseconds.toString() + '000000'
 }
 
-// Helper function to make typed RPC calls
-async function callRPC(method: string, params?: any): Promise<any> {
+// Generic JSON-RPC transport. T is a compile-time assertion of the wire
+// shape (see wire-types.ts), not runtime validation -- the backend is
+// trusted to serve what its projections declare.
+async function callRPC<T>(method: string, params?: unknown): Promise<T> {
   const request: JsonRpcRequest = {
     method,
     params,
@@ -87,7 +104,7 @@ async function callRPC(method: string, params?: any): Promise<any> {
       throw new JsonRpcError(data.error.code, data.error.message)
     }
 
-    return data.result
+    return data.result as T
   } catch (error) {
     throw error
   }
@@ -96,10 +113,18 @@ async function callRPC(method: string, params?: any): Promise<any> {
 // Data Transformation Functions
 
 // Helper functions to deserialize timestamps
-function traceSummaryFromJSON(json: any): TraceSummary {
+function traceSummaryFromJSON(json: JsonTraceSummary): TraceSummary {
   return {
     ...json,
-    rootSpan: json.rootSpan ?? undefined,
+    // The wire sends null for orphaned traces and for an empty root
+    // service name (nullif in the projection); the domain wants
+    // undefined / '' respectively.
+    rootSpan: json.rootSpan
+      ? {
+          serviceName: json.rootSpan.serviceName ?? '',
+          name: json.rootSpan.name,
+        }
+      : undefined,
     startTime: parseBigInt(json.startTime),
     // durationNs arrives as a varchar-encoded int64 (ns precision
     // would otherwise be clipped by JSON's float64 numbers).
@@ -107,28 +132,27 @@ function traceSummaryFromJSON(json: any): TraceSummary {
   }
 }
 
-function traceSummariesFromJSON(json: any): TraceSummary[] {
+function traceSummariesFromJSON(json: JsonTraceSummary[]): TraceSummary[] {
   return json.map(traceSummaryFromJSON)
 }
 
-function traceDataFromJSON(json: any): TraceData {
+function traceDataFromJSON(json: JsonTraceData): TraceData {
   return {
     ...json,
-    spans: json.spans.map((spanNode: any) => ({
+    // events/links/matched are always present on the wire (coalesced
+    // server-side), so no fallbacks here.
+    spans: json.spans.map(spanNode => ({
       spanData: {
         ...spanNode.spanData,
         startTime: parseBigInt(spanNode.spanData.startTime),
         endTime: parseBigInt(spanNode.spanData.endTime),
-        events: spanNode.spanData.events
-          ? spanNode.spanData.events.map((event: any) => ({
-              ...event,
-              timestamp: parseBigInt(event.timestamp),
-            }))
-          : [],
-        links: spanNode.spanData.links || [],
+        events: spanNode.spanData.events.map(event => ({
+          ...event,
+          timestamp: parseBigInt(event.timestamp),
+        })),
       },
       depth: spanNode.depth,
-      matched: spanNode.matched ?? true,
+      matched: spanNode.matched,
     })),
   }
 }
@@ -136,20 +160,20 @@ function traceDataFromJSON(json: any): TraceData {
 // Summary projection returned by searchLogs. Lightweight -- only
 // promote the one bigint field (timestamp); the rest are plain
 // primitives on the wire.
-function logSummaryFromJSON(json: any): LogSummary {
+function logSummaryFromJSON(json: JsonLogSummary): LogSummary {
   return {
     ...json,
     timestamp: parseBigInt(json.timestamp),
   }
 }
 
-function logSummariesFromJSON(json: any): LogSummary[] {
+function logSummariesFromJSON(json: JsonLogSummary[]): LogSummary[] {
   return json.map(logSummaryFromJSON)
 }
 
 // Full log row returned by getLog(id). Promotes both timestamp
 // columns; everything else matches the wire shape.
-function logDataFromJSON(json: any): LogData {
+function logDataFromJSON(json: JsonLogData): LogData {
   return {
     ...json,
     timestamp: parseBigInt(json.timestamp),
@@ -157,19 +181,19 @@ function logDataFromJSON(json: any): LogData {
   }
 }
 
-function exemplarFromJSON(json: any): Exemplar {
+function exemplarFromJSON(json: JsonExemplar): Exemplar {
   return {
     ...json,
     timestamp: parseBigInt(json.timestamp),
   }
 }
 
-function dataPointFromJSON(json: any): DataPoint {
+function dataPointFromJSON(json: JsonDataPoint): DataPoint {
   return {
     ...json,
     timestamp: parseBigInt(json.timestamp),
     startTime: parseBigInt(json.startTime),
-    exemplars: json.exemplars?.map(exemplarFromJSON) ?? [],
+    exemplars: json.exemplars.map(exemplarFromJSON),
   }
 }
 
@@ -179,55 +203,49 @@ function dataPointFromJSON(json: any): DataPoint {
 // plain string and attributes are already plain string/string/string
 // trios -- so it's just a recursive call into the timeseries'
 // datapoints to revive their timestamp BigInts.
-function timeseriesFromJSON(json: any): MetricTimeseries {
+function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
   return {
-    attributesKey: json.attributesKey ?? '',
-    attributes: json.attributes ?? [],
-    datapoints: json.datapoints?.map(dataPointFromJSON) ?? [],
+    attributesKey: json.attributesKey,
+    attributes: json.attributes,
+    datapoints: json.datapoints.map(dataPointFromJSON),
   }
 }
 
-function metricDataFromJSON(json: any): MetricData {
+function metricDataFromJSON(json: JsonMetricData): MetricData {
   return {
     ...json,
-    metricType: json.metricType ?? undefined,
-    aggregationTemporality: json.aggregationTemporality ?? null,
-    isMonotonic:
-      json.isMonotonic === null || json.isMonotonic === undefined
-        ? null
-        : Boolean(json.isMonotonic),
-    timeseries: json.timeseries?.map(timeseriesFromJSON) ?? [],
+    timeseries: json.timeseries.map(timeseriesFromJSON),
   }
 }
 
-function metricSummaryFromJSON(json: any): MetricSummary {
+function metricSummaryFromJSON(json: JsonMetricSummary): MetricSummary {
   return {
     ...json,
     description: json.description ?? '',
     serviceName: json.serviceName ?? '',
-    seriesCount: Number(json.seriesCount ?? 0),
-    dataPointCount: Number(json.dataPointCount ?? 0),
+    seriesCount: json.seriesCount ?? 0,
+    dataPointCount: json.dataPointCount ?? 0,
     lastSeen: parseBigInt(json.lastSeen),
   }
 }
 
-function metricSummariesFromJSON(json: any): MetricSummary[] {
+function metricSummariesFromJSON(json: JsonMetricSummary[]): MetricSummary[] {
   return json.map(metricSummaryFromJSON)
 }
 
-function statsFromJSON(json: any): Stats {
+function statsFromJSON(json: JsonStats): Stats {
   return {
     traces: {
       ...json.traces,
-      lastReceived: parseNullableBigInt(json.traces?.lastReceived),
+      lastReceived: parseNullableBigInt(json.traces.lastReceived),
     },
     logs: {
       ...json.logs,
-      lastReceived: parseNullableBigInt(json.logs?.lastReceived),
+      lastReceived: parseNullableBigInt(json.logs.lastReceived),
     },
     metrics: {
       ...json.metrics,
-      lastReceived: parseNullableBigInt(json.metrics?.lastReceived),
+      lastReceived: parseNullableBigInt(json.metrics.lastReceived),
     },
   }
 }
@@ -244,7 +262,10 @@ export let telemetryAPI = {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
     const params = [startTimeNs, endTimeNs]
-    const rawData = await callRPC('getTraceAttributes', params)
+    const rawData = await callRPC<JsonAttributeDefinition[]>(
+      'getTraceAttributes',
+      params
+    )
 
     // Validate that we received an array
     if (!Array.isArray(rawData)) {
@@ -264,7 +285,10 @@ export let telemetryAPI = {
   getAttributesByTraceID: async (
     traceID: string
   ): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC('getAttributesByTraceID', [traceID])
+    const rawData = await callRPC<JsonAttributeDefinition[]>(
+      'getAttributesByTraceID',
+      [traceID]
+    )
     if (!Array.isArray(rawData)) {
       console.warn(
         'getAttributesByTraceID: Expected array, got:',
@@ -283,7 +307,10 @@ export let telemetryAPI = {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
     const params = [startTimeNs, endTimeNs]
-    const rawData = await callRPC('getLogAttributes', params)
+    const rawData = await callRPC<JsonAttributeDefinition[]>(
+      'getLogAttributes',
+      params
+    )
 
     if (!Array.isArray(rawData)) {
       console.warn(
@@ -308,7 +335,7 @@ export let telemetryAPI = {
     const params = queryTree
       ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
       : [startTimeNs, endTimeNs]
-    const rawData = await callRPC('searchTraces', params)
+    const rawData = await callRPC<JsonTraceSummary[]>('searchTraces', params)
     return traceSummariesFromJSON(rawData)
   },
 
@@ -319,13 +346,13 @@ export let telemetryAPI = {
     const params = queryTree
       ? [traceID, convertQueryTreeForBackend(queryTree)]
       : [traceID]
-    const rawData = await callRPC('searchSpans', params)
+    const rawData = await callRPC<JsonTraceData>('searchSpans', params)
     return traceDataFromJSON(rawData)
   },
 
-  clearTraces: () => callRPC('clearTraces', undefined),
+  clearTraces: () => callRPC<string>('clearTraces', undefined),
   deleteTraces: (traceIDs: string[]) =>
-    callRPC('deleteSpansByTraceID', traceIDs),
+    callRPC<JsonDeleteResult>('deleteSpansByTraceID', traceIDs),
 
   // Log methods
   //
@@ -342,18 +369,18 @@ export let telemetryAPI = {
     const params = queryTree
       ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
       : [startTimeNs, endTimeNs]
-    const rawData = await callRPC('searchLogs', params)
+    const rawData = await callRPC<JsonLogSummary[]>('searchLogs', params)
     return logSummariesFromJSON(rawData)
   },
 
   getLog: async (logID: string): Promise<LogData> => {
-    const rawData = await callRPC('getLog', [logID])
+    const rawData = await callRPC<JsonLogData>('getLog', [logID])
     return logDataFromJSON(rawData)
   },
 
-  getLogsByTraceID: (traceID: string) => callRPC('getLogsByTraceID', [traceID]),
-  deleteLogByID: (logId: string) => callRPC('deleteLogByID', [logId]),
-  clearLogs: () => callRPC('clearLogs', undefined),
+  deleteLogByID: (logId: string) =>
+    callRPC<JsonDeleteResult>('deleteLogByID', [logId]),
+  clearLogs: () => callRPC<string>('clearLogs', undefined),
 
   // Metric methods
   searchMetricSummaries: async (
@@ -366,7 +393,10 @@ export let telemetryAPI = {
     const params = queryTree
       ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
       : [startTimeNs, endTimeNs]
-    const rawData = await callRPC('searchMetricSummaries', params)
+    const rawData = await callRPC<JsonMetricSummary[]>(
+      'searchMetricSummaries',
+      params
+    )
     return metricSummariesFromJSON(rawData)
   },
 
@@ -380,7 +410,7 @@ export let telemetryAPI = {
     // Not-found arrives as a JSON-RPC error (one wire convention across all
     // signals); translate it to null here so callers keep a simple contract.
     try {
-      const rawData = await callRPC('getMetric', [
+      const rawData = await callRPC<JsonMetricData>('getMetric', [
         streamId,
         startTimeNs,
         endTimeNs,
@@ -404,7 +434,10 @@ export let telemetryAPI = {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
     const params = [startTimeNs, endTimeNs]
-    const rawData = await callRPC('getMetricAttributes', params)
+    const rawData = await callRPC<JsonAttributeDefinition[]>(
+      'getMetricAttributes',
+      params
+    )
 
     if (!Array.isArray(rawData)) {
       console.warn(
@@ -418,21 +451,21 @@ export let telemetryAPI = {
     return convertAttributesToFieldDefinitions(rawData)
   },
 
-  clearMetrics: () => callRPC('clearMetrics', undefined),
+  clearMetrics: () => callRPC<string>('clearMetrics', undefined),
 
   // Stats methods
   getStats: async (): Promise<Stats> => {
-    const rawData = await callRPC('getStats')
+    const rawData = await callRPC<JsonStats>('getStats')
     return statsFromJSON(rawData)
   },
 
   getTraceSpanCount: async (traceID: string): Promise<number> => {
-    return await callRPC('getTraceSpanCount', [traceID])
+    return await callRPC<number>('getTraceSpanCount', [traceID])
   },
 }
 
 // Helper function to convert frontend query tree to minimal backend format
-function convertQueryTreeForBackend(queryTree: QueryNode): any {
+function convertQueryTreeForBackend(queryTree: QueryNode): BackendQueryNode {
   if (queryTree.type === 'condition') {
     return {
       id: queryTree.id,
@@ -466,7 +499,7 @@ function convertQueryTreeForBackend(queryTree: QueryNode): any {
 
 // Helper function to convert backend attribute data to FieldDefinition objects
 function convertAttributesToFieldDefinitions(
-  attributes: { name: string; type: string; attributeScope: string }[]
+  attributes: JsonAttributeDefinition[]
 ): FieldDefinition[] {
   return attributes
     .filter(attr => attr && attr.name && attr.type && attr.attributeScope) // Filter out invalid entries
