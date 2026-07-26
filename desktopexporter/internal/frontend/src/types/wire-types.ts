@@ -9,8 +9,6 @@
 // ride as strings (JSON numbers are float64 and would clip ns precision)
 // and are promoted to bigint by the revivers in telemetry-service.ts.
 
-import type { MetricType } from './api-types'
-
 export type JsonAttribute = {
   key: string
   value: string
@@ -130,6 +128,11 @@ export type JsonLogData = {
 
 // --- Metrics ---
 
+// Same closed set as MetricType in api-types.ts, duplicated deliberately
+// so the wire contract stays fully self-contained.
+export type JsonMetricType =
+  'Empty' | 'Gauge' | 'Sum' | 'Histogram' | 'ExponentialHistogram'
+
 export type JsonExemplar = {
   timestamp: string
   value: number
@@ -210,7 +213,7 @@ export type JsonMetricData = {
   // Coalesced server-side ('' for a stream with no ingests in the window).
   description: string
   unit: string
-  metricType: MetricType
+  metricType: JsonMetricType
   aggregationTemporality: string | null
   isMonotonic: boolean | null
   resourceDroppedAttributesCount: number
@@ -228,7 +231,7 @@ export type JsonMetricSummary = {
   // Left-joined from stream_description; null when absent.
   description: string | null
   unit: string
-  metricType: MetricType
+  metricType: JsonMetricType
   aggregationTemporality: string | null
   // null for every type except Sum.
   isMonotonic: boolean | null
