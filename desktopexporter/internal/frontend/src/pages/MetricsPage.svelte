@@ -368,7 +368,6 @@
     selectedId={selectedKey}
     drawerId="signal-drawer"
     drawerLabel="Metrics"
-    onSelect={selectMetric}
     onRefresh={handleRefresh}
     refreshPulse={!!refreshIndicatorText}
     refreshAsideTip={refreshIndicatorText}

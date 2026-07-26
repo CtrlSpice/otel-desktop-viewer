@@ -373,7 +373,6 @@
     selectedId={selectedTraceId}
     drawerId="signal-drawer"
     drawerLabel="Traces"
-    onSelect={selectTrace}
     onRefresh={handleRefresh}
     {refreshPulse}
     {refreshAsideTip}

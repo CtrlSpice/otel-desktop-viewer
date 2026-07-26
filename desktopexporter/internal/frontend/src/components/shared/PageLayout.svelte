@@ -34,14 +34,10 @@
     drawerId: string
     /** Tooltip label on the collapsed open-drawer button. */
     drawerLabel: string
-    /** Total item count for the collapsed badge (often
-     * `items.length`, but may differ if filtered). */
-    count?: number
     itemKey?: (item: T) => string
     /** How each row in the list renders. Optional only because
      * empty-list pages (Home) never call it. */
     itemSnippet?: Snippet<[item: T, selected: boolean]>
-    onSelect?: (id: string) => void
     onRefresh?: () => void
     refreshPulse?: boolean
     refreshAsideTip?: string
@@ -83,10 +79,8 @@
     selectedId,
     drawerId,
     drawerLabel,
-    count,
     itemKey,
     itemSnippet,
-    onSelect,
     onRefresh,
     refreshPulse,
     refreshAsideTip,
@@ -122,10 +116,8 @@
     {selectedId}
     {drawerId}
     label={drawerLabel}
-    count={count ?? items.length}
     itemSnippet={noopItem}
     {itemKey}
-    {onSelect}
     {onRefresh}
     {refreshPulse}
     {refreshAsideTip}

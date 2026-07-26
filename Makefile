@@ -73,6 +73,10 @@ format-ts:
 validate-ts:
 	cd desktopexporter/internal/frontend && npm run check
 
+.PHONY: test-ts
+test-ts:
+	cd desktopexporter/internal/frontend && npm test
+
 .PHONY: build
 build: build-ts build-go
 
@@ -81,7 +85,7 @@ run: build-ts
 	go run . --browser-port 8000
 
 .PHONY: test
-test: test-go validate-ts
+test: test-go validate-ts test-ts
 
 .PHONY: release-dry-run
 release-dry-run:
@@ -109,6 +113,7 @@ help:
 	@echo "  build-ts          - Build frontend"
 	@echo "  format-ts         - Format frontend code (Prettier)"
 	@echo "  validate-ts       - Type check frontend"
+	@echo "  test-ts           - Run frontend unit tests (Vitest)"
 	@echo "  dev-ts            - Start frontend dev server (Vite)"
 	@echo ""
 	@echo "Server:"
@@ -123,7 +128,7 @@ help:
 	@echo "Convenience:"
 	@echo "  build             - Build frontend and Go binary"
 	@echo "  run               - Build frontend, then run server (in-memory)"
-	@echo "  test              - Run Go tests and type check frontend"
+	@echo "  test              - Run Go tests, frontend type check, and frontend unit tests"
 	@echo "  dev-go            - Kill port, start server, seed traces + logs + metrics"
 	@echo ""
 	@echo "Other:"

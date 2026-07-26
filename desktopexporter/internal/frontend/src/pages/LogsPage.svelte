@@ -284,7 +284,6 @@
     selectedId={selectedLogId}
     drawerId="signal-drawer"
     drawerLabel="Logs"
-    onSelect={selectLog}
     onRefresh={handleRefresh}
     {refreshPulse}
     {refreshAsideTip}
