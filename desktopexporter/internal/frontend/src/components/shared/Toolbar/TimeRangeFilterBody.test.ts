@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { screen, fireEvent } from '@testing-library/svelte'
 import TimeRangeFilterBody from './TimeRangeFilterBody.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -10,7 +10,15 @@ function renderComponent() {
 }
 
 describe('TimeRangeFilterBody', () => {
+  beforeEach(() => {
+    // Pin a non-UTC zone: on a UTC machine (like CI) the "local" timezone
+    // option renders the same "Coordinated Universal Time" label as the UTC
+    // option, making the UTC button query ambiguous.
+    vi.stubEnv('TZ', 'America/New_York')
+  })
+
   afterEach(() => {
+    vi.unstubAllEnvs()
     vi.useRealTimers()
   })
 
