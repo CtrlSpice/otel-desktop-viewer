@@ -812,47 +812,6 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	return json.RawMessage(raw), nil
 }
 
-// resolveStreamID maps an 8-field OTel metric identity to its
-// metric_streams.id. Returns sql.ErrNoRows if no stream matches; callers
-// translate that into a "not found" response (ErrStreamIDNotFound at the
-// JSON-RPC layer). Empty strings on the nullable identity fields
-// (aggregation_temporality, is_monotonic) match NULL columns via
-// `is not distinct from`.
-//
-// Returned id is a string in canonical UUID form so we can pass it back
-// into subsequent queries via the same `?::uuid` casting used everywhere
-// else; we deliberately don't return a duckdb.UUID because callers (the
-// JSON-RPC layer) and downstream queries both prefer the string shape.
-// resolveStreamID looks up metric_streams.id for the 8-field identity
-// tuple supplied by the JSON-RPC layer. All identity columns in
-// metric_streams are NOT NULL (with empty-string / false defaults
-// representing "not applicable"), so plain equality is safe -- callers
-// pass the same not-applicable convention streamIdentity uses
-// internally. is_monotonic is the only field that needs translation:
-// the wire form is the string "true"/"false"/"" while the column is
-// boolean, with metric types that don't carry monotonicity (everything
-// other than Sum) stored as the false default.
-func resolveStreamID(ctx context.Context, db *sql.DB, name, unit, metricType, aggregationTemporality, isMonotonic, scopeName, scopeVersion, serviceName string) (string, error) {
-	const q = `
-		select id::varchar from metric_streams
-		where name = ?
-		  and unit = ?
-		  and metric_type = ?
-		  and aggregation_temporality = ?
-		  and is_monotonic = ?
-		  and scope_name = ?
-		  and scope_version = ?
-		  and service_name = ?
-		limit 1
-	`
-	var id string
-	err := db.QueryRowContext(ctx, q,
-		name, unit, metricType, aggregationTemporality, isMonotonic == "true",
-		scopeName, scopeVersion, serviceName,
-	).Scan(&id)
-	return id, err
-}
-
 // GetMetricAttributes returns a JSON array of attribute names/scopes/types
 // for metrics that have at least one datapoint in the given time range.
 // Uses the renamed metric_ingest_id column on attributes; the existence
