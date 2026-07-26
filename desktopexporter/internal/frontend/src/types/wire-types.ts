@@ -8,6 +8,11 @@
 // The one systematic wire/domain difference: int64 nanosecond timestamps
 // ride as strings (JSON numbers are float64 and would clip ns precision)
 // and are promoted to bigint by the revivers in telemetry-service.ts.
+//
+// Timestamps only: other 64-bit fields (datapoint intValue, histogram
+// count/zeroCount/bucket arrays, summary lastValue) ride as JSON numbers
+// and silently lose precision past 2^53. That is the current contract,
+// not an oversight in these types.
 
 export type JsonAttribute = {
   key: string
@@ -214,8 +219,12 @@ export type JsonMetricData = {
   description: string
   unit: string
   metricType: JsonMetricType
-  aggregationTemporality: string | null
-  isMonotonic: boolean | null
+  // Projected straight off metric_streams, where "not applicable" is
+  // encoded as '' / false (not-null columns; the encoding keeps the
+  // stream UNIQUE constraint deduping correctly). Contrast with
+  // JsonMetricSummary, which nulls isMonotonic for non-Sum types.
+  aggregationTemporality: string
+  isMonotonic: boolean
   resourceDroppedAttributesCount: number
   resource: JsonResourceData
   scopeName: string
@@ -232,14 +241,19 @@ export type JsonMetricSummary = {
   description: string | null
   unit: string
   metricType: JsonMetricType
-  aggregationTemporality: string | null
-  // null for every type except Sum.
+  // Not-null stream column; '' encodes "not applicable" (see
+  // JsonMetricData).
+  aggregationTemporality: string
+  // Explicitly nulled by the projection for every type except Sum --
+  // unlike getMetric, which serves the raw stream column (false for
+  // non-Sums).
   isMonotonic: boolean | null
-  serviceName: string | null
-  // seriesCount/dataPointCount come from left joins; nullable in the SQL
-  // shape even though filtered streams always have in-window datapoints.
-  seriesCount: number | null
-  dataPointCount: number | null
+  serviceName: string
+  // seriesCount/dataPointCount/lastSeen all come from left joins, but the
+  // search time-condition guarantees every filtered stream has at least
+  // one in-window datapoint, so all three CTEs always produce a row.
+  seriesCount: number
+  dataPointCount: number
   lastValue: number | null
   lastSeen: string
 }
@@ -281,10 +295,29 @@ export type JsonStats = {
 // --- Attribute discovery (getTraceAttributes / getLogAttributes /
 // getMetricAttributes / getAttributesByTraceID) ---
 
+// The attr_type DuckDB enum verbatim (schema.go). Note the spelling
+// asymmetry the enum itself carries: scalar booleans are 'bool', arrays
+// are 'boolean[]'. The frontend's FieldType uses 'boolean' for both, so
+// the service layer translates the scalar at the boundary.
+export type JsonAttributeType =
+  | 'string'
+  | 'int64'
+  | 'float64'
+  | 'bool'
+  | 'string[]'
+  | 'int64[]'
+  | 'float64[]'
+  | 'boolean[]'
+
+// Union across the discovery endpoints: traces serve resource/scope/span/
+// event/link, logs serve resource/scope/log, metrics serve resource/scope.
+export type JsonAttributeScope =
+  'resource' | 'scope' | 'span' | 'event' | 'link' | 'log'
+
 export type JsonAttributeDefinition = {
   name: string
-  attributeScope: string
-  type: string
+  attributeScope: JsonAttributeScope
+  type: JsonAttributeType
 }
 
 // --- Mutation results ---
@@ -296,10 +329,11 @@ export type JsonDeleteResult = {
   count: number
 }
 
-// --- Request direction: the query-tree shape search.ParseQueryTree
-// unmarshals on the Go side (internal/store/search/search_tree.go) ---
+// --- Request direction (frontend -> backend): the query-tree shape
+// search.ParseQueryTree unmarshals on the Go side
+// (internal/store/search/search_tree.go) ---
 
-export type BackendQueryField = {
+export type JsonQueryField = {
   // name/type are omitted for global search; attributeScope only
   // accompanies attribute-scoped fields.
   name?: string
@@ -308,12 +342,12 @@ export type BackendQueryField = {
   attributeScope?: string
 }
 
-export type BackendQueryNode =
+export type JsonQueryNode =
   | {
       id: string
       type: 'condition'
       query: {
-        field: BackendQueryField
+        field: JsonQueryField
         fieldOperator: string
         value: string
       }
@@ -323,6 +357,6 @@ export type BackendQueryNode =
       type: 'group'
       group: {
         logicalOperator: string
-        children: BackendQueryNode[]
+        children: JsonQueryNode[]
       }
     }

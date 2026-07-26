@@ -42,7 +42,8 @@ export type FieldType =
   | 'float64[]'
   | 'boolean[]'
 
-export type AttributeScope = 'resource' | 'scope' | 'span' | 'event' | 'link'
+export type AttributeScope =
+  'resource' | 'scope' | 'span' | 'event' | 'link' | 'log'
 
 export type FieldDefinition =
   | {

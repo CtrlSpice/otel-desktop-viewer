@@ -25,15 +25,12 @@ import type {
   JsonStats,
   JsonTraceData,
   JsonTraceSummary,
-  BackendQueryNode,
+  JsonAttributeType,
+  JsonQueryNode,
 } from '@/types/wire-types'
 import { parseBigInt, parseNullableBigInt } from '@/utils/bigint'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
-import type {
-  AttributeScope,
-  FieldDefinition,
-  FieldType,
-} from '@/constants/fields'
+import type { FieldDefinition, FieldType } from '@/constants/fields'
 import { getOperatorsForFieldType } from '@/constants/operators'
 
 // JSON-RPC Client
@@ -85,29 +82,25 @@ async function callRPC<T>(method: string, params?: unknown): Promise<T> {
     jsonrpc: '2.0',
   }
 
-  try {
-    const response = await fetch('/rpc', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(request),
-    })
+  const response = await fetch('/rpc', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  })
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-
-    const data: JsonRpcResponse = await response.json()
-
-    if (data.error) {
-      throw new JsonRpcError(data.error.code, data.error.message)
-    }
-
-    return data.result as T
-  } catch (error) {
-    throw error
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
   }
+
+  const data: JsonRpcResponse = await response.json()
+
+  if (data.error) {
+    throw new JsonRpcError(data.error.code, data.error.message)
+  }
+
+  return data.result as T
 }
 
 // Data Transformation Functions
@@ -139,8 +132,9 @@ function traceSummariesFromJSON(json: JsonTraceSummary[]): TraceSummary[] {
 function traceDataFromJSON(json: JsonTraceData): TraceData {
   return {
     ...json,
-    // events/links/matched are always present on the wire (coalesced
-    // server-side), so no fallbacks here.
+    // events is coalesced to [] server-side and matched is always
+    // emitted (literal true when no search criteria), so no fallbacks;
+    // links rides the spanData spread untouched.
     spans: json.spans.map(spanNode => ({
       spanData: {
         ...spanNode.spanData,
@@ -222,9 +216,6 @@ function metricSummaryFromJSON(json: JsonMetricSummary): MetricSummary {
   return {
     ...json,
     description: json.description ?? '',
-    serviceName: json.serviceName ?? '',
-    seriesCount: json.seriesCount ?? 0,
-    dataPointCount: json.dataPointCount ?? 0,
     lastSeen: parseBigInt(json.lastSeen),
   }
 }
@@ -465,7 +456,7 @@ export let telemetryAPI = {
 }
 
 // Helper function to convert frontend query tree to minimal backend format
-function convertQueryTreeForBackend(queryTree: QueryNode): BackendQueryNode {
+function convertQueryTreeForBackend(queryTree: QueryNode): JsonQueryNode {
   if (queryTree.type === 'condition') {
     return {
       id: queryTree.id,
@@ -497,17 +488,29 @@ function convertQueryTreeForBackend(queryTree: QueryNode): BackendQueryNode {
   }
 }
 
+// DuckDB's attr_type enum spells scalar booleans 'bool'; the frontend's
+// FieldType uses 'boolean' (matching the enum's own 'boolean[]' arrays).
+// Translate at the boundary -- without this, boolean attributes fall
+// through getOperatorsForFieldType's default branch and lose the
+// boolean operator set.
+function fieldTypeFromWire(type: JsonAttributeType): FieldType {
+  return type === 'bool' ? 'boolean' : type
+}
+
 // Helper function to convert backend attribute data to FieldDefinition objects
 function convertAttributesToFieldDefinitions(
   attributes: JsonAttributeDefinition[]
 ): FieldDefinition[] {
   return attributes
     .filter(attr => attr && attr.name && attr.type && attr.attributeScope) // Filter out invalid entries
-    .map(attr => ({
-      name: attr.name,
-      type: attr.type as FieldType,
-      searchScope: 'attribute' as const,
-      attributeScope: attr.attributeScope as AttributeScope,
-      operators: getOperatorsForFieldType(attr.type as FieldType),
-    }))
+    .map(attr => {
+      const type = fieldTypeFromWire(attr.type)
+      return {
+        name: attr.name,
+        type,
+        searchScope: 'attribute' as const,
+        attributeScope: attr.attributeScope,
+        operators: getOperatorsForFieldType(type),
+      }
+    })
 }
