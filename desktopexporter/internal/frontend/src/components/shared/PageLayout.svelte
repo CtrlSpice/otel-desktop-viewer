@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang="ts" generics="T">
   /*
    * PageLayout: the single top-level layout used by every route.
    *
@@ -97,17 +97,17 @@
     minMainPx,
     minDetailPx,
     resizableStorageKey,
-  }: Props<any> = $props()
+  }: Props<T> = $props()
 
   // No-op snippet for railOnly pages (Home) that render no list -- the
   // drawer's effectivelyOpen=false guarantees this never renders,
   // but the prop is required so we satisfy the type.
-  const noopItem: Snippet<[item: any, selected: boolean]> = $derived(
+  const noopItem: Snippet<[item: T, selected: boolean]> = $derived(
     itemSnippet ?? noopFallback
   )
 </script>
 
-{#snippet noopFallback(_item: any, _selected: boolean)}{/snippet}
+{#snippet noopFallback(_item: T, _selected: boolean)}{/snippet}
 
 <div class="page-layout">
   <SignalListDrawer

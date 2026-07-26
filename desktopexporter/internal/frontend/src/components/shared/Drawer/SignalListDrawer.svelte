@@ -17,7 +17,7 @@
   }
 </script>
 
-<script lang="ts">
+<script lang="ts" generics="T">
   import type { Snippet } from 'svelte'
   import { onMount } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
@@ -67,7 +67,9 @@
     drawerId,
     label,
     itemSnippet,
-    itemKey = (item: any) => item.id,
+    // Default assumes items carry an `id` (logs, metrics); pages whose
+    // items key differently (traces: traceID) must pass itemKey.
+    itemKey = (item: T) => (item as { id: string }).id,
     onRefresh,
     refreshPulse = false,
     refreshAsideTip = '',
@@ -77,7 +79,7 @@
     drawerSearch,
     footer,
     children,
-  }: Props<any> = $props()
+  }: Props<T> = $props()
 
   /*
    * Drawer open/closed is a single global preference shared by every

@@ -46,8 +46,12 @@ beforeAll(() => {
   }
 })
 
+// Instantiation expression pins the drawer's generic to DrawerItem; passing
+// the bare component would collapse T to unknown and reject our snippet.
+const TypedDrawer = SignalListDrawer<DrawerItem>
+
 function renderDrawer(props: Record<string, unknown> = {}) {
-  return renderWithContexts(SignalListDrawer, {
+  return renderWithContexts(TypedDrawer, {
     items,
     selectedId: null,
     drawerId: 'traces-drawer',
