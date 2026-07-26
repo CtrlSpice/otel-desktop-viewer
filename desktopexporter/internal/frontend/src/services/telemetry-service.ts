@@ -51,6 +51,9 @@ export class JsonRpcError extends Error {
   }
 }
 
+// Custom error codes minted by the backend (internal/server/errors.go).
+const ERR_CODE_METRIC_NOT_FOUND = -32003
+
 // Helper function to convert milliseconds to nanoseconds
 function toNanoseconds(milliseconds: number): string {
   return milliseconds === 0 ? '0' : milliseconds.toString() + '000000'
@@ -374,13 +377,24 @@ export let telemetryAPI = {
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const rawData = await callRPC('getMetric', [
-      streamId,
-      startTimeNs,
-      endTimeNs,
-    ])
-    if (rawData === null || rawData === 'null') return null
-    return metricDataFromJSON(rawData)
+    // Not-found arrives as a JSON-RPC error (one wire convention across all
+    // signals); translate it to null here so callers keep a simple contract.
+    try {
+      const rawData = await callRPC('getMetric', [
+        streamId,
+        startTimeNs,
+        endTimeNs,
+      ])
+      return metricDataFromJSON(rawData)
+    } catch (error) {
+      if (
+        error instanceof JsonRpcError &&
+        error.code === ERR_CODE_METRIC_NOT_FOUND
+      ) {
+        return null
+      }
+      throw error
+    }
   },
 
   getMetricAttributes: async (

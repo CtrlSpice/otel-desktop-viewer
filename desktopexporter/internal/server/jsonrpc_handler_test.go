@@ -486,9 +486,9 @@ func TestGetMetric(t *testing.T) {
 		})
 		result, err := handler.Handle(context.Background(), req)
 
-		assert.NoError(t, err)
-		raw, ok := result.(json.RawMessage)
-		assert.True(t, ok)
-		assert.Equal(t, "null", string(raw))
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Equal(t, ErrMetricNotFound, err,
+			"not-found must use the shared error convention, not a null result")
 	})
 }

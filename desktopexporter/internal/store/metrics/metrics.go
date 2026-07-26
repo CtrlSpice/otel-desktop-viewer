@@ -20,6 +20,7 @@ import (
 
 var (
 	ErrInvalidMetricQuery   = errors.New("invalid metric search query")
+	ErrStreamIDNotFound     = errors.New("metric stream ID not found")
 	ErrMetricsStoreInternal = errors.New("metrics store internal error")
 )
 
@@ -801,19 +802,19 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return json.RawMessage("null"), nil
+			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}
 		return nil, fmt.Errorf("GetMetric: %w: %w", ErrMetricsStoreInternal, err)
 	}
 	if raw == nil || string(raw) == "null" {
-		return json.RawMessage("null"), nil
+		return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 	}
 	return json.RawMessage(raw), nil
 }
 
 // resolveStreamID maps an 8-field OTel metric identity to its
 // metric_streams.id. Returns sql.ErrNoRows if no stream matches; callers
-// translate that into a "not found" response (e.g. JSON null at the
+// translate that into a "not found" response (ErrStreamIDNotFound at the
 // JSON-RPC layer). Empty strings on the nullable identity fields
 // (aggregation_temporality, is_monotonic) match NULL columns via
 // `is not distinct from`.

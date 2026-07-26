@@ -11,24 +11,32 @@ import (
 	"golang.org/x/exp/jsonrpc2"
 )
 
-// Custom JSON-RPC error codes
+// Custom JSON-RPC error codes.
+//
+// Not-found convention: a request for a specific entity that does not exist
+// returns the matching *NotFound error below -- never a null result. The
+// frontend service layer decides how each surfaces in the UI.
 const (
 	ErrCodeTraceNotFound  = -32001
 	ErrCodeLogNotFound    = -32002
+	ErrCodeMetricNotFound = -32003
 	ErrCodeInvalidTraceID = -32004
 	ErrCodeInvalidLogID   = -32005
 	ErrCodeSpanNotFound   = -32006
 	ErrCodeInvalidQuery   = -32007
+	ErrCodeInvalidSpanID  = -32008
 )
 
 // Custom JSON-RPC errors
 var (
 	ErrTraceNotFound  = jsonrpc2.NewError(ErrCodeTraceNotFound, "Trace not found")
 	ErrLogsNotFound   = jsonrpc2.NewError(ErrCodeLogNotFound, "Log not found")
+	ErrMetricNotFound = jsonrpc2.NewError(ErrCodeMetricNotFound, "Metric not found")
 	ErrInvalidTraceID = jsonrpc2.NewError(ErrCodeInvalidTraceID, "Invalid trace ID")
 	ErrInvalidLogID   = jsonrpc2.NewError(ErrCodeInvalidLogID, "Invalid log ID")
 	ErrSpanNotFound   = jsonrpc2.NewError(ErrCodeSpanNotFound, "Span not found")
 	ErrInvalidQuery   = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
+	ErrInvalidSpanID  = jsonrpc2.NewError(ErrCodeInvalidSpanID, "Invalid span ID")
 )
 
 // mapStoreError maps store-layer sentinel errors to JSON-RPC errors.
@@ -44,6 +52,8 @@ func mapStoreError(err error) error {
 		return ErrSpanNotFound
 	case errors.Is(err, logs.ErrLogIDNotFound):
 		return ErrLogsNotFound
+	case errors.Is(err, metrics.ErrStreamIDNotFound):
+		return ErrMetricNotFound
 	case errors.Is(err, spans.ErrInvalidTraceQuery), errors.Is(err, logs.ErrInvalidLogQuery),
 		errors.Is(err, metrics.ErrInvalidMetricQuery), errors.Is(err, search.ErrInvalidQuery):
 		return ErrInvalidQuery
