@@ -71,8 +71,12 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 	if err := db.QueryRowContext(ctx, query, sizeBytes, maxSizeBytes).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetStats: %w: %w", ErrStatsInternal, err)
 	}
+	// The projection is a json_object of scalar subqueries over aggregates,
+	// which always yields one non-null row -- a nil scan means the query
+	// itself misbehaved. Surfacing "{}" here would violate the wire contract
+	// (frontend wire-types.ts declares all three signal blocks required).
 	if raw == nil {
-		return json.RawMessage("{}"), nil
+		return nil, fmt.Errorf("GetStats: %w: query returned no row", ErrStatsInternal)
 	}
 	return json.RawMessage(raw), nil
 }
