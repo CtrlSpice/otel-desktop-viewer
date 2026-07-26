@@ -23,8 +23,9 @@ const (
 	ErrCodeInvalidTraceID = -32004
 	ErrCodeInvalidLogID   = -32005
 	ErrCodeSpanNotFound   = -32006
-	ErrCodeInvalidQuery   = -32007
-	ErrCodeInvalidSpanID  = -32008
+	ErrCodeInvalidQuery    = -32007
+	ErrCodeInvalidSpanID   = -32008
+	ErrCodeInvalidStreamID = -32009
 )
 
 // Custom JSON-RPC errors
@@ -35,8 +36,9 @@ var (
 	ErrInvalidTraceID = jsonrpc2.NewError(ErrCodeInvalidTraceID, "Invalid trace ID")
 	ErrInvalidLogID   = jsonrpc2.NewError(ErrCodeInvalidLogID, "Invalid log ID")
 	ErrSpanNotFound   = jsonrpc2.NewError(ErrCodeSpanNotFound, "Span not found")
-	ErrInvalidQuery   = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
-	ErrInvalidSpanID  = jsonrpc2.NewError(ErrCodeInvalidSpanID, "Invalid span ID")
+	ErrInvalidQuery    = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
+	ErrInvalidSpanID   = jsonrpc2.NewError(ErrCodeInvalidSpanID, "Invalid span ID")
+	ErrInvalidStreamID = jsonrpc2.NewError(ErrCodeInvalidStreamID, "Invalid metric stream ID")
 )
 
 // mapStoreError maps store-layer sentinel errors to JSON-RPC errors.

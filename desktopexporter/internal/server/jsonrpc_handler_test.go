@@ -375,6 +375,34 @@ func TestDeleteParamValidation(t *testing.T) {
 	}
 }
 
+// TestReadPathIDValidation covers the single-ID validation on read methods:
+// a malformed ID returns the signal-specific code instead of reaching SQL
+// and surfacing as a cast error dressed up as ErrInternal.
+func TestReadPathIDValidation(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+	ctx := context.Background()
+
+	cases := []struct {
+		method     string
+		params     any
+		invalidErr error
+	}{
+		{"searchSpans", []string{"not-a-trace-id"}, ErrInvalidTraceID},
+		{"getLog", []string{"not-a-log-id"}, ErrInvalidLogID},
+		{"getMetric", []string{"not-a-stream-id", "0", "1"}, ErrInvalidStreamID},
+		{"getAttributesByTraceID", []string{"not-a-trace-id"}, ErrInvalidTraceID},
+		{"getTraceSpanCount", []string{"not-a-trace-id"}, ErrInvalidTraceID},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			result, err := handler.Handle(ctx, createRequest(tc.method, tc.params))
+			assert.Nil(t, result)
+			assert.Equal(t, tc.invalidErr, err)
+		})
+	}
+}
+
 func TestMethodNotFound(t *testing.T) {
 	handler, teardown := setupHandler(t)
 	defer teardown()
@@ -639,7 +667,7 @@ func TestGetAttributesByTraceID(t *testing.T) {
 
 		result, err := handler.Handle(context.Background(), createRequest("getAttributesByTraceID", []any{42}))
 		assert.Nil(t, result)
-		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+		assert.Equal(t, ErrInvalidTraceID, err)
 	})
 }
 

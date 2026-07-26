@@ -115,10 +115,9 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	traceID, ok := params[0].(string)
-	if !ok {
-		log.Printf("Invalid traceID type: %T", params[0])
-		return nil, jsonrpc2.ErrInvalidParams
+	traceID, err := parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	if err != nil {
+		return nil, err
 	}
 
 	var query any
@@ -194,10 +193,9 @@ func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any
 		log.Printf("Invalid parameter count: %d (expected 1)", len(params))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	logID, ok := params[0].(string)
-	if !ok {
-		log.Printf("Invalid logID type: %T", params[0])
-		return nil, jsonrpc2.ErrInvalidParams
+	logID, err := parseIDParam(params[0], ErrInvalidLogID, normalizeUUID)
+	if err != nil {
+		return nil, err
 	}
 	result, err := logs.Get(ctx, h.store.DB(), logID)
 	if err != nil {
@@ -247,10 +245,9 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 		log.Printf("Invalid parameter count: %d (expected 3: streamId, startTime, endTime)", len(params))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	streamID, ok := params[0].(string)
-	if !ok {
-		log.Printf("Invalid streamId type: %T", params[0])
-		return nil, jsonrpc2.ErrInvalidParams
+	streamID, err := parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
+	if err != nil {
+		return nil, err
 	}
 	startTime, err := parseTimestampParam(params[1], "startTime")
 	if err != nil {
@@ -436,10 +433,9 @@ func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrp
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	traceID, ok := params[0].(string)
-	if !ok {
-		log.Printf("Invalid traceID type: %T", params[0])
-		return nil, jsonrpc2.ErrInvalidParams
+	traceID, err := parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	if err != nil {
+		return nil, err
 	}
 
 	attributes, err := spans.GetAttributesByTraceID(ctx, h.store.DB(), traceID)
@@ -459,9 +455,9 @@ func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Re
 	if len(params) != 1 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	traceID, ok := params[0].(string)
-	if !ok {
-		return nil, jsonrpc2.ErrInvalidParams
+	traceID, err := parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	if err != nil {
+		return nil, err
 	}
 	count, err := stats.GetTraceSpanCount(ctx, h.store.DB(), traceID)
 	if err != nil {
@@ -519,6 +515,24 @@ func parseIDParams(req *jsonrpc2.Request, invalidIDErr error, normalize func(str
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// parseIDParam validates and normalizes a single entity ID param (read
+// paths: searchSpans, getLog, getMetric, getAttributesByTraceID,
+// getTraceSpanCount). Like parseIDParams, a bad value returns the
+// signal-specific -3200x code instead of reaching SQL as a cast error.
+func parseIDParam(param any, invalidIDErr error, normalize func(string) (string, error)) (string, error) {
+	s, ok := param.(string)
+	if !ok {
+		log.Printf("Invalid ID type: %T (expected string)", param)
+		return "", invalidIDErr
+	}
+	id, err := normalize(s)
+	if err != nil {
+		log.Printf("Invalid ID %q: %v", s, err)
+		return "", invalidIDErr
+	}
+	return id, nil
 }
 
 // normalizeUUID validates a 128-bit entity ID (trace IDs: 32-char hex on the
