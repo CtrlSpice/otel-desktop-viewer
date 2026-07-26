@@ -20,6 +20,7 @@ import (
 
 var (
 	ErrInvalidMetricQuery   = errors.New("invalid metric search query")
+	ErrStreamIDNotFound     = errors.New("metric stream ID not found")
 	ErrMetricsStoreInternal = errors.New("metrics store internal error")
 )
 
@@ -595,6 +596,9 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 }
 
 // GetMetric returns full MetricData for a metric stream in the time window.
+// An unknown streamID returns ErrStreamIDNotFound; a known stream with no
+// datapoints in the window returns valid MetricData with an empty timeseries
+// list (the two are distinct: only the former is a "not found").
 func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64) (json.RawMessage, error) {
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
@@ -777,79 +781,45 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 			) order by latest_ts desc)) as timeseries
 			from ts_dps_agg
 		)
+		-- Left join: a stream with no datapoints in the window still
+		-- produces a row (empty timeseries, blank representative fields).
+		-- Only an unknown stream yields zero rows -> sql.ErrNoRows ->
+		-- ErrStreamIDNotFound. The representative-sourced fields are
+		-- coalesced so the wire shape stays non-null either way.
 		select cast(json_object(
-			'id', s.id, 'name', s.name, 'description', r.description, 'unit', s.unit,
+			'id', s.id, 'name', s.name, 'description', coalesce(r.description, ''), 'unit', s.unit,
 			'metricType', s.metric_type,
 			'aggregationTemporality', s.aggregation_temporality,
 			'isMonotonic', s.is_monotonic,
-			'resourceDroppedAttributesCount', r.resource_dropped_attributes_count,
+			'resourceDroppedAttributesCount', coalesce(r.resource_dropped_attributes_count, 0),
 			'resource', json_object(
 				'attributes', coalesce((select attrs from ingest_res_attrs), json('[]')),
-				'droppedAttributesCount', r.resource_dropped_attributes_count
+				'droppedAttributesCount', coalesce(r.resource_dropped_attributes_count, 0)
 			),
 			'scopeName', s.scope_name, 'scopeVersion', s.scope_version,
-			'scopeDroppedAttributesCount', r.scope_dropped_attributes_count,
+			'scopeDroppedAttributesCount', coalesce(r.scope_dropped_attributes_count, 0),
 			'scope', json_object(
 				'name', s.scope_name, 'version', s.scope_version,
 				'attributes', coalesce((select attrs from ingest_scope_attrs), json('[]')),
-				'droppedAttributesCount', r.scope_dropped_attributes_count
+				'droppedAttributesCount', coalesce(r.scope_dropped_attributes_count, 0)
 			),
 			'timeseries', coalesce((select timeseries from timeseries_agg), json('[]'))
 		) as varchar) as metric
-		from representative r, stream s
+		from stream s left join representative r on true
 	`
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return json.RawMessage("null"), nil
+			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}
 		return nil, fmt.Errorf("GetMetric: %w: %w", ErrMetricsStoreInternal, err)
 	}
+	// The projection is a non-null json_object, so a null here means the
+	// query itself misbehaved -- an internal anomaly, not a missing stream.
 	if raw == nil || string(raw) == "null" {
-		return json.RawMessage("null"), nil
+		return nil, fmt.Errorf("GetMetric: %w: query returned null", ErrMetricsStoreInternal)
 	}
 	return json.RawMessage(raw), nil
-}
-
-// resolveStreamID maps an 8-field OTel metric identity to its
-// metric_streams.id. Returns sql.ErrNoRows if no stream matches; callers
-// translate that into a "not found" response (e.g. JSON null at the
-// JSON-RPC layer). Empty strings on the nullable identity fields
-// (aggregation_temporality, is_monotonic) match NULL columns via
-// `is not distinct from`.
-//
-// Returned id is a string in canonical UUID form so we can pass it back
-// into subsequent queries via the same `?::uuid` casting used everywhere
-// else; we deliberately don't return a duckdb.UUID because callers (the
-// JSON-RPC layer) and downstream queries both prefer the string shape.
-// resolveStreamID looks up metric_streams.id for the 8-field identity
-// tuple supplied by the JSON-RPC layer. All identity columns in
-// metric_streams are NOT NULL (with empty-string / false defaults
-// representing "not applicable"), so plain equality is safe -- callers
-// pass the same not-applicable convention streamIdentity uses
-// internally. is_monotonic is the only field that needs translation:
-// the wire form is the string "true"/"false"/"" while the column is
-// boolean, with metric types that don't carry monotonicity (everything
-// other than Sum) stored as the false default.
-func resolveStreamID(ctx context.Context, db *sql.DB, name, unit, metricType, aggregationTemporality, isMonotonic, scopeName, scopeVersion, serviceName string) (string, error) {
-	const q = `
-		select id::varchar from metric_streams
-		where name = ?
-		  and unit = ?
-		  and metric_type = ?
-		  and aggregation_temporality = ?
-		  and is_monotonic = ?
-		  and scope_name = ?
-		  and scope_version = ?
-		  and service_name = ?
-		limit 1
-	`
-	var id string
-	err := db.QueryRowContext(ctx, q,
-		name, unit, metricType, aggregationTemporality, isMonotonic == "true",
-		scopeName, scopeVersion, serviceName,
-	).Scan(&id)
-	return id, err
 }
 
 // GetMetricAttributes returns a JSON array of attribute names/scopes/types
