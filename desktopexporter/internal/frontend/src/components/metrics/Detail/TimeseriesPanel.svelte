@@ -322,7 +322,7 @@
     gap: 0.5rem;
   }
 
-  .ts-panel :global(.field-group__heading :global(.field-group__caret)) {
+  .ts-panel :global(.field-group__heading .field-group__caret) {
     @apply ml-0 justify-self-end;
   }
 
