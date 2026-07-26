@@ -94,7 +94,7 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 					log.DroppedAttributesCount(),      // DroppedAttributesCount UINTEGER
 					uint32(log.Flags()),               // Flags UINTEGER
 					log.EventName(),                   // EventName VARCHAR
-					serviceName,                        // ServiceName VARCHAR (NOT NULL, '' = unknown)
+					serviceName,                       // ServiceName VARCHAR (NOT NULL, '' = unknown)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
@@ -353,9 +353,15 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	}
 	switch name {
 	case "traceID", "traceId":
+		// uuid column compared directly: DuckDB casts both dashed and
+		// dash-less 32-hex strings to uuid, so the wire form works as-is.
 		return "l.trace_id", nil
 	case "spanID", "spanId":
-		return "l.span_id", nil
+		// Span IDs are served as 16-char hex (OTLP wire form), which does
+		// NOT cast to uuid. Convert the column to wire form instead, same
+		// as the trace-search spanID branch, so pasted IDs compare as
+		// strings and typos match nothing rather than erroring.
+		return "right(replace(l.span_id::varchar, '-', ''), 16)", nil
 	case "severityText":
 		return "l.severity_text", nil
 	case "severityNumber":

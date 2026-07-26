@@ -22,7 +22,7 @@ import (
 var (
 	ErrTraceIDNotFound    = errors.New("trace ID not found")
 	ErrSpanIDNotFound     = errors.New("span ID not found")
-	ErrInvalidTraceQuery = errors.New("invalid trace search query")
+	ErrInvalidTraceQuery  = errors.New("invalid trace search query")
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
@@ -680,10 +680,20 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 	}
 	if col, found := strings.CutPrefix(field.Name, "link."); found {
 		snake := util.CamelToSnake(col)
+		// The served link JSON calls the linked target "spanID" (OTLP wire
+		// shape); the owning span is implicit in where the link appears.
+		// Alias the wire name to the linked_span_id column so searching
+		// what the UI displays actually matches.
+		if snake == "span_id" {
+			snake = "linked_span_id"
+		}
 		if err := util.ValidateColumnName(snake, linkColumns); err != nil {
 			return "", fmt.Errorf("link field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		colExpr := "l." + snake
+		// Compare span IDs in wire form (16-char hex): the stored uuid is
+		// zero-padded, and a raw 16-hex value fails the uuid cast.
+		// trace_id stays raw -- dash-less 32-hex casts to uuid fine.
 		if snake == "linked_span_id" {
 			colExpr = "right(replace(l." + snake + "::varchar, '-', ''), 16)"
 		}
@@ -757,4 +767,3 @@ func mapTraceGlobalExpressions() ([]string, error) {
 		)`,
 	}, nil
 }
-

@@ -114,7 +114,7 @@ type traceSummaryJSON struct {
 	RootSpan    *rootSpanJSON `json:"rootSpan"`
 	StartTime   string        `json:"startTime"`  // varchar-encoded int64 ns
 	DurationNs  *string       `json:"durationNs"` // string-encoded int64 ns; max(end) - min(start) over trace
-	SpanCount   float64       `json:"spanCount"`   // JSON number
+	SpanCount   float64       `json:"spanCount"`  // JSON number
 	ErrorCount  float64       `json:"errorCount"`
 }
 
@@ -836,6 +836,47 @@ func TestSearchTraces(t *testing.T) {
 				"field":         map[string]any{"name": "link.traceID", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "00000000-0000-0000-0000-00000000000a",
+			},
+		}
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	t.Run("Field_link.traceID_WireForm", func(t *testing.T) {
+		// Same link, queried with the dash-less 32-hex form the API serves.
+		// DuckDB casts it to uuid directly; no normalization involved.
+		query := map[string]any{
+			"id":   "f7",
+			"type": "condition",
+			"query": map[string]any{
+				"field":         map[string]any{"name": "link.traceID", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "0000000000000000000000000000000a",
+			},
+		}
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		summaries := parseSummaries(raw)
+		assert.NotEmpty(t, summaries)
+		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	t.Run("Field_link.spanID_WireForm", func(t *testing.T) {
+		// link.spanID means the linked *target* (matching the spanID field
+		// in served link JSON), queried in 16-hex wire form. Root span's
+		// link targets 000000000000000a. Before the linked_span_id alias +
+		// wire-form conversion this hit the owner column and errored on
+		// the uuid cast.
+		query := map[string]any{
+			"id":   "f8",
+			"type": "condition",
+			"query": map[string]any{
+				"field":         map[string]any{"name": "link.spanID", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "000000000000000a",
 			},
 		}
 		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)

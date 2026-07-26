@@ -268,7 +268,6 @@ func TestLogOrdering(t *testing.T) {
 	assert.Equal(t, "INFO", entries[2].SeverityText)
 }
 
-
 // TestEmptyLogs verifies handling of empty log lists and empty store.
 func TestEmptyLogs(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
@@ -693,6 +692,44 @@ func TestSearchLogs(t *testing.T) {
 		assert.Empty(t, entries)
 	})
 
+	// The search bar's ID-paste completion suggests `traceID = <32-hex>` and
+	// `spanID = <16-hex>` field queries in wire form (no dashes). Trace IDs
+	// work through DuckDB's dash-less uuid cast; span IDs need the wire-form
+	// column conversion in mapLogFieldExpression (a raw 16-hex value does
+	// not cast to uuid).
+	t.Run("Field_TraceID_WireForm", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q3c",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "traceID", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "00000000000000000000000000000099",
+			},
+		}
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseSummaries(raw)
+		assert.Len(t, entries, 3, "wire-form trace ID should match all logs in the trace")
+	})
+
+	t.Run("Field_SpanID_WireForm", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q3d",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "spanID", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "0000000000000002",
+			},
+		}
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err)
+		entries := parseSummaries(raw)
+		assert.Len(t, entries, 1, "wire-form span ID should match its log, not a cast error")
+		assert.Equal(t, "ERROR", entries[0].SeverityText)
+	})
+
 	t.Run("Field_SeverityText", func(t *testing.T) {
 		query := &search.QueryNode{
 			ID:   "q4",
@@ -710,6 +747,10 @@ func TestSearchLogs(t *testing.T) {
 		assert.Equal(t, "ERROR", entries[0].SeverityText)
 	})
 
+	// spanID compares in wire form (16-char hex, as served by the API). The
+	// padded dashed-uuid storage form is an internal detail and no longer
+	// matches -- it only ever worked as a side effect of the raw uuid-column
+	// comparison that broke wire-form input.
 	t.Run("Field_SpanID", func(t *testing.T) {
 		query := &search.QueryNode{
 			ID:   "q5",
@@ -717,7 +758,7 @@ func TestSearchLogs(t *testing.T) {
 			Query: &search.Query{
 				Field:         &search.FieldDefinition{Name: "spanID", SearchScope: "field"},
 				FieldOperator: "=",
-				Value:         "00000000-0000-0000-0000-000000000001",
+				Value:         "0000000000000001",
 			},
 		}
 		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
