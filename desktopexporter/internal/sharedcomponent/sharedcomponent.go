@@ -26,6 +26,7 @@ import (
 // SharedComponents a map that keeps reference of all created instances for a given configuration,
 // and ensures that the shared state is started and stopped only once.
 type SharedComponents[K comparable, V component.Component] struct {
+	mu    sync.Mutex
 	comps map[K]*SharedComponent[V]
 }
 
@@ -39,6 +40,8 @@ func NewSharedComponents[K comparable, V component.Component]() *SharedComponent
 // GetOrAdd returns the already created instance if exists, otherwise creates a new instance
 // and adds it to the map of references.
 func (scs *SharedComponents[K, V]) GetOrAdd(key K, create func() (V, error)) (*SharedComponent[V], error) {
+	scs.mu.Lock()
+	defer scs.mu.Unlock()
 	if c, ok := scs.comps[key]; ok {
 		return c, nil
 	}
@@ -48,7 +51,11 @@ func (scs *SharedComponents[K, V]) GetOrAdd(key K, create func() (V, error)) (*S
 	}
 	newComp := &SharedComponent[V]{
 		component: comp,
+		// Runs from Shutdown's stopOnce, after GetOrAdd has released the
+		// lock, so taking it here cannot deadlock.
 		removeFunc: func() {
+			scs.mu.Lock()
+			defer scs.mu.Unlock()
 			delete(scs.comps, key)
 		},
 	}
