@@ -174,7 +174,7 @@ Query functions build JSON in SQL using `json_object`, `json_arrayagg`, `to_json
 
 ### Search
 
-The frontend builds a **query tree** (`components/shared/Search/queryTree.ts`). `store/search/search_tree.go` walks the tree and generates SQL with:
+The frontend builds a **query tree** (`src/components/shared/Search/queryTree.ts`). `store/search/search_tree.go` walks the tree and generates SQL with:
 
 - Positional parameter binding (ordered param list)
 - `{COND}` placeholders for composable WHERE fragments
@@ -216,7 +216,7 @@ CORS is enabled for local dev (Vite on port 3001).
 | `getStats` | Signal counts plus store `sizeBytes` / `maxSizeBytes` (used for polling and retention UI) |
 | `clearTraces` / `clearLogs` / `clearMetrics` | Delete all data for a signal |
 | `deleteSpansByTraceID` | Delete one or more traces by ID (batch param) |
-| `deleteSpanByID` / `deleteLogByID` | Delete a single span or log by ID |
+| `deleteSpanByID` / `deleteLogByID` | Delete one or more spans or logs by ID (batch param) |
 
 Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The API has one not-found convention: requesting a specific entity that does not exist returns an error (`-32001` trace, `-32002` log, `-32003` metric), never a `null` result. `getMetric` distinguishes an unknown stream (`-32003`) from a known stream with no datapoints in the requested window (valid `MetricData` with an empty `timeseries`). Invalid ID *params* return dedicated codes rather than surfacing as internal errors on read and delete paths. IDs embedded in search query trees (`traceID`, `spanID`, `link.*`, etc.) compare in OTLP wire form: values are dash-stripped and lowercased, columns are converted to the same wire shape, and malformed input returns empty results instead of `-32603` cast errors. The frontend service layer (`telemetry-service.ts`) translates these codes into whatever shape its callers want (e.g. `getMetric` returns `null` on `-32003`).
 
@@ -244,7 +244,7 @@ Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The AP
 | Routing | First-party (History API, `src/route/`) |
 | Styling | Tailwind CSS 4 + DaisyUI 5 |
 | Components | bits-ui |
-| Search UI | CodeMirror 6 + Lezer grammar (`components/shared/Search/codemirror/`) |
+| Search UI | CodeMirror 6 + Lezer grammar (`src/components/shared/Search/codemirror/`) |
 | Charts | layerchart |
 | Tests | Vitest (unit, component, context) + svelte-check in CI |
 
@@ -293,7 +293,7 @@ Three-pane model via `PageLayout.svelte` and `SignalListDrawer.svelte`:
 
 ### Real-time updates
 
-The UI **polls** `getStats` on an interval to detect new data and show refresh affordances. There is no WebSocket push channel.
+The UI **polls** `getStats` on an interval to detect new data and show refresh affordances: every 3 seconds on trace, log, and metric pages; every 5 seconds on home. There is no WebSocket push channel.
 
 ## Data flows
 
