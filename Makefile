@@ -93,8 +93,8 @@ release-dry-run:
 
 .PHONY: kill-port
 kill-port:
-	@echo "Killing process on port 8888..."
-	@lsof -ti:8888 | xargs kill -9 2>/dev/null || echo "No process found on port 8888"
+	@echo "Killing processes on ports 8000, 4317, 4318..."
+	@lsof -ti:8000,4317,4318 | xargs kill -9 2>/dev/null || echo "No process found on ports 8000, 4317, 4318"
 
 .PHONY: stop
 stop:
@@ -133,5 +133,5 @@ help:
 	@echo ""
 	@echo "Other:"
 	@echo "  release-dry-run      - Trigger release workflow (dry run)"
-	@echo "  kill-port            - Kill process on port 8888"
+	@echo "  kill-port            - Kill processes on ports 8000, 4317, 4318"
 	@echo "  stop              - Stop Go server and Vite dev server"
