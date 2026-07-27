@@ -28,7 +28,7 @@ flowchart TB
     RPC -->|JSON| Browser
   end
 
-  Desktop -->|starts on first export| HTTP[HTTP server :8000]
+  Desktop -->|starts at collector boot| HTTP[HTTP server :8000]
   HTTP --> Static
   HTTP --> RPC
 ```
@@ -54,6 +54,7 @@ otel-desktop-viewer/
 │   ├── exporter.go            # pushTraces / pushMetrics / pushLogs
 │   └── internal/
 │       ├── server/            # HTTP server, JSON-RPC, embedded static assets
+│       ├── sharedcomponent/   # Thread-safe shared exporter instance per config
 │       ├── store/             # DuckDB store, schema, ingest, search, query
 │       └── frontend/          # Svelte 5 + Vite UI
 ├── scripts/                   # OTLP seed scripts for local dev
@@ -65,7 +66,7 @@ The root module builds the collector binary. The frontend builds into `desktopex
 
 ## Collector binary
 
-Built with the [OpenTelemetry Collector Builder (OCB)](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder). Generated files (`main.go`, `components.go`) should not be edited by hand except where already customized.
+Built with the [OpenTelemetry Collector Builder (OCB)](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder). Generated files (`main.go`, `components.go`) should not be edited by hand except where already customized. The pinned OTLP receiver and batch processor modules are at **v0.156.0** (`components.go`).
 
 **Registered components** (`components.go`):
 
@@ -92,6 +93,7 @@ logs:    otlp → desktop
 | `--browser-port` | 8000 | UI + JSON-RPC port |
 | `--host` | localhost | Bind address for all endpoints |
 | `--db` | *(empty)* | DuckDB file path; empty = in-memory |
+| `--db-max-size` | *(empty)* | Store size cap (e.g. `512MB`, `2GB`); oldest telemetry pruned when exceeded. `0` disables pruning. Defaults to 512 MB in-memory, 2 GB on disk. |
 | `--open-browser` | true | Open UI on startup |
 
 Configuration is injected as inline YAML resolver URIs at startup. There is no `--config` file path exposed by the CLI today, though the underlying collector supports YAML providers.
@@ -103,7 +105,7 @@ The `desktop` exporter is the heart of the application. For a given config it ow
 1. A **DuckDB store** (`internal/store`)
 2. An **HTTP server** (`internal/server`) that serves the UI and JSON-RPC
 
-Trace, metrics, and logs exporters are created separately by the collector factory, but they **share one `desktopExporter` instance** per config via `sharedcomponent` (`factory.go`). This ensures a single database and a single HTTP listener.
+Trace, metrics, and logs exporters are created separately by the collector factory, but they **share one `desktopExporter` instance** per config via `sharedcomponent` (`internal/sharedcomponent/`, wired from `factory.go`). This ensures a single database and a single HTTP listener.
 
 **Ingest path** (`exporter.go`):
 
@@ -113,7 +115,9 @@ OTLP pdata → exporterhelper → pushTraces|pushMetrics|pushLogs → store.With
 
 Ingest writes directly from OpenTelemetry pdata into DuckDB appenders. There are no intermediate Go domain structs between OTLP and storage.
 
-**Lifecycle**: The HTTP server starts in `Start()` on a goroutine. Shutdown closes the server, then the store.
+**Lifecycle**: `newDesktopExporter` opens the store and HTTP server; `Start()` launches `ListenAndServe` on a goroutine (the UI is reachable before the first OTLP batch arrives). When a retention cap is configured, a background loop enforces it every 30 seconds. `Shutdown()` cancels the retention loop and waits for it to finish, closes the HTTP server, then closes the store.
+
+**Retention**: `--db-max-size` sets a byte cap on stored telemetry. When usage exceeds the cap, the oldest traces, logs, and metrics are pruned. `getStats` reports current usage and the configured cap alongside signal counts.
 
 ## Storage (DuckDB)
 
@@ -141,7 +145,7 @@ Schema is defined in `desktopexporter/internal/store/schema/schema.go` and appli
 
 **Design themes**
 
-- **All IDs are UUIDs.** OpenTelemetry 8-byte span IDs are zero-padded to 16 bytes on ingest.
+- **All IDs are UUIDs in DuckDB.** OpenTelemetry 8-byte span IDs are zero-padded to 16 bytes on ingest. JSON-RPC responses and search comparisons use OTLP **wire form** (dash-less lowercase hex: 32 chars for trace IDs, 16 for span IDs).
 - **Normalized nested data.** Events, links, exemplars, and attributes live in separate tables—not nested arrays or DuckDB UNION types.
 - **Single `datapoints` table.** Type-specific columns use NULLs for irrelevant fields; `metric_type` + CHECK constraints enforce the discriminated union. Columnar compression makes sparse rows cheap.
 - **`metric_streams` + `metric_ingests`.** Stream identity is deduplicated across batches; per-batch metadata varies without splitting logical metrics.
@@ -170,7 +174,7 @@ Query functions build JSON in SQL using `json_object`, `json_arrayagg`, `to_json
 
 ### Search
 
-The frontend builds a **query tree** (`components/shared/Search/queryTree`). `store/search/search_tree.go` walks the tree and generates SQL with:
+The frontend builds a **query tree** (`components/shared/Search/queryTree.ts`). `store/search/search_tree.go` walks the tree and generates SQL with:
 
 - Positional parameter binding (ordered param list)
 - `{COND}` placeholders for composable WHERE fragments
@@ -185,7 +189,7 @@ Global search casts scalar fields to strings and searches attribute key/value pa
 
 | Route | Handler |
 |-------|---------|
-| `POST /rpc` | JSON-RPC 2.0 (`golang.org/x/exp/jsonrpc2`) |
+| `POST /rpc` | JSON-RPC 2.0 (`golang.org/x/exp/jsonrpc2`); request bodies capped at 1 MB |
 | `GET /*` | Embedded static files; extension-less unknown paths fall back to `index.html` for client-side routing |
 
 CORS is enabled for local dev (Vite on port 3001).
@@ -202,7 +206,8 @@ CORS is enabled for local dev (Vite on port 3001).
 | `searchTraces` | Trace summaries for list view |
 | `searchSpans` | Full trace with spans, events, links, attributes |
 | `getTraceSpanCount` | Span count for a trace |
-| `getTraceAttributes` / `getAttributesByTraceID` | Attribute discovery for traces |
+| `getTraceAttributes` | Attribute key discovery across a time range (search autocomplete) |
+| `getAttributesByTraceID` | Attribute key discovery for one trace |
 | `searchLogs` / `getLog` | Log list and detail |
 | `getLogAttributes` | Attribute discovery for logs |
 | `searchMetricSummaries` | Metric stream list |
@@ -238,9 +243,9 @@ Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The AP
 | Routing | First-party (History API, `src/route/`) |
 | Styling | Tailwind CSS 4 + DaisyUI 5 |
 | Components | bits-ui |
-| Search UI | CodeMirror 6 + Lezer grammar (`SignalToolbar/search/lang/`) |
+| Search UI | CodeMirror 6 + Lezer grammar (`components/shared/Search/codemirror/`) |
 | Charts | layerchart |
-| Tests | Vitest + svelte-check |
+| Tests | Vitest (unit, component, context) + svelte-check in CI |
 
 ### Routing
 
@@ -281,7 +286,7 @@ Three-pane model via `PageLayout.svelte` and `SignalListDrawer.svelte`:
 
 ### API client
 
-`services/telemetry-service.ts` posts JSON-RPC requests to `/rpc`. It revives bigint timestamps and typed fields on the client. Search queries are sent as query trees; time ranges are converted to nanosecond strings for the backend.
+`services/telemetry-service.ts` posts JSON-RPC requests to `/rpc`. Wire payloads are typed in `types/wire-types.ts` (`Json*` interfaces); revivers convert them to domain types in `types/api-types.ts`. Search queries are sent as query trees; time ranges are converted to nanosecond strings for the backend.
 
 **Metrics**: The backend returns raw datapoints; histogram quantiles, rates, heatmaps, and legend state are computed client-side in `metric-view-context.svelte.ts`.
 
@@ -350,15 +355,16 @@ These appear in older notes or collector capabilities but are **not** part of th
 - `--config` YAML file exposed on the CLI (inline flag-built config only)
 - `batch` processor in default pipelines
 - `exporterhelper.WithRetry()` on the desktop exporter
+- Fresh frontend embed in the Docker image (`Dockerfile` runs `go build` only; use `make build-ts` before building the image, or fix #253)
 
 ## Related files
 
-**Backend entry and wiring**: `main.go`, `components.go`, `desktopexporter/factory.go`, `desktopexporter/exporter.go`
+**Backend entry and wiring**: `main.go`, `components.go`, `desktopexporter/factory.go`, `desktopexporter/exporter.go`, `desktopexporter/internal/sharedcomponent/`
 
 **Server and API**: `desktopexporter/internal/server/server.go`, `jsonrpc_handler.go`, `errors.go`
 
 **Storage**: `desktopexporter/internal/store/store.go`, `schema/schema.go`, `spans/`, `metrics/`, `logs/`, `search/search_tree.go`
 
-**Frontend**: `desktopexporter/internal/frontend/src/App.svelte`, `pages/`, `services/telemetry-service.ts`, `contexts/`
+**Frontend**: `desktopexporter/internal/frontend/src/App.svelte`, `pages/`, `services/telemetry-service.ts`, `types/wire-types.ts`, `contexts/`
 
 **Tooling**: `Makefile`, `Dockerfile`, `.goreleaser.yaml`
