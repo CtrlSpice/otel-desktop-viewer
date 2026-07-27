@@ -66,7 +66,7 @@ The root module builds the collector binary. The frontend builds into `desktopex
 
 ## Collector binary
 
-Built with the [OpenTelemetry Collector Builder (OCB)](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder). Generated files (`main.go`, `components.go`) should not be edited by hand except where already customized. The pinned OTLP receiver and batch processor modules are at **v0.156.0** (`components.go`).
+Built with the [OpenTelemetry Collector Builder (OCB)](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder). Generated files (`main.go`, `components.go`) should not be edited by hand except where already customized. The distribution currently builds against **collector v0.157.0 / v1.63.0** (`go.mod`); `components.go` also records module versions in `ReceiverModules` / `ProcessorModules` metadata strings (keep these in sync when bumping). Requires **Go 1.26**.
 
 **Registered components** (`components.go`):
 
@@ -105,7 +105,7 @@ The `desktop` exporter is the heart of the application. For a given config it ow
 1. A **DuckDB store** (`internal/store`)
 2. An **HTTP server** (`internal/server`) that serves the UI and JSON-RPC
 
-Trace, metrics, and logs exporters are created separately by the collector factory, but they **share one `desktopExporter` instance** per config via `sharedcomponent` (`internal/sharedcomponent/`, wired from `factory.go`). This ensures a single database and a single HTTP listener.
+Trace, metrics, and logs exporters are created separately by the collector factory, but they **share one `desktopExporter` instance** per config via a local `sharedcomponent` package (`internal/sharedcomponent/`, mutex-guarded; wired from `factory.go`). This ensures a single database and a single HTTP listener.
 
 **Ingest path** (`exporter.go`):
 
@@ -196,7 +196,7 @@ CORS is enabled for local dev (Vite on port 3001).
 
 **Static assets**
 
-- Embedded via `//go:embed static` after `make build-ts`
+- Embedded via `//go:embed static` after `make build-ts` (which wipes `server/static/` before copying, so stale hashed assets do not accumulate)
 - Frontend iteration uses the Vite dev server (`make dev-ts` on port 3001), which proxies `/rpc` to the Go server
 
 ### JSON-RPC methods
@@ -213,9 +213,10 @@ CORS is enabled for local dev (Vite on port 3001).
 | `searchMetricSummaries` | Metric stream list |
 | `getMetric` | Metric detail and time series for one stream in a time window |
 | `getMetricAttributes` | Attribute discovery for metrics |
-| `getStats` | Counts of traces, logs, metrics (used for polling) |
+| `getStats` | Signal counts plus store `sizeBytes` / `maxSizeBytes` (used for polling and retention UI) |
 | `clearTraces` / `clearLogs` / `clearMetrics` | Delete all data for a signal |
-| `deleteSpansByTraceID` / `deleteSpanByID` / `deleteLogByID` | Targeted deletes |
+| `deleteSpansByTraceID` | Delete one or more traces by ID (batch param) |
+| `deleteSpanByID` / `deleteLogByID` | Delete a single span or log by ID |
 
 Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The API has one not-found convention: requesting a specific entity that does not exist returns an error (`-32001` trace, `-32002` log, `-32003` metric), never a `null` result. `getMetric` distinguishes an unknown stream (`-32003`) from a known stream with no datapoints in the requested window (valid `MetricData` with an empty `timeseries`). Invalid ID *params* return dedicated codes rather than surfacing as internal errors on read and delete paths. IDs embedded in search query trees (`traceID`, `spanID`, `link.*`, etc.) compare in OTLP wire form: values are dash-stripped and lowercased, columns are converted to the same wire shape, and malformed input returns empty results instead of `-32603` cast errors. The frontend service layer (`telemetry-service.ts`) translates these codes into whatever shape its callers want (e.g. `getMetric` returns `null` on `-32003`).
 
