@@ -21,7 +21,6 @@ import (
 // Sentinel errors for use with errors.Is.
 var (
 	ErrTraceIDNotFound    = errors.New("trace ID not found")
-	ErrSpanIDNotFound     = errors.New("span ID not found")
 	ErrInvalidTraceQuery  = errors.New("invalid trace search query")
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
