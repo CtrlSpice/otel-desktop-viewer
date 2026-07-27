@@ -14,13 +14,14 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func setupServer(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
 	str, err := store.NewStore(context.Background(), "")
 	require.NoError(t, err)
-	s, err := NewServer("localhost:8000", str)
+	s, err := NewServer("localhost:8000", str, zap.NewNop())
 	require.NoError(t, err)
 	testServer := httptest.NewServer(s.server.Handler)
 

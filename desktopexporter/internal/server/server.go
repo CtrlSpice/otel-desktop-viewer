@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"path"
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/rs/cors"
+	"go.uber.org/zap"
 	"golang.org/x/exp/jsonrpc2"
 )
 
@@ -28,14 +28,16 @@ const maxRPCRequestBodyBytes = 1 << 20 // 1 MB
 type Server struct {
 	server         http.Server
 	jsonrpcHandler *JSONRPCHandler
+	logger         *zap.Logger
 }
 
-func NewServer(endpoint string, store *store.Store) (*Server, error) {
+func NewServer(endpoint string, store *store.Store, logger *zap.Logger) (*Server, error) {
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
 		},
-		jsonrpcHandler: NewJSONRPCHandler(store),
+		jsonrpcHandler: NewJSONRPCHandler(store, logger),
+		logger:         logger,
 	}
 
 	if err := s.initHandler(); err != nil {
@@ -61,7 +63,7 @@ func (s *Server) initHandler() error {
 	if err != nil {
 		return err
 	}
-	mux.Handle("/", spaHandler(fsys))
+	mux.Handle("/", spaHandler(fsys, s.logger))
 
 	// CORS for the Vite frontend
 	c := cors.New(cors.Options{
@@ -82,12 +84,12 @@ func staticFS() (fs.FS, error) {
 // client router owns the route (e.g. a deep-linked /traces/{id} or a refreshed
 // /metrics). Paths with a file extension that do not exist 404 normally. Non-GET
 // requests fall through to the file server.
-func spaHandler(fsys fs.FS) http.Handler {
+func spaHandler(fsys fs.FS, logger *zap.Logger) http.Handler {
 	fileServer := http.FileServerFS(fsys)
 	serveIndex := func(writer http.ResponseWriter) {
 		bytes, err := fs.ReadFile(fsys, "index.html")
 		if err != nil {
-			log.Printf("Error reading index.html: %v", err)
+			logger.Error("reading index.html", zap.Error(err))
 			http.Error(writer, "Failed to load page", http.StatusInternalServerError)
 			return
 		}
@@ -114,48 +116,45 @@ func (s *Server) rpcHandler(writer http.ResponseWriter, request *http.Request) {
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, fmt.Errorf("%w: request body too large", jsonrpc2.ErrInvalidRequest))
+			s.sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, fmt.Errorf("%w: request body too large", jsonrpc2.ErrInvalidRequest))
 			return
 		}
-		sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInternal)
+		s.sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInternal)
 		return
 	}
 
 	message, err := jsonrpc2.DecodeMessage(body)
 	if err != nil {
-		sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrParse)
+		s.sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrParse)
 		return
 	}
 
 	rpcRequest, ok := message.(*jsonrpc2.Request)
 	if !ok {
-		sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInvalidRequest)
+		s.sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInvalidRequest)
 		return
 	}
 
 	result, err := s.jsonrpcHandler.Handle(request.Context(), rpcRequest)
 	if err != nil {
-		sendJSONRPCResponse(writer, rpcRequest.ID, nil, err)
+		s.sendJSONRPCResponse(writer, rpcRequest.ID, nil, err)
 		return
 	}
 
-	sendJSONRPCResponse(writer, rpcRequest.ID, result, nil)
+	s.sendJSONRPCResponse(writer, rpcRequest.ID, result, nil)
 }
 
-// sendJSONRPCResponse encodes and writes a spec-compliant JSON-RPC response body
-// It handles both success and error cases, with fallback http response
-// if our error handling creates new and exciting errors
-func sendJSONRPCResponse(writer http.ResponseWriter, id jsonrpc2.ID, result any, rpcError error) {
+func (s *Server) sendJSONRPCResponse(writer http.ResponseWriter, id jsonrpc2.ID, result any, rpcError error) {
 	response, err := jsonrpc2.NewResponse(id, result, rpcError)
 	if err != nil {
-		log.Printf("Error creating JSON-RPC response: %v", err)
+		s.logger.Error("creating JSON-RPC response", zap.Error(err))
 		http.Error(writer, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	bytes, err := jsonrpc2.EncodeMessage(response)
 	if err != nil {
-		log.Printf("Error encoding JSON-RPC response: %v", err)
+		s.logger.Error("encoding JSON-RPC response", zap.Error(err))
 		http.Error(writer, "Internal server error", http.StatusInternalServerError)
 		return
 	}

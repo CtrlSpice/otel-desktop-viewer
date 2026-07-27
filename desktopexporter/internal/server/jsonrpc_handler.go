@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
@@ -13,15 +12,17 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/stats"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"golang.org/x/exp/jsonrpc2"
 )
 
 type JSONRPCHandler struct {
-	store *store.Store
+	store  *store.Store
+	logger *zap.Logger
 }
 
-func NewJSONRPCHandler(store *store.Store) *JSONRPCHandler {
-	return &JSONRPCHandler{store: store}
+func NewJSONRPCHandler(store *store.Store, logger *zap.Logger) *JSONRPCHandler {
+	return &JSONRPCHandler{store: store, logger: logger}
 }
 
 func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -70,21 +71,21 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	if len(params) < 2 || len(params) > 3 {
-		log.Printf("Invalid parameter count: %d (expected 2-3)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "2-3"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	startTime, err := parseTimestampParam(params[0], "startTime")
+	startTime, err := h.parseTimestampParam(params[0], "startTime")
 	if err != nil {
 		return nil, err
 	}
 
-	endTime, err := parseTimestampParam(params[1], "endTime")
+	endTime, err := h.parseTimestampParam(params[1], "endTime")
 	if err != nil {
 		return nil, err
 	}
@@ -94,10 +95,9 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 		query = params[2]
 	}
 
-	log.Printf("searchTraces query parameter: %+v", query)
 	summaries, err := spans.SearchTraces(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
-		log.Printf("Error searching traces: %v", err)
+		h.logger.Error("searching traces", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return summaries, nil
@@ -106,16 +106,16 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	if len(params) < 1 || len(params) > 2 {
-		log.Printf("Invalid parameter count: %d (expected 1-2)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "1-2"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	traceID, err := parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	traceID, err := h.parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 
 	result, err := spans.SearchSpans(ctx, h.store.DB(), traceID, query)
 	if err != nil {
-		log.Printf("Error searching spans: %v", err)
+		h.logger.Error("searching spans", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return result, nil
@@ -136,7 +136,7 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
 	err := spans.Clear(ctx, h.store.DB())
 	if err != nil {
-		log.Printf("Error clearing traces: %v", err)
+		h.logger.Error("clearing traces", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return "Traces cleared successfully", nil
@@ -145,18 +145,18 @@ func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
 func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) < 2 || len(params) > 3 {
-		log.Printf("Invalid parameter count: %d (expected 2-3)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "2-3"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	startTime, err := parseTimestampParam(params[0], "startTime")
+	startTime, err := h.parseTimestampParam(params[0], "startTime")
 	if err != nil {
 		return nil, err
 	}
-	endTime, err := parseTimestampParam(params[1], "endTime")
+	endTime, err := h.parseTimestampParam(params[1], "endTime")
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 	}
 	result, err := logs.Search(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
-		log.Printf("Error searching logs: %v", err)
+		h.logger.Error("searching logs", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return result, nil
@@ -175,7 +175,7 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 	err := logs.Clear(ctx, h.store.DB())
 	if err != nil {
-		log.Printf("Error clearing logs: %v", err)
+		h.logger.Error("clearing logs", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return "Logs cleared successfully", nil
@@ -186,20 +186,20 @@ func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) != 1 {
-		log.Printf("Invalid parameter count: %d (expected 1)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "1"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	logID, err := parseIDParam(params[0], ErrInvalidLogID, normalizeUUID)
+	logID, err := h.parseIDParam(params[0], ErrInvalidLogID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 	result, err := logs.Get(ctx, h.store.DB(), logID)
 	if err != nil {
-		log.Printf("Error getting log: %v", err)
+		h.logger.Error("getting log", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return result, nil
@@ -208,18 +208,18 @@ func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any
 func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) < 2 || len(params) > 3 {
-		log.Printf("Invalid parameter count: %d (expected 2-3)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "2-3"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	startTime, err := parseTimestampParam(params[0], "startTime")
+	startTime, err := h.parseTimestampParam(params[0], "startTime")
 	if err != nil {
 		return nil, err
 	}
-	endTime, err := parseTimestampParam(params[1], "endTime")
+	endTime, err := h.parseTimestampParam(params[1], "endTime")
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 	}
 	summaries, err := metrics.SearchSummaries(ctx, h.store.DB(), startTime, endTime, query)
 	if err != nil {
-		log.Printf("Error searching metric summaries: %v", err)
+		h.logger.Error("searching metric summaries", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return summaries, nil
@@ -238,28 +238,28 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) != 3 {
-		log.Printf("Invalid parameter count: %d (expected 3: streamId, startTime, endTime)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "3: streamId, startTime, endTime"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	streamID, err := parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
+	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
-	startTime, err := parseTimestampParam(params[1], "startTime")
+	startTime, err := h.parseTimestampParam(params[1], "startTime")
 	if err != nil {
 		return nil, err
 	}
-	endTime, err := parseTimestampParam(params[2], "endTime")
+	endTime, err := h.parseTimestampParam(params[2], "endTime")
 	if err != nil {
 		return nil, err
 	}
 	result, err := metrics.GetMetric(ctx, h.store.DB(), streamID, startTime, endTime)
 	if err != nil {
-		log.Printf("Error getting metric: %v", err)
+		h.logger.Error("getting metric", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return result, nil
@@ -268,7 +268,7 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 	err := metrics.Clear(ctx, h.store.DB())
 	if err != nil {
-		log.Printf("Error clearing metrics: %v", err)
+		h.logger.Error("clearing metrics", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return "Metrics cleared successfully", nil
@@ -276,13 +276,13 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 
 // deleteSpansByTraceID deletes all spans for one or more traces.
 func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	traceIDs, err := parseIDParams(req, ErrInvalidTraceID, normalizeUUID)
+	traceIDs, err := h.parseIDParams(req, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := spans.DeleteSpansByTraceIDs(ctx, h.store.DB(), traceIDs); err != nil {
-		log.Printf("Error deleting spans by trace IDs: %v", err)
+		h.logger.Error("deleting spans by trace IDs", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 
@@ -294,13 +294,13 @@ func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2
 
 // deleteSpanByID deletes one or more specific spans by their IDs.
 func (h *JSONRPCHandler) deleteSpanByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	spanIDs, err := parseIDParams(req, ErrInvalidSpanID, normalizeSpanID)
+	spanIDs, err := h.parseIDParams(req, ErrInvalidSpanID, normalizeSpanID)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := spans.DeleteSpansByIDs(ctx, h.store.DB(), spanIDs); err != nil {
-		log.Printf("Error deleting spans by IDs: %v", err)
+		h.logger.Error("deleting spans by IDs", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 
@@ -312,13 +312,13 @@ func (h *JSONRPCHandler) deleteSpanByID(ctx context.Context, req *jsonrpc2.Reque
 
 // deleteLogByID deletes one or more specific logs by their IDs.
 func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	logIDs, err := parseIDParams(req, ErrInvalidLogID, normalizeUUID)
+	logIDs, err := h.parseIDParams(req, ErrInvalidLogID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := logs.DeleteLogsByIDs(ctx, h.store.DB(), logIDs); err != nil {
-		log.Printf("Error deleting logs by IDs: %v", err)
+		h.logger.Error("deleting logs by IDs", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 
@@ -331,28 +331,28 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	if len(params) != 2 {
-		log.Printf("Invalid parameter count: %d (expected 2)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "2"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	startTime, err := parseTimestampParam(params[0], "startTime")
+	startTime, err := h.parseTimestampParam(params[0], "startTime")
 	if err != nil {
 		return nil, err
 	}
 
-	endTime, err := parseTimestampParam(params[1], "endTime")
+	endTime, err := h.parseTimestampParam(params[1], "endTime")
 	if err != nil {
 		return nil, err
 	}
 
 	attributes, err := spans.GetTraceAttributes(ctx, h.store.DB(), startTime, endTime)
 	if err != nil {
-		log.Printf("Error getting trace attributes: %v", err)
+		h.logger.Error("getting trace attributes", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 
@@ -362,28 +362,28 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	if len(params) != 2 {
-		log.Printf("Invalid parameter count: %d (expected 2)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "2"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	startTime, err := parseTimestampParam(params[0], "startTime")
+	startTime, err := h.parseTimestampParam(params[0], "startTime")
 	if err != nil {
 		return nil, err
 	}
 
-	endTime, err := parseTimestampParam(params[1], "endTime")
+	endTime, err := h.parseTimestampParam(params[1], "endTime")
 	if err != nil {
 		return nil, err
 	}
 
 	attributes, err := logs.GetLogAttributes(ctx, h.store.DB(), startTime, endTime)
 	if err != nil {
-		log.Printf("Error getting log attributes: %v", err)
+		h.logger.Error("getting log attributes", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 
@@ -393,28 +393,28 @@ func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Req
 func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	if len(params) != 2 {
-		log.Printf("Invalid parameter count: %d (expected 2)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "2"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	startTime, err := parseTimestampParam(params[0], "startTime")
+	startTime, err := h.parseTimestampParam(params[0], "startTime")
 	if err != nil {
 		return nil, err
 	}
 
-	endTime, err := parseTimestampParam(params[1], "endTime")
+	endTime, err := h.parseTimestampParam(params[1], "endTime")
 	if err != nil {
 		return nil, err
 	}
 
 	attributes, err := metrics.GetMetricAttributes(ctx, h.store.DB(), startTime, endTime)
 	if err != nil {
-		log.Printf("Error getting metric attributes: %v", err)
+		h.logger.Error("getting metric attributes", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 
@@ -424,23 +424,23 @@ func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.
 func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	if len(params) != 1 {
-		log.Printf("Invalid parameter count: %d (expected 1)", len(params))
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", len(params)), zap.String("expected", "1"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	traceID, err := parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	traceID, err := h.parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 
 	attributes, err := spans.GetAttributesByTraceID(ctx, h.store.DB(), traceID)
 	if err != nil {
-		log.Printf("Error getting attributes by trace ID: %v", err)
+		h.logger.Error("getting attributes by trace ID", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 
@@ -455,13 +455,13 @@ func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Re
 	if len(params) != 1 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	traceID, err := parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	traceID, err := h.parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 	count, err := stats.GetTraceSpanCount(ctx, h.store.DB(), traceID)
 	if err != nil {
-		log.Printf("Error getting trace span count: %v", err)
+		h.logger.Error("getting trace span count", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return count, nil
@@ -470,13 +470,13 @@ func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Re
 func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 	sizeBytes, err := h.store.SizeBytes(ctx)
 	if err != nil {
-		log.Printf("Error measuring store size: %v", err)
+		h.logger.Error("measuring store size", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 
 	result, err := stats.GetStats(ctx, h.store.DB(), sizeBytes, h.store.RetentionCap())
 	if err != nil {
-		log.Printf("Error getting stats: %v", err)
+		h.logger.Error("getting stats", zap.Error(err))
 		return nil, mapStoreError(err)
 	}
 	return result, nil
@@ -488,15 +488,15 @@ func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 // returns invalidIDErr (the signal-specific -3200x code). Previously these
 // params went straight into SQL, where a non-string or non-UUID value became
 // a DB cast error reported as a generic internal error.
-func parseIDParams(req *jsonrpc2.Request, invalidIDErr error, normalize func(string) (string, error)) ([]any, error) {
+func (h *JSONRPCHandler) parseIDParams(req *jsonrpc2.Request, invalidIDErr error, normalize func(string) (string, error)) ([]any, error) {
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		log.Printf("Failed to unmarshal params: %v", err)
+		h.logger.Debug("invalid RPC params", zap.Error(err))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	if len(params) == 0 {
-		log.Printf("Invalid parameter count: 0 (expected at least 1 ID)")
+		h.logger.Debug("invalid RPC parameter count", zap.Int("count", 0), zap.String("expected", "at least 1 ID"))
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -504,12 +504,12 @@ func parseIDParams(req *jsonrpc2.Request, invalidIDErr error, normalize func(str
 	for _, param := range params {
 		s, ok := param.(string)
 		if !ok {
-			log.Printf("Invalid ID type: %T (expected string)", param)
+			h.logger.Debug("invalid ID type", zap.String("expected", "string"), zap.Any("param", param))
 			return nil, invalidIDErr
 		}
 		id, err := normalize(s)
 		if err != nil {
-			log.Printf("Invalid ID %q: %v", s, err)
+			h.logger.Debug("invalid ID", zap.String("id", s), zap.Error(err))
 			return nil, invalidIDErr
 		}
 		ids = append(ids, id)
@@ -521,15 +521,15 @@ func parseIDParams(req *jsonrpc2.Request, invalidIDErr error, normalize func(str
 // paths: searchSpans, getLog, getMetric, getAttributesByTraceID,
 // getTraceSpanCount). Like parseIDParams, a bad value returns the
 // signal-specific -3200x code instead of reaching SQL as a cast error.
-func parseIDParam(param any, invalidIDErr error, normalize func(string) (string, error)) (string, error) {
+func (h *JSONRPCHandler) parseIDParam(param any, invalidIDErr error, normalize func(string) (string, error)) (string, error) {
 	s, ok := param.(string)
 	if !ok {
-		log.Printf("Invalid ID type: %T (expected string)", param)
+		h.logger.Debug("invalid ID type", zap.String("expected", "string"), zap.Any("param", param))
 		return "", invalidIDErr
 	}
 	id, err := normalize(s)
 	if err != nil {
-		log.Printf("Invalid ID %q: %v", s, err)
+		h.logger.Debug("invalid ID", zap.String("id", s), zap.Error(err))
 		return "", invalidIDErr
 	}
 	return id, nil
@@ -567,15 +567,15 @@ func normalizeSpanID(s string) (string, error) {
 // parseTimestampParam parses a timestamp parameter that must be a JSON string
 // containing a base-10 int64. Large integers travel as strings to avoid
 // float64 precision loss in JSON.
-func parseTimestampParam(param any, paramName string) (int64, error) {
+func (h *JSONRPCHandler) parseTimestampParam(param any, paramName string) (int64, error) {
 	s, ok := param.(string)
 	if !ok {
-		log.Printf("Invalid %s type: %T, value: %v (expected string)", paramName, param, param)
+		h.logger.Debug("invalid timestamp param type", zap.String("param", paramName), zap.Any("value", param))
 		return 0, jsonrpc2.ErrInvalidParams
 	}
 	parsed, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		log.Printf("Invalid %s string: %v", paramName, err)
+		h.logger.Debug("invalid timestamp param", zap.String("param", paramName), zap.Error(err))
 		return 0, jsonrpc2.ErrInvalidParams
 	}
 	return parsed, nil
