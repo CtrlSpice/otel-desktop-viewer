@@ -12,6 +12,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/collector/component v1.63.0
+	go.opentelemetry.io/collector/component/componenttest v0.157.0
 	go.opentelemetry.io/collector/confmap v1.63.0
 	go.opentelemetry.io/collector/confmap/provider/envprovider v1.63.0
 	go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.63.0
@@ -91,7 +92,6 @@ require (
 	go.opentelemetry.io/collector v0.157.0 // indirect
 	go.opentelemetry.io/collector/client v1.63.0 // indirect
 	go.opentelemetry.io/collector/component/componentstatus v0.157.0 // indirect
-	go.opentelemetry.io/collector/component/componenttest v0.157.0 // indirect
 	go.opentelemetry.io/collector/config/configauth v1.63.0 // indirect
 	go.opentelemetry.io/collector/config/configcompression v1.63.0 // indirect
 	go.opentelemetry.io/collector/config/configgrpc v0.157.0 // indirect
