@@ -197,6 +197,7 @@ CORS is enabled for local dev (Vite on port 3001).
 **Static assets**
 
 - Embedded via `//go:embed static` after `make build-ts` (which wipes `server/static/` before copying, so stale hashed assets do not accumulate)
+- The root `Dockerfile` builds the frontend in a Node stage before `go build`, so `docker build` embeds the current UI without a local `make build-ts`
 - Frontend iteration uses the Vite dev server (`make dev-ts` on port 3001), which proxies `/rpc` to the Go server
 
 ### JSON-RPC methods
@@ -356,7 +357,6 @@ These appear in older notes or collector capabilities but are **not** part of th
 - `--config` YAML file exposed on the CLI (inline flag-built config only)
 - `batch` processor in default pipelines
 - `exporterhelper.WithRetry()` on the desktop exporter
-- Fresh frontend embed in the Docker image (`Dockerfile` runs `go build` only; use `make build-ts` before building the image, or fix #253)
 
 ## Related files
 

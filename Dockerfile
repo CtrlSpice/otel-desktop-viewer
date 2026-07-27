@@ -1,3 +1,11 @@
+FROM node:24-bookworm AS frontend
+
+WORKDIR /frontend
+COPY desktopexporter/internal/frontend/package.json desktopexporter/internal/frontend/package-lock.json ./
+RUN npm ci
+COPY desktopexporter/internal/frontend/ ./
+RUN npm run build
+
 FROM golang:1.26 AS golang
 
 # Install build and runtime dependencies for CGO
@@ -7,11 +15,17 @@ RUN apt-get update && apt-get install -y \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy source code
 WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
 COPY . .
 
-# Build the application from source
+# Embed the UI built in the frontend stage (not committed static/)
+RUN rm -rf desktopexporter/internal/server/static/*
+COPY --from=frontend /frontend/dist/ desktopexporter/internal/server/static/
+
 RUN go build -o otel-desktop-viewer .
 
 # Full image (not slim): the duckdb-go cgo runtime needs the complete
