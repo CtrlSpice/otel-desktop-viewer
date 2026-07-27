@@ -1,14 +1,17 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/rs/cors"
@@ -29,6 +32,9 @@ type Server struct {
 	server         http.Server
 	jsonrpcHandler *JSONRPCHandler
 	logger         *zap.Logger
+
+	serveDone chan struct{}
+	startMu   sync.Mutex
 }
 
 func NewServer(endpoint string, store *store.Store, logger *zap.Logger) (*Server, error) {
@@ -47,8 +53,46 @@ func NewServer(endpoint string, store *store.Store, logger *zap.Logger) (*Server
 	return &s, nil
 }
 
+// Start binds the listen address synchronously, then serves HTTP on a
+// background goroutine. Bind failures (e.g. port in use) return immediately.
 func (s *Server) Start() error {
-	return s.server.ListenAndServe()
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+
+	if s.serveDone != nil {
+		return errors.New("server already started")
+	}
+
+	ln, err := net.Listen("tcp", s.server.Addr)
+	if err != nil {
+		return err
+	}
+
+	done := make(chan struct{})
+	s.serveDone = done
+	go func() {
+		defer close(done)
+		err := s.server.Serve(ln)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.logger.Error("HTTP server failed", zap.Error(err))
+		}
+	}()
+	return nil
+}
+
+// Shutdown drains in-flight requests and waits for the serve goroutine to exit.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.startMu.Lock()
+	done := s.serveDone
+	s.startMu.Unlock()
+
+	if done == nil {
+		return nil
+	}
+
+	err := s.server.Shutdown(ctx)
+	<-done
+	return err
 }
 
 func (s *Server) initHandler() error {
@@ -161,8 +205,4 @@ func (s *Server) sendJSONRPCResponse(writer http.ResponseWriter, id jsonrpc2.ID,
 
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Write(bytes)
-}
-
-func (s *Server) Close() error {
-	return s.server.Close()
 }

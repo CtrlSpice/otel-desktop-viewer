@@ -50,6 +50,10 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
 	}()
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	spanCount := 0
 	for _, resourceSpan := range traces.ResourceSpans().All() {
 		resource := resourceSpan.Resource()
@@ -64,6 +68,10 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 			scope := scopeSpan.Scope()
 
 			for _, span := range scopeSpan.Spans().All() {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+
 				traceUUID := duckdb.UUID(span.TraceID())
 
 				spanID := span.SpanID()

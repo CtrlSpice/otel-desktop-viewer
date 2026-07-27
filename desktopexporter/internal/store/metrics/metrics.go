@@ -68,6 +68,9 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 		for si, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			scope := scopeMetric.Scope()
 			for mi, metric := range scopeMetric.Metrics().All() {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				identity := streamIdentityFromMetric(metric, scope.Name(), scope.Version(), serviceName)
 				identitySet[identity] = struct{}{}
 				coords = append(coords, identityWithCoord{identity: identity, coord: metricCoord{ri, si, mi}})
@@ -76,6 +79,9 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 	}
 	if len(coords) == 0 {
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	identities := make([]streamIdentity, 0, len(identitySet))
 	for id := range identitySet {
@@ -105,6 +111,9 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 	rowPlaceholders := make([]string, len(identities))
 	insertArgs := make([]driver.NamedValue, 0, len(identities)*9)
 	for i, id := range identities {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		newID := uuid.NewString()
 		rowPlaceholders[i] = "(?::uuid, ?, ?, ?, ?, ?, ?, ?, ?)"
 		var err error
@@ -159,6 +168,10 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 	streamIDs := make(map[streamIdentity]duckdb.UUID, len(identities))
 	dest := make([]driver.Value, 9)
 	for {
+		if err := ctx.Err(); err != nil {
+			rows.Close()
+			return err
+		}
 		if err := rows.Next(dest); err != nil {
 			if err.Error() == "EOF" {
 				break
@@ -210,6 +223,9 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 		for _, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			scope := scopeMetric.Scope()
 			for _, metric := range scopeMetric.Metrics().All() {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				identity := streamIdentityFromMetric(metric, scope.Name(), scope.Version(), serviceName)
 				streamID, ok := streamIDs[identity]
 				if !ok {

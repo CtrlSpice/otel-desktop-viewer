@@ -48,7 +48,7 @@ func createMetricsExporter(ctx context.Context, set exporter.Settings, config co
 	}
 
 	exporter, err := exporters.GetOrAdd(desktopCfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(desktopCfg, set.Logger)
+		return newDesktopExporter(ctx, desktopCfg, set.Logger)
 	})
 	if err != nil {
 		return nil, err
@@ -66,6 +66,10 @@ func createMetricsExporter(ctx context.Context, set exporter.Settings, config co
 }
 
 func createLogsExporter(ctx context.Context, set exporter.Settings, config component.Config) (exporter.Logs, error) {
+	if config == nil {
+		return nil, errors.New("nil config")
+	}
+
 	cfg := config.(*Config)
 	err := cfg.Validate()
 	if err != nil {
@@ -73,7 +77,7 @@ func createLogsExporter(ctx context.Context, set exporter.Settings, config compo
 	}
 
 	e, err := exporters.GetOrAdd(cfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(cfg, set.Logger)
+		return newDesktopExporter(ctx, cfg, set.Logger)
 	})
 	if err != nil {
 		return nil, err
@@ -88,6 +92,10 @@ func createLogsExporter(ctx context.Context, set exporter.Settings, config compo
 }
 
 func createTracesExporter(ctx context.Context, set exporter.Settings, config component.Config) (exporter.Traces, error) {
+	if config == nil {
+		return nil, errors.New("nil config")
+	}
+
 	cfg := config.(*Config)
 	err := cfg.Validate()
 	if err != nil {
@@ -95,7 +103,7 @@ func createTracesExporter(ctx context.Context, set exporter.Settings, config com
 	}
 
 	e, err := exporters.GetOrAdd(cfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(cfg, set.Logger)
+		return newDesktopExporter(ctx, cfg, set.Logger)
 	})
 	if err != nil {
 		return nil, err

@@ -115,7 +115,7 @@ OTLP pdata → exporterhelper → pushTraces|pushMetrics|pushLogs → store.With
 
 Ingest writes directly from OpenTelemetry pdata into DuckDB appenders. There are no intermediate Go domain structs between OTLP and storage.
 
-**Lifecycle**: `newDesktopExporter` opens the store and HTTP server; `Start()` launches `ListenAndServe` on a goroutine (the UI is reachable before the first OTLP batch arrives). When a retention cap is configured, a background loop enforces it every 30 seconds. `Shutdown()` cancels the retention loop and waits for it to finish, closes the HTTP server, then closes the store.
+**Lifecycle**: `newDesktopExporter` opens the store and HTTP server using the factory startup context. `Start()` binds the listen address synchronously (bind failures such as port-in-use propagate to the collector), then serves HTTP on a background goroutine. Ingest paths check `ctx.Err()` before work and on every record (metrics pass 1 included); `CloseAppenders` on exit flushes buffered rows. When a retention cap is configured, a background loop enforces it every 30 seconds. `Shutdown()` cancels the retention loop and waits for it to finish, gracefully shuts down the HTTP server and waits for the serve goroutine, then closes the store.
 
 **Retention**: `--db-max-size` sets a byte cap on stored telemetry. When usage exceeds the cap, the oldest traces, logs, and metrics are pruned. `getStats` reports current usage and the configured cap alongside signal counts.
 

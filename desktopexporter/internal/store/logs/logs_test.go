@@ -584,6 +584,38 @@ func TestIngestLogs_FlushInterval(t *testing.T) {
 	}
 }
 
+func TestIngest_CanceledContext(t *testing.T) {
+	s, _, teardown := setupStore(t)
+	defer teardown()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, createTestLogsPdataN(time.Now().UnixNano(), 1))
+	})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestIngest_CanceledDuringIngest(t *testing.T) {
+	s, _, teardown := setupStore(t)
+	defer teardown()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ldata := createTestLogsPdataN(time.Now().UnixNano(), 100)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.WithConn(func(conn driver.Conn) error {
+			return logs.Ingest(ctx, conn, ldata)
+		})
+	}()
+	cancel()
+
+	err := <-errCh
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 // TestSearchLogs tests logs.Search with various query types.
 func TestSearchLogs(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
