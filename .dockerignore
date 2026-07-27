@@ -1,0 +1,7 @@
+.git
+.github
+**/node_modules
+desktopexporter/internal/frontend/dist
+otel-desktop-viewer
+*.duckdb
+*.db

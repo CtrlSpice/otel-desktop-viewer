@@ -198,7 +198,7 @@ docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest-amd64
 docker pull ghcr.io/ctrlspice/otel-desktop-viewer:latest-arm64
 ```
 
-Or build locally from source:
+Or build locally from source (compiles the frontend and Go binary inside the image):
 
 ```bash
 docker build --tag otel-desktop-viewer:latest .
