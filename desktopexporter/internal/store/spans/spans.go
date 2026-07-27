@@ -691,11 +691,13 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 			return "", fmt.Errorf("link field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		colExpr := "l." + snake
-		// Compare span IDs in wire form (16-char hex): the stored uuid is
-		// zero-padded, and a raw 16-hex value fails the uuid cast.
-		// trace_id stays raw -- dash-less 32-hex casts to uuid fine.
-		if snake == "linked_span_id" {
+		// Compare IDs in wire form: the stored uuid is zero-padded for span
+		// IDs, and raw uuid-column comparisons error on malformed input.
+		switch snake {
+		case "linked_span_id":
 			colExpr = "right(replace(l." + snake + "::varchar, '-', ''), 16)"
+		case "trace_id":
+			colExpr = "replace(l.trace_id::varchar, '-', '')"
 		}
 		return fmt.Sprintf("exists(select 1 from links l where l.span_id = s.span_id and %s {COND})", colExpr), nil
 	}
@@ -705,6 +707,10 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 	if field.Name == "spanID" || field.Name == "parentSpanID" {
 		col := util.CamelToSnake(field.Name)
 		return "right(replace(s." + col + "::varchar, '-', ''), 16)", nil
+	}
+	if field.Name == "traceID" {
+		// Wire-form comparison, same reasoning as the link.traceID branch.
+		return "replace(s.trace_id::varchar, '-', '')", nil
 	}
 	if len(field.Name) > 0 {
 		col := util.CamelToSnake(field.Name)

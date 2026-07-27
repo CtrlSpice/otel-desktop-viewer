@@ -126,6 +126,30 @@ func TestSearchTraces(t *testing.T) {
 		require.Len(t, summaries, 1, "searchTraces should return the ingested trace")
 		assert.Equal(t, testTraceIDHex, summaries[0]["traceID"])
 	})
+
+	t.Run("Garbage traceID in query tree", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		query := map[string]any{
+			"id":   "q-garbage",
+			"type": "condition",
+			"query": map[string]any{
+				"field":         map[string]any{"name": "traceID", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "not-a-trace",
+			},
+		}
+		req := createRequest("searchTraces", []any{"0", strconv.FormatInt(1<<63-1, 10), query})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err, "garbage trace ID in search must not surface -32603")
+		raw, ok := result.(json.RawMessage)
+		require.True(t, ok)
+		var summaries []map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &summaries))
+		assert.Empty(t, summaries)
+	})
 }
 
 func TestSearchSpans(t *testing.T) {
@@ -220,6 +244,30 @@ func TestSearchLogs(t *testing.T) {
 		var full map[string]any
 		assert.NoError(t, json.Unmarshal(getRaw, &full))
 		assert.Equal(t, "test log message", full["body"])
+	})
+
+	t.Run("Garbage spanID in query tree", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		query := map[string]any{
+			"id":   "q-garbage",
+			"type": "condition",
+			"query": map[string]any{
+				"field":         map[string]any{"name": "spanID", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "zz-definitely-not-hex",
+			},
+		}
+		req := createRequest("searchLogs", []any{"0", strconv.FormatInt(1<<63-1, 10), query})
+		result, err := handler.Handle(context.Background(), req)
+
+		assert.NoError(t, err, "garbage span ID in search must not surface -32603")
+		raw, ok := result.(json.RawMessage)
+		require.True(t, ok)
+		var entries []map[string]any
+		assert.NoError(t, json.Unmarshal(raw, &entries))
+		assert.Empty(t, entries)
 	})
 }
 

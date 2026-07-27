@@ -151,6 +151,25 @@ func buildGroup(group *QueryGroup, conditions *[]string, params *[]NamedParam, m
 	return nil
 }
 
+// wireIDFields are field names whose values are trace/span IDs: served in
+// OTLP wire form (dash-less lowercase hex) but stored in uuid columns.
+// Signal mappers convert those columns to wire form for comparison, and
+// values are normalized here to match, so dashed or uppercase input still
+// works and malformed IDs match nothing instead of erroring on a uuid cast.
+var wireIDFields = map[string]struct{}{
+	"traceID":      {},
+	"traceId":      {},
+	"spanID":       {},
+	"spanId":       {},
+	"parentSpanID": {},
+	"link.traceID": {},
+	"link.spanID":  {},
+}
+
+func normalizeWireIDValue(value string) string {
+	return strings.ToLower(strings.ReplaceAll(value, "-", ""))
+}
+
 // BuildOperatorCondition builds SQL condition for a specific operator.
 func BuildOperatorCondition(expression string, query *Query, params *[]NamedParam) (string, error) {
 	if query == nil {
@@ -191,6 +210,13 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 
 	if query.Field != nil && strings.HasSuffix(query.Field.Type, "[]") {
 		return handleArrayOperator(expression, query, params)
+	}
+
+	// Normalized after the NULL check so `= NULL` keeps its IS NULL meaning.
+	if query.Field != nil {
+		if _, ok := wireIDFields[query.Field.Name]; ok {
+			value = normalizeWireIDValue(value)
+		}
 	}
 
 	paramName := fmt.Sprintf("value_%d", len(*params))

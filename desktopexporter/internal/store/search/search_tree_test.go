@@ -114,6 +114,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 	tests := []struct {
 		name           string
 		expression     string
+		fieldName      string
 		operator       string
 		value          string
 		expectedSQL    string
@@ -222,6 +223,17 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expectedSQL:    "s.SearchText IS NULL",
 			expectedParams: nil,
 		},
+		{
+			name:        "wire ID field strips dashes and lowercases",
+			expression:  "replace(l.trace_id::varchar, '-', '')",
+			fieldName:   "traceID",
+			operator:    "=",
+			value:       "ABCD-0000-0000-0000-000000000001",
+			expectedSQL: "replace(l.trace_id::varchar, '-', '') = value_2",
+			expectedParams: []NamedParam{
+				{"value_2", "abcd000000000000000000000001"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -232,7 +244,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			}
 
 			query := &Query{
-				Field:         &FieldDefinition{Type: ""},
+				Field:         &FieldDefinition{Type: "", Name: tt.fieldName},
 				FieldOperator: tt.operator,
 				Value:         tt.value,
 			}

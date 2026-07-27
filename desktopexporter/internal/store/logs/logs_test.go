@@ -693,10 +693,9 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	// The search bar's ID-paste completion suggests `traceID = <32-hex>` and
-	// `spanID = <16-hex>` field queries in wire form (no dashes). Trace IDs
-	// work through DuckDB's dash-less uuid cast; span IDs need the wire-form
-	// column conversion in mapLogFieldExpression (a raw 16-hex value does
-	// not cast to uuid).
+	// `spanID = <16-hex>` field queries in wire form (no dashes). Both
+	// columns compare as wire-form strings (mapLogFieldExpression), with
+	// values dash-stripped and lowercased by the search package.
 	t.Run("Field_TraceID_WireForm", func(t *testing.T) {
 		query := &search.QueryNode{
 			ID:   "q3c",
@@ -728,6 +727,38 @@ func TestSearchLogs(t *testing.T) {
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1, "wire-form span ID should match its log, not a cast error")
 		assert.Equal(t, "ERROR", entries[0].SeverityText)
+	})
+
+	// Malformed IDs are a search that finds nothing, not a uuid cast error
+	// bubbling up as -32603 (issue #276).
+	t.Run("Field_TraceID_Garbage", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q3e",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "traceID", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "not-a-trace",
+			},
+		}
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err, "garbage trace ID must not surface a cast error")
+		assert.Empty(t, parseSummaries(raw))
+	})
+
+	t.Run("Field_SpanID_Garbage", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q3f",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "spanID", SearchScope: "field"},
+				FieldOperator: "=",
+				Value:         "zz-definitely-not-hex",
+			},
+		}
+		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err, "garbage span ID must not surface a cast error")
+		assert.Empty(t, parseSummaries(raw))
 	})
 
 	t.Run("Field_SeverityText", func(t *testing.T) {
@@ -768,6 +799,8 @@ func TestSearchLogs(t *testing.T) {
 		assert.Equal(t, "INFO", entries[0].SeverityText)
 	})
 
+	// Dashed uuid input keeps working: the search package strips dashes
+	// before binding, so it compares equal to the wire-form column.
 	t.Run("Field_TraceID", func(t *testing.T) {
 		query := &search.QueryNode{
 			ID:   "q5b",
