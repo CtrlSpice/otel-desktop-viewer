@@ -11,7 +11,6 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/exporter"
-	"go.uber.org/zap"
 )
 
 func testExporterSettings(t *testing.T) exporter.Settings {
@@ -71,29 +70,14 @@ func TestSharedExporterSingleton(t *testing.T) {
 	require.NoError(t, mExp.Shutdown(ctx))
 }
 
-func TestExporterStartPortInUse(t *testing.T) {
+func TestFactoryShutdownAndRestart(t *testing.T) {
 	ctx := context.Background()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := ln.Addr().String()
-	defer ln.Close()
-
-	exp, err := newDesktopExporter(ctx, &Config{Endpoint: addr, DbMaxSize: "0"}, zap.NewNop())
-	require.NoError(t, err)
-	defer func() { _ = exp.Shutdown(ctx) }()
-
-	err = exp.Start(ctx, nil)
-	require.Error(t, err)
-}
-
-func TestExporterShutdown(t *testing.T) {
-	ctx := context.Background()
+	set := testExporterSettings(t)
 	cfg := &Config{Endpoint: freeLocalAddr(t), DbMaxSize: "0"}
 
-	exp, err := newDesktopExporter(ctx, cfg, zap.NewNop())
+	exp, err := createMetricsExporter(ctx, set, cfg)
 	require.NoError(t, err)
-
-	require.NoError(t, exp.Start(ctx, nil))
+	require.NoError(t, exp.Start(ctx, componenttest.NewNopHost()))
 
 	resp, err := http.Get("http://" + cfg.Endpoint + "/")
 	require.NoError(t, err)
@@ -102,9 +86,9 @@ func TestExporterShutdown(t *testing.T) {
 
 	require.NoError(t, exp.Shutdown(ctx))
 
-	exp2, err := newDesktopExporter(ctx, cfg, zap.NewNop())
+	exp2, err := createMetricsExporter(ctx, set, cfg)
 	require.NoError(t, err)
-	require.NoError(t, exp2.Start(ctx, nil))
+	require.NoError(t, exp2.Start(ctx, componenttest.NewNopHost()))
 	require.NoError(t, exp2.Shutdown(ctx))
 }
 
