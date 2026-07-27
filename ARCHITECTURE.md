@@ -206,13 +206,24 @@ CORS is enabled for local dev (Vite on port 3001).
 | `searchLogs` / `getLog` | Log list and detail |
 | `getLogAttributes` | Attribute discovery for logs |
 | `searchMetricSummaries` | Metric stream list |
-| `getMetric` / `searchMetrics` / `getMetrics` | Metric detail and time series |
+| `getMetric` | Metric detail and time series for one stream in a time window |
 | `getMetricAttributes` | Attribute discovery for metrics |
 | `getStats` | Counts of traces, logs, metrics (used for polling) |
 | `clearTraces` / `clearLogs` / `clearMetrics` | Delete all data for a signal |
 | `deleteSpansByTraceID` / `deleteSpanByID` / `deleteLogByID` | Targeted deletes |
 
-Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The API has one not-found convention: requesting a specific entity that does not exist returns an error (`-32001` trace, `-32002` log, `-32003` metric), never a `null` result. `getMetric` distinguishes an unknown stream (`-32003`) from a known stream with no datapoints in the requested window (valid `MetricData` with an empty `timeseries`). Invalid ID *params* likewise return dedicated codes (`-32004` trace, `-32005` log, `-32008` span, `-32009` metric stream) rather than surfacing as internal errors, on read and delete paths alike. IDs embedded in search query trees (`traceID`, `spanID`, `link.*`, etc.) compare in OTLP wire form: values are dash-stripped and lowercased, columns are converted to the same wire shape, and malformed input returns empty results instead of `-32603` cast errors. The frontend service layer (`telemetry-service.ts`) translates these codes into whatever shape its callers want (e.g. `getMetric` returns `null` on `-32003`).
+Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The API has one not-found convention: requesting a specific entity that does not exist returns an error (`-32001` trace, `-32002` log, `-32003` metric), never a `null` result. `getMetric` distinguishes an unknown stream (`-32003`) from a known stream with no datapoints in the requested window (valid `MetricData` with an empty `timeseries`). Invalid ID *params* return dedicated codes rather than surfacing as internal errors on read and delete paths. IDs embedded in search query trees (`traceID`, `spanID`, `link.*`, etc.) compare in OTLP wire form: values are dash-stripped and lowercased, columns are converted to the same wire shape, and malformed input returns empty results instead of `-32603` cast errors. The frontend service layer (`telemetry-service.ts`) translates these codes into whatever shape its callers want (e.g. `getMetric` returns `null` on `-32003`).
+
+| Code | Meaning |
+|------|---------|
+| `-32001` | Trace not found (`searchSpans`, `getTraceSpanCount`, …) |
+| `-32002` | Log not found (`getLog`) |
+| `-32003` | Metric stream not found (`getMetric`) |
+| `-32004` | Invalid trace ID param |
+| `-32005` | Invalid log ID param |
+| `-32007` | Invalid search query tree |
+| `-32008` | Invalid span ID param |
+| `-32009` | Invalid metric stream ID param |
 
 ## Frontend
 
@@ -223,7 +234,7 @@ Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The AP
 | Layer | Choice |
 |-------|--------|
 | Framework | Svelte 5 (runes: `$state`, `$derived`, `$effect`) |
-| Build | Vite 7 |
+| Build | Vite 8 |
 | Routing | First-party (History API, `src/route/`) |
 | Styling | Tailwind CSS 4 + DaisyUI 5 |
 | Components | bits-ui |
