@@ -353,9 +353,11 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	}
 	switch name {
 	case "traceID", "traceId":
-		// uuid column compared directly: DuckDB casts both dashed and
-		// dash-less 32-hex strings to uuid, so the wire form works as-is.
-		return "l.trace_id", nil
+		// Compare in wire form (dash-less 32-hex) like the global mapper:
+		// a raw uuid-column comparison errors on malformed input and LIKE
+		// operators would match against the dashed internal form. Values
+		// are dash-stripped and lowercased by the search package.
+		return "replace(l.trace_id::varchar, '-', '')", nil
 	case "spanID", "spanId":
 		// Span IDs are served as 16-char hex (OTLP wire form), which does
 		// NOT cast to uuid. Convert the column to wire form instead, same

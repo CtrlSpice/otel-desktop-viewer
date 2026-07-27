@@ -847,7 +847,6 @@ func TestSearchTraces(t *testing.T) {
 
 	t.Run("Field_link.traceID_WireForm", func(t *testing.T) {
 		// Same link, queried with the dash-less 32-hex form the API serves.
-		// DuckDB casts it to uuid directly; no normalization involved.
 		query := map[string]any{
 			"id":   "f7",
 			"type": "condition",
@@ -884,6 +883,53 @@ func TestSearchTraces(t *testing.T) {
 		summaries := parseSummaries(raw)
 		assert.NotEmpty(t, summaries)
 		assert.Equal(t, testTraceID, summaries[0].TraceID)
+	})
+
+	// Malformed IDs are a search that finds nothing, not a uuid cast error
+	// bubbling up as -32603 (issue #276).
+	t.Run("Field_traceID_Garbage", func(t *testing.T) {
+		query := map[string]any{
+			"id":   "f9",
+			"type": "condition",
+			"query": map[string]any{
+				"field":         map[string]any{"name": "traceID", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "not-a-trace",
+			},
+		}
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err, "garbage trace ID must not surface a cast error")
+		assert.Empty(t, parseSummaries(raw))
+	})
+
+	t.Run("Field_spanID_Garbage", func(t *testing.T) {
+		query := map[string]any{
+			"id":   "f10",
+			"type": "condition",
+			"query": map[string]any{
+				"field":         map[string]any{"name": "spanID", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "zz-definitely-not-hex",
+			},
+		}
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err, "garbage span ID must not surface a cast error")
+		assert.Empty(t, parseSummaries(raw))
+	})
+
+	t.Run("Field_link.traceID_Garbage", func(t *testing.T) {
+		query := map[string]any{
+			"id":   "f11",
+			"type": "condition",
+			"query": map[string]any{
+				"field":         map[string]any{"name": "link.traceID", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "not-a-trace",
+			},
+		}
+		raw, err := spans.SearchTraces(ctx, s.DB(), startTime, endTime, query)
+		assert.NoError(t, err, "garbage link trace ID must not surface a cast error")
+		assert.Empty(t, parseSummaries(raw))
 	})
 }
 
