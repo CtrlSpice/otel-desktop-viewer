@@ -14,8 +14,7 @@
   import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { Stats } from '@/types/api-types'
-  import luluImage from '@/assets/images/lulu.png'
-  import axolotlImage from '@/assets/images/axolotl.svg'
+  import luluImage from '@/assets/images/lulu.webp'
 
   const POLL_INTERVAL_MS = 5000
 
@@ -318,18 +317,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
     {#snippet pageFooter()}
       <div class="home-page__footer">
         <p class="home-page__footer-text">
-          Made with
-          <img src={axolotlImage} alt="axolotl emoji" class="home-page__footer-icon" />
-          by
-          <a
-            href="https://github.com/CtrlSpice"
-            class="home-page__footer-link"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Mila Ardath
-          </a>
-          , with Artwork by
+          Artwork by
           <a
             href="https://cbatesonart.artstation.com/"
             class="home-page__footer-link"
@@ -441,10 +429,6 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
 
   .home-page__footer-text {
     @apply text-center text-sm text-base-content/60;
-  }
-
-  .home-page__footer-icon {
-    @apply mx-0.5 inline-block h-[1em] w-[1em] max-h-3.5 max-w-3.5 align-middle object-contain;
   }
 
   .home-page__footer-link {

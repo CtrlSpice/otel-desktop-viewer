@@ -26,6 +26,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // This app is served from localhost out of a Go-embedded binary, so
+    // transfer size is irrelevant and we deliberately don't code-split.
+    // Vite's default 500 kB warning assumes a public web app; keep the
+    // warning as a canary for genuine bloat instead.
+    chunkSizeWarningLimit: 1200,
   },
   test: {
     include: ['src/**/*.test.ts'],
