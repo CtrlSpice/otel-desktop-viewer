@@ -4,12 +4,11 @@ import (
 	"context"
 	"database/sql/driver"
 	"errors"
-	"fmt"
-	"log"
 	"net/http"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
+	"go.uber.org/zap"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -35,18 +34,19 @@ const (
 type desktopExporter struct {
 	server *server.Server
 	store  *store.Store
+	logger *zap.Logger
 
 	retentionCancel context.CancelFunc
 	retentionDone   chan struct{}
 }
 
-func newDesktopExporter(cfg *Config) (*desktopExporter, error) {
+func newDesktopExporter(cfg *Config, logger *zap.Logger) (*desktopExporter, error) {
 	str, err := store.NewStore(context.Background(), cfg.Db)
 	if err != nil {
 		return nil, err
 	}
 
-	srv, err := server.NewServer(cfg.Endpoint, str)
+	srv, err := server.NewServer(cfg.Endpoint, str, logger)
 	if err != nil {
 		str.Close()
 		return nil, err
@@ -72,6 +72,7 @@ func newDesktopExporter(cfg *Config) (*desktopExporter, error) {
 	return &desktopExporter{
 		server: srv,
 		store:  str,
+		logger: logger,
 	}, nil
 }
 
@@ -90,7 +91,7 @@ func (e *desktopExporter) runRetentionLoop(ctx context.Context, done chan<- stru
 			return
 		case <-ticker.C:
 			if err := e.store.EnforceRetention(ctx, e.store.RetentionCap()); err != nil {
-				log.Printf("retention enforcement failed: %v", err)
+				e.logger.Error("retention enforcement failed", zap.Error(err))
 			}
 		}
 	}
@@ -119,9 +120,10 @@ func (e *desktopExporter) Start(ctx context.Context, host component.Host) error 
 		err := e.server.Start()
 
 		if errors.Is(err, http.ErrServerClosed) {
-			fmt.Printf("server closed\n")
-		} else if err != nil {
-			fmt.Printf("error listening for server: %s\n", err)
+			return
+		}
+		if err != nil {
+			e.logger.Error("HTTP server listen failed", zap.Error(err))
 		}
 
 	}()

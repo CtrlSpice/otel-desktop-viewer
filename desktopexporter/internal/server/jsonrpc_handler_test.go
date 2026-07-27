@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap"
 	"golang.org/x/exp/jsonrpc2"
 )
 
@@ -26,7 +27,7 @@ func setupHandler(t *testing.T) (*JSONRPCHandler, func()) {
 	t.Helper()
 	s, err := store.NewStore(context.Background(), "")
 	require.NoError(t, err)
-	handler := NewJSONRPCHandler(s)
+	handler := NewJSONRPCHandler(s, zap.NewNop())
 	return handler, func() {
 		s.Close()
 	}
@@ -66,7 +67,7 @@ func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
 	t.Helper()
 	s, err := store.NewStore(context.Background(), "")
 	require.NoError(t, err)
-	handler := NewJSONRPCHandler(s)
+	handler := NewJSONRPCHandler(s, zap.NewNop())
 	ctx := context.Background()
 
 	err = s.WithConn(func(conn driver.Conn) error {
@@ -764,7 +765,7 @@ func setupHandlerWithMetrics(t *testing.T) (*JSONRPCHandler, func()) {
 	t.Helper()
 	s, err := store.NewStore(context.Background(), "")
 	require.NoError(t, err)
-	handler := NewJSONRPCHandler(s)
+	handler := NewJSONRPCHandler(s, zap.NewNop())
 	ctx := context.Background()
 
 	err = s.WithConn(func(conn driver.Conn) error {
