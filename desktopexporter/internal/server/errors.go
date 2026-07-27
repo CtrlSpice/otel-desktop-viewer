@@ -22,7 +22,6 @@ const (
 	ErrCodeMetricNotFound  = -32003
 	ErrCodeInvalidTraceID  = -32004
 	ErrCodeInvalidLogID    = -32005
-	ErrCodeSpanNotFound    = -32006
 	ErrCodeInvalidQuery    = -32007
 	ErrCodeInvalidSpanID   = -32008
 	ErrCodeInvalidStreamID = -32009
@@ -35,7 +34,6 @@ var (
 	ErrMetricNotFound  = jsonrpc2.NewError(ErrCodeMetricNotFound, "Metric not found")
 	ErrInvalidTraceID  = jsonrpc2.NewError(ErrCodeInvalidTraceID, "Invalid trace ID")
 	ErrInvalidLogID    = jsonrpc2.NewError(ErrCodeInvalidLogID, "Invalid log ID")
-	ErrSpanNotFound    = jsonrpc2.NewError(ErrCodeSpanNotFound, "Span not found")
 	ErrInvalidQuery    = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
 	ErrInvalidSpanID   = jsonrpc2.NewError(ErrCodeInvalidSpanID, "Invalid span ID")
 	ErrInvalidStreamID = jsonrpc2.NewError(ErrCodeInvalidStreamID, "Invalid metric stream ID")
@@ -50,8 +48,6 @@ func mapStoreError(err error) error {
 	switch {
 	case errors.Is(err, spans.ErrTraceIDNotFound):
 		return ErrTraceNotFound
-	case errors.Is(err, spans.ErrSpanIDNotFound):
-		return ErrSpanNotFound
 	case errors.Is(err, logs.ErrLogIDNotFound):
 		return ErrLogsNotFound
 	case errors.Is(err, metrics.ErrStreamIDNotFound):
