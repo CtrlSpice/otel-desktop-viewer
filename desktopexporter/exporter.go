@@ -120,8 +120,9 @@ func (e *desktopExporter) Start(ctx context.Context, host component.Host) error 
 		err := e.server.Start()
 
 		if errors.Is(err, http.ErrServerClosed) {
-			e.logger.Info("HTTP server closed")
-		} else if err != nil {
+			return
+		}
+		if err != nil {
 			e.logger.Error("HTTP server listen failed", zap.Error(err))
 		}
 
