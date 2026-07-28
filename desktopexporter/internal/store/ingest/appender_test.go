@@ -8,8 +8,8 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
-	"github.com/google/uuid"
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -71,8 +71,8 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 		if err := appenders["logs"].AppendRow(
 			logID,
 			int64(0), int64(0), // Timestamp, ObservedTimestamp
-			nil, nil,           // TraceID, SpanID
-			"INFO", int32(9),   // SeverityText, SeverityNumber
+			nil, nil, // TraceID, SpanID
+			"INFO", int32(9), // SeverityText, SeverityNumber
 			"flush test", "str", // Body, BodyType
 			uint32(0), "scope", "v1", uint32(0), uint32(0), uint32(0), "",
 			"", // ServiceName VARCHAR (NOT NULL, '' = unknown)

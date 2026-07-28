@@ -405,7 +405,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "f1",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "name", "searchScope": "field"},
+				"field":         map[string]any{"name": "name", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "gauge_metric",
 			},
@@ -423,7 +423,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "f2",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "description", "searchScope": "field"},
+				"field":         map[string]any{"name": "description", "searchScope": "field"},
 				"fieldOperator": "CONTAINS",
 				"value":         "memory",
 			},
@@ -441,7 +441,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "f3",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "unit", "searchScope": "field"},
+				"field":         map[string]any{"name": "unit", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "bytes",
 			},
@@ -464,7 +464,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "f4",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "scope.name", "searchScope": "field"},
+				"field":         map[string]any{"name": "scope.name", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "test-scope",
 			},
@@ -481,7 +481,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "f4b",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "scopeName", "searchScope": "field"},
+				"field":         map[string]any{"name": "scopeName", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "test-scope",
 			},
@@ -498,7 +498,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "f5",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "scope.version", "searchScope": "field"},
+				"field":         map[string]any{"name": "scope.version", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "v1.0.0",
 			},
@@ -515,7 +515,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "f5b",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "scopeVersion", "searchScope": "field"},
+				"field":         map[string]any{"name": "scopeVersion", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "v1.0.0",
 			},
@@ -533,7 +533,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "f6",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"name": "resourceDroppedAttributesCount", "searchScope": "field"},
+				"field":         map[string]any{"name": "resourceDroppedAttributesCount", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "0",
 			},
@@ -551,7 +551,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "g1",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"searchScope": "global"},
+				"field":         map[string]any{"searchScope": "global"},
 				"fieldOperator": "CONTAINS",
 				"value":         "memory",
 			},
@@ -569,7 +569,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "g2",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"searchScope": "global"},
+				"field":         map[string]any{"searchScope": "global"},
 				"fieldOperator": "CONTAINS",
 				"value":         "test-service",
 			},
@@ -586,7 +586,7 @@ func TestMetricSuite(t *testing.T) {
 			"id":   "g3",
 			"type": "condition",
 			"query": map[string]any{
-				"field":          map[string]any{"searchScope": "global"},
+				"field":         map[string]any{"searchScope": "global"},
 				"fieldOperator": "CONTAINS",
 				"value":         "nonexistent-metric-xyz",
 			},

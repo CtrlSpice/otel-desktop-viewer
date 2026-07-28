@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/component"
-	"go.uber.org/zap"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
