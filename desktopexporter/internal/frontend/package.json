@@ -32,6 +32,8 @@
     "bits-ui": "^2.18.1",
     "chrono-node": "^2.10.1",
     "d3-interpolate": "^3.0.1",
+    "d3-scale": "^4.0.2",
+    "d3-shape": "^3.2.0",
     "daisyui": "^5.7.0",
     "layerchart": "^2.0.2",
     "svelte": "^5.56.7"
@@ -49,7 +51,6 @@
     "@types/d3-scale-chromatic": "^3.1.0",
     "@types/d3-shape": "^3.1.8",
     "@types/node": "^26.1.1",
-    "autoprefixer": "^10.5.4",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.23",
     "prettier": "^3.9.6",

@@ -1,0 +1,47 @@
+# Install: pip install pre-commit && pre-commit install
+# Mirrors local checks from CI (format, typecheck, tests).
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: go fmt
+        entry: gofmt -w
+        language: system
+        types: [go]
+
+      - id: go-test
+        name: go test (desktopexporter)
+        entry: bash -c 'cd desktopexporter && go test ./...'
+        language: system
+        pass_filenames: false
+        files: ^desktopexporter/.*\.go$
+        always_run: false
+
+      - id: frontend-format-check
+        name: frontend format check
+        entry: bash -c 'cd desktopexporter/internal/frontend && npm run format:check'
+        language: system
+        pass_filenames: false
+        files: ^desktopexporter/internal/frontend/
+
+      - id: frontend-check
+        name: frontend typecheck
+        entry: bash -c 'cd desktopexporter/internal/frontend && npm run check'
+        language: system
+        pass_filenames: false
+        files: ^desktopexporter/internal/frontend/
+
+      - id: frontend-test
+        name: frontend unit tests
+        entry: bash -c 'cd desktopexporter/internal/frontend && npm test'
+        language: system
+        pass_filenames: false
+        files: ^desktopexporter/internal/frontend/
