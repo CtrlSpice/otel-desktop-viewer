@@ -126,14 +126,7 @@ Production builds embed frontend output under `desktopexporter/internal/server/s
 make test
 ```
 
-Optional but recommended — install [pre-commit](https://pre-commit.com/) hooks (format, typecheck, and tests on changed paths):
-
-```bash
-pip install pre-commit
-pre-commit install
-```
-
-That runs Go tests, frontend format check, `svelte-check`, and Vitest when you commit matching files.
+That runs Go tests and frontend typechecking — the same bar we expect locally before review.
 
 CI also builds on **Ubuntu, macOS, and Windows** on every pull request. Windows needs CGO + MSYS2, same as local dev.
 
