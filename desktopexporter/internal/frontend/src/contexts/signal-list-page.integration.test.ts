@@ -29,6 +29,13 @@ async function waitForMounted() {
   })
 }
 
+async function waitForListLoaded() {
+  await waitForMounted()
+  await vi.waitFor(() => {
+    expect(screen.getByTestId('loading').textContent).toBe('false')
+  })
+}
+
 describe('createSignalListPage integration', () => {
   beforeEach(() => {
     resetListUpdateSeqForTests()
@@ -42,16 +49,16 @@ describe('createSignalListPage integration', () => {
     ]
     const fetchList = vi.fn(async () => items)
     renderProbe('/logs', items, fetchList)
-    await waitForMounted()
+    await waitForListLoaded()
 
-    expect(fetchList).toHaveBeenCalledTimes(2)
+    expect(fetchList).toHaveBeenCalledTimes(1)
     expect(screen.getByTestId('item-count').textContent).toBe('3')
     expect(screen.getByTestId('item-ids').textContent).toBe('a,b,c')
   })
 
   it('derives selectedId from the URL path', async () => {
     renderProbe('/logs/log-b', [{ id: 'log-a', name: 'a' }, { id: 'log-b', name: 'b' }])
-    await waitForMounted()
+    await waitForListLoaded()
 
     expect(screen.getByTestId('selected-id').textContent).toBe('log-b')
     expect(screen.getByTestId('selected-index').textContent).toBe('1')
@@ -73,7 +80,7 @@ describe('createSignalListPage integration', () => {
     expect(window.location.pathname).toBe('/logs/deep-link-id')
 
     resolveFetch([{ id: 'other', name: 'other' }])
-    await waitForMounted()
+    await waitForListLoaded()
     await tick()
 
     // Stale id should trigger fallback navigation, not an immediate clobber mid-fetch.
@@ -94,7 +101,7 @@ describe('createSignalListPage integration', () => {
         page = ctx
       },
     })
-    await waitForMounted()
+    await waitForListLoaded()
 
     page!.selectByOffset(1)
     await tick()
@@ -107,7 +114,7 @@ describe('createSignalListPage integration', () => {
     let fetchCalls = 0
     const fetchList = vi.fn(async () => {
       fetchCalls++
-      if (fetchCalls <= 2) {
+      if (fetchCalls <= 1) {
         return [{ id: 'a', name: 'alfa' }]
       }
       return new Promise<Item[]>(resolve => {
@@ -123,7 +130,7 @@ describe('createSignalListPage integration', () => {
         page = ctx
       },
     })
-    await waitForMounted()
+    await waitForListLoaded()
 
     const slowFetch = page!.runListFetch()
     const searchSeq = beginListUpdate('logs')
@@ -151,7 +158,7 @@ describe('createSignalListPage integration', () => {
     let fetchCalls = 0
     const fetchList = vi.fn(async () => {
       fetchCalls++
-      if (fetchCalls <= 2) {
+      if (fetchCalls <= 1) {
         return [{ id: 'a', name: 'alfa' }]
       }
       return new Promise<Item[]>(resolve => {
@@ -167,7 +174,7 @@ describe('createSignalListPage integration', () => {
         page = ctx
       },
     })
-    await waitForMounted()
+    await waitForListLoaded()
 
     const staleSearchSeq = beginListUpdate('logs')
     const slowFetch = page!.runListFetch()

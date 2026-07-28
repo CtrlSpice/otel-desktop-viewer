@@ -242,8 +242,7 @@ export function createSignalListPage<TItem>(
     loading = false
   }
 
-  onMount(async () => {
-    await runListFetch()
+  onMount(() => {
     mounted = true
   })
 
