@@ -27,7 +27,7 @@ describe('createSignalListPage integration', () => {
   it('loads the list on mount and exposes sorted items', async () => {
     const items = [
       { id: 'c', name: 'charlie' },
-      { id: 'a', name: 'alpha' },
+      { id: 'a', name: 'alfa' },
       { id: 'b', name: 'bravo' },
     ]
     const fetchList = vi.fn(async () => items)
@@ -72,7 +72,7 @@ describe('createSignalListPage integration', () => {
 
   it('selectByOffset navigates with replace mode', async () => {
     const items = [
-      { id: 'a', name: 'alpha' },
+      { id: 'a', name: 'alfa' },
       { id: 'b', name: 'bravo' },
     ]
     let page: import('@/contexts/signal-list-page.svelte').SignalListPage<Item> | undefined
@@ -93,8 +93,8 @@ describe('createSignalListPage integration', () => {
   })
 
   it('refetches when navigateToItem changes the route after mount', async () => {
-    const fetchList = vi.fn(async () => [{ id: 'a', name: 'alpha' }])
-    renderProbe('/logs', [{ id: 'a', name: 'alpha' }], fetchList)
+    const fetchList = vi.fn(async () => [{ id: 'a', name: 'alfa' }])
+    renderProbe('/logs', [{ id: 'a', name: 'alfa' }], fetchList)
     await waitForMounted()
 
     navigateToItem('logs', 'a')
