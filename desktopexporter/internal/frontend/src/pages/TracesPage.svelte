@@ -55,83 +55,95 @@
 </script>
 
 <script lang="ts">
-  import { onMount } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
   import {
-    signalIdFromPath,
     navigateToItem,
     getSpanFromQuery,
     setSpanInQuery,
     SPAN_PARAM,
   } from '@/route'
-  import { getRouteContext } from '@/contexts/route-context.svelte'
   import type {
     TraceData,
     SearchResultEvent,
     TraceStats,
   } from '@/types/api-types'
   import type { QueryNode } from '@/components/shared/Search/queryTree'
-  import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
+  import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
+  import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import TraceCard from '@/components/traces/TraceCard.svelte'
   import DetailView from '@/components/traces/Detail/TraceDetailView.svelte'
   import WaterfallView from '@/components/traces/Waterfall/WaterfallView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
-  import { TrashIcon } from '@/icons'
 
-  // --- context ---
   let timeContext = getTimeContext()
-
-  // --- URL is the source of truth for the selected trace + span ---
-  // `/traces/<traceID>?span=<spanID>`. Every selection change is a navigate (below).
   const routeContext = getRouteContext()
 
-  // --- state: API / list ---
-  let traceSummaries = $state<TraceSummary[]>([])
-  let loading = $state(true)
-  let error = $state<string | null>(null)
-  let mounted = $state(false)
+  let baselineStats = $state<TraceStats | null>(null)
+  let polledStats = $state<TraceStats | null>(null)
+  let actionError = $state<string | null>(null)
 
-  // --- state: sort ---
-  let sortColumn = $state<TraceSummarySortColumn>('startTime')
-  let sortDirection = $state<TraceSummarySortDirection>('desc')
+  const page = createSignalListPage<TraceSummary>({
+    signal: 'traces',
+    getItemId: trace => trace.traceID,
+    initialSort: { column: 'startTime', direction: 'desc' },
+    compare: (a, b, col, dir) =>
+      compareTraceSummaries(
+        a,
+        b,
+        col as TraceSummarySortColumn,
+        dir as TraceSummarySortDirection
+      ),
+    fetchList: async () => {
+      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+        timeContext.selection,
+        Date.now()
+      )
+      const results = await telemetryAPI.searchTraces(startTime, endTime)
+      const s = await telemetryAPI.getStats()
+      baselineStats = s.traces
+      polledStats = s.traces
+      return results
+    },
+    pollStats: async () => {
+      const s = await telemetryAPI.getStats()
+      polledStats = s.traces
+    },
+    refreshFromStats: () => {
+      if (!baselineStats || !polledStats) {
+        return { pulse: false, tip: '' }
+      }
+      const parts: string[] = []
+      const traceDelta = polledStats.traceCount - baselineStats.traceCount
+      if (traceDelta > 0) {
+        parts.push(
+          `+${traceDelta.toLocaleString()} trace${traceDelta !== 1 ? 's' : ''}`
+        )
+      }
+      const spanDelta = polledStats.spanCount - baselineStats.spanCount
+      if (spanDelta > 0) {
+        parts.push(
+          `+${spanDelta.toLocaleString()} span${spanDelta !== 1 ? 's' : ''}`
+        )
+      }
+      return { pulse: parts.length > 0, tip: parts.join(', ') }
+    },
+  })
 
-  // --- selection + detail (selection derived from URL) ---
-  let selectedTraceId = $derived(signalIdFromPath('traces', routeContext.route.path))
+  // `/traces/<traceID>?span=<spanID>` — span selection lives in the query string.
   let selectedSpanID = $derived(routeContext.route.query[SPAN_PARAM] ?? null)
   let traceData = $state<TraceData | null>(null)
   let detailLoading = $state(false)
-
-  // --- state: active search query (for span highlighting in waterfall) ---
   let activeQueryTree = $state<QueryNode | undefined>(undefined)
 
-  // --- state: polling / refresh ---
-  let searchEditorApi = $state<SearchEditorAPI | null>(null)
-  let baselineStats = $state<TraceStats | null>(null)
-  let polledStats = $state<TraceStats | null>(null)
-  const POLL_INTERVAL_MS = 3000
-
-  // --- derived ---
-  let sortedTraces = $derived.by(() => {
-    const col = sortColumn
-    const dir = sortDirection
-    const rows = [...traceSummaries]
-    rows.sort((a, b) => compareTraceSummaries(a, b, col, dir))
-    return rows
-  })
-
-  let hasTraceRows = $derived(traceSummaries.length > 0)
-
-  let selectedSummary = $derived(
-    selectedTraceId
-      ? sortedTraces.find(t => t.traceID === selectedTraceId)
-      : undefined
-  )
+  let hasTraceRows = $derived(page.items.length > 0)
+  let displayError = $derived(page.error ?? actionError)
 
   let selectedSpan = $derived(
     traceData?.spans.find(n => n.spanData.spanID === selectedSpanID)
@@ -140,59 +152,12 @@
       undefined
   )
 
-  let pendingNewTraceCount = $derived.by(() => {
-    if (!baselineStats || !polledStats) return 0
-    const delta = polledStats.traceCount - baselineStats.traceCount
-    return delta > 0 ? delta : 0
-  })
-
-  let pendingNewSpanCount = $derived.by(() => {
-    if (!baselineStats || !polledStats) return 0
-    const delta = polledStats.spanCount - baselineStats.spanCount
-    return delta > 0 ? delta : 0
-  })
-
-  let refreshPulse = $derived(
-    pendingNewTraceCount > 0 || pendingNewSpanCount > 0
-  )
-
-  let refreshAsideTip = $derived.by(() => {
-    const parts: string[] = []
-    if (pendingNewTraceCount > 0)
-      parts.push(`+${pendingNewTraceCount.toLocaleString()} trace${pendingNewTraceCount !== 1 ? 's' : ''}`)
-    if (pendingNewSpanCount > 0)
-      parts.push(`+${pendingNewSpanCount.toLocaleString()} span${pendingNewSpanCount !== 1 ? 's' : ''}`)
-    return parts.join(', ')
-  })
-
-  // --- effects ---
-
-  let lastValidIndex = $state(0)
-
-  // Auto-select a trace when none (or an out-of-range id) is selected. Guarded
-  // behind mounted + !loading so a URL-provided id is never clobbered before
-  // the list has finished fetching (shared-link load ordering).
   $effect(() => {
-    if (!mounted || loading) return
-    const id = selectedTraceId
-    const idx = id ? sortedTraces.findIndex(t => t.traceID === id) : -1
-    if (idx >= 0) {
-      lastValidIndex = idx
-    } else if (sortedTraces.length > 0) {
-      const fallback =
-        sortedTraces[Math.min(lastValidIndex, sortedTraces.length - 1)]
-      if (fallback) navigateToItem('traces', fallback.traceID, 'replace')
-    } else if (id) {
-      navigateToItem('traces', null, 'replace')
-    }
-  })
-
-  $effect(() => {
-    const summary = selectedSummary
+    const summary = page.selectedSummary
     if (!summary) {
       // Don't tear down the detail view while the list is still loading -- a
       // shared link's trace id may simply not be in the list yet.
-      if (!mounted || loading) return
+      if (!page.mounted || page.loading) return
       traceData = null
       setSpanInQuery(null)
       return
@@ -200,88 +165,18 @@
     fetchTraceDetail(summary.traceID, activeQueryTree)
   })
 
-  $effect(() => {
-    void timeContext.selection
-    if (mounted) {
-      fetchTraces()
-    }
-  })
-
-  $effect(() => {
-    if (!mounted) return
-    const id = setInterval(async () => {
-      try {
-        const s = await telemetryAPI.getStats()
-        polledStats = s.traces
-      } catch {
-        /* polling failures are silent */
-      }
-    }, POLL_INTERVAL_MS)
-    return () => clearInterval(id)
-  })
-
-  // --- handlers ---
-  function handleSortChange(value: string, direction: 'asc' | 'desc') {
-    sortColumn = value as TraceSummarySortColumn
-    sortDirection = direction
-  }
-
   function selectTrace(traceID: string) {
-    // Explicit click is navigational: push so back returns to the prior trace.
-    navigateToItem('traces', traceID)
-  }
-
-  // --- nav: walk sortedTraces ---
-
-  let selectedIndex = $derived(
-    selectedTraceId
-      ? sortedTraces.findIndex(t => t.traceID === selectedTraceId)
-      : -1
-  )
-
-  function selectByOffset(delta: number) {
-    if (selectedIndex < 0 || sortedTraces.length === 0) return
-    const target = Math.max(
-      0,
-      Math.min(sortedTraces.length - 1, selectedIndex + delta)
-    )
-    if (target === selectedIndex) return
-    const next = sortedTraces[target]
-    if (next) navigateToItem('traces', next.traceID, 'replace')
-  }
-
-  function selectFirst() {
-    const first = sortedTraces[0]
-    if (first) navigateToItem('traces', first.traceID, 'replace')
-  }
-
-  function selectLast() {
-    const last = sortedTraces[sortedTraces.length - 1]
-    if (last) navigateToItem('traces', last.traceID, 'replace')
+    page.selectItem(traceID)
   }
 
   function handleSelectSpan(spanID: string) {
-    // Clicking a span is navigational: push so back returns to the prior span.
     setSpanInQuery(spanID, 'push')
   }
 
-  async function fetchTraces() {
-    try {
-      loading = true
-      error = null
-      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
-        timeContext.selection,
-        Date.now()
-      )
-      traceSummaries = await telemetryAPI.searchTraces(startTime, endTime)
-      const s = await telemetryAPI.getStats()
-      baselineStats = s.traces
-      polledStats = s.traces
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to fetch traces'
-      console.error('Error fetching trace summaries:', err)
-    } finally {
-      loading = false
+  function handleSearchResults(event: SearchResultEvent) {
+    page.handleSearchResults(event)
+    if (event.signal === 'traces') {
+      activeQueryTree = event.queryTree as QueryNode | undefined
     }
   }
 
@@ -297,7 +192,6 @@
         const firstMatch = result.spans.find(n => n.matched)
         desired = firstMatch?.spanData.spanID ?? spanIds[0] ?? null
       } else if (urlSpan && spanIds.includes(urlSpan)) {
-        // Honor a span carried by a shared/deep link.
         desired = urlSpan
       } else {
         desired = spanIds[0] ?? null
@@ -312,71 +206,51 @@
     }
   }
 
-  function handleRefresh() {
-    searchEditorApi?.clear()
-    fetchTraces()
-  }
-
-  function handleSearchResults(event: SearchResultEvent) {
-    if (event.signal === 'traces') {
-      loading = false
-      error = null
-      traceSummaries = event.results
-      activeQueryTree = event.queryTree as QueryNode | undefined
-    }
-  }
-
   async function handleDeleteAllTraces() {
+    actionError = null
     try {
       await telemetryAPI.clearTraces()
       navigateToItem('traces', null, 'replace')
       traceData = null
-      await fetchTraces()
+      await page.runListFetch()
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to delete traces'
+      actionError =
+        err instanceof Error ? err.message : 'Failed to delete traces'
       console.error('Error deleting traces:', err)
     }
   }
 
   async function handleDeleteTrace(traceID: string) {
+    actionError = null
     try {
       await telemetryAPI.deleteTraces([traceID])
-      if (selectedTraceId === traceID) {
+      if (page.selectedId === traceID) {
         navigateToItem('traces', null, 'replace')
         traceData = null
       }
-      await fetchTraces()
+      await page.runListFetch()
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to delete trace'
+      actionError =
+        err instanceof Error ? err.message : 'Failed to delete trace'
       console.error('Error deleting trace:', err)
     }
   }
 
-  // Wrapped form for the footer's onDelete: SignalFooter expects a
-  // 0-arg callback. We bind the currently selected trace ID inside the
-  // function (not at the prop site) so TS's narrowing on the truthy
-  // check holds when the callback eventually fires.
   function deleteSelectedTrace() {
     if (traceData) handleDeleteTrace(traceData.traceID)
   }
-
-  // --- lifecycle ---
-  onMount(async () => {
-    await fetchTraces()
-    mounted = true
-  })
 </script>
 
 <div class="traces-page">
   <PageLayout
-    items={sortedTraces}
-    selectedId={selectedTraceId}
+    items={page.sortedItems}
+    selectedId={page.selectedId}
     drawerId="signal-drawer"
     drawerLabel="Traces"
-    onRefresh={handleRefresh}
-    {refreshPulse}
-    {refreshAsideTip}
-    {loading}
+    onRefresh={page.handleRefresh}
+    refreshPulse={page.refreshPulse}
+    refreshAsideTip={page.refreshAsideTip}
+    loading={page.loading}
     itemKey={t => t.traceID}
     resizableStorageKey="trace-detail-panels"
     minDetailPx={352}
@@ -386,9 +260,9 @@
         segment="toolbar"
         signal="traces"
         sortOptions={SORT_OPTIONS}
-        sortValue={sortColumn}
-        {sortDirection}
-        onSortChange={handleSortChange}
+        sortValue={page.sortColumn}
+        sortDirection={page.sortDirection}
+        onSortChange={page.handleSortChange}
       />
     {/snippet}
 
@@ -397,11 +271,11 @@
         segment="search"
         signal="traces"
         sortOptions={SORT_OPTIONS}
-        sortValue={sortColumn}
-        {sortDirection}
-        onSortChange={handleSortChange}
+        sortValue={page.sortColumn}
+        sortDirection={page.sortDirection}
+        onSortChange={page.handleSortChange}
         onSearchResults={handleSearchResults}
-        onSearchReady={api => (searchEditorApi = api)}
+        onSearchReady={api => (page.searchEditorApi = api)}
       />
     {/snippet}
 
@@ -410,32 +284,23 @@
     {/snippet}
 
     {#snippet drawerFooter()}
-      <div class="flex items-center justify-between">
-        <span class="text-xs tabular-nums text-base-content/50">
-          {sortedTraces.length} trace{sortedTraces.length !== 1 ? 's' : ''}
-        </span>
-        <button
-          type="button"
-          class="btn btn-ghost btn-xs text-error"
-          onclick={handleDeleteAllTraces}
-          aria-label="Delete all traces"
-        >
-          <TrashIcon class="h-3 w-3" aria-hidden="true" />
-          Delete all
-        </button>
-      </div>
+      <SignalDrawerFooter
+        count={page.sortedItems.length}
+        label="trace"
+        onDeleteAll={handleDeleteAllTraces}
+      />
     {/snippet}
 
     {#snippet main()}
-      {#if error}
+      {#if displayError}
         <div class="traces-page__placeholder alert alert-error">
-          <span>Error: {error}</span>
+          <span>Error: {displayError}</span>
         </div>
-      {:else if loading && !hasTraceRows}
+      {:else if page.loading && !hasTraceRows}
         <div class="traces-page__placeholder traces-empty">
           Loading traces…
         </div>
-      {:else if !loading && !hasTraceRows}
+      {:else if !page.loading && !hasTraceRows}
         <div class="traces-page__placeholder traces-empty">
           <p class="text-rp-subtle">No traces in this time range</p>
           <p class="mt-2 text-sm text-rp-muted">
@@ -466,13 +331,13 @@
 
     {#snippet pageFooter()}
       <SignalFooter
-        index={selectedIndex}
-        total={sortedTraces.length}
+        index={page.selectedIndex}
+        total={page.sortedItems.length}
         label="trace"
-        onFirst={selectFirst}
-        onPrev={() => selectByOffset(-1)}
-        onNext={() => selectByOffset(1)}
-        onLast={selectLast}
+        onFirst={page.selectFirst}
+        onPrev={() => page.selectByOffset(-1)}
+        onNext={() => page.selectByOffset(1)}
+        onLast={page.selectLast}
         onDelete={traceData ? deleteSelectedTrace : undefined}
       />
     {/snippet}
