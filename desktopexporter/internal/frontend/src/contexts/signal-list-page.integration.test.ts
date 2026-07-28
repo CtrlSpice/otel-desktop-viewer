@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { tick } from 'svelte'
 import { screen } from '@testing-library/svelte'
 import SignalListPageProbe from '@/test/SignalListPageProbe.svelte'
 import { navigateToItem } from '@/route'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import {
+  beginListUpdate,
+  cancelPendingListUpdates,
+  isLatestListUpdate,
+  resetListUpdateSeqForTests,
+} from '@/components/shared/utils/list-update-seq'
 
 type Item = { id: string; name: string }
 
@@ -24,6 +30,10 @@ async function waitForMounted() {
 }
 
 describe('createSignalListPage integration', () => {
+  beforeEach(() => {
+    resetListUpdateSeqForTests()
+  })
+
   it('loads the list on mount and exposes sorted items', async () => {
     const items = [
       { id: 'c', name: 'charlie' },
@@ -92,15 +102,108 @@ describe('createSignalListPage integration', () => {
     expect(window.location.pathname).toBe('/logs/b')
   })
 
-  it('refetches when navigateToItem changes the route after mount', async () => {
-    const fetchList = vi.fn(async () => [{ id: 'a', name: 'alfa' }])
-    renderProbe('/logs', [{ id: 'a', name: 'alfa' }], fetchList)
+  it('does not let a stale list fetch overwrite newer search results', async () => {
+    let resolveSlowFetch!: (items: Item[]) => void
+    let fetchCalls = 0
+    const fetchList = vi.fn(async () => {
+      fetchCalls++
+      if (fetchCalls <= 2) {
+        return [{ id: 'a', name: 'alfa' }]
+      }
+      return new Promise<Item[]>(resolve => {
+        resolveSlowFetch = resolve
+      })
+    })
+
+    let page: import('@/contexts/signal-list-page.svelte').SignalListPage<Item> | undefined
+    setTestUrl('/logs')
+    renderWithContexts(SignalListPageProbe, {
+      fetchList,
+      onContext: ctx => {
+        page = ctx
+      },
+    })
     await waitForMounted()
 
-    navigateToItem('logs', 'a')
+    const slowFetch = page!.runListFetch()
+    const searchSeq = beginListUpdate('logs')
+    page!.handleSearchResults({
+      signal: 'logs',
+      updateSeq: searchSeq,
+      results: [{ id: 'search-only', name: 'search-only' }],
+    } as unknown as import('@/types/api-types').SearchResultEvent)
     await tick()
 
-    // Initial mount fetch only; time-range effect may fire once mounted.
-    expect(fetchList.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByTestId('item-ids').textContent).toBe('search-only')
+
+    resolveSlowFetch([
+      { id: 'x', name: 'x-ray' },
+      { id: 'y', name: 'yankee' },
+    ])
+    await slowFetch
+    await tick()
+
+    expect(screen.getByTestId('item-ids').textContent).toBe('search-only')
+  })
+
+  it('does not let a stale search overwrite a newer list fetch', async () => {
+    let resolveSlowFetch!: (items: Item[]) => void
+    let fetchCalls = 0
+    const fetchList = vi.fn(async () => {
+      fetchCalls++
+      if (fetchCalls <= 2) {
+        return [{ id: 'a', name: 'alfa' }]
+      }
+      return new Promise<Item[]>(resolve => {
+        resolveSlowFetch = resolve
+      })
+    })
+
+    let page: import('@/contexts/signal-list-page.svelte').SignalListPage<Item> | undefined
+    setTestUrl('/logs')
+    renderWithContexts(SignalListPageProbe, {
+      fetchList,
+      onContext: ctx => {
+        page = ctx
+      },
+    })
+    await waitForMounted()
+
+    const staleSearchSeq = beginListUpdate('logs')
+    const slowFetch = page!.runListFetch()
+    page!.handleSearchResults({
+      signal: 'logs',
+      updateSeq: staleSearchSeq,
+      results: [{ id: 'stale-search', name: 'stale' }],
+    } as unknown as import('@/types/api-types').SearchResultEvent)
+    await tick()
+
+    expect(screen.getByTestId('item-ids').textContent).toBe('a')
+
+    resolveSlowFetch([
+      { id: 'x', name: 'x-ray' },
+      { id: 'y', name: 'yankee' },
+    ])
+    await slowFetch
+    await tick()
+
+    expect(screen.getByTestId('item-ids').textContent).toBe('x,y')
+  })
+
+  it('does not let one signal\'s list update invalidate another signal\'s seq', () => {
+    const logsSeq = beginListUpdate('logs')
+    beginListUpdate('metrics')
+
+    expect(isLatestListUpdate('logs', logsSeq)).toBe(true)
+  })
+
+  it('cancelPendingListUpdates invalidates in-flight ops for that signal only', () => {
+    const logsSeq = beginListUpdate('logs')
+    const metricsSeq = beginListUpdate('metrics')
+
+    cancelPendingListUpdates('logs')
+
+    expect(isLatestListUpdate('logs', logsSeq)).toBe(false)
+    expect(isLatestListUpdate('metrics', metricsSeq)).toBe(true)
   })
 })

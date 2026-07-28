@@ -23,6 +23,7 @@
   } from '@/contexts/time-context.svelte'
   import type { TimeContext } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
+  import { beginListUpdate, cancelPendingListUpdates } from '@/components/shared/utils/list-update-seq'
   import type { FilterDescriptor } from '@/components/shared/Toolbar/filter-types'
   import { queryLanguageSupport } from './codemirror/query-language'
   import { createQueryCompletionSource } from './codemirror/completions'
@@ -131,6 +132,7 @@
   let editorContainer = $state<HTMLDivElement | null>(null)
   let editorView: EditorView | null = null
   let searchError = $state<string | null>(null)
+  let alive = true
   const placeholderCompartment = new Compartment()
 
   // --- state: filter popover ---
@@ -254,21 +256,23 @@
   }
 
   /** Fetch without any search filter and deliver via onSearchResults. */
-  function fetchClean() {
+  function fetchClean(updateSeq: number) {
     const ctx = currentSearchContext()
     const fn = buildSearchFn(ctx)
     fn?.()
       .then(results => {
-        emitResults(results)
+        emitResults(results, undefined, updateSeq)
       })
       .catch(err => {
+        if (!alive) return
         searchError = 'Search failed: ' + err.message
       })
   }
 
   /** Emit results with the query tree attached so consumers can reuse it. */
-  function emitResults(results: any, queryTree?: QueryNode) {
-    onSearchResults?.({ signal, results, queryTree } as SearchResultEvent)
+  function emitResults(results: any, queryTree?: QueryNode, updateSeq?: number) {
+    if (!alive || updateSeq === undefined) return
+    onSearchResults?.({ signal, results, queryTree, updateSeq } as SearchResultEvent)
   }
 
   function onSubmit() {
@@ -276,7 +280,7 @@
 
     if (!text.trim()) {
       searchError = null
-      fetchClean()
+      fetchClean(beginListUpdate(signal))
       return
     }
 
@@ -284,7 +288,7 @@
       const queryTree: QueryNode | null = parseQuery(text, availableFields)
       searchError = null
       if (!queryTree) {
-        fetchClean()
+        fetchClean(beginListUpdate(signal))
         return
       }
 
@@ -297,15 +301,17 @@
       const searchCtx = currentSearchContext()
       const searchFn = buildSearchFn(searchCtx, queryTree)
       if (!searchFn) {
-        fetchClean()
+        fetchClean(beginListUpdate(signal))
         return
       }
 
+      const updateSeq = beginListUpdate(signal)
       searchFn()
         .then(results => {
-          emitResults(results, queryTree)
+          emitResults(results, queryTree, updateSeq)
         })
         .catch(err => {
+          if (!alive) return
           searchError = 'Search failed: ' + err.message
         })
     } catch (err) {
@@ -404,6 +410,8 @@
   })
 
   onDestroy(() => {
+    alive = false
+    cancelPendingListUpdates(signal)
     editorView?.destroy()
   })
 </script>

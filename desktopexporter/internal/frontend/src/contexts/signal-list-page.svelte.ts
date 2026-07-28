@@ -7,7 +7,7 @@
 //
 // File extension is `.svelte.ts` because we use `$state` / `$effect` inside.
 
-import { onMount } from 'svelte'
+import { onMount, onDestroy } from 'svelte'
 import { getTimeContext } from '@/contexts/time-context.svelte'
 import { getRouteContext } from '@/contexts/route-context.svelte'
 import {
@@ -18,6 +18,11 @@ import {
 } from '@/route'
 import type { SearchResultEvent } from '@/types/api-types'
 import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
+import {
+  beginListUpdate,
+  cancelPendingListUpdates,
+  isLatestListUpdate,
+} from '@/components/shared/utils/list-update-seq'
 
 export type SortDirection = 'asc' | 'desc'
 
@@ -182,15 +187,19 @@ export function createSignalListPage<TItem>(
   })
 
   async function runListFetch() {
+    const updateSeq = beginListUpdate(opts.signal)
     try {
       loading = true
       error = null
-      items = await opts.fetchList()
+      const next = await opts.fetchList()
+      if (!isLatestListUpdate(opts.signal, updateSeq)) return
+      items = next
       updateRefreshIndicator()
     } catch (err) {
+      if (!isLatestListUpdate(opts.signal, updateSeq)) return
       error = err instanceof Error ? err.message : 'Failed to load list'
     } finally {
-      loading = false
+      if (isLatestListUpdate(opts.signal, updateSeq)) loading = false
     }
   }
 
@@ -227,14 +236,19 @@ export function createSignalListPage<TItem>(
 
   function handleSearchResults(event: SearchResultEvent) {
     if (event.signal !== opts.signal) return
-    loading = false
+    if (!isLatestListUpdate(event.signal, event.updateSeq)) return
     error = null
     items = event.results as TItem[]
+    loading = false
   }
 
   onMount(async () => {
     await runListFetch()
     mounted = true
+  })
+
+  onDestroy(() => {
+    cancelPendingListUpdates(opts.signal)
   })
 
   return {
