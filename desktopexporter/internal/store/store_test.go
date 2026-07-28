@@ -21,6 +21,14 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
+func setupStore(t *testing.T) (*Store, context.Context, func()) {
+	t.Helper()
+	ctx := context.Background()
+	s, err := NewStore(ctx, "")
+	require.NoError(t, err)
+	return s, ctx, func() { s.Close() }
+}
+
 type storeTest struct {
 	name    string
 	dbPath  string
