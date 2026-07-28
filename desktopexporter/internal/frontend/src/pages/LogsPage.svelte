@@ -46,248 +46,118 @@
 </script>
 
 <script lang="ts">
-  import { onMount } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import { signalIdFromPath, navigateToItem } from '@/route'
-  import { getRouteContext } from '@/contexts/route-context.svelte'
-  import type { LogData, SearchResultEvent } from '@/types/api-types'
+  import { navigateToItem } from '@/route'
+  import type { LogData } from '@/types/api-types'
+  import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
-  import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
+  import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import LogCard from '@/components/logs/LogCard.svelte'
   import LogDetailPanel from '@/components/logs/LogDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
-  import { TrashIcon } from '@/icons'
 
-  // --- context ---
   let timeContext = getTimeContext()
 
-  // --- URL is the source of truth for the selected log (`/logs/<id>`) ---
-  const routeContext = getRouteContext()
+  let baselineLogCount = $state(0)
+  let polledLogCount = $state(0)
+  let actionError = $state<string | null>(null)
 
-  // --- state: API / list ---
-  let logs = $state<LogSummary[]>([])
-  let loading = $state(true)
-  let error = $state<string | null>(null)
-  let mounted = $state(false)
+  const page = createSignalListPage<LogSummary>({
+    signal: 'logs',
+    getItemId: log => log.id,
+    initialSort: { column: 'timestamp', direction: 'desc' },
+    compare: (a, b, col, dir) =>
+      compareLogs(a, b, col as LogSortColumn, dir as LogSortDirection),
+    fetchList: async () => {
+      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+        timeContext.selection,
+        Date.now()
+      )
+      const results = await telemetryAPI.searchLogs(startTime, endTime, undefined)
+      const s = await telemetryAPI.getStats()
+      baselineLogCount = s.logs.logCount
+      polledLogCount = s.logs.logCount
+      return results
+    },
+    pollStats: async () => {
+      const s = await telemetryAPI.getStats()
+      polledLogCount = s.logs.logCount
+    },
+    refreshFromStats: () => {
+      const delta = polledLogCount - baselineLogCount
+      const pending = delta > 0 ? delta : 0
+      return {
+        pulse: pending > 0,
+        tip:
+          pending > 0
+            ? `+${pending.toLocaleString()} log${pending !== 1 ? 's' : ''}`
+            : '',
+      }
+    },
+  })
 
-  // --- state: sort ---
-  let sortColumn = $state<LogSortColumn>('timestamp')
-  let sortDirection = $state<LogSortDirection>('desc')
-
-  // --- selection (derived from URL) ---
-  //
-  // selectedLogId is the user's pick from the list (the LogSummary
-  // `id`), read from the route path. The detail fetcher round-trips to
-  // getLog(id) for the full LogData on demand, with a debounce that keeps
-  // held-arrow keyboard nav from firing a request per row. Detail loading/
-  // error state lives on the fetcher object, not on the page.
-  let selectedLogId = $derived(signalIdFromPath('logs', routeContext.route.path))
+  // selectedLogId is the user's pick from the list (the LogSummary `id`),
+  // read from the route path. The detail fetcher round-trips to getLog(id) for
+  // the full LogData on demand, with a debounce that keeps held-arrow keyboard
+  // nav from firing a request per row.
   const detailFetcher = createDebouncedDetailFetcher<string, LogData>({
     fetch: id => telemetryAPI.getLog(id),
     keysEqual: (a, b) => a === b,
     fallbackErrorMessage: 'Failed to load log details',
   })
 
-  // --- state: polling / refresh ---
-  let searchEditorApi = $state<SearchEditorAPI | null>(null)
-  let baselineLogCount = $state(0)
-  let polledLogCount = $state(0)
-  const POLL_INTERVAL_MS = 3000
-
-  // --- derived ---
-  let sortedLogs = $derived.by(() => {
-    const col = sortColumn
-    const dir = sortDirection
-    const rows = [...logs]
-    rows.sort((a, b) => compareLogs(a, b, col, dir))
-    return rows
-  })
-
-  let hasLogRows = $derived(logs.length > 0)
-
-  // The current selection from the list-side perspective: a
-  // LogSummary, used for footer/nav rendering that doesn't need the
-  // full body/attributes. The full LogData for the detail panel
-  // lives in selectedLogDetail (fetched in an effect below).
-  let selectedSummary = $derived(
-    selectedLogId ? sortedLogs.find(l => l.id === selectedLogId) : undefined
-  )
-
-  let pendingNewLogCount = $derived.by(() => {
-    const delta = polledLogCount - baselineLogCount
-    return delta > 0 ? delta : 0
-  })
-
-  let refreshPulse = $derived(pendingNewLogCount > 0)
-
-  let refreshAsideTip = $derived(
-    pendingNewLogCount > 0
-      ? `+${pendingNewLogCount.toLocaleString()} log${pendingNewLogCount !== 1 ? 's' : ''}`
-      : ''
-  )
-
-  // --- effects ---
-  let lastValidIndex = $state(0)
-
-  // Guarded behind mounted + !loading so a URL-provided id (shared link) is
-  // never replaced before the list has finished fetching.
-  $effect(() => {
-    if (!mounted || loading) return
-    const id = selectedLogId
-    const idx = id ? sortedLogs.findIndex(l => l.id === id) : -1
-    if (idx >= 0) {
-      lastValidIndex = idx
-    } else if (sortedLogs.length > 0) {
-      const fallback = sortedLogs[Math.min(lastValidIndex, sortedLogs.length - 1)]
-      if (fallback) navigateToItem('logs', fallback.id, 'replace')
-    } else if (id) {
-      navigateToItem('logs', null, 'replace')
-    }
-  })
+  let hasLogRows = $derived(page.items.length > 0)
+  let displayError = $derived(page.error ?? actionError)
 
   $effect(() => {
-    void timeContext.selection
-    if (mounted) {
-      fetchLogs()
-    }
+    detailFetcher.key = page.selectedId
   })
-
-  $effect(() => {
-    if (!mounted) return
-    const id = setInterval(async () => {
-      try {
-        const s = await telemetryAPI.getStats()
-        polledLogCount = s.logs.logCount
-      } catch {
-        /* polling failures are silent */
-      }
-    }, POLL_INTERVAL_MS)
-    return () => clearInterval(id)
-  })
-
-  // Pipe selection into the detail fetcher. The fetcher's $effect
-  // handles the debounce + race-guarded round-trip and exposes
-  // loading/error/data as reactive reads. Single source of truth
-  // remains selectedLogId; the fetcher just mirrors it.
-  $effect(() => {
-    detailFetcher.key = selectedLogId
-  })
-
-  // --- handlers ---
-  function handleSortChange(value: string, direction: 'asc' | 'desc') {
-    sortColumn = value as LogSortColumn
-    sortDirection = direction
-  }
 
   function selectLog(logId: string) {
-    // Explicit click is navigational: push so back returns to the prior log.
-    navigateToItem('logs', logId)
-  }
-
-  // --- nav: walk sortedLogs ---
-
-  let selectedIndex = $derived(
-    selectedLogId ? sortedLogs.findIndex(l => l.id === selectedLogId) : -1
-  )
-
-  function selectByOffset(delta: number) {
-    if (selectedIndex < 0 || sortedLogs.length === 0) return
-    const target = Math.max(
-      0,
-      Math.min(sortedLogs.length - 1, selectedIndex + delta)
-    )
-    if (target === selectedIndex) return
-    const next = sortedLogs[target]
-    if (next) navigateToItem('logs', next.id, 'replace')
-  }
-
-  function selectFirst() {
-    const first = sortedLogs[0]
-    if (first) navigateToItem('logs', first.id, 'replace')
-  }
-
-  function selectLast() {
-    const last = sortedLogs[sortedLogs.length - 1]
-    if (last) navigateToItem('logs', last.id, 'replace')
-  }
-
-  async function fetchLogs() {
-    try {
-      loading = true
-      error = null
-      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
-        timeContext.selection,
-        Date.now()
-      )
-      logs = await telemetryAPI.searchLogs(startTime, endTime, undefined)
-      const s = await telemetryAPI.getStats()
-      baselineLogCount = s.logs.logCount
-      polledLogCount = s.logs.logCount
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to load logs'
-    } finally {
-      loading = false
-    }
-  }
-
-  function handleRefresh() {
-    searchEditorApi?.clear()
-    fetchLogs()
-  }
-
-  function handleSearchResults(event: SearchResultEvent) {
-    if (event.signal === 'logs') {
-      loading = false
-      error = null
-      logs = event.results
-    }
+    page.selectItem(logId)
   }
 
   async function handleDeleteLog(logId: string) {
+    actionError = null
     try {
       await telemetryAPI.deleteLogByID(logId)
-      if (selectedLogId === logId) {
+      if (page.selectedId === logId) {
         navigateToItem('logs', null, 'replace')
       }
-      await fetchLogs()
+      await page.runListFetch()
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to delete log'
+      actionError = err instanceof Error ? err.message : 'Failed to delete log'
     }
   }
 
   async function handleDeleteAllLogs() {
+    actionError = null
     try {
       await telemetryAPI.clearLogs()
       navigateToItem('logs', null, 'replace')
-      await fetchLogs()
+      await page.runListFetch()
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to delete logs'
+      actionError = err instanceof Error ? err.message : 'Failed to delete logs'
     }
   }
-
-  // --- lifecycle ---
-  onMount(async () => {
-    await fetchLogs()
-    mounted = true
-  })
 </script>
 
 <div class="logs-page">
   <PageLayout
-    items={sortedLogs}
-    selectedId={selectedLogId}
+    items={page.sortedItems}
+    selectedId={page.selectedId}
     drawerId="signal-drawer"
     drawerLabel="Logs"
-    onRefresh={handleRefresh}
-    {refreshPulse}
-    {refreshAsideTip}
-    {loading}
+    onRefresh={page.handleRefresh}
+    refreshPulse={page.refreshPulse}
+    refreshAsideTip={page.refreshAsideTip}
+    loading={page.loading}
     itemKey={l => l.id}
   >
     {#snippet drawerChromeToolbar()}
@@ -295,9 +165,9 @@
         segment="toolbar"
         signal="logs"
         sortOptions={SORT_OPTIONS}
-        sortValue={sortColumn}
-        {sortDirection}
-        onSortChange={handleSortChange}
+        sortValue={page.sortColumn}
+        sortDirection={page.sortDirection}
+        onSortChange={page.handleSortChange}
       />
     {/snippet}
 
@@ -306,11 +176,11 @@
         segment="search"
         signal="logs"
         sortOptions={SORT_OPTIONS}
-        sortValue={sortColumn}
-        {sortDirection}
-        onSortChange={handleSortChange}
-        onSearchResults={handleSearchResults}
-        onSearchReady={api => (searchEditorApi = api)}
+        sortValue={page.sortColumn}
+        sortDirection={page.sortDirection}
+        onSortChange={page.handleSortChange}
+        onSearchResults={page.handleSearchResults}
+        onSearchReady={api => (page.searchEditorApi = api)}
       />
     {/snippet}
 
@@ -319,30 +189,21 @@
     {/snippet}
 
     {#snippet drawerFooter()}
-      <div class="flex items-center justify-between">
-        <span class="text-xs tabular-nums text-base-content/50">
-          {sortedLogs.length} log{sortedLogs.length !== 1 ? 's' : ''}
-        </span>
-        <button
-          type="button"
-          class="btn btn-ghost btn-xs text-error"
-          onclick={handleDeleteAllLogs}
-          aria-label="Delete all logs"
-        >
-          <TrashIcon class="h-3 w-3" aria-hidden="true" />
-          Delete all
-        </button>
-      </div>
+      <SignalDrawerFooter
+        count={page.sortedItems.length}
+        label="log"
+        onDeleteAll={handleDeleteAllLogs}
+      />
     {/snippet}
 
     {#snippet main()}
-      {#if error}
+      {#if displayError}
           <div class="logs-page__placeholder alert alert-error">
-            <span>Error: {error}</span>
+            <span>Error: {displayError}</span>
           </div>
-        {:else if loading && !hasLogRows}
+        {:else if page.loading && !hasLogRows}
           <div class="logs-page__placeholder logs-empty">Loading logs…</div>
-        {:else if !loading && !hasLogRows}
+        {:else if !page.loading && !hasLogRows}
           <div class="logs-page__placeholder logs-empty">
             <p class="text-rp-subtle">No logs in this time range</p>
             <p class="mt-2 text-sm text-rp-muted">
@@ -364,15 +225,15 @@
 
     {#snippet pageFooter()}
       <SignalFooter
-        index={selectedIndex}
-        total={sortedLogs.length}
+        index={page.selectedIndex}
+        total={page.sortedItems.length}
         label="log"
-        onFirst={selectFirst}
-        onPrev={() => selectByOffset(-1)}
-        onNext={() => selectByOffset(1)}
-        onLast={selectLast}
-        onDelete={selectedSummary
-          ? () => handleDeleteLog(selectedSummary.id)
+        onFirst={page.selectFirst}
+        onPrev={() => page.selectByOffset(-1)}
+        onNext={() => page.selectByOffset(1)}
+        onLast={page.selectLast}
+        onDelete={page.selectedSummary
+          ? () => handleDeleteLog(page.selectedSummary!.id)
           : undefined}
       />
     {/snippet}

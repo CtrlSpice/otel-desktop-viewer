@@ -314,6 +314,21 @@ export type Stats = {
 // projection. Full LogData for a single row is fetched on demand via
 // the getLog(id) JSON-RPC method.
 export type SearchResultEvent =
-  | { signal: 'traces'; results: TraceSummary[]; queryTree?: unknown }
-  | { signal: 'logs'; results: LogSummary[]; queryTree?: unknown }
-  | { signal: 'metrics'; results: MetricSummary[]; queryTree?: unknown }
+  | {
+      signal: 'traces'
+      results: TraceSummary[]
+      queryTree?: unknown
+      updateSeq: number
+    }
+  | {
+      signal: 'logs'
+      results: LogSummary[]
+      queryTree?: unknown
+      updateSeq: number
+    }
+  | {
+      signal: 'metrics'
+      results: MetricSummary[]
+      queryTree?: unknown
+      updateSeq: number
+    }
