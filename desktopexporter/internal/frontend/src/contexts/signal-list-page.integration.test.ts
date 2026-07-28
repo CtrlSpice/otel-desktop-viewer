@@ -57,7 +57,10 @@ describe('createSignalListPage integration', () => {
   })
 
   it('derives selectedId from the URL path', async () => {
-    renderProbe('/logs/log-b', [{ id: 'log-a', name: 'a' }, { id: 'log-b', name: 'b' }])
+    renderProbe('/logs/log-b', [
+      { id: 'log-a', name: 'a' },
+      { id: 'log-b', name: 'b' },
+    ])
     await waitForListLoaded()
 
     expect(screen.getByTestId('selected-id').textContent).toBe('log-b')
@@ -92,7 +95,9 @@ describe('createSignalListPage integration', () => {
       { id: 'a', name: 'alfa' },
       { id: 'b', name: 'bravo' },
     ]
-    let page: import('@/contexts/signal-list-page.svelte').SignalListPage<Item> | undefined
+    let page:
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<Item>
+      | undefined
 
     setTestUrl('/logs/a')
     renderWithContexts(SignalListPageProbe, {
@@ -122,7 +127,9 @@ describe('createSignalListPage integration', () => {
       })
     })
 
-    let page: import('@/contexts/signal-list-page.svelte').SignalListPage<Item> | undefined
+    let page:
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<Item>
+      | undefined
     setTestUrl('/logs')
     renderWithContexts(SignalListPageProbe, {
       fetchList,
@@ -166,7 +173,9 @@ describe('createSignalListPage integration', () => {
       })
     })
 
-    let page: import('@/contexts/signal-list-page.svelte').SignalListPage<Item> | undefined
+    let page:
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<Item>
+      | undefined
     setTestUrl('/logs')
     renderWithContexts(SignalListPageProbe, {
       fetchList,
@@ -197,7 +206,7 @@ describe('createSignalListPage integration', () => {
     expect(screen.getByTestId('item-ids').textContent).toBe('x,y')
   })
 
-  it('does not let one signal\'s list update invalidate another signal\'s seq', () => {
+  it("does not let one signal's list update invalidate another signal's seq", () => {
     const logsSeq = beginListUpdate('logs')
     beginListUpdate('metrics')
 

@@ -5,13 +5,11 @@ import userEvent from '@testing-library/user-event'
 import SignalDrawerFooter from './SignalDrawerFooter.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
-function renderFooter(
-  props: {
-    count: number
-    label: 'trace' | 'log' | 'metric'
-    onDeleteAll?: () => void
-  }
-) {
+function renderFooter(props: {
+  count: number
+  label: 'trace' | 'log' | 'metric'
+  onDeleteAll?: () => void
+}) {
   setTestUrl('/logs')
   const onDeleteAll = props.onDeleteAll ?? vi.fn()
   renderWithContexts(SignalDrawerFooter, {
