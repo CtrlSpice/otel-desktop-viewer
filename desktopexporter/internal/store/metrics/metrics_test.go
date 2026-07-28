@@ -33,6 +33,19 @@ const (
 	testQuantileWindowPoints  int   = 1_000_000_000
 )
 
+// readStore runs a query under the store's read lock and returns its result.
+// Store exposes no raw *sql.DB: every read is ordered against ingest,
+// retention, and Close.
+func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
+	var out T
+	err := s.WithDBRead(func(db *sql.DB) error {
+		var err error
+		out, err = fn(db)
+		return err
+	})
+	return out, err
+}
+
 func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	t.Helper()
 	ctx := context.Background()
@@ -41,10 +54,12 @@ func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	return s, ctx, func() { s.Close() }
 }
 
-func countRows(t *testing.T, db *sql.DB, ctx context.Context, query string, args ...any) int {
+func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, args ...any) int {
 	t.Helper()
 	var n int
-	require.NoError(t, db.QueryRowContext(ctx, query, args...).Scan(&n))
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx, query, args...).Scan(&n)
+	}))
 	return n
 }
 
@@ -207,7 +222,9 @@ func createTestMetricsPdata() pmetric.Metrics {
 // searchMetricsAll returns metrics.SearchSummaries with wide time range and nil query; parses JSON to slice of maps.
 func searchMetricsAll(t *testing.T, s *store.Store, ctx context.Context) []map[string]any {
 	t.Helper()
-	raw, err := metrics.SearchSummaries(ctx, s.DB(), 0, maxNano, nil)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.SearchSummaries(ctx, db, 0, maxNano, nil)
+	})
 	assert.NoError(t, err)
 	var out []map[string]any
 	assert.NoError(t, json.Unmarshal(raw, &out))
@@ -216,7 +233,9 @@ func searchMetricsAll(t *testing.T, s *store.Store, ctx context.Context) []map[s
 
 func searchSummariesAll(t *testing.T, s *store.Store, ctx context.Context) []map[string]any {
 	t.Helper()
-	raw, err := metrics.SearchSummaries(ctx, s.DB(), 0, maxNano, nil)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.SearchSummaries(ctx, db, 0, maxNano, nil)
+	})
 	require.NoError(t, err)
 	var out []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &out))
@@ -239,7 +258,9 @@ func findSummary(t *testing.T, summaries []map[string]any, name string) map[stri
 func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name string) map[string]any {
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
-	raw, err := metrics.GetMetric(ctx, s.DB(), id, 0, maxNano)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, id, 0, maxNano)
+	})
 	require.NoError(t, err)
 	var m map[string]any
 	require.NoError(t, json.Unmarshal(raw, &m))
@@ -353,7 +374,7 @@ func TestMetricSuite(t *testing.T) {
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
-		assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from exemplars"), 0, "exemplars should be ingested")
+		assert.Greater(t, countRows(t, s, ctx, "select count(*) from exemplars"), 0, "exemplars should be ingested")
 		gauge := getMetricFullByName(t, s, ctx, "gauge_metric")
 		requireMetric(t, gauge, "gauge_metric")
 		datapoints := metricDatapoints(gauge)
@@ -385,7 +406,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-service",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -410,7 +433,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "gauge_metric",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -428,7 +453,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "memory",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -446,7 +473,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "bytes",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -469,7 +498,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-scope",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -486,7 +517,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-scope",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -503,7 +536,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "v1.0.0",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -520,7 +555,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "v1.0.0",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -538,7 +575,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "0",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -556,7 +595,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "memory",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -574,7 +615,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "test-service",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -591,7 +634,9 @@ func TestMetricSuite(t *testing.T) {
 				"value":         "nonexistent-metric-xyz",
 			},
 		}
-		raw, err := metrics.SearchSummaries(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
@@ -635,7 +680,10 @@ func metricDatapoints(m map[string]any) []any {
 // DeleteMetricStream. The production JSON-RPC layer does the same
 // resolve-then-delete pattern; we replicate it here so the existing
 // test cases stay readable without needing to spell out streamIDs.
-func deleteByIdentity(t *testing.T, ctx context.Context, db *sql.DB, name, unit, metricType, aggTemporality, isMonotonic, scopeName, scopeVersion, serviceName string) error {
+// deleteByIdentity resolves an identity tuple to a stream UUID and deletes that
+// stream. Both steps run in one write-lock window so the resolved ID cannot be
+// pruned out from under the delete.
+func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, unit, metricType, aggTemporality, isMonotonic, scopeName, scopeVersion, serviceName string) error {
 	t.Helper()
 	const q = `
 		select id::varchar from metric_streams
@@ -649,18 +697,20 @@ func deleteByIdentity(t *testing.T, ctx context.Context, db *sql.DB, name, unit,
 		  and service_name = ?
 		limit 1
 	`
-	var streamID string
-	err := db.QueryRowContext(ctx, q,
-		name, unit, metricType, aggTemporality, isMonotonic == "true",
-		scopeName, scopeVersion, serviceName,
-	).Scan(&streamID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return metrics.DeleteMetricStream(ctx, db, streamID)
+	return s.WithDBWrite(func(db *sql.DB) error {
+		var streamID string
+		err := db.QueryRowContext(ctx, q,
+			name, unit, metricType, aggTemporality, isMonotonic == "true",
+			scopeName, scopeVersion, serviceName,
+		).Scan(&streamID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return metrics.DeleteMetricStream(ctx, db, streamID)
+	})
 }
 
 // TestDeleteMetricStream covers the per-stream cascade. Each subtest
@@ -681,7 +731,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		assert.Len(t, before, 5)
 
 		// Gauges have no temporality / monotonic; pass empty strings.
-		err = deleteByIdentity(t, ctx, s.DB(),
+		err = deleteByIdentity(t, ctx, s,
 			"gauge_metric", "bytes", "Gauge",
 			"", "",
 			"test-scope", "v1.0.0", "test-service",
@@ -694,7 +744,7 @@ func TestDeleteMetricStream(t *testing.T) {
 			assert.NotEqual(t, "gauge_metric", m["name"])
 		}
 
-		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from metric_streams where name = ?`, "gauge_metric"))
 	})
 
@@ -714,10 +764,10 @@ func TestDeleteMetricStream(t *testing.T) {
 		// SearchSummaries collapses by identity so we still see 5 rows.
 		assert.Len(t, searchSummariesAll(t, s, ctx), 5)
 		// One stream per logical metric (5), 3 ingests per stream (15).
-		assert.Equal(t, 5, countRows(t, s.DB(), ctx, `select count(*) from metric_streams`))
-		assert.Equal(t, 15, countRows(t, s.DB(), ctx, `select count(*) from metric_ingests`))
+		assert.Equal(t, 5, countRows(t, s, ctx, `select count(*) from metric_streams`))
+		assert.Equal(t, 15, countRows(t, s, ctx, `select count(*) from metric_ingests`))
 
-		err := deleteByIdentity(t, ctx, s.DB(),
+		err := deleteByIdentity(t, ctx, s,
 			"gauge_metric", "bytes", "Gauge",
 			"", "",
 			"test-scope", "v1.0.0", "test-service",
@@ -726,11 +776,11 @@ func TestDeleteMetricStream(t *testing.T) {
 
 		assert.Len(t, searchSummariesAll(t, s, ctx), 4)
 		// One stream + its three ingests should be gone.
-		assert.Equal(t, 4, countRows(t, s.DB(), ctx, `select count(*) from metric_streams`))
-		assert.Equal(t, 12, countRows(t, s.DB(), ctx, `select count(*) from metric_ingests`))
-		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+		assert.Equal(t, 4, countRows(t, s, ctx, `select count(*) from metric_streams`))
+		assert.Equal(t, 12, countRows(t, s, ctx, `select count(*) from metric_ingests`))
+		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from metric_streams where name = ?`, "gauge_metric"))
-		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from datapoints d join metric_streams s on s.id = d.stream_id where s.name = ?`,
 			"gauge_metric"))
 	})
@@ -762,7 +812,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		assert.Len(t, searchMetricsAll(t, s, ctx), 2)
 
 		// Delete the bytes one — count should survive.
-		err = deleteByIdentity(t, ctx, s.DB(),
+		err = deleteByIdentity(t, ctx, s,
 			"requests", "bytes", "Gauge", "", "",
 			"scope", "v1", "svc",
 		)
@@ -798,7 +848,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
 
-		err = deleteByIdentity(t, ctx, s.DB(),
+		err = deleteByIdentity(t, ctx, s,
 			"requests", "count", "Gauge", "", "",
 			"scope", "v1", "svc-a",
 		)
@@ -838,7 +888,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
 
-		err = deleteByIdentity(t, ctx, s.DB(),
+		err = deleteByIdentity(t, ctx, s,
 			"requests", "count", "Sum", "Cumulative", "true",
 			"scope", "v1", "svc",
 		)
@@ -861,7 +911,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, searchMetricsAll(t, s, ctx), 5)
 
-		err = deleteByIdentity(t, ctx, s.DB(),
+		err = deleteByIdentity(t, ctx, s,
 			"nonexistent", "bytes", "Gauge", "", "",
 			"test-scope", "v1.0.0", "test-service",
 		)
@@ -879,38 +929,38 @@ func TestDeleteMetricStream(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Histogram has datapoints with exemplars — pick it.
-		dpBefore := countRows(t, s.DB(), ctx,
+		dpBefore := countRows(t, s, ctx,
 			`select count(*) from datapoints where stream_id in (select id from metric_streams where name = ?)`,
 			"histogram_metric")
-		exBefore := countRows(t, s.DB(), ctx,
+		exBefore := countRows(t, s, ctx,
 			`select count(*) from exemplars where datapoint_id in (select id from datapoints where stream_id in (select id from metric_streams where name = ?))`,
 			"histogram_metric")
-		attrBefore := countRows(t, s.DB(), ctx,
+		attrBefore := countRows(t, s, ctx,
 			`select count(*) from attributes where metric_ingest_id in (select id from metric_ingests where stream_id in (select id from metric_streams where name = ?))`,
 			"histogram_metric")
 		assert.Greater(t, dpBefore, 0)
 		assert.Greater(t, exBefore, 0)
 		assert.Greater(t, attrBefore, 0)
 
-		err = deleteByIdentity(t, ctx, s.DB(),
+		err = deleteByIdentity(t, ctx, s,
 			"histogram_metric", "seconds", "Histogram",
 			"Delta", "",
 			"test-scope", "v1.0.0", "test-service",
 		)
 		assert.NoError(t, err)
 
-		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from metric_streams where name = ?`, "histogram_metric"))
-		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from datapoints where stream_id in (select id from metric_streams where name = ?)`,
 			"histogram_metric"))
-		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from exemplars e where exists (
 				select 1 from datapoints d
 				where d.id = e.datapoint_id
 				  and d.stream_id in (select id from metric_streams where name = ?)
 			)`, "histogram_metric"))
-		assert.Equal(t, 0, countRows(t, s.DB(), ctx,
+		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from attributes where metric_ingest_id in (select id from metric_ingests where stream_id in (select id from metric_streams where name = ?))`,
 			"histogram_metric"))
 	})
@@ -940,10 +990,10 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 
 	// createTestMetricsPdata produces five distinct logical metrics.
 	// Across N batches we should still see exactly five stream rows.
-	assert.Equal(t, 5, countRows(t, s.DB(), ctx,
+	assert.Equal(t, 5, countRows(t, s, ctx,
 		`select count(*) from metric_streams`),
 		"distinct logical metrics should not multiply across batches")
-	assert.Equal(t, 5*batches, countRows(t, s.DB(), ctx,
+	assert.Equal(t, 5*batches, countRows(t, s, ctx,
 		`select count(*) from metric_ingests`),
 		"every batch should add one ingest per metric")
 
@@ -951,7 +1001,7 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 	// stream_id must match a metric_streams row, and every per-batch
 	// metric_ingests row pointing at the same logical metric must
 	// resolve to the same stream_id.
-	gaugeStreamRows := countRows(t, s.DB(), ctx,
+	gaugeStreamRows := countRows(t, s, ctx,
 		`select count(distinct stream_id) from metric_ingests where stream_id in (
 			select id from metric_streams where name = 'gauge_metric'
 		)`)
@@ -959,7 +1009,7 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 		"all gauge_metric ingests must share one stream_id")
 
 	// Sanity: cross-table referential integrity holds.
-	orphanDatapoints := countRows(t, s.DB(), ctx,
+	orphanDatapoints := countRows(t, s, ctx,
 		`select count(*) from datapoints d
 		 left join metric_streams s on s.id = d.stream_id
 		 where s.id is null`)
@@ -1026,7 +1076,7 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			assert.Equal(t, 2, countRows(t, s.DB(), ctx,
+			assert.Equal(t, 2, countRows(t, s, ctx,
 				`select count(*) from metric_streams`),
 				"changing %s should produce a distinct stream", tc.name)
 		})
@@ -1054,7 +1104,7 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 	// Match the column against the resource attribute by joining
 	// metric_streams -> metric_ingests -> attributes(scope=resource,
 	// key=service.name).
-	mismatches := countRows(t, s.DB(), ctx, `
+	mismatches := countRows(t, s, ctx, `
 		select count(*) from metric_streams s
 		join metric_ingests mi on mi.stream_id = s.id
 		join attributes a
@@ -1093,19 +1143,21 @@ func TestClearMetrics(t *testing.T) {
 
 	metricList := searchMetricsAll(t, s, ctx)
 	assert.Len(t, metricList, 5)
-	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from datapoints"), 0)
-	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_ingest_id is not null"), 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from datapoints"), 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where metric_ingest_id is not null"), 0)
 
-	err = metrics.Clear(ctx, s.DB())
+	err = s.WithDBWrite(func(db *sql.DB) error {
+		return metrics.Clear(ctx, db)
+	})
 	assert.NoError(t, err)
 
 	metricList = searchMetricsAll(t, s, ctx)
 	assert.Empty(t, metricList)
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from metric_streams"))
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from metric_ingests"))
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from datapoints"))
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from exemplars"))
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where metric_ingest_id is not null"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_streams"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_ingests"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from datapoints"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from exemplars"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where metric_ingest_id is not null"))
 }
 
 func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {

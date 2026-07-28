@@ -21,6 +21,19 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
+// readStore runs a query under the store's read lock and returns its result.
+// Store exposes no raw *sql.DB: every read is ordered against ingest,
+// retention, and Close.
+func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
+	var out T
+	err := s.WithDBRead(func(db *sql.DB) error {
+		var err error
+		out, err = fn(db)
+		return err
+	})
+	return out, err
+}
+
 func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	t.Helper()
 	ctx := context.Background()
@@ -29,10 +42,12 @@ func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	return s, ctx, func() { s.Close() }
 }
 
-func countRows(t *testing.T, db *sql.DB, ctx context.Context, query string, args ...any) int {
+func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, args ...any) int {
 	t.Helper()
 	var n int
-	require.NoError(t, db.QueryRowContext(ctx, query, args...).Scan(&n))
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx, query, args...).Scan(&n)
+	}))
 	return n
 }
 
@@ -158,7 +173,9 @@ func createTestLogsPdataN(baseTime int64, n int) plog.Logs {
 func searchLogsAll(t *testing.T, s *store.Store, ctx context.Context) []logSummaryJSON {
 	t.Helper()
 	const maxNano = 1<<63 - 1
-	raw, err := logs.Search(ctx, s.DB(), 0, maxNano, nil)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.Search(ctx, db, 0, maxNano, nil)
+	})
 	assert.NoError(t, err)
 	var entries []logSummaryJSON
 	assert.NoError(t, json.Unmarshal(raw, &entries))
@@ -170,7 +187,9 @@ func searchLogsAll(t *testing.T, s *store.Store, ctx context.Context) []logSumma
 // shape assertions below.
 func getLogFull(t *testing.T, s *store.Store, ctx context.Context, id string) logEntryJSON {
 	t.Helper()
-	raw, err := logs.Get(ctx, s.DB(), id)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.Get(ctx, db, id)
+	})
 	assert.NoError(t, err)
 	var entry logEntryJSON
 	assert.NoError(t, json.Unmarshal(raw, &entry))
@@ -296,14 +315,16 @@ func TestClearLogs(t *testing.T) {
 
 	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 3)
-	assert.Greater(t, countRows(t, s.DB(), ctx, "select count(*) from attributes where log_id is not null"), 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where log_id is not null"), 0)
 
-	err = logs.Clear(ctx, s.DB())
+	err = s.WithDBWrite(func(db *sql.DB) error {
+		return logs.Clear(ctx, db)
+	})
 	assert.NoError(t, err)
 
 	entries = searchLogsAll(t, s, ctx)
 	assert.Empty(t, entries)
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where log_id is not null"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where log_id is not null"))
 }
 
 // TestLogSuite runs a comprehensive suite on the same three-log dataset.
@@ -428,7 +449,9 @@ func TestLogSuite(t *testing.T) {
 	})
 
 	t.Run("LogGetNotFound", func(t *testing.T) {
-		_, err := logs.Get(ctx, s.DB(), "00000000-0000-0000-0000-000000000000")
+		_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Get(ctx, db, "00000000-0000-0000-0000-000000000000")
+		})
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, logs.ErrLogIDNotFound)
 	})
@@ -447,7 +470,9 @@ func TestGetLogAttributes(t *testing.T) {
 
 	startTime := baseTime - int64(time.Hour)
 	endTime := baseTime + int64(time.Hour)
-	raw, err := logs.GetLogAttributes(ctx, s.DB(), startTime, endTime)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.GetLogAttributes(ctx, db, startTime, endTime)
+	})
 	assert.NoError(t, err)
 
 	var attributes []struct {
@@ -472,7 +497,9 @@ func TestGetLogAttributes(t *testing.T) {
 	assert.Contains(t, byScope["log"], "log.list")
 
 	// Out-of-range query returns empty
-	rawEmpty, err := logs.GetLogAttributes(ctx, s.DB(), 0, 1)
+	rawEmpty, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.GetLogAttributes(ctx, db, 0, 1)
+	})
 	assert.NoError(t, err)
 	assert.Equal(t, json.RawMessage("[]"), rawEmpty)
 }
@@ -495,10 +522,12 @@ func TestDeleteLogByID(t *testing.T) {
 	targetID := entries[0].ID
 	assert.NotEmpty(t, targetID)
 
-	attrsBefore := countRows(t, s.DB(), ctx, "select count(*) from attributes where log_id = ?", targetID)
+	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes where log_id = ?", targetID)
 	assert.Greater(t, attrsBefore, 0, "target log should have attributes")
 
-	err = logs.DeleteLogByID(ctx, s.DB(), targetID)
+	err = s.WithDBWrite(func(db *sql.DB) error {
+		return logs.DeleteLogByID(ctx, db, targetID)
+	})
 	assert.NoError(t, err)
 
 	entries = searchLogsAll(t, s, ctx)
@@ -507,7 +536,7 @@ func TestDeleteLogByID(t *testing.T) {
 		assert.NotEqual(t, targetID, e.ID)
 	}
 
-	assert.Equal(t, 0, countRows(t, s.DB(), ctx, "select count(*) from attributes where log_id = ?", targetID))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where log_id = ?", targetID))
 }
 
 // TestDeleteLogsByIDs verifies that multiple logs can be deleted by their IDs.
@@ -526,7 +555,9 @@ func TestDeleteLogsByIDs(t *testing.T) {
 	assert.Len(t, entries, 3)
 
 	idsToDelete := []any{entries[0].ID, entries[1].ID}
-	err = logs.DeleteLogsByIDs(ctx, s.DB(), idsToDelete)
+	err = s.WithDBWrite(func(db *sql.DB) error {
+		return logs.DeleteLogsByIDs(ctx, db, idsToDelete)
+	})
 	assert.NoError(t, err)
 
 	entries = searchLogsAll(t, s, ctx)
@@ -538,7 +569,9 @@ func TestDeleteLogsByIDs_Empty(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	err := logs.DeleteLogsByIDs(ctx, s.DB(), []any{})
+	err := s.WithDBWrite(func(db *sql.DB) error {
+		return logs.DeleteLogsByIDs(ctx, db, []any{})
+	})
 	assert.NoError(t, err)
 }
 
@@ -647,7 +680,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "Operation failed",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
@@ -667,7 +702,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "event.a",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.NotEmpty(t, entries)
@@ -685,7 +722,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "00000000000000000000000000000099",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3, "global search for trace ID hex should match all logs")
@@ -701,7 +740,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "0000000000000002",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1, "global search for span ID hex should match one log")
@@ -718,7 +759,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "nonexistent-log-text-xyz",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Empty(t, entries)
@@ -738,7 +781,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "00000000000000000000000000000099",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3, "wire-form trace ID should match all logs in the trace")
@@ -754,7 +799,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "0000000000000002",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1, "wire-form span ID should match its log, not a cast error")
@@ -773,7 +820,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "not-a-trace",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err, "garbage trace ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
 	})
@@ -788,7 +837,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "zz-definitely-not-hex",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err, "garbage span ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
 	})
@@ -803,7 +854,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "ERROR",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
@@ -824,7 +877,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "0000000000000001",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
@@ -843,7 +898,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "00000000-0000-0000-0000-000000000099",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3, "all three logs share the same trace")
@@ -859,7 +916,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "17", // plog.SeverityNumberError
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
@@ -881,7 +940,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "Operation warning",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
@@ -899,7 +960,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "event.a",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
@@ -918,7 +981,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "test-scope",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3)
@@ -937,7 +1002,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "v1.0.0",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 3)
@@ -960,7 +1027,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "log-b",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
@@ -983,7 +1052,9 @@ func TestSearchLogs(t *testing.T) {
 				Value:         "test-service",
 			},
 		}
-		raw, err := logs.Search(ctx, s.DB(), startTime, endTime, query)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, startTime, endTime, query)
+		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
 		assert.NotEmpty(t, entries)
@@ -1010,7 +1081,7 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	mismatches := countRows(t, s.DB(), ctx, `
+	mismatches := countRows(t, s, ctx, `
 		select count(*) from logs l
 		left join attributes a
 		     on a.log_id = l.id

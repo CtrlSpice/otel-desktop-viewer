@@ -2,6 +2,7 @@ package ingest_test
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"testing"
@@ -14,6 +15,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
+
+// readStore runs a query under the store's read lock and returns its result.
+// Store exposes no raw *sql.DB: every read is ordered against ingest,
+// retention, and Close.
+func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
+	var out T
+	err := s.WithDBRead(func(db *sql.DB) error {
+		var err error
+		out, err = fn(db)
+		return err
+	})
+	return out, err
+}
 
 func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	t.Helper()
@@ -94,19 +108,25 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	require.NoError(t, err)
 
 	var logCount int
-	err = s.DB().QueryRowContext(ctx, "select count(*) from logs").Scan(&logCount)
+	err = s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx, "select count(*) from logs").Scan(&logCount)
+	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, logCount, "log row must be visible after Flush without Close")
 
 	logIDStr := uuid.UUID(logID).String()
 	var attrCount int
-	require.NoError(t, s.DB().QueryRowContext(ctx, "select count(*) from attributes where log_id = ?", logIDStr).Scan(&attrCount))
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx, "select count(*) from attributes where log_id = ?", logIDStr).Scan(&attrCount)
+	}))
 	assert.Equal(t, 2, attrCount, "attribute rows must be visible after Flush without Close")
 
 	var key, value, scope string
-	err = s.DB().QueryRowContext(ctx,
-		"select key, value, scope from attributes where log_id = ? and key = ?",
-		logIDStr, "flush_attr").Scan(&key, &value, &scope)
+	err = s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx,
+			"select key, value, scope from attributes where log_id = ? and key = ?",
+			logIDStr, "flush_attr").Scan(&key, &value, &scope)
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "flush_attr", key)
 	assert.Equal(t, "ok", value)

@@ -145,19 +145,19 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, err, "metrics table should exist and accept data")
 
 			// Verify data was inserted correctly
-			summariesRaw, err := spans.SearchTraces(ctx, s.DB(), 0, 1<<63-1, nil)
+			summariesRaw, err := spans.SearchTraces(ctx, s.db, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries")
 			var summaries []map[string]any
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 			assert.Len(t, summaries, 2, "should have two traces")
 
-			logsRaw, err := logs.Search(ctx, s.DB(), 0, 1<<63-1, nil)
+			logsRaw, err := logs.Search(ctx, s.db, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve logs")
 			var logEntries []any
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 			assert.Len(t, logEntries, 3, "should have three logs")
 
-			metricsRaw, err := metrics.SearchSummaries(ctx, s.DB(), 0, 1<<63-1, nil)
+			metricsRaw, err := metrics.SearchSummaries(ctx, s.db, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve metrics")
 			var metricEntries []any
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
@@ -174,15 +174,15 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
 
 			// Verify data after reopening
-			summariesRaw, err = spans.SearchTraces(ctx, s.DB(), 0, 1<<63-1, nil)
+			summariesRaw, err = spans.SearchTraces(ctx, s.db, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 
-			logsRaw, err = logs.Search(ctx, s.DB(), 0, 1<<63-1, nil)
+			logsRaw, err = logs.Search(ctx, s.db, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve logs after reopening")
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 
-			metricsRaw, err = metrics.SearchSummaries(ctx, s.DB(), 0, 1<<63-1, nil)
+			metricsRaw, err = metrics.SearchSummaries(ctx, s.db, 0, 1<<63-1, nil)
 			assert.NoError(t, err, "should be able to retrieve metrics after reopening")
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
 
@@ -218,7 +218,7 @@ func TestStoreIndexesCreated(t *testing.T) {
 	defer s.Close()
 
 	var count int
-	err = s.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&count)
+	err = s.db.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, len(schema.IndexCreationQueries), count, "index count should match IndexCreationQueries")
 }
@@ -236,7 +236,7 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 	// FK chain is now stream -> ingest -> datapoint; we have to seed
 	// both parent rows before the chk_metric_type_valid violation will
 	// fire on the datapoint insert.
-	_, err = s.DB().ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 		insert into metric_streams
 			(id, name, unit, metric_type, aggregation_temporality,
 			 is_monotonic, scope_name, scope_version, service_name)
@@ -245,10 +245,10 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 	require.NoError(t, err, "inserting a metric_streams row should succeed")
 
 	var streamID string
-	require.NoError(t, s.DB().QueryRowContext(ctx,
+	require.NoError(t, s.db.QueryRowContext(ctx,
 		"select id::varchar from metric_streams where name = 'test'").Scan(&streamID))
 
-	_, err = s.DB().ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 		insert into metric_ingests
 			(id, stream_id, description,
 			 resource_dropped_attributes_count, scope_dropped_attributes_count)
@@ -257,10 +257,10 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 	require.NoError(t, err, "inserting a metric_ingests row should succeed")
 
 	var ingestID string
-	require.NoError(t, s.DB().QueryRowContext(ctx,
+	require.NoError(t, s.db.QueryRowContext(ctx,
 		"select id::varchar from metric_ingests where stream_id = ?::uuid", streamID).Scan(&ingestID))
 
-	_, err = s.DB().ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 		insert into datapoints
 			(id, stream_id, metric_ingest_id, metric_type, timestamp, start_time, flags)
 		values (gen_random_uuid(), ?::uuid, ?::uuid, 'InvalidType', 0, 0, 0)
@@ -286,7 +286,7 @@ func TestStorePersistentReopenIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	var indexCount int
-	err = s2.DB().QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&indexCount)
+	err = s2.db.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&indexCount)
 	require.NoError(t, err)
 	assert.Equal(t, len(schema.IndexCreationQueries), indexCount)
 	require.NoError(t, s2.Close())
@@ -353,5 +353,5 @@ func TestStoreLifecycleErrors(t *testing.T) {
 	assert.Error(t, err, "should get error when reading from closed store")
 	assert.True(t, errors.Is(err, ErrStoreConnectionClosed), "error should be ErrStoreConnectionClosed")
 
-	assert.Nil(t, s.DB(), "DB() should be nil after close")
+	assert.Nil(t, s.db, "db should be nil after close")
 }

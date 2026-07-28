@@ -13,12 +13,12 @@ import (
 // one fat attribute row so pruning visibly moves the size measurement.
 func seedSpans(t *testing.T, s *Store, n int) {
 	t.Helper()
-	_, err := s.DB().Exec(`
+	_, err := s.db.Exec(`
 		insert into spans (trace_id, span_id, name, start_time, end_time)
 		select uuid(), uuid(), 'span-' || range, range * 1000000, range * 1000000 + 500
 		from range(?)`, n)
 	require.NoError(t, err)
-	_, err = s.DB().Exec(`
+	_, err = s.db.Exec(`
 		insert into attributes (span_id, scope, key, value, type)
 		select span_id, 'span', 'pad', repeat('x', 500), 'string' from spans`)
 	require.NoError(t, err)
@@ -28,7 +28,7 @@ func seedSpans(t *testing.T, s *Store, n int) {
 // observed_timestamp fallback in the prune cutoff.
 func seedLogs(t *testing.T, s *Store, n int) {
 	t.Helper()
-	_, err := s.DB().Exec(`
+	_, err := s.db.Exec(`
 		insert into logs (id, timestamp, observed_timestamp, body)
 		select uuid(),
 			case when range % 2 = 0 then range * 1000000 else 0 end,
@@ -42,11 +42,11 @@ func seedLogs(t *testing.T, s *Store, n int) {
 // timestamp = startTime + i * 1ms.
 func seedDatapoints(t *testing.T, s *Store, streamID, ingestID string, n int, startTime int64) {
 	t.Helper()
-	_, err := s.DB().Exec(`insert into metric_streams (id, name, metric_type) values (?, 'metric-' || ?, 'Gauge') on conflict do nothing`, streamID, streamID)
+	_, err := s.db.Exec(`insert into metric_streams (id, name, metric_type) values (?, 'metric-' || ?, 'Gauge') on conflict do nothing`, streamID, streamID)
 	require.NoError(t, err)
-	_, err = s.DB().Exec(`insert into metric_ingests (id, stream_id) values (?, ?)`, ingestID, streamID)
+	_, err = s.db.Exec(`insert into metric_ingests (id, stream_id) values (?, ?)`, ingestID, streamID)
 	require.NoError(t, err)
-	_, err = s.DB().Exec(`
+	_, err = s.db.Exec(`
 		insert into datapoints (id, stream_id, metric_ingest_id, timestamp, double_value, value_type)
 		select uuid(), ?::uuid, ?::uuid, ? + range * 1000000, range, 'double'
 		from range(?)`, streamID, ingestID, startTime, n)
@@ -56,7 +56,7 @@ func seedDatapoints(t *testing.T, s *Store, streamID, ingestID string, n int, st
 func count(t *testing.T, s *Store, table string) int64 {
 	t.Helper()
 	var n int64
-	require.NoError(t, s.DB().QueryRow(`select count(*) from `+table).Scan(&n))
+	require.NoError(t, s.db.QueryRow(`select count(*) from `+table).Scan(&n))
 	return n
 }
 
@@ -83,7 +83,7 @@ func TestSizeBytesOnDisk(t *testing.T) {
 	defer s.Close()
 
 	seedSpans(t, s, 5000)
-	_, err = s.DB().Exec(`checkpoint`)
+	_, err = s.db.Exec(`checkpoint`)
 	require.NoError(t, err)
 
 	size, err := s.SizeBytes(ctx)
@@ -114,12 +114,12 @@ func TestEnforceRetentionPrunesOldest(t *testing.T) {
 
 	// The survivors must be the newest rows.
 	var minStart int64
-	require.NoError(t, s.DB().QueryRow(`select min(start_time) from spans`).Scan(&minStart))
+	require.NoError(t, s.db.QueryRow(`select min(start_time) from spans`).Scan(&minStart))
 	assert.Positive(t, minStart, "the oldest spans should be gone")
 
 	// No dangling attributes: every attribute's span must still exist.
 	var orphans int64
-	require.NoError(t, s.DB().QueryRow(`
+	require.NoError(t, s.db.QueryRow(`
 		select count(*) from attributes a
 		where a.span_id is not null
 		and not exists (select 1 from spans sp where sp.span_id = a.span_id)`).Scan(&orphans))
@@ -145,9 +145,9 @@ func TestEnforceRetentionSweepsOrphanedMetricIdentity(t *testing.T) {
 	require.NoError(t, s.EnforceRetention(ctx, 1))
 
 	var oldStreams, oldIngests, liveStreams int64
-	require.NoError(t, s.DB().QueryRow(`select count(*) from metric_streams where id = ?::uuid`, oldStream).Scan(&oldStreams))
-	require.NoError(t, s.DB().QueryRow(`select count(*) from metric_ingests where id = ?::uuid`, oldIngest).Scan(&oldIngests))
-	require.NoError(t, s.DB().QueryRow(`select count(*) from metric_streams where id = ?::uuid`, liveStream).Scan(&liveStreams))
+	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, oldStream).Scan(&oldStreams))
+	require.NoError(t, s.db.QueryRow(`select count(*) from metric_ingests where id = ?::uuid`, oldIngest).Scan(&oldIngests))
+	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, liveStream).Scan(&liveStreams))
 
 	assert.Zero(t, oldStreams, "fully-pruned stream should be swept")
 	assert.Zero(t, oldIngests, "ingest with no remaining datapoints should be swept")

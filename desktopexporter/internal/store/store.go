@@ -185,14 +185,7 @@ func (s *Store) WithDBWrite(fn func(db *sql.DB) error) error {
 	return fn(s.db)
 }
 
-// DB returns the underlying *sql.DB without holding the lock across the
-// caller's work.
-//
-// Test-only. Production code must use WithDBRead or WithDBWrite so access is
-// ordered against ingest, retention, and Close. Tests use one store per test
-// and drive it from a single goroutine, where that ordering is not needed.
-func (s *Store) DB() *sql.DB {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.db
-}
+// Store deliberately exposes no accessor for its *sql.DB. Handing out the pool
+// would let a caller query after the lock released, which is the ordering bug
+// WithDBRead and WithDBWrite exist to prevent. Callers that need the pool pass
+// a closure to one of those instead.

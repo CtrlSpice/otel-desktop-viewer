@@ -142,7 +142,7 @@ What this does **not** guarantee: a query does not see rows that an in-flight in
 
 `EnforceRetention` takes the write lock once per prune round rather than across a whole pass, so queries interleave between rounds instead of blocking for up to three checkpoints.
 
-`Store.DB()` returns the pool without holding the lock across the caller's work. It exists for tests, which drive one store from a single goroutine; production code goes through `WithDBRead` or `WithDBWrite`.
+`Store` exposes no accessor for its `*sql.DB`. Handing out the pool would let a caller query after the lock released, which is the ordering these methods exist to enforce, so every caller — production and test alike — passes a closure to `WithDBRead` or `WithDBWrite`. CI enforces this: a `.DB()` call outside `_test.go` files fails the `go-checks` job.
 
 ### Schema
 
