@@ -123,7 +123,26 @@ Ingest writes directly from OpenTelemetry pdata into DuckDB appenders. There are
 
 **Engine**: DuckDB via `github.com/duckdb/duckdb-go/v2` (CGO required).
 
-**Connection model**: `store.Store` wraps a mutex-protected `driver.Conn`. All reads and writes go through `WithConn` to serialize access.
+**Connection model**: `store.Store` holds two handles to one DuckDB database, ordered by a single `sync.RWMutex`.
+
+- `conn` — a dedicated `driver.Conn` from `connector.Connect`, used only by ingest. DuckDB appenders are bound to the connection that created them, so ingest cannot run on the pool.
+- `db` — a `*sql.DB` pool from `sql.OpenDB`, used by every query and by the delete/checkpoint paths. The pool is capped via `SetMaxOpenConns`, because each pooled connection is a real DuckDB connection with real memory cost.
+
+Access is chosen by intent, not by handle:
+
+| Method | Lock | Handle | Used by |
+|--------|------|--------|---------|
+| `WithConn` | write | `conn` | ingest (appenders) |
+| `WithDBWrite` | write | `db` | clear, delete, retention prune + checkpoint |
+| `WithDBRead` | read | `db` | all queries |
+
+The write lock is shared across both handles, so appender writes, deletes, and retention checkpoints are mutually exclusive even though they run on different connections. Reads run concurrently with one another and never overlap a write.
+
+What this does **not** guarantee: a query does not see rows that an in-flight ingest has appended but not yet flushed. DuckDB appenders buffer client-side and become visible on flush — automatically at the chunk threshold, or on `Flush`/`Close` at the end of each ingest call. Under load the UI can lag ingest by up to one batch. That is a visibility window, not a lost write.
+
+`EnforceRetention` takes the write lock once per prune round rather than across a whole pass, so queries interleave between rounds instead of blocking for up to three checkpoints.
+
+`Store.DB()` returns the pool without holding the lock across the caller's work. It exists for tests, which drive one store from a single goroutine; production code goes through `WithDBRead` or `WithDBWrite`.
 
 ### Schema
 
