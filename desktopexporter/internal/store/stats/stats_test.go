@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"database/sql"
 	"database/sql/driver"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
@@ -21,6 +22,19 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
+
+// readStore runs a query under the store's read lock and returns its result.
+// Store exposes no raw *sql.DB: every read is ordered against ingest,
+// retention, and Close.
+func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
+	var out T
+	err := s.WithDBRead(func(db *sql.DB) error {
+		var err error
+		out, err = fn(db)
+		return err
+	})
+	return out, err
+}
 
 func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	t.Helper()
@@ -86,7 +100,9 @@ func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {
 	t.Helper()
 	sizeBytes, err := s.SizeBytes(ctx)
 	require.NoError(t, err)
-	raw, err := stats.GetStats(ctx, s.DB(), sizeBytes, s.RetentionCap())
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap())
+	})
 	require.NoError(t, err)
 	var result statsJSON
 	require.NoError(t, json.Unmarshal(raw, &result))

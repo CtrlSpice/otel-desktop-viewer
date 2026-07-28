@@ -1,6 +1,7 @@
 package ingest_test
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"testing"
@@ -42,7 +43,9 @@ func TestIngestAttributes_ResourceScopeSpan(t *testing.T) {
 	assert.NoError(t, err)
 
 	now := time.Now().UnixNano()
-	raw, err := spans.GetTraceAttributes(ctx, s.DB(), now-int64(time.Hour), now+int64(time.Hour))
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceAttributes(ctx, db, now-int64(time.Hour), now+int64(time.Hour))
+	})
 	assert.NoError(t, err)
 
 	var attrs []struct {
@@ -106,7 +109,9 @@ func TestIngestAttributes_EventAndLink(t *testing.T) {
 	assert.NoError(t, err)
 
 	now := time.Now().UnixNano()
-	raw, err := spans.GetTraceAttributes(ctx, s.DB(), now-int64(time.Hour), now+int64(time.Hour))
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceAttributes(ctx, db, now-int64(time.Hour), now+int64(time.Hour))
+	})
 	assert.NoError(t, err)
 
 	var attrs []struct {
@@ -249,7 +254,9 @@ func TestIngestAttributes_EmptyMaps(t *testing.T) {
 	assert.NoError(t, err)
 
 	now := time.Now().UnixNano()
-	raw, err := spans.GetTraceAttributes(ctx, s.DB(), now-int64(time.Hour), now+int64(time.Hour))
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceAttributes(ctx, db, now-int64(time.Hour), now+int64(time.Hour))
+	})
 	assert.NoError(t, err)
 
 	var attrs []struct {

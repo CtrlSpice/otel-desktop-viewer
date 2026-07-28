@@ -12,6 +12,17 @@ install-clean:
 build-go:
 	go build -o otel-desktop-viewer
 
+.PHONY: format-go
+format-go:
+	gofmt -w .
+
+.PHONY: format-go-check
+format-go-check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "These files need gofmt:"; echo "$$unformatted"; exit 1; \
+	fi
+
 .PHONY: test-go
 test-go:
 	cd desktopexporter && go test ./...
@@ -118,6 +129,8 @@ help:
 	@echo ""
 	@echo "Server:"
 	@echo "  build-go          - Build Go binary"
+	@echo "  format-go         - Format Go code (gofmt)"
+	@echo "  format-go-check   - Fail if any Go file needs gofmt"
 	@echo "  test-go           - Run Go tests"
 	@echo "  run-go            - Run server (in-memory, data lost on exit)"
 	@echo "  run-go-persist    - Run server with persistent DB file (data retained)"

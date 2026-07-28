@@ -32,9 +32,29 @@ const (
 // it is the total tracked by DuckDB's duckdb_memory() table function, since
 // there is no file to measure.
 func (s *Store) SizeBytes(ctx context.Context) (int64, error) {
+	var size int64
+	err := s.WithDBRead(func(db *sql.DB) error {
+		var err error
+		size, err = s.sizeBytes(ctx, db)
+		return err
+	})
+	return size, err
+}
+
+// SizeBytesWithDB reports store size using a *sql.DB the caller already
+// obtained from WithDBRead or WithDBWrite. Use this instead of SizeBytes when
+// already inside a WithDB* callback: calling SizeBytes there would acquire the
+// read lock a second time, which deadlocks if a writer queues between the two
+// acquisitions.
+func (s *Store) SizeBytesWithDB(ctx context.Context, db *sql.DB) (int64, error) {
+	return s.sizeBytes(ctx, db)
+}
+
+// sizeBytes is the unlocked implementation. Callers must already hold s.mu.
+func (s *Store) sizeBytes(ctx context.Context, db *sql.DB) (int64, error) {
 	if s.dbPath == "" {
 		var size int64
-		err := s.db.QueryRowContext(ctx,
+		err := db.QueryRowContext(ctx,
 			`select coalesce(sum(memory_usage_bytes), 0) from duckdb_memory()`,
 		).Scan(&size)
 		if err != nil {
@@ -62,45 +82,68 @@ func (s *Store) SizeBytes(ctx context.Context) (int64, error) {
 // maxBytes. maxBytes <= 0 disables enforcement. Each round deletes the oldest
 // pruneFraction of every signal (by time percentile) and checkpoints so
 // DuckDB reclaims the space, re-measuring between rounds.
+//
+// The write lock is taken per round, not for the whole pass, so queries can
+// interleave between rounds. A full pass runs up to three checkpoints; holding
+// the lock across all of them would block every reader for the entire pass.
 func (s *Store) EnforceRetention(ctx context.Context, maxBytes int64) error {
 	if maxBytes <= 0 {
 		return nil
 	}
 
 	for round := 0; round < maxPruneRounds; round++ {
-		size, err := s.SizeBytes(ctx)
+		fits, err := s.enforceRound(ctx, maxBytes)
 		if err != nil {
 			return err
 		}
-		if size <= maxBytes {
+		if fits {
 			return nil
-		}
-
-		if err := s.pruneOldestSpans(ctx); err != nil {
-			return err
-		}
-		if err := s.pruneOldestLogs(ctx); err != nil {
-			return err
-		}
-		if err := s.pruneOldestDatapoints(ctx); err != nil {
-			return err
-		}
-
-		// Checkpoint flushes the WAL and lets DuckDB reuse the freed blocks;
-		// without it the file/memory measurement would not move.
-		if _, err := s.db.ExecContext(ctx, `checkpoint`); err != nil {
-			return fmt.Errorf("EnforceRetention: %w: %w", ErrRetentionInternal, err)
 		}
 	}
 	return nil
 }
 
+// enforceRound runs one measure-prune-checkpoint round under the write lock.
+// It reports whether the store already fits within maxBytes, in which case no
+// pruning was done and the caller can stop.
+func (s *Store) enforceRound(ctx context.Context, maxBytes int64) (bool, error) {
+	fits := false
+	err := s.WithDBWrite(func(db *sql.DB) error {
+		size, err := s.sizeBytes(ctx, db)
+		if err != nil {
+			return err
+		}
+		if size <= maxBytes {
+			fits = true
+			return nil
+		}
+
+		if err := s.pruneOldestSpans(ctx, db); err != nil {
+			return err
+		}
+		if err := s.pruneOldestLogs(ctx, db); err != nil {
+			return err
+		}
+		if err := s.pruneOldestDatapoints(ctx, db); err != nil {
+			return err
+		}
+
+		// Checkpoint flushes the WAL and lets DuckDB reuse the freed blocks;
+		// without it the file/memory measurement would not move.
+		if _, err := db.ExecContext(ctx, `checkpoint`); err != nil {
+			return fmt.Errorf("EnforceRetention: %w: %w", ErrRetentionInternal, err)
+		}
+		return nil
+	})
+	return fits, err
+}
+
 // pruneCutoff returns the timestamp below which rows should be deleted,
 // i.e. the pruneFraction percentile of the given time expression. Returns
 // (0, false) when the table is empty.
-func (s *Store) pruneCutoff(ctx context.Context, query string) (int64, bool, error) {
+func (s *Store) pruneCutoff(ctx context.Context, db *sql.DB, query string) (int64, bool, error) {
 	var cutoff sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, query, pruneFraction).Scan(&cutoff); err != nil {
+	if err := db.QueryRowContext(ctx, query, pruneFraction).Scan(&cutoff); err != nil {
 		return 0, false, fmt.Errorf("pruneCutoff: %w: %w", ErrRetentionInternal, err)
 	}
 	return cutoff.Int64, cutoff.Valid, nil
@@ -110,8 +153,8 @@ func (s *Store) pruneCutoff(ctx context.Context, query string) (int64, bool, err
 // events, links, and attributes. Attribute rows for events and links carry
 // the owning span_id (enforced by chk_attributes_one_owner), so a single
 // span_id predicate covers all three owners. Leaves first, spans last.
-func (s *Store) pruneOldestSpans(ctx context.Context) error {
-	cutoff, ok, err := s.pruneCutoff(ctx,
+func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
+	cutoff, ok, err := s.pruneCutoff(ctx, db,
 		`select cast(quantile_cont(start_time, ?) as bigint) from spans`)
 	if err != nil || !ok {
 		return err
@@ -123,7 +166,7 @@ func (s *Store) pruneOldestSpans(ctx context.Context) error {
 		`delete from events where span_id in (select span_id from spans where start_time < ?)`,
 		`delete from spans where start_time < ?`,
 	} {
-		if _, err := s.db.ExecContext(ctx, q, cutoff); err != nil {
+		if _, err := db.ExecContext(ctx, q, cutoff); err != nil {
 			return fmt.Errorf("pruneOldestSpans: %w: %w", ErrRetentionInternal, err)
 		}
 	}
@@ -133,10 +176,10 @@ func (s *Store) pruneOldestSpans(ctx context.Context) error {
 // pruneOldestLogs deletes the oldest fraction of logs and their attributes.
 // Logs may arrive with timestamp = 0 (unset); observed_timestamp is the
 // fallback, mirroring how GetStats computes lastReceived.
-func (s *Store) pruneOldestLogs(ctx context.Context) error {
+func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 	const logTime = `coalesce(nullif(timestamp, 0), observed_timestamp)`
 
-	cutoff, ok, err := s.pruneCutoff(ctx,
+	cutoff, ok, err := s.pruneCutoff(ctx, db,
 		`select cast(quantile_cont(`+logTime+`, ?) as bigint) from logs`)
 	if err != nil || !ok {
 		return err
@@ -146,7 +189,7 @@ func (s *Store) pruneOldestLogs(ctx context.Context) error {
 		`delete from attributes where log_id in (select id from logs where ` + logTime + ` < ?)`,
 		`delete from logs where ` + logTime + ` < ?`,
 	} {
-		if _, err := s.db.ExecContext(ctx, q, cutoff); err != nil {
+		if _, err := db.ExecContext(ctx, q, cutoff); err != nil {
 			return fmt.Errorf("pruneOldestLogs: %w: %w", ErrRetentionInternal, err)
 		}
 	}
@@ -159,8 +202,8 @@ func (s *Store) pruneOldestLogs(ctx context.Context) error {
 // metric_ingests grows by one row per OTLP batch, so leaving orphans behind
 // would let the store creep back over the cap with rows pruning can't touch.
 // A swept stream that is still live gets recreated by ingest's find-or-insert.
-func (s *Store) pruneOldestDatapoints(ctx context.Context) error {
-	cutoff, ok, err := s.pruneCutoff(ctx,
+func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
+	cutoff, ok, err := s.pruneCutoff(ctx, db,
 		`select cast(quantile_cont(timestamp, ?) as bigint) from datapoints`)
 	if err != nil || !ok {
 		return err
@@ -173,7 +216,7 @@ func (s *Store) pruneOldestDatapoints(ctx context.Context) error {
 		`delete from exemplars where datapoint_id in ` + doomed,
 		`delete from datapoints where timestamp < ?`,
 	} {
-		if _, err := s.db.ExecContext(ctx, q, cutoff); err != nil {
+		if _, err := db.ExecContext(ctx, q, cutoff); err != nil {
 			return fmt.Errorf("pruneOldestDatapoints: %w: %w", ErrRetentionInternal, err)
 		}
 	}
@@ -191,7 +234,7 @@ func (s *Store) pruneOldestDatapoints(ctx context.Context) error {
 		`delete from metric_streams ms
 			where not exists (select 1 from metric_ingests mi where mi.stream_id = ms.id)`,
 	} {
-		if _, err := s.db.ExecContext(ctx, q); err != nil {
+		if _, err := db.ExecContext(ctx, q); err != nil {
 			return fmt.Errorf("pruneOldestDatapoints: %w: %w", ErrRetentionInternal, err)
 		}
 	}

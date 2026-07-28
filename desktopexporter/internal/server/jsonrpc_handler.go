@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -37,6 +38,19 @@ func (h *JSONRPCHandler) handleStoreError(err error) error {
 		h.logger.Error("store error", zap.Error(err))
 	}
 	return mapped
+}
+
+// storeRead runs a query that returns a value, under the store's read lock.
+// Every read path in this file goes through here so no handler reaches the
+// pool unordered against ingest and retention.
+func storeRead[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
+	var out T
+	err := s.WithDBRead(func(db *sql.DB) error {
+		var err error
+		out, err = fn(db)
+		return err
+	})
+	return out, err
 }
 
 func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -107,7 +121,9 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 		query = params[2]
 	}
 
-	summaries, err := spans.SearchTraces(ctx, h.store.DB(), startTime, endTime, query)
+	summaries, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchTraces(ctx, db, startTime, endTime, query)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -134,7 +150,9 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 		query = params[1]
 	}
 
-	result, err := spans.SearchSpans(ctx, h.store.DB(), traceID, query)
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchSpans(ctx, db, traceID, query)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -142,7 +160,9 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 }
 
 func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
-	err := spans.Clear(ctx, h.store.DB())
+	err := h.store.WithDBWrite(func(db *sql.DB) error {
+		return spans.Clear(ctx, db)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -169,7 +189,9 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 	if len(params) == 3 {
 		query = params[2]
 	}
-	result, err := logs.Search(ctx, h.store.DB(), startTime, endTime, query)
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.Search(ctx, db, startTime, endTime, query)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -177,7 +199,9 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 }
 
 func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
-	err := logs.Clear(ctx, h.store.DB())
+	err := h.store.WithDBWrite(func(db *sql.DB) error {
+		return logs.Clear(ctx, db)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -198,7 +222,9 @@ func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any
 	if err != nil {
 		return nil, err
 	}
-	result, err := logs.Get(ctx, h.store.DB(), logID)
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.Get(ctx, db, logID)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -225,7 +251,9 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 	if len(params) == 3 {
 		query = params[2]
 	}
-	summaries, err := metrics.SearchSummaries(ctx, h.store.DB(), startTime, endTime, query)
+	summaries, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -252,7 +280,9 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	if err != nil {
 		return nil, err
 	}
-	result, err := metrics.GetMetric(ctx, h.store.DB(), streamID, startTime, endTime)
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID, startTime, endTime)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -260,7 +290,9 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 }
 
 func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
-	err := metrics.Clear(ctx, h.store.DB())
+	err := h.store.WithDBWrite(func(db *sql.DB) error {
+		return metrics.Clear(ctx, db)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -274,7 +306,9 @@ func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2
 		return nil, err
 	}
 
-	if err := spans.DeleteSpansByTraceIDs(ctx, h.store.DB(), traceIDs); err != nil {
+	if err := h.store.WithDBWrite(func(db *sql.DB) error {
+		return spans.DeleteSpansByTraceIDs(ctx, db, traceIDs)
+	}); err != nil {
 		return nil, h.handleStoreError(err)
 	}
 
@@ -291,7 +325,9 @@ func (h *JSONRPCHandler) deleteSpanByID(ctx context.Context, req *jsonrpc2.Reque
 		return nil, err
 	}
 
-	if err := spans.DeleteSpansByIDs(ctx, h.store.DB(), spanIDs); err != nil {
+	if err := h.store.WithDBWrite(func(db *sql.DB) error {
+		return spans.DeleteSpansByIDs(ctx, db, spanIDs)
+	}); err != nil {
 		return nil, h.handleStoreError(err)
 	}
 
@@ -308,7 +344,9 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 		return nil, err
 	}
 
-	if err := logs.DeleteLogsByIDs(ctx, h.store.DB(), logIDs); err != nil {
+	if err := h.store.WithDBWrite(func(db *sql.DB) error {
+		return logs.DeleteLogsByIDs(ctx, db, logIDs)
+	}); err != nil {
 		return nil, h.handleStoreError(err)
 	}
 
@@ -338,7 +376,9 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 		return nil, err
 	}
 
-	attributes, err := spans.GetTraceAttributes(ctx, h.store.DB(), startTime, endTime)
+	attributes, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceAttributes(ctx, db, startTime, endTime)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -366,7 +406,9 @@ func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Req
 		return nil, err
 	}
 
-	attributes, err := logs.GetLogAttributes(ctx, h.store.DB(), startTime, endTime)
+	attributes, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.GetLogAttributes(ctx, db, startTime, endTime)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -394,7 +436,9 @@ func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.
 		return nil, err
 	}
 
-	attributes, err := metrics.GetMetricAttributes(ctx, h.store.DB(), startTime, endTime)
+	attributes, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricAttributes(ctx, db, startTime, endTime)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -417,7 +461,9 @@ func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrp
 		return nil, err
 	}
 
-	attributes, err := spans.GetAttributesByTraceID(ctx, h.store.DB(), traceID)
+	attributes, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetAttributesByTraceID(ctx, db, traceID)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -437,7 +483,9 @@ func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Re
 	if err != nil {
 		return nil, err
 	}
-	count, err := stats.GetTraceSpanCount(ctx, h.store.DB(), traceID)
+	count, err := storeRead(h.store, func(db *sql.DB) (int64, error) {
+		return stats.GetTraceSpanCount(ctx, db, traceID)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
@@ -445,12 +493,16 @@ func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Re
 }
 
 func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
-	sizeBytes, err := h.store.SizeBytes(ctx)
-	if err != nil {
-		return nil, h.handleStoreError(err)
-	}
+	retentionCap := h.store.RetentionCap()
 
-	result, err := stats.GetStats(ctx, h.store.DB(), sizeBytes, h.store.RetentionCap())
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		// SizeBytesWithDB, not SizeBytes: we already hold the read lock.
+		sizeBytes, err := h.store.SizeBytesWithDB(ctx, db)
+		if err != nil {
+			return nil, err
+		}
+		return stats.GetStats(ctx, db, sizeBytes, retentionCap)
+	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}

@@ -65,6 +65,35 @@ jobs:
     - name: Exporter Go Tests
       run: cd desktopexporter; go test ./...
 
+  # Go source checks that need no CGO and no DuckDB toolchain, so they run once
+  # on Linux rather than across the build matrix (which includes Windows, where
+  # this shell syntax differs).
+  go-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version: '1.26'
+
+    # The frontend job gates Prettier; this is the Go equivalent.
+    - name: Format check (gofmt)
+      run: make format-go-check
+
+    # Guards the store's concurrency model: production code must reach DuckDB
+    # through Store.WithConn, WithDBRead, or WithDBWrite so access is ordered
+    # against ingest, retention, and Close. A raw *sql.DB handed to a caller
+    # escapes that ordering, which is what issue #238 fixed.
+    - name: No unguarded store access outside tests
+      run: |
+        if grep -rn --include='*.go' '\.DB()' desktopexporter/ | grep -v '_test\.go'; then
+          echo "::error::Production code must use Store.WithDBRead/WithDBWrite, not a raw *sql.DB."
+          exit 1
+        fi
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
