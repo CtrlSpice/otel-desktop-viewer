@@ -3,8 +3,6 @@ package desktopexporter
 import (
 	"context"
 	"database/sql/driver"
-	"errors"
-	"net/http"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -40,8 +38,8 @@ type desktopExporter struct {
 	retentionDone   chan struct{}
 }
 
-func newDesktopExporter(cfg *Config, logger *zap.Logger) (*desktopExporter, error) {
-	str, err := store.NewStore(context.Background(), cfg.Db)
+func newDesktopExporter(ctx context.Context, cfg *Config, logger *zap.Logger) (*desktopExporter, error) {
+	str, err := store.NewStore(ctx, cfg.Db)
 	if err != nil {
 		return nil, err
 	}
@@ -116,17 +114,9 @@ func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error 
 }
 
 func (e *desktopExporter) Start(ctx context.Context, host component.Host) error {
-	go func() {
-		err := e.server.Start()
-
-		if errors.Is(err, http.ErrServerClosed) {
-			return
-		}
-		if err != nil {
-			e.logger.Error("HTTP server listen failed", zap.Error(err))
-		}
-
-	}()
+	if err := e.server.Start(); err != nil {
+		return err
+	}
 
 	if e.store.RetentionCap() > 0 {
 		// The loop gets its own context rather than the startup ctx, which
@@ -147,8 +137,8 @@ func (e *desktopExporter) Shutdown(ctx context.Context) error {
 		<-e.retentionDone
 	}
 
-	// Close server first (stops accepting new requests)
-	if err := e.server.Close(); err != nil {
+	// Shut down the HTTP server and wait for the serve goroutine to exit.
+	if err := e.server.Shutdown(ctx); err != nil {
 		return err
 	}
 

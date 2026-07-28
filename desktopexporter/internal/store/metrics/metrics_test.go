@@ -1352,6 +1352,37 @@ func TestIngestMetrics_FlushInterval(t *testing.T) {
 	}
 }
 
+func TestIngest_CanceledContext(t *testing.T) {
+	s, _, teardown := setupStore(t)
+	defer teardown()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(1))
+	})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestIngest_CanceledDuringIngest(t *testing.T) {
+	s, _, teardown := setupStore(t)
+	defer teardown()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, createTestMetricsPdataN(100))
+		})
+	}()
+	cancel()
+
+	err := <-errCh
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 // TestSearchSummaries_CardFields verifies the slim summary projection used
 // by drawer cards: stream id, series count, scalar last value, last seen.
 func TestSearchSummaries_CardFields(t *testing.T) {

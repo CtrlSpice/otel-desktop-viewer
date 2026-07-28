@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,7 +28,7 @@ func setupServer(t *testing.T) (*httptest.Server, func()) {
 
 	return testServer, func() {
 		testServer.Close()
-		s.Close()
+		_ = s.Shutdown(context.Background())
 		str.Close()
 	}
 }
@@ -171,4 +172,21 @@ func TestCORSHeaders(t *testing.T) {
 	assert.Equal(t, "http://localhost:5173", res.Header.Get("Access-Control-Allow-Origin"))
 	assert.Contains(t, res.Header.Get("Access-Control-Allow-Methods"), "POST")
 	assert.Contains(t, res.Header.Get("Access-Control-Allow-Headers"), "Content-Type")
+}
+
+func TestStartBindConflict(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+	defer ln.Close()
+
+	str, err := store.NewStore(context.Background(), "")
+	require.NoError(t, err)
+	defer str.Close()
+
+	s, err := NewServer(addr, str, zap.NewNop())
+	require.NoError(t, err)
+
+	err = s.Start()
+	require.Error(t, err)
 }

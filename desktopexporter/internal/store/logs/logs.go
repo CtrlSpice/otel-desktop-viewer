@@ -49,6 +49,10 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
 	}()
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	logCount := 0
 	for _, resourceLogs := range logs.ResourceLogs().All() {
 		resource := resourceLogs.Resource()
@@ -61,6 +65,10 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
 			scope := scopeLogs.Scope()
 
 			for _, log := range scopeLogs.LogRecords().All() {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+
 				logID := duckdb.UUID(uuid.New())
 				var traceUUID *duckdb.UUID
 				if tid := log.TraceID(); !tid.IsEmpty() {

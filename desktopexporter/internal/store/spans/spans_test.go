@@ -968,6 +968,38 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 	assert.GreaterOrEqual(t, scopeAttr, 1)
 }
 
+func TestIngest_CanceledContext(t *testing.T) {
+	s, _, teardown := setupStore(t)
+	defer teardown()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, createTestTracesPdataN(1))
+	})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestIngest_CanceledDuringIngest(t *testing.T) {
+	s, _, teardown := setupStore(t)
+	defer teardown()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	traces := createTestTracesPdataN(100)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.WithConn(func(conn driver.Conn) error {
+			return spans.Ingest(ctx, conn, traces)
+		})
+	}()
+	cancel()
+
+	err := <-errCh
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 // TestDeleteSpanByID verifies that a single span can be deleted by its SpanID, including child rows.
 func TestDeleteSpanByID(t *testing.T) {
 	s, ctx, teardown := setupStore(t)

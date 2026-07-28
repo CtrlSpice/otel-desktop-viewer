@@ -62,11 +62,6 @@ func TestConfigValidate(t *testing.T) {
 			cfg:  Config{Endpoint: "localhost:8000", DbMaxSize: "0"},
 		},
 		{
-			name:    "reserved port",
-			cfg:     Config{Endpoint: "localhost:8888"},
-			wantErr: "port 8888",
-		},
-		{
 			name:    "invalid max size",
 			cfg:     Config{Endpoint: "localhost:8000", DbMaxSize: "lots"},
 			wantErr: "invalid db_max_size",

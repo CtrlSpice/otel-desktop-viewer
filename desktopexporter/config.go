@@ -23,10 +23,6 @@ type Config struct {
 
 // Validate checks if the exporter configuration is valid
 func (cfg *Config) Validate() error {
-	if cfg.Endpoint == "localhost:8888" {
-		return fmt.Errorf("port 8888 is not supported as it is used internally")
-	}
-
 	if _, err := parseByteSize(cfg.DbMaxSize); err != nil {
 		return fmt.Errorf("invalid db_max_size %q: %w", cfg.DbMaxSize, err)
 	}

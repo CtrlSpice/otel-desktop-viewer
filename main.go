@@ -99,6 +99,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 				`yaml:service::pipelines::metrics::exporters: [desktop]`,
 				`yaml:service::pipelines::logs::receivers: [otlp]`,
 				`yaml:service::pipelines::logs::exporters: [desktop]`,
+				`yaml:service::telemetry::metrics::level: none`,
 			}
 			set.ConfigProviderSettings.ResolverSettings.DefaultScheme = "env"
 
