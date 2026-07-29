@@ -185,6 +185,32 @@ html[data-theme='rose-pine-dawn'] {
   @apply text-xs;
 }
 
+/* Show delay, toggled by tooltip-warmth.ts between this default and 0s
+   ("warm"). Never delay hiding, or a dismissed tooltip lingers. */
+:root {
+  --tooltip-show-delay: 500ms;
+}
+
+.tooltip[data-tip]::before,
+.tooltip[data-tip]::after {
+  transition-delay: 0s;
+}
+
+.tooltip[data-tip]:where(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    .tooltip-open
+  )::before,
+.tooltip[data-tip]:where(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    .tooltip-open
+  )::after {
+  transition-delay: var(--tooltip-show-delay);
+}
+
 /* Rosé Pine text hierarchy utilities.
    text-base  = Text  (e0def4 moon / 575279 dawn) — primary reading
    text-subtle = Subtle (908caa moon / 797593 dawn) — secondary/label
