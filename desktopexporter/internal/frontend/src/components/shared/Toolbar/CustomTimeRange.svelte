@@ -197,7 +197,6 @@
         <button
           type="submit"
           class="typed-field typed-field--action typed-field--apply btn btn-sm join-item shrink-0 gap-1"
-          title="Apply"
         >
           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M5 14l3.5 3.5L19 6.5" />

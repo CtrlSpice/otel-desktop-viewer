@@ -145,9 +145,9 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
               {#snippet right()}
                 <button
                   type="button"
-                  class="drawer-header-btn"
+                  class="drawer-header-btn tooltip tooltip-left"
                   onclick={copyEndpointSnippet}
-                  title={endpointCopied ? 'Copied!' : 'Copy snippet'}
+                  data-tip={endpointCopied ? 'Copied!' : 'Copy snippet'}
                   aria-label={endpointCopied ? 'Copied' : 'Copy snippet'}
                 >
                   {#if endpointCopied}

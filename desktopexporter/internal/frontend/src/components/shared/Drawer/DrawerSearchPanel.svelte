@@ -81,7 +81,7 @@
       aria-label="List controls"
     >
       <DateTimeFilter
-        class="drawer-header-btn drawer-header-btn--inactive shrink-0"
+        class="drawer-header-btn drawer-header-btn--inactive shrink-0 tooltip tooltip-bottom"
       />
 
       <button
