@@ -442,6 +442,10 @@ export let telemetryAPI = {
     return convertAttributesToFieldDefinitions(rawData)
   },
 
+  // Takes a bare stream id, not an array: metrics address a stream by a single
+  // uuid everywhere (see getMetric), unlike deleteLogByID / deleteTraces.
+  deleteMetricStream: (streamID: string) =>
+    callRPC<string>('deleteMetricStream', [streamID]),
   clearMetrics: () => callRPC<string>('clearMetrics', undefined),
 
   // Stats methods

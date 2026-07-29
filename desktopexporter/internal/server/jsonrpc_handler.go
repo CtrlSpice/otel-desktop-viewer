@@ -73,6 +73,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.clearLogs(ctx)
 	case "clearMetrics":
 		return h.clearMetrics(ctx)
+	case "deleteMetricStream":
+		return h.deleteMetricStream(ctx, req)
 	case "deleteSpansByTraceID":
 		return h.deleteSpansByTraceID(ctx, req)
 	case "deleteSpanByID":
@@ -297,6 +299,34 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 		return nil, h.handleStoreError(err)
 	}
 	return "Metrics cleared successfully", nil
+}
+
+// deleteMetricStream deletes one metric stream and everything hanging off it.
+// It takes a single ID rather than an array like deleteLogByID and
+// deleteSpansByTraceID: metrics identify a stream by one UUID everywhere else
+// in this handler (see getMetric), and the delete cascade in the store is keyed
+// on a single stream_id.
+func (h *JSONRPCHandler) deleteMetricStream(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if len(params) != 1 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.store.WithDBWrite(func(db *sql.DB) error {
+		return metrics.DeleteMetricStream(ctx, db, streamID)
+	}); err != nil {
+		return nil, h.handleStoreError(err)
+	}
+
+	return "Metric stream deleted successfully", nil
 }
 
 // deleteSpansByTraceID deletes all spans for one or more traces.
