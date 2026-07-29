@@ -49,9 +49,14 @@
   )
 </script>
 
+<!--
+  data-tip rather than title: callers add a `tooltip tooltip-*` class and get
+  the DaisyUI bubble in the same style as the rest of the drawer chrome. Both
+  at once would stack a native tooltip under the styled one.
+-->
 <button
   class="theme-toggle {className}"
-  title={label}
+  data-tip={label}
   aria-label={label}
   onclick={cycleTheme}
 >

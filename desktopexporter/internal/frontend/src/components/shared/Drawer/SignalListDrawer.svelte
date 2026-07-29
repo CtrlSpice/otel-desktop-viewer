@@ -205,9 +205,9 @@
     {@render children()}
   </div>
 
-  <div class="drawer-side is-drawer-close:overflow-visible">
+  <div class="drawer-side">
     <div
-      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-open:w-[28rem] is-drawer-close:overflow-hidden is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
+      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-open:w-[28rem] is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
       class:signal-drawer__panel--instant={skipWidthTransition}
     >
       {#if !effectivelyOpen}
@@ -225,10 +225,15 @@
               />
             </span>
           {:else}
+            <!--
+              data-tip matches aria-label: a chevron labelled with the signal
+              name ("Traces") reads as a filter, not an expander, and a visible
+              label that disagrees with the accessible name trips WCAG 2.5.3.
+            -->
             <label
               for={drawerId}
               class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right cursor-pointer"
-              data-tip={label}
+              data-tip="Open sidebar"
               aria-label="Open sidebar"
             >
               <ArrowRightIcon
@@ -249,18 +254,18 @@
           <div class="signal-drawer__collapsed-group">
             <DateTimeFilter
               popoverAnchor="outward"
-              class="drawer-header-btn drawer-header-btn--inactive shrink-0"
+              class="drawer-header-btn drawer-header-btn--inactive shrink-0 tooltip tooltip-right"
             />
             {#if onRefresh}
               <button
                 type="button"
-              class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive {refreshPulse &&
+              class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right {refreshPulse &&
               refreshAsideTip
-                ? 'tooltip tooltip-right tooltip-secondary'
+                ? 'tooltip-secondary'
                 : ''}"
               data-tip={refreshPulse && refreshAsideTip
                 ? refreshAsideTip
-                : undefined}
+                : 'Refresh'}
               class:signal-drawer__refresh--has-new-data={refreshPulse}
               onclick={onRefresh}
               aria-label={refreshPulse
@@ -285,7 +290,7 @@
               </button>
             {/if}
             <ThemeToggle
-              class="drawer-header-btn drawer-header-btn--inactive"
+              class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right"
             />
           </div>
         </div>
@@ -317,18 +322,20 @@
             {#snippet right()}
               <button
                 type="button"
-                class="drawer-header-btn drawer-header-btn--inactive"
+                class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom"
+                data-tip="Home"
                 onclick={() => navigate('/')}
                 aria-label="Home"
               >
                 <HomeIcon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
               </button>
               <ThemeToggle
-                class="drawer-header-btn drawer-header-btn--inactive"
+                class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom"
               />
               <label
                 for={drawerId}
-                class="drawer-header-btn drawer-header-btn--inactive cursor-pointer"
+                class="drawer-header-btn drawer-header-btn--inactive cursor-pointer tooltip tooltip-bottom"
+                data-tip="Collapse sidebar"
                 aria-label="Collapse sidebar"
               >
                 <ArrowRightIcon
@@ -357,9 +364,15 @@
                   {/if}
                   <button
                     type="button"
-                    class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive"
+                    class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom {refreshPulse &&
+                    refreshAsideTip
+                      ? 'tooltip-secondary'
+                      : ''}"
                     class:signal-drawer__refresh--has-new-data={refreshPulse}
                     onclick={onRefresh}
+                    data-tip={refreshPulse && refreshAsideTip
+                      ? refreshAsideTip
+                      : 'Refresh'}
                     aria-label={refreshPulse
                       ? `Refresh — ${refreshAsideTip}`
                       : 'Refresh'}
@@ -444,9 +457,35 @@
     @apply flex flex-col;
   }
 
+  /*
+   * Nothing in the drawer chrome may clip: the icon buttons carry DaisyUI
+   * tooltips, which are pseudo-elements that paint outside their trigger.
+   * Clipping is not a stacking problem -- no z-index rescues a tooltip inside
+   * an `overflow: hidden` ancestor, the ancestor has to stop clipping. Same
+   * hazard the PaneHeader tab rule warns about.
+   *
+   * Three elements clip the chrome: .drawer-side, the collapsed panel (3.5rem
+   * wide, clips rail tooltips sideways) and the drawer's PaneHeader (one row
+   * tall, clips header tooltips downward). The outer .drawer and app shell
+   * clip too, but they are full-viewport, so nothing lands outside them.
+   *
+   * The PaneHeader rule is scoped to this drawer on purpose -- .pane-header
+   * keeps its own overflow-hidden elsewhere so long tab labels truncate
+   * against it.
+   *
+   * This lives here rather than as `is-drawer-close:overflow-visible` on the
+   * elements: that utility compiles to a `:where()` selector with zero
+   * specificity, so it lost to the .drawer-side rule in this very block.
+   */
   .signal-drawer :global(.drawer-side) {
-    @apply h-full overflow-hidden;
+    @apply h-full;
     min-height: 0;
+    overflow: visible;
+  }
+
+  .signal-drawer :global(.drawer-toggle:not(:checked) ~ .drawer-side .signal-drawer__panel),
+  .signal-drawer :global(.signal-drawer__header .pane-header) {
+    overflow: visible;
   }
 
   .signal-drawer__panel {

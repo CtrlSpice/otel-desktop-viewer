@@ -83,6 +83,7 @@
   popovertarget={popoverId}
   aria-expanded={popoverOpen}
   aria-label={ariaLabel}
+  data-tip="Change time range"
 >
   <svg
     class="h-[17px] w-[17px] shrink-0"

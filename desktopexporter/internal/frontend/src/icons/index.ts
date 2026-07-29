@@ -16,10 +16,7 @@ import CustomizeIcon from './CustomizeIcon.svelte'
 import CopyIcon from './CopyIcon.svelte'
 import DateTimeIcon from './DateTimeIcon.svelte'
 import FilterIcon from './FilterIcon.svelte'
-import FirePitIcon from './FirePitIcon.svelte'
-import FocusPointIcon from './FocusPoint.svelte'
 import GlobalIcon from './GlobalIcon.svelte'
-import HandPointingDownIcon from './HandPointingDown.svelte'
 import LeftToRightListBulletIcon from './LeftToRightListBullet.svelte'
 import LinkIcon from './LinkIcon.svelte'
 import LogIcon from './LogIcon.svelte'
@@ -29,6 +26,7 @@ import HomeIcon from './HomeIcon.svelte'
 import FallingStarIcon from './FallingStarIcon.svelte'
 import MoonIcon from './MoonIcon.svelte'
 import ReloadIcon from './Reload.svelte'
+import SortingIcon from './SortingIcon.svelte'
 import SunIcon from './SunIcon.svelte'
 import TrashIcon from './TrashIcon.svelte'
 
@@ -47,10 +45,7 @@ export {
   CopyIcon,
   DateTimeIcon,
   FilterIcon,
-  FirePitIcon,
-  FocusPointIcon,
   GlobalIcon,
-  HandPointingDownIcon,
   LeftToRightListBulletIcon,
   LinkIcon,
   LogIcon,
@@ -60,6 +55,7 @@ export {
   FallingStarIcon,
   MoonIcon,
   ReloadIcon,
+  SortingIcon,
   SunIcon,
   TrashIcon,
 }

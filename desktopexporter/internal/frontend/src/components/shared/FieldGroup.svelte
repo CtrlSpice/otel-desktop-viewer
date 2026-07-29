@@ -40,9 +40,10 @@
       {@render headerAction()}
       <button
         type="button"
-        class="field-group__caret-btn"
+        class="field-group__caret-btn tooltip tooltip-left"
         aria-expanded={open}
         aria-label="{open ? 'Collapse' : 'Expand'} {label}"
+        data-tip="{open ? 'Collapse' : 'Expand'} {label}"
         onclick={() => setOpen(!open)}
       >
         <ArrowDownIcon class="field-group__caret" aria-hidden="true" />
