@@ -428,9 +428,11 @@ func TestDeleteParamValidation(t *testing.T) {
 	}
 }
 
-// TestReadPathIDValidation covers the single-ID validation on read methods:
-// a malformed ID returns the signal-specific code instead of reaching SQL
-// and surfacing as a cast error dressed up as ErrInternal.
+// TestReadPathIDValidation covers the single-ID validation on the methods that
+// take one ID rather than an array: a malformed ID returns the signal-specific
+// code instead of reaching SQL and surfacing as a cast error dressed up as
+// ErrInternal. Mostly reads, plus deleteMetricStream, which is single-ID
+// because metrics address a stream by one uuid (see the handler comment).
 func TestReadPathIDValidation(t *testing.T) {
 	handler, teardown := setupHandler(t)
 	defer teardown()
@@ -446,6 +448,7 @@ func TestReadPathIDValidation(t *testing.T) {
 		{"getMetric", []string{"not-a-stream-id", "0", "1"}, ErrInvalidStreamID},
 		{"getAttributesByTraceID", []string{"not-a-trace-id"}, ErrInvalidTraceID},
 		{"getTraceSpanCount", []string{"not-a-trace-id"}, ErrInvalidTraceID},
+		{"deleteMetricStream", []string{"not-a-stream-id"}, ErrInvalidStreamID},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method, func(t *testing.T) {
@@ -632,6 +635,52 @@ func TestDeleteLogByID(t *testing.T) {
 	getResult, err := handler.Handle(ctx, createRequest("getLog", []string{logID}))
 	assert.Nil(t, getResult)
 	assert.Equal(t, ErrLogsNotFound, err, "deleted log should be gone")
+}
+
+func TestDeleteMetricStream(t *testing.T) {
+	handler, teardown := setupHandlerWithMetrics(t)
+	defer teardown()
+	ctx := context.Background()
+
+	maxNano := strconv.FormatInt(1<<63-1, 10)
+	searchResult, err := handler.Handle(ctx, createRequest("searchMetricSummaries", []string{"0", maxNano}))
+	require.NoError(t, err)
+	raw, ok := searchResult.(json.RawMessage)
+	require.True(t, ok)
+	var summaries []map[string]any
+	require.NoError(t, json.Unmarshal(raw, &summaries))
+	require.NotEmpty(t, summaries, "fixture must provide at least one metric stream")
+	streamID, ok := summaries[0]["id"].(string)
+	require.True(t, ok)
+	before := len(summaries)
+
+	result, err := handler.Handle(ctx, createRequest("deleteMetricStream", []string{streamID}))
+	assert.NoError(t, err)
+	assert.Equal(t, "Metric stream deleted successfully", result)
+
+	// The stream is gone from search, and only that stream went with it.
+	searchResult, err = handler.Handle(ctx, createRequest("searchMetricSummaries", []string{"0", maxNano}))
+	require.NoError(t, err)
+	raw, ok = searchResult.(json.RawMessage)
+	require.True(t, ok)
+	require.NoError(t, json.Unmarshal(raw, &summaries))
+	assert.Len(t, summaries, before-1, "exactly one stream should be gone")
+	for _, s := range summaries {
+		assert.NotEqual(t, streamID, s["id"], "deleted stream must not reappear")
+	}
+}
+
+// TestDeleteMetricStreamNotFound covers deleting a stream that does not exist.
+// The cascade is a series of unconditional DELETEs, so this is a no-op rather
+// than an error -- the UI relies on that when a poll races a delete.
+func TestDeleteMetricStreamNotFound(t *testing.T) {
+	handler, teardown := setupHandlerWithMetrics(t)
+	defer teardown()
+
+	result, err := handler.Handle(context.Background(),
+		createRequest("deleteMetricStream", []string{"00000000-0000-0000-0000-0000000000ff"}))
+	assert.NoError(t, err)
+	assert.Equal(t, "Metric stream deleted successfully", result)
 }
 
 // assertAttributeDiscovery unmarshals an attribute-discovery result and checks

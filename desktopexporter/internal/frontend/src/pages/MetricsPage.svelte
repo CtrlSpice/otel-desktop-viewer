@@ -210,6 +210,24 @@
     }
   }
 
+  async function handleDeleteMetric(streamID: string) {
+    actionError = null
+    try {
+      await telemetryAPI.deleteMetricStream(streamID)
+      // Clear the detail pane before refetching: the $effect above keys off
+      // page.selectedSummary, and the deleted stream is gone from the next
+      // list fetch, so leaving it set would render a stale chart.
+      if (page.selectedId === streamID) {
+        navigateToItem('metrics', null, 'replace')
+        selectedMetric = undefined
+      }
+      await page.runListFetch()
+    } catch (err) {
+      actionError =
+        err instanceof Error ? err.message : 'Failed to delete metric'
+    }
+  }
+
   async function handleDeleteAllMetrics() {
     actionError = null
     try {
@@ -363,6 +381,9 @@
         onPrev={() => page.selectByOffset(-1)}
         onNext={() => page.selectByOffset(1)}
         onLast={page.selectLast}
+        onDelete={page.selectedSummary
+          ? () => handleDeleteMetric(page.selectedSummary!.id)
+          : undefined}
       />
     {/snippet}
   </PageLayout>
