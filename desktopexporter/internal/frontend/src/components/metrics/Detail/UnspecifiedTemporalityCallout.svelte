@@ -26,7 +26,7 @@
 {#if size === 'mini'}
   <span
     class="callout-mini tooltip tooltip-top"
-    data-tip="aggregationTemporality = Unspecified"
+    data-tip="Temporality: unspecified"
   >
     unspecifiedTemporality
   </span>

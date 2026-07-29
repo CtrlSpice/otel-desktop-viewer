@@ -12,8 +12,8 @@
   <label
     class="chart-stat-overlays-toggle tooltip tooltip-top"
     data-tip={ctx.rateSlopeOverlayAvailable
-      ? 'Show min, max, and rate slope overlays'
-      : 'Show min, max, and avg overlays'}
+      ? 'Min/max + rate slope'
+      : 'Min/max + avg'}
   >
     <input
       type="checkbox"

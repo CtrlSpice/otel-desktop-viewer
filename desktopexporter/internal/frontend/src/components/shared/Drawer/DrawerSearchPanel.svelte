@@ -91,7 +91,7 @@
         popovertarget={sortPopoverId}
         aria-expanded={sortPopoverOpen}
         aria-label={sortAriaLabel}
-        data-tip="Change sort"
+        data-tip="Sort"
       >
         <SortingIcon class="h-[17px] w-[17px] shrink-0" />
       </button>

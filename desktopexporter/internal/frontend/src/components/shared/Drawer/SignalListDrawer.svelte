@@ -216,7 +216,7 @@
           {#if railOnly}
             <span
               class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right"
-              data-tip="Send data to populate this drawer"
+              data-tip="Waiting for data"
               aria-disabled="true"
             >
               <ArrowRightIcon

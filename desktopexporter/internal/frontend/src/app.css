@@ -182,6 +182,7 @@ html[data-theme='rose-pine-dawn'] {
   box-shadow: 0 2px 8px -2px
     color-mix(in oklab, var(--color-base-content) 35%, transparent);
   font-weight: 500;
+  @apply text-xs;
 }
 
 /* Rosé Pine text hierarchy utilities.

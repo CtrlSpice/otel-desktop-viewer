@@ -40,13 +40,16 @@
     }
   })
 
-  const label = $derived(
+  const themeName = $derived(
     currentTheme === 'rose-pine-dawn'
-      ? 'Dawn theme active'
+      ? 'Dawn'
       : currentTheme === 'rose-pine-moon'
-        ? 'Moon theme active'
-        : 'Pine theme active',
+        ? 'Moon'
+        : 'Pine',
   )
+  // aria-label states current state ("active"); the tooltip just names the
+  // theme, since a hovering user already sees which one is showing.
+  const label = $derived(`${themeName} theme active`)
 </script>
 
 <!--
@@ -56,7 +59,7 @@
 -->
 <button
   class="theme-toggle {className}"
-  data-tip={label}
+  data-tip="{themeName} theme"
   aria-label={label}
   onclick={cycleTheme}
 >

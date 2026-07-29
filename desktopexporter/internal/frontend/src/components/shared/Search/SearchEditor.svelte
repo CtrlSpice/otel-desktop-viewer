@@ -457,7 +457,7 @@
             class="drawer-editor-btn join-item tooltip tooltip-bottom"
             onclick={openHelp}
             aria-label="Search query help"
-            data-tip="Search query help"
+            data-tip="Query help"
           >
             <HelpCircleIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           </button>
@@ -491,7 +491,7 @@
           class="btn btn-ghost btn-neutral btn-sm btn-square join-item tooltip tooltip-bottom"
           onclick={openHelp}
           aria-label="Search query help"
-          data-tip="Search query help"
+          data-tip="Query help"
         >
           <HelpCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
