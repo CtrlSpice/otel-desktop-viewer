@@ -188,7 +188,7 @@ html[data-theme='rose-pine-dawn'] {
 /* Show delay, toggled by tooltip-warmth.ts between this default and 0s
    ("warm"). Never delay hiding, or a dismissed tooltip lingers. */
 :root {
-  --tooltip-show-delay: 500ms;
+  --tooltip-show-delay: 400ms;
 }
 
 .tooltip[data-tip]::before,
