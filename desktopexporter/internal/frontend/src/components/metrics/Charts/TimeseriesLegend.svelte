@@ -4,6 +4,7 @@
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import type { LegendTimeseries as Timeseries } from '@/types/metric-chart-types'
+  import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
 
   // Currently not mounted anywhere -- TimeseriesPanel.svelte hosts the
   // live legend rows. Kept in sync with that component's colour wiring
@@ -59,10 +60,11 @@
       {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
       {@const fg =
         checked && seriesColor ? readableTextColor(seriesColor) : chartNeutral()}
+      {@const rowAttrs = dedupeAttributes(ts.attributes)}
       {@const tooltip =
-        ts.attributes.length === 0
+        rowAttrs.length === 0
           ? 'default'
-          : ts.attributes.map((a) => `${a.key}=${a.value}`).join(', ')}
+          : rowAttrs.map((a) => `${a.key}=${a.value}`).join(', ')}
       <li
         class="timeseries-legend__row"
         class:timeseries-legend__row--disabled={disabled}
@@ -79,10 +81,10 @@
               toggle(ts.key, (e.currentTarget as HTMLInputElement).checked)}
           />
           <span class="timeseries-legend__attrs">
-            {#if ts.attributes.length === 0}
+            {#if rowAttrs.length === 0}
               <span class="timeseries-legend__attrs-empty">default</span>
             {:else}
-              {#each ts.attributes as attr (attr.key)}
+              {#each rowAttrs as attr (attr.key)}
                 <span class="timeseries-legend__attr">
                   <span class="timeseries-legend__attr-key">{attr.key}</span>
                   <span class="timeseries-legend__attr-eq">=</span>

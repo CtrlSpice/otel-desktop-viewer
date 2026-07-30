@@ -18,6 +18,7 @@
   import MetricField from '@/components/metrics/Detail/MetricField.svelte'
   import SeriesDatapointList from '@/components/metrics/Detail/SeriesDatapointList.svelte'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
+  import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
 
   const ctx = getMetricViewContext()
   const expandedDatapointSections = new SvelteSet<string>()
@@ -47,14 +48,14 @@
 
     const allKeys = new Set<string>()
     for (const row of rows) {
-      for (const a of row.attributes) allKeys.add(a.key)
+      for (const a of dedupeAttributes(row.attributes)) allKeys.add(a.key)
     }
 
     const differing = new Set<string>()
     for (const key of allKeys) {
       const signatures = new Set<string>()
       for (const row of rows) {
-        const a = row.attributes.find((x) => x.key === key)
+        const a = dedupeAttributes(row.attributes).find(x => x.key === key)
         signatures.add(a?.value ?? '')
       }
       if (signatures.size > 1) differing.add(key)
@@ -66,8 +67,9 @@
   function headerAttrs(
     attrs: PanelTimeseries['attributes']
   ): PanelTimeseries['attributes'] {
-    if (!differingAttrKeys) return attrs
-    return attrs.filter((a) => differingAttrKeys.has(a.key))
+    const unique = dedupeAttributes(attrs)
+    if (!differingAttrKeys) return unique
+    return unique.filter(a => differingAttrKeys.has(a.key))
   }
 
   function toggle(key: string, checked: boolean) {
@@ -75,8 +77,9 @@
   }
 
   function attrsTooltip(attrs: PanelTimeseries['attributes']): string {
-    if (attrs.length === 0) return 'default series'
-    return attrs.map((a) => `${a.key}: ${a.value}`).join(' ')
+    const unique = dedupeAttributes(attrs)
+    if (unique.length === 0) return 'default series'
+    return unique.map(a => `${a.key}: ${a.value}`).join(' ')
   }
 
   function setTimeseriesOpen(key: string, open: boolean) {
@@ -153,7 +156,7 @@
       {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
       {@const fg =
         checked && seriesColor ? readableTextColor(seriesColor) : chartNeutral()}
-      {@const hasAttrs = ts.attributes.length > 0}
+      {@const hasAttrs = dedupeAttributes(ts.attributes).length > 0}
       {@const rowHeaderAttrs = headerAttrs(ts.attributes)}
       {@const tooltip = attrsTooltip(ts.attributes)}
       {@const headerLabel =
@@ -240,7 +243,7 @@
             {#if hasAttrs}
               <table class="detail-fields w-full" aria-label="Timeseries fields">
                 <tbody>
-                  {#each metricTs.attributes as attr (attr.key)}
+                  {#each dedupeAttributes(metricTs.attributes) as attr (attr.key)}
                     <MetricField
                       fieldName={attr.key}
                       fieldValue={attr.value}
