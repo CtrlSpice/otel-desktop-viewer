@@ -146,6 +146,71 @@ html[data-theme='rose-pine-dawn'] {
   --waterfall-tick-mix-strength: 60%;
 }
 
+/* Tooltips — inverted against the page.
+
+   daisyUI defaults the bubble to --color-neutral on --color-neutral-content,
+   which in Rosé Pine pairs Muted grey with Text and fails AA in every theme:
+   2.44:1 in dawn, 3.91:1 in moon and main (floor is 4.5:1). Dawn is simply
+   where it is most visible.
+
+   Inverting against the surface — Text as the background, Base as the
+   foreground — gives 6.07:1 dawn, 11.86:1 moon, 13.39:1 main, and reads as a
+   bubble floating above the UI rather than a panel inside it. That is the
+   conventional treatment and it holds its meaning in both light and dark.
+
+   --tt-bg is daisyUI's own hook, so the tail (::after) follows the bubble for
+   free. --tt-fg is ours: the colour variants below re-point it so
+   tooltip-error and tooltip-secondary keep their own contrasting text. */
+.tooltip {
+  --tt-bg: var(--color-base-content);
+  --tt-fg: var(--color-base-100);
+}
+
+.tooltip-error {
+  --tt-fg: var(--color-error-content);
+}
+
+.tooltip-secondary {
+  --tt-fg: var(--color-secondary-content);
+}
+
+.tooltip[data-tip]::before {
+  color: var(--tt-fg);
+  /* Small lift so the bubble separates from busy chart and table content;
+     dawn especially needs it, where bubble and page are both low contrast
+     against the mid greys in between. */
+  box-shadow: 0 2px 8px -2px
+    color-mix(in oklab, var(--color-base-content) 35%, transparent);
+  font-weight: 500;
+  @apply text-xs;
+}
+
+/* Show delay, toggled by tooltip-warmth.ts between this default and 0s
+   ("warm"). Never delay hiding, or a dismissed tooltip lingers. */
+:root {
+  --tooltip-show-delay: 400ms;
+}
+
+.tooltip[data-tip]::before,
+.tooltip[data-tip]::after {
+  transition-delay: 0s;
+}
+
+.tooltip[data-tip]:where(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    .tooltip-open
+  )::before,
+.tooltip[data-tip]:where(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    .tooltip-open
+  )::after {
+  transition-delay: var(--tooltip-show-delay);
+}
+
 /* Rosé Pine text hierarchy utilities.
    text-base  = Text  (e0def4 moon / 575279 dawn) — primary reading
    text-subtle = Subtle (908caa moon / 797593 dawn) — secondary/label

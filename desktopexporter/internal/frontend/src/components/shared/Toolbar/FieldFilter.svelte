@@ -105,12 +105,12 @@
   <button
     bind:this={buttonEl}
     type="button"
-    class="toolbar-filter-trigger toolbar-filter-trigger--field"
+    class="toolbar-filter-trigger toolbar-filter-trigger--field tooltip tooltip-bottom"
     class:toolbar-filter-trigger--compact={!label}
     class:toolbar-filter-trigger--active={popoverOpen}
     onclick={togglePopover}
     aria-label={label ? `${label}: filter columns` : 'Filter columns'}
-    title="Filter columns"
+    data-tip="Filter columns"
     aria-expanded={popoverOpen}
   >
     <span class="toolbar-filter-trigger__icon" aria-hidden="true">

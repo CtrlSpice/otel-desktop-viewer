@@ -503,38 +503,6 @@ func Clear(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// DeleteSpansByTraceID deletes all spans for a specific trace.
-func DeleteSpansByTraceID(ctx context.Context, db *sql.DB, traceID string) error {
-	childQueries := []string{
-		`delete from attributes where span_id in (select span_id from spans where trace_id = ?)`,
-		`delete from links where span_id in (select span_id from spans where trace_id = ?)`,
-		`delete from events where span_id in (select span_id from spans where trace_id = ?)`,
-		`delete from spans where trace_id = ?`,
-	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, traceID); err != nil {
-			return fmt.Errorf("DeleteSpansByTraceID: %w: %w", ErrSpansStoreInternal, err)
-		}
-	}
-	return nil
-}
-
-// DeleteSpanByID deletes a specific span by its ID.
-func DeleteSpanByID(ctx context.Context, db *sql.DB, spanID string) error {
-	childQueries := []string{
-		`delete from attributes where span_id = ?`,
-		`delete from links where span_id = ?`,
-		`delete from events where span_id = ?`,
-		`delete from spans where span_id = ?`,
-	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, spanID); err != nil {
-			return fmt.Errorf("DeleteSpanByID: %w: %w", ErrSpansStoreInternal, err)
-		}
-	}
-	return nil
-}
-
 // DeleteSpansByIDs deletes multiple spans by their IDs.
 func DeleteSpansByIDs(ctx context.Context, db *sql.DB, spanIDs []any) error {
 	if len(spanIDs) == 0 {

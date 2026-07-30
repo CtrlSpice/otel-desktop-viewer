@@ -280,20 +280,6 @@ func Clear(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// DeleteLogByID deletes a specific log by its ID.
-func DeleteLogByID(ctx context.Context, db *sql.DB, logID string) error {
-	childQueries := []string{
-		`delete from attributes where log_id = ?`,
-		`delete from logs where id = ?`,
-	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, logID); err != nil {
-			return fmt.Errorf("DeleteLogByID: %w: %w", ErrLogsStoreInternal, err)
-		}
-	}
-	return nil
-}
-
 // DeleteLogsByIDs deletes multiple logs by their IDs.
 func DeleteLogsByIDs(ctx context.Context, db *sql.DB, logIDs []any) error {
 	if len(logIDs) == 0 {

@@ -29,7 +29,8 @@
 <div class="detail-nav" role="group" aria-label="{label} navigation">
   <button
     type="button"
-    class="btn btn-ghost btn-sm btn-square"
+    class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
+    data-tip="First {label}"
     onclick={onFirst}
     disabled={!canGoPrev}
     aria-label="First {label}"
@@ -38,7 +39,8 @@
   </button>
   <button
     type="button"
-    class="btn btn-ghost btn-sm btn-square"
+    class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
+    data-tip="Previous {label}"
     onclick={onPrev}
     disabled={!canGoPrev}
     aria-label="Previous {label}"
@@ -50,7 +52,8 @@
   </span>
   <button
     type="button"
-    class="btn btn-ghost btn-sm btn-square"
+    class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
+    data-tip="Next {label}"
     onclick={onNext}
     disabled={!canGoNext}
     aria-label="Next {label}"
@@ -59,7 +62,8 @@
   </button>
   <button
     type="button"
-    class="btn btn-ghost btn-sm btn-square"
+    class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
+    data-tip="Last {label}"
     onclick={onLast}
     disabled={!canGoNext}
     aria-label="Last {label}"

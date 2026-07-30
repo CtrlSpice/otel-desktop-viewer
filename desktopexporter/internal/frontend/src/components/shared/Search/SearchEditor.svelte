@@ -454,19 +454,19 @@
         <div class="join join-horizontal shrink-0 rounded-full">
           <button
             type="button"
-            class="drawer-editor-btn join-item"
+            class="drawer-editor-btn join-item tooltip tooltip-bottom"
             onclick={openHelp}
             aria-label="Search query help"
-            title="Search query help"
+            data-tip="Query help"
           >
             <HelpCircleIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           </button>
           <button
             type="button"
-            class="drawer-editor-btn join-item"
+            class="drawer-editor-btn join-item tooltip tooltip-bottom"
             onclick={clearSearch}
             aria-label="Clear search"
-            title="Clear search"
+            data-tip="Clear search"
           >
             <CancelIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           </button>
@@ -488,28 +488,28 @@
       <div class="search-actions join">
         <button
           type="button"
-          class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
+          class="btn btn-ghost btn-neutral btn-sm btn-square join-item tooltip tooltip-bottom"
           onclick={openHelp}
           aria-label="Search query help"
-          title="Search query help"
+          data-tip="Query help"
         >
           <HelpCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
         <button
           type="button"
-          class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
+          class="btn btn-ghost btn-neutral btn-sm btn-square join-item tooltip tooltip-bottom"
           onclick={clearSearch}
           aria-label="Clear search"
-          title="Clear search"
+          data-tip="Clear search"
         >
           <CancelIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
         <button
           type="button"
-          class="btn btn-ghost btn-neutral btn-sm btn-square join-item"
+          class="btn btn-ghost btn-neutral btn-sm btn-square join-item tooltip tooltip-bottom"
           onclick={onSubmit}
           aria-label="Search (Enter)"
-          title="Search (Enter)"
+          data-tip="Search (Enter)"
         >
           <svg
             class="h-4 w-4 shrink-0"
@@ -547,9 +547,10 @@
     <h2 class="help-dialog-title">Querying Your {signalLabel}</h2>
     <button
       type="button"
-      class="btn btn-ghost btn-sm btn-square shrink-0 text-base-content/70 hover:text-base-content"
+      class="btn btn-ghost btn-sm btn-square shrink-0 text-base-content/70 hover:text-base-content tooltip tooltip-left"
       onclick={() => helpDialogElement?.close()}
       aria-label="Close"
+      data-tip="Close"
     >
       <svg
         class="h-5 w-5"

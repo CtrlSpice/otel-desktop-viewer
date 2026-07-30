@@ -1091,45 +1091,6 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-// TestDeleteSpanByID verifies that a single span can be deleted by its SpanID, including child rows.
-func TestDeleteSpanByID(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
-
-	traces := createTestTracePdata()
-	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
-	})
-	assert.NoError(t, err)
-
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, "00000000-0000-0000-0000-000000000099", nil)
-	})
-	assert.NoError(t, err)
-	assert.Equal(t, 9, getTraceSpansCount(t, raw))
-
-	spanUUID := "00000000-0000-0000-0000-000000000001"
-	eventsBefore := countRows(t, s, ctx, "select count(*) from events where span_id = ?", spanUUID)
-	linksBefore := countRows(t, s, ctx, "select count(*) from links where span_id = ?", spanUUID)
-	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes where span_id = ?", spanUUID)
-	assert.Greater(t, eventsBefore+linksBefore+attrsBefore, 0, "root span should have child rows")
-
-	err = s.WithDBWrite(func(db *sql.DB) error {
-		return spans.DeleteSpanByID(ctx, db, spanUUID)
-	})
-	assert.NoError(t, err)
-
-	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, "00000000-0000-0000-0000-000000000099", nil)
-	})
-	assert.NoError(t, err)
-	assert.Equal(t, 8, getTraceSpansCount(t, raw))
-
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events where span_id = ?", spanUUID))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links where span_id = ?", spanUUID))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where span_id = ?", spanUUID))
-}
-
 // TestDeleteSpansByIDs verifies that multiple spans can be deleted by their SpanIDs, including child rows.
 func TestDeleteSpansByIDs(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
@@ -1180,36 +1141,6 @@ func TestDeleteSpansByIDs_Empty(t *testing.T) {
 		return spans.DeleteSpansByIDs(ctx, db, []any{})
 	})
 	assert.NoError(t, err)
-}
-
-// TestDeleteSpansByTraceID verifies that all spans for a trace are deleted, including child rows.
-func TestDeleteSpansByTraceID(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
-
-	traces := createTestTracePdata()
-	testTraceID := "00000000000000000000000000000099"
-	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
-	})
-	assert.NoError(t, err)
-
-	summaries := searchTracesAll(t, s, ctx)
-	assert.Len(t, summaries, 1)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from events"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from links"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where span_id is not null"), 0)
-
-	err = s.WithDBWrite(func(db *sql.DB) error {
-		return spans.DeleteSpansByTraceID(ctx, db, testTraceID)
-	})
-	assert.NoError(t, err)
-
-	summaries = searchTracesAll(t, s, ctx)
-	assert.Empty(t, summaries)
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where span_id is not null"))
 }
 
 // TestSearchSpansWith32CharHexTraceID verifies that SearchSpans finds a trace when given the 32-char hex form (no hyphens).

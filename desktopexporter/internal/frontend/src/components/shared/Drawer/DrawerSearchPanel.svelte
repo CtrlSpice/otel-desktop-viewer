@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { ArrowUpIcon } from '@/icons'
-  import HugeiconsSorting05 from '@/icons/HugeiconsSorting05.svelte'
+  import { ArrowUpIcon, SortingIcon } from '@/icons'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import {
@@ -82,18 +81,19 @@
       aria-label="List controls"
     >
       <DateTimeFilter
-        class="drawer-header-btn drawer-header-btn--inactive shrink-0"
+        class="drawer-header-btn drawer-header-btn--inactive shrink-0 tooltip tooltip-bottom"
       />
 
       <button
         bind:this={sortTriggerEl}
         type="button"
-        class="drawer-header-btn drawer-header-btn--inactive shrink-0"
+        class="drawer-header-btn drawer-header-btn--inactive shrink-0 tooltip tooltip-bottom"
         popovertarget={sortPopoverId}
         aria-expanded={sortPopoverOpen}
         aria-label={sortAriaLabel}
+        data-tip="Sort"
       >
-        <HugeiconsSorting05 class="h-[17px] w-[17px] shrink-0" />
+        <SortingIcon class="h-[17px] w-[17px] shrink-0" />
       </button>
 
       <div

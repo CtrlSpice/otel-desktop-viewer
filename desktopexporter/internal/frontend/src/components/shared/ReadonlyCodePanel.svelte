@@ -141,9 +141,9 @@
     <div class="readonly-code-panel__toolbar">
       <button
         type="button"
-        class="readonly-code-panel__copy drawer-header-btn"
+        class="readonly-code-panel__copy drawer-header-btn tooltip tooltip-left"
         onclick={copyToClipboard}
-        title={copied ? 'Copied!' : copyLabel}
+        data-tip={copied ? 'Copied!' : copyLabel}
         aria-label={copied ? 'Copied' : copyLabel}
       >
         {#if copied}

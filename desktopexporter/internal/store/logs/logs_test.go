@@ -504,41 +504,6 @@ func TestGetLogAttributes(t *testing.T) {
 	assert.Equal(t, json.RawMessage("[]"), rawEmpty)
 }
 
-// TestDeleteLogByID verifies that a single log can be deleted by its ID, including child attributes.
-func TestDeleteLogByID(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
-
-	baseTime := time.Now().UnixNano()
-	ldata := createTestLogsPdata(baseTime)
-	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata)
-	})
-	assert.NoError(t, err)
-
-	entries := searchLogsAll(t, s, ctx)
-	assert.Len(t, entries, 3)
-
-	targetID := entries[0].ID
-	assert.NotEmpty(t, targetID)
-
-	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes where log_id = ?", targetID)
-	assert.Greater(t, attrsBefore, 0, "target log should have attributes")
-
-	err = s.WithDBWrite(func(db *sql.DB) error {
-		return logs.DeleteLogByID(ctx, db, targetID)
-	})
-	assert.NoError(t, err)
-
-	entries = searchLogsAll(t, s, ctx)
-	assert.Len(t, entries, 2)
-	for _, e := range entries {
-		assert.NotEqual(t, targetID, e.ID)
-	}
-
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where log_id = ?", targetID))
-}
-
 // TestDeleteLogsByIDs verifies that multiple logs can be deleted by their IDs.
 func TestDeleteLogsByIDs(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
