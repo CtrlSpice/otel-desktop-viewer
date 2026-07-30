@@ -17,6 +17,7 @@
   import { LeftToRightListBulletIcon, BarChartHorizontalIcon } from '@/icons'
   import MetricField from './MetricField.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
+  import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
@@ -56,7 +57,7 @@
   let resourceAttrs = $derived.by((): MetadataAttr[] => {
     const m = ctx.metric
     if (!m) return []
-    return m.resource.attributes.map(a => ({
+    return dedupeAttributes(m.resource.attributes).map(a => ({
       key: a.key,
       value: a.value,
       type: a.type,
@@ -67,6 +68,7 @@
   let scopeAttrs = $derived.by((): MetadataAttr[] => {
     const m = ctx.metric
     if (!m) return []
+    const attrs = dedupeAttributes(m.scope.attributes)
     const out: MetadataAttr[] = []
     if (m.scope.name) {
       out.push({
@@ -84,7 +86,9 @@
         scope: 'scope',
       })
     }
-    for (const a of m.scope.attributes) {
+    const reserved = new Set(out.map(a => a.key))
+    for (const a of attrs) {
+      if (reserved.has(a.key)) continue
       out.push({ key: a.key, value: a.value, type: a.type, scope: 'scope' })
     }
     return out

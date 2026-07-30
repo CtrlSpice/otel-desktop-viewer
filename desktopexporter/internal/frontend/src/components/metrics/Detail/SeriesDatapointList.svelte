@@ -8,6 +8,7 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { formatMetricValuePlain } from '@/components/metrics/utils/format-metric-value'
+  import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import type { DataPoint } from '@/types/api-types'
 
   type Props = {
@@ -144,7 +145,7 @@
                       {#if ex.spanID}
                         <span class="dp-list__detail-value">span: {ex.spanID}</span>
                       {/if}
-                      {#each ex.filteredAttributes as attr (attr.key)}
+                      {#each dedupeAttributes(ex.filteredAttributes) as attr (attr.key)}
                         <span class="dp-list__detail-value">{attr.key}: {attr.value}</span>
                       {/each}
                     </div>
