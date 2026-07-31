@@ -9,7 +9,8 @@
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { navigateToItem } from '@/route'
+  import { itemHref, navigateToItem } from '@/route'
+  import { SPAN_PARAM } from '@/route/query-params'
 
   type Props = {
     log: LogData | undefined
@@ -60,6 +61,18 @@
     if (log.scope.droppedAttributesCount > 0) n++
     return n
   })
+
+  let traceSpanPatch = $derived(
+    log?.traceID && log?.spanID
+      ? ({ [SPAN_PARAM]: log.spanID } as const)
+      : undefined
+  )
+
+  function goToTrace(e: MouseEvent) {
+    if (!log?.traceID) return
+    e.preventDefault()
+    navigateToItem('traces', log.traceID, 'push', traceSpanPatch)
+  }
 </script>
 
 {#if log}
@@ -111,16 +124,23 @@
                 {#snippet value()}
                   <a
                     class="detail-cell__value link link-primary font-mono"
-                    href="/traces/{log.traceID}"
-                    onclick={e => {
-                      e.preventDefault()
-                      navigateToItem('traces', log.traceID)
-                    }}
+                    href={itemHref('traces', log.traceID, traceSpanPatch)}
+                    onclick={goToTrace}
                   >{log.traceID}</a>
                 {/snippet}
               </LogField>
             {/if}
-            {#if log.spanID}
+            {#if log.spanID && log.traceID}
+              <LogField fieldName="span id" fieldType="string">
+                {#snippet value()}
+                  <a
+                    class="detail-cell__value link link-primary font-mono"
+                    href={itemHref('traces', log.traceID, traceSpanPatch)}
+                    onclick={goToTrace}
+                  >{log.spanID}</a>
+                {/snippet}
+              </LogField>
+            {:else if log.spanID}
               <LogField
                 fieldName="span id"
                 fieldType="string"
