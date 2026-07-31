@@ -70,12 +70,9 @@ describe('LogDetailView trace correlation', () => {
   it('navigates to trace detail with span patch on click', async () => {
     renderLog(makeLog())
     await userEvent.click(screen.getByRole('link', { name: 'span-xyz' }))
-    expect(navigateToItem).toHaveBeenCalledWith(
-      'traces',
-      'trace-abc',
-      'push',
-      { [SPAN_PARAM]: 'span-xyz' }
-    )
+    expect(navigateToItem).toHaveBeenCalledWith('traces', 'trace-abc', 'push', {
+      [SPAN_PARAM]: 'span-xyz',
+    })
   })
 
   it('renders span id as plain text when trace id is missing', () => {

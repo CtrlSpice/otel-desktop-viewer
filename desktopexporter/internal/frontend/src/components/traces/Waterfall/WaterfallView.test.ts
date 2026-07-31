@@ -8,7 +8,8 @@ import { renderWithContexts } from '@/test/render-helpers'
 import { scrollMock } from '@/test/mock-virtual-list'
 
 vi.mock('@humanspeak/svelte-virtual-list', async () => {
-  const { default: MockVirtualList } = await import('@/test/MockVirtualList.svelte')
+  const { default: MockVirtualList } =
+    await import('@/test/MockVirtualList.svelte')
   return { default: MockVirtualList }
 })
 

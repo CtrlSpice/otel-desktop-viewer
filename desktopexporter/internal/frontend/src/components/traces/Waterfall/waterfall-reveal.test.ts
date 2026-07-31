@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  ancestorIdsOf,
-  expandAncestorsForSpan,
-} from './waterfall-reveal'
+import { ancestorIdsOf, expandAncestorsForSpan } from './waterfall-reveal'
 
 describe('ancestorIdsOf', () => {
   it('returns ancestors from immediate parent to root', () => {
@@ -39,7 +36,10 @@ describe('expandAncestorsForSpan', () => {
   })
 
   it('returns false when no ancestors are collapsed', () => {
-    const parentOf = new Map<string, string | null>([['f', 'e'], ['e', null]])
+    const parentOf = new Map<string, string | null>([
+      ['f', 'e'],
+      ['e', null],
+    ])
     const collapsed = new Set<string>()
     expect(expandAncestorsForSpan(collapsed, 'f', parentOf)).toBe(false)
   })

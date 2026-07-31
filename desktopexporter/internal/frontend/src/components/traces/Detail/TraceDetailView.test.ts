@@ -50,9 +50,7 @@ describe('TraceDetailView parent span link', () => {
 
   it('selects the parent span in the current trace on click', async () => {
     renderWithContexts(TraceDetailView, { span: makeSpan() })
-    await userEvent.click(
-      screen.getByRole('button', { name: 'parent-span' })
-    )
+    await userEvent.click(screen.getByRole('button', { name: 'parent-span' }))
     expect(setSpanInQuery).toHaveBeenCalledWith('parent-span', 'push')
   })
 

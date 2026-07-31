@@ -10,7 +10,11 @@ import {
   withoutParams,
   withQueryPatch,
 } from './router'
-import { EVENT_PARAM, SIGNAL_ITEM_QUERY_PARAMS, SPAN_PARAM } from './query-params'
+import {
+  EVENT_PARAM,
+  SIGNAL_ITEM_QUERY_PARAMS,
+  SPAN_PARAM,
+} from './query-params'
 
 describe('parseRoute', () => {
   it('parses an absolute href into path and query', () => {
@@ -128,10 +132,13 @@ describe('mergeItemQuery', () => {
   it('applies span and event together', () => {
     expect(
       buildSearch(
-        mergeItemQuery({ start: '0' }, {
-          [SPAN_PARAM]: 'abc',
-          [EVENT_PARAM]: '2',
-        })
+        mergeItemQuery(
+          { start: '0' },
+          {
+            [SPAN_PARAM]: 'abc',
+            [EVENT_PARAM]: '2',
+          }
+        )
       )
     ).toBe('?start=0&span=abc&event=2')
   })

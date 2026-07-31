@@ -50,10 +50,9 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
       datapoints: [makeDatapoint()],
       expandDatapointId: 'dp-1',
     })
-    expect(screen.getByRole('link', { name: 'trace: trace-ex' })).toHaveAttribute(
-      'href',
-      '/traces/trace-ex?start=0&end=1&span=span-ex'
-    )
+    expect(
+      screen.getByRole('link', { name: 'trace: trace-ex' })
+    ).toHaveAttribute('href', '/traces/trace-ex?start=0&end=1&span=span-ex')
     expect(screen.getByRole('link', { name: 'span: span-ex' })).toHaveAttribute(
       'href',
       '/traces/trace-ex?start=0&end=1&span=span-ex'
@@ -66,11 +65,8 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
       expandDatapointId: 'dp-1',
     })
     await userEvent.click(screen.getByRole('link', { name: 'span: span-ex' }))
-    expect(navigateToItem).toHaveBeenCalledWith(
-      'traces',
-      'trace-ex',
-      'push',
-      { [SPAN_PARAM]: 'span-ex' }
-    )
+    expect(navigateToItem).toHaveBeenCalledWith('traces', 'trace-ex', 'push', {
+      [SPAN_PARAM]: 'span-ex',
+    })
   })
 })
