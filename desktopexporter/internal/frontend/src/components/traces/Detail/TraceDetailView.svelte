@@ -50,6 +50,7 @@
   import LinksPanel from './LinksPanel.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { setSpanInQuery } from '@/route'
   import {
     LeftToRightListBulletIcon,
     LinkIcon,
@@ -226,7 +227,18 @@
                 <SpanField fieldName="trace id" fieldValue={span.traceID} fieldType="string" />
               {/if}
               {#if !isRoot && detailSearchFieldVisible(columnFilter, 'parentSpanID')}
-                <SpanField fieldName="parent span id" fieldValue={span.parentSpanID ?? ''} fieldType="string" />
+                <tr class="table-row">
+                  <td class="detail-cell">
+                    <span class="detail-cell__key">
+                      parent span id <span class="detail-cell__type">(string)</span>:
+                    </span>
+                    <button
+                      type="button"
+                      class="detail-cell__value link link-primary font-mono"
+                      onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
+                    >{span.parentSpanID}</button>
+                  </td>
+                </tr>
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'spanID')}
                 <SpanField fieldName="span id" fieldValue={span.spanID} fieldType="string" />
