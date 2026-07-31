@@ -350,4 +350,9 @@
     @apply m-0 px-3 py-6 text-center text-sm italic;
     color: var(--color-muted);
   }
+
+  .detail-cell__type {
+    color: var(--color-subtle);
+    @apply font-normal;
+  }
 </style>
