@@ -2,7 +2,8 @@
   import type { LinkData } from '@/types/api-types'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import SpanField from './SpanField.svelte'
-  import { navigateToItem } from '@/route'
+  import { itemHref, navigateToItem } from '@/route'
+  import { SPAN_PARAM } from '@/route/query-params'
 
   type Props = {
     links: LinkData[]
@@ -16,9 +17,19 @@
     if (link.droppedAttributesCount > 0) n++
     return n
   }
+
+  function spanPatch(link: LinkData) {
+    return link.spanID ? { [SPAN_PARAM]: link.spanID } : undefined
+  }
+
+  function goToLink(e: MouseEvent, link: LinkData) {
+    e.preventDefault()
+    navigateToItem('traces', link.traceID, 'push', spanPatch(link))
+  }
 </script>
 
 {#each links as link, index (index)}
+  {@const patch = spanPatch(link)}
   <FieldGroup label={link.traceID} count={linkFieldCount(link)} open={index === 0}>
     <table class="detail-fields w-full" aria-label="Link {link.traceID}">
       <tbody>
@@ -29,15 +40,23 @@
             </span>
             <a
               class="detail-cell__value link link-primary font-mono"
-              href="/traces/{link.traceID}"
-              onclick={e => {
-                e.preventDefault()
-                navigateToItem('traces', link.traceID)
-              }}
+              href={itemHref('traces', link.traceID, patch)}
+              onclick={e => goToLink(e, link)}
             >{link.traceID}</a>
           </td>
         </tr>
-        <SpanField fieldName="span id" fieldValue={link.spanID} fieldType="string" />
+        <tr class="table-row">
+          <td class="detail-cell">
+            <span class="detail-cell__key">
+              span id <span class="detail-cell__type">(string)</span>:
+            </span>
+            <a
+              class="detail-cell__value link link-primary font-mono"
+              href={itemHref('traces', link.traceID, patch)}
+              onclick={e => goToLink(e, link)}
+            >{link.spanID}</a>
+          </td>
+        </tr>
         <SpanField
           fieldName="trace state"
           fieldValue={link.traceState}
