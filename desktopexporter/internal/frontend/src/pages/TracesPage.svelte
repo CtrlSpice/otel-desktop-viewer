@@ -65,7 +65,10 @@
     navigateToItem,
     getSpanFromQuery,
     setSpanInQuery,
+    selectSpanEvent,
+    setEventInQuery,
     SPAN_PARAM,
+    EVENT_PARAM,
   } from '@/route'
   import type {
     TraceData,
@@ -136,8 +139,15 @@
     },
   })
 
-  // `/traces/<traceID>?span=<spanID>` — span selection lives in the query string.
+  // `/traces/<traceID>?span=<spanID>&event=<index>` — span/event in query string.
   let selectedSpanID = $derived(routeContext.route.query[SPAN_PARAM] ?? null)
+  let selectedEventIndex = $derived.by((): number | null => {
+    const raw = routeContext.route.query[EVENT_PARAM]
+    if (!raw) return null
+    const index = Number.parseInt(raw, 10)
+    if (!Number.isFinite(index) || index < 0) return null
+    return index
+  })
   let traceData = $state<TraceData | null>(null)
   let detailLoading = $state(false)
   let activeQueryTree = $state<QueryNode | undefined>(undefined)
@@ -151,6 +161,21 @@
       traceData?.spans[0]?.spanData ??
       undefined
   )
+
+  let resolvedEventIndex = $derived.by((): number | null => {
+    const span = selectedSpan
+    const index = selectedEventIndex
+    if (index === null || !span) return null
+    if (index >= span.events.length) return null
+    return index
+  })
+
+  $effect(() => {
+    const index = selectedEventIndex
+    const span = selectedSpan
+    if (index === null) return
+    if (!span || index >= span.events.length) setEventInQuery(null)
+  })
 
   $effect(() => {
     const summary = page.selectedSummary
@@ -171,6 +196,10 @@
 
   function handleSelectSpan(spanID: string) {
     setSpanInQuery(spanID, 'push')
+  }
+
+  function handleSelectEvent(spanID: string, eventIndex: number) {
+    selectSpanEvent(spanID, eventIndex, 'push')
   }
 
   function handleSearchResults(event: SearchResultEvent) {
@@ -312,6 +341,7 @@
           spans={traceData.spans}
           {selectedSpanID}
           onSelectSpan={handleSelectSpan}
+          onSelectEvent={handleSelectEvent}
           loading={detailLoading}
         />
       {:else if detailLoading}
@@ -326,7 +356,7 @@
     {/snippet}
 
     {#snippet detail()}
-      <DetailView span={selectedSpan} />
+      <DetailView span={selectedSpan} selectedEventIndex={resolvedEventIndex} />
     {/snippet}
 
     {#snippet pageFooter()}

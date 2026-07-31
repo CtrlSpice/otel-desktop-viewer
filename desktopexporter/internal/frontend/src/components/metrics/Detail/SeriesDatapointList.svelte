@@ -9,7 +9,9 @@
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { formatMetricValuePlain } from '@/components/metrics/utils/format-metric-value'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
-  import type { DataPoint } from '@/types/api-types'
+  import { itemHref, navigateToItem } from '@/route'
+  import { SPAN_PARAM } from '@/route/query-params'
+  import type { DataPoint, Exemplar } from '@/types/api-types'
 
   type Props = {
     datapoints: DataPoint[]
@@ -39,6 +41,16 @@
       Number(timestamp / 1_000_000n),
       timeContext.tz
     ).dateTime
+  }
+
+  function exemplarSpanPatch(ex: Exemplar) {
+    return ex.spanID ? { [SPAN_PARAM]: ex.spanID } : undefined
+  }
+
+  function goToExemplarTrace(e: MouseEvent, ex: Exemplar) {
+    if (!ex.traceID) return
+    e.preventDefault()
+    navigateToItem('traces', ex.traceID, 'push', exemplarSpanPatch(ex))
   }
 
   function datapointValueParts(
@@ -140,9 +152,20 @@
                         time: {formatDatapointTime(ex.timestamp)}
                       </span>
                       {#if ex.traceID}
-                        <span class="dp-list__detail-value">trace: {ex.traceID}</span>
+                        {@const patch = exemplarSpanPatch(ex)}
+                        <a
+                          class="dp-list__detail-value link link-primary font-mono"
+                          href={itemHref('traces', ex.traceID, patch)}
+                          onclick={e => goToExemplarTrace(e, ex)}
+                        >trace: {ex.traceID}</a>
                       {/if}
-                      {#if ex.spanID}
+                      {#if ex.spanID && ex.traceID}
+                        <a
+                          class="dp-list__detail-value link link-primary font-mono"
+                          href={itemHref('traces', ex.traceID, exemplarSpanPatch(ex))}
+                          onclick={e => goToExemplarTrace(e, ex)}
+                        >span: {ex.spanID}</a>
+                      {:else if ex.spanID}
                         <span class="dp-list__detail-value">span: {ex.spanID}</span>
                       {/if}
                       {#each dedupeAttributes(ex.filteredAttributes) as attr (attr.key)}

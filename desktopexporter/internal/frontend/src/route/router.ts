@@ -1,6 +1,11 @@
 // Client router: read/write URL state via the History API.
 
-import { SIGNAL_ITEM_QUERY_PARAMS } from './query-params'
+import {
+  SIGNAL_ITEM_QUERY_PARAMS,
+  type SignalItemQueryParam,
+} from './query-params'
+
+export type ItemQueryPatch = Partial<Record<SignalItemQueryParam, string>>
 
 export type SignalName = 'traces' | 'metrics' | 'logs'
 
@@ -189,21 +194,55 @@ export function navigateCurrentRoute(
 }
 
 /**
+ * Strips stale item-scoped params, then applies an optional caller patch.
+ *
+ * @remarks Used by {@link navigateToItem} and {@link itemHref}. Preserves the time window.
+ */
+export function mergeItemQuery(
+  query: Record<string, string>,
+  itemQuery?: ItemQueryPatch
+): Record<string, string> {
+  let next = withoutParams(query, SIGNAL_ITEM_QUERY_PARAMS)
+  if (itemQuery) next = withQueryPatch(next, itemQuery)
+  return next
+}
+
+/**
+ * Builds an href for a signal item path with optional item-scoped query params.
+ *
+ * @param signal - traces, metrics, or logs
+ * @param id - item id
+ * @param itemQuery - optional scoped params (e.g. span, event) applied after strip
+ */
+export function itemHref(
+  signal: SignalName,
+  id: string,
+  itemQuery?: ItemQueryPatch
+): string {
+  const route = readRoute()
+  const query = mergeItemQuery(route.query, itemQuery)
+  const path = `${signalPath(signal)}/${encodeURIComponent(id)}`
+  return path + buildSearch(query)
+}
+
+/**
  * Navigates to a signal item or bare list path.
  *
  * @param signal - traces, metrics, or logs
  * @param id - item id, or `null` for the list path
  * @param mode - {@link HistoryMode}; defaults to `'push'`
+ * @param itemQuery - optional scoped params (e.g. span, event) applied after strip
  *
- * @remarks Clears all signal item-scoped params (span, metric view) and preserves the time window.
+ * @remarks Clears all signal item-scoped params (span, event, metric view) and preserves the time window.
  */
 export function navigateToItem(
   signal: SignalName,
   id: string | null,
-  mode: HistoryMode = 'push'
+  mode: HistoryMode = 'push',
+  itemQuery?: ItemQueryPatch
 ): void {
   const route = readRoute()
-  const query = withoutParams(route.query, SIGNAL_ITEM_QUERY_PARAMS)
+  const query = mergeItemQuery(route.query, itemQuery)
   const base = signalPath(signal)
   const path = id ? `${base}/${encodeURIComponent(id)}` : base
   navigate(path + buildSearch(query), mode)

@@ -4,11 +4,17 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildSearch,
+  mergeItemQuery,
   parseRoute,
   signalIdFromPath,
   withoutParams,
   withQueryPatch,
 } from './router'
+import {
+  EVENT_PARAM,
+  SIGNAL_ITEM_QUERY_PARAMS,
+  SPAN_PARAM,
+} from './query-params'
 
 describe('parseRoute', () => {
   it('parses an absolute href into path and query', () => {
@@ -95,6 +101,62 @@ describe('withQueryPatch', () => {
     const query = { a: '1' }
     withQueryPatch(query, { a: '2', b: '3' })
     expect(query).toEqual({ a: '1' })
+  })
+})
+
+describe('mergeItemQuery', () => {
+  it('strips stale item-scoped params and applies a span patch', () => {
+    const merged = mergeItemQuery(
+      {
+        start: '0',
+        end: '1',
+        span: 'old-span',
+        event: '3',
+        agg: 'rate',
+      },
+      { [SPAN_PARAM]: 'new-span' }
+    )
+    expect(merged).toEqual({
+      start: '0',
+      end: '1',
+      [SPAN_PARAM]: 'new-span',
+    })
+  })
+
+  it('preserves the time window when no patch is given', () => {
+    expect(
+      mergeItemQuery({ start: '0', end: '1', span: 'x', dp: '1' })
+    ).toEqual({ start: '0', end: '1' })
+  })
+
+  it('applies span and event together', () => {
+    expect(
+      buildSearch(
+        mergeItemQuery(
+          { start: '0' },
+          {
+            [SPAN_PARAM]: 'abc',
+            [EVENT_PARAM]: '2',
+          }
+        )
+      )
+    ).toBe('?start=0&span=abc&event=2')
+  })
+
+  it('strips all signal item query params', () => {
+    const stripped = withoutParams(
+      {
+        start: '0',
+        span: '1',
+        event: '2',
+        agg: 'rate',
+        htab: 'heatmap',
+        hscope: 'window',
+        dp: 'dp-1',
+      },
+      SIGNAL_ITEM_QUERY_PARAMS
+    )
+    expect(stripped).toEqual({ start: '0' })
   })
 })
 

@@ -50,6 +50,7 @@
   import LinksPanel from './LinksPanel.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { setSpanInQuery } from '@/route'
   import {
     LeftToRightListBulletIcon,
     LinkIcon,
@@ -58,11 +59,12 @@
 
   type Props = {
     span: SpanData | undefined
+    selectedEventIndex?: number | null
     /** Empty: show all Fields rows. Non-empty: only selected search fields / attributes. */
     columnFilter?: FieldDefinition[]
   }
 
-  let { span, columnFilter = [] }: Props = $props()
+  let { span, selectedEventIndex = null, columnFilter = [] }: Props = $props()
 
   let timeContext = getTimeContext()
 
@@ -82,6 +84,10 @@
 
   type Tab = 'fields' | 'events' | 'links'
   let activeTab = $state<Tab>('fields')
+
+  $effect(() => {
+    if (selectedEventIndex !== null) activeTab = 'events'
+  })
 
   let spanOpen = $state(true)
   let resourceOpen = $state(true)
@@ -226,7 +232,18 @@
                 <SpanField fieldName="trace id" fieldValue={span.traceID} fieldType="string" />
               {/if}
               {#if !isRoot && detailSearchFieldVisible(columnFilter, 'parentSpanID')}
-                <SpanField fieldName="parent span id" fieldValue={span.parentSpanID ?? ''} fieldType="string" />
+                <tr class="table-row">
+                  <td class="detail-cell">
+                    <span class="detail-cell__key">
+                      parent span id <span class="detail-cell__type">(string)</span>:
+                    </span>
+                    <button
+                      type="button"
+                      class="detail-cell__value link link-primary font-mono"
+                      onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
+                    >{span.parentSpanID}</button>
+                  </td>
+                </tr>
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'spanID')}
                 <SpanField fieldName="span id" fieldValue={span.spanID} fieldType="string" />
@@ -288,7 +305,11 @@
         {#if numEvents === 0}
           <p class="detail-view__tab-empty">No events recorded for this span</p>
         {:else}
-          <EventsPanel events={span.events} spanStartTime={span.startTime} />
+          <EventsPanel
+            events={span.events}
+            spanStartTime={span.startTime}
+            {selectedEventIndex}
+          />
         {/if}
       {:else if activeTab === 'links'}
         {#if numLinks === 0}
@@ -328,5 +349,10 @@
   .detail-view__tab-empty {
     @apply m-0 px-3 py-6 text-center text-sm italic;
     color: var(--color-muted);
+  }
+
+  .detail-cell__type {
+    color: var(--color-subtle);
+    @apply font-normal;
   }
 </style>
