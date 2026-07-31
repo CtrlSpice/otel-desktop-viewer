@@ -32,7 +32,7 @@
    *  a degenerate interpolation. */
   const MIN_TRACE_PALETTE = 5
 
-  export type EventMarker = { percent: number; name: string }
+  export type EventMarker = { percent: number; name: string; eventIndex: number }
 
   export type WaterfallRowData = {
     spanNode: SpanNode
@@ -223,13 +223,14 @@
             parseBigInt(node.spanData.startTime)
         ),
         tree: treeMeta[i]!,
-        eventMarkers: node.spanData.events.map(e => ({
+        eventMarkers: node.spanData.events.map((e, eventIndex) => ({
           percent: getOffsetPercent(
             bounds.start,
             bounds.duration,
             parseBigInt(e.timestamp)
           ),
           name: e.name,
+          eventIndex,
         })),
       }
     })
@@ -309,6 +310,7 @@
     spans: SpanNode[]
     selectedSpanID: string | null
     onSelectSpan: (spanID: string) => void
+    onSelectEvent?: (spanID: string, eventIndex: number) => void
     loading?: boolean
     footer?: Snippet
   }
@@ -317,6 +319,7 @@
     spans,
     selectedSpanID,
     onSelectSpan,
+    onSelectEvent,
     loading = false,
     footer,
   }: Props = $props()
@@ -765,6 +768,7 @@
                   onSelectSpan(sid)
                   void focusRowTr(sid)
                 }}
+                onSelectEvent={eventIndex => onSelectEvent?.(sid, eventIndex)}
                 onToggleExpand={() => toggleCollapse(sid)}
               />
             {/snippet}

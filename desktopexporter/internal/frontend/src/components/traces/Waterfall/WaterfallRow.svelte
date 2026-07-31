@@ -16,6 +16,7 @@
     serviceColWidth: number
     matched?: boolean
     onRowClick: () => void
+    onSelectEvent?: (eventIndex: number) => void
     onToggleExpand: () => void
   }
 
@@ -29,6 +30,7 @@
     serviceColWidth,
     matched = false,
     onRowClick,
+    onSelectEvent,
     onToggleExpand,
   }: Props = $props()
 
@@ -159,6 +161,7 @@
             markers={row.eventMarkers}
             color={row.color}
             layer="tooltips"
+            {onSelectEvent}
           />
         </div>
       {/if}

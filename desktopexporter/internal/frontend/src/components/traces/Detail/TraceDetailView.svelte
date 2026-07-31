@@ -59,11 +59,12 @@
 
   type Props = {
     span: SpanData | undefined
+    selectedEventIndex?: number | null
     /** Empty: show all Fields rows. Non-empty: only selected search fields / attributes. */
     columnFilter?: FieldDefinition[]
   }
 
-  let { span, columnFilter = [] }: Props = $props()
+  let { span, selectedEventIndex = null, columnFilter = [] }: Props = $props()
 
   let timeContext = getTimeContext()
 
@@ -83,6 +84,10 @@
 
   type Tab = 'fields' | 'events' | 'links'
   let activeTab = $state<Tab>('fields')
+
+  $effect(() => {
+    if (selectedEventIndex !== null) activeTab = 'events'
+  })
 
   let spanOpen = $state(true)
   let resourceOpen = $state(true)
@@ -300,7 +305,11 @@
         {#if numEvents === 0}
           <p class="detail-view__tab-empty">No events recorded for this span</p>
         {:else}
-          <EventsPanel events={span.events} spanStartTime={span.startTime} />
+          <EventsPanel
+            events={span.events}
+            spanStartTime={span.startTime}
+            {selectedEventIndex}
+          />
         {/if}
       {:else if activeTab === 'links'}
         {#if numLinks === 0}

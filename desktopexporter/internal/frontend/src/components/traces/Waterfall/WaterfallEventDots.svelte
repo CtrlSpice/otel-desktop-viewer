@@ -8,9 +8,10 @@
     /** `dots` renders visible markers under bar labels; `tooltips` renders
      *  hover targets + labels in a higher layer so tooltips paint above text. */
     layer: 'dots' | 'tooltips'
+    onSelectEvent?: (eventIndex: number) => void
   }
 
-  let { markers, color, layer }: Props = $props()
+  let { markers, color, layer, onSelectEvent }: Props = $props()
 </script>
 
 {#each markers as marker}
@@ -22,14 +23,19 @@
       aria-hidden="true"
     ></span>
   {:else}
-    <span
+    <button
+      type="button"
       class="event-marker event-marker--tooltip-target"
       style:left="{marker.percent}%"
       style:--marker-color={color}
       data-tooltip={marker.name}
       data-side={marker.percent < 50 ? 'right' : 'left'}
       aria-label="Event: {marker.name}"
-    ></span>
+      onclick={e => {
+        e.stopPropagation()
+        onSelectEvent?.(marker.eventIndex)
+      }}
+    ></button>
   {/if}
 {/each}
 
@@ -60,7 +66,7 @@
   /* Invisible hit target sized larger than the visible dot so hover is
      forgiving. Tooltip paints in the z-20 layer above bar labels. */
   .event-marker--tooltip-target {
-    @apply rounded-full border-0 pointer-events-auto;
+    @apply rounded-full border-0 pointer-events-auto cursor-pointer;
     width: var(--waterfall-bar-height, 0.875rem);
     height: var(--waterfall-bar-height, 0.875rem);
     background: transparent;
