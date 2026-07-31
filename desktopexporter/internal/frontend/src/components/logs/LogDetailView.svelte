@@ -120,22 +120,24 @@
               fieldValue={severityLabel}
             />
             {#if log.traceID}
+              {@const traceID = log.traceID}
               <LogField fieldName="trace id" fieldType="string">
                 {#snippet value()}
                   <a
                     class="detail-cell__value link link-primary font-mono"
-                    href={itemHref('traces', log.traceID, traceSpanPatch)}
+                    href={itemHref('traces', traceID, traceSpanPatch)}
                     onclick={goToTrace}
-                  >{log.traceID}</a>
+                  >{traceID}</a>
                 {/snippet}
               </LogField>
             {/if}
             {#if log.spanID && log.traceID}
+              {@const traceID = log.traceID}
               <LogField fieldName="span id" fieldType="string">
                 {#snippet value()}
                   <a
                     class="detail-cell__value link link-primary font-mono"
-                    href={itemHref('traces', log.traceID, traceSpanPatch)}
+                    href={itemHref('traces', traceID, traceSpanPatch)}
                     onclick={goToTrace}
                   >{log.spanID}</a>
                 {/snippet}
