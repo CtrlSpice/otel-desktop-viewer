@@ -257,10 +257,10 @@
     computeAutoCollapsedParents,
     computeSearchCollapsedParents,
   } from './waterfall-auto-collapse'
+  import { expandAncestorsForSpan } from './waterfall-reveal'
 
   const WATERFALL_ROW_HEIGHT_PX = 28
   const GRID_PAGE_STEP = 8
-  const VISIBLE_MARGIN_PX = 24
 
   const KEY_DELTAS: Record<string, KeyDelta> = {
     ArrowDown: { kind: 'relative', offset: 1 },
@@ -521,12 +521,13 @@
       index: number
       smoothScroll?: boolean
       shouldThrowOnBounds?: boolean
-      align?: 'auto' | 'top' | 'bottom' | 'nearest'
+      align?: 'auto' | 'top' | 'bottom' | 'nearest' | 'center'
     }) => Promise<void>
   }
 
   let vlistRef = $state<VirtualListRef | null>(null)
   let lastScrolledSelection: string | null = null
+  let activeScroll: Promise<void> = Promise.resolve()
 
   function visibleRowIndex(spanId: string): number {
     return visibleRows.findIndex(
@@ -534,36 +535,35 @@
     )
   }
 
-  function isComfortablyVisible(idx: number): boolean {
-    const viewport = scrollContainerEl?.querySelector<HTMLElement>(
-      '.waterfall-vlist-viewport'
-    )
-    const row = viewport?.querySelector<HTMLElement>(
-      `[data-original-index="${idx}"]`
-    )
-    if (!viewport || !row) return false
-    const vRect = viewport.getBoundingClientRect()
-    const rRect = row.getBoundingClientRect()
-    return (
-      rRect.top >= vRect.top + VISIBLE_MARGIN_PX &&
-      rRect.bottom <= vRect.bottom - VISIBLE_MARGIN_PX
-    )
+  function ensureSpanExpanded(spanId: string): boolean {
+    const next = new Set(collapsedParents)
+    const changed = expandAncestorsForSpan(next, spanId, parentBySpanId)
+    if (changed) collapsedParents = next
+    return changed
+  }
+
+  async function revealAndScrollToSpan(
+    spanId: string,
+    smoothScroll = true
+  ): Promise<void> {
+    if (ensureSpanExpanded(spanId)) await tick()
+    const idx = visibleRowIndex(spanId)
+    if (idx < 0 || !vlistRef) return
+    activeScroll = vlistRef.scroll({
+      index: idx,
+      align: 'center',
+      smoothScroll,
+      shouldThrowOnBounds: false,
+    })
+    await activeScroll
   }
 
   $effect(() => {
     const id = selectedSpanID
     if (!vlistRef || !id) return
     if (id === lastScrolledSelection) return
-    const idx = visibleRowIndex(id)
-    if (idx < 0) return
     lastScrolledSelection = id
-    if (isComfortablyVisible(idx)) return
-    void vlistRef.scroll({
-      index: idx,
-      align: 'auto',
-      smoothScroll: true,
-      shouldThrowOnBounds: false,
-    })
+    void revealAndScrollToSpan(id)
   })
 
   $effect(() => {
@@ -574,20 +574,9 @@
 
   let gridHostEl = $state<HTMLDivElement | null>(null)
 
-  async function scrollRowIntoView(spanId: string) {
-    const idx = visibleRowIndex(spanId)
-    if (idx >= 0 && vlistRef) {
-      await vlistRef.scroll({
-        index: idx,
-        align: 'nearest',
-        smoothScroll: false,
-        shouldThrowOnBounds: false,
-      })
-    }
-  }
-
   async function focusRowTr(spanId: string) {
-    await scrollRowIntoView(spanId)
+    await tick()
+    await activeScroll
     await tick()
     const safe = escapeForSelector(spanId)
     scrollContainerEl
