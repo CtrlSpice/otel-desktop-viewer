@@ -1,7 +1,6 @@
 package metrics_test
 
 import (
-	"go.uber.org/zap"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -18,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.uber.org/zap"
 )
 
 const maxNano = 1<<63 - 1

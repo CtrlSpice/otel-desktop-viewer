@@ -1,7 +1,6 @@
 package logs_test
 
 import (
-	"go.uber.org/zap"
 	"context"
 	"database/sql"
 	"encoding/hex"
@@ -20,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.

@@ -1,7 +1,6 @@
 package spans_test
 
 import (
-	"go.uber.org/zap"
 	"context"
 	"database/sql/driver"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap"
 )
 
 // benchTraces builds a batch shaped like the reference capture: 17 attribute

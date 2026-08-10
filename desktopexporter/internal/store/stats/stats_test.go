@@ -1,7 +1,6 @@
 package stats_test
 
 import (
-	"go.uber.org/zap"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +21,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.

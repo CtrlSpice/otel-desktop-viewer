@@ -1,7 +1,6 @@
 package ingest_test
 
 import (
-	"go.uber.org/zap"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -15,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.
