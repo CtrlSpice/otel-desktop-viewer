@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.uber.org/zap"
 )
 
 const maxNano = 1<<63 - 1
@@ -49,7 +50,7 @@ func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	t.Helper()
 	ctx := context.Background()
-	s, err := store.NewStore(ctx, "")
+	s, err := store.NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	return s, ctx, func() { s.Close() }
 }

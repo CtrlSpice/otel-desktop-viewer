@@ -74,7 +74,7 @@ func (e *DuckDBExtension) Store() *store.Store {
 }
 
 func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
-	str, err := store.NewStore(ctx, e.cfg.Db)
+	str, err := store.NewStore(ctx, e.cfg.Db, e.logger)
 	if err != nil {
 		return err
 	}

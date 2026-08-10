@@ -11,6 +11,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap"
 )
 
 // benchTraces builds a batch shaped like the reference capture: 17 attribute
@@ -77,7 +78,7 @@ func BenchmarkIngestBatch(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
-				s, err := store.NewStore(ctx, "")
+				s, err := store.NewStore(ctx, "", zap.NewNop())
 				if err != nil {
 					b.Fatal(err)
 				}

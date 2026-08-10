@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.
@@ -39,7 +40,7 @@ func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	t.Helper()
 	ctx := context.Background()
-	s, err := store.NewStore(ctx, "")
+	s, err := store.NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	return s, ctx, func() { s.Close() }
 }

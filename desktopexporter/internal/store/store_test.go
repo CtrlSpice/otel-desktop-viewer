@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"go.uber.org/zap"
 	"os"
 	"testing"
 	"time"
@@ -24,7 +25,7 @@ import (
 func setupStore(t *testing.T) (*Store, context.Context, func()) {
 	t.Helper()
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	return s, ctx, func() { s.Close() }
 }
@@ -113,7 +114,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			ctx := context.Background()
 
 			// Test store initialization
-			s, err := NewStore(ctx, tt.dbPath)
+			s, err := NewStore(ctx, tt.dbPath, zap.NewNop())
 			require.NoError(t, err, "store should initialize without error")
 			assert.NotNil(t, s.db, "database connection should not be nil")
 			assert.NotNil(t, s.conn, "duckdb connection should not be nil")
@@ -168,7 +169,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, err, "store should close without error")
 
 			// Test store reopening
-			s, err = NewStore(ctx, tt.dbPath)
+			s, err = NewStore(ctx, tt.dbPath, zap.NewNop())
 			require.NoError(t, err, "store should reopen without error")
 			assert.NotNil(t, s.db, "database connection should be reestablished")
 			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
@@ -213,7 +214,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 // TestStoreIndexesCreated verifies that all IndexCreationQueries are applied on store init.
 func TestStoreIndexesCreated(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -228,7 +229,7 @@ func TestStoreIndexesCreated(t *testing.T) {
 // chk_metric_type_valid is rejected.
 func TestStoreConstraintsEnforced(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -276,13 +277,13 @@ func TestStorePersistentReopenIdempotent(t *testing.T) {
 
 	ctx := context.Background()
 
-	s, err := NewStore(ctx, dbPath)
+	s, err := NewStore(ctx, dbPath, zap.NewNop())
 	require.NoError(t, err)
 	require.NoError(t, s.Close())
 
 	// Reopening must not panic or fatal - constraints use "already exists" guard,
 	// indexes use IF NOT EXISTS.
-	s2, err := NewStore(ctx, dbPath)
+	s2, err := NewStore(ctx, dbPath, zap.NewNop())
 	require.NoError(t, err)
 
 	var indexCount int
@@ -296,7 +297,7 @@ func TestStorePersistentReopenIdempotent(t *testing.T) {
 // constraint accepts a valid ExponentialHistogram datapoint.
 func TestStoreExponentialHistogramConstraint(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -328,7 +329,7 @@ func TestStoreExponentialHistogramConstraint(t *testing.T) {
 
 func TestStoreLifecycleErrors(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 
 	// Test using store after close
