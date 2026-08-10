@@ -16,6 +16,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
 const (
@@ -33,18 +34,26 @@ type desktopExporter struct {
 	server *server.Server
 	store  *store.Store
 	logger *zap.Logger
+	tel    *telemetry.Telemetry
 
 	retentionCancel context.CancelFunc
 	retentionDone   chan struct{}
 }
 
-func newDesktopExporter(ctx context.Context, cfg *Config, logger *zap.Logger) (*desktopExporter, error) {
+func newDesktopExporter(ctx context.Context, cfg *Config, settings component.TelemetrySettings) (*desktopExporter, error) {
+	logger := settings.Logger
+
+	tel, err := telemetry.New(settings, cfg.SelfTelemetry(), cfg.InstrumentIngest())
+	if err != nil {
+		return nil, err
+	}
+
 	str, err := store.NewStore(ctx, cfg.Db)
 	if err != nil {
 		return nil, err
 	}
 
-	srv, err := server.NewServer(cfg.Endpoint, str, logger)
+	srv, err := server.NewServer(cfg.Endpoint, str, logger, tel)
 	if err != nil {
 		str.Close()
 		return nil, err
@@ -71,6 +80,7 @@ func newDesktopExporter(ctx context.Context, cfg *Config, logger *zap.Logger) (*
 		server: srv,
 		store:  str,
 		logger: logger,
+		tel:    tel,
 	}, nil
 }
 
@@ -88,29 +98,73 @@ func (e *desktopExporter) runRetentionLoop(ctx context.Context, done chan<- stru
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := e.store.EnforceRetention(ctx, e.store.RetentionCap()); err != nil {
-				e.logger.Error("retention enforcement failed", zap.Error(err))
-			}
+			e.enforceRetention(ctx)
 		}
 	}
 }
 
+// enforceRetention runs one retention pass inside a span that carries the store
+// size on either side of it, so how much a pass actually reclaims is visible.
+//
+// The measurements are best-effort: a failed SizeBytes reports 0 for that side
+// and the pass runs (or is reported) anyway. Instrumentation must never break
+// the thing it measures, and a pass that pruned successfully is not a failure
+// just because we could not size the result.
+func (e *desktopExporter) enforceRetention(ctx context.Context) {
+	spanCtx, endRetention := e.tel.Retention(ctx)
+
+	before := e.storeSizeBytes(spanCtx)
+	err := e.store.EnforceRetention(spanCtx, e.store.RetentionCap())
+	after := e.storeSizeBytes(spanCtx)
+
+	endRetention(before, after, err)
+
+	if err != nil {
+		e.logger.Error("retention enforcement failed", zap.Error(err))
+	}
+}
+
+// storeSizeBytes measures the store for the retention span, reporting 0 when
+// the measurement itself fails.
+func (e *desktopExporter) storeSizeBytes(ctx context.Context) int64 {
+	size, err := e.store.SizeBytes(ctx)
+	if err != nil {
+		e.logger.Debug("could not measure store size for retention span", zap.Error(err))
+		return 0
+	}
+	return size
+}
+
+// The three push paths each wrap ingest in a span carrying the batch's item
+// count, so throughput is measurable per signal. The span covers WithConn, not
+// just the write, because acquiring the store's write lock is part of what
+// makes ingest slow when it contends with queries.
+
 func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
-	return e.store.WithConn(func(conn driver.Conn) error {
+	ctx, end := e.tel.Ingest(ctx, "traces", source.SpanCount())
+	err := e.store.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, source)
 	})
+	end(err)
+	return err
 }
 
 func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {
-	return e.store.WithConn(func(conn driver.Conn) error {
+	ctx, end := e.tel.Ingest(ctx, "metrics", source.DataPointCount())
+	err := e.store.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, source)
 	})
+	end(err)
+	return err
 }
 
 func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error {
-	return e.store.WithConn(func(conn driver.Conn) error {
+	ctx, end := e.tel.Ingest(ctx, "logs", source.LogRecordCount())
+	err := e.store.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, source)
 	})
+	end(err)
+	return err
 }
 
 func (e *desktopExporter) Start(ctx context.Context, host component.Host) error {

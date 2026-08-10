@@ -72,35 +72,112 @@ func runInteractive(params otelcol.CollectorSettings) error {
 	return nil
 }
 
+// configOptions carries the CLI flags that shape the composed collector config.
+// Extracted so collectorURIs can be exercised in tests without running a
+// collector.
+type configOptions struct {
+	host        string
+	httpPort    int
+	grpcPort    int
+	browserPort int
+	db          string
+	dbMaxSize   string
+
+	// selfTelemetry turns on the exporter's own instrumentation and points the
+	// collector's service telemetry back at this process's own OTLP receiver,
+	// so the viewer renders its own spans and metrics.
+	selfTelemetry bool
+}
+
+// collectorURIs builds the yaml config fragments that stand in for a config
+// file. Keys use confmap's "::" delimiter for flat values; the telemetry block
+// is a nested document because the declarative-config reader and processor
+// schemas are lists of maps.
+func collectorURIs(o configOptions) []string {
+	endpoint := formatEndpoint(o.host)
+
+	uris := []string{
+		`yaml:receivers::otlp::protocols::http::cors::allowed_origins: [https://*,http://*]`,
+		`yaml:receivers::otlp::protocols::http::endpoint: "` + endpoint(o.httpPort) + `"`,
+		`yaml:receivers::otlp::protocols::grpc::endpoint: "` + endpoint(o.grpcPort) + `"`,
+		`yaml:exporters::desktop::endpoint: "` + endpoint(o.browserPort) + `"`,
+		`yaml:exporters::desktop::db: ` + o.db,
+		`yaml:exporters::desktop::db_max_size: "` + o.dbMaxSize + `"`,
+		`yaml:service::pipelines::traces::receivers: [otlp]`,
+		`yaml:service::pipelines::traces::exporters: [desktop]`,
+		`yaml:service::pipelines::metrics::receivers: [otlp]`,
+		`yaml:service::pipelines::metrics::exporters: [desktop]`,
+		`yaml:service::pipelines::logs::receivers: [otlp]`,
+		`yaml:service::pipelines::logs::exporters: [desktop]`,
+	}
+
+	return append(uris, telemetryURIs(o, endpoint(o.grpcPort))...)
+}
+
+// telemetryURIs composes the service::telemetry block and the exporter's own
+// telemetry mode.
+//
+// Off is the default and keeps metrics at level "none", which is what stops the
+// collector standing up a metrics pipeline for a tool nobody asked to observe.
+//
+// The self mode points both the metric readers and the span processors at this
+// process's own OTLP gRPC receiver, so the viewer renders its own telemetry.
+// The explicit readers list matters even though the config would validate
+// without it: otelconftelemetry's default config already carries a Pull
+// (Prometheus) reader, so raising the level without replacing that reader would
+// publish metrics on a Prometheus endpoint rather than sending them to us.
+//
+// The exporter is put in "self" rather than "enabled" so ingest spans are
+// suppressed -- writing our own telemetry would otherwise emit spans describing
+// that write.
+func telemetryURIs(o configOptions, otlpEndpoint string) []string {
+	if !o.selfTelemetry {
+		return []string{`yaml:service::telemetry::metrics::level: none`}
+	}
+
+	target := "http://" + otlpEndpoint
+	return []string{
+		`yaml:exporters::desktop::telemetry: self`,
+		"yaml:" + `
+service:
+  telemetry:
+    metrics:
+      level: detailed
+      readers:
+        - periodic:
+            exporter:
+              otlp:
+                protocol: grpc
+                endpoint: ` + target + `
+    traces:
+      processors:
+        - batch:
+            exporter:
+              otlp:
+                protocol: grpc
+                endpoint: ` + target + `
+`,
+	}
+}
+
 func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	var httpPortFlag, grpcPortFlag, browserPortFlag int
 	var hostFlag, dbFlag, dbMaxSizeFlag string
-	var openBrowserFlag bool
+	var openBrowserFlag, telemetryFlag bool
 
 	rootCmd := &cobra.Command{
 		Use:     set.BuildInfo.Command,
 		Version: set.BuildInfo.Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Format the host for use in endpoint addresses.
-			// IPv6 addresses must be wrapped in brackets for net.JoinHostPort
-			// and YAML values containing special characters need quoting.
-			endpoint := formatEndpoint(hostFlag)
-
-			set.ConfigProviderSettings.ResolverSettings.URIs = []string{
-				`yaml:receivers::otlp::protocols::http::cors::allowed_origins: [https://*,http://*]`,
-				`yaml:receivers::otlp::protocols::http::endpoint: "` + endpoint(httpPortFlag) + `"`,
-				`yaml:receivers::otlp::protocols::grpc::endpoint: "` + endpoint(grpcPortFlag) + `"`,
-				`yaml:exporters::desktop::endpoint: "` + endpoint(browserPortFlag) + `"`,
-				`yaml:exporters::desktop::db: ` + dbFlag,
-				`yaml:exporters::desktop::db_max_size: "` + dbMaxSizeFlag + `"`,
-				`yaml:service::pipelines::traces::receivers: [otlp]`,
-				`yaml:service::pipelines::traces::exporters: [desktop]`,
-				`yaml:service::pipelines::metrics::receivers: [otlp]`,
-				`yaml:service::pipelines::metrics::exporters: [desktop]`,
-				`yaml:service::pipelines::logs::receivers: [otlp]`,
-				`yaml:service::pipelines::logs::exporters: [desktop]`,
-				`yaml:service::telemetry::metrics::level: none`,
-			}
+			set.ConfigProviderSettings.ResolverSettings.URIs = collectorURIs(configOptions{
+				host:          hostFlag,
+				httpPort:      httpPortFlag,
+				grpcPort:      grpcPortFlag,
+				browserPort:   browserPortFlag,
+				db:            dbFlag,
+				dbMaxSize:     dbMaxSizeFlag,
+				selfTelemetry: telemetryFlag,
+			})
 			set.ConfigProviderSettings.ResolverSettings.DefaultScheme = "env"
 
 			if openBrowserFlag {
@@ -126,6 +203,7 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().IntVar(&browserPortFlag, "browser-port", 8000, "The port number where we expose our data")
 	rootCmd.Flags().StringVar(&hostFlag, "host", "localhost", "The host where we expose our all endpoints (OTLP receivers and browser). Use '::' or '0.0.0.0' to listen on all interfaces.")
 	rootCmd.Flags().StringVar(&dbFlag, "db", "", "The path of your database file. Omitting this flag opens DuckDB in in-memory mode, with no data persisted to disk.")
+	rootCmd.Flags().BoolVar(&telemetryFlag, "telemetry", false, "Emit the viewer's own traces and metrics to its own OTLP receiver, so it can be observed in its own UI.")
 	rootCmd.Flags().StringVar(&dbMaxSizeFlag, "db-max-size", "", "Maximum size of the telemetry store (e.g. 512MB, 2GB). The oldest telemetry is pruned once the limit is reached. Use 0 to disable pruning. Defaults to 512MB in in-memory mode and 2GB with a database file.")
 
 	return rootCmd

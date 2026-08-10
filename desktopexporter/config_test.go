@@ -43,6 +43,29 @@ func TestParseByteSize(t *testing.T) {
 	}
 }
 
+// "self" is the mode that differs: instrumented, but with ingest suppressed so
+// exporting to yourself does not distort the ingest numbers.
+func TestTelemetryMode(t *testing.T) {
+	tests := []struct {
+		telemetry        string
+		enabled          bool
+		instrumentIngest bool
+	}{
+		{telemetry: "", enabled: false, instrumentIngest: false},
+		{telemetry: TelemetryDisabled, enabled: false, instrumentIngest: false},
+		{telemetry: TelemetryEnabled, enabled: true, instrumentIngest: true},
+		{telemetry: TelemetrySelf, enabled: true, instrumentIngest: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.telemetry, func(t *testing.T) {
+			cfg := Config{Endpoint: "localhost:8000", Telemetry: tc.telemetry}
+			assert.Equal(t, tc.enabled, cfg.SelfTelemetry())
+			assert.Equal(t, tc.instrumentIngest, cfg.InstrumentIngest())
+		})
+	}
+}
+
 func TestConfigValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -65,6 +88,32 @@ func TestConfigValidate(t *testing.T) {
 			name:    "invalid max size",
 			cfg:     Config{Endpoint: "localhost:8000", DbMaxSize: "lots"},
 			wantErr: "invalid db_max_size",
+		},
+		{
+			name: "telemetry disabled",
+			cfg:  Config{Endpoint: "localhost:8000", Telemetry: TelemetryDisabled},
+		},
+		{
+			name: "telemetry on",
+			cfg:  Config{Endpoint: "localhost:8000", Telemetry: TelemetryEnabled},
+		},
+		{
+			name: "telemetry self",
+			cfg:  Config{Endpoint: "localhost:8000", Telemetry: TelemetrySelf},
+		},
+		{
+			name: "telemetry unset",
+			cfg:  Config{Endpoint: "localhost:8000", Telemetry: ""},
+		},
+		{
+			name:    "invalid telemetry",
+			cfg:     Config{Endpoint: "localhost:8000", Telemetry: "yes please"},
+			wantErr: `invalid telemetry "yes please": expected "disabled", "enabled", or "self"`,
+		},
+		{
+			name:    "telemetry is case sensitive",
+			cfg:     Config{Endpoint: "localhost:8000", Telemetry: "Enabled"},
+			wantErr: `invalid telemetry "Enabled"`,
 		},
 	}
 

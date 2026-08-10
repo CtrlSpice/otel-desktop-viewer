@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -22,7 +23,7 @@ func setupServer(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
 	str, err := store.NewStore(context.Background(), "")
 	require.NoError(t, err)
-	s, err := NewServer("localhost:8000", str, zap.NewNop())
+	s, err := NewServer("localhost:8000", str, zap.NewNop(), telemetry.Disabled())
 	require.NoError(t, err)
 	testServer := httptest.NewServer(s.server.Handler)
 
@@ -184,7 +185,7 @@ func TestStartBindConflict(t *testing.T) {
 	require.NoError(t, err)
 	defer str.Close()
 
-	s, err := NewServer(addr, str, zap.NewNop())
+	s, err := NewServer(addr, str, zap.NewNop(), telemetry.Disabled())
 	require.NoError(t, err)
 
 	err = s.Start()

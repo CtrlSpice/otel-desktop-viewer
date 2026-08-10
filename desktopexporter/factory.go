@@ -31,8 +31,9 @@ func NewFactory() exporter.Factory {
 // Create default configurations
 func createDefaultConfig() component.Config {
 	return &Config{
-		Endpoint: defaultEndpoint,
-		Db:       defaultDb,
+		Endpoint:  defaultEndpoint,
+		Db:        defaultDb,
+		Telemetry: TelemetryDisabled,
 	}
 }
 
@@ -48,7 +49,7 @@ func createMetricsExporter(ctx context.Context, set exporter.Settings, config co
 	}
 
 	exporter, err := exporters.GetOrAdd(desktopCfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(ctx, desktopCfg, set.Logger)
+		return newDesktopExporter(ctx, desktopCfg, set.TelemetrySettings)
 	})
 	if err != nil {
 		return nil, err
@@ -77,7 +78,7 @@ func createLogsExporter(ctx context.Context, set exporter.Settings, config compo
 	}
 
 	e, err := exporters.GetOrAdd(cfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(ctx, cfg, set.Logger)
+		return newDesktopExporter(ctx, cfg, set.TelemetrySettings)
 	})
 	if err != nil {
 		return nil, err
@@ -103,7 +104,7 @@ func createTracesExporter(ctx context.Context, set exporter.Settings, config com
 	}
 
 	e, err := exporters.GetOrAdd(cfg, func() (*desktopExporter, error) {
-		return newDesktopExporter(ctx, cfg, set.Logger)
+		return newDesktopExporter(ctx, cfg, set.TelemetrySettings)
 	})
 	if err != nil {
 		return nil, err
