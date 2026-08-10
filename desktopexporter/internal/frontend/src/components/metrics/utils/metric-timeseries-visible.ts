@@ -24,7 +24,7 @@ import type { AggregationView } from './aggregation'
  * once this many are selected. Histogram metrics are uncapped — the
  * heatmap can show every attribute breakdown at once.
  */
-export const MAX_VISIBLE_TIMESERIES = 10
+export const MAX_VISIBLE_TIMESERIES = 22
 
 /**
  * How many timeseries to auto-select on first load (before the user
@@ -32,7 +32,7 @@ export const MAX_VISIBLE_TIMESERIES = 10
  * so the initial chart is readable; the user can manually check more
  * up to the cap.
  */
-export const DEFAULT_VISIBLE_TIMESERIES = 5
+export const DEFAULT_VISIBLE_TIMESERIES = 10
 
 const STORAGE_PREFIX = 'metrics:view:'
 
