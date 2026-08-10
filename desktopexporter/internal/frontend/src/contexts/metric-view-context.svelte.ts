@@ -895,7 +895,10 @@ export function createMetricViewContext(
       startNs,
       endNs,
       100,
-      temporality
+      temporality,
+      // Align columns to whichever clock the axis is labelled in, so a
+      // day-scale bucket breaks where the reader expects the day to break.
+      timeContext.tz
     )
     if ('kind' in perAttribute) {
       const err = histogramAggregationErrorToBucketSeriesError(perAttribute)

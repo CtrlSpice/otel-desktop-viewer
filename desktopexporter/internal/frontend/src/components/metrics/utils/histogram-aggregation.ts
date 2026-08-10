@@ -79,8 +79,9 @@ const NS_PER_DAY = 24n * NS_PER_HOUR
  *
  * Widths are also nameable: "5 minute buckets" rather than "1h41m".
  *
- * Caveat: day-scale alignment is against UTC midnight, not local. Fine
- * for now; revisit if buckets are ever labelled by calendar date.
+ * Which clock those boundaries belong to is `histogramBucketStart`'s
+ * business -- it takes the view's timezone, so a day-scale bucket breaks
+ * at local midnight rather than UTC midnight.
  */
 const NS_PER_MS = 1_000_000n
 
@@ -178,11 +179,49 @@ export function histogramBucketNs(
   return (span / NS_PER_DAY / BigInt(maxPoints) + 1n) * NS_PER_DAY
 }
 
+/**
+ * Offset, in nanoseconds, to add before flooring so that day- and hour-scale
+ * buckets break at local wall-clock boundaries rather than UTC ones.
+ *
+ * Flooring against the epoch aligns to UTC, so in UTC+10 a "1 day" column runs
+ * 10:00-10:00 local -- which is wrong wherever the boundary is being read as a
+ * date. Sub-hour widths are unaffected in whole-hour zones, but half-hour and
+ * 45-minute zones exist (India, Nepal, Chatham), so the offset is applied at
+ * every width rather than only the large ones.
+ *
+ * The offset is resolved per timestamp, so a bucket either side of a DST
+ * transition uses the offset in force at that moment instead of one snapshot
+ * applied to the whole range.
+ */
+function localOffsetNs(timestampNs: bigint): bigint {
+  const ms = Number(timestampNs / 1_000_000n)
+  // getTimezoneOffset is minutes *behind* UTC, so negate it.
+  return BigInt(-new Date(ms).getTimezoneOffset()) * 60n * 1_000_000_000n
+}
+
+/**
+ * Floor a timestamp to its bucket.
+ *
+ * `tz` selects the alignment: 'UTC' floors against the epoch, 'local' against
+ * local wall-clock boundaries. Defaults to UTC so existing callers and the
+ * pure-arithmetic tests keep their behaviour.
+ */
 export function histogramBucketStart(
   timestampNs: bigint,
-  bucketNs: bigint
+  bucketNs: bigint,
+  tz: 'local' | 'UTC' = 'UTC'
 ): bigint {
-  return (timestampNs / bucketNs) * bucketNs
+  if (tz === 'UTC') return (timestampNs / bucketNs) * bucketNs
+
+  const offset = localOffsetNs(timestampNs)
+  const shifted = timestampNs + offset
+  // BigInt division truncates toward zero, so pre-epoch timestamps would floor
+  // the wrong way without this correction.
+  const floored =
+    shifted < 0n && shifted % bucketNs !== 0n
+      ? (shifted / bucketNs - 1n) * bucketNs
+      : (shifted / bucketNs) * bucketNs
+  return floored - offset
 }
 
 function isHistogramDp(
@@ -388,7 +427,8 @@ export function buildHistogramTimeMergedSeries(
   startTsNs: bigint,
   endTsNs: bigint,
   maxPoints: number,
-  temporality: string
+  temporality: string,
+  tz: 'local' | 'UTC' = 'UTC'
 ): HistogramSlicePoint[] | HistogramAggregationError {
   if (temporality !== 'Delta' && temporality !== 'Cumulative') {
     return {
@@ -445,7 +485,7 @@ export function buildHistogramTimeMergedSeries(
       }
       const hdp = dp as HistogramDataPoint | ExponentialHistogramDataPoint
       if (hdp.timestamp < startTsNs || hdp.timestamp >= endTsNs) continue
-      const bucketStart = histogramBucketStart(hdp.timestamp, bucketNs)
+      const bucketStart = histogramBucketStart(hdp.timestamp, bucketNs, tz)
       const key = `${bucketStart.toString()}\0${ts.attributesKey}`
       const list = groups.get(key)
       if (list) list.push(hdp)

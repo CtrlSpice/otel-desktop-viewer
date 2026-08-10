@@ -239,3 +239,58 @@ describe('cumulative bucket merge', () => {
     }
   })
 })
+
+describe('histogramBucketStart timezone alignment', () => {
+  // Flooring against the epoch aligns to UTC. A day-scale column then breaks
+  // at UTC midnight wherever the viewer is, which reads as the wrong day for
+  // anyone not on UTC.
+  it('aligns day buckets to local midnight, not UTC midnight', () => {
+    // 2026-03-15T04:30:00Z
+    const ts = BigInt(Date.UTC(2026, 2, 15, 4, 30, 0)) * MS
+
+    const utcStart = histogramBucketStart(ts, DAY, 'UTC')
+    const localStart = histogramBucketStart(ts, DAY, 'local')
+
+    // UTC alignment always lands exactly on a UTC midnight.
+    expect(new Date(Number(utcStart / MS)).getUTCHours()).toBe(0)
+
+    // Local alignment lands on local midnight. In a UTC runner the two
+    // coincide, which is correct rather than a failure -- assert the
+    // property, not a difference.
+    const localDate = new Date(Number(localStart / MS))
+    expect(localDate.getHours()).toBe(0)
+    expect(localDate.getMinutes()).toBe(0)
+    expect(localDate.getSeconds()).toBe(0)
+  })
+
+  it('never floors past the timestamp it is given', () => {
+    const ts = BigInt(Date.UTC(2026, 6, 4, 17, 45, 13)) * MS
+    for (const width of [SEC, MIN, HOUR, DAY]) {
+      for (const tz of ['UTC', 'local'] as const) {
+        const start = histogramBucketStart(ts, width, tz)
+        expect(start).toBeLessThanOrEqual(ts)
+        expect(ts - start).toBeLessThan(width)
+      }
+    }
+  })
+
+  // Two timestamps in the same local day must share a day bucket, which is
+  // the whole point of aligning to the viewer's clock.
+  it('groups timestamps from one local day into one bucket', () => {
+    const morning = BigInt(new Date(2026, 4, 20, 9, 15, 0).getTime()) * MS
+    const evening = BigInt(new Date(2026, 4, 20, 22, 45, 0).getTime()) * MS
+
+    expect(histogramBucketStart(morning, DAY, 'local')).toBe(
+      histogramBucketStart(evening, DAY, 'local')
+    )
+  })
+
+  it('floors pre-epoch timestamps downward rather than toward zero', () => {
+    const ts = BigInt(Date.UTC(1969, 11, 31, 22, 0, 0)) * MS
+    for (const tz of ['UTC', 'local'] as const) {
+      const start = histogramBucketStart(ts, HOUR, tz)
+      expect(start).toBeLessThanOrEqual(ts)
+      expect(ts - start).toBeLessThan(HOUR)
+    }
+  })
+})
