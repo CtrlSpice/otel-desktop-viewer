@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
@@ -25,6 +26,7 @@ const (
 	ErrCodeInvalidQuery    = -32007
 	ErrCodeInvalidSpanID   = -32008
 	ErrCodeInvalidStreamID = -32009
+	ErrCodeRequestCanceled = -32010
 )
 
 // Custom JSON-RPC errors
@@ -37,6 +39,13 @@ var (
 	ErrInvalidQuery    = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
 	ErrInvalidSpanID   = jsonrpc2.NewError(ErrCodeInvalidSpanID, "Invalid span ID")
 	ErrInvalidStreamID = jsonrpc2.NewError(ErrCodeInvalidStreamID, "Invalid metric stream ID")
+
+	// ErrRequestCanceled covers a query abandoned by the caller -- the UI
+	// navigating away mid-poll, or a browser tab closing. DuckDB surfaces the
+	// interrupt as "INTERRUPT Error: Interrupted!" wrapped around
+	// context.Canceled. Nobody is left to receive this, so it exists to keep
+	// cancellation out of the internal-error bucket rather than to be shown.
+	ErrRequestCanceled = jsonrpc2.NewError(ErrCodeRequestCanceled, "Request canceled")
 )
 
 // mapStoreError maps store-layer sentinel errors to JSON-RPC errors.
@@ -46,6 +55,10 @@ func mapStoreError(err error) error {
 		return nil
 	}
 	switch {
+	// Checked first: a cancelled query can fail anywhere, so the wrapped
+	// error may also match a store sentinel on its way out.
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return ErrRequestCanceled
 	case errors.Is(err, spans.ErrTraceIDNotFound):
 		return ErrTraceNotFound
 	case errors.Is(err, logs.ErrLogIDNotFound):

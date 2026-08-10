@@ -55,7 +55,7 @@
 </script>
 
 <script lang="ts">
-  import { telemetryAPI } from '@/services/telemetry-service'
+  import { telemetryAPI, isAbortError } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -209,10 +209,24 @@
     }
   }
 
+  // Each fetch supersedes the last: clicking down a trace list abandons the
+  // previous searchSpans, and without aborting it the query keeps running
+  // server-side holding the store's read lock for a result we have already
+  // thrown away.
+  let detailFetch: AbortController | null = null
+
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
+    detailFetch?.abort()
+    const fetchCtl = new AbortController()
+    detailFetch = fetchCtl
+
     try {
       detailLoading = true
-      const result = await telemetryAPI.searchSpans(traceID, queryTree)
+      const result = await telemetryAPI.searchSpans(
+        traceID,
+        queryTree,
+        fetchCtl.signal
+      )
       traceData = result
       const spanIds = result.spans.map(n => n.spanData.spanID)
       const urlSpan = getSpanFromQuery()
@@ -227,11 +241,19 @@
       }
       if (desired !== urlSpan) setSpanInQuery(desired)
     } catch (err) {
+      // A superseded fetch is not a failure: a newer one is already in flight
+      // and owns the view state.
+      if (isAbortError(err)) return
       console.error('Failed to fetch trace detail:', err)
       traceData = null
       setSpanInQuery(null)
     } finally {
-      detailLoading = false
+      // Only the newest fetch owns the loading flag; an aborted older one
+      // must not clear it out from under its replacement.
+      if (detailFetch === fetchCtl) {
+        detailLoading = false
+        detailFetch = null
+      }
     }
   }
 

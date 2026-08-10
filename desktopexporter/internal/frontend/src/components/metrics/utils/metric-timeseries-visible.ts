@@ -23,8 +23,16 @@ import type { AggregationView } from './aggregation'
  * for gauge/sum line charts. The legend disables further checkboxes
  * once this many are selected. Histogram metrics are uncapped — the
  * heatmap can show every attribute breakdown at once.
+ *
+ * 22 is a full F1 grid: 11 teams × 2 cars.
+ *
+ * Note this is sized for a view that does not exist yet. Today no single
+ * stream comes near it: metric_streams identity includes service_name and
+ * each team is its own service, so a per-driver metric is 11 separate
+ * streams of 2 series rather than one stream of 22. Raising the cap
+ * changes nothing observable until those streams merge.
  */
-export const MAX_VISIBLE_TIMESERIES = 10
+export const MAX_VISIBLE_TIMESERIES = 22
 
 /**
  * How many timeseries to auto-select on first load (before the user
@@ -32,7 +40,7 @@ export const MAX_VISIBLE_TIMESERIES = 10
  * so the initial chart is readable; the user can manually check more
  * up to the cap.
  */
-export const DEFAULT_VISIBLE_TIMESERIES = 5
+export const DEFAULT_VISIBLE_TIMESERIES = 10
 
 const STORAGE_PREFIX = 'metrics:view:'
 

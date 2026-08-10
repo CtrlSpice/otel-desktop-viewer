@@ -4,9 +4,9 @@ package main
 
 import (
 	desktopexporter "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
+	duckdbextension "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/duckdbextension"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/connector"
-	"go.opentelemetry.io/collector/extension"
 	"go.opentelemetry.io/collector/otelcol"
 	batchprocessor "go.opentelemetry.io/collector/processor/batchprocessor"
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"
@@ -22,11 +22,14 @@ func components() (otelcol.Factories, error) {
 	// explicit factory instead of being built implicitly.
 	factories.Telemetry = otelconftelemetry.NewFactory()
 
-	factories.Extensions, err = otelcol.MakeFactoryMap[extension.Factory]()
+	factories.Extensions, err = otelcol.MakeFactoryMap(
+		duckdbextension.NewFactory(),
+	)
 	if err != nil {
 		return otelcol.Factories{}, err
 	}
 	factories.ExtensionModules = make(map[component.Type]string, len(factories.Extensions))
+	factories.ExtensionModules[duckdbextension.NewFactory().Type()] = "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/duckdbextension"
 
 	factories.Receivers, err = otelcol.MakeFactoryMap(
 		otlpreceiver.NewFactory(),

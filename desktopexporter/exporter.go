@@ -3,145 +3,120 @@ package desktopexporter
 import (
 	"context"
 	"database/sql/driver"
-	"time"
+	"errors"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	"go.uber.org/zap"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
-const (
-	// retentionInterval is how often the retention loop checks the store size.
-	retentionInterval = 30 * time.Second
+// storeHost is what the exporter needs from the extensions map: something that
+// owns the shared store. Declared consumer-side so the exporter is coupled to
+// the capability, not to the duckdb extension's package or type name --
+// anything in host.GetExtensions() exposing Store() qualifies.
+type storeHost interface {
+	Store() *store.Store
+}
 
-	// Default store size caps applied when db_max_size is unset. In-memory
-	// mode gets a tighter default because the data competes with everything
-	// else for RAM; a database file can afford more room.
-	defaultMaxSizeInMemory = 512 << 20 // 512 MB
-	defaultMaxSizeOnDisk   = 2 << 30   // 2 GB
-)
-
+// desktopExporter writes one signal's batches into the shared store. It owns
+// nothing else: the store, the viewer server, and retention live in the duckdb
+// extension, which the collector starts before -- and shuts down after -- any
+// pipeline component. Each signal's exporter is an independent instance;
+// sharing happens through the extension lookup, not through shared construction.
 type desktopExporter struct {
-	server *server.Server
-	store  *store.Store
-	logger *zap.Logger
+	tel *telemetry.Telemetry
 
-	retentionCancel context.CancelFunc
-	retentionDone   chan struct{}
+	// store is resolved in Start and never changes afterwards. The collector
+	// guarantees extensions are started first, so by the time the pipeline
+	// calls the push functions this is non-nil.
+	store *store.Store
 }
 
-func newDesktopExporter(ctx context.Context, cfg *Config, logger *zap.Logger) (*desktopExporter, error) {
-	str, err := store.NewStore(ctx, cfg.Db)
+func newDesktopExporter(cfg *Config, settings component.TelemetrySettings) (*desktopExporter, error) {
+	tel, err := telemetry.New(settings, cfg.SelfTelemetry(), cfg.InstrumentIngest())
 	if err != nil {
 		return nil, err
 	}
+	return &desktopExporter{tel: tel}, nil
+}
 
-	srv, err := server.NewServer(cfg.Endpoint, str, logger)
-	if err != nil {
-		str.Close()
-		return nil, err
-	}
-
-	// Config is already validated, so the only parse outcomes are a size,
-	// 0 (disabled), or -1 (unset: apply the mode-dependent default).
-	maxBytes, err := parseByteSize(cfg.DbMaxSize)
-	if err != nil {
-		str.Close()
-		return nil, err
-	}
-	if maxBytes < 0 {
-		if cfg.Db == "" {
-			maxBytes = defaultMaxSizeInMemory
-		} else {
-			maxBytes = defaultMaxSizeOnDisk
+// Start resolves the shared store from the collector's extensions. Exactly one
+// store-owning extension must be configured: none is a configuration error
+// (add `duckdb:` under extensions and service::extensions), and more than one
+// would make the choice fall to map iteration order, so it is rejected rather
+// than silently picking a writer target at random.
+func (e *desktopExporter) Start(_ context.Context, host component.Host) error {
+	var found *store.Store
+	for _, ext := range host.GetExtensions() {
+		sh, ok := ext.(storeHost)
+		if !ok {
+			continue
 		}
-	}
-	// The cap lives on the store so getStats can report it alongside usage.
-	str.SetRetentionCap(maxBytes)
-
-	return &desktopExporter{
-		server: srv,
-		store:  str,
-		logger: logger,
-	}, nil
-}
-
-// runRetentionLoop enforces the store size cap every retentionInterval until
-// ctx is cancelled. It closes done on exit so Shutdown can wait for the last
-// enforcement pass to finish before closing the store underneath it.
-func (e *desktopExporter) runRetentionLoop(ctx context.Context, done chan<- struct{}) {
-	defer close(done)
-
-	ticker := time.NewTicker(retentionInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := e.store.EnforceRetention(ctx, e.store.RetentionCap()); err != nil {
-				e.logger.Error("retention enforcement failed", zap.Error(err))
-			}
+		if found != nil {
+			return errors.New("multiple store extensions configured; the desktop exporter needs exactly one duckdb extension")
 		}
+		found = sh.Store()
 	}
-}
-
-func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
-	return e.store.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, source)
-	})
-}
-
-func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {
-	return e.store.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, source)
-	})
-}
-
-func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error {
-	return e.store.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, source)
-	})
-}
-
-func (e *desktopExporter) Start(ctx context.Context, host component.Host) error {
-	if err := e.server.Start(); err != nil {
-		return err
+	if found == nil {
+		return errors.New("no store extension configured: add `duckdb` to extensions and service::extensions")
 	}
-
-	if e.store.RetentionCap() > 0 {
-		// The loop gets its own context rather than the startup ctx, which
-		// the collector cancels once Start returns.
-		retentionCtx, cancel := context.WithCancel(context.Background())
-		e.retentionCancel = cancel
-		e.retentionDone = make(chan struct{})
-		go e.runRetentionLoop(retentionCtx, e.retentionDone)
-	}
+	e.store = found
 	return nil
 }
 
-func (e *desktopExporter) Shutdown(ctx context.Context) error {
-	// Stop the retention loop and wait for any in-flight enforcement pass,
-	// so the store isn't closed out from under it.
-	if e.retentionCancel != nil {
-		e.retentionCancel()
-		<-e.retentionDone
-	}
+// The three push paths each wrap ingest in a span carrying the batch's item
+// count, so throughput is measurable per signal. The span covers WithConn, not
+// just the write, because acquiring the store's write lock is part of what
+// makes ingest slow when it contends with queries.
+//
+// Each also imposes IngestTimeout. The incoming context is not a useful
+// deadline here: with the sending queue enabled the batcher starts a fresh
+// context.Background() per merged batch (it must -- the client's request has
+// already completed), so nothing upstream bounds the write. See IngestTimeout
+// for why the bound exists and why it is set so far above the working range.
+func withIngestTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, IngestTimeout)
+}
 
-	// Shut down the HTTP server and wait for the serve goroutine to exit.
-	if err := e.server.Shutdown(ctx); err != nil {
-		return err
-	}
+func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) error {
+	ctx, cancel := withIngestTimeout(ctx)
+	defer cancel()
 
-	// Then close the store
-	return e.store.Close()
+	ctx, end := e.tel.Ingest(ctx, "traces", source.SpanCount())
+	err := e.store.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, source)
+	})
+	end(err)
+	return err
+}
+
+func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metrics) error {
+	ctx, cancel := withIngestTimeout(ctx)
+	defer cancel()
+
+	ctx, end := e.tel.Ingest(ctx, "metrics", source.DataPointCount())
+	err := e.store.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, source)
+	})
+	end(err)
+	return err
+}
+
+func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error {
+	ctx, cancel := withIngestTimeout(ctx)
+	defer cancel()
+
+	ctx, end := e.tel.Ingest(ctx, "logs", source.LogRecordCount())
+	err := e.store.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, source)
+	})
+	end(err)
+	return err
 }

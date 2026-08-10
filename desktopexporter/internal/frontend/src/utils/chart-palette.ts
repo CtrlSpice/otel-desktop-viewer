@@ -61,22 +61,26 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
 
 // ── Categorical series palette ──
 //
-// Fixed-size 10-colour palette walking the five stem waypoints in hue
-// order (pine → foam → gold → rose → iris, rotated so the caller's
-// `start` stem is first). Sampled at 10 evenly-spaced positions across
-// the combined HCL arc, so:
-//   - Slot 0 is always the rotated start stem; slot 9 the last stem.
+// Fixed-size palette walking the five stem waypoints in hue order
+// (pine → foam → gold → rose → iris, rotated so the caller's `start`
+// stem is first). Sampled at N evenly-spaced positions across the
+// combined HCL arc, so:
+//   - Slot 0 is always the rotated start stem; the last slot the last stem.
 //   - count=5 returns all five stems exactly.
 //   - Other counts mix literal stems with HCL interpolations between
 //     adjacent waypoints (four segments).
 //
-// Why 10 and not parametric: the chart caps visible series at 10
-// (MAX_VISIBLE_TIMESERIES). Generating a count-aware palette meant
-// shifting series colours every time the user toggled visibility on a
-// metric with a different count of timeseries -- a series's colour
-// shouldn't depend on how many neighbours it has. Locking the palette
-// at 10 means "the 4th visible timeseries" always gets the same hue,
-// no matter the metric.
+// Callers pass the *cap* (MAX_VISIBLE_TIMESERIES), never the current
+// series count. That is the load-bearing part: a count-aware palette
+// would shift every series's colour whenever the user toggled visibility
+// on a metric with a different number of timeseries -- a series's colour
+// shouldn't depend on how many neighbours it has. Passing a constant
+// means "the 4th visible timeseries" always gets the same hue, no matter
+// the metric.
+//
+// Density trade-off: the cap is how many slots are sampled from a
+// five-waypoint arc, so raising it packs hues closer together and makes
+// adjacent series harder to distinguish on a line chart.
 //
 export type CategoricalStem = 'pine' | 'foam' | 'gold' | 'rose' | 'iris'
 

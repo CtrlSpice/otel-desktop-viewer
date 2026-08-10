@@ -12,8 +12,10 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
 	"golang.org/x/exp/jsonrpc2"
@@ -32,18 +34,40 @@ type Server struct {
 	server         http.Server
 	jsonrpcHandler *JSONRPCHandler
 	logger         *zap.Logger
+	tel            *telemetry.Telemetry
 
 	serveDone chan struct{}
 	startMu   sync.Mutex
 }
 
-func NewServer(endpoint string, store *store.Store, logger *zap.Logger) (*Server, error) {
+func NewServer(endpoint string, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry) (*Server, error) {
+	if tel == nil {
+		tel = telemetry.Disabled()
+	}
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
+
+			// ReadHeaderTimeout and IdleTimeout are pure hygiene: they bound a
+			// client that opens a connection and dribbles (or never sends)
+			// headers, and reap idle keep-alives. Neither can affect a
+			// legitimate request.
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+
+			// Deliberately no WriteTimeout. Go measures it from the end of
+			// header read through the end of the response write, so it caps
+			// *handler execution* too -- and a searchSpans over a large trace
+			// is unbounded by design. A WriteTimeout here would abort exactly
+			// the slow queries a trace viewer exists to serve, and would do it
+			// by killing the connection with a partial body. Query cost is
+			// bounded by cancellation instead: the client aborts, and the
+			// context tears the DuckDB query down.
 		},
 		jsonrpcHandler: NewJSONRPCHandler(store, logger),
 		logger:         logger,
+		tel:            tel,
 	}
 
 	if err := s.initHandler(); err != nil {
@@ -155,54 +179,74 @@ func spaHandler(fsys fs.FS, logger *zap.Logger) http.Handler {
 }
 
 func (s *Server) rpcHandler(writer http.ResponseWriter, request *http.Request) {
+	requestCtx := request.Context()
+
 	limited := http.MaxBytesReader(writer, request.Body, maxRPCRequestBodyBytes)
 	body, err := io.ReadAll(limited)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			s.sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, fmt.Errorf("%w: request body too large", jsonrpc2.ErrInvalidRequest))
+			s.sendJSONRPCResponse(requestCtx, writer, jsonrpc2.ID{}, nil, fmt.Errorf("%w: request body too large", jsonrpc2.ErrInvalidRequest))
 			return
 		}
-		s.sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInternal)
+		s.sendJSONRPCResponse(requestCtx, writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInternal)
 		return
 	}
 
 	message, err := jsonrpc2.DecodeMessage(body)
 	if err != nil {
-		s.sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrParse)
+		s.sendJSONRPCResponse(requestCtx, writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrParse)
 		return
 	}
 
 	rpcRequest, ok := message.(*jsonrpc2.Request)
 	if !ok {
-		s.sendJSONRPCResponse(writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInvalidRequest)
+		s.sendJSONRPCResponse(requestCtx, writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInvalidRequest)
 		return
 	}
 
-	result, err := s.jsonrpcHandler.Handle(request.Context(), rpcRequest)
+	// The span covers dispatch *and* encoding. DuckDB builds the response JSON
+	// inside the query, so "query time" and "JSON construction" are not
+	// separable here -- the only clean split is EncodeMessage, which gets its
+	// own child span in sendJSONRPCResponse.
+	ctx, endRPC := s.tel.RPC(requestCtx, rpcRequest.Method)
+
+	result, err := s.jsonrpcHandler.Handle(ctx, rpcRequest)
 	if err != nil {
-		s.sendJSONRPCResponse(writer, rpcRequest.ID, nil, err)
+		endRPC(s.sendJSONRPCResponse(ctx, writer, rpcRequest.ID, nil, err), err)
 		return
 	}
 
-	s.sendJSONRPCResponse(writer, rpcRequest.ID, result, nil)
+	endRPC(s.sendJSONRPCResponse(ctx, writer, rpcRequest.ID, result, nil), nil)
 }
 
-func (s *Server) sendJSONRPCResponse(writer http.ResponseWriter, id jsonrpc2.ID, result any, rpcError error) {
+// sendJSONRPCResponse writes the response and returns its encoded size in
+// bytes, which the caller records on the RPC span. Returns 0 when the response
+// could not be produced. ctx carries the RPC span, so the encode child span
+// hangs off the call it belongs to.
+func (s *Server) sendJSONRPCResponse(ctx context.Context, writer http.ResponseWriter, id jsonrpc2.ID, result any, rpcError error) int {
 	response, err := jsonrpc2.NewResponse(id, result, rpcError)
 	if err != nil {
 		s.logger.Error("creating JSON-RPC response", zap.Error(err))
 		http.Error(writer, "Internal server error", http.StatusInternalServerError)
-		return
+		return 0
 	}
 
+	// Encoding gets its own child span because it is the only cleanly separable
+	// component of serving a request: DuckDB builds the response JSON inside the
+	// SQL query, so query time and JSON-construction time cannot be told apart.
+	// If this span turns out to be trivial, the latency is entirely in the query
+	// and the client.
+	endEncode := s.tel.RPCEncode(ctx)
 	bytes, err := jsonrpc2.EncodeMessage(response)
+	endEncode(err)
 	if err != nil {
 		s.logger.Error("encoding JSON-RPC response", zap.Error(err))
 		http.Error(writer, "Internal server error", http.StatusInternalServerError)
-		return
+		return 0
 	}
 
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Write(bytes)
+	return len(bytes)
 }

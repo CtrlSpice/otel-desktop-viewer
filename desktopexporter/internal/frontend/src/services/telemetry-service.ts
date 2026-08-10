@@ -71,10 +71,39 @@ function toNanoseconds(milliseconds: number): string {
   return milliseconds === 0 ? '0' : milliseconds.toString() + '000000'
 }
 
+/** Thrown when a request is abandoned. Callers that supersede their own
+ *  requests should swallow this rather than surfacing it as an error -- the
+ *  result was discarded on purpose. */
+export class RequestAbortedError extends Error {
+  constructor() {
+    super('Request aborted')
+    this.name = 'RequestAbortedError'
+  }
+}
+
+/** True when a rejection is just an abandoned request. */
+export function isAbortError(err: unknown): boolean {
+  return (
+    err instanceof RequestAbortedError ||
+    (err instanceof DOMException && err.name === 'AbortError')
+  )
+}
+
 // Generic JSON-RPC transport. T is a compile-time assertion of the wire
 // shape (see wire-types.ts), not runtime validation -- the backend is
 // trusted to serve what its projections declare.
-async function callRPC<T>(method: string, params?: unknown): Promise<T> {
+//
+// `signal` is what makes server-side cancellation reachable. The backend
+// already tears a running DuckDB query down when the request context is
+// cancelled, but without a signal here the fetch survives navigation, so the
+// query runs to completion holding the store's read lock for a result nobody
+// will read. Aborting the fetch closes the connection, which cancels
+// request.Context(), which interrupts the query.
+async function callRPC<T>(
+  method: string,
+  params?: unknown,
+  signal?: AbortSignal
+): Promise<T> {
   const request: JsonRpcRequest = {
     method,
     params,
@@ -82,13 +111,20 @@ async function callRPC<T>(method: string, params?: unknown): Promise<T> {
     jsonrpc: '2.0',
   }
 
-  const response = await fetch('/rpc', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  })
+  let response: Response
+  try {
+    response = await fetch('/rpc', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal,
+    })
+  } catch (err) {
+    if (isAbortError(err)) throw new RequestAbortedError()
+    throw err
+  }
 
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`)
@@ -330,14 +366,18 @@ export let telemetryAPI = {
     return traceSummariesFromJSON(rawData)
   },
 
+  // signal is plumbed here first because searchSpans is the heaviest query
+  // and the one most often abandoned -- clicking through traces supersedes it
+  // repeatedly.
   searchSpans: async (
     traceID: string,
-    queryTree?: QueryNode
+    queryTree?: QueryNode,
+    signal?: AbortSignal
   ): Promise<TraceData> => {
     const params = queryTree
       ? [traceID, convertQueryTreeForBackend(queryTree)]
       : [traceID]
-    const rawData = await callRPC<JsonTraceData>('searchSpans', params)
+    const rawData = await callRPC<JsonTraceData>('searchSpans', params, signal)
     return traceDataFromJSON(rawData)
   },
 
