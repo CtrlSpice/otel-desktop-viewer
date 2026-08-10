@@ -31,9 +31,10 @@ func NewFactory() exporter.Factory {
 // Create default configurations
 func createDefaultConfig() component.Config {
 	return &Config{
-		Endpoint:  defaultEndpoint,
-		Db:        defaultDb,
-		Telemetry: TelemetryDisabled,
+		Endpoint:     defaultEndpoint,
+		Db:           defaultDb,
+		Telemetry:    TelemetryDisabled,
+		SendingQueue: defaultSendingQueue(),
 	}
 }
 
@@ -61,6 +62,7 @@ func createMetricsExporter(ctx context.Context, set exporter.Settings, config co
 		desktopCfg,
 		exporter.Unwrap().pushMetrics,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
+		exporterhelper.WithQueue(desktopCfg.SendingQueue),
 		exporterhelper.WithStart(exporter.Start),
 		exporterhelper.WithShutdown(exporter.Shutdown),
 	)
@@ -87,6 +89,7 @@ func createLogsExporter(ctx context.Context, set exporter.Settings, config compo
 	return exporterhelper.NewLogs(ctx, set, cfg,
 		e.Unwrap().pushLogs,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
+		exporterhelper.WithQueue(cfg.SendingQueue),
 		exporterhelper.WithStart(e.Start),
 		exporterhelper.WithShutdown(e.Shutdown),
 	)
@@ -113,6 +116,7 @@ func createTracesExporter(ctx context.Context, set exporter.Settings, config com
 	return exporterhelper.NewTraces(ctx, set, cfg,
 		e.Unwrap().pushTraces,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
+		exporterhelper.WithQueue(cfg.SendingQueue),
 		exporterhelper.WithTimeout(exporterhelper.TimeoutConfig{Timeout: 0}),
 		exporterhelper.WithStart(e.Start),
 		exporterhelper.WithShutdown(e.Shutdown),
