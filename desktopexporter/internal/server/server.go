@@ -12,6 +12,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
@@ -46,6 +47,23 @@ func NewServer(endpoint string, store *store.Store, logger *zap.Logger, tel *tel
 	s := Server{
 		server: http.Server{
 			Addr: endpoint,
+
+			// ReadHeaderTimeout and IdleTimeout are pure hygiene: they bound a
+			// client that opens a connection and dribbles (or never sends)
+			// headers, and reap idle keep-alives. Neither can affect a
+			// legitimate request.
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+
+			// Deliberately no WriteTimeout. Go measures it from the end of
+			// header read through the end of the response write, so it caps
+			// *handler execution* too -- and a searchSpans over a large trace
+			// is unbounded by design. A WriteTimeout here would abort exactly
+			// the slow queries a trace viewer exists to serve, and would do it
+			// by killing the connection with a partial body. Query cost is
+			// bounded by cancellation instead: the client aborts, and the
+			// context tears the DuckDB query down.
 		},
 		jsonrpcHandler: NewJSONRPCHandler(store, logger),
 		logger:         logger,

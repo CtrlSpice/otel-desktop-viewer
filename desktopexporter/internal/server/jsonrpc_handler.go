@@ -27,8 +27,8 @@ func NewJSONRPCHandler(store *store.Store, logger *zap.Logger) *JSONRPCHandler {
 }
 
 // handleStoreError maps store errors to JSON-RPC codes and logs only unexpected
-// failures (those that become -32603). Expected outcomes like not-found or
-// invalid query are returned to the client without logging.
+// failures (those that become -32603). Expected outcomes like not-found,
+// invalid query, or a caller that went away are returned without logging.
 func (h *JSONRPCHandler) handleStoreError(err error) error {
 	if err == nil {
 		return nil

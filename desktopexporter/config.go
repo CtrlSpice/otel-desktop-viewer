@@ -78,9 +78,32 @@ func defaultSendingQueue() configoptional.Optional[exporterhelper.QueueBatchConf
 			FlushTimeout: 200 * time.Millisecond,
 			Sizer:        exporterhelper.RequestSizerTypeItems,
 			MinSize:      8192,
+			// Bounding the batch is what makes IngestTimeout sizeable: without
+			// a ceiling, a merged burst can be arbitrarily large and no
+			// deadline can distinguish "big" from "stuck". Measured ingest is
+			// linear at ~43us/span, so 20k items is ~860ms of work.
+			MaxSize: 20_000,
 		}),
 	})
 }
+
+// IngestTimeout bounds a single batch write.
+//
+// This is a backstop against a hung write, not a latency control. A write that
+// stalls holds the store's write lock, and every reader takes that lock -- so a
+// wedged ingest freezes the UI permanently rather than degrading it. The
+// deadline guarantees the lock is always released.
+//
+// Sized against measurement, generously: ingest is linear at ~43us/span, so the
+// 20k-item batch ceiling is ~860ms of work. 30s is ~35x that, which no
+// legitimate batch reaches even on a loaded machine with a cold disk-backed
+// store.
+//
+// It is deliberately far above the working range because tripping it is
+// harmful: appenders flush every 50 spans, so a batch cut short is *partially*
+// applied, and the queue runs without retry. A deadline that fires means silent
+// partial data loss, which is worse than a slow write.
+const IngestTimeout = 30 * time.Second
 
 // Telemetry modes.
 const (

@@ -140,10 +140,28 @@ func (e *DuckDBExtension) Shutdown(ctx context.Context) error {
 
 	// Then close the store. The collector shuts extensions down after every
 	// pipeline component, so the exporters' queues have already drained.
+	//
+	// Close takes the store's write lock, which waits on every in-flight
+	// reader -- so a slow query would otherwise stall shutdown indefinitely,
+	// past whatever deadline the collector gave us. Bound it by ctx and report
+	// rather than hang: the process is going away, and a store left unclosed
+	// at exit loses at most the WAL, which DuckDB replays on next open.
 	if e.store != nil {
-		err := e.store.Close()
+		store := e.store
 		e.store = nil
-		return err
+
+		closed := make(chan error, 1)
+		go func() { closed <- store.Close() }()
+
+		select {
+		case err := <-closed:
+			return err
+		case <-ctx.Done():
+			e.logger.Warn("store close did not finish before shutdown deadline; "+
+				"a long-running query is still holding the lock",
+				zap.Error(ctx.Err()))
+			return nil
+		}
 	}
 	return nil
 }
