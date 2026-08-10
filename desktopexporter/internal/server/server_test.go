@@ -21,7 +21,7 @@ import (
 
 func setupServer(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
-	str, err := store.NewStore(context.Background(), "")
+	str, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
 	s, err := NewServer("localhost:8000", str, zap.NewNop(), telemetry.Disabled())
 	require.NoError(t, err)
@@ -181,7 +181,7 @@ func TestStartBindConflict(t *testing.T) {
 	addr := ln.Addr().String()
 	defer ln.Close()
 
-	str, err := store.NewStore(context.Background(), "")
+	str, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
 	defer str.Close()
 

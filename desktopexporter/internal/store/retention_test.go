@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"go.uber.org/zap"
 	"path/filepath"
 	"testing"
 
@@ -62,7 +63,7 @@ func count(t *testing.T, s *Store, table string) int64 {
 
 func TestSizeBytesInMemory(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -78,7 +79,7 @@ func TestSizeBytesInMemory(t *testing.T) {
 
 func TestSizeBytesOnDisk(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, filepath.Join(t.TempDir(), "retention_test.db"))
+	s, err := NewStore(ctx, filepath.Join(t.TempDir(), "retention_test.db"), zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -93,7 +94,7 @@ func TestSizeBytesOnDisk(t *testing.T) {
 
 func TestEnforceRetentionPrunesOldest(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -128,7 +129,7 @@ func TestEnforceRetentionPrunesOldest(t *testing.T) {
 
 func TestEnforceRetentionSweepsOrphanedMetricIdentity(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -156,7 +157,7 @@ func TestEnforceRetentionSweepsOrphanedMetricIdentity(t *testing.T) {
 
 func TestEnforceRetentionDisabled(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -168,7 +169,7 @@ func TestEnforceRetentionDisabled(t *testing.T) {
 
 func TestEnforceRetentionUnderCap(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewStore(ctx, "")
+	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 

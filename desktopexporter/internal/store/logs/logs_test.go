@@ -1,6 +1,7 @@
 package logs_test
 
 import (
+	"go.uber.org/zap"
 	"context"
 	"database/sql"
 	"encoding/hex"
@@ -37,7 +38,7 @@ func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
 	t.Helper()
 	ctx := context.Background()
-	s, err := store.NewStore(ctx, "")
+	s, err := store.NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	return s, ctx, func() { s.Close() }
 }

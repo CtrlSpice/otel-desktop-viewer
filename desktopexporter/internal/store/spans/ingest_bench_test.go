@@ -1,6 +1,7 @@
 package spans_test
 
 import (
+	"go.uber.org/zap"
 	"context"
 	"database/sql/driver"
 	"fmt"
@@ -77,7 +78,7 @@ func BenchmarkIngestBatch(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
-				s, err := store.NewStore(ctx, "")
+				s, err := store.NewStore(ctx, "", zap.NewNop())
 				if err != nil {
 					b.Fatal(err)
 				}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
 	"github.com/duckdb/duckdb-go/v2"
+	"go.uber.org/zap"
 )
 
 // maxPoolConns caps the *sql.DB pool. Reads run concurrently under the store's
@@ -45,6 +46,16 @@ type Store struct {
 	// and reported by getStats. 0 means retention is disabled. Set once via
 	// SetRetentionCap before the store is shared; read without locking.
 	retentionCapBytes int64
+
+	// logger is never nil: NewStore substitutes a no-op when given one, so
+	// call sites need no guard.
+	logger *zap.Logger
+
+	// Result of the schema version check, set once during NewStore and read
+	// without locking. The warning is logged at open; this is kept so callers
+	// (and the enforcement switch, when it lands) can act on the outcome
+	// rather than parse a message.
+	schemaCompat SchemaCompatibility
 }
 
 // SetRetentionCap sets the store size cap in bytes. Call before the store is
@@ -60,7 +71,13 @@ func (s *Store) RetentionCap() int64 {
 
 // NewStore creates a new store for the given database path.
 // An empty dbPath will create a temporary in-memory database.
-func NewStore(ctx context.Context, dbPath string) (*Store, error) {
+//
+// logger may be nil, in which case nothing is logged.
+func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if dbPath != "" {
 		dbPath = filepath.Clean(dbPath)
 	}
@@ -92,21 +109,34 @@ func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 		}
 	}
 
-	// 2) Create the tables for our signals
+	// 2) Check the schema version before creating anything else.
+	//
+	// The ordering is load-bearing, not stylistic. Run after the table and
+	// index loops and an incompatible file fails inside them first --
+	// `create table if not exists` leaves the old table alone, then index
+	// creation dies against a column that does not exist, and the user gets
+	// "failed to create index 4" instead of "this database was written by a
+	// different version".
+	schemaCompat, err := checkSchemaVersion(db, dbPath, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3) Create the tables for our signals
 	for i, query := range schema.TableCreationQueries {
 		if _, err = db.Exec(query); err != nil {
 			return nil, fmt.Errorf("%w while creating table %d: %w", ErrStoreInitFailed, i, err)
 		}
 	}
 
-	// 3) Create indexes - queries use IF NOT EXISTS so reopening is safe
+	// 4) Create indexes - queries use IF NOT EXISTS so reopening is safe
 	for i, query := range schema.IndexCreationQueries {
 		if _, err = db.Exec(query); err != nil {
 			return nil, fmt.Errorf("%w while creating index %d: %w", ErrStoreInitFailed, i, err)
 		}
 	}
 
-	// 4) Create macros - queries use CREATE OR REPLACE so reopening is safe
+	// 5) Create macros - queries use CREATE OR REPLACE so reopening is safe
 	for i, query := range schema.MacroCreationQueries {
 		if _, err = db.Exec(query); err != nil {
 			return nil, fmt.Errorf("%w while creating macro %d: %w", ErrStoreInitFailed, i, err)
@@ -114,9 +144,11 @@ func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 	}
 
 	return &Store{
-		db:     db,
-		conn:   conn,
-		dbPath: dbPath,
+		db:           db,
+		conn:         conn,
+		dbPath:       dbPath,
+		logger:       logger,
+		schemaCompat: schemaCompat,
 	}, nil
 }
 

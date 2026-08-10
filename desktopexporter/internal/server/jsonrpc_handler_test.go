@@ -25,7 +25,7 @@ import (
 
 func setupHandler(t *testing.T) (*JSONRPCHandler, func()) {
 	t.Helper()
-	s, err := store.NewStore(context.Background(), "")
+	s, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
 	handler := NewJSONRPCHandler(s, zap.NewNop())
 	return handler, func() {
@@ -65,7 +65,7 @@ func buildTestLogs() plog.Logs {
 
 func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
 	t.Helper()
-	s, err := store.NewStore(context.Background(), "")
+	s, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
 	handler := NewJSONRPCHandler(s, zap.NewNop())
 	ctx := context.Background()
@@ -812,7 +812,7 @@ func buildTestMetrics() pmetric.Metrics {
 
 func setupHandlerWithMetrics(t *testing.T) (*JSONRPCHandler, func()) {
 	t.Helper()
-	s, err := store.NewStore(context.Background(), "")
+	s, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
 	handler := NewJSONRPCHandler(s, zap.NewNop())
 	ctx := context.Background()
