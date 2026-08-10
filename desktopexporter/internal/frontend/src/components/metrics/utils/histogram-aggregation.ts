@@ -62,18 +62,120 @@ export function isHistogramAggregationError(
   )
 }
 
+const NS_PER_SEC = 1_000_000_000n
+const NS_PER_MIN = 60n * NS_PER_SEC
+const NS_PER_HOUR = 60n * NS_PER_MIN
+const NS_PER_DAY = 24n * NS_PER_HOUR
+
+/**
+ * Bucket widths we are willing to choose, smallest first.
+ *
+ * Every entry divides evenly into a day, and the epoch is a whole number
+ * of seconds, so flooring a timestamp against any of them lands on the
+ * same wall-clock boundaries regardless of the query window. That is what
+ * keeps columns still while the user pans or zooms -- an arbitrary width
+ * like span/100 moves every boundary on the smallest range change, and
+ * the whole heatmap reshuffles.
+ *
+ * Widths are also nameable: "5 minute buckets" rather than "1h41m".
+ *
+ * Caveat: day-scale alignment is against UTC midnight, not local. Fine
+ * for now; revisit if buckets are ever labelled by calendar date.
+ */
+const NS_PER_MS = 1_000_000n
+
+const BUCKET_LADDER: readonly bigint[] = [
+  // Sub-second rungs matter for burst captures: a replay that emits a
+  // whole session in a couple of seconds has nothing but sub-second
+  // structure, and a 1s floor would flatten it to one or two columns.
+  // These divide a second evenly, so they keep the stable-boundary
+  // property the rest of the ladder has.
+  NS_PER_MS,
+  10n * NS_PER_MS,
+  100n * NS_PER_MS,
+  250n * NS_PER_MS,
+  500n * NS_PER_MS,
+  NS_PER_SEC,
+  5n * NS_PER_SEC,
+  10n * NS_PER_SEC,
+  30n * NS_PER_SEC,
+  NS_PER_MIN,
+  5n * NS_PER_MIN,
+  10n * NS_PER_MIN,
+  15n * NS_PER_MIN,
+  30n * NS_PER_MIN,
+  NS_PER_HOUR,
+  3n * NS_PER_HOUR,
+  6n * NS_PER_HOUR,
+  12n * NS_PER_HOUR,
+  NS_PER_DAY,
+]
+
+/**
+ * Median gap between consecutive timestamps, or null below two distinct
+ * ones.
+ *
+ * Median rather than mean: a capture containing a pause (or one old burst
+ * plus a recent one) has a mean gap far larger than its real reporting
+ * interval, which would floor the bucket width to something uselessly
+ * coarse.
+ */
+function medianIntervalNs(timestamps: readonly bigint[]): bigint | null {
+  if (timestamps.length < 2) return null
+  const sorted = [...timestamps].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  const gaps: bigint[] = []
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = sorted[i]! - sorted[i - 1]!
+    if (gap > 0n) gaps.push(gap)
+  }
+  if (gaps.length === 0) return null
+  gaps.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  return gaps[Math.floor(gaps.length / 2)]!
+}
+
+/**
+ * Choose a bucket width for the histogram heatmap.
+ *
+ * Spans the *data*, not the query window. A window ending at "now" over
+ * data that is hours or days old would otherwise have its width set by
+ * the empty tail: the race capture is 1.8s of datapoints viewed 11 days
+ * later, and dividing that 11-day span by 100 put every datapoint into a
+ * single column -- worse the further you zoom out, which is backwards.
+ * The gauge/sum path already spans first-to-last datapoint (`bucketize`);
+ * this brings histograms into line.
+ *
+ * Then snap up to the smallest ladder width yielding at most `maxPoints`
+ * buckets, never finer than the data's own cadence -- bucketing below the
+ * reporting interval only manufactures empty columns between real ones.
+ */
 export function histogramBucketNs(
   startTsNs: bigint,
   endTsNs: bigint,
   minDataTsNs: bigint | null,
-  maxPoints: number
+  maxPoints: number,
+  maxDataTsNs: bigint | null = null,
+  dataTimestampsNs: readonly bigint[] = []
 ): bigint {
   const effectiveStart =
     minDataTsNs !== null && minDataTsNs > startTsNs ? minDataTsNs : startTsNs
-  const span = endTsNs - effectiveStart
+  const effectiveEnd =
+    maxDataTsNs !== null && maxDataTsNs < endTsNs ? maxDataTsNs : endTsNs
+
+  const span = effectiveEnd - effectiveStart
   if (span <= 0n || maxPoints < 1) return MIN_BUCKET_NS
-  const raw = span / BigInt(maxPoints)
-  return raw < MIN_BUCKET_NS ? MIN_BUCKET_NS : raw
+
+  const cadence = medianIntervalNs(dataTimestampsNs)
+  const floorNs =
+    cadence !== null && cadence > MIN_BUCKET_NS ? cadence : MIN_BUCKET_NS
+
+  for (const width of BUCKET_LADDER) {
+    if (width < floorNs) continue
+    if (span / width <= BigInt(maxPoints)) return width
+  }
+
+  // Span outruns the ladder (beyond ~100 days at maxPoints=100): whole
+  // days, rounded up so the bucket count stays under target.
+  return (span / NS_PER_DAY / BigInt(maxPoints) + 1n) * NS_PER_DAY
 }
 
 export function histogramBucketStart(
@@ -174,16 +276,97 @@ function mergeHistogramSliceDelta(
   })
 }
 
+/**
+ * Convert a bucket's worth of Cumulative datapoints into the activity
+ * *within* that bucket.
+ *
+ * Cumulative counts run since the start of the stream, so a bucket's own
+ * contribution is last-minus-first, not last. Returning the latest point
+ * (as this did) makes every column show the running total to date: the
+ * heatmap climbs monotonically instead of showing where the activity
+ * was, and it worsens with window length as more points are discarded
+ * per bucket.
+ *
+ * A single datapoint in the bucket has no earlier point to difference
+ * against, so it passes through unchanged -- the first bucket of a stream
+ * therefore carries the stream's history, which is correct: that activity
+ * did happen, we just cannot attribute it more precisely.
+ *
+ * A decrease means the counter reset (process restart). The post-reset
+ * point is then already a delta from zero, so it is taken as-is rather
+ * than differenced into negative counts.
+ */
 function mergeHistogramSliceCumulative(
   dps: (HistogramDataPoint | ExponentialHistogramDataPoint)[]
 ): HistogramSlicePoint | null {
   if (dps.length === 0) return null
-  let latest = dps[0]!
-  for (const dp of dps) {
-    if (dp.timestamp > latest.timestamp) latest = dp
+
+  const ordered = [...dps].sort((a, b) =>
+    a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0
+  )
+  const first = ordered[0]!
+  const last = ordered[ordered.length - 1]!
+  if (first === last) return mergeHistogramSliceDelta([last])
+
+  const lastSlice = mergeHistogramSliceDelta([last])
+  const firstSlice = mergeHistogramSliceDelta([first])
+  if (!lastSlice || !firstSlice) return lastSlice
+
+  return subtractHistogramSlices(lastSlice, firstSlice)
+}
+
+/** Element-wise `a - b`, clamped at zero. A negative result anywhere means
+ *  the counter reset inside the bucket, in which case `a` already counts
+ *  from zero and is returned unchanged. */
+function subtractHistogramSlices(
+  a: HistogramSlicePoint,
+  b: HistogramSlicePoint
+): HistogramSlicePoint {
+  if (a.kind !== b.kind) return a
+
+  const diffCounts = (xs: number[], ys: number[]): number[] | null => {
+    if (xs.length !== ys.length) return null
+    const out: number[] = []
+    for (let i = 0; i < xs.length; i++) {
+      const d = xs[i]! - ys[i]!
+      if (d < 0) return null
+      out.push(d)
+    }
+    return out
   }
-  const slice = mergeHistogramSliceDelta([latest])
-  return slice
+
+  const totals = {
+    count: a.totals.count - b.totals.count,
+    sum: a.totals.sum - b.totals.sum,
+    min: a.totals.min,
+    max: a.totals.max,
+  }
+  if (totals.count < 0) return a
+
+  if (a.kind === 'histogram' && b.kind === 'histogram') {
+    if (a.bounds.length !== b.bounds.length) return a
+    const counts = diffCounts(a.counts, b.counts)
+    if (counts === null) return a
+    return { ...a, counts, totals }
+  }
+
+  if (a.kind === 'expHistogram' && b.kind === 'expHistogram') {
+    if (a.scale !== b.scale) return a
+    if (
+      a.positiveOffset !== b.positiveOffset ||
+      a.negativeOffset !== b.negativeOffset
+    ) {
+      return a
+    }
+    const positiveCounts = diffCounts(a.positiveCounts, b.positiveCounts)
+    const negativeCounts = diffCounts(a.negativeCounts, b.negativeCounts)
+    if (positiveCounts === null || negativeCounts === null) return a
+    const zeroCount = a.zeroCount - b.zeroCount
+    if (zeroCount < 0) return a
+    return { ...a, positiveCounts, negativeCounts, zeroCount, totals }
+  }
+
+  return a
 }
 
 function mergeSliceGroup(
@@ -215,6 +398,8 @@ export function buildHistogramTimeMergedSeries(
   }
 
   let minDataTs: bigint | null = null
+  let maxDataTs: bigint | null = null
+  const dataTimestamps: bigint[] = []
   const allDps: (HistogramDataPoint | ExponentialHistogramDataPoint)[] = []
   for (const ts of timeseries) {
     for (const dp of ts.datapoints) {
@@ -227,13 +412,24 @@ export function buildHistogramTimeMergedSeries(
       const hdp = dp as HistogramDataPoint | ExponentialHistogramDataPoint
       if (hdp.timestamp < startTsNs || hdp.timestamp >= endTsNs) continue
       allDps.push(hdp)
+      dataTimestamps.push(hdp.timestamp)
       if (minDataTs === null || hdp.timestamp < minDataTs) {
         minDataTs = hdp.timestamp
+      }
+      if (maxDataTs === null || hdp.timestamp > maxDataTs) {
+        maxDataTs = hdp.timestamp
       }
     }
   }
 
-  const bucketNs = histogramBucketNs(startTsNs, endTsNs, minDataTs, maxPoints)
+  const bucketNs = histogramBucketNs(
+    startTsNs,
+    endTsNs,
+    minDataTs,
+    maxPoints,
+    maxDataTs,
+    dataTimestamps
+  )
   const groups = new Map<
     string,
     (HistogramDataPoint | ExponentialHistogramDataPoint)[]
