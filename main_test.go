@@ -154,6 +154,27 @@ func TestTelemetryOffKeepsMetricsNone(t *testing.T) {
 	assert.Equal(t, `yaml:service::telemetry::metrics::level: none`, uris[0])
 }
 
+// Batching must actually be in the pipeline. The exporter's sending queue no
+// longer batches, so if the processor is missing from the pipelines nothing
+// batches at all -- every client request becomes its own appender transaction.
+func TestPipelinesBatch(t *testing.T) {
+	joined := strings.Join(collectorURIs(testOptions()), "\n")
+
+	for _, signal := range []string{"traces", "metrics", "logs"} {
+		assert.Contains(t, joined,
+			"service::pipelines::"+signal+"::processors: [batch]",
+			"%s pipeline must batch", signal)
+	}
+
+	// send_batch_max_size bounds a merged batch, which is what makes the
+	// exporter's IngestTimeout a meaningful deadline rather than a guess.
+	assert.Contains(t, joined, "processors::batch::send_batch_max_size:")
+
+	cfg, err := resolveConfig(t, testOptions())
+	require.NoError(t, err)
+	require.NoError(t, cfg.Validate())
+}
+
 // The OTLP target must follow --grpc and --host rather than being hardcoded,
 // or self-telemetry silently goes nowhere on a non-default port.
 func TestSelfTelemetryFollowsGRPCEndpoint(t *testing.T) {

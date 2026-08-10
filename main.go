@@ -107,6 +107,13 @@ func collectorURIs(o configOptions) []string {
 		`yaml:extensions::duckdb::db: ` + o.db,
 		`yaml:extensions::duckdb::db_max_size: "` + o.dbMaxSize + `"`,
 		`yaml:service::extensions: [duckdb]`,
+		// Batching happens here rather than in the exporter's sending queue.
+		// send_batch_max_size bounds a merged batch, which is what makes the
+		// exporter's IngestTimeout a meaningful deadline: without a ceiling no
+		// timeout can tell "large" from "stuck".
+		`yaml:processors::batch::send_batch_size: 8192`,
+		`yaml:processors::batch::send_batch_max_size: 20000`,
+		`yaml:processors::batch::timeout: 200ms`,
 		// The exporter must still be declared even though all of its store
 		// config moved to the extension: pipelines reference `desktop`, and a
 		// config with no exporters section is rejected outright. The empty map
@@ -114,10 +121,13 @@ func collectorURIs(o configOptions) []string {
 		// file.
 		`yaml:exporters::desktop: {}`,
 		`yaml:service::pipelines::traces::receivers: [otlp]`,
+		`yaml:service::pipelines::traces::processors: [batch]`,
 		`yaml:service::pipelines::traces::exporters: [desktop]`,
 		`yaml:service::pipelines::metrics::receivers: [otlp]`,
+		`yaml:service::pipelines::metrics::processors: [batch]`,
 		`yaml:service::pipelines::metrics::exporters: [desktop]`,
 		`yaml:service::pipelines::logs::receivers: [otlp]`,
+		`yaml:service::pipelines::logs::processors: [batch]`,
 		`yaml:service::pipelines::logs::exporters: [desktop]`,
 	}
 

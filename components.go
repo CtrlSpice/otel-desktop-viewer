@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/connector"
 	"go.opentelemetry.io/collector/otelcol"
-	"go.opentelemetry.io/collector/processor"
+	batchprocessor "go.opentelemetry.io/collector/processor/batchprocessor"
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"
 	"go.opentelemetry.io/collector/service/telemetry/otelconftelemetry"
 )
@@ -49,17 +49,14 @@ func components() (otelcol.Factories, error) {
 	factories.ExporterModules = make(map[component.Type]string, len(factories.Exporters))
 	factories.ExporterModules[desktopexporter.NewFactory().Type()] = "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
 
-	// No processors are registered. The collector config is composed entirely
-	// from CLI flags (see collectorURIs in main.go) with no --config escape
-	// hatch, so nothing can place a processor in a pipeline -- a registered one
-	// is unreachable weight in the binary. Batching now happens in the
-	// exporter's sending queue, where it composes with the queue instead of
-	// double-buffering in front of it.
-	factories.Processors, err = otelcol.MakeFactoryMap[processor.Factory]()
+	factories.Processors, err = otelcol.MakeFactoryMap(
+		batchprocessor.NewFactory(),
+	)
 	if err != nil {
 		return otelcol.Factories{}, err
 	}
 	factories.ProcessorModules = make(map[component.Type]string, len(factories.Processors))
+	factories.ProcessorModules[batchprocessor.NewFactory().Type()] = "go.opentelemetry.io/collector/processor/batchprocessor v0.157.0"
 
 	factories.Connectors, err = otelcol.MakeFactoryMap[connector.Factory]()
 	if err != nil {

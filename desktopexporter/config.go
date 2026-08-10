@@ -58,10 +58,12 @@ type Config struct {
 //     mode; the client SDK's own export timeout bounds the blocking.
 //   - Sized in items (spans / datapoints / records), because request count
 //     says nothing about how much work or memory a batch represents.
-//   - Batching at queue consumption, replacing any batch processor in front:
-//     merged batches mean fewer, larger appender transactions, and dedupe at
-//     ingest resolves each distinct attribute set once per merged batch
-//     rather than once per client request.
+//   - No batching here. Batching is the batch processor's job (configured in
+//     main.go's composed pipeline), so there is exactly one buffer in front of
+//     the store rather than two with independent flush timers and different
+//     overflow behaviour. Merged batches still mean fewer, larger appender
+//     transactions, and let ingest resolve each distinct attribute set once
+//     per merged batch rather than once per client request.
 //
 // Deliberately no retry (exporterhelper.WithRetry): a local DuckDB write
 // failure is not transient the way a network export failure is, and replaying
@@ -74,16 +76,7 @@ func defaultSendingQueue() configoptional.Optional[exporterhelper.QueueBatchConf
 		BlockOnOverflow: true,
 		Sizer:           exporterhelper.RequestSizerTypeItems,
 		QueueSize:       50_000,
-		Batch: configoptional.Some(exporterhelper.BatchConfig{
-			FlushTimeout: 200 * time.Millisecond,
-			Sizer:        exporterhelper.RequestSizerTypeItems,
-			MinSize:      8192,
-			// Bounding the batch is what makes IngestTimeout sizeable: without
-			// a ceiling, a merged burst can be arbitrarily large and no
-			// deadline can distinguish "big" from "stuck". Measured ingest is
-			// linear at ~43us/span, so 20k items is ~860ms of work.
-			MaxSize: 20_000,
-		}),
+		Batch:           configoptional.None[exporterhelper.BatchConfig](),
 	})
 }
 
@@ -95,9 +88,9 @@ func defaultSendingQueue() configoptional.Optional[exporterhelper.QueueBatchConf
 // deadline guarantees the lock is always released.
 //
 // Sized against measurement, generously: ingest is linear at ~43us/span, so the
-// 20k-item batch ceiling is ~860ms of work. 30s is ~35x that, which no
-// legitimate batch reaches even on a loaded machine with a cold disk-backed
-// store.
+// batch processor's 20k send_batch_max_size is ~860ms of work. 30s is ~35x
+// that, which no legitimate batch reaches even on a loaded machine with a cold
+// disk-backed store.
 //
 // It is deliberately far above the working range because tripping it is
 // harmful: appenders flush every 50 spans, so a batch cut short is *partially*

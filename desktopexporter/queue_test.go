@@ -20,6 +20,10 @@ import (
 // The queue defaults are load-bearing, not incidental: NumConsumers must stay 1
 // while the store has a single appender connection, and WaitForResult false is
 // the async behaviour the queue exists for. Pin them so a change is a decision.
+//
+// Batching is deliberately absent: it belongs to the batch processor in the
+// composed pipeline, so there is one buffer in front of the store rather than
+// two with independent flush timers.
 func TestDefaultSendingQueue(t *testing.T) {
 	cfg := createDefaultConfig().(*Config)
 
@@ -31,8 +35,9 @@ func TestDefaultSendingQueue(t *testing.T) {
 	assert.True(t, q.BlockOnOverflow)
 	assert.Equal(t, exporterhelper.RequestSizerTypeItems, q.Sizer)
 	assert.Positive(t, q.QueueSize)
-	require.True(t, q.Batch.HasValue(), "batching at queue consumption should be on by default")
-	assert.Positive(t, q.Batch.Get().FlushTimeout)
+	assert.False(t, q.Batch.HasValue(),
+		"batching belongs to the batch processor, not the queue -- two buffers "+
+			"would mean two flush timers and two overflow policies")
 
 	require.NoError(t, cfg.Validate())
 }
