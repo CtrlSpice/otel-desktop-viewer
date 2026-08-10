@@ -11,7 +11,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/confmap"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -73,13 +72,12 @@ func TestSendingQueueValidation(t *testing.T) {
 func TestQueuedIngestEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	set := testExporterSettings(t)
+	host, endpoint := startTestExtension(t)
 	cfg := createDefaultConfig().(*Config)
-	cfg.Endpoint = freeLocalAddr(t)
-	cfg.DbMaxSize = "0"
 
 	exp, err := createTracesExporter(ctx, set, cfg)
 	require.NoError(t, err)
-	require.NoError(t, exp.Start(ctx, componenttest.NewNopHost()))
+	require.NoError(t, exp.Start(ctx, host))
 	defer func() { require.NoError(t, exp.Shutdown(ctx)) }()
 
 	td := ptrace.NewTraces()
@@ -100,7 +98,7 @@ func TestQueuedIngestEndToEnd(t *testing.T) {
 	// flush timeout. Poll the real RPC surface until it lands.
 	searchBody := `{"jsonrpc":"2.0","id":1,"method":"searchTraces","params":["0","9223372036854775807"]}`
 	assert.Eventually(t, func() bool {
-		resp, err := http.Post("http://"+cfg.Endpoint+"/rpc", "application/json",
+		resp, err := http.Post("http://"+endpoint+"/rpc", "application/json",
 			bytes.NewBufferString(searchBody))
 		if err != nil {
 			return false

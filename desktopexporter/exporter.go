@@ -3,15 +3,13 @@ package desktopexporter
 import (
 	"context"
 	"database/sql/driver"
-	"time"
+	"errors"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	"go.uber.org/zap"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/server"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
@@ -19,120 +17,58 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
-const (
-	// retentionInterval is how often the retention loop checks the store size.
-	retentionInterval = 30 * time.Second
-
-	// Default store size caps applied when db_max_size is unset. In-memory
-	// mode gets a tighter default because the data competes with everything
-	// else for RAM; a database file can afford more room.
-	defaultMaxSizeInMemory = 512 << 20 // 512 MB
-	defaultMaxSizeOnDisk   = 2 << 30   // 2 GB
-)
-
-type desktopExporter struct {
-	server *server.Server
-	store  *store.Store
-	logger *zap.Logger
-	tel    *telemetry.Telemetry
-
-	retentionCancel context.CancelFunc
-	retentionDone   chan struct{}
+// storeHost is what the exporter needs from the extensions map: something that
+// owns the shared store. Declared consumer-side so the exporter is coupled to
+// the capability, not to the duckdb extension's package or type name --
+// anything in host.GetExtensions() exposing Store() qualifies.
+type storeHost interface {
+	Store() *store.Store
 }
 
-func newDesktopExporter(ctx context.Context, cfg *Config, settings component.TelemetrySettings) (*desktopExporter, error) {
-	logger := settings.Logger
+// desktopExporter writes one signal's batches into the shared store. It owns
+// nothing else: the store, the viewer server, and retention live in the duckdb
+// extension, which the collector starts before -- and shuts down after -- any
+// pipeline component. Each signal's exporter is an independent instance;
+// sharing happens through the extension lookup, not through shared construction.
+type desktopExporter struct {
+	tel *telemetry.Telemetry
 
+	// store is resolved in Start and never changes afterwards. The collector
+	// guarantees extensions are started first, so by the time the pipeline
+	// calls the push functions this is non-nil.
+	store *store.Store
+}
+
+func newDesktopExporter(cfg *Config, settings component.TelemetrySettings) (*desktopExporter, error) {
 	tel, err := telemetry.New(settings, cfg.SelfTelemetry(), cfg.InstrumentIngest())
 	if err != nil {
 		return nil, err
 	}
+	return &desktopExporter{tel: tel}, nil
+}
 
-	str, err := store.NewStore(ctx, cfg.Db)
-	if err != nil {
-		return nil, err
-	}
-
-	srv, err := server.NewServer(cfg.Endpoint, str, logger, tel)
-	if err != nil {
-		str.Close()
-		return nil, err
-	}
-
-	// Config is already validated, so the only parse outcomes are a size,
-	// 0 (disabled), or -1 (unset: apply the mode-dependent default).
-	maxBytes, err := parseByteSize(cfg.DbMaxSize)
-	if err != nil {
-		str.Close()
-		return nil, err
-	}
-	if maxBytes < 0 {
-		if cfg.Db == "" {
-			maxBytes = defaultMaxSizeInMemory
-		} else {
-			maxBytes = defaultMaxSizeOnDisk
+// Start resolves the shared store from the collector's extensions. Exactly one
+// store-owning extension must be configured: none is a configuration error
+// (add `duckdb:` under extensions and service::extensions), and more than one
+// would make the choice fall to map iteration order, so it is rejected rather
+// than silently picking a writer target at random.
+func (e *desktopExporter) Start(_ context.Context, host component.Host) error {
+	var found *store.Store
+	for _, ext := range host.GetExtensions() {
+		sh, ok := ext.(storeHost)
+		if !ok {
+			continue
 		}
-	}
-	// The cap lives on the store so getStats can report it alongside usage.
-	str.SetRetentionCap(maxBytes)
-
-	return &desktopExporter{
-		server: srv,
-		store:  str,
-		logger: logger,
-		tel:    tel,
-	}, nil
-}
-
-// runRetentionLoop enforces the store size cap every retentionInterval until
-// ctx is cancelled. It closes done on exit so Shutdown can wait for the last
-// enforcement pass to finish before closing the store underneath it.
-func (e *desktopExporter) runRetentionLoop(ctx context.Context, done chan<- struct{}) {
-	defer close(done)
-
-	ticker := time.NewTicker(retentionInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			e.enforceRetention(ctx)
+		if found != nil {
+			return errors.New("multiple store extensions configured; the desktop exporter needs exactly one duckdb extension")
 		}
+		found = sh.Store()
 	}
-}
-
-// enforceRetention runs one retention pass inside a span that carries the store
-// size on either side of it, so how much a pass actually reclaims is visible.
-//
-// The measurements are best-effort: a failed SizeBytes reports 0 for that side
-// and the pass runs (or is reported) anyway. Instrumentation must never break
-// the thing it measures, and a pass that pruned successfully is not a failure
-// just because we could not size the result.
-func (e *desktopExporter) enforceRetention(ctx context.Context) {
-	spanCtx, endRetention := e.tel.Retention(ctx)
-
-	before := e.storeSizeBytes(spanCtx)
-	err := e.store.EnforceRetention(spanCtx, e.store.RetentionCap())
-	after := e.storeSizeBytes(spanCtx)
-
-	endRetention(before, after, err)
-
-	if err != nil {
-		e.logger.Error("retention enforcement failed", zap.Error(err))
+	if found == nil {
+		return errors.New("no store extension configured: add `duckdb` to extensions and service::extensions")
 	}
-}
-
-// storeSizeBytes measures the store for the retention span, reporting 0 when
-// the measurement itself fails.
-func (e *desktopExporter) storeSizeBytes(ctx context.Context) int64 {
-	size, err := e.store.SizeBytes(ctx)
-	if err != nil {
-		e.logger.Debug("could not measure store size for retention span", zap.Error(err))
-		return 0
-	}
-	return size
+	e.store = found
+	return nil
 }
 
 // The three push paths each wrap ingest in a span carrying the batch's item
@@ -165,37 +101,4 @@ func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error 
 	})
 	end(err)
 	return err
-}
-
-func (e *desktopExporter) Start(ctx context.Context, host component.Host) error {
-	if err := e.server.Start(); err != nil {
-		return err
-	}
-
-	if e.store.RetentionCap() > 0 {
-		// The loop gets its own context rather than the startup ctx, which
-		// the collector cancels once Start returns.
-		retentionCtx, cancel := context.WithCancel(context.Background())
-		e.retentionCancel = cancel
-		e.retentionDone = make(chan struct{})
-		go e.runRetentionLoop(retentionCtx, e.retentionDone)
-	}
-	return nil
-}
-
-func (e *desktopExporter) Shutdown(ctx context.Context) error {
-	// Stop the retention loop and wait for any in-flight enforcement pass,
-	// so the store isn't closed out from under it.
-	if e.retentionCancel != nil {
-		e.retentionCancel()
-		<-e.retentionDone
-	}
-
-	// Shut down the HTTP server and wait for the serve goroutine to exit.
-	if err := e.server.Shutdown(ctx); err != nil {
-		return err
-	}
-
-	// Then close the store
-	return e.store.Close()
 }

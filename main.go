@@ -100,9 +100,19 @@ func collectorURIs(o configOptions) []string {
 		`yaml:receivers::otlp::protocols::http::cors::allowed_origins: [https://*,http://*]`,
 		`yaml:receivers::otlp::protocols::http::endpoint: "` + endpoint(o.httpPort) + `"`,
 		`yaml:receivers::otlp::protocols::grpc::endpoint: "` + endpoint(o.grpcPort) + `"`,
-		`yaml:exporters::desktop::endpoint: "` + endpoint(o.browserPort) + `"`,
-		`yaml:exporters::desktop::db: ` + o.db,
-		`yaml:exporters::desktop::db_max_size: "` + o.dbMaxSize + `"`,
+		// The duckdb extension owns the store, the viewer server, and
+		// retention; the desktop exporter only writes and finds the store
+		// through the extension at startup.
+		`yaml:extensions::duckdb::endpoint: "` + endpoint(o.browserPort) + `"`,
+		`yaml:extensions::duckdb::db: ` + o.db,
+		`yaml:extensions::duckdb::db_max_size: "` + o.dbMaxSize + `"`,
+		`yaml:service::extensions: [duckdb]`,
+		// The exporter must still be declared even though all of its store
+		// config moved to the extension: pipelines reference `desktop`, and a
+		// config with no exporters section is rejected outright. The empty map
+		// means "with defaults", exactly like writing `desktop:` in a config
+		// file.
+		`yaml:exporters::desktop: {}`,
 		`yaml:service::pipelines::traces::receivers: [otlp]`,
 		`yaml:service::pipelines::traces::exporters: [desktop]`,
 		`yaml:service::pipelines::metrics::receivers: [otlp]`,
@@ -138,6 +148,7 @@ func telemetryURIs(o configOptions, otlpEndpoint string) []string {
 	target := "http://" + otlpEndpoint
 	return []string{
 		`yaml:exporters::desktop::telemetry: self`,
+		`yaml:extensions::duckdb::telemetry: self`,
 		"yaml:" + `
 service:
   telemetry:
