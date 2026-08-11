@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { ExponentialHistogramDataPoint } from '@/types/api-types'
+import type {
+  ExponentialHistogramDataPoint,
+  HistogramDataPoint,
+} from '@/types/api-types'
 import {
   buildHistogramTimeMergedSeries,
   isHistogramAggregationError,
@@ -168,5 +171,164 @@ describe('exponential histograms whose scale drifts within a series', () => {
     // so a correct merge overlaps them rather than laying them side by side.
     expect(slice.positiveOffset).toBe(2)
     expect(slice.positiveCounts).toEqual([7, 7])
+  })
+})
+
+describe('cumulative exponential histograms whose scale drifts mid-window', () => {
+  function cumDp(
+    timestamp: bigint,
+    scale: number,
+    offset: number,
+    counts: number[],
+    count: number
+  ): ExponentialHistogramDataPoint {
+    return {
+      id: `dp-${timestamp}`,
+      metricType: 'ExponentialHistogram',
+      timestamp,
+      startTime: 0n,
+      flags: 0,
+      exemplars: [],
+      attributes: [],
+      count,
+      sum: count,
+      min: 1,
+      max: 100,
+      scale,
+      zeroCount: 0,
+      zeroThreshold: 0,
+      positiveBucketOffset: offset,
+      positiveBucketCounts: counts,
+      negativeBucketOffset: 0,
+      negativeBucketCounts: [],
+      aggregationTemporality: 'Cumulative',
+    } as unknown as ExponentialHistogramDataPoint
+  }
+
+  function activityIn(dps: ExponentialHistogramDataPoint[]) {
+    const series = [
+      { attributesKey: 'a', attributes: [], datapoints: dps },
+    ] as unknown as Parameters<typeof buildHistogramTimeMergedSeries>[0]
+    const out = buildHistogramTimeMergedSeries(
+      series,
+      1_000_000_000n,
+      2_000_000_000n,
+      1,
+      'Cumulative'
+    )
+    expect(isHistogramAggregationError(out)).toBe(false)
+    const slices = out as HistogramSlicePoint[]
+    expect(slices).toHaveLength(1)
+    return slices[0]!
+  }
+
+  it('subtracts across a scale change instead of reporting the running total', () => {
+    // Cumulative counter: 10 observations by the first datapoint, 30 by the
+    // second, and the SDK downscaled from 2 to 1 in between. The activity in
+    // this bucket is 20, not 30.
+    const slice = activityIn([
+      cumDp(1_000_000_000n, 2, 4, [5, 5, 0, 0], 10),
+      cumDp(1_000_000_001n, 1, 2, [15, 15], 30),
+    ])
+    expect(slice.kind).toBe('expHistogram')
+    if (slice.kind !== 'expHistogram') return
+
+    expect(slice.totals.count).toBe(20)
+    // First downscales to [10, 0] at offset 2; last is [15, 15] at offset 2.
+    expect(slice.scale).toBe(1)
+    expect(slice.positiveOffset).toBe(2)
+    expect(slice.positiveCounts).toEqual([5, 15])
+    expect(slice.positiveCounts.reduce((x, y) => x + y, 0)).toBe(20)
+  })
+
+  it('still treats a genuine counter reset as a reset', () => {
+    // The later slice is smaller: the counter restarted, so the activity is
+    // the later value itself, not a negative difference.
+    const slice = activityIn([
+      cumDp(1_000_000_000n, 1, 2, [50, 50], 100),
+      cumDp(1_000_000_001n, 1, 2, [3, 4], 7),
+    ])
+    if (slice.kind !== 'expHistogram') return
+    expect(slice.totals.count).toBe(7)
+    expect(slice.positiveCounts).toEqual([3, 4])
+  })
+})
+
+describe('explicit-bounds histograms whose bounds change mid-series', () => {
+  function boundsDp(
+    timestamp: bigint,
+    bounds: number[],
+    counts: number[]
+  ): HistogramDataPoint {
+    const count = counts.reduce((a, b) => a + b, 0)
+    return {
+      id: `dp-${timestamp}`,
+      metricType: 'Histogram',
+      timestamp,
+      startTime: timestamp,
+      flags: 0,
+      exemplars: [],
+      attributes: [],
+      count,
+      sum: count,
+      min: 0,
+      max: 10,
+      explicitBounds: bounds,
+      bucketCounts: counts,
+      aggregationTemporality: 'Delta',
+    } as unknown as HistogramDataPoint
+  }
+
+  it('reports the mismatch instead of summing incompatible layouts', () => {
+    // Two datapoints of one series, one bucketed at [1,2,5] and one at
+    // [10,20,50]. Bucket i of the first covers nothing like bucket i of the
+    // second, so adding them is meaningless -- and the old code did exactly
+    // that, then labelled the result with the first datapoint's bounds.
+    const series = [
+      {
+        attributesKey: 'a',
+        attributes: [],
+        datapoints: [
+          boundsDp(1_000_000_000n, [1, 2, 5], [1, 1, 1, 1]),
+          boundsDp(1_000_000_001n, [10, 20, 50], [2, 2, 2, 2]),
+        ],
+      },
+    ] as unknown as Parameters<typeof buildHistogramTimeMergedSeries>[0]
+
+    const out = buildHistogramTimeMergedSeries(
+      series,
+      1_000_000_000n,
+      2_000_000_000n,
+      1,
+      'Delta'
+    )
+    expect(isHistogramAggregationError(out)).toBe(true)
+    if (!isHistogramAggregationError(out)) return
+    expect(out.kind).toBe('boundsMismatch')
+  })
+
+  it('still merges when the bounds actually agree', () => {
+    const series = [
+      {
+        attributesKey: 'a',
+        attributes: [],
+        datapoints: [
+          boundsDp(1_000_000_000n, [1, 2, 5], [1, 1, 1, 1]),
+          boundsDp(1_000_000_001n, [1, 2, 5], [2, 2, 2, 2]),
+        ],
+      },
+    ] as unknown as Parameters<typeof buildHistogramTimeMergedSeries>[0]
+
+    const out = buildHistogramTimeMergedSeries(
+      series,
+      1_000_000_000n,
+      2_000_000_000n,
+      1,
+      'Delta'
+    )
+    expect(isHistogramAggregationError(out)).toBe(false)
+    const slice = (out as HistogramSlicePoint[])[0]!
+    if (slice.kind !== 'histogram') return
+    expect(slice.counts).toEqual([3, 3, 3, 3])
   })
 })
