@@ -226,8 +226,12 @@ export type DataPoint =
 // timestamp-desc as well. Both orderings are guaranteed by the
 // backend SQL.
 export type MetricTimeseries = {
+  /** Series id -- stable across restarts, unique per (stream, resource, labels). */
   attributesKey: string
   attributes: Attributes
+  /** The resource that emitted this series; distinguishes replicas whose
+   *  labels are identical. */
+  resource: ResourceData
   datapoints: DataPoint[]
 }
 

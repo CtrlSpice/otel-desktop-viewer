@@ -71,6 +71,7 @@ function makeCumulativeSumMetric(): MetricData {
     timeseries: [
       {
         attributesKey: 'route=/a',
+        resource: { attributes: [], droppedAttributesCount: 0 },
         attributes: [{ key: 'route', value: '/a', type: 'string' }],
         datapoints: [
           makeSumDatapoint('dp-a1', 0, 10),
@@ -79,6 +80,7 @@ function makeCumulativeSumMetric(): MetricData {
       },
       {
         attributesKey: 'route=/b',
+        resource: { attributes: [], droppedAttributesCount: 0 },
         attributes: [{ key: 'route', value: '/b', type: 'string' }],
         datapoints: [
           makeSumDatapoint('dp-b1', 0, 4),

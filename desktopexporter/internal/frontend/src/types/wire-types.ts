@@ -239,8 +239,26 @@ export type JsonDataPoint =
   | JsonExponentialHistogramDataPoint
 
 export type JsonMetricTimeseries = {
+  /**
+   * The series id: content-derived from (stream, resource, labels).
+   *
+   * Was the canonical "key=value|..." rendering of the labels, which could not
+   * survive series splitting by resource -- two replicas of one service have
+   * byte-identical labels and so produced colliding keys. It is also stable
+   * across restarts and retention, which the old key was not, so it can be put
+   * in a URL.
+   */
   attributesKey: string
   attributes: JsonAttribute[]
+  /**
+   * The resource that emitted this series.
+   *
+   * Load-bearing once series split by resource: when two replicas produce
+   * identical labels, this is the only thing that tells them apart. Constant
+   * within a series by construction. JsonMetricData.resource still describes
+   * one arbitrary batch and is the weaker claim.
+   */
+  resource: JsonResourceData
   datapoints: JsonDataPoint[]
 }
 

@@ -33,6 +33,7 @@ import type {
   Attributes,
 } from '@/types/api-types'
 import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
+import { distinguishingResourceAttributes } from '@/utils/series-labels'
 import {
   buildHistogramTimeMergedSeries,
   buildVisibleSeriesQuantileChartTimeseries,
@@ -502,9 +503,13 @@ export function createMetricViewContext(
   const gaugeSumLegendTimeseries = $derived.by((): LegendTimeseries[] => {
     const m = getMetric()
     if (!m) return []
+    const distinguishing = distinguishingResourceAttributes(m.timeseries)
     return m.timeseries.map(ts => ({
       key: ts.attributesKey,
-      attributes: ts.attributes,
+      attributes: [
+        ...ts.attributes,
+        ...(distinguishing.get(ts.attributesKey) ?? []),
+      ],
     }))
   })
 
@@ -951,9 +956,10 @@ export function createMetricViewContext(
   const histogramLegendTimeseries = $derived.by((): LegendTimeseries[] => {
     const m = getMetric()
     if (!m) return []
+    const distinguishing = distinguishingResourceAttributes(m.timeseries)
     return histogramTimeseriesGroups.map(g => ({
       key: g.key,
-      attributes: g.attributes,
+      attributes: [...g.attributes, ...(distinguishing.get(g.key) ?? [])],
     }))
   })
 

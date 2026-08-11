@@ -261,6 +261,7 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
   return {
     attributesKey: json.attributesKey,
     attributes: json.attributes,
+    resource: json.resource,
     datapoints: json.datapoints.map(dataPointFromJSON),
   }
 }

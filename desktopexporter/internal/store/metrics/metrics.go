@@ -964,13 +964,26 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 		-- which is what the detail panel's legend reads top-down.
 		-- Empty list (no dps in window) collapses to '[]' via the
 		-- outer coalesce.
+		-- Each series carries the resource that emitted it.
+		--
+		-- Not optional once series split by resource: two replicas of one
+		-- service produce byte-identical attribute sets, so the resource is the
+		-- only thing that tells them apart. Without it the legend shows two
+		-- entries a user cannot distinguish, which is worse than the single
+		-- merged line the split replaced.
+		--
+		-- The top-level resource (from the representative ingest) stays for
+		-- compatibility, but it is the weaker claim: it describes one arbitrary
+		-- batch, whereas this describes the line being drawn.
 		timeseries_agg as (
 			select to_json(list(json_object(
-				'attributesKey', attrs_key,
-				'attributes', attributes_sample,
-				'datapoints', datapoints
-			) order by latest_ts desc)) as timeseries
-			from ts_dps_agg
+				'attributesKey', t.attrs_key,
+				'attributes', t.attributes_sample,
+				'resource', resource_json(r.attribute_ids, r.dropped_attributes_count),
+				'datapoints', t.datapoints
+			) order by t.latest_ts desc)) as timeseries
+			from ts_dps_agg t
+			join resources r on r.id = t.resource_id
 		)
 		-- Left join: a stream with no datapoints in the window still
 		-- produces a row (empty timeseries, blank representative fields).
