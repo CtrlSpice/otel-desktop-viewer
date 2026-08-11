@@ -330,18 +330,40 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 // When criteria is nil, all spans for the trace are returned (replacing GetTrace).
 // When criteria is provided, only matching spans are returned (replacing SearchTraceSpans).
 func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
+	query, args, err := searchSpansSQL(traceID, criteria)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("SearchSpans: %w", ErrTraceIDNotFound)
+	}
+	return json.RawMessage(raw), nil
+}
+
+// searchSpansSQL renders the trace-fetch query and its bound arguments.
+//
+// Split out from SearchSpans so the SQL is reachable without a database. That
+// is what lets a golden test assert the rendered text, which in turn is what
+// makes moving these query bodies into .sql files provable as a no-op rather
+// than merely believed to be one.
+func searchSpansSQL(traceID string, criteria any) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
+			return "", nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
 		}
 	}
 
 	cteSQL, whereClause, args, err := buildSpanSQL(searchTree, traceID)
 	if err != nil {
-		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
+		return "", nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
 	}
 
 	// The recursive CTE always walks the full trace tree (filtered by trace_id only)
@@ -582,14 +604,7 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 		from ordered_spans
 	`, cteSQL, matchedCTE, matchedExpr, matchedJoin)
 
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrSpansStoreInternal, err)
-	}
-	if raw == nil {
-		return nil, fmt.Errorf("SearchSpans: %w", ErrTraceIDNotFound)
-	}
-	return json.RawMessage(raw), nil
+	return query, args, nil
 }
 
 // GetTraceAttributes returns every attribute name/scope/type this store knows
