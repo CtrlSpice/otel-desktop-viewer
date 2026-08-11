@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
@@ -255,29 +256,11 @@ func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error)
 	// against the dictionary in place. This replaced a log_attrs CTE that
 	// grouped the log's attribute rows by scope and was left-joined back three
 	// times under different aliases.
-	query := `
-		select cast(json_object(
-			'id', l.id,
-			'timestamp', l.timestamp::varchar,
-			'observedTimestamp', l.observed_timestamp::varchar,
-			'traceID', trace_id_wire(l.trace_id),
-			'spanID', span_id_wire(l.span_id),
-			'severityText', l.severity_text,
-			'severityNumber', l.severity_number,
-			'body', l.body,
-			'bodyType', l.body_type,
-			'resource', resource_json(r.attribute_ids, r.dropped_attributes_count),
-			'scope', scope_json(sc.name, sc.version, sc.attribute_ids, sc.dropped_attributes_count),
-			'droppedAttributesCount', l.dropped_attributes_count,
-			'flags', l.flags,
-			'eventName', l.event_name,
-			'attributes', attrs_json(l.attribute_ids)
-		) as varchar) as log
-		from logs l
-		join resources r on r.id = l.resource_id
-		join scopes sc on sc.id = l.scope_id
-		where l.id = ?::uuid
-	`
+	query, err := queries.Render(queries.GetLog, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, logID).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -296,15 +279,11 @@ func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error)
 // spans.GetTraceAttributes for why the dictionary answers this directly instead
 // of unnesting every log in the window.
 func GetLogAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
-	query := `
-		select cast(to_json(list(attribute_def_json(sub.key, sub.scope, sub.type)
-			order by sub.key, sub.scope)) as varchar) as attributes
-		from (
-			select distinct a.key, a.scope, a.type
-			from attributes a
-			where a.scope in ('resource', 'scope', 'log')
-		) sub
-	`
+	query, err := queries.Render(queries.GetLogAttributes, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetLogAttributes: %w: %w", ErrLogsStoreInternal, err)

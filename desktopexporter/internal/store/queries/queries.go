@@ -49,7 +49,7 @@ import (
 )
 
 //go:embed ddl/types/*.sql ddl/tables/*.sql ddl/indexes/*.sql ddl/macros/*.sql
-//go:embed spans/*.sql
+//go:embed spans/*.sql metrics/*.sql logs/*.sql
 var files embed.FS
 
 // Statement is one DDL object: the SQL, plus the file it came from.
@@ -91,11 +91,25 @@ const (
 
 	// SearchTraces lists trace summaries for the trace list view.
 	SearchTraces Name = "spans/search_traces.sql"
+
+	// GetMetric returns one stream's series and datapoints in a time window.
+	GetMetric Name = "metrics/get_metric.sql"
+	// GetMetricAttributes lists the attribute keys metrics carry.
+	GetMetricAttributes Name = "metrics/get_metric_attributes.sql"
+
+	// GetLog returns one log record with its attributes resolved.
+	GetLog Name = "logs/get_log.sql"
+	// GetLogAttributes lists the attribute keys logs carry.
+	GetLogAttributes Name = "logs/get_log_attributes.sql"
 )
 
 // queryNames is every read-path query. Kept beside the constants so adding one
 // without registering it is a visible omission rather than a silent one.
-var queryNames = []Name{SearchSpans, SearchTraces}
+var queryNames = []Name{
+	SearchSpans, SearchTraces,
+	GetMetric, GetMetricAttributes,
+	GetLog, GetLogAttributes,
+}
 
 var templates = parseAll()
 
