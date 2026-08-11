@@ -1410,14 +1410,16 @@ func findMetricID(t *testing.T, s *store.Store, ctx context.Context, name string
 	return ""
 }
 
-// TestIngestMetrics_FlushInterval exercises the flushIntervalMetrics codepath by ingesting
-// more than 100 metrics in one call (flush runs when metricCount % 100 == 0). All metrics
-// have resource and scope attributes; we assert they were flushed correctly.
-func TestIngestMetrics_FlushInterval(t *testing.T) {
+// TestIngestMetrics_LargeBatchStaysConsistent ingests more metrics in one call
+// than the flush interval and asserts they all landed with their attributes.
+// Like the spans and logs versions it does not claim to test the flush itself,
+// which is unobservable by design. Sized from the constant so it cannot stop
+// being a large batch when the constant moves.
+func TestIngestMetrics_LargeBatchStaysConsistent(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	const batchSize = 101 // > flushIntervalMetrics (100)
+	const batchSize = metrics.FlushInterval + 1
 	err := s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(batchSize), s.FlushedIDs())
 	})

@@ -1090,14 +1090,28 @@ func TestSearchTraces(t *testing.T) {
 	})
 }
 
-// TestIngestSpans_FlushInterval exercises the flushIntervalSpans codepath by ingesting
-// more than 50 spans in one call (flush runs when spanCount % 50 == 0). All spans have
-// resource, scope, and span attributes; we assert they were flushed correctly.
-func TestIngestSpans_FlushInterval(t *testing.T) {
+// TestIngestSpans_LargeBatchStaysConsistent ingests more spans in one call
+// than the flush interval and asserts every span landed with attribute ids
+// that resolve against the dictionary.
+//
+// It deliberately does *not* claim to test the mid-batch flush, because that
+// flush has no observable behaviour to test: it caps appender memory on a
+// pathological batch and nothing more. Nothing reads mid-batch -- ingest holds
+// the store write lock throughout -- and the deferred Close flushes whatever
+// is left, so neutering the interval changes no result this or any other test
+// can see. An earlier version of this test was named for the flush interval
+// and survived exactly that mutation.
+//
+// What it does catch is the two-pass split-brain: the join below fails if the
+// appender wrote an array whose ids never reached the dictionary. The batch is
+// sized from the constant so it stays large relative to the interval -- when
+// the constant was raised from 50 to 500 the hardcoded 51 quietly stopped
+// being a large batch at all.
+func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	const batchSize = 51 // > flushIntervalSpans (50)
+	const batchSize = spans.FlushInterval + 1
 	traces := createTestTracesPdataN(batchSize)
 	err := s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
@@ -1111,7 +1125,8 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, batchSize, getTraceSpansCount(t, raw))
 
-	// Assert attributes flushed: span 1 (index 0), span 50 (index 49), span 51 (index 50)
+	// Sample the first span, the last one before the mid-batch flush, and the
+	// first one after it -- the boundary is where a split-brain would show.
 	// SpanID for index i is (i+1) as 16-char hex; UUID format is 8-4-4-4-12.
 	//
 	// Attributes are no longer rows owned by a span, so "did this span's
@@ -1120,7 +1135,7 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 	// appender wrote an array whose ids never made it into the dictionary, which
 	// is precisely the split-brain the two-pass ingest could produce if a
 	// mid-batch flush landed between the passes.
-	for _, spanIndex := range []int{0, 49, 50} {
+	for _, spanIndex := range []int{0, spans.FlushInterval - 1, spans.FlushInterval} {
 		spanIDHex := fmt.Sprintf("%016x", spanIndex+1)
 		spanUUID := "00000000-0000-0000-0000-" + spanIDHex[4:]
 		attrCount := countRows(t, s, ctx, `

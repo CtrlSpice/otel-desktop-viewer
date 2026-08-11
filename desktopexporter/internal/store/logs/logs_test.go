@@ -619,15 +619,18 @@ func TestDeleteLogsByIDs_Empty(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestIngestLogs_FlushInterval exercises the flushIntervalLogs codepath by ingesting
-// a few hundred logs in one call (flush runs when logCount % 100 == 0). All logs
-// have resource, scope, and log attributes; we assert they were flushed correctly.
-func TestIngestLogs_FlushInterval(t *testing.T) {
+// TestIngestLogs_LargeBatchStaysConsistent ingests more logs in one call than
+// the flush interval and asserts every record landed with its attributes
+// intact. As with the spans version, it does not claim to test the flush
+// itself -- that has no observable behaviour -- only that a batch larger than
+// the interval ingests consistently. Sized from the constant: this said 250
+// against an interval that had been raised to 500.
+func TestIngestLogs_LargeBatchStaysConsistent(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
-	const batchSize = 250
+	const batchSize = logs.FlushInterval + 1
 	ldata := createTestLogsPdataN(baseTime, batchSize)
 	err := s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
