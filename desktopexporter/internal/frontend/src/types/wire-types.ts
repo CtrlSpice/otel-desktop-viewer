@@ -68,21 +68,38 @@ export type JsonLinkData = {
   attributes: JsonAttribute[]
 }
 
+// The searchSpans wire shape is compressed in three ways, all resolved at the
+// service boundary so nothing downstream sees them:
+//
+//   - resource and scope are references (`r`, `s`) into the response's
+//     top-level maps rather than a full copy per span. The reference trace
+//     holds 23 distinct resources and 1 scope across 5,735 spans, where the
+//     repeated objects were over half the payload.
+//   - times are `start` (offset from the response's traceStart) and `dur`,
+//     rather than two 19-digit absolute nanosecond strings. Offset and
+//     duration are also what a waterfall bar is: a position and a width.
+//   - traceID is gone; it is at the response root, and a single-trace response
+//     repeated it once per span.
+//
+// Together these took the reference trace from 6.90 MB to 2.92 MB.
 export type JsonSpanData = {
-  traceID: string
   traceState: string
   spanID: string
   parentSpanID: string | null
   name: string
   kind: string
-  startTime: string
-  endTime: string
+  /** Nanoseconds after JsonTraceData.traceStart. */
+  start: number
+  /** Duration in nanoseconds, measured from this span's own start. */
+  dur: number
   // attributes/events/links are coalesced to [] server-side; never absent.
   attributes: JsonAttribute[]
   events: JsonEventData[]
   links: JsonLinkData[]
-  resource: JsonResourceData
-  scope: JsonScopeData
+  /** Key into JsonTraceData.resources. */
+  r: number
+  /** Key into JsonTraceData.scopes. */
+  s: number
   droppedAttributesCount: number
   droppedEventsCount: number
   droppedLinksCount: number
@@ -99,6 +116,21 @@ export type JsonSpanNode = {
 
 export type JsonTraceData = {
   traceID: string
+  /**
+   * Absolute nanoseconds, as a string: the baseline every span's `start` is
+   * measured from. Only this one field needs the full magnitude.
+   *
+   * It is min(start_time) across the spans in *this response*, not the root
+   * span's start -- clock skew across hosts means a child can legitimately
+   * report an earlier start than its parent, and a trace may have no root at
+   * all. Baseline and offsets are computed by the same query and shipped
+   * together, so each response is internally consistent.
+   */
+  traceStart: string
+  /** Distinct resources in this trace, keyed by a store-stable sequence number. */
+  resources: Record<string, JsonResourceData>
+  /** Distinct scopes in this trace, keyed by a store-stable sequence number. */
+  scopes: Record<string, JsonScopeData>
   spans: JsonSpanNode[]
 }
 

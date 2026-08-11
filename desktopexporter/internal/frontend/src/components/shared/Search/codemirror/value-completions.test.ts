@@ -8,7 +8,7 @@ import {
 import { queryLanguageSupport } from './query-language'
 import type { JsonAttributeMatch } from '@/types/wire-types'
 import { OPERATORS } from '@/constants/operators'
-import type { FieldDefinition } from '@/constants/fields'
+import type { AttributeScope, FieldDefinition } from '@/constants/fields'
 
 const matches: JsonAttributeMatch[] = [
   {
@@ -32,7 +32,7 @@ const matches: JsonAttributeMatch[] = [
 // cross-signal test below.
 const attrField = (
   name: string,
-  attributeScope: FieldDefinition['attributeScope']
+  attributeScope: AttributeScope
 ): FieldDefinition => ({
   name,
   type: 'string',

@@ -166,25 +166,48 @@ function traceSummariesFromJSON(json: JsonTraceSummary[]): TraceSummary[] {
   return json.map(traceSummaryFromJSON)
 }
 
+// Rehydrates the compressed searchSpans wire shape into the SpanData the views
+// expect: references resolved against the response's resource and scope maps,
+// times reconstructed from the trace baseline, traceID reattached.
+//
+// Every compression the wire format applies is undone here, at one boundary, so
+// no view knows the transport changed. That was worth doing deliberately -- the
+// waterfall, the detail panel and the search results all read SpanData, and
+// pushing `r`/`s` lookups into each of them would have spread the wire format
+// across the app for no benefit.
+//
+// Resolved resources and scopes are *shared*, not copied: all 4,891 spans of a
+// trace point at the same 23 resource objects. They are read-only downstream,
+// and copying them per span would rebuild client-side exactly the duplication
+// the wire format just removed.
 function traceDataFromJSON(json: JsonTraceData): TraceData {
+  const traceStart = parseBigInt(json.traceStart)
+
   return {
-    ...json,
+    traceID: json.traceID,
     // events is coalesced to [] server-side and matched is always
     // emitted (literal true when no search criteria), so no fallbacks;
     // links rides the spanData spread untouched.
-    spans: json.spans.map(spanNode => ({
-      spanData: {
-        ...spanNode.spanData,
-        startTime: parseBigInt(spanNode.spanData.startTime),
-        endTime: parseBigInt(spanNode.spanData.endTime),
-        events: spanNode.spanData.events.map(event => ({
-          ...event,
-          timestamp: parseBigInt(event.timestamp),
-        })),
-      },
-      depth: spanNode.depth,
-      matched: spanNode.matched,
-    })),
+    spans: json.spans.map(spanNode => {
+      const { r, s, start, dur, ...rest } = spanNode.spanData
+      const startTime = traceStart + BigInt(start)
+      return {
+        spanData: {
+          ...rest,
+          traceID: json.traceID,
+          resource: json.resources[String(r)],
+          scope: json.scopes[String(s)],
+          startTime,
+          endTime: startTime + BigInt(dur),
+          events: spanNode.spanData.events.map(event => ({
+            ...event,
+            timestamp: parseBigInt(event.timestamp),
+          })),
+        },
+        depth: spanNode.depth,
+        matched: spanNode.matched,
+      }
+    }),
   }
 }
 

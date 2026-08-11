@@ -491,34 +491,57 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 		-- in the per-span projection re-resolved the same 24 resources 4,891
 		-- times and cost two ~150ms operators.
 		resource_data as (
-			select r.id, resource_json(r.attribute_ids, r.dropped_attributes_count) as obj
+			select r.id, r.seq, resource_json(r.attribute_ids, r.dropped_attributes_count) as obj
 			from resources r
 			where r.id in (select resource_id from tree)
 		),
 
 		scope_data as (
-			select sc.id,
+			select sc.id, sc.seq,
 				scope_json(sc.name, sc.version, sc.attribute_ids, sc.dropped_attributes_count) as obj
 			from scopes sc
 			where sc.id in (select scope_id from tree)
 		),
 
+		-- The baseline every span offset is measured from.
+		--
+		-- min(start_time), not the root span's start: clocks across hosts are
+		-- not synchronised, so a child can legitimately report an earlier start
+		-- than its parent, and min() is also indifferent to whether the trace
+		-- has a root at all -- which matters, since a trace whose parent is
+		-- missing is displayed as rooted anyway.
+		trace_start as (
+			select min(start_time) as t from tree
+		),
+
 		ordered_spans as (
 			select json_object(
 					'spanData', json_object(
-						'traceID', trace_id_wire(ts.trace_id),
+						-- No traceID: it is at the response root, and a
+						-- single-trace response repeated it 32 bytes per span.
 						'traceState', ts.trace_state,
 						'spanID', span_id_wire(ts.span_id),
 						'parentSpanID', case when ts.parent_span_id is not null then span_id_wire(ts.parent_span_id) end,
 						'name', ts.name,
 						'kind', ts.kind,
-						'startTime', ts.start_time::varchar,
-						'endTime', ts.end_time::varchar,
+						-- Offset from traceStart, and duration from the span's
+						-- own start. Deliberately not two offsets: an end
+						-- offset inherits the trace's full magnitude however
+						-- brief the span, while a duration stays small. It is
+						-- also what the waterfall wants -- a bar is a position
+						-- and a width, so the client stops subtracting on every
+						-- render.
+						'start', ts.start_time - (select t from trace_start),
+						'dur', ts.end_time - ts.start_time,
 						'attributes', coalesce(sa.attrs, json('[]')),
 						'events', coalesce(ed.events, json('[]')),
 						'links', coalesce(ld.links, json('[]')),
-						'resource', rd.obj,
-						'scope', scd.obj,
+						-- References into the top-level maps. seq rather than
+						-- the uuid: two 36-char ids per span is ~413KB on the
+						-- reference trace, a small integer ~57KB. The uuids are
+						-- storage identity and have no business on the wire.
+						'r', rd.seq,
+						's', scd.seq,
 						'droppedAttributesCount', ts.dropped_attributes_count,
 						'droppedEventsCount', ts.dropped_events_count,
 						'droppedLinksCount', ts.dropped_links_count,
@@ -543,6 +566,16 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 				then null
 			else cast(json_object(
 				'traceID', trace_id_wire((select trace_id from search_params)),
+				-- Absolute ns as a string; only this one needs the full
+				-- magnitude, and only the detail panel reads it, as
+				-- BigInt(traceStart) + BigInt(start).
+				'traceStart', (select t from trace_start)::varchar,
+				-- Each distinct resource and scope once, keyed by seq. On the
+				-- reference trace this is 24 resources and 1 scope against
+				-- 5,735 spans that previously carried a full copy each,
+				-- which was over half the response.
+				'resources', coalesce((select json_group_object(seq::varchar, obj) from resource_data), json('{}')),
+				'scopes', coalesce((select json_group_object(seq::varchar, obj) from scope_data), json('{}')),
 				'spans', coalesce(to_json(list(span_json order by sort_path)), json('[]'))
 			) as varchar)
 		end as trace
