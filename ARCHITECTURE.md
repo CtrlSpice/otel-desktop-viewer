@@ -152,44 +152,67 @@ Schema is defined in `desktopexporter/internal/store/schema/schema.go` and appli
 
 | Table | Role |
 |-------|------|
-| `spans` | Span records; `service_name` denormalized from `service.name` |
+| `attributes` | Dictionary of distinct `(key, value, type, scope)` rows, keyed by a content hash |
+| `resources` | Deduped resources, shared across all three signals; `seq` is the wire key |
+| `scopes` | Deduped instrumentation scopes; `seq` is the wire key |
+| `spans` | Span records; `resource_id`, `scope_id`, `attribute_ids`, plus `service_name` denormalized from `service.name` |
 | `events` | Span events (normalized) |
 | `links` | Span links (normalized) |
-| `logs` | Log records; `service_name` denormalized |
+| `logs` | Log records; same reference columns as `spans` |
 | `metric_streams` | Canonical identity for a logical metric (name, unit, type, scope, service, …) |
-| `metric_ingests` | One row per OTLP batch arrival for a stream (description, dropped counts) |
-| `datapoints` | All metric data points in one table; `metric_type` discriminates gauge/sum/histogram/exponential histogram |
+| `metric_series` | One row per chart line: `(stream_id, resource_id, attribute_ids)` under a content-hashed id |
+| `metric_ingests` | One row per OTLP batch arrival for a stream (description, `resource_id`, `scope_id`) |
+| `datapoints` | All metric data points in one table; `metric_type` discriminates gauge/sum/histogram/exponential histogram; `series_id` names the line |
 | `exemplars` | Metric exemplars (normalized) |
-| `attributes` | Normalized key/value attributes for all entity types |
 
 **Design themes**
 
 - **All IDs are UUIDs in DuckDB.** OpenTelemetry 8-byte span IDs are zero-padded to 16 bytes on ingest. JSON-RPC responses and search comparisons use OTLP **wire form** (dash-less lowercase hex: 32 chars for trace IDs, 16 for span IDs).
-- **Normalized nested data.** Events, links, exemplars, and attributes live in separate tables—not nested arrays or DuckDB UNION types.
+- **Attributes are a content-addressed dictionary.** One row per distinct `(key, value, type, scope)` for the whole database, with `id = sha256(...)` truncated to 16 bytes and computed in Go at unwrap. Every owner holds an inline `uuid[]`, deduped and sorted by id. Because identity is the content, ingest knows every id before it writes and needs no read-back, and repeat writes are `on conflict (id) do nothing`.
+- **Scope is part of dictionary identity**, not a free-form tag. That is what lets attribute discovery answer from `select distinct key, scope, type from attributes` alone, instead of unnesting every owner array. The cost is that the same triple used as both a resource and a span attribute is two rows.
+- **Normalized nested data.** Events, links, and exemplars live in separate tables—not nested arrays or DuckDB UNION types.
 - **Single `datapoints` table.** Type-specific columns use NULLs for irrelevant fields; `metric_type` + CHECK constraints enforce the discriminated union. Columnar compression makes sparse rows cheap.
 - **`metric_streams` + `metric_ingests`.** Stream identity is deduplicated across batches; per-batch metadata varies without splitting logical metrics.
-- **`attributes` table.** Multiple nullable owner ID columns (`span_id`, `event_id`, `link_id`, `log_id`, `metric_ingest_id`, `datapoint_id`, `exemplar_id`) plus a `scope` column (`resource`, `scope`, `span`, etc.). CHECK constraints enforce exactly one owner pattern per row.
+- **No referential integrity on array elements.** DuckDB cannot declare a foreign key into a `LIST`, so nothing at the engine level stops an `attribute_ids` entry pointing at a missing dictionary row. This is a knowing trade for the dedupe: it becomes ingest's responsibility, and store-level consistency tests assert no dangling references survive a `Clear` → ingest cycle. `resources` / `scopes` are reached by a real FK; only the arrays are unenforced.
+- **Orphans are swept, not cascaded.** Since no FK covers the arrays, the `Clear` and delete-by-id paths leave dictionary rows behind rather than reference-counting them. `ingest.SweepOrphans` builds the live id set by unnesting every owner and deletes what nothing references. It runs from two places. The `clearTraces` / `clearLogs` / `clearMetrics` handlers sweep in the same write-locked closure as the truncate, so clearing a signal actually reclaims its share of the dictionary — this cannot be left to retention, which is size-driven and does not run at all when the cap is disabled, so the orphans would survive until restart. Retention sweeps too, once before its first size measurement and again at the end of each prune round, since the prunes are what create orphans. The invariant that buys: **no round deletes real telemetry to make room for rows nothing references** — which matters because orphans count toward the size the cap is compared against.
+
+The per-id delete paths (`deleteSpansByTraceID`, `deleteSpanByID`, `deleteLogByID`, `deleteMetricStream`) deliberately do **not** sweep — deleting one trace would otherwise pay for a full unnest of every owner table — so their orphans wait for the next clear or retention round.
+- **`service_name` stays denormalized** on `spans` and `logs` even though resources are now deduped. With ~24 resource rows the join is cheap, but this is the hottest filter in span search and a column scan still beats a join plus an array unnest.
+- **Indexes are equality-only, by engine constraint.** DuckDB's ART indexes serve equality and `IN` on a single column — never ranges, joins, aggregation or sorting — and min-max zonemaps are maintained automatically for every column. So the time-column indexes were dropped: they cost every write and, measured alternating to avoid cache bias, made no difference to reads. A `LIST` column cannot be indexed or FK'd at all, which is why `metric_series` exists — it turns a chart's grouping key from an unindexable array into one indexable `uuid`.
 - **Depth is computed at query time** via recursive CTEs when building trace waterfalls—not stored on ingest.
+- **The schema is versioned.** `schema_meta` holds a single integer, checked against `schema.Version` before the table and index loops run. A mismatch, or a pre-versioning database with data in it, is refused with a message naming the db path — deliberately an error rather than a warning, so an incompatible database fails immediately instead of surfacing later as an opaque query error.
 
 ### Ingest
 
+Ingest is **two-pass**, and per OTLP request costs three small inserts and no reads regardless of span count:
+
+1. Walk the hierarchy hashing every attribute into `(key, value, type, scope)` ids, deduped in a Go map, and build each owner's sorted `uuid[]`.
+2. Insert `attributes` **first**, then `resources` / `scopes`. Ordering is deliberate: no FK can enforce it, and a crash between the two leaves collectable orphans rather than a resource referencing rows that do not exist.
+3. Open the appenders and walk again, appending owners with their arrays.
+
 | Signal | Package | Notes |
 |--------|---------|-------|
-| Traces | `store/spans` | Flushes appenders every 50 rows |
-| Metrics | `store/metrics` | Stream find-or-insert, then datapoints/exemplars/attributes |
-| Logs | `store/logs` | Flushes appenders every 100 rows |
+| Traces | `store/spans` | Flushes appenders every 500 spans |
+| Metrics | `store/metrics` | Stream find-or-insert, series resolve, then datapoints/exemplars |
+| Logs | `store/logs` | Flushes appenders every 500 records |
 
-Shared helpers in `store/ingest/` manage DuckDB appenders and attribute rows.
+The dictionary inserts cannot use an appender: appenders have no conflict handling, and a constraint violation errors at flush and takes the whole chunk with it. The high-volume tables have no dedupe requirement and keep the appender.
+
+`store/ingest/` holds the shared pieces: `dictionary.go` (hashing and id construction), `flushed.go` (a per-store cache of ids already written, so a repeat batch skips the insert entirely — invalidated in the one function that deletes dictionary rows), and `sweep.go`.
 
 ## Query layer and API
 
 ### JSON rows from DuckDB
 
-Query functions build JSON in SQL using `json_object`, `json_arrayagg`, `to_json`, etc., and scan each result row into `json.RawMessage`. The JSON-RPC layer forwards these bytes without Go response structs.
+Query functions build JSON in SQL using `json_object`, `to_json(list(...))`, etc., and scan each result row into `json.RawMessage`. The JSON-RPC layer forwards these bytes without Go response structs.
+
+Ordered aggregation is `to_json(list(x order by k))` rather than `json_group_array`, which is a macro and therefore rejects `ORDER BY` inside it. Attribute arrays are ordered by key on the read path, which is also what makes the JSON deterministic — the previous output followed scan order with no `ORDER BY` anywhere, so it was never actually order-stable.
+
+**Shared shapes live in SQL macros** (`MacroCreationQueries`), layered the way the histogram math already was: leaf value helpers (`attrs_json`, `attr_value`, `has_attr`, `trace_id_wire`, `span_id_wire`), then component objects (`resource_json`, `scope_json`, `attribute_def_json`). `attrs_json(ids)` alone replaced the same unnest-and-join fragment repeated across spans, logs and metrics.
 
 **Why**: Response shape is defined once in SQL. No duplicate struct tags, no scan-then-marshal step. The frontend is the primary consumer.
 
-**Trade-off**: Response structure is not statically typed in Go; it lives in SQL strings.
+**Trade-off**: Response structure is not statically typed in Go; it lives in SQL strings, and macros are invisible to Go tooling — a typo surfaces at runtime, which is what the macro unit tests exist for.
 
 ### Search
 
@@ -200,7 +223,13 @@ The frontend builds a **query tree** (`src/components/shared/Search/queryTree.ts
 - `{RAW}` for array containment checks
 - Signal-specific field mappers in `spans`, `logs`, and `metrics` packages
 
-Global search casts scalar fields to strings and searches attribute key/value pairs via the normalized `attributes` table.
+Global search casts scalar fields to strings and searches attribute key/value pairs through the dictionary.
+
+**Attribute equality takes a fast path.** An attribute id is a pure function of `(key, value, type, scope)`, so an equality search can compute the id it wants before the query runs: `ingest.IDProbe` emits `list_contains(attribute_ids, '<id>'::uuid)` and the predicate never joins the dictionary at all (2.67 ms → 0.13 ms on the reference capture). It is narrow on purpose and returns `""` — falling back to the correct-but-slower value comparison — for anything it cannot answer byte-exactly: any operator but `=`, the `NULL` sentinel, and any type token the schema enum does not contain. The type comes from the field definition, which for attribute fields is the token ingest wrote, served back by discovery.
+
+The `attr_id` / `attr_frame` SQL macros reimplement the same hash independently. They are deliberately kept **off** the correctness path — used only to audit that stored ids match their content — because one implementation writing and reading with a second one checking is what makes the check meaningful. Putting the macro in search predicates would turn a Go/SQL divergence into search silently returning nothing.
+
+Attribute *discovery* is served from the dictionary (`store/attributes`), which also answers value-first lookup: given text a user can see in the UI, return the keys that hold it, across every signal in one scan of a small table.
 
 ### HTTP server
 
@@ -226,7 +255,8 @@ CORS is enabled for local dev (Vite on port 3001).
 | `searchTraces` | Trace summaries for list view |
 | `searchSpans` | Full trace with spans, events, links, attributes |
 | `getTraceSpanCount` | Span count for a trace |
-| `getTraceAttributes` | Attribute key discovery across a time range (search autocomplete) |
+| `getTraceAttributes` | Attribute key discovery, served from the dictionary (search autocomplete) |
+| `searchAttributes` | Value-first discovery: given text, the fields that would find it |
 | `getAttributesByTraceID` | Attribute key discovery for one trace |
 | `searchLogs` / `getLog` | Log list and detail |
 | `getLogAttributes` | Attribute discovery for logs |
@@ -326,7 +356,8 @@ App / SDK
   → otlp receiver
   → desktop exporter (exporterhelper)
   → spans|metrics|logs.Ingest
-  → DuckDB appenders (entities + attributes in FK order)
+  → pass 1: hash attributes → insert dictionary, then resources/scopes
+  → pass 2: DuckDB appenders (owners carrying uuid[] references)
 ```
 
 ### Read path (traces example)
@@ -341,8 +372,23 @@ TracesPage
 User selects trace
   → searchSpans(traceID)
   → Full trace JSON with depth CTE, events, links, attributes
+  → traceDataFromJSON rehydrates the compressed wire shape
   → Waterfall + detail panels
 ```
+
+### Wire format
+
+`searchSpans` does not repeat data that is constant across the response.
+
+- **Resources and scopes are sent once**, as top-level maps keyed by the store-stable `resources.seq` / `scopes.seq`, with each span carrying short `r` and `s` references. On the reference trace that is 23 resources and 1 scope against 4,891 spans that previously carried a full copy each — over half the payload. The keys are sequence values rather than response-local indices precisely so a client can cache "resource 7" across fetches and across signals; sequences are never reused after retention deletes a row, so a cached entry can go missing but never go wrong.
+- **Times are an offset plus a duration.** The root carries `traceStart` as absolute nanoseconds; each span carries `start` (offset from it) and `dur`. Not two offsets: an end-offset inherits the trace's full magnitude however brief the span, while a duration stays small. It is also what a waterfall bar is — a position and a width.
+- **`traceID` is not repeated** in `spanData`; it is at the response root.
+
+`traceStart` is `min(start_time)` across the response, not the root span's start: clock skew across hosts means a child can legitimately report an earlier start than its parent, and a trace may have no root at all.
+
+**This imposes one constraint on the frontend**: it must keep replacing the trace wholesale per fetch. Anything that merged spans incrementally into an existing view would mix offsets computed against two different baselines.
+
+The whole shape is absorbed at `traceDataFromJSON` in `telemetry-service.ts`, so `SpanData` and every view are unaware the transport changed. Resolved resources are shared by reference rather than copied, so the client does not rebuild the duplication the wire format removes.
 
 ### Dev workflow
 
@@ -359,10 +405,12 @@ Or run production-like: `make build && ./otel-desktop-viewer` (embedded assets, 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Storage | DuckDB | Columnar OLAP; fast filters and aggregations on local telemetry |
-| Schema | Normalized tables | Query events, links, attributes, datapoints independently; avoid UNION/MAP pain |
+| Schema | Normalized tables | Query events, links, datapoints independently; avoid UNION/MAP pain |
 | Metric identity | `metric_streams` + `metric_ingests` | Dedupe logical streams; preserve per-batch metadata |
+| Metric series | `metric_series`, id hashed from `(stream_id, resource_id, attribute_ids)` | Splits replicas that would otherwise interleave into one line; gives a chart line a stable id a URL can name |
 | Datapoints | Single table with NULLs | Simpler than per-type tables; columnar NULL compression |
-| Attributes | Shared table + owner ID columns | FK integrity, indexed search, attribute discovery |
+| Attributes | Content-hashed dictionary + `uuid[]` on owners | Dedupes at the atom; ids known before write, so ingest needs no read-back |
+| Attribute ids | sha256 truncated to 128 bits | Fits `uuid`; birthday bound is far below the machine's own error rate. Audited by an independent SQL macro rather than trusted |
 | Ingest | pdata → DuckDB appenders | No intermediate Go structs |
 | API responses | JSON rows from SQL | SQL is the single source of truth for response shape |
 | Transport | JSON-RPC over HTTP | One endpoint; typed methods; no REST surface |

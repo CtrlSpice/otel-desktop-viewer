@@ -91,7 +91,7 @@ func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) 
 
 	ctx, end := e.tel.Ingest(ctx, "traces", source.SpanCount())
 	err := e.store.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, source)
+		return spans.Ingest(ctx, conn, source, e.store.FlushedIDs())
 	})
 	end(err)
 	return err
@@ -103,7 +103,7 @@ func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metric
 
 	ctx, end := e.tel.Ingest(ctx, "metrics", source.DataPointCount())
 	err := e.store.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, source)
+		return metrics.Ingest(ctx, conn, source, e.store.FlushedIDs())
 	})
 	end(err)
 	return err
@@ -115,7 +115,7 @@ func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error 
 
 	ctx, end := e.tel.Ingest(ctx, "logs", source.LogRecordCount())
 	err := e.store.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, source)
+		return logs.Ingest(ctx, conn, source, e.store.FlushedIDs())
 	})
 	end(err)
 	return err

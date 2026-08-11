@@ -8,6 +8,8 @@ import (
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/attributes"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
@@ -87,6 +89,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getLogAttributes(ctx, req)
 	case "getMetricAttributes":
 		return h.getMetricAttributes(ctx, req)
+	case "searchAttributes":
+		return h.searchAttributes(ctx, req)
 	case "getAttributesByTraceID":
 		return h.getAttributesByTraceID(ctx, req)
 	case "getStats":
@@ -162,8 +166,16 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 }
 
 func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
+	// Clear deletes the signal's own rows but never the dictionary: attribute,
+	// resource and scope rows are shared across signals, so only a sweep can
+	// prove one is unreferenced. It has to run here rather than being left to
+	// retention -- retention is size-driven and does not run at all when the
+	// cap is disabled, which would leak every orphaned row until restart.
 	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		return spans.Clear(ctx, db)
+		if err := spans.Clear(ctx, db); err != nil {
+			return err
+		}
+		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -201,8 +213,16 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 }
 
 func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
+	// Clear deletes the signal's own rows but never the dictionary: attribute,
+	// resource and scope rows are shared across signals, so only a sweep can
+	// prove one is unreferenced. It has to run here rather than being left to
+	// retention -- retention is size-driven and does not run at all when the
+	// cap is disabled, which would leak every orphaned row until restart.
 	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		return logs.Clear(ctx, db)
+		if err := logs.Clear(ctx, db); err != nil {
+			return err
+		}
+		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -292,8 +312,16 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 }
 
 func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
+	// Clear deletes the signal's own rows but never the dictionary: attribute,
+	// resource and scope rows are shared across signals, so only a sweep can
+	// prove one is unreferenced. It has to run here rather than being left to
+	// retention -- retention is size-driven and does not run at all when the
+	// cap is disabled, which would leak every orphaned row until restart.
 	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		return metrics.Clear(ctx, db)
+		if err := metrics.Clear(ctx, db); err != nil {
+			return err
+		}
+		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -384,6 +412,37 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 		"message": "Logs deleted successfully",
 		"count":   len(logIDs),
 	}, nil
+}
+
+// searchAttributes answers "which attribute keys hold this text?" across every
+// signal at once, from the dictionary alone.
+//
+// Deliberately not scoped to a signal or a time window, unlike the
+// getXAttributes discovery methods. The dictionary is shared -- one row per
+// distinct (key, value, type, scope) for the whole store -- so narrowing to one
+// signal would mean unnesting owner arrays to find out which signals reference
+// a row, which is the cost this avoids. The scope on each result says which
+// signals can carry it.
+func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if len(params) != 1 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	term, ok := params[0].(string)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return attributes.Search(ctx, db, term)
+	})
+	if err != nil {
+		return nil, h.handleStoreError(err)
+	}
+	return result, nil
 }
 
 func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {

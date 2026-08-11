@@ -11,12 +11,14 @@ const timeseriesCtx = {
   isHistogramKind: false,
   allowedAggs: ['raw', 'sum', 'avg', 'rate'],
   datapointIds: new Set(['dp-1', 'dp-2']),
+  seriesKeys: new Set(['series-1', 'series-2']),
 }
 
 const histogramCtx = {
   isHistogramKind: true,
   allowedAggs: ['raw'],
   datapointIds: new Set(['dp-h1']),
+  seriesKeys: new Set(['series-h1']),
 }
 
 describe('parseMetricViewQuery', () => {
@@ -29,6 +31,7 @@ describe('parseMetricViewQuery', () => {
       kind: 'timeseries',
       agg: 'rate',
       dp: 'dp-1',
+      series: null,
     })
   })
 
@@ -42,17 +45,18 @@ describe('parseMetricViewQuery', () => {
       htab: 'quantiles',
       hscope: 'window',
       dp: 'dp-h1',
+      series: null,
     })
   })
 
   it('rejects disallowed agg on timeseries', () => {
     const q = parseMetricViewQuery({ agg: 'not-a-view' }, timeseriesCtx)
-    expect(q).toEqual({ kind: 'timeseries', agg: null, dp: null })
+    expect(q).toEqual({ kind: 'timeseries', agg: null, dp: null, series: null })
   })
 
   it('rejects unknown datapoint id', () => {
     const q = parseMetricViewQuery({ dp: 'missing' }, timeseriesCtx)
-    expect(q).toEqual({ kind: 'timeseries', agg: null, dp: null })
+    expect(q).toEqual({ kind: 'timeseries', agg: null, dp: null, series: null })
   })
 
   it('defaults invalid histogram enums', () => {
@@ -65,6 +69,7 @@ describe('parseMetricViewQuery', () => {
       htab: 'heatmap',
       hscope: 'window',
       dp: null,
+      series: null,
     })
   })
 })
@@ -74,12 +79,14 @@ describe('metricViewQueriesEqual', () => {
     kind: 'timeseries',
     agg: 'rate',
     dp: 'dp-1',
+    series: null,
   }
   const histogram: MetricViewQuery = {
     kind: 'histogram',
     htab: 'quantiles',
     hscope: 'bucket',
     dp: 'dp-h1',
+    series: null,
   }
 
   it('matches identical timeseries queries', () => {
@@ -118,6 +125,7 @@ describe('metricViewQueriesEqual', () => {
   it('is insensitive to property order', () => {
     const reordered = {
       dp: 'dp-1',
+      series: null,
       agg: 'rate',
       kind: 'timeseries',
     } as MetricViewQuery
@@ -127,7 +135,12 @@ describe('metricViewQueriesEqual', () => {
 
 describe('metricViewQueryToParams', () => {
   it('serializes timeseries without cross-kind keys', () => {
-    const q: MetricViewQuery = { kind: 'timeseries', agg: 'avg', dp: 'dp-1' }
+    const q: MetricViewQuery = {
+      kind: 'timeseries',
+      agg: 'avg',
+      dp: 'dp-1',
+      series: null,
+    }
     expect(metricViewQueryToParams(q)).toEqual({ agg: 'avg', dp: 'dp-1' })
   })
 
@@ -137,6 +150,7 @@ describe('metricViewQueryToParams', () => {
       htab: 'histogram',
       hscope: 'bucket',
       dp: null,
+      series: null,
     }
     expect(metricViewQueryToParams(q)).toEqual({
       htab: 'histogram',
@@ -156,6 +170,7 @@ describe('metricViewQueryToParams', () => {
       kind: 'timeseries',
       agg: 'sum',
       dp: 'dp-2',
+      series: null,
     }
     const merged = mergeRouteQueryWithMetricView(routeQuery, view)
     expect(merged).toEqual({
@@ -165,6 +180,95 @@ describe('metricViewQueryToParams', () => {
       agg: 'sum',
       dp: 'dp-2',
     })
+    expect(parseMetricViewQuery(merged, timeseriesCtx)).toEqual(view)
+  })
+})
+
+// The `series` param exists because `dp` cannot be durable.
+//
+// A datapoint id is minted per row and deleted by retention, so a metric link
+// more than a retention window old names a point that no longer exists and
+// degrades to no selection. A series id is content-derived from
+// (stream, resource, labels): the same series has the same id across restarts
+// and re-ingests, so it still resolves long after the point it was captured
+// with has been pruned.
+describe('series param', () => {
+  it('parses a known series id', () => {
+    const q = parseMetricViewQuery({ series: 'series-1' }, timeseriesCtx)
+    expect(q.series).toBe('series-1')
+  })
+
+  it('survives when the datapoint it was captured with is gone', () => {
+    // The shape of an aged link: the series still exists, the point does not.
+    const q = parseMetricViewQuery(
+      { series: 'series-1', dp: 'dp-pruned-by-retention' },
+      timeseriesCtx
+    )
+    expect(q.dp).toBeNull()
+    expect(q.series).toBe('series-1')
+  })
+
+  it('drops a series that no longer exists', () => {
+    // A series genuinely disappears when its labels stop being reported, and a
+    // link naming one should fall back to no selection rather than dangle.
+    const q = parseMetricViewQuery({ series: 'series-gone' }, timeseriesCtx)
+    expect(q.series).toBeNull()
+  })
+
+  it('applies to histogram metrics too', () => {
+    const q = parseMetricViewQuery({ series: 'series-h1' }, histogramCtx)
+    expect(q.series).toBe('series-h1')
+  })
+
+  it('is serialized when set and omitted when not', () => {
+    expect(
+      metricViewQueryToParams({
+        kind: 'timeseries',
+        agg: null,
+        dp: null,
+        series: 'series-1',
+      })
+    ).toEqual({ series: 'series-1' })
+
+    expect(
+      metricViewQueryToParams({
+        kind: 'timeseries',
+        agg: null,
+        dp: null,
+        series: null,
+      })
+    ).toEqual({})
+  })
+
+  it('participates in equality, so a series change is an external navigation', () => {
+    const base = {
+      kind: 'timeseries',
+      agg: null,
+      dp: null,
+    } as const
+    expect(
+      metricViewQueriesEqual(
+        { ...base, series: 'series-1' },
+        { ...base, series: 'series-2' }
+      )
+    ).toBe(false)
+    expect(
+      metricViewQueriesEqual(
+        { ...base, series: 'series-1' },
+        { ...base, series: 'series-1' }
+      )
+    ).toBe(true)
+  })
+
+  it('round-trips through the route query', () => {
+    const view: MetricViewQuery = {
+      kind: 'timeseries',
+      agg: 'sum',
+      dp: 'dp-2',
+      series: 'series-2',
+    }
+    const merged = mergeRouteQueryWithMetricView({ start: '1' }, view)
+    expect(merged.series).toBe('series-2')
     expect(parseMetricViewQuery(merged, timeseriesCtx)).toEqual(view)
   })
 })

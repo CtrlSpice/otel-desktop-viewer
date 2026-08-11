@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -274,7 +276,7 @@ func TestMetricSuite(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 	})
 	assert.NoError(t, err, "ingest test metrics")
 
@@ -724,7 +726,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		defer teardown()
 
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 
@@ -757,7 +759,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		// same logical Gauge, all sharing one metric_streams row.
 		for i := 0; i < 3; i++ {
 			err := s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+				return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 			})
 			assert.NoError(t, err)
 		}
@@ -807,7 +809,7 @@ func TestDeleteMetricStream(t *testing.T) {
 			dp.SetIntValue(1)
 		}
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchMetricsAll(t, s, ctx), 2)
@@ -844,7 +846,7 @@ func TestDeleteMetricStream(t *testing.T) {
 			dp.SetIntValue(1)
 		}
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
@@ -884,7 +886,7 @@ func TestDeleteMetricStream(t *testing.T) {
 			dp.SetIntValue(1)
 		}
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
@@ -907,7 +909,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		defer teardown()
 
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchMetricsAll(t, s, ctx), 5)
@@ -925,7 +927,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		defer teardown()
 
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 
@@ -936,12 +938,30 @@ func TestDeleteMetricStream(t *testing.T) {
 		exBefore := countRows(t, s, ctx,
 			`select count(*) from exemplars where datapoint_id in (select id from datapoints where stream_id in (select id from metric_streams where name = ?))`,
 			"histogram_metric")
+		// The old query counted attribute rows owned by this stream's ingest
+		// batches -- i.e. its resource and scope attributes. Those are now ids
+		// in the referenced resources / scopes arrays, so the equivalent
+		// question is how many distinct ids the stream's ingests reach.
+		//
+		// Deliberately not the datapoint labels: the histogram fixture's
+		// datapoints carry none, so counting those would assert nothing.
 		attrBefore := countRows(t, s, ctx,
-			`select count(*) from attributes where metric_ingest_id in (select id from metric_ingests where stream_id in (select id from metric_streams where name = ?))`,
+			`select count(distinct t.aid)
+			 from metric_ingests mi
+			 join resources r on r.id = mi.resource_id
+			 join scopes sc on sc.id = mi.scope_id,
+			 unnest(r.attribute_ids || sc.attribute_ids) as t(aid)
+			 where mi.stream_id in (select id from metric_streams where name = ?)`,
 			"histogram_metric")
 		assert.Greater(t, dpBefore, 0)
 		assert.Greater(t, exBefore, 0)
 		assert.Greater(t, attrBefore, 0)
+
+		// The dictionary rows those ids point at, before the delete. They must
+		// survive the cascade -- other streams may still reference them -- and
+		// only go when the sweep proves them unreferenced.
+		dictBefore := countRows(t, s, ctx, `select count(*) from attributes`)
+		assert.Greater(t, dictBefore, 0)
 
 		err = deleteByIdentity(t, ctx, s,
 			"histogram_metric", "seconds", "Histogram",
@@ -961,9 +981,30 @@ func TestDeleteMetricStream(t *testing.T) {
 				where d.id = e.datapoint_id
 				  and d.stream_id in (select id from metric_streams where name = ?)
 			)`, "histogram_metric"))
+		// The cascade deliberately does NOT touch the dictionary: attribute,
+		// resource and scope rows are shared across every signal, so "is this
+		// one still in use" is not a question a stream-scoped delete can
+		// answer. It stays whole here...
+		assert.Equal(t, dictBefore, countRows(t, s, ctx, `select count(*) from attributes`),
+			"a stream delete must not remove shared dictionary rows")
+
+		// ...and the sweep is what collects whatever the delete orphaned.
+		require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+			return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
+		}))
+		// The other four fixture metrics still reference the same resource and
+		// scope, so the sweep must NOT take those rows -- shared content
+		// survives as long as one owner remains. What it does take is anything
+		// only the deleted stream reached.
 		assert.Equal(t, 0, countRows(t, s, ctx,
-			`select count(*) from attributes where metric_ingest_id in (select id from metric_ingests where stream_id in (select id from metric_streams where name = ?))`,
-			"histogram_metric"))
+			`select count(*) from attributes a
+			 where not exists (select 1 from resources r, unnest(r.attribute_ids) t(aid) where t.aid = a.id)
+			   and not exists (select 1 from scopes sc, unnest(sc.attribute_ids) t(aid) where t.aid = a.id)
+			   and not exists (select 1 from datapoints d, unnest(d.attribute_ids) t(aid) where t.aid = a.id)
+			   and not exists (select 1 from exemplars e, unnest(e.attribute_ids) t(aid) where t.aid = a.id)`),
+			"the sweep must leave no unreferenced dictionary row behind")
+		assert.Greater(t, countRows(t, s, ctx, `select count(*) from resources`), 0,
+			"the resource is still referenced by the four surviving streams")
 	})
 }
 
@@ -984,7 +1025,7 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 	const batches = 5
 	for i := 0; i < batches; i++ {
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 		})
 		require.NoError(t, err)
 	}
@@ -1068,12 +1109,12 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 			defer teardown()
 
 			err := s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pcommon.InstrumentationScope, pcommon.Resource) {}))
+				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pcommon.InstrumentationScope, pcommon.Resource) {}), s.FlushedIDs())
 			})
 			require.NoError(t, err)
 
 			err = s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, mk(t, tc.mutate))
+				return metrics.Ingest(ctx, conn, mk(t, tc.mutate), s.FlushedIDs())
 			})
 			require.NoError(t, err)
 
@@ -1097,22 +1138,21 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 	})
 	require.NoError(t, err)
 
 	// All five fixture metrics share service.name = test-service.
-	// Match the column against the resource attribute by joining
-	// metric_streams -> metric_ingests -> attributes(scope=resource,
-	// key=service.name).
+	//
+	// The source of truth moved: the resource attribute is no longer a row
+	// owned by the ingest batch, it is an id in the referenced resources row's
+	// array. attr_value resolves it, which is the same macro the search mappers
+	// use -- so this also pins that the macro agrees with what ingest wrote.
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from metric_streams s
 		join metric_ingests mi on mi.stream_id = s.id
-		join attributes a
-		     on a.metric_ingest_id = mi.id
-		    and a.scope = 'resource'
-		    and a.key = 'service.name'
-		where s.service_name <> a.value
+		join resources r on r.id = mi.resource_id
+		where s.service_name <> coalesce(attr_value(r.attribute_ids, 'service.name'), '')
 	`)
 	assert.Equal(t, 0, mismatches,
 		"metric_streams.service_name must equal the source resource attribute")
@@ -1124,7 +1164,7 @@ func TestEmptyMetrics(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, pmetric.NewMetrics())
+		return metrics.Ingest(ctx, conn, pmetric.NewMetrics(), s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -1138,14 +1178,14 @@ func TestClearMetrics(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
 	metricList := searchMetricsAll(t, s, ctx)
 	assert.Len(t, metricList, 5)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from datapoints"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where metric_ingest_id is not null"), 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes"), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return metrics.Clear(ctx, db)
@@ -1158,7 +1198,18 @@ func TestClearMetrics(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_ingests"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from datapoints"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from exemplars"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where metric_ingest_id is not null"))
+
+	// Clear leaves the dictionary alone -- it cannot know whether a traces or
+	// logs row still references any of it. With no other signal ingested here
+	// everything it left behind is orphaned, and the sweep takes all of it.
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes"), 0,
+		"Clear must not delete shared dictionary rows itself")
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
+	}))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
 }
 
 func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
@@ -1207,7 +1258,7 @@ func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
 	dp2.Negative().BucketCounts().FromRaw([]uint64{})
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md)
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 	}))
 
 	byName := make(map[string]map[string]any)
@@ -1359,16 +1410,18 @@ func findMetricID(t *testing.T, s *store.Store, ctx context.Context, name string
 	return ""
 }
 
-// TestIngestMetrics_FlushInterval exercises the flushIntervalMetrics codepath by ingesting
-// more than 100 metrics in one call (flush runs when metricCount % 100 == 0). All metrics
-// have resource and scope attributes; we assert they were flushed correctly.
-func TestIngestMetrics_FlushInterval(t *testing.T) {
+// TestIngestMetrics_LargeBatchStaysConsistent ingests more metrics in one call
+// than the flush interval and asserts they all landed with their attributes.
+// Like the spans and logs versions it does not claim to test the flush itself,
+// which is unobservable by design. Sized from the constant so it cannot stop
+// being a large batch when the constant moves.
+func TestIngestMetrics_LargeBatchStaysConsistent(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
-	const batchSize = 101 // > flushIntervalMetrics (100)
+	const batchSize = metrics.FlushInterval + 1
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(batchSize))
+		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(batchSize), s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -1413,7 +1466,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 	cancel()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(1))
+		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(1), s.FlushedIDs())
 	})
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -1427,7 +1480,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdataN(100))
+			return metrics.Ingest(ctx, conn, createTestMetricsPdataN(100), s.FlushedIDs())
 		})
 	}()
 	cancel()
@@ -1462,7 +1515,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 		dp2.Attributes().PutStr("host", "a")
 
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		}))
 
 		summary := findSummary(t, searchSummariesAll(t, s, ctx), "gauge_card_test")
@@ -1486,7 +1539,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 				count: 6, sum: 7.0, min: 0.5, max: 2.5},
 		})
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		}))
 
 		summary := findSummary(t, searchSummariesAll(t, s, ctx), "hist_card_test")
@@ -1495,4 +1548,289 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 		assert.EqualValues(t, 1, summary["dataPointCount"])
 		assert.Nil(t, summary["lastValue"])
 	})
+}
+
+// Datapoint and exemplar labels are searchable.
+//
+// They were not before the attribute dictionary: metric search runs per
+// metric_ingests row, and reaching datapoint labels from there meant a
+// correlated walk of the largest table in the store. Resolving the dictionary
+// first makes it one array-overlap scan (39.2ms -> 7.7ms on the reference
+// capture), so the coverage gap is now just a gap.
+func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+	}))
+
+	search := func(t *testing.T, scope, name, op, value string) []map[string]any {
+		t.Helper()
+		query := map[string]any{
+			"type": "condition",
+			"query": map[string]any{
+				"field": map[string]any{
+					"name":           name,
+					"searchScope":    "attribute",
+					"attributeScope": scope,
+				},
+				"fieldOperator": op,
+				"value":         value,
+			},
+		}
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, 0, time.Now().UnixNano()+int64(time.Hour), query)
+		})
+		require.NoError(t, err)
+		var out []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &out))
+		return out
+	}
+
+	t.Run("datapoint label matches its own metric only", func(t *testing.T) {
+		// memory.type=heap is on the gauge metric's datapoint; the other four
+		// fixture metrics must not match, or the predicate is not actually
+		// filtering.
+		got := search(t, "datapoint", "memory.type", "=", "heap")
+		require.Len(t, got, 1)
+		assert.Equal(t, "gauge_metric", got[0]["name"])
+	})
+
+	t.Run("datapoint label with a non-matching value finds nothing", func(t *testing.T) {
+		assert.Empty(t, search(t, "datapoint", "memory.type", "=", "stack"))
+	})
+
+	// Mutation-driven: without these, making the key predicate always-true
+	// (`a.key = ? or true`) left every other subtest passing, because each
+	// fixture label value happens to be unique. These pair a real key with
+	// another key's value, so a predicate that ignores the key over-matches.
+	t.Run("the key is part of the match, not just the value", func(t *testing.T) {
+		// "int" is a real datapoint label value -- but under key "type", not
+		// "memory.type". Ignoring the key would return the int metric.
+		assert.Empty(t, search(t, "datapoint", "memory.type", "=", "int"),
+			"memory.type is heap; int belongs to a different key")
+
+		// A key that exists nowhere, paired with a value that does.
+		assert.Empty(t, search(t, "datapoint", "no.such.key", "=", "heap"),
+			"a non-existent key must match nothing regardless of the value")
+
+		// Same for exemplars.
+		assert.Empty(t, search(t, "exemplar", "no.such.key", "=", "gauge"))
+	})
+
+	// Scope is part of the dictionary id, so a datapoint search must not reach
+	// an exemplar label and vice versa -- even though both live in the same
+	// attributes table.
+	t.Run("scopes do not leak into each other", func(t *testing.T) {
+		assert.Empty(t, search(t, "datapoint", "exemplar.source", "=", "gauge"),
+			"exemplar.source is not a datapoint label")
+		assert.Empty(t, search(t, "exemplar", "memory.type", "=", "heap"),
+			"memory.type is not an exemplar label")
+	})
+
+	t.Run("exemplar label", func(t *testing.T) {
+		got := search(t, "exemplar", "exemplar.source", "=", "histogram")
+		require.Len(t, got, 1)
+		assert.Equal(t, "histogram_metric", got[0]["name"])
+	})
+
+	t.Run("exemplar labels distinguish metrics", func(t *testing.T) {
+		// Every fixture metric carries exemplar.source, with a different value
+		// each, so this pins that the value is compared and not merely the key.
+		for _, tc := range []struct{ value, metric string }{
+			{"gauge", "gauge_metric"},
+			{"sum", "sum_metric"},
+			{"exponential_histogram", "exponential_histogram_metric"},
+		} {
+			got := search(t, "exemplar", "exemplar.source", "=", tc.value)
+			require.Len(t, got, 1, "value %q", tc.value)
+			assert.Equal(t, tc.metric, got[0]["name"])
+		}
+	})
+
+	t.Run("LIKE on a datapoint label", func(t *testing.T) {
+		got := search(t, "datapoint", "memory.type", "CONTAINS", "hea")
+		require.Len(t, got, 1)
+		assert.Equal(t, "gauge_metric", got[0]["name"])
+	})
+
+	t.Run("global free-text reaches datapoint and exemplar labels", func(t *testing.T) {
+		global := func(term string) []map[string]any {
+			query := map[string]any{
+				"type": "condition",
+				"query": map[string]any{
+					"field":         map[string]any{"searchScope": "global"},
+					"fieldOperator": "CONTAINS",
+					"value":         term,
+				},
+			}
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.SearchSummaries(ctx, db, 0, time.Now().UnixNano()+int64(time.Hour), query)
+			})
+			require.NoError(t, err)
+			var out []map[string]any
+			require.NoError(t, json.Unmarshal(raw, &out))
+			return out
+		}
+		// "heap" appears only as a datapoint label value.
+		got := global("heap")
+		require.Len(t, got, 1, "global search must reach datapoint labels")
+		assert.Equal(t, "gauge_metric", got[0]["name"])
+
+		// "exponential_histogram" appears as an exemplar label value.
+		assert.NotEmpty(t, global("exponential_histogram"),
+			"global search must reach exemplar labels")
+	})
+}
+
+// Two replicas of one service, emitting the same instrument with the same
+// labels, must be two series -- not one interleaved line.
+//
+// metric_streams identifies a stream by service_name rather than by resource,
+// deliberately, so a counter survives a pod restart. Nothing downstream then
+// re-introduced the resource, so replicas collapsed together: SDKs put
+// host.name and k8s.pod.name on the *resource*, which made this the common
+// shape in any replicated deployment rather than an exotic one. Prometheus
+// would show two series here; we showed one, silently averaging two machines.
+func buildTwoReplicaMetrics(t *testing.T) pmetric.Metrics {
+	t.Helper()
+	md := pmetric.NewMetrics()
+	base := time.Now().UnixNano()
+
+	// Same service, same scope, same metric, same datapoint labels. The only
+	// difference is host.name on the resource.
+	for i, host := range []string{"pod-a", "pod-b"} {
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "checkout")
+		rm.Resource().Attributes().PutStr("host.name", host)
+
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("otelhttp")
+		sm.Scope().SetVersion("1.2.0")
+
+		m := sm.Metrics().AppendEmpty()
+		m.SetName("http.server.duration")
+		m.SetUnit("ms")
+		g := m.SetEmptyGauge()
+		for j := 0; j < 3; j++ {
+			dp := g.DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.Timestamp(base + int64(j)*1_000_000))
+			dp.SetDoubleValue(float64(10*(i+1) + j))
+			dp.Attributes().PutStr("http.route", "/checkout")
+		}
+	}
+	return md
+}
+
+func TestMetricSeries_SplitByResource(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
+	}))
+
+	// One logical stream: that part is correct and must stay correct, or a pod
+	// restart would fragment the timeseries.
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1, "two replicas are still one metric stream")
+	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
+		"the summary must report two series, agreeing with the detail view")
+
+	streamID, ok := summaries[0]["id"].(string)
+	require.True(t, ok)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour))
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	ts, _ := metric["timeseries"].([]any)
+	require.Len(t, ts, 2, "one series per replica, not one merged line")
+
+	// Each carries its own three points -- a merge would produce one series of
+	// six, which is the shape that silently averaged two machines together.
+	keys := map[string]bool{}
+	for _, entry := range ts {
+		e := entry.(map[string]any)
+		dps, _ := e["datapoints"].([]any)
+		assert.Len(t, dps, 3, "each replica keeps its own datapoints")
+		keys[e["attributesKey"].(string)] = true
+	}
+
+	// And they must be distinguishable. The labels are identical by
+	// construction, so a key derived from labels alone collides -- which would
+	// render two indistinguishable legend entries, strictly worse than the
+	// single merged line it replaced.
+	assert.Len(t, keys, 2,
+		"series keys must differ, or the split produces two identical legend entries")
+}
+
+// A series id has to survive re-ingest, restarts and retention, because it is
+// what a shared URL names.
+//
+// This is the property the old wire format could not offer: metric links could
+// only reference a datapoint id, which is minted per row and deleted by
+// retention, so a pasted link degraded silently to "no selection". A
+// content-derived id from (stream, resource, labels) is the same every time the
+// same series arrives.
+func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	seriesIDs := func() []string {
+		var out []string
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			rows, err := db.Query(`select id::varchar from metric_series order by 1`)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err != nil {
+					return err
+				}
+				out = append(out, id)
+			}
+			return rows.Err()
+		}))
+		return out
+	}
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
+	}))
+	first := seriesIDs()
+	require.Len(t, first, 2, "two replicas are two series")
+
+	// The same content again: same ids, no new rows.
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
+	}))
+	assert.Equal(t, first, seriesIDs(),
+		"re-ingesting the same series must not mint new ids")
+
+	// And the id the wire serves is the id in the table, or a URL built from
+	// one could not be resolved back to the other.
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
+			time.Now().UnixNano()+int64(time.Hour))
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	var served []string
+	for _, entry := range metric["timeseries"].([]any) {
+		served = append(served, entry.(map[string]any)["attributesKey"].(string))
+	}
+	sort.Strings(served)
+	assert.Equal(t, first, served,
+		"the key on the wire must be the series id, so a link resolves back to a row")
 }

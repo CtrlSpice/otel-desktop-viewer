@@ -71,12 +71,12 @@ func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
 	ctx := context.Background()
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, buildTestTraces())
+		return spans.Ingest(ctx, conn, buildTestTraces(), s.FlushedIDs())
 	})
 	assert.NoError(t, err, "ingest spans")
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, buildTestLogs())
+		return logs.Ingest(ctx, conn, buildTestLogs(), s.FlushedIDs())
 	})
 	assert.NoError(t, err, "ingest logs")
 
@@ -818,7 +818,7 @@ func setupHandlerWithMetrics(t *testing.T) (*JSONRPCHandler, func()) {
 	ctx := context.Background()
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildTestMetrics())
+		return metrics.Ingest(ctx, conn, buildTestMetrics(), s.FlushedIDs())
 	})
 	require.NoError(t, err, "ingest metrics")
 
@@ -988,5 +988,59 @@ func TestGetMetric(t *testing.T) {
 		timeseries, ok := metric["timeseries"].([]any)
 		require.True(t, ok, "timeseries must be a JSON array, got %T", metric["timeseries"])
 		assert.Empty(t, timeseries)
+	})
+}
+
+// searchAttributes is the value-first counterpart to the getXAttributes
+// discovery methods: given text seen in the UI, which keys hold it. It takes no
+// time range and no signal, because the dictionary it reads is shared by all
+// three.
+func TestSearchAttributes(t *testing.T) {
+	call := func(t *testing.T, handler *JSONRPCHandler, params any) []map[string]any {
+		t.Helper()
+		result, err := handler.Handle(context.Background(), createRequest("searchAttributes", params))
+		require.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		require.True(t, ok, "expected json.RawMessage, got %T", result)
+		var out []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &out))
+		return out
+	}
+
+	t.Run("finds the key holding a value", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		got := call(t, handler, []string{"pumpkin"})
+		require.NotEmpty(t, got, "a value present in the fixture must be found")
+
+		var found map[string]any
+		for _, m := range got {
+			if m["name"] == "service.name" {
+				found = m
+			}
+		}
+		require.NotNil(t, found, "service.name should be among the matches")
+		assert.Equal(t, "resource", found["attributeScope"])
+		assert.Contains(t, found["sampleValues"], "pumpkin.pie")
+	})
+
+	t.Run("no match and empty term return an empty list", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		assert.Empty(t, call(t, handler, []string{"no-such-text-anywhere"}))
+		assert.Empty(t, call(t, handler, []string{""}),
+			"an empty term is not a request for the whole dictionary")
+	})
+
+	t.Run("rejects malformed params", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		for _, params := range []any{[]string{}, []string{"a", "b"}, []int{1}} {
+			_, err := handler.Handle(context.Background(), createRequest("searchAttributes", params))
+			assert.Error(t, err, "params %v", params)
+		}
 	})
 }

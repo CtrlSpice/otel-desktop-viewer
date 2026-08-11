@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 )
 
 var ErrRetentionInternal = errors.New("retention internal error")
@@ -91,6 +93,16 @@ func (s *Store) EnforceRetention(ctx context.Context, maxBytes int64) error {
 		return nil
 	}
 
+	// Sweep before the first measurement. Orphaned dictionary rows count
+	// toward the size the cap is compared against, so garbage left by a Clear
+	// or a delete-by-id must never be what tips the store over and triggers
+	// pruning of real telemetry.
+	if err := s.WithDBWrite(func(db *sql.DB) error {
+		return ingest.SweepOrphans(ctx, db, s.flushed)
+	}); err != nil {
+		return err
+	}
+
 	for round := 0; round < maxPruneRounds; round++ {
 		fits, err := s.enforceRound(ctx, maxBytes)
 		if err != nil {
@@ -128,6 +140,13 @@ func (s *Store) enforceRound(ctx context.Context, maxBytes int64) (bool, error) 
 			return err
 		}
 
+		// The prunes are what create orphans, so sweep here rather than at the
+		// top of the next round: the next round's measurement then reflects
+		// live data instead of what this round just abandoned.
+		if err := ingest.SweepOrphans(ctx, db, s.flushed); err != nil {
+			return err
+		}
+
 		// Checkpoint flushes the WAL and lets DuckDB reuse the freed blocks;
 		// without it the file/memory measurement would not move.
 		if _, err := db.ExecContext(ctx, `checkpoint`); err != nil {
@@ -150,9 +169,11 @@ func (s *Store) pruneCutoff(ctx context.Context, db *sql.DB, query string) (int6
 }
 
 // pruneOldestSpans deletes the oldest fraction of spans along with their
-// events, links, and attributes. Attribute rows for events and links carry
-// the owning span_id (enforced by chk_attributes_one_owner), so a single
-// span_id predicate covers all three owners. Leaves first, spans last.
+// events and links. Leaves first, spans last.
+//
+// Attributes are not touched here: they are shared dictionary rows, and whether
+// a given one is still referenced is not a question a span predicate can answer.
+// enforceRound sweeps once after all three prunes.
 func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 	cutoff, ok, err := s.pruneCutoff(ctx, db,
 		`select cast(quantile_cont(start_time, ?) as bigint) from spans`)
@@ -161,7 +182,6 @@ func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 	}
 
 	for _, q := range []string{
-		`delete from attributes where span_id in (select span_id from spans where start_time < ?)`,
 		`delete from links where span_id in (select span_id from spans where start_time < ?)`,
 		`delete from events where span_id in (select span_id from spans where start_time < ?)`,
 		`delete from spans where start_time < ?`,
@@ -173,7 +193,8 @@ func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// pruneOldestLogs deletes the oldest fraction of logs and their attributes.
+// pruneOldestLogs deletes the oldest fraction of logs. Attributes are swept
+// separately, for the reason given on pruneOldestSpans.
 // Logs may arrive with timestamp = 0 (unset); observed_timestamp is the
 // fallback, mirroring how GetStats computes lastReceived.
 func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
@@ -186,7 +207,6 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 	}
 
 	for _, q := range []string{
-		`delete from attributes where log_id in (select id from logs where ` + logTime + ` < ?)`,
 		`delete from logs where ` + logTime + ` < ?`,
 	} {
 		if _, err := db.ExecContext(ctx, q, cutoff); err != nil {
@@ -197,7 +217,7 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 }
 
 // pruneOldestDatapoints deletes the oldest fraction of datapoints with their
-// exemplars and attributes, then sweeps metric_ingests and metric_streams
+// exemplars, then sweeps metric_ingests and metric_streams
 // rows that no longer own any datapoints. The identity sweep matters:
 // metric_ingests grows by one row per OTLP batch, so leaving orphans behind
 // would let the store creep back over the cap with rows pruning can't touch.
@@ -211,8 +231,6 @@ func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
 
 	doomed := `(select id from datapoints where timestamp < ?)`
 	for _, q := range []string{
-		`delete from attributes where exemplar_id in (select id from exemplars where datapoint_id in ` + doomed + `)`,
-		`delete from attributes where datapoint_id in ` + doomed,
 		`delete from exemplars where datapoint_id in ` + doomed,
 		`delete from datapoints where timestamp < ?`,
 	} {
@@ -222,13 +240,11 @@ func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
 	}
 
 	// Orphan sweep: ingest batches whose datapoints are all gone, then
-	// streams whose ingest batches are all gone. Ordering matters for the
-	// FK chain (attributes -> metric_ingests -> metric_streams).
+	// streams whose ingest batches are all gone. Ordering follows the FK
+	// chain (metric_ingests -> metric_streams).
 	for _, q := range []string{
-		`delete from attributes where metric_ingest_id in (
-			select id from metric_ingests mi
-			where not exists (select 1 from datapoints d where d.metric_ingest_id = mi.id)
-		)`,
+		`delete from metric_series ms
+			where not exists (select 1 from datapoints d where d.series_id = ms.id)`,
 		`delete from metric_ingests mi
 			where not exists (select 1 from datapoints d where d.metric_ingest_id = mi.id)`,
 		`delete from metric_streams ms

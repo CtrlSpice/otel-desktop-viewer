@@ -318,7 +318,20 @@ class Parser {
     if (!this.current()) {
       return null
     }
-    return this.parseExpression()
+    const node = this.parseExpression()
+
+    // Everything must be consumed. Without this an unquoted multi-word value
+    // parsed as its first word and the rest vanished: `service.name = Red Bull
+    // Racing` searched for `Red` and returned confidently wrong results.
+    //
+    // validateQuery has always reported this, so the editor underlined it --
+    // but parseQuery did not, so a query that was submitted anyway ran
+    // truncated. The two now agree.
+    const leftover = this.current()
+    if (leftover && leftover.type !== 'EOF') {
+      throw new Error(unexpectedTokenMessage(leftover.value))
+    }
+    return node
   }
 
   // Parse: expression → term ( ( "AND" | "OR" ) term )*
@@ -710,11 +723,22 @@ export function validateQuery(
     errors.push({
       from: leftover.position,
       to: tokenEnd(leftover),
-      message: `Unexpected token: ${leftover.value}`,
+      message: unexpectedTokenMessage(leftover.value),
     })
   }
 
   return errors
+}
+
+// Shared by the parser and the validator so the editor's underline and the
+// error a submitted query produces say the same thing. Names the fix rather
+// than just the symptom: the overwhelmingly common cause is an unquoted value
+// containing a space.
+function unexpectedTokenMessage(value: string): string {
+  return (
+    `Unexpected "${value}". Values containing spaces must be quoted, ` +
+    `for example: service.name = "Red Bull Racing"`
+  )
 }
 
 // Main Parse Function

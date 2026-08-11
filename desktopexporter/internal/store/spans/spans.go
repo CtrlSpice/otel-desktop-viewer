@@ -25,7 +25,28 @@ var (
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
-const flushIntervalSpans = 50
+// flushIntervalSpans bounds how many spans accumulate in the appenders before
+// they are pushed to DuckDB. It exists to cap memory on a pathological batch,
+// not to make writes visible sooner -- nothing reads mid-batch, since ingest
+// holds the store write lock throughout.
+//
+// Raised from 50 to 500 on measurement. Each flush is a cgo call into
+// duckdb_appender_flush, and that call is roughly half of ingest time, so
+// flushing more often than memory requires is pure overhead. Measured on
+// 2000-span batches (Apple M4 Pro -- absolute figures are an upper bound, but
+// the shape of the curve is what the choice rests on, and slower hardware moves
+// the knee later, not earlier):
+//
+//	interval   50 -> 15.77 us/span
+//	          100 -> 11.14
+//	          250 ->  8.12
+//	          500 ->  7.13   <- knee
+//	         1000 ->  6.60
+//	   close only ->  6.27
+//
+// Past 500 the remaining 14% buys unbounded appender memory, which is a bad
+// trade for a desktop tool sharing RAM with the user's actual work.
+const flushIntervalSpans = 500
 
 // resourceServiceName extracts the service.name resource attribute as a
 // plain string, returning "" when not present. This is the same logic
@@ -38,10 +59,66 @@ func resourceServiceName(attrs pcommon.Map) string {
 	return ""
 }
 
-// Ingest ingests trace spans from pdata into the spans, events, links, and attributes tables.
-// The caller must hold any required lock on the connection.
-func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err error) {
-	tables := []string{"attributes", "events", "links", "spans"}
+// Ingest ingests trace spans from pdata into the spans, events, links, and
+// attributes tables. The caller must hold any required lock on the connection.
+//
+// Two passes. The first walks the resource/scope hierarchy, hashing every
+// attribute into a Dictionary and resolving each resource and scope to a
+// content-derived id; it then writes the dictionary in three inserts. The
+// second opens the appenders and walks again, appending owners with the id
+// arrays the first pass produced.
+//
+// The split exists because the dictionary needs conflict handling and the
+// appender has none: its whole surface is AppendRow/Flush/Clear/Close, and a
+// duplicate errors at flush and takes the chunk with it. Ordering is safe
+// because the inserts commit before any appender flush, and the appenders open
+// after the resolve -- the same shape metrics.Ingest already used for its
+// stream upsert.
+func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	// Pass 1: hash everything and resolve resource/scope identities.
+	dict := ingest.NewDictionary(flushed)
+
+	type scopeKey struct{ ri, si int }
+	resourceIDs := map[int]duckdb.UUID{}
+	scopeIDs := map[scopeKey]duckdb.UUID{}
+
+	// AddAttributes already returns the array its owner should store, so pass 1
+	// records it and pass 2 reads it back rather than hashing the same
+	// attributes a second time.
+	//
+	// Consumed by position: both passes walk the identical nested loops in the
+	// identical order, so the Nth span visited in pass 2 is the Nth entry here.
+	// The cursors are checked against the slice lengths when the walk finishes,
+	// so a future edit that desynchronises the two passes fails loudly instead
+	// of silently pairing a span with another span's attributes.
+	var spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID
+
+	for ri, resourceSpan := range traces.ResourceSpans().All() {
+		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource())
+		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
+			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope())
+			for _, span := range scopeSpan.Spans().All() {
+				spanAttrs = append(spanAttrs, dict.AddAttributes(span.Attributes(), ingest.ScopeSpan))
+				for _, event := range span.Events().All() {
+					eventAttrs = append(eventAttrs, dict.AddAttributes(event.Attributes(), ingest.ScopeEvent))
+				}
+				for _, link := range span.Links().All() {
+					linkAttrs = append(linkAttrs, dict.AddAttributes(link.Attributes(), ingest.ScopeLink))
+				}
+			}
+		}
+	}
+
+	if err := dict.Flush(ctx, conn); err != nil {
+		return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
+	}
+
+	// Pass 2: append the signal rows.
+	tables := []string{"events", "links", "spans"}
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
 		return err
@@ -50,22 +127,19 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 		err = errors.Join(err, ingest.CloseAppenders(appenders, tables))
 	}()
 
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
 	spanCount := 0
-	for _, resourceSpan := range traces.ResourceSpans().All() {
+	var spanCur, eventCur, linkCur int
+	for ri, resourceSpan := range traces.ResourceSpans().All() {
 		resource := resourceSpan.Resource()
+		resourceID := resourceIDs[ri]
 		// Denormalize service.name onto every span row in this resource.
-		// Source of truth is still the resource attribute row written
-		// below; this column is the index target for "filter spans by
-		// service" queries, which would otherwise need a join through
-		// attributes.
+		// Source of truth is the resource's attribute row, reached through
+		// resource_id; this column is the index target for "filter spans by
+		// service", which is the hottest filter in span search.
 		serviceName := resourceServiceName(resource.Attributes())
 
-		for _, scopeSpan := range resourceSpan.ScopeSpans().All() {
-			scope := scopeSpan.Scope()
+		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
+			scopeID := scopeIDs[scopeKey{ri, si}]
 
 			for _, span := range scopeSpan.Spans().All() {
 				if err := ctx.Err(); err != nil {
@@ -86,79 +160,73 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 					u := duckdb.UUID(parentPadded)
 					parentSpanUUID = &u
 				}
+
+				// Hashed in pass 1. NonNil because AttributeSet returns nil for
+				// an empty map while the column is NOT NULL: an owner with no
+				// attributes stores an empty array.
+				spanAttrIDs := ingest.NonNil(spanAttrs[spanCur])
+				spanCur++
+
 				err := appenders["spans"].AppendRow(
-					traceUUID,                         // TraceID UUID
-					span.TraceState().AsRaw(),         // TraceState VARCHAR
-					spanUUID,                          // SpanID UUID
-					parentSpanUUID,                    // ParentSpanID UUID
-					span.Name(),                       // Name VARCHAR
-					span.Kind().String(),              // Kind VARCHAR
-					int64(span.StartTimestamp()),      // StartTime BIGINT
-					int64(span.EndTimestamp()),        // EndTime BIGINT
-					resource.DroppedAttributesCount(), // ResourceDroppedAttributesCount UINTEGER
-					scope.Name(),                      // ScopeName VARCHAR
-					scope.Version(),                   // ScopeVersion VARCHAR
-					scope.DroppedAttributesCount(),    // ScopeDroppedAttributesCount UINTEGER
-					span.DroppedAttributesCount(),     // DroppedAttributesCount UINTEGER
-					span.DroppedEventsCount(),         // DroppedEventsCount UINTEGER
-					span.DroppedLinksCount(),          // DroppedLinksCount UINTEGER
-					span.Status().Code().String(),     // StatusCode VARCHAR
-					span.Status().Message(),           // StatusMessage VARCHAR
-					serviceName,                       // ServiceName VARCHAR (NOT NULL, '' = unknown)
+					traceUUID,                     // TraceID UUID
+					span.TraceState().AsRaw(),     // TraceState VARCHAR
+					spanUUID,                      // SpanID UUID
+					parentSpanUUID,                // ParentSpanID UUID
+					span.Name(),                   // Name VARCHAR
+					span.Kind().String(),          // Kind VARCHAR
+					int64(span.StartTimestamp()),  // StartTime BIGINT
+					int64(span.EndTimestamp()),    // EndTime BIGINT
+					resourceID,                    // ResourceID UUID
+					scopeID,                       // ScopeID UUID
+					spanAttrIDs,                   // AttributeIDs UUID[]
+					span.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
+					span.DroppedEventsCount(),     // DroppedEventsCount UINTEGER
+					span.DroppedLinksCount(),      // DroppedLinksCount UINTEGER
+					span.Status().Code().String(), // StatusCode VARCHAR
+					span.Status().Message(),       // StatusMessage VARCHAR
+					serviceName,                   // ServiceName VARCHAR (NOT NULL, '' = unknown)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 				}
 
 				for _, event := range span.Events().All() {
-					eventID := duckdb.UUID(uuid.New())
+					eventAttrIDs := ingest.NonNil(eventAttrs[eventCur])
+					eventCur++
 					err = appenders["events"].AppendRow(
-						eventID,                        // ID UUID
+						duckdb.UUID(uuid.New()),        // ID UUID
 						spanUUID,                       // SpanID UUID
 						event.Name(),                   // Name VARCHAR
 						int64(event.Timestamp()),       // Timestamp BIGINT
+						eventAttrIDs,                   // AttributeIDs UUID[]
 						event.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
 					)
 					if err != nil {
 						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
-					if err := ingest.IngestAttributes(appenders["attributes"],
-						[]ingest.AttributeBatchItem{{Attrs: event.Attributes(), IDs: ingest.AttributeOwnerIDs{SpanID: &spanUUID, EventID: &eventID}, Scope: "event"}}); err != nil {
-						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
-					}
 				}
 
 				for _, link := range span.Links().All() {
-					linkID := duckdb.UUID(uuid.New())
 					linkTraceUUID := duckdb.UUID(link.TraceID())
 					linkSpanID := link.SpanID()
 					var linkSpanPadded [16]byte
 					copy(linkSpanPadded[8:], linkSpanID[:])
 					linkSpanUUID := duckdb.UUID(linkSpanPadded)
 
+					linkAttrIDs := ingest.NonNil(linkAttrs[linkCur])
+					linkCur++
 					err = appenders["links"].AppendRow(
-						linkID,                        // ID UUID
+						duckdb.UUID(uuid.New()),       // ID UUID
 						spanUUID,                      // SpanID UUID
 						linkTraceUUID,                 // TraceID UUID
 						linkSpanUUID,                  // LinkedSpanID UUID
 						link.TraceState().AsRaw(),     // TraceState VARCHAR
+						linkAttrIDs,                   // AttributeIDs UUID[]
 						link.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
 					)
 					if err != nil {
 						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 					}
-					if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{{Attrs: link.Attributes(), IDs: ingest.AttributeOwnerIDs{SpanID: &spanUUID, LinkID: &linkID}, Scope: "link"}}); err != nil {
-						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
-					}
-				}
-
-				spanIDs := ingest.AttributeOwnerIDs{SpanID: &spanUUID}
-				if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
-					{Attrs: span.Attributes(), IDs: spanIDs, Scope: "span"},
-					{Attrs: resource.Attributes(), IDs: spanIDs, Scope: "resource"},
-					{Attrs: scope.Attributes(), IDs: spanIDs, Scope: "scope"},
-				}); err != nil {
-					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 				}
 
 				spanCount++
@@ -169,6 +237,16 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err er
 				}
 			}
 		}
+	}
+
+	// The two passes must have visited exactly the same owners. If they ever
+	// diverge, every span past the divergence point would silently receive some
+	// other span's attributes -- corruption with no error, which is why this is
+	// checked rather than assumed.
+	if spanCur != len(spanAttrs) || eventCur != len(eventAttrs) || linkCur != len(linkAttrs) {
+		return fmt.Errorf("Ingest: %w: pass mismatch (spans %d/%d, events %d/%d, links %d/%d)",
+			ErrSpansStoreInternal, spanCur, len(spanAttrs),
+			eventCur, len(eventAttrs), linkCur, len(linkAttrs))
 	}
 
 	return nil
@@ -191,8 +269,9 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 	}
 
 	// service_name comes from spans.service_name (denormalized at
-	// ingest from the service.name resource attribute) rather than the
-	// attributes table; same value, no per-row attribute lookup.
+	// ingest from the service.name resource attribute) rather than
+	// resolving it through resource_id; same value, no join and no array
+	// unnest on a per-trace aggregate.
 	//
 	// `hasRootSpan` makes the orphaned-trace state explicit so consumers
 	// don't have to infer it from a null rootSpan. rootSpan carries only
@@ -230,12 +309,12 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
 				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
-			from spans s, search_params
+			%s
 			where %s
 			order by
 				s.trace_id,
 				case when s.parent_span_id is null then 0 else 1 end
-		) sub`, cteSQL, whereClause)
+		) sub`, cteSQL, spanSearchFrom, whereClause)
 
 	var raw []byte
 	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
@@ -276,25 +355,33 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 		matchedCTE = fmt.Sprintf(`,
 		matched_spans as (
 			select s.span_id
-			from spans s, search_params
+			%s
 			where %s
-		)`, whereClause)
-		matchedJoin = "left join matched_spans ms on st.span_id = ms.span_id"
+		)`, spanSearchFrom, whereClause)
+		matchedJoin = "left join matched_spans ms on ts.span_id = ms.span_id"
 		matchedExpr = "case when ms.span_id is not null then true else false end"
 	}
 
+	// The recursion carries only what the walk needs -- six narrow columns --
+	// and the payload is joined back on once, in the `tree` CTE. Materialising
+	// all 17 span columns through every recursion level was the single largest
+	// avoidable cost here: copied at each depth, thrown away at every level but
+	// the last.
+	//
+	// `tree` exists so the trace's span set is defined in exactly one place.
+	// Without it the payload gets re-derived four separate times after the
+	// recursion (span_attrs, resource_data, scope_data, and the final
+	// projection), which is easy to get subtly out of step. Measured at no
+	// performance difference -- DuckDB already materialises a recursive CTE once
+	// and reuses it across references, and the re-derivations were PK-indexed
+	// joins over a few thousand rows. Kept for the structure, not the speed.
 	query := fmt.Sprintf(`
 		with recursive
 		%s,
 
 		spans_tree as (
 			select
-				s.trace_id, s.trace_state, s.span_id, s.parent_span_id,
-				s.name, s.kind, s.start_time, s.end_time,
-				s.resource_dropped_attributes_count, s.scope_name, s.scope_version,
-				s.scope_dropped_attributes_count, s.dropped_attributes_count,
-				s.dropped_events_count, s.dropped_links_count,
-				s.status_code, s.status_message,
+				s.trace_id, s.span_id, s.parent_span_id, s.start_time,
 				0 as depth,
 				array[row_number() over (order by
 					case when s.parent_span_id is null then 0 else 1 end,
@@ -309,12 +396,7 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 			union all
 
 			select
-				s.trace_id, s.trace_state, s.span_id, s.parent_span_id,
-				s.name, s.kind, s.start_time, s.end_time,
-				s.resource_dropped_attributes_count, s.scope_name, s.scope_version,
-				s.scope_dropped_attributes_count, s.dropped_attributes_count,
-				s.dropped_events_count, s.dropped_links_count,
-				s.status_code, s.status_message,
+				s.trace_id, s.span_id, s.parent_span_id, s.start_time,
 				st.depth + 1,
 				st.sort_path || array[row_number() over (
 					partition by st.span_id order by s.start_time
@@ -323,22 +405,56 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 			join spans_tree st on s.parent_span_id = st.span_id and s.trace_id = st.trace_id
 		)%s,
 
-		span_attributes as (
-			select a.span_id, a.scope,
-				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attributes
-			from attributes a
-			where a.span_id in (select span_id from spans_tree)
-				and a.event_id is null and a.link_id is null
-			group by a.span_id, a.scope
+		-- The walk's result joined back to its payload, once.
+		tree as materialized (
+			select st.depth, st.sort_path,
+				s.span_id, s.parent_span_id, s.trace_id, s.trace_state, s.name, s.kind,
+				s.start_time, s.end_time, s.resource_id, s.scope_id, s.attribute_ids,
+				s.dropped_attributes_count, s.dropped_events_count, s.dropped_links_count,
+				s.status_code, s.status_message
+			from spans_tree st
+			join spans s on s.span_id = st.span_id
 		),
 
-		event_attributes as (
-			select a.event_id,
-				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attributes
-			from attributes a
-			where a.event_id is not null
-				and a.span_id in (select span_id from spans_tree)
-			group by a.event_id
+		-- These three resolve attribute arrays the long way instead of calling
+		-- attrs_json, and that is deliberate.
+		--
+		-- attrs_json is a correlated subquery. In a per-row projection over a
+		-- large table the planner materialises it once per row: measured at
+		-- 149ms for 4,868 spans against 33ms for the same work as one grouped
+		-- pass. The macro stays the right tool where the row count is small --
+		-- resource_data and scope_data below, logs.Get, GetMetric -- and the
+		-- wrong one here.
+		--
+		-- The ordering (a.key, a.id) matches attrs_json exactly, so the rendered
+		-- JSON is identical either way.
+		span_attrs as (
+			select ts.span_id as id,
+				to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
+				             order by a.key, a.id)) as attrs
+			from tree ts, unnest(ts.attribute_ids) as t(aid)
+			join attributes a on a.id = t.aid
+			group by ts.span_id
+		),
+
+		event_attrs as (
+			select e.id,
+				to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
+				             order by a.key, a.id)) as attrs
+			from events e, unnest(e.attribute_ids) as t(aid)
+			join attributes a on a.id = t.aid
+			where e.span_id in (select span_id from tree)
+			group by e.id
+		),
+
+		link_attrs as (
+			select l.id,
+				to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
+				             order by a.key, a.id)) as attrs
+			from links l, unnest(l.attribute_ids) as t(aid)
+			join attributes a on a.id = t.aid
+			where l.span_id in (select span_id from tree)
+			group by l.id
 		),
 
 		event_data as (
@@ -347,86 +463,119 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 					'name', e.name,
 					'timestamp', e.timestamp::varchar,
 					'droppedAttributesCount', e.dropped_attributes_count,
-					'attributes', coalesce(ea.attributes, json('[]'))
+					'attributes', coalesce(ea.attrs, json('[]'))
 				) order by e.timestamp)) as events
 			from events e
-			left join event_attributes ea on e.id = ea.event_id
-			where e.span_id in (select span_id from spans_tree)
+			left join event_attrs ea on ea.id = e.id
+			where e.span_id in (select span_id from tree)
 			group by e.span_id
-		),
-
-		link_attributes as (
-			select a.link_id,
-				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attributes
-			from attributes a
-			where a.link_id is not null
-				and a.span_id in (select span_id from spans_tree)
-			group by a.link_id
 		),
 
 		link_data as (
 			select l.span_id,
 				json_group_array(json_object(
-					'traceID', replace(l.trace_id::varchar, '-', ''),
-					'spanID', right(replace(l.linked_span_id::varchar, '-', ''), 16),
+					'traceID', trace_id_wire(l.trace_id),
+					'spanID', span_id_wire(l.linked_span_id),
 					'traceState', l.trace_state,
 					'droppedAttributesCount', l.dropped_attributes_count,
-					'attributes', coalesce(la.attributes, json('[]'))
+					'attributes', coalesce(la.attrs, json('[]'))
 				)) as links
 			from links l
-			left join link_attributes la on l.id = la.link_id
-			where l.span_id in (select span_id from spans_tree)
+			left join link_attrs la on la.id = l.id
+			where l.span_id in (select span_id from tree)
 			group by l.span_id
+		),
+
+		-- Resource and scope JSON is built once per *distinct owner*, which is
+		-- the entire point of deduping them. Inlining resource_json/scope_json
+		-- in the per-span projection re-resolved the same 24 resources 4,891
+		-- times and cost two ~150ms operators.
+		resource_data as (
+			select r.id, r.seq, resource_json(r.attribute_ids, r.dropped_attributes_count) as obj
+			from resources r
+			where r.id in (select resource_id from tree)
+		),
+
+		scope_data as (
+			select sc.id, sc.seq,
+				scope_json(sc.name, sc.version, sc.attribute_ids, sc.dropped_attributes_count) as obj
+			from scopes sc
+			where sc.id in (select scope_id from tree)
+		),
+
+		-- The baseline every span offset is measured from.
+		--
+		-- min(start_time), not the root span's start: clocks across hosts are
+		-- not synchronised, so a child can legitimately report an earlier start
+		-- than its parent, and min() is also indifferent to whether the trace
+		-- has a root at all -- which matters, since a trace whose parent is
+		-- missing is displayed as rooted anyway.
+		trace_start as (
+			select min(start_time) as t from tree
 		),
 
 		ordered_spans as (
 			select json_object(
 					'spanData', json_object(
-						'traceID', replace(st.trace_id::varchar, '-', ''),
-						'traceState', st.trace_state,
-						'spanID', right(replace(st.span_id::varchar, '-', ''), 16),
-						'parentSpanID', case when st.parent_span_id is not null then right(replace(st.parent_span_id::varchar, '-', ''), 16) end,
-						'name', st.name,
-						'kind', st.kind,
-						'startTime', st.start_time::varchar,
-						'endTime', st.end_time::varchar,
-						'attributes', coalesce(sa_span.attributes, json('[]')),
+						-- No traceID: it is at the response root, and a
+						-- single-trace response repeated it 32 bytes per span.
+						'traceState', ts.trace_state,
+						'spanID', span_id_wire(ts.span_id),
+						'parentSpanID', case when ts.parent_span_id is not null then span_id_wire(ts.parent_span_id) end,
+						'name', ts.name,
+						'kind', ts.kind,
+						-- Offset from traceStart, and duration from the span's
+						-- own start. Deliberately not two offsets: an end
+						-- offset inherits the trace's full magnitude however
+						-- brief the span, while a duration stays small. It is
+						-- also what the waterfall wants -- a bar is a position
+						-- and a width, so the client stops subtracting on every
+						-- render.
+						'start', ts.start_time - (select t from trace_start),
+						'dur', ts.end_time - ts.start_time,
+						'attributes', coalesce(sa.attrs, json('[]')),
 						'events', coalesce(ed.events, json('[]')),
 						'links', coalesce(ld.links, json('[]')),
-						'resource', json_object(
-							'attributes', coalesce(sa_res.attributes, json('[]')),
-							'droppedAttributesCount', st.resource_dropped_attributes_count
-						),
-						'scope', json_object(
-							'name', st.scope_name,
-							'version', st.scope_version,
-							'attributes', coalesce(sa_scope.attributes, json('[]')),
-							'droppedAttributesCount', st.scope_dropped_attributes_count
-						),
-						'droppedAttributesCount', st.dropped_attributes_count,
-						'droppedEventsCount', st.dropped_events_count,
-						'droppedLinksCount', st.dropped_links_count,
-						'statusCode', st.status_code,
-						'statusMessage', st.status_message
+						-- References into the top-level maps. seq rather than
+						-- the uuid: two 36-char ids per span is ~413KB on the
+						-- reference trace, a small integer ~57KB. The uuids are
+						-- storage identity and have no business on the wire.
+						'r', rd.seq,
+						's', scd.seq,
+						'droppedAttributesCount', ts.dropped_attributes_count,
+						'droppedEventsCount', ts.dropped_events_count,
+						'droppedLinksCount', ts.dropped_links_count,
+						'statusCode', ts.status_code,
+						'statusMessage', ts.status_message
 					),
-				'depth', st.depth,
+				'depth', ts.depth,
 				'matched', %s
 			) as span_json,
-				st.sort_path
-			from spans_tree st
+				ts.sort_path
+			from tree ts
+			join resource_data rd on rd.id = ts.resource_id
+			join scope_data scd on scd.id = ts.scope_id
+			left join span_attrs sa on sa.id = ts.span_id
 			%s
-			left join span_attributes sa_span on st.span_id = sa_span.span_id and sa_span.scope = 'span'
-			left join span_attributes sa_res on st.span_id = sa_res.span_id and sa_res.scope = 'resource'
-			left join span_attributes sa_scope on st.span_id = sa_scope.span_id and sa_scope.scope = 'scope'
-			left join event_data ed on st.span_id = ed.span_id
-			left join link_data ld on st.span_id = ld.span_id
+			left join event_data ed on ts.span_id = ed.span_id
+			left join link_data ld on ts.span_id = ld.span_id
 		)
 
 		select case
 			when not exists (select 1 from spans where trace_id = (select trace_id from search_params))
 				then null
 			else cast(json_object(
-				'traceID', replace((select trace_id from search_params)::varchar, '-', ''),
+				'traceID', trace_id_wire((select trace_id from search_params)),
+				-- Absolute ns as a string; only this one needs the full
+				-- magnitude, and only the detail panel reads it, as
+				-- BigInt(traceStart) + BigInt(start).
+				'traceStart', (select t from trace_start)::varchar,
+				-- Each distinct resource and scope once, keyed by seq. On the
+				-- reference trace this is 24 resources and 1 scope against
+				-- 5,735 spans that previously carried a full copy each,
+				-- which was over half the response.
+				'resources', coalesce((select json_group_object(seq::varchar, obj) from resource_data), json('{}')),
+				'scopes', coalesce((select json_group_object(seq::varchar, obj) from scope_data), json('{}')),
 				'spans', coalesce(to_json(list(span_json order by sort_path)), json('[]'))
 			) as varchar)
 		end as trace
@@ -443,43 +592,44 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 	return json.RawMessage(raw), nil
 }
 
-// GetTraceAttributes returns a JSON array of attribute names/scopes/types for spans in the time range.
+// GetTraceAttributes returns every attribute name/scope/type this store knows
+// about, for the search field dropdowns.
+//
+// The time range is accepted and ignored, and that is a deliberate behaviour
+// change. These used to be an indexed join from attributes to spans over the
+// window; with attributes deduped into a dictionary, honouring the window would
+// mean unnesting every span's array and joining back -- on the interactive path
+// that populates a dropdown. The dictionary is small and already bounded by
+// retention, so it answers directly. The semantics become "keys this store
+// knows about" rather than "keys in this window", which is the better answer
+// for a dropdown anyway.
+//
+// This is why scope is part of dictionary identity: without it, attributeScope
+// could not be produced without the unnest this exists to avoid.
 func GetTraceAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
-	query := `
-		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope, 'type', sub.type::varchar)
-			order by sub.key, sub.scope)) as varchar) as attributes
-		from (
-			select distinct a.key, a.scope, a.type
-			from attributes a
-			inner join spans s on a.span_id = s.span_id
-			where s.start_time >= ? and s.start_time <= ?
-		) sub
-	`
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetTraceAttributes: %w: %w", ErrSpansStoreInternal, err)
-	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return traceAttributeKeys(ctx, db)
 }
 
-// GetAttributesByTraceID returns a JSON array of distinct attribute key/scope/type for all spans in a trace.
+// GetAttributesByTraceID returns the same store-wide key list as
+// GetTraceAttributes. Narrowing to one trace would cost the unnest described
+// there; both callers populate the same dropdown.
 func GetAttributesByTraceID(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+	return traceAttributeKeys(ctx, db)
+}
+
+func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 	query := `
-		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope, 'type', sub.type::varchar)
+		select cast(to_json(list(attribute_def_json(sub.key, sub.scope, sub.type)
 			order by sub.key, sub.scope)) as varchar) as attributes
 		from (
 			select distinct a.key, a.scope, a.type
 			from attributes a
-			inner join spans s on a.span_id = s.span_id
-			where s.trace_id = ?
+			where a.scope in ('resource', 'scope', 'span', 'event', 'link')
 		) sub
 	`
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetAttributesByTraceID: %w: %w", ErrSpansStoreInternal, err)
+	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetTraceAttributes: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -489,8 +639,11 @@ func GetAttributesByTraceID(ctx context.Context, db *sql.DB, traceID string) (js
 
 // Clear truncates the spans table and all child tables (events, links, and their attributes).
 func Clear(ctx context.Context, db *sql.DB) error {
+	// Attribute, resource and scope rows are not deleted here: they are shared
+	// with logs and metrics, so "was it only ours?" is not a question this
+	// function can answer. ingest.SweepOrphans collects whatever these deletes
+	// orphaned, and the caller runs it once for all three signals.
 	childQueries := []string{
-		`delete from attributes where span_id is not null`,
 		`truncate table links`,
 		`truncate table events`,
 		`truncate table spans`,
@@ -508,9 +661,8 @@ func DeleteSpansByIDs(ctx context.Context, db *sql.DB, spanIDs []any) error {
 	if len(spanIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildPlaceholders(len(spanIDs))
+	placeholders := util.BuildUUIDPlaceholders(len(spanIDs))
 	childQueries := []string{
-		fmt.Sprintf(`delete from attributes where span_id in (%s)`, placeholders),
 		fmt.Sprintf(`delete from links where span_id in (%s)`, placeholders),
 		fmt.Sprintf(`delete from events where span_id in (%s)`, placeholders),
 		fmt.Sprintf(`delete from spans where span_id in (%s)`, placeholders),
@@ -528,9 +680,8 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	if len(traceIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildPlaceholders(len(traceIDs))
+	placeholders := util.BuildUUIDPlaceholders(len(traceIDs))
 	childQueries := []string{
-		fmt.Sprintf(`delete from attributes where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
 		fmt.Sprintf(`delete from links where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
 		fmt.Sprintf(`delete from events where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
 		fmt.Sprintf(`delete from spans where trace_id in (%s)`, placeholders),
@@ -547,6 +698,24 @@ func buildTraceSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteSQ
 	return search.BuildSearchSQL(queryNode, startTime, endTime, traceFieldMapper(), "s.start_time >= time_start and s.start_time <= time_end")
 }
 
+// Two idioms compare a trace id in this file, and they are not
+// interchangeable. Which one applies depends on the operation:
+//
+//   - Exact lookup -- "give me this trace" -- compares uuid to uuid, here.
+//     The caller has already normalised the id (normalizeUUID in the RPC
+//     handler), so the value is well-formed, and uuid equality is what
+//     idx_spans_traceid can actually serve.
+//
+//   - Fuzzy search -- "find traces whose id contains abc" -- compares text to
+//     text, in mapTraceFieldExpression. It has to: LIKE against a uuid column
+//     would match the dashed internal rendering rather than the wire form the
+//     UI displays, and a half-typed id must match nothing rather than abort the
+//     query. That predicate is deliberately not indexable.
+//
+// try_cast rather than a plain cast keeps the second property in the first
+// idiom: a malformed id yields NULL, the comparison matches nothing, and the
+// caller gets ErrTraceIDNotFound -- the same outcome as before, instead of a
+// query error surfacing as an internal failure.
 func buildSpanSQL(queryNode *search.QueryNode, traceID string) (cteSQL string, whereSQL string, args []any, err error) {
 	params := []search.NamedParam{
 		{Name: "trace_id", Value: traceID},
@@ -569,30 +738,56 @@ func buildSpanSQL(queryNode *search.QueryNode, traceID string) (cteSQL string, w
 	cteParams := make([]string, len(params))
 	for i, p := range params {
 		args[i] = p.Value
+		if p.Name == "trace_id" {
+			// Typed in the CTE so every downstream reference is uuid-to-uuid.
+			// Left as a bare parameter, the CTE column is VARCHAR and each use
+			// re-derives the comparison's cast direction from context, which is
+			// exactly the kind of thing that is fine until it isn't.
+			cteParams[i] = "try_cast(? as uuid) as trace_id"
+			continue
+		}
 		cteParams[i] = fmt.Sprintf("? as %s", p.Name)
 	}
 	cteSQL = fmt.Sprintf("search_params as (select %s)", strings.Join(cteParams, ", "))
 	return cteSQL, whereSQL, args, nil
 }
 
+// spanSearchFrom is the FROM clause every span search predicate is written
+// against. resources and scopes are joined in unconditionally because
+// resource.* and scope.* search fields now resolve through them rather than
+// through denormalized columns on spans; both are inner joins, since
+// resource_id and scope_id are NOT NULL.
+const spanSearchFrom = `from search_params, spans s
+		join resources r on r.id = s.resource_id
+		join scopes sc on sc.id = s.scope_id`
+
 var spanColumns = map[string]struct{}{
-	"trace_id":                          {},
-	"trace_state":                       {},
-	"span_id":                           {},
-	"parent_span_id":                    {},
-	"name":                              {},
-	"kind":                              {},
-	"start_time":                        {},
-	"end_time":                          {},
-	"resource_dropped_attributes_count": {},
-	"scope_name":                        {},
-	"scope_version":                     {},
-	"scope_dropped_attributes_count":    {},
-	"dropped_attributes_count":          {},
-	"dropped_events_count":              {},
-	"dropped_links_count":               {},
-	"status_code":                       {},
-	"status_message":                    {},
+	"trace_id":                 {},
+	"trace_state":              {},
+	"span_id":                  {},
+	"parent_span_id":           {},
+	"name":                     {},
+	"kind":                     {},
+	"start_time":               {},
+	"end_time":                 {},
+	"service_name":             {},
+	"dropped_attributes_count": {},
+	"dropped_events_count":     {},
+	"dropped_links_count":      {},
+	"status_code":              {},
+	"status_message":           {},
+}
+
+// Columns reachable on the joined resources / scopes rows. resource.* and
+// scope.* search fields validate against these instead of spanColumns.
+var resourceColumns = map[string]struct{}{
+	"dropped_attributes_count": {},
+}
+
+var scopeColumns = map[string]struct{}{
+	"name":                     {},
+	"version":                  {},
+	"dropped_attributes_count": {},
 }
 
 var eventColumns = map[string]struct{}{
@@ -613,7 +808,7 @@ var linkColumns = map[string]struct{}{
 }
 
 func traceFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapTraceFieldExpression(field)
@@ -622,7 +817,7 @@ func traceFieldMapper() search.FieldMapper {
 			}
 			return []string{expr}, nil
 		case "attribute":
-			return mapTraceAttributeExpressions(field, params)
+			return mapTraceAttributeExpressions(field, query, params)
 		case "global":
 			return mapTraceGlobalExpressions()
 		default:
@@ -634,17 +829,17 @@ func traceFieldMapper() search.FieldMapper {
 func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 	if resourceField, found := strings.CutPrefix(field.Name, "resource."); found {
 		col := util.CamelToSnake(resourceField)
-		if err := util.ValidateColumnName(col, spanColumns); err != nil {
+		if err := util.ValidateColumnName(col, resourceColumns); err != nil {
 			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
-		return "s." + col, nil
+		return "r." + col, nil
 	}
 	if scopeField, found := strings.CutPrefix(field.Name, "scope."); found {
-		col := "scope_" + util.CamelToSnake(scopeField)
-		if err := util.ValidateColumnName(col, spanColumns); err != nil {
+		col := util.CamelToSnake(scopeField)
+		if err := util.ValidateColumnName(col, scopeColumns); err != nil {
 			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
-		return "s." + col, nil
+		return "sc." + col, nil
 	}
 	if col, found := strings.CutPrefix(field.Name, "event."); found {
 		snake := util.CamelToSnake(col)
@@ -697,25 +892,82 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 	return field.Name, nil
 }
 
-func mapTraceAttributeExpressions(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
-	idx := len(*params)
-	scopeParam := fmt.Sprintf("attr_scope_%d", idx)
-	keyParam := fmt.Sprintf("attr_key_%d", idx+1)
-	*params = append(*params,
-		search.NamedParam{Name: scopeParam, Value: field.AttributeScope},
-		search.NamedParam{Name: keyParam, Value: field.Name},
-	)
+// mapTraceAttributeExpressions turns "attribute foo.bar, in scope X" into a
+// predicate.
+//
+// The scope parameter the old form carried is gone: scope is implied by which
+// owner's array is unnested, and an owner's array only ever holds ids of its own
+// kind. One param per field instead of two.
+//
+// Event and link attributes need an EXISTS, because the question is whether
+// *any* event or link on the span matches. A span's own attributes are on its
+// own row, so those stay a plain attr_value lookup.//
+// Resource and scope predicates are **hoisted into the owner table** rather
+// than evaluated per row. The obvious form, `attr_value(r.attribute_ids, k)
+// {COND}`, is correlated: it unnests and joins the dictionary once per span.
+// Measured on 200k spans over 24 resources, exact match on service.name:
+//
+//	attr_value(r.attribute_ids, k) per span      60.59 ms
+//	resource_id in (select ... from resources)    2.14 ms
+//
+// 28x, because the subquery runs once over ~24 rows and the outer predicate is
+// then an indexed equality on resource_id (idx_spans_resource). {COND} is
+// embedded so it lands inside the subquery, where the small scan is.
+func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
+	// Fast path first: an equality test on a string attribute is a membership
+	// test against an id we can compute here. IDProbe returns "" for anything
+	// it cannot answer exactly, which falls through to the value comparison.
+	switch field.AttributeScope {
+	case "resource":
+		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeResource); p != "" {
+			return []string{search.Complete("s.resource_id in (select id from resources where " + p + ")")}, nil
+		}
+	case "scope":
+		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeScope); p != "" {
+			return []string{search.Complete("s.scope_id in (select id from scopes where " + p + ")")}, nil
+		}
+	case "span":
+		if p := ingest.IDProbe("s.attribute_ids", field, query, ingest.ScopeSpan); p != "" {
+			return []string{search.Complete(p)}, nil
+		}
+	case "event":
+		if p := ingest.IDProbe("e.attribute_ids", field, query, ingest.ScopeEvent); p != "" {
+			return []string{search.Complete(
+				"exists(select 1 from events e where e.span_id = s.span_id and " + p + ")")}, nil
+		}
+	case "link":
+		if p := ingest.IDProbe("l.attribute_ids", field, query, ingest.ScopeLink); p != "" {
+			return []string{search.Complete(
+				"exists(select 1 from links l where l.span_id = s.span_id and " + p + ")")}, nil
+		}
+	}
+
+	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
+	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
 
 	switch field.AttributeScope {
-	case "resource", "scope", "span":
-		expr := fmt.Sprintf("(select a.value from attributes a where a.span_id = s.span_id and a.scope = %s and a.key = %s limit 1)", scopeParam, keyParam)
-		return []string{expr}, nil
+	case "resource":
+		return []string{fmt.Sprintf(
+			"s.resource_id in (select id from resources where attr_value(attribute_ids, %s) {COND})",
+			keyParam)}, nil
+	case "scope":
+		return []string{fmt.Sprintf(
+			"s.scope_id in (select id from scopes where attr_value(attribute_ids, %s) {COND})",
+			keyParam)}, nil
+	case "span":
+		return []string{fmt.Sprintf("attr_value(s.attribute_ids, %s)", keyParam)}, nil
 	case "event":
-		expr := fmt.Sprintf("exists(select 1 from events e join attributes a on a.event_id = e.id where e.span_id = s.span_id and a.scope = %s and a.key = %s and a.value {COND})", scopeParam, keyParam)
-		return []string{expr}, nil
+		return []string{fmt.Sprintf(`exists(
+			select 1 from events e, unnest(e.attribute_ids) as t(aid)
+			join attributes a on a.id = t.aid
+			where e.span_id = s.span_id and a.key = %s and a.value {COND}
+		)`, keyParam)}, nil
 	case "link":
-		expr := fmt.Sprintf("exists(select 1 from links l join attributes a on a.link_id = l.id where l.span_id = s.span_id and a.scope = %s and a.key = %s and a.value {COND})", scopeParam, keyParam)
-		return []string{expr}, nil
+		return []string{fmt.Sprintf(`exists(
+			select 1 from links l, unnest(l.attribute_ids) as t(aid)
+			join attributes a on a.id = t.aid
+			where l.span_id = s.span_id and a.key = %s and a.value {COND}
+		)`, keyParam)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
 	}
@@ -731,20 +983,43 @@ func mapTraceGlobalExpressions() ([]string, error) {
 		"CAST(s.status_code AS VARCHAR) {COND}",
 		"CAST(s.status_message AS VARCHAR) {COND}",
 		"CAST(s.trace_state AS VARCHAR) {COND}",
-		"CAST(s.scope_name AS VARCHAR) {COND}",
-		"CAST(s.scope_version AS VARCHAR) {COND}",
+		"CAST(sc.name AS VARCHAR) {COND}",
+		"CAST(sc.version AS VARCHAR) {COND}",
 		"exists(select 1 from events e where e.span_id = s.span_id and CAST(e.name AS VARCHAR) {COND})",
 		"exists(select 1 from links l where l.span_id = s.span_id and (replace(l.trace_id::varchar, '-', '') {COND} or CAST(l.trace_state AS VARCHAR) {COND} or right(replace(l.linked_span_id::varchar, '-', ''), 16) {COND}))",
-		`exists(
-			select 1
-			from attributes a
-			where a.span_id = s.span_id and (
-				a.key {COND} or a.value {COND} or
-				(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
-				(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
-				(a.type = 'float64[]' AND list_contains(TRY_CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
-				(a.type = 'boolean[]' AND list_contains(TRY_CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
-			)
-		)`,
+		// Free-text search over attributes now takes three clauses where it used
+		// to take one. Under the old schema every attribute a span could reach
+		// -- its own, its resource's, its scope's, and every event's and link's
+		// -- carried that span_id, so a single `where a.span_id = s.span_id`
+		// covered all five. The dictionary keeps them in five separate arrays on
+		// four tables, so the coverage has to be spelled out.
+		//
+		// Resource, scope and span attributes are on the span's own row, so
+		// concatenating those three arrays is one unnest. Events and links are
+		// separate rows and need their own EXISTS.
+		matchAnyAttribute("unnest(s.attribute_ids || r.attribute_ids || sc.attribute_ids) as t(aid)", ""),
+		matchAnyAttribute("events e, unnest(e.attribute_ids) as t(aid)", "e.span_id = s.span_id and "),
+		matchAnyAttribute("links l, unnest(l.attribute_ids) as t(aid)", "l.span_id = s.span_id and "),
 	}, nil
+}
+
+// matchAnyAttribute builds an EXISTS that resolves an owner's attribute id
+// array against the dictionary and tests every stored form against the free-text
+// term: key, value, and element-wise for the four array types.
+//
+// from is the source that produces t(aid); scope narrows that source to the
+// current span and is empty when the array is already on the span's own row.
+func matchAnyAttribute(from, scope string) string {
+	return fmt.Sprintf(`exists(
+		select 1
+		from %s
+		join attributes a on a.id = t.aid
+		where %s(
+			a.key {COND} or a.value {COND} or
+			(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
+			(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
+			(a.type = 'float64[]' AND list_contains(TRY_CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
+			(a.type = 'boolean[]' AND list_contains(TRY_CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+		)
+	)`, from, scope)
 }

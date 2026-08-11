@@ -27,6 +27,7 @@ import type {
   JsonTraceSummary,
   JsonAttributeType,
   JsonQueryNode,
+  JsonAttributeMatch,
 } from '@/types/wire-types'
 import { parseBigInt, parseNullableBigInt } from '@/utils/bigint'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
@@ -165,25 +166,48 @@ function traceSummariesFromJSON(json: JsonTraceSummary[]): TraceSummary[] {
   return json.map(traceSummaryFromJSON)
 }
 
+// Rehydrates the compressed searchSpans wire shape into the SpanData the views
+// expect: references resolved against the response's resource and scope maps,
+// times reconstructed from the trace baseline, traceID reattached.
+//
+// Every compression the wire format applies is undone here, at one boundary, so
+// no view knows the transport changed. That was worth doing deliberately -- the
+// waterfall, the detail panel and the search results all read SpanData, and
+// pushing `r`/`s` lookups into each of them would have spread the wire format
+// across the app for no benefit.
+//
+// Resolved resources and scopes are *shared*, not copied: all 4,891 spans of a
+// trace point at the same 23 resource objects. They are read-only downstream,
+// and copying them per span would rebuild client-side exactly the duplication
+// the wire format just removed.
 function traceDataFromJSON(json: JsonTraceData): TraceData {
+  const traceStart = parseBigInt(json.traceStart)
+
   return {
-    ...json,
+    traceID: json.traceID,
     // events is coalesced to [] server-side and matched is always
     // emitted (literal true when no search criteria), so no fallbacks;
     // links rides the spanData spread untouched.
-    spans: json.spans.map(spanNode => ({
-      spanData: {
-        ...spanNode.spanData,
-        startTime: parseBigInt(spanNode.spanData.startTime),
-        endTime: parseBigInt(spanNode.spanData.endTime),
-        events: spanNode.spanData.events.map(event => ({
-          ...event,
-          timestamp: parseBigInt(event.timestamp),
-        })),
-      },
-      depth: spanNode.depth,
-      matched: spanNode.matched,
-    })),
+    spans: json.spans.map(spanNode => {
+      const { r, s, start, dur, ...rest } = spanNode.spanData
+      const startTime = traceStart + BigInt(start)
+      return {
+        spanData: {
+          ...rest,
+          traceID: json.traceID,
+          resource: json.resources[String(r)],
+          scope: json.scopes[String(s)],
+          startTime,
+          endTime: startTime + BigInt(dur),
+          events: spanNode.spanData.events.map(event => ({
+            ...event,
+            timestamp: parseBigInt(event.timestamp),
+          })),
+        },
+        depth: spanNode.depth,
+        matched: spanNode.matched,
+      }
+    }),
   }
 }
 
@@ -237,6 +261,7 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
   return {
     attributesKey: json.attributesKey,
     attributes: json.attributes,
+    resource: json.resource,
     datapoints: json.datapoints.map(dataPointFromJSON),
   }
 }
@@ -281,6 +306,22 @@ function statsFromJSON(json: JsonStats): Stats {
 
 // Export typed methods for each RPC call with built-in conversion
 export let telemetryAPI = {
+  // Value-first discovery: given text the user can see, which attribute keys
+  // hold it. Cross-signal by nature -- the dictionary it reads is shared by
+  // traces, logs and metrics -- so unlike getXAttributes it takes no signal and
+  // no time range.
+  searchAttributes: async (term: string): Promise<JsonAttributeMatch[]> => {
+    if (!term.trim()) return []
+    const rawData = await callRPC<JsonAttributeMatch[]>('searchAttributes', [
+      term,
+    ])
+    if (!Array.isArray(rawData)) {
+      console.warn('searchAttributes: Expected array, got:', typeof rawData)
+      return []
+    }
+    return rawData
+  },
+
   // Trace methods
   getTraceAttributes: async (
     startTime: number,

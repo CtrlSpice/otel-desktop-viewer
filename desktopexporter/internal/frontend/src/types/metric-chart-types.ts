@@ -36,15 +36,27 @@ export type ChartTimeseries = {
  * (a colour from the stem-rotated pool); unchecked rows use neutral.
  */
 export type LegendTimeseries = {
-  /** Stable identifier for this attribute set, used as the bind key.
-   * In practice this is the `attributesKey` (canonical "key=value|..."
-   * string) the backend materialises on every datapoint and bucket-
-   * series point as `attrs_canonical`. The same encoding is used for
-   * Gauge/Sum, Histogram, and ExponentialHistogram timeseries, so a
-   * single legend implementation covers all metric types. */
+  /** Stable identifier for this series, used as the bind key. This is
+   * `MetricTimeseries.attributesKey`, which is now the series id --
+   * content-derived from (stream, resource, labels) rather than a rendering
+   * of the labels. The same id covers Gauge/Sum, Histogram and
+   * ExponentialHistogram, so one legend implementation serves all of them. */
   key: string
   /** Attributes that distinguish this timeseries from siblings. May
-   * be empty for a metric whose datapoints carry no attributes. */
+   * be empty for a metric whose datapoints carry no attributes.
+   *
+   * These are the datapoint labels, plus any resource attributes that differ
+   * between the series of this metric. The resource ones are only present when
+   * a metric spans several: two replicas of one service emit byte-identical
+   * labels, so without something from the resource the legend would show rows
+   * a user cannot tell apart -- worse than the single merged line that
+   * splitting them replaced. Only the resource attributes that actually vary
+   * are merged in, since a whole resource is ~15 attributes of
+   * mostly-identical noise.
+   *
+   * Merging rather than carrying a separate field is deliberate: the series
+   * table already renders a column per attribute key that differs across rows,
+   * so a distinguishing host.name simply becomes a column. */
   attributes: Attribute[]
   /** Optional sample count or other small annotation shown after the
    * attribute pairs. Purely informational; not bound. */

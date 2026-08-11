@@ -74,7 +74,7 @@ func TestConcurrentIngestQueryAndRetention(t *testing.T) {
 			for time.Now().Before(deadline) {
 				traces := buildUniqueTraces(seq.Add(1))
 				err := s.WithConn(func(conn driver.Conn) error {
-					return spans.Ingest(ctx, conn, traces)
+					return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 				})
 				if err != nil {
 					fail(fmt.Errorf("ingest: %w", err))

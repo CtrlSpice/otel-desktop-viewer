@@ -33,6 +33,7 @@ import type {
   Attributes,
 } from '@/types/api-types'
 import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
+import { distinguishingResourceAttributes } from '@/utils/series-labels'
 import {
   buildHistogramTimeMergedSeries,
   buildVisibleSeriesQuantileChartTimeseries,
@@ -305,6 +306,8 @@ export function createMetricViewContext(
   // on this context.
   const view = $state({
     selectedDatapointId: null as string | null,
+    // Explicitly chosen series, independent of any datapoint selection.
+    selectedSeriesKey: null as string | null,
     selectionSource: null as 'chart' | 'detail' | null,
     expandedDatapoints: new SvelteSet<string>(),
     expandedTimeseries: new SvelteSet<string>(),
@@ -356,10 +359,14 @@ export function createMetricViewContext(
   function metricParseContext(): MetricViewParseContext {
     const datapointIds = new Set<string>()
     for (const dp of allDatapoints(getMetric())) datapointIds.add(dp.id)
+    const seriesKeys = new Set<string>()
+    for (const ts of getMetric()?.timeseries ?? [])
+      seriesKeys.add(ts.attributesKey)
     return {
       isHistogramKind,
       allowedAggs: availableAggregationViewsList,
       datapointIds,
+      seriesKeys,
     }
   }
 
@@ -370,12 +377,14 @@ export function createMetricViewContext(
         htab: view.activeHistogramTab,
         hscope: view.histogramScope,
         dp: view.selectedDatapointId,
+        series: selectedSeriesKey,
       }
     }
     return {
       kind: 'timeseries',
       agg: view.aggregationView === 'raw' ? null : view.aggregationView,
       dp: view.selectedDatapointId,
+      series: selectedSeriesKey,
     }
   }
 
@@ -412,6 +421,34 @@ export function createMetricViewContext(
       view.selectedDatapointId = null
       view.selectionSource = null
     }
+
+    // The series survives independently of the datapoint. A link older than a
+    // retention window still names a live series long after the specific point
+    // it was built from has been pruned, so restoring it is what keeps a
+    // shared link meaningful rather than silently empty.
+    view.selectedSeriesKey = q.series
+
+    // A named series has to be *drawn*, or the link is worse than useless: the
+    // default visible set is the first MAX_VISIBLE_TIMESERIES, so a link to
+    // series 40 of 63 would otherwise land on a chart that does not contain
+    // it. Adding rather than replacing keeps the rest of the user's view.
+    if (q.series) revealSeries(q.series)
+  }
+
+  /**
+   * Ensures a series is in the visible set for its metric kind.
+   *
+   * @param key - series id
+   *
+   * @remarks
+   * Only ever adds. A shared link should bring its series into view without
+   * throwing away whatever else the recipient had showing.
+   */
+  function revealSeries(key: string): void {
+    const visible = isHistogramKind
+      ? view.histogramVisible
+      : view.gaugeSumVisible
+    if (!visible.has(key)) visible.add(key)
   }
 
   function writeMetricUrl(mode: HistoryMode): void {
@@ -502,9 +539,13 @@ export function createMetricViewContext(
   const gaugeSumLegendTimeseries = $derived.by((): LegendTimeseries[] => {
     const m = getMetric()
     if (!m) return []
+    const distinguishing = distinguishingResourceAttributes(m.timeseries)
     return m.timeseries.map(ts => ({
       key: ts.attributesKey,
-      attributes: ts.attributes,
+      attributes: [
+        ...ts.attributes,
+        ...(distinguishing.get(ts.attributesKey) ?? []),
+      ],
     }))
   })
 
@@ -799,12 +840,26 @@ export function createMetricViewContext(
    *  and to flag which row in the mini-legend is "the one you picked"
    *  vs. aggregates shown alongside for comparison. */
   const selectedSeriesKey = $derived.by((): string | null => {
-    const id = view.selectedDatapointId
-    if (id === null) return null
     const m = getMetric()
     if (!m) return null
-    for (const ts of m.timeseries) {
-      if (ts.datapoints.some(dp => dp.id === id)) return ts.attributesKey
+
+    // A selected datapoint is the more specific answer and wins: it names both
+    // the series and the point within it.
+    const id = view.selectedDatapointId
+    if (id !== null) {
+      for (const ts of m.timeseries) {
+        if (ts.datapoints.some(dp => dp.id === id)) return ts.attributesKey
+      }
+    }
+
+    // Otherwise fall back to an explicitly chosen series. This is what a link
+    // restores once its datapoint has aged out: the point is gone, the line is
+    // still there, and the user still lands on it.
+    if (view.selectedSeriesKey !== null) {
+      const known = m.timeseries.some(
+        ts => ts.attributesKey === view.selectedSeriesKey
+      )
+      if (known) return view.selectedSeriesKey
     }
     return null
   })
@@ -951,9 +1006,10 @@ export function createMetricViewContext(
   const histogramLegendTimeseries = $derived.by((): LegendTimeseries[] => {
     const m = getMetric()
     if (!m) return []
+    const distinguishing = distinguishingResourceAttributes(m.timeseries)
     return histogramTimeseriesGroups.map(g => ({
       key: g.key,
-      attributes: g.attributes,
+      attributes: [...g.attributes, ...(distinguishing.get(g.key) ?? [])],
     }))
   })
 
@@ -1299,6 +1355,14 @@ export function createMetricViewContext(
       const next = needsInitialSeed
         ? resolveTimeseriesVisible(keys, streamId)
         : reconcileTimeseriesVisible(view.gaugeSumVisible, keys, streamId)
+
+      // A series named in the URL has to end up drawn, and this is the first
+      // point where that can be decided: effect (1) applies the URL before
+      // gaugeSumGroups.keys have settled, so the id could not be validated
+      // there and anything it revealed would be rebuilt away by the reconcile
+      // above. Doing it here, against known keys, is what makes a deep link to
+      // series 40 of 63 actually show series 40 rather than the default first
+      // ten.
       if (!visibleKeyListsEqual(view.gaugeSumVisible, next)) {
         const visible = new SvelteSet(next)
         view.gaugeSumVisible = visible

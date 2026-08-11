@@ -27,6 +27,7 @@
   import type { FilterDescriptor } from '@/components/shared/Toolbar/filter-types'
   import { queryLanguageSupport } from './codemirror/query-language'
   import { createQueryCompletionSource } from './codemirror/completions'
+  import { createValueDiscoverySource } from './codemirror/value-completions'
   import { createQueryLinter } from './codemirror/linter'
   import { queryTheme, ensureTooltipStyles } from './codemirror/theme'
   import { createQueryKeymap } from './codemirror/keymap'
@@ -376,7 +377,16 @@
       extensions: [
         queryLanguageSupport(),
         autocompletion({
-          override: [createQueryCompletionSource(() => availableFields)],
+          // Key-first runs first and wins where it applies; value-first only
+          // fires on bare text at the top level, where the other has nothing to
+          // offer. Async, so it cannot block typing.
+          override: [
+            createQueryCompletionSource(() => availableFields),
+            createValueDiscoverySource(
+              telemetryAPI.searchAttributes,
+              () => availableFields
+            ),
+          ],
           activateOnTyping: true,
           icons: false,
         }),

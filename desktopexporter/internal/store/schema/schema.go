@@ -6,10 +6,68 @@ var TypeCreationQueries = []string{
 }
 
 // Table creation queries
-// Order matters: spans before events/links, metric_streams before metric_ingests
-// before datapoints before exemplars (FK dependencies). attributes references
-// every owner table, so it goes last.
+//
+// Order matters (FK dependencies): attributes first -- it references nothing --
+// then resources/scopes, then the signals that reference them, then
+// metric_streams before metric_ingests before datapoints before exemplars.
+//
+// This inverts the previous order, where attributes went last because it
+// carried an FK to every owner table. It now owns no ownership at all: owners
+// point at it, by uuid[], and DuckDB cannot FK into a LIST so those references
+// are unenforced by construction. See dictionary integrity in the store tests.
 var TableCreationQueries = []string{
+	// The attribute dictionary: one row per distinct (key, value, type, scope)
+	// for the whole database. On the reference capture, 723,692 attribute rows
+	// collapse to 267 dictionary rows.
+	//
+	// id = sha256 over the length-prefixed fields, truncated to 16 bytes.
+	// Content-derived rather than surrogate, so ingest can compute it without
+	// asking the database and the owners' arrays are correct by construction.
+	// Identity being the primary key is also why there is no UNIQUE here: it
+	// would be redundant against the PK, and would put an index over `value`,
+	// which holds whole SQL statements and stack traces.
+	//
+	// `scope` is part of identity, not a free-form tag. Attribute discovery has
+	// to report attributeScope (a closed union in wire-types.ts), and scope
+	// otherwise lives only in *which* array references an id -- unrecoverable
+	// without unnesting every owner. The cost is that the same triple under two
+	// scopes is two rows, which is negligible: the populations barely overlap.
+	`create table if not exists attributes (
+		id uuid primary key,
+		key varchar not null,
+		value varchar not null,
+		type attr_type not null,
+		scope varchar not null
+	)`,
+
+	// seq is the short, store-stable key the wire format uses instead of a
+	// 36-char uuid. Sequence values are never reused, so a client cache can
+	// miss but never be wrong.
+	`create sequence if not exists resource_seq`,
+	`create sequence if not exists scope_seq`,
+
+	// id = sha256(attribute_ids, dropped_attributes_count).
+	//
+	// dropped_attributes_count is part of identity, so a resource with the same
+	// attributes but a different dropped count is a separate row. Correct, but
+	// note an exporter that varies its dropped count fragments the dedupe.
+	`create table if not exists resources (
+		id uuid primary key,
+		seq integer not null default nextval('resource_seq'),
+		attribute_ids uuid[] not null,
+		dropped_attributes_count uinteger not null default 0
+	)`,
+
+	// id = sha256(name, version, attribute_ids, dropped_attributes_count).
+	`create table if not exists scopes (
+		id uuid primary key,
+		seq integer not null default nextval('scope_seq'),
+		name varchar not null default '',
+		version varchar not null default '',
+		attribute_ids uuid[] not null,
+		dropped_attributes_count uinteger not null default 0
+	)`,
+
 	`create table if not exists spans (
 		trace_id uuid,
 		trace_state varchar,
@@ -19,10 +77,9 @@ var TableCreationQueries = []string{
 		kind varchar,
 		start_time bigint,
 		end_time bigint,
-		resource_dropped_attributes_count uinteger,
-		scope_name varchar,
-		scope_version varchar,
-		scope_dropped_attributes_count uinteger,
+		resource_id uuid not null,
+		scope_id uuid not null,
+		attribute_ids uuid[] not null,
 		dropped_attributes_count uinteger,
 		dropped_events_count uinteger,
 		dropped_links_count uinteger,
@@ -30,21 +87,28 @@ var TableCreationQueries = []string{
 		status_message varchar,
 		-- Denormalized cache of the resource attribute service.name (the
 		-- single most-filtered-on column for span search). The source of
-		-- truth is still the attributes row with key='service.name',
-		-- scope='resource'; this column lets DuckDB's columnar storage and
-		-- min-max indexes do equality filtering without a join.
+		-- truth is still the attribute row reached through resource_id;
+		-- this column lets DuckDB's columnar storage and min-max indexes
+		-- do equality filtering without a join.
+		--
+		-- Kept despite resources now being deduped: with ~24 resource rows
+		-- the join is cheap, but this is the hottest filter in span search
+		-- and a column scan still beats a join plus an array unnest.
 		--
 		-- NOT NULL with empty-string default: same rationale as
 		-- metric_streams.service_name. The duckdb appender is also
 		-- happier with a plain string column than with nullable typed
 		-- pointers, which it doesn't accept directly.
-		service_name varchar not null default ''
+		service_name varchar not null default '',
+		foreign key (resource_id) references resources(id),
+		foreign key (scope_id) references scopes(id)
 	)`,
 	`create table if not exists events (
 		id uuid primary key,
 		span_id uuid not null,
 		name varchar,
 		timestamp bigint,
+		attribute_ids uuid[] not null,
 		dropped_attributes_count uinteger,
 		foreign key (span_id) references spans(span_id)
 	)`,
@@ -54,6 +118,7 @@ var TableCreationQueries = []string{
 		trace_id uuid,
 		linked_span_id uuid,
 		trace_state varchar,
+		attribute_ids uuid[] not null,
 		dropped_attributes_count uinteger,
 		foreign key (span_id) references spans(span_id)
 	)`,
@@ -67,15 +132,16 @@ var TableCreationQueries = []string{
 		severity_number integer,
 		body varchar,
 		body_type varchar,
-		resource_dropped_attributes_count uinteger,
-		scope_name varchar,
-		scope_version varchar,
-		scope_dropped_attributes_count uinteger,
+		resource_id uuid not null,
+		scope_id uuid not null,
+		attribute_ids uuid[] not null,
 		dropped_attributes_count uinteger,
 		flags uinteger,
 		event_name varchar,
 		-- See the matching service_name column on spans for rationale.
-		service_name varchar not null default ''
+		service_name varchar not null default '',
+		foreign key (resource_id) references resources(id),
+		foreign key (scope_id) references scopes(id)
 	)`,
 	// metric_streams is the canonical identity for a logical OTel metric.
 	// Modeled after VictoriaMetrics's IndexDB pattern: every identity-bearing
@@ -114,22 +180,63 @@ var TableCreationQueries = []string{
 		service_name varchar not null default '',
 		unique (name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
 	)`,
+	// metric_series is the timeseries: the thing a chart draws one line per.
+	//
+	// The schema had no row for it. metric_streams is deliberately coarser --
+	// it identifies a stream by service_name rather than by resource, so a
+	// counter stays one timeseries when a pod restarts -- and the actual series
+	// was only ever implied, by grouping datapoints on their label set at query
+	// time. That had three costs:
+	//
+	//   - Two replicas of one service, emitting the same instrument with the
+	//     same labels, grouped together and interleaved into one line.
+	//   - Grouping ran on a LIST column, which DuckDB cannot index and must
+	//     rebuild and hash per row. Measured on 294,607 datapoints: 5.0ms
+	//     grouping by the array against 0.9ms by a fixed-width key.
+	//   - A series had no name, so nothing could link to one. Metric URLs could
+	//     only reference a datapoint id, which retention deletes -- shared links
+	//     rotted, and degraded silently to "no selection".
+	//
+	// id = sha256(stream_id, resource_id, attribute_ids), so it is stable
+	// across restarts and re-ingests: the same series always has the same id,
+	// which is what makes it safe to put in a URL.
+	`create table if not exists metric_series (
+		id uuid primary key,
+		stream_id uuid not null,
+		resource_id uuid not null,
+		attribute_ids uuid[] not null,
+		foreign key (stream_id) references metric_streams(id),
+		foreign key (resource_id) references resources(id)
+	)`,
+
 	// metric_ingests records each OTLP batch arrival for a stream. One row
 	// per (stream, batch) -- so a long-lived counter that's reported every
 	// 10s for an hour produces 360 metric_ingests rows pointing at one
-	// metric_streams row. description and dropped-attribute counts can vary
-	// across batches and are NOT identity, so they live here.
+	// metric_streams row. description varies across batches and is NOT
+	// identity, so it lives here; resource and scope are now references
+	// rather than per-batch dropped counts.
 	`create table if not exists metric_ingests (
 		id uuid primary key,
 		stream_id uuid not null,
 		description varchar,
-		resource_dropped_attributes_count uinteger,
-		scope_dropped_attributes_count uinteger,
-		foreign key (stream_id) references metric_streams(id)
+		resource_id uuid not null,
+		scope_id uuid not null,
+		foreign key (stream_id) references metric_streams(id),
+		foreign key (resource_id) references resources(id),
+		foreign key (scope_id) references scopes(id)
 	)`,
 	`create table if not exists datapoints (
 		id uuid primary key,
 		stream_id uuid not null,
+		-- The series this point belongs to. Grouping a chart is now an
+		-- equality on one fixed-width column instead of hashing a LIST, and
+		-- it is indexable, which a LIST is not.
+		--
+		-- attribute_ids stays alongside it rather than being replaced: it is
+		-- what the series id is derived from, it is what attrs_json renders,
+		-- and dropping it would make the labels of a datapoint unreachable
+		-- without a join back through metric_series.
+		series_id uuid not null,
 		metric_ingest_id uuid not null,
 		timestamp bigint,
 		start_time bigint,
@@ -150,22 +257,18 @@ var TableCreationQueries = []string{
 		positive_bucket_counts ubigint[],
 		negative_bucket_offset integer,
 		negative_bucket_counts ubigint[],
-		-- Canonical "key=value|key=value|..." form of the datapoint's
-		-- attribute set, with keys sorted ascending. Used for grouping
-		-- datapoints by stream-within-stream (same metric, different
-		-- attribute combinations) without a per-query string_agg over
-		-- the attributes table. Computed in Go during the existing
-		-- IngestAttributes pass so we don't iterate the attribute map
-		-- twice. NULL for datapoints with no attributes.
+		-- Replaces attrs_canonical. That column materialised the datapoint's
+		-- attribute set as "key=value|..." so grouping by stream-within-stream
+		-- was an equality compare on a varchar. The array serves the same
+		-- purpose and is the identity itself rather than a rendering of it:
+		-- equal arrays mean equal attribute sets, by construction.
 		--
-		-- Stored as a string (rather than a sha1 digest) so the column
-		-- is self-describing when querying the DB directly, and so the
-		-- frontend's chart-grouping code can compute the same string
-		-- from raw attributes without hashing. Trade-off: variable-
-		-- width column instead of fixed 20-byte. On a local tool with
-		-- bounded retention this is the right side of the bargain.
-		attrs_canonical varchar,
+		-- This is where the rewrite pays most. On the reference capture,
+		-- 294,607 datapoints carry 591,890 attribute rows resolving to 89
+		-- distinct label sets -- 82% of the whole attributes table.
+		attribute_ids uuid[] not null,
 		foreign key (stream_id) references metric_streams(id),
+		foreign key (series_id) references metric_series(id),
 		foreign key (metric_ingest_id) references metric_ingests(id)
 	)`,
 	`create table if not exists exemplars (
@@ -175,88 +278,79 @@ var TableCreationQueries = []string{
 		value double,
 		trace_id uuid,
 		span_id uuid,
+		attribute_ids uuid[] not null,
 		foreign key (datapoint_id) references datapoints(id)
-	)`,
-	// attributes still references every owner table by FK; metric_id is
-	// renamed to metric_ingest_id since the per-batch record (formerly
-	// metrics) is now metric_ingests. The chk_attributes_one_owner
-	// constraint is rewritten with the new column name; the exclusivity
-	// rules are otherwise unchanged. Resource and scope attributes for a
-	// metric live with the metric_ingest row (one set per ingest batch).
-	`create table if not exists attributes (
-		span_id uuid,
-		event_id uuid,
-		link_id uuid,
-		log_id uuid,
-		metric_ingest_id uuid,
-		datapoint_id uuid,
-		exemplar_id uuid,
-		scope varchar not null,
-		key varchar not null,
-		value varchar not null,
-		type attr_type not null,
-		foreign key (span_id) references spans(span_id),
-		foreign key (event_id) references events(id),
-		foreign key (link_id) references links(id),
-		foreign key (log_id) references logs(id),
-		foreign key (metric_ingest_id) references metric_ingests(id),
-		foreign key (datapoint_id) references datapoints(id),
-		foreign key (exemplar_id) references exemplars(id),
-		unique (span_id, event_id, link_id, log_id, metric_ingest_id, datapoint_id, exemplar_id, scope, key),
-		constraint chk_attributes_one_owner check (
-			(span_id is not null and event_id is null and link_id is null and log_id is null and metric_ingest_id is null and datapoint_id is null and exemplar_id is null) or
-			(event_id is not null and span_id is not null and link_id is null and log_id is null and metric_ingest_id is null and datapoint_id is null and exemplar_id is null) or
-			(link_id is not null and span_id is not null and event_id is null and log_id is null and metric_ingest_id is null and datapoint_id is null and exemplar_id is null) or
-			(log_id is not null and span_id is null and event_id is null and link_id is null and metric_ingest_id is null and datapoint_id is null and exemplar_id is null) or
-			(metric_ingest_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and datapoint_id is null and exemplar_id is null) or
-			(datapoint_id is not null and metric_ingest_id is not null and span_id is null and event_id is null and link_id is null and log_id is null and exemplar_id is null) or
-			(exemplar_id is not null and datapoint_id is not null and metric_ingest_id is not null and span_id is null and event_id is null and link_id is null and log_id is null)
-		)
 	)`,
 }
 
 // Index creation queries.
 //
-// Three categories of changes vs. the pre-normalization schema:
+// Changes vs. the pre-dictionary schema:
 //
-//  1. Per-owner attribute indexes (idx_attributes_metric, the two
-//     _hierarchy ones) are gone. They existed solely to speed up
-//     identity-reconstruction CTEs that have themselves been deleted
-//     because identity now lives in metric_streams.
-//  2. Old metric indexes (idx_metrics_name/identity/received) are
-//     replaced by the corresponding metric_streams / metric_ingests
-//     indexes, sized for the new access patterns.
-//  3. service_name indexes on spans/logs/metric_streams support direct
-//     columnar filtering for "show me everything from service X" queries.
+//  1. The eight per-owner attribute indexes are gone, and nothing replaces
+//     them. `attributes` is now a ~267-row dictionary with a primary key;
+//     there is nothing left to index. idx_attributes_key_value goes too:
+//     global text search now scans a few hundred rows instead of ~700k.
+//  2. idx_datapoints_stream_attrs is gone. It indexed (stream_id,
+//     attrs_canonical), and DuckDB cannot index a LIST column, so the
+//     attribute_ids replacement has no equivalent. Grouping by the array
+//     still works, unindexed, and is already narrowed by stream_id via
+//     idx_datapoints_stream_time. Confirm on a metrics-heavy session.
+//  3. New resource/scope reference indexes, for the joins that replace the
+//     old per-span attribute lookups.
+//
+// Note what cannot be indexed at all: attribute_ids. Attribute search is a
+// list_contains probe over the candidate set rather than an index seek, but
+// the candidate set is already narrowed by time range, and the probe is an
+// inline array test rather than a correlated subquery into a huge table.
+// Indexes here are ART indexes, and ART indexes in DuckDB serve exactly one
+// thing: equality and IN(...) on a single column. They do not accelerate range
+// predicates, joins, aggregation or sorting -- DuckDB uses hash joins and
+// zonemaps for those.
+//
+// So a time-window filter gets nothing from an index on the time column, which
+// is why there are none here. Four such indexes were removed after measuring:
+// idx_spans_starttime, idx_events_timestamp, idx_logs_timestamp and
+// idx_datapoints_time. On the reference capture the range scan they were
+// supposed to serve ran in 0.085ms with the index and 0.088ms without --
+// alternating the arms so neither got a warmer cache -- while they cost insert
+// throughput and memory on every write.
+//
+// The fallback argument does not rescue them either. Zonemaps prune by row-group
+// min/max and only work when data is physically ordered by the filtered column;
+// spans are exported when they *end*, so a long-running parent arrives last with
+// the earliest start_time. Measured on the race replay: 25.8% of rows have a
+// start_time lower than the preceding row's. Scrambled arrival means the zonemap
+// cannot prune well and the ART index cannot serve the range -- so neither
+// mechanism helps, and only the write cost is real.
+//
+// Do not re-add a time-column index without a measurement showing it helps.
 var IndexCreationQueries = []string{
 	`create index if not exists idx_spans_traceid on spans(trace_id)`,
-	`create index if not exists idx_spans_starttime on spans(start_time)`,
 	`create index if not exists idx_spans_parentspanid on spans(parent_span_id)`,
 	`create index if not exists idx_spans_service on spans(service_name)`,
+	`create index if not exists idx_spans_resource on spans(resource_id)`,
+	`create index if not exists idx_spans_scope on spans(scope_id)`,
 	`create index if not exists idx_events_span on events(span_id)`,
-	`create index if not exists idx_events_timestamp on events(timestamp)`,
 	`create index if not exists idx_links_span on links(span_id)`,
 	`create index if not exists idx_links_trace on links(trace_id, linked_span_id)`,
-	`create index if not exists idx_logs_timestamp on logs(timestamp)`,
 	`create index if not exists idx_logs_traceid on logs(trace_id)`,
 	`create index if not exists idx_logs_severitynumber on logs(severity_number)`,
 	`create index if not exists idx_logs_service on logs(service_name)`,
+	`create index if not exists idx_logs_resource on logs(resource_id)`,
+	`create index if not exists idx_logs_scope on logs(scope_id)`,
 	`create index if not exists idx_metric_streams_name on metric_streams(name)`,
 	`create index if not exists idx_metric_streams_service on metric_streams(service_name)`,
 	`create index if not exists idx_metric_ingests_stream on metric_ingests(stream_id)`,
+	`create index if not exists idx_metric_ingests_resource on metric_ingests(resource_id)`,
 	`create index if not exists idx_datapoints_stream_time on datapoints(stream_id, timestamp desc)`,
-	`create index if not exists idx_datapoints_stream_attrs on datapoints(stream_id, attrs_canonical)`,
-	`create index if not exists idx_datapoints_time on datapoints(timestamp desc)`,
+	// Restores what idx_datapoints_stream_attrs used to do before attributes
+	// became a LIST. ART indexes serve equality on a single column, which is
+	// exactly the shape series grouping now has.
+	`create index if not exists idx_datapoints_series on datapoints(series_id)`,
+	`create index if not exists idx_metric_series_stream on metric_series(stream_id)`,
 	`create index if not exists idx_exemplars_datapoint on exemplars(datapoint_id)`,
 	`create index if not exists idx_exemplars_trace on exemplars(trace_id, span_id)`,
-	`create index if not exists idx_attributes_span on attributes(span_id, key, value, type)`,
-	`create index if not exists idx_attributes_event on attributes(event_id, key, value, type)`,
-	`create index if not exists idx_attributes_link on attributes(link_id, key, value, type)`,
-	`create index if not exists idx_attributes_log on attributes(log_id, key, value, type)`,
-	`create index if not exists idx_attributes_datapoint on attributes(datapoint_id, key, value, type)`,
-	`create index if not exists idx_attributes_exemplar on attributes(exemplar_id, key, value, type)`,
-	`create index if not exists idx_attributes_metric_ingest on attributes(metric_ingest_id, key, value, type)`,
-	`create index if not exists idx_attributes_key_value on attributes(key, value, type)`,
 }
 
 // Macro creation queries
@@ -268,6 +362,129 @@ var IndexCreationQueries = []string{
 //	bucket_quantile_linear / _loglin        -- shared pipeline (cumulative -> filter -> kernel)
 //	hist_quantile / exp_hist_quantile       -- top-level entry points
 var MacroCreationQueries = []string{
+	// attr_frame / attr_id mirror ingest.AttributeID in SQL.
+	//
+	// This is a deliberate second implementation, not shared code. A Go-side
+	// re-hash would use the very function that wrote the ids and could only
+	// ever catch storage corruption; an independent one also catches a bug in
+	// the Go hashing, and catches the encoding drifting between builds -- the
+	// failure mode that is far likelier than a 128-bit collision.
+	//
+	// Two traps, both found by testing rather than reading docs:
+	//   - strlen() is byte length and matches Go's len(); length() counts
+	//     characters and would diverge on any non-ASCII value.
+	//   - k::blob is not a usable way to get byte length: DuckDB rejects
+	//     non-ASCII in a VARCHAR->BLOB cast.
+	//
+	// Verified against an independent shasum on ASCII and UTF-8 input.
+	`create or replace macro attr_frame(k, v, t, s) as (
+		strlen(k)::varchar || ':' || k ||
+		strlen(v)::varchar || ':' || v ||
+		strlen(t)::varchar || ':' || t ||
+		strlen(s)::varchar || ':' || s
+	)`,
+	`create or replace macro attr_id(k, v, t, s) as (
+		cast(
+			substr(sha256(attr_frame(k,v,t,s)),  1, 8) || '-' ||
+			substr(sha256(attr_frame(k,v,t,s)),  9, 4) || '-' ||
+			substr(sha256(attr_frame(k,v,t,s)), 13, 4) || '-' ||
+			substr(sha256(attr_frame(k,v,t,s)), 17, 4) || '-' ||
+			substr(sha256(attr_frame(k,v,t,s)), 21, 12)
+		as uuid)
+	)`,
+
+	// attrs_json renders an owner's attribute_ids as the wire attribute array.
+	//
+	// Replaces the per-owner attribute CTE that appeared eight times across
+	// spans.go, logs.go and metrics.go. Ordered by key: array order is
+	// identity, not presentation, so display order is imposed here.
+	`create or replace macro attrs_json(ids) as (
+		coalesce((
+			select to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
+			                    order by a.key, a.id))
+			from unnest(ids) as t(aid)
+			join attributes a on a.id = t.aid
+		), json('[]'))
+	)`,
+
+	// attrs_key renders an attribute set as the canonical "key=value|..."
+	// string, keys in lexicographic order.
+	//
+	// This is the old datapoints.attrs_canonical column, computed on demand
+	// from attribute_ids instead of materialised at ingest. It survives only
+	// because JsonMetricTimeseries.attributesKey is still that string on the
+	// wire; when series identity gains the resource, this becomes a composite
+	// and the macro goes with it.
+	//
+	// Not an identity primitive any more: grouping is by attribute_ids, which
+	// is the identity itself. This only renders it.
+	`create or replace macro attrs_key(ids) as (
+		coalesce((
+			select string_agg(a.key || '=' || a.value, '|' order by a.key, a.id)
+			from unnest(ids) as t(aid)
+			join attributes a on a.id = t.aid
+		), '')
+	)`,
+
+	// attr_value looks one attribute up by key, NULL when absent.
+	//
+	// This is how resource.* and scope.* attribute *searches* resolve, now that
+	// there is no per-owner attributes row to correlate against: the array is
+	// already on the joined resources / scopes row, and that table is a couple
+	// of dozen rows, so the lookup is effectively cached.
+	//
+	// Note it is NOT how service.name is read on the hot filter path.
+	// spans.service_name and logs.service_name were kept as denormalized
+	// columns (the plan had proposed dropping them); a column scan still beats
+	// a join plus an unnest for the single most-filtered-on field. This macro
+	// is what verifies those columns agree with the resource they came from.
+	`create or replace macro attr_value(ids, k) as (
+		(select a.value
+		 from unnest(ids) as t(aid)
+		 join attributes a on a.id = t.aid
+		 where a.key = k
+		 limit 1)
+	)`,
+
+	// has_attr tests membership by id. An inline array probe -- no join, no
+	// correlated subquery into a table of owner-attribute rows.
+	//
+	// Callers pass an id computed in Go by ingest.AttributeID, which is why
+	// exact-match attribute search needs no database round trip to build its
+	// predicate. Deliberately not attr_id(...) inline: that would put the audit
+	// macro on the correctness path, where a Go/SQL divergence turns into search
+	// quietly returning nothing instead of a failing test.
+	`create or replace macro has_attr(ids, id) as (
+		list_contains(ids, id)
+	)`,
+
+	// Wire renderings of the two id types. Trace ids go out as 32 hex chars and
+	// span ids as the low 16, matching the OTLP/JSON convention.
+	`create or replace macro trace_id_wire(id) as (
+		replace(id::varchar, '-', '')
+	)`,
+	`create or replace macro span_id_wire(id) as (
+		right(replace(id::varchar, '-', ''), 16)
+	)`,
+
+	// Component objects. resource_json / scope_json take the row's own fields
+	// rather than an id, so a caller that already joined the row needs no
+	// second lookup.
+	`create or replace macro resource_json(ids, dropped) as (
+		json_object('attributes', attrs_json(ids), 'droppedAttributesCount', dropped)
+	)`,
+	`create or replace macro scope_json(name, version, ids, dropped) as (
+		json_object('name', name, 'version', version,
+		            'attributes', attrs_json(ids), 'droppedAttributesCount', dropped)
+	)`,
+
+	// One attribute *definition* -- the shape the search-field dropdowns read.
+	// Identical in four places before this: two in spans.go, one each in
+	// logs.go and metrics.go.
+	`create or replace macro attribute_def_json(key, scope, type) as (
+		json_object('name', key, 'attributeScope', scope, 'type', type::varchar)
+	)`,
+
 	// Interpolation kernels.
 	// interp_loglin falls back to linear when lo*hi <= 0 (zero endpoint or sign mismatch)
 	`create or replace macro interp_linear(lo, hi, acc_prev, cnt, target) as (

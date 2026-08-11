@@ -13,6 +13,7 @@ export type TimeseriesMetricViewQuery = {
   kind: 'timeseries'
   agg: string | null
   dp: string | null
+  series: string | null
 }
 
 export type HistogramMetricViewQuery = {
@@ -20,6 +21,7 @@ export type HistogramMetricViewQuery = {
   htab: 'heatmap' | 'quantiles' | 'histogram'
   hscope: 'window' | 'bucket'
   dp: string | null
+  series: string | null
 }
 
 export type MetricViewQuery =
@@ -29,6 +31,8 @@ export type MetricViewParseContext = {
   isHistogramKind: boolean
   allowedAggs: readonly string[]
   datapointIds: ReadonlySet<string>
+  /** Series ids present on the current metric. */
+  seriesKeys: ReadonlySet<string>
 }
 
 const HTAB_VALUES = ['heatmap', 'quantiles', 'histogram'] as const
@@ -41,7 +45,9 @@ const HSCOPE_VALUES = ['window', 'bucket'] as const
  * @param datapointIds - ids present on the current metric
  * @returns validated datapoint id, or `null`
  *
- * @remarks Stale ids from shared links become `null`.
+ * @remarks Stale ids from shared links become `null`. Datapoint ids are minted
+ * per row and deleted by retention, so this happens routinely on any link more
+ * than a retention window old -- which is why `series` exists alongside it.
  */
 function parseDatapointParam(
   query: Record<string, string>,
@@ -60,6 +66,31 @@ function parseDatapointParam(
  *
  * @example `('rate', ['raw', 'rate'])` → `'rate'`
  */
+/**
+ * Validates the `series` query param against the metric's series ids.
+ *
+ * @param query - raw route query
+ * @param seriesKeys - series ids present on the current metric
+ * @returns validated series id, or `null`
+ *
+ * @remarks
+ * This is the durable half of a metric link. A series id is content-derived
+ * from (stream, resource, labels), so it is the same across restarts and
+ * re-ingests and survives retention deleting the specific datapoint a link was
+ * built from -- which `dp` alone cannot.
+ *
+ * Still validated rather than trusted: a series can genuinely disappear when
+ * its labels stop being reported, and a link naming one that no longer exists
+ * should fall back to no selection rather than dangle.
+ */
+function parseSeriesParam(
+  query: Record<string, string>,
+  seriesKeys: ReadonlySet<string>
+): string | null {
+  const series = query.series || null
+  return series && seriesKeys.has(series) ? series : null
+}
+
 function parseOptionalMember(
   raw: string | undefined,
   allowed: readonly string[]
@@ -96,13 +127,15 @@ function parseEnumMember<T extends string>(
  */
 function parseHistogramMetricViewQuery(
   query: Record<string, string>,
-  dp: string | null
+  dp: string | null,
+  series: string | null
 ): HistogramMetricViewQuery {
   return {
     kind: 'histogram',
     htab: parseEnumMember(query.htab, HTAB_VALUES, 'heatmap'),
     hscope: parseEnumMember(query.hscope, HSCOPE_VALUES, 'window'),
     dp,
+    series,
   }
 }
 
@@ -119,12 +152,14 @@ function parseHistogramMetricViewQuery(
 function parseTimeseriesMetricViewQuery(
   query: Record<string, string>,
   allowedAggs: readonly string[],
-  dp: string | null
+  dp: string | null,
+  series: string | null
 ): TimeseriesMetricViewQuery {
   return {
     kind: 'timeseries',
     agg: parseOptionalMember(query.agg, allowedAggs),
     dp,
+    series,
   }
 }
 
@@ -142,9 +177,10 @@ export function parseMetricViewQuery(
   ctx: MetricViewParseContext
 ): MetricViewQuery {
   const dp = parseDatapointParam(query, ctx.datapointIds)
+  const series = parseSeriesParam(query, ctx.seriesKeys)
   return ctx.isHistogramKind
-    ? parseHistogramMetricViewQuery(query, dp)
-    : parseTimeseriesMetricViewQuery(query, ctx.allowedAggs, dp)
+    ? parseHistogramMetricViewQuery(query, dp, series)
+    : parseTimeseriesMetricViewQuery(query, ctx.allowedAggs, dp, series)
 }
 
 /**
@@ -162,6 +198,7 @@ export function metricViewQueriesEqual(
   b: MetricViewQuery
 ): boolean {
   if (a.dp !== b.dp) return false
+  if (a.series !== b.series) return false
   if (a.kind === 'histogram') {
     return b.kind === 'histogram' && a.htab === b.htab && a.hscope === b.hscope
   }

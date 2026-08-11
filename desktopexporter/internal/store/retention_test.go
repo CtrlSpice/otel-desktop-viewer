@@ -10,18 +10,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// seedSpans inserts n spans with start_time = i * 1ms (i in [0, n)), each with
-// one fat attribute row so pruning visibly moves the size measurement.
-func seedSpans(t *testing.T, s *Store, n int) {
+// Fixed owner ids the seed helpers share. resource_id / scope_id are NOT NULL
+// on spans and logs, so every fixture needs a real row to point at.
+const (
+	seedResourceID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+	seedScopeID    = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+)
+
+// seedOwners inserts the shared resource and scope rows, idempotently.
+func seedOwners(t *testing.T, s *Store) {
 	t.Helper()
 	_, err := s.db.Exec(`
-		insert into spans (trace_id, span_id, name, start_time, end_time)
-		select uuid(), uuid(), 'span-' || range, range * 1000000, range * 1000000 + 500
-		from range(?)`, n)
+		insert into resources (id, attribute_ids) values (?::uuid, []::uuid[])
+		on conflict do nothing`, seedResourceID)
 	require.NoError(t, err)
 	_, err = s.db.Exec(`
-		insert into attributes (span_id, scope, key, value, type)
-		select span_id, 'span', 'pad', repeat('x', 500), 'string' from spans`)
+		insert into scopes (id, name, version, attribute_ids)
+		values (?::uuid, 'seed', 'v1', []::uuid[]) on conflict do nothing`, seedScopeID)
+	require.NoError(t, err)
+}
+
+// seedSpans inserts n spans with start_time = i * 1ms (i in [0, n)), each
+// referencing one fat attribute of its own so pruning visibly moves the size
+// measurement.
+//
+// The attribute has to be per-span now. Under the old owner-keyed schema a
+// single fat row per span was written n times; in the dictionary the same
+// content collapses to one row, so a shared attribute would pad the store by
+// 500 bytes total and the size assertions would measure nothing. Making each
+// distinct also means the sweep has real garbage to collect after pruning,
+// which is what the orphan assertions below check.
+func seedSpans(t *testing.T, s *Store, n int) {
+	t.Helper()
+	seedOwners(t, s)
+	_, err := s.db.Exec(`
+		insert into attributes (id, key, value, type, scope)
+		select attr_id('pad', repeat('x', 500) || range, 'string', 'span'),
+		       'pad', repeat('x', 500) || range, 'string', 'span'
+		from range(?) on conflict do nothing`, n)
+	require.NoError(t, err)
+	_, err = s.db.Exec(`
+		insert into spans (trace_id, span_id, name, start_time, end_time,
+		                   resource_id, scope_id, attribute_ids)
+		select uuid(), uuid(), 'span-' || range, range * 1000000, range * 1000000 + 500,
+		       ?::uuid, ?::uuid,
+		       [attr_id('pad', repeat('x', 500) || range, 'string', 'span')]
+		from range(?)`, seedResourceID, seedScopeID, n)
 	require.NoError(t, err)
 }
 
@@ -29,13 +63,16 @@ func seedSpans(t *testing.T, s *Store, n int) {
 // observed_timestamp fallback in the prune cutoff.
 func seedLogs(t *testing.T, s *Store, n int) {
 	t.Helper()
+	seedOwners(t, s)
 	_, err := s.db.Exec(`
-		insert into logs (id, timestamp, observed_timestamp, body)
+		insert into logs (id, timestamp, observed_timestamp, body,
+		                  resource_id, scope_id, attribute_ids)
 		select uuid(),
 			case when range % 2 = 0 then range * 1000000 else 0 end,
 			range * 1000000,
-			repeat('y', 200)
-		from range(?)`, n)
+			repeat('y', 200),
+			?::uuid, ?::uuid, []::uuid[]
+		from range(?)`, seedResourceID, seedScopeID, n)
 	require.NoError(t, err)
 }
 
@@ -45,12 +82,22 @@ func seedDatapoints(t *testing.T, s *Store, streamID, ingestID string, n int, st
 	t.Helper()
 	_, err := s.db.Exec(`insert into metric_streams (id, name, metric_type) values (?, 'metric-' || ?, 'Gauge') on conflict do nothing`, streamID, streamID)
 	require.NoError(t, err)
-	_, err = s.db.Exec(`insert into metric_ingests (id, stream_id) values (?, ?)`, ingestID, streamID)
+	seedOwners(t, s)
+	_, err = s.db.Exec(`insert into metric_ingests (id, stream_id, resource_id, scope_id) values (?, ?, ?::uuid, ?::uuid)`,
+		ingestID, streamID, seedResourceID, seedScopeID)
+	require.NoError(t, err)
+	// datapoints.series_id is a NOT NULL foreign key, so the series has to
+	// exist before its points. One series per stream is enough here -- these
+	// tests are about pruning by time, not about series identity.
+	_, err = s.db.Exec(`
+		insert into metric_series (id, stream_id, resource_id, attribute_ids)
+		values (?::uuid, ?::uuid, ?::uuid, []::uuid[]) on conflict do nothing`,
+		streamID, streamID, seedResourceID)
 	require.NoError(t, err)
 	_, err = s.db.Exec(`
-		insert into datapoints (id, stream_id, metric_ingest_id, timestamp, double_value, value_type)
-		select uuid(), ?::uuid, ?::uuid, ? + range * 1000000, range, 'double'
-		from range(?)`, streamID, ingestID, startTime, n)
+		insert into datapoints (id, stream_id, series_id, metric_ingest_id, timestamp, double_value, value_type, attribute_ids)
+		select uuid(), ?::uuid, ?::uuid, ?::uuid, ? + range * 1000000, range, 'double', []::uuid[]
+		from range(?)`, streamID, streamID, ingestID, startTime, n)
 	require.NoError(t, err)
 }
 
@@ -118,13 +165,28 @@ func TestEnforceRetentionPrunesOldest(t *testing.T) {
 	require.NoError(t, s.db.QueryRow(`select min(start_time) from spans`).Scan(&minStart))
 	assert.Positive(t, minStart, "the oldest spans should be gone")
 
-	// No dangling attributes: every attribute's span must still exist.
+	// The dictionary invariant, in both directions.
+	//
+	// Nothing enforces this: DuckDB cannot put a foreign key into a LIST, so
+	// the relationship that used to be FK-checked is now ingest's and the
+	// sweep's responsibility. Retention runs SweepOrphans at the end of every
+	// round, so by the time enforcement returns there must be no attribute row
+	// that nothing points at...
 	var orphans int64
 	require.NoError(t, s.db.QueryRow(`
 		select count(*) from attributes a
-		where a.span_id is not null
-		and not exists (select 1 from spans sp where sp.span_id = a.span_id)`).Scan(&orphans))
-	assert.Zero(t, orphans, "pruning must not leave orphaned attributes")
+		where not exists (
+			select 1 from spans sp, unnest(sp.attribute_ids) t(aid) where t.aid = a.id
+		)`).Scan(&orphans))
+	assert.Zero(t, orphans, "retention must sweep attributes orphaned by pruning")
+
+	// ...and, the direction that would be silent corruption rather than mere
+	// garbage, no surviving span referencing an attribute that is gone.
+	var dangling int64
+	require.NoError(t, s.db.QueryRow(`
+		select count(*) from (select unnest(attribute_ids) as id from spans) r
+		where not exists (select 1 from attributes a where a.id = r.id)`).Scan(&dangling))
+	assert.Zero(t, dangling, "pruning must never leave a span pointing at a missing attribute")
 }
 
 func TestEnforceRetentionSweepsOrphanedMetricIdentity(t *testing.T) {

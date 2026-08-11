@@ -485,7 +485,7 @@ func TestConvertValueForArrayType(t *testing.T) {
 }
 
 func TestBuildSearchSQL_NilQuery(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *[]NamedParam) ([]string, error) {
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
 		return []string{field.Name}, nil
 	}
 
@@ -497,7 +497,7 @@ func TestBuildSearchSQL_NilQuery(t *testing.T) {
 }
 
 func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *[]NamedParam) ([]string, error) {
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
 		return []string{field.Name}, nil
 	}
 
@@ -519,7 +519,7 @@ func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
 }
 
 func TestBuildSearchSQL_GroupAND(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *[]NamedParam) ([]string, error) {
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
 		return []string{field.Name}, nil
 	}
 
@@ -562,7 +562,7 @@ func TestBuildSearchSQL_GroupAND(t *testing.T) {
 }
 
 func TestBuildSearchSQL_GlobalORs(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *[]NamedParam) ([]string, error) {
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
 		if field.SearchScope == "global" {
 			return []string{"SearchText {COND}", "Name {COND}"}, nil
 		}
@@ -586,7 +586,7 @@ func TestBuildSearchSQL_GlobalORs(t *testing.T) {
 }
 
 func TestBuildConditions_MissingField(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *[]NamedParam) ([]string, error) {
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
 		return []string{field.Name}, nil
 	}
 

@@ -68,21 +68,38 @@ export type JsonLinkData = {
   attributes: JsonAttribute[]
 }
 
+// The searchSpans wire shape is compressed in three ways, all resolved at the
+// service boundary so nothing downstream sees them:
+//
+//   - resource and scope are references (`r`, `s`) into the response's
+//     top-level maps rather than a full copy per span. The reference trace
+//     holds 23 distinct resources and 1 scope across 5,735 spans, where the
+//     repeated objects were over half the payload.
+//   - times are `start` (offset from the response's traceStart) and `dur`,
+//     rather than two 19-digit absolute nanosecond strings. Offset and
+//     duration are also what a waterfall bar is: a position and a width.
+//   - traceID is gone; it is at the response root, and a single-trace response
+//     repeated it once per span.
+//
+// Together these took the reference trace from 6.90 MB to 2.92 MB.
 export type JsonSpanData = {
-  traceID: string
   traceState: string
   spanID: string
   parentSpanID: string | null
   name: string
   kind: string
-  startTime: string
-  endTime: string
+  /** Nanoseconds after JsonTraceData.traceStart. */
+  start: number
+  /** Duration in nanoseconds, measured from this span's own start. */
+  dur: number
   // attributes/events/links are coalesced to [] server-side; never absent.
   attributes: JsonAttribute[]
   events: JsonEventData[]
   links: JsonLinkData[]
-  resource: JsonResourceData
-  scope: JsonScopeData
+  /** Key into JsonTraceData.resources. */
+  r: number
+  /** Key into JsonTraceData.scopes. */
+  s: number
   droppedAttributesCount: number
   droppedEventsCount: number
   droppedLinksCount: number
@@ -99,6 +116,21 @@ export type JsonSpanNode = {
 
 export type JsonTraceData = {
   traceID: string
+  /**
+   * Absolute nanoseconds, as a string: the baseline every span's `start` is
+   * measured from. Only this one field needs the full magnitude.
+   *
+   * It is min(start_time) across the spans in *this response*, not the root
+   * span's start -- clock skew across hosts means a child can legitimately
+   * report an earlier start than its parent, and a trace may have no root at
+   * all. Baseline and offsets are computed by the same query and shipped
+   * together, so each response is internally consistent.
+   */
+  traceStart: string
+  /** Distinct resources in this trace, keyed by a store-stable sequence number. */
+  resources: Record<string, JsonResourceData>
+  /** Distinct scopes in this trace, keyed by a store-stable sequence number. */
+  scopes: Record<string, JsonScopeData>
   spans: JsonSpanNode[]
 }
 
@@ -207,8 +239,26 @@ export type JsonDataPoint =
   | JsonExponentialHistogramDataPoint
 
 export type JsonMetricTimeseries = {
+  /**
+   * The series id: content-derived from (stream, resource, labels).
+   *
+   * Was the canonical "key=value|..." rendering of the labels, which could not
+   * survive series splitting by resource -- two replicas of one service have
+   * byte-identical labels and so produced colliding keys. It is also stable
+   * across restarts and retention, which the old key was not, so it can be put
+   * in a URL.
+   */
   attributesKey: string
   attributes: JsonAttribute[]
+  /**
+   * The resource that emitted this series.
+   *
+   * Load-bearing once series split by resource: when two replicas produce
+   * identical labels, this is the only thing that tells them apart. Constant
+   * within a series by construction. JsonMetricData.resource still describes
+   * one arbitrary batch and is the weaker claim.
+   */
+  resource: JsonResourceData
   datapoints: JsonDataPoint[]
 }
 
@@ -310,14 +360,48 @@ export type JsonAttributeType =
   | 'boolean[]'
 
 // Union across the discovery endpoints: traces serve resource/scope/span/
-// event/link, logs serve resource/scope/log, metrics serve resource/scope.
+// event/link, logs serve resource/scope/log, metrics serve resource/scope/
+// datapoint/exemplar.
+//
+// datapoint and exemplar arrived with the attribute dictionary. Before it,
+// metric discovery deliberately stopped at the per-batch resource and scope
+// rows: reaching datapoint labels meant a second join through a table where
+// they were 82% of the rows, on the interactive path that fills the search
+// dropdowns. Reading them from the dictionary is the same `select distinct`,
+// so they are now both discoverable and searchable.
+//
+// Note the scope is the *owner kind*, not the storage location -- an attribute
+// id implies its scope because scope is part of the content hash.
 export type JsonAttributeScope =
-  'resource' | 'scope' | 'span' | 'event' | 'link' | 'log'
+  | 'resource'
+  | 'scope'
+  | 'span'
+  | 'event'
+  | 'link'
+  | 'log'
+  | 'datapoint'
+  | 'exemplar'
 
 export type JsonAttributeDefinition = {
   name: string
   attributeScope: JsonAttributeScope
   type: JsonAttributeType
+}
+
+// searchAttributes: value-first discovery.
+//
+// The getXAttributes methods answer "which keys exist" so a dropdown can be
+// filled. This answers the opposite question -- "I can see this text, which key
+// is it?" -- and does it across traces, logs and metrics in one call, because
+// they all reference the same attribute dictionary.
+//
+// matchCount is the number of distinct *values* of this key that match, not the
+// number of spans or logs carrying it. It distinguishes "this term identifies
+// one specific thing" from "this term appears all over a high-cardinality key".
+// sampleValues is a short, bounded illustration, not a complete list.
+export type JsonAttributeMatch = JsonAttributeDefinition & {
+  matchCount: number
+  sampleValues: string[]
 }
 
 // --- Mutation results ---
