@@ -10,6 +10,22 @@ on:
 permissions:
   contents: read
 
+# Only the newest commit on a branch is worth building. Without this, pushing a
+# follow-up while a run is in flight leaves both going: the older one finishes
+# against code nobody will look at, and on a three-platform matrix that is real
+# runner time -- the Windows job alone runs 5-8 minutes.
+#
+# It also fixes a subtler problem. actions/setup-go caches GOMODCACHE and
+# GOCACHE keyed on go.sum, and GitHub caches are immutable: the first run to
+# finish saves the key, and any run that started before that save restores
+# nothing and then fails to save ("another job may be creating this cache").
+# Overlapping runs therefore both miss, and on Windows a miss is ~110s of
+# recompiling DuckDB's C++. Serialising the branch means the cache is written
+# once and hit thereafter.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
