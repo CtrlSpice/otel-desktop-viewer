@@ -18,16 +18,17 @@ create or replace macro fold_below_cutoff(counts, offset_, cutoff) as (
 		case
 			when counts is null or len(counts) = 0 or cutoff is null or cutoff < offset_
 				then {'counts': counts, 'offset': offset_, 'folded': 0::bigint}
-			else (
-				with d as (
-					select least(cutoff - offset_ + 1, len(counts)) as drop_n
-				)
-				select {
-					'counts': list_slice(counts, drop_n + 1, len(counts)),
-					'offset': offset_ + drop_n,
-					'folded': cast(coalesce(list_sum(list_slice(counts, 1, drop_n)), 0) as bigint)
-				}
-				from d
-			)
+			-- The drop count is repeated three times rather than bound once in
+			-- a CTE. That reads worse, and it is deliberate: a subquery inside
+			-- a macro cannot be used from a lambda --
+			-- "subqueries in lambda expressions are not supported" -- which
+			-- rules the macro out of exactly the list_transform composition the
+			-- merge needs. Verified equivalent to the CTE form across all 663
+			-- offset/cutoff/array combinations before the swap.
+			else {
+				'counts': list_slice(counts, least(cutoff - offset_ + 1, len(counts)) + 1, len(counts)),
+				'offset': offset_ + least(cutoff - offset_ + 1, len(counts)),
+				'folded': cast(coalesce(list_sum(list_slice(counts, 1, least(cutoff - offset_ + 1, len(counts)))), 0) as bigint)
+			}
 		end
 	)

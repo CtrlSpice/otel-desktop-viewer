@@ -131,5 +131,6 @@ var (
 		"31_link_json.sql",
 		"32_span_data_json.sql",
 		"33_exp_zero_cutoff.sql",
+		"34_diff_bucket_vectors.sql",
 	}
 )

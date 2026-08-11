@@ -52,16 +52,16 @@ create or replace macro downscale_exp_buckets(counts, offset_, levels) as (
 							- floor_div(offset_, cast(pow(2, levels) as bigint))
 							+ 1
 					),
-					k_off -> cast(
+					lambda k_off: cast(
 						coalesce(
 							list_sum(
 								list_transform(
 									list_filter(
 										list_zip(counts, range(0, len(counts))),
-										pair -> floor_div(offset_ + pair[2], cast(pow(2, levels) as bigint))
+										lambda pair: floor_div(offset_ + pair[2], cast(pow(2, levels) as bigint))
 											= floor_div(offset_, cast(pow(2, levels) as bigint)) + k_off
 									),
-									pair -> pair[1]
+									lambda pair: pair[1]
 								)
 							),
 							0

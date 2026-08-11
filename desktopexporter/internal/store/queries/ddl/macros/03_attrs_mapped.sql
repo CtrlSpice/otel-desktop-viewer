@@ -1,7 +1,7 @@
 -- attrs_mapped resolves an id array against a prebuilt attr_dict map.
 --
 -- Same output as attrs_json, different execution: a per-row probe into a
--- small hash map, instead of unnest -> join -> group by, which explodes
+-- small hash map, instead of lambda unnest: lambda join: group by, which explodes
 -- each owner's array into rows only to collapse it back. Measured on the
 -- reference trace (4,891 spans, 2,457 events, 1,567 links), whole
 -- searchSpans query:
@@ -18,7 +18,7 @@
 -- of times and needs no map built for it at all.
 create or replace macro attrs_mapped(ids, m) as (
 		coalesce(to_json(list_transform(
-			list_sort(list_transform(ids, aid -> map_extract(m, aid)[1])),
-			e -> e.j
+			list_sort(list_transform(ids, lambda aid: map_extract(m, aid)[1])),
+			lambda e: e.j
 		)), json('[]'))
 	)

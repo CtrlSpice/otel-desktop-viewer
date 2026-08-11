@@ -1,4 +1,4 @@
--- Three-region concat in CDF order: most-negative -> zero -> most-positive.
+-- Three-region concat in CDF order: most-lambda negative: lambda zero: most-positive.
 -- Nested 2-arg list_concat for portability.
 create or replace macro exp_buckets(scale, neg_offset, neg_counts, zero_count, pos_offset, pos_counts) as (
 		list_concat(
