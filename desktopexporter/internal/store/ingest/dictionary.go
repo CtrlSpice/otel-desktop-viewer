@@ -302,6 +302,20 @@ func (d *Dictionary) flushScopes(ctx context.Context, conn driver.Conn) error {
 	return execArgs(ctx, conn, q, args, "scopes")
 }
 
+// NonNil normalises a nil id slice to an empty one.
+//
+// AttributeSet returns nil for an empty attribute map, but every
+// attribute_ids column is NOT NULL: an owner with no attributes stores an
+// empty array, not SQL NULL. Keeping the columns NOT NULL means every read
+// path can join without a null guard, and there is no distinction to draw
+// between "no attributes" and "no row".
+func NonNil(ids []duckdb.UUID) []duckdb.UUID {
+	if ids == nil {
+		return []duckdb.UUID{}
+	}
+	return ids
+}
+
 // uuidList renders ids as a DuckDB list literal body.
 //
 // UUIDs cross the parameter boundary as text throughout this file, cast back

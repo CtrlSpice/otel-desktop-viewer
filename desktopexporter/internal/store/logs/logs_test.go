@@ -13,6 +13,7 @@ import (
 	"database/sql/driver"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/stretchr/testify/assert"
@@ -302,7 +303,15 @@ func TestEmptyLogs(t *testing.T) {
 	assert.Empty(t, entries)
 }
 
-// TestClearLogs verifies that all logs can be cleared from the store, including child attributes.
+// TestClearLogs verifies that all logs can be cleared from the store, and pins
+// the two-step contract the attribute dictionary introduced.
+//
+// Clear used to delete the log's attribute rows along with the logs, because
+// each row belonged to exactly one log. Dictionary rows are shared with spans
+// and metrics, so Clear can no longer tell whether a row it just abandoned is
+// dead; it deliberately leaves them, and ingest.SweepOrphans is the only thing
+// that decides. Asserting that they survive Clear is the new contract, not a
+// dropped assertion. See spans.TestClearTraces for the same shape.
 func TestClearLogs(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
@@ -316,7 +325,12 @@ func TestClearLogs(t *testing.T) {
 
 	entries := searchLogsAll(t, s, ctx)
 	assert.Len(t, entries, 3)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where log_id is not null"), 0)
+
+	// Snapshot rather than a non-empty check, so a Clear that deleted only some
+	// of the dictionary would still be caught.
+	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes")
+	assert.Greater(t, attrsBefore, 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where scope = 'log'"), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return logs.Clear(ctx, db)
@@ -325,7 +339,21 @@ func TestClearLogs(t *testing.T) {
 
 	entries = searchLogsAll(t, s, ctx)
 	assert.Empty(t, entries)
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where log_id is not null"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from logs"))
+	assert.Equal(t, attrsBefore, countRows(t, s, ctx, "select count(*) from attributes"),
+		"Clear must not delete attribute rows: they are shared with spans and metrics")
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from resources"), 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from scopes"), 0)
+
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return ingest.SweepOrphans(ctx, db)
+	}))
+
+	// Logs were the only signal ingested, so after the sweep nothing is
+	// referenced and all three tables empty out.
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
 }
 
 // TestLogSuite runs a comprehensive suite on the same three-log dataset.
@@ -458,51 +486,101 @@ func TestLogSuite(t *testing.T) {
 	})
 }
 
+// attributeDef mirrors one entry of the GetLogAttributes payload, which the
+// attribute_def_json macro renders.
+type attributeDef struct {
+	Name           string `json:"name"`
+	AttributeScope string `json:"attributeScope"`
+	Type           string `json:"type"`
+}
+
+func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context, startTime, endTime int64) []attributeDef {
+	t.Helper()
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.GetLogAttributes(ctx, db, startTime, endTime)
+	})
+	require.NoError(t, err)
+	var out []attributeDef
+	require.NoError(t, json.Unmarshal(raw, &out))
+	return out
+}
+
+// TestGetLogAttributes pins a deliberate behaviour change: GetLogAttributes
+// accepts a time range and ignores it, returning every log-side attribute
+// definition (scopes resource, scope, log) the store knows about.
+//
+// It used to window, because attribute rows were per-log and could be joined
+// back to a timestamp. The dictionary has no owner and therefore no time: one
+// row covers every log that ever carried that (key, value, type), so there is
+// nothing to filter on. Answering from the few hundred dictionary rows is also
+// why this got cheap enough to stop windowing in the first place.
+//
+// The old test asserted that an out-of-range window returned "[]", which is now
+// exactly backwards. Two assertions replace it, and both fail if the function
+// silently reverted to windowing:
+//
+//  1. An out-of-range window returns the same set as a covering one.
+//  2. A window that covers only the first batch still reports attributes that
+//     only the second, much later batch introduced.
+//
+// (1) alone would be weak: the fixture's second record has timestamp 0, so a
+// windowed implementation asked for [0,1] would return a non-empty subset
+// rather than nothing. (2) has no such escape -- those keys exist only outside
+// the window.
 func TestGetLogAttributes(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
 
 	baseTime := time.Now().UnixNano()
-	ldata := createTestLogsPdata(baseTime)
-	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata)
-	})
-	require.NoError(t, err)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime))
+	}))
 
 	startTime := baseTime - int64(time.Hour)
 	endTime := baseTime + int64(time.Hour)
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetLogAttributes(ctx, db, startTime, endTime)
-	})
-	assert.NoError(t, err)
+	attributes := getLogAttributeDefs(t, s, ctx, startTime, endTime)
 
-	var attributes []struct {
-		Name           string `json:"name"`
-		AttributeScope string `json:"attributeScope"`
-		Type           string `json:"type"`
+	// The full set for this fixture, exactly. Compared as a set rather than a
+	// slice: the query orders by (key, scope), and the two log.list entries tie
+	// on both, so their relative order is not something the function promises.
+	assert.ElementsMatch(t, []attributeDef{
+		{Name: "log.bool", AttributeScope: "log", Type: "bool"},
+		{Name: "log.float", AttributeScope: "log", Type: "float64"},
+		{Name: "log.int", AttributeScope: "log", Type: "int64"},
+		{Name: "log.list", AttributeScope: "log", Type: "string[]"},
+		{Name: "log.list", AttributeScope: "log", Type: "int64[]"},
+		{Name: "log.string", AttributeScope: "log", Type: "string"},
+		{Name: "service.name", AttributeScope: "resource", Type: "string"},
+		{Name: "service.version", AttributeScope: "resource", Type: "string"},
+	}, attributes)
+
+	// The ordering the function does promise: non-decreasing by (key, scope).
+	for i := 1; i < len(attributes); i++ {
+		prev, cur := attributes[i-1], attributes[i]
+		assert.LessOrEqual(t, prev.Name+"\x00"+prev.AttributeScope, cur.Name+"\x00"+cur.AttributeScope,
+			"results must be ordered by key then scope")
 	}
-	assert.NoError(t, json.Unmarshal(raw, &attributes))
-	assert.NotEmpty(t, attributes, "should have discovered log attributes")
 
-	byScope := make(map[string][]string)
-	for _, a := range attributes {
-		byScope[a.AttributeScope] = append(byScope[a.AttributeScope], a.Name)
+	// (1) The range is ignored, not merely generous.
+	assert.ElementsMatch(t, attributes, getLogAttributeDefs(t, s, ctx, 0, 1),
+		"GetLogAttributes must ignore its time range")
+
+	// (2) A second batch two hours later, carrying keys the first batch never
+	// used -- including a scope-scoped one, so all three scopes are covered.
+	laterTime := baseTime + int64(2*time.Hour)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, createTestLogsPdataN(laterTime, 1))
+	}))
+
+	// Queried with the ORIGINAL window, which ends an hour before that batch.
+	names := map[string]string{}
+	for _, a := range getLogAttributeDefs(t, s, ctx, startTime, endTime) {
+		names[a.Name] = a.AttributeScope
 	}
-
-	assert.Contains(t, byScope["resource"], "service.name")
-	assert.Contains(t, byScope["resource"], "service.version")
-	assert.Contains(t, byScope["log"], "log.string")
-	assert.Contains(t, byScope["log"], "log.int")
-	assert.Contains(t, byScope["log"], "log.float")
-	assert.Contains(t, byScope["log"], "log.bool")
-	assert.Contains(t, byScope["log"], "log.list")
-
-	// Out-of-range query returns empty
-	rawEmpty, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetLogAttributes(ctx, db, 0, 1)
-	})
-	assert.NoError(t, err)
-	assert.Equal(t, json.RawMessage("[]"), rawEmpty)
+	assert.Equal(t, "log", names["log.index"], "attributes outside the window must still be reported")
+	assert.Equal(t, "log", names["flush_test"])
+	assert.Equal(t, "resource", names["resource.key"])
+	assert.Equal(t, "scope", names["scope.key"], "scope-scoped attributes belong to the log-side set")
 }
 
 // TestDeleteLogsByIDs verifies that multiple logs can be deleted by their IDs.
@@ -1047,14 +1125,26 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// The path to the source of truth changed with the dictionary: there is no
+	// log-keyed resource attribute row left to left-join, so it resolves through
+	// resource_id -> resources.attribute_ids -> attributes, which attr_value
+	// does in one step. logs.resource_id is NOT NULL with an FK, so the inner
+	// join cannot drop a row; attr_value yields NULL for an absent key, hence
+	// the coalesce against the column's '' default. Mirrors the spans test.
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from logs l
-		left join attributes a
-		     on a.log_id = l.id
-		    and a.scope = 'resource'
-		    and a.key = 'service.name'
-		where l.service_name <> coalesce(a.value, '')
+		join resources r on r.id = l.resource_id
+		where l.service_name <> coalesce(attr_value(r.attribute_ids, 'service.name'), '')
 	`)
 	assert.Equal(t, 0, mismatches,
 		"logs.service_name must equal the source resource attribute (or '' when absent)")
+
+	// Guard against a vacuous pass: zero mismatches over zero joined rows would
+	// look identical to the invariant holding.
+	joined := countRows(t, s, ctx, `
+		select count(*) from logs l join resources r on r.id = l.resource_id
+	`)
+	assert.Equal(t, countRows(t, s, ctx, "select count(*) from logs"), joined,
+		"every log must resolve to a resource row, or the check above passes vacuously")
+	assert.Greater(t, joined, 0)
 }

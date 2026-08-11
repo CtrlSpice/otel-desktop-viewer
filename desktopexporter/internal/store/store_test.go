@@ -249,11 +249,23 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 	require.NoError(t, s.db.QueryRowContext(ctx,
 		"select id::varchar from metric_streams where name = 'test'").Scan(&streamID))
 
+	// metric_ingests now references resources and scopes instead of carrying
+	// its own dropped counts, and both FKs are NOT NULL -- so the parent rows
+	// have to exist before the ingest row can.
 	_, err = s.db.ExecContext(ctx, `
-		insert into metric_ingests
-			(id, stream_id, description,
-			 resource_dropped_attributes_count, scope_dropped_attributes_count)
-		values (gen_random_uuid(), ?::uuid, '', 0, 0)
+		insert into resources (id, attribute_ids)
+		values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid, []::uuid[])`)
+	require.NoError(t, err, "inserting a resources row should succeed")
+	_, err = s.db.ExecContext(ctx, `
+		insert into scopes (id, name, version, attribute_ids)
+		values ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '', '', []::uuid[])`)
+	require.NoError(t, err, "inserting a scopes row should succeed")
+
+	_, err = s.db.ExecContext(ctx, `
+		insert into metric_ingests (id, stream_id, description, resource_id, scope_id)
+		values (gen_random_uuid(), ?::uuid, '',
+			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
 	`, streamID)
 	require.NoError(t, err, "inserting a metric_ingests row should succeed")
 
@@ -263,8 +275,8 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 
 	_, err = s.db.ExecContext(ctx, `
 		insert into datapoints
-			(id, stream_id, metric_ingest_id, metric_type, timestamp, start_time, flags)
-		values (gen_random_uuid(), ?::uuid, ?::uuid, 'InvalidType', 0, 0, 0)
+			(id, stream_id, metric_ingest_id, metric_type, timestamp, start_time, flags, attribute_ids)
+		values (gen_random_uuid(), ?::uuid, ?::uuid, 'InvalidType', 0, 0, 0, []::uuid[])
 	`, streamID, ingestID)
 	assert.Error(t, err, "inserting a datapoint with invalid metric_type should violate chk_metric_type_valid")
 }

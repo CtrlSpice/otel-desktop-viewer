@@ -310,9 +310,27 @@ export type JsonAttributeType =
   | 'boolean[]'
 
 // Union across the discovery endpoints: traces serve resource/scope/span/
-// event/link, logs serve resource/scope/log, metrics serve resource/scope.
+// event/link, logs serve resource/scope/log, metrics serve resource/scope/
+// datapoint/exemplar.
+//
+// datapoint and exemplar arrived with the attribute dictionary. Before it,
+// metric discovery deliberately stopped at the per-batch resource and scope
+// rows: reaching datapoint labels meant a second join through a table where
+// they were 82% of the rows, on the interactive path that fills the search
+// dropdowns. Reading them from the dictionary is the same `select distinct`,
+// so they are now both discoverable and searchable.
+//
+// Note the scope is the *owner kind*, not the storage location -- an attribute
+// id implies its scope because scope is part of the content hash.
 export type JsonAttributeScope =
-  'resource' | 'scope' | 'span' | 'event' | 'link' | 'log'
+  | 'resource'
+  | 'scope'
+  | 'span'
+  | 'event'
+  | 'link'
+  | 'log'
+  | 'datapoint'
+  | 'exemplar'
 
 export type JsonAttributeDefinition = {
   name: string

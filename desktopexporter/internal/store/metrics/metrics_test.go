@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -936,12 +937,30 @@ func TestDeleteMetricStream(t *testing.T) {
 		exBefore := countRows(t, s, ctx,
 			`select count(*) from exemplars where datapoint_id in (select id from datapoints where stream_id in (select id from metric_streams where name = ?))`,
 			"histogram_metric")
+		// The old query counted attribute rows owned by this stream's ingest
+		// batches -- i.e. its resource and scope attributes. Those are now ids
+		// in the referenced resources / scopes arrays, so the equivalent
+		// question is how many distinct ids the stream's ingests reach.
+		//
+		// Deliberately not the datapoint labels: the histogram fixture's
+		// datapoints carry none, so counting those would assert nothing.
 		attrBefore := countRows(t, s, ctx,
-			`select count(*) from attributes where metric_ingest_id in (select id from metric_ingests where stream_id in (select id from metric_streams where name = ?))`,
+			`select count(distinct t.aid)
+			 from metric_ingests mi
+			 join resources r on r.id = mi.resource_id
+			 join scopes sc on sc.id = mi.scope_id,
+			 unnest(r.attribute_ids || sc.attribute_ids) as t(aid)
+			 where mi.stream_id in (select id from metric_streams where name = ?)`,
 			"histogram_metric")
 		assert.Greater(t, dpBefore, 0)
 		assert.Greater(t, exBefore, 0)
 		assert.Greater(t, attrBefore, 0)
+
+		// The dictionary rows those ids point at, before the delete. They must
+		// survive the cascade -- other streams may still reference them -- and
+		// only go when the sweep proves them unreferenced.
+		dictBefore := countRows(t, s, ctx, `select count(*) from attributes`)
+		assert.Greater(t, dictBefore, 0)
 
 		err = deleteByIdentity(t, ctx, s,
 			"histogram_metric", "seconds", "Histogram",
@@ -961,9 +980,30 @@ func TestDeleteMetricStream(t *testing.T) {
 				where d.id = e.datapoint_id
 				  and d.stream_id in (select id from metric_streams where name = ?)
 			)`, "histogram_metric"))
+		// The cascade deliberately does NOT touch the dictionary: attribute,
+		// resource and scope rows are shared across every signal, so "is this
+		// one still in use" is not a question a stream-scoped delete can
+		// answer. It stays whole here...
+		assert.Equal(t, dictBefore, countRows(t, s, ctx, `select count(*) from attributes`),
+			"a stream delete must not remove shared dictionary rows")
+
+		// ...and the sweep is what collects whatever the delete orphaned.
+		require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+			return ingest.SweepOrphans(ctx, db)
+		}))
+		// The other four fixture metrics still reference the same resource and
+		// scope, so the sweep must NOT take those rows -- shared content
+		// survives as long as one owner remains. What it does take is anything
+		// only the deleted stream reached.
 		assert.Equal(t, 0, countRows(t, s, ctx,
-			`select count(*) from attributes where metric_ingest_id in (select id from metric_ingests where stream_id in (select id from metric_streams where name = ?))`,
-			"histogram_metric"))
+			`select count(*) from attributes a
+			 where not exists (select 1 from resources r, unnest(r.attribute_ids) t(aid) where t.aid = a.id)
+			   and not exists (select 1 from scopes sc, unnest(sc.attribute_ids) t(aid) where t.aid = a.id)
+			   and not exists (select 1 from datapoints d, unnest(d.attribute_ids) t(aid) where t.aid = a.id)
+			   and not exists (select 1 from exemplars e, unnest(e.attribute_ids) t(aid) where t.aid = a.id)`),
+			"the sweep must leave no unreferenced dictionary row behind")
+		assert.Greater(t, countRows(t, s, ctx, `select count(*) from resources`), 0,
+			"the resource is still referenced by the four surviving streams")
 	})
 }
 
@@ -1102,17 +1142,16 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 	require.NoError(t, err)
 
 	// All five fixture metrics share service.name = test-service.
-	// Match the column against the resource attribute by joining
-	// metric_streams -> metric_ingests -> attributes(scope=resource,
-	// key=service.name).
+	//
+	// The source of truth moved: the resource attribute is no longer a row
+	// owned by the ingest batch, it is an id in the referenced resources row's
+	// array. attr_value resolves it, which is the same macro the search mappers
+	// use -- so this also pins that the macro agrees with what ingest wrote.
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from metric_streams s
 		join metric_ingests mi on mi.stream_id = s.id
-		join attributes a
-		     on a.metric_ingest_id = mi.id
-		    and a.scope = 'resource'
-		    and a.key = 'service.name'
-		where s.service_name <> a.value
+		join resources r on r.id = mi.resource_id
+		where s.service_name <> coalesce(attr_value(r.attribute_ids, 'service.name'), '')
 	`)
 	assert.Equal(t, 0, mismatches,
 		"metric_streams.service_name must equal the source resource attribute")
@@ -1145,7 +1184,7 @@ func TestClearMetrics(t *testing.T) {
 	metricList := searchMetricsAll(t, s, ctx)
 	assert.Len(t, metricList, 5)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from datapoints"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where metric_ingest_id is not null"), 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes"), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return metrics.Clear(ctx, db)
@@ -1158,7 +1197,18 @@ func TestClearMetrics(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_ingests"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from datapoints"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from exemplars"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where metric_ingest_id is not null"))
+
+	// Clear leaves the dictionary alone -- it cannot know whether a traces or
+	// logs row still references any of it. With no other signal ingested here
+	// everything it left behind is orphaned, and the sweep takes all of it.
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes"), 0,
+		"Clear must not delete shared dictionary rows itself")
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return ingest.SweepOrphans(ctx, db)
+	}))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
 }
 
 func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
@@ -1494,5 +1544,139 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 		assert.EqualValues(t, 1, summary["seriesCount"])
 		assert.EqualValues(t, 1, summary["dataPointCount"])
 		assert.Nil(t, summary["lastValue"])
+	})
+}
+
+// Datapoint and exemplar labels are searchable.
+//
+// They were not before the attribute dictionary: metric search runs per
+// metric_ingests row, and reaching datapoint labels from there meant a
+// correlated walk of the largest table in the store. Resolving the dictionary
+// first makes it one array-overlap scan (39.2ms -> 7.7ms on the reference
+// capture), so the coverage gap is now just a gap.
+func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+	}))
+
+	search := func(t *testing.T, scope, name, op, value string) []map[string]any {
+		t.Helper()
+		query := map[string]any{
+			"type": "condition",
+			"query": map[string]any{
+				"field": map[string]any{
+					"name":           name,
+					"searchScope":    "attribute",
+					"attributeScope": scope,
+				},
+				"fieldOperator": op,
+				"value":         value,
+			},
+		}
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, 0, time.Now().UnixNano()+int64(time.Hour), query)
+		})
+		require.NoError(t, err)
+		var out []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &out))
+		return out
+	}
+
+	t.Run("datapoint label matches its own metric only", func(t *testing.T) {
+		// memory.type=heap is on the gauge metric's datapoint; the other four
+		// fixture metrics must not match, or the predicate is not actually
+		// filtering.
+		got := search(t, "datapoint", "memory.type", "=", "heap")
+		require.Len(t, got, 1)
+		assert.Equal(t, "gauge_metric", got[0]["name"])
+	})
+
+	t.Run("datapoint label with a non-matching value finds nothing", func(t *testing.T) {
+		assert.Empty(t, search(t, "datapoint", "memory.type", "=", "stack"))
+	})
+
+	// Mutation-driven: without these, making the key predicate always-true
+	// (`a.key = ? or true`) left every other subtest passing, because each
+	// fixture label value happens to be unique. These pair a real key with
+	// another key's value, so a predicate that ignores the key over-matches.
+	t.Run("the key is part of the match, not just the value", func(t *testing.T) {
+		// "int" is a real datapoint label value -- but under key "type", not
+		// "memory.type". Ignoring the key would return the int metric.
+		assert.Empty(t, search(t, "datapoint", "memory.type", "=", "int"),
+			"memory.type is heap; int belongs to a different key")
+
+		// A key that exists nowhere, paired with a value that does.
+		assert.Empty(t, search(t, "datapoint", "no.such.key", "=", "heap"),
+			"a non-existent key must match nothing regardless of the value")
+
+		// Same for exemplars.
+		assert.Empty(t, search(t, "exemplar", "no.such.key", "=", "gauge"))
+	})
+
+	// Scope is part of the dictionary id, so a datapoint search must not reach
+	// an exemplar label and vice versa -- even though both live in the same
+	// attributes table.
+	t.Run("scopes do not leak into each other", func(t *testing.T) {
+		assert.Empty(t, search(t, "datapoint", "exemplar.source", "=", "gauge"),
+			"exemplar.source is not a datapoint label")
+		assert.Empty(t, search(t, "exemplar", "memory.type", "=", "heap"),
+			"memory.type is not an exemplar label")
+	})
+
+	t.Run("exemplar label", func(t *testing.T) {
+		got := search(t, "exemplar", "exemplar.source", "=", "histogram")
+		require.Len(t, got, 1)
+		assert.Equal(t, "histogram_metric", got[0]["name"])
+	})
+
+	t.Run("exemplar labels distinguish metrics", func(t *testing.T) {
+		// Every fixture metric carries exemplar.source, with a different value
+		// each, so this pins that the value is compared and not merely the key.
+		for _, tc := range []struct{ value, metric string }{
+			{"gauge", "gauge_metric"},
+			{"sum", "sum_metric"},
+			{"exponential_histogram", "exponential_histogram_metric"},
+		} {
+			got := search(t, "exemplar", "exemplar.source", "=", tc.value)
+			require.Len(t, got, 1, "value %q", tc.value)
+			assert.Equal(t, tc.metric, got[0]["name"])
+		}
+	})
+
+	t.Run("LIKE on a datapoint label", func(t *testing.T) {
+		got := search(t, "datapoint", "memory.type", "CONTAINS", "hea")
+		require.Len(t, got, 1)
+		assert.Equal(t, "gauge_metric", got[0]["name"])
+	})
+
+	t.Run("global free-text reaches datapoint and exemplar labels", func(t *testing.T) {
+		global := func(term string) []map[string]any {
+			query := map[string]any{
+				"type": "condition",
+				"query": map[string]any{
+					"field":         map[string]any{"searchScope": "global"},
+					"fieldOperator": "CONTAINS",
+					"value":         term,
+				},
+			}
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.SearchSummaries(ctx, db, 0, time.Now().UnixNano()+int64(time.Hour), query)
+			})
+			require.NoError(t, err)
+			var out []map[string]any
+			require.NoError(t, json.Unmarshal(raw, &out))
+			return out
+		}
+		// "heap" appears only as a datapoint label value.
+		got := global("heap")
+		require.Len(t, got, 1, "global search must reach datapoint labels")
+		assert.Equal(t, "gauge_metric", got[0]["name"])
+
+		// "exponential_histogram" appears as an exemplar label value.
+		assert.NotEmpty(t, global("exponential_histogram"),
+			"global search must reach exemplar labels")
 	})
 }

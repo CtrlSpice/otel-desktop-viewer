@@ -24,6 +24,12 @@ var (
 	ErrMetricsStoreInternal = errors.New("metrics store internal error")
 )
 
+// flushIntervalMetrics counts *metrics*, not datapoints -- a different unit
+// from the span and log intervals, and already far coarser in rows. A single
+// metric can carry thousands of datapoints, so 100 metrics is easily hundreds
+// of thousands of appended rows between flushes: well past the point where
+// flush overhead matters. Left alone deliberately rather than raised to match
+// the others.
 const flushIntervalMetrics = 100
 
 // Ingest writes the metric data in m to the metric_streams,
@@ -46,7 +52,7 @@ const flushIntervalMetrics = 100
 // and resolves them in one round-trip; doing the upsert per metric
 // would be O(metrics) round-trips per batch.
 func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error) {
-	tables := []string{"attributes", "exemplars", "datapoints", "metric_ingests"}
+	tables := []string{"exemplars", "datapoints", "metric_ingests"}
 
 	// Pass 1: collect every distinct identity in this OTLP request, plus
 	// per-identity service_name (denormalized onto metric_streams). We
@@ -62,11 +68,22 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 
 	var coords []identityWithCoord
 	identitySet := make(map[streamIdentity]struct{})
+
+	// The attribute dictionary is built in the same walk. Datapoint labels are
+	// the bulk of it: on the reference capture they are 82% of all attribute
+	// rows, resolving to 89 distinct sets across 294,607 datapoints.
+	dict := ingest.NewDictionary()
+	type scopeKey struct{ ri, si int }
+	resourceIDs := map[int]duckdb.UUID{}
+	scopeIDs := map[scopeKey]duckdb.UUID{}
+
 	for ri, resourceMetric := range m.ResourceMetrics().All() {
 		resource := resourceMetric.Resource()
 		serviceName := serviceNameFromAttrs(resource.Attributes())
+		resourceIDs[ri] = dict.AddResource(resource)
 		for si, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			scope := scopeMetric.Scope()
+			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scope)
 			for mi, metric := range scopeMetric.Metrics().All() {
 				if err := ctx.Err(); err != nil {
 					return err
@@ -74,6 +91,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 				identity := streamIdentityFromMetric(metric, scope.Name(), scope.Version(), serviceName)
 				identitySet[identity] = struct{}{}
 				coords = append(coords, identityWithCoord{identity: identity, coord: metricCoord{ri, si, mi}})
+				addMetricAttributes(dict, metric)
 			}
 		}
 	}
@@ -208,6 +226,10 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 	// stream_id from streamIDs by re-deriving its identity (cheap; the
 	// alternative would be carrying stream IDs alongside coords, but
 	// the lookup is O(1) and keeps the inner loop self-contained).
+	if err := dict.Flush(ctx, conn); err != nil {
+		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+	}
+
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
@@ -217,11 +239,13 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 	}()
 
 	metricCount := 0
-	for _, resourceMetric := range m.ResourceMetrics().All() {
+	for ri, resourceMetric := range m.ResourceMetrics().All() {
 		resource := resourceMetric.Resource()
 		serviceName := serviceNameFromAttrs(resource.Attributes())
-		for _, scopeMetric := range resourceMetric.ScopeMetrics().All() {
+		resourceID := resourceIDs[ri]
+		for si, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			scope := scopeMetric.Scope()
+			scopeID := scopeIDs[scopeKey{ri, si}]
 			for _, metric := range scopeMetric.Metrics().All() {
 				if err := ctx.Err(); err != nil {
 					return err
@@ -235,11 +259,11 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 				ingestID := duckdb.UUID(uuid.New())
 
 				if err := appenders["metric_ingests"].AppendRow(
-					ingestID,                          // ID UUID
-					streamID,                          // StreamID UUID
-					metric.Description(),              // Description VARCHAR
-					resource.DroppedAttributesCount(), // ResourceDroppedAttributesCount UINTEGER
-					scope.DroppedAttributesCount(),    // ScopeDroppedAttributesCount UINTEGER
+					ingestID,             // ID UUID
+					streamID,             // StreamID UUID
+					metric.Description(), // Description VARCHAR
+					resourceID,           // ResourceID UUID
+					scopeID,              // ScopeID UUID
 				); err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 				}
@@ -262,13 +286,6 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 						return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 					}
 				}
-				ownerIDs := ingest.AttributeOwnerIDs{MetricIngestID: &ingestID}
-				if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
-					{Attrs: resource.Attributes(), IDs: ownerIDs, Scope: "resource"},
-					{Attrs: scope.Attributes(), IDs: ownerIDs, Scope: "scope"},
-				}); err != nil {
-					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-				}
 				metricCount++
 				if metricCount%flushIntervalMetrics == 0 {
 					if err := ingest.FlushAppenders(appenders, tables); err != nil {
@@ -280,6 +297,51 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 	}
 
 	return nil
+}
+
+// addMetricAttributes records every datapoint and exemplar attribute set on a
+// metric into the dictionary. Kept separate from the append pass so pass 1 can
+// hash everything before any row references it.
+func addMetricAttributes(dict *ingest.Dictionary, metric pmetric.Metric) {
+	addNumber := func(dps pmetric.NumberDataPointSlice) {
+		for _, dp := range dps.All() {
+			dict.AddAttributes(dp.Attributes(), ingest.ScopeDatapoint)
+			addExemplarAttributes(dict, dp.Exemplars())
+		}
+	}
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		addNumber(metric.Gauge().DataPoints())
+	case pmetric.MetricTypeSum:
+		addNumber(metric.Sum().DataPoints())
+	case pmetric.MetricTypeHistogram:
+		for _, dp := range metric.Histogram().DataPoints().All() {
+			dict.AddAttributes(dp.Attributes(), ingest.ScopeDatapoint)
+			addExemplarAttributes(dict, dp.Exemplars())
+		}
+	case pmetric.MetricTypeExponentialHistogram:
+		for _, dp := range metric.ExponentialHistogram().DataPoints().All() {
+			dict.AddAttributes(dp.Attributes(), ingest.ScopeDatapoint)
+			addExemplarAttributes(dict, dp.Exemplars())
+		}
+	}
+}
+
+func addExemplarAttributes(dict *ingest.Dictionary, exemplars pmetric.ExemplarSlice) {
+	for _, ex := range exemplars.All() {
+		dict.AddAttributes(ex.FilteredAttributes(), ingest.ScopeExemplar)
+	}
+}
+
+// datapointAttrIDs returns the id array for a datapoint's labels.
+//
+// Replaces nullableCanonical, which materialised the same set as a
+// "key=value|..." string for grouping. The array is the identity itself rather
+// than a rendering of it, and NOT NULL rather than nullable: an unlabelled
+// datapoint stores an empty array, so grouping needs no null coalesce.
+func datapointAttrIDs(attrs pcommon.Map) []duckdb.UUID {
+	_, ids := ingest.AttributeSet(attrs, ingest.ScopeDatapoint)
+	return ingest.NonNil(ids)
 }
 
 // streamIdentity is the 8-field compound identity of a metric stream.
@@ -353,33 +415,15 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, ingestID, datapointI
 			u := duckdb.UUID(padded)
 			spanUUID = &u
 		}
+		_, exAttrIDs := ingest.AttributeSet(ex.FilteredAttributes(), ingest.ScopeExemplar)
 		if err := appenders["exemplars"].AppendRow(
 			exemplarID, datapointID, int64(ex.Timestamp()), ex.DoubleValue(), traceUUID, spanUUID,
+			ingest.NonNil(exAttrIDs),
 		); err != nil {
-			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-		}
-		exOwnerIDs := ingest.AttributeOwnerIDs{MetricIngestID: &ingestID, DataPointID: &datapointID, ExemplarID: &exemplarID}
-		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
-			{Attrs: ex.FilteredAttributes(), IDs: exOwnerIDs, Scope: "exemplar"},
-		}); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
-}
-
-// nullableCanonical returns the canonical "key=value|..." form of an
-// attribute set (see ingest.AttrsCanonical) when non-empty, or nil so
-// the resulting datapoints.attrs_canonical column is SQL NULL when
-// empty. Storing NULL for the empty case matches our query
-// convention: "no attributes" is a distinct stream identity from
-// "any specific attribute set" and gets coalesced to a sentinel
-// empty-string by readers.
-func nullableCanonical(attrs pcommon.Map) any {
-	if attrs.Len() == 0 {
-		return nil
-	}
-	return ingest.AttrsCanonical(attrs)
 }
 
 func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, streamID, ingestID duckdb.UUID, dps pmetric.NumberDataPointSlice) error {
@@ -389,14 +433,8 @@ func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, streamID, inge
 		if err := appenders["datapoints"].AppendRow(
 			datapointID, streamID, ingestID, int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
 			doubleVal, intVal, valType, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-			nullableCanonical(dp.Attributes()),
+			datapointAttrIDs(dp.Attributes()),
 		); err != nil {
-			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-		}
-		dpOwnerIDs := ingest.AttributeOwnerIDs{MetricIngestID: &ingestID, DataPointID: &datapointID}
-		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
-			{Attrs: dp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
-		}); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		if err := ingestExemplars(appenders, ingestID, datapointID, dp.Exemplars()); err != nil {
@@ -420,14 +458,8 @@ func ingestSumDatapoints(appenders map[string]*duckdb.Appender, streamID, ingest
 			datapointID, streamID, ingestID, int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
 			doubleVal, intVal, valType,
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-			nullableCanonical(dp.Attributes()),
+			datapointAttrIDs(dp.Attributes()),
 		); err != nil {
-			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-		}
-		dpOwnerIDs := ingest.AttributeOwnerIDs{MetricIngestID: &ingestID, DataPointID: &datapointID}
-		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
-			{Attrs: dp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
-		}); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		if err := ingestExemplars(appenders, ingestID, datapointID, dp.Exemplars()); err != nil {
@@ -445,14 +477,8 @@ func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, streamID, 
 			nil, nil, nil,
 			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), dp.BucketCounts().AsRaw(), dp.ExplicitBounds().AsRaw(),
 			nil, nil, nil, nil, nil, nil, nil,
-			nullableCanonical(dp.Attributes()),
+			datapointAttrIDs(dp.Attributes()),
 		); err != nil {
-			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-		}
-		dpOwnerIDs := ingest.AttributeOwnerIDs{MetricIngestID: &ingestID, DataPointID: &datapointID}
-		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
-			{Attrs: dp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
-		}); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		if err := ingestExemplars(appenders, ingestID, datapointID, dp.Exemplars()); err != nil {
@@ -471,14 +497,8 @@ func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender,
 			nil, nil, nil,
 			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), nil, nil,
 			dp.Scale(), dp.ZeroCount(), dp.ZeroThreshold(), pos.Offset(), pos.BucketCounts().AsRaw(), neg.Offset(), neg.BucketCounts().AsRaw(),
-			nullableCanonical(dp.Attributes()),
+			datapointAttrIDs(dp.Attributes()),
 		); err != nil {
-			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-		}
-		dpOwnerIDs := ingest.AttributeOwnerIDs{MetricIngestID: &ingestID, DataPointID: &datapointID}
-		if err := ingest.IngestAttributes(appenders["attributes"], []ingest.AttributeBatchItem{
-			{Attrs: dp.Attributes(), IDs: dpOwnerIDs, Scope: "datapoint"},
-		}); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		if err := ingestExemplars(appenders, ingestID, datapointID, dp.Exemplars()); err != nil {
@@ -527,8 +547,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 	query := fmt.Sprintf(`%s,
 		filtered_ingests as (
 			select m.id, m.stream_id
-			from metric_ingests m
-			inner join metric_streams s on s.id = m.stream_id, search_params
+			%s
 			where %s
 		),
 		filtered_streams as (
@@ -559,7 +578,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 			group by mi.stream_id
 		),
 		stream_series_count as (
-			select stream_id, count(distinct coalesce(attrs_canonical, '')) as series_count
+			select stream_id, count(distinct attribute_ids) as series_count
 			from filtered_dps
 			group by stream_id
 		),
@@ -600,7 +619,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 		left join stream_series_count ssc on ssc.stream_id = fs.id
 		left join stream_datapoint_count sdc on sdc.stream_id = fs.id
 		left join stream_last_value slv on slv.stream_id = fs.id
-	`, cteSQL, whereClause)
+	`, cteSQL, metricSearchFrom, whereClause)
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrMetricsStoreInternal, err)
@@ -652,31 +671,16 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 			where d.stream_id = input.stream_id
 			  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
 		),
-		dp_attrs_agg as (
-			select a.datapoint_id, json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.datapoint_id in (select id from filtered_dps) and a.scope = 'datapoint'
-			group by a.datapoint_id
-		),
-		exemplar_attrs as (
-			select a.exemplar_id,
-				json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.exemplar_id is not null
-				and a.datapoint_id in (select id from filtered_dps)
-				and a.scope = 'exemplar'
-			group by a.exemplar_id
-		),
+		-- The dp_attrs_agg and exemplar_attrs CTEs are gone: attrs_json
+		-- resolves each row's id array in place, so there is nothing to
+		-- pre-aggregate and join back.
 		exemplars_agg as (
 			select e.datapoint_id, json_group_array(json_object(
 				'timestamp', e.timestamp::varchar,
 				'value', e.value,
-				'traceID', replace(e.trace_id::varchar, '-', ''),
-				'spanID', right(replace(e.span_id::varchar, '-', ''), 16),
-				'filteredAttributes', coalesce(
-					(select attrs from exemplar_attrs where exemplar_attrs.exemplar_id = e.id),
-					json('[]')
-				)
+				'traceID', trace_id_wire(e.trace_id),
+				'spanID', span_id_wire(e.span_id),
+				'filteredAttributes', attrs_json(e.attribute_ids)
 			)) as exemplars
 			from exemplars e
 			where e.datapoint_id in (select id from filtered_dps)
@@ -700,21 +704,24 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 			order by ild.last_dp_ts desc nulls last
 			limit 1
 		),
-		ingest_res_attrs as (
-			select json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.metric_ingest_id in (select id from matched_ingests)
-			  and a.scope = 'resource'
-			  and a.datapoint_id is null
-			  and a.exemplar_id is null
-		),
-		ingest_scope_attrs as (
-			select json_group_array(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)) as attrs
-			from attributes a
-			where a.metric_ingest_id in (select id from matched_ingests)
-			  and a.scope = 'scope'
-			  and a.datapoint_id is null
-			  and a.exemplar_id is null
+		-- Resource and scope come from the representative ingest, the same
+		-- row the dropped counts come from.
+		--
+		-- They used to be aggregated over *all* matched ingests with no
+		-- DISTINCT, so a metric with 360 batches emitted 360 duplicate copies
+		-- of each resource attribute while its droppedAttributesCount came
+		-- from one ingest -- an asymmetry that only looked harmless because
+		-- the frontend deduped by key on render. Taking both from the same
+		-- row fixes it, and the dedupe makes it free: every batch from the
+		-- same sender now points at one resources row anyway.
+		representative_owners as (
+			select r.attribute_ids as resource_attribute_ids,
+			       r.dropped_attributes_count as resource_dropped,
+			       sc.attribute_ids as scope_attribute_ids,
+			       sc.dropped_attributes_count as scope_dropped
+			from representative rep
+			join resources r on r.id = rep.resource_id
+			join scopes sc on sc.id = rep.scope_id
 		),
 		-- One row per (metric, attribute-set) -- i.e. per OTel stream.
 		-- The attribute set itself is owned by the stream (lifted out of
@@ -730,8 +737,8 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 		-- arg_max all yield the same answer; we use any_value for clarity.
 		ts_dps_agg as (
 			select
-				coalesce(d.attrs_canonical, '') as attrs_key,
-				any_value(coalesce((select attrs from dp_attrs_agg where dp_attrs_agg.datapoint_id = d.id), json('[]'))) as attributes_sample,
+				attrs_key(d.attribute_ids) as attrs_key,
+				any_value(attrs_json(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
 				to_json(list(json_merge_patch(
 					json_object(
@@ -781,7 +788,7 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 					end
 				) order by d.timestamp desc)) as datapoints
 			from filtered_dps d
-			group by coalesce(d.attrs_canonical, '')
+			group by d.attribute_ids
 		),
 		-- Pack each timeseries into the wire shape and order them so
 		-- the most recently active timeseries sorts first -- mirrors
@@ -807,17 +814,17 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 			'metricType', s.metric_type,
 			'aggregationTemporality', s.aggregation_temporality,
 			'isMonotonic', s.is_monotonic,
-			'resourceDroppedAttributesCount', coalesce(r.resource_dropped_attributes_count, 0),
-			'resource', json_object(
-				'attributes', coalesce((select attrs from ingest_res_attrs), json('[]')),
-				'droppedAttributesCount', coalesce(r.resource_dropped_attributes_count, 0)
+			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
+			'resource', coalesce(
+				(select resource_json(resource_attribute_ids, resource_dropped) from representative_owners),
+				json_object('attributes', json('[]'), 'droppedAttributesCount', 0)
 			),
 			'scopeName', s.scope_name, 'scopeVersion', s.scope_version,
-			'scopeDroppedAttributesCount', coalesce(r.scope_dropped_attributes_count, 0),
-			'scope', json_object(
-				'name', s.scope_name, 'version', s.scope_version,
-				'attributes', coalesce((select attrs from ingest_scope_attrs), json('[]')),
-				'droppedAttributesCount', coalesce(r.scope_dropped_attributes_count, 0)
+			'scopeDroppedAttributesCount', coalesce((select scope_dropped from representative_owners), 0),
+			'scope', coalesce(
+				(select scope_json(s.scope_name, s.scope_version, scope_attribute_ids, scope_dropped) from representative_owners),
+				json_object('name', s.scope_name, 'version', s.scope_version,
+				            'attributes', json('[]'), 'droppedAttributesCount', 0)
 			),
 			'timeseries', coalesce((select timeseries from timeseries_agg), json('[]'))
 		) as varchar) as metric
@@ -838,29 +845,26 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	return json.RawMessage(raw), nil
 }
 
-// GetMetricAttributes returns a JSON array of attribute names/scopes/types
-// for metrics that have at least one datapoint in the given time range.
-// Uses the renamed metric_ingest_id column on attributes; the existence
-// check lives on metric_ingests (the per-batch table) since we want
-// attributes from any batch whose datapoints land in the window.
+// GetMetricAttributes returns every metric-side attribute name/scope/type this
+// store knows about. The time range is accepted and ignored -- see the note on
+// spans.GetTraceAttributes.
+//
+// Datapoint and exemplar attributes are included, which the windowed version
+// deliberately excluded: it was scoped to the per-batch resource/scope rows
+// because reaching datapoint labels meant a second join through a table where
+// they were 82% of the rows. From the dictionary they are the same select.
 func GetMetricAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
 	query := `
-		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope, 'type', sub.type::varchar)
+		select cast(to_json(list(attribute_def_json(sub.key, sub.scope, sub.type)
 			order by sub.key, sub.scope)) as varchar) as attributes
 		from (
 			select distinct a.key, a.scope, a.type
 			from attributes a
-			inner join metric_ingests m on a.metric_ingest_id = m.id
-			where a.datapoint_id is null and a.exemplar_id is null
-			  and exists (
-				select 1 from datapoints d
-				where d.metric_ingest_id = m.id
-				  and d.timestamp >= ? and d.timestamp <= ?
-			  )
+			where a.scope in ('resource', 'scope', 'datapoint', 'exemplar')
 		) sub
 	`
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, startTime, endTime).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetMetricAttributes: %w: %w", ErrMetricsStoreInternal, err)
 	}
 	if raw == nil {
@@ -886,10 +890,11 @@ func GetMetricAttributes(ctx context.Context, db *sql.DB, startTime, endTime int
 // keeps us in lockstep with the FK cascade conventions used everywhere
 // else in this package.
 func Clear(ctx context.Context, db *sql.DB) error {
+	// Attribute, resource and scope rows are shared across signals, so this
+	// cannot know whether the ones it just abandoned are still in use.
+	// ingest.SweepOrphans collects them; the store runs it once for all three
+	// signals rather than three times here.
 	for _, q := range []string{
-		`delete from attributes where exemplar_id is not null`,
-		`delete from attributes where datapoint_id is not null`,
-		`delete from attributes where metric_ingest_id is not null`,
 		`delete from exemplars`,
 		`delete from datapoints`,
 		`delete from metric_ingests`,
@@ -903,11 +908,11 @@ func Clear(ctx context.Context, db *sql.DB) error {
 }
 
 // DeleteMetricStream removes a metric stream and every row that
-// references it: metric_ingests, datapoints, exemplars, and attribute
-// rows owned by any of those. Now that identity is normalized into
-// metric_streams, the dependency graph is a simple tree
-// (streams -> ingests -> datapoints -> exemplars, with attributes
-// hanging off each). This is a single, child-first cascade run on a
+// references it: metric_ingests, datapoints and exemplars. The
+// dependency graph is a simple tree (streams -> ingests -> datapoints
+// -> exemplars); attributes are no longer part of it, since they are
+// shared dictionary rows collected by ingest.SweepOrphans rather than
+// per-owner rows. This is a single, child-first cascade run on a
 // pinned connection.
 //
 // We still can't wrap this in a transaction: DuckDB issue #13819 still
@@ -927,17 +932,6 @@ func DeleteMetricStream(ctx context.Context, db *sql.DB, streamID string) error 
 	// Each statement names the doomed stream in its own WHERE clause so
 	// they're independent at the FK layer. Order: leaves first.
 	for _, q := range []string{
-		`delete from attributes where exemplar_id in (
-			select id from exemplars where datapoint_id in (
-				select id from datapoints where stream_id = ?::uuid
-			)
-		)`,
-		`delete from attributes where datapoint_id in (
-			select id from datapoints where stream_id = ?::uuid
-		)`,
-		`delete from attributes where metric_ingest_id in (
-			select id from metric_ingests where stream_id = ?::uuid
-		)`,
 		`delete from exemplars where datapoint_id in (
 			select id from datapoints where stream_id = ?::uuid
 		)`,
@@ -970,10 +964,8 @@ func buildMetricSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteS
 // reference. All identity columns now resolve through metric_streams (s);
 // description / *_dropped_attributes_count remain on metric_ingests (m).
 var metricColumns = map[string]struct{}{
-	"id":                                {},
-	"description":                       {},
-	"resource_dropped_attributes_count": {},
-	"scope_dropped_attributes_count":    {},
+	"id":          {},
+	"description": {},
 }
 
 func metricFieldMapper() search.FieldMapper {
@@ -995,6 +987,50 @@ func metricFieldMapper() search.FieldMapper {
 	}
 }
 
+// matchIngestByLabel finds the ingests owning a datapoint (or exemplar) whose
+// label matches, and it is written this way for a measured reason.
+//
+// The dictionary is resolved *first*: the inner select turns (key, condition)
+// into a list of attribute ids by scanning ~488 rows, and the outer scan then
+// tests each row's array for overlap with that list. One pass, no unnest, no
+// join per row. The obvious alternatives cost 5x on the reference capture
+// (229,196 datapoints):
+//
+//	correlated EXISTS per ingest         39.2 ms
+//	hoisted IN with unnest + join        36.3 ms
+//	hoisted IN with array overlap         7.7 ms   <- this
+//
+// The && operator is list_has_any. Note what the predicate means: it matches
+// ingests having a datapoint that *carries* the label with a matching value. A
+// null-check therefore matches nothing rather than finding datapoints missing
+// the label -- unlike the resource and scope cases above, where attr_value
+// returns NULL for an absent key and `IS NULL` means "lacks it". The asymmetry
+// is inherent: a resource has one attribute set, an ingest has thousands of
+// datapoints, so "the label is absent" is not a property of the ingest.
+//
+// The two %s are the source relation and the qualified array column: the
+// exemplar form joins datapoints, and both tables have an attribute_ids, so the
+// column has to be named explicitly.
+const matchIngestByLabel = `m.id in (
+			select d.metric_ingest_id from %s
+			where %s && (
+				select list(a.id) from attributes a where a.key = %s and a.value {COND}
+			)
+		)`
+
+// metricSearchFrom is the FROM clause metric search predicates are written
+// against. Mirrors spans.spanSearchFrom and logs.logSearchFrom.
+//
+// resources and scopes join through metric_ingests, not metric_streams: the
+// stream's scope_name / scope_version are its coarse *identity* (stable across
+// pod restarts, which is what keeps a counter one timeseries), while the
+// resources and scopes rows are the precise per-batch record. Searching
+// resource.* has to mean the latter.
+const metricSearchFrom = `from search_params, metric_ingests m
+			inner join metric_streams s on s.id = m.stream_id
+			inner join resources r on r.id = m.resource_id
+			inner join scopes sc on sc.id = m.scope_id`
+
 func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 	name := field.Name
 	if name == "" {
@@ -1011,6 +1047,13 @@ func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 		return "s.scope_version", nil
 	case "description":
 		return "m.description", nil
+	// The two dropped counts moved off metric_ingests onto the resources and
+	// scopes rows it now references, so they resolve through the joins rather
+	// than as columns on m.
+	case "resource.droppedAttributesCount", "resourceDroppedAttributesCount":
+		return "r.dropped_attributes_count", nil
+	case "scope.droppedAttributesCount", "scopeDroppedAttributesCount":
+		return "sc.dropped_attributes_count", nil
 	default:
 		col := util.CamelToSnake(name)
 		if err := util.ValidateColumnName(col, metricColumns); err != nil {
@@ -1020,27 +1063,55 @@ func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 	}
 }
 
+// mapMetricAttributeExpressions resolves an attribute by key against whichever
+// array its scope names. The scope parameter the old form carried is gone:
+// scope is implied by which array is searched.
+//
+// "metric" is kept as an alias for the resource array. It never denoted its own
+// storage -- under the old schema all three scopes were rows hanging off the
+// same metric_ingest_id -- and the search-field registry still emits it.
+//
+// Both predicates are hoisted into the owner table -- see
+// spans.mapTraceAttributeExpressions for the measurement that motivates it.
 func mapMetricAttributeExpressions(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
-	idx := len(*params)
-	scopeParam := fmt.Sprintf("attr_scope_%d", idx)
-	keyParam := fmt.Sprintf("attr_key_%d", idx+1)
-	*params = append(*params,
-		search.NamedParam{Name: scopeParam, Value: field.AttributeScope},
-		search.NamedParam{Name: keyParam, Value: field.Name},
-	)
+	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
+	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
 
 	switch field.AttributeScope {
-	// "resource"/"scope"/"metric" all denote attributes attached to a
-	// metric_ingest row (the per-batch record), so they live on the
-	// renamed metric_ingest_id column. Datapoint and exemplar
-	// attribute scopes are handled elsewhere.
-	case "resource", "scope", "metric":
-		expr := fmt.Sprintf("(SELECT a.value FROM attributes a WHERE a.metric_ingest_id = m.id AND a.datapoint_id IS NULL AND a.exemplar_id IS NULL AND a.scope = %s AND a.key = %s LIMIT 1)", scopeParam, keyParam)
-		return []string{expr}, nil
+	case "resource", "metric":
+		return []string{fmt.Sprintf(
+			"m.resource_id in (select id from resources where attr_value(attribute_ids, %s) {COND})",
+			keyParam)}, nil
+	case "scope":
+		return []string{fmt.Sprintf(
+			"m.scope_id in (select id from scopes where attr_value(attribute_ids, %s) {COND})",
+			keyParam)}, nil
+	case "datapoint":
+		return []string{fmt.Sprintf(matchIngestByLabel,
+			"datapoints d", "d.attribute_ids", keyParam)}, nil
+	case "exemplar":
+		return []string{fmt.Sprintf(matchIngestByLabel,
+			"exemplars e join datapoints d on d.id = e.datapoint_id", "e.attribute_ids", keyParam)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidMetricQuery)
 	}
 }
+
+// matchIngestByAnyLabel is the free-text form of matchIngestByLabel: it matches
+// on key, on value, or element-wise inside the four array types, mirroring what
+// the span and log global matchers cover.
+const matchIngestByAnyLabel = `m.id in (
+			select d.metric_ingest_id from %s
+			where %s && (
+				select list(a.id) from attributes a where (
+					a.key {COND} OR a.value {COND} OR
+					(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
+					(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
+					(a.type = 'float64[]' AND list_contains(TRY_CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
+					(a.type = 'boolean[]' AND list_contains(TRY_CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+				)
+			)
+		)`
 
 func mapMetricGlobalExpressions() ([]string, error) {
 	return []string{
@@ -1049,10 +1120,20 @@ func mapMetricGlobalExpressions() ([]string, error) {
 		"CAST(s.unit AS VARCHAR) {COND}",
 		"CAST(s.scope_name AS VARCHAR) {COND}",
 		"CAST(s.scope_version AS VARCHAR) {COND}",
+		// Datapoint and exemplar labels, resolved through the dictionary first
+		// so free-text search costs one array-overlap scan rather than a
+		// per-ingest correlated walk of the datapoints table.
+		fmt.Sprintf(matchIngestByAnyLabel, "datapoints d", "d.attribute_ids"),
+		fmt.Sprintf(matchIngestByAnyLabel,
+			"exemplars e join datapoints d on d.id = e.datapoint_id", "e.attribute_ids"),
+
+		// The batch's resource and scope attributes -- the two sets that used
+		// to share one metric_ingest_id in the attributes table.
 		`EXISTS(
 			SELECT 1
-			FROM attributes a
-			WHERE a.metric_ingest_id = m.id AND (
+			FROM unnest(r.attribute_ids || sc.attribute_ids) AS t(aid)
+			JOIN attributes a ON a.id = t.aid
+			WHERE (
 				a.key {COND} OR a.value {COND} OR
 				(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
 				(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR

@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
@@ -162,8 +163,16 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 }
 
 func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
+	// Clear deletes the signal's own rows but never the dictionary: attribute,
+	// resource and scope rows are shared across signals, so only a sweep can
+	// prove one is unreferenced. It has to run here rather than being left to
+	// retention -- retention is size-driven and does not run at all when the
+	// cap is disabled, which would leak every orphaned row until restart.
 	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		return spans.Clear(ctx, db)
+		if err := spans.Clear(ctx, db); err != nil {
+			return err
+		}
+		return ingest.SweepOrphans(ctx, db)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -201,8 +210,16 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 }
 
 func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
+	// Clear deletes the signal's own rows but never the dictionary: attribute,
+	// resource and scope rows are shared across signals, so only a sweep can
+	// prove one is unreferenced. It has to run here rather than being left to
+	// retention -- retention is size-driven and does not run at all when the
+	// cap is disabled, which would leak every orphaned row until restart.
 	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		return logs.Clear(ctx, db)
+		if err := logs.Clear(ctx, db); err != nil {
+			return err
+		}
+		return ingest.SweepOrphans(ctx, db)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -292,8 +309,16 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 }
 
 func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
+	// Clear deletes the signal's own rows but never the dictionary: attribute,
+	// resource and scope rows are shared across signals, so only a sweep can
+	// prove one is unreferenced. It has to run here rather than being left to
+	// retention -- retention is size-driven and does not run at all when the
+	// cap is disabled, which would leak every orphaned row until restart.
 	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		return metrics.Clear(ctx, db)
+		if err := metrics.Clear(ctx, db); err != nil {
+			return err
+		}
+		return ingest.SweepOrphans(ctx, db)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

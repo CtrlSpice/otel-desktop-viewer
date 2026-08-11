@@ -35,13 +35,13 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 			'traces', (select json_object(
 				'traceCount',   count(distinct trace_id),
 				'spanCount',    count(*),
-				'serviceCount', (
-					select count(distinct a.value)
-					from attributes a
-					inner join spans s2 on a.span_id = s2.span_id
-					where a.scope = 'resource' and a.key = 'service.name'
-						and a.event_id is null and a.link_id is null
-				),
+				-- Counted off the denormalized column rather than resolved
+				-- through resource_id: same value by construction (both are
+				-- written from the same service.name attribute at ingest), and
+				-- this is a single column scan instead of a join plus an array
+				-- unnest. The empty string is the "no service.name" marker, so
+				-- it is excluded rather than counted as a service.
+				'serviceCount', (select count(distinct service_name) from spans where service_name <> ''),
 				'errorCount',   count(*) filter (where status_code = 'Error'),
 				'lastReceived', cast(max(start_time) as varchar)
 			) from spans),

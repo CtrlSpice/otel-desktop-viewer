@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"database/sql/driver"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
@@ -49,6 +51,40 @@ func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, 
 		return db.QueryRowContext(ctx, query, args...).Scan(&n)
 	}))
 	return n
+}
+
+// queryIDs collects a single uuid column as strings, ready to feed straight back
+// as `in (...)` parameters.
+//
+// The dictionary made this necessary: an assertion about "the attributes this
+// span referenced" has to capture those ids *before* the span row is deleted,
+// because afterwards there is no array left to unnest. Select the column as
+// ::varchar -- the driver hands a raw uuid back as bytes, and the round trip as
+// text is what lets the ids go back out as ordinary query parameters.
+func queryIDs(t *testing.T, s *store.Store, ctx context.Context, query string, args ...any) []any {
+	t.Helper()
+	var out []any
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		rows, err := db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			out = append(out, id)
+		}
+		return rows.Err()
+	}))
+	return out
+}
+
+// placeholders builds "?, ?, ?" for an n-parameter `in (...)` clause.
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }
 
 // mustDecodeTraceID decodes a 32-char hex string to 16 bytes (trace ID).
@@ -200,7 +236,16 @@ func TestEmptySpans(t *testing.T) {
 	assert.Empty(t, summaries)
 }
 
-// TestClearTraces verifies that all traces can be cleared from the store, including child rows.
+// TestClearTraces verifies that all traces can be cleared from the store,
+// including child rows, and pins the two-step contract the dictionary
+// introduced: Clear drops the owners, the sweep collects what that orphaned.
+//
+// Clear used to delete the attribute rows it owned, because every attribute row
+// belonged to exactly one span/event/link and "is it still needed?" had an
+// obvious answer. Attributes are now shared across spans, logs and metrics, so
+// Clear cannot answer that question and deliberately leaves them behind --
+// asserting they *survive* is the point, not an omission. ingest.SweepOrphans
+// is the only thing that may delete them.
 func TestClearTraces(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
@@ -215,7 +260,13 @@ func TestClearTraces(t *testing.T) {
 	assert.Len(t, summaries, 1)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from events"), 0)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from links"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where span_id is not null"), 0)
+
+	// Snapshot the dictionary so the post-Clear assertion is "unchanged", not
+	// merely "non-empty" -- a Clear that deleted some but not all attribute rows
+	// would slip past a non-empty check.
+	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes")
+	assert.Greater(t, attrsBefore, 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where scope = 'span'"), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return spans.Clear(ctx, db)
@@ -224,9 +275,25 @@ func TestClearTraces(t *testing.T) {
 
 	summaries = searchTracesAll(t, s, ctx)
 	assert.Empty(t, summaries)
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from spans"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where span_id is not null"))
+
+	// The dictionary, resources and scopes are untouched by Clear.
+	assert.Equal(t, attrsBefore, countRows(t, s, ctx, "select count(*) from attributes"),
+		"Clear must not delete attribute rows: they are shared with logs and metrics")
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from resources"), 0)
+	assert.Greater(t, countRows(t, s, ctx, "select count(*) from scopes"), 0)
+
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return ingest.SweepOrphans(ctx, db)
+	}))
+
+	// Spans were the only signal ingested, so after the sweep nothing is
+	// referenced and the three tables empty out completely.
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
 }
 
 // getTraceTraceID returns the trace ID from SearchSpans JSON (traceID in response is hex string).
@@ -1046,16 +1113,46 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 
 	// Assert attributes flushed: span 1 (index 0), span 50 (index 49), span 51 (index 50)
 	// SpanID for index i is (i+1) as 16-char hex; UUID format is 8-4-4-4-12.
+	//
+	// Attributes are no longer rows owned by a span, so "did this span's
+	// attributes survive the flush?" is now asked by unnesting the span's
+	// attribute_ids and joining the dictionary. The join matters: it fails if the
+	// appender wrote an array whose ids never made it into the dictionary, which
+	// is precisely the split-brain the two-pass ingest could produce if a
+	// mid-batch flush landed between the passes.
 	for _, spanIndex := range []int{0, 49, 50} {
 		spanIDHex := fmt.Sprintf("%016x", spanIndex+1)
 		spanUUID := "00000000-0000-0000-0000-" + spanIDHex[4:]
-		attrCount := countRows(t, s, ctx, "select count(*) from attributes where span_id = ? and scope = 'span' and key in ('span.index', 'flush_test')", spanUUID)
+		attrCount := countRows(t, s, ctx, `
+			select count(*)
+			from (select unnest(attribute_ids) as id from spans where span_id = ?) x
+			join attributes a on a.id = x.id
+			where a.scope = 'span' and a.key in ('span.index', 'flush_test')
+		`, spanUUID)
 		assert.GreaterOrEqual(t, attrCount, 2, "span %d should have span.index and flush_test attributes", spanIndex)
 	}
-	// Resource/scope attributes on first span
+
+	// Resource/scope attributes reached through the first span's resource_id and
+	// scope_id. These used to be re-written once per owning span; they are now
+	// one deduped row each, so the assertion goes through the reference rather
+	// than looking for a span-keyed copy.
 	span1UUID := "00000000-0000-0000-0000-000000000001"
-	resAttr := countRows(t, s, ctx, "select count(*) from attributes where span_id = ? and scope = 'resource'", span1UUID)
-	scopeAttr := countRows(t, s, ctx, "select count(*) from attributes where span_id = ? and scope = 'scope'", span1UUID)
+	resAttr := countRows(t, s, ctx, `
+		select count(*)
+		from spans s
+		join resources r on r.id = s.resource_id
+		join (select id, key, scope from attributes) a
+		  on list_contains(r.attribute_ids, a.id)
+		where s.span_id = ? and a.scope = 'resource'
+	`, span1UUID)
+	scopeAttr := countRows(t, s, ctx, `
+		select count(*)
+		from spans s
+		join scopes sc on sc.id = s.scope_id
+		join (select id, key, scope from attributes) a
+		  on list_contains(sc.attribute_ids, a.id)
+		where s.span_id = ? and a.scope = 'scope'
+	`, span1UUID)
 	assert.GreaterOrEqual(t, resAttr, 1)
 	assert.GreaterOrEqual(t, scopeAttr, 1)
 }
@@ -1114,8 +1211,23 @@ func TestDeleteSpansByIDs(t *testing.T) {
 		"00000000-0000-0000-0000-000000000002",
 		"00000000-0000-0000-0000-000000000003",
 	}
-	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes where span_id in (?, ?, ?)", deletedIDs...)
-	assert.Greater(t, attrsBefore, 0, "deleted spans should have attributes")
+
+	// Capture the dictionary ids these spans reference before they go, because
+	// afterwards there is no span row left to unnest. Each of these three spans
+	// carries its own distinctly-named attributes in the fixture (root.*,
+	// child.*, child2.*), so every span-scoped id here is referenced by nothing
+	// else -- which is what makes the post-sweep assertion below exact rather
+	// than approximate.
+	spanAttrIDs := queryIDs(t, s, ctx, `
+		select distinct a.id::varchar
+		from (select unnest(attribute_ids) as id from spans where span_id in (?, ?, ?)) x
+		join attributes a on a.id = x.id
+		where a.scope = 'span'
+	`, deletedIDs...)
+	require.NotEmpty(t, spanAttrIDs, "deleted spans should have attributes")
+	inSpanAttrIDs := "select count(*) from attributes where id in (" + placeholders(len(spanAttrIDs)) + ")"
+
+	attrsTotalBefore := countRows(t, s, ctx, "select count(*) from attributes")
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return spans.DeleteSpansByIDs(ctx, db, deletedIDs)
@@ -1130,7 +1242,28 @@ func TestDeleteSpansByIDs(t *testing.T) {
 
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events where span_id in (?, ?, ?)", deletedIDs...))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links where span_id in (?, ?, ?)", deletedIDs...))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where span_id in (?, ?, ?)", deletedIDs...))
+
+	// The delete-by-id path no longer removes attribute rows. It cannot: the
+	// dictionary is shared, so deciding a row is dead needs a whole-database
+	// view that a targeted delete does not have.
+	assert.Equal(t, attrsTotalBefore, countRows(t, s, ctx, "select count(*) from attributes"),
+		"DeleteSpansByIDs must leave the dictionary alone")
+	assert.Equal(t, len(spanAttrIDs), countRows(t, s, ctx, inSpanAttrIDs, spanAttrIDs...))
+
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return ingest.SweepOrphans(ctx, db)
+	}))
+
+	// Now the sweep collects them -- and only them.
+	assert.Equal(t, 0, countRows(t, s, ctx, inSpanAttrIDs, spanAttrIDs...),
+		"SweepOrphans must collect the attributes the deleted spans were the last referrers of")
+	// The resource attributes survive, because the six remaining spans still
+	// point at the same resource row. A sweep that over-collected would take
+	// these with it, and service filtering would break silently.
+	assert.Equal(t, 1, countRows(t, s, ctx,
+		"select count(*) from attributes where scope = 'resource' and key = 'service.name'"),
+		"shared resource attributes must survive: live spans still reference them")
+	assert.Equal(t, 1, countRows(t, s, ctx, "select count(*) from resources"))
 }
 
 // TestDeleteSpansByIDs_Empty verifies that deleting with an empty list is a no-op.
@@ -1179,7 +1312,9 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	assert.Len(t, summaries, 1)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from events"), 0)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from links"), 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where span_id is not null"), 0)
+
+	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes")
+	assert.Greater(t, attrsBefore, 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return spans.DeleteSpansByTraceIDs(ctx, db, []any{testTraceID})
@@ -1190,7 +1325,20 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	assert.Empty(t, summaries)
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes where span_id is not null"))
+
+	// Same two-step contract as TestClearTraces: deleting the owners strands the
+	// dictionary rows, and only the sweep may reclaim them. See the comment
+	// there for why the delete path cannot make that call itself.
+	assert.Equal(t, attrsBefore, countRows(t, s, ctx, "select count(*) from attributes"),
+		"DeleteSpansByTraceIDs must leave the dictionary alone")
+
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return ingest.SweepOrphans(ctx, db)
+	}))
+
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
 }
 
 // TestDeleteSpansByTraceIDs_Empty verifies that deleting with an empty list is a no-op.
@@ -1472,21 +1620,38 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// For every span row that carries a non-empty service_name, there
-	// must be a matching resource attribute row with the same value.
-	// (We use coalesce(a.value, '') because spans without the resource
-	// attribute have a column value of '' and no matching attribute.)
+	// For every span row, service_name must equal the value the resource
+	// actually carries.
+	//
+	// The path to the source of truth changed: there is no longer a
+	// span-keyed resource attribute row to left-join. It resolves through
+	// resource_id -> resources.attribute_ids -> attributes, which the
+	// attr_value macro does in one step. The inner join on resources is safe
+	// because spans.resource_id is NOT NULL with an FK -- a span without a
+	// resource cannot exist -- so an inner join here cannot hide a row the
+	// way it would have under the old nullable-owner shape. attr_value
+	// returns NULL when the key is absent, hence the coalesce: spans whose
+	// resource has no service.name must carry '' in the column.
 	var mismatches int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `
 			select count(*) from spans s
-			left join attributes a
-			     on a.span_id = s.span_id
-			    and a.scope = 'resource'
-			    and a.key = 'service.name'
-			where s.service_name <> coalesce(a.value, '')
+			join resources r on r.id = s.resource_id
+			where s.service_name <> coalesce(attr_value(r.attribute_ids, 'service.name'), '')
 		`).Scan(&mismatches)
 	}))
 	assert.Equal(t, 0, mismatches,
 		"spans.service_name must equal the source resource attribute (or '' when absent)")
+
+	// Guard the inner join: if resource_id ever stopped resolving, the query
+	// above would return 0 mismatches over 0 rows and pass vacuously.
+	var joined int
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx, `
+			select count(*) from spans s join resources r on r.id = s.resource_id
+		`).Scan(&joined)
+	}))
+	assert.Equal(t, countRows(t, s, ctx, "select count(*) from spans"), joined,
+		"every span must resolve to a resource row, or the check above passes vacuously")
+	assert.Greater(t, joined, 0)
 }

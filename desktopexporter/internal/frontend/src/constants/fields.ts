@@ -42,8 +42,19 @@ export type FieldType =
   | 'float64[]'
   | 'boolean[]'
 
+// The owner kinds an attribute search field can target. Mirrors
+// JsonAttributeScope in wire-types.ts, which is what the discovery endpoints
+// return; the two must stay in step or a discovered field cannot be turned into
+// a search field.
 export type AttributeScope =
-  'resource' | 'scope' | 'span' | 'event' | 'link' | 'log'
+  | 'resource'
+  | 'scope'
+  | 'span'
+  | 'event'
+  | 'link'
+  | 'log'
+  | 'datapoint'
+  | 'exemplar'
 
 export type FieldDefinition =
   | {

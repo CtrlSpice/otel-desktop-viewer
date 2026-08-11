@@ -94,7 +94,24 @@ func TestPreVersioningDatabaseIsNotStamped(t *testing.T) {
 	// tables with a row in spans, and no schema_meta at all.
 	s := newFileStore(t, path)
 	err := s.WithDBWrite(func(db *sql.DB) error {
-		_, err := db.Exec(`insert into spans (trace_id, span_id) values (?::uuid, ?::uuid)`,
+		// spans.resource_id / scope_id are NOT NULL FKs, so the owner rows
+		// have to exist first.
+		if _, err := db.Exec(`
+			insert into resources (id, attribute_ids)
+			values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid, []::uuid[])`); err != nil {
+			return err
+		}
+		if _, err := db.Exec(`
+			insert into scopes (id, name, version, attribute_ids)
+			values ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '', '', []::uuid[])`); err != nil {
+			return err
+		}
+		_, err := db.Exec(`
+			insert into spans (trace_id, span_id, resource_id, scope_id, attribute_ids)
+			values (?::uuid, ?::uuid,
+				'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+				'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid,
+				[]::uuid[])`,
 			"11111111-1111-1111-1111-111111111111",
 			"22222222-2222-2222-2222-222222222222")
 		return err

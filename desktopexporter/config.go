@@ -87,15 +87,23 @@ func defaultSendingQueue() configoptional.Optional[exporterhelper.QueueBatchConf
 // wedged ingest freezes the UI permanently rather than degrading it. The
 // deadline guarantees the lock is always released.
 //
-// Sized against measurement, generously: ingest is linear at ~43us/span, so the
-// batch processor's 20k send_batch_max_size is ~860ms of work. 30s is ~35x
-// that, which no legitimate batch reaches even on a loaded machine with a cold
-// disk-backed store.
+// Sizing, and the caveat that matters: the measurements behind it were taken on
+// an Apple M4 Pro, which is fast. They are an *upper bound* on performance, so
+// they cannot be used directly to justify a lower bound like this one.
+//
+// Measured there: ~25us/span, so the batch processor's 20k send_batch_max_size
+// is ~500ms of work. Budgeting an order of magnitude for slower hardware -- an
+// older laptop, a loaded machine, a cold disk-backed store, a VM with one core
+// -- puts a worst-case legitimate batch at ~5s. 30s is ~6x that, which is the
+// margin to reason about; the ~60x implied by the M4 figure is not real.
 //
 // It is deliberately far above the working range because tripping it is
-// harmful: appenders flush every 50 spans, so a batch cut short is *partially*
-// applied, and the queue runs without retry. A deadline that fires means silent
-// partial data loss, which is worse than a slow write.
+// harmful: appenders flush every flushIntervalSpans (500) records, so a batch
+// cut short is *partially* applied, and the queue runs without retry. A
+// deadline that fires means silent partial data loss, which is worse than a
+// slow write. Note that raising the flush interval widened that partial-write
+// window tenfold, which argues for keeping this deadline generous rather than
+// tightening it.
 const IngestTimeout = 30 * time.Second
 
 // Telemetry modes.

@@ -264,18 +264,37 @@ var TableCreationQueries = []string{
 // list_contains probe over the candidate set rather than an index seek, but
 // the candidate set is already narrowed by time range, and the probe is an
 // inline array test rather than a correlated subquery into a huge table.
+// Indexes here are ART indexes, and ART indexes in DuckDB serve exactly one
+// thing: equality and IN(...) on a single column. They do not accelerate range
+// predicates, joins, aggregation or sorting -- DuckDB uses hash joins and
+// zonemaps for those.
+//
+// So a time-window filter gets nothing from an index on the time column, which
+// is why there are none here. Four such indexes were removed after measuring:
+// idx_spans_starttime, idx_events_timestamp, idx_logs_timestamp and
+// idx_datapoints_time. On the reference capture the range scan they were
+// supposed to serve ran in 0.085ms with the index and 0.088ms without --
+// alternating the arms so neither got a warmer cache -- while they cost insert
+// throughput and memory on every write.
+//
+// The fallback argument does not rescue them either. Zonemaps prune by row-group
+// min/max and only work when data is physically ordered by the filtered column;
+// spans are exported when they *end*, so a long-running parent arrives last with
+// the earliest start_time. Measured on the race replay: 25.8% of rows have a
+// start_time lower than the preceding row's. Scrambled arrival means the zonemap
+// cannot prune well and the ART index cannot serve the range -- so neither
+// mechanism helps, and only the write cost is real.
+//
+// Do not re-add a time-column index without a measurement showing it helps.
 var IndexCreationQueries = []string{
 	`create index if not exists idx_spans_traceid on spans(trace_id)`,
-	`create index if not exists idx_spans_starttime on spans(start_time)`,
 	`create index if not exists idx_spans_parentspanid on spans(parent_span_id)`,
 	`create index if not exists idx_spans_service on spans(service_name)`,
 	`create index if not exists idx_spans_resource on spans(resource_id)`,
 	`create index if not exists idx_spans_scope on spans(scope_id)`,
 	`create index if not exists idx_events_span on events(span_id)`,
-	`create index if not exists idx_events_timestamp on events(timestamp)`,
 	`create index if not exists idx_links_span on links(span_id)`,
 	`create index if not exists idx_links_trace on links(trace_id, linked_span_id)`,
-	`create index if not exists idx_logs_timestamp on logs(timestamp)`,
 	`create index if not exists idx_logs_traceid on logs(trace_id)`,
 	`create index if not exists idx_logs_severitynumber on logs(severity_number)`,
 	`create index if not exists idx_logs_service on logs(service_name)`,
@@ -286,7 +305,6 @@ var IndexCreationQueries = []string{
 	`create index if not exists idx_metric_ingests_stream on metric_ingests(stream_id)`,
 	`create index if not exists idx_metric_ingests_resource on metric_ingests(resource_id)`,
 	`create index if not exists idx_datapoints_stream_time on datapoints(stream_id, timestamp desc)`,
-	`create index if not exists idx_datapoints_time on datapoints(timestamp desc)`,
 	`create index if not exists idx_exemplars_datapoint on exemplars(datapoint_id)`,
 	`create index if not exists idx_exemplars_trace on exemplars(trace_id, span_id)`,
 }
@@ -343,6 +361,84 @@ var MacroCreationQueries = []string{
 			from unnest(ids) as t(aid)
 			join attributes a on a.id = t.aid
 		), json('[]'))
+	)`,
+
+	// attrs_key renders an attribute set as the canonical "key=value|..."
+	// string, keys in lexicographic order.
+	//
+	// This is the old datapoints.attrs_canonical column, computed on demand
+	// from attribute_ids instead of materialised at ingest. It survives only
+	// because JsonMetricTimeseries.attributesKey is still that string on the
+	// wire; when series identity gains the resource, this becomes a composite
+	// and the macro goes with it.
+	//
+	// Not an identity primitive any more: grouping is by attribute_ids, which
+	// is the identity itself. This only renders it.
+	`create or replace macro attrs_key(ids) as (
+		coalesce((
+			select string_agg(a.key || '=' || a.value, '|' order by a.key, a.id)
+			from unnest(ids) as t(aid)
+			join attributes a on a.id = t.aid
+		), '')
+	)`,
+
+	// attr_value looks one attribute up by key, NULL when absent.
+	//
+	// This is how resource.* and scope.* attribute *searches* resolve, now that
+	// there is no per-owner attributes row to correlate against: the array is
+	// already on the joined resources / scopes row, and that table is a couple
+	// of dozen rows, so the lookup is effectively cached.
+	//
+	// Note it is NOT how service.name is read on the hot filter path.
+	// spans.service_name and logs.service_name were kept as denormalized
+	// columns (the plan had proposed dropping them); a column scan still beats
+	// a join plus an unnest for the single most-filtered-on field. This macro
+	// is what verifies those columns agree with the resource they came from.
+	`create or replace macro attr_value(ids, k) as (
+		(select a.value
+		 from unnest(ids) as t(aid)
+		 join attributes a on a.id = t.aid
+		 where a.key = k
+		 limit 1)
+	)`,
+
+	// has_attr tests membership by id. An inline array probe -- no join, no
+	// correlated subquery into a table of owner-attribute rows.
+	//
+	// Callers pass an id computed in Go by ingest.AttributeID, which is why
+	// exact-match attribute search needs no database round trip to build its
+	// predicate. Deliberately not attr_id(...) inline: that would put the audit
+	// macro on the correctness path, where a Go/SQL divergence turns into search
+	// quietly returning nothing instead of a failing test.
+	`create or replace macro has_attr(ids, id) as (
+		list_contains(ids, id)
+	)`,
+
+	// Wire renderings of the two id types. Trace ids go out as 32 hex chars and
+	// span ids as the low 16, matching the OTLP/JSON convention.
+	`create or replace macro trace_id_wire(id) as (
+		replace(id::varchar, '-', '')
+	)`,
+	`create or replace macro span_id_wire(id) as (
+		right(replace(id::varchar, '-', ''), 16)
+	)`,
+
+	// Component objects. resource_json / scope_json take the row's own fields
+	// rather than an id, so a caller that already joined the row needs no
+	// second lookup.
+	`create or replace macro resource_json(ids, dropped) as (
+		json_object('attributes', attrs_json(ids), 'droppedAttributesCount', dropped)
+	)`,
+	`create or replace macro scope_json(name, version, ids, dropped) as (
+		json_object('name', name, 'version', version,
+		            'attributes', attrs_json(ids), 'droppedAttributesCount', dropped)
+	)`,
+
+	// One attribute *definition* -- the shape the search-field dropdowns read.
+	// Identical in four places before this: two in spans.go, one each in
+	// logs.go and metrics.go.
+	`create or replace macro attribute_def_json(key, scope, type) as (
+		json_object('name', key, 'attributeScope', scope, 'type', type::varchar)
 	)`,
 
 	// Interpolation kernels.
