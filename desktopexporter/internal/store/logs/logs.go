@@ -337,7 +337,7 @@ func DeleteLogsByIDs(ctx context.Context, db *sql.DB, logIDs []any) error {
 	if len(logIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildPlaceholders(len(logIDs))
+	placeholders := util.BuildUUIDPlaceholders(len(logIDs))
 	childQueries := []string{
 		fmt.Sprintf(`delete from logs where id in (%s)`, placeholders),
 	}

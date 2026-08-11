@@ -628,7 +628,7 @@ func DeleteSpansByIDs(ctx context.Context, db *sql.DB, spanIDs []any) error {
 	if len(spanIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildPlaceholders(len(spanIDs))
+	placeholders := util.BuildUUIDPlaceholders(len(spanIDs))
 	childQueries := []string{
 		fmt.Sprintf(`delete from links where span_id in (%s)`, placeholders),
 		fmt.Sprintf(`delete from events where span_id in (%s)`, placeholders),
@@ -647,7 +647,7 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	if len(traceIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildPlaceholders(len(traceIDs))
+	placeholders := util.BuildUUIDPlaceholders(len(traceIDs))
 	childQueries := []string{
 		fmt.Sprintf(`delete from links where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
 		fmt.Sprintf(`delete from events where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
