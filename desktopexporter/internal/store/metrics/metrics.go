@@ -891,8 +891,21 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 		--
 		-- attributes_sample picks any one datapoint's attributes from
 		-- this timeseries. Within a timeseries they're identical by
-		-- definition (it's the grouping criterion), so any() / first() /
-		-- arg_max all yield the same answer; we use any_value for clarity.
+		-- construction -- series_id is content-derived from (stream,
+		-- resource, attribute_ids), so the array cannot vary inside a group.
+		--
+		-- any_value wraps the *array*, not the resolved JSON. Written the
+		-- other way round the macro sits inside the aggregate, so it runs once
+		-- per datapoint and every result but one is thrown away. attrs_json is
+		-- a correlated subquery, which makes that expensive in the worst way:
+		-- measured on one stream of the reference capture, 220,913 datapoints
+		-- collapsing to 220 series,
+		--
+		--	any_value(attrs_json(ids))   0.687s wall, 7.20s CPU
+		--	attrs_json(any_value(ids))   0.021s wall, 0.05s CPU
+		--
+		-- 33x wall and 141x CPU, for identical output. Aggregate first, then
+		-- resolve once per group.
 		ts_dps_agg as (
 			select
 				d.series_id,
@@ -903,7 +916,7 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 				-- -- which is what makes it safe in a URL, unlike a datapoint
 				-- id that retention eventually deletes.
 				d.series_id::varchar as attrs_key,
-				any_value(attrs_json(d.attribute_ids)) as attributes_sample,
+				attrs_json(any_value(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
 				to_json(list(json_merge_patch(
 					json_object(
@@ -981,7 +994,18 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 				'attributes', t.attributes_sample,
 				'resource', resource_json(r.attribute_ids, r.dropped_attributes_count),
 				'datapoints', t.datapoints
-			) order by t.latest_ts desc)) as timeseries
+			-- attrs_key breaks ties, and the tie is the common case rather
+			-- than the exception: series of one metric are usually reported
+			-- together, so they share a latest_ts. DuckDB's sort is not
+			-- stable, so without a second key the same request returns the
+			-- series in a different order each time -- verified by calling
+			-- getMetric twice against an unchanged store and getting two
+			-- orderings. The UI keys legend rows and colour assignment on
+			-- this list, so that reshuffles a chart between refreshes.
+			--
+			-- attrs_key is the series id: unique within the metric, so the
+			-- order is now total and deterministic.
+			) order by t.latest_ts desc, t.attrs_key)) as timeseries
 			from ts_dps_agg t
 			join resources r on r.id = t.resource_id
 		)
