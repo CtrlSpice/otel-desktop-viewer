@@ -37,8 +37,18 @@ export function downscaleExpBuckets(
   offset: number,
   levels: number
 ): DownscaledBuckets {
-  if (!counts || counts.length === 0 || levels <= 0) {
+  // Nothing to rescale to: the offset is already at the target scale.
+  if (levels <= 0) {
     return { offset, counts: counts ?? [] }
+  }
+  // Empty counts still carry an offset, and that offset is expressed at the
+  // *source* scale. Returning it unchanged leaks a source-scale index into a
+  // target-scale comparison: mergeExpHistogramStreams takes min() over every
+  // stream's offset to find the alignment point, so one empty high-scale array
+  // drags the target below any real bucket and padLeftToOffset zero-fills out
+  // to it. Numerically harmless, unbounded in memory.
+  if (!counts || counts.length === 0) {
+    return { offset: floorDiv(offset, Math.pow(2, levels)), counts: [] }
   }
   const factor = Math.pow(2, levels)
   const newOffset = floorDiv(offset, factor)
@@ -137,6 +147,17 @@ function expPositiveCutoff(
 }
 
 /** Cross-series exponential histogram merge (ports merged exp SQL pipeline). */
+function minOffsetOfNonEmpty(
+  buckets: readonly { offset: number; counts: number[] }[]
+): number {
+  let min: number | null = null
+  for (const b of buckets) {
+    if (b.counts.length === 0) continue
+    if (min === null || b.offset < min) min = b.offset
+  }
+  return min ?? 0
+}
+
 export function mergeExpHistogramStreams(
   entries: ExpHistogramWire[],
   totals: { count: number; sum: number; min: number; max: number }
@@ -172,8 +193,14 @@ export function mergeExpHistogramStreams(
     ),
   }))
 
-  const posTargetOffset = Math.min(...downscaled.map(d => d.pos.offset))
-  const negTargetOffset = Math.min(...downscaled.map(d => d.neg.offset))
+  // Only arrays that actually hold buckets get a say in where the merged array
+  // starts. An empty array's offset points at no data, so letting it win the
+  // minimum drags the result's start below any real bucket and pads the gap
+  // with zeros -- correct counts, wasted space, and unbounded when the offset
+  // is stale. Falls back to 0 when every stream is empty, which is the offset
+  // of the empty result.
+  const posTargetOffset = minOffsetOfNonEmpty(downscaled.map(d => d.pos))
+  const negTargetOffset = minOffsetOfNonEmpty(downscaled.map(d => d.neg))
 
   const posPadded = downscaled.map(d =>
     padLeftToOffset(d.pos.counts, d.pos.offset, posTargetOffset)

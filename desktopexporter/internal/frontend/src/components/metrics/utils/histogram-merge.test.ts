@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   downscaleExpBuckets,
+  mergeExpHistogramStreams,
   floorDiv,
   foldBelowCutoff,
   mergeExplicitHistogramVectors,
@@ -109,5 +110,51 @@ describe('mergeExplicitHistogramVectors', () => {
         { bounds: [1, 5], counts: [1, 2, 3] },
       ])
     ).toThrow()
+  })
+})
+
+describe('downscaleExpBuckets with an empty bucket array', () => {
+  // The offset of an empty array is still a *source-scale* index. Returned
+  // unrescaled it wins the min() that picks the alignment point, and the merge
+  // then zero-pads out to an index no real bucket occupies -- correct counts,
+  // unbounded memory.
+  it('rescales the offset even when there are no counts', () => {
+    expect(downscaleExpBuckets([], -7, 5)).toEqual({ offset: -1, counts: [] })
+    // ...matching what a non-empty array at the same offset and scale gives.
+    expect(downscaleExpBuckets([10, 20], -7, 5).offset).toBe(-1)
+  })
+
+  it('leaves the offset alone when there is no rescale to do', () => {
+    expect(downscaleExpBuckets([], -7, 0)).toEqual({ offset: -7, counts: [] })
+  })
+
+  it('does not pad a merge out to an empty stream stale offset', () => {
+    const merged = mergeExpHistogramStreams(
+      [
+        {
+          scale: 5,
+          zeroCount: 0,
+          zeroThreshold: 0,
+          positiveBucketOffset: -7,
+          positiveBucketCounts: [],
+          negativeBucketOffset: 0,
+          negativeBucketCounts: [],
+        },
+        {
+          scale: 0,
+          zeroCount: 0,
+          zeroThreshold: 0,
+          positiveBucketOffset: 0,
+          positiveBucketCounts: [1, 2],
+          negativeBucketOffset: 0,
+          negativeBucketCounts: [],
+        },
+      ],
+      { count: 3, sum: 3, min: 1, max: 2 }
+    )
+    // Before the fix this returned offset -7 and nine buckets, seven of them
+    // padding. The real data occupies two.
+    expect(merged.positiveBucketCounts).toEqual([1, 2])
+    expect(merged.positiveBucketOffset).toBe(0)
   })
 })
