@@ -31,6 +31,10 @@ format-go-check:
 # show a stale macro, or none at all if it predates one. That is a confusing
 # thing to debug cold, and the fix is to reapply them.
 #
+# Reads the _order manifest rather than globbing the directory: DuckDB binds a
+# macro body when the macro is created, so exp_buckets must follow
+# exp_pos_buckets, and alphabetical order does not respect that.
+#
 # The files carry no trailing semicolons (one statement per file, so they read
 # cleanly), hence the echo between them.
 #
@@ -38,7 +42,8 @@ format-go-check:
 .PHONY: refresh-macros
 refresh-macros:
 	@test -n "$(DB)" || { echo "usage: make refresh-macros DB=path/to.db"; exit 1; }
-	@for f in desktopexporter/internal/store/queries/ddl/macros/*.sql; do cat $$f; echo ";"; done | duckdb "$(DB)"
+	@dir=desktopexporter/internal/store/queries/ddl/macros; \
+	grep -v '^\#' $$dir/_order | grep -v '^$$' | while read -r f; do cat "$$dir/$$f"; echo ";"; done | duckdb "$(DB)"
 	@echo "macros reapplied to $(DB)"
 
 .PHONY: test-go
