@@ -2,6 +2,7 @@ package queries_test
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
@@ -69,5 +70,40 @@ func TestNoIndexOnArrayColumns(t *testing.T) {
 	for _, stmt := range queries.Indexes() {
 		require.NotContains(t, stmt.SQL, "attribute_ids",
 			"DuckDB cannot index a LIST column; this would fail at store open")
+	}
+}
+
+// Cross-signal references must stay unconstrained.
+//
+// logs and exemplars carry trace_id / span_id, and links carries the trace_id
+// of the trace it points at. None of them may become a foreign key: signals
+// arrive independently and out of order, so the span a log names may arrive
+// later, be dropped by sampling, or never be sent. An FK would reject that
+// telemetry on arrival -- most often for partial or failed traces, which is
+// precisely what someone opens this tool to look at.
+//
+// No ingest test would catch it either: they all write complete traces, where
+// the referenced span happens to exist. So the guard has to be on the DDL.
+func TestCrossSignalReferencesAreNotForeignKeys(t *testing.T) {
+	for _, tc := range []struct{ file, column string }{
+		{"08_logs.sql", "trace_id"},
+		{"08_logs.sql", "span_id"},
+		{"13_exemplars.sql", "trace_id"},
+		{"13_exemplars.sql", "span_id"},
+		{"07_links.sql", "trace_id"},
+	} {
+		t.Run(tc.file+"/"+tc.column, func(t *testing.T) {
+			var ddl string
+			for _, stmt := range queries.Tables() {
+				if strings.HasSuffix(stmt.Name, tc.file) {
+					ddl = stmt.SQL
+				}
+			}
+			require.NotEmpty(t, ddl, "table file not found: %s", tc.file)
+			require.NotContains(t, ddl, "foreign key ("+tc.column+")",
+				"%s.%s must stay unconstrained: signals arrive out of order, and an FK "+
+					"would reject logs and exemplars whose span has not arrived yet",
+				tc.file, tc.column)
+		})
 	}
 }

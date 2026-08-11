@@ -2,16 +2,53 @@ package queries
 
 // DDL creation order.
 //
-// These lists are the schema's ordering, and the ordering is load-bearing:
-// attributes exists before resources and scopes because they reference it,
-// those exist before the signals that carry FKs to them, and macros come last
-// because a table macro binds the tables it names at creation time.
+// These lists are the schema's creation order, and the order is load-bearing.
 //
-// The files themselves carry the rationale for each object. Kept as explicit
-// lists rather than a directory walk so the order is stated rather than
-// implied by filenames, and so a new file that nobody sequenced fails the
-// registration check in queries.go instead of silently sorting itself into
-// the middle of the schema.
+// # What constrains it
+//
+// Declared foreign keys, and only those:
+//
+//	spans, logs        -> resources, scopes
+//	events, links      -> spans
+//	metric_streams     -> (none)
+//	metric_series      -> metric_streams, resources
+//	metric_ingests     -> metric_streams, resources, scopes
+//	datapoints         -> metric_streams, metric_series, metric_ingests
+//	exemplars          -> datapoints
+//
+// So attributes comes first (it references nothing), then resources and
+// scopes, then each signal above its own children. Macros are last because a
+// table macro binds the tables it names when it is created, not when it runs.
+//
+// # What does not constrain it, and must not start to
+//
+// The store carries cross-signal references that are deliberately *not*
+// foreign keys:
+//
+//	logs.trace_id, logs.span_id
+//	exemplars.trace_id, exemplars.span_id
+//	links.trace_id            (the linked trace, as opposed to links.span_id)
+//
+// These point at spans, but nothing enforces that the span exists. That is
+// required, not an oversight. Signals arrive independently and out of order: a
+// log is written the moment it is received, and the span it belongs to may
+// arrive in a later batch, may be dropped by sampling, or may never be sent at
+// all. A foreign key here would reject perfectly good telemetry on arrival, and
+// it would do so most often under exactly the conditions a debugging tool
+// exists for -- a partial or failed trace.
+//
+// The consequence for this file is that logs and exemplars impose no ordering
+// against spans, and none should be inferred from the fact that they reference
+// them. The consequence for the schema is stronger: adding an FK to any column
+// listed above would break ingest for out-of-order arrival, which no test that
+// ingests a complete trace would catch.
+//
+// # Why explicit lists
+//
+// Rather than a directory walk, so the order is stated instead of implied by
+// filenames, and so a new file that nobody sequenced fails the registration
+// check in queries.go instead of silently sorting itself into the middle of
+// the schema. Each object's own rationale lives in its .sql file.
 var (
 	typeFiles = []string{
 		"00_attr_type.sql",
