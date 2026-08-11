@@ -469,9 +469,9 @@ func DeleteSpansByIDs(ctx context.Context, db *sql.DB, spanIDs []any) error {
 	// SQL is static and cannot disagree with the argument count.
 	ids := util.ToStringList(spanIDs)
 	childQueries := []string{
-		`delete from links where span_id in (` + util.UUIDList() + `)`,
-		`delete from events where span_id in (` + util.UUIDList() + `)`,
-		`delete from spans where span_id in (` + util.UUIDList() + `)`,
+		`delete from links where span_id in (select id from uuid_list(?))`,
+		`delete from events where span_id in (select id from uuid_list(?))`,
+		`delete from spans where span_id in (select id from uuid_list(?))`,
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, ids); err != nil {
@@ -488,9 +488,9 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	}
 	ids := util.ToStringList(traceIDs)
 	childQueries := []string{
-		`delete from links where span_id in (select span_id from spans where trace_id in (` + util.UUIDList() + `))`,
-		`delete from events where span_id in (select span_id from spans where trace_id in (` + util.UUIDList() + `))`,
-		`delete from spans where trace_id in (` + util.UUIDList() + `)`,
+		`delete from links where span_id in (select span_id from spans where trace_id in (select id from uuid_list(?)))`,
+		`delete from events where span_id in (select span_id from spans where trace_id in (select id from uuid_list(?)))`,
+		`delete from spans where trace_id in (select id from uuid_list(?))`,
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, ids); err != nil {

@@ -339,7 +339,7 @@ func DeleteLogsByIDs(ctx context.Context, db *sql.DB, logIDs []any) error {
 	}
 	ids := util.ToStringList(logIDs)
 	childQueries := []string{
-		`delete from logs where id in (` + util.UUIDList() + `)`,
+		`delete from logs where id in (select id from uuid_list(?))`,
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, ids); err != nil {

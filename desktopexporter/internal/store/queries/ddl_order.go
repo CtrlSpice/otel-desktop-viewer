@@ -125,5 +125,6 @@ var (
 		"25_fold_below_cutoff.sql",
 		"26_pad_left_to_offset.sql",
 		"27_sum_bucket_vectors.sql",
+		"28_uuid_list.sql",
 	}
 )

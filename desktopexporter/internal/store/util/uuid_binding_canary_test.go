@@ -65,7 +65,7 @@ func TestDriverStillCannotBindUUIDLists(t *testing.T) {
 	t.Run("the form we ship works", func(t *testing.T) {
 		var n int
 		require.NoError(t, db.QueryRow(
-			`select count(*) from t where id in (`+UUIDList()+`)`,
+			`select count(*) from t where id in (select unnest(?::varchar[])::uuid)`,
 			[]string{id}).Scan(&n))
 		assert.Equal(t, 1, n, "the shipped form must match the stored row")
 	})
