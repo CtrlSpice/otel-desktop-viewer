@@ -146,7 +146,7 @@ What this does **not** guarantee: a query does not see rows that an in-flight in
 
 ### Schema
 
-Schema is defined in `desktopexporter/internal/store/schema/schema.go` and applied on store creation.
+Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file per object — `types/`, `tables/`, `indexes/`, `macros/` — applied in order on store creation. The order is explicit Go lists in `queries/ddl_order.go` rather than a directory walk, because it is load-bearing and because a file nobody sequenced should fail loudly instead of sorting itself into the middle of the schema. `store/schema` retains only `version.go`, whose queries run *before* this DDL to decide whether running it is safe at all.
 
 **Core tables**
 
@@ -174,6 +174,13 @@ Schema is defined in `desktopexporter/internal/store/schema/schema.go` and appli
 - **Single `datapoints` table.** Type-specific columns use NULLs for irrelevant fields; `metric_type` + CHECK constraints enforce the discriminated union. Columnar compression makes sparse rows cheap.
 - **`metric_streams` + `metric_ingests`.** Stream identity is deduplicated across batches; per-batch metadata varies without splitting logical metrics.
 - **No referential integrity on array elements.** DuckDB cannot declare a foreign key into a `LIST`, so nothing at the engine level stops an `attribute_ids` entry pointing at a missing dictionary row. This is a knowing trade for the dedupe: it becomes ingest's responsibility, and store-level consistency tests assert no dangling references survive a `Clear` → ingest cycle. `resources` / `scopes` are reached by a real FK; only the arrays are unenforced.
+- **Two kinds of reference, and the difference is deliberate.** Foreign keys are declared where a row genuinely cannot exist without its parent: `spans`/`logs` → `resources`/`scopes`, `events`/`links` → `spans`, `metric_series`/`metric_ingests`/`datapoints` → `metric_streams`, `exemplars` → `datapoints`. Those are what constrain table creation order.
+
+  Cross-signal references are **not** foreign keys and must not become them: `logs.trace_id`, `logs.span_id`, `exemplars.trace_id`, `exemplars.span_id`, and `links.trace_id` (the linked trace, as distinct from `links.span_id`, which is a real FK to the owning span). They point at spans with nothing enforcing the span exists.
+
+  That is required, not an oversight. Signals arrive independently and out of order: a log is written the moment it is received, and the span it belongs to may arrive in a later batch, be dropped by sampling, or never be sent at all. A foreign key would reject perfectly good telemetry on arrival — and would do so most often for partial or failed traces, which is exactly what someone opens this tool to look at. So logs and exemplars impose no creation ordering against spans, and none should be inferred from the fact that they reference them.
+
+  Guarded by a test that reads the DDL, because no ingest test would catch a regression: they all write complete traces, where the referenced span happens to exist.
 - **Orphans are swept, not cascaded.** Since no FK covers the arrays, the `Clear` and delete-by-id paths leave dictionary rows behind rather than reference-counting them. `ingest.SweepOrphans` builds the live id set by unnesting every owner and deletes what nothing references. It runs from two places. The `clearTraces` / `clearLogs` / `clearMetrics` handlers sweep in the same write-locked closure as the truncate, so clearing a signal actually reclaims its share of the dictionary — this cannot be left to retention, which is size-driven and does not run at all when the cap is disabled, so the orphans would survive until restart. Retention sweeps too, once before its first size measurement and again at the end of each prune round, since the prunes are what create orphans. The invariant that buys: **no round deletes real telemetry to make room for rows nothing references** — which matters because orphans count toward the size the cap is compared against.
 
 The per-id delete paths (`deleteSpansByTraceID`, `deleteSpanByID`, `deleteLogByID`, `deleteMetricStream`) deliberately do **not** sweep — deleting one trace would otherwise pay for a full unnest of every owner table — so their orphans wait for the next clear or retention round.
@@ -432,7 +439,7 @@ These appear in older notes or collector capabilities but are **not** part of th
 
 **Server and API**: `desktopexporter/internal/server/server.go`, `jsonrpc_handler.go`, `errors.go`
 
-**Storage**: `desktopexporter/internal/store/store.go`, `schema/schema.go`, `spans/`, `metrics/`, `logs/`, `search/search_tree.go`
+**Storage**: `desktopexporter/internal/store/store.go`, `queries/` (all SQL: `ddl/` plus the read path), `schema/version.go`, `spans/`, `metrics/`, `logs/`, `search/search_tree.go`
 
 **Frontend**: `desktopexporter/internal/frontend/src/App.svelte`, `pages/`, `services/telemetry-service.ts`, `types/wire-types.ts`, `contexts/`
 
