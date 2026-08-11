@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
@@ -397,7 +398,7 @@ func searchSpansSQL(traceID string, criteria any) (string, []any, error) {
 	// performance difference -- DuckDB already materialises a recursive CTE once
 	// and reuses it across references, and the re-derivations were PK-indexed
 	// joins over a few thousand rows. Kept for the structure, not the speed.
-	query, err := renderSearchSpans(searchSpansParams{
+	query, err := queries.Render(queries.SearchSpans, searchSpansParams{
 		CTEs:        cteSQL,
 		MatchedCTE:  matchedCTE,
 		MatchedExpr: matchedExpr,

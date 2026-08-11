@@ -1,10 +1,10 @@
-package schema_test
+package queries_test
 
 import (
 	"database/sql"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -16,20 +16,19 @@ func TestAllDDLExecutes(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	for _, q := range schema.TypeCreationQueries {
-		db.Exec(q) // "already exists" is fine
+	for _, stmt := range queries.Types() {
+		db.Exec(stmt.SQL) // "already exists" is fine
 	}
-	for i, q := range schema.TableCreationQueries {
-		_, err := db.Exec(q)
-		require.NoErrorf(t, err, "table query %d:\n%s", i, q)
-	}
-	for i, q := range schema.IndexCreationQueries {
-		_, err := db.Exec(q)
-		require.NoErrorf(t, err, "index query %d:\n%s", i, q)
-	}
-	for i, q := range schema.MacroCreationQueries {
-		_, err := db.Exec(q)
-		require.NoErrorf(t, err, "macro query %d:\n%s", i, q)
+	// Naming the failing file beats naming its index: the whole point of the
+	// move was that "table query 4" made you count entries to find out what
+	// broke.
+	for _, group := range [][]queries.Statement{
+		queries.Tables(), queries.Indexes(), queries.Macros(),
+	} {
+		for _, stmt := range group {
+			_, err := db.Exec(stmt.SQL)
+			require.NoErrorf(t, err, "%s:\n%s", stmt.Name, stmt.SQL)
+		}
 	}
 }
 
@@ -40,9 +39,9 @@ func TestSequencesAssignShortKeys(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	for _, qs := range [][]string{schema.TypeCreationQueries, schema.TableCreationQueries} {
-		for _, q := range qs {
-			db.Exec(q)
+	for _, group := range [][]queries.Statement{queries.Types(), queries.Tables()} {
+		for _, stmt := range group {
+			db.Exec(stmt.SQL)
 		}
 	}
 
@@ -67,8 +66,8 @@ func TestSequencesAssignShortKeys(t *testing.T) {
 // Pin that none is attempted -- it is the constraint behind several design
 // choices and an easy one to forget.
 func TestNoIndexOnArrayColumns(t *testing.T) {
-	for _, q := range schema.IndexCreationQueries {
-		require.NotContains(t, q, "attribute_ids",
+	for _, stmt := range queries.Indexes() {
+		require.NotContains(t, stmt.SQL, "attribute_ids",
 			"DuckDB cannot index a LIST column; this would fail at store open")
 	}
 }

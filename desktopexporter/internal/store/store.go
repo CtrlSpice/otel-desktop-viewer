@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/duckdb/duckdb-go/v2"
 	"go.uber.org/zap"
 )
@@ -109,10 +109,10 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	// 1) Create types - ignore "already exists" errors
-	for i, query := range schema.TypeCreationQueries {
-		if _, err = db.Exec(query); err != nil {
+	for _, stmt := range queries.Types() {
+		if _, err = db.Exec(stmt.SQL); err != nil {
 			if !strings.Contains(err.Error(), "already exists") {
-				return nil, fmt.Errorf("%w while creating type %d: %w", ErrStoreInitFailed, i, err)
+				return nil, fmt.Errorf("%w while creating type %s: %w", ErrStoreInitFailed, stmt.Name, err)
 			}
 		}
 	}
@@ -131,23 +131,23 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	}
 
 	// 3) Create the tables for our signals
-	for i, query := range schema.TableCreationQueries {
-		if _, err = db.Exec(query); err != nil {
-			return nil, fmt.Errorf("%w while creating table %d: %w", ErrStoreInitFailed, i, err)
+	for _, stmt := range queries.Tables() {
+		if _, err = db.Exec(stmt.SQL); err != nil {
+			return nil, fmt.Errorf("%w while creating table %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
 	}
 
 	// 4) Create indexes - queries use IF NOT EXISTS so reopening is safe
-	for i, query := range schema.IndexCreationQueries {
-		if _, err = db.Exec(query); err != nil {
-			return nil, fmt.Errorf("%w while creating index %d: %w", ErrStoreInitFailed, i, err)
+	for _, stmt := range queries.Indexes() {
+		if _, err = db.Exec(stmt.SQL); err != nil {
+			return nil, fmt.Errorf("%w while creating index %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
 	}
 
 	// 5) Create macros - queries use CREATE OR REPLACE so reopening is safe
-	for i, query := range schema.MacroCreationQueries {
-		if _, err = db.Exec(query); err != nil {
-			return nil, fmt.Errorf("%w while creating macro %d: %w", ErrStoreInitFailed, i, err)
+	for _, stmt := range queries.Macros() {
+		if _, err = db.Exec(stmt.SQL); err != nil {
+			return nil, fmt.Errorf("%w while creating macro %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
 	}
 

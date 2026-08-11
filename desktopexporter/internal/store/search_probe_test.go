@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
@@ -184,12 +184,12 @@ func TestFastPathAgreesWithValueComparison(t *testing.T) {
 // enum DDL rather than restated, so the two cannot be edited apart.
 func TestAttrTypesMatchSchemaEnum(t *testing.T) {
 	var ddl string
-	for _, q := range schema.TypeCreationQueries {
-		if strings.Contains(q, "attr_type") {
-			ddl = q
+	for _, stmt := range queries.Types() {
+		if strings.Contains(stmt.SQL, "attr_type") {
+			ddl = stmt.SQL
 		}
 	}
-	require.NotEmpty(t, ddl, "attr_type enum not found in TypeCreationQueries")
+	require.NotEmpty(t, ddl, "attr_type enum not found in the type DDL")
 
 	open := strings.Index(ddl, "(")
 	close := strings.LastIndex(ddl, ")")
