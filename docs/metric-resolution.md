@@ -111,11 +111,58 @@ load-bearing: downscale everyone to the minimum scale, left-pad to the minimum
 offset, sum element-wise, then fold buckets at or below the zero threshold into
 `zeroCount`. Negative buckets travel symmetrically.
 
-The machinery for this **already exists server-side and is unused** — macros
+The machinery for this already exists server-side — macros
 `downscale_exp_buckets`, `fold_below_cutoff`, `pad_left_to_offset` and
-`sum_bucket_vectors` (ddl/macros/24-27) are referenced by no query. The client's
-`mergeExpHistogramStreams` (histogram-merge.ts:140-206) is the semantics to
-match.
+`sum_bucket_vectors` (ddl/macros/24-27). They are referenced by no query, but
+they are **not untested**: `queries/schema_test.go:295-830` covers each one,
+including odd and negative offsets. What is untested is their *composition* into
+a merge.
+
+Their arithmetic has been checked against the spec and against the TypeScript:
+399 downscale combinations (offsets -9..9 x lengths 1..7 x levels 1..3) with no
+mismatch, and 200 randomized multi-stream merges matching
+`mergeExpHistogramStreams` exactly on scale, threshold, zero count, both offsets
+and both arrays.
+
+**But they are not the right implementation for the hot path.**
+`downscale_exp_buckets` is O(buckets^2) — for each output bucket it re-zips and
+re-filters the whole input list, and the planner does not hoist the `list_zip`
+out of the lambda. Measured at 2,000 rows:
+
+	buckets/row    time
+	20             0.015 s
+	40             0.055 s
+	80             0.200 s
+	160            0.717 s
+
+Extrapolated to the 200,791-datapoint stream that is ~43 s for a single
+downscale pass, against ~0.6 s for the same work expressed relationally
+(`unnest` -> `group by floor((offset+p)/2^k)` -> `list(c order by k)`).
+
+So: build the merge relationally, keep the cheap scalar macros, and treat 24/26/
+27 as the **verified oracle** that a differential test checks the relational
+query against. The relational form needs a `generate_series` left join to
+gap-fill, since `list(c order by k)` is only dense when every coarse bucket in
+range receives input.
+
+Three pieces do not exist yet and are needed either way: the zero cutoff
+`floor(log2(T) * 2^scale) - 1` (currently an inline expression in
+`histogram-merge.ts:129-137`, and the single most dangerous line to leave
+uncodified), bucket-derived min/max, and a `diff_bucket_vectors` for the
+cumulative path.
+
+Two defects to fix before any of this ships:
+
+- **`fold_below_cutoff` contains a subquery** (25_...sql:21-31), which macro 24's
+  own comment warns against. It binds today but hard-fails inside a lambda:
+  `subqueries in lambda expressions are not supported`. A subquery-free rewrite
+  is byte-identical across 169 offset/cutoff pairs.
+- **An empty bucket array returns its offset un-rescaled**, in both the SQL
+  (24_...sql:30-31) and the TypeScript (histogram-merge.ts:40-42) — verified:
+  `downscale_exp_buckets([], -7, 5)` returns offset -7 where a non-empty array
+  returns -1. That un-rescaled offset then wins `min(...)` and pads the result
+  with zeros out to it. Harmless numerically, unbounded in memory: a stale
+  high-scale offset can materialise a multi-million-element array.
 
 One thing not to port: the client's *within-series* merge
 (`mergeHistogramSliceDelta`, histogram-aggregation.ts:300-315) takes
@@ -183,9 +230,22 @@ than convenient:
   the client still wants to thin.
 - Wire response gains `datapointCount`, `resolution`, and per-series stats.
 
-Expected effect: 278 ms and tens of megabytes become a few milliseconds and a
-few hundred kilobytes, and the cost scales with the chart rather than with the
-retention window.
+Expected effect, stated separately because the two paths differ:
+
+- **Gauge/Sum**: 278 ms and tens of megabytes become a few milliseconds and a few
+  hundred kilobytes. M4 is min/max/first/last — cheap aggregates over a scan.
+- **Histograms**: the response shrinks by ~100x and the client stops doing the
+  merge, but **the query does not get faster**. A merge must touch every input
+  bucket of every datapoint, so it is Theta(datapoints x buckets) however it is
+  written; the measured floor for the 200,791-datapoint stream is ~0.6 s. The
+  win is transfer, JSON parsing and client CPU, not query time.
+
+Worth knowing before optimising for it: in the reference corpus that stream has
+**exactly one distinct scale, offset and zero_threshold** across all 200,791
+datapoints. So the rescale path never fires on this data, and its no-op branch
+is free (0.004 s). Scale drift is a correctness requirement, not a hot path —
+which is an argument for correctness first and relational rewriting only if a
+real workload proves it necessary.
 
 ## Every window change is a new query
 
