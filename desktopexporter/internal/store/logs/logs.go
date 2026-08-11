@@ -377,7 +377,7 @@ var logColumns = map[string]struct{}{
 }
 
 func logFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapLogFieldExpression(field)
@@ -386,7 +386,7 @@ func logFieldMapper() search.FieldMapper {
 			}
 			return []string{expr}, nil
 		case "attribute":
-			return mapLogAttributeExpressions(field, params)
+			return mapLogAttributeExpressions(field, query, params)
 		case "global":
 			return mapLogGlobalExpressions()
 		default:
@@ -444,7 +444,25 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 //
 // Resource and scope predicates are hoisted into the owner table -- see
 // spans.mapTraceAttributeExpressions for the measurement that motivates it.
-func mapLogAttributeExpressions(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
+	// Fast path: equality on a string attribute is a membership test against a
+	// content-derived id. IDProbe returns "" for anything it cannot answer
+	// exactly, falling through to the value comparison below.
+	switch field.AttributeScope {
+	case "resource":
+		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeResource); p != "" {
+			return []string{search.Complete("l.resource_id in (select id from resources where " + p + ")")}, nil
+		}
+	case "scope":
+		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeScope); p != "" {
+			return []string{search.Complete("l.scope_id in (select id from scopes where " + p + ")")}, nil
+		}
+	case "log":
+		if p := ingest.IDProbe("l.attribute_ids", field, query, ingest.ScopeLog); p != "" {
+			return []string{search.Complete(p)}, nil
+		}
+	}
+
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
 

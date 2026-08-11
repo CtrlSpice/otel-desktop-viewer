@@ -969,7 +969,7 @@ var metricColumns = map[string]struct{}{
 }
 
 func metricFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapMetricFieldExpression(field)
@@ -978,7 +978,7 @@ func metricFieldMapper() search.FieldMapper {
 			}
 			return []string{expr}, nil
 		case "attribute":
-			return mapMetricAttributeExpressions(field, params)
+			return mapMetricAttributeExpressions(field, query, params)
 		case "global":
 			return mapMetricGlobalExpressions()
 		default:
@@ -1073,7 +1073,32 @@ func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 //
 // Both predicates are hoisted into the owner table -- see
 // spans.mapTraceAttributeExpressions for the measurement that motivates it.
-func mapMetricAttributeExpressions(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
+	// Fast path: equality on a string attribute is a membership test against a
+	// content-derived id. IDProbe returns "" for anything it cannot answer
+	// exactly, falling through to the value comparison below.
+	switch field.AttributeScope {
+	case "resource", "metric":
+		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeResource); p != "" {
+			return []string{search.Complete("m.resource_id in (select id from resources where " + p + ")")}, nil
+		}
+	case "scope":
+		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeScope); p != "" {
+			return []string{search.Complete("m.scope_id in (select id from scopes where " + p + ")")}, nil
+		}
+	case "datapoint":
+		if p := ingest.IDProbe("d.attribute_ids", field, query, ingest.ScopeDatapoint); p != "" {
+			return []string{search.Complete(
+				"m.id in (select d.metric_ingest_id from datapoints d where " + p + ")")}, nil
+		}
+	case "exemplar":
+		if p := ingest.IDProbe("e.attribute_ids", field, query, ingest.ScopeExemplar); p != "" {
+			return []string{search.Complete(
+				"m.id in (select d.metric_ingest_id from exemplars e" +
+					" join datapoints d on d.id = e.datapoint_id where " + p + ")")}, nil
+		}
+	}
+
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
 

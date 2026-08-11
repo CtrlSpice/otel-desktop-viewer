@@ -53,7 +53,23 @@ type NamedParam struct {
 // Signal-specific code provides this to the generic tree walker.
 // The params slice is provided so mappers can add their own CTE parameters
 // (e.g. for parameterized attribute scope/key lookups).
-type FieldMapper func(field *FieldDefinition, params *[]NamedParam) ([]string, error)
+type FieldMapper func(field *FieldDefinition, query *Query, params *[]NamedParam) ([]string, error)
+
+// PredicateToken marks an expression that is already a complete boolean, so
+// BuildOperatorCondition returns it untouched instead of appending the operator
+// and value.
+//
+// It exists for predicates a mapper can answer better than the generic
+// machinery. The motivating case: an equality test on a string attribute is a
+// membership test against a content-derived id, computable in Go, so the
+// expression becomes list_contains(ids, <literal uuid>) with the operator and
+// value already consumed -- 20x faster than resolving the value through the
+// dictionary at query time.
+const PredicateToken = "{PREDICATE}"
+
+// Complete marks expr as a finished boolean, so no operator or value is
+// appended to it.
+func Complete(expr string) string { return PredicateToken + expr }
 
 // ParseQueryTree converts JSON from frontend to QueryNode struct.
 func ParseQueryTree(jsonData any) (*QueryNode, error) {
@@ -91,7 +107,7 @@ func buildCondition(query *Query, conditions *[]string, params *[]NamedParam, ma
 
 	field := query.Field
 
-	dbExpressions, err := mapper(field, params)
+	dbExpressions, err := mapper(field, query, params)
 	if err != nil {
 		return fmt.Errorf("map field %s: %w", field.Name, err)
 	}
@@ -178,6 +194,12 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 
 	operator := query.FieldOperator
 	value := query.Value
+
+	// A mapper that already produced a complete boolean says so, and nothing
+	// further is appended to it.
+	if rest, found := strings.CutPrefix(expression, PredicateToken); found {
+		return rest, nil
+	}
 
 	const condToken = "{COND}"
 	const rawToken = "{RAW}"

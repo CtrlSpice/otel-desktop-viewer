@@ -775,7 +775,7 @@ var linkColumns = map[string]struct{}{
 }
 
 func traceFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapTraceFieldExpression(field)
@@ -784,7 +784,7 @@ func traceFieldMapper() search.FieldMapper {
 			}
 			return []string{expr}, nil
 		case "attribute":
-			return mapTraceAttributeExpressions(field, params)
+			return mapTraceAttributeExpressions(field, query, params)
 		case "global":
 			return mapTraceGlobalExpressions()
 		default:
@@ -880,7 +880,35 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 // 28x, because the subquery runs once over ~24 rows and the outer predicate is
 // then an indexed equality on resource_id (idx_spans_resource). {COND} is
 // embedded so it lands inside the subquery, where the small scan is.
-func mapTraceAttributeExpressions(field *search.FieldDefinition, params *[]search.NamedParam) ([]string, error) {
+func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
+	// Fast path first: an equality test on a string attribute is a membership
+	// test against an id we can compute here. IDProbe returns "" for anything
+	// it cannot answer exactly, which falls through to the value comparison.
+	switch field.AttributeScope {
+	case "resource":
+		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeResource); p != "" {
+			return []string{search.Complete("s.resource_id in (select id from resources where " + p + ")")}, nil
+		}
+	case "scope":
+		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeScope); p != "" {
+			return []string{search.Complete("s.scope_id in (select id from scopes where " + p + ")")}, nil
+		}
+	case "span":
+		if p := ingest.IDProbe("s.attribute_ids", field, query, ingest.ScopeSpan); p != "" {
+			return []string{search.Complete(p)}, nil
+		}
+	case "event":
+		if p := ingest.IDProbe("e.attribute_ids", field, query, ingest.ScopeEvent); p != "" {
+			return []string{search.Complete(
+				"exists(select 1 from events e where e.span_id = s.span_id and " + p + ")")}, nil
+		}
+	case "link":
+		if p := ingest.IDProbe("l.attribute_ids", field, query, ingest.ScopeLink); p != "" {
+			return []string{search.Complete(
+				"exists(select 1 from links l where l.span_id = s.span_id and " + p + ")")}, nil
+		}
+	}
+
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
 
