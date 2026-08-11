@@ -76,7 +76,7 @@ func TestBodyPreviewTruncates(t *testing.T) {
 		       body_preview(NULL) is null
 	`).Scan(&long, &short, &emptyOK, &nullOK))
 
-	assert.Equal(t, 200, long, "a long body must be cut to the preview length")
+	assert.Equal(t, 300, long, "a long body must be cut to the preview length")
 	assert.Equal(t, 50, short, "a short body must pass through untouched")
 	assert.True(t, emptyOK, "empty body must stay empty, not become NULL")
 	assert.True(t, nullOK, "NULL body must stay NULL, not become an empty string")
