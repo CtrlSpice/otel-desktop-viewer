@@ -337,12 +337,12 @@ func DeleteLogsByIDs(ctx context.Context, db *sql.DB, logIDs []any) error {
 	if len(logIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildUUIDPlaceholders(len(logIDs))
+	ids := util.ToStringList(logIDs)
 	childQueries := []string{
-		fmt.Sprintf(`delete from logs where id in (%s)`, placeholders),
+		`delete from logs where id in (` + util.UUIDList() + `)`,
 	}
 	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, logIDs...); err != nil {
+		if _, err := db.ExecContext(ctx, q, ids); err != nil {
 			return fmt.Errorf("DeleteLogsByIDs: %w: %w", ErrLogsStoreInternal, err)
 		}
 	}

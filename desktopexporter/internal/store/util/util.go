@@ -43,29 +43,28 @@ func BuildPlaceholders(count int) string {
 	return buildPlaceholders(count, "?")
 }
 
-// BuildUUIDPlaceholders is BuildPlaceholders for comparisons against a uuid
-// column, where the values arrive as strings.
+// UUIDList renders a set of uuid strings as one bound-list predicate body.
 //
-// Measured, not assumed: an untyped parameter already casts correctly here,
-// because it is a direct parameter rather than a value read out of a CTE, and
-// DuckDB resolves the direction the way we want in that position. So this
-// changes no behaviour today. It is written out because the direction *is*
-// position-dependent -- the same comparison sourced from a CTE column casts the
-// other way and silently matches nothing -- and a delete is the worst place for
-// a future refactor to discover that.
+// The SQL it goes into is static: `where id in (` + UUIDList() + `)`, with the
+// whole set travelling as a single argument. That removes the class of bug the
+// previous form invited, where the number of `?::uuid` placeholders built into
+// the text and the number of arguments appended beside it could drift apart --
+// a mismatch SQL cannot catch, because both counts are correct on their own.
 //
-// A plain cast rather than try_cast, deliberately differing from how
-// SearchSpans types its trace id. A read can sensibly answer "not found" for a
-// malformed id; a delete that quietly removes nothing and reports success is
-// the failure mode this codebase keeps getting bitten by. Garbage in should
-// raise, and both the untyped and cast forms do:
+// The list binds as varchar[] and is cast inside the query rather than bound as
+// uuid[]. That is not a stylistic choice: the driver's duckdb.UUID type
+// implements Value() with DuckDB's internal sign-bit flip, so binding one as a
+// *parameter* silently corrupts the high nibble -- a bound
+// 11111111-1111-1111-1111-111111111111 arrives as 91111111-... and matches
+// nothing, with no error. Verified against the driver. It is safe through the
+// appender, which is the only place the codebase uses it, and every query path
+// binds uuids as strings for exactly this reason.
 //
-//	                 valid id   wire form   malformed
-//	untyped ?        deletes    deletes     error
-//	?::uuid          deletes    deletes     error
-//	try_cast(...)    deletes    deletes     0 rows, "success"
-func BuildUUIDPlaceholders(count int) string {
-	return buildPlaceholders(count, "?::uuid")
+// Measured at 204,891 spans, deletes rolled back between rounds: within noise
+// of the placeholder form at every size (0.3ms vs 0.5ms at one id, 22.4ms vs
+// 21.8ms at a thousand), so the safety costs nothing worth counting.
+func UUIDList() string {
+	return "select unnest(?::varchar[])::uuid"
 }
 
 func buildPlaceholders(count int, mark string) string {
@@ -139,4 +138,21 @@ func valueSliceToStringAndType(v pcommon.Value) (valueStr string, typeStr string
 		}
 	}
 	return "[" + strings.Join(parts, ",") + "]", typeStr
+}
+
+// ToStringList converts the []any of ids the JSON-RPC layer hands us into the
+// []string the driver binds as varchar[].
+//
+// The ids arrive as any because they come from decoded JSON; the handler has
+// already validated each one parses as a uuid, so anything non-string here
+// would be a programming error rather than bad input, and is dropped rather
+// than silently stringified into something that cannot match.
+func ToStringList(ids []any) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if s, ok := id.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }

@@ -465,14 +465,16 @@ func DeleteSpansByIDs(ctx context.Context, db *sql.DB, spanIDs []any) error {
 	if len(spanIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildUUIDPlaceholders(len(spanIDs))
+	// One bound list per statement, rather than one placeholder per id: the
+	// SQL is static and cannot disagree with the argument count.
+	ids := util.ToStringList(spanIDs)
 	childQueries := []string{
-		fmt.Sprintf(`delete from links where span_id in (%s)`, placeholders),
-		fmt.Sprintf(`delete from events where span_id in (%s)`, placeholders),
-		fmt.Sprintf(`delete from spans where span_id in (%s)`, placeholders),
+		`delete from links where span_id in (` + util.UUIDList() + `)`,
+		`delete from events where span_id in (` + util.UUIDList() + `)`,
+		`delete from spans where span_id in (` + util.UUIDList() + `)`,
 	}
 	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, spanIDs...); err != nil {
+		if _, err := db.ExecContext(ctx, q, ids); err != nil {
 			return fmt.Errorf("DeleteSpansByIDs: %w: %w", ErrSpansStoreInternal, err)
 		}
 	}
@@ -484,14 +486,14 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	if len(traceIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildUUIDPlaceholders(len(traceIDs))
+	ids := util.ToStringList(traceIDs)
 	childQueries := []string{
-		fmt.Sprintf(`delete from links where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
-		fmt.Sprintf(`delete from events where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
-		fmt.Sprintf(`delete from spans where trace_id in (%s)`, placeholders),
+		`delete from links where span_id in (select span_id from spans where trace_id in (` + util.UUIDList() + `))`,
+		`delete from events where span_id in (select span_id from spans where trace_id in (` + util.UUIDList() + `))`,
+		`delete from spans where trace_id in (` + util.UUIDList() + `)`,
 	}
 	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, traceIDs...); err != nil {
+		if _, err := db.ExecContext(ctx, q, ids); err != nil {
 			return fmt.Errorf("DeleteSpansByTraceIDs: %w: %w", ErrSpansStoreInternal, err)
 		}
 	}
