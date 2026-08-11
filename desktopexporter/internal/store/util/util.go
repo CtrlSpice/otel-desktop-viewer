@@ -67,6 +67,12 @@ func BuildPlaceholders(count int) string {
 // the UUID -> HUGEINT cast is not implemented), so treat the mechanism as
 // unconfirmed. The behaviour is not: do not bind duckdb.UUID as a parameter.
 //
+// Watch this. The double cast is a workaround for a driver limitation, not a
+// property of the schema, so it should not outlive the limitation.
+// TestDriverStillCannotBindUUIDLists pins both halves and fails the moment
+// either lifts -- at which point this collapses to `select unnest(?::uuid[])`
+// and the comment above can go with it.
+//
 // Measured at 204,891 spans, deletes rolled back between rounds: within noise
 // of the placeholder form at every size (0.3ms vs 0.5ms at one id, 22.4ms vs
 // 21.8ms at a thousand), so the safety costs nothing worth counting.
