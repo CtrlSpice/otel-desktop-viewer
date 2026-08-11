@@ -88,11 +88,14 @@ const (
 	// SearchSpans fetches one whole trace: the recursive tree walk, its
 	// payload, and the resource/scope maps the wire format references.
 	SearchSpans Name = "spans/search_spans.sql"
+
+	// SearchTraces lists trace summaries for the trace list view.
+	SearchTraces Name = "spans/search_traces.sql"
 )
 
 // queryNames is every read-path query. Kept beside the constants so adding one
 // without registering it is a visible omission rather than a silent one.
-var queryNames = []Name{SearchSpans}
+var queryNames = []Name{SearchSpans, SearchTraces}
 
 var templates = parseAll()
 

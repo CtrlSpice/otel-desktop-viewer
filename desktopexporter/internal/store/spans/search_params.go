@@ -19,3 +19,15 @@ type searchSpansParams struct {
 	MatchedExpr string
 	MatchedJoin string
 }
+
+// searchTracesParams are the fragments searchTracesSQL assembles into
+// queries/spans/search_traces.sql.
+type searchTracesParams struct {
+	// CTEs is the search_params CTE holding the time bounds.
+	CTEs string
+	// From is the shared FROM/JOIN chain for span search, so the summary
+	// query and the matched_spans CTE in search_spans stay in step.
+	From string
+	// Where is the predicate, "true" when there are no criteria.
+	Where string
+}

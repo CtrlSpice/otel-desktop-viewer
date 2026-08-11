@@ -255,18 +255,37 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 
 // SearchTraces returns trace summaries in the time range matching the optional criteria.
 func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
+	finalQuery, args, err := searchTracesSQL(startTime, endTime, criteria)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// searchTracesSQL renders the trace-summary query and its bound arguments.
+// Split out for the same reason as searchSpansSQL: so a golden test can pin the
+// rendered text without standing up a store.
+func searchTracesSQL(startTime, endTime int64, criteria any) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
+			return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 		}
 	}
 
 	cteSQL, whereClause, args, err := buildTraceSQL(searchTree, startTime, endTime)
 	if err != nil {
-		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
+		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 	}
 
 	// service_name comes from spans.service_name (denormalized at
@@ -281,50 +300,16 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 	// computed from the min/max across ALL spans). startTime and
 	// durationNs are precomputed from span bounds so the summary always
 	// reflects wall-clock coverage.
-	finalQuery := fmt.Sprintf(`%s
-		select cast(coalesce(to_json(list(json_object(
-			'traceID',      replace(sub.trace_id::varchar, '-', ''),
-			'hasRootSpan',  sub.has_root_span,
-			'rootSpan',     case when sub.has_root_span then json_object(
-				'serviceName', sub.service_name,
-				'name',        sub.root_name
-			) end,
-			'startTime',    sub.trace_start_time::varchar,
-			'durationNs',   case
-				when sub.trace_start_time is not null
-					and sub.trace_end_time is not null
-					then (sub.trace_end_time - sub.trace_start_time)::varchar
-				else null
-			end,
-			'spanCount',    sub.span_count,
-			'errorCount',   sub.error_count
-		) order by sub.trace_start_time desc
-		)), '[]') as varchar) as summaries
-		from (
-			select distinct on (s.trace_id)
-				s.trace_id,
-				(s.parent_span_id is null) as has_root_span,
-				case when s.parent_span_id is null then nullif(s.service_name, '') end as service_name,
-				case when s.parent_span_id is null then s.name end as root_name,
-				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
-				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
-				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
-			%s
-			where %s
-			order by
-				s.trace_id,
-				case when s.parent_span_id is null then 0 else 1 end
-		) sub`, cteSQL, spanSearchFrom, whereClause)
+	finalQuery, err := queries.Render(queries.SearchTraces, searchTracesParams{
+		CTEs:  cteSQL,
+		From:  spanSearchFrom,
+		Where: whereClause,
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
+	}
 
-	var raw []byte
-	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
-	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return finalQuery, args, nil
 }
 
 // SearchSpans returns spans for a single trace, optionally filtered by search criteria.

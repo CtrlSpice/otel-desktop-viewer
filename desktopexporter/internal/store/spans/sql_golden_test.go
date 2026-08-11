@@ -83,3 +83,25 @@ func TestSearchSpansSQLBindsTraceID(t *testing.T) {
 	require.NotContains(t, query, "00000000000000000000000000000099",
 		"trace id must be bound, not interpolated")
 }
+
+// Same contract as the searchSpans golden, for the trace-summary query. Its two
+// shapes are the same two: a search predicate is either present or it is not.
+func TestSearchTracesSQLGolden(t *testing.T) {
+	for _, tc := range goldenCases {
+		t.Run(tc.name, func(t *testing.T) {
+			query, _, err := searchTracesSQL(0, 1<<62, tc.criteria)
+			require.NoError(t, err)
+
+			path := filepath.Join("testdata", "search_traces_"+tc.name+".sql")
+			if *updateGolden {
+				require.NoError(t, os.MkdirAll("testdata", 0o755))
+				require.NoError(t, os.WriteFile(path, []byte(query), 0o644))
+				return
+			}
+			want, err := os.ReadFile(path)
+			require.NoError(t, err, "missing golden file; run with -update-golden")
+			require.Equal(t, string(want), query,
+				"rendered SQL changed. If deliberate, re-run with -update-golden and read the diff carefully")
+		})
+	}
+}
