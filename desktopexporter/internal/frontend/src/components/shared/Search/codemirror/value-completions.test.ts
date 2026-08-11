@@ -7,6 +7,8 @@ import {
 } from './value-completions'
 import { queryLanguageSupport } from './query-language'
 import type { JsonAttributeMatch } from '@/types/wire-types'
+import { OPERATORS } from '@/constants/operators'
+import type { FieldDefinition } from '@/constants/fields'
 
 const matches: JsonAttributeMatch[] = [
   {
@@ -25,16 +27,39 @@ const matches: JsonAttributeMatch[] = [
   },
 ]
 
+// The fields this editor accepts. Suggestions are filtered against these, so
+// anything offered is guaranteed to pass the linter -- see the
+// cross-signal test below.
+const attrField = (
+  name: string,
+  attributeScope: FieldDefinition['attributeScope']
+): FieldDefinition => ({
+  name,
+  type: 'string',
+  searchScope: 'attribute',
+  attributeScope,
+  operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS, OPERATORS.CONTAINS],
+})
+
+const traceFields: FieldDefinition[] = [
+  attrField('service.name', 'resource'),
+  attrField('http.route', 'span'),
+]
+
 // Drives the source the way CodeMirror does: build a document, put the cursor
 // at the end, and ask for completions there.
-async function complete(doc: string, search = vi.fn().mockResolvedValue(matches)) {
+async function complete(
+  doc: string,
+  search = vi.fn().mockResolvedValue(matches),
+  fields: FieldDefinition[] = traceFields
+) {
   const state = EditorState.create({
     doc,
     extensions: [queryLanguageSupport()],
     selection: { anchor: doc.length },
   })
   const context = new CompletionContext(state, doc.length, true)
-  const result = await createValueDiscoverySource(search)(context)
+  const result = await createValueDiscoverySource(search, () => fields)(context)
   return { result, search }
 }
 
@@ -123,6 +148,68 @@ describe('value discovery completions', () => {
     const { result } = await complete(
       'checkout',
       vi.fn().mockRejectedValue(new Error('offline'))
+    )
+    expect(result).toBeNull()
+  })
+})
+
+describe('only suggests fields this editor can search', () => {
+  // Found by using it: the dictionary is shared across signals, so looking up
+  // "Mercedes" in the *traces* box returned f1.team -- a datapoint label from
+  // metrics. Accepting it produced `f1.team = "Mercedes"`, which the linter
+  // immediately underlined as `Unknown field`, because a span cannot be
+  // filtered by a metric label. Suggesting something and then rejecting it is
+  // worse than staying quiet.
+  const crossSignal: JsonAttributeMatch[] = [
+    {
+      name: 'f1.team',
+      attributeScope: 'datapoint',
+      type: 'string',
+      matchCount: 1,
+      sampleValues: ['Mercedes'],
+    },
+    {
+      name: 'service.name',
+      attributeScope: 'resource',
+      type: 'string',
+      matchCount: 1,
+      sampleValues: ['Mercedes'],
+    },
+  ]
+
+  it('drops matches whose scope this signal cannot search', async () => {
+    const { result } = await complete(
+      'Merce',
+      vi.fn().mockResolvedValue(crossSignal)
+    )
+    expect(result!.options.map(o => o.label)).toEqual([
+      'service.name = "Mercedes"',
+    ])
+  })
+
+  it('offers nothing rather than something unusable', async () => {
+    const { result } = await complete(
+      'Merce',
+      vi.fn().mockResolvedValue([crossSignal[0]])
+    )
+    expect(result).toBeNull()
+  })
+
+  // The same key can exist under several scopes, and only some are valid here,
+  // so the scope has to match too -- not just the name.
+  it('matches on scope as well as name', async () => {
+    const sameNameWrongScope: JsonAttributeMatch[] = [
+      {
+        name: 'service.name',
+        attributeScope: 'datapoint',
+        type: 'string',
+        matchCount: 1,
+        sampleValues: ['Mercedes'],
+      },
+    ]
+    const { result } = await complete(
+      'Merce',
+      vi.fn().mockResolvedValue(sameNameWrongScope)
     )
     expect(result).toBeNull()
   })

@@ -382,7 +382,10 @@
           // offer. Async, so it cannot block typing.
           override: [
             createQueryCompletionSource(() => availableFields),
-            createValueDiscoverySource(telemetryAPI.searchAttributes),
+            createValueDiscoverySource(
+              telemetryAPI.searchAttributes,
+              () => availableFields
+            ),
           ],
           activateOnTyping: true,
           icons: false,

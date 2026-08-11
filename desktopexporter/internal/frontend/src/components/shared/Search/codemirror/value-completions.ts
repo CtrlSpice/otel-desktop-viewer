@@ -4,6 +4,7 @@ import {
   type Completion,
 } from '@codemirror/autocomplete'
 import type { JsonAttributeMatch } from '@/types/wire-types'
+import type { FieldDefinition } from '@/constants/fields'
 
 /**
  * Value-first completion: the user types text they can see in the UI, and the
@@ -23,6 +24,14 @@ import type { JsonAttributeMatch } from '@/types/wire-types'
  *
  * Deliberately additive: it only fires where the key-first source has nothing
  * useful to say, so it can never displace a field-name completion.
+ *
+ * It is also filtered to the fields this editor actually accepts. The
+ * dictionary is shared by every signal, so a raw lookup for "Mercedes" returns
+ * `f1.team` (a datapoint label) alongside `service.name` (a resource
+ * attribute) — and offering the first in the traces box produces an expression
+ * the linter immediately flags as `Unknown field`, because spans cannot be
+ * filtered by a metric label. Suggesting something and then underlining it is
+ * worse than not suggesting it.
  */
 
 /** How many suggestions to show. Enough to choose from, few enough to scan. */
@@ -75,7 +84,8 @@ function optionsForMatch(match: JsonAttributeMatch): Completion[] {
  * @returns a CodeMirror completion source
  */
 export function createValueDiscoverySource(
-  search: (term: string) => Promise<JsonAttributeMatch[]>
+  search: (term: string) => Promise<JsonAttributeMatch[]>,
+  getFields: () => FieldDefinition[]
 ) {
   return async function valueDiscoverySource(
     context: CompletionContext
@@ -110,7 +120,20 @@ export function createValueDiscoverySource(
     }
     if (context.aborted) return null
 
-    const options = matches.flatMap(optionsForMatch).slice(0, MAX_SUGGESTIONS)
+    // Only suggest what this editor can actually search. Matching on scope as
+    // well as name matters: the same key can exist under several scopes, and
+    // only some of them are valid here.
+    const fields = getFields()
+    const searchable = matches.filter(match =>
+      fields.some(
+        field =>
+          field.searchScope === 'attribute' &&
+          field.name === match.name &&
+          field.attributeScope === match.attributeScope
+      )
+    )
+
+    const options = searchable.flatMap(optionsForMatch).slice(0, MAX_SUGGESTIONS)
     if (options.length === 0) return null
 
     return {
