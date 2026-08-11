@@ -23,6 +23,24 @@ format-go-check:
 		echo "These files need gofmt:"; echo "$$unformatted"; exit 1; \
 	fi
 
+# Reapply the macro DDL to an existing database file.
+#
+# Macros live in the DuckDB catalog, so a .db file keeps whatever definitions it
+# was last opened with. NewStore re-runs `create or replace` on every open, so
+# the app self-heals -- but a file inspected straight from the duckdb CLI can
+# show a stale macro, or none at all if it predates one. That is a confusing
+# thing to debug cold, and the fix is to reapply them.
+#
+# The files carry no trailing semicolons (one statement per file, so they read
+# cleanly), hence the echo between them.
+#
+#   make refresh-macros DB=path/to.db
+.PHONY: refresh-macros
+refresh-macros:
+	@test -n "$(DB)" || { echo "usage: make refresh-macros DB=path/to.db"; exit 1; }
+	@for f in desktopexporter/internal/store/queries/ddl/macros/*.sql; do cat $$f; echo ";"; done | duckdb "$(DB)"
+	@echo "macros reapplied to $(DB)"
+
 .PHONY: test-go
 test-go:
 	cd desktopexporter && go test ./...
@@ -142,6 +160,7 @@ help:
 	@echo "  build-go          - Build Go binary"
 	@echo "  format-go         - Format Go code (gofmt)"
 	@echo "  format-go-check   - Fail if any Go file needs gofmt"
+	@echo "  refresh-macros    - Reapply macro DDL to a .db file (DB=path)"
 	@echo "  test-go           - Run Go tests"
 	@echo "  run-go            - Run server (in-memory, data lost on exit)"
 	@echo "  run-go-persist    - Run server with persistent DB file (data retained)"
