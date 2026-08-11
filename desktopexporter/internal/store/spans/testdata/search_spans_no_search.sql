@@ -111,12 +111,7 @@
 
 		event_data as (
 			select e.span_id,
-				to_json(list(json_object(
-					'name', e.name,
-					'timestamp', e.timestamp::varchar,
-					'droppedAttributesCount', e.dropped_attributes_count,
-					'attributes', coalesce(ea.attrs, json('[]'))
-				) order by e.timestamp)) as events
+				to_json(list(event_json(e, ea.attrs) order by e.timestamp)) as events
 			from events e
 			left join event_attrs ea on ea.id = e.id
 			where e.span_id in (select span_id from tree)
@@ -125,13 +120,7 @@
 
 		link_data as (
 			select l.span_id,
-				json_group_array(json_object(
-					'traceID', trace_id_wire(l.trace_id),
-					'spanID', span_id_wire(l.linked_span_id),
-					'traceState', l.trace_state,
-					'droppedAttributesCount', l.dropped_attributes_count,
-					'attributes', coalesce(la.attrs, json('[]'))
-				)) as links
+				json_group_array(link_json(l, la.attrs)) as links
 			from links l
 			left join link_attrs la on la.id = l.id
 			where l.span_id in (select span_id from tree)
@@ -168,37 +157,9 @@
 
 		ordered_spans as (
 			select json_object(
-					'spanData', json_object(
-						-- No traceID: it is at the response root, and a
-						-- single-trace response repeated it 32 bytes per span.
-						'traceState', ts.trace_state,
-						'spanID', span_id_wire(ts.span_id),
-						'parentSpanID', case when ts.parent_span_id is not null then span_id_wire(ts.parent_span_id) end,
-						'name', ts.name,
-						'kind', ts.kind,
-						-- Offset from traceStart, and duration from the span's
-						-- own start. Deliberately not two offsets: an end
-						-- offset inherits the trace's full magnitude however
-						-- brief the span, while a duration stays small. It is
-						-- also what the waterfall wants -- a bar is a position
-						-- and a width, so the client stops subtracting on every
-						-- render.
-						'start', ts.start_time - (select t from trace_start),
-						'dur', ts.end_time - ts.start_time,
-						'attributes', coalesce(sa.attrs, json('[]')),
-						'events', coalesce(ed.events, json('[]')),
-						'links', coalesce(ld.links, json('[]')),
-						-- References into the top-level maps. seq rather than
-						-- the uuid: two 36-char ids per span is ~413KB on the
-						-- reference trace, a small integer ~57KB. The uuids are
-						-- storage identity and have no business on the wire.
-						'r', rd.seq,
-						's', scd.seq,
-						'droppedAttributesCount', ts.dropped_attributes_count,
-						'droppedEventsCount', ts.dropped_events_count,
-						'droppedLinksCount', ts.dropped_links_count,
-						'statusCode', ts.status_code,
-						'statusMessage', ts.status_message
+					'spanData', span_data_json(
+						ts, sa.attrs, ed.events, ld.links,
+						rd.seq, scd.seq, (select t from trace_start)
 					),
 				'depth', ts.depth,
 				'matched', true

@@ -127,5 +127,8 @@ var (
 		"27_sum_bucket_vectors.sql",
 		"28_uuid_list.sql",
 		"29_body_preview.sql",
+		"30_event_json.sql",
+		"31_link_json.sql",
+		"32_span_data_json.sql",
 	}
 )
