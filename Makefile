@@ -80,6 +80,10 @@ build-ts:
 format-ts:
 	cd desktopexporter/internal/frontend && npm run format
 
+.PHONY: format-ts-check
+format-ts-check:
+	cd desktopexporter/internal/frontend && npm run format:check
+
 .PHONY: validate-ts
 validate-ts:
 	cd desktopexporter/internal/frontend && npm run check
@@ -95,8 +99,14 @@ build: build-ts build-go
 run: build-ts
 	go run . --browser-port 8000
 
+# Mirrors what CI enforces, so a green `make test` means a green PR. The
+# format checks run first because they cost seconds and the test suites cost
+# minutes -- and because the formatting gap is what actually bit: prettier is
+# part of the frontend CI job, `format-ts` only rewrites files, and nothing
+# local ran `format:check`, so seven unformatted files went out across several
+# commits before CI caught them.
 .PHONY: test
-test: test-go validate-ts test-ts
+test: format-go-check format-ts-check validate-ts test-go test-ts
 
 .PHONY: release-dry-run
 release-dry-run:
@@ -123,6 +133,7 @@ help:
 	@echo "  install-clean     - Clean install (removes node_modules first)"
 	@echo "  build-ts          - Build frontend"
 	@echo "  format-ts         - Format frontend code (Prettier)"
+	@echo "  format-ts-check   - Fail if any frontend file needs Prettier"
 	@echo "  validate-ts       - Type check frontend"
 	@echo "  test-ts           - Run frontend unit tests (Vitest)"
 	@echo "  dev-ts            - Start frontend dev server (Vite)"
