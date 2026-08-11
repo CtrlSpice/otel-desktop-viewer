@@ -9,6 +9,6 @@
 			'severityText',   l.severity_text,
 			'severityNumber', l.severity_number,
 			'serviceName',    l.service_name,
-			'bodyPreview',    substring(l.body, 1, {{.BodyPreviewLen}})
+			'bodyPreview',    body_preview(l.body)
 		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc)), '[]') as varchar) as logs
 		from filtered l

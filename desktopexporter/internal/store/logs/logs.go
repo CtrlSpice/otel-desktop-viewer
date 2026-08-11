@@ -184,11 +184,6 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *inge
 	return nil
 }
 
-// bodyPreviewLen is the max character count for the server-truncated
-// body preview returned by Search. Callers that need the full body
-// must fetch the log via Get.
-const bodyPreviewLen = 200
-
 // Search returns log summaries in the time range matching the optional
 // criteria. Each row is a lightweight projection -- enough to render
 // the log card without shipping the full body or attribute set. Use
@@ -199,7 +194,7 @@ const bodyPreviewLen = 200
 // scaffolding (OTLP logs are anonymous) and must never be rendered to
 // users.
 //
-// `bodyPreview` is server-truncated to bodyPreviewLen characters.
+// `bodyPreview` is server-truncated by the body_preview macro.
 func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
@@ -218,10 +213,9 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 	logTimeExpr := `(case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end)`
 	whereWithTime := strings.ReplaceAll(whereClause, "l.log_time", logTimeExpr)
 	finalQuery, err := queries.Render(queries.SearchLogs, searchLogsParams{
-		CTEs:           cteSQL,
-		From:           logSearchFrom,
-		Where:          whereWithTime,
-		BodyPreviewLen: bodyPreviewLen,
+		CTEs:  cteSQL,
+		From:  logSearchFrom,
+		Where: whereWithTime,
 	})
 	if err != nil {
 		return nil, err
@@ -481,12 +475,11 @@ func mapLogGlobalExpressions() ([]string, error) {
 // searchLogsParams are the fragments Search assembles into
 // queries/logs/search_logs.sql.
 //
-// BodyPreviewLen is an int rather than a string: it was a %d in the format
-// string this replaced, and keeping it typed means the template cannot be
-// handed a value that is not a number.
+// Every field is a SQL fragment. The body-preview length used to be here too,
+// as a number interpolated into the query; it is a body_preview macro now, so
+// nothing in this struct is a *value* -- values travel as bound arguments.
 type searchLogsParams struct {
-	CTEs           string
-	From           string
-	Where          string
-	BodyPreviewLen int
+	CTEs  string
+	From  string
+	Where string
 }

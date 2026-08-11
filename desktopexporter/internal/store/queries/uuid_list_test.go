@@ -53,3 +53,31 @@ func TestUUIDListRejectsMalformedIDs(t *testing.T) {
 				"reporting success having removed nothing is worse than an error", bad)
 	}
 }
+
+// body_preview truncates a log body for the summary card, and the corpus does
+// not test it: real log bodies in the reference capture top out at 166
+// characters, so the truncation never fires and a macro that returned the body
+// untouched would pass every end-to-end check.
+func TestBodyPreviewTruncates(t *testing.T) {
+	db, err := sql.Open("duckdb", "")
+	require.NoError(t, err)
+	defer db.Close()
+	for _, stmt := range queries.Macros() {
+		_, err := db.Exec(stmt.SQL)
+		require.NoErrorf(t, err, "%s", stmt.Name)
+	}
+
+	var long, short int
+	var emptyOK, nullOK bool
+	require.NoError(t, db.QueryRow(`
+		select length(body_preview(repeat('x', 500))),
+		       length(body_preview(repeat('y', 50))),
+		       body_preview('') = '',
+		       body_preview(NULL) is null
+	`).Scan(&long, &short, &emptyOK, &nullOK))
+
+	assert.Equal(t, 200, long, "a long body must be cut to the preview length")
+	assert.Equal(t, 50, short, "a short body must pass through untouched")
+	assert.True(t, emptyOK, "empty body must stay empty, not become NULL")
+	assert.True(t, nullOK, "NULL body must stay NULL, not become an empty string")
+}
