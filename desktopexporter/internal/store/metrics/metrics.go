@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
@@ -127,58 +126,72 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 		return driver.DefaultParameterConverter.ConvertValue(v)
 	}
 
-	rowPlaceholders := make([]string, len(identities))
-	insertArgs := make([]driver.NamedValue, 0, len(identities)*9)
-	for i, id := range identities {
+	// Nine parallel arrays, one bound argument each, so the statement text is
+	// the same whatever the batch holds. The previous form built one
+	// "(?::uuid, ?, ...)" tuple per identity and appended nine arguments
+	// beside it -- two counts that must agree, which SQL cannot check because
+	// each is correct on its own.
+	newStreamIDs := make([]string, 0, len(identities))
+	names := make([]string, 0, len(identities))
+	units := make([]string, 0, len(identities))
+	types := make([]string, 0, len(identities))
+	temporalities := make([]string, 0, len(identities))
+	monotonics := make([]bool, 0, len(identities))
+	scopeNames := make([]string, 0, len(identities))
+	scopeVersions := make([]string, 0, len(identities))
+	serviceNames := make([]string, 0, len(identities))
+	for _, id := range identities {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		newID := uuid.NewString()
-		rowPlaceholders[i] = "(?::uuid, ?, ?, ?, ?, ?, ?, ?, ?)"
-		var err error
-		insertArgs, err = appendNamedValues(insertArgs, prepareArg,
-			newID, id.Name, id.Unit, id.MetricType, id.AggregationTemporality,
-			isMonotonicToBool(id.IsMonotonic), id.ScopeName, id.ScopeVersion, id.ServiceName,
-		)
-		if err != nil {
-			return fmt.Errorf("Ingest: %w: prep insert arg: %w", ErrMetricsStoreInternal, err)
-		}
+		newStreamIDs = append(newStreamIDs, uuid.NewString())
+		names = append(names, id.Name)
+		units = append(units, id.Unit)
+		types = append(types, id.MetricType)
+		temporalities = append(temporalities, id.AggregationTemporality)
+		monotonics = append(monotonics, isMonotonicToBool(id.IsMonotonic))
+		scopeNames = append(scopeNames, id.ScopeName)
+		scopeVersions = append(scopeVersions, id.ScopeVersion)
+		serviceNames = append(serviceNames, id.ServiceName)
 	}
 
-	insertSQL := fmt.Sprintf(
-		`insert into metric_streams (id, name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
-		 values %s
-		 on conflict (name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name) do nothing`,
-		strings.Join(rowPlaceholders, ", "),
-	)
+	insertArgs, err := appendNamedValues(nil, prepareArg,
+		newStreamIDs, names, units, types, temporalities, monotonics,
+		scopeNames, scopeVersions, serviceNames)
+	if err != nil {
+		return fmt.Errorf("Ingest: %w: prep insert arg: %w", ErrMetricsStoreInternal, err)
+	}
+
+	const insertSQL = `insert into metric_streams (id, name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
+		 select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[]),
+		        unnest(?::varchar[]), unnest(?::boolean[]), unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[])
+		 on conflict (name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name) do nothing`
 	if _, err := dconn.ExecContext(ctx, insertSQL, insertArgs); err != nil {
 		return fmt.Errorf("Ingest: %w: stream insert: %w", ErrMetricsStoreInternal, err)
 	}
 
-	tupleClauses := make([]string, len(identities))
-	selectArgs := make([]driver.NamedValue, 0, len(identities)*8)
-	for i, id := range identities {
-		tupleClauses[i] = `(name = ? and unit = ? and metric_type = ?
-			and aggregation_temporality = ?
-			and is_monotonic = ?
-			and scope_name = ?
-			and scope_version = ?
-			and service_name = ?)`
-		var err error
-		selectArgs, err = appendNamedValues(selectArgs, prepareArg,
-			id.Name, id.Unit, id.MetricType, id.AggregationTemporality,
-			isMonotonicToBool(id.IsMonotonic), id.ScopeName, id.ScopeVersion, id.ServiceName,
-		)
-		if err != nil {
-			return fmt.Errorf("Ingest: %w: prep select arg: %w", ErrMetricsStoreInternal, err)
-		}
+	// The same eight arrays, joined against rather than OR'd together. The
+	// previous form was an OR of one eight-column conjunction per identity,
+	// so both the text and the argument count grew with the batch.
+	selectArgs, err := appendNamedValues(nil, prepareArg,
+		names, units, types, temporalities, monotonics,
+		scopeNames, scopeVersions, serviceNames)
+	if err != nil {
+		return fmt.Errorf("Ingest: %w: prep select arg: %w", ErrMetricsStoreInternal, err)
 	}
-	selectSQL := fmt.Sprintf(
-		`select id, name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name
-		 from metric_streams
-		 where %s`,
-		strings.Join(tupleClauses, " or "),
-	)
+
+	const selectSQL = `select s.id, s.name, s.unit, s.metric_type, s.aggregation_temporality,
+		        s.is_monotonic, s.scope_name, s.scope_version, s.service_name
+		 from metric_streams s
+		 join (
+			select unnest(?::varchar[]) as name, unnest(?::varchar[]) as unit,
+			       unnest(?::varchar[]) as metric_type, unnest(?::varchar[]) as aggregation_temporality,
+			       unnest(?::boolean[]) as is_monotonic, unnest(?::varchar[]) as scope_name,
+			       unnest(?::varchar[]) as scope_version, unnest(?::varchar[]) as service_name
+		 ) w on s.name = w.name and s.unit = w.unit and s.metric_type = w.metric_type
+		    and s.aggregation_temporality = w.aggregation_temporality
+		    and s.is_monotonic = w.is_monotonic and s.scope_name = w.scope_name
+		    and s.scope_version = w.scope_version and s.service_name = w.service_name`
 	rows, err := dconn.QueryContext(ctx, selectSQL, selectArgs)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: stream select: %w", ErrMetricsStoreInternal, err)
@@ -469,18 +482,34 @@ func insertSeries(
 	if len(rows) == 0 {
 		return nil
 	}
-	tuples := make([]string, 0, len(rows))
-	args := make([]driver.NamedValue, 0, len(rows)*3)
+	// Four parallel arrays, the last a list of lists: the label sets travel as
+	// data rather than as UUIDListLiteral text spliced into the statement, so
+	// the query no longer varies with the *contents* of a batch, not merely
+	// its size.
+	ids := make([]string, 0, len(rows))
+	streams := make([]string, 0, len(rows))
+	resources := make([]string, 0, len(rows))
+	attrs := make([][]string, 0, len(rows))
 	for _, r := range rows {
-		tuples = append(tuples, "(?::uuid, ?::uuid, ?::uuid, "+ingest.UUIDListLiteral(r.attrs)+")")
-		var err error
-		if args, err = appendNamedValues(args, prepareArg,
-			ingest.FormatUUID(r.id), ingest.FormatUUID(r.stream), ingest.FormatUUID(r.resource)); err != nil {
-			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+		ids = append(ids, ingest.FormatUUID(r.id))
+		streams = append(streams, ingest.FormatUUID(r.stream))
+		resources = append(resources, ingest.FormatUUID(r.resource))
+		set := make([]string, 0, len(r.attrs))
+		for _, a := range r.attrs {
+			set = append(set, ingest.FormatUUID(a))
 		}
+		attrs = append(attrs, set)
 	}
-	q := `insert into metric_series (id, stream_id, resource_id, attribute_ids) values ` +
-		strings.Join(tuples, ", ") + ` on conflict (id) do nothing`
+
+	args, err := appendNamedValues(nil, prepareArg, ids, streams, resources, attrs)
+	if err != nil {
+		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+	}
+
+	const q = `insert into metric_series (id, stream_id, resource_id, attribute_ids)
+		 select unnest(?::varchar[])::uuid, unnest(?::varchar[])::uuid, unnest(?::varchar[])::uuid,
+		        list_transform(unnest(?::varchar[][]), x -> x::uuid)
+		 on conflict (id) do nothing`
 	if _, err := dconn.ExecContext(ctx, q, args); err != nil {
 		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 	}
