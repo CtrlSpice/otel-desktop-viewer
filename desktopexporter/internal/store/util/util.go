@@ -52,13 +52,20 @@ func BuildPlaceholders(count int) string {
 // a mismatch SQL cannot catch, because both counts are correct on their own.
 //
 // The list binds as varchar[] and is cast inside the query rather than bound as
-// uuid[]. That is not a stylistic choice: the driver's duckdb.UUID type
-// implements Value() with DuckDB's internal sign-bit flip, so binding one as a
-// *parameter* silently corrupts the high nibble -- a bound
-// 11111111-1111-1111-1111-111111111111 arrives as 91111111-... and matches
-// nothing, with no error. Verified against the driver. It is safe through the
-// appender, which is the only place the codebase uses it, and every query path
-// binds uuids as strings for exactly this reason.
+// uuid[]. That is not a stylistic choice: binding the driver's duckdb.UUID type
+// as a *parameter* silently returns nothing. Measured -- a bound
+// 11111111-1111-1111-1111-111111111111 reads back as 91111111-..., matching no
+// row and raising no error, for both a scalar parameter and a list. It is safe
+// through the appender, which is the only place this codebase uses the type,
+// and every query path already binds uuids as strings.
+//
+// The likely cause, offered as a lead rather than a fact: DuckDB documents
+// UUIDs as "represented internally as HUGEINT values", which is signed, so
+// something has to flip the top bit to keep unsigned UUID ordering intact --
+// and the corruption observed is exactly bit 127. That flip is not documented
+// and is not visible from SQL (UUIDs sort 0, 1, 9, f as you would expect, and
+// the UUID -> HUGEINT cast is not implemented), so treat the mechanism as
+// unconfirmed. The behaviour is not: do not bind duckdb.UUID as a parameter.
 //
 // Measured at 204,891 spans, deletes rolled back between rounds: within noise
 // of the placeholder form at every size (0.3ms vs 0.5ms at one id, 22.4ms vs
