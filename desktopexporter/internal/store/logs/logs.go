@@ -217,25 +217,15 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 
 	logTimeExpr := `(case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end)`
 	whereWithTime := strings.ReplaceAll(whereClause, "l.log_time", logTimeExpr)
-	finalQuery := fmt.Sprintf(`%s,
-		filtered as (
-			select l.* %s
-			where %s
-		)
-		select cast(coalesce(to_json(list(json_object(
-			'id',             l.id,
-			'timestamp',      cast(coalesce(nullif(l.timestamp, 0), l.observed_timestamp) as varchar),
-			'severityText',   l.severity_text,
-			'severityNumber', l.severity_number,
-			'serviceName',    l.service_name,
-			'bodyPreview',    substring(l.body, 1, %d)
-		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc)), '[]') as varchar) as logs
-		from filtered l`,
-		cteSQL,
-		logSearchFrom,
-		whereWithTime,
-		bodyPreviewLen,
-	)
+	finalQuery, err := queries.Render(queries.SearchLogs, searchLogsParams{
+		CTEs:           cteSQL,
+		From:           logSearchFrom,
+		Where:          whereWithTime,
+		BodyPreviewLen: bodyPreviewLen,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	var raw []byte
 	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
@@ -486,4 +476,17 @@ func mapLogGlobalExpressions() ([]string, error) {
 			)
 		)`,
 	}, nil
+}
+
+// searchLogsParams are the fragments Search assembles into
+// queries/logs/search_logs.sql.
+//
+// BodyPreviewLen is an int rather than a string: it was a %d in the format
+// string this replaced, and keeping it typed means the template cannot be
+// handed a value that is not a number.
+type searchLogsParams struct {
+	CTEs           string
+	From           string
+	Where          string
+	BodyPreviewLen int
 }

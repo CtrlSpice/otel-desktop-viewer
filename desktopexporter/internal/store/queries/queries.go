@@ -101,6 +101,11 @@ const (
 	GetLog Name = "logs/get_log.sql"
 	// GetLogAttributes lists the attribute keys logs carry.
 	GetLogAttributes Name = "logs/get_log_attributes.sql"
+
+	// SearchMetricSummaries lists metric streams for the metrics list view.
+	SearchMetricSummaries Name = "metrics/search_summaries.sql"
+	// SearchLogs lists log summaries for the logs list view.
+	SearchLogs Name = "logs/search_logs.sql"
 )
 
 // queryNames is every read-path query. Kept beside the constants so adding one
@@ -109,6 +114,7 @@ var queryNames = []Name{
 	SearchSpans, SearchTraces,
 	GetMetric, GetMetricAttributes,
 	GetLog, GetLogAttributes,
+	SearchMetricSummaries, SearchLogs,
 }
 
 var templates = parseAll()
