@@ -77,7 +77,19 @@ var sweepQueries = []string{
 // check (so pre-existing garbage can never be what pushes the store over the
 // cap) and once at the end of every round (the prunes are what create the
 // orphans).
-func SweepOrphans(ctx context.Context, exec ExecContext) error {
+// flushed may be nil when no store-level cache is in play.
+func SweepOrphans(ctx context.Context, exec ExecContext, flushed *FlushedIDs) error {
+	// Forget first, and unconditionally.
+	//
+	// This is the only function that deletes dictionary rows, which is what
+	// makes a "these ids exist" cache safe at all -- so invalidation belongs
+	// here rather than at the call sites, where it would be four places to
+	// forget. Doing it before the deletes rather than after means a sweep that
+	// fails partway still leaves the cache empty: the next batch re-inserts
+	// rows that may already be present (free, they conflict) instead of
+	// skipping rows that are already gone (silent dangling references).
+	flushed.Forget()
+
 	for _, q := range sweepQueries {
 		if _, err := exec.ExecContext(ctx, q); err != nil {
 			return fmt.Errorf("SweepOrphans: %w: %w", ErrIngestInternal, err)

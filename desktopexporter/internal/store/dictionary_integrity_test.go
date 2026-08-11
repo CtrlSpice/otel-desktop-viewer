@@ -167,20 +167,20 @@ func ingestAll(t *testing.T, s *Store, seed byte) {
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, integrityTraces(seed))
+		return spans.Ingest(ctx, conn, integrityTraces(seed), s.FlushedIDs())
 	}))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, integrityLogs(seed))
+		return logs.Ingest(ctx, conn, integrityLogs(seed), s.FlushedIDs())
 	}))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, integrityMetrics(seed))
+		return metrics.Ingest(ctx, conn, integrityMetrics(seed), s.FlushedIDs())
 	}))
 }
 
 func sweep(t *testing.T, s *Store) {
 	t.Helper()
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(context.Background(), db)
+		return ingest.SweepOrphans(context.Background(), db, s.FlushedIDs())
 	}))
 }
 
@@ -286,4 +286,53 @@ func TestDictionaryIntegrityAfterRetention(t *testing.T) {
 	// rounds and stops -- exercising every prune path and both sweep points.
 	require.NoError(t, s.EnforceRetention(ctx, 1))
 	assertNoDanglingRefs(t, s, "after retention")
+}
+
+// The cache's own contract, separate from the integrity it must not break.
+//
+// The middle assertion is the whole optimisation: a second batch of identical
+// content adds no new ids, so its dictionary flush issues no SQL at all. That is
+// what removes the ~2.3ms fixed per-batch cost, and it is why small batches went
+// from 2.7x slower than the pre-dictionary schema to 2.1x faster.
+func TestFlushedIDsPopulatesAndClears(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+
+	assert.Zero(t, s.FlushedIDs().Len(), "nothing written yet")
+
+	ingestAll(t, s, 1)
+	first := s.FlushedIDs().Len()
+	assert.Positive(t, first, "ingest must record what it wrote")
+
+	ingestAll(t, s, 2)
+	assert.Equal(t, first, s.FlushedIDs().Len(),
+		"identical content adds no new ids -- this is the skip that makes it fast")
+
+	sweep(t, s)
+	assert.Zero(t, s.FlushedIDs().Len(),
+		"the sweep deletes dictionary rows, so it must forget them too")
+}
+
+// A store must never consult another store's set. Two stores are two databases;
+// ids written to one say nothing about the other, and skipping on that basis
+// would leave dangling references. This is the bug the first prototype hit.
+func TestFlushedIDsAreNotSharedBetweenStores(t *testing.T) {
+	ctx := context.Background()
+	a, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer a.Close()
+	b, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer b.Close()
+
+	assert.NotSame(t, a.FlushedIDs(), b.FlushedIDs(), "each store owns its own set")
+
+	ingestAll(t, a, 1)
+	assert.Zero(t, b.FlushedIDs().Len(), "writing to one store must not mark the other")
+
+	// b has seen nothing, so it writes everything and stays self-consistent.
+	ingestAll(t, b, 1)
+	assertNoDanglingRefs(t, b, "second store ingesting the same content")
 }

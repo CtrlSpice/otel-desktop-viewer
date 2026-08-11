@@ -51,7 +51,7 @@ const flushIntervalMetrics = 100
 // The two-pass shape exists so the upsert sees ALL identities at once
 // and resolves them in one round-trip; doing the upsert per metric
 // would be O(metrics) round-trips per batch.
-func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error) {
+func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *ingest.FlushedIDs) (err error) {
 	tables := []string{"exemplars", "datapoints", "metric_ingests"}
 
 	// Pass 1: collect every distinct identity in this OTLP request, plus
@@ -72,7 +72,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics) (err error
 	// The attribute dictionary is built in the same walk. Datapoint labels are
 	// the bulk of it: on the reference capture they are 82% of all attribute
 	// rows, resolving to 89 distinct sets across 294,607 datapoints.
-	dict := ingest.NewDictionary()
+	dict := ingest.NewDictionary(flushed)
 	type scopeKey struct{ ri, si int }
 	resourceIDs := map[int]duckdb.UUID{}
 	scopeIDs := map[scopeKey]duckdb.UUID{}

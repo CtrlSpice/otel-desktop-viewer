@@ -139,7 +139,7 @@ func TestGetStats_WithTraces(t *testing.T) {
 	tr := buildTestTraces(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, tr)
+		return spans.Ingest(ctx, conn, tr, s.FlushedIDs())
 	})
 	require.NoError(t, err)
 
@@ -163,7 +163,7 @@ func TestGetStats_WithLogs(t *testing.T) {
 	lg := buildTestLogs(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, lg)
+		return logs.Ingest(ctx, conn, lg, s.FlushedIDs())
 	})
 	require.NoError(t, err)
 
@@ -183,7 +183,7 @@ func TestGetStats_WithMetrics(t *testing.T) {
 	m := buildTestMetrics()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, m)
+		return metrics.Ingest(ctx, conn, m, s.FlushedIDs())
 	})
 	require.NoError(t, err)
 
@@ -203,13 +203,13 @@ func TestGetStats_AllSignals(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		if err := spans.Ingest(ctx, conn, buildTestTraces(baseTime)); err != nil {
+		if err := spans.Ingest(ctx, conn, buildTestTraces(baseTime), s.FlushedIDs()); err != nil {
 			return err
 		}
-		if err := logs.Ingest(ctx, conn, buildTestLogs(baseTime)); err != nil {
+		if err := logs.Ingest(ctx, conn, buildTestLogs(baseTime), s.FlushedIDs()); err != nil {
 			return err
 		}
-		return metrics.Ingest(ctx, conn, buildTestMetrics())
+		return metrics.Ingest(ctx, conn, buildTestMetrics(), s.FlushedIDs())
 	})
 	require.NoError(t, err)
 

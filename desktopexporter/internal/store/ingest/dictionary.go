@@ -187,13 +187,24 @@ type Dictionary struct {
 	attributes map[duckdb.UUID]Attribute
 	resources  map[duckdb.UUID]Resource
 	scopes     map[duckdb.UUID]Scope
+
+	// flushed is the store's record of what is already in the database. May be
+	// nil, which disables the optimisation and restores the always-insert
+	// behaviour -- see FlushedIDs.
+	flushed *FlushedIDs
 }
 
-func NewDictionary() *Dictionary {
+// NewDictionary builds a dictionary for one batch.
+//
+// flushed is the owning store's FlushedIDs, or nil to insert unconditionally.
+// It must belong to the same store as the connection the batch is flushed on:
+// a set shared across two databases would skip inserts into one of them.
+func NewDictionary(flushed *FlushedIDs) *Dictionary {
 	return &Dictionary{
 		attributes: map[duckdb.UUID]Attribute{},
 		resources:  map[duckdb.UUID]Resource{},
 		scopes:     map[duckdb.UUID]Scope{},
+		flushed:    flushed,
 	}
 }
 
@@ -258,6 +269,7 @@ func (d *Dictionary) Flush(ctx context.Context, conn driver.Conn) error {
 }
 
 func (d *Dictionary) flushAttributes(ctx context.Context, conn driver.Conn) error {
+	d.attributes = unseen(d.flushed, d.attributes)
 	if len(d.attributes) == 0 {
 		return nil
 	}
@@ -269,10 +281,15 @@ func (d *Dictionary) flushAttributes(ctx context.Context, conn driver.Conn) erro
 	}
 	q := `insert into attributes (id, key, value, type, scope) values ` +
 		strings.Join(rows, ", ") + ` on conflict (id) do nothing`
-	return execArgs(ctx, conn, q, args, "attributes")
+	if err := execArgs(ctx, conn, q, args, "attributes"); err != nil {
+		return err
+	}
+	mark(d.flushed, d.attributes)
+	return nil
 }
 
 func (d *Dictionary) flushResources(ctx context.Context, conn driver.Conn) error {
+	d.resources = unseen(d.flushed, d.resources)
 	if len(d.resources) == 0 {
 		return nil
 	}
@@ -284,10 +301,15 @@ func (d *Dictionary) flushResources(ctx context.Context, conn driver.Conn) error
 	}
 	q := `insert into resources (id, attribute_ids, dropped_attributes_count) values ` +
 		strings.Join(rows, ", ") + ` on conflict (id) do nothing`
-	return execArgs(ctx, conn, q, args, "resources")
+	if err := execArgs(ctx, conn, q, args, "resources"); err != nil {
+		return err
+	}
+	mark(d.flushed, d.resources)
+	return nil
 }
 
 func (d *Dictionary) flushScopes(ctx context.Context, conn driver.Conn) error {
+	d.scopes = unseen(d.flushed, d.scopes)
 	if len(d.scopes) == 0 {
 		return nil
 	}
@@ -299,7 +321,11 @@ func (d *Dictionary) flushScopes(ctx context.Context, conn driver.Conn) error {
 	}
 	q := `insert into scopes (id, name, version, attribute_ids, dropped_attributes_count) values ` +
 		strings.Join(rows, ", ") + ` on conflict (id) do nothing`
-	return execArgs(ctx, conn, q, args, "scopes")
+	if err := execArgs(ctx, conn, q, args, "scopes"); err != nil {
+		return err
+	}
+	mark(d.flushed, d.scopes)
+	return nil
 }
 
 // NonNil normalises a nil id slice to an empty one.

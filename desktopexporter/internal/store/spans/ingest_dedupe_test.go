@@ -50,7 +50,7 @@ func TestIngestDedupesAcrossSpans(t *testing.T) {
 	}
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, td)
+		return spans.Ingest(ctx, conn, td, s.FlushedIDs())
 	}))
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {

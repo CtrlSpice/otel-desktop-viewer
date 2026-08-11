@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
 	"github.com/duckdb/duckdb-go/v2"
 	"go.uber.org/zap"
@@ -41,6 +42,13 @@ type Store struct {
 	// Not reentrant: never call a locking Store method from inside a WithConn,
 	// WithDBRead, or WithDBWrite callback.
 	mu sync.RWMutex
+
+	// flushed records which dictionary rows this store has already written, so
+	// a batch whose attributes, resource and scope are all known can skip its
+	// insert. Owned here because the set describes one database: sharing it
+	// across stores would skip inserts into the wrong one. Invalidated by
+	// ingest.SweepOrphans, the only thing that deletes dictionary rows.
+	flushed *ingest.FlushedIDs
 
 	// retentionCapBytes is the store size cap enforced by EnforceRetention
 	// and reported by getStats. 0 means retention is disabled. Set once via
@@ -149,7 +157,19 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		dbPath:       dbPath,
 		logger:       logger,
 		schemaCompat: schemaCompat,
+		flushed:      ingest.NewFlushedIDs(),
 	}, nil
+}
+
+// FlushedIDs is the store's record of which dictionary rows are already
+// written. Pass it to spans.Ingest, logs.Ingest and metrics.Ingest so a batch
+// whose content has all been seen can skip its dictionary insert.
+//
+// Passing nil instead is always safe -- it just reinserts every time -- but
+// passing *another* store's set is not, which is why this hangs off the store
+// rather than being a package-level singleton.
+func (s *Store) FlushedIDs() *ingest.FlushedIDs {
+	return s.flushed
 }
 
 // Close closes the store and the underlying database connection.

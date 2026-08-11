@@ -186,7 +186,7 @@ func TestTraceSummaryOrdering(t *testing.T) {
 	traces, trace1Hex, trace2Hex, trace3Hex := buildTracesForSummaryOrdering(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	})
 	assert.NoError(t, err, "failed to ingest spans")
 
@@ -228,7 +228,7 @@ func TestEmptySpans(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, ptrace.NewTraces())
+		return spans.Ingest(ctx, conn, ptrace.NewTraces(), s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -252,7 +252,7 @@ func TestClearTraces(t *testing.T) {
 
 	traces := createTestTracePdata()
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -286,7 +286,7 @@ func TestClearTraces(t *testing.T) {
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from scopes"), 0)
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db)
+		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
 	}))
 
 	// Spans were the only signal ingested, so after the sweep nothing is
@@ -340,7 +340,7 @@ func TestTraceSuite(t *testing.T) {
 	traces := createTestTracePdata()
 	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	})
 	assert.NoError(t, err, "failed to ingest test trace")
 
@@ -445,7 +445,7 @@ func TestSearchTraces(t *testing.T) {
 	traces := createTestTracePdata()
 	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	})
 	assert.NoError(t, err, "failed to ingest test trace")
 
@@ -1100,7 +1100,7 @@ func TestIngestSpans_FlushInterval(t *testing.T) {
 	const batchSize = 51 // > flushIntervalSpans (50)
 	traces := createTestTracesPdataN(batchSize)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -1165,7 +1165,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 	cancel()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, createTestTracesPdataN(1))
+		return spans.Ingest(ctx, conn, createTestTracesPdataN(1), s.FlushedIDs())
 	})
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -1180,7 +1180,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
-			return spans.Ingest(ctx, conn, traces)
+			return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 		})
 	}()
 	cancel()
@@ -1196,7 +1196,7 @@ func TestDeleteSpansByIDs(t *testing.T) {
 
 	traces := createTestTracePdata()
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -1251,7 +1251,7 @@ func TestDeleteSpansByIDs(t *testing.T) {
 	assert.Equal(t, len(spanAttrIDs), countRows(t, s, ctx, inSpanAttrIDs, spanAttrIDs...))
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db)
+		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
 	}))
 
 	// Now the sweep collects them -- and only them.
@@ -1284,7 +1284,7 @@ func TestSearchSpansWith32CharHexTraceID(t *testing.T) {
 
 	traces := createTestTracePdata()
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	})
 	require.NoError(t, err)
 
@@ -1304,7 +1304,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	traces := createTestTracePdata()
 	testTraceID := "00000000000000000000000000000099"
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -1333,7 +1333,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 		"DeleteSpansByTraceIDs must leave the dictionary alone")
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db)
+		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
 	}))
 
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
@@ -1616,7 +1616,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	traces, _, _, _ := buildTracesForSummaryOrdering(baseTime)
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces)
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	})
 	require.NoError(t, err)
 

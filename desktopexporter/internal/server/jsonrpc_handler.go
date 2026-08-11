@@ -172,7 +172,7 @@ func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
 		if err := spans.Clear(ctx, db); err != nil {
 			return err
 		}
-		return ingest.SweepOrphans(ctx, db)
+		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -219,7 +219,7 @@ func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 		if err := logs.Clear(ctx, db); err != nil {
 			return err
 		}
-		return ingest.SweepOrphans(ctx, db)
+		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -318,7 +318,7 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 		if err := metrics.Clear(ctx, db); err != nil {
 			return err
 		}
-		return ingest.SweepOrphans(ctx, db)
+		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

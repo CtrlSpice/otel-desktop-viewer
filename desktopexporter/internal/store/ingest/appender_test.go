@@ -91,7 +91,7 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 
 	// Build the dictionary side the way logs.Ingest does, so the ids the
 	// appender writes are the ids the dictionary rows were keyed by.
-	dict := ingest.NewDictionary()
+	dict := ingest.NewDictionary(nil)
 
 	resource := pcommon.NewResource()
 	resource.Attributes().PutStr("service.name", "flush-test")

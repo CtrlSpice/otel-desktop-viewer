@@ -276,7 +276,7 @@ func TestLogOrdering(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata)
+		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -295,7 +295,7 @@ func TestEmptyLogs(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, plog.NewLogs())
+		return logs.Ingest(ctx, conn, plog.NewLogs(), s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -319,7 +319,7 @@ func TestClearLogs(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata)
+		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -346,7 +346,7 @@ func TestClearLogs(t *testing.T) {
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from scopes"), 0)
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db)
+		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
 	}))
 
 	// Logs were the only signal ingested, so after the sweep nothing is
@@ -364,7 +364,7 @@ func TestLogSuite(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata)
+		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
 	})
 	assert.NoError(t, err, "failed to ingest test logs")
 
@@ -533,7 +533,7 @@ func TestGetLogAttributes(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime))
+		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime), s.FlushedIDs())
 	}))
 
 	startTime := baseTime - int64(time.Hour)
@@ -569,7 +569,7 @@ func TestGetLogAttributes(t *testing.T) {
 	// used -- including a scope-scoped one, so all three scopes are covered.
 	laterTime := baseTime + int64(2*time.Hour)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdataN(laterTime, 1))
+		return logs.Ingest(ctx, conn, createTestLogsPdataN(laterTime, 1), s.FlushedIDs())
 	}))
 
 	// Queried with the ORIGINAL window, which ends an hour before that batch.
@@ -591,7 +591,7 @@ func TestDeleteLogsByIDs(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata)
+		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -630,7 +630,7 @@ func TestIngestLogs_FlushInterval(t *testing.T) {
 	const batchSize = 250
 	ldata := createTestLogsPdataN(baseTime, batchSize)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata)
+		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -669,7 +669,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 	cancel()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdataN(time.Now().UnixNano(), 1))
+		return logs.Ingest(ctx, conn, createTestLogsPdataN(time.Now().UnixNano(), 1), s.FlushedIDs())
 	})
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -684,7 +684,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
-			return logs.Ingest(ctx, conn, ldata)
+			return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
 		})
 	}()
 	cancel()
@@ -701,7 +701,7 @@ func TestSearchLogs(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, ldata)
+		return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -1121,7 +1121,7 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 
 	baseTime := time.Now().UnixNano()
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime))
+		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime), s.FlushedIDs())
 	})
 	require.NoError(t, err)
 

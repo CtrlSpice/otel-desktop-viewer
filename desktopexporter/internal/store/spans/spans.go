@@ -74,13 +74,13 @@ func resourceServiceName(attrs pcommon.Map) string {
 // because the inserts commit before any appender flush, and the appenders open
 // after the resolve -- the same shape metrics.Ingest already used for its
 // stream upsert.
-func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces) (err error) {
+func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
 	// Pass 1: hash everything and resolve resource/scope identities.
-	dict := ingest.NewDictionary()
+	dict := ingest.NewDictionary(flushed)
 
 	type scopeKey struct{ ri, si int }
 	resourceIDs := map[int]duckdb.UUID{}

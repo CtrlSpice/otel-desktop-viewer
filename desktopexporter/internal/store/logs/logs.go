@@ -64,13 +64,13 @@ const flushIntervalLogs = 500
 // Two passes, matching spans.Ingest: hash and resolve resource/scope
 // identities, flush the dictionary, then append the log rows with the id
 // arrays. See spans.Ingest for why the dictionary cannot ride the appender.
-func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs) (err error) {
+func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *ingest.FlushedIDs) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
 	// Pass 1: dictionary.
-	dict := ingest.NewDictionary()
+	dict := ingest.NewDictionary(flushed)
 	type scopeKey struct{ ri, si int }
 	resourceIDs := map[int]duckdb.UUID{}
 	scopeIDs := map[scopeKey]duckdb.UUID{}

@@ -98,7 +98,7 @@ func (s *Store) EnforceRetention(ctx context.Context, maxBytes int64) error {
 	// or a delete-by-id must never be what tips the store over and triggers
 	// pruning of real telemetry.
 	if err := s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db)
+		return ingest.SweepOrphans(ctx, db, s.flushed)
 	}); err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func (s *Store) enforceRound(ctx context.Context, maxBytes int64) (bool, error) 
 		// The prunes are what create orphans, so sweep here rather than at the
 		// top of the next round: the next round's measurement then reflects
 		// live data instead of what this round just abandoned.
-		if err := ingest.SweepOrphans(ctx, db); err != nil {
+		if err := ingest.SweepOrphans(ctx, db, s.flushed); err != nil {
 			return err
 		}
 

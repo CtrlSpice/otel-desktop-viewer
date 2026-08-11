@@ -275,7 +275,7 @@ func TestMetricSuite(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 	})
 	assert.NoError(t, err, "ingest test metrics")
 
@@ -725,7 +725,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		defer teardown()
 
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 
@@ -758,7 +758,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		// same logical Gauge, all sharing one metric_streams row.
 		for i := 0; i < 3; i++ {
 			err := s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+				return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 			})
 			assert.NoError(t, err)
 		}
@@ -808,7 +808,7 @@ func TestDeleteMetricStream(t *testing.T) {
 			dp.SetIntValue(1)
 		}
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchMetricsAll(t, s, ctx), 2)
@@ -845,7 +845,7 @@ func TestDeleteMetricStream(t *testing.T) {
 			dp.SetIntValue(1)
 		}
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
@@ -885,7 +885,7 @@ func TestDeleteMetricStream(t *testing.T) {
 			dp.SetIntValue(1)
 		}
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchSummariesAll(t, s, ctx), 2)
@@ -908,7 +908,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		defer teardown()
 
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 		assert.Len(t, searchMetricsAll(t, s, ctx), 5)
@@ -926,7 +926,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		defer teardown()
 
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 		})
 		assert.NoError(t, err)
 
@@ -989,7 +989,7 @@ func TestDeleteMetricStream(t *testing.T) {
 
 		// ...and the sweep is what collects whatever the delete orphaned.
 		require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-			return ingest.SweepOrphans(ctx, db)
+			return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
 		}))
 		// The other four fixture metrics still reference the same resource and
 		// scope, so the sweep must NOT take those rows -- shared content
@@ -1024,7 +1024,7 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 	const batches = 5
 	for i := 0; i < batches; i++ {
 		err := s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 		})
 		require.NoError(t, err)
 	}
@@ -1108,12 +1108,12 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 			defer teardown()
 
 			err := s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pcommon.InstrumentationScope, pcommon.Resource) {}))
+				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pcommon.InstrumentationScope, pcommon.Resource) {}), s.FlushedIDs())
 			})
 			require.NoError(t, err)
 
 			err = s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, mk(t, tc.mutate))
+				return metrics.Ingest(ctx, conn, mk(t, tc.mutate), s.FlushedIDs())
 			})
 			require.NoError(t, err)
 
@@ -1137,7 +1137,7 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 	})
 	require.NoError(t, err)
 
@@ -1163,7 +1163,7 @@ func TestEmptyMetrics(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, pmetric.NewMetrics())
+		return metrics.Ingest(ctx, conn, pmetric.NewMetrics(), s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -1177,7 +1177,7 @@ func TestClearMetrics(t *testing.T) {
 	defer teardown()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -1204,7 +1204,7 @@ func TestClearMetrics(t *testing.T) {
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes"), 0,
 		"Clear must not delete shared dictionary rows itself")
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db)
+		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
 	}))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from attributes"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from resources"))
@@ -1257,7 +1257,7 @@ func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
 	dp2.Negative().BucketCounts().FromRaw([]uint64{})
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md)
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 	}))
 
 	byName := make(map[string]map[string]any)
@@ -1418,7 +1418,7 @@ func TestIngestMetrics_FlushInterval(t *testing.T) {
 
 	const batchSize = 101 // > flushIntervalMetrics (100)
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(batchSize))
+		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(batchSize), s.FlushedIDs())
 	})
 	assert.NoError(t, err)
 
@@ -1463,7 +1463,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 	cancel()
 
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(1))
+		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(1), s.FlushedIDs())
 	})
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -1477,7 +1477,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdataN(100))
+			return metrics.Ingest(ctx, conn, createTestMetricsPdataN(100), s.FlushedIDs())
 		})
 	}()
 	cancel()
@@ -1512,7 +1512,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 		dp2.Attributes().PutStr("host", "a")
 
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		}))
 
 		summary := findSummary(t, searchSummariesAll(t, s, ctx), "gauge_card_test")
@@ -1536,7 +1536,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 				count: 6, sum: 7.0, min: 0.5, max: 2.5},
 		})
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, md)
+			return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 		}))
 
 		summary := findSummary(t, searchSummariesAll(t, s, ctx), "hist_card_test")
@@ -1559,7 +1559,7 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 	defer teardown()
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdata())
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
 	}))
 
 	search := func(t *testing.T, scope, name, op, value string) []map[string]any {

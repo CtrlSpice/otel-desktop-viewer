@@ -114,7 +114,7 @@ func TestFlushIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	build := func() *ingest.Dictionary {
-		d := ingest.NewDictionary()
+		d := ingest.NewDictionary(nil)
 		res := pcommon.NewResource()
 		res.Attributes().PutStr("service.name", "checkout")
 		res.Attributes().PutStr("host.name", "pod-a")
@@ -156,7 +156,7 @@ func TestFlushedArraysReferenceRealAttributes(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
 
-	d := ingest.NewDictionary()
+	d := ingest.NewDictionary(nil)
 	res := pcommon.NewResource()
 	res.Attributes().PutStr("service.name", "checkout")
 	res.Attributes().PutInt("process.pid", 4242)
@@ -187,7 +187,7 @@ func TestStoredIDsMatchTheSQLMacro(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
 
-	d := ingest.NewDictionary()
+	d := ingest.NewDictionary(nil)
 	d.AddAttributes(attrMap(map[string]string{
 		"http.method": "GET",
 		"url.path":    "/api/v1/resource",

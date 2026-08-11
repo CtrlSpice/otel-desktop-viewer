@@ -129,19 +129,19 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			// Ingest two traces, three logs, and one metric via pdata
 			traces := buildStoreTestTraces()
 			err = s.WithConn(func(conn driver.Conn) error {
-				return spans.Ingest(ctx, conn, traces)
+				return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 			})
 			assert.NoError(t, err, "spans table should exist and accept data")
 
 			logData := buildStoreTestLogs()
 			err = s.WithConn(func(conn driver.Conn) error {
-				return logs.Ingest(ctx, conn, logData)
+				return logs.Ingest(ctx, conn, logData, s.FlushedIDs())
 			})
 			assert.NoError(t, err, "logs table should exist and accept data")
 
 			metricData := buildStoreTestMetrics()
 			err = s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, metricData)
+				return metrics.Ingest(ctx, conn, metricData, s.FlushedIDs())
 			})
 			assert.NoError(t, err, "metrics table should exist and accept data")
 
@@ -334,7 +334,7 @@ func TestStoreExponentialHistogramConstraint(t *testing.T) {
 	dp.Negative().BucketCounts().FromRaw([]uint64{1, 2})
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, m)
+		return metrics.Ingest(ctx, conn, m, s.FlushedIDs())
 	})
 	assert.NoError(t, err, "ExponentialHistogram ingest should satisfy chk_exponential_histogram_fields constraint")
 }

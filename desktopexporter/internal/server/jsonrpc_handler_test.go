@@ -71,12 +71,12 @@ func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
 	ctx := context.Background()
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, buildTestTraces())
+		return spans.Ingest(ctx, conn, buildTestTraces(), s.FlushedIDs())
 	})
 	assert.NoError(t, err, "ingest spans")
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, buildTestLogs())
+		return logs.Ingest(ctx, conn, buildTestLogs(), s.FlushedIDs())
 	})
 	assert.NoError(t, err, "ingest logs")
 
@@ -818,7 +818,7 @@ func setupHandlerWithMetrics(t *testing.T) (*JSONRPCHandler, func()) {
 	ctx := context.Background()
 
 	err = s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildTestMetrics())
+		return metrics.Ingest(ctx, conn, buildTestMetrics(), s.FlushedIDs())
 	})
 	require.NoError(t, err, "ingest metrics")
 
