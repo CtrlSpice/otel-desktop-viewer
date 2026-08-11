@@ -65,21 +65,64 @@ Across temporality and monotonicity:
 - **Delta** — values are per-interval and plotted raw, so the line is preserved.
   Summing *displayed* deltas is not the window total; see stats below.
 
+Two edge cases the reduction has to handle explicitly:
+
+- **NaN elects itself.** DuckDB orders NaN above infinity — verified:
+  `max()` over `(10.0, NaN, 99.0)` returns NaN, and `arg_max` elects that row.
+  So a single NaN sample would become its bucket's representative and displace a
+  real maximum. Filter `isfinite(double_value)` in the M4 CTE.
+- **`FLAG_NO_RECORDED_VALUE`** is never filtered anywhere today; such points
+  chart as 0 via the `?? 0` fallback in chart-projection.ts. The server-side
+  reduction is the right place to finally exclude them.
+- **Multiple resets in one bucket** collapse to at most one visible reset, and
+  the increments between hidden pairs are lost from the rate view. Bounded and
+  honest — LTTB has the same class of problem — but it should be stated rather
+  than discovered.
+
 ### Histogram and ExponentialHistogram: merge, do not sample
 
 These are not scalar series. The UI renders a heatmap, quantiles over time, or a
 single distribution, and it currently does not downsample them at all — which is
 why the largest stream in the corpus is the exponential histogram.
 
-The natural reduction is **adding bucket counts within a time bucket**, and that
-is exact: a merged histogram yields the same quantiles and the same heatmap
-column as the individual ones. There is no fidelity trade here, only arithmetic.
+The reduction is a **merge within a time bucket**, and it is exact — but the
+merge is not the same operation for both temporalities, and an earlier draft of
+this document got that wrong.
 
-The complication is ExponentialHistogram scale. Two histograms only merge
-directly if they share a scale; otherwise the finer must be downscaled to the
-coarser, which is lossless in the same way (adjacent buckets combine). Zero
-counts and negative buckets have to travel with the merge rather than being
-dropped.
+- **Delta**: add bucket counts. Each datapoint covers its own interval, so
+  summing is correct.
+- **Cumulative**: **last minus first**, with a reset clamp. Each datapoint is a
+  running total, so adding them multiply-counts everything.
+
+The client already knows this and is the reference implementation:
+`mergeHistogramSliceCumulative` (histogram-aggregation.ts:338-355) sorts by
+timestamp and subtracts, and `subtractHistogramSlices` returns the later slice
+unchanged when subtraction would go negative, which is how a counter reset is
+absorbed. A server implementation has to branch on temporality exactly as
+`mergeSliceGroup` does, and port those fallback rules rather than reinvent them.
+
+Min and max need the same care: for a cumulative bucket you cannot subtract
+minima, so they are derived from the merged counts (`withBucketDerivedMinMax`)
+or returned null.
+
+For ExponentialHistogram, "rescale to the coarsest scale" is necessary but not
+sufficient. Offset alignment and `zero_threshold` folding are equally
+load-bearing: downscale everyone to the minimum scale, left-pad to the minimum
+offset, sum element-wise, then fold buckets at or below the zero threshold into
+`zeroCount`. Negative buckets travel symmetrically.
+
+The machinery for this **already exists server-side and is unused** — macros
+`downscale_exp_buckets`, `fold_below_cutoff`, `pad_left_to_offset` and
+`sum_bucket_vectors` (ddl/macros/24-27) are referenced by no query. The client's
+`mergeExpHistogramStreams` (histogram-merge.ts:140-206) is the semantics to
+match.
+
+One thing not to port: the client's *within-series* merge
+(`mergeHistogramSliceDelta`, histogram-aggregation.ts:300-315) takes
+`expDps[0].scale` and offset without rescaling, and `sumBucketVectors` zero-pads
+by length rather than by offset. SDKs legitimately change scale mid-stream as
+the value range grows, so scale and offset can drift *within* one series. Moving
+this server-side is the chance to run the full align path in both cases.
 
 ## Stats must come from the server
 
@@ -92,7 +135,16 @@ return { min, max, avg: sum / points.length, total: sum }
 ```
 
 Under M4, min and max survive exactly by construction. avg and total do not,
-since M4 deliberately over-samples extremes.
+and the reason is sharper than "sampling error": M4's output is **50% extremes
+by construction**, so anything averaging or summing the retained points is
+systematically extreme-biased rather than merely noisy. That applies to
+`seriesStatsFromPoints` and to the client's aggregate views
+(`aggregateSum`/`aggregateAverage`/`combinePool`).
+
+The fix is cheap and belongs in the same GROUP BY: **return per-bucket `count`
+and `sum` alongside the four M4 points**. Client-side averages and sums then
+become exact rather than sampled. Rate view is already exact under M4, because
+deltas of a cumulative counter telescope across retained points.
 
 **They are already wrong today.** Those numbers are computed over ~2,000
 LTTB-selected points out of, for a typical gauge stream, ~143,000 — so the
@@ -134,6 +186,53 @@ than convenient:
 Expected effect: 278 ms and tens of megabytes become a few milliseconds and a
 few hundred kilobytes, and the cost scales with the chart rather than with the
 retention window.
+
+## Exemplars are the thing that breaks
+
+M4 elects points by *value*, and exemplars hang off individual datapoint ids
+(`get_metric.sql`, exemplars_agg). So the datapoints carrying exemplars are
+mostly not the ones M4 retains, and the exemplar badges and trace links in
+`SeriesDatapointList.svelte` would quietly empty out — on exactly the dense
+streams this reduction targets, and taking trace correlation with them.
+
+Exemplars are sparse. Return **all** of them for the window, keyed by series,
+joining exemplars to datapoints over the window rather than over the retained
+ids. This has to land with M4, not after it.
+
+Other frontend surfaces degrade acceptably, largely because #295 already
+designed for datapoints going missing under retention:
+
+- `?dp=` validates against payload ids and nulls out when absent, and the
+  `series` param fallback still lands the user on the right line. Keeping real
+  datapoint ids on M4-retained rows means surviving links keep working.
+- Chart click selection resolves by nearest timestamp over the payload, so
+  clickable points and payload points coincide by construction — better than
+  today, where the click resolves against the full list the client then thins.
+- The heatmap keys selection by bucket timestamp rather than datapoint id.
+- `totalDatapointCount` and `histogramTimeseriesGroups.pointCount` count the
+  payload and would under-report; both need wiring to the new `datapointCount`.
+
+## Order to build it
+
+Each step ships on its own:
+
+1. **Per-series stats and true `datapointCount`.** Smallest change, fixes the
+   existing `total` bug, no reduction semantics involved, and the "showing X of
+   Y" UI needs it regardless.
+2. **M4 for Gauge/Sum**, with per-bucket `count`/`sum`, `isfinite` filtering and
+   dedup of the up-to-four elected rows. Client LTTB stays: it is a no-op
+   passthrough when the input already fits, so it costs nothing and catches
+   anything missed.
+3. **Exemplar re-attachment**, in the same release as 2.
+4. **Histogram and ExponentialHistogram merge**, temporality-branched, using the
+   existing unused macros. Biggest win — the 200k-point stream is an
+   ExponentialHistogram — and the most intricate, hence last.
+
+Not worth doing: LTTB in SQL (recursive-CTE contortion for a weaker guarantee
+than M4); moving the rate/sum/avg *chart views* server-side (with per-bucket
+count and sum the client computes them exactly, and that logic is deeply
+UI-coupled); sampling histograms; assuming scale and `zero_threshold` are
+uniform within a stream.
 
 ## Open questions
 
