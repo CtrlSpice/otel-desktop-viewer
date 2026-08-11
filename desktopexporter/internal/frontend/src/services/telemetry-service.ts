@@ -27,6 +27,7 @@ import type {
   JsonTraceSummary,
   JsonAttributeType,
   JsonQueryNode,
+  JsonAttributeMatch,
 } from '@/types/wire-types'
 import { parseBigInt, parseNullableBigInt } from '@/utils/bigint'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
@@ -281,6 +282,22 @@ function statsFromJSON(json: JsonStats): Stats {
 
 // Export typed methods for each RPC call with built-in conversion
 export let telemetryAPI = {
+  // Value-first discovery: given text the user can see, which attribute keys
+  // hold it. Cross-signal by nature -- the dictionary it reads is shared by
+  // traces, logs and metrics -- so unlike getXAttributes it takes no signal and
+  // no time range.
+  searchAttributes: async (term: string): Promise<JsonAttributeMatch[]> => {
+    if (!term.trim()) return []
+    const rawData = await callRPC<JsonAttributeMatch[]>('searchAttributes', [
+      term,
+    ])
+    if (!Array.isArray(rawData)) {
+      console.warn('searchAttributes: Expected array, got:', typeof rawData)
+      return []
+    }
+    return rawData
+  },
+
   // Trace methods
   getTraceAttributes: async (
     startTime: number,
