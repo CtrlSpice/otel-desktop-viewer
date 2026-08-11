@@ -297,21 +297,33 @@ function mergeHistogramSliceDelta(
     })
   }
 
+  // Merging exponential histograms across *time within one series* is the
+  // same operation as merging them across series, so it goes through the same
+  // function. An earlier version summed the bucket vectors directly and took
+  // scale and offset from the first datapoint, which is only correct when
+  // every datapoint in the bucket happens to share them.
+  //
+  // They do not have to. An SDK downscales a stream mid-flight as the observed
+  // range widens, and offset moves whenever the smallest observed value does.
+  // Summing misaligned vectors adds counts from bucket i of one datapoint to
+  // bucket i of another that covers a different value range -- silently wrong
+  // quantiles, no error. mergeExpHistogramStreams downscales to the coarsest
+  // scale, left-pads to the smallest offset, then sums.
   const expDps = dps as ExponentialHistogramDataPoint[]
-  const posVectors = expDps.map(dp => dp.positiveBucketCounts)
-  const negVectors = expDps.map(dp => dp.negativeBucketCounts)
+  const totals = rollupHistogramTotals(dps.map(totalsFromDp))
+  const merged = mergeExpHistogramStreams(expDps, totals)
   return withBucketDerivedMinMax({
     kind: 'expHistogram',
     timestamp,
     attributesKey: '',
-    scale: expDps[0]!.scale,
-    zeroThreshold: Math.max(...expDps.map(dp => dp.zeroThreshold)),
-    zeroCount: expDps.reduce((n, dp) => n + dp.zeroCount, 0),
-    positiveOffset: expDps[0]!.positiveBucketOffset,
-    positiveCounts: sumBucketVectors(posVectors) ?? [],
-    negativeOffset: expDps[0]!.negativeBucketOffset,
-    negativeCounts: sumBucketVectors(negVectors) ?? [],
-    totals: rollupHistogramTotals(dps.map(totalsFromDp)),
+    scale: merged.scale,
+    zeroThreshold: merged.zeroThreshold,
+    zeroCount: merged.zeroCount,
+    positiveOffset: merged.positiveBucketOffset,
+    positiveCounts: merged.positiveBucketCounts,
+    negativeOffset: merged.negativeBucketOffset,
+    negativeCounts: merged.negativeBucketCounts,
+    totals,
   })
 }
 

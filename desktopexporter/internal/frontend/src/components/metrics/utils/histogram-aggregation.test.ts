@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import type { ExponentialHistogramDataPoint } from '@/types/api-types'
 import {
+  buildHistogramTimeMergedSeries,
+  isHistogramAggregationError,
   buildPerSeriesQuantileSeries,
   buildVisibleSeriesQuantileChartTimeseries,
   parseQuantileSeriesKey,
@@ -83,5 +86,87 @@ describe('buildPerSeriesQuantileSeries', () => {
     const lines = buildPerSeriesQuantileSeries(perAttribute, 0.5, visible)
     expect(lines.map(l => l.key).sort()).toEqual(['host=a', 'host=b'])
     expect(lines[0]!.points).toHaveLength(2)
+  })
+})
+
+describe('exponential histograms whose scale drifts within a series', () => {
+  // An SDK downscales a stream mid-flight as the observed range widens, so two
+  // datapoints of the *same* series can carry different scales and offsets.
+  // Merging them by summing bucket vectors positionally adds counts covering
+  // different value ranges together: wrong quantiles, no error.
+  function expDp(
+    timestamp: bigint,
+    scale: number,
+    positiveBucketOffset: number,
+    positiveBucketCounts: number[]
+  ): ExponentialHistogramDataPoint {
+    const count = positiveBucketCounts.reduce((a, b) => a + b, 0)
+    return {
+      id: `dp-${timestamp}`,
+      metricType: 'ExponentialHistogram',
+      timestamp,
+      startTime: timestamp,
+      flags: 0,
+      exemplars: [],
+      attributes: [],
+      count,
+      sum: count,
+      min: 1,
+      max: 100,
+      scale,
+      zeroCount: 0,
+      zeroThreshold: 0,
+      positiveBucketOffset,
+      positiveBucketCounts,
+      negativeBucketOffset: 0,
+      negativeBucketCounts: [],
+      aggregationTemporality: 'Delta',
+    } as unknown as ExponentialHistogramDataPoint
+  }
+
+  it('rescales before summing rather than trusting the first datapoint', () => {
+    // Same series, one bucket of time. Scale 2 downscales to scale 1 by
+    // merging adjacent bucket pairs; the offsets differ too.
+    const series = [
+      {
+        attributesKey: 'a',
+        attributes: [],
+        datapoints: [
+          expDp(1_000_000_000n, 2, 4, [1, 1, 1, 1]),
+          expDp(1_000_000_001n, 1, 2, [5, 5]),
+        ],
+      },
+    ] as unknown as Parameters<typeof buildHistogramTimeMergedSeries>[0]
+
+    const out = buildHistogramTimeMergedSeries(
+      series,
+      1_000_000_000n,
+      2_000_000_000n,
+      1,
+      'Delta'
+    )
+    expect(isHistogramAggregationError(out)).toBe(false)
+    const slices = out as HistogramSlicePoint[]
+    // Both datapoints must land in ONE bucket, or the merge never runs and
+    // the test proves nothing -- which is exactly what the first version of
+    // this test did.
+    expect(slices).toHaveLength(1)
+
+    const slice = slices[0]!
+    expect(slice.kind).toBe('expHistogram')
+    if (slice.kind !== 'expHistogram') return
+
+    // The merge must land on the coarsest scale present, not the first one.
+    expect(slice.scale).toBe(1)
+
+    // Total count is conserved however the buckets are aligned: 4 + 10.
+    const total = slice.positiveCounts.reduce((a, b) => a + b, 0)
+    expect(total).toBe(14)
+
+    // The scale-2 datapoint's four buckets at offset 4 collapse to two buckets
+    // at offset 2, which is exactly where the scale-1 datapoint already sits --
+    // so a correct merge overlaps them rather than laying them side by side.
+    expect(slice.positiveOffset).toBe(2)
+    expect(slice.positiveCounts).toEqual([7, 7])
   })
 })
