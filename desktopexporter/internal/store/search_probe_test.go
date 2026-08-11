@@ -71,10 +71,12 @@ func TestSearchProbeMatchesIngestedID(t *testing.T) {
 
 	checked := 0
 	for _, x := range rows {
-		// Deliberately no type is declared: the probe hashes under all of
-		// them, so the stored id must appear whatever the attribute's type.
+		// The type comes from the dictionary row, which is exactly what
+		// discovery serves to the frontend -- so this walks every distinct
+		// (key, value, type, scope) the fixture produced and asserts the
+		// probe recomputes the id ingest stored for it.
 		probe := ingest.IDProbe("ids",
-			&search.FieldDefinition{Name: x.key},
+			&search.FieldDefinition{Name: x.key, Type: x.typ},
 			&search.Query{FieldOperator: "=", Value: x.value},
 			x.scope)
 		require.NotEmpty(t, probe, "probe should fire")
@@ -101,14 +103,20 @@ func TestIDProbeRefusesWhatItCannotGuarantee(t *testing.T) {
 		{"not-equals", str, &search.Query{FieldOperator: "!=", Value: "GET"}, false},
 		{"contains", str, &search.Query{FieldOperator: "CONTAINS", Value: "GE"}, false},
 		{"NULL sentinel", str, &search.Query{FieldOperator: "=", Value: "NULL"}, false},
-		// Types are probed rather than trusted, so these now take the fast
-		// path too -- an int64's stored text is "200", exactly what is typed.
+		// The declared type is trusted -- for an attribute field it is the
+		// token ingest wrote, served back by discovery -- so a non-string
+		// type takes the fast path under that type. An int64's stored text
+		// is "200", exactly what is typed.
 		{"int64 field", &search.FieldDefinition{Name: "http.status_code", Type: "int64"},
 			&search.Query{FieldOperator: "=", Value: "200"}, true},
-		{"untyped field still works", &search.FieldDefinition{Name: "x"},
-			&search.Query{FieldOperator: "=", Value: "y"}, true},
-		{"wrongly declared type still works", &search.FieldDefinition{Name: "x", Type: "float64"},
-			&search.Query{FieldOperator: "=", Value: "y"}, true},
+		// With no type there is no id to compute, so this must fall back to
+		// the value-comparison form rather than guess a token. Guessing is
+		// what the all-eight-types version did, and it conflated int64 200
+		// with string "200".
+		{"untyped field falls back", &search.FieldDefinition{Name: "x"},
+			&search.Query{FieldOperator: "=", Value: "y"}, false},
+		{"unknown type token falls back", &search.FieldDefinition{Name: "x", Type: "decimal"},
+			&search.Query{FieldOperator: "=", Value: "y"}, false},
 		{"nil query", str, nil, false},
 	} {
 		got := ingest.IDProbe("ids", tc.field, tc.query, ingest.ScopeSpan) != ""

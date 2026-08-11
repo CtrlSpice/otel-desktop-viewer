@@ -2,7 +2,7 @@ package ingest
 
 import (
 	"fmt"
-	"strings"
+	"slices"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 )
@@ -36,24 +36,35 @@ import (
 //     so a user typing 0.333 never matches the stored 0.3333333333333333. That
 //     is equally true of today's text comparison, so it is not a regression --
 //     just not a case this rescues.
-//
-// # Why it probes every type rather than trusting the declared one
-//
-// The id includes the type token, so hashing under the wrong type silently
-// matches nothing. An earlier version gated on field.Type == "string" and
-// trusted the caller; measuring against real data caught it returning zero
-// results for f1.lap.number, an int64 the request had declared as a string.
-// Silent zero results from a type disagreement is exactly the failure this
-// whole design is supposed to avoid.
-//
-// So it hashes the value under all eight types and tests membership against
-// any of them. The value string is identical in every case -- only the token
-// differs -- so this costs eight cheap hashes and one array-overlap test
-// instead of one, removes the dependency on client-supplied type metadata
-// entirely, and extends the fast path to int64 and bool, whose stored text
-// ("200", "true") is exactly what a user types.
 //   - Never the NULL sentinel, which means "lacks this key" -- the opposite of
 //     a membership test.
+//   - Any type token the schema enum does not contain, which can only mean the
+//     caller and the store disagree about what types exist.
+//
+// # Why it trusts the declared type
+//
+// The id includes the type token, so the probe needs to know the type. For an
+// attribute field that type is not client guesswork: GetTraceAttributes serves
+// the field list as "select distinct a.key, a.scope, a.type from attributes",
+// so it is the token ingest itself wrote, round-tripped back. A key carrying
+// two types appears as two field definitions, each correct.
+//
+// An earlier version hashed under all eight types and tested overlap, on the
+// belief that the declared type could not be trusted -- a conclusion drawn from
+// f1.lap.number returning nothing when declared as a string. Whatever produced
+// that "string" (a hand-built probe request, or the older schema it was
+// observed against, which was mid-rewrite and at one point serving from a
+// corrupt database), it was not the frontend: the dictionary holds the key as
+// int64, and discovery reads the dictionary.
+//
+// Probing all eight was also less correct, not merely more expensive. The value
+// string is identical across types, so int64 200 and string "200" hash to
+// different ids but both land in the overlap set: searching an integer field
+// for 200 would also match a string "200" written by another producer. No key
+// in the reference capture carries two types, so nothing surfaced it -- it
+// would have appeared the first time two producers disagreed, as a search
+// quietly returning too much. One hash under the declared type is cheaper and
+// says what the user meant.
 //
 // Everything refused falls back to the value-comparison form, which is correct
 // for all of it, just slower.
@@ -71,11 +82,11 @@ func IDProbe(arrayExpr string, field *search.FieldDefinition, query *search.Quer
 	if query.FieldOperator != "=" || query.Value == "NULL" {
 		return ""
 	}
-	ids := make([]string, 0, len(AttrTypes))
-	for _, typ := range AttrTypes {
-		ids = append(ids, "'"+formatUUID(AttributeID(field.Name, query.Value, typ, scope))+"'::uuid")
+	if !slices.Contains(AttrTypes, field.Type) {
+		return ""
 	}
-	return fmt.Sprintf("%s && [%s]", arrayExpr, strings.Join(ids, ", "))
+	id := formatUUID(AttributeID(field.Name, query.Value, field.Type, scope))
+	return fmt.Sprintf("list_contains(%s, '%s'::uuid)", arrayExpr, id)
 }
 
 // AttrTypes is every value of the attr_type enum, in schema order.
