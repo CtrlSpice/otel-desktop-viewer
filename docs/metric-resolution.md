@@ -187,6 +187,44 @@ Expected effect: 278 ms and tens of megabytes become a few milliseconds and a
 few hundred kilobytes, and the cost scales with the chart rather than with the
 retention window.
 
+## Every window change is a new query
+
+Reduction moves the data the client no longer has, so panning and zooming stop
+being local operations. Today the client holds every datapoint for the fetched
+window and re-runs LTTB itself; afterwards each window change is a round trip.
+That is affordable only because the query gets cheap, which is the same trade
+the wire rewrite made for traces.
+
+**Bucket boundaries must be absolute, not window-relative.** If buckets were
+`start + i x width`, nudging the window by a second would shift every boundary,
+re-elect every M4 point, and make the chart shimmer while panning — points
+moving for no reason other than that the request changed.
+
+The histogram path already gets this right and M4 should reuse it rather than
+invent a second scheme:
+
+```ts
+histogramBucketStart: (timestampNs / bucketNs) * bucketNs   // epoch-aligned
+```
+
+and `BUCKET_LADDER` is chosen to preserve it — the sub-second rungs "divide a
+second evenly, so they keep the stable-boundary property the rest of the ladder
+has".
+
+What that buys:
+
+- panning slides data through fixed buckets, so points enter and leave rather
+  than move
+- only crossing a ladder rung changes resolution, which is a deliberate visible
+  step instead of continuous churn
+- the same (series, width, bucket) always produces the same answer, so responses
+  are deterministic, comparable across requests, and cacheable if that ever
+  matters
+
+The rest is ordinary interaction work: debounce during a drag, fetch a little
+wider than the visible window so small pans do not refetch, and keep rendering
+current data while the new response lands.
+
 ## Exemplars are the thing that breaks
 
 M4 elects points by *value*, and exemplars hang off individual datapoint ids
