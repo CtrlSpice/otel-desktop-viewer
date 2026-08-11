@@ -54,9 +54,13 @@ func TestInMemoryStoreIsClean(t *testing.T) {
 	assert.Zero(t, logs.Len())
 }
 
-// A file stamped with a different version must be reported, not silently used.
-// This is the case that becomes a hard failure once enforcement is switched on.
-func TestVersionMismatchIsReported(t *testing.T) {
+// A file stamped with a different version must be refused, not silently used.
+//
+// This was warn-only through the rewrite, while the schema was still moving.
+// Now it is the thing standing between an incompatible file and the opaque
+// failure it would otherwise produce -- an appender column-count error partway
+// through an ingest, or an index built against a column that is not there.
+func TestVersionMismatchIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "future.db")
 
 	s := newFileStore(t, path)
@@ -71,23 +75,34 @@ func TestVersionMismatchIsReported(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
-	reopened, logs := openWithLogs(t, path)
-	defer reopened.Close()
+	core, logs := observer.New(zap.WarnLevel)
+	reopened, err := NewStore(context.Background(), path, zap.New(core))
+	require.Error(t, err, "an incompatible file must not open")
+	require.ErrorIs(t, err, ErrSchemaIncompatible,
+		"callers need to tell this apart from a genuine store failure")
+	if reopened != nil {
+		reopened.Close()
+	}
 
-	assert.Equal(t, SchemaMismatch, reopened.SchemaCompatibility())
-	require.Equal(t, 1, logs.Len(), "a mismatch must be reported to the user")
+	// The error has to say which file and what to do, since there is no
+	// migration path -- the user's only move is to delete it or point --db
+	// elsewhere.
+	assert.Contains(t, err.Error(), "future.db", "name the file")
+	assert.Contains(t, err.Error(), "--db", "say what to do about it")
 
-	entry := logs.All()[0]
-	fields := entry.ContextMap()
-	assert.Contains(t, fields["database"], "future.db", "name the file")
+	require.Equal(t, 1, logs.Len(), "and it must be logged, not only returned")
+	fields := logs.All()[0].ContextMap()
 	assert.Equal(t, int64(schema.Version+1), fields["file_version"])
-	assert.Contains(t, fields["remedy"], "--db", "say what to do about it")
+	assert.Equal(t, int64(schema.Version), fields["expected_version"])
 }
 
-// A file holding data but carrying no stamp predates versioning. It must not be
-// stamped on sight: doing so would assert a compatibility nobody checked and
-// destroy the only evidence of where the file came from.
-func TestPreVersioningDatabaseIsNotStamped(t *testing.T) {
+// A file holding data but carrying no stamp predates versioning, so its shape
+// is unknown and it must be refused too.
+//
+// It must also not be stamped on the way out: stamping would assert a
+// compatibility nobody checked and destroy the only evidence of where the file
+// came from, so a second open would wrongly call it fine.
+func TestPreVersioningDatabaseIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 
 	// Build a database the way a pre-versioning build would leave it: real
@@ -125,23 +140,20 @@ func TestPreVersioningDatabaseIsNotStamped(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
-	reopened, logs := openWithLogs(t, path)
-	defer reopened.Close()
-
-	assert.Equal(t, SchemaPreVersioning, reopened.SchemaCompatibility())
+	core, logs := observer.New(zap.WarnLevel)
+	_, err = NewStore(context.Background(), path, zap.New(core))
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	assert.Contains(t, err.Error(), "legacy.db")
 	require.Equal(t, 1, logs.Len())
-	assert.Contains(t, logs.All()[0].ContextMap()["database"], "legacy.db")
 
-	// And it stays unstamped, so reopening reports the same thing rather than
-	// quietly deciding the file is fine the second time.
-	require.NoError(t, reopened.WithDBRead(func(db *sql.DB) error {
-		var stamped sql.NullInt64
-		if err := db.QueryRow(schema.ReadVersionQuery).Scan(&stamped); err != nil {
-			return err
-		}
-		assert.False(t, stamped.Valid, "a pre-versioning file must not be stamped on sight")
-		return nil
-	}))
+	// And it stays unstamped, so a second open reports the same thing rather
+	// than quietly deciding the file is fine.
+	raw, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	defer raw.Close()
+	var stamped sql.NullInt64
+	require.NoError(t, raw.QueryRow(schema.ReadVersionQuery).Scan(&stamped))
+	assert.False(t, stamped.Valid, "a pre-versioning file must not be stamped on sight")
 }
 
 // The version check has to run before the table and index loops.
@@ -191,4 +203,36 @@ func TestVersionCheckRunsBeforeTableCreation(t *testing.T) {
 	entry := logs.All()[0].ContextMap()
 	assert.Contains(t, entry["database"], "order.db")
 	assert.Contains(t, entry["remedy"], "--db")
+}
+
+// The upgrade path this bump exists for.
+//
+// Version 1 shipped on main, stamped onto the owner-keyed attributes schema.
+// Had the dictionary rewrite kept Version = 1, an existing database would have
+// matched on the number and been read as compatible -- and then failed as an
+// appender column-count error partway through an ingest, or an index built
+// against a column that no longer exists. Exactly the opaque failure the
+// version check was built to prevent, defeated by not bumping.
+//
+// Deliberately hardcodes 1 rather than deriving it: the point is the specific
+// version that exists in the wild, and a derived value would follow future
+// bumps and stop testing anything.
+func TestDatabaseFromPreviousReleaseIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v1.db")
+
+	s := newFileStore(t, path)
+	require.NoError(t, s.Close())
+
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`delete from schema_meta`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into schema_meta (version) values (1)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible,
+		"a database from the previous release must be refused, not silently reused")
+	assert.Contains(t, err.Error(), "--db", "and must say what to do about it")
 }

@@ -2,11 +2,26 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
 	"go.uber.org/zap"
 )
+
+// ErrSchemaIncompatible is returned when the database on disk was written by a
+// different schema than this build understands.
+//
+// Enforcement, not a warning. The check spent the rewrite in warn-only mode
+// because the schema was still moving and hard failure would have meant
+// deleting the dev database on every iteration. It is now what stops an
+// incompatible file being opened and failing later as something opaque: an
+// appender column-count error partway through an ingest, or "failed to create
+// index 4" against a column that does not exist.
+//
+// There is no migration. The remedy is to delete the file or point --db
+// somewhere else, which is what the message says.
+var ErrSchemaIncompatible = errors.New("database schema is incompatible with this build")
 
 // SchemaCompatibility describes what the version check found when the store was
 // opened.
@@ -59,13 +74,14 @@ func checkSchemaVersion(db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCo
 		if stamped.Int64 == schema.Version {
 			return SchemaOK, nil
 		}
-		logger.Warn("database was written by a different schema version; "+
-			"the viewer may fail to read or write it",
+		logger.Error("database was written by a different schema version",
 			zap.String("database", describePath(dbPath)),
 			zap.Int64("file_version", stamped.Int64),
 			zap.Int("expected_version", schema.Version),
 			zap.String("remedy", "delete it or pass a different --db path"))
-		return SchemaMismatch, nil
+		return SchemaMismatch, fmt.Errorf("%w: %s was written by schema version %d, "+
+			"this build uses %d -- delete it or pass a different --db path",
+			ErrSchemaIncompatible, describePath(dbPath), stamped.Int64, schema.Version)
 	}
 
 	hasData, err := hasExistingData(db)
@@ -73,12 +89,14 @@ func checkSchemaVersion(db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCo
 		return SchemaOK, err
 	}
 	if hasData {
-		logger.Warn("database holds data but carries no schema version, so it predates "+
+		logger.Error("database holds data but carries no schema version, so it predates "+
 			"versioning and its shape cannot be confirmed",
 			zap.String("database", describePath(dbPath)),
 			zap.Int("expected_version", schema.Version),
 			zap.String("remedy", "delete it or pass a different --db path"))
-		return SchemaPreVersioning, nil
+		return SchemaPreVersioning, fmt.Errorf("%w: %s holds data but carries no schema "+
+			"version, so it predates versioning -- delete it or pass a different --db path",
+			ErrSchemaIncompatible, describePath(dbPath))
 	}
 
 	if _, err := db.Exec(schema.StampVersionQuery, schema.Version); err != nil {

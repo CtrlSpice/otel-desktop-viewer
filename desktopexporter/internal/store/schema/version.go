@@ -14,9 +14,20 @@ package schema
 // mismatch first surfaces as a duckdb appender column-count error during ingest,
 // or as an index creation failure against a column that does not exist.
 //
-// Version 1 is the schema as of the attributes-dictionary rewrite. Files written
-// before versioning existed carry no stamp at all and are detected separately.
-const Version = 1
+// Version 1 was the owner-keyed attributes schema -- the last shape before the
+// dictionary. It shipped stamped, so databases written by that build exist in
+// the wild and must be recognised rather than silently reused.
+//
+// Version 2 is the attribute dictionary: attributes deduped into a table of
+// distinct (key, value, type, scope) rows, owners referencing them by uuid[],
+// resources and scopes as shared tables, and metric_series. Nothing about a
+// version 1 file can be read by this build -- the columns it indexes do not
+// exist -- so the bump is what stops that being discovered as an appender
+// column-count error midway through an ingest.
+//
+// Files written before versioning existed carry no stamp at all and are
+// detected separately.
+const Version = 2
 
 // VersionTableQuery creates the version table.
 //
