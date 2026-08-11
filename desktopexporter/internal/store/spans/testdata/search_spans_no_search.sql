@@ -39,9 +39,27 @@
 			join spans s on s.span_id = st.span_id
 		),
 
-		-- The dictionary as a single MAP, built once and probed by the three
-		-- CTEs below. Materialized so it is built once per query rather than
-		-- once per reference.
+		-- The attributes this trace references, as one MAP, probed by the three
+		-- CTEs below.
+		--
+		-- Narrowed to the ids actually referenced, not the whole dictionary,
+		-- and that is the difference between an optimisation and a liability.
+		-- Building over every row costs the same as the group-by form it
+		-- replaced once the dictionary is large, because the cost tracks total
+		-- store content rather than the trace being fetched. Measured on a
+		-- 5,735-span trace:
+		--
+		--	dictionary rows      whole-dict map      narrowed map
+		--	1,286                0.036s / 0.118s     0.035s / 0.117s
+		--	101,286              0.065s / 0.179s     0.036s / 0.118s
+		--
+		-- A season of F1 telemetry reaches ~1,286 distinct attributes, where
+		-- the two are indistinguishable. A web service with a url.path per
+		-- request reaches the second row on its first afternoon, and there the
+		-- unnarrowed form gives back everything the map was for.
+		--
+		-- The trace's own working set is small and stays small: 73 distinct
+		-- attributes for that 5,735-span trace.
 		dict_map as materialized (
 			select map(list(id), list({
 				'k': key,
@@ -49,6 +67,13 @@
 				'j': json_object('key', key, 'value', value, 'type', type::varchar)
 			})) as m
 			from attributes
+			where id in (
+				select unnest(attribute_ids) from tree
+				union select unnest(e.attribute_ids) from events e
+					where e.span_id in (select span_id from tree)
+				union select unnest(l.attribute_ids) from links l
+					where l.span_id in (select span_id from tree)
+			)
 		),
 
 		-- These three resolve attribute arrays by probing dict_map rather than
