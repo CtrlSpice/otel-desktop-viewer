@@ -68,6 +68,7 @@ function makeCumulativeSumMetric(): MetricData {
     scopeVersion: EMPTY_SCOPE.version,
     scopeDroppedAttributesCount: 0,
     scope: EMPTY_SCOPE,
+    datapointCount: 0,
     timeseries: [
       {
         attributesKey: 'route=/a',
@@ -77,6 +78,7 @@ function makeCumulativeSumMetric(): MetricData {
           makeSumDatapoint('dp-a1', 0, 10),
           makeSumDatapoint('dp-a2', 60_000, 25),
         ],
+        stats: null,
       },
       {
         attributesKey: 'route=/b',
@@ -86,6 +88,7 @@ function makeCumulativeSumMetric(): MetricData {
           makeSumDatapoint('dp-b1', 0, 4),
           makeSumDatapoint('dp-b2', 60_000, 9),
         ],
+        stats: null,
       },
     ],
   }

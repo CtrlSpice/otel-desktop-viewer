@@ -263,6 +263,7 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
     attributes: json.attributes,
     resource: json.resource,
     datapoints: json.datapoints.map(dataPointFromJSON),
+    stats: json.stats ?? null,
   }
 }
 

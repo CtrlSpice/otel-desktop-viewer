@@ -233,6 +233,22 @@ export type MetricTimeseries = {
    *  labels are identical. */
   resource: ResourceData
   datapoints: DataPoint[]
+  /** Min / max / avg / sum over *every* datapoint in the window, computed by
+   *  the store. Null for histogram series, which carry no scalar value.
+   *
+   *  These exist because the client cannot compute them correctly: it sees the
+   *  datapoints after thinning, so an average taken there is the mean of a
+   *  sample and a sum is short by the thinning factor. */
+  stats: SeriesValueStats | null
+}
+
+/** Per-series value statistics, computed server-side over the full window. */
+export type SeriesValueStats = {
+  count: number
+  min: number
+  max: number
+  sum: number
+  avg: number
 }
 
 export type MetricData = {
@@ -253,6 +269,9 @@ export type MetricData = {
   scopeDroppedAttributesCount: number
   scope: ScopeData
   timeseries: MetricTimeseries[]
+  /** How many datapoints the window holds, which is not necessarily how many
+   *  were returned. Equal until the store starts reducing what it sends. */
+  datapointCount: number
 }
 
 // Sparkline point shape used by detail charts (not the drawer summary).

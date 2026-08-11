@@ -663,8 +663,33 @@ export function createMetricViewContext(
 
   const seriesStatsByKey = $derived.by((): ReadonlyMap<string, SeriesStats> => {
     const out = new Map<string, SeriesStats>()
+
+    // In the raw view the store's numbers win, because they are the only
+    // correct ones: seriesStatsFromPoints runs over chart points, which have
+    // already been thinned to CHART_POINTS_PER_SERIES, so its avg is the mean
+    // of a sample and its total is short by the thinning factor -- and `total`
+    // is offered as a badge for Sum + Delta + raw.
+    //
+    // Derived views (sum / avg / rate) keep computing client-side: those points
+    // are transformed rather than sampled, so their stats describe the
+    // transform, and no server-side equivalent would match.
+    const raw = view.aggregationView === 'raw'
+    const fromServer = new Map<string, SeriesStats>()
+    if (raw) {
+      for (const ts of getMetric()?.timeseries ?? []) {
+        const st = ts.stats
+        if (!st) continue
+        fromServer.set(ts.attributesKey, {
+          min: st.min,
+          max: st.max,
+          avg: st.avg,
+          total: st.sum,
+        })
+      }
+    }
+
     for (const [key, points] of seriesRowPointsByKey) {
-      out.set(key, seriesStatsFromPoints(points))
+      out.set(key, fromServer.get(key) ?? seriesStatsFromPoints(points))
     }
     return out
   })

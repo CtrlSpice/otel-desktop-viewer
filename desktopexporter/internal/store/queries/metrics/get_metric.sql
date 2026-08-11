@@ -124,6 +124,24 @@
 				d.series_id::varchar as attrs_key,
 				attrs_json(any_value(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
+				-- Stats over every datapoint in the window, not over whatever
+				-- subset a chart ends up drawing.
+				--
+				-- The client computes these from its chart points, which are
+				-- thinned to CHART_POINTS_PER_SERIES before it sees them -- so
+				-- the average is the mean of an arbitrary sample, and the total
+				-- offered for delta sums is short by roughly the thinning
+				-- factor. Both are wrong today and get wronger under any
+				-- server-side reduction, which deliberately keeps extremes.
+				--
+				-- coalesce(double_value, int_value): a datapoint carries one or
+				-- the other by metric type, and value_type says which. Both are
+				-- null for histogram datapoints, so these come back null there
+				-- and the histogram path ignores them -- it has its own totals.
+				count(coalesce(d.double_value, d.int_value)) as value_count,
+				min(coalesce(d.double_value, d.int_value)) as value_min,
+				max(coalesce(d.double_value, d.int_value)) as value_max,
+				sum(coalesce(d.double_value, d.int_value)) as value_sum,
 				to_json(list(json_merge_patch(
 					json_object(
 						'id', d.id,
@@ -199,7 +217,15 @@
 				'attributesKey', t.attrs_key,
 				'attributes', t.attributes_sample,
 				'resource', resource_json(r.attribute_ids, r.dropped_attributes_count),
-				'datapoints', t.datapoints
+				'datapoints', t.datapoints,
+				-- Null for histogram series, which have no scalar value.
+				'stats', case when t.value_count > 0 then json_object(
+					'count', t.value_count,
+					'min', t.value_min,
+					'max', t.value_max,
+					'sum', t.value_sum,
+					'avg', t.value_sum / t.value_count
+				) end
 			-- attrs_key breaks ties, and the tie is the common case rather
 			-- than the exception: series of one metric are usually reported
 			-- together, so they share a latest_ts. DuckDB's sort is not
@@ -237,7 +263,13 @@
 				json_object('name', s.scope_name, 'version', s.scope_version,
 				            'attributes', json('[]'), 'droppedAttributesCount', 0)
 			),
-			'timeseries', coalesce((select timeseries from timeseries_agg), json('[]'))
+			'timeseries', coalesce((select timeseries from timeseries_agg), json('[]')),
+			-- How many datapoints the window actually holds, as opposed to how
+			-- many came back. Equal today; the moment the server reduces what it
+			-- returns, the difference is what the UI needs in order to say so.
+			'datapointCount', coalesce((select sum(dp_count) from (
+				select count(*) as dp_count from filtered_dps group by series_id
+			)), 0)
 		) as varchar) as metric
 		from stream s left join representative r on true
 	
