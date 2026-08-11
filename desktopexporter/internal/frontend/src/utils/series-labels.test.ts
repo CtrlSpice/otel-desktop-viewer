@@ -10,7 +10,11 @@ const series = (
     attributesKey: key,
     attributes: [{ key: 'http.route', value: '/checkout', type: 'string' }],
     resource: {
-      attributes: resourceAttrs.map(([k, v]) => ({ key: k, value: v, type: 'string' })),
+      attributes: resourceAttrs.map(([k, v]) => ({
+        key: k,
+        value: v,
+        type: 'string',
+      })),
       droppedAttributesCount: 0,
     },
     datapoints: [],
@@ -21,8 +25,14 @@ describe('distinguishingResourceAttributes', () => {
   // byte-identical labels, so only the resource tells them apart.
   it('returns the attribute that varies between replicas', () => {
     const got = distinguishingResourceAttributes([
-      series('a', [['service.name', 'checkout'], ['host.name', 'pod-a']]),
-      series('b', [['service.name', 'checkout'], ['host.name', 'pod-b']]),
+      series('a', [
+        ['service.name', 'checkout'],
+        ['host.name', 'pod-a'],
+      ]),
+      series('b', [
+        ['service.name', 'checkout'],
+        ['host.name', 'pod-b'],
+      ]),
     ])
     expect(got.get('a')).toEqual([
       { key: 'host.name', value: 'pod-a', type: 'string' },
@@ -36,8 +46,14 @@ describe('distinguishingResourceAttributes', () => {
   // column of identical values.
   it('returns nothing when every series shares a resource', () => {
     const got = distinguishingResourceAttributes([
-      series('a', [['service.name', 'checkout'], ['host.name', 'pod-a']]),
-      series('b', [['service.name', 'checkout'], ['host.name', 'pod-a']]),
+      series('a', [
+        ['service.name', 'checkout'],
+        ['host.name', 'pod-a'],
+      ]),
+      series('b', [
+        ['service.name', 'checkout'],
+        ['host.name', 'pod-a'],
+      ]),
     ])
     expect(got.get('a')).toEqual([])
     expect(got.get('b')).toEqual([])
@@ -69,7 +85,10 @@ describe('distinguishingResourceAttributes', () => {
   // tells them apart just as well as differing values.
   it('treats a key missing from one series as distinguishing', () => {
     const got = distinguishingResourceAttributes([
-      series('a', [['service.name', 'checkout'], ['k8s.pod.name', 'p1']]),
+      series('a', [
+        ['service.name', 'checkout'],
+        ['k8s.pod.name', 'p1'],
+      ]),
       series('b', [['service.name', 'checkout']]),
     ])
     expect(got.get('a')!.map(a => a.key)).toEqual(['k8s.pod.name'])

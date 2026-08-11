@@ -1,10 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { EditorState } from '@codemirror/state'
 import { CompletionContext } from '@codemirror/autocomplete'
-import {
-  createValueDiscoverySource,
-  matchToQuery,
-} from './value-completions'
+import { createValueDiscoverySource, matchToQuery } from './value-completions'
 import { queryLanguageSupport } from './query-language'
 import type { JsonAttributeMatch } from '@/types/wire-types'
 import { OPERATORS } from '@/constants/operators'
@@ -106,15 +103,18 @@ describe('value discovery completions', () => {
   // fifty, so it sorts first.
   it('boosts keys where the term is specific', async () => {
     const { result } = await complete('checkout')
-    const specific = result!.options.find(o => o.label.startsWith('service.name'))
+    const specific = result!.options.find(o =>
+      o.label.startsWith('service.name')
+    )
     const broad = result!.options.find(o => o.label.startsWith('http.route'))
     expect(specific!.boost).toBeGreaterThan(broad!.boost ?? 0)
   })
 
   it('shows the value count when more match than are shown', async () => {
     const { result } = await complete('checkout')
-    expect(result!.options.find(o => o.label.includes('/checkout"'))!.detail)
-      .toBe('span · 6 values')
+    expect(
+      result!.options.find(o => o.label.includes('/checkout"'))!.detail
+    ).toBe('span · 6 values')
     // Fully sampled keys show just the scope -- no misleading count.
     expect(result!.options[0].detail).toBe('resource')
   })

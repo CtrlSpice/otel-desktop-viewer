@@ -90,7 +90,9 @@ describe('unquoted multi-word values', () => {
     } catch (e) {
       thrown = e instanceof Error ? e.message : String(e)
     }
-    expect(thrown).toBe(errors.find(e => /Unexpected "Bull"/.test(e.message))!.message)
+    expect(thrown).toBe(
+      errors.find(e => /Unexpected "Bull"/.test(e.message))!.message
+    )
   })
 })
 

@@ -31,7 +31,8 @@ export function createQueryKeymap(onSubmit: () => void) {
     // throw away focus.
     {
       key: 'Escape',
-      run: view => (completionStatus(view.state) !== null ? false : blurCommand(view)),
+      run: view =>
+        completionStatus(view.state) !== null ? false : blurCommand(view),
     },
   ])
 }

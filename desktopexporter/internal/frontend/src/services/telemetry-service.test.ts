@@ -75,11 +75,15 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     traceStart: '1700000000000000000',
     resources: {
       '7': {
-        attributes: [{ key: 'service.name', value: 'checkout', type: 'string' }],
+        attributes: [
+          { key: 'service.name', value: 'checkout', type: 'string' },
+        ],
         droppedAttributesCount: 0,
       },
       '9': {
-        attributes: [{ key: 'service.name', value: 'payments', type: 'string' }],
+        attributes: [
+          { key: 'service.name', value: 'payments', type: 'string' },
+        ],
         droppedAttributesCount: 2,
       },
     },
@@ -102,7 +106,14 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           start: 0,
           dur: 5_000_000,
           attributes: [],
-          events: [{ name: 'e', timestamp: '1700000000000000123', droppedAttributesCount: 0, attributes: [] }],
+          events: [
+            {
+              name: 'e',
+              timestamp: '1700000000000000123',
+              droppedAttributesCount: 0,
+              attributes: [],
+            },
+          ],
           links: [],
           r: 7,
           s: 3,
@@ -150,8 +161,12 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     const trace = await fetchTrace()
     // Two spans, two different resources -- a decoder that ignored `r` would
     // still look plausible if every span shared one.
-    expect(trace.spans[0].spanData.resource.attributes[0].value).toBe('checkout')
-    expect(trace.spans[1].spanData.resource.attributes[0].value).toBe('payments')
+    expect(trace.spans[0].spanData.resource.attributes[0].value).toBe(
+      'checkout'
+    )
+    expect(trace.spans[1].spanData.resource.attributes[0].value).toBe(
+      'payments'
+    )
     expect(trace.spans[1].spanData.resource.droppedAttributesCount).toBe(2)
   })
 
@@ -194,16 +209,23 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     stubRpcResponse({
       jsonrpc: '2.0',
       id: 1,
-      result: { ...wire, spans: [wire.spans[0], { ...wire.spans[0], depth: 1 }] },
+      result: {
+        ...wire,
+        spans: [wire.spans[0], { ...wire.spans[0], depth: 1 }],
+      },
     })
     const trace = await telemetryAPI.searchSpans('abc123')
     // Copying would rebuild client-side the duplication the wire format
     // exists to remove.
-    expect(trace.spans[0].spanData.resource).toBe(trace.spans[1].spanData.resource)
+    expect(trace.spans[0].spanData.resource).toBe(
+      trace.spans[1].spanData.resource
+    )
   })
 
   it('still promotes event timestamps to bigint', async () => {
     const trace = await fetchTrace()
-    expect(trace.spans[0].spanData.events[0].timestamp).toBe(1700000000000000123n)
+    expect(trace.spans[0].spanData.events[0].timestamp).toBe(
+      1700000000000000123n
+    )
   })
 })

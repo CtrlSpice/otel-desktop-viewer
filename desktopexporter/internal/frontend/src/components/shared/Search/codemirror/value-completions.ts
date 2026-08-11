@@ -105,7 +105,11 @@ export function createValueDiscoverySource(
     // the word. The redundant guard is gone rather than left to look
     // load-bearing to whoever next touches this.
     const before = context.state.sliceDoc(0, word.from).trim()
-    if (before !== '' && !/\b(AND|OR)$/i.test(before) && !before.endsWith('(')) {
+    if (
+      before !== '' &&
+      !/\b(AND|OR)$/i.test(before) &&
+      !before.endsWith('(')
+    ) {
       return null
     }
 
@@ -133,7 +137,9 @@ export function createValueDiscoverySource(
       )
     )
 
-    const options = searchable.flatMap(optionsForMatch).slice(0, MAX_SUGGESTIONS)
+    const options = searchable
+      .flatMap(optionsForMatch)
+      .slice(0, MAX_SUGGESTIONS)
     if (options.length === 0) return null
 
     return {

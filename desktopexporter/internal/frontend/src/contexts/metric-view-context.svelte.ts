@@ -360,7 +360,8 @@ export function createMetricViewContext(
     const datapointIds = new Set<string>()
     for (const dp of allDatapoints(getMetric())) datapointIds.add(dp.id)
     const seriesKeys = new Set<string>()
-    for (const ts of getMetric()?.timeseries ?? []) seriesKeys.add(ts.attributesKey)
+    for (const ts of getMetric()?.timeseries ?? [])
+      seriesKeys.add(ts.attributesKey)
     return {
       isHistogramKind,
       allowedAggs: availableAggregationViewsList,
@@ -444,7 +445,9 @@ export function createMetricViewContext(
    * throwing away whatever else the recipient had showing.
    */
   function revealSeries(key: string): void {
-    const visible = isHistogramKind ? view.histogramVisible : view.gaugeSumVisible
+    const visible = isHistogramKind
+      ? view.histogramVisible
+      : view.gaugeSumVisible
     if (!visible.has(key)) visible.add(key)
   }
 
