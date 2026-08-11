@@ -39,45 +39,49 @@
 			join spans s on s.span_id = st.span_id
 		),
 
-		-- These three resolve attribute arrays the long way instead of calling
-		-- attrs_json, and that is deliberate.
+		-- The dictionary as a single MAP, built once and probed by the three
+		-- CTEs below. Materialized so it is built once per query rather than
+		-- once per reference.
+		dict_map as materialized (
+			select map(list(id), list({
+				'k': key,
+				'i': id,
+				'j': json_object('key', key, 'value', value, 'type', type::varchar)
+			})) as m
+			from attributes
+		),
+
+		-- These three resolve attribute arrays by probing dict_map rather than
+		-- by calling attrs_json, and that is deliberate.
 		--
-		-- attrs_json is a correlated subquery. In a per-row projection over a
-		-- large table the planner materialises it once per row: measured at
-		-- 149ms for 4,868 spans against 33ms for the same work as one grouped
-		-- pass. The macro stays the right tool where the row count is small --
-		-- resource_data and scope_data below, logs.Get, GetMetric -- and the
-		-- wrong one here.
+		-- attrs_json is a correlated subquery, which the planner materialises
+		-- once per row in a per-row projection over a large table: 149ms for
+		-- 4,868 spans. Rewriting it as unnest + join + group by brought that to
+		-- 33ms but explodes each owner's array into rows only to collapse it
+		-- again, and spends heavily on parallelism to do it -- 0.35s of CPU for
+		-- 50ms of wall time on the whole query.
 		--
-		-- The ordering (a.key, a.id) matches attrs_json exactly, so the rendered
-		-- JSON is identical either way.
+		-- Probing a prebuilt map is both faster and cheaper: 37-40ms wall at
+		-- 0.19s CPU. attrs_mapped orders by (key, id) exactly as attrs_json
+		-- does, so the rendered JSON is byte-identical to both earlier forms.
 		span_attrs as (
-			select ts.span_id as id,
-				to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
-				             order by a.key, a.id)) as attrs
-			from tree ts, unnest(ts.attribute_ids) as t(aid)
-			join attributes a on a.id = t.aid
-			group by ts.span_id
+			select ts.span_id as id, attrs_mapped(ts.attribute_ids, dm.m) as attrs
+			from tree ts, dict_map dm
+			where len(ts.attribute_ids) > 0
 		),
 
 		event_attrs as (
-			select e.id,
-				to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
-				             order by a.key, a.id)) as attrs
-			from events e, unnest(e.attribute_ids) as t(aid)
-			join attributes a on a.id = t.aid
+			select e.id, attrs_mapped(e.attribute_ids, dm.m) as attrs
+			from events e, dict_map dm
 			where e.span_id in (select span_id from tree)
-			group by e.id
+				and len(e.attribute_ids) > 0
 		),
 
 		link_attrs as (
-			select l.id,
-				to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
-				             order by a.key, a.id)) as attrs
-			from links l, unnest(l.attribute_ids) as t(aid)
-			join attributes a on a.id = t.aid
+			select l.id, attrs_mapped(l.attribute_ids, dm.m) as attrs
+			from links l, dict_map dm
 			where l.span_id in (select span_id from tree)
-			group by l.id
+				and len(l.attribute_ids) > 0
 		),
 
 		event_data as (
