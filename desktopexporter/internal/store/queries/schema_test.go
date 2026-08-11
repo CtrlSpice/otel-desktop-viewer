@@ -839,3 +839,60 @@ func TestMacros_Idempotent(t *testing.T) {
 		require.NoErrorf(t, err, "re-running macro %d should succeed", i)
 	}
 }
+
+// exp_zero_cutoff decides which buckets fall inside a merged histogram's zero
+// region. It is the one piece of this arithmetic that fails silently: get it
+// wrong and counts move between zero_count and the first bucket, shifting every
+// quantile without raising anything.
+//
+// So this checks the defining property rather than a table of expected values,
+// across the full scale range: the bucket at the cutoff must be wholly at or
+// below the threshold, and the next one must not be.
+func TestMacros_ExpZeroCutoff(t *testing.T) {
+	db, err := sql.Open("duckdb", "")
+	require.NoError(t, err)
+	defer db.Close()
+	for _, stmt := range queries.Macros() {
+		_, err := db.Exec(stmt.SQL)
+		require.NoErrorf(t, err, "%s", stmt.Name)
+	}
+
+	thresholds := []float64{1e-9, 0.001, 0.5, 1, 1.5, 2, 3.7, 6.25, 1024}
+	for scale := -5; scale <= 12; scale++ {
+		for _, threshold := range thresholds {
+			var cutoff int64
+			var fits, escapes bool
+			require.NoError(t, db.QueryRow(`
+				select exp_zero_cutoff(?, ?),
+				       pow(2, (exp_zero_cutoff(?, ?) + 1) * pow(2, -?)) <= ?,
+				       pow(2, (exp_zero_cutoff(?, ?) + 2) * pow(2, -?)) >  ?
+			`, threshold, scale, threshold, scale, scale, threshold,
+				threshold, scale, scale, threshold).Scan(&cutoff, &fits, &escapes))
+
+			assert.Truef(t, fits,
+				"scale %d threshold %g: bucket %d is not wholly inside the zero region",
+				scale, threshold, cutoff)
+			assert.Truef(t, escapes,
+				"scale %d threshold %g: bucket %d should not have been folded",
+				scale, threshold, cutoff+1)
+		}
+	}
+}
+
+// No zero region means nothing to fold, and fold_below_cutoff reads NULL as
+// "fold nothing".
+func TestMacros_ExpZeroCutoffWithoutAZeroRegion(t *testing.T) {
+	db, err := sql.Open("duckdb", "")
+	require.NoError(t, err)
+	defer db.Close()
+	for _, stmt := range queries.Macros() {
+		_, err := db.Exec(stmt.SQL)
+		require.NoErrorf(t, err, "%s", stmt.Name)
+	}
+
+	for _, threshold := range []any{0.0, -1.0, nil} {
+		var cutoff sql.NullInt64
+		require.NoError(t, db.QueryRow(`select exp_zero_cutoff(?, 0)`, threshold).Scan(&cutoff))
+		assert.Falsef(t, cutoff.Valid, "threshold %v should yield NULL, got %d", threshold, cutoff.Int64)
+	}
+}
