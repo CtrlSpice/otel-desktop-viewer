@@ -1680,3 +1680,88 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 			"global search must reach exemplar labels")
 	})
 }
+
+// Two replicas of one service, emitting the same instrument with the same
+// labels, must be two series -- not one interleaved line.
+//
+// metric_streams identifies a stream by service_name rather than by resource,
+// deliberately, so a counter survives a pod restart. Nothing downstream then
+// re-introduced the resource, so replicas collapsed together: SDKs put
+// host.name and k8s.pod.name on the *resource*, which made this the common
+// shape in any replicated deployment rather than an exotic one. Prometheus
+// would show two series here; we showed one, silently averaging two machines.
+func buildTwoReplicaMetrics(t *testing.T) pmetric.Metrics {
+	t.Helper()
+	md := pmetric.NewMetrics()
+	base := time.Now().UnixNano()
+
+	// Same service, same scope, same metric, same datapoint labels. The only
+	// difference is host.name on the resource.
+	for i, host := range []string{"pod-a", "pod-b"} {
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "checkout")
+		rm.Resource().Attributes().PutStr("host.name", host)
+
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("otelhttp")
+		sm.Scope().SetVersion("1.2.0")
+
+		m := sm.Metrics().AppendEmpty()
+		m.SetName("http.server.duration")
+		m.SetUnit("ms")
+		g := m.SetEmptyGauge()
+		for j := 0; j < 3; j++ {
+			dp := g.DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.Timestamp(base + int64(j)*1_000_000))
+			dp.SetDoubleValue(float64(10*(i+1) + j))
+			dp.Attributes().PutStr("http.route", "/checkout")
+		}
+	}
+	return md
+}
+
+func TestMetricSeries_SplitByResource(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
+	}))
+
+	// One logical stream: that part is correct and must stay correct, or a pod
+	// restart would fragment the timeseries.
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1, "two replicas are still one metric stream")
+	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
+		"the summary must report two series, agreeing with the detail view")
+
+	streamID, ok := summaries[0]["id"].(string)
+	require.True(t, ok)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour))
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	ts, _ := metric["timeseries"].([]any)
+	require.Len(t, ts, 2, "one series per replica, not one merged line")
+
+	// Each carries its own three points -- a merge would produce one series of
+	// six, which is the shape that silently averaged two machines together.
+	keys := map[string]bool{}
+	for _, entry := range ts {
+		e := entry.(map[string]any)
+		dps, _ := e["datapoints"].([]any)
+		assert.Len(t, dps, 3, "each replica keeps its own datapoints")
+		keys[e["attributesKey"].(string)] = true
+	}
+
+	// And they must be distinguishable. The labels are identical by
+	// construction, so a key derived from labels alone collides -- which would
+	// render two indistinguishable legend entries, strictly worse than the
+	// single merged line it replaced.
+	assert.Len(t, keys, 2,
+		"series keys must differ, or the split produces two identical legend entries")
+}

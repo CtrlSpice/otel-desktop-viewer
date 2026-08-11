@@ -577,10 +577,19 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 			where mi.stream_id in (select id from filtered_streams)
 			group by mi.stream_id
 		),
+		-- A series is (resource, labels), not labels alone.
+		--
+		-- metric_streams deliberately identifies a stream by service_name and
+		-- not by resource, so a counter survives a pod restart. The consequence
+		-- is that two replicas of one service emitting the same instrument with
+		-- the same labels land on one stream -- and counting labels alone would
+		-- report them as a single series, disagreeing with the detail view that
+		-- now splits them.
 		stream_series_count as (
-			select stream_id, count(distinct attribute_ids) as series_count
-			from filtered_dps
-			group by stream_id
+			select d.stream_id, count(distinct (mi.resource_id, d.attribute_ids)) as series_count
+			from filtered_dps d
+			join metric_ingests mi on mi.id = d.metric_ingest_id
+			group by d.stream_id
 		),
 		stream_datapoint_count as (
 			select stream_id, count(*) as datapoint_count
@@ -662,12 +671,18 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 		-- Datapoints inherit aggregation_temporality / is_monotonic from
 		-- the stream so the per-type JSON projection below doesn't need
 		-- a per-row join.
+		-- resource_id joins in so a series can be split by the resource that
+		-- emitted it. A join rather than a denormalized column on datapoints:
+		-- it is a primary-key lookup from metric_ingest_id, and datapoints is
+		-- the largest table in the store.
 		filtered_dps as (
 			select d.*,
+				mi.resource_id as resource_id,
 				s.metric_type as metric_type,
 				s.aggregation_temporality as aggregation_temporality,
 				s.is_monotonic as is_monotonic
 			from datapoints d, input, stream s
+			join metric_ingests mi on mi.id = d.metric_ingest_id
 			where d.stream_id = input.stream_id
 			  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
 		),
@@ -735,9 +750,22 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 		-- this timeseries. Within a timeseries they're identical by
 		-- definition (it's the grouping criterion), so any() / first() /
 		-- arg_max all yield the same answer; we use any_value for clarity.
+		-- resource_seq distinguishes series whose labels are identical.
+		--
+		-- Splitting by resource without changing the key would produce two
+		-- entries both reading http.route=/checkout, indistinguishable in the
+		-- legend -- strictly worse than the single merged line it replaced. seq
+		-- is the same store-stable key the trace wire format uses.
+		series_resource as (
+			select r.id, r.seq from resources r
+			where r.id in (select resource_id from filtered_dps)
+		),
+
 		ts_dps_agg as (
 			select
-				attrs_key(d.attribute_ids) as attrs_key,
+				d.resource_id,
+				'r' || (select seq from series_resource where id = d.resource_id)
+					|| '|' || attrs_key(d.attribute_ids) as attrs_key,
 				any_value(attrs_json(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
 				to_json(list(json_merge_patch(
@@ -788,7 +816,7 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 					end
 				) order by d.timestamp desc)) as datapoints
 			from filtered_dps d
-			group by d.attribute_ids
+			group by d.resource_id, d.attribute_ids
 		),
 		-- Pack each timeseries into the wire shape and order them so
 		-- the most recently active timeseries sorts first -- mirrors
