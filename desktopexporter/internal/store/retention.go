@@ -243,6 +243,8 @@ func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
 	// streams whose ingest batches are all gone. Ordering follows the FK
 	// chain (metric_ingests -> metric_streams).
 	for _, q := range []string{
+		`delete from metric_series ms
+			where not exists (select 1 from datapoints d where d.series_id = ms.id)`,
 		`delete from metric_ingests mi
 			where not exists (select 1 from datapoints d where d.metric_ingest_id = mi.id)`,
 		`delete from metric_streams ms

@@ -97,6 +97,20 @@ func ResourceID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
 	return hashID(uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
 }
 
+// SeriesID derives a timeseries' identity: the stream it belongs to, the
+// resource that emitted it, and its label set.
+//
+// Content-derived like the rest, which is what makes it usable in a URL --
+// the same series gets the same id across restarts and re-ingests, so a link
+// survives in a way one built on a minted datapoint id cannot.
+//
+// resource_id is in the key and that is the whole point: metric_streams
+// identifies a stream by service_name so a counter survives a pod restart,
+// which means two replicas share a stream. The series is where they separate.
+func SeriesID(streamID, resourceID duckdb.UUID, attributeIDs []duckdb.UUID) duckdb.UUID {
+	return hashID(formatUUID(streamID), formatUUID(resourceID), uuidsKey(attributeIDs))
+}
+
 // ScopeID derives a scope's identity. Name and version participate because two
 // instrumentation libraries with identical (empty) attribute sets are still
 // different scopes.
@@ -359,6 +373,14 @@ func uuidList(ids []duckdb.UUID) string {
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }
+
+// FormatUUID renders the canonical 8-4-4-4-12 form. Exported because metrics
+// builds its own metric_series insert and has to bind ids the same way.
+func FormatUUID(id duckdb.UUID) string { return formatUUID(id) }
+
+// UUIDListLiteral renders ids as a DuckDB list literal, for callers outside
+// this package building their own inserts against a uuid[] column.
+func UUIDListLiteral(ids []duckdb.UUID) string { return uuidList(ids) }
 
 // formatUUID renders the canonical 8-4-4-4-12 form.
 func formatUUID(id duckdb.UUID) string {

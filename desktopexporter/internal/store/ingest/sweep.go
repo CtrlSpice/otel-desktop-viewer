@@ -30,6 +30,7 @@ const liveAttributeIDs = `
 	union select unnest(attribute_ids) from links
 	union select unnest(attribute_ids) from logs
 	union select unnest(attribute_ids) from datapoints
+	union select unnest(attribute_ids) from metric_series
 	union select unnest(attribute_ids) from exemplars
 	union select unnest(attribute_ids) from resources
 	union select unnest(attribute_ids) from scopes`
@@ -54,6 +55,7 @@ var sweepQueries = []string{
 		select resource_id from spans
 		union select resource_id from logs
 		union select resource_id from metric_ingests
+		union select resource_id from metric_series
 	)`,
 	`delete from scopes where id not in (
 		select scope_id from spans

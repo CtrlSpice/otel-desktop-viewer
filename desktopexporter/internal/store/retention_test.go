@@ -86,10 +86,18 @@ func seedDatapoints(t *testing.T, s *Store, streamID, ingestID string, n int, st
 	_, err = s.db.Exec(`insert into metric_ingests (id, stream_id, resource_id, scope_id) values (?, ?, ?::uuid, ?::uuid)`,
 		ingestID, streamID, seedResourceID, seedScopeID)
 	require.NoError(t, err)
+	// datapoints.series_id is a NOT NULL foreign key, so the series has to
+	// exist before its points. One series per stream is enough here -- these
+	// tests are about pruning by time, not about series identity.
 	_, err = s.db.Exec(`
-		insert into datapoints (id, stream_id, metric_ingest_id, timestamp, double_value, value_type, attribute_ids)
-		select uuid(), ?::uuid, ?::uuid, ? + range * 1000000, range, 'double', []::uuid[]
-		from range(?)`, streamID, ingestID, startTime, n)
+		insert into metric_series (id, stream_id, resource_id, attribute_ids)
+		values (?::uuid, ?::uuid, ?::uuid, []::uuid[]) on conflict do nothing`,
+		streamID, streamID, seedResourceID)
+	require.NoError(t, err)
+	_, err = s.db.Exec(`
+		insert into datapoints (id, stream_id, series_id, metric_ingest_id, timestamp, double_value, value_type, attribute_ids)
+		select uuid(), ?::uuid, ?::uuid, ?::uuid, ? + range * 1000000, range, 'double', []::uuid[]
+		from range(?)`, streamID, streamID, ingestID, startTime, n)
 	require.NoError(t, err)
 }
 

@@ -275,8 +275,8 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 
 	_, err = s.db.ExecContext(ctx, `
 		insert into datapoints
-			(id, stream_id, metric_ingest_id, metric_type, timestamp, start_time, flags, attribute_ids)
-		values (gen_random_uuid(), ?::uuid, ?::uuid, 'InvalidType', 0, 0, 0, []::uuid[])
+			(id, stream_id, series_id, metric_ingest_id, metric_type, timestamp, start_time, flags, attribute_ids)
+		values (gen_random_uuid(), ?::uuid, ?::uuid, ?::uuid, 'InvalidType', 0, 0, 0, []::uuid[])
 	`, streamID, ingestID)
 	assert.Error(t, err, "inserting a datapoint with invalid metric_type should violate chk_metric_type_valid")
 }

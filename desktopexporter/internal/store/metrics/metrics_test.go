@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -1764,4 +1765,70 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	// single merged line it replaced.
 	assert.Len(t, keys, 2,
 		"series keys must differ, or the split produces two identical legend entries")
+}
+
+// A series id has to survive re-ingest, restarts and retention, because it is
+// what a shared URL names.
+//
+// This is the property the old wire format could not offer: metric links could
+// only reference a datapoint id, which is minted per row and deleted by
+// retention, so a pasted link degraded silently to "no selection". A
+// content-derived id from (stream, resource, labels) is the same every time the
+// same series arrives.
+func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	seriesIDs := func() []string {
+		var out []string
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			rows, err := db.Query(`select id::varchar from metric_series order by 1`)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err != nil {
+					return err
+				}
+				out = append(out, id)
+			}
+			return rows.Err()
+		}))
+		return out
+	}
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
+	}))
+	first := seriesIDs()
+	require.Len(t, first, 2, "two replicas are two series")
+
+	// The same content again: same ids, no new rows.
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
+	}))
+	assert.Equal(t, first, seriesIDs(),
+		"re-ingesting the same series must not mint new ids")
+
+	// And the id the wire serves is the id in the table, or a URL built from
+	// one could not be resolved back to the other.
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
+			time.Now().UnixNano()+int64(time.Hour))
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	var served []string
+	for _, entry := range metric["timeseries"].([]any) {
+		served = append(served, entry.(map[string]any)["attributesKey"].(string))
+	}
+	sort.Strings(served)
+	assert.Equal(t, first, served,
+		"the key on the wire must be the series id, so a link resolves back to a row")
 }

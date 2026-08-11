@@ -180,6 +180,35 @@ var TableCreationQueries = []string{
 		service_name varchar not null default '',
 		unique (name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
 	)`,
+	// metric_series is the timeseries: the thing a chart draws one line per.
+	//
+	// The schema had no row for it. metric_streams is deliberately coarser --
+	// it identifies a stream by service_name rather than by resource, so a
+	// counter stays one timeseries when a pod restarts -- and the actual series
+	// was only ever implied, by grouping datapoints on their label set at query
+	// time. That had three costs:
+	//
+	//   - Two replicas of one service, emitting the same instrument with the
+	//     same labels, grouped together and interleaved into one line.
+	//   - Grouping ran on a LIST column, which DuckDB cannot index and must
+	//     rebuild and hash per row. Measured on 294,607 datapoints: 5.0ms
+	//     grouping by the array against 0.9ms by a fixed-width key.
+	//   - A series had no name, so nothing could link to one. Metric URLs could
+	//     only reference a datapoint id, which retention deletes -- shared links
+	//     rotted, and degraded silently to "no selection".
+	//
+	// id = sha256(stream_id, resource_id, attribute_ids), so it is stable
+	// across restarts and re-ingests: the same series always has the same id,
+	// which is what makes it safe to put in a URL.
+	`create table if not exists metric_series (
+		id uuid primary key,
+		stream_id uuid not null,
+		resource_id uuid not null,
+		attribute_ids uuid[] not null,
+		foreign key (stream_id) references metric_streams(id),
+		foreign key (resource_id) references resources(id)
+	)`,
+
 	// metric_ingests records each OTLP batch arrival for a stream. One row
 	// per (stream, batch) -- so a long-lived counter that's reported every
 	// 10s for an hour produces 360 metric_ingests rows pointing at one
@@ -199,6 +228,15 @@ var TableCreationQueries = []string{
 	`create table if not exists datapoints (
 		id uuid primary key,
 		stream_id uuid not null,
+		-- The series this point belongs to. Grouping a chart is now an
+		-- equality on one fixed-width column instead of hashing a LIST, and
+		-- it is indexable, which a LIST is not.
+		--
+		-- attribute_ids stays alongside it rather than being replaced: it is
+		-- what the series id is derived from, it is what attrs_json renders,
+		-- and dropping it would make the labels of a datapoint unreachable
+		-- without a join back through metric_series.
+		series_id uuid not null,
 		metric_ingest_id uuid not null,
 		timestamp bigint,
 		start_time bigint,
@@ -230,6 +268,7 @@ var TableCreationQueries = []string{
 		-- distinct label sets -- 82% of the whole attributes table.
 		attribute_ids uuid[] not null,
 		foreign key (stream_id) references metric_streams(id),
+		foreign key (series_id) references metric_series(id),
 		foreign key (metric_ingest_id) references metric_ingests(id)
 	)`,
 	`create table if not exists exemplars (
@@ -305,6 +344,11 @@ var IndexCreationQueries = []string{
 	`create index if not exists idx_metric_ingests_stream on metric_ingests(stream_id)`,
 	`create index if not exists idx_metric_ingests_resource on metric_ingests(resource_id)`,
 	`create index if not exists idx_datapoints_stream_time on datapoints(stream_id, timestamp desc)`,
+	// Restores what idx_datapoints_stream_attrs used to do before attributes
+	// became a LIST. ART indexes serve equality on a single column, which is
+	// exactly the shape series grouping now has.
+	`create index if not exists idx_datapoints_series on datapoints(series_id)`,
+	`create index if not exists idx_metric_series_stream on metric_series(stream_id)`,
 	`create index if not exists idx_exemplars_datapoint on exemplars(datapoint_id)`,
 	`create index if not exists idx_exemplars_trace on exemplars(trace_id, span_id)`,
 }
