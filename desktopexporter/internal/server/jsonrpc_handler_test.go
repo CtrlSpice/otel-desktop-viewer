@@ -990,3 +990,57 @@ func TestGetMetric(t *testing.T) {
 		assert.Empty(t, timeseries)
 	})
 }
+
+// searchAttributes is the value-first counterpart to the getXAttributes
+// discovery methods: given text seen in the UI, which keys hold it. It takes no
+// time range and no signal, because the dictionary it reads is shared by all
+// three.
+func TestSearchAttributes(t *testing.T) {
+	call := func(t *testing.T, handler *JSONRPCHandler, params any) []map[string]any {
+		t.Helper()
+		result, err := handler.Handle(context.Background(), createRequest("searchAttributes", params))
+		require.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		require.True(t, ok, "expected json.RawMessage, got %T", result)
+		var out []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &out))
+		return out
+	}
+
+	t.Run("finds the key holding a value", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		got := call(t, handler, []string{"pumpkin"})
+		require.NotEmpty(t, got, "a value present in the fixture must be found")
+
+		var found map[string]any
+		for _, m := range got {
+			if m["name"] == "service.name" {
+				found = m
+			}
+		}
+		require.NotNil(t, found, "service.name should be among the matches")
+		assert.Equal(t, "resource", found["attributeScope"])
+		assert.Contains(t, found["sampleValues"], "pumpkin.pie")
+	})
+
+	t.Run("no match and empty term return an empty list", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		assert.Empty(t, call(t, handler, []string{"no-such-text-anywhere"}))
+		assert.Empty(t, call(t, handler, []string{""}),
+			"an empty term is not a request for the whole dictionary")
+	})
+
+	t.Run("rejects malformed params", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		for _, params := range []any{[]string{}, []string{"a", "b"}, []int{1}} {
+			_, err := handler.Handle(context.Background(), createRequest("searchAttributes", params))
+			assert.Error(t, err, "params %v", params)
+		}
+	})
+}

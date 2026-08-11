@@ -338,6 +338,22 @@ export type JsonAttributeDefinition = {
   type: JsonAttributeType
 }
 
+// searchAttributes: value-first discovery.
+//
+// The getXAttributes methods answer "which keys exist" so a dropdown can be
+// filled. This answers the opposite question -- "I can see this text, which key
+// is it?" -- and does it across traces, logs and metrics in one call, because
+// they all reference the same attribute dictionary.
+//
+// matchCount is the number of distinct *values* of this key that match, not the
+// number of spans or logs carrying it. It distinguishes "this term identifies
+// one specific thing" from "this term appears all over a high-cardinality key".
+// sampleValues is a short, bounded illustration, not a complete list.
+export type JsonAttributeMatch = JsonAttributeDefinition & {
+  matchCount: number
+  sampleValues: string[]
+}
+
 // --- Mutation results ---
 
 // deleteSpansByTraceID / deleteSpanByID / deleteLogByID.
