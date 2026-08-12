@@ -133,7 +133,8 @@
 		-- keeps the arguments plain.
 		reduction as (
 			select case
-				-- Gauge and Sum only. Sampling a histogram is not a reduction,
+				-- Gauge and Sum sample; histograms merge (see hist_merged).
+				-- Sampling a histogram is not a reduction,
 				-- it is data loss: each datapoint carries bucket *counts*, so
 				-- keeping four per bucket discards the observations in all the
 				-- rest. Measured on the reference stream, sampling took 275,196
@@ -146,8 +147,27 @@
 				-- is asked for. Slow beats wrong.
 				when s.metric_type in ('Gauge', 'Sum')
 					then bucket_width_ns(i.time_end - i.time_start, i.target_buckets)
+				-- Histograms reduce by merging, which for Delta is addition of
+				-- bucket counts and is exact. Cumulative is deliberately left
+				-- unreduced: its merge is last-minus-first with a reset clamp,
+				-- and this corpus contains no cumulative histogram to check an
+				-- implementation against. Correct and slow beats plausible.
+				when s.metric_type in ('Histogram', 'ExponentialHistogram')
+				     and s.aggregation_temporality = 'Delta'
+					then bucket_width_ns(i.time_end - i.time_start, i.target_buckets)
 			end as width_ns
 			from input i, stream s
+		),
+
+		-- Is this a histogram merge or a scalar election? They share the
+		-- bucketing above and diverge here.
+		reduction_kind as (
+			select case
+				when (select width_ns from reduction) is null then 'none'
+				when s.metric_type in ('Histogram', 'ExponentialHistogram') then 'merge'
+				else 'elect'
+			end as kind
+			from stream s
 		),
 
 		-- Bucket starts are absolute, not measured from the window: floor by
@@ -192,6 +212,131 @@
 			union
 			select d.id from filtered_dps d
 			where exists (select 1 from exemplars e where e.datapoint_id = d.id)
+		),
+
+		-- Histogram merge, Delta only.
+		--
+		-- Adding bucket counts is exact: each datapoint covers its own
+		-- interval, so a merged histogram yields the same quantiles and the
+		-- same heatmap column as the datapoints it replaces. There is no
+		-- fidelity trade here, only arithmetic -- which is why histograms merge
+		-- rather than being sampled like scalars.
+		--
+		-- Exponential histograms need aligning first. Two histograms only add
+		-- directly if they share a scale and an offset, and an SDK downscales a
+		-- stream mid-flight as the observed range widens. So: downscale each to
+		-- the coarsest scale in its bucket, left-pad each to the smallest
+		-- offset, then add. On a stream whose scale never moves -- which is the
+		-- common case, and the whole reference corpus -- every downscale is a
+		-- no-op and costs nothing.
+		hist_scaled as (
+			select b.*,
+				min(b.scale) over (partition by b.series_id, b.bucket_start) as target_scale
+			from bucketed_dps b
+			where (select kind from reduction_kind) = 'merge'
+		),
+		hist_downscaled as (
+			select h.*,
+				downscale_exp_buckets(h.positive_bucket_counts, h.positive_bucket_offset,
+					h.scale - h.target_scale) as pos_d,
+				downscale_exp_buckets(h.negative_bucket_counts, h.negative_bucket_offset,
+					h.scale - h.target_scale) as neg_d
+			from hist_scaled h
+		),
+		-- Only arrays holding buckets get a say in the alignment point: an
+		-- empty array's offset points at no data, and letting it win the
+		-- minimum pads the result out to an index nothing occupies.
+		hist_aligned as (
+			select d.*,
+				min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
+					over (partition by d.series_id, d.bucket_start) as pos_target_offset,
+				min(case when len(d.neg_d.counts) > 0 then d.neg_d.offset end)
+					over (partition by d.series_id, d.bucket_start) as neg_target_offset
+			from hist_downscaled d
+		),
+		hist_padded as (
+			select a.*,
+				pad_left_to_offset(a.pos_d.counts, a.pos_d.offset,
+					coalesce(a.pos_target_offset, a.pos_d.offset)) as pos_p,
+				pad_left_to_offset(a.neg_d.counts, a.neg_d.offset,
+					coalesce(a.neg_target_offset, a.neg_d.offset)) as neg_p
+			from hist_aligned a
+		),
+		hist_merged as (
+			select
+				p.series_id,
+				p.resource_id,
+				p.bucket_start,
+				-- A real datapoint id, not a synthetic one: the last of the
+				-- bucket. Keeps ?dp= links and datapoint selection working
+				-- against something that exists.
+				arg_max(p.id, p.timestamp) as id,
+				max(p.timestamp) as timestamp,
+				min(p.start_time) as start_time,
+				any_value(p.metric_type) as metric_type,
+				any_value(p.aggregation_temporality) as aggregation_temporality,
+				any_value(p.flags) as flags,
+				any_value(p.is_monotonic) as is_monotonic,
+				sum(p.count) as count,
+				sum(p.sum) as sum,
+				-- Explicit bounds: identical across the group or the merge is
+				-- meaningless, and there is no rescale that reconciles them.
+				any_value(p.explicit_bounds) as explicit_bounds,
+				count(distinct p.explicit_bounds::varchar) as distinct_bounds,
+				sum_bucket_vectors(list(p.bucket_counts)) as bucket_counts,
+				any_value(p.target_scale) as scale,
+				max(p.zero_threshold) as zero_threshold,
+				sum(p.zero_count) as zero_count,
+				any_value(coalesce(p.pos_target_offset, 0)) as positive_bucket_offset,
+				sum_bucket_vectors(list(p.pos_p)) as positive_bucket_counts,
+				any_value(coalesce(p.neg_target_offset, 0)) as negative_bucket_offset,
+				sum_bucket_vectors(list(p.neg_p)) as negative_bucket_counts
+			from hist_padded p
+			group by p.series_id, p.resource_id, p.bucket_start
+		),
+
+		-- What the projection reads. Merging replaces a bucket's datapoints
+		-- with one merged datapoint; electing keeps real rows and filters them
+		-- by retained_ids; no reduction passes everything through.
+		--
+		-- `union all by name` matches columns by name rather than position, so
+		-- the two branches do not have to agree on column order -- which they
+		-- would silently get wrong.
+		projected_dps as (
+			select * from filtered_dps
+			where (select kind from reduction_kind) <> 'merge'
+			union all by name
+			select
+				m.id, m.series_id, m.resource_id, m.timestamp, m.start_time,
+				m.metric_type, m.aggregation_temporality, m.flags,
+				m.count, m.sum,
+				-- Bucket-derived, because a merge cannot carry min and max
+				-- through: they describe individual observations, and the
+				-- merged buckets are what is left of them.
+				(bucket_extents(case
+					when m.metric_type = 'Histogram'
+						then hist_buckets(m.explicit_bounds, m.bucket_counts)
+					else exp_buckets(m.scale, m.negative_bucket_offset, m.negative_bucket_counts,
+					                 m.zero_count, m.positive_bucket_offset, m.positive_bucket_counts)
+				end)).min as min,
+				(bucket_extents(case
+					when m.metric_type = 'Histogram'
+						then hist_buckets(m.explicit_bounds, m.bucket_counts)
+					else exp_buckets(m.scale, m.negative_bucket_offset, m.negative_bucket_counts,
+					                 m.zero_count, m.positive_bucket_offset, m.positive_bucket_counts)
+				end)).max as max,
+				m.explicit_bounds, m.bucket_counts,
+				m.scale, m.zero_count, m.zero_threshold,
+				m.positive_bucket_offset, m.positive_bucket_counts,
+				m.negative_bucket_offset, m.negative_bucket_counts,
+				null::double as double_value, null::bigint as int_value,
+				null::varchar as value_type, m.is_monotonic
+			from hist_merged m
+			-- A bucket whose datapoints disagree about explicit bounds cannot
+			-- be merged; there is no rescale that reconciles two boundary sets.
+			-- Dropping the row would hide it, so the merge refuses to run and
+			-- the caller sees the unreduced series instead.
+			where m.distinct_bounds <= 1
 		),
 
 		ts_dps_agg as (
@@ -275,12 +420,12 @@
 					-- deliberately outside this filter: they describe the
 					-- window, not the sample drawn from it, which is the whole
 					-- reason they are computed here rather than in the client.
-					filter (where r.id is not null or (select width_ns from reduction) is null)
+					filter (where (select kind from reduction_kind) <> 'elect' or r.id is not null)
 				) as datapoints
 			-- Grouping on a fixed-width, indexable column instead of rebuilding
 		-- and hashing a LIST per row. Measured on 294,607 datapoints: 5.0ms
 		-- by the array against 0.9ms by a single uuid.
-		from filtered_dps d
+		from projected_dps d
 			left join retained_ids r on r.id = d.id
 			group by d.series_id, d.resource_id
 		),
