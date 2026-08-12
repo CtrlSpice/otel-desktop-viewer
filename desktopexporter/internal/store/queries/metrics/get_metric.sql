@@ -132,8 +132,22 @@
 		-- expressions are not supported". Reading from `input` as a relation
 		-- keeps the arguments plain.
 		reduction as (
-			select bucket_width_ns(i.time_end - i.time_start, i.target_buckets) as width_ns
-			from input i
+			select case
+				-- Gauge and Sum only. Sampling a histogram is not a reduction,
+				-- it is data loss: each datapoint carries bucket *counts*, so
+				-- keeping four per bucket discards the observations in all the
+				-- rest. Measured on the reference stream, sampling took 275,196
+				-- observations down to 729 -- quantiles and heatmap alike would
+				-- be fiction, with nothing to indicate it.
+				--
+				-- The correct reduction for a histogram is a merge: add counts
+				-- for Delta, last-minus-first for Cumulative. Until that exists,
+				-- histograms return every datapoint however small a resolution
+				-- is asked for. Slow beats wrong.
+				when s.metric_type in ('Gauge', 'Sum')
+					then bucket_width_ns(i.time_end - i.time_start, i.target_buckets)
+			end as width_ns
+			from input i, stream s
 		),
 
 		-- Bucket starts are absolute, not measured from the window: floor by
