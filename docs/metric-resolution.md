@@ -350,7 +350,59 @@ because that means the counter restarted. `diff_bucket_vectors` exists for it
 and returns NULL as the reset signal. `subtractHistogramSlices` in the client is
 the reference, now that it aligns scales rather than bailing on a mismatch.
 
-What is missing is *evidence*. There is no cumulative histogram in the corpus to
+### Getting cumulative data to test against
+
+bargeboard emits Delta deliberately, and says why: "Cumulative histograms would
+put every observation since lights-out in every column, which is why the heatmap
+looked identically wide the whole race." That is a product decision about the
+demo, not a limitation, so it should not be changed to suit a test.
+
+It does not need to be. **Cumulative is the running sum of deltas**, so real
+cumulative fixtures can be derived from the captures already taken -- same
+observations, same distributions, cumulative semantics:
+
+```sql
+with flat as (
+  select id, series_id, timestamp, explicit_bounds,
+         generate_subscripts(bucket_counts, 1) as k, unnest(bucket_counts) as c
+  from datapoints d join metric_streams s on s.id = d.stream_id
+  where s.name = 'f1.driver.lap_time'
+),
+running as (
+  select id, series_id, timestamp, explicit_bounds, k,
+         sum(c) over (partition by series_id, k order by timestamp
+                      rows between unbounded preceding and current row) as cum
+  from flat
+)
+select id, series_id, timestamp, any_value(explicit_bounds) as explicit_bounds,
+       list(cum order by k) as bucket_counts, sum(cum) as count
+from running group by id, series_id, timestamp
+```
+
+On the season capture that yields 12,333 cumulative datapoints across 233
+series, with real lap-time distributions rather than invented ones. The five
+instruments that would qualify in the first place are `lap_time`, `sector_time`,
+`pit_duration`, `top_speed` and `interval_distribution`.
+
+It also gives a property worth asserting: merging a whole window of the derived
+cumulative data must reproduce the sum of the original deltas over that range.
+Same observations, two routes, one answer.
+
+### The harness exists
+
+`queries/cumulative_merge_test.go` drives randomized cumulative pairs through
+the SQL macros and an independent Go implementation of the same rules, written
+from the specification rather than transcribed from the SQL so that a shared
+misreading is the only way both can be wrong together. Mutation-checked: swapping
+the subtraction operands and dropping the reset check are both caught.
+
+One thing it taught immediately. The first generator built `last` independently
+of `first`, which made 238 of 300 cases counter resets -- the clamp was
+exhaustively tested and the subtraction barely at all. Building `last` from
+`first` by adding non-negative increments, the way a counter actually behaves,
+moved that to 53 resets and 247 real subtractions.
+
+What is still missing is *evidence for the implementation*. There is no cumulative histogram in the corpus to
 check an implementation against, and a histogram merge that is subtly wrong
 produces plausible quantiles rather than an error. The honest next step is to
 synthesize cumulative data -- the same technique that exposed the
