@@ -77,6 +77,9 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	resourceIDs := map[int]duckdb.UUID{}
 	scopeIDs := map[scopeKey]duckdb.UUID{}
 
+	// One id array per datapoint, in walk order, handed to collectSeries below.
+	var dpAttrIDs [][]duckdb.UUID
+
 	for ri, resourceMetric := range m.ResourceMetrics().All() {
 		resource := resourceMetric.Resource()
 		serviceName := serviceNameFromAttrs(resource.Attributes())
@@ -91,7 +94,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 				identity := streamIdentityFromMetric(metric, scope.Name(), scope.Version(), serviceName)
 				identitySet[identity] = struct{}{}
 				coords = append(coords, identityWithCoord{identity: identity, coord: metricCoord{ri, si, mi}})
-				addMetricAttributes(dict, metric)
+				dpAttrIDs = addMetricAttributes(dict, metric, dpAttrIDs)
 			}
 		}
 	}
@@ -251,10 +254,11 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	// is a foreign key, so the rows must be committed before the appender
 	// flushes. Between the two is the only place it fits.
 	//
-	// The walk also carries each datapoint's attribute ids forward, so pass 2
-	// reads them by position instead of hashing every label set a second time
-	// -- datapoints are the highest-volume path in the store.
-	dpIdents, seriesRows, err := collectSeries(ctx, m, streamIDs, resourceIDs)
+	// The walk consumes the ids the dictionary walk already derived, and carries
+	// them forward again so pass 2 reads them by position too. Neither this walk
+	// nor pass 2 hashes a label set: datapoints are the highest-volume path in
+	// the store, and one derivation each is all they get.
+	dpIdents, seriesRows, err := collectSeries(ctx, m, streamIDs, resourceIDs, dpAttrIDs)
 	if err != nil {
 		return err
 	}
@@ -343,46 +347,26 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 // addMetricAttributes records every datapoint and exemplar attribute set on a
 // metric into the dictionary. Kept separate from the append pass so pass 1 can
 // hash everything before any row references it.
-func addMetricAttributes(dict *ingest.Dictionary, metric pmetric.Metric) {
-	addNumber := func(dps pmetric.NumberDataPointSlice) {
-		for _, dp := range dps.All() {
-			dict.AddAttributes(dp.Attributes(), ingest.ScopeDatapoint)
-			addExemplarAttributes(dict, dp.Exemplars())
-		}
-	}
-	switch metric.Type() {
-	case pmetric.MetricTypeGauge:
-		addNumber(metric.Gauge().DataPoints())
-	case pmetric.MetricTypeSum:
-		addNumber(metric.Sum().DataPoints())
-	case pmetric.MetricTypeHistogram:
-		for _, dp := range metric.Histogram().DataPoints().All() {
-			dict.AddAttributes(dp.Attributes(), ingest.ScopeDatapoint)
-			addExemplarAttributes(dict, dp.Exemplars())
-		}
-	case pmetric.MetricTypeExponentialHistogram:
-		for _, dp := range metric.ExponentialHistogram().DataPoints().All() {
-			dict.AddAttributes(dp.Attributes(), ingest.ScopeDatapoint)
-			addExemplarAttributes(dict, dp.Exemplars())
-		}
-	}
+//
+// Appends each datapoint's id array to out, in walk order, and returns the
+// extended slice. Those ids are the expensive part -- deriving one costs a
+// sha256 per label plus a sort, and datapoints are the highest-volume path in
+// the store -- so collectSeries reads them by position rather than hashing
+// every label set a second time. It cannot register them itself: the dictionary
+// is flushed before collectSeries runs, because series rows reference these ids
+// and no foreign key can enforce that ordering into a uuid[].
+func addMetricAttributes(dict *ingest.Dictionary, metric pmetric.Metric, out [][]duckdb.UUID) [][]duckdb.UUID {
+	eachDatapoint(metric, func(attrs pcommon.Map, exemplars pmetric.ExemplarSlice) {
+		out = append(out, ingest.NonNil(dict.AddAttributes(attrs, ingest.ScopeDatapoint)))
+		addExemplarAttributes(dict, exemplars)
+	})
+	return out
 }
 
 func addExemplarAttributes(dict *ingest.Dictionary, exemplars pmetric.ExemplarSlice) {
 	for _, ex := range exemplars.All() {
 		dict.AddAttributes(ex.FilteredAttributes(), ingest.ScopeExemplar)
 	}
-}
-
-// datapointAttrIDs returns the id array for a datapoint's labels.
-//
-// Replaces nullableCanonical, which materialised the same set as a
-// "key=value|..." string for grouping. The array is the identity itself rather
-// than a rendering of it, and NOT NULL rather than nullable: an unlabelled
-// datapoint stores an empty array, so grouping needs no null coalesce.
-func datapointAttrIDs(attrs pcommon.Map) []duckdb.UUID {
-	_, ids := ingest.AttributeSet(attrs, ingest.ScopeDatapoint)
-	return ingest.NonNil(ids)
 }
 
 // dpIdentity is what pass 1 works out for one datapoint and pass 2 writes.
@@ -412,9 +396,11 @@ func collectSeries(
 	m pmetric.Metrics,
 	streamIDs map[streamIdentity]duckdb.UUID,
 	resourceIDs map[int]duckdb.UUID,
+	dpAttrIDs [][]duckdb.UUID,
 ) ([]dpIdentity, map[duckdb.UUID]seriesRow, error) {
-	var idents []dpIdentity
+	idents := make([]dpIdentity, 0, len(dpAttrIDs))
 	rows := map[duckdb.UUID]seriesRow{}
+	cur := 0
 
 	for ri, resourceMetric := range m.ResourceMetrics().All() {
 		resource := resourceMetric.Resource()
@@ -432,38 +418,53 @@ func collectSeries(
 					return nil, nil, fmt.Errorf("collectSeries: %w: stream id missing for identity %+v",
 						ErrMetricsStoreInternal, identity)
 				}
-				eachDatapointAttrs(metric, func(attrs pcommon.Map) {
-					_, ids := ingest.AttributeSet(attrs, ingest.ScopeDatapoint)
-					ids = ingest.NonNil(ids)
+				var overrun bool
+				eachDatapoint(metric, func(_ pcommon.Map, _ pmetric.ExemplarSlice) {
+					if cur >= len(dpAttrIDs) {
+						overrun = true
+						return
+					}
+					ids := dpAttrIDs[cur]
+					cur++
 					sid := ingest.SeriesID(streamID, resourceID, ids)
 					idents = append(idents, dpIdentity{series: sid, attrs: ids})
 					rows[sid] = seriesRow{id: sid, stream: streamID, resource: resourceID, attrs: ids}
 				})
+				if overrun {
+					return nil, nil, fmt.Errorf("collectSeries: %w: more datapoints than the dictionary walk saw (%d)",
+						ErrMetricsStoreInternal, len(dpAttrIDs))
+				}
 			}
 		}
+	}
+	if cur != len(dpAttrIDs) {
+		return nil, nil, fmt.Errorf("collectSeries: %w: dictionary walk mismatch (%d/%d)",
+			ErrMetricsStoreInternal, cur, len(dpAttrIDs))
 	}
 	return idents, rows, nil
 }
 
-// eachDatapointAttrs visits a metric's datapoints in the order the ingest*
-// helpers write them. Both walks go through this, so they cannot drift apart.
-func eachDatapointAttrs(metric pmetric.Metric, fn func(attrs pcommon.Map)) {
+// eachDatapoint visits a metric's datapoints in the order the ingest* helpers
+// write them. Every walk goes through this, so they cannot drift apart -- which
+// matters because the dictionary walk and collectSeries pair up by position,
+// and a divergence would file every datapoint past it under another series.
+func eachDatapoint(metric pmetric.Metric, fn func(attrs pcommon.Map, exemplars pmetric.ExemplarSlice)) {
 	switch metric.Type() {
 	case pmetric.MetricTypeGauge:
 		for _, dp := range metric.Gauge().DataPoints().All() {
-			fn(dp.Attributes())
+			fn(dp.Attributes(), dp.Exemplars())
 		}
 	case pmetric.MetricTypeSum:
 		for _, dp := range metric.Sum().DataPoints().All() {
-			fn(dp.Attributes())
+			fn(dp.Attributes(), dp.Exemplars())
 		}
 	case pmetric.MetricTypeHistogram:
 		for _, dp := range metric.Histogram().DataPoints().All() {
-			fn(dp.Attributes())
+			fn(dp.Attributes(), dp.Exemplars())
 		}
 	case pmetric.MetricTypeExponentialHistogram:
 		for _, dp := range metric.ExponentialHistogram().DataPoints().All() {
-			fn(dp.Attributes())
+			fn(dp.Attributes(), dp.Exemplars())
 		}
 	}
 }
