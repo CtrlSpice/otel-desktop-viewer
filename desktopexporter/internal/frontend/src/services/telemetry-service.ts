@@ -476,7 +476,13 @@ export let telemetryAPI = {
   getMetric: async (
     streamId: string,
     startTime: number,
-    endTime: number
+    endTime: number,
+    /** How many time buckets to reduce the window to. Omit for every
+     *  datapoint. The store keeps up to four points per bucket -- first, last,
+     *  smallest, largest -- so the drawn line is the same as it would be with
+     *  every point, and it ignores this entirely for histograms, which need
+     *  merging rather than sampling. */
+    targetBuckets?: number
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -487,6 +493,7 @@ export let telemetryAPI = {
         streamId,
         startTimeNs,
         endTimeNs,
+        ...(targetBuckets ? [String(targetBuckets)] : []),
       ])
       return metricDataFromJSON(rawData)
     } catch (error) {

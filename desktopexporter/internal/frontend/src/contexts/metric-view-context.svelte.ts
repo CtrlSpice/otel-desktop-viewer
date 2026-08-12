@@ -131,6 +131,20 @@ const KEY = 'metric-view'
 // picking the most visually significant point per bucket.
 const CHART_POINTS_PER_SERIES = 2000
 
+/**
+ * How many time buckets to ask the store to reduce a window to.
+ *
+ * Matched to the chart's point budget so the fetch and the draw cannot drift
+ * apart: asking for fewer buckets than the chart can render throws away detail
+ * that would have been visible, and asking for many more ships datapoints the
+ * chart will immediately discard.
+ *
+ * The store keeps up to four points per bucket, so the response can hold more
+ * points than this -- and the client's LTTB pass still runs, as a no-op when
+ * the input already fits.
+ */
+export const METRIC_BUCKET_TARGET = CHART_POINTS_PER_SERIES
+
 // --- Types --------------------------------------------------------
 
 export type HistogramTab = 'heatmap' | 'quantiles' | 'histogram'
