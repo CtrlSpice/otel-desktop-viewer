@@ -2,7 +2,8 @@
 		with input as (
 			select ?::uuid as stream_id,
 				?::bigint as time_start,
-				?::bigint as time_end
+				?::bigint as time_end,
+				?::bigint as target_buckets
 		),
 		stream as (
 			select s.* from metric_streams s, input
@@ -112,6 +113,73 @@
 		--
 		-- 33x wall and 141x CPU, for identical output. Aggregate first, then
 		-- resolve once per group.
+		-- M4 reduction: at most four datapoints per series per time bucket --
+		-- the earliest, the latest, the smallest and the largest.
+		--
+		-- Chosen over the client's LTTB because for a chart of a given width
+		-- the line drawn from these points is *identical* to the line drawn
+		-- from every point: the extremes of each pixel column are always
+		-- present, so nothing that would have been visible is dropped. LTTB
+		-- preserves shape but is a sample -- a spike survives only if its
+		-- triangle is large enough.
+		--
+		-- Skipped entirely when target_buckets is null, which is the default:
+		-- reduction is opt-in, and a caller that wants every datapoint still
+		-- gets every datapoint.
+		-- Columns, not subqueries. bucket_width_ns filters a list with a
+		-- lambda, and a subquery passed as an argument is inlined into that
+		-- lambda body, where DuckDB rejects it: "subqueries in lambda
+		-- expressions are not supported". Reading from `input` as a relation
+		-- keeps the arguments plain.
+		reduction as (
+			select bucket_width_ns(i.time_end - i.time_start, i.target_buckets) as width_ns
+			from input i
+		),
+
+		-- Bucket starts are absolute, not measured from the window: floor by
+		-- the width so panning slides data through fixed buckets rather than
+		-- re-cutting them on every request.
+		bucketed_dps as (
+			select d.*,
+				(d.timestamp // (select width_ns from reduction))
+					* (select width_ns from reduction) as bucket_start
+			from filtered_dps d
+			where (select width_ns from reduction) is not null
+		),
+
+		-- isfinite: DuckDB orders NaN above infinity, so one NaN sample would
+		-- win max() and elect itself as its bucket's representative, displacing
+		-- a real value. It cannot be charted either way, so it is excluded from
+		-- the election rather than allowed to win it.
+		bucket_elected as (
+			select
+				series_id,
+				bucket_start,
+				arg_min(id, timestamp) as first_id,
+				arg_max(id, timestamp) as last_id,
+				arg_min(id, coalesce(double_value, int_value))
+					filter (where isfinite(coalesce(double_value, int_value))) as min_id,
+				arg_max(id, coalesce(double_value, int_value))
+					filter (where isfinite(coalesce(double_value, int_value))) as max_id
+			from bucketed_dps
+			group by series_id, bucket_start
+		),
+
+		-- The ids that survive: the elected four per bucket, plus every
+		-- datapoint carrying an exemplar.
+		--
+		-- Exemplars are the link from a metric to a trace, and election is
+		-- driven by *value*, so the datapoints holding them are mostly not the
+		-- ones M4 keeps. Dropping them would quietly gut trace correlation on
+		-- exactly the dense streams this reduction exists for. They are sparse
+		-- by construction, so keeping all of them costs little.
+		retained_ids as (
+			select unnest([first_id, last_id, min_id, max_id]) as id from bucket_elected
+			union
+			select d.id from filtered_dps d
+			where exists (select 1 from exemplars e where e.datapoint_id = d.id)
+		),
+
 		ts_dps_agg as (
 			select
 				d.series_id,
@@ -188,11 +256,18 @@
 							'aggregationTemporality', d.aggregation_temporality
 						)
 					end
-				) order by d.timestamp desc)) as datapoints
+				) order by d.timestamp desc)
+					-- Only the reduction narrows the list. The stats above are
+					-- deliberately outside this filter: they describe the
+					-- window, not the sample drawn from it, which is the whole
+					-- reason they are computed here rather than in the client.
+					filter (where r.id is not null or (select width_ns from reduction) is null)
+				) as datapoints
 			-- Grouping on a fixed-width, indexable column instead of rebuilding
 		-- and hashing a LIST per row. Measured on 294,607 datapoints: 5.0ms
 		-- by the array against 0.9ms by a single uuid.
 		from filtered_dps d
+			left join retained_ids r on r.id = d.id
 			group by d.series_id, d.resource_id
 		),
 		-- Pack each timeseries into the wire shape and order them so

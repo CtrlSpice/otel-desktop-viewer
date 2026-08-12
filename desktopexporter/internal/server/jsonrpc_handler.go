@@ -287,7 +287,9 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	if len(params) != 3 {
+	// The fourth parameter is optional: callers that predate it, or that want
+	// every datapoint, send three and get no reduction.
+	if len(params) < 3 || len(params) > 4 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
@@ -302,8 +304,21 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	if err != nil {
 		return nil, err
 	}
+	// How many time buckets to reduce the window to. The client knows its
+	// chart width; the store cannot.
+	var targetBuckets int64
+	if len(params) == 4 {
+		targetBuckets, err = h.parseTimestampParam(params[3], "targetBuckets")
+		if err != nil {
+			return nil, err
+		}
+		if targetBuckets < 0 {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, startTime, endTime)
+		return metrics.GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

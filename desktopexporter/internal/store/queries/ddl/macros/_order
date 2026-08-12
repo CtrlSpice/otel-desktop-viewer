@@ -41,3 +41,4 @@ span_data_json.sql
 exp_zero_cutoff.sql
 diff_bucket_vectors.sql
 bucket_extents.sql
+bucket_width_ns.sql

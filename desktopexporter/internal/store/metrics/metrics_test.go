@@ -262,7 +262,7 @@ func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, 0, maxNano)
+		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -1742,7 +1742,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	require.True(t, ok)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour))
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -1820,7 +1820,7 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour))
+			time.Now().UnixNano()+int64(time.Hour), 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
