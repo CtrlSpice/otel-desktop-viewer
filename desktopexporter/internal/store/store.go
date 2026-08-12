@@ -46,8 +46,11 @@ type Store struct {
 	// flushed records which dictionary rows this store has already written, so
 	// a batch whose attributes, resource and scope are all known can skip its
 	// insert. Owned here because the set describes one database: sharing it
-	// across stores would skip inserts into the wrong one. Invalidated by
-	// ingest.SweepOrphans, the only thing that deletes dictionary rows.
+	// across stores would skip inserts into the wrong one. Warmed from disk in
+	// NewStore via ingest.LoadFlushedIDs, so a persistent --db that already
+	// holds the dictionary does not re-insert everything until the cache
+	// refills. Invalidated by ingest.SweepOrphans, the only thing that deletes
+	// dictionary rows.
 	flushed *ingest.FlushedIDs
 
 	// retentionCapBytes is the store size cap enforced by EnforceRetention
@@ -151,13 +154,25 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		}
 	}
 
+	// 6) Warm the dictionary flush cache from whatever is already on disk.
+	// Without this, a persistent --db reopened with its dictionary intact
+	// would still re-insert every attribute, resource and scope until enough
+	// batches had flushed to refill an empty in-process cache -- exactly the
+	// fixed per-batch cost FlushedIDs exists to remove, paid again on every
+	// restart. Loads every id ever stored, which is bounded the same way the
+	// on-disk dictionary itself is: by retention.
+	flushed, err := ingest.LoadFlushedIDs(ctx, db)
+	if err != nil {
+		return nil, fmt.Errorf("%w while warming the dictionary flush cache: %w", ErrStoreInitFailed, err)
+	}
+
 	return &Store{
 		db:           db,
 		conn:         conn,
 		dbPath:       dbPath,
 		logger:       logger,
 		schemaCompat: schemaCompat,
-		flushed:      ingest.NewFlushedIDs(),
+		flushed:      flushed,
 	}, nil
 }
 

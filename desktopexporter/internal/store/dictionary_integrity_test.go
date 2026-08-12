@@ -294,6 +294,13 @@ func TestDictionaryIntegrityAfterRetention(t *testing.T) {
 // content adds no new ids, so its dictionary flush issues no SQL at all. That is
 // what removes the ~2.3ms fixed per-batch cost, and it is why small batches went
 // from 2.7x slower than the pre-dictionary schema to 2.1x faster.
+//
+// The final stretch pins the sweep's precise invalidation, not just that it
+// invalidates something: clearing traces orphans the span/event/link
+// attributes, but the resource, scope, and the log/metric attributes stay
+// referenced, so those ids must survive in the cache. A sweep that fell back
+// to forgetting everything would also make `after` smaller than `first` --
+// only the `Positive` assertion on `after` tells the two apart.
 func TestFlushedIDsPopulatesAndClears(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
@@ -310,9 +317,18 @@ func TestFlushedIDsPopulatesAndClears(t *testing.T) {
 	assert.Equal(t, first, s.FlushedIDs().Len(),
 		"identical content adds no new ids -- this is the skip that makes it fast")
 
+	// Clear traces only: span/event/link attributes lose their only owner and
+	// become orphans, but the resource and scope are still referenced by logs
+	// and metrics, and log/metric attributes are untouched.
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return spans.Clear(ctx, db)
+	}))
 	sweep(t, s)
-	assert.Zero(t, s.FlushedIDs().Len(),
-		"the sweep deletes dictionary rows, so it must forget them too")
+
+	after := s.FlushedIDs().Len()
+	assert.Less(t, after, first, "the sweep must forget the ids it actually deleted")
+	assert.Positive(t, after,
+		"ids the sweep did not delete -- the shared resource, scope, and log/metric attributes -- must stay marked")
 }
 
 // A store must never consult another store's set. Two stores are two databases;

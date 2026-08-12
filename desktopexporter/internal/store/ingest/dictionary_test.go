@@ -149,6 +149,33 @@ func TestFlushIsIdempotent(t *testing.T) {
 	}))
 }
 
+// A failed exec must never mark ids as flushed. Marking before -- or
+// regardless of -- a successful exec would tell the cache a row exists that
+// was never written, which is the one failure mode FlushedIDs' doc comment
+// calls out as undetectable: a later batch would trust the cache, skip the
+// insert, and leave an owner's array pointing at a row that was never there.
+func TestFailedFlushDoesNotMarkAsFlushed(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	// Force the attributes insert to fail without touching FlushedIDs itself:
+	// drop the table the statement targets.
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		_, err := db.Exec(`drop table attributes`)
+		return err
+	}))
+
+	d := ingest.NewDictionary(s.FlushedIDs())
+	d.AddAttributes(attrMap(map[string]string{"http.method": "GET"}), ingest.ScopeSpan)
+
+	err := s.WithConn(func(conn driver.Conn) error {
+		return d.Flush(ctx, conn)
+	})
+	require.Error(t, err, "the insert must fail with its table gone")
+	assert.Zero(t, s.FlushedIDs().Len(),
+		"a failed exec must leave nothing marked -- marking beforehand would convince the cache this row exists")
+}
+
 // Every id an owner array references must exist in the dictionary. Nothing
 // enforces this -- DuckDB cannot FK into a LIST -- so it is checked rather than
 // assumed.
