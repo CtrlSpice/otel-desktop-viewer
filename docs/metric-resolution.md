@@ -332,6 +332,35 @@ count and sum the client computes them exactly, and that logic is deeply
 UI-coupled); sampling histograms; assuming scale and `zero_threshold` are
 uniform within a stream.
 
+## The gap that matters: cumulative histograms
+
+Delta histograms merge. Cumulative ones do not, and that is the default.
+
+The OTLP metrics exporter specification requires implementations to "set
+temporality preference to Cumulative for all instrument kinds by default";
+Delta is opt-in through `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`.
+So a service instrumented with stock OpenTelemetry emits cumulative histograms,
+and gets none of this reduction. The reference corpus is Delta only because
+bargeboard configures it that way, which is why the implementation could be
+verified at all -- and also why the gap was easy to miss.
+
+The merge itself is understood: last-minus-first within the bucket, with a
+clamp that falls back to the later slice when any bucket would go negative,
+because that means the counter restarted. `diff_bucket_vectors` exists for it
+and returns NULL as the reset signal. `subtractHistogramSlices` in the client is
+the reference, now that it aligns scales rather than bailing on a mismatch.
+
+What is missing is *evidence*. There is no cumulative histogram in the corpus to
+check an implementation against, and a histogram merge that is subtly wrong
+produces plausible quantiles rather than an error. The honest next step is to
+synthesize cumulative data -- the same technique that exposed the
+high-cardinality dictionary and the exemplar problem -- and differential-test
+the SQL against the TypeScript before trusting it.
+
+Until then histograms with cumulative temporality return every datapoint. That
+is correct and slow, which is the right way round, but it should not be mistaken
+for finished.
+
 ## Open questions
 
 - Default resolution when the client does not send one. 2,000 matches today's
