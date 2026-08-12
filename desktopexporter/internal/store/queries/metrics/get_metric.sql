@@ -147,13 +147,12 @@
 				-- is asked for. Slow beats wrong.
 				when s.metric_type in ('Gauge', 'Sum')
 					then bucket_width_ns(i.time_end - i.time_start, i.target_buckets)
-				-- Histograms reduce by merging, which for Delta is addition of
-				-- bucket counts and is exact. Cumulative is deliberately left
-				-- unreduced: its merge is last-minus-first with a reset clamp,
-				-- and this corpus contains no cumulative histogram to check an
-				-- implementation against. Correct and slow beats plausible.
+				-- Histograms reduce by merging. Delta adds bucket counts;
+				-- Cumulative subtracts the first of the bucket from the last,
+				-- because each datapoint is a running total and adding them
+				-- would count every observation once per datapoint.
 				when s.metric_type in ('Histogram', 'ExponentialHistogram')
-				     and s.aggregation_temporality = 'Delta'
+				     and s.aggregation_temporality in ('Delta', 'Cumulative')
 					then bucket_width_ns(i.time_end - i.time_start, i.target_buckets)
 			end as width_ns
 			from input i, stream s
@@ -277,20 +276,60 @@
 				any_value(p.aggregation_temporality) as aggregation_temporality,
 				any_value(p.flags) as flags,
 				any_value(p.is_monotonic) as is_monotonic,
-				sum(p.count) as count,
-				sum(p.sum) as sum,
+				-- Delta adds; Cumulative takes last minus first.
+				--
+				-- The alignment chain above has already put every datapoint in
+				-- this bucket on a common scale and origin, so the earliest and
+				-- latest are directly comparable and the subtraction is a
+				-- straight element-wise difference.
+				--
+				-- diff_bucket_vectors returns NULL when any bucket would go
+				-- negative, which means the counter restarted. The clamp then
+				-- falls back to the later slice, because after a restart the
+				-- later value *is* the activity since the restart. That is a
+				-- different situation from failing to align, which is why the
+				-- two are not allowed to share an exit.
+				case when any_value(p.aggregation_temporality) = 'Delta'
+					then sum(p.count)
+					else greatest(max(p.count) - min(p.count), 0)
+				end as count,
+				case when any_value(p.aggregation_temporality) = 'Delta'
+					then sum(p.sum)
+					else greatest(max(p.sum) - min(p.sum), 0)
+				end as sum,
 				-- Explicit bounds: identical across the group or the merge is
 				-- meaningless, and there is no rescale that reconciles them.
 				any_value(p.explicit_bounds) as explicit_bounds,
 				count(distinct p.explicit_bounds::varchar) as distinct_bounds,
-				sum_bucket_vectors(list(p.bucket_counts)) as bucket_counts,
+				case when any_value(p.aggregation_temporality) = 'Delta'
+					then sum_bucket_vectors(list(p.bucket_counts))
+					else coalesce(
+						diff_bucket_vectors(arg_max(p.bucket_counts, p.timestamp), arg_min(p.bucket_counts, p.timestamp)),
+						arg_max(p.bucket_counts, p.timestamp)
+					)
+				end as bucket_counts,
 				any_value(p.target_scale) as scale,
 				max(p.zero_threshold) as zero_threshold,
-				sum(p.zero_count) as zero_count,
+				case when any_value(p.aggregation_temporality) = 'Delta'
+					then sum(p.zero_count)
+					else greatest(max(p.zero_count) - min(p.zero_count), 0)
+				end as zero_count,
 				any_value(coalesce(p.pos_target_offset, 0)) as positive_bucket_offset,
-				sum_bucket_vectors(list(p.pos_p)) as positive_bucket_counts,
+				case when any_value(p.aggregation_temporality) = 'Delta'
+					then sum_bucket_vectors(list(p.pos_p))
+					else coalesce(
+						diff_bucket_vectors(arg_max(p.pos_p, p.timestamp), arg_min(p.pos_p, p.timestamp)),
+						arg_max(p.pos_p, p.timestamp)
+					)
+				end as positive_bucket_counts,
 				any_value(coalesce(p.neg_target_offset, 0)) as negative_bucket_offset,
-				sum_bucket_vectors(list(p.neg_p)) as negative_bucket_counts
+				case when any_value(p.aggregation_temporality) = 'Delta'
+					then sum_bucket_vectors(list(p.neg_p))
+					else coalesce(
+						diff_bucket_vectors(arg_max(p.neg_p, p.timestamp), arg_min(p.neg_p, p.timestamp)),
+						arg_max(p.neg_p, p.timestamp)
+					)
+				end as negative_bucket_counts
 			from hist_padded p
 			group by p.series_id, p.resource_id, p.bucket_start
 		),
