@@ -93,14 +93,22 @@ func (s *Store) EnforceRetention(ctx context.Context, maxBytes int64) error {
 		return nil
 	}
 
-	// Sweep before the first measurement. Orphaned dictionary rows count
-	// toward the size the cap is compared against, so garbage left by a Clear
-	// or a delete-by-id must never be what tips the store over and triggers
-	// pruning of real telemetry.
-	if err := s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db, s.flushed)
-	}); err != nil {
+	// Orphaned dictionary rows count toward the size the cap is compared
+	// against, so garbage left by a Clear or a delete-by-id must never be what
+	// tips the store over and triggers pruning of real telemetry. That requires
+	// sweeping before any prune -- but not before the measurement that decides
+	// whether to prune at all.
+	//
+	// This used to sweep unconditionally, which meant a store sitting at 1% of
+	// its cap still ran three anti-joins and dropped the dictionary cache every
+	// 30 seconds, under the write lock, to protect against a prune that was
+	// never going to happen.
+	fits, err := s.sweepIfOverCap(ctx, maxBytes)
+	if err != nil {
 		return err
+	}
+	if fits {
+		return nil
 	}
 
 	for round := 0; round < maxPruneRounds; round++ {
@@ -113,6 +121,45 @@ func (s *Store) EnforceRetention(ctx context.Context, maxBytes int64) error {
 		}
 	}
 	return nil
+}
+
+// sweepIfOverCap measures the store and, only if it exceeds maxBytes, collects
+// orphans and measures again. It reports whether the store fits, in which case
+// no pruning is needed.
+//
+// The re-measurement is what preserves the guarantee: if the excess was garbage
+// all along, the sweep alone brings the store back under and this returns true,
+// so no telemetry is pruned. Sweeping and re-measuring costs a checkpoint, but
+// only on the path where something is actually over the cap.
+func (s *Store) sweepIfOverCap(ctx context.Context, maxBytes int64) (bool, error) {
+	fits := false
+	err := s.WithDBWrite(func(db *sql.DB) error {
+		size, err := s.sizeBytes(ctx, db)
+		if err != nil {
+			return err
+		}
+		if size <= maxBytes {
+			fits = true
+			return nil
+		}
+
+		if err := ingest.SweepOrphans(ctx, db, s.flushed); err != nil {
+			return err
+		}
+		// Without a checkpoint the deletes do not move the measurement, so the
+		// re-measure below would report the pre-sweep size and prune anyway.
+		if _, err := db.ExecContext(ctx, `checkpoint`); err != nil {
+			return fmt.Errorf("EnforceRetention: %w: %w", ErrRetentionInternal, err)
+		}
+
+		size, err = s.sizeBytes(ctx, db)
+		if err != nil {
+			return err
+		}
+		fits = size <= maxBytes
+		return nil
+	})
+	return fits, err
 }
 
 // enforceRound runs one measure-prune-checkpoint round under the write lock.

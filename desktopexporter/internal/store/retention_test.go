@@ -240,3 +240,59 @@ func TestEnforceRetentionUnderCap(t *testing.T) {
 	require.NoError(t, s.EnforceRetention(ctx, 1<<40 /* 1 TB */))
 	assert.Equal(t, int64(1000), count(t, s, "spans"), "store under the cap must not be pruned")
 }
+
+// TestSweepIfOverCapCollectsGarbage pins the guarantee sweepIfOverCap exists
+// for: orphaned dictionary rows count toward the size the cap is compared
+// against, so when the store is over, the orphans are collected *before* any
+// prune decision is taken. Otherwise retention deletes real telemetry to make
+// room for rows nothing references -- the garbage survives and the data does
+// not.
+//
+// Asserting on the resulting size would not catch a regression here, because
+// pruning also shrinks the store. Asserting that the live spans survived does.
+func TestSweepIfOverCapCollectsGarbage(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+
+	const total, keep = 4000, 200
+	seedSpans(t, s, total)
+	_, err = s.db.Exec(`delete from spans where start_time >= ?`, int64(keep)*1000000)
+	require.NoError(t, err)
+	require.Equal(t, int64(total), count(t, s, "attributes"),
+		"the orphans must still be present, or this test proves nothing")
+
+	size, err := s.SizeBytes(ctx)
+	require.NoError(t, err)
+
+	_, err = s.sweepIfOverCap(ctx, size-1)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(keep), count(t, s, "attributes"),
+		"orphaned dictionary rows should have been collected before any prune")
+	assert.Equal(t, int64(keep), count(t, s, "spans"),
+		"sweeping must not touch live telemetry")
+}
+
+// TestSweepIfOverCapSkipsSweepUnderCap is the other half, and the behaviour
+// change: a store comfortably inside its cap does no work at all. It used to
+// sweep unconditionally on every retention tick, which also dropped the
+// dictionary cache every 30 seconds for no reason.
+func TestSweepIfOverCapSkipsSweepUnderCap(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+
+	const total, keep = 1000, 100
+	seedSpans(t, s, total)
+	_, err = s.db.Exec(`delete from spans where start_time >= ?`, int64(keep)*1000000)
+	require.NoError(t, err)
+
+	fits, err := s.sweepIfOverCap(ctx, 1<<40 /* 1 TB */)
+	require.NoError(t, err)
+	assert.True(t, fits, "a store far under its cap must report that it fits")
+	assert.Equal(t, int64(total), count(t, s, "attributes"),
+		"under the cap there is nothing to protect against, so the sweep must not run")
+}
