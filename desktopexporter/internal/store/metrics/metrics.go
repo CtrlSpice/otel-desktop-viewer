@@ -301,6 +301,11 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 					metric.Description(), // Description VARCHAR
 					resourceID,           // ResourceID UUID
 					scopeID,              // ScopeID UUID
+					// Batch-level, from the OTLP wrappers rather than the
+					// Resource / InstrumentationScope messages, neither of
+					// which carries the field.
+					resourceMetric.SchemaUrl(), // ResourceSchemaURL VARCHAR
+					scopeMetric.SchemaUrl(),    // ScopeSchemaURL VARCHAR
 				); err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 				}
@@ -406,6 +411,9 @@ func collectSeries(
 		resource := resourceMetric.Resource()
 		serviceName := serviceNameFromAttrs(resource.Attributes())
 		resourceID := resourceIDs[ri]
+		// Once per resource, not per datapoint: it is a fixed property of the
+		// resource, and there are ~10^5 datapoints behind each one.
+		instanceKey := ingest.InstanceKey(resource.Attributes())
 		for _, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			scope := scopeMetric.Scope()
 			for _, metric := range scopeMetric.Metrics().All() {
@@ -426,8 +434,13 @@ func collectSeries(
 					}
 					ids := dpAttrIDs[cur]
 					cur++
-					sid := ingest.SeriesID(streamID, resourceID, ids)
+					sid := ingest.SeriesID(streamID, instanceKey, ids)
 					idents = append(idents, dpIdentity{series: sid, attrs: ids})
+					// resource_id is the resource this series was *first* seen
+					// with, since the insert is on-conflict-do-nothing. When a
+					// resource is enriched mid-stream the series now survives
+					// intact, which is the point, but its stored resource stays
+					// the earlier one. It is a representative, not an identity.
 					rows[sid] = seriesRow{id: sid, stream: streamID, resource: resourceID, attrs: ids}
 				})
 				if overrun {

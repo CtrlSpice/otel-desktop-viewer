@@ -141,6 +141,7 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 			ingest.NonNil(logAttrIDs), // AttributeIDs UUID[]
 			uint32(0), uint32(0), "",  // DroppedAttributesCount, Flags, EventName
 			"flush-test", // ServiceName VARCHAR (NOT NULL, '' = unknown)
+			"", "",       // ResourceSchemaURL, ScopeSchemaURL (batch-level, optional)
 		); err != nil {
 			return err
 		}

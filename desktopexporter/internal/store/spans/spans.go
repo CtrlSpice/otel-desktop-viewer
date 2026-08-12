@@ -186,6 +186,8 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 					span.Status().Code().String(), // StatusCode VARCHAR
 					span.Status().Message(),       // StatusMessage VARCHAR
 					serviceName,                   // ServiceName VARCHAR (NOT NULL, '' = unknown)
+					resourceSpan.SchemaUrl(),      // ResourceSchemaURL VARCHAR (batch-level)
+					scopeSpan.SchemaUrl(),         // ScopeSchemaURL VARCHAR (batch-level)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)

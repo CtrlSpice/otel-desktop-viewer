@@ -21,18 +21,18 @@
 		-- Datapoints inherit aggregation_temporality / is_monotonic from
 		-- the stream so the per-type JSON projection below doesn't need
 		-- a per-row join.
-		-- resource_id joins in so a series can be split by the resource that
-		-- emitted it. A join rather than a denormalized column on datapoints:
-		-- it is a primary-key lookup from metric_ingest_id, and datapoints is
-		-- the largest table in the store.
+		-- resource_id rides along for the per-batch resource of each datapoint.
+		-- It is NOT what groups a series: `resources` is content-addressed, so
+		-- one instance that gets enriched mid-stream owns several rows there,
+		-- and grouping on it split a single series across them. A join rather
+		-- than a denormalized column on datapoints: it is a primary-key lookup
+		-- from metric_ingest_id, and datapoints is the largest table here.
 		filtered_dps as (
 			select d.*,
-				mi.resource_id as resource_id,
 				s.metric_type as metric_type,
 				s.aggregation_temporality as aggregation_temporality,
 				s.is_monotonic as is_monotonic
 			from datapoints d, input, stream s
-			join metric_ingests mi on mi.id = d.metric_ingest_id
 			where d.stream_id = input.stream_id
 			  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
 		),
@@ -99,7 +99,7 @@
 		-- attributes_sample picks any one datapoint's attributes from
 		-- this timeseries. Within a timeseries they're identical by
 		-- construction -- series_id is content-derived from (stream,
-		-- resource, attribute_ids), so the array cannot vary inside a group.
+		-- instance, attribute_ids), so the array cannot vary inside a group.
 		--
 		-- any_value wraps the *array*, not the resolved JSON. Written the
 		-- other way round the macro sits inside the aggregate, so it runs once
@@ -264,7 +264,6 @@
 		hist_merged as (
 			select
 				p.series_id,
-				p.resource_id,
 				p.bucket_start,
 				-- A real datapoint id, not a synthetic one: the last of the
 				-- bucket. Keeps ?dp= links and datapoint selection working
@@ -331,7 +330,7 @@
 					)
 				end as negative_bucket_counts
 			from hist_padded p
-			group by p.series_id, p.resource_id, p.bucket_start
+			group by p.series_id, p.bucket_start
 		),
 
 		-- What the projection reads. Merging replaces a bucket's datapoints
@@ -346,7 +345,7 @@
 			where (select kind from reduction_kind) <> 'merge'
 			union all by name
 			select
-				m.id, m.series_id, m.resource_id, m.timestamp, m.start_time,
+				m.id, m.series_id, m.timestamp, m.start_time,
 				m.metric_type, m.aggregation_temporality, m.flags,
 				m.count, m.sum,
 				-- Bucket-derived, because a merge cannot carry min and max
@@ -381,12 +380,19 @@
 		ts_dps_agg as (
 			select
 				d.series_id,
-				d.resource_id,
-				-- The series id is the key. It is content-derived from
-				-- (stream, resource, labels), so it distinguishes replicas
-				-- whose labels are identical, and it is stable across restarts
-				-- -- which is what makes it safe in a URL, unlike a datapoint
-				-- id that retention eventually deletes.
+				-- The series id is the key, and the only key. It is
+				-- content-derived from (stream, instance, labels), so it
+				-- distinguishes replicas whose labels are identical, and it is
+				-- stable across restarts -- which is what makes it safe in a
+				-- URL, unlike a datapoint id that retention eventually deletes.
+				--
+				-- Deliberately NOT grouped alongside the ingest's resource_id,
+				-- as it once was. A resource is content-addressed, so enriching
+				-- one mid-stream mints a second resources row for the same
+				-- instance, and grouping by it split one series into two chart
+				-- lines even after the series id itself stopped splitting. The
+				-- resource shown comes from metric_series, which holds exactly
+				-- one per series.
 				d.series_id::varchar as attrs_key,
 				attrs_json(any_value(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
@@ -466,7 +472,7 @@
 		-- by the array against 0.9ms by a single uuid.
 		from projected_dps d
 			left join retained_ids r on r.id = d.id
-			group by d.series_id, d.resource_id
+			group by d.series_id
 		),
 		-- Pack each timeseries into the wire shape and order them so
 		-- the most recently active timeseries sorts first -- mirrors
@@ -512,7 +518,8 @@
 			-- order is now total and deterministic.
 			) order by t.latest_ts desc, t.attrs_key)) as timeseries
 			from ts_dps_agg t
-			join resources r on r.id = t.resource_id
+			join metric_series ms on ms.id = t.series_id
+			join resources r on r.id = ms.resource_id
 		)
 		-- Left join: a stream with no datapoints in the window still
 		-- produces a row (empty timeseries, blank representative fields).

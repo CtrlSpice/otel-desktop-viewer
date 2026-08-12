@@ -1834,3 +1834,96 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	assert.Equal(t, first, served,
 		"the key on the wire must be the series id, so a link resolves back to a row")
 }
+
+// buildInstanceMetrics emits one gauge from one instance, optionally with extra
+// resource attributes bolted on -- the shape a collector processor produces
+// when it starts resolving metadata partway through a stream.
+func buildInstanceMetrics(t *testing.T, extra map[string]string, base int64) pmetric.Metrics {
+	t.Helper()
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "checkout")
+	rm.Resource().Attributes().PutStr("service.instance.id", "checkout-7f9c")
+	for k, v := range extra {
+		rm.Resource().Attributes().PutStr(k, v)
+	}
+
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("otelhttp")
+	sm.Scope().SetVersion("1.2.0")
+
+	m := sm.Metrics().AppendEmpty()
+	m.SetName("http.server.duration")
+	m.SetUnit("ms")
+	g := m.SetEmptyGauge()
+	for j := 0; j < 3; j++ {
+		dp := g.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(base + int64(j)*1_000_000))
+		dp.SetDoubleValue(float64(j))
+		dp.Attributes().PutStr("http.route", "/checkout")
+	}
+	return md
+}
+
+// TestMetricSeries_SurvivesResourceEnrichment is the regression test for a
+// series splitting when nothing about the series changed.
+//
+// A resource id is a hash of the resource's whole attribute set, so when
+// something enriches a resource mid-stream the resource id changes. While the
+// series id was derived from that, one instrument from one instance drew two
+// chart lines, split at the moment the extra attributes appeared, and a
+// ?series= link addressed only half of it. Observed in the reference capture:
+// 48 resource rows for 35 distinct service.instance.id, telemetry.sdk.* present
+// on 35 and absent from 13.
+//
+// Two resource rows is the correct outcome and is asserted deliberately: the
+// payloads really did differ, and being able to see that is information. What
+// must not change is the series.
+func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Now().UnixNano()
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, nil, base), s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, map[string]string{
+			"telemetry.sdk.name":     "opentelemetry",
+			"telemetry.sdk.language": "go",
+			"telemetry.sdk.version":  "1.28.0",
+		}, base+10_000_000), s.FlushedIDs())
+	}))
+
+	countRows := func(table string) int {
+		var n int
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			return db.QueryRow(`select count(*) from ` + table).Scan(&n)
+		}))
+		return n
+	}
+
+	assert.Equal(t, 2, countRows("resources"),
+		"the two payloads genuinely differed, so two resource rows is correct")
+	assert.Equal(t, 1, countRows("metric_series"),
+		"enriching a resource must not mint a second series for the same instance")
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, float64(1), summaries[0]["seriesCount"],
+		"the summary must agree that this is one series")
+
+	streamID, ok := summaries[0]["id"].(string)
+	require.True(t, ok)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	ts, _ := metric["timeseries"].([]any)
+	require.Len(t, ts, 1, "one line on the chart, not two")
+	dps, _ := ts[0].(map[string]any)["datapoints"].([]any)
+	assert.Len(t, dps, 6, "both batches land on the same line")
+}

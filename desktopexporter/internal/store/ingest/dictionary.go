@@ -98,18 +98,71 @@ func ResourceID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
 	return hashID(uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
 }
 
-// SeriesID derives a timeseries' identity: the stream it belongs to, the
-// resource that emitted it, and its label set.
+// SeriesID derives a timeseries' identity: the stream it belongs to, which
+// instance emitted it, and its label set.
 //
 // Content-derived like the rest, which is what makes it usable in a URL --
 // the same series gets the same id across restarts and re-ingests, so a link
 // survives in a way one built on a minted datapoint id cannot.
 //
-// resource_id is in the key and that is the whole point: metric_streams
-// identifies a stream by service_name so a counter survives a pod restart,
-// which means two replicas share a stream. The series is where they separate.
-func SeriesID(streamID, resourceID duckdb.UUID, attributeIDs []duckdb.UUID) duckdb.UUID {
-	return hashID(formatUUID(streamID), formatUUID(resourceID), uuidsKey(attributeIDs))
+// The instance key is in there because metric_streams identifies a stream by
+// service_name so a counter survives a pod restart, which means two replicas
+// share a stream. The series is where they separate.
+//
+// It is deliberately NOT the resource row id, which this used to take. A
+// resource id is a hash of the resource's whole attribute set, so anything
+// enriching a resource mid-stream -- a processor that starts resolving k8s
+// metadata, an SDK that adds telemetry.sdk.* partway through -- mints a new
+// resource, and used to mint a new series with it. One instrument from one
+// instance then drew two chart lines, split at the moment those attributes
+// appeared, and a ?series= link addressed only one half of it. Measured in the
+// reference capture: 48 resource rows for 35 distinct service.instance.id,
+// with telemetry.sdk.* on 35 of them and absent from the other 13.
+//
+// See InstanceKey for the identity used instead.
+func SeriesID(streamID duckdb.UUID, instanceKey string, attributeIDs []duckdb.UUID) duckdb.UUID {
+	return hashID(formatUUID(streamID), instanceKey, uuidsKey(attributeIDs))
+}
+
+// instanceKeys are the resource attributes that identify *which instance* a
+// resource describes, rather than merely describing it, most specific first.
+//
+// service.instance.id is the one OTel actually sanctions for this. host.name
+// and k8s.pod.name are the usual stand-ins when an SDK omits it, and are what
+// the original split-by-resource was reaching for.
+var instanceKeys = []string{
+	"service.instance.id",
+	"host.name",
+	"k8s.pod.name",
+}
+
+// InstanceKey returns a stable identity for the instance a resource describes,
+// for use as part of a series id. Empty when the resource does not say.
+//
+// The attribute name is included in the result, so a host.name of "web-1"
+// cannot collide with a k8s.pod.name of "web-1".
+//
+// Absent means absent. When none of these attributes are present the key is
+// empty and every such resource lands on one series -- the same default a
+// datapoint with no labels gets, for the same reason: the telemetry expressed
+// no distinction, so we do not invent one.
+//
+// Falling back to the resource id here would be inventing one. A resource id is
+// a hash of the whole attribute set, so it splits on enrichment rather than on
+// instance, which means it answers a question nobody asked and answers it
+// wrongly -- and it would do so precisely in the cases where we know least
+// about the instance. Two replicas sharing a line because neither identified
+// itself is a true statement about the data. Two lines because a processor
+// added an attribute is not.
+func InstanceKey(attrs pcommon.Map) string {
+	for _, k := range instanceKeys {
+		if v, ok := attrs.Get(k); ok {
+			if s := v.AsString(); s != "" {
+				return k + "=" + s
+			}
+		}
+	}
+	return ""
 }
 
 // ScopeID derives a scope's identity. Name and version participate because two

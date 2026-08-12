@@ -25,9 +25,17 @@ package schema
 // exist -- so the bump is what stops that being discovered as an appender
 // column-count error midway through an ingest.
 //
+// Version 3 adds resource_schema_url and scope_schema_url to spans, logs and
+// metric_ingests. Additive in the loose sense, but `create table if not exists`
+// does not alter a table that already exists: a version 2 file keeps its
+// narrower spans table and the first ingest fails with "invalid column count:
+// expected 16, got 18". That is precisely the opaque failure this constant
+// exists to turn into a clear message, so a new column on an existing table
+// bumps it even though a new table or a new index does not.
+//
 // Files written before versioning existed carry no stamp at all and are
 // detected separately.
-const Version = 2
+const Version = 3
 
 // VersionTableQuery creates the version table.
 //
