@@ -33,9 +33,23 @@ package schema
 // exists to turn into a clear message, so a new column on an existing table
 // bumps it even though a new table or a new index does not.
 //
+// Version 4 changes what a resource id means, not the resources table's
+// columns. It used to be sha256(attribute_ids, dropped_attributes_count) --
+// the resource's whole attribute set -- which meant anything that enriched a
+// resource mid-stream (a processor resolving k8s metadata, an SDK adding
+// telemetry.sdk.* partway through) minted a new row for the same running
+// process; metrics.SeriesID then worked around the resulting instability by
+// keying series on InstanceKey instead of the resource id. It is now
+// sha256(service.namespace, service.name, service.instance.id) -- the OTel
+// triplet the spec actually commits to as identity -- so InstanceKey is gone
+// and SeriesID takes the resource id again. Existing resource rows, and every
+// metric_series row hashed from them, were keyed by the old function: this
+// build would compute different ids for the same resources, so a version 3
+// file's rows are unreadable under the new identity, not merely stale.
+//
 // Files written before versioning existed carry no stamp at all and are
 // detected separately.
-const Version = 3
+const Version = 4
 
 // VersionTableQuery creates the version table.
 //

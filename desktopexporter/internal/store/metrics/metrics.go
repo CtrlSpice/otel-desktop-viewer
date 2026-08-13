@@ -411,9 +411,6 @@ func collectSeries(
 		resource := resourceMetric.Resource()
 		serviceName := serviceNameFromAttrs(resource.Attributes())
 		resourceID := resourceIDs[ri]
-		// Once per resource, not per datapoint: it is a fixed property of the
-		// resource, and there are ~10^5 datapoints behind each one.
-		instanceKey := ingest.InstanceKey(resource.Attributes())
 		for _, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			scope := scopeMetric.Scope()
 			for _, metric := range scopeMetric.Metrics().All() {
@@ -434,7 +431,7 @@ func collectSeries(
 					}
 					ids := dpAttrIDs[cur]
 					cur++
-					sid := ingest.SeriesID(streamID, instanceKey, ids)
+					sid := ingest.SeriesID(streamID, resourceID, ids)
 					idents = append(idents, dpIdentity{series: sid, attrs: ids})
 					// resource_id is the resource this series was *first* seen
 					// with, since the insert is on-conflict-do-nothing. When a
