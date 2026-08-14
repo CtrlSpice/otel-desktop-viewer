@@ -42,11 +42,11 @@ datapoint_json.sql
 exemplar_json.sql
 timeseries_json.sql
 series_stats_json.sql
-aggregate_bucket_json.sql
 event_json.sql
 link_json.sql
 span_data_json.sql
 exp_zero_cutoff.sql
 diff_bucket_vectors.sql
 bucket_extents.sql
+aggregate_bucket_json.sql
 bucket_width_ns.sql

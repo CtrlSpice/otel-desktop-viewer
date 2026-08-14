@@ -310,6 +310,10 @@ export type JsonAggregateBucket = {
   startTime: string
   count: number
   sum: number
+  /** Derived from the buckets: a merge cannot carry the observed min and max
+   *  through, because for cumulative it is a subtraction. */
+  min: number
+  max: number
   scale: number
   zeroThreshold: number
   zeroCount: number

@@ -17,6 +17,17 @@ create or replace macro aggregate_bucket_json(timestamp_, start_time, count_, su
 			'startTime', start_time::varchar,
 			'count', count_,
 			'sum', sum_,
+			-- Derived from the buckets, because a merge cannot carry min and max
+			-- through: for cumulative the merge is a subtraction, and you cannot
+			-- subtract two minima to learn the minimum of the activity between
+			-- them. bucket_extents says the same thing the client's bucketExtents
+			-- does, from the same buckets.
+			'min', (bucket_extents(exp_buckets(scale, neg_fold.offset, neg_fold.counts,
+				zero_count + pos_fold.folded + neg_fold.folded,
+				pos_fold.offset, pos_fold.counts))).min,
+			'max', (bucket_extents(exp_buckets(scale, neg_fold.offset, neg_fold.counts,
+				zero_count + pos_fold.folded + neg_fold.folded,
+				pos_fold.offset, pos_fold.counts))).max,
 			'scale', scale,
 			'zeroThreshold', zero_threshold,
 			'zeroCount', zero_count + pos_fold.folded + neg_fold.folded,

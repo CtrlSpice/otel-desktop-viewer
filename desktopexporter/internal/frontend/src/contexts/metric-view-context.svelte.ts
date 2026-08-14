@@ -42,8 +42,6 @@ import {
   DEFAULT_HISTOGRAM_QUANTILES,
   histogramSliceToDatapoint,
   isHistogramAggregationError,
-  mergeHistogramSlicesAcrossTime,
-  mergeHistogramWindowSummary,
   parseQuantileSeriesKey,
   quantileKeyFromValue,
   type HistogramAggregationError,
@@ -311,6 +309,39 @@ export interface MetricViewContext {
 
 // --- Factory ------------------------------------------------------
 
+/**
+ * Turn the store's aggregate buckets into the slice shape the heatmap draws.
+ *
+ * A rename, not a computation: every number is already merged. The store owns
+ * scale alignment, zero-threshold folding and the vector sums, so this only
+ * maps field names and widens the counts to numbers.
+ */
+function aggregateToSlices(
+  buckets: JsonAggregateBucket[] | null
+): HistogramSlicePoint[] {
+  if (!buckets) return []
+  return buckets.map(b => ({
+    kind: 'expHistogram' as const,
+    timestamp: BigInt(b.timestamp),
+    attributesKey: '',
+    scale: b.scale,
+    zeroThreshold: b.zeroThreshold,
+    zeroCount: b.zeroCount,
+    positiveOffset: b.positiveBucketOffset,
+    positiveCounts: b.positiveBucketCounts,
+    negativeOffset: b.negativeBucketOffset,
+    negativeCounts: b.negativeBucketCounts,
+    totals: {
+      count: b.count,
+      sum: b.sum,
+      // Derived from the buckets server-side; a merge cannot carry the
+      // originals through.
+      min: b.min,
+      max: b.max,
+    },
+  }))
+}
+
 export function createMetricViewContext(
   getMetric: () => MetricData | undefined,
   /**
@@ -320,7 +351,9 @@ export function createMetricViewContext(
    * layer over a metric and owes its predictability to not doing IO. The page
    * owns the fetch, this owns what the numbers mean.
    */
-  getAggregate: () => JsonAggregateBucket[] | null = () => null
+  getAggregate: () => JsonAggregateBucket[] | null = () => null,
+  /** The same merge over a single bucket spanning the window. */
+  getAggregateSummary: () => JsonAggregateBucket | null = () => null
 ): MetricViewContext {
   const timeContext = getTimeContext()
 
@@ -1008,36 +1041,17 @@ export function createMetricViewContext(
       return { ...empty, error: err, aggregatedError: err }
     }
 
-    const heatmapResult = mergeHistogramSlicesAcrossTime(
-      perAttribute,
-      histogramVisibleKeys
-    )
-    if ('kind' in heatmapResult) {
-      const err = histogramAggregationErrorToBucketSeriesError(heatmapResult)
-      return {
-        perAttribute,
-        heatmap: [],
-        summary: null,
-        error: err,
-        aggregatedError: err,
-      }
-    }
-
-    const summaryResult = mergeHistogramWindowSummary(
-      perAttribute,
-      histogramVisibleKeys,
-      temporality
-    )
-    if (isHistogramAggregationError(summaryResult)) {
-      const err = histogramAggregationErrorToBucketSeriesError(summaryResult)
-      return {
-        perAttribute,
-        heatmap: heatmapResult,
-        summary: null,
-        error: null,
-        aggregatedError: err,
-      }
-    }
+    // The cross-series merge comes from the store, which aligned scales,
+    // folded the zero threshold and summed the vectors. Merging it again here
+    // would be the same arithmetic in a second language -- the duplication
+    // that produced #351, where the two implementations disagreed about where
+    // the zero region ended.
+    //
+    // Null while a fetch is in flight, or when nothing is selected. Both are
+    // "no columns to draw" rather than an error.
+    const heatmapResult = aggregateToSlices(getAggregate())
+    const summary = getAggregateSummary()
+    const summaryResult = summary ? aggregateToSlices([summary])[0]! : null
 
     return {
       perAttribute,

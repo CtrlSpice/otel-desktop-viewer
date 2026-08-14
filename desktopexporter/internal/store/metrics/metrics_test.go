@@ -2290,6 +2290,13 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 	q, ok := a["quantiles"].(map[string]any)
 	require.True(t, ok, "the aggregate carries quantiles for the summary panel")
 	assert.NotNil(t, q["0.5"])
+
+	// min and max are derived from the buckets, because a merge cannot carry
+	// them through -- for cumulative it is a subtraction, and two minima do not
+	// subtract into the minimum of what happened between them. At scale -1 the
+	// surviving buckets are (1,4] and (4,16].
+	assert.InDelta(t, 1.0, a["min"], 1e-9, "lower edge of the first populated bucket")
+	assert.InDelta(t, 16.0, a["max"], 1e-9, "upper edge of the last populated bucket")
 }
 
 // TestGetMetric_TimezoneAlignedBuckets covers bucket boundaries landing where

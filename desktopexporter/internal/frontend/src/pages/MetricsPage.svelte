@@ -155,10 +155,16 @@
   // The store's cross-series merge for the current legend selection. Null
   // until the first fetch resolves, and whenever the metric changes.
   let selectedAggregate = $state<JsonAggregateBucket[] | null>(null)
+  // The same merge over one bucket spanning the window. A window summary is
+  // not the last column of a chart, and it is not the columns added together
+  // either -- it is the merge asked a different question, so the store answers
+  // it rather than the client approximating from what it already has.
+  let selectedAggregateSummary = $state<JsonAggregateBucket | null>(null)
 
   createMetricViewContext(
     () => selectedMetric,
-    () => selectedAggregate
+    () => selectedAggregate,
+    () => selectedAggregateSummary
   )
   const metricCtx = getMetricViewContext()
 
@@ -223,6 +229,7 @@
 
     if (!summary || !metricCtx.isHistogramKind) {
       selectedAggregate = null
+      selectedAggregateSummary = null
       return
     }
 
@@ -247,20 +254,40 @@
         timeContext.selection,
         Date.now()
       )
-      const result = await telemetryAPI.getMetricAggregate(
-        summary.id,
-        startTime,
-        endTime,
-        METRIC_BUCKET_TARGET,
-        keys,
-        DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
-        tzOffsetNs()
-      )
+      const quantiles = DEFAULT_HISTOGRAM_QUANTILES as unknown as number[]
+      // Both shapes of the same question, issued together so they cannot
+      // disagree about the window or the selection.
+      const [buckets, whole] = await Promise.all([
+        telemetryAPI.getMetricAggregate(
+          summary.id,
+          startTime,
+          endTime,
+          METRIC_BUCKET_TARGET,
+          keys,
+          quantiles,
+          tzOffsetNs()
+        ),
+        telemetryAPI.getMetricAggregate(
+          summary.id,
+          startTime,
+          endTime,
+          1,
+          keys,
+          quantiles,
+          tzOffsetNs()
+        ),
+      ])
       // A slower earlier request must not overwrite a newer answer.
-      if (token === aggregateToken) selectedAggregate = result
+      if (token === aggregateToken) {
+        selectedAggregate = buckets
+        selectedAggregateSummary = whole?.[0] ?? null
+      }
     } catch (err) {
       console.error('Failed to fetch metric aggregate:', err)
-      if (token === aggregateToken) selectedAggregate = null
+      if (token === aggregateToken) {
+        selectedAggregate = null
+        selectedAggregateSummary = null
+      }
     }
   }
 
