@@ -70,3 +70,33 @@ func TestDriverStillCannotBindUUIDLists(t *testing.T) {
 		assert.Equal(t, 1, n, "the shipped form must match the stored row")
 	})
 }
+
+// The read-side twin of the test above, and the reason every query that hands
+// a uuid back to Go writes `id::varchar` rather than `id`.
+//
+// Scanning a uuid column straight into a Go string does not error. It yields
+// the raw 16 bytes of the value, which is a perfectly valid Go string and
+// looks like plausible-if-mangled text -- so the failure surfaces somewhere far
+// away, as an id that matches nothing. The explicit cast is what makes DuckDB
+// format it as hex text.
+//
+// Pinned for the same reason as the binding limitation: it is a third-party
+// behaviour we route around, and it fails silently.
+func TestDriverStillReturnsRawBytesForUnscastUUIDs(t *testing.T) {
+	db, err := sql.Open("duckdb", "")
+	require.NoError(t, err)
+	defer db.Close()
+
+	const want = "11111111-2222-3333-4444-555555555555"
+
+	var raw string
+	require.NoError(t, db.QueryRow(`select ?::uuid`, want).Scan(&raw),
+		"scanning a uuid into a string still succeeds -- that is the hazard")
+	assert.NotEqual(t, want, raw,
+		"driver now returns formatted uuid text: drop the ::varchar casts on the read path")
+	assert.Len(t, raw, 16, "expected the raw 16 bytes rather than 36 characters of hex")
+
+	var cast string
+	require.NoError(t, db.QueryRow(`select (?::uuid)::varchar`, want).Scan(&cast))
+	assert.Equal(t, want, cast, "the explicit cast is what produces usable text")
+}

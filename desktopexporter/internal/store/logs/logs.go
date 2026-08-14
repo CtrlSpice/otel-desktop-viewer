@@ -159,6 +159,8 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *inge
 					uint32(log.Flags()),            // Flags UINTEGER
 					log.EventName(),                // EventName VARCHAR
 					serviceName,                    // ServiceName VARCHAR (NOT NULL, '' = unknown)
+					resourceLogs.SchemaUrl(),       // ResourceSchemaURL VARCHAR (batch-level)
+					scopeLogs.SchemaUrl(),          // ScopeSchemaURL VARCHAR (batch-level)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)

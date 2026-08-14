@@ -1670,3 +1670,43 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 		"every span must resolve to a resource row, or the check above passes vacuously")
 	assert.Greater(t, joined, 0)
 }
+
+// TestSchemaURLsAreStored pins that the batch-level schema urls survive ingest.
+//
+// They live on the OTLP wrappers -- ResourceSpans.SchemaUrl and
+// ScopeSpans.SchemaUrl -- and NOT on the Resource or InstrumentationScope
+// messages, neither of which has the field. That is why they are columns on
+// spans rather than part of resource or scope identity: the same scope emitted
+// through two pipelines stamping different urls is still one scope.
+func TestSchemaURLsAreStored(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	const resURL = "https://opentelemetry.io/schemas/1.27.0"
+	const scopeURL = "https://opentelemetry.io/schemas/1.24.0"
+
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.SetSchemaUrl(resURL)
+	rs.Resource().Attributes().PutStr("service.name", "checkout")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.SetSchemaUrl(scopeURL)
+	ss.Scope().SetName("otelhttp")
+	span := ss.Spans().AppendEmpty()
+	span.SetName("GET /checkout")
+	span.SetTraceID(pcommon.TraceID([16]byte{1}))
+	span.SetSpanID(pcommon.SpanID([8]byte{2}))
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+	}))
+
+	var gotRes, gotScope string
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(
+			`select resource_schema_url, scope_schema_url from spans`,
+		).Scan(&gotRes, &gotScope)
+	}))
+	assert.Equal(t, resURL, gotRes, "the resource schema url must survive ingest")
+	assert.Equal(t, scopeURL, gotScope, "the scope schema url must survive ingest")
+}

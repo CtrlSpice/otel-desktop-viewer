@@ -11,6 +11,7 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
@@ -39,6 +40,14 @@ type Attribute struct {
 }
 
 // Resource is one deduped resource: an attribute set plus its dropped count.
+//
+// Deduping is by ResourceID, which no longer depends on this attribute set --
+// see ResourceID. So two AddResource calls that resolve to the same id can
+// carry different AttributeIDs (an enriched resource, say); the map in
+// Dictionary keeps whichever this batch saw last, and Flush's `on conflict do
+// nothing` then keeps whichever batch reached the database first. Either way
+// attribute_ids is a representative sample of the resource's payload, not
+// part of what makes the row that resource.
 type Resource struct {
 	ID           duckdb.UUID
 	AttributeIDs []duckdb.UUID
@@ -91,10 +100,50 @@ func AttributeID(key, value, typ, scope string) duckdb.UUID {
 	return hashID(key, value, typ, scope)
 }
 
-// ResourceID derives a resource's identity from its attribute ids and dropped
-// count. The ids are already sorted and deduped by the caller.
-func ResourceID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
-	return hashID(uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
+// ResourceID derives a resource's identity from the OTel-mandated
+// identifying triplet, read straight out of its attributes -- NOT from the
+// resource's whole attribute set.
+//
+// The Resource SDK spec is explicit about what identity means here: the id
+// "MUST be unique for each instance of the same service.namespace,service.name
+// pair (in other words service.namespace,service.name,service.instance.id
+// triplet MUST be globally unique)." All three are Required-level. Nothing
+// else a resource carries -- host.name, k8s.pod.name, telemetry.sdk.*, cloud
+// metadata -- is part of that contract, however much it looks like it should
+// be.
+//
+// A missing attribute contributes an empty string to the hash, not a
+// substitute for one. If a service omits service.instance.id, every instance
+// of that service legitimately shares one resource row, because the telemetry
+// expressed no distinction -- the same collapse a datapoint with no labels
+// gets onto one default series. Falling back to hashing the whole attribute
+// set instead would answer a question the telemetry never asked, and would do
+// so precisely when we know least about the resource: two replicas that both
+// omit service.instance.id sharing one row is a true statement about what was
+// sent; two rows because a processor added telemetry.sdk.* partway through is
+// not.
+//
+// Content-derived like the rest, so ingest never needs a read-back or a wide
+// natural-key index to resolve one, and ids are stable across restarts and
+// re-ingests. Measured in the reference capture: hashing the whole attribute
+// set produced 48 resource rows for 35 distinct service.instance.id values,
+// with telemetry.sdk.* present on 35 of them and absent from the other 13 --
+// the same running process minting a new row the moment it got enriched.
+func ResourceID(attrs pcommon.Map) duckdb.UUID {
+	return hashID(
+		resourceAttrString(attrs, "service.namespace"),
+		resourceAttrString(attrs, "service.name"),
+		resourceAttrString(attrs, "service.instance.id"),
+	)
+}
+
+// resourceAttrString reads one resource identity field, or "" if the
+// resource does not set it. Absent means absent -- see ResourceID.
+func resourceAttrString(attrs pcommon.Map, key string) string {
+	if v, ok := attrs.Get(key); ok {
+		return v.AsString()
+	}
+	return ""
 }
 
 // SeriesID derives a timeseries' identity: the stream it belongs to, the
@@ -104,9 +153,23 @@ func ResourceID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
 // the same series gets the same id across restarts and re-ingests, so a link
 // survives in a way one built on a minted datapoint id cannot.
 //
-// resource_id is in the key and that is the whole point: metric_streams
-// identifies a stream by service_name so a counter survives a pod restart,
-// which means two replicas share a stream. The series is where they separate.
+// The resource id is in there because metric_streams identifies a stream by
+// service_name so a counter survives a pod restart, which means two replicas
+// of one service share a stream. The series is where they separate: two
+// replicas with identical labels still carry distinct resource ids (or, if
+// neither identifies itself, legitimately collapse to one series -- see
+// ResourceID), so keying on it is what keeps their datapoints from
+// interleaving into one line.
+//
+// This only works because resource identity is the OTel triplet
+// (service.namespace, service.name, service.instance.id), not a hash of the
+// resource's whole attribute set. A whole-attribute-set hash changes the
+// moment anything enriches the resource mid-stream -- a processor resolving
+// k8s metadata, an SDK adding telemetry.sdk.* partway through -- and putting
+// that unstable value in a series key used to mint a second series for the
+// same instance: one instrument drew two chart lines, split at the moment
+// those attributes appeared, and a ?series= link addressed only one half of
+// it.
 func SeriesID(streamID, resourceID duckdb.UUID, attributeIDs []duckdb.UUID) duckdb.UUID {
 	return hashID(formatUUID(streamID), formatUUID(resourceID), uuidsKey(attributeIDs))
 }
@@ -148,7 +211,8 @@ func uuidString(id duckdb.UUID) string {
 // reaches the wire, because the read path orders by key in SQL.
 //
 // Deduping is a guard that should never fire; if it ever did, [A,A,B] and [A,B]
-// would hash to different resources.
+// would hash to different scopes -- scopes still key off this array, though
+// resources no longer do; see ResourceID.
 func AttributeSet(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) {
 	if attrs.Len() == 0 {
 		return nil, nil
@@ -235,7 +299,7 @@ func (d *Dictionary) AddAttributes(attrs pcommon.Map, scope string) []duckdb.UUI
 // AddResource records a resource and returns its id.
 func (d *Dictionary) AddResource(res pcommon.Resource) duckdb.UUID {
 	ids := d.AddAttributes(res.Attributes(), ScopeResource)
-	id := ResourceID(ids, res.DroppedAttributesCount())
+	id := ResourceID(res.Attributes())
 	d.resources[id] = Resource{ID: id, AttributeIDs: ids, Dropped: res.DroppedAttributesCount()}
 	return id
 }
@@ -282,64 +346,120 @@ func (d *Dictionary) Flush(ctx context.Context, conn driver.Conn) error {
 	return d.flushScopes(ctx, conn)
 }
 
-func (d *Dictionary) flushAttributes(ctx context.Context, conn driver.Conn) error {
-	d.attributes = unseen(d.flushed, d.attributes)
-	if len(d.attributes) == 0 {
+// flushRows is the sequence every dictionary flush shares: filter down to
+// rows the cache has not seen, bail out if nothing is left, execute, and mark
+// only once that execution has actually succeeded.
+//
+// That ordering is the one thing that matters here and it used to be retyped
+// three times, once per table. Marking before a successful exec -- or
+// unconditionally -- would tell the cache a row exists that was never
+// written, which is exactly the undetectable failure FlushedIDs documents:
+// nothing catches it until an owner's array points at a row that silently
+// never made it in.
+//
+// query must be `unnest`-shaped over the parallel arrays buildArgs returns,
+// the same idiom metrics.go uses for the metric_streams upsert: one bound
+// argument per column, so the statement text is fixed regardless of how many
+// rows are in m.
+func flushRows[T any](
+	ctx context.Context,
+	conn driver.Conn,
+	flushed *FlushedIDs,
+	m map[duckdb.UUID]T,
+	query string,
+	what string,
+	buildArgs func(map[duckdb.UUID]T) []any,
+) error {
+	m = unseen(flushed, m)
+	if len(m) == 0 {
 		return nil
 	}
-	rows := make([]string, 0, len(d.attributes))
-	args := make([]any, 0, len(d.attributes)*5)
-	for _, a := range d.attributes {
-		rows = append(rows, "(?::uuid, ?, ?, ?::attr_type, ?)")
-		args = append(args, formatUUID(a.ID), a.Key, a.Value, a.Type, a.Scope)
-	}
-	q := `insert into attributes (id, key, value, type, scope) values ` +
-		strings.Join(rows, ", ") + ` on conflict (id) do nothing`
-	if err := execArgs(ctx, conn, q, args, "attributes"); err != nil {
+	if err := execArgs(ctx, conn, query, buildArgs(m), what); err != nil {
 		return err
 	}
-	mark(d.flushed, d.attributes)
+	mark(flushed, m)
 	return nil
 }
+
+// attributesUpsert is static, unlike the per-batch `values (...), (...), ...`
+// text it replaced: the arrays vary, the query never does, so DuckDB can
+// actually prepare it once instead of replanning on every distinct row count.
+const attributesUpsert = `insert into attributes (id, key, value, type, scope)
+	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[])::attr_type, unnest(?::varchar[])
+	on conflict (id) do nothing`
+
+func (d *Dictionary) flushAttributes(ctx context.Context, conn driver.Conn) error {
+	return flushRows(ctx, conn, d.flushed, d.attributes, attributesUpsert, "attributes",
+		func(rows map[duckdb.UUID]Attribute) []any {
+			ids := make([]string, 0, len(rows))
+			keys := make([]string, 0, len(rows))
+			values := make([]string, 0, len(rows))
+			types := make([]string, 0, len(rows))
+			scopes := make([]string, 0, len(rows))
+			for _, a := range rows {
+				ids = append(ids, formatUUID(a.ID))
+				keys = append(keys, a.Key)
+				values = append(values, a.Value)
+				types = append(types, a.Type)
+				scopes = append(scopes, a.Scope)
+			}
+			return []any{ids, keys, values, types, scopes}
+		})
+}
+
+const resourcesUpsert = `insert into resources (id, attribute_ids, dropped_attributes_count)
+	select unnest(?::varchar[])::uuid, unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
+	on conflict (id) do nothing`
 
 func (d *Dictionary) flushResources(ctx context.Context, conn driver.Conn) error {
-	d.resources = unseen(d.flushed, d.resources)
-	if len(d.resources) == 0 {
-		return nil
-	}
-	rows := make([]string, 0, len(d.resources))
-	args := make([]any, 0, len(d.resources)*3)
-	for _, r := range d.resources {
-		rows = append(rows, "(?::uuid, ?::uuid[], ?)")
-		args = append(args, formatUUID(r.ID), uuidList(r.AttributeIDs), r.Dropped)
-	}
-	q := `insert into resources (id, attribute_ids, dropped_attributes_count) values ` +
-		strings.Join(rows, ", ") + ` on conflict (id) do nothing`
-	if err := execArgs(ctx, conn, q, args, "resources"); err != nil {
-		return err
-	}
-	mark(d.flushed, d.resources)
-	return nil
+	return flushRows(ctx, conn, d.flushed, d.resources, resourcesUpsert, "resources",
+		func(rows map[duckdb.UUID]Resource) []any {
+			ids := make([]string, 0, len(rows))
+			attributeIDs := make([][]string, 0, len(rows))
+			dropped := make([]uint32, 0, len(rows))
+			for _, r := range rows {
+				ids = append(ids, formatUUID(r.ID))
+				attributeIDs = append(attributeIDs, formatUUIDs(r.AttributeIDs))
+				dropped = append(dropped, r.Dropped)
+			}
+			return []any{ids, attributeIDs, dropped}
+		})
 }
 
+const scopesUpsert = `insert into scopes (id, name, version, attribute_ids, dropped_attributes_count)
+	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
+	on conflict (id) do nothing`
+
 func (d *Dictionary) flushScopes(ctx context.Context, conn driver.Conn) error {
-	d.scopes = unseen(d.flushed, d.scopes)
-	if len(d.scopes) == 0 {
-		return nil
+	return flushRows(ctx, conn, d.flushed, d.scopes, scopesUpsert, "scopes",
+		func(rows map[duckdb.UUID]Scope) []any {
+			ids := make([]string, 0, len(rows))
+			names := make([]string, 0, len(rows))
+			versions := make([]string, 0, len(rows))
+			attributeIDs := make([][]string, 0, len(rows))
+			dropped := make([]uint32, 0, len(rows))
+			for _, sc := range rows {
+				ids = append(ids, formatUUID(sc.ID))
+				names = append(names, sc.Name)
+				versions = append(versions, sc.Version)
+				attributeIDs = append(attributeIDs, formatUUIDs(sc.AttributeIDs))
+				dropped = append(dropped, sc.Dropped)
+			}
+			return []any{ids, names, versions, attributeIDs, dropped}
+		})
+}
+
+// formatUUIDs renders each id in its canonical text form, for binding as a
+// `varchar[]` element of the `varchar[][]` parameter an attribute_ids column
+// unnests and casts back to uuid[]. A nil ids (an owner with no attributes)
+// renders as an empty, non-nil []string, which the driver round-trips as SQL
+// `[]` rather than NULL -- see NonNil below for why that distinction matters.
+func formatUUIDs(ids []duckdb.UUID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = formatUUID(id)
 	}
-	rows := make([]string, 0, len(d.scopes))
-	args := make([]any, 0, len(d.scopes)*5)
-	for _, sc := range d.scopes {
-		rows = append(rows, "(?::uuid, ?, ?, ?::uuid[], ?)")
-		args = append(args, formatUUID(sc.ID), sc.Name, sc.Version, uuidList(sc.AttributeIDs), sc.Dropped)
-	}
-	q := `insert into scopes (id, name, version, attribute_ids, dropped_attributes_count) values ` +
-		strings.Join(rows, ", ") + ` on conflict (id) do nothing`
-	if err := execArgs(ctx, conn, q, args, "scopes"); err != nil {
-		return err
-	}
-	mark(d.flushed, d.scopes)
-	return nil
+	return out
 }
 
 // NonNil normalises a nil id slice to an empty one.
@@ -386,6 +506,22 @@ func UUIDListLiteral(ids []duckdb.UUID) string { return uuidList(ids) }
 func formatUUID(id duckdb.UUID) string {
 	h := uuidString(id)
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
+// parseUUID is the inverse of formatUUID, for ids read back from the database
+// rather than computed here: LoadFlushedIDs warming the cache from what is
+// already on disk, and SweepOrphans reading back exactly which ids a delete
+// removed.
+//
+// duckdb.UUID and uuid.UUID are both plain [16]byte, so the conversion is
+// direct -- same idiom metrics.go's decodeStreamID uses for a uuid column
+// scanned as text.
+func parseUUID(s string) (duckdb.UUID, error) {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return duckdb.UUID{}, err
+	}
+	return duckdb.UUID(id), nil
 }
 
 func execArgs(ctx context.Context, conn driver.Conn, query string, args []any, what string) error {

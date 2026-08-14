@@ -1693,16 +1693,25 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 // host.name and k8s.pod.name on the *resource*, which made this the common
 // shape in any replicated deployment rather than an exotic one. Prometheus
 // would show two series here; we showed one, silently averaging two machines.
+//
+// What tells the replicas apart is service.instance.id -- the only field the
+// OTel spec actually commits to as resource identity (see ingest.ResourceID).
+// host.name differing too is realistic flavor, not what does the work here;
+// TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses below pins that
+// host.name alone, without service.instance.id, would NOT split these into
+// two series.
 func buildTwoReplicaMetrics(t *testing.T) pmetric.Metrics {
 	t.Helper()
 	md := pmetric.NewMetrics()
 	base := time.Now().UnixNano()
 
-	// Same service, same scope, same metric, same datapoint labels. The only
-	// difference is host.name on the resource.
+	// Same service, same scope, same metric, same datapoint labels. The
+	// resources differ by service.instance.id -- the identifying field -- and,
+	// incidentally, by host.name too.
 	for i, host := range []string{"pod-a", "pod-b"} {
 		rm := md.ResourceMetrics().AppendEmpty()
 		rm.Resource().Attributes().PutStr("service.name", "checkout")
+		rm.Resource().Attributes().PutStr("service.instance.id", "checkout-"+host)
 		rm.Resource().Attributes().PutStr("host.name", host)
 
 		sm := rm.ScopeMetrics().AppendEmpty()
@@ -1723,6 +1732,11 @@ func buildTwoReplicaMetrics(t *testing.T) pmetric.Metrics {
 	return md
 }
 
+// TestMetricSeries_SplitByResource is also the regression test for the
+// property Change A must not break: two genuinely different instances --
+// same service.name, distinct service.instance.id -- still get two resource
+// rows and two series. Collapsing replicas that actually identified
+// themselves would be a worse bug than the one this whole change fixes.
 func TestMetricSeries_SplitByResource(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()
@@ -1730,6 +1744,16 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
 	}))
+
+	countRows := func(table string) int {
+		var n int
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			return db.QueryRow(`select count(*) from ` + table).Scan(&n)
+		}))
+		return n
+	}
+	assert.Equal(t, 2, countRows("resources"),
+		"distinct service.instance.id must produce distinct resource rows")
 
 	// One logical stream: that part is correct and must stay correct, or a pod
 	// restart would fragment the timeseries.
@@ -1767,6 +1791,61 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	// single merged line it replaced.
 	assert.Len(t, keys, 2,
 		"series keys must differ, or the split produces two identical legend entries")
+}
+
+// TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses is the inverse of
+// TestMetricSeries_SplitByResource: two resources that differ only by
+// host.name, with no service.instance.id at all, must collapse onto one
+// series. host.name (and k8s.pod.name) used to be a fallback identity --
+// InstanceKey walked a list of stand-ins when service.instance.id was absent
+// -- but the OTel spec sanctions only service.instance.id for this, so that
+// fallback is gone. Absent means absent: the telemetry never claimed these
+// were different instances, so we do not either.
+func TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	md := pmetric.NewMetrics()
+	base := time.Now().UnixNano()
+	for i, host := range []string{"pod-a", "pod-b"} {
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "checkout")
+		rm.Resource().Attributes().PutStr("host.name", host)
+
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("otelhttp")
+		sm.Scope().SetVersion("1.2.0")
+
+		m := sm.Metrics().AppendEmpty()
+		m.SetName("http.server.duration")
+		m.SetUnit("ms")
+		g := m.SetEmptyGauge()
+		for j := 0; j < 3; j++ {
+			dp := g.DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.Timestamp(base + int64(j)*1_000_000))
+			dp.SetDoubleValue(float64(10*(i+1) + j))
+			dp.Attributes().PutStr("http.route", "/checkout")
+		}
+	}
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+
+	countRows := func(table string) int {
+		var n int
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			return db.QueryRow(`select count(*) from ` + table).Scan(&n)
+		}))
+		return n
+	}
+	assert.Equal(t, 1, countRows("resources"),
+		"host.name alone, without service.instance.id, must not fragment the resource")
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, float64(1), summaries[0]["seriesCount"],
+		"neither replica identified itself, so they legitimately collapse to one series")
 }
 
 // A series id has to survive re-ingest, restarts and retention, because it is
@@ -1833,4 +1912,104 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	sort.Strings(served)
 	assert.Equal(t, first, served,
 		"the key on the wire must be the series id, so a link resolves back to a row")
+}
+
+// buildInstanceMetrics emits one gauge from one instance, optionally with extra
+// resource attributes bolted on -- the shape a collector processor produces
+// when it starts resolving metadata partway through a stream.
+func buildInstanceMetrics(t *testing.T, extra map[string]string, base int64) pmetric.Metrics {
+	t.Helper()
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "checkout")
+	rm.Resource().Attributes().PutStr("service.instance.id", "checkout-7f9c")
+	for k, v := range extra {
+		rm.Resource().Attributes().PutStr(k, v)
+	}
+
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("otelhttp")
+	sm.Scope().SetVersion("1.2.0")
+
+	m := sm.Metrics().AppendEmpty()
+	m.SetName("http.server.duration")
+	m.SetUnit("ms")
+	g := m.SetEmptyGauge()
+	for j := 0; j < 3; j++ {
+		dp := g.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(base + int64(j)*1_000_000))
+		dp.SetDoubleValue(float64(j))
+		dp.Attributes().PutStr("http.route", "/checkout")
+	}
+	return md
+}
+
+// TestMetricSeries_SurvivesResourceEnrichment is the regression test for a
+// series -- and, as of Change A, a resource -- splitting when nothing about
+// the instance changed.
+//
+// A resource id used to be a hash of the resource's whole attribute set, so
+// enriching a resource mid-stream (an SDK adding telemetry.sdk.* partway
+// through, say) minted a second resource row for the same running process,
+// and because the series id was derived from that resource row, a second
+// series too: one instrument from one instance drew two chart lines, split at
+// the moment the extra attributes appeared, and a ?series= link addressed
+// only half of it. Observed in the reference capture: 48 resource rows for 35
+// distinct service.instance.id, telemetry.sdk.* present on 35 and absent from
+// 13.
+//
+// Resource identity is now the OTel triplet read from attributes (see
+// ingest.ResourceID), and both payloads here share the same
+// service.instance.id -- so enrichment no longer mints a resource either: one
+// row, one series. That is the whole point of Change A, and is why this test
+// now asserts ONE resources row rather than two: the earlier version of this
+// test asserted two as the "correct" half of the split, back when a resource
+// id still carried the attribute set as identity. It no longer does.
+func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Now().UnixNano()
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, nil, base), s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, map[string]string{
+			"telemetry.sdk.name":     "opentelemetry",
+			"telemetry.sdk.language": "go",
+			"telemetry.sdk.version":  "1.28.0",
+		}, base+10_000_000), s.FlushedIDs())
+	}))
+
+	countRows := func(table string) int {
+		var n int
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			return db.QueryRow(`select count(*) from ` + table).Scan(&n)
+		}))
+		return n
+	}
+
+	assert.Equal(t, 1, countRows("resources"),
+		"same service.instance.id: enrichment must not mint a second resource row")
+	assert.Equal(t, 1, countRows("metric_series"),
+		"enriching a resource must not mint a second series for the same instance")
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, float64(1), summaries[0]["seriesCount"],
+		"the summary must agree that this is one series")
+
+	streamID, ok := summaries[0]["id"].(string)
+	require.True(t, ok)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	ts, _ := metric["timeseries"].([]any)
+	require.Len(t, ts, 1, "one line on the chart, not two")
+	dps, _ := ts[0].(map[string]any)["datapoints"].([]any)
+	assert.Len(t, dps, 6, "both batches land on the same line")
 }
