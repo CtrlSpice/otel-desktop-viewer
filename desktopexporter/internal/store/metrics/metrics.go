@@ -778,13 +778,16 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	}
 
 	var raw []byte
-	if seriesIDs == nil {
-		seriesIDs = []string{}
+	// A nil slice binds as an empty array, not SQL NULL, so "all series" has
+	// to travel as an untyped nil. Empty then keeps its own meaning: no series.
+	var seriesArg any
+	if seriesIDs != nil {
+		seriesArg = seriesIDs
 	}
 	if quantiles == nil {
 		quantiles = []float64{}
 	}
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}

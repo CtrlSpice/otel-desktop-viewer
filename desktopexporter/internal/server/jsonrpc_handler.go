@@ -325,6 +325,10 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 		if !ok {
 			return nil, jsonrpc2.ErrInvalidParams
 		}
+		// Non-nil before the loop: an empty array means "no series", and
+		// appending nothing to a nil slice would leave it indistinguishable
+		// from the parameter being absent.
+		seriesIDs = []string{}
 		for _, v := range raw {
 			id, ok := v.(string)
 			if !ok {

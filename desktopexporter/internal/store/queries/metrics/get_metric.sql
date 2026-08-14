@@ -61,7 +61,13 @@
 			  -- Narrowing here rather than after the merge: the reduction and
 			  -- every alignment stage downstream then run over only the series
 			  -- asked for, instead of merging series the caller will discard.
-			  and (len(input.series_ids) = 0
+			  -- NULL means "no filter", an empty list means "no series". Those
+			  -- are different questions and the client already distinguishes
+			  -- them: its visible-key set is empty when a user has unticked
+			  -- every series, and absent when the concept does not apply.
+			  -- Collapsing empty to "all" would render every series at the
+			  -- exact moment the user asked for none.
+			  and (input.series_ids is null
 			       or list_contains(input.series_ids, d.series_id::varchar))
 		),
 		-- The dp_attrs_agg and exemplar_attrs CTEs are gone: attrs_json

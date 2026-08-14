@@ -957,12 +957,12 @@ export function createMetricViewContext(
     }
   )
 
-  const histogramVisibleKeys = $derived.by((): Set<string> | null => {
-    if (view.histogramVisible.size === histogramTimeseriesGroups.length) {
-      return null
-    }
-    return view.histogramVisible
-  })
+  // Always the set. All-visible is a set holding every key; none-visible is
+  // empty. Returning null for "all" gave one state two encodings and put the
+  // burden of telling empty from absent on every consumer.
+  const histogramVisibleKeys = $derived.by(
+    (): Set<string> => view.histogramVisible
+  )
 
   const histogramAggregation = $derived.by(() => {
     const m = getMetric()
@@ -1170,18 +1170,11 @@ export function createMetricViewContext(
   })
 
   // -- Detail-view wiring (legend filter coupling) --
-  const visibleDpCanonicalKeys = $derived.by((): Set<string> | null => {
-    if (metricType === 'Gauge' || metricType === 'Sum') {
-      if (view.gaugeSumVisible.size === gaugeSumGroups.keys.length) return null
+  const visibleDpCanonicalKeys = $derived.by((): Set<string> => {
+    if (metricType === 'Gauge' || metricType === 'Sum')
       return view.gaugeSumVisible
-    }
-    if (isHistogramKind) {
-      if (view.histogramVisible.size === histogramTimeseriesGroups.length) {
-        return null
-      }
-      return view.histogramVisible
-    }
-    return null
+    if (isHistogramKind) return view.histogramVisible
+    return new Set()
   })
 
   const filteredTimeseries = $derived.by(() => {

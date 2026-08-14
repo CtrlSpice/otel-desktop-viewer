@@ -2151,7 +2151,11 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 	assert.ElementsMatch(t, []string{all[0], all[2]}, got,
 		"asking for two returns exactly those two")
 
-	assert.Len(t, seriesKeys([]string{}), 3, "empty means all, not none")
+	// The three states are distinct, and the empty one is the reachable
+	// mistake: a user who unticks every series must see nothing, not
+	// everything. nil and []string{} are different questions.
+	assert.Empty(t, seriesKeys([]string{}),
+		"an empty selection means no series, not every series")
 }
 
 // TestGetMetric_Quantiles covers quantiles computed in the store rather than

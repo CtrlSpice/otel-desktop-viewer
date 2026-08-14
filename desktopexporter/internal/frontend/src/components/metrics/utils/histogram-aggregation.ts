@@ -641,11 +641,19 @@ function buildHistogramTimeMergedSeriesUnchecked(
   return out
 }
 
+/**
+ * Keep the slices whose series are visible.
+ *
+ * visibleKeys is always a set, never null. "Everything is visible" is a set
+ * holding every key, not a separate encoding -- collapsing that to null gave
+ * one state two representations, and made an empty set (a user who unticked
+ * every series) look interchangeable with "no filter" to anyone reading a
+ * signature. It was a fast path that escaped into the type.
+ */
 function filterVisibleSlices(
   slices: HistogramSlicePoint[],
-  visibleKeys: Set<string> | null
+  visibleKeys: Set<string>
 ): HistogramSlicePoint[] {
-  if (!visibleKeys) return slices
   return slices.filter(s => visibleKeys.has(s.attributesKey))
 }
 
@@ -719,7 +727,7 @@ function mergeSlicesAtTimestamp(
 /** Merge visible per-attribute slices per timestamp (heatmap column). */
 export function mergeHistogramSlicesAcrossTime(
   slices: HistogramSlicePoint[],
-  visibleKeys: Set<string> | null
+  visibleKeys: Set<string>
 ): HistogramSlicePoint[] | HistogramAggregationError {
   const visible = filterVisibleSlices(slices, visibleKeys)
   const byTime = new Map<string, HistogramSlicePoint[]>()
@@ -747,7 +755,7 @@ export function mergeHistogramSlicesAcrossTime(
 /** Full-window merge of visible per-attribute slices (Summary tab). */
 export function mergeHistogramWindowSummary(
   perAttributeSlices: HistogramSlicePoint[],
-  visibleKeys: Set<string> | null,
+  visibleKeys: Set<string>,
   temporality: string
 ): HistogramSlicePoint | null | HistogramAggregationError {
   const visible = filterVisibleSlices(perAttributeSlices, visibleKeys)
@@ -840,7 +848,7 @@ export function mergeHistogramWindowSummary(
 export function histogramSliceAtTimestamp(
   perAttributeSlices: HistogramSlicePoint[],
   timestampNs: bigint,
-  visibleKeys: Set<string> | null
+  visibleKeys: Set<string>
 ): HistogramSlicePoint | null | HistogramAggregationError {
   const merged = mergeHistogramSlicesAcrossTime(perAttributeSlices, visibleKeys)
   if ('kind' in merged && merged.kind === 'boundsMismatch') return merged
@@ -949,7 +957,7 @@ function quantilePointsFromMergedSlices(
 export function buildVisibleSeriesQuantileChartTimeseries(
   perAttributeSlices: HistogramSlicePoint[],
   quantiles: readonly number[],
-  visibleKeys: Set<string> | null
+  visibleKeys: Set<string>
 ): ChartTimeseries[] {
   const out: ChartTimeseries[] = []
   for (const q of quantiles) {
@@ -975,7 +983,7 @@ export function buildVisibleSeriesQuantileChartTimeseries(
 export function buildPerSeriesQuantileSeries(
   perAttributeSlices: HistogramSlicePoint[],
   quantile: number,
-  visibleKeys: Set<string> | null
+  visibleKeys: Set<string>
 ): ChartTimeseries[] {
   const visible = filterVisibleSlices(perAttributeSlices, visibleKeys)
   const byKey = new Map<string, HistogramSlicePoint[]>()
