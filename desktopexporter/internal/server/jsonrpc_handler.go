@@ -351,8 +351,18 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 		}
 	}
 
+	// The viewer's UTC offset in nanoseconds, so day boundaries fall where the
+	// reader's calendar puts them. Absent means UTC.
+	var tzOffsetNs int64
+	if len(params) >= 7 && params[6] != nil {
+		tzOffsetNs, err = h.parseTimestampParam(params[6], "tzOffsetNs")
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles)
+		return metrics.GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

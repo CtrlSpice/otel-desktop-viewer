@@ -766,7 +766,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // caller asking for two of ten series pays for two.
 // quantiles are computed per histogram datapoint and returned keyed by the
 // quantile; empty skips the work.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64) (json.RawMessage, error) {
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64) (json.RawMessage, error) {
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON
@@ -784,7 +784,7 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	if quantiles == nil {
 		quantiles = []float64{}
 	}
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}

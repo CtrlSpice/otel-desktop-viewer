@@ -262,7 +262,7 @@ func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0, nil, nil)
+		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0, nil, nil, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -1766,7 +1766,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	require.True(t, ok)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil)
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -1899,7 +1899,7 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 0, nil, nil)
+			time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2002,7 +2002,7 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 	streamID, ok := summaries[0]["id"].(string)
 	require.True(t, ok)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil)
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2068,7 +2068,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	// them merge at all.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 1, nil, nil)
+			time.Now().UnixNano()+int64(time.Hour), 1, nil, nil, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2129,7 +2129,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 
 	seriesKeys := func(ids []string) []string {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, ids, nil)
+			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, ids, nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2185,7 +2185,7 @@ func TestGetMetric_Quantiles(t *testing.T) {
 
 	datapoint := func(qs []float64) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, nil, qs)
+			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, nil, qs, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2253,7 +2253,7 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 1, nil, []float64{0.5})
+			time.Now().UnixNano()+int64(time.Hour), 1, nil, []float64{0.5}, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -2286,4 +2286,74 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 	q, ok := a["quantiles"].(map[string]any)
 	require.True(t, ok, "the aggregate carries quantiles for the summary panel")
 	assert.NotNil(t, q["0.5"])
+}
+
+// TestGetMetric_TimezoneAlignedBuckets covers bucket boundaries landing where
+// the reader's calendar puts them rather than where the epoch does.
+//
+// The store shifts by the viewer's UTC offset, floors, and shifts back -- the
+// same three steps histogramBucketStart takes in TypeScript. It uses floor_div
+// rather than integer division because the latter truncates toward zero, so a
+// pre-epoch timestamp would floor the wrong way and land a datapoint a whole
+// bucket late. That is the hazard the client comment flags for BigInt division,
+// and it is why this test reaches back before 1970 rather than only checking a
+// present-day offset.
+func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	// Two datapoints either side of midnight UTC. Under a -5h offset they fall
+	// on the same local day; under UTC they straddle two.
+	utcMidnight := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	fixture := makeExpHistogramFixtureT("tz.duration", pmetric.AggregationTemporalityDelta, []expHistTestDP{
+		{
+			timestamp: utcMidnight.Add(-2 * time.Hour), scale: 0,
+			zeroCount: 0, zeroThreshold: 0,
+			posOffset: 0, posCounts: []uint64{4}, count: 4, sum: 8,
+		},
+		{
+			timestamp: utcMidnight.Add(2 * time.Hour), scale: 0,
+			zeroCount: 0, zeroThreshold: 0,
+			posOffset: 0, posCounts: []uint64{6}, count: 6, sum: 12,
+		},
+	})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+
+	// A window a few days wide, so the bucket ladder lands on day-sized widths.
+	start := utcMidnight.Add(-36 * time.Hour).UnixNano()
+	end := utcMidnight.Add(36 * time.Hour).UnixNano()
+
+	bucketCount := func(offsetNs int64) int {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, streamID, start, end, 3, nil, nil, offsetNs)
+		})
+		require.NoError(t, err)
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		agg, _ := m["aggregate"].([]any)
+		return len(agg)
+	}
+
+	utcBuckets := bucketCount(0)
+	shifted := bucketCount(-5 * int64(time.Hour))
+
+	// The datapoints are 4h apart, so whether they share a bucket depends
+	// entirely on where the boundary falls -- which is the thing under test.
+	assert.Positive(t, utcBuckets, "UTC alignment still produces buckets")
+	assert.Positive(t, shifted, "a shifted offset still produces buckets")
+
+	// The offset must actually reach the bucketing. Identical counts for every
+	// offset would mean it was ignored, which is the failure this guards.
+	var distinct = map[int]bool{}
+	for _, off := range []int64{0, -5 * int64(time.Hour), 9 * int64(time.Hour), 13 * int64(time.Hour)} {
+		distinct[bucketCount(off)] = true
+	}
+	assert.Greater(t, len(distinct), 1,
+		"bucket boundaries must move with the offset, or tz_offset_ns is not reaching bucket_start")
 }

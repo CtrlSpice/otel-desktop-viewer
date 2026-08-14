@@ -17,7 +17,16 @@
 				-- Computed here rather than shipped as bucket vectors for the client
 				-- to reduce: three numbers per series per bucket instead of a
 				-- forty-element array, and one implementation of the arithmetic.
-				?::double[] as quantiles
+				?::double[] as quantiles,
+				-- The viewer's UTC offset in nanoseconds, so bucket boundaries fall
+				-- where the reader's calendar says a day breaks rather than where the
+				-- epoch does. 0 aligns to UTC, which is what a caller that does not
+				-- care should send.
+				--
+				-- A query parameter, not URL state: it comes from a user preference,
+				-- so a shared link renders in the recipient's calendar rather than
+				-- the sender's.
+				?::bigint as tz_offset_ns
 		),
 		stream as (
 			select s.* from metric_streams s, input
@@ -191,10 +200,19 @@
 		-- Bucket starts are absolute, not measured from the window: floor by
 		-- the width so panning slides data through fixed buckets rather than
 		-- re-cutting them on every request.
+		-- Shift into the viewer's local time, floor, shift back -- the same
+		-- three steps histogramBucketStart takes in TypeScript.
+		--
+		-- floor_div rather than //: integer division truncates toward zero, so
+		-- a pre-epoch timestamp would floor the wrong way and land a datapoint
+		-- one bucket late. The client comment flags the identical hazard for
+		-- BigInt division.
 		bucketed_dps as (
 			select d.*,
-				(d.timestamp // (select width_ns from reduction))
-					* (select width_ns from reduction) as bucket_start
+				floor_div(d.timestamp + (select tz_offset_ns from input),
+				          (select width_ns from reduction))
+					* (select width_ns from reduction)
+					- (select tz_offset_ns from input) as bucket_start
 			from filtered_dps d
 			where (select width_ns from reduction) is not null
 		),
