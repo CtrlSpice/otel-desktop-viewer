@@ -28,7 +28,15 @@ create or replace macro bucket_quantile_linear(buckets, q) as (
 					chosen as (
 						select
 							params.target as target,
-							list_filter(with_acc.bs, lambda b: b.acc >= params.target)[1] as b
+							-- cnt > 0 first: a quantile is never *inside* an empty
+							-- bucket. For q > 0 this changes nothing, since an empty
+							-- bucket's running total equals its predecessor's and the
+							-- earlier bucket already satisfies the target. It matters
+							-- only at q = 0, where target is 0 and the leading zero
+							-- bucket that exp_buckets always emits would otherwise be
+							-- selected with cnt = 0 -- the 0/0 the interp kernels now
+							-- guard against.
+							list_filter(with_acc.bs, lambda b: b.cnt > 0 and b.acc >= params.target)[1] as b
 						from with_acc, params
 					)
 				select interp_linear(b.lo, b.hi, b.acc_prev, b.cnt, target) from chosen
