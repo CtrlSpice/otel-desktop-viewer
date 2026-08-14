@@ -3,6 +3,7 @@ package queries_test
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
@@ -960,6 +961,65 @@ func TestMacros_BucketExtents(t *testing.T) {
 			require.True(t, mn.Valid, "expected extents, got NULL")
 			assert.Equal(t, tc.min, mn.Float64, "min")
 			assert.Equal(t, tc.max, mx.Float64, "max")
+		})
+	}
+}
+
+// TestMacros_QuantileSkipsEmptyBuckets pins that a quantile is never taken from
+// a bucket holding nothing.
+//
+// exp_buckets always emits a zero bucket, even when zero_count is 0. At q = 0
+// the target is 0, so that empty bucket's running total already satisfies
+// acc >= target and it used to be selected -- yielding 0/0 in the interpolation
+// kernel, and a NaN quantile, for a histogram whose smallest observation was
+// well above zero.
+//
+// For q > 0 the filter is a no-op: an empty bucket's running total equals its
+// predecessor's, so if it meets the target the earlier bucket already did and
+// is chosen first. The p50 cases here are what would regress if that reasoning
+// were wrong.
+func TestMacros_QuantileSkipsEmptyBuckets(t *testing.T) {
+	db := setupMacroDB(t)
+
+	cases := []struct {
+		name  string
+		query string
+		want  float64
+	}{
+		{
+			// scale=0 -> base=2, buckets (1,2] and (2,4] and (4,8].
+			// No zero region, so the smallest observation is above 1.
+			name:  "q=0 returns the first populated bucket's lower edge, not 0",
+			query: "select exp_hist_quantile(0, 0, [], 0, 0, [10, 20, 30], 0.0)",
+			want:  1.0,
+		},
+		{
+			// A genuine zero region: the zero bucket is populated, so it is
+			// selected on its merits and 0 is the right answer.
+			name:  "q=0 with a real zero region still returns 0",
+			query: "select exp_hist_quantile(0, 0, [], 5, 0, [10, 20, 30], 0.0)",
+			want:  0.0,
+		},
+		{
+			// An empty bucket in the middle must not absorb the target.
+			name:  "empty interior bucket is skipped",
+			query: "select exp_hist_quantile(0, 0, [], 0, 0, [10, 0, 30], 0.25)",
+			want:  2.0,
+		},
+		{
+			// Unchanged by the filter -- guards the "no-op for q > 0" claim.
+			name:  "p50 unaffected",
+			query: "select exp_hist_quantile(0, 0, [], 0, 0, [10, 20, 30], 0.5)",
+			want:  4.0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got float64
+			require.NoError(t, db.QueryRow(tc.query).Scan(&got))
+			require.False(t, math.IsNaN(got), "quantile must not be NaN")
+			assert.InDelta(t, tc.want, got, 1e-9)
 		})
 	}
 }
