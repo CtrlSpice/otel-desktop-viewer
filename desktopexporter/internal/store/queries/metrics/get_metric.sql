@@ -68,13 +68,7 @@
 		-- resolves each row's id array in place, so there is nothing to
 		-- pre-aggregate and join back.
 		exemplars_agg as (
-			select e.datapoint_id, json_group_array(json_object(
-				'timestamp', e.timestamp::varchar,
-				'value', e.value,
-				'traceID', trace_id_wire(e.trace_id),
-				'spanID', span_id_wire(e.span_id),
-				'filteredAttributes', attrs_json(e.attribute_ids)
-			)) as exemplars
+			select e.datapoint_id, json_group_array(exemplar_json(e)) as exemplars
 			from exemplars e
 			where e.datapoint_id in (select id from filtered_dps)
 			group by e.datapoint_id
@@ -393,10 +387,10 @@
 		-- both folded totals into zero_count.
 		hist_folds as (
 			select m.*,
-				fold_below_cutoff(m.positive_bucket_counts, m.positive_bucket_offset,
-				                  exp_zero_cutoff(m.zero_threshold, m.scale)) as pos_fold,
-				fold_below_cutoff(m.negative_bucket_counts, m.negative_bucket_offset,
-				                  exp_zero_cutoff(m.zero_threshold, m.scale)) as neg_fold
+				zero_fold(m.positive_bucket_counts, m.positive_bucket_offset,
+					m.zero_threshold, m.scale) as pos_fold,
+				zero_fold(m.negative_bucket_counts, m.negative_bucket_offset,
+					m.zero_threshold, m.scale) as neg_fold
 			from hist_merged m
 		),
 		hist_folded as (
@@ -492,61 +486,10 @@
 				min(coalesce(d.double_value, d.int_value)) as value_min,
 				max(coalesce(d.double_value, d.int_value)) as value_max,
 				sum(coalesce(d.double_value, d.int_value)) as value_sum,
-				to_json(list(json_merge_patch(
-					json_object(
-						'id', d.id,
-						'metricType', d.metric_type,
-						'timestamp', d.timestamp::varchar,
-						'startTime', d.start_time::varchar,
-						'flags', d.flags,
-						'exemplars', coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]'))
-					),
-					case d.metric_type
-						when 'Gauge' then json_object(
-							'doubleValue', d.double_value,
-							'intValue', d.int_value,
-							'valueType', d.value_type
-						)
-						when 'Sum' then json_object(
-							'doubleValue', d.double_value,
-							'intValue', d.int_value,
-							'valueType', d.value_type,
-							'isMonotonic', d.is_monotonic,
-							'aggregationTemporality', d.aggregation_temporality
-						)
-						when 'Histogram' then json_object(
-							'count', d.count,
-							'sum', d.sum,
-							'min', d.min,
-							'max', d.max,
-							'bucketCounts', d.bucket_counts,
-							'explicitBounds', d.explicit_bounds,
-							'quantiles', case when len((select quantiles from input)) = 0 then null
-								else hist_quantiles(d.explicit_bounds, d.bucket_counts,
-									(select quantiles from input)) end,
-							'aggregationTemporality', d.aggregation_temporality
-						)
-						when 'ExponentialHistogram' then json_object(
-							'count', d.count,
-							'sum', d.sum,
-							'min', d.min,
-							'max', d.max,
-							'scale', d.scale,
-							'zeroCount', d.zero_count,
-							'zeroThreshold', d.zero_threshold,
-							'positiveBucketOffset', d.positive_bucket_offset,
-							'positiveBucketCounts', d.positive_bucket_counts,
-							'negativeBucketOffset', d.negative_bucket_offset,
-							'negativeBucketCounts', d.negative_bucket_counts,
-							'quantiles', case when len((select quantiles from input)) = 0 then null
-								else exp_hist_quantiles(d.scale,
-									d.negative_bucket_offset, d.negative_bucket_counts,
-									d.zero_count,
-									d.positive_bucket_offset, d.positive_bucket_counts,
-									(select quantiles from input)) end,
-							'aggregationTemporality', d.aggregation_temporality
-						)
-					end
+				to_json(list(datapoint_json(
+					d,
+					coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]')),
+					(select quantiles from input)
 				) order by d.timestamp desc)
 					-- Only the reduction narrows the list. The stats above are
 					-- deliberately outside this filter: they describe the
@@ -579,19 +522,12 @@
 		-- compatibility, but it is the weaker claim: it describes one arbitrary
 		-- batch, whereas this describes the line being drawn.
 		timeseries_agg as (
-			select to_json(list(json_object(
-				'attributesKey', t.attrs_key,
-				'attributes', t.attributes_sample,
-				'resource', resource_json(r.attribute_ids, r.dropped_attributes_count),
-				'datapoints', t.datapoints,
-				-- Null for histogram series, which have no scalar value.
-				'stats', case when t.value_count > 0 then json_object(
-					'count', t.value_count,
-					'min', t.value_min,
-					'max', t.value_max,
-					'sum', t.value_sum,
-					'avg', t.value_sum / t.value_count
-				) end
+			select to_json(list(timeseries_json(
+				t.attrs_key,
+				t.attributes_sample,
+				resource_json(r.attribute_ids, r.dropped_attributes_count),
+				t.datapoints,
+				series_stats_json(t.value_count, t.value_min, t.value_max, t.value_sum)
 			-- attrs_key breaks ties, and the tie is the common case rather
 			-- than the exception: series of one metric are usually reported
 			-- together, so they share a latest_ts. DuckDB's sort is not
@@ -674,10 +610,10 @@
 		-- zero threshold leaves buckets underneath it that belong in zero_count.
 		agg_folds as (
 			select m.*,
-				fold_below_cutoff(m.positive_bucket_counts, m.positive_bucket_offset,
-					exp_zero_cutoff(m.zero_threshold, m.scale)) as pos_fold,
-				fold_below_cutoff(m.negative_bucket_counts, m.negative_bucket_offset,
-					exp_zero_cutoff(m.zero_threshold, m.scale)) as neg_fold
+				zero_fold(m.positive_bucket_counts, m.positive_bucket_offset,
+					m.zero_threshold, m.scale) as pos_fold,
+				zero_fold(m.negative_bucket_counts, m.negative_bucket_offset,
+					m.zero_threshold, m.scale) as neg_fold
 			from agg_merged m
 		),
 		aggregate_agg as (
