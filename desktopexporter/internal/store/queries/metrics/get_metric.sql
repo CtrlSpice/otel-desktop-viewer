@@ -3,7 +3,14 @@
 			select ?::uuid as stream_id,
 				?::bigint as time_start,
 				?::bigint as time_end,
-				?::bigint as target_buckets
+				?::bigint as target_buckets,
+				-- Which series the caller cares about. Empty means all of them,
+				-- which is the unfiltered behaviour every existing caller gets.
+				--
+				-- Bound as varchar[] and cast in SQL rather than as a uuid list:
+				-- the driver corrupts a bound []duckdb.UUID silently, matching
+				-- nothing (see the uuid_binding canary in store/util).
+				?::varchar[] as series_ids
 		),
 		stream as (
 			select s.* from metric_streams s, input
@@ -35,6 +42,11 @@
 			from datapoints d, input, stream s
 			where d.stream_id = input.stream_id
 			  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
+			  -- Narrowing here rather than after the merge: the reduction and
+			  -- every alignment stage downstream then run over only the series
+			  -- asked for, instead of merging series the caller will discard.
+			  and (len(input.series_ids) = 0
+			       or list_contains(input.series_ids, d.series_id::varchar))
 		),
 		-- The dp_attrs_agg and exemplar_attrs CTEs are gone: attrs_json
 		-- resolves each row's id array in place, so there is nothing to
