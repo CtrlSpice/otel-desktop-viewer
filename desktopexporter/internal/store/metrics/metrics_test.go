@@ -2208,3 +2208,82 @@ func TestGetMetric_Quantiles(t *testing.T) {
 	assert.Nil(t, datapoint(nil)["quantiles"],
 		"no quantiles requested means none computed")
 }
+
+// TestGetMetric_CrossSeriesAggregate covers the merge that lets the client stop
+// combining series itself.
+//
+// Two series, different scales, in one time bucket. The aggregate must put them
+// on a common scale, align offsets and sum -- conserving every observation,
+// which is the property a merge can quietly break and a chart will never show.
+//
+// Worked by hand. Scale 0 has base 2 and bucket i covering (2^i, 2^(i+1)];
+// scale -1 has base 4 and bucket j covering (4^j, 4^(j+1)]. The coarser of the
+// two wins, so the scale-0 series is downscaled by one step, folding its
+// buckets in pairs:
+//
+//	A scale  0, counts [10, 20, 30] at offset 0  -> [30, 30] at offset 0
+//	B scale -1, counts [5, 5]       at offset 0
+//	merged   scale -1, counts [35, 35] at offset 0
+//
+// Totals: A has 60 observations, B has 10, so the aggregate must report 70.
+func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Now().Add(-time.Minute)
+	fixture := makeExpHistogramFixtureT("agg.duration", pmetric.AggregationTemporalityDelta, []expHistTestDP{
+		{
+			timestamp: base, attrs: map[string]string{"route": "/a"},
+			scale: 0, zeroCount: 0, zeroThreshold: 0,
+			posOffset: 0, posCounts: []uint64{10, 20, 30},
+			count: 60, sum: 100,
+		},
+		{
+			timestamp: base.Add(time.Second), attrs: map[string]string{"route": "/b"},
+			scale: -1, zeroCount: 0, zeroThreshold: 0,
+			posOffset: 0, posCounts: []uint64{5, 5},
+			count: 10, sum: 20,
+		},
+	})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
+			time.Now().UnixNano()+int64(time.Hour), 1, nil, []float64{0.5})
+	})
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+
+	require.Len(t, m["timeseries"].([]any), 2, "per-series data still returned")
+
+	agg, ok := m["aggregate"].([]any)
+	require.True(t, ok, "aggregate must be present for a histogram merge")
+	require.Len(t, agg, 1, "both series fall in one time bucket")
+	a := agg[0].(map[string]any)
+
+	assert.Equal(t, float64(-1), a["scale"], "merged on the coarser scale")
+	assert.Equal(t, float64(70), a["count"], "every observation conserved")
+	assert.Equal(t, float64(0), a["positiveBucketOffset"])
+
+	counts, _ := a["positiveBucketCounts"].([]any)
+	require.Len(t, counts, 2)
+	assert.Equal(t, float64(35), counts[0], "10+20 downscaled, plus 5")
+	assert.Equal(t, float64(35), counts[1], "30 downscaled, plus 5")
+
+	// Bucket counts and the reported total have to tell the same story.
+	var sum float64
+	for _, c := range counts {
+		sum += c.(float64)
+	}
+	assert.Equal(t, a["count"], sum+a["zeroCount"].(float64),
+		"bucket counts plus zero count must equal the reported total")
+
+	q, ok := a["quantiles"].(map[string]any)
+	require.True(t, ok, "the aggregate carries quantiles for the summary panel")
+	assert.NotNil(t, q["0.5"])
+}

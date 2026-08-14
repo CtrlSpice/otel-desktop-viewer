@@ -589,6 +589,100 @@
 			from ts_dps_agg t
 			join metric_series ms on ms.id = t.series_id
 			join resources r on r.id = ms.resource_id
+		),
+		-- The cross-series aggregate: the selected series merged into one
+		-- histogram per time bucket, which is what a heatmap draws and what a
+		-- window summary describes.
+		--
+		-- Same five steps as the per-series chain above -- common scale,
+		-- aligned offsets, pad, sum, fold -- partitioned by bucket alone
+		-- rather than by (series, bucket). It runs on the reduced set, one row
+		-- per series per bucket, not on raw datapoints, which is why it costs
+		-- ~14ms where the scan that precedes it costs ~140ms.
+		--
+		-- Temporality is already resolved by hist_folded: Delta summed, and
+		-- Cumulative reduced to last-minus-first. Either way each row is
+		-- "activity in this bucket", so summing across series is right for
+		-- both without branching again.
+		--
+		-- Histograms only. Summing gauges across series would be arithmetic
+		-- nobody asked for.
+		agg_scaled as (
+			select f.*, min(f.scale) over (partition by f.bucket_start) as agg_scale
+			from hist_folded f
+		),
+		agg_downscaled as (
+			select a.*,
+				downscale_exp_buckets(a.positive_bucket_counts, a.positive_bucket_offset,
+					a.scale - a.agg_scale) as pos_d,
+				downscale_exp_buckets(a.negative_bucket_counts, a.negative_bucket_offset,
+					a.scale - a.agg_scale) as neg_d
+			from agg_scaled a
+		),
+		agg_aligned as (
+			select d.*,
+				min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
+					over (partition by d.bucket_start) as pos_agg_offset,
+				min(case when len(d.neg_d.counts) > 0 then d.neg_d.offset end)
+					over (partition by d.bucket_start) as neg_agg_offset
+			from agg_downscaled d
+		),
+		agg_padded as (
+			select a.*,
+				pad_left_to_offset(a.pos_d.counts, a.pos_d.offset,
+					coalesce(a.pos_agg_offset, a.pos_d.offset)) as pos_p,
+				pad_left_to_offset(a.neg_d.counts, a.neg_d.offset,
+					coalesce(a.neg_agg_offset, a.neg_d.offset)) as neg_p
+			from agg_aligned a
+		),
+		agg_merged as (
+			select
+				p.bucket_start,
+				max(p.timestamp) as timestamp,
+				min(p.start_time) as start_time,
+				sum(p.count) as count,
+				sum(p.sum) as sum,
+				any_value(p.agg_scale) as scale,
+				max(p.zero_threshold) as zero_threshold,
+				sum(p.zero_count) as zero_count,
+				any_value(coalesce(p.pos_agg_offset, 0)) as positive_bucket_offset,
+				sum_bucket_vectors(list(p.pos_p)) as positive_bucket_counts,
+				any_value(coalesce(p.neg_agg_offset, 0)) as negative_bucket_offset,
+				sum_bucket_vectors(list(p.neg_p)) as negative_bucket_counts
+			from agg_padded p
+			group by p.bucket_start
+		),
+		-- Same reconciliation the per-series merge needs: taking the largest
+		-- zero threshold leaves buckets underneath it that belong in zero_count.
+		agg_folds as (
+			select m.*,
+				fold_below_cutoff(m.positive_bucket_counts, m.positive_bucket_offset,
+					exp_zero_cutoff(m.zero_threshold, m.scale)) as pos_fold,
+				fold_below_cutoff(m.negative_bucket_counts, m.negative_bucket_offset,
+					exp_zero_cutoff(m.zero_threshold, m.scale)) as neg_fold
+			from agg_merged m
+		),
+		aggregate_agg as (
+			select to_json(list(json_object(
+				'timestamp', f.timestamp::varchar,
+				'startTime', f.start_time::varchar,
+				'count', f.count,
+				'sum', f.sum,
+				'scale', f.scale,
+				'zeroThreshold', f.zero_threshold,
+				'zeroCount', f.zero_count + f.pos_fold.folded + f.neg_fold.folded,
+				'positiveBucketOffset', f.pos_fold.offset,
+				'positiveBucketCounts', f.pos_fold.counts,
+				'negativeBucketOffset', f.neg_fold.offset,
+				'negativeBucketCounts', f.neg_fold.counts,
+				'quantiles', case when len((select quantiles from input)) = 0 then null
+					else exp_hist_quantiles(f.scale,
+						f.neg_fold.offset, f.neg_fold.counts,
+						f.zero_count + f.pos_fold.folded + f.neg_fold.folded,
+						f.pos_fold.offset, f.pos_fold.counts,
+						(select quantiles from input)) end
+			) order by f.bucket_start)) as aggregate
+			from agg_folds f
 		)
 		-- Left join: a stream with no datapoints in the window still
 		-- produces a row (empty timeseries, blank representative fields).
@@ -613,6 +707,10 @@
 				            'attributes', json('[]'), 'droppedAttributesCount', 0)
 			),
 			'timeseries', coalesce((select timeseries from timeseries_agg), json('[]')),
+			-- Null rather than [] when there is nothing to aggregate, so the
+			-- client can tell "no histogram merge happened" from "merged to
+			-- nothing".
+			'aggregate', (select aggregate from aggregate_agg),
 			-- How many datapoints the window actually holds, as opposed to how
 			-- many came back. Equal today; the moment the server reduces what it
 			-- returns, the difference is what the UI needs in order to say so.
