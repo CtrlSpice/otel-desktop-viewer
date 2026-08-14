@@ -2361,3 +2361,68 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 	assert.Greater(t, len(distinct), 1,
 		"bucket boundaries must move with the offset, or tz_offset_ns is not reaching bucket_start")
 }
+
+// TestGetMetricAggregate covers the aggregate-only call, which exists so a
+// legend toggle does not re-ship the per-series payload.
+//
+// It must answer the same question as GetMetric's aggregate field for the same
+// arguments -- it runs the same query and keeps one field, and this is what
+// stops those two drifting.
+func TestGetMetricAggregate(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Now().Add(-time.Minute)
+	var dps []expHistTestDP
+	for si := 0; si < 3; si++ {
+		dps = append(dps, expHistTestDP{
+			timestamp: base.Add(time.Duration(si) * time.Second),
+			attrs:     map[string]string{"route": fmt.Sprintf("/r%d", si)},
+			scale:     0, zeroCount: 0, zeroThreshold: 0,
+			posOffset: 0, posCounts: []uint64{2, 3},
+			count: 5, sum: 10,
+		})
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn,
+			makeExpHistogramFixtureT("agg.only", pmetric.AggregationTemporalityDelta, dps),
+			s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+	end := time.Now().UnixNano() + int64(time.Hour)
+
+	// Same arguments to both calls.
+	full, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0)
+	})
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(full, &m))
+	fromFull, _ := json.Marshal(m["aggregate"])
+
+	only, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0)
+	})
+	require.NoError(t, err)
+
+	assert.JSONEq(t, string(fromFull), string(only),
+		"the aggregate-only call must match GetMetric's aggregate field")
+
+	// And it honours the selection, which is the reason it exists.
+	var agg []map[string]any
+	require.NoError(t, json.Unmarshal(only, &agg))
+	require.NotEmpty(t, agg)
+	allCount := agg[0]["count"].(float64)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, []string{}, nil, 0)
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(raw),
+		"an empty selection aggregates no series")
+
+	assert.Positive(t, allCount, "nil selection aggregates every series")
+}

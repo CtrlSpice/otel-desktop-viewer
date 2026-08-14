@@ -801,6 +801,37 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	return json.RawMessage(raw), nil
 }
 
+// GetMetricAggregate returns only the cross-series aggregate: the selected
+// series merged into one histogram per time bucket.
+//
+// Exists as its own call because the two halves of a metric response have
+// different lifetimes. Per-series quantiles are additive -- fetch them once for
+// every series and any subset's lines are already in hand -- while the
+// aggregate is specific to the selection and has to be recomputed when the
+// legend changes. Binding both to one fetch would either re-ship the per-series
+// payload on every toggle, or make selecting a metric fetch twice, because the
+// legend selection is seeded from the response it would depend on.
+//
+// Runs the same query and keeps one field. The per-series work happens either
+// way -- the aggregate is built from the merged series -- so the saving is
+// payload, not computation.
+func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64) (json.RawMessage, error) {
+	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		Aggregate json.RawMessage `json:"aggregate"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, fmt.Errorf("GetMetricAggregate: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if envelope.Aggregate == nil {
+		return json.RawMessage("null"), nil
+	}
+	return envelope.Aggregate, nil
+}
+
 // GetMetricAttributes returns every metric-side attribute name/scope/type this
 // store knows about. The time range is accepted and ignored -- see the note on
 // spans.GetTraceAttributes.

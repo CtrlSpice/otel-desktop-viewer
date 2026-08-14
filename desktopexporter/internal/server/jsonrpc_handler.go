@@ -69,6 +69,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchMetricSummaries(ctx, req)
 	case "getMetric":
 		return h.getMetric(ctx, req)
+	case "getMetricAggregate":
+		return h.getMetricAggregate(ctx, req)
 	case "clearTraces":
 		return h.clearTraces(ctx)
 	case "clearLogs":
@@ -282,27 +284,40 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 	return summaries, nil
 }
 
-func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+// getMetricParams is the parameter set getMetric and getMetricAggregate share.
+// They ask the same question of the same window; only the shape of the answer
+// differs, so the parsing lives once.
+type getMetricParams struct {
+	streamID           string
+	startTime, endTime int64
+	targetBuckets      int64
+	seriesIDs          []string
+	quantiles          []float64
+	tzOffsetNs         int64
+}
+
+func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricParams, error) {
+	var out getMetricParams
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
+		return out, jsonrpc2.ErrInvalidParams
 	}
 	// The fourth parameter is optional: callers that predate it, or that want
 	// every datapoint, send three and get no reduction.
 	if len(params) < 3 || len(params) > 4 {
-		return nil, jsonrpc2.ErrInvalidParams
+		return out, jsonrpc2.ErrInvalidParams
 	}
 	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	startTime, err := h.parseTimestampParam(params[1], "startTime")
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	endTime, err := h.parseTimestampParam(params[2], "endTime")
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	// How many time buckets to reduce the window to. The client knows its
 	// chart width; the store cannot.
@@ -310,10 +325,10 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	if len(params) >= 4 {
 		targetBuckets, err = h.parseTimestampParam(params[3], "targetBuckets")
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		if targetBuckets < 0 {
-			return nil, jsonrpc2.ErrInvalidParams
+			return out, jsonrpc2.ErrInvalidParams
 		}
 	}
 
@@ -323,7 +338,7 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	if len(params) >= 5 && params[4] != nil {
 		raw, ok := params[4].([]any)
 		if !ok {
-			return nil, jsonrpc2.ErrInvalidParams
+			return out, jsonrpc2.ErrInvalidParams
 		}
 		// Non-nil before the loop: an empty array means "no series", and
 		// appending nothing to a nil slice would leave it indistinguishable
@@ -332,7 +347,7 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 		for _, v := range raw {
 			id, ok := v.(string)
 			if !ok {
-				return nil, jsonrpc2.ErrInvalidParams
+				return out, jsonrpc2.ErrInvalidParams
 			}
 			seriesIDs = append(seriesIDs, id)
 		}
@@ -344,12 +359,12 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	if len(params) >= 6 && params[5] != nil {
 		raw, ok := params[5].([]any)
 		if !ok {
-			return nil, jsonrpc2.ErrInvalidParams
+			return out, jsonrpc2.ErrInvalidParams
 		}
 		for _, v := range raw {
 			q, ok := v.(float64)
 			if !ok || q < 0 || q > 1 {
-				return nil, jsonrpc2.ErrInvalidParams
+				return out, jsonrpc2.ErrInvalidParams
 			}
 			quantiles = append(quantiles, q)
 		}
@@ -361,12 +376,27 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	if len(params) >= 7 && params[6] != nil {
 		tzOffsetNs, err = h.parseTimestampParam(params[6], "tzOffsetNs")
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 	}
+	out.streamID = streamID
+	out.startTime = startTime
+	out.endTime = endTime
+	out.targetBuckets = targetBuckets
+	out.seriesIDs = seriesIDs
+	out.quantiles = quantiles
+	out.tzOffsetNs = tzOffsetNs
+	return out, nil
+}
 
+func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	args, err := h.parseGetMetricParams(req)
+	if err != nil {
+		return nil, err
+	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs)
+		return metrics.GetMetric(ctx, db, args.streamID, args.startTime, args.endTime,
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -566,6 +596,25 @@ func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Req
 	}
 
 	return attributes, nil
+}
+
+// getMetricAggregate takes the same parameters as getMetric and returns only
+// the cross-series aggregate. Separate method rather than a flag on getMetric:
+// the two are fetched on different triggers -- metric selection versus legend
+// selection -- so they are different requests, not one request in two modes.
+func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	args, err := h.parseGetMetricParams(req)
+	if err != nil {
+		return nil, err
+	}
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricAggregate(ctx, db, args.streamID, args.startTime, args.endTime,
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs)
+	})
+	if err != nil {
+		return nil, h.handleStoreError(err)
+	}
+	return result, nil
 }
 
 func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
