@@ -77,6 +77,7 @@
     DEFAULT_HISTOGRAM_QUANTILES,
     localOffsetNs,
   } from '@/components/metrics/utils/histogram-aggregation'
+  import type { JsonAggregateBucket } from '@/types/wire-types'
   import { untrack } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
@@ -151,7 +152,14 @@
   let selectedMetric = $state<MetricData | undefined>(undefined)
   let detailLoading = $state(false)
 
-  createMetricViewContext(() => selectedMetric)
+  // The store's cross-series merge for the current legend selection. Null
+  // until the first fetch resolves, and whenever the metric changes.
+  let selectedAggregate = $state<JsonAggregateBucket[] | null>(null)
+
+  createMetricViewContext(
+    () => selectedMetric,
+    () => selectedAggregate
+  )
   const metricCtx = getMetricViewContext()
 
   let hasMetricRows = $derived(page.items.length > 0)
@@ -192,6 +200,69 @@
     const summary = untrack(() => page.selectedSummary)
     if (summary) fetchMetricDetail(summary)
   })
+
+  // The aggregate is fetched separately from the metric, because the two have
+  // different lifetimes. Per-series quantiles are additive -- fetched once with
+  // the metric, and any subset's lines are already in hand -- while the merge
+  // is specific to the selection and has to be recomputed when the legend
+  // changes.
+  //
+  // Folding this into the detail effect would break that effect's contract: it
+  // depends on the metric identity alone and untracks the summary, because
+  // polling churns object references and re-fetching would clobber legend
+  // state. It would also fetch twice per metric, since the legend selection is
+  // seeded from the response it would then depend on.
+  let aggregateTimer: ReturnType<typeof setTimeout> | undefined
+  let aggregateToken = 0
+
+  $effect(() => {
+    const summary = page.selectedSummary
+    // Read reactively so a toggle re-runs this. Sorted so a set rebuilt with
+    // the same members does not look like a change.
+    const keys = [...metricCtx.histogramVisible].sort()
+
+    if (!summary || !metricCtx.isHistogramKind) {
+      selectedAggregate = null
+      return
+    }
+
+    // Coalesce rapid toggles into one request. Ticking through five series
+    // should ask the store once, not five times.
+    clearTimeout(aggregateTimer)
+    const token = ++aggregateToken
+    aggregateTimer = setTimeout(() => {
+      void fetchAggregate(summary, keys, token)
+    }, 120)
+
+    return () => clearTimeout(aggregateTimer)
+  })
+
+  async function fetchAggregate(
+    summary: MetricSummary,
+    keys: string[],
+    token: number
+  ) {
+    try {
+      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+        timeContext.selection,
+        Date.now()
+      )
+      const result = await telemetryAPI.getMetricAggregate(
+        summary.id,
+        startTime,
+        endTime,
+        METRIC_BUCKET_TARGET,
+        keys,
+        DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
+        tzOffsetNs()
+      )
+      // A slower earlier request must not overwrite a newer answer.
+      if (token === aggregateToken) selectedAggregate = result
+    } catch (err) {
+      console.error('Failed to fetch metric aggregate:', err)
+      if (token === aggregateToken) selectedAggregate = null
+    }
+  }
 
   function selectMetric(key: string) {
     page.selectItem(key)

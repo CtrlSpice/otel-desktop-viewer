@@ -22,6 +22,7 @@
  * lifetime even as the user navigates between metrics. (The
  * underlying `selectedMetric` cell lives on MetricsPage.)
  */
+import type { JsonAggregateBucket } from '@/types/wire-types'
 import { setContext, getContext, untrack } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import type {
@@ -311,7 +312,15 @@ export interface MetricViewContext {
 // --- Factory ------------------------------------------------------
 
 export function createMetricViewContext(
-  getMetric: () => MetricData | undefined
+  getMetric: () => MetricData | undefined,
+  /**
+   * The store's cross-series aggregate for the current legend selection.
+   *
+   * A getter rather than something fetched here: this context is a derivation
+   * layer over a metric and owes its predictability to not doing IO. The page
+   * owns the fetch, this owns what the numbers mean.
+   */
+  getAggregate: () => JsonAggregateBucket[] | null = () => null
 ): MetricViewContext {
   const timeContext = getTimeContext()
 

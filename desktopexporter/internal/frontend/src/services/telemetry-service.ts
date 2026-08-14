@@ -28,6 +28,7 @@ import type {
   JsonAttributeType,
   JsonQueryNode,
   JsonAttributeMatch,
+  JsonAggregateBucket,
 } from '@/types/wire-types'
 import { parseBigInt, parseNullableBigInt } from '@/utils/bigint'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
@@ -514,6 +515,42 @@ export let telemetryAPI = {
         ...(tzOffsetNs !== undefined ? [String(tzOffsetNs)] : []),
       ])
       return metricDataFromJSON(rawData)
+    } catch (error) {
+      if (
+        error instanceof JsonRpcError &&
+        error.code === ERR_CODE_METRIC_NOT_FOUND
+      ) {
+        return null
+      }
+      throw error
+    }
+  },
+
+  /** The cross-series aggregate alone, for when only the legend selection
+   *  changed. Per-series quantiles are additive and come with the metric; this
+   *  is the part that depends on which series are visible, so it is the part
+   *  worth refetching on a toggle. */
+  getMetricAggregate: async (
+    streamId: string,
+    startTime: number,
+    endTime: number,
+    targetBuckets: number,
+    seriesIds: string[],
+    quantiles: number[],
+    tzOffsetNs: number
+  ): Promise<JsonAggregateBucket[] | null> => {
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
+    try {
+      return await callRPC<JsonAggregateBucket[] | null>('getMetricAggregate', [
+        streamId,
+        startTimeNs,
+        endTimeNs,
+        String(targetBuckets),
+        seriesIds,
+        quantiles,
+        String(tzOffsetNs),
+      ])
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
