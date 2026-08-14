@@ -37,6 +37,7 @@ pad_left_to_offset.sql
 sum_bucket_vectors.sql
 uuid_list.sql
 body_preview.sql
+aggregate_bucket_json.sql
 event_json.sql
 link_json.sql
 span_data_json.sql

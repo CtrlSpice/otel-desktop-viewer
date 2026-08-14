@@ -663,24 +663,10 @@
 			from agg_merged m
 		),
 		aggregate_agg as (
-			select to_json(list(json_object(
-				'timestamp', f.timestamp::varchar,
-				'startTime', f.start_time::varchar,
-				'count', f.count,
-				'sum', f.sum,
-				'scale', f.scale,
-				'zeroThreshold', f.zero_threshold,
-				'zeroCount', f.zero_count + f.pos_fold.folded + f.neg_fold.folded,
-				'positiveBucketOffset', f.pos_fold.offset,
-				'positiveBucketCounts', f.pos_fold.counts,
-				'negativeBucketOffset', f.neg_fold.offset,
-				'negativeBucketCounts', f.neg_fold.counts,
-				'quantiles', case when len((select quantiles from input)) = 0 then null
-					else exp_hist_quantiles(f.scale,
-						f.neg_fold.offset, f.neg_fold.counts,
-						f.zero_count + f.pos_fold.folded + f.neg_fold.folded,
-						f.pos_fold.offset, f.pos_fold.counts,
-						(select quantiles from input)) end
+			select to_json(list(aggregate_bucket_json(
+				f.timestamp, f.start_time, f.count, f.sum, f.scale,
+				f.zero_threshold, f.zero_count, f.pos_fold, f.neg_fold,
+				(select quantiles from input)
 			) order by f.bucket_start)) as aggregate
 			from agg_folds f
 		)
