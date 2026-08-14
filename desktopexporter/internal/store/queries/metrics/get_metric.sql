@@ -333,6 +333,47 @@
 			group by p.series_id, p.bucket_start
 		),
 
+		-- Reconcile the merged zero threshold with the merged buckets.
+		--
+		-- hist_merged takes the largest zero_threshold of the group, because a
+		-- merged histogram cannot claim to resolve values that one of its inputs
+		-- did not. That leaves the input with the *smaller* threshold contributing
+		-- buckets covering (its T, the merged T] -- a range the merged threshold
+		-- now declares empty. Those buckets have to move into zero_count, or the
+		-- datapoint says one thing in zero_threshold and another in its arrays.
+		--
+		-- Two CTEs rather than one because SQL cannot reference a select alias
+		-- from the same select list, and calling the macro once per output column
+		-- would evaluate it six times.
+		--
+		-- Explicit-bounds histograms fall through untouched: they carry no zero
+		-- threshold, exp_zero_cutoff returns NULL for a null or non-positive one,
+		-- and fold_below_cutoff treats a NULL cutoff as "fold nothing". No branch
+		-- on metric_type is needed.
+		--
+		-- Mirrors mergeExpHistogramStreams in histogram-merge.ts, which computes
+		-- the same cutoff for both signs from the same (threshold, scale) and adds
+		-- both folded totals into zero_count.
+		hist_folds as (
+			select m.*,
+				fold_below_cutoff(m.positive_bucket_counts, m.positive_bucket_offset,
+				                  exp_zero_cutoff(m.zero_threshold, m.scale)) as pos_fold,
+				fold_below_cutoff(m.negative_bucket_counts, m.negative_bucket_offset,
+				                  exp_zero_cutoff(m.zero_threshold, m.scale)) as neg_fold
+			from hist_merged m
+		),
+		hist_folded as (
+			select f.* exclude (pos_fold, neg_fold, zero_count,
+					positive_bucket_offset, positive_bucket_counts,
+					negative_bucket_offset, negative_bucket_counts),
+				f.zero_count + f.pos_fold.folded + f.neg_fold.folded as zero_count,
+				f.pos_fold.offset as positive_bucket_offset,
+				f.pos_fold.counts as positive_bucket_counts,
+				f.neg_fold.offset as negative_bucket_offset,
+				f.neg_fold.counts as negative_bucket_counts
+			from hist_folds f
+		),
+
 		-- What the projection reads. Merging replaces a bucket's datapoints
 		-- with one merged datapoint; electing keeps real rows and filters them
 		-- by retained_ids; no reduction passes everything through.
@@ -369,7 +410,7 @@
 				m.negative_bucket_offset, m.negative_bucket_counts,
 				null::double as double_value, null::bigint as int_value,
 				null::varchar as value_type, m.is_monotonic
-			from hist_merged m
+			from hist_folded m
 			-- A bucket whose datapoints disagree about explicit bounds cannot
 			-- be merged; there is no rescale that reconciles two boundary sets.
 			-- Dropping the row would hide it, so the merge refuses to run and

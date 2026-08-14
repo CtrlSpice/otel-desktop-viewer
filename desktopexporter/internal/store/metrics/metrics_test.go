@@ -2013,3 +2013,83 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 	dps, _ := ts[0].(map[string]any)["datapoints"].([]any)
 	assert.Len(t, dps, 6, "both batches land on the same line")
 }
+
+// TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold is the first
+// end-to-end test of the server-side reduction path. Every other GetMetric call
+// in this package passes resolution 0, so the reduction machinery -- M4
+// election, the alignment chain, hist_merged -- was covered only by macro unit
+// tests and never run assembled. That is how the bug below survived.
+//
+// An exponential histogram's zero_threshold T declares that observations at or
+// below T live in zero_count rather than in a bucket. Merging datapoints with
+// different thresholds takes the larger, because the merged histogram cannot
+// claim to resolve values one of its inputs could not. The input with the
+// smaller threshold is then contributing buckets that fall entirely below the
+// merged threshold, and those counts have to move into zero_count -- otherwise
+// zero_threshold says one thing and the bucket array says another.
+//
+// Worked by hand at scale 0, where base = 2 and bucket i covers (2^i, 2^(i+1)]:
+//
+//	A: threshold 1, zeroCount 1, counts [5, 7] at offset 0
+//	B: threshold 4, zeroCount 2, counts [0, 0, 3] at offset 0
+//
+//	merged threshold = 4
+//	cutoff           = floor(log2(4) * 2^0) - 1 = 1
+//	summed counts    = [5, 7, 3] at offset 0
+//	folded           = buckets 0 and 1 = 5 + 7 = 12
+//	result           = [3] at offset 2, zeroCount 1 + 2 + 12 = 15
+func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Now().Add(-time.Minute)
+	fixture := makeExpHistogramFixtureT("http.duration", pmetric.AggregationTemporalityDelta, []expHistTestDP{
+		{
+			timestamp: base, scale: 0,
+			zeroCount: 1, zeroThreshold: 1,
+			posOffset: 0, posCounts: []uint64{5, 7},
+			count: 13, sum: 40,
+		},
+		{
+			timestamp: base.Add(time.Millisecond), scale: 0,
+			zeroCount: 2, zeroThreshold: 4,
+			posOffset: 0, posCounts: []uint64{0, 0, 3},
+			count: 5, sum: 30,
+		},
+	})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	// Resolution 1 puts both datapoints in a single bucket, which is what makes
+	// them merge at all.
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
+			time.Now().UnixNano()+int64(time.Hour), 1)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	ts, _ := metric["timeseries"].([]any)
+	require.Len(t, ts, 1, "one series")
+	dps, _ := ts[0].(map[string]any)["datapoints"].([]any)
+	require.Len(t, dps, 1, "both datapoints merge into one")
+	dp := dps[0].(map[string]any)
+
+	assert.Equal(t, float64(4), dp["zeroThreshold"], "merged threshold is the larger of the two")
+	assert.Equal(t, float64(15), dp["zeroCount"],
+		"buckets below the merged threshold must be folded into zero_count")
+	assert.Equal(t, float64(2), dp["positiveBucketOffset"],
+		"the folded buckets are gone, so the array starts above the cutoff")
+
+	counts, _ := dp["positiveBucketCounts"].([]any)
+	require.Len(t, counts, 1)
+	assert.Equal(t, float64(3), counts[0], "only the bucket above the threshold survives")
+
+	// The whole point: no observation was invented or lost by moving counts.
+	assert.Equal(t, float64(18), dp["count"], "total observations conserved")
+}
