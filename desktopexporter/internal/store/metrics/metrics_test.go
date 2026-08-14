@@ -262,7 +262,7 @@ func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0, nil)
+		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0, nil, nil)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -1766,7 +1766,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	require.True(t, ok)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil)
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -1899,7 +1899,7 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 0, nil)
+			time.Now().UnixNano()+int64(time.Hour), 0, nil, nil)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2002,7 +2002,7 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 	streamID, ok := summaries[0]["id"].(string)
 	require.True(t, ok)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil)
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2068,7 +2068,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	// them merge at all.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 1, nil)
+			time.Now().UnixNano()+int64(time.Hour), 1, nil, nil)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2129,7 +2129,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 
 	seriesKeys := func(ids []string) []string {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, ids)
+			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, ids, nil)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2152,4 +2152,59 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 		"asking for two returns exactly those two")
 
 	assert.Len(t, seriesKeys([]string{}), 3, "empty means all, not none")
+}
+
+// TestGetMetric_Quantiles covers quantiles computed in the store rather than
+// from bucket vectors on the client.
+//
+// The expected values are the ones the TypeScript implementation produces for
+// the same buckets, verified against it over a 1,200-case grid: at scale 0 the
+// buckets are (1,2] cnt 10, (2,4] cnt 20 and (4,8] cnt 30, so p50's target of
+// 30 lands exactly on the upper edge of the second bucket.
+//
+// Empty means none, so a caller drawing no overlays does not pay for them.
+func TestGetMetric_Quantiles(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Now().Add(-time.Minute)
+	fixture := makeExpHistogramFixtureT("q.duration", pmetric.AggregationTemporalityDelta, []expHistTestDP{{
+		timestamp: base, scale: 0,
+		zeroCount: 0, zeroThreshold: 1,
+		posOffset: 0, posCounts: []uint64{10, 20, 30},
+		count: 60, sum: 200,
+	}})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+	end := time.Now().UnixNano() + int64(time.Hour)
+
+	datapoint := func(qs []float64) map[string]any {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, nil, qs)
+		})
+		require.NoError(t, err)
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		ts := m["timeseries"].([]any)
+		require.Len(t, ts, 1)
+		dps := ts[0].(map[string]any)["datapoints"].([]any)
+		require.Len(t, dps, 1)
+		return dps[0].(map[string]any)
+	}
+
+	withQ := datapoint([]float64{0.5, 0.95, 0.99})
+	q, ok := withQ["quantiles"].(map[string]any)
+	require.True(t, ok, "quantiles must be an object keyed by the quantile")
+
+	assert.InDelta(t, 4.0, q["0.5"], 1e-9)
+	assert.InDelta(t, 7.464263932294459, q["0.95"], 1e-9)
+	assert.InDelta(t, 7.889861635946874, q["0.99"], 1e-9)
+
+	assert.Nil(t, datapoint(nil)["quantiles"],
+		"no quantiles requested means none computed")
 }

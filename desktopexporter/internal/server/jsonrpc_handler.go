@@ -334,8 +334,25 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 		}
 	}
 
+	// Which quantiles to compute per histogram datapoint. Absent or empty
+	// means none, so a caller drawing no overlays does not pay for them.
+	var quantiles []float64
+	if len(params) >= 6 && params[5] != nil {
+		raw, ok := params[5].([]any)
+		if !ok {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		for _, v := range raw {
+			q, ok := v.(float64)
+			if !ok || q < 0 || q > 1 {
+				return nil, jsonrpc2.ErrInvalidParams
+			}
+			quantiles = append(quantiles, q)
+		}
+	}
+
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs)
+		return metrics.GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

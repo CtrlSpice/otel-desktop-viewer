@@ -10,7 +10,14 @@
 				-- Bound as varchar[] and cast in SQL rather than as a uuid list:
 				-- the driver corrupts a bound []duckdb.UUID silently, matching
 				-- nothing (see the uuid_binding canary in store/util).
-				?::varchar[] as series_ids
+				?::varchar[] as series_ids,
+				-- Which quantiles to compute per histogram datapoint. Empty skips the
+				-- work entirely, so a caller drawing no overlays pays nothing.
+				--
+				-- Computed here rather than shipped as bucket vectors for the client
+				-- to reduce: three numbers per series per bucket instead of a
+				-- forty-element array, and one implementation of the arithmetic.
+				?::double[] as quantiles
 		),
 		stream as (
 			select s.* from metric_streams s, input
@@ -496,6 +503,9 @@
 							'max', d.max,
 							'bucketCounts', d.bucket_counts,
 							'explicitBounds', d.explicit_bounds,
+							'quantiles', case when len((select quantiles from input)) = 0 then null
+								else hist_quantiles(d.explicit_bounds, d.bucket_counts,
+									(select quantiles from input)) end,
 							'aggregationTemporality', d.aggregation_temporality
 						)
 						when 'ExponentialHistogram' then json_object(
@@ -510,6 +520,12 @@
 							'positiveBucketCounts', d.positive_bucket_counts,
 							'negativeBucketOffset', d.negative_bucket_offset,
 							'negativeBucketCounts', d.negative_bucket_counts,
+							'quantiles', case when len((select quantiles from input)) = 0 then null
+								else exp_hist_quantiles(d.scale,
+									d.negative_bucket_offset, d.negative_bucket_counts,
+									d.zero_count,
+									d.positive_bucket_offset, d.positive_bucket_counts,
+									(select quantiles from input)) end,
 							'aggregationTemporality', d.aggregation_temporality
 						)
 					end
