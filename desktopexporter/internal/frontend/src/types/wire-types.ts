@@ -213,6 +213,11 @@ export type JsonHistogramDataPoint = JsonBaseDataPoint & {
   max: number
   bucketCounts: number[]
   explicitBounds: number[]
+  /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
+   *  the store from this datapoint's buckets; null when none were requested.
+   *  Keys are the quantile as the server formatted it, so look up by the same
+   *  string the request sent. */
+  quantiles: Record<string, number | null> | null
   aggregationTemporality: string
 }
 
@@ -229,6 +234,11 @@ export type JsonExponentialHistogramDataPoint = JsonBaseDataPoint & {
   positiveBucketCounts: number[]
   negativeBucketOffset: number
   negativeBucketCounts: number[]
+  /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
+   *  the store from this datapoint's buckets; null when none were requested.
+   *  Keys are the quantile as the server formatted it, so look up by the same
+   *  string the request sent. */
+  quantiles: Record<string, number | null> | null
   aggregationTemporality: string
 }
 
@@ -284,8 +294,30 @@ export type JsonMetricData = {
   scopeDroppedAttributesCount: number
   scope: JsonScopeData
   timeseries: JsonMetricTimeseries[]
+  /** The selected series merged into one histogram per time bucket -- what a
+   *  heatmap draws and what a window summary describes. Null when the metric is
+   *  not a histogram, or when no merge happened, so a client can tell that
+   *  apart from "merged to nothing". */
+  aggregate: JsonAggregateBucket[] | null
   /** Datapoints in the window, which may exceed the number returned. */
   datapointCount: number
+}
+
+/** One time bucket of the cross-series merge. Carries bucket vectors because
+ *  the heatmap draws them; per-series data carries only quantiles. */
+export type JsonAggregateBucket = {
+  timestamp: string
+  startTime: string
+  count: number
+  sum: number
+  scale: number
+  zeroThreshold: number
+  zeroCount: number
+  positiveBucketOffset: number
+  positiveBucketCounts: number[]
+  negativeBucketOffset: number
+  negativeBucketCounts: number[]
+  quantiles: Record<string, number | null> | null
 }
 
 export type JsonMetricSummary = {

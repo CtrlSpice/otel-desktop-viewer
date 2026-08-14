@@ -482,7 +482,13 @@ export let telemetryAPI = {
      *  smallest, largest -- so the drawn line is the same as it would be with
      *  every point, and it ignores this entirely for histograms, which need
      *  merging rather than sampling. */
-    targetBuckets?: number
+    targetBuckets?: number,
+    /** Restrict the response to these series. Omit for all of them. The store
+     *  narrows before reducing, so asking for two of ten costs two. */
+    seriesIds?: string[],
+    /** Quantiles to compute per histogram datapoint, keyed by the quantile in
+     *  the response. Omit to skip the work. */
+    quantiles?: number[]
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -493,7 +499,13 @@ export let telemetryAPI = {
         streamId,
         startTimeNs,
         endTimeNs,
-        ...(targetBuckets ? [String(targetBuckets)] : []),
+        // Positional params: a later one requires the earlier, so a caller
+        // passing quantiles without a resolution still sends a placeholder.
+        ...(targetBuckets || seriesIds || quantiles
+          ? [String(targetBuckets ?? 0)]
+          : []),
+        ...(seriesIds || quantiles ? [seriesIds ?? []] : []),
+        ...(quantiles ? [quantiles] : []),
       ])
       return metricDataFromJSON(rawData)
     } catch (error) {
