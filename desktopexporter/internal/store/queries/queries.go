@@ -118,6 +118,10 @@ var queryNames = []Name{
 	SearchMetricSummaries, SearchLogs,
 }
 
+// Names returns every registered read-path query, so callers that need to
+// walk the set -- the parse test, for one -- do not have to restate it.
+func Names() []Name { return append([]Name(nil), queryNames...) }
+
 var templates = parseAll()
 
 func parseAll() map[Name]*template.Template {
