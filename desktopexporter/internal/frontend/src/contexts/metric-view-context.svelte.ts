@@ -37,6 +37,7 @@ import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-pr
 import { distinguishingResourceAttributes } from '@/utils/series-labels'
 import {
   buildHistogramTimeMergedSeries,
+  heatmapColumnsForWidth,
   buildVisibleSeriesQuantileChartTimeseries,
   DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
   DEFAULT_HISTOGRAM_QUANTILES,
@@ -276,6 +277,9 @@ export interface MetricViewContext {
   // -- Methods --
   /** Toggle per-timeseries expansion (TimeseriesPanel chevron). */
   toggleTimeseriesExpanded(key: string): void
+  /** Reported by the heatmap once its plot area is laid out, and on resize.
+   *  The column count follows the chart rather than a constant. */
+  reportHeatmapWidth(px: number): void
   setActiveHistogramTab(tab: HistogramTab): void
   setHistogramScope(scope: HistogramScope): void
   setAggregationView(next: AggregationView): void
@@ -360,6 +364,10 @@ export function createMetricViewContext(
   // The ONE per-metric mutable cell. Reset by the effect below when
   // the metric identity changes; otherwise written only by methods
   // on this context.
+  // The heatmap's measured plot width, in pixels. 0 until it lays out, which
+  // heatmapColumnsForWidth reads as "not measured yet".
+  let heatmapWidthPx = $state(0)
+
   const view = $state({
     selectedDatapointId: null as string | null,
     // Explicitly chosen series, independent of any datapoint selection.
@@ -1030,7 +1038,9 @@ export function createMetricViewContext(
       m.timeseries,
       startNs,
       endNs,
-      100,
+      // Was a hardcoded 100, which matched nothing the chart had measured --
+      // the plot binds its own clientWidth and nothing read it.
+      heatmapColumnsForWidth(heatmapWidthPx),
       temporality,
       // Align columns to whichever clock the axis is labelled in, so a
       // day-scale bucket breaks where the reader expects the day to break.
@@ -1528,6 +1538,16 @@ export function createMetricViewContext(
     }
   }
 
+  // Only meaningful changes are recorded: heatmapColumnsForWidth quantises, so
+  // writing every pixel of a drag would invalidate the derivation without
+  // changing its answer.
+  function reportHeatmapWidth(px: number) {
+    if (heatmapColumnsForWidth(px) === heatmapColumnsForWidth(heatmapWidthPx)) {
+      return
+    }
+    heatmapWidthPx = px
+  }
+
   function setActiveHistogramTab(tab: HistogramTab) {
     view.activeHistogramTab = tab
     // Back returns to the prior tab.
@@ -1923,6 +1943,7 @@ export function createMetricViewContext(
     },
 
     toggleTimeseriesExpanded,
+    reportHeatmapWidth,
     setActiveHistogramTab,
     setHistogramScope,
     setAggregationView,

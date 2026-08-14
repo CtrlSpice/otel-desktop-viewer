@@ -724,6 +724,37 @@ function mergeSlicesAtTimestamp(
   })
 }
 
+// A heatmap cell narrower than this stops reading as a cell; much wider and the
+// chart is coarser than the screen can show. Six pixels puts a 1200px plot at
+// 200 columns, against the 100 this replaces.
+const HEATMAP_PX_PER_COLUMN = 6
+
+// Quantised, so dragging a window edge does not re-bucket on every pixel. A
+// step of 25 means the answer has to change meaningfully before any work is
+// redone. Clamped at both ends: below the floor the chart says nothing, above
+// the ceiling the cells are thinner than the screen can draw.
+const HEATMAP_COLUMN_STEP = 25
+const HEATMAP_MIN_COLUMNS = 50
+const HEATMAP_MAX_COLUMNS = 400
+
+/**
+ * How many time columns a heatmap of this pixel width should have.
+ *
+ * Replaces a hardcoded 100, which matched nothing the chart had measured. The
+ * plot already binds its own clientWidth; this turns that into a column count.
+ *
+ * Falls back to the floor for a width that is zero, negative or not yet
+ * measured -- the first render happens before layout, and a chart with too few
+ * columns is recoverable where one with NaN columns is not.
+ */
+export function heatmapColumnsForWidth(px: number): number {
+  if (!Number.isFinite(px) || px <= 0) return HEATMAP_MIN_COLUMNS
+  const stepped =
+    Math.round(px / HEATMAP_PX_PER_COLUMN / HEATMAP_COLUMN_STEP) *
+    HEATMAP_COLUMN_STEP
+  return Math.min(HEATMAP_MAX_COLUMNS, Math.max(HEATMAP_MIN_COLUMNS, stepped))
+}
+
 export function histogramBucketWidthMs(
   startTsNs: bigint,
   endTsNs: bigint,

@@ -5,6 +5,7 @@ import type {
 } from '@/types/api-types'
 import {
   buildHistogramTimeMergedSeries,
+  heatmapColumnsForWidth,
   isHistogramAggregationError,
   buildPerSeriesQuantileSeries,
   buildVisibleSeriesQuantileChartTimeseries,
@@ -330,5 +331,28 @@ describe('explicit-bounds histograms whose bounds change mid-series', () => {
     const slice = (out as HistogramSlicePoint[])[0]!
     if (slice.kind !== 'histogram') return
     expect(slice.counts).toEqual([3, 3, 3, 3])
+  })
+})
+
+describe('heatmapColumnsForWidth', () => {
+  it('derives columns from the measured width', () => {
+    expect(heatmapColumnsForWidth(1200)).toBe(200)
+    expect(heatmapColumnsForWidth(600)).toBe(100)
+  })
+
+  it('quantises, so a pixel of resize does not change the answer', () => {
+    expect(heatmapColumnsForWidth(1200)).toBe(heatmapColumnsForWidth(1207))
+    expect(heatmapColumnsForWidth(1200)).toBe(heatmapColumnsForWidth(1193))
+  })
+
+  it('clamps at both ends', () => {
+    expect(heatmapColumnsForWidth(60)).toBe(50)
+    expect(heatmapColumnsForWidth(100000)).toBe(400)
+  })
+
+  it('falls back to the floor before layout has measured anything', () => {
+    expect(heatmapColumnsForWidth(0)).toBe(50)
+    expect(heatmapColumnsForWidth(Number.NaN)).toBe(50)
+    expect(heatmapColumnsForWidth(-10)).toBe(50)
   })
 })
