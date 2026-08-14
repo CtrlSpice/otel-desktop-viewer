@@ -488,7 +488,10 @@ export let telemetryAPI = {
     seriesIds?: string[],
     /** Quantiles to compute per histogram datapoint, keyed by the quantile in
      *  the response. Omit to skip the work. */
-    quantiles?: number[]
+    quantiles?: number[],
+    /** The viewer's UTC offset in nanoseconds, so bucket boundaries fall where
+     *  the reader's calendar puts them. Omit for UTC. */
+    tzOffsetNs?: number
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -504,8 +507,11 @@ export let telemetryAPI = {
         ...(targetBuckets || seriesIds || quantiles
           ? [String(targetBuckets ?? 0)]
           : []),
-        ...(seriesIds || quantiles ? [seriesIds ?? []] : []),
-        ...(quantiles ? [quantiles] : []),
+        ...(seriesIds || quantiles || tzOffsetNs !== undefined
+          ? [seriesIds ?? []]
+          : []),
+        ...(quantiles || tzOffsetNs !== undefined ? [quantiles ?? []] : []),
+        ...(tzOffsetNs !== undefined ? [String(tzOffsetNs)] : []),
       ])
       return metricDataFromJSON(rawData)
     } catch (error) {

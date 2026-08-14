@@ -73,6 +73,10 @@
 
 <script lang="ts">
   import { METRIC_BUCKET_TARGET } from '@/contexts/metric-view-context.svelte'
+  import {
+    DEFAULT_HISTOGRAM_QUANTILES,
+    localOffsetNs,
+  } from '@/components/metrics/utils/histogram-aggregation'
   import { untrack } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
@@ -193,6 +197,12 @@
     page.selectItem(key)
   }
 
+  /** The offset to align store-side buckets to, in nanoseconds. */
+  function tzOffsetNs(): number {
+    if (timeContext.tz === 'UTC') return 0
+    return Number(localOffsetNs(BigInt(Date.now()) * 1_000_000n))
+  }
+
   async function fetchMetricDetail(summary: MetricSummary) {
     try {
       detailLoading = true
@@ -213,7 +223,14 @@
           summary.id,
           startTime,
           endTime,
-          METRIC_BUCKET_TARGET
+          METRIC_BUCKET_TARGET,
+          // Every series for now. Narrowing to the legend selection needs the
+          // fetch to re-run on toggle, which is a separate change.
+          undefined,
+          DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
+          // Bucket boundaries follow the reader's calendar rather than the
+          // epoch. 0 is UTC, which is what the store assumes without this.
+          tzOffsetNs()
         )) ?? undefined
     } catch (err) {
       console.error('Failed to fetch metric detail:', err)

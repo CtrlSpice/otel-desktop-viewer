@@ -194,7 +194,10 @@ export function histogramBucketNs(
  * transition uses the offset in force at that moment instead of one snapshot
  * applied to the whole range.
  */
-function localOffsetNs(timestampNs: bigint): bigint {
+/** The viewer's UTC offset at a moment, in nanoseconds. Exported so a caller
+ *  can hand the same alignment to the store, which buckets on epoch boundaries
+ *  unless told otherwise. */
+export function localOffsetNs(timestampNs: bigint): bigint {
   const ms = Number(timestampNs / 1_000_000n)
   // getTimezoneOffset is minutes *behind* UTC, so negate it.
   return BigInt(-new Date(ms).getTimezoneOffset()) * 60n * 1_000_000_000n
