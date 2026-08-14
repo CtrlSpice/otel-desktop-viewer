@@ -1,11 +1,11 @@
-package schema_test
+package queries_test
 
 import (
 	"database/sql"
 	"fmt"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,8 +24,8 @@ func setupMacroDB(t *testing.T) *sql.DB {
 	db := sql.OpenDB(connector)
 	t.Cleanup(func() { _ = db.Close() })
 
-	for i, q := range schema.MacroCreationQueries {
-		_, err := db.Exec(q)
+	for i, q := range queries.Macros() {
+		_, err := db.Exec(q.SQL)
 		require.NoErrorf(t, err, "creating macro %d should succeed", i)
 	}
 	return db
@@ -834,8 +834,8 @@ func TestMacros_Idempotent(t *testing.T) {
 	// DuckDB quirk where some CREATE statements weren't idempotent and had
 	// to be tolerated at the bootstrap layer.
 	db := setupMacroDB(t)
-	for i, q := range schema.MacroCreationQueries {
-		_, err := db.Exec(q)
+	for i, q := range queries.Macros() {
+		_, err := db.Exec(q.SQL)
 		require.NoErrorf(t, err, "re-running macro %d should succeed", i)
 	}
 }

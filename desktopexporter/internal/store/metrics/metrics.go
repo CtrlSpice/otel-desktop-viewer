@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
@@ -126,58 +126,72 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 		return driver.DefaultParameterConverter.ConvertValue(v)
 	}
 
-	rowPlaceholders := make([]string, len(identities))
-	insertArgs := make([]driver.NamedValue, 0, len(identities)*9)
-	for i, id := range identities {
+	// Nine parallel arrays, one bound argument each, so the statement text is
+	// the same whatever the batch holds. The previous form built one
+	// "(?::uuid, ?, ...)" tuple per identity and appended nine arguments
+	// beside it -- two counts that must agree, which SQL cannot check because
+	// each is correct on its own.
+	newStreamIDs := make([]string, 0, len(identities))
+	names := make([]string, 0, len(identities))
+	units := make([]string, 0, len(identities))
+	types := make([]string, 0, len(identities))
+	temporalities := make([]string, 0, len(identities))
+	monotonics := make([]bool, 0, len(identities))
+	scopeNames := make([]string, 0, len(identities))
+	scopeVersions := make([]string, 0, len(identities))
+	serviceNames := make([]string, 0, len(identities))
+	for _, id := range identities {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		newID := uuid.NewString()
-		rowPlaceholders[i] = "(?::uuid, ?, ?, ?, ?, ?, ?, ?, ?)"
-		var err error
-		insertArgs, err = appendNamedValues(insertArgs, prepareArg,
-			newID, id.Name, id.Unit, id.MetricType, id.AggregationTemporality,
-			isMonotonicToBool(id.IsMonotonic), id.ScopeName, id.ScopeVersion, id.ServiceName,
-		)
-		if err != nil {
-			return fmt.Errorf("Ingest: %w: prep insert arg: %w", ErrMetricsStoreInternal, err)
-		}
+		newStreamIDs = append(newStreamIDs, uuid.NewString())
+		names = append(names, id.Name)
+		units = append(units, id.Unit)
+		types = append(types, id.MetricType)
+		temporalities = append(temporalities, id.AggregationTemporality)
+		monotonics = append(monotonics, isMonotonicToBool(id.IsMonotonic))
+		scopeNames = append(scopeNames, id.ScopeName)
+		scopeVersions = append(scopeVersions, id.ScopeVersion)
+		serviceNames = append(serviceNames, id.ServiceName)
 	}
 
-	insertSQL := fmt.Sprintf(
-		`insert into metric_streams (id, name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
-		 values %s
-		 on conflict (name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name) do nothing`,
-		strings.Join(rowPlaceholders, ", "),
-	)
+	insertArgs, err := appendNamedValues(nil, prepareArg,
+		newStreamIDs, names, units, types, temporalities, monotonics,
+		scopeNames, scopeVersions, serviceNames)
+	if err != nil {
+		return fmt.Errorf("Ingest: %w: prep insert arg: %w", ErrMetricsStoreInternal, err)
+	}
+
+	const insertSQL = `insert into metric_streams (id, name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
+		 select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[]),
+		        unnest(?::varchar[]), unnest(?::boolean[]), unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[])
+		 on conflict (name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name) do nothing`
 	if _, err := dconn.ExecContext(ctx, insertSQL, insertArgs); err != nil {
 		return fmt.Errorf("Ingest: %w: stream insert: %w", ErrMetricsStoreInternal, err)
 	}
 
-	tupleClauses := make([]string, len(identities))
-	selectArgs := make([]driver.NamedValue, 0, len(identities)*8)
-	for i, id := range identities {
-		tupleClauses[i] = `(name = ? and unit = ? and metric_type = ?
-			and aggregation_temporality = ?
-			and is_monotonic = ?
-			and scope_name = ?
-			and scope_version = ?
-			and service_name = ?)`
-		var err error
-		selectArgs, err = appendNamedValues(selectArgs, prepareArg,
-			id.Name, id.Unit, id.MetricType, id.AggregationTemporality,
-			isMonotonicToBool(id.IsMonotonic), id.ScopeName, id.ScopeVersion, id.ServiceName,
-		)
-		if err != nil {
-			return fmt.Errorf("Ingest: %w: prep select arg: %w", ErrMetricsStoreInternal, err)
-		}
+	// The same eight arrays, joined against rather than OR'd together. The
+	// previous form was an OR of one eight-column conjunction per identity,
+	// so both the text and the argument count grew with the batch.
+	selectArgs, err := appendNamedValues(nil, prepareArg,
+		names, units, types, temporalities, monotonics,
+		scopeNames, scopeVersions, serviceNames)
+	if err != nil {
+		return fmt.Errorf("Ingest: %w: prep select arg: %w", ErrMetricsStoreInternal, err)
 	}
-	selectSQL := fmt.Sprintf(
-		`select id, name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name
-		 from metric_streams
-		 where %s`,
-		strings.Join(tupleClauses, " or "),
-	)
+
+	const selectSQL = `select s.id, s.name, s.unit, s.metric_type, s.aggregation_temporality,
+		        s.is_monotonic, s.scope_name, s.scope_version, s.service_name
+		 from metric_streams s
+		 join (
+			select unnest(?::varchar[]) as name, unnest(?::varchar[]) as unit,
+			       unnest(?::varchar[]) as metric_type, unnest(?::varchar[]) as aggregation_temporality,
+			       unnest(?::boolean[]) as is_monotonic, unnest(?::varchar[]) as scope_name,
+			       unnest(?::varchar[]) as scope_version, unnest(?::varchar[]) as service_name
+		 ) w on s.name = w.name and s.unit = w.unit and s.metric_type = w.metric_type
+		    and s.aggregation_temporality = w.aggregation_temporality
+		    and s.is_monotonic = w.is_monotonic and s.scope_name = w.scope_name
+		    and s.scope_version = w.scope_version and s.service_name = w.service_name`
 	rows, err := dconn.QueryContext(ctx, selectSQL, selectArgs)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: stream select: %w", ErrMetricsStoreInternal, err)
@@ -468,18 +482,34 @@ func insertSeries(
 	if len(rows) == 0 {
 		return nil
 	}
-	tuples := make([]string, 0, len(rows))
-	args := make([]driver.NamedValue, 0, len(rows)*3)
+	// Four parallel arrays, the last a list of lists: the label sets travel as
+	// data rather than as UUIDListLiteral text spliced into the statement, so
+	// the query no longer varies with the *contents* of a batch, not merely
+	// its size.
+	ids := make([]string, 0, len(rows))
+	streams := make([]string, 0, len(rows))
+	resources := make([]string, 0, len(rows))
+	attrs := make([][]string, 0, len(rows))
 	for _, r := range rows {
-		tuples = append(tuples, "(?::uuid, ?::uuid, ?::uuid, "+ingest.UUIDListLiteral(r.attrs)+")")
-		var err error
-		if args, err = appendNamedValues(args, prepareArg,
-			ingest.FormatUUID(r.id), ingest.FormatUUID(r.stream), ingest.FormatUUID(r.resource)); err != nil {
-			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+		ids = append(ids, ingest.FormatUUID(r.id))
+		streams = append(streams, ingest.FormatUUID(r.stream))
+		resources = append(resources, ingest.FormatUUID(r.resource))
+		set := make([]string, 0, len(r.attrs))
+		for _, a := range r.attrs {
+			set = append(set, ingest.FormatUUID(a))
 		}
+		attrs = append(attrs, set)
 	}
-	q := `insert into metric_series (id, stream_id, resource_id, attribute_ids) values ` +
-		strings.Join(tuples, ", ") + ` on conflict (id) do nothing`
+
+	args, err := appendNamedValues(nil, prepareArg, ids, streams, resources, attrs)
+	if err != nil {
+		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+	}
+
+	const q = `insert into metric_series (id, stream_id, resource_id, attribute_ids)
+		 select unnest(?::varchar[])::uuid, unnest(?::varchar[])::uuid, unnest(?::varchar[])::uuid,
+		        list_transform(unnest(?::varchar[][]), x -> x::uuid)
+		 on conflict (id) do nothing`
 	if _, err := dconn.ExecContext(ctx, q, args); err != nil {
 		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 	}
@@ -694,84 +724,14 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 	}
 
-	query := fmt.Sprintf(`%s,
-		filtered_ingests as (
-			select m.id, m.stream_id
-			%s
-			where %s
-		),
-		filtered_streams as (
-			select s.* from metric_streams s
-			where s.id in (select distinct stream_id from filtered_ingests)
-		),
-		filtered_dps as (
-			select d.* from datapoints d
-			inner join filtered_streams fs on d.stream_id = fs.id, search_params
-			where d.timestamp >= time_start and d.timestamp <= time_end
-		),
-		stream_latest_dp as (
-			select stream_id, max(timestamp) as last_dp_ts
-			from filtered_dps
-			group by stream_id
-		),
-		ingest_latest_dp as (
-			select metric_ingest_id, max(timestamp) as last_dp_ts
-			from filtered_dps
-			group by metric_ingest_id
-		),
-		stream_description as (
-			select mi.stream_id,
-				arg_max(mi.description, ild.last_dp_ts) as description
-			from metric_ingests mi
-			inner join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
-			where mi.stream_id in (select id from filtered_streams)
-			group by mi.stream_id
-		),
-		-- Counting series is now counting one indexable column, rather than
-		-- distinct (resource, label-array) pairs.
-		stream_series_count as (
-			select stream_id, count(distinct series_id) as series_count
-			from filtered_dps
-			group by stream_id
-		),
-		stream_datapoint_count as (
-			select stream_id, count(*) as datapoint_count
-			from filtered_dps
-			group by stream_id
-		),
-		stream_last_value as (
-			select
-				d.stream_id,
-				arg_max(coalesce(d.double_value, d.int_value), d.timestamp) as last_value
-			from filtered_dps d
-			inner join filtered_streams fs on fs.id = d.stream_id
-			where fs.metric_type in ('Gauge', 'Sum')
-			group by d.stream_id
-		)
-		select cast(coalesce(to_json(list(json_object(
-			'id', cast(fs.id as varchar),
-			'name', fs.name,
-			'description', sd.description,
-			'unit', fs.unit,
-			'metricType', fs.metric_type,
-			'aggregationTemporality', fs.aggregation_temporality,
-			'isMonotonic', case
-				when fs.metric_type = 'Sum' then fs.is_monotonic
-				else null
-			end,
-			'serviceName', fs.service_name,
-			'seriesCount', ssc.series_count,
-			'dataPointCount', sdc.datapoint_count,
-			'lastValue', slv.last_value,
-			'lastSeen', sldp.last_dp_ts::varchar
-		) order by sldp.last_dp_ts desc nulls last)), '[]') as varchar) as summaries
-		from filtered_streams fs
-		left join stream_latest_dp sldp on sldp.stream_id = fs.id
-		left join stream_description sd on sd.stream_id = fs.id
-		left join stream_series_count ssc on ssc.stream_id = fs.id
-		left join stream_datapoint_count sdc on sdc.stream_id = fs.id
-		left join stream_last_value slv on slv.stream_id = fs.id
-	`, cteSQL, metricSearchFrom, whereClause)
+	query, err := queries.Render(queries.SearchMetricSummaries, searchSummariesParams{
+		CTEs:  cteSQL,
+		From:  metricSearchFrom,
+		Where: whereClause,
+	})
+	if err != nil {
+		return nil, err
+	}
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrMetricsStoreInternal, err)
@@ -792,225 +752,11 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	// one datapoint in the time window." All identity columns the JSON
 	// projection needs come from the metric_streams row directly via
 	// the stream CTE.
-	query := `
-		with input as (
-			select ?::uuid as stream_id,
-				?::bigint as time_start,
-				?::bigint as time_end
-		),
-		stream as (
-			select s.* from metric_streams s, input
-			where s.id = input.stream_id
-		),
-		matched_ingests as (
-			select m.* from metric_ingests m, input
-			where m.stream_id = input.stream_id
-			  and exists (
-				select 1 from datapoints d
-				where d.metric_ingest_id = m.id
-				  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
-			  )
-		),
-		-- Datapoints inherit aggregation_temporality / is_monotonic from
-		-- the stream so the per-type JSON projection below doesn't need
-		-- a per-row join.
-		-- resource_id joins in so a series can be split by the resource that
-		-- emitted it. A join rather than a denormalized column on datapoints:
-		-- it is a primary-key lookup from metric_ingest_id, and datapoints is
-		-- the largest table in the store.
-		filtered_dps as (
-			select d.*,
-				mi.resource_id as resource_id,
-				s.metric_type as metric_type,
-				s.aggregation_temporality as aggregation_temporality,
-				s.is_monotonic as is_monotonic
-			from datapoints d, input, stream s
-			join metric_ingests mi on mi.id = d.metric_ingest_id
-			where d.stream_id = input.stream_id
-			  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
-		),
-		-- The dp_attrs_agg and exemplar_attrs CTEs are gone: attrs_json
-		-- resolves each row's id array in place, so there is nothing to
-		-- pre-aggregate and join back.
-		exemplars_agg as (
-			select e.datapoint_id, json_group_array(json_object(
-				'timestamp', e.timestamp::varchar,
-				'value', e.value,
-				'traceID', trace_id_wire(e.trace_id),
-				'spanID', span_id_wire(e.span_id),
-				'filteredAttributes', attrs_json(e.attribute_ids)
-			)) as exemplars
-			from exemplars e
-			where e.datapoint_id in (select id from filtered_dps)
-			group by e.datapoint_id
-		),
-		-- Per-ingest latest datapoint timestamp over the queried window
-		-- -- the recency proxy we use to pick a "representative" ingest
-		-- for description / dropped counts. These per-batch fields can
-		-- drift across ingests; we prefer the most recently-observed
-		-- sender's view (newest data, not newest wall-clock arrival).
-		ingest_latest_dp as (
-			select metric_ingest_id, max(timestamp) as last_dp_ts
-			from filtered_dps
-			group by metric_ingest_id
-		),
-		-- Most recent matched ingest is the source of variable-but-
-		-- non-identifying fields (description, dropped counts).
-		representative as (
-			select mi.* from matched_ingests mi
-			inner join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
-			order by ild.last_dp_ts desc nulls last
-			limit 1
-		),
-		-- Resource and scope come from the representative ingest, the same
-		-- row the dropped counts come from.
-		--
-		-- They used to be aggregated over *all* matched ingests with no
-		-- DISTINCT, so a metric with 360 batches emitted 360 duplicate copies
-		-- of each resource attribute while its droppedAttributesCount came
-		-- from one ingest -- an asymmetry that only looked harmless because
-		-- the frontend deduped by key on render. Taking both from the same
-		-- row fixes it, and the dedupe makes it free: every batch from the
-		-- same sender now points at one resources row anyway.
-		representative_owners as (
-			select r.attribute_ids as resource_attribute_ids,
-			       r.dropped_attributes_count as resource_dropped,
-			       sc.attribute_ids as scope_attribute_ids,
-			       sc.dropped_attributes_count as scope_dropped
-			from representative rep
-			join resources r on r.id = rep.resource_id
-			join scopes sc on sc.id = rep.scope_id
-		),
-		-- One row per (metric, attribute-set) -- i.e. per OTel stream.
-		-- The attribute set itself is owned by the stream (lifted out of
-		-- the per-dp objects), and the dp objects inside are pure OTLP
-		-- measurement payloads: timestamp, type-specific value fields,
-		-- exemplars, flags. attrs_canonical is the grouping key; we
-		-- coalesce NULL (no-attrs case) to "" so all attribute-less
-		-- points collapse into one timeseries rather than scattering.
-		--
-		-- attributes_sample picks any one datapoint's attributes from
-		-- this timeseries. Within a timeseries they're identical by
-		-- definition (it's the grouping criterion), so any() / first() /
-		-- arg_max all yield the same answer; we use any_value for clarity.
-		ts_dps_agg as (
-			select
-				d.series_id,
-				d.resource_id,
-				-- The series id is the key. It is content-derived from
-				-- (stream, resource, labels), so it distinguishes replicas
-				-- whose labels are identical, and it is stable across restarts
-				-- -- which is what makes it safe in a URL, unlike a datapoint
-				-- id that retention eventually deletes.
-				d.series_id::varchar as attrs_key,
-				any_value(attrs_json(d.attribute_ids)) as attributes_sample,
-				max(d.timestamp) as latest_ts,
-				to_json(list(json_merge_patch(
-					json_object(
-						'id', d.id,
-						'metricType', d.metric_type,
-						'timestamp', d.timestamp::varchar,
-						'startTime', d.start_time::varchar,
-						'flags', d.flags,
-						'exemplars', coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]'))
-					),
-					case d.metric_type
-						when 'Gauge' then json_object(
-							'doubleValue', d.double_value,
-							'intValue', d.int_value,
-							'valueType', d.value_type
-						)
-						when 'Sum' then json_object(
-							'doubleValue', d.double_value,
-							'intValue', d.int_value,
-							'valueType', d.value_type,
-							'isMonotonic', d.is_monotonic,
-							'aggregationTemporality', d.aggregation_temporality
-						)
-						when 'Histogram' then json_object(
-							'count', d.count,
-							'sum', d.sum,
-							'min', d.min,
-							'max', d.max,
-							'bucketCounts', d.bucket_counts,
-							'explicitBounds', d.explicit_bounds,
-							'aggregationTemporality', d.aggregation_temporality
-						)
-						when 'ExponentialHistogram' then json_object(
-							'count', d.count,
-							'sum', d.sum,
-							'min', d.min,
-							'max', d.max,
-							'scale', d.scale,
-							'zeroCount', d.zero_count,
-							'zeroThreshold', d.zero_threshold,
-							'positiveBucketOffset', d.positive_bucket_offset,
-							'positiveBucketCounts', d.positive_bucket_counts,
-							'negativeBucketOffset', d.negative_bucket_offset,
-							'negativeBucketCounts', d.negative_bucket_counts,
-							'aggregationTemporality', d.aggregation_temporality
-						)
-					end
-				) order by d.timestamp desc)) as datapoints
-			-- Grouping on a fixed-width, indexable column instead of rebuilding
-		-- and hashing a LIST per row. Measured on 294,607 datapoints: 5.0ms
-		-- by the array against 0.9ms by a single uuid.
-		from filtered_dps d
-			group by d.series_id, d.resource_id
-		),
-		-- Pack each timeseries into the wire shape and order them so
-		-- the most recently active timeseries sorts first -- mirrors
-		-- the "newest first" feel of the old flat datapoint list,
-		-- which is what the detail panel's legend reads top-down.
-		-- Empty list (no dps in window) collapses to '[]' via the
-		-- outer coalesce.
-		-- Each series carries the resource that emitted it.
-		--
-		-- Not optional once series split by resource: two replicas of one
-		-- service produce byte-identical attribute sets, so the resource is the
-		-- only thing that tells them apart. Without it the legend shows two
-		-- entries a user cannot distinguish, which is worse than the single
-		-- merged line the split replaced.
-		--
-		-- The top-level resource (from the representative ingest) stays for
-		-- compatibility, but it is the weaker claim: it describes one arbitrary
-		-- batch, whereas this describes the line being drawn.
-		timeseries_agg as (
-			select to_json(list(json_object(
-				'attributesKey', t.attrs_key,
-				'attributes', t.attributes_sample,
-				'resource', resource_json(r.attribute_ids, r.dropped_attributes_count),
-				'datapoints', t.datapoints
-			) order by t.latest_ts desc)) as timeseries
-			from ts_dps_agg t
-			join resources r on r.id = t.resource_id
-		)
-		-- Left join: a stream with no datapoints in the window still
-		-- produces a row (empty timeseries, blank representative fields).
-		-- Only an unknown stream yields zero rows -> sql.ErrNoRows ->
-		-- ErrStreamIDNotFound. The representative-sourced fields are
-		-- coalesced so the wire shape stays non-null either way.
-		select cast(json_object(
-			'id', s.id, 'name', s.name, 'description', coalesce(r.description, ''), 'unit', s.unit,
-			'metricType', s.metric_type,
-			'aggregationTemporality', s.aggregation_temporality,
-			'isMonotonic', s.is_monotonic,
-			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
-			'resource', coalesce(
-				(select resource_json(resource_attribute_ids, resource_dropped) from representative_owners),
-				json_object('attributes', json('[]'), 'droppedAttributesCount', 0)
-			),
-			'scopeName', s.scope_name, 'scopeVersion', s.scope_version,
-			'scopeDroppedAttributesCount', coalesce((select scope_dropped from representative_owners), 0),
-			'scope', coalesce(
-				(select scope_json(s.scope_name, s.scope_version, scope_attribute_ids, scope_dropped) from representative_owners),
-				json_object('name', s.scope_name, 'version', s.scope_version,
-				            'attributes', json('[]'), 'droppedAttributesCount', 0)
-			),
-			'timeseries', coalesce((select timeseries from timeseries_agg), json('[]'))
-		) as varchar) as metric
-		from stream s left join representative r on true
-	`
+	query, err := queries.Render(queries.GetMetric, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1035,15 +781,11 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 // because reaching datapoint labels meant a second join through a table where
 // they were 82% of the rows. From the dictionary they are the same select.
 func GetMetricAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
-	query := `
-		select cast(to_json(list(attribute_def_json(sub.key, sub.scope, sub.type)
-			order by sub.key, sub.scope)) as varchar) as attributes
-		from (
-			select distinct a.key, a.scope, a.type
-			from attributes a
-			where a.scope in ('resource', 'scope', 'datapoint', 'exemplar')
-		) sub
-	`
+	query, err := queries.Render(queries.GetMetricAttributes, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetMetricAttributes: %w: %w", ErrMetricsStoreInternal, err)
@@ -1420,4 +1162,15 @@ func boolValueToIdentityString(v driver.Value, metricType string) string {
 		return "false"
 	}
 	return ""
+}
+
+// searchSummariesParams are the fragments SearchSummaries assembles into
+// queries/metrics/search_summaries.sql.
+type searchSummariesParams struct {
+	// CTEs is the search_params CTE holding the time bounds.
+	CTEs string
+	// From is the shared FROM/JOIN chain for metric search.
+	From string
+	// Where is the predicate, "true" when there are no criteria.
+	Where string
 }

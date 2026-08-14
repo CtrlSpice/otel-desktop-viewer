@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
@@ -254,18 +255,37 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 
 // SearchTraces returns trace summaries in the time range matching the optional criteria.
 func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
+	finalQuery, args, err := searchTracesSQL(startTime, endTime, criteria)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// searchTracesSQL renders the trace-summary query and its bound arguments.
+// Split out for the same reason as searchSpansSQL: so a golden test can pin the
+// rendered text without standing up a store.
+func searchTracesSQL(startTime, endTime int64, criteria any) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
+			return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 		}
 	}
 
 	cteSQL, whereClause, args, err := buildTraceSQL(searchTree, startTime, endTime)
 	if err != nil {
-		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
+		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 	}
 
 	// service_name comes from spans.service_name (denormalized at
@@ -280,68 +300,56 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 	// computed from the min/max across ALL spans). startTime and
 	// durationNs are precomputed from span bounds so the summary always
 	// reflects wall-clock coverage.
-	finalQuery := fmt.Sprintf(`%s
-		select cast(coalesce(to_json(list(json_object(
-			'traceID',      replace(sub.trace_id::varchar, '-', ''),
-			'hasRootSpan',  sub.has_root_span,
-			'rootSpan',     case when sub.has_root_span then json_object(
-				'serviceName', sub.service_name,
-				'name',        sub.root_name
-			) end,
-			'startTime',    sub.trace_start_time::varchar,
-			'durationNs',   case
-				when sub.trace_start_time is not null
-					and sub.trace_end_time is not null
-					then (sub.trace_end_time - sub.trace_start_time)::varchar
-				else null
-			end,
-			'spanCount',    sub.span_count,
-			'errorCount',   sub.error_count
-		) order by sub.trace_start_time desc
-		)), '[]') as varchar) as summaries
-		from (
-			select distinct on (s.trace_id)
-				s.trace_id,
-				(s.parent_span_id is null) as has_root_span,
-				case when s.parent_span_id is null then nullif(s.service_name, '') end as service_name,
-				case when s.parent_span_id is null then s.name end as root_name,
-				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
-				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
-				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
-			%s
-			where %s
-			order by
-				s.trace_id,
-				case when s.parent_span_id is null then 0 else 1 end
-		) sub`, cteSQL, spanSearchFrom, whereClause)
+	finalQuery, err := queries.Render(queries.SearchTraces, searchTracesParams{
+		CTEs:  cteSQL,
+		From:  spanSearchFrom,
+		Where: whereClause,
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
+	}
 
-	var raw []byte
-	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
-	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return finalQuery, args, nil
 }
 
 // SearchSpans returns spans for a single trace, optionally filtered by search criteria.
 // When criteria is nil, all spans for the trace are returned (replacing GetTrace).
 // When criteria is provided, only matching spans are returned (replacing SearchTraceSpans).
 func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
+	query, args, err := searchSpansSQL(traceID, criteria)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("SearchSpans: %w", ErrTraceIDNotFound)
+	}
+	return json.RawMessage(raw), nil
+}
+
+// searchSpansSQL renders the trace-fetch query and its bound arguments.
+//
+// Split out from SearchSpans so the SQL is reachable without a database. That
+// is what lets a golden test assert the rendered text, which in turn is what
+// makes moving these query bodies into .sql files provable as a no-op rather
+// than merely believed to be one.
+func searchSpansSQL(traceID string, criteria any) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
+			return "", nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
 		}
 	}
 
 	cteSQL, whereClause, args, err := buildSpanSQL(searchTree, traceID)
 	if err != nil {
-		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
+		return "", nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
 	}
 
 	// The recursive CTE always walks the full trace tree (filtered by trace_id only)
@@ -375,221 +383,17 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 	// performance difference -- DuckDB already materialises a recursive CTE once
 	// and reuses it across references, and the re-derivations were PK-indexed
 	// joins over a few thousand rows. Kept for the structure, not the speed.
-	query := fmt.Sprintf(`
-		with recursive
-		%s,
-
-		spans_tree as (
-			select
-				s.trace_id, s.span_id, s.parent_span_id, s.start_time,
-				0 as depth,
-				array[row_number() over (order by
-					case when s.parent_span_id is null then 0 else 1 end,
-					s.start_time
-				)] as sort_path
-			from spans s, search_params
-			where s.trace_id = search_params.trace_id
-				and (s.parent_span_id is null or s.parent_span_id not in (
-					select span_id from spans where trace_id = search_params.trace_id
-				))
-
-			union all
-
-			select
-				s.trace_id, s.span_id, s.parent_span_id, s.start_time,
-				st.depth + 1,
-				st.sort_path || array[row_number() over (
-					partition by st.span_id order by s.start_time
-				)] as sort_path
-			from spans s
-			join spans_tree st on s.parent_span_id = st.span_id and s.trace_id = st.trace_id
-		)%s,
-
-		-- The walk's result joined back to its payload, once.
-		tree as materialized (
-			select st.depth, st.sort_path,
-				s.span_id, s.parent_span_id, s.trace_id, s.trace_state, s.name, s.kind,
-				s.start_time, s.end_time, s.resource_id, s.scope_id, s.attribute_ids,
-				s.dropped_attributes_count, s.dropped_events_count, s.dropped_links_count,
-				s.status_code, s.status_message
-			from spans_tree st
-			join spans s on s.span_id = st.span_id
-		),
-
-		-- These three resolve attribute arrays the long way instead of calling
-		-- attrs_json, and that is deliberate.
-		--
-		-- attrs_json is a correlated subquery. In a per-row projection over a
-		-- large table the planner materialises it once per row: measured at
-		-- 149ms for 4,868 spans against 33ms for the same work as one grouped
-		-- pass. The macro stays the right tool where the row count is small --
-		-- resource_data and scope_data below, logs.Get, GetMetric -- and the
-		-- wrong one here.
-		--
-		-- The ordering (a.key, a.id) matches attrs_json exactly, so the rendered
-		-- JSON is identical either way.
-		span_attrs as (
-			select ts.span_id as id,
-				to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
-				             order by a.key, a.id)) as attrs
-			from tree ts, unnest(ts.attribute_ids) as t(aid)
-			join attributes a on a.id = t.aid
-			group by ts.span_id
-		),
-
-		event_attrs as (
-			select e.id,
-				to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
-				             order by a.key, a.id)) as attrs
-			from events e, unnest(e.attribute_ids) as t(aid)
-			join attributes a on a.id = t.aid
-			where e.span_id in (select span_id from tree)
-			group by e.id
-		),
-
-		link_attrs as (
-			select l.id,
-				to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
-				             order by a.key, a.id)) as attrs
-			from links l, unnest(l.attribute_ids) as t(aid)
-			join attributes a on a.id = t.aid
-			where l.span_id in (select span_id from tree)
-			group by l.id
-		),
-
-		event_data as (
-			select e.span_id,
-				to_json(list(json_object(
-					'name', e.name,
-					'timestamp', e.timestamp::varchar,
-					'droppedAttributesCount', e.dropped_attributes_count,
-					'attributes', coalesce(ea.attrs, json('[]'))
-				) order by e.timestamp)) as events
-			from events e
-			left join event_attrs ea on ea.id = e.id
-			where e.span_id in (select span_id from tree)
-			group by e.span_id
-		),
-
-		link_data as (
-			select l.span_id,
-				json_group_array(json_object(
-					'traceID', trace_id_wire(l.trace_id),
-					'spanID', span_id_wire(l.linked_span_id),
-					'traceState', l.trace_state,
-					'droppedAttributesCount', l.dropped_attributes_count,
-					'attributes', coalesce(la.attrs, json('[]'))
-				)) as links
-			from links l
-			left join link_attrs la on la.id = l.id
-			where l.span_id in (select span_id from tree)
-			group by l.span_id
-		),
-
-		-- Resource and scope JSON is built once per *distinct owner*, which is
-		-- the entire point of deduping them. Inlining resource_json/scope_json
-		-- in the per-span projection re-resolved the same 24 resources 4,891
-		-- times and cost two ~150ms operators.
-		resource_data as (
-			select r.id, r.seq, resource_json(r.attribute_ids, r.dropped_attributes_count) as obj
-			from resources r
-			where r.id in (select resource_id from tree)
-		),
-
-		scope_data as (
-			select sc.id, sc.seq,
-				scope_json(sc.name, sc.version, sc.attribute_ids, sc.dropped_attributes_count) as obj
-			from scopes sc
-			where sc.id in (select scope_id from tree)
-		),
-
-		-- The baseline every span offset is measured from.
-		--
-		-- min(start_time), not the root span's start: clocks across hosts are
-		-- not synchronised, so a child can legitimately report an earlier start
-		-- than its parent, and min() is also indifferent to whether the trace
-		-- has a root at all -- which matters, since a trace whose parent is
-		-- missing is displayed as rooted anyway.
-		trace_start as (
-			select min(start_time) as t from tree
-		),
-
-		ordered_spans as (
-			select json_object(
-					'spanData', json_object(
-						-- No traceID: it is at the response root, and a
-						-- single-trace response repeated it 32 bytes per span.
-						'traceState', ts.trace_state,
-						'spanID', span_id_wire(ts.span_id),
-						'parentSpanID', case when ts.parent_span_id is not null then span_id_wire(ts.parent_span_id) end,
-						'name', ts.name,
-						'kind', ts.kind,
-						-- Offset from traceStart, and duration from the span's
-						-- own start. Deliberately not two offsets: an end
-						-- offset inherits the trace's full magnitude however
-						-- brief the span, while a duration stays small. It is
-						-- also what the waterfall wants -- a bar is a position
-						-- and a width, so the client stops subtracting on every
-						-- render.
-						'start', ts.start_time - (select t from trace_start),
-						'dur', ts.end_time - ts.start_time,
-						'attributes', coalesce(sa.attrs, json('[]')),
-						'events', coalesce(ed.events, json('[]')),
-						'links', coalesce(ld.links, json('[]')),
-						-- References into the top-level maps. seq rather than
-						-- the uuid: two 36-char ids per span is ~413KB on the
-						-- reference trace, a small integer ~57KB. The uuids are
-						-- storage identity and have no business on the wire.
-						'r', rd.seq,
-						's', scd.seq,
-						'droppedAttributesCount', ts.dropped_attributes_count,
-						'droppedEventsCount', ts.dropped_events_count,
-						'droppedLinksCount', ts.dropped_links_count,
-						'statusCode', ts.status_code,
-						'statusMessage', ts.status_message
-					),
-				'depth', ts.depth,
-				'matched', %s
-			) as span_json,
-				ts.sort_path
-			from tree ts
-			join resource_data rd on rd.id = ts.resource_id
-			join scope_data scd on scd.id = ts.scope_id
-			left join span_attrs sa on sa.id = ts.span_id
-			%s
-			left join event_data ed on ts.span_id = ed.span_id
-			left join link_data ld on ts.span_id = ld.span_id
-		)
-
-		select case
-			when not exists (select 1 from spans where trace_id = (select trace_id from search_params))
-				then null
-			else cast(json_object(
-				'traceID', trace_id_wire((select trace_id from search_params)),
-				-- Absolute ns as a string; only this one needs the full
-				-- magnitude, and only the detail panel reads it, as
-				-- BigInt(traceStart) + BigInt(start).
-				'traceStart', (select t from trace_start)::varchar,
-				-- Each distinct resource and scope once, keyed by seq. On the
-				-- reference trace this is 24 resources and 1 scope against
-				-- 5,735 spans that previously carried a full copy each,
-				-- which was over half the response.
-				'resources', coalesce((select json_group_object(seq::varchar, obj) from resource_data), json('{}')),
-				'scopes', coalesce((select json_group_object(seq::varchar, obj) from scope_data), json('{}')),
-				'spans', coalesce(to_json(list(span_json order by sort_path)), json('[]'))
-			) as varchar)
-		end as trace
-		from ordered_spans
-	`, cteSQL, matchedCTE, matchedExpr, matchedJoin)
-
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrSpansStoreInternal, err)
+	query, err := queries.Render(queries.SearchSpans, searchSpansParams{
+		CTEs:        cteSQL,
+		MatchedCTE:  matchedCTE,
+		MatchedExpr: matchedExpr,
+		MatchedJoin: matchedJoin,
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("SearchSpans: %w: %w", ErrSpansStoreInternal, err)
 	}
-	if raw == nil {
-		return nil, fmt.Errorf("SearchSpans: %w", ErrTraceIDNotFound)
-	}
-	return json.RawMessage(raw), nil
+
+	return query, args, nil
 }
 
 // GetTraceAttributes returns every attribute name/scope/type this store knows
@@ -661,14 +465,16 @@ func DeleteSpansByIDs(ctx context.Context, db *sql.DB, spanIDs []any) error {
 	if len(spanIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildUUIDPlaceholders(len(spanIDs))
+	// One bound list per statement, rather than one placeholder per id: the
+	// SQL is static and cannot disagree with the argument count.
+	ids := util.ToStringList(spanIDs)
 	childQueries := []string{
-		fmt.Sprintf(`delete from links where span_id in (%s)`, placeholders),
-		fmt.Sprintf(`delete from events where span_id in (%s)`, placeholders),
-		fmt.Sprintf(`delete from spans where span_id in (%s)`, placeholders),
+		`delete from links where span_id in (select id from uuid_list(?))`,
+		`delete from events where span_id in (select id from uuid_list(?))`,
+		`delete from spans where span_id in (select id from uuid_list(?))`,
 	}
 	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, spanIDs...); err != nil {
+		if _, err := db.ExecContext(ctx, q, ids); err != nil {
 			return fmt.Errorf("DeleteSpansByIDs: %w: %w", ErrSpansStoreInternal, err)
 		}
 	}
@@ -680,14 +486,14 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	if len(traceIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildUUIDPlaceholders(len(traceIDs))
+	ids := util.ToStringList(traceIDs)
 	childQueries := []string{
-		fmt.Sprintf(`delete from links where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
-		fmt.Sprintf(`delete from events where span_id in (select span_id from spans where trace_id in (%s))`, placeholders),
-		fmt.Sprintf(`delete from spans where trace_id in (%s)`, placeholders),
+		`delete from links where span_id in (select span_id from spans where trace_id in (select id from uuid_list(?)))`,
+		`delete from events where span_id in (select span_id from spans where trace_id in (select id from uuid_list(?)))`,
+		`delete from spans where trace_id in (select id from uuid_list(?))`,
 	}
 	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, traceIDs...); err != nil {
+		if _, err := db.ExecContext(ctx, q, ids); err != nil {
 			return fmt.Errorf("DeleteSpansByTraceIDs: %w: %w", ErrSpansStoreInternal, err)
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
@@ -183,11 +184,6 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *inge
 	return nil
 }
 
-// bodyPreviewLen is the max character count for the server-truncated
-// body preview returned by Search. Callers that need the full body
-// must fetch the log via Get.
-const bodyPreviewLen = 200
-
 // Search returns log summaries in the time range matching the optional
 // criteria. Each row is a lightweight projection -- enough to render
 // the log card without shipping the full body or attribute set. Use
@@ -198,7 +194,7 @@ const bodyPreviewLen = 200
 // scaffolding (OTLP logs are anonymous) and must never be rendered to
 // users.
 //
-// `bodyPreview` is server-truncated to bodyPreviewLen characters.
+// `bodyPreview` is server-truncated by the body_preview macro.
 func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
@@ -216,25 +212,14 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 
 	logTimeExpr := `(case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end)`
 	whereWithTime := strings.ReplaceAll(whereClause, "l.log_time", logTimeExpr)
-	finalQuery := fmt.Sprintf(`%s,
-		filtered as (
-			select l.* %s
-			where %s
-		)
-		select cast(coalesce(to_json(list(json_object(
-			'id',             l.id,
-			'timestamp',      cast(coalesce(nullif(l.timestamp, 0), l.observed_timestamp) as varchar),
-			'severityText',   l.severity_text,
-			'severityNumber', l.severity_number,
-			'serviceName',    l.service_name,
-			'bodyPreview',    substring(l.body, 1, %d)
-		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc)), '[]') as varchar) as logs
-		from filtered l`,
-		cteSQL,
-		logSearchFrom,
-		whereWithTime,
-		bodyPreviewLen,
-	)
+	finalQuery, err := queries.Render(queries.SearchLogs, searchLogsParams{
+		CTEs:  cteSQL,
+		From:  logSearchFrom,
+		Where: whereWithTime,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	var raw []byte
 	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
@@ -255,29 +240,11 @@ func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error)
 	// against the dictionary in place. This replaced a log_attrs CTE that
 	// grouped the log's attribute rows by scope and was left-joined back three
 	// times under different aliases.
-	query := `
-		select cast(json_object(
-			'id', l.id,
-			'timestamp', l.timestamp::varchar,
-			'observedTimestamp', l.observed_timestamp::varchar,
-			'traceID', trace_id_wire(l.trace_id),
-			'spanID', span_id_wire(l.span_id),
-			'severityText', l.severity_text,
-			'severityNumber', l.severity_number,
-			'body', l.body,
-			'bodyType', l.body_type,
-			'resource', resource_json(r.attribute_ids, r.dropped_attributes_count),
-			'scope', scope_json(sc.name, sc.version, sc.attribute_ids, sc.dropped_attributes_count),
-			'droppedAttributesCount', l.dropped_attributes_count,
-			'flags', l.flags,
-			'eventName', l.event_name,
-			'attributes', attrs_json(l.attribute_ids)
-		) as varchar) as log
-		from logs l
-		join resources r on r.id = l.resource_id
-		join scopes sc on sc.id = l.scope_id
-		where l.id = ?::uuid
-	`
+	query, err := queries.Render(queries.GetLog, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, logID).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -296,15 +263,11 @@ func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error)
 // spans.GetTraceAttributes for why the dictionary answers this directly instead
 // of unnesting every log in the window.
 func GetLogAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
-	query := `
-		select cast(to_json(list(attribute_def_json(sub.key, sub.scope, sub.type)
-			order by sub.key, sub.scope)) as varchar) as attributes
-		from (
-			select distinct a.key, a.scope, a.type
-			from attributes a
-			where a.scope in ('resource', 'scope', 'log')
-		) sub
-	`
+	query, err := queries.Render(queries.GetLogAttributes, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("GetLogAttributes: %w: %w", ErrLogsStoreInternal, err)
@@ -337,12 +300,12 @@ func DeleteLogsByIDs(ctx context.Context, db *sql.DB, logIDs []any) error {
 	if len(logIDs) == 0 {
 		return nil
 	}
-	placeholders := util.BuildUUIDPlaceholders(len(logIDs))
+	ids := util.ToStringList(logIDs)
 	childQueries := []string{
-		fmt.Sprintf(`delete from logs where id in (%s)`, placeholders),
+		`delete from logs where id in (select id from uuid_list(?))`,
 	}
 	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, logIDs...); err != nil {
+		if _, err := db.ExecContext(ctx, q, ids); err != nil {
 			return fmt.Errorf("DeleteLogsByIDs: %w: %w", ErrLogsStoreInternal, err)
 		}
 	}
@@ -507,4 +470,16 @@ func mapLogGlobalExpressions() ([]string, error) {
 			)
 		)`,
 	}, nil
+}
+
+// searchLogsParams are the fragments Search assembles into
+// queries/logs/search_logs.sql.
+//
+// Every field is a SQL fragment. The body-preview length used to be here too,
+// as a number interpolated into the query; it is a body_preview macro now, so
+// nothing in this struct is a *value* -- values travel as bound arguments.
+type searchLogsParams struct {
+	CTEs  string
+	From  string
+	Where string
 }

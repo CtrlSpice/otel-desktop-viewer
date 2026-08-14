@@ -12,7 +12,7 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -221,7 +221,7 @@ func TestStoreIndexesCreated(t *testing.T) {
 	var count int
 	err = s.db.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&count)
 	require.NoError(t, err)
-	assert.Equal(t, len(schema.IndexCreationQueries), count, "index count should match IndexCreationQueries")
+	assert.Equal(t, len(queries.Indexes()), count, "index count should match IndexCreationQueries")
 }
 
 // TestStoreConstraintsEnforced verifies that inline CHECK constraints on the datapoints and
@@ -301,7 +301,7 @@ func TestStorePersistentReopenIdempotent(t *testing.T) {
 	var indexCount int
 	err = s2.db.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_indexes() WHERE schema_name = 'main'").Scan(&indexCount)
 	require.NoError(t, err)
-	assert.Equal(t, len(schema.IndexCreationQueries), indexCount)
+	assert.Equal(t, len(queries.Indexes()), indexCount)
 	require.NoError(t, s2.Close())
 }
 

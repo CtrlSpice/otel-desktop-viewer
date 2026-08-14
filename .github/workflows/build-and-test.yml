@@ -10,6 +10,22 @@ on:
 permissions:
   contents: read
 
+# Only the newest commit on a branch is worth building. Without this, pushing a
+# follow-up while a run is in flight leaves both going: the older one finishes
+# against code nobody will look at, and on a three-platform matrix that is real
+# runner time -- the Windows job alone runs 5-8 minutes.
+#
+# It also fixes a subtler problem. actions/setup-go caches GOMODCACHE and
+# GOCACHE keyed on go.sum, and GitHub caches are immutable: the first run to
+# finish saves the key, and any run that started before that save restores
+# nothing and then fails to save ("another job may be creating this cache").
+# Overlapping runs therefore both miss, and on Windows a miss is ~110s of
+# recompiling DuckDB's C++. Serialising the branch means the cache is written
+# once and hit thereafter.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -36,12 +52,28 @@ jobs:
         go-version: '1.26'
 
     # MSYS2 provides GCC and build tools needed for CGO compilation on Windows
+    #
+    # update: false skips `pacman -Syuu`, which was re-syncing and upgrading the
+    # whole distribution on every run -- 74-97s, against a package set that is
+    # cached and pinned right here. A build toolchain that changes underneath us
+    # between two runs of the same commit is a liability, not a feature: it makes
+    # "it passed yesterday" unanswerable.
+    #
+    # When to refresh it, deliberately:
+    #   - alongside a Go version bump, since those are one toolchain decision and
+    #     should be reviewed together
+    #   - when a build failure actually implicates the compiler
+    #   - when a package below needs a version this base does not carry
+    #
+    # How: flip this to true for one run and put it back, or delete the
+    # msys2-pkgs-* entry from the Actions cache. Editing the install list below
+    # also re-keys the cache on its own, since the key hashes that list.
     - name: Set up MSYS2 (Windows)
       if: matrix.os == 'windows-latest'
       uses: msys2/setup-msys2@v2
       with:
         msystem: UCRT64
-        update: true
+        update: false
         # Required packages:
         # - mingw-w64-ucrt-x86_64-gcc: GCC compiler for Windows x64 with modern C runtime (UCRT)
         # - mingw-w64-ucrt-x86_64-toolchain: Complete toolchain including make, binutils, and other build tools

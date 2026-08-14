@@ -1,4 +1,4 @@
-package schema_test
+package queries_test
 
 import (
 	"testing"

@@ -1,3 +1,11 @@
 # Vite build output embedded by Go (//go:embed). Excluded from GitHub
 # language stats so the repo bar reflects source, not minified bundles.
 desktopexporter/internal/server/static/** linguist-generated=true
+
+# SQL is embedded verbatim by //go:embed, so its bytes are part of the binary.
+# Left to git's platform defaults, a Windows checkout rewrites these to CRLF and
+# the embedded queries differ from every other platform's -- harmless to DuckDB,
+# but it desynchronises the golden tests, which compare rendered SQL byte for
+# byte against fragments Go builds with LF. Pinning eol=lf keeps one canonical
+# form everywhere.
+*.sql text eol=lf
