@@ -746,7 +746,11 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // An unknown streamID returns ErrStreamIDNotFound; a known stream with no
 // datapoints in the window returns valid MetricData with an empty timeseries
 // list (the two are distinct: only the former is a "not found").
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64) (json.RawMessage, error) {
+// targetBuckets is how many time buckets to reduce the window to; 0 means no
+// reduction, and the caller gets every datapoint. Reduction is opt-in because
+// it changes which datapoints exist in the response, and a caller that has not
+// asked for it should not have to discover that.
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64) (json.RawMessage, error) {
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON
@@ -758,7 +762,7 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	}
 
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}

@@ -14,9 +14,9 @@ create or replace macro sum_bucket_vectors(vectors) as (
 			when vectors is null or len(vectors) = 0 then null
 			else list_reduce(
 				vectors,
-				(acc, v) -> list_transform(
+				lambda acc, v: list_transform(
 					list_zip(acc, v),
-					pair -> coalesce(pair[1], 0) + coalesce(pair[2], 0)
+					lambda pair: coalesce(pair[1], 0) + coalesce(pair[2], 0)
 				)
 			)
 		end

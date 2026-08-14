@@ -27,8 +27,18 @@
 -- arithmetic on the macro's parameters, so DuckDB folds the duplicates.
 create or replace macro downscale_exp_buckets(counts, offset_, levels) as (
 		case
-			when counts is null or len(counts) = 0 or levels <= 0
+			-- Nothing to rescale to: the offset is already at the target scale.
+			when levels <= 0
 				then {'offset': offset_, 'counts': counts}
+			-- Empty counts still carry an offset, and that offset is expressed
+			-- at the *source* scale. Returning it unchanged leaks a source-scale
+			-- index into a target-scale comparison: the caller takes min() over
+			-- every stream's offset to find the alignment point, so one empty
+			-- high-scale array drags the target offset far below where any real
+			-- bucket sits, and pad_left_to_offset then zero-fills out to it.
+			-- Numerically harmless, unbounded in memory.
+			when counts is null or len(counts) = 0
+				then {'offset': floor_div(offset_, cast(pow(2, levels) as bigint)), 'counts': counts}
 			else {
 				'offset': floor_div(offset_, cast(pow(2, levels) as bigint)),
 				-- list_sum promotes to HUGEINT; cast back to BIGINT so the
@@ -42,16 +52,16 @@ create or replace macro downscale_exp_buckets(counts, offset_, levels) as (
 							- floor_div(offset_, cast(pow(2, levels) as bigint))
 							+ 1
 					),
-					k_off -> cast(
+					lambda k_off: cast(
 						coalesce(
 							list_sum(
 								list_transform(
 									list_filter(
 										list_zip(counts, range(0, len(counts))),
-										pair -> floor_div(offset_ + pair[2], cast(pow(2, levels) as bigint))
+										lambda pair: floor_div(offset_ + pair[2], cast(pow(2, levels) as bigint))
 											= floor_div(offset_, cast(pow(2, levels) as bigint)) + k_off
 									),
-									pair -> pair[1]
+									lambda pair: pair[1]
 								)
 							),
 							0

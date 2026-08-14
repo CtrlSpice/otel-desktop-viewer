@@ -1,0 +1,44 @@
+# Creation order for this directory, read by queries.go and by
+# `make refresh-macros`. Order is load-bearing: DuckDB binds a macro body
+# when the macro is created, so a macro must follow the ones it calls, and
+# a table must follow the tables it references.
+#
+# This is the only place the order is written down. Filenames say what an
+# object is; this file says when it is built.
+attr_frame.sql
+attr_id.sql
+attrs_json.sql
+attrs_mapped.sql
+attrs_key.sql
+attr_value.sql
+has_attr.sql
+trace_id_wire.sql
+span_id_wire.sql
+resource_json.sql
+scope_json.sql
+attribute_def_json.sql
+interp_linear.sql
+interp_loglin.sql
+hist_buckets.sql
+exp_pos_buckets.sql
+exp_neg_buckets.sql
+exp_zero_bucket.sql
+exp_buckets.sql
+bucket_quantile_linear.sql
+bucket_quantile_loglin.sql
+hist_quantile.sql
+exp_hist_quantile.sql
+floor_div.sql
+downscale_exp_buckets.sql
+fold_below_cutoff.sql
+pad_left_to_offset.sql
+sum_bucket_vectors.sql
+uuid_list.sql
+body_preview.sql
+event_json.sql
+link_json.sql
+span_data_json.sql
+exp_zero_cutoff.sql
+diff_bucket_vectors.sql
+bucket_extents.sql
+bucket_width_ns.sql

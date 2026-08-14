@@ -1,8 +1,13 @@
 package queries
 
-// DDL creation order.
+import (
+	"strings"
+)
+
+// DDL creation order, read from the `_order` manifest in each directory.
 //
-// These lists are the schema's creation order, and the order is load-bearing.
+// The order is load-bearing and the manifests are the only place it is written
+// down. Filenames say what an object is; `_order` says when it is built.
 //
 // # What constrains it
 //
@@ -10,15 +15,17 @@ package queries
 //
 //	spans, logs        -> resources, scopes
 //	events, links      -> spans
-//	metric_streams     -> (none)
 //	metric_series      -> metric_streams, resources
 //	metric_ingests     -> metric_streams, resources, scopes
 //	datapoints         -> metric_streams, metric_series, metric_ingests
 //	exemplars          -> datapoints
 //
 // So attributes comes first (it references nothing), then resources and
-// scopes, then each signal above its own children. Macros are last because a
-// table macro binds the tables it names when it is created, not when it runs.
+// scopes, then each signal above its own children.
+//
+// Macros are last, and among themselves they are ordered too: DuckDB binds a
+// macro body when the macro is created, so `exp_buckets` must follow
+// `exp_pos_buckets`. Creating them alphabetically does not work.
 //
 // # What does not constrain it, and must not start to
 //
@@ -32,103 +39,39 @@ package queries
 // These point at spans, but nothing enforces that the span exists. That is
 // required, not an oversight. Signals arrive independently and out of order: a
 // log is written the moment it is received, and the span it belongs to may
-// arrive in a later batch, may be dropped by sampling, or may never be sent at
-// all. A foreign key here would reject perfectly good telemetry on arrival, and
-// it would do so most often under exactly the conditions a debugging tool
-// exists for -- a partial or failed trace.
+// arrive in a later batch, be dropped by sampling, or never be sent at all. A
+// foreign key here would reject perfectly good telemetry on arrival, and it
+// would do so most often under exactly the conditions a debugging tool exists
+// for -- a partial or failed trace.
 //
-// The consequence for this file is that logs and exemplars impose no ordering
-// against spans, and none should be inferred from the fact that they reference
-// them. The consequence for the schema is stronger: adding an FK to any column
+// So logs and exemplars impose no ordering against spans, and none should be
+// inferred from the fact that they reference them. Adding an FK to any column
 // listed above would break ingest for out-of-order arrival, which no test that
 // ingests a complete trace would catch.
-//
-// # Why explicit lists
-//
-// Rather than a directory walk, so the order is stated instead of implied by
-// filenames, and so a new file that nobody sequenced fails the registration
-// check in queries.go instead of silently sorting itself into the middle of
-// the schema. Each object's own rationale lives in its .sql file.
 var (
-	typeFiles = []string{
-		"00_attr_type.sql",
-	}
-
-	tableFiles = []string{
-		"00_attributes.sql",
-		"01_resource_seq.sql",
-		"02_scope_seq.sql",
-		"03_resources.sql",
-		"04_scopes.sql",
-		"05_spans.sql",
-		"06_events.sql",
-		"07_links.sql",
-		"08_logs.sql",
-		"09_metric_streams.sql",
-		"10_metric_series.sql",
-		"11_metric_ingests.sql",
-		"12_datapoints.sql",
-		"13_exemplars.sql",
-	}
-
-	indexFiles = []string{
-		"00_idx_spans_traceid.sql",
-		"01_idx_spans_parentspanid.sql",
-		"02_idx_spans_service.sql",
-		"03_idx_spans_resource.sql",
-		"04_idx_spans_scope.sql",
-		"05_idx_events_span.sql",
-		"06_idx_links_span.sql",
-		"07_idx_links_trace.sql",
-		"08_idx_logs_traceid.sql",
-		"09_idx_logs_severitynumber.sql",
-		"10_idx_logs_service.sql",
-		"11_idx_logs_resource.sql",
-		"12_idx_logs_scope.sql",
-		"13_idx_metric_streams_name.sql",
-		"14_idx_metric_streams_service.sql",
-		"15_idx_metric_ingests_stream.sql",
-		"16_idx_metric_ingests_resource.sql",
-		"17_idx_datapoints_stream_time.sql",
-		"18_idx_datapoints_series.sql",
-		"19_idx_metric_series_stream.sql",
-		"20_idx_exemplars_datapoint.sql",
-		"21_idx_exemplars_trace.sql",
-	}
-
-	macroFiles = []string{
-		"00_attr_frame.sql",
-		"01_attr_id.sql",
-		"02_attrs_json.sql",
-		"03_attrs_mapped.sql",
-		"04_attrs_key.sql",
-		"05_attr_value.sql",
-		"06_has_attr.sql",
-		"07_trace_id_wire.sql",
-		"08_span_id_wire.sql",
-		"09_resource_json.sql",
-		"10_scope_json.sql",
-		"11_attribute_def_json.sql",
-		"12_interp_linear.sql",
-		"13_interp_loglin.sql",
-		"14_hist_buckets.sql",
-		"15_exp_pos_buckets.sql",
-		"16_exp_neg_buckets.sql",
-		"17_exp_zero_bucket.sql",
-		"18_exp_buckets.sql",
-		"19_bucket_quantile_linear.sql",
-		"20_bucket_quantile_loglin.sql",
-		"21_hist_quantile.sql",
-		"22_exp_hist_quantile.sql",
-		"23_floor_div.sql",
-		"24_downscale_exp_buckets.sql",
-		"25_fold_below_cutoff.sql",
-		"26_pad_left_to_offset.sql",
-		"27_sum_bucket_vectors.sql",
-		"28_uuid_list.sql",
-		"29_body_preview.sql",
-		"30_event_json.sql",
-		"31_link_json.sql",
-		"32_span_data_json.sql",
-	}
+	typeFiles  = manifest("types")
+	tableFiles = manifest("tables")
+	indexFiles = manifest("indexes")
+	macroFiles = manifest("macros")
 )
+
+// manifest reads one directory's `_order`, skipping blanks and # comments.
+func manifest(kind string) []string {
+	b, err := files.ReadFile("ddl/" + kind + "/_order")
+	if err != nil {
+		// Unreachable: go:embed fails at compile time if the file is absent.
+		panic("queries: missing order manifest for " + kind + ": " + err.Error())
+	}
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		out = append(out, line)
+	}
+	if len(out) == 0 {
+		panic("queries: order manifest for " + kind + " is empty")
+	}
+	return out
+}

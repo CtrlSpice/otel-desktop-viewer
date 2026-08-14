@@ -49,6 +49,7 @@ import (
 )
 
 //go:embed ddl/types/*.sql ddl/tables/*.sql ddl/indexes/*.sql ddl/macros/*.sql
+//go:embed ddl/types/_order ddl/tables/_order ddl/indexes/_order ddl/macros/_order
 //go:embed spans/*.sql metrics/*.sql logs/*.sql
 var files embed.FS
 

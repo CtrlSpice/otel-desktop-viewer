@@ -86,11 +86,11 @@ func TestNoIndexOnArrayColumns(t *testing.T) {
 // the referenced span happens to exist. So the guard has to be on the DDL.
 func TestCrossSignalReferencesAreNotForeignKeys(t *testing.T) {
 	for _, tc := range []struct{ file, column string }{
-		{"08_logs.sql", "trace_id"},
-		{"08_logs.sql", "span_id"},
-		{"13_exemplars.sql", "trace_id"},
-		{"13_exemplars.sql", "span_id"},
-		{"07_links.sql", "trace_id"},
+		{"logs.sql", "trace_id"},
+		{"logs.sql", "span_id"},
+		{"exemplars.sql", "trace_id"},
+		{"exemplars.sql", "span_id"},
+		{"links.sql", "trace_id"},
 	} {
 		t.Run(tc.file+"/"+tc.column, func(t *testing.T) {
 			var ddl string

@@ -260,6 +260,8 @@ export type JsonMetricTimeseries = {
    */
   resource: JsonResourceData
   datapoints: JsonDataPoint[]
+  /** Server-computed stats over the whole window; null for histograms. */
+  stats: JsonSeriesValueStats | null
 }
 
 export type JsonMetricData = {
@@ -282,6 +284,8 @@ export type JsonMetricData = {
   scopeDroppedAttributesCount: number
   scope: JsonScopeData
   timeseries: JsonMetricTimeseries[]
+  /** Datapoints in the window, which may exceed the number returned. */
+  datapointCount: number
 }
 
 export type JsonMetricSummary = {
@@ -444,3 +448,13 @@ export type JsonQueryNode =
         children: JsonQueryNode[]
       }
     }
+
+/** Per-series value statistics computed by the store over every datapoint in
+ *  the window, as opposed to the subset a chart draws. */
+export type JsonSeriesValueStats = {
+  count: number
+  min: number
+  max: number
+  sum: number
+  avg: number
+}

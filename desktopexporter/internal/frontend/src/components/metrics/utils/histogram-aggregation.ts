@@ -13,6 +13,7 @@ import {
 } from '@/components/metrics/utils/histogram-quantile'
 import {
   HistogramBoundsMismatchError,
+  downscaleExpBuckets,
   mergeExplicitHistogramVectors,
   mergeExpHistogramStreams,
   rollupHistogramTotals,
@@ -284,34 +285,59 @@ function mergeHistogramSliceDelta(
   const attributesKey = '' // filled by caller
 
   if (isHistogramDp(first)) {
-    const bounds = first.explicitBounds
-    const vectors = dps.map(dp => (dp as HistogramDataPoint).bucketCounts)
-    const counts = sumBucketVectors(vectors) ?? []
+    // Through mergeExplicitHistogramVectors rather than summing directly,
+    // because that function checks the bounds agree and this one used to take
+    // them from the first datapoint and trust the rest.
+    //
+    // Explicit bounds cannot be aligned the way exponential scales can -- there
+    // is no rescale that turns one set of boundaries into another -- so a
+    // mismatch is not something to reconcile, it is something to report. It
+    // surfaces as a boundsMismatch state the UI already renders; summing counts
+    // across incompatible layouts and labelling them with the first
+    // datapoint's bounds produced a plausible-looking chart of nothing.
+    const merged = mergeExplicitHistogramVectors(
+      dps.map(dp => ({
+        bounds: (dp as HistogramDataPoint).explicitBounds,
+        counts: (dp as HistogramDataPoint).bucketCounts,
+      }))
+    )
     return withBucketDerivedMinMax({
       kind: 'histogram',
       timestamp,
       attributesKey: '',
-      bounds,
-      counts,
+      bounds: merged.bounds,
+      counts: merged.counts,
       totals: rollupHistogramTotals(dps.map(totalsFromDp)),
     })
   }
 
+  // Merging exponential histograms across *time within one series* is the
+  // same operation as merging them across series, so it goes through the same
+  // function. An earlier version summed the bucket vectors directly and took
+  // scale and offset from the first datapoint, which is only correct when
+  // every datapoint in the bucket happens to share them.
+  //
+  // They do not have to. An SDK downscales a stream mid-flight as the observed
+  // range widens, and offset moves whenever the smallest observed value does.
+  // Summing misaligned vectors adds counts from bucket i of one datapoint to
+  // bucket i of another that covers a different value range -- silently wrong
+  // quantiles, no error. mergeExpHistogramStreams downscales to the coarsest
+  // scale, left-pads to the smallest offset, then sums.
   const expDps = dps as ExponentialHistogramDataPoint[]
-  const posVectors = expDps.map(dp => dp.positiveBucketCounts)
-  const negVectors = expDps.map(dp => dp.negativeBucketCounts)
+  const totals = rollupHistogramTotals(dps.map(totalsFromDp))
+  const merged = mergeExpHistogramStreams(expDps, totals)
   return withBucketDerivedMinMax({
     kind: 'expHistogram',
     timestamp,
     attributesKey: '',
-    scale: expDps[0]!.scale,
-    zeroThreshold: Math.max(...expDps.map(dp => dp.zeroThreshold)),
-    zeroCount: expDps.reduce((n, dp) => n + dp.zeroCount, 0),
-    positiveOffset: expDps[0]!.positiveBucketOffset,
-    positiveCounts: sumBucketVectors(posVectors) ?? [],
-    negativeOffset: expDps[0]!.negativeBucketOffset,
-    negativeCounts: sumBucketVectors(negVectors) ?? [],
-    totals: rollupHistogramTotals(dps.map(totalsFromDp)),
+    scale: merged.scale,
+    zeroThreshold: merged.zeroThreshold,
+    zeroCount: merged.zeroCount,
+    positiveOffset: merged.positiveBucketOffset,
+    positiveCounts: merged.positiveBucketCounts,
+    negativeOffset: merged.negativeBucketOffset,
+    negativeCounts: merged.negativeBucketCounts,
+    totals,
   })
 }
 
@@ -357,6 +383,40 @@ function mergeHistogramSliceCumulative(
 /** Element-wise `a - b`, clamped at zero. A negative result anywhere means
  *  the counter reset inside the bucket, in which case `a` already counts
  *  from zero and is returned unchanged. */
+/**
+ * Subtract two bucket arrays that may start at different offsets.
+ *
+ * Both are padded to a common origin and length first, so a bucket present in
+ * one and absent in the other is treated as the zero it is. Returns null when
+ * any bucket would go negative, which the caller reads as a counter reset.
+ */
+function alignedDiff(
+  a: { offset: number; counts: number[] },
+  b: { offset: number; counts: number[] }
+): { offset: number; counts: number[] } | null {
+  if (a.counts.length === 0 && b.counts.length === 0) {
+    return { offset: a.offset, counts: [] }
+  }
+  const start = Math.min(
+    a.counts.length ? a.offset : Number.POSITIVE_INFINITY,
+    b.counts.length ? b.offset : Number.POSITIVE_INFINITY
+  )
+  const end = Math.max(
+    a.counts.length ? a.offset + a.counts.length : Number.NEGATIVE_INFINITY,
+    b.counts.length ? b.offset + b.counts.length : Number.NEGATIVE_INFINITY
+  )
+  const at = (x: { offset: number; counts: number[] }, i: number): number =>
+    x.counts[i - x.offset] ?? 0
+
+  const counts: number[] = []
+  for (let i = start; i < end; i++) {
+    const d = at(a, i) - at(b, i)
+    if (d < 0) return null
+    counts.push(d)
+  }
+  return { offset: start, counts }
+}
+
 function subtractHistogramSlices(
   a: HistogramSlicePoint,
   b: HistogramSlicePoint
@@ -390,19 +450,57 @@ function subtractHistogramSlices(
   }
 
   if (a.kind === 'expHistogram' && b.kind === 'expHistogram') {
-    if (a.scale !== b.scale) return a
-    if (
-      a.positiveOffset !== b.positiveOffset ||
-      a.negativeOffset !== b.negativeOffset
-    ) {
-      return a
-    }
-    const positiveCounts = diffCounts(a.positiveCounts, b.positiveCounts)
-    const negativeCounts = diffCounts(a.negativeCounts, b.negativeCounts)
-    if (positiveCounts === null || negativeCounts === null) return a
+    // Align before subtracting rather than giving up on a mismatch.
+    //
+    // `return a` is the reset clamp: when the later slice is smaller than the
+    // earlier one the counter restarted, and the later value *is* the activity
+    // since the restart. That is correct. What was not correct was taking the
+    // same exit when the two slices merely disagreed about scale or offset --
+    // an SDK downscales a stream mid-flight as the observed range widens, so a
+    // window that spans the change would silently report the cumulative running
+    // total as though it were the activity in that bucket.
+    //
+    // Downscaling is a sum, so it preserves the ordering the reset clamp
+    // depends on: if the later slice dominated the earlier one before, it still
+    // does afterwards.
+    const target = Math.min(a.scale, b.scale)
+    const aPos = downscaleExpBuckets(
+      a.positiveCounts,
+      a.positiveOffset,
+      a.scale - target
+    )
+    const bPos = downscaleExpBuckets(
+      b.positiveCounts,
+      b.positiveOffset,
+      b.scale - target
+    )
+    const aNeg = downscaleExpBuckets(
+      a.negativeCounts,
+      a.negativeOffset,
+      a.scale - target
+    )
+    const bNeg = downscaleExpBuckets(
+      b.negativeCounts,
+      b.negativeOffset,
+      b.scale - target
+    )
+
+    const pos = alignedDiff(aPos, bPos)
+    const neg = alignedDiff(aNeg, bNeg)
+    if (pos === null || neg === null) return a
+
     const zeroCount = a.zeroCount - b.zeroCount
     if (zeroCount < 0) return a
-    return { ...a, positiveCounts, negativeCounts, zeroCount, totals }
+    return {
+      ...a,
+      scale: target,
+      positiveOffset: pos.offset,
+      positiveCounts: pos.counts,
+      negativeOffset: neg.offset,
+      negativeCounts: neg.counts,
+      zeroCount,
+      totals,
+    }
   }
 
   return a
@@ -423,6 +521,35 @@ function mergeSliceGroup(
 
 /** Per-(time bucket, attributesKey) slices after within-slice temporality merge. */
 export function buildHistogramTimeMergedSeries(
+  timeseries: MetricTimeseries[],
+  startTsNs: bigint,
+  endTsNs: bigint,
+  maxPoints: number,
+  temporality: string,
+  tz: 'local' | 'UTC' = 'UTC'
+): HistogramSlicePoint[] | HistogramAggregationError {
+  // Bounds disagreement is a data condition, not a crash: this function already
+  // returns HistogramAggregationError for the unspecified-temporality case, and
+  // the callers render it. Converting here keeps the merge free to throw from
+  // deep inside without every intermediate having to thread an error type.
+  try {
+    return buildHistogramTimeMergedSeriesUnchecked(
+      timeseries,
+      startTsNs,
+      endTsNs,
+      maxPoints,
+      temporality,
+      tz
+    )
+  } catch (e) {
+    if (e instanceof HistogramBoundsMismatchError) {
+      return { kind: 'boundsMismatch', message: e.message }
+    }
+    throw e
+  }
+}
+
+function buildHistogramTimeMergedSeriesUnchecked(
   timeseries: MetricTimeseries[],
   startTsNs: bigint,
   endTsNs: bigint,

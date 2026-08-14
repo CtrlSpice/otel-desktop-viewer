@@ -1,0 +1,21 @@
+# Creation order for this directory, read by queries.go and by
+# `make refresh-macros`. Order is load-bearing: DuckDB binds a macro body
+# when the macro is created, so a macro must follow the ones it calls, and
+# a table must follow the tables it references.
+#
+# This is the only place the order is written down. Filenames say what an
+# object is; this file says when it is built.
+attributes.sql
+resource_seq.sql
+scope_seq.sql
+resources.sql
+scopes.sql
+spans.sql
+events.sql
+links.sql
+logs.sql
+metric_streams.sql
+metric_series.sql
+metric_ingests.sql
+datapoints.sql
+exemplars.sql
