@@ -302,9 +302,15 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return out, jsonrpc2.ErrInvalidParams
 	}
-	// The fourth parameter is optional: callers that predate it, or that want
-	// every datapoint, send three and get no reduction.
-	if len(params) < 3 || len(params) > 4 {
+	// Everything past the third is optional and additive: targetBuckets,
+	// seriesIds, quantiles, tzOffsetNs. A caller that predates any of them
+	// sends fewer and gets the old behaviour.
+	//
+	// The upper bound was 4 and stayed 4 while four more parameters were added
+	// below it, so every request carrying them was rejected before it reached
+	// them. Nothing caught it: the store tests call GetMetric directly, and the
+	// handler tests only ever sent three.
+	if len(params) < 3 || len(params) > 7 {
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)

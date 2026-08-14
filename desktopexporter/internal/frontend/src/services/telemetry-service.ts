@@ -508,8 +508,12 @@ export let telemetryAPI = {
         ...(targetBuckets || seriesIds || quantiles
           ? [String(targetBuckets ?? 0)]
           : []),
+        // null, not [] -- the three states are distinct on the wire: absent or
+        // null means every series, an empty array means none. Sending [] for
+        // "no filter" asked the store for no series, which it correctly
+        // answered with nothing.
         ...(seriesIds || quantiles || tzOffsetNs !== undefined
-          ? [seriesIds ?? []]
+          ? [seriesIds ?? null]
           : []),
         ...(quantiles || tzOffsetNs !== undefined ? [quantiles ?? []] : []),
         ...(tzOffsetNs !== undefined ? [String(tzOffsetNs)] : []),

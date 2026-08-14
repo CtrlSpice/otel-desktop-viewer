@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -1043,4 +1044,55 @@ func TestSearchAttributes(t *testing.T) {
 			assert.Error(t, err, "params %v", params)
 		}
 	})
+}
+
+// TestGetMetricAcceptsEveryParameter walks the parameter list one at a time.
+//
+// Every parameter past the third is optional and additive, which means the
+// arity bound has to move each time one is added. It did not: the bound stayed
+// at four while four more were added below it, so every request carrying them
+// was rejected before reaching the code that reads them.
+//
+// Nothing caught that. The store tests call GetMetric directly and never touch
+// this handler, and the handler tests only ever sent three parameters. It
+// surfaced by opening the app, where selecting any metric failed with "invalid
+// params" and an empty detail pane.
+func TestGetMetricAcceptsEveryParameter(t *testing.T) {
+	handler, teardown := setupHandlerWithMetrics(t)
+	defer teardown()
+
+	summaryResult, err := handler.Handle(context.Background(), createRequest(
+		"searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
+	require.NoError(t, err)
+	var summaries []map[string]any
+	require.NoError(t, json.Unmarshal(summaryResult.(json.RawMessage), &summaries))
+	require.NotEmpty(t, summaries)
+	streamID := summaries[0]["id"].(string)
+	maxTime := strconv.FormatInt(1<<63-1, 10)
+
+	full := []any{
+		streamID,         // 1 stream
+		"0",              // 2 start
+		maxTime,          // 3 end
+		"100",            // 4 targetBuckets
+		[]any{},          // 5 seriesIds
+		[]any{0.5, 0.95}, // 6 quantiles
+		"0",              // 7 tzOffsetNs
+	}
+
+	for n := 3; n <= len(full); n++ {
+		t.Run(fmt.Sprintf("%d params", n), func(t *testing.T) {
+			for _, method := range []string{"getMetric", "getMetricAggregate"} {
+				result, err := handler.Handle(context.Background(),
+					createRequest(method, full[:n]))
+				require.NoErrorf(t, err, "%s with %d parameters", method, n)
+				require.NotNil(t, result)
+			}
+		})
+	}
+
+	// One past the end is still rejected, or the bound means nothing.
+	_, err = handler.Handle(context.Background(),
+		createRequest("getMetric", append(append([]any{}, full...), "extra")))
+	assert.Error(t, err, "a parameter beyond the known list must be refused")
 }

@@ -227,7 +227,10 @@
     // the same members does not look like a change.
     const keys = [...metricCtx.histogramVisible].sort()
 
-    if (!summary || !metricCtx.isHistogramKind) {
+    // Wait for the metric itself. The legend selection is seeded from that
+    // response, so fetching before it arrives asks for the empty set -- which
+    // now correctly means "no series" and returns nothing.
+    if (!summary || !metricCtx.isHistogramKind || !selectedMetric) {
       selectedAggregate = null
       selectedAggregateSummary = null
       return
