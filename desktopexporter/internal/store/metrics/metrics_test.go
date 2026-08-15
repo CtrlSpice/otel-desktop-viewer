@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -262,7 +263,7 @@ func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0, nil, nil, 0)
+		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0, nil, nil, 0, false)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -1766,7 +1767,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	require.True(t, ok)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0)
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -1899,7 +1900,7 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0)
+			time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2002,7 +2003,7 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 	streamID, ok := summaries[0]["id"].(string)
 	require.True(t, ok)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0)
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2068,7 +2069,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	// them merge at all.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 1, nil, nil, 0)
+			time.Now().UnixNano()+int64(time.Hour), 1, nil, nil, 0, false)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2129,7 +2130,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 
 	seriesKeys := func(ids []string) []string {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, ids, nil, 0)
+			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, ids, nil, 0, false)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2189,7 +2190,7 @@ func TestGetMetric_Quantiles(t *testing.T) {
 
 	datapoint := func(qs []float64) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, nil, qs, 0)
+			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, nil, qs, 0, false)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2257,7 +2258,7 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 1, nil, []float64{0.5}, 0)
+			time.Now().UnixNano()+int64(time.Hour), 1, nil, []float64{0.5}, 0, false)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -2342,7 +2343,7 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 
 	bucketCount := func(offsetNs int64) int {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, start, end, 3, nil, nil, offsetNs)
+			return metrics.GetMetric(ctx, db, streamID, start, end, 3, nil, nil, offsetNs, false)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2367,6 +2368,208 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 	}
 	assert.Greater(t, len(distinct), 1,
 		"bucket boundaries must move with the offset, or tz_offset_ns is not reaching bucket_start")
+}
+
+// TestGetMetric_FitToDataSpansTheData covers the reduction dividing the data's
+// own extent when the caller says its window was never chosen.
+//
+// The bug this pins: the reduction always divided the *requested* window, so
+// "All" -- epoch to now -- produced buckets over a year wide and merged an
+// entire session into one datapoint per series. The chart was not misdrawing a
+// fine reduction; it was drawing the one bucket it was sent. Fitting the axis
+// client-side could not help, because the collapse happened before the response
+// was built.
+//
+// Both halves matter. Fitting must recover the resolution, and an explicit
+// window must keep dividing itself, so its buckets stay anchored where the
+// caller put them.
+func TestGetMetric_FitToDataSpansTheData(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	// Ten minutes of datapoints a minute apart, inside a window that spans
+	// decades. That ratio is the whole point: at 8 target buckets the requested
+	// window gives buckets years wide, and the data's own extent gives buckets
+	// of about a minute.
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	dps := make([]expHistTestDP, 0, 10)
+	for i := range 10 {
+		dps = append(dps, expHistTestDP{
+			timestamp: base.Add(time.Duration(i) * time.Minute), scale: 0,
+			zeroCount: 0, zeroThreshold: 0,
+			posOffset: 0, posCounts: []uint64{uint64(i + 1)}, count: uint64(i + 1), sum: float64(i + 1),
+		})
+	}
+	fixture := makeExpHistogramFixtureT("fit.duration", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+
+	// The unbounded window a "no choice was made" caller sends.
+	start := int64(0)
+	end := base.Add(48 * time.Hour).UnixNano()
+
+	get := func(fit bool) map[string]any {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, streamID, start, end, 8, nil, nil, 0, fit)
+		})
+		require.NoError(t, err)
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		return m
+	}
+	buckets := func(m map[string]any) int {
+		agg, _ := m["aggregate"].([]any)
+		return len(agg)
+	}
+
+	asked := get(false)
+	fitted := get(true)
+
+	// The collapse, and its absence. One bucket is the symptom exactly: every
+	// observation in the session, merged into a single column.
+	assert.Equal(t, 1, buckets(asked),
+		"dividing a decades-wide window must still merge the session into one bucket")
+	assert.Greater(t, buckets(fitted), buckets(asked),
+		"fitting to the data must recover resolution the requested window destroyed")
+
+	// The reported window, so nobody has to infer it from bucketed timestamps.
+	askedWindow, _ := asked["window"].(map[string]any)
+	require.NotNil(t, askedWindow)
+	assert.Equal(t, false, askedWindow["fittedToData"])
+	assert.Nil(t, askedWindow["startNs"], "an unfitted window is the caller's own")
+
+	fittedWindow, _ := fitted["window"].(map[string]any)
+	require.NotNil(t, fittedWindow)
+	assert.Equal(t, true, fittedWindow["fittedToData"])
+	assert.Equal(t, strconv.FormatInt(base.UnixNano(), 10), fittedWindow["startNs"],
+		"the fitted window starts at the first datapoint")
+	assert.Equal(t, strconv.FormatInt(base.Add(9*time.Minute).UnixNano(), 10), fittedWindow["endNs"],
+		"the fitted window ends at the last datapoint")
+
+	// An explicit window is a request, and keeps dividing itself. Without this
+	// the fix would be "always fit", which silently discards the emptiness that
+	// says a metric stopped reporting.
+	tight := base.Add(-6 * time.Hour).UnixNano()
+	rawTight, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID, tight, end, 8, nil, nil, 0, false)
+	})
+	require.NoError(t, err)
+	var mTight map[string]any
+	require.NoError(t, json.Unmarshal(rawTight, &mTight))
+	assert.Positive(t, buckets(mTight), "an explicit window still buckets")
+}
+
+// TestGetMetric_MergedRowsCarryTheirBucket covers a merged histogram row
+// reporting the bucket it is, rather than the newest datapoint inside it.
+//
+// The merge grouped by bucket_start and then reported max(timestamp), so rows
+// the store had put in one bucket came back on their constituents' clocks --
+// timestamps seconds apart inside a bucket tens of seconds wide, and two series
+// merged over the same bucket disagreeing about when that bucket was. Nothing
+// caught it: the client re-buckets into its own columns on the way to the
+// chart, so the wire could be wrong without the picture looking wrong.
+//
+// The window is explicit and the target chosen so the ladder in bucket_width_ns
+// lands on exactly 10s: 60s / 6 admits 10s and refuses 5s. Pinning the width is
+// what lets the assertion be "on the grid" rather than "self-consistent".
+func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	// 13:00:00 UTC is a whole minute, so it is already on the 10s grid and the
+	// expected bucket starts are base, base+10s, base+20s exactly.
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	at := func(d time.Duration, driver string) histTestDP {
+		return histTestDP{
+			timestamp: base.Add(d),
+			attrs:     map[string]string{"driver": driver},
+			bounds:    []float64{1, 2},
+			counts:    []uint64{1, 0, 0},
+			count:     1, sum: 0.5, min: 0.5, max: 0.5,
+		}
+	}
+	// Two series, several datapoints per bucket, none of them landing on a
+	// boundary -- so any surviving constituent timestamp shows up immediately.
+	fixture := makeHistogramFixtureT("bucket.duration", pmetric.AggregationTemporalityDelta, []histTestDP{
+		at(1*time.Second, "ALO"),
+		at(7*time.Second, "ALO"),
+		at(11*time.Second, "ALO"),
+		at(3*time.Second, "VER"),
+		at(25*time.Second, "VER"),
+	})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID,
+			base.UnixNano(), base.Add(60*time.Second).UnixNano(),
+			6, nil, nil, 0, false)
+	})
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+
+	const widthNs = int64(10 * time.Second)
+	bucketOf := func(d time.Duration) int64 { return base.Add(d).UnixNano() }
+
+	series, _ := m["timeseries"].([]any)
+	require.NotEmpty(t, series)
+
+	perSeries := map[string][]int64{}
+	for _, s := range series {
+		ts := s.(map[string]any)
+		key := ts["attributesKey"].(string)
+		for _, d := range ts["datapoints"].([]any) {
+			v, err := strconv.ParseInt(d.(map[string]any)["timestamp"].(string), 10, 64)
+			require.NoError(t, err)
+			perSeries[key] = append(perSeries[key], v)
+		}
+	}
+
+	var all []int64
+	for _, stamps := range perSeries {
+		for _, v := range stamps {
+			all = append(all, v)
+			assert.Zero(t, v%widthNs,
+				"a merged row must sit on the bucket grid, not on a constituent's timestamp")
+		}
+	}
+	require.NotEmpty(t, all)
+
+	// The exact buckets, so "on the grid" cannot be satisfied by rounding to
+	// the wrong one. Bucket 0 holds datapoints from both series.
+	distinct := map[int64]bool{}
+	for _, v := range all {
+		distinct[v] = true
+	}
+	assert.Equal(t, map[int64]bool{
+		bucketOf(0): true, bucketOf(10 * time.Second): true, bucketOf(20 * time.Second): true,
+	}, distinct)
+
+	// Both series merged over bucket 0 must name it identically -- the point of
+	// the grid is that rows from different series line up on it.
+	require.Len(t, perSeries, 2)
+	for key, stamps := range perSeries {
+		assert.Contains(t, stamps, bucketOf(0), "series %s must report bucket 0 by its start", key)
+	}
+
+	// The aggregate is the same merge across series and has to agree, or the
+	// heatmap's columns and the rows beneath them sit on different clocks.
+	for _, b := range m["aggregate"].([]any) {
+		v, err := strconv.ParseInt(b.(map[string]any)["timestamp"].(string), 10, 64)
+		require.NoError(t, err)
+		assert.Zero(t, v%widthNs, "an aggregate bucket must sit on the grid too")
+	}
 }
 
 // TestGetMetricAggregate covers the aggregate-only call, which exists so a
@@ -2403,7 +2606,7 @@ func TestGetMetricAggregate(t *testing.T) {
 
 	// Same arguments to both calls.
 	full, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0)
+		return metrics.GetMetric(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0, false)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -2411,7 +2614,7 @@ func TestGetMetricAggregate(t *testing.T) {
 	fromFull, _ := json.Marshal(m["aggregate"])
 
 	only, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0)
+		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0, false)
 	})
 	require.NoError(t, err)
 
@@ -2425,7 +2628,7 @@ func TestGetMetricAggregate(t *testing.T) {
 	allCount := agg[0]["count"].(float64)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, []string{}, nil, 0)
+		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, []string{}, nil, 0, false)
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(raw),

@@ -1078,6 +1078,7 @@ func TestGetMetricAcceptsEveryParameter(t *testing.T) {
 		[]any{},          // 5 seriesIds
 		[]any{0.5, 0.95}, // 6 quantiles
 		"0",              // 7 tzOffsetNs
+		true,             // 8 fitToData
 	}
 
 	for n := 3; n <= len(full); n++ {

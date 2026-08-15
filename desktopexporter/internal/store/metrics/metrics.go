@@ -766,7 +766,14 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // caller asking for two of ten series pays for two.
 // quantiles are computed per histogram datapoint and returned keyed by the
 // quantile; empty skips the work.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64) (json.RawMessage, error) {
+// fitToData says the window is the absence of a choice rather than a request,
+// which lets the reduction divide the data's own extent instead of the window.
+// It matters most at the widest windows: "All" spans decades, so dividing it
+// into targetBuckets gave buckets over a year wide and merged whole sessions
+// into one datapoint per series. The caller owns the time picker and so owns
+// this decision; the store obeys it. The window actually used comes back in the
+// response, so nobody has to infer it from bucketed timestamps.
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool) (json.RawMessage, error) {
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON
@@ -787,7 +794,7 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	if quantiles == nil {
 		quantiles = []float64{}
 	}
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}
@@ -815,8 +822,8 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 // Runs the same query and keeps one field. The per-series work happens either
 // way -- the aggregate is built from the merged series -- so the saving is
 // payload, not computation.
-func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64) (json.RawMessage, error) {
-	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs)
+func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool) (json.RawMessage, error) {
+	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData)
 	if err != nil {
 		return nil, err
 	}

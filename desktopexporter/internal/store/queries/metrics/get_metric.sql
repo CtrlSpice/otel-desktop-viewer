@@ -26,7 +26,23 @@
 				-- A query parameter, not URL state: it comes from a user preference,
 				-- so a shared link renders in the recipient's calendar rather than
 				-- the sender's.
-				?::bigint as tz_offset_ns
+				?::bigint as tz_offset_ns,
+				-- Whether the caller's window is a request or the absence of one.
+				--
+				-- The reduction divides a span by target_buckets, and the span it
+				-- divided was always the *requested* one. Ask for "All" -- epoch to
+				-- now, fifty-six years -- and a bucket is 414 days wide, so an
+				-- entire two-hour race merges into one datapoint per series. The
+				-- chart was not misdrawing a fine reduction; it was drawing the one
+				-- bucket it was sent.
+				--
+				-- A caller that never chose a window is not asking about the fifty-
+				-- six years, so with this set the span comes from the data instead
+				-- (see data_extent). The decision stays with the caller, which owns
+				-- the time picker and knows whether a window was chosen; the store
+				-- only obeys. Inferring it here from time_start = 0 would put the
+				-- same rule in two languages, to drift apart later.
+				?::boolean as fit_to_data
 		),
 		stream as (
 			select s.* from metric_streams s, input
@@ -159,6 +175,33 @@
 		-- lambda body, where DuckDB rejects it: "subqueries in lambda
 		-- expressions are not supported". Reading from `input` as a relation
 		-- keeps the arguments plain.
+		-- The extent the data actually occupies inside the requested window,
+		-- and the span the reduction divides.
+		--
+		-- +1 because both ends are inclusive: a stream with a single datapoint
+		-- spans one nanosecond, not zero, and a zero span would divide to a
+		-- zero-width bucket. coalesce covers the empty result, where there is
+		-- no extent to fit and the requested window is all there is.
+		--
+		-- Only consulted when the caller said its window was not a choice. An
+		-- explicit window keeps dividing itself, so its buckets stay anchored
+		-- to the window: panning slides data through fixed boundaries instead
+		-- of re-cutting them per request, and a metric that stopped reporting
+		-- keeps the empty space that says so.
+		data_extent as (
+			select min(timestamp) as min_ts, max(timestamp) as max_ts
+			from filtered_dps
+		),
+		reduction_span as (
+			select case
+				when i.fit_to_data then coalesce(
+					(select max_ts - min_ts + 1 from data_extent),
+					i.time_end - i.time_start
+				)
+				else i.time_end - i.time_start
+			end as span_ns
+			from input i
+		),
 		reduction as (
 			select case
 				-- Gauge and Sum sample; histograms merge (see hist_merged).
@@ -174,16 +217,18 @@
 				-- histograms return every datapoint however small a resolution
 				-- is asked for. Slow beats wrong.
 				when s.metric_type in ('Gauge', 'Sum')
-					then bucket_width_ns(i.time_end - i.time_start, i.target_buckets)
+					then bucket_width_ns(rs.span_ns, i.target_buckets)
 				-- Histograms reduce by merging. Delta adds bucket counts;
 				-- Cumulative subtracts the first of the bucket from the last,
 				-- because each datapoint is a running total and adding them
 				-- would count every observation once per datapoint.
 				when s.metric_type in ('Histogram', 'ExponentialHistogram')
 				     and s.aggregation_temporality in ('Delta', 'Cumulative')
-					then bucket_width_ns(i.time_end - i.time_start, i.target_buckets)
+					then bucket_width_ns(rs.span_ns, i.target_buckets)
 			end as width_ns
-			from input i, stream s
+			-- reduction_span as a relation, not a scalar subquery: the comment
+			-- above applies to it for the same reason it applies to the window.
+			from input i, stream s, reduction_span rs
 		),
 
 		-- Is this a histogram merge or a scalar election? They share the
@@ -306,7 +351,27 @@
 				-- bucket. Keeps ?dp= links and datapoint selection working
 				-- against something that exists.
 				arg_max(p.id, p.timestamp) as id,
-				max(p.timestamp) as timestamp,
+				-- The bucket this row *is*, not the newest datapoint that went
+				-- into it.
+				--
+				-- max(timestamp) put every merged row on a constituent's clock,
+				-- so rows the store had grouped into one 30-second bucket came
+				-- back on timestamps 5 seconds apart, and two series merged over
+				-- the same bucket disagreed about when it was. The row is the
+				-- bucket; its timestamp should say which one.
+				--
+				-- Safe because this path only runs when there is a reduction:
+				-- bucketed_dps filters on width_ns being non-null, so
+				-- bucket_start is never null here. The unreduced path returns
+				-- real datapoints and keeps their own timestamps, which is
+				-- right -- nothing was merged.
+				--
+				-- start_time stays the earliest constituent's rather than
+				-- becoming bucket_start: it is OTLP's "when did this
+				-- observation period begin", and the earliest is the honest
+				-- answer for a group. Only the point on the time axis is the
+				-- bucket's.
+				p.bucket_start as timestamp,
 				min(p.start_time) as start_time,
 				any_value(p.metric_type) as metric_type,
 				any_value(p.aggregation_temporality) as aggregation_temporality,
@@ -598,7 +663,12 @@
 		agg_merged as (
 			select
 				p.bucket_start,
-				max(p.timestamp) as timestamp,
+				-- The bucket, for the same reason hist_merged uses it: this row
+				-- is a merge across every selected series in one bucket, so no
+				-- single constituent's timestamp describes it. Both halves of
+				-- the response have to agree on this, or the heatmap's columns
+				-- and the per-series rows beneath them sit on different clocks.
+				p.bucket_start as timestamp,
 				min(p.start_time) as start_time,
 				sum(p.count) as count,
 				sum(p.sum) as sum,
@@ -682,7 +752,23 @@
 			-- returns, the difference is what the UI needs in order to say so.
 			'datapointCount', coalesce((select sum(dp_count) from (
 				select count(*) as dp_count from filtered_dps group by series_id
-			)), 0)
+			)), 0),
+			-- The window the reduction actually divided, and whether it came
+			-- from the data or from the caller.
+			--
+			-- Reported rather than left to be inferred: the client drew its axis
+			-- by scanning the timestamps it got back, which are bucket starts,
+			-- so its axis and the server's bucketing were two answers to one
+			-- question -- and the client's was derived from the very reduction
+			-- it was trying to describe. Null start/end when the window is the
+			-- caller's own: it already knows it.
+			'window', json_object(
+				'fittedToData', (select fit_to_data from input),
+				'startNs', case when (select fit_to_data from input)
+					then (select min_ts from data_extent)::varchar end,
+				'endNs', case when (select fit_to_data from input)
+					then (select max_ts from data_extent)::varchar end
+			)
 		) as varchar) as metric
 		from stream s left join representative r on true
 	
