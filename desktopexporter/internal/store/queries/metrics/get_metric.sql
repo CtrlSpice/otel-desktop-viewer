@@ -351,6 +351,18 @@
 				-- bucket. Keeps ?dp= links and datapoint selection working
 				-- against something that exists.
 				arg_max(p.id, p.timestamp) as id,
+				-- The series' labels, which the merge would otherwise drop.
+				--
+				-- projected_dps unions this branch with filtered_dps `by name`,
+				-- so a column missing here is not an error -- it arrives as
+				-- NULL. attrs_json(NULL) is [], so every merged histogram series
+				-- came back with no attributes and the legend labelled all
+				-- twenty-one of them "default series".
+				--
+				-- any_value is exact rather than arbitrary: series_id is
+				-- content-derived from (stream, instance, attribute_ids), so the
+				-- array cannot vary within a group.
+				any_value(p.attribute_ids) as attribute_ids,
 				-- The bucket this row *is*, not the newest datapoint that went
 				-- into it.
 				--
@@ -506,6 +518,7 @@
 					else exp_buckets(m.scale, m.negative_bucket_offset, m.negative_bucket_counts,
 					                 m.zero_count, m.positive_bucket_offset, m.positive_bucket_counts)
 				end)).max as max,
+				m.attribute_ids,
 				m.explicit_bounds, m.bucket_counts,
 				m.scale, m.zero_count, m.zero_threshold,
 				m.positive_bucket_offset, m.positive_bucket_counts,

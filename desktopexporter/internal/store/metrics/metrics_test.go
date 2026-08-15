@@ -2095,6 +2095,226 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	assert.Equal(t, float64(18), dp["count"], "total observations conserved")
 }
 
+// TestGetMetric_MergedSeriesKeepTheirLabels covers a merged histogram series
+// still reporting the attributes that identify it.
+//
+// hist_merged aggregates per (series, bucket) and listed its output columns
+// explicitly, and attribute_ids was not among them. projected_dps unions that
+// branch with filtered_dps using `union all by name`, which fills a missing
+// column with NULL rather than failing -- so every merged histogram arrived
+// with no attributes, attrs_json(NULL) rendered [], and the legend labelled all
+// twenty-one series "default series". Gauges were unaffected: their branch is
+// `select *`.
+//
+// The bug needed a reduction to appear at all, which is why no existing test
+// saw it: they either request no reduction or never look at the labels.
+func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	// Two series, told apart only by their labels, each with two datapoints
+	// close enough to merge.
+	dp := func(d time.Duration, driver string) histTestDP {
+		return histTestDP{
+			timestamp: base.Add(d),
+			attrs:     map[string]string{"driver": driver},
+			bounds:    []float64{1, 2},
+			counts:    []uint64{1, 0, 0},
+			count:     1, sum: 0.5, min: 0.5, max: 0.5,
+		}
+	}
+	fixture := makeHistogramFixtureT("labelled.duration", pmetric.AggregationTemporalityDelta, []histTestDP{
+		dp(0, "ALO"), dp(time.Second, "ALO"),
+		dp(0, "VER"), dp(time.Second, "VER"),
+	})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	// Target 1 forces the merge. Without a reduction the rows come straight
+	// from filtered_dps and carry their labels regardless, which is exactly the
+	// blind spot this covers.
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			1, nil, nil, 0, false)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	series, _ := metric["timeseries"].([]any)
+	require.Len(t, series, 2, "two series")
+
+	drivers := map[string]bool{}
+	for _, entry := range series {
+		attrs, _ := entry.(map[string]any)["attributes"].([]any)
+		require.NotEmpty(t, attrs,
+			"a merged series must carry the attributes that identify it")
+		for _, a := range attrs {
+			m := a.(map[string]any)
+			if m["key"] == "driver" {
+				drivers[m["value"].(string)] = true
+			}
+		}
+	}
+	assert.Equal(t, map[string]bool{"ALO": true, "VER": true}, drivers,
+		"each merged series keeps its own label, not a blank or a neighbour's")
+}
+
+// TestExpHistogramMerge_RescalesBeforeSumming covers a series whose scale
+// drifts mid-flight: an SDK downscales as the observed range widens, so two
+// datapoints of the *same* series can carry different scales and offsets.
+//
+// Summing their bucket vectors positionally would add counts covering
+// different value ranges together -- wrong quantiles, no error, no way to see
+// it from the chart. The merge has to bring both onto the coarsest scale
+// present first.
+//
+// Ported from the TypeScript merge, which is where this used to be asserted.
+// That implementation is gone -- the store does the merging now -- and this
+// test exists so the behaviour did not leave with it.
+func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	fixture := makeExpHistogramFixtureT("rescale.duration", pmetric.AggregationTemporalityDelta, []expHistTestDP{
+		// Scale 2, four buckets from offset 4.
+		{
+			timestamp: base, scale: 2,
+			zeroCount: 0, zeroThreshold: 0,
+			posOffset: 4, posCounts: []uint64{1, 1, 1, 1},
+			count: 4, sum: 8,
+		},
+		// Scale 1, two buckets from offset 2 -- the same value range, half the
+		// resolution. Downscaling the first by one step lands exactly here,
+		// which is what makes the overlap checkable rather than approximate.
+		{
+			timestamp: base.Add(time.Second), scale: 1,
+			zeroCount: 0, zeroThreshold: 0,
+			posOffset: 2, posCounts: []uint64{5, 5},
+			count: 10, sum: 20,
+		},
+	})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	// Target 1 puts both datapoints in one bucket, which is what makes them
+	// merge at all.
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			1, nil, nil, 0, false)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	ts, _ := metric["timeseries"].([]any)
+	require.Len(t, ts, 1)
+	dps, _ := ts[0].(map[string]any)["datapoints"].([]any)
+	require.Len(t, dps, 1, "both datapoints merge into one bucket")
+	dp := dps[0].(map[string]any)
+
+	// The merge lands on the coarsest scale present, not the first seen.
+	assert.Equal(t, float64(1), dp["scale"],
+		"merging must downscale to the coarsest scale in the group")
+
+	// Total count is conserved however the buckets are aligned: 4 + 10.
+	counts, _ := dp["positiveBucketCounts"].([]any)
+	var total float64
+	for _, c := range counts {
+		total += c.(float64)
+	}
+	assert.Equal(t, float64(14), total, "no observation invented or lost")
+	assert.Equal(t, float64(14), dp["count"], "the reported count agrees with the buckets")
+
+	// The scale-2 datapoint's four buckets at offset 4 collapse to two at
+	// offset 2 -- exactly where the scale-1 datapoint already sits. A correct
+	// merge overlaps them; a positional sum would lay them side by side.
+	assert.Equal(t, float64(2), dp["positiveBucketOffset"])
+	require.Len(t, counts, 2, "overlapped, not concatenated")
+	assert.Equal(t, float64(7), counts[0])
+	assert.Equal(t, float64(7), counts[1])
+}
+
+// TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange covers the same
+// drift on a Cumulative stream, where the merge is a subtraction rather than a
+// sum.
+//
+// Each datapoint is a running total, so the activity in a bucket is the last
+// minus the first. Do that without aligning scales and the two vectors are not
+// comparable, and the fallback reports the running total as though it were the
+// activity -- a counter that only ever climbs, drawn as though every bucket saw
+// all of it.
+//
+// Also ported from the deleted TypeScript merge.
+func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	fixture := makeExpHistogramFixtureT("cumulative.duration", pmetric.AggregationTemporalityCumulative, []expHistTestDP{
+		// 10 observations so far, at scale 2.
+		{
+			timestamp: base, scale: 2,
+			zeroCount: 0, zeroThreshold: 0,
+			posOffset: 4, posCounts: []uint64{5, 5, 0, 0},
+			count: 10, sum: 10,
+		},
+		// 30 by the next datapoint, and the SDK downscaled in between. The
+		// activity in this bucket is 20, not 30.
+		{
+			timestamp: base.Add(time.Second), scale: 1,
+			zeroCount: 0, zeroThreshold: 0,
+			posOffset: 2, posCounts: []uint64{15, 15},
+			count: 30, sum: 30,
+		},
+	})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			1, nil, nil, 0, false)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	ts, _ := metric["timeseries"].([]any)
+	require.Len(t, ts, 1)
+	dps, _ := ts[0].(map[string]any)["datapoints"].([]any)
+	require.Len(t, dps, 1, "both datapoints merge into one bucket")
+	dp := dps[0].(map[string]any)
+
+	// The number that matters: activity, not the running total.
+	assert.Equal(t, float64(20), dp["count"],
+		"a cumulative bucket reports the activity within it, not the counter's value")
+
+	counts, _ := dp["positiveBucketCounts"].([]any)
+	var total float64
+	for _, c := range counts {
+		total += c.(float64)
+	}
+	assert.Equal(t, float64(20), total,
+		"the bucket vectors must be differenced on a common scale, not passed through")
+}
+
 // TestGetMetric_SeriesFilter covers the parameter that makes server-side
 // cross-series aggregation possible: the caller names the series it wants and
 // the store narrows before the reduction, so asking for two of ten costs two.
