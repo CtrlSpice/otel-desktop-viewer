@@ -1,8 +1,4 @@
-import {
-  histogramQuantilesForDatapoint,
-  histogramSliceToDatapoint,
-  QUANTILE_LABELS,
-} from '@/components/metrics/utils/histogram-aggregation'
+import { QUANTILE_LABELS } from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramTotals } from '@/components/metrics/utils/histogram-merge'
 import type { SelectionLegendRow } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
@@ -144,10 +140,12 @@ export function heatmapColumnSelectionAt(
   if (idx < 0) return null
 
   const slice = series[idx]!
-  const dp = histogramSliceToDatapoint(slice, 'heatmap-column', temporality)
+  // The store's numbers. Computing them here meant rebuilding this bucket's
+  // list and walking it once per quantile, for a value the response already
+  // carried.
   const quantiles: Record<string, number | null> = {}
   for (const { key } of QUANTILE_LABELS) {
-    quantiles[key] = histogramQuantilesForDatapoint(dp)[key] ?? null
+    quantiles[key] = slice.quantiles?.[key] ?? null
   }
 
   return {

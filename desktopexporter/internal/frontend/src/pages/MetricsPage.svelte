@@ -74,7 +74,8 @@
 <script lang="ts">
   import { METRIC_BUCKET_TARGET } from '@/contexts/metric-view-context.svelte'
   import {
-    HEATMAP_MAX_COLUMNS,
+    DEFAULT_HISTOGRAM_QUANTILES,
+    HEATMAP_BUCKET_TARGET,
     localOffsetNs,
   } from '@/components/metrics/utils/histogram-aggregation'
   import type { JsonAggregateBucket } from '@/types/wire-types'
@@ -268,20 +269,10 @@
         timeContext.selection,
         Date.now()
       )
-      // No quantiles: nothing here reads the ones the store computes.
-      //
-      // Every quantile this page draws is derived client-side from the bucket
-      // vectors -- the Quantiles tab through sliceQuantileValue, a heatmap
-      // column through heatmapColumnSelectionAt, the distribution marks
-      // through quantilePointSelectionAt -- all of them calling
-      // histogramQuantilesForDatapoint on data already in hand. The server's
-      // quantiles field was arriving and being discarded.
-      //
-      // It was not free. Measured on interval_distribution over 21 series at
-      // 400 buckets: 31,623 ms asking for three quantiles against 285 ms
-      // asking for none, for 14% more payload. Asking for what is read costs
-      // a hundredth of asking for what is not.
-      const quantiles: number[] = []
+// The store's quantiles, which are now the only ones. The client used to
+      // recompute them from the bucket vectors -- 2,700 walks for one render of
+      // this metric, 3,068 ms in a single task. That code is gone.
+      const quantiles = DEFAULT_HISTOGRAM_QUANTILES as unknown as number[]
       // Same answer as the detail fetch gives, so the aggregate is bucketed
       // over the window the series beneath it were bucketed over.
       const fit = isDefaultUnboundedWindow(timeContext.selection)
@@ -292,7 +283,7 @@
           summary.id,
           startTime,
           endTime,
-          HEATMAP_MAX_COLUMNS,
+          HEATMAP_BUCKET_TARGET,
           keys,
           quantiles,
           tzOffsetNs(),
@@ -421,17 +412,14 @@
       // This is what stops a dense stream shipping tens of megabytes to draw a
       // few thousand pixels: measured at 46.4 MB and 640 ms down to 0.36 MB and
       // 60 ms on a 242,324-datapoint stream.
-      // A histogram is drawn as a heatmap, which cannot show more columns than
-      // it has room for -- so ask for the heatmap's ceiling rather than the
-      // line chart's target. The difference is not free: histogram datapoints
-      // carry a bucket vector and a quantile set each, so the line-chart target
-      // fetches five times the payload and discards four fifths of it at the
-      // merge. It only became visible once the window stopped collapsing to a
-      // single bucket, which had been hiding the cost.
+      // A histogram gets the heatmap's target, which is a resolution decision
+      // rather than the line chart's point budget. Histogram datapoints carry a
+      // bucket vector each, so the line-chart target fetched an order of
+      // magnitude more payload than any heatmap can show.
       const bucketTarget =
         summary.metricType === 'Histogram' ||
         summary.metricType === 'ExponentialHistogram'
-          ? HEATMAP_MAX_COLUMNS
+          ? HEATMAP_BUCKET_TARGET
           : METRIC_BUCKET_TARGET
       selectedMetric =
         (await telemetryAPI.getMetric(
@@ -442,9 +430,9 @@
           // Every series for now. Narrowing to the legend selection needs the
           // fetch to re-run on toggle, which is a separate change.
           undefined,
-          // None, for the reason given in fetchAggregate: the client derives
-          // every quantile it draws from the bucket vectors it already has.
-          [],
+          // Computed by the store, read by the client. Both halves of the
+          // response need them: the per-series lines and the merged columns.
+          DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
           // Bucket boundaries follow the reader's calendar rather than the
           // epoch. 0 is UTC, which is what the store assumes without this.
           tzOffsetNs(),

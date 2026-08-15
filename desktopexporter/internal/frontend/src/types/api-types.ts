@@ -183,6 +183,11 @@ export type HistogramDataPoint = BaseDataPoint & {
   bucketCounts: number[]
   explicitBounds: number[]
   aggregationTemporality: string
+  /** Quantiles computed by the store for this bucket, keyed by the quantile
+   *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
+   *  deriving them here walked every bucket of every series once per quantile
+   *  and cost seconds on the main thread. */
+  quantiles?: Record<string, number | null> | null
 }
 
 export type ExponentialHistogramDataPoint = BaseDataPoint & {
@@ -199,6 +204,11 @@ export type ExponentialHistogramDataPoint = BaseDataPoint & {
   negativeBucketOffset: number
   negativeBucketCounts: number[]
   aggregationTemporality: string
+  /** Quantiles computed by the store for this bucket, keyed by the quantile
+   *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
+   *  deriving them here walked every bucket of every series once per quantile
+   *  and cost seconds on the main thread. */
+  quantiles?: Record<string, number | null> | null
 }
 
 export type DataPoint =

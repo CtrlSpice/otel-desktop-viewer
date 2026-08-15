@@ -36,8 +36,7 @@ import type {
 import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
 import { distinguishingResourceAttributes } from '@/utils/series-labels'
 import {
-  buildHistogramTimeMergedSeries,
-  heatmapColumnsForWidth,
+  seriesBucketsToSlices,
   buildVisibleSeriesQuantileChartTimeseries,
   DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
   DEFAULT_HISTOGRAM_QUANTILES,
@@ -292,9 +291,6 @@ export interface MetricViewContext {
   // -- Methods --
   /** Toggle per-timeseries expansion (TimeseriesPanel chevron). */
   toggleTimeseriesExpanded(key: string): void
-  /** Reported by the heatmap once its plot area is laid out, and on resize.
-   *  The column count follows the chart rather than a constant. */
-  reportHeatmapWidth(px: number): void
   setActiveHistogramTab(tab: HistogramTab): void
   setHistogramScope(scope: HistogramScope): void
   setAggregationView(next: AggregationView): void
@@ -360,6 +356,7 @@ function aggregateToSlices(
         bounds: b.explicitBounds,
         counts: b.bucketCounts ?? [],
         totals,
+        quantiles: b.quantiles ?? null,
       }
     }
     return {
@@ -374,6 +371,7 @@ function aggregateToSlices(
       negativeOffset: b.negativeBucketOffset ?? 0,
       negativeCounts: b.negativeBucketCounts ?? [],
       totals,
+      quantiles: b.quantiles ?? null,
     }
   })
 }
@@ -399,10 +397,6 @@ export function createMetricViewContext(
   // The ONE per-metric mutable cell. Reset by the effect below when
   // the metric identity changes; otherwise written only by methods
   // on this context.
-  // The heatmap's measured plot width, in pixels. 0 until it lays out, which
-  // heatmapColumnsForWidth reads as "not measured yet".
-  let heatmapWidthPx = $state(0)
-
   const view = $state({
     selectedDatapointId: null as string | null,
     // Explicitly chosen series, independent of any datapoint selection.
@@ -1107,23 +1101,10 @@ export function createMetricViewContext(
       return { ...empty, error: err, aggregatedError: err }
     }
 
-    const { startNs, endNs } = histogramAxisWindow
-    const perAttribute = buildHistogramTimeMergedSeries(
-      m.timeseries,
-      startNs,
-      endNs,
-      // Was a hardcoded 100, which matched nothing the chart had measured --
-      // the plot binds its own clientWidth and nothing read it.
-      heatmapColumnsForWidth(heatmapWidthPx),
-      temporality,
-      // Align columns to whichever clock the axis is labelled in, so a
-      // day-scale bucket breaks where the reader expects the day to break.
-      timeContext.tz
-    )
-    if ('kind' in perAttribute) {
-      const err = histogramAggregationErrorToBucketSeriesError(perAttribute)
-      return { ...empty, error: err, aggregatedError: err }
-    }
+    // One slice per store bucket. The store has already bucketed, merged and
+    // resolved temporality; re-doing any of that here was the 3s of blocked
+    // main thread on every histogram selection, and got Cumulative wrong.
+    const perAttribute = seriesBucketsToSlices(m.timeseries)
 
     // The cross-series merge comes from the store, which aligned scales,
     // folded the zero threshold and summed the vectors. Merging it again here
@@ -1619,16 +1600,6 @@ export function createMetricViewContext(
     }
   }
 
-  // Only meaningful changes are recorded: heatmapColumnsForWidth quantises, so
-  // writing every pixel of a drag would invalidate the derivation without
-  // changing its answer.
-  function reportHeatmapWidth(px: number) {
-    if (heatmapColumnsForWidth(px) === heatmapColumnsForWidth(heatmapWidthPx)) {
-      return
-    }
-    heatmapWidthPx = px
-  }
-
   function setActiveHistogramTab(tab: HistogramTab) {
     view.activeHistogramTab = tab
     // Back returns to the prior tab.
@@ -2030,7 +2001,6 @@ export function createMetricViewContext(
     },
 
     toggleTimeseriesExpanded,
-    reportHeatmapWidth,
     setActiveHistogramTab,
     setHistogramScope,
     setAggregationView,

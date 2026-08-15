@@ -277,13 +277,6 @@
 
   let containerWidth = $state(0)
 
-  // Tell the context how wide the plot actually is, so the column count follows
-  // the chart instead of a constant. The context quantises, so a drag reports
-  // often and re-buckets rarely.
-  $effect(() => {
-    ctx.reportHeatmapWidth(containerWidth)
-  })
-
   /** Scroll viewport width — measured on the plot area. */
   let plotContainerWidth = $derived(Math.max(containerWidth, 0))
 

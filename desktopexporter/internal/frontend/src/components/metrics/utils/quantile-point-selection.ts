@@ -1,8 +1,4 @@
-import {
-  histogramQuantilesForDatapoint,
-  histogramSliceToDatapoint,
-  QUANTILE_LABELS,
-} from '@/components/metrics/utils/histogram-aggregation'
+import { QUANTILE_LABELS } from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
 import {
   heatmapColumnSelectionAt,
@@ -54,15 +50,11 @@ export function quantilePointSelectionAt(
   for (const seriesKey of visible) {
     const slice = sliceAtTimestamp(perAttributeSlices, timestampNs, seriesKey)
     if (!slice) continue
-    const dp = histogramSliceToDatapoint(
-      slice,
-      `quantile:${seriesKey}`,
-      temporality
-    )
+    // Read from the store's response; see sliceQuantileValue for why this is
+    // not computed here.
     const quantiles: Record<string, number | null> = {}
-    const record = histogramQuantilesForDatapoint(dp)
     for (const { key } of QUANTILE_LABELS) {
-      quantiles[key] = record[key] ?? null
+      quantiles[key] = slice.quantiles?.[key] ?? null
     }
     series.push({ seriesKey, quantiles })
   }

@@ -8,7 +8,6 @@ import {
   padLeftToOffset,
   sumBucketVectors,
 } from '@/components/metrics/utils/histogram-merge'
-import { histQuantile } from '@/components/metrics/utils/histogram-quantile'
 
 describe('floorDiv', () => {
   it('negative remainder rounds toward -inf', () => {
@@ -96,12 +95,13 @@ describe('padLeftToOffset', () => {
 })
 
 describe('mergeExplicitHistogramVectors', () => {
-  it('merges and computes quantile', () => {
+  it('merges counts positionally when the bounds agree', () => {
     const merged = mergeExplicitHistogramVectors([
       { bounds: [1, 2, 5, 10], counts: [0, 50, 50, 0, 0] },
       { bounds: [1, 2, 5, 10], counts: [0, 30, 50, 20, 0] },
     ])
-    expect(histQuantile(merged.bounds, merged.counts, 0.5)).toBeCloseTo(2.6, 9)
+    expect(merged.bounds).toEqual([1, 2, 5, 10])
+    expect(merged.counts).toEqual([0, 80, 100, 20, 0])
   })
   it('throws on bounds mismatch', () => {
     expect(() =>

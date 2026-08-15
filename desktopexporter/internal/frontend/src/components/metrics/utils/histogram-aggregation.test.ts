@@ -4,9 +4,8 @@ import type {
   HistogramDataPoint,
 } from '@/types/api-types'
 import {
-  buildHistogramTimeMergedSeries,
-  heatmapColumnsForWidth,
-  HEATMAP_MAX_COLUMNS,
+  HEATMAP_BUCKET_TARGET,
+  seriesBucketsToSlices,
   isHistogramAggregationError,
   buildPerSeriesQuantileSeries,
   buildVisibleSeriesQuantileChartTimeseries,
@@ -35,6 +34,9 @@ function histSlice(
       min: 0,
       max: 10,
     },
+    // Supplied by the store, as they are in a real response. The client no
+    // longer derives these, so a slice without them has no quantile to draw.
+    quantiles: { '0.5': 2, '0.95': 5, '0.99': 9 },
   }
 }
 
@@ -94,274 +96,102 @@ describe('buildPerSeriesQuantileSeries', () => {
   })
 })
 
-describe('exponential histograms whose scale drifts within a series', () => {
-  // An SDK downscales a stream mid-flight as the observed range widens, so two
-  // datapoints of the *same* series can carry different scales and offsets.
-  // Merging them by summing bucket vectors positionally adds counts covering
-  // different value ranges together: wrong quantiles, no error.
-  function expDp(
-    timestamp: bigint,
-    scale: number,
-    positiveBucketOffset: number,
-    positiveBucketCounts: number[]
-  ): ExponentialHistogramDataPoint {
-    const count = positiveBucketCounts.reduce((a, b) => a + b, 0)
-    return {
-      id: `dp-${timestamp}`,
-      metricType: 'ExponentialHistogram',
-      timestamp,
-      startTime: timestamp,
-      flags: 0,
-      exemplars: [],
-      attributes: [],
-      count,
-      sum: count,
-      min: 1,
-      max: 100,
-      scale,
-      zeroCount: 0,
-      zeroThreshold: 0,
-      positiveBucketOffset,
-      positiveBucketCounts,
-      negativeBucketOffset: 0,
-      negativeBucketCounts: [],
-      aggregationTemporality: 'Delta',
-    } as unknown as ExponentialHistogramDataPoint
-  }
+describe('HEATMAP_BUCKET_TARGET', () => {
+  // Pinned literally because it is a request parameter: the store's ladder
+  // turns it into a bucket width, and changing it changes what every histogram
+  // response contains. It is deliberately not derived from the plot width --
+  // see the constant's own note for why that was both wrong and self-defeating.
+  it('is the resolution a histogram asks the store for', () => {
+    expect(HEATMAP_BUCKET_TARGET).toBe(100)
+  })
+})
 
-  it('rescales before summing rather than trusting the first datapoint', () => {
-    // Same series, one bucket of time. Scale 2 downscales to scale 1 by
-    // merging adjacent bucket pairs; the offsets differ too.
+describe('seriesBucketsToSlices', () => {
+  it('emits one slice per store bucket, keyed by its series', () => {
     const series = [
       {
-        attributesKey: 'a',
+        attributesKey: 'driver=ALO',
         attributes: [],
         datapoints: [
-          expDp(1_000_000_000n, 2, 4, [1, 1, 1, 1]),
-          expDp(1_000_000_001n, 1, 2, [5, 5]),
+          {
+            id: 'a',
+            metricType: 'Histogram',
+            timestamp: ts1,
+            count: 3,
+            sum: 6,
+            min: 1,
+            max: 3,
+            explicitBounds: [1, 2],
+            bucketCounts: [1, 1, 1],
+            exemplars: [],
+            flags: 0,
+          },
+          {
+            id: 'b',
+            metricType: 'Histogram',
+            timestamp: ts2,
+            count: 1,
+            sum: 5,
+            min: 5,
+            max: 5,
+            explicitBounds: [1, 2],
+            bucketCounts: [0, 0, 1],
+            exemplars: [],
+            flags: 0,
+          },
         ],
       },
-    ] as unknown as Parameters<typeof buildHistogramTimeMergedSeries>[0]
+    ] as unknown as Parameters<typeof seriesBucketsToSlices>[0]
 
-    const out = buildHistogramTimeMergedSeries(
-      series,
-      1_000_000_000n,
-      2_000_000_000n,
-      1,
-      'Delta'
-    )
-    expect(isHistogramAggregationError(out)).toBe(false)
-    const slices = out as HistogramSlicePoint[]
-    // Both datapoints must land in ONE bucket, or the merge never runs and
-    // the test proves nothing -- which is exactly what the first version of
-    // this test did.
+    const slices = seriesBucketsToSlices(series)
+
+    // Two datapoints in, two slices out: no grouping, no re-bucketing. The
+    // store decided where the buckets are.
+    expect(slices).toHaveLength(2)
+    expect(slices.map(s => s.timestamp)).toEqual([ts1, ts2])
+    expect(slices.every(s => s.attributesKey === 'driver=ALO')).toBe(true)
+    expect(slices[0]!.totals.count).toBe(3)
+    expect(slices[1]!.totals.count).toBe(1)
+  })
+
+  it('carries the exponential fields through untouched', () => {
+    const series = [
+      {
+        attributesKey: 'driver=VER',
+        attributes: [],
+        datapoints: [
+          {
+            id: 'c',
+            metricType: 'ExponentialHistogram',
+            timestamp: ts1,
+            count: 4,
+            sum: 8,
+            min: 1,
+            max: 4,
+            scale: 2,
+            zeroCount: 1,
+            zeroThreshold: 0.5,
+            positiveBucketOffset: 3,
+            positiveBucketCounts: [1, 2],
+            negativeBucketOffset: 0,
+            negativeBucketCounts: [],
+            exemplars: [],
+            flags: 0,
+          },
+        ],
+      },
+    ] as unknown as Parameters<typeof seriesBucketsToSlices>[0]
+
+    const slices = seriesBucketsToSlices(series)
     expect(slices).toHaveLength(1)
-
     const slice = slices[0]!
     expect(slice.kind).toBe('expHistogram')
     if (slice.kind !== 'expHistogram') return
-
-    // The merge must land on the coarsest scale present, not the first one.
-    expect(slice.scale).toBe(1)
-
-    // Total count is conserved however the buckets are aligned: 4 + 10.
-    const total = slice.positiveCounts.reduce((a, b) => a + b, 0)
-    expect(total).toBe(14)
-
-    // The scale-2 datapoint's four buckets at offset 4 collapse to two buckets
-    // at offset 2, which is exactly where the scale-1 datapoint already sits --
-    // so a correct merge overlaps them rather than laying them side by side.
-    expect(slice.positiveOffset).toBe(2)
-    expect(slice.positiveCounts).toEqual([7, 7])
-  })
-})
-
-describe('cumulative exponential histograms whose scale drifts mid-window', () => {
-  function cumDp(
-    timestamp: bigint,
-    scale: number,
-    offset: number,
-    counts: number[],
-    count: number
-  ): ExponentialHistogramDataPoint {
-    return {
-      id: `dp-${timestamp}`,
-      metricType: 'ExponentialHistogram',
-      timestamp,
-      startTime: 0n,
-      flags: 0,
-      exemplars: [],
-      attributes: [],
-      count,
-      sum: count,
-      min: 1,
-      max: 100,
-      scale,
-      zeroCount: 0,
-      zeroThreshold: 0,
-      positiveBucketOffset: offset,
-      positiveBucketCounts: counts,
-      negativeBucketOffset: 0,
-      negativeBucketCounts: [],
-      aggregationTemporality: 'Cumulative',
-    } as unknown as ExponentialHistogramDataPoint
-  }
-
-  function activityIn(dps: ExponentialHistogramDataPoint[]) {
-    const series = [
-      { attributesKey: 'a', attributes: [], datapoints: dps },
-    ] as unknown as Parameters<typeof buildHistogramTimeMergedSeries>[0]
-    const out = buildHistogramTimeMergedSeries(
-      series,
-      1_000_000_000n,
-      2_000_000_000n,
-      1,
-      'Cumulative'
-    )
-    expect(isHistogramAggregationError(out)).toBe(false)
-    const slices = out as HistogramSlicePoint[]
-    expect(slices).toHaveLength(1)
-    return slices[0]!
-  }
-
-  it('subtracts across a scale change instead of reporting the running total', () => {
-    // Cumulative counter: 10 observations by the first datapoint, 30 by the
-    // second, and the SDK downscaled from 2 to 1 in between. The activity in
-    // this bucket is 20, not 30.
-    const slice = activityIn([
-      cumDp(1_000_000_000n, 2, 4, [5, 5, 0, 0], 10),
-      cumDp(1_000_000_001n, 1, 2, [15, 15], 30),
-    ])
-    expect(slice.kind).toBe('expHistogram')
-    if (slice.kind !== 'expHistogram') return
-
-    expect(slice.totals.count).toBe(20)
-    // First downscales to [10, 0] at offset 2; last is [15, 15] at offset 2.
-    expect(slice.scale).toBe(1)
-    expect(slice.positiveOffset).toBe(2)
-    expect(slice.positiveCounts).toEqual([5, 15])
-    expect(slice.positiveCounts.reduce((x, y) => x + y, 0)).toBe(20)
-  })
-
-  it('still treats a genuine counter reset as a reset', () => {
-    // The later slice is smaller: the counter restarted, so the activity is
-    // the later value itself, not a negative difference.
-    const slice = activityIn([
-      cumDp(1_000_000_000n, 1, 2, [50, 50], 100),
-      cumDp(1_000_000_001n, 1, 2, [3, 4], 7),
-    ])
-    if (slice.kind !== 'expHistogram') return
-    expect(slice.totals.count).toBe(7)
-    expect(slice.positiveCounts).toEqual([3, 4])
-  })
-})
-
-describe('explicit-bounds histograms whose bounds change mid-series', () => {
-  function boundsDp(
-    timestamp: bigint,
-    bounds: number[],
-    counts: number[]
-  ): HistogramDataPoint {
-    const count = counts.reduce((a, b) => a + b, 0)
-    return {
-      id: `dp-${timestamp}`,
-      metricType: 'Histogram',
-      timestamp,
-      startTime: timestamp,
-      flags: 0,
-      exemplars: [],
-      attributes: [],
-      count,
-      sum: count,
-      min: 0,
-      max: 10,
-      explicitBounds: bounds,
-      bucketCounts: counts,
-      aggregationTemporality: 'Delta',
-    } as unknown as HistogramDataPoint
-  }
-
-  it('reports the mismatch instead of summing incompatible layouts', () => {
-    // Two datapoints of one series, one bucketed at [1,2,5] and one at
-    // [10,20,50]. Bucket i of the first covers nothing like bucket i of the
-    // second, so adding them is meaningless -- and the old code did exactly
-    // that, then labelled the result with the first datapoint's bounds.
-    const series = [
-      {
-        attributesKey: 'a',
-        attributes: [],
-        datapoints: [
-          boundsDp(1_000_000_000n, [1, 2, 5], [1, 1, 1, 1]),
-          boundsDp(1_000_000_001n, [10, 20, 50], [2, 2, 2, 2]),
-        ],
-      },
-    ] as unknown as Parameters<typeof buildHistogramTimeMergedSeries>[0]
-
-    const out = buildHistogramTimeMergedSeries(
-      series,
-      1_000_000_000n,
-      2_000_000_000n,
-      1,
-      'Delta'
-    )
-    expect(isHistogramAggregationError(out)).toBe(true)
-    if (!isHistogramAggregationError(out)) return
-    expect(out.kind).toBe('boundsMismatch')
-  })
-
-  it('still merges when the bounds actually agree', () => {
-    const series = [
-      {
-        attributesKey: 'a',
-        attributes: [],
-        datapoints: [
-          boundsDp(1_000_000_000n, [1, 2, 5], [1, 1, 1, 1]),
-          boundsDp(1_000_000_001n, [1, 2, 5], [2, 2, 2, 2]),
-        ],
-      },
-    ] as unknown as Parameters<typeof buildHistogramTimeMergedSeries>[0]
-
-    const out = buildHistogramTimeMergedSeries(
-      series,
-      1_000_000_000n,
-      2_000_000_000n,
-      1,
-      'Delta'
-    )
-    expect(isHistogramAggregationError(out)).toBe(false)
-    const slice = (out as HistogramSlicePoint[])[0]!
-    if (slice.kind !== 'histogram') return
-    expect(slice.counts).toEqual([3, 3, 3, 3])
-  })
-})
-
-describe('heatmapColumnsForWidth', () => {
-  it('derives columns from the measured width', () => {
-    expect(heatmapColumnsForWidth(1200)).toBe(200)
-    expect(heatmapColumnsForWidth(600)).toBe(100)
-  })
-
-  it('quantises, so a pixel of resize does not change the answer', () => {
-    expect(heatmapColumnsForWidth(1200)).toBe(heatmapColumnsForWidth(1207))
-    expect(heatmapColumnsForWidth(1200)).toBe(heatmapColumnsForWidth(1193))
-  })
-
-  it('clamps at both ends', () => {
-    expect(heatmapColumnsForWidth(60)).toBe(50)
-    expect(heatmapColumnsForWidth(100000)).toBe(HEATMAP_MAX_COLUMNS)
-  })
-
-  // The ceiling is also what a histogram asks the store for, so it is a query
-  // bound and not only a drawing one. Pinned literally: a caller reading it as
-  // a fetch target should see the number change here when it changes.
-  it('caps at 250 columns', () => {
-    expect(HEATMAP_MAX_COLUMNS).toBe(250)
-    expect(HEATMAP_MAX_COLUMNS % 25).toBe(0)
-  })
-
-  it('falls back to the floor before layout has measured anything', () => {
-    expect(heatmapColumnsForWidth(0)).toBe(50)
-    expect(heatmapColumnsForWidth(Number.NaN)).toBe(50)
-    expect(heatmapColumnsForWidth(-10)).toBe(50)
+    // No rescaling: the store already aligned everything inside this bucket, so
+    // touching the scale here could only undo that.
+    expect(slice.scale).toBe(2)
+    expect(slice.positiveOffset).toBe(3)
+    expect(slice.positiveCounts).toEqual([1, 2])
+    expect(slice.zeroCount).toBe(1)
   })
 })
