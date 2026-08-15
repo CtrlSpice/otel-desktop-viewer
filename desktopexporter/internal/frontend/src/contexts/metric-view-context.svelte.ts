@@ -324,26 +324,43 @@ function aggregateToSlices(
   buckets: JsonAggregateBucket[] | null
 ): HistogramSlicePoint[] {
   if (!buckets) return []
-  return buckets.map(b => ({
-    kind: 'expHistogram' as const,
-    timestamp: BigInt(b.timestamp),
-    attributesKey: '',
-    scale: b.scale,
-    zeroThreshold: b.zeroThreshold,
-    zeroCount: b.zeroCount,
-    positiveOffset: b.positiveBucketOffset,
-    positiveCounts: b.positiveBucketCounts,
-    negativeOffset: b.negativeBucketOffset,
-    negativeCounts: b.negativeBucketCounts,
-    totals: {
+  return buckets.map(b => {
+    const totals = {
       count: b.count,
       sum: b.sum,
       // Derived from the buckets server-side; a merge cannot carry the
       // originals through.
       min: b.min,
       max: b.max,
-    },
-  }))
+    }
+    // Explicit bounds or exponential, never both. Reading only the exponential
+    // fields left every explicit-bounds histogram with empty arrays and an
+    // empty chart, while its totals and quantiles were right -- which is why it
+    // looked like a rendering problem rather than a missing branch.
+    if (b.explicitBounds && b.explicitBounds.length > 0) {
+      return {
+        kind: 'histogram' as const,
+        timestamp: BigInt(b.timestamp),
+        attributesKey: '',
+        bounds: b.explicitBounds,
+        counts: b.bucketCounts ?? [],
+        totals,
+      }
+    }
+    return {
+      kind: 'expHistogram' as const,
+      timestamp: BigInt(b.timestamp),
+      attributesKey: '',
+      scale: b.scale ?? 0,
+      zeroThreshold: b.zeroThreshold ?? 0,
+      zeroCount: b.zeroCount ?? 0,
+      positiveOffset: b.positiveBucketOffset ?? 0,
+      positiveCounts: b.positiveBucketCounts ?? [],
+      negativeOffset: b.negativeBucketOffset ?? 0,
+      negativeCounts: b.negativeBucketCounts ?? [],
+      totals,
+    }
+  })
 }
 
 export function createMetricViewContext(

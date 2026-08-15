@@ -314,13 +314,18 @@ export type JsonAggregateBucket = {
    *  through, because for cumulative it is a subtraction. */
   min: number
   max: number
-  scale: number
-  zeroThreshold: number
-  zeroCount: number
-  positiveBucketOffset: number
-  positiveBucketCounts: number[]
-  negativeBucketOffset: number
-  negativeBucketCounts: number[]
+  /** Explicit-bounds histograms carry these; exponential ones carry the
+   *  scale/offset fields below. A bucket has one representation or the other,
+   *  never both, so the absent set is omitted rather than sent as nulls. */
+  bucketCounts?: number[]
+  explicitBounds?: number[]
+  scale?: number
+  zeroThreshold?: number
+  zeroCount?: number
+  positiveBucketOffset?: number
+  positiveBucketCounts?: number[]
+  negativeBucketOffset?: number
+  negativeBucketCounts?: number[]
   quantiles: Record<string, number | null> | null
 }
 

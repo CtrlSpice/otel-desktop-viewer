@@ -608,7 +608,22 @@
 				any_value(coalesce(p.pos_agg_offset, 0)) as positive_bucket_offset,
 				sum_bucket_vectors(list(p.pos_p)) as positive_bucket_counts,
 				any_value(coalesce(p.neg_agg_offset, 0)) as negative_bucket_offset,
-				sum_bucket_vectors(list(p.neg_p)) as negative_bucket_counts
+				sum_bucket_vectors(list(p.neg_p)) as negative_bucket_counts,
+				-- Explicit-bounds histograms keep their data here, not in the
+				-- exponential vectors above, and merging only those left four of
+				-- the five histograms in the reference capture aggregating to
+				-- empty buckets with correct totals -- a chart of nothing.
+				--
+				-- Summed, not diffed: hist_folded already resolved temporality
+				-- per series, so every row arriving here is activity within its
+				-- bucket whichever way it was recorded.
+				sum_bucket_vectors(list(p.bucket_counts)) as bucket_counts,
+				any_value(p.explicit_bounds) as explicit_bounds,
+				-- Bounds cannot be reconciled the way scales can: there is no
+				-- rescale that turns one set of boundaries into another. So a
+				-- disagreement is reported rather than merged, the same guard
+				-- hist_merged applies along the time axis.
+				count(distinct p.explicit_bounds::varchar) as distinct_bounds
 			from agg_padded p
 			group by p.bucket_start
 		),
@@ -626,9 +641,14 @@
 			select to_json(list(aggregate_bucket_json(
 				f.timestamp, f.start_time, f.count, f.sum, f.scale,
 				f.zero_threshold, f.zero_count, f.pos_fold, f.neg_fold,
+				f.explicit_bounds, f.bucket_counts,
 				(select quantiles from input)
 			) order by f.bucket_start)) as aggregate
 			from agg_folds f
+			-- A bucket whose series disagree about bounds cannot be merged.
+			-- Dropping it is what the time-axis merge does too; showing a sum
+			-- across incompatible layouts would be a plausible chart of nothing.
+			where f.distinct_bounds <= 1
 		)
 		-- Left join: a stream with no datapoints in the window still
 		-- produces a row (empty timeseries, blank representative fields).
