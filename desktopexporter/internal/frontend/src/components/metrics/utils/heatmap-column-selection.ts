@@ -1,6 +1,6 @@
 import { QUANTILE_LABELS } from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
-import type { HistogramTotals } from '@/components/metrics/utils/histogram-merge'
+import type { HistogramTotals } from '@/components/metrics/utils/histogram-aggregation'
 import type { SelectionLegendRow } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
 import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
 

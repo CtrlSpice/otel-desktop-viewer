@@ -3,28 +3,6 @@
 
 export type HistBucket = { lo: number; hi: number; cnt: number }
 
-/** Explicit-bound histogram buckets in CDF order. counts.length = bounds.length + 1. */
-export function histBuckets(bounds: number[], counts: number[]): HistBucket[] {
-  if (bounds.length === 0 || counts.length === 0) return []
-  const out: HistBucket[] = []
-  for (let i = 0; i < counts.length; i++) {
-    let lo: number
-    let hi: number
-    if (i === 0) {
-      lo = bounds[0]!
-      hi = bounds[0]!
-    } else if (i === counts.length - 1) {
-      lo = bounds[bounds.length - 1]!
-      hi = bounds[bounds.length - 1]!
-    } else {
-      lo = bounds[i - 1]!
-      hi = bounds[i]!
-    }
-    out.push({ lo, hi, cnt: counts[i]! })
-  }
-  return out
-}
-
 function expBase(scale: number): number {
   return Math.pow(2, Math.pow(2, -scale))
 }
@@ -82,43 +60,4 @@ export function expBuckets(
     ...expZeroBucket(zeroCount),
     ...expPosBuckets(scale, posOffset, posCounts),
   ]
-}
-
-/** Lower bound of a populated bucket for min/max display. */
-function bucketLoForExtent(b: HistBucket): number {
-  if (Number.isFinite(b.lo)) return b.lo
-  // (-∞, hi] underflow — finite lower bound unknown; use 0 for non-negative metrics.
-  return 0
-}
-
-/** Upper bound of a populated bucket for min/max display. */
-function bucketHiForExtent(b: HistBucket): number {
-  if (Number.isFinite(b.hi)) return b.hi
-  // [lo, +∞) overflow
-  return b.lo
-}
-
-/** Min/max over populated bucket bounds (ignores OTLP summary fields). */
-export function bucketExtents(
-  buckets: HistBucket[]
-): { min: number; max: number } | null {
-  let min = Infinity
-  let max = -Infinity
-  let found = false
-  for (const b of buckets) {
-    if (b.cnt <= 0) continue
-    found = true
-    const lo = bucketLoForExtent(b)
-    const hi = bucketHiForExtent(b)
-    if (lo < min) min = lo
-    if (hi > max) max = hi
-  }
-  if (!found || !Number.isFinite(min) || !Number.isFinite(max)) return null
-  return { min, max }
-}
-
-function bucketTotal(buckets: HistBucket[]): number {
-  let total = 0
-  for (const b of buckets) total += b.cnt
-  return total
 }

@@ -4,9 +4,16 @@ import type {
   MetricTimeseries,
 } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
-import type { HistogramTotals } from '@/components/metrics/utils/histogram-merge'
 
 const MIN_BUCKET_NS = 1_000_000n // 1 ms
+
+/** Aggregate values of a histogram bucket, as the store reports them. */
+export type HistogramTotals = {
+  count: number
+  sum: number
+  min: number
+  max: number
+}
 
 export type HistogramSlicePoint =
   | {
@@ -95,23 +102,6 @@ export function localOffsetNs(timestampNs: bigint): bigint {
   const ms = Number(timestampNs / 1_000_000n)
   // getTimezoneOffset is minutes *behind* UTC, so negate it.
   return BigInt(-new Date(ms).getTimezoneOffset()) * 60n * 1_000_000_000n
-}
-
-function isHistogramDp(
-  dp: HistogramDataPoint | ExponentialHistogramDataPoint
-): dp is HistogramDataPoint {
-  return dp.metricType === 'Histogram'
-}
-
-function totalsFromDp(
-  dp: HistogramDataPoint | ExponentialHistogramDataPoint
-): HistogramTotals {
-  return {
-    count: dp.count,
-    sum: dp.sum,
-    min: dp.min,
-    max: dp.max,
-  }
 }
 
 /**
