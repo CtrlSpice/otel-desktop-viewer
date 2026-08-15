@@ -240,6 +240,18 @@ export type DataPoint =
 // timestamp desc); datapoints inside a timeseries arrive
 // timestamp-desc as well. Both orderings are guaranteed by the
 // backend SQL.
+/** One bucket of a scalar series' Sum / Average / Rate views, computed by the
+ *  store. Null values mean the bucket held no samples -- not that the answer
+ *  was zero. */
+export type ScalarViewBucket = {
+  bucketStart: bigint
+  sampleCount: number
+  sum: number | null
+  avg: number | null
+  rate: number | null
+  hasReset: boolean
+}
+
 export type MetricTimeseries = {
   /** Series id -- stable across restarts, unique per (stream, resource, labels). */
   attributesKey: string
@@ -255,6 +267,8 @@ export type MetricTimeseries = {
    *  datapoints after thinning, so an average taken there is the mean of a
    *  sample and a sum is short by the thinning factor. */
   stats: SeriesValueStats | null
+  /** Per-bucket Sum / Average / Rate from the store. Null for histograms. */
+  views: ScalarViewBucket[] | null
 }
 
 /** Per-series value statistics, computed server-side over the full window. */

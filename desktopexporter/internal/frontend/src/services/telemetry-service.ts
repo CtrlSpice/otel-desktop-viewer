@@ -265,6 +265,11 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
     resource: json.resource,
     datapoints: json.datapoints.map(dataPointFromJSON),
     stats: json.stats ?? null,
+    views:
+      json.views?.map(v => ({
+        ...v,
+        bucketStart: parseBigInt(v.bucketStart),
+      })) ?? null,
   }
 }
 
@@ -504,7 +509,10 @@ export let telemetryAPI = {
      *  The store then divides the data's own extent instead of the window,
      *  which is what keeps "All" from merging a whole session into one bucket.
      *  Omit to treat the window as a request. */
-    fitToData?: boolean
+    fitToData?: boolean,
+    /** Resolution for the Sum / Average / Rate views, which bucket for a
+     *  different chart than the election thins for. Omit for none. */
+    viewBuckets?: number
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -532,6 +540,7 @@ export let telemetryAPI = {
         { value: quantiles ?? [], given: quantiles !== undefined },
         { value: String(tzOffsetNs ?? 0), given: tzOffsetNs !== undefined },
         { value: fitToData ?? false, given: fitToData !== undefined },
+        { value: String(viewBuckets ?? 0), given: viewBuckets !== undefined },
       ]
       while (optional.length > 0 && !optional[optional.length - 1].given) {
         optional.pop()
@@ -566,7 +575,8 @@ export let telemetryAPI = {
     seriesIds: string[],
     quantiles: number[],
     tzOffsetNs: number,
-    fitToData: boolean
+    fitToData: boolean,
+    viewBuckets = 0
   ): Promise<JsonAggregateBucket[] | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -582,6 +592,7 @@ export let telemetryAPI = {
         // Must match what getMetric sent for the same view, or the aggregate is
         // bucketed against a different window than the series beneath it.
         fitToData,
+        String(viewBuckets),
       ])
     } catch (error) {
       if (

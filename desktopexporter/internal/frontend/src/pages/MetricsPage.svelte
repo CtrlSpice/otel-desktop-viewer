@@ -72,7 +72,10 @@
 </script>
 
 <script lang="ts">
-  import { METRIC_BUCKET_TARGET } from '@/contexts/metric-view-context.svelte'
+  import {
+    METRIC_BUCKET_TARGET,
+    SCALAR_VIEW_BUCKETS,
+  } from '@/contexts/metric-view-context.svelte'
   import {
     DEFAULT_HISTOGRAM_QUANTILES,
     HEATMAP_BUCKET_TARGET,
@@ -441,7 +444,10 @@
           // divided decades: a two-hour session came back as a single bucket
           // per series, and no amount of client-side axis fitting could put
           // back the resolution that was never sent.
-          isDefaultUnboundedWindow(timeContext.selection)
+          isDefaultUnboundedWindow(timeContext.selection),
+          // Resolution for the Sum / Average / Rate views, which bucket for a
+          // different chart than the election thins for.
+          SCALAR_VIEW_BUCKETS
         )) ?? undefined
       // Same statement, before anything renders: the chart must not build once
       // for the previous metric's visible set and colours, and again for this

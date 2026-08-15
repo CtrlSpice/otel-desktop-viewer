@@ -235,22 +235,22 @@ function trimTrailingEmptyBucketPoints(
   return points.slice(0, last + 1)
 }
 
-// Internal: project one timeseries' points to delta-space if
-// `cumulative` is true, otherwise pass through. Centralizes the
-// reset bookkeeping so every per-view aggregation handles cumulative
-// sources identically.
+// --- 3. Per-view aggregation functions --------------------------------
+
 /**
  * The per-interval activity a derived view works from.
  *
  * For a cumulative series this reads the delta the store computed, rather than
- * differencing the points here. The client only ever saw points *after* the M4
- * election, so its "previous point" was frequently not the previous datapoint
- * and the difference silently spanned the gap. The store differences every
- * datapoint in the window, before any reduction.
+ * differencing the points here -- those have been through the M4 election, so
+ * consecutive chart points are frequently not consecutive datapoints.
  *
- * A point with no delta describes no interval -- the first reading of a series,
- * or one whose predecessor was a non-finite value the store dropped -- and is
- * left out, which is what differencing N readings into N-1 intervals did too.
+ * A point with no delta describes no interval (the first reading of a series,
+ * or one whose predecessor was a non-finite value the store dropped) and is
+ * left out, exactly as differencing N readings into N-1 intervals did.
+ *
+ * Only combinePool still needs this: the per-series views now come from the
+ * store, but the pooled Selected / All lines are selection-dependent and are
+ * still merged here.
  */
 function toWorkingPoints(
   points: ChartPoint[],
@@ -266,8 +266,6 @@ function toWorkingPoints(
   }
   return { points: out, resets }
 }
-
-// --- 3. Per-view aggregation functions --------------------------------
 
 /**
  * Options shared by every aggregation. `cumulative` says whether the
@@ -297,155 +295,6 @@ export function aggregateRaw(
   // Defensive copy: callers shouldn't mutate the input's points array.
   const out = series.map(s => ({ ...s, points: s.points.slice() }))
   return { series: out, resets: new Map() }
-}
-
-/**
- * Sum view: total value per bucket. For cumulative input we first
- * convert to per-interval deltas, then sum the deltas in each bucket
- * -- so "Sum" over a 1-minute bucket of a cumulative counter shows
- * "total events in that minute". For delta input we just sum the
- * deltas directly. Empty buckets render as 0 so the chart keeps an
- * even baseline.
- */
-export function aggregateSum(
-  series: ChartTimeseries[],
-  opts: AggregateOpts
-): { series: ChartTimeseries[]; resets: ResetIndicesByKey } {
-  const resets: ResetIndicesByKey = new Map()
-  const out: ChartTimeseries[] = []
-  for (const s of series) {
-    // Sum reduces raw values directly; only Rate needs deltas.
-    // Cumulative input is already a running total — delta-converting
-    // first would turn Sum into "events in this window," which is a
-    // different (and not-what-Sum-means) metric.
-    const work = { points: s.points, resets: [] as number[] }
-    const { buckets, bucketCenters } = bucketize(work.points, opts.bucketCount)
-    const points: ChartPoint[] = buckets.map((bucket, i) => {
-      let total = 0
-      for (const p of bucket) total += p.value
-      return { date: bucketCenters[i]!, value: total }
-    })
-    out.push({ ...s, points: trimTrailingEmptyBucketPoints(points, buckets) })
-    if (work.resets.length > 0) {
-      // Map reset indices from delta-space to bucket-space: a reset
-      // at delta index `r` shows up in the bucket that contains that
-      // delta's timestamp. We approximate by translating each reset's
-      // bucket from `buckets` directly (cheap; one O(buckets) walk).
-      const bucketResets: number[] = []
-      for (const r of work.resets) {
-        const ts = work.points[r]!.date.getTime()
-        for (let i = 0; i < bucketCenters.length; i++) {
-          if (buckets[i]!.some(p => p.date.getTime() === ts)) {
-            bucketResets.push(i)
-            break
-          }
-        }
-      }
-      if (bucketResets.length > 0) resets.set(s.key, bucketResets)
-    }
-  }
-  return { series: out, resets }
-}
-
-/**
- * Average view: arithmetic mean of values per bucket. Same cumulative-
- * conversion path as Sum. Empty buckets are skipped (NaN) rather than
- * forced to 0 -- "average of nothing is 0" would be misleading; the
- * caller's chart renderer should treat undefined as a gap.
- *
- * Concretely we use `value: 0` for empty buckets to keep the
- * ChartPoint type tight, but this is a known limitation -- if it
- * matters we can switch ChartPoint to allow nullable value later.
- */
-export function aggregateAverage(
-  series: ChartTimeseries[],
-  opts: AggregateOpts
-): { series: ChartTimeseries[]; resets: ResetIndicesByKey } {
-  const resets: ResetIndicesByKey = new Map()
-  const out: ChartTimeseries[] = []
-  for (const s of series) {
-    // Avg averages raw values directly; only Rate needs deltas.
-    // For a cumulative counter, "average reading in the window" is
-    // the mean of the running totals — the delta-then-average path
-    // would compute mean per-scrape *delta*, which is essentially
-    // rate × bucketSeconds and not what "Average" implies.
-    const work = { points: s.points, resets: [] as number[] }
-    const { buckets, bucketCenters } = bucketize(work.points, opts.bucketCount)
-    // Empty buckets are skipped: the mean of zero samples is undefined,
-    // and forcing it to 0 plants a misleading dive at trailing/middle gaps.
-    const points: ChartPoint[] = []
-    for (let i = 0; i < buckets.length; i++) {
-      const bucket = buckets[i]!
-      if (bucket.length === 0) continue
-      let total = 0
-      for (const p of bucket) total += p.value
-      points.push({ date: bucketCenters[i]!, value: total / bucket.length })
-    }
-    out.push({ ...s, points })
-    if (work.resets.length > 0) {
-      const bucketResets: number[] = []
-      for (const r of work.resets) {
-        const ts = work.points[r]!.date.getTime()
-        for (let i = 0; i < bucketCenters.length; i++) {
-          if (buckets[i]!.some(p => p.date.getTime() === ts)) {
-            bucketResets.push(i)
-            break
-          }
-        }
-      }
-      if (bucketResets.length > 0) resets.set(s.key, bucketResets)
-    }
-  }
-  return { series: out, resets }
-}
-
-/**
- * Rate view: per-second value. For cumulative monotonic counters
- * this is the headline view -- "requests per second", "errors per
- * second", etc. We compute (Σ deltas in bucket) ÷ (bucket seconds).
- * For delta input the formula collapses to (Σ values) ÷ (bucket
- * seconds), which is sane: deltas-per-second.
- *
- * Bucket seconds comes from bucketize(); for identity bucketing it's
- * the mean inter-point interval, which gives a per-point rate that
- * matches what users expect from Prometheus's irate().
- */
-export function aggregateRate(
-  series: ChartTimeseries[],
-  opts: AggregateOpts
-): { series: ChartTimeseries[]; resets: ResetIndicesByKey } {
-  const resets: ResetIndicesByKey = new Map()
-  const out: ChartTimeseries[] = []
-  for (const s of series) {
-    const work = toWorkingPoints(s.points, opts.cumulative)
-    const { buckets, bucketCenters, bucketSeconds } = bucketize(
-      work.points,
-      opts.bucketCount
-    )
-    const points: ChartPoint[] = buckets.map((bucket, i) => {
-      if (bucketSeconds === 0) {
-        return { date: bucketCenters[i]!, value: 0 }
-      }
-      let total = 0
-      for (const p of bucket) total += p.value
-      return { date: bucketCenters[i]!, value: total / bucketSeconds }
-    })
-    out.push({ ...s, points: trimTrailingEmptyBucketPoints(points, buckets) })
-    if (work.resets.length > 0) {
-      const bucketResets: number[] = []
-      for (const r of work.resets) {
-        const ts = work.points[r]!.date.getTime()
-        for (let i = 0; i < bucketCenters.length; i++) {
-          if (buckets[i]!.some(p => p.date.getTime() === ts)) {
-            bucketResets.push(i)
-            break
-          }
-        }
-      }
-      if (bucketResets.length > 0) resets.set(s.key, bucketResets)
-    }
-  }
-  return { series: out, resets }
 }
 
 // --- 4. Cross-timeseries aggregation (Selected / Other / All) --------

@@ -342,7 +342,8 @@
 					* (select width_ns from scalar_view_grid)
 					- (select tz_offset_ns from input) as bucket_start,
 				d.value,
-				sd.delta
+				sd.delta,
+				sd.is_reset
 			from scalar_dps d
 			left join scalar_deltas sd
 				on sd.series_id = d.series_id and sd.timestamp = d.timestamp
@@ -398,7 +399,12 @@
 				count(b.series_id) as sample_count,
 				sum(b.value) as value_sum,
 				avg(b.value) as value_avg,
-				sum(b.delta) / ((select width_ns from scalar_view_grid) / 1e9) as rate
+				sum(b.delta) / ((select width_ns from scalar_view_grid) / 1e9) as rate,
+				-- Did the counter restart inside this bucket? The rate view marks
+				-- it, because a restart is the one place the number understates
+				-- what happened and the chart should say so rather than draw a
+				-- plausible dip.
+				coalesce(bool_or(b.is_reset), false) as has_reset
 			from scalar_view_spine sp
 			left join scalar_view_bucketed b
 				on b.series_id = sp.series_id
@@ -412,7 +418,8 @@
 					'sampleCount', sample_count,
 					'sum', value_sum,
 					'avg', value_avg,
-					'rate', rate
+					'rate', rate,
+					'hasReset', has_reset
 				) order by bucket_start)) as views
 			from scalar_view_agg
 			group by series_id

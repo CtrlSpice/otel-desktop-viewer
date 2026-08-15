@@ -82,6 +82,9 @@ function makeCumulativeSumMetric(): MetricData {
           makeSumDatapoint('dp-a2', 60_000, 25),
         ],
         stats: null,
+        // The store's view buckets; this fixture is about aggregation defaults,
+        // not the views themselves.
+        views: null,
       },
       {
         attributesKey: 'route=/b',
@@ -92,6 +95,9 @@ function makeCumulativeSumMetric(): MetricData {
           makeSumDatapoint('dp-b2', 60_000, 9),
         ],
         stats: null,
+        // The store's view buckets; this fixture is about aggregation defaults,
+        // not the views themselves.
+        views: null,
       },
     ],
   }

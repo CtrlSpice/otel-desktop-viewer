@@ -32,6 +32,7 @@ import type {
   HistogramDataPoint,
   ExponentialHistogramDataPoint,
   Attributes,
+  ScalarViewBucket,
 } from '@/types/api-types'
 import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
 import { distinguishingResourceAttributes } from '@/utils/series-labels'
@@ -59,7 +60,6 @@ import {
   AGG_KEY_ALL,
   AGG_KEY_SELECTED,
   AGG_KEY_TOTAL,
-  aggregateRate,
   aggregateRaw,
   aggregateSelectedAndAll,
   availableAggregationViews,
@@ -147,6 +147,16 @@ const CHART_POINTS_PER_SERIES = 2000
  * One reduction, in the store, sized so its output is what the chart draws.
  */
 export const METRIC_BUCKET_TARGET = CHART_POINTS_PER_SERIES / 4
+
+/**
+ * How many buckets the Sum / Average / Rate views aggregate onto.
+ *
+ * A chart-resolution number, and deliberately not METRIC_BUCKET_TARGET: the
+ * election thins a line while keeping its shape, these bucket it for a
+ * different chart. The store's ladder rounds this down to a nameable width, so
+ * it is a ceiling rather than an exact count.
+ */
+export const SCALAR_VIEW_BUCKETS = 120
 
 // --- Types --------------------------------------------------------
 
@@ -696,7 +706,68 @@ export function createMetricViewContext(
   //     rules: selected empty → one "All" line; selected covers all →
   //     one "Total" line; otherwise 2.
 
-  const SUM_AUTO_BUCKET_COUNT_CAP = 120
+  const SUM_AUTO_BUCKET_COUNT_CAP = SCALAR_VIEW_BUCKETS
+
+  /**
+   * The store's per-bucket answer for one view, as chart points.
+   *
+   * A projection of the `views` the response carries -- no bucketing, no
+   * differencing, no reset detection. All three used to happen here, over chart
+   * points that had already been through the M4 election, on a grid derived
+   * from each series' own first and last point.
+   *
+   * An empty bucket reads differently per view, which is why the store sends
+   * null rather than zero. Sum and Rate mean "nothing happened in this window",
+   * so they draw a zero. Average has no answer -- the mean of nothing is not
+   * nought -- so it leaves a gap. A bucket that *has* samples but no value is
+   * the first bucket of a cumulative series: no predecessor, so no interval,
+   * and nothing to draw either.
+   */
+  function viewPoints(
+    views: ScalarViewBucket[] | null,
+    view: 'sum' | 'avg' | 'rate'
+  ): ChartPoint[] {
+    if (!views) return []
+    const out: ChartPoint[] = []
+    for (const b of views) {
+      const value = view === 'sum' ? b.sum : view === 'avg' ? b.avg : b.rate
+      if (value === null) {
+        if (b.sampleCount > 0) continue
+        if (view === 'avg') continue
+        out.push({
+          date: new Date(Number(b.bucketStart / 1_000_000n)),
+          value: 0,
+        })
+        continue
+      }
+      out.push({ date: new Date(Number(b.bucketStart / 1_000_000n)), value })
+    }
+    return out
+  }
+
+  /** Per-series lines for a store-computed view, plus the buckets whose counter
+   *  restarted -- which the rate chart marks. */
+  function seriesFromViews(
+    series: readonly { key: string; label: string }[],
+    view: 'sum' | 'avg' | 'rate'
+  ): { series: ChartTimeseries[]; resets: ResetIndicesByKey } {
+    const m = getMetric()
+    const resets: ResetIndicesByKey = new Map()
+    if (!m) return { series: [], resets }
+    const byKey = new Map(m.timeseries.map(ts => [ts.attributesKey, ts.views]))
+    const out: ChartTimeseries[] = []
+    for (const s of series) {
+      const views = byKey.get(s.key) ?? null
+      out.push({ ...s, points: viewPoints(views, view) })
+      if (!views) continue
+      const flagged: number[] = []
+      views.forEach((b, i) => {
+        if (b.hasReset) flagged.push(i)
+      })
+      if (flagged.length > 0) resets.set(s.key, flagged)
+    }
+    return { series: out, resets }
+  }
 
   /** Shared bucket count for rate-view raw lines AND cross-series
    *  aggregates so their staircases align.
@@ -744,10 +815,7 @@ export function createMetricViewContext(
     const cumulative =
       metricType === 'Sum' && isCumulativeTemporality(temporality)
     if (view.aggregationView === 'rate') {
-      return aggregateRate(visible, {
-        cumulative,
-        bucketCount: sharedBucketCount,
-      })
+      return seriesFromViews(visible, 'rate')
     }
     return aggregateRaw(visible, {
       cumulative,
@@ -787,7 +855,7 @@ export function createMetricViewContext(
         metricType === 'Sum' && isCumulativeTemporality(temporality)
       const transformed =
         view.aggregationView === 'rate'
-          ? aggregateRate(all, { cumulative, bucketCount: sharedBucketCount })
+          ? seriesFromViews(all, 'rate')
           : aggregateRaw(all, {
               cumulative,
               bucketCount: SUM_AUTO_BUCKET_COUNT_CAP,

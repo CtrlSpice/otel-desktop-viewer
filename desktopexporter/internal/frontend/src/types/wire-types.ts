@@ -253,6 +253,19 @@ export type JsonDataPoint =
   | JsonHistogramDataPoint
   | JsonExponentialHistogramDataPoint
 
+/** One bucket of a scalar series' Sum / Average / Rate views, as the store
+ *  computed them. sum, avg and rate are null when the bucket holds no samples:
+ *  Sum and Rate read that as no activity, Average has to skip it, and a zero
+ *  here would decide that for both. */
+export type JsonScalarViewBucket = {
+  bucketStart: string
+  sampleCount: number
+  sum: number | null
+  avg: number | null
+  rate: number | null
+  hasReset: boolean
+}
+
 export type JsonMetricTimeseries = {
   /**
    * The series id: content-derived from (stream, resource, labels).
@@ -277,6 +290,9 @@ export type JsonMetricTimeseries = {
   datapoints: JsonDataPoint[]
   /** Server-computed stats over the whole window; null for histograms. */
   stats: JsonSeriesValueStats | null
+  /** Per-bucket Sum / Average / Rate. Null for histogram series, which have no
+   *  scalar to aggregate. */
+  views: JsonScalarViewBucket[] | null
 }
 
 export type JsonMetricData = {
