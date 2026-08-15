@@ -6,9 +6,11 @@
 -- by that key.
 --
 -- Exists so the store can answer "p50, p95 and p99 of this datapoint" in one
--- pass. Computing quantiles here rather than shipping bucket vectors for the
--- client to reduce is what lets a response carry three numbers per series per
--- bucket instead of a forty-element array.
+-- call. One call, not one pass: each quantile walks the buckets itself. Making
+-- them share a single accumulation would need that accumulation as its own
+-- macro, and a subquery-valued macro cannot be passed as an argument to
+-- another -- see bucket_quantile_linear, which records the three ways that
+-- fails and why the remaining cost is bounded.
 --
 -- A quantile with nothing to compute from yields null rather than an error, so
 -- one empty datapoint does not void the whole object.
