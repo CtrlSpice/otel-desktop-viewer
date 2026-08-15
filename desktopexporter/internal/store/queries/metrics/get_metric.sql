@@ -42,7 +42,14 @@
 				-- the time picker and knows whether a window was chosen; the store
 				-- only obeys. Inferring it here from time_start = 0 would put the
 				-- same rule in two languages, to drift apart later.
-				?::boolean as fit_to_data
+				?::boolean as fit_to_data,
+				-- How many buckets the Sum / Average / Rate views aggregate onto.
+				--
+				-- Deliberately not target_buckets. The election's job is to keep
+				-- the line's shape while thinning it; the view's job is chart
+				-- resolution for a different chart. Welding them would make a
+				-- change to one silently retune the other.
+				?::bigint as view_buckets
 		),
 		stream as (
 			select s.* from metric_streams s, input
@@ -310,6 +317,105 @@
 				value < prev_value as is_reset
 			from scalar_lagged
 			where prev_value is not null
+		),
+
+		-- The grid the scalar views aggregate on.
+		--
+		-- Absolute boundaries from the ladder, not span/N measured from each
+		-- series' own first and last point. That per-series origin is what made
+		-- two lines' "bucket 3" cover different intervals; the client's
+		-- sharedBucketCount papers over it by handing both paths the same bucket
+		-- *count*, and its comment concedes that only lines up because the
+		-- series happen to share a scrape cadence.
+		scalar_view_grid as (
+			-- reduction_span as a relation, not a scalar subquery: bucket_width_ns
+			-- filters a list with a lambda, and a subquery argument is inlined
+			-- into that lambda body where DuckDB rejects it. The reduction CTE
+			-- above takes the same care for the same reason.
+			select bucket_width_ns(rs.span_ns, i.view_buckets) as width_ns
+			from input i, reduction_span rs
+		),
+		scalar_view_bucketed as (
+			select d.series_id,
+				floor_div(d.timestamp + (select tz_offset_ns from input),
+				          (select width_ns from scalar_view_grid))
+					* (select width_ns from scalar_view_grid)
+					- (select tz_offset_ns from input) as bucket_start,
+				d.value,
+				sd.delta
+			from scalar_dps d
+			left join scalar_deltas sd
+				on sd.series_id = d.series_id and sd.timestamp = d.timestamp
+		),
+		-- Each series' own first and last populated bucket.
+		--
+		-- Per series, not per response: a series that started late should not
+		-- carry empty buckets for time before it existed, nor a series that
+		-- stopped trail them afterwards. The boundaries stay shared -- only the
+		-- extent differs -- so two series still line up where they overlap.
+		scalar_view_extent as (
+			select series_id,
+				min(bucket_start) as first_bucket,
+				max(bucket_start) as last_bucket
+			from scalar_view_bucketed
+			group by series_id
+		),
+		-- Every bucket between those ends, including the ones nothing landed in.
+		--
+		-- Interior gaps are information: a Sum or Rate of zero across an outage
+		-- is the answer, and a chart that joined the two sides would draw
+		-- straight through it. Leading and trailing empties are not, which is
+		-- what the extent above trims.
+		scalar_view_spine as (
+			select e.series_id,
+				unnest(range(e.first_bucket,
+				             e.last_bucket + g.width_ns,
+				             g.width_ns)) as bucket_start
+			from scalar_view_extent e, scalar_view_grid g
+		),
+		-- One row per (series, bucket), carrying every view's answer.
+		--
+		-- An empty bucket comes out null rather than zero, and that falls out of
+		-- SQL rather than being arranged: sum and avg over no rows are null. It
+		-- is exactly the distinction the views need -- Sum and Rate read a gap
+		-- as zero activity, Average has to skip it, because the mean of nothing
+		-- is not nought. Emitting 0 here would bake one view's reading into all
+		-- three. sample_count rides along so "no samples" stays legible.
+		--
+		-- All four are computed rather than the caller naming a view: they are
+		-- aggregate functions over rows already grouped, so the extra ones cost
+		-- almost nothing, and switching tabs then needs no round trip. The
+		-- selection-dependent pooled lines are a different matter -- those
+		-- recompute when the legend changes, as the histogram aggregate does.
+		--
+		-- Only rate differences a cumulative counter. Summing across series at
+		-- time t means adding the running totals; delta-converting first would
+		-- turn Sum into "events in this window" and Average into "mean
+		-- increment" -- useful numbers, but not the ones those labels promise.
+		scalar_view_agg as (
+			select sp.series_id,
+				sp.bucket_start,
+				count(b.series_id) as sample_count,
+				sum(b.value) as value_sum,
+				avg(b.value) as value_avg,
+				sum(b.delta) / ((select width_ns from scalar_view_grid) / 1e9) as rate
+			from scalar_view_spine sp
+			left join scalar_view_bucketed b
+				on b.series_id = sp.series_id
+			   and b.bucket_start = sp.bucket_start
+			group by sp.series_id, sp.bucket_start
+		),
+		scalar_views_agg as (
+			select series_id,
+				to_json(list(json_object(
+					'bucketStart', bucket_start::varchar,
+					'sampleCount', sample_count,
+					'sum', value_sum,
+					'avg', value_avg,
+					'rate', rate
+				) order by bucket_start)) as views
+			from scalar_view_agg
+			group by series_id
 		),
 
 		-- isfinite: DuckDB orders NaN above infinity, so one NaN sample would
@@ -675,7 +781,8 @@
 				t.attributes_sample,
 				resource_json(r.attribute_ids, r.dropped_attributes_count),
 				t.datapoints,
-				series_stats_json(t.value_count, t.value_min, t.value_max, t.value_sum)
+				series_stats_json(t.value_count, t.value_min, t.value_max, t.value_sum),
+				sv.views
 			-- attrs_key breaks ties, and the tie is the common case rather
 			-- than the exception: series of one metric are usually reported
 			-- together, so they share a latest_ts. DuckDB's sort is not
@@ -691,6 +798,9 @@
 			from ts_dps_agg t
 			join metric_series ms on ms.id = t.series_id
 			join resources r on r.id = ms.resource_id
+			-- Left: a histogram series has no scalar views, and a scalar series
+			-- with nothing in the window has no buckets either.
+			left join scalar_views_agg sv on sv.series_id = t.series_id
 		),
 		-- The cross-series aggregate: the selected series merged into one
 		-- histogram per time bucket, which is what a heatmap draws and what a

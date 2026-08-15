@@ -295,6 +295,7 @@ type getMetricParams struct {
 	quantiles          []float64
 	tzOffsetNs         int64
 	fitToData          bool
+	viewBuckets        int64
 }
 
 func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricParams, error) {
@@ -304,15 +305,15 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	// Everything past the third is optional and additive: targetBuckets,
-	// seriesIds, quantiles, tzOffsetNs, fitToData. A caller that predates any of
-	// them sends fewer and gets the old behaviour.
+	// seriesIds, quantiles, tzOffsetNs, fitToData, viewBuckets. A caller that
+	// predates any of them sends fewer and gets the old behaviour.
 	//
 	// The upper bound was 4 and stayed 4 while four more parameters were added
 	// below it, so every request carrying them was rejected before it reached
 	// them. Nothing caught it: the store tests call GetMetric directly, and the
 	// handler tests only ever sent three. TestGetMetricAcceptsEveryParameter
 	// now sends a full set, so the bound cannot fall behind again silently.
-	if len(params) < 3 || len(params) > 8 {
+	if len(params) < 3 || len(params) > 9 {
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
@@ -389,6 +390,19 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	}
 	// Whether the window is a request or the absence of one. Absent means it is
 	// a request, which is what every caller predating this parameter meant.
+	// Resolution for the scalar views. Absent means none, which is what a
+	// caller predating the parameter meant.
+	var viewBuckets int64
+	if len(params) >= 9 && params[8] != nil {
+		viewBuckets, err = h.parseTimestampParam(params[8], "viewBuckets")
+		if err != nil {
+			return out, err
+		}
+		if viewBuckets < 0 {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+	}
+
 	var fitToData bool
 	if len(params) >= 8 && params[7] != nil {
 		b, ok := params[7].(bool)
@@ -405,6 +419,7 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	out.quantiles = quantiles
 	out.tzOffsetNs = tzOffsetNs
 	out.fitToData = fitToData
+	out.viewBuckets = viewBuckets
 	return out, nil
 }
 
@@ -415,7 +430,7 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, args.streamID, args.startTime, args.endTime,
-			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData)
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -628,7 +643,7 @@ func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.R
 	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricAggregate(ctx, db, args.streamID, args.startTime, args.endTime,
-			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData)
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

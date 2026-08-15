@@ -3,12 +3,15 @@
 -- Every field is passed in. attributes and datapoints are already-built JSON
 -- from aggregates the caller ran, and resource comes from a join -- so this
 -- assembles rather than resolves, and stays a pure function of its arguments.
-create or replace macro timeseries_json(attrs_key, attributes, resource, datapoints, stats) as (
+create or replace macro timeseries_json(attrs_key, attributes, resource, datapoints, stats, views) as (
 		json_object(
 			'attributesKey', attrs_key,
 			'attributes', attributes,
 			'resource', resource,
 			'datapoints', datapoints,
-			'stats', stats
+			'stats', stats,
+			-- Per-bucket Sum / Average / Rate for this series. Null for
+			-- histograms, which have no scalar to aggregate.
+			'views', views
 		)
 	)
