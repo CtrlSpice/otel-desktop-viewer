@@ -262,6 +262,56 @@
 			where (select width_ns from reduction) is not null
 		),
 
+		-- Per-interval activity for a cumulative scalar series.
+		--
+		-- Each datapoint of a Cumulative Sum is a running total, so the activity
+		-- in an interval is the difference from the previous datapoint of the
+		-- same series. The first datapoint has no predecessor and produces no
+		-- interval -- N readings describe N-1 intervals, which is what the null
+		-- check drops.
+		--
+		-- A fall means the counter restarted between the two readings. The
+		-- convention (Prometheus rate(), and the TypeScript this replaces) is to
+		-- treat the current reading as the increment since the restart: the
+		-- prior counter is gone, so it is the best reference available. The reset
+		-- is reported rather than smoothed away, so the chart can mark it instead
+		-- of drawing a cliff.
+		--
+		-- Computed before any reduction, which is the half the client could not
+		-- do: it differenced *chart points*, which have already been through the
+		-- M4 election, so its "previous point" was frequently not the previous
+		-- datapoint and the delta silently spanned the gap.
+		--
+		-- isfinite for the same reason bucket_elected uses it: DuckDB orders NaN
+		-- above infinity, and one NaN poisons every difference after it. A NaN
+		-- the instrument really sent is still visible in the datapoint list,
+		-- which is fetched unreduced -- the chart drops what it cannot draw, the
+		-- record keeps what arrived.
+		scalar_dps as (
+			select d.series_id, d.timestamp,
+				coalesce(d.double_value, d.int_value) as value
+			from filtered_dps d
+			where d.metric_type in ('Gauge', 'Sum')
+			  and isfinite(coalesce(d.double_value, d.int_value))
+		),
+		scalar_lagged as (
+			select s.*,
+				lag(s.value) over (
+					partition by s.series_id order by s.timestamp
+				) as prev_value
+			from scalar_dps s
+		),
+		scalar_deltas as (
+			select series_id,
+				timestamp,
+				case when value < prev_value then value
+				     else value - prev_value
+				end as delta,
+				value < prev_value as is_reset
+			from scalar_lagged
+			where prev_value is not null
+		),
+
 		-- isfinite: DuckDB orders NaN above infinity, so one NaN sample would
 		-- win max() and elect itself as its bucket's representative, displacing
 		-- a real value. It cannot be charted either way, so it is excluded from
@@ -495,8 +545,20 @@
 		-- `union all by name` matches columns by name rather than position, so
 		-- the two branches do not have to agree on column order -- which they
 		-- would silently get wrong.
+		-- The scalar rows, carrying the per-interval activity computed above.
+		--
+		-- A left join: the first datapoint of each series has no predecessor and
+		-- therefore no delta, and a NaN reading was dropped from scalar_dps
+		-- entirely. Both arrive here as null, which is the honest answer -- "no
+		-- interval" rather than a zero that would read as "no activity".
+		filtered_with_deltas as (
+			select d.*, sd.delta as delta, sd.is_reset as is_reset
+			from filtered_dps d
+			left join scalar_deltas sd
+				on sd.series_id = d.series_id and sd.timestamp = d.timestamp
+		),
 		projected_dps as (
-			select * from filtered_dps
+			select * from filtered_with_deltas
 			where (select kind from reduction_kind) <> 'merge'
 			union all by name
 			select
@@ -524,7 +586,9 @@
 				m.positive_bucket_offset, m.positive_bucket_counts,
 				m.negative_bucket_offset, m.negative_bucket_counts,
 				null::double as double_value, null::bigint as int_value,
-				null::varchar as value_type, m.is_monotonic
+				null::varchar as value_type, m.is_monotonic,
+				-- Histograms have no scalar to difference.
+				null::double as delta, null::boolean as is_reset
 			from hist_folded m
 			-- A bucket whose datapoints disagree about explicit bounds cannot
 			-- be merged; there is no rescale that reconciles two boundary sets.

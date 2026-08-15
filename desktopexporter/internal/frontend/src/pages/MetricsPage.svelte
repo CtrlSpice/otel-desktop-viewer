@@ -443,9 +443,14 @@
           // back the resolution that was never sent.
           isDefaultUnboundedWindow(timeContext.selection)
         )) ?? undefined
+      // Same statement, before anything renders: the chart must not build once
+      // for the previous metric's visible set and colours, and again for this
+      // one's.
+      metricCtx.seedForMetric(selectedMetric)
     } catch (err) {
       console.error('Failed to fetch metric detail:', err)
       selectedMetric = undefined
+      metricCtx.seedForMetric(undefined)
     } finally {
       detailLoading = false
     }

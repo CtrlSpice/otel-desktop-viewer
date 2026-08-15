@@ -203,6 +203,11 @@ export type JsonSumDataPoint = JsonBaseDataPoint & {
   valueType: string
   isMonotonic: boolean
   aggregationTemporality: string
+  /** Activity since the previous reading of this series. Cumulative only;
+   *  null on the first datapoint, which describes no interval. */
+  delta?: number | null
+  /** Whether the counter restarted in that interval. */
+  isReset?: boolean | null
 }
 
 export type JsonHistogramDataPoint = JsonBaseDataPoint & {

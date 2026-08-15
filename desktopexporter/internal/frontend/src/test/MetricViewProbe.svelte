@@ -6,7 +6,7 @@
   } from '@/contexts/metric-view-context.svelte'
   import type { MetricData } from '@/types/api-types'
 
-  // createMetricViewContext() runs $effect, so it only works inside a
+  // createMetricViewContext() registers $effects, so it only works inside a
   // component. This probe renders the sub-view state the URL sync owns so
   // tests can observe it through the DOM, and hands the context back so
   // tests can drive it through its public methods.
@@ -17,6 +17,10 @@
   let { metric, oncontext }: Props = $props()
 
   const metricCtx = createMetricViewContext(() => metric)
+  // The page seeds synchronously in the same statement that assigns the
+  // metric; the probe stands in for that. Seeding is no longer an effect, so
+  // without this the sub-view defaults are never applied.
+  untrack(() => metricCtx.seedForMetric(metric))
   // Handing the context back is a one-time setup step, not a subscription.
   untrack(() => oncontext?.(metricCtx))
 </script>

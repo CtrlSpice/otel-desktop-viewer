@@ -33,7 +33,17 @@ create or replace macro datapoint_json(d, exemplars, qs) as (
 					'intValue', d.int_value,
 					'valueType', d.value_type,
 					'isMonotonic', d.is_monotonic,
-					'aggregationTemporality', d.aggregation_temporality
+					'aggregationTemporality', d.aggregation_temporality,
+					-- Activity since the previous reading of this series, and
+					-- whether the counter restarted in between. Null on the first
+					-- datapoint of a series, which describes no interval.
+					--
+					-- Cumulative only: a Delta Sum's value already *is* the
+					-- interval's activity, so differencing it would be wrong.
+					'delta', case when d.aggregation_temporality = 'Cumulative'
+						then d.delta end,
+					'isReset', case when d.aggregation_temporality = 'Cumulative'
+						then d.is_reset end
 				)
 				when 'Histogram' then json_object(
 					'count', d.count,

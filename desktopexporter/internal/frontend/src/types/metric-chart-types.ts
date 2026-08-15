@@ -6,7 +6,18 @@
 
 import type { Attribute } from '@/types/api-types'
 
-export type ChartPoint = { date: Date; value: number }
+export type ChartPoint = {
+  date: Date
+  value: number
+  /** Activity since the previous reading, computed by the store. Present only
+   *  on Cumulative Sums, and null on a series' first point, which describes no
+   *  interval. Derived views read this rather than differencing the points they
+   *  were given -- those have been through the reduction, so consecutive chart
+   *  points are frequently not consecutive datapoints. */
+  delta?: number | null
+  /** The counter restarted in this interval, as the store saw it. */
+  isReset?: boolean | null
+}
 
 /**
  * One per-attribute timeseries projected for layerchart. The

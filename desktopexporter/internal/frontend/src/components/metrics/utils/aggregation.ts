@@ -13,7 +13,7 @@
 //
 // All aggregation/overlay functions are pure (no I/O, no globals).
 // Callers must say up front whether their source is Cumulative or
-// Delta temporality -- that determines whether cumulativeToDeltas runs
+// Delta temporality -- that determines whether the store's deltas are read
 // first.
 
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
@@ -163,43 +163,6 @@ export function availableAggregationViews(
 // --- 2. Building blocks -----------------------------------------------
 
 /**
- * Convert a cumulative-temporality series (each point = running total)
- * into per-interval deltas (each output point = increment since the
- * previous point). The first input point cannot produce an interval
- * -- there's no prior reference -- so the output has length N-1.
- *
- * Reset handling: when point[n].value < point[n-1].value on a
- * monotonic counter, the process restarted (container redeployed,
- * collector reset, etc.). The conventional fix (matching Prometheus's
- * rate()) is to treat the new value as the partial-interval increment
- * and flag the index so the UI can mark it. Without this, a counter
- * reset would render as a huge negative delta and tank the chart.
- *
- * `resets` contains indices into the OUTPUT array, not the input.
- */
-export function cumulativeToDeltas(points: ChartPoint[]): {
-  points: ChartPoint[]
-  resets: number[]
-} {
-  const out: ChartPoint[] = []
-  const resets: number[] = []
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1]!
-    const cur = points[i]!
-    let delta = cur.value - prev.value
-    if (delta < 0) {
-      // Counter reset between prev and cur. Assume `cur.value` is the
-      // increment that accumulated since the reset (the prior counter
-      // is gone -- best we can do without a fresher reference).
-      delta = cur.value
-      resets.push(out.length)
-    }
-    out.push({ date: cur.date, value: delta })
-  }
-  return { points: out, resets }
-}
-
-/**
  * Slice `points` into `bucketCount` equal-time buckets spanning the
  * series' first and last timestamps. Used by sum/avg/rate so the
  * chart shows one output point per visible bucket rather than one
@@ -276,20 +239,40 @@ function trimTrailingEmptyBucketPoints(
 // `cumulative` is true, otherwise pass through. Centralizes the
 // reset bookkeeping so every per-view aggregation handles cumulative
 // sources identically.
+/**
+ * The per-interval activity a derived view works from.
+ *
+ * For a cumulative series this reads the delta the store computed, rather than
+ * differencing the points here. The client only ever saw points *after* the M4
+ * election, so its "previous point" was frequently not the previous datapoint
+ * and the difference silently spanned the gap. The store differences every
+ * datapoint in the window, before any reduction.
+ *
+ * A point with no delta describes no interval -- the first reading of a series,
+ * or one whose predecessor was a non-finite value the store dropped -- and is
+ * left out, which is what differencing N readings into N-1 intervals did too.
+ */
 function toWorkingPoints(
   points: ChartPoint[],
   cumulative: boolean
 ): { points: ChartPoint[]; resets: number[] } {
   if (!cumulative) return { points, resets: [] }
-  return cumulativeToDeltas(points)
+  const out: ChartPoint[] = []
+  const resets: number[] = []
+  for (const p of points) {
+    if (p.delta === null || p.delta === undefined) continue
+    if (p.isReset) resets.push(out.length)
+    out.push({ date: p.date, value: p.delta })
+  }
+  return { points: out, resets }
 }
 
 // --- 3. Per-view aggregation functions --------------------------------
 
 /**
  * Options shared by every aggregation. `cumulative` says whether the
- * input is cumulative-temporality (triggers cumulativeToDeltas before
- * the view's math). `bucketCount` is the desired chart x-resolution
+ * input is cumulative-temporality (so the view reads the store's
+ * per-interval deltas). `bucketCount` is the desired chart x-resolution
  * for bucketed views; raw passes it to its caller's downsampler
  * separately.
  */
@@ -658,7 +641,7 @@ function combinePool(
   const allPoints: ChartPoint[] = []
   for (const s of pool) {
     const { points } = needsDeltas
-      ? cumulativeToDeltas(s.points)
+      ? toWorkingPoints(s.points, true)
       : { points: s.points }
     for (const p of points) allPoints.push(p)
   }

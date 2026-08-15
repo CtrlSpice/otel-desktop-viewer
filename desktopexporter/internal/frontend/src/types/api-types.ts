@@ -172,6 +172,11 @@ export type SumDataPoint = BaseDataPoint & {
   valueType: string
   isMonotonic: boolean
   aggregationTemporality: string
+  /** Activity since the previous reading of this series, from the store.
+   *  Cumulative only; null on a series' first datapoint. */
+  delta?: number | null
+  /** Whether the counter restarted in that interval. */
+  isReset?: boolean | null
 }
 
 export type HistogramDataPoint = BaseDataPoint & {

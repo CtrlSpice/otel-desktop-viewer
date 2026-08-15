@@ -40,7 +40,13 @@ export function timeseriesToChartTimeseries(timeseries: MetricTimeseries[]): {
       const typed = dp as GaugeDataPoint | SumDataPoint
       const value = typed.doubleValue ?? typed.intValue ?? 0
       const t = Number(dp.timestamp / 1_000_000n)
-      points.push({ date: new Date(t), value })
+      points.push({
+        date: new Date(t),
+        value,
+        // Cumulative Sums only; a Gauge has no interval to describe.
+        delta: typed.metricType === 'Sum' ? (typed.delta ?? null) : null,
+        isReset: typed.metricType === 'Sum' ? (typed.isReset ?? null) : null,
+      })
     }
     points.sort((a, b) => a.date.getTime() - b.date.getTime())
     chartTimeseries.push({
