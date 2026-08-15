@@ -272,6 +272,13 @@ function metricDataFromJSON(json: JsonMetricData): MetricData {
   return {
     ...json,
     timeseries: json.timeseries.map(timeseriesFromJSON),
+    window: {
+      // Tolerated as absent so a response from a store that predates the field
+      // still renders, on the same window the caller asked for.
+      fittedToData: json.window?.fittedToData ?? false,
+      startNs: parseNullableBigInt(json.window?.startNs ?? null),
+      endNs: parseNullableBigInt(json.window?.endNs ?? null),
+    },
   }
 }
 
@@ -492,31 +499,48 @@ export let telemetryAPI = {
     quantiles?: number[],
     /** The viewer's UTC offset in nanoseconds, so bucket boundaries fall where
      *  the reader's calendar puts them. Omit for UTC. */
-    tzOffsetNs?: number
+    tzOffsetNs?: number,
+    /** Whether this window is the absence of a choice rather than a request.
+     *  The store then divides the data's own extent instead of the window,
+     *  which is what keeps "All" from merging a whole session into one bucket.
+     *  Omit to treat the window as a request. */
+    fitToData?: boolean
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
     // Not-found arrives as a JSON-RPC error (one wire convention across all
     // signals); translate it to null here so callers keep a simple contract.
     try {
+      // Positional params: a later one requires the earlier, so a caller
+      // passing quantiles without a resolution still sends a placeholder.
+      //
+      // Built as a list and trimmed from the end rather than as one conditional
+      // per parameter. The conditional form made every parameter name every
+      // parameter after it, so adding one meant editing every line above it --
+      // four edits to add a fifth, each silently optional.
+      //
+      // seriesIds sends null, not [] -- the three states are distinct on the
+      // wire: absent or null means every series, an empty array means none.
+      // Sending [] for "no filter" asked the store for no series, which it
+      // correctly answered with nothing.
+      const optional: { value: unknown; given: boolean }[] = [
+        {
+          value: String(targetBuckets ?? 0),
+          given: targetBuckets !== undefined,
+        },
+        { value: seriesIds ?? null, given: seriesIds !== undefined },
+        { value: quantiles ?? [], given: quantiles !== undefined },
+        { value: String(tzOffsetNs ?? 0), given: tzOffsetNs !== undefined },
+        { value: fitToData ?? false, given: fitToData !== undefined },
+      ]
+      while (optional.length > 0 && !optional[optional.length - 1].given) {
+        optional.pop()
+      }
       const rawData = await callRPC<JsonMetricData>('getMetric', [
         streamId,
         startTimeNs,
         endTimeNs,
-        // Positional params: a later one requires the earlier, so a caller
-        // passing quantiles without a resolution still sends a placeholder.
-        ...(targetBuckets || seriesIds || quantiles
-          ? [String(targetBuckets ?? 0)]
-          : []),
-        // null, not [] -- the three states are distinct on the wire: absent or
-        // null means every series, an empty array means none. Sending [] for
-        // "no filter" asked the store for no series, which it correctly
-        // answered with nothing.
-        ...(seriesIds || quantiles || tzOffsetNs !== undefined
-          ? [seriesIds ?? null]
-          : []),
-        ...(quantiles || tzOffsetNs !== undefined ? [quantiles ?? []] : []),
-        ...(tzOffsetNs !== undefined ? [String(tzOffsetNs)] : []),
+        ...optional.map(p => p.value),
       ])
       return metricDataFromJSON(rawData)
     } catch (error) {
@@ -541,7 +565,8 @@ export let telemetryAPI = {
     targetBuckets: number,
     seriesIds: string[],
     quantiles: number[],
-    tzOffsetNs: number
+    tzOffsetNs: number,
+    fitToData: boolean
   ): Promise<JsonAggregateBucket[] | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -554,6 +579,9 @@ export let telemetryAPI = {
         seriesIds,
         quantiles,
         String(tzOffsetNs),
+        // Must match what getMetric sent for the same view, or the aggregate is
+        // bucketed against a different window than the series beneath it.
+        fitToData,
       ])
     } catch (error) {
       if (

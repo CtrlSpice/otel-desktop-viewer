@@ -735,7 +735,21 @@ const HEATMAP_PX_PER_COLUMN = 6
 // the ceiling the cells are thinner than the screen can draw.
 const HEATMAP_COLUMN_STEP = 25
 const HEATMAP_MIN_COLUMNS = 50
-const HEATMAP_MAX_COLUMNS = 400
+
+/**
+ * The most columns any heatmap will draw, and so the most time buckets worth
+ * asking the store for.
+ *
+ * Exported because it is a *fetch* bound as much as a drawing one. A histogram
+ * request carries a bucket vector per series per bucket, so asking for the
+ * line-chart target of 2000 buys columns nothing can render: several times the
+ * query, the payload and the parse, discarded at the point of merge.
+ *
+ * 250 at six pixels each is a 1500px plot, wider than the chart pane gets on a
+ * laptop, so the cap binds before the pixels do rather than after. A step
+ * multiple, so the quantisation above still lands on it exactly.
+ */
+export const HEATMAP_MAX_COLUMNS = 250
 
 /**
  * How many time columns a heatmap of this pixel width should have.

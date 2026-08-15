@@ -301,6 +301,17 @@ export type JsonMetricData = {
   aggregate: JsonAggregateBucket[] | null
   /** Datapoints in the window, which may exceed the number returned. */
   datapointCount: number
+  /** The window the reduction actually divided.
+   *
+   *  `fittedToData` echoes what was asked for; `startNs` / `endNs` are the
+   *  data's own extent and are null unless it was. Reported rather than
+   *  inferred: the timestamps in the response are bucket starts, so deriving
+   *  the axis from them describes the reduction with its own output. */
+  window: {
+    fittedToData: boolean
+    startNs: string | null
+    endNs: string | null
+  }
 }
 
 /** One time bucket of the cross-series merge. Carries bucket vectors because

@@ -253,13 +253,20 @@
                 </tbody>
               </table>
             {/if}
+            <!-- What arrived, once it has: metricTs.datapoints are the
+                 store's merged buckets for a reduced histogram, and this list
+                 is the view that has to show the telemetry itself. The merged
+                 rows stand in for the moment the fetch is in flight, so the
+                 group is never briefly empty. -->
+            {@const rawDatapoints = ctx.seriesDatapoints(ts.key)}
+            {@const listDatapoints = rawDatapoints ?? metricTs.datapoints}
             <FieldGroup
               label="Datapoints"
-              count={metricTs.datapoints.length}
+              count={listDatapoints.length}
               open={datapointsOpen}
               onOpenChange={(open) => setDatapointsOpen(ts.key, open)}
             >
-              <SeriesDatapointList datapoints={metricTs.datapoints} flush />
+              <SeriesDatapointList datapoints={listDatapoints} flush />
             </FieldGroup>
           {:else}
             <p class="ts-fields-empty">Timeseries not found</p>

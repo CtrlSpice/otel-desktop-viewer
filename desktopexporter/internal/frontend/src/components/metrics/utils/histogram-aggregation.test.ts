@@ -6,6 +6,7 @@ import type {
 import {
   buildHistogramTimeMergedSeries,
   heatmapColumnsForWidth,
+  HEATMAP_MAX_COLUMNS,
   isHistogramAggregationError,
   buildPerSeriesQuantileSeries,
   buildVisibleSeriesQuantileChartTimeseries,
@@ -347,7 +348,15 @@ describe('heatmapColumnsForWidth', () => {
 
   it('clamps at both ends', () => {
     expect(heatmapColumnsForWidth(60)).toBe(50)
-    expect(heatmapColumnsForWidth(100000)).toBe(400)
+    expect(heatmapColumnsForWidth(100000)).toBe(HEATMAP_MAX_COLUMNS)
+  })
+
+  // The ceiling is also what a histogram asks the store for, so it is a query
+  // bound and not only a drawing one. Pinned literally: a caller reading it as
+  // a fetch target should see the number change here when it changes.
+  it('caps at 250 columns', () => {
+    expect(HEATMAP_MAX_COLUMNS).toBe(250)
+    expect(HEATMAP_MAX_COLUMNS % 25).toBe(0)
   })
 
   it('falls back to the floor before layout has measured anything', () => {

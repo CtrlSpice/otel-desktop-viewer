@@ -69,6 +69,9 @@ function makeCumulativeSumMetric(): MetricData {
     scopeDroppedAttributesCount: 0,
     scope: EMPTY_SCOPE,
     datapointCount: 0,
+    // The window as the caller asked for it: this fixture's assertions are
+    // about aggregation views, not about the axis.
+    window: { fittedToData: false, startNs: null, endNs: null },
     timeseries: [
       {
         attributesKey: 'route=/a',

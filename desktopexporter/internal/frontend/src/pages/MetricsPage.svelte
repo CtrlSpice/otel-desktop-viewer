@@ -74,18 +74,20 @@
 <script lang="ts">
   import { METRIC_BUCKET_TARGET } from '@/contexts/metric-view-context.svelte'
   import {
-    DEFAULT_HISTOGRAM_QUANTILES,
+    HEATMAP_MAX_COLUMNS,
     localOffsetNs,
   } from '@/components/metrics/utils/histogram-aggregation'
   import type { JsonAggregateBucket } from '@/types/wire-types'
   import { untrack } from 'svelte'
+  import { SvelteMap } from 'svelte/reactivity'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
+    isDefaultUnboundedWindow,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import { navigateToItem } from '@/route'
-  import type { MetricData, MetricStats } from '@/types/api-types'
+  import type { DataPoint, MetricData, MetricStats } from '@/types/api-types'
   import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
@@ -161,10 +163,19 @@
   // it rather than the client approximating from what it already has.
   let selectedAggregateSummary = $state<JsonAggregateBucket | null>(null)
 
+  // Unreduced datapoints per series, fetched when a series is expanded.
+  //
+  // Keyed by series id, cleared whenever the metric or the window changes so a
+  // stale series can never be shown under a new question. A SvelteMap because
+  // the list reads it during render.
+  let seriesDatapoints = new SvelteMap<string, DataPoint[]>()
+  let seriesDatapointsKey = $state('')
+
   createMetricViewContext(
     () => selectedMetric,
     () => selectedAggregate,
-    () => selectedAggregateSummary
+    () => selectedAggregateSummary,
+    key => seriesDatapoints.get(key)
   )
   const metricCtx = getMetricViewContext()
 
@@ -257,7 +268,23 @@
         timeContext.selection,
         Date.now()
       )
-      const quantiles = DEFAULT_HISTOGRAM_QUANTILES as unknown as number[]
+      // No quantiles: nothing here reads the ones the store computes.
+      //
+      // Every quantile this page draws is derived client-side from the bucket
+      // vectors -- the Quantiles tab through sliceQuantileValue, a heatmap
+      // column through heatmapColumnSelectionAt, the distribution marks
+      // through quantilePointSelectionAt -- all of them calling
+      // histogramQuantilesForDatapoint on data already in hand. The server's
+      // quantiles field was arriving and being discarded.
+      //
+      // It was not free. Measured on interval_distribution over 21 series at
+      // 400 buckets: 31,623 ms asking for three quantiles against 285 ms
+      // asking for none, for 14% more payload. Asking for what is read costs
+      // a hundredth of asking for what is not.
+      const quantiles: number[] = []
+      // Same answer as the detail fetch gives, so the aggregate is bucketed
+      // over the window the series beneath it were bucketed over.
+      const fit = isDefaultUnboundedWindow(timeContext.selection)
       // Both shapes of the same question, issued together so they cannot
       // disagree about the window or the selection.
       const [buckets, whole] = await Promise.all([
@@ -265,10 +292,11 @@
           summary.id,
           startTime,
           endTime,
-          METRIC_BUCKET_TARGET,
+          HEATMAP_MAX_COLUMNS,
           keys,
           quantiles,
-          tzOffsetNs()
+          tzOffsetNs(),
+          fit
         ),
         telemetryAPI.getMetricAggregate(
           summary.id,
@@ -277,7 +305,8 @@
           1,
           keys,
           quantiles,
-          tzOffsetNs()
+          tzOffsetNs(),
+          fit
         ),
       ])
       // A slower earlier request must not overwrite a newer answer.
@@ -296,6 +325,79 @@
 
   function selectMetric(key: string) {
     page.selectItem(key)
+  }
+
+  // Expanding a series fetches that series as it was sent: no reduction, no
+  // quantiles, one series.
+  //
+  // The chart may show a reduction -- that is what a chart is for. The list may
+  // not: it is the view that answers "what did my service actually send", and
+  // for a reduced histogram `metric.timeseries[].datapoints` are the store's
+  // merged buckets rather than datapoints. On the reference capture the window
+  // held 17,076 and the response carried 3,094.
+  //
+  // Fetched on expansion rather than with the metric because it is the only
+  // place that wants every row, and narrow enough to be cheap: the store
+  // filters by series before reducing, so one series of that same metric is
+  // 1,001 datapoints in 132 ms. Asking for all of them up front would put the
+  // whole unreduced stream on the wire to render twenty rows.
+  $effect(() => {
+    const summary = page.selectedSummary
+    const expanded = [...metricCtx.expandedTimeseries]
+    const { start, end } = selectionToQueryRangeMs(
+      timeContext.selection,
+      Date.now()
+    )
+    // One key per (metric, window). When it changes every cached series is
+    // answering a question nobody asked any more.
+    const key = summary ? `${summary.id}:${start}:${end}:${timeContext.tz}` : ''
+    if (key !== seriesDatapointsKey) {
+      seriesDatapointsKey = key
+      seriesDatapoints.clear()
+    }
+    if (!summary || expanded.length === 0) return
+
+    for (const seriesKey of expanded) {
+      if (seriesDatapoints.has(seriesKey)) continue
+      void fetchSeriesDatapoints(summary.id, seriesKey, start, end, key)
+    }
+  })
+
+  const seriesInFlight = new Set<string>()
+
+  async function fetchSeriesDatapoints(
+    streamId: string,
+    seriesKey: string,
+    startTime: number,
+    endTime: number,
+    cacheKey: string
+  ) {
+    if (seriesInFlight.has(seriesKey)) return
+    seriesInFlight.add(seriesKey)
+    try {
+      const result = await telemetryAPI.getMetric(
+        streamId,
+        startTime,
+        endTime,
+        // No reduction. This is the request the whole feature is about.
+        0,
+        [seriesKey],
+        // None: the list shows what arrived, and quantiles are a derived
+        // statistic the client computes anyway.
+        [],
+        tzOffsetNs(),
+        isDefaultUnboundedWindow(timeContext.selection)
+      )
+      // The window may have moved while this was in flight; a late answer to a
+      // superseded question must not land in the new cache.
+      if (cacheKey !== seriesDatapointsKey) return
+      const series = result?.timeseries.find(t => t.attributesKey === seriesKey)
+      if (series) seriesDatapoints.set(seriesKey, series.datapoints)
+    } catch (err) {
+      console.error('Failed to fetch series datapoints:', err)
+    } finally {
+      seriesInFlight.delete(seriesKey)
+    }
   }
 
   /** The offset to align store-side buckets to, in nanoseconds. */
@@ -319,19 +421,39 @@
       // This is what stops a dense stream shipping tens of megabytes to draw a
       // few thousand pixels: measured at 46.4 MB and 640 ms down to 0.36 MB and
       // 60 ms on a 242,324-datapoint stream.
+      // A histogram is drawn as a heatmap, which cannot show more columns than
+      // it has room for -- so ask for the heatmap's ceiling rather than the
+      // line chart's target. The difference is not free: histogram datapoints
+      // carry a bucket vector and a quantile set each, so the line-chart target
+      // fetches five times the payload and discards four fifths of it at the
+      // merge. It only became visible once the window stopped collapsing to a
+      // single bucket, which had been hiding the cost.
+      const bucketTarget =
+        summary.metricType === 'Histogram' ||
+        summary.metricType === 'ExponentialHistogram'
+          ? HEATMAP_MAX_COLUMNS
+          : METRIC_BUCKET_TARGET
       selectedMetric =
         (await telemetryAPI.getMetric(
           summary.id,
           startTime,
           endTime,
-          METRIC_BUCKET_TARGET,
+          bucketTarget,
           // Every series for now. Narrowing to the legend selection needs the
           // fetch to re-run on toggle, which is a separate change.
           undefined,
-          DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
+          // None, for the reason given in fetchAggregate: the client derives
+          // every quantile it draws from the bucket vectors it already has.
+          [],
           // Bucket boundaries follow the reader's calendar rather than the
           // epoch. 0 is UTC, which is what the store assumes without this.
-          tzOffsetNs()
+          tzOffsetNs(),
+          // "All" is the absence of a choice, so the store divides the data's
+          // own extent instead of the window. Without this the reduction
+          // divided decades: a two-hour session came back as a single bucket
+          // per series, and no amount of client-side axis fitting could put
+          // back the resolution that was never sent.
+          isDefaultUnboundedWindow(timeContext.selection)
         )) ?? undefined
     } catch (err) {
       console.error('Failed to fetch metric detail:', err)

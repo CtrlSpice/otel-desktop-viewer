@@ -272,6 +272,17 @@ export type MetricData = {
   /** How many datapoints the window holds, which is not necessarily how many
    *  were returned. Equal until the store starts reducing what it sends. */
   datapointCount: number
+  /** The window the store's reduction actually divided.
+   *
+   *  Bounds are the data's own extent, and are null unless the caller said its
+   *  window was the absence of a choice. A chart draws this rather than
+   *  re-deriving it: the timestamps in the response are bucket starts, so
+   *  measuring them describes the reduction using its own output. */
+  window: {
+    fittedToData: boolean
+    startNs: bigint | null
+    endNs: bigint | null
+  }
 }
 
 // Sparkline point shape used by detail charts (not the drawer summary).

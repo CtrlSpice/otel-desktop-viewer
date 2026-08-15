@@ -111,6 +111,7 @@ import {
 } from '@/components/metrics/utils/metric-timeseries-colors'
 import {
   getTimeContext,
+  isDefaultUnboundedWindow,
   selectionToQueryRangeMs,
 } from '@/contexts/time-context.svelte'
 import {
@@ -236,6 +237,20 @@ export interface MetricViewContext {
   readonly histogramLegendTimeseries: LegendTimeseries[]
   readonly histogramTimeseriesCount: number
   readonly histogramVisible: SvelteSet<string>
+  /** True when the chart narrowed itself to the data because no window was
+   *  asked for, so the axis can say so rather than quietly cropping. */
+  readonly histogramAxisFitToData: boolean
+  /**
+   * The datapoints a series actually carries, as sent, or undefined until they
+   * have been fetched.
+   *
+   * Separate from `metric.timeseries[].datapoints`, which for a reduced
+   * histogram are the store's merged buckets. The chart is free to draw a
+   * reduction; the list is not free to show one, because the list is the answer
+   * to "what did my service send". Fetched per series on expansion rather than
+   * with the metric, since it is the one place that needs every row.
+   */
+  seriesDatapoints(seriesKey: string): DataPoint[] | undefined
   readonly heatmapBucketSeries: HistogramSlicePoint[] | null
   readonly bucketSeriesError: BucketSeriesError | null
   readonly aggregatedDatapoint:
@@ -374,7 +389,10 @@ export function createMetricViewContext(
    */
   getAggregate: () => JsonAggregateBucket[] | null = () => null,
   /** The same merge over a single bucket spanning the window. */
-  getAggregateSummary: () => JsonAggregateBucket | null = () => null
+  getAggregateSummary: () => JsonAggregateBucket | null = () => null,
+  /** Unreduced datapoints for one series, once the page has fetched them. */
+  getSeriesDatapoints: (seriesKey: string) => DataPoint[] | undefined = () =>
+    undefined
 ): MetricViewContext {
   const timeContext = getTimeContext()
 
@@ -843,11 +861,51 @@ export function createMetricViewContext(
     })
   })
 
+  /**
+   * The window the chart draws, and whether it was narrowed to the data.
+   *
+   * "All" is the absence of a choice, so a chart may fit its own data: two
+   * hours of a race across a fifty-six year axis is a hairline, and the
+   * emptiness around it carries nothing. Any other selection is a request, and
+   * the gap between what was asked for and what arrived is part of the answer
+   * -- a metric that stopped reporting should look like one.
+   *
+   * Gauges and Sums have always fitted, by taking the extent of their own
+   * points; histograms were the one signal drawn against the raw query range,
+   * which is the asymmetry this closes.
+   *
+   * Derived from the metric, not from the clock, so polling cannot slide the
+   * axis under someone mid-read.
+   */
+  const histogramAxisWindow = $derived.by(() => {
+    const qr = selectionToQueryRangeMs(timeContext.selection, Date.now())
+    const asked = {
+      startNs: BigInt(qr.start) * 1_000_000n,
+      endNs: BigInt(qr.end) * 1_000_000n,
+      fitToData: false,
+    }
+    // The store reports the window it reduced over, so the axis draws the same
+    // window the buckets were cut from. Scanning the returned datapoints
+    // instead measured bucket *starts* -- the reduction's own output -- and so
+    // could never reveal that the reduction had collapsed.
+    const w = getMetric()?.window
+    if (!w?.fittedToData || w.startNs === null || w.endNs === null) return asked
+    if (w.endNs <= w.startNs) return asked
+    // End is exclusive downstream, so a point on the last timestamp still
+    // lands inside the final bucket.
+    return { startNs: w.startNs, endNs: w.endNs + 1n, fitToData: true }
+  })
+
   const chartDataTimeRange = $derived.by(
     (): { startMs: number; endMs: number } | undefined => {
       if (isHistogramKind) {
-        const qr = selectionToQueryRangeMs(timeContext.selection, Date.now())
-        return { startMs: qr.start, endMs: qr.end }
+        // The same window the buckets were built over -- the header states
+        // what was drawn, not what was requested.
+        const { startNs, endNs } = histogramAxisWindow
+        return {
+          startMs: Number(startNs / 1_000_000n),
+          endMs: Number(endNs / 1_000_000n),
+        }
       }
       if (metricType === 'Gauge' || metricType === 'Sum') {
         let min = Infinity
@@ -1049,8 +1107,7 @@ export function createMetricViewContext(
       return { ...empty, error: err, aggregatedError: err }
     }
 
-    const startNs = BigInt(queryRange.start) * 1_000_000n
-    const endNs = BigInt(queryRange.end) * 1_000_000n
+    const { startNs, endNs } = histogramAxisWindow
     const perAttribute = buildHistogramTimeMergedSeries(
       m.timeseries,
       startNs,
@@ -1089,9 +1146,16 @@ export function createMetricViewContext(
     }
   })
 
-  // Badge counts raw datapoints in the current window (same source as
-  // the inline expanded table in TimeseriesPanel and as the Gauge/Sum
-  // branch above), NOT heatmap time buckets.
+  // Badge counts the rows this series contributed to the window, from the same
+  // source as the inline expanded table in TimeseriesPanel and the Gauge/Sum
+  // branch above.
+  //
+  // For a reduced histogram those rows are the store's merged buckets, not raw
+  // datapoints -- the comment here claimed "raw" and went on claiming it after
+  // the merge moved into SQL, because both are `ts.datapoints` and neither the
+  // type nor the shape changed underneath it. MetricData.datapointCount is what
+  // holds the window's real total; on the reference capture the two read 3,094
+  // and 17,076.
   const histogramLegendTimeseries = $derived.by((): LegendTimeseries[] => {
     const m = getMetric()
     if (!m) return []
@@ -1888,6 +1952,12 @@ export function createMetricViewContext(
     },
     get histogramVisible() {
       return view.histogramVisible
+    },
+    get histogramAxisFitToData() {
+      return histogramAxisWindow.fitToData
+    },
+    seriesDatapoints(seriesKey: string) {
+      return getSeriesDatapoints(seriesKey)
     },
     get heatmapBucketSeries() {
       return heatmapBucketSeries
