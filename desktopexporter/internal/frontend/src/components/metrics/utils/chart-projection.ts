@@ -10,7 +10,6 @@ import type {
   SumDataPoint,
 } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
-import { downsampleLTTB } from '@/components/metrics/utils/metric-downsample'
 
 /**
  * Project backend-grouped MetricTimeseries into the {date, value}
@@ -24,10 +23,7 @@ import { downsampleLTTB } from '@/components/metrics/utils/metric-downsample'
  * ascending here because layerchart's LineChart expects
  * monotonically-increasing x values to draw a connected line.
  */
-export function timeseriesToChartTimeseries(
-  timeseries: MetricTimeseries[],
-  opts?: { downsampleTo?: number }
-): {
+export function timeseriesToChartTimeseries(timeseries: MetricTimeseries[]): {
   chartTimeseries: ChartTimeseries[]
   /** Convenience: same `key` strings the timeseries have, in the
    * same order. Caller can seed `visibleKeys` from this without
@@ -47,9 +43,6 @@ export function timeseriesToChartTimeseries(
       points.push({ date: new Date(t), value })
     }
     points.sort((a, b) => a.date.getTime() - b.date.getTime())
-    if (opts?.downsampleTo) {
-      points = downsampleLTTB(points, opts.downsampleTo)
-    }
     chartTimeseries.push({
       key: ts.attributesKey,
       label: ts.attributesKey === '' ? 'default' : ts.attributesKey,

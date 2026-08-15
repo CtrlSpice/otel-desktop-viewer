@@ -126,24 +126,27 @@ import {
 
 const KEY = 'metric-view'
 
-// Per-series LTTB budget for the line chart. Below this count the raw
-// samples are rendered; above it we downsample keeping first+last and
-// picking the most visually significant point per bucket.
+// How many points per series the line chart is willing to draw.
 const CHART_POINTS_PER_SERIES = 2000
 
 /**
  * How many time buckets to ask the store to reduce a window to.
  *
- * Matched to the chart's point budget so the fetch and the draw cannot drift
- * apart: asking for fewer buckets than the chart can render throws away detail
- * that would have been visible, and asking for many more ships datapoints the
- * chart will immediately discard.
+ * Buckets, not points -- which is the distinction this constant used to lose.
+ * It was defined as CHART_POINTS_PER_SERIES, but the store's M4 election keeps
+ * up to four points per bucket (first, last, min, max), so asking for 2,000
+ * buckets shipped up to 8,000 points per series and the client then ran LTTB to
+ * compress them back down to 2,000.
  *
- * The store keeps up to four points per bucket, so the response can hold more
- * points than this -- and the client's LTTB pass still runs, as a no-op when
- * the input already fits.
+ * That second pass was not merely wasted work. M4 elects those four points
+ * precisely so the drawn line is identical to the line through every datapoint;
+ * LTTB picks the visually significant ones and drops the rest, including the
+ * extremes M4 kept on purpose. The compression undid the guarantee the
+ * reduction existed to provide.
+ *
+ * One reduction, in the store, sized so its output is what the chart draws.
  */
-export const METRIC_BUCKET_TARGET = CHART_POINTS_PER_SERIES
+export const METRIC_BUCKET_TARGET = CHART_POINTS_PER_SERIES / 4
 
 // --- Types --------------------------------------------------------
 
@@ -624,9 +627,9 @@ export function createMetricViewContext(
     if (!m || (metricType !== 'Gauge' && metricType !== 'Sum')) {
       return { chartTimeseries: [], keys: [] as string[] }
     }
-    return timeseriesToChartTimeseries(m.timeseries, {
-      downsampleTo: CHART_POINTS_PER_SERIES,
-    })
+    // No client-side thinning: the store's M4 election is the reduction, and
+    // it is sized so its output is what the chart draws.
+    return timeseriesToChartTimeseries(m.timeseries)
   })
 
   const gaugeSumLegendTimeseries = $derived.by((): LegendTimeseries[] => {
