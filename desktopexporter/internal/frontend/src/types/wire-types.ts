@@ -184,6 +184,9 @@ export type JsonExemplar = {
 type JsonBaseDataPoint = {
   id: string
   timestamp: string
+  /** The same instant in epoch milliseconds, as a number. Charts want ms and
+   *  would otherwise divide the nanosecond BigInt once per datapoint. */
+  timestampMs: number
   startTime: string
   flags: number
   exemplars: JsonExemplar[]

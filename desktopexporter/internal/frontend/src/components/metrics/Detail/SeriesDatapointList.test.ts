@@ -18,6 +18,7 @@ function makeDatapoint(overrides: Partial<SumDataPoint> = {}): SumDataPoint {
   return {
     id: 'dp-1',
     timestamp: 1_700_000_000_000_000_000n,
+    timestampMs: 1_700_000_000_000,
     startTime: 1_700_000_000_000_000_000n,
     flags: 0,
     metricType: 'Sum',

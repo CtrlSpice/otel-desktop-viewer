@@ -153,6 +153,9 @@ export type Exemplar = {
 type BaseDataPoint = {
   id: string
   timestamp: bigint
+  /** The same instant in epoch milliseconds, from the store. Charts read this
+   *  rather than dividing `timestamp` per datapoint. */
+  timestampMs: number
   startTime: bigint
   flags: number
   exemplars: Exemplar[]

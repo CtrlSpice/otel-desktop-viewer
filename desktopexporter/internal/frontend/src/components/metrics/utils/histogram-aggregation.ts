@@ -319,6 +319,7 @@ export function histogramSliceToDatapoint(
   const base = {
     id,
     timestamp: normalized.timestamp,
+    timestampMs: Number(normalized.timestamp / 1_000_000n),
     startTime: normalized.timestamp,
     flags: 0,
     exemplars: [],

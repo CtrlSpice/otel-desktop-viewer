@@ -18,6 +18,14 @@ create or replace macro datapoint_json(d, exemplars, qs) as (
 				'id', d.id,
 				'metricType', d.metric_type,
 				'timestamp', d.timestamp::varchar,
+				-- The same instant in epoch milliseconds, as a number.
+				--
+				-- The chart needs milliseconds and got them by dividing the
+				-- nanosecond string's BigInt per datapoint -- 23,000 BigInt
+				-- divisions to draw one Gauge. Epoch ms is ~1.8e12, comfortably
+				-- inside float64's exact-integer range, so unlike the ns value it
+				-- loses nothing as a JSON number.
+				'timestampMs', d.timestamp // 1000000,
 				'startTime', d.start_time::varchar,
 				'flags', d.flags,
 				'exemplars', exemplars

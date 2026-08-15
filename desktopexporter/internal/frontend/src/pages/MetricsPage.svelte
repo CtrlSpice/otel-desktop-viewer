@@ -400,7 +400,16 @@
     return Number(localOffsetNs(BigInt(Date.now()) * 1_000_000n))
   }
 
+  // Which detail fetch is current. The aggregate fetch has had one of these
+  // since it was split out; this one did not, so a response for a metric the
+  // user had already navigated away from would still be assigned -- showing the
+  // wrong metric's data, and building the chart a second time to do it. Walking
+  // the list with the pager reproduced it every time; clicking one metric and
+  // waiting did not, which is why it looked like a rendering problem.
+  let detailToken = 0
+
   async function fetchMetricDetail(summary: MetricSummary) {
+    const token = ++detailToken
     try {
       detailLoading = true
       const { start: startTime, end: endTime } = selectionToQueryRangeMs(
@@ -424,7 +433,7 @@
         summary.metricType === 'ExponentialHistogram'
           ? HEATMAP_BUCKET_TARGET
           : METRIC_BUCKET_TARGET
-      selectedMetric =
+      const result =
         (await telemetryAPI.getMetric(
           summary.id,
           startTime,
@@ -449,16 +458,22 @@
           // different chart than the election thins for.
           SCALAR_VIEW_BUCKETS
         )) ?? undefined
+      // A slower earlier request must not overwrite a newer answer.
+      if (token !== detailToken) return
+      selectedMetric = result
       // Same statement, before anything renders: the chart must not build once
       // for the previous metric's visible set and colours, and again for this
       // one's.
       metricCtx.seedForMetric(selectedMetric)
     } catch (err) {
       console.error('Failed to fetch metric detail:', err)
+      if (token !== detailToken) return
       selectedMetric = undefined
       metricCtx.seedForMetric(undefined)
     } finally {
-      detailLoading = false
+      // Only the current request owns the spinner; a superseded one clearing it
+      // would say "loaded" while the answer is still on its way.
+      if (token === detailToken) detailLoading = false
     }
   }
 

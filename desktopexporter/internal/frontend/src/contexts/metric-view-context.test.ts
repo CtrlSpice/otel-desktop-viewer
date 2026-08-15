@@ -36,6 +36,7 @@ function makeSumDatapoint(
   return {
     id,
     timestamp,
+    timestampMs: Number(timestamp / 1_000_000n),
     startTime: BigInt(BASE_TIMESTAMP_MS) * 1_000_000n,
     flags: 0,
     exemplars: [],
