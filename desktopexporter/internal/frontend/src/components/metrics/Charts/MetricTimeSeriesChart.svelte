@@ -29,7 +29,7 @@
     type AggregationView,
     rateSlopeViewSymbol,
     rateSlopeBucketSegment,
-    seriesStatsFromPoints,
+    type SeriesStats,
   } from '@/components/metrics/utils/aggregation'
   import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
@@ -140,6 +140,11 @@
     /** Chart point click → caller resolves to a datapoint and syncs
      *  the Series tab. Aggregate synthetic lines should no-op upstream. */
     onChartPointClick?: (seriesKey: string, clickedAt: Date) => void
+    /** Per-series stats from the store, for the selected-series overlay.
+     *  The chart used to fold its own from the drawn points, whose average is
+     *  the mean of a reduced sample; these describe the window (raw views) or
+     *  the drawn transform (rate view), matching the row badges. */
+    seriesStats?: ReadonlyMap<string, SeriesStats>
   }
 
   let {
@@ -155,6 +160,7 @@
     selectedRateSlope = undefined,
     timeRange = null,
     onChartPointClick,
+    seriesStats,
   }: Props = $props()
 
   const timeContext = getTimeContext()
@@ -517,7 +523,8 @@
     const series = chartSeries.find(s => s.key === selectedSeriesKey)
     if (!series || series.data.length === 0) return []
 
-    const stats = seriesStatsFromPoints(series.data)
+    const stats = seriesStats?.get(selectedSeriesKey)
+    if (!stats) return []
     const color = series.color
     const marks: SeriesStatMark[] = []
 

@@ -88,6 +88,8 @@ function makeCumulativeSumMetric(): MetricData {
         views: null,
         // Likewise the row sparkline, which the store reduces separately.
         sparkline: null,
+        // And the drawn rate line's extremes, which need view buckets.
+        rateStats: null,
       },
       {
         attributesKey: 'route=/b',
@@ -103,6 +105,8 @@ function makeCumulativeSumMetric(): MetricData {
         views: null,
         // Likewise the row sparkline, which the store reduces separately.
         sparkline: null,
+        // And the drawn rate line's extremes, which need view buckets.
+        rateStats: null,
       },
     ],
   }

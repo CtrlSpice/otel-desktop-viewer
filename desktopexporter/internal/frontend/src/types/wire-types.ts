@@ -266,7 +266,18 @@ export type JsonScalarViewBucket = {
   sum: number | null
   avg: number | null
   rate: number | null
+  /** Slope of the drawn rate line's segment arriving at this bucket, in
+   *  rate-units per second. Null for buckets the rate view does not draw and
+   *  for the first it does, which no segment arrives at. */
+  slope: number | null
   hasReset: boolean
+}
+
+/** Extremes of a series' drawn rate line, for the rate view's badges. */
+export type JsonSeriesRateStats = {
+  min: number
+  max: number
+  avg: number
 }
 
 export type JsonMetricTimeseries = {
@@ -293,6 +304,9 @@ export type JsonMetricTimeseries = {
   datapoints: JsonDataPoint[]
   /** Server-computed stats over the whole window; null for histograms. */
   stats: JsonSeriesValueStats | null
+  /** Extremes of the drawn rate line; null for histograms and for series with
+   *  no rate to draw. The raw stats describe the values, these the transform. */
+  rateStats: JsonSeriesRateStats | null
   /** Per-bucket Sum / Average / Rate. Null for histogram series, which have no
    *  scalar to aggregate. */
   views: JsonScalarViewBucket[] | null

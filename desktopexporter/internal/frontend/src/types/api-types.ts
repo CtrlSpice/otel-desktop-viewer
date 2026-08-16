@@ -254,7 +254,20 @@ export type ScalarViewBucket = {
   sum: number | null
   avg: number | null
   rate: number | null
+  /** Slope of the drawn rate line's segment arriving at this bucket, in
+   *  rate-units per second, from the store. Null for undrawn buckets and the
+   *  first drawn one. */
+  slope: number | null
   hasReset: boolean
+}
+
+/** Extremes of a series' drawn rate line, computed by the store over the same
+ *  sequence the chart draws -- gap zeros included, because the reader sees
+ *  them. */
+export type SeriesRateStats = {
+  min: number
+  max: number
+  avg: number
 }
 
 export type MetricTimeseries = {
@@ -274,6 +287,8 @@ export type MetricTimeseries = {
   stats: SeriesValueStats | null
   /** Per-bucket Sum / Average / Rate from the store. Null for histograms. */
   views: ScalarViewBucket[] | null
+  /** Extremes of the drawn rate line; null when there is no rate to draw. */
+  rateStats: SeriesRateStats | null
   /** This series' shape at list-row resolution, reduced by the store to min and
    *  max per bucket.
    *

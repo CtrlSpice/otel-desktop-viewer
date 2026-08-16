@@ -68,9 +68,8 @@ import {
   availableAggregationViews,
   defaultAggregationViewFor,
   availableSeriesStatBadges,
+  rateSlopeBucketSegment,
   availableRateSlopeOverlay,
-  rateSlopeAtPoint,
-  seriesStatsFromPoints,
   resampleSeriesToBucketCenters,
   type AggregateLineKey,
   type AggregateResult,
@@ -798,16 +797,24 @@ export function createMetricViewContext(
     const out: ChartPoint[] = []
     for (const b of views) {
       const value = view === 'sum' ? b.sum : view === 'avg' ? b.avg : b.rate
+      // Rate points carry the store's slope for the tangent overlay; the
+      // other views have no tangent and their points stay two fields.
+      const slope = view === 'rate' ? (b.slope ?? null) : undefined
       if (value === null) {
         if (b.sampleCount > 0) continue
         if (view === 'avg') continue
         out.push({
           date: new Date(Number(b.bucketStart / 1_000_000n)),
           value: 0,
+          slope,
         })
         continue
       }
-      out.push({ date: new Date(Number(b.bucketStart / 1_000_000n)), value })
+      out.push({
+        date: new Date(Number(b.bucketStart / 1_000_000n)),
+        value,
+        slope,
+      })
     }
     return out
   }
@@ -948,12 +955,14 @@ export function createMetricViewContext(
     //
     // Rate is the exception, and for a reason rather than by omission: a rate
     // row is a transform of the series, not the series in different units, so
-    // its stats have to describe the transform. They come off the store's rate
-    // buckets -- the same numbers the row's sparkline draws, so the badge and
-    // the shape above it can never disagree.
+    // its stats have to describe the transform. The store computes them over
+    // the drawn rate line -- gap zeros included -- so the badge and the shape
+    // above it come from one expression of the drawing rules.
     if (view.aggregationView === 'rate') {
-      for (const [key, points] of sparklinePointsByKey) {
-        out.set(key, seriesStatsFromPoints(points))
+      for (const ts of getMetric()?.timeseries ?? []) {
+        const rs = ts.rateStats
+        if (!rs) continue
+        out.set(ts.attributesKey, { min: rs.min, max: rs.max, avg: rs.avg })
       }
       return out
     }
@@ -1252,7 +1261,7 @@ export function createMetricViewContext(
     const series = transformedGaugeSumChartTimeseries.find(s => s.key === key)
     if (!series) return undefined
     const at = new Date(Number(highlightedTimestamp / 1_000_000n))
-    return rateSlopeAtPoint(series.points, at)
+    return rateSlopeBucketSegment(series.points, at)?.slope
   })
 
   // -- Histogram chart wiring --

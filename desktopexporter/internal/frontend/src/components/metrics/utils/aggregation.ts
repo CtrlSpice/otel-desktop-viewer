@@ -308,7 +308,14 @@ export function resampleSeriesToBucketCenters(
       if (t >= lo && t < hi) last = p
     }
     if (last !== undefined) lastWithData = resampled.length
-    resampled.push({ date: center, value: last?.value ?? 0 })
+    // The source point moved to the center, not a fresh one: the store's
+    // per-point fields (slope for the tangent, delta for resets) must survive
+    // the move. The filler for an empty window is synthetic and carries none.
+    resampled.push(
+      last !== undefined
+        ? { ...last, date: center }
+        : { date: center, value: 0 }
+    )
   }
 
   return {
@@ -327,28 +334,6 @@ export type SeriesStats = {
   max?: number
   avg?: number
   total?: number
-}
-
-/** Min / max / mean / sum over one series' chart points (post-view). */
-export function seriesStatsFromPoints(
-  points: readonly ChartPoint[]
-): SeriesStats {
-  if (points.length === 0) return {}
-
-  let min: number | undefined
-  let max: number | undefined
-  let sum = 0
-  for (const p of points) {
-    if (min === undefined || p.value < min) min = p.value
-    if (max === undefined || p.value > max) max = p.value
-    sum += p.value
-  }
-  return {
-    min,
-    max,
-    avg: sum / points.length,
-    total: sum,
-  }
 }
 
 /** Opinionated badge set for TimeseriesPanel rows (matches chart view). */
@@ -410,15 +395,15 @@ export function rateSlopeBucketSegment(
 ): RateSlopeBucketSegment | undefined {
   if (ratePoints.length < 2) return undefined
 
-  const sorted = [...ratePoints].sort(
-    (a, b) => a.date.getTime() - b.date.getTime()
-  )
+  // Geometry only: which two drawn points bracket the selection. The slope is
+  // the store's, computed for exactly this segment when the buckets were --
+  // differencing here would re-derive a number the response already carries.
+  // Points arrive in time order from the store's buckets.
   const atMs = at.getTime()
-
   let pointIdx = 0
   let bestDist = Infinity
-  for (let i = 0; i < sorted.length; i++) {
-    const dist = Math.abs(sorted[i]!.date.getTime() - atMs)
+  for (let i = 0; i < ratePoints.length; i++) {
+    const dist = Math.abs(ratePoints[i]!.date.getTime() - atMs)
     if (dist < bestDist) {
       bestDist = dist
       pointIdx = i
@@ -426,28 +411,11 @@ export function rateSlopeBucketSegment(
   }
   if (pointIdx < 1) return undefined
 
-  const from = sorted[pointIdx - 1]!
-  const to = sorted[pointIdx]!
-  const dtSec = (to.date.getTime() - from.date.getTime()) / 1000
-  if (dtSec <= 0) return undefined
-  if (!Number.isFinite(from.value) || !Number.isFinite(to.value)) {
+  const from = ratePoints[pointIdx - 1]!
+  const to = ratePoints[pointIdx]!
+  const slope = to.slope
+  if (slope === null || slope === undefined || !Number.isFinite(slope)) {
     return undefined
   }
-
-  return {
-    slope: (to.value - from.value) / dtSec,
-    from,
-    to,
-  }
-}
-
-/**
- * Slope of the displayed rate series at `at`. See
- * {@link rateSlopeBucketSegment}.
- */
-export function rateSlopeAtPoint(
-  ratePoints: readonly ChartPoint[],
-  at: Date
-): number | undefined {
-  return rateSlopeBucketSegment(ratePoints, at)?.slope
+  return { slope, from, to }
 }

@@ -17,6 +17,9 @@ export type ChartPoint = {
   delta?: number | null
   /** The counter restarted in this interval, as the store saw it. */
   isReset?: boolean | null
+  /** Rate view only: slope of the drawn segment arriving at this point, from
+   *  the store. The tangent overlay reads it instead of differencing points. */
+  slope?: number | null
 }
 
 /**

@@ -271,6 +271,7 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
     datapoints: json.datapoints.map(dataPointFromJSON),
     stats: json.stats ?? null,
     views: json.views ? scalarViewBucketsFromJSON(json.views) : null,
+    rateStats: json.rateStats ?? null,
     sparkline:
       json.sparkline?.map(p => ({
         ...p,
