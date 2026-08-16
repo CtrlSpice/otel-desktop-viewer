@@ -971,31 +971,38 @@
 				count(coalesce(d.double_value, d.int_value)) as value_count,
 				min(coalesce(d.double_value, d.int_value)) as value_min,
 				max(coalesce(d.double_value, d.int_value)) as value_max,
-				sum(coalesce(d.double_value, d.int_value)) as value_sum,
-				coalesce(to_json(list(datapoint_json(
-					d,
-					coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]')),
-					(select quantiles from input)
-				) order by d.timestamp desc)
-					-- Only the reduction and the datapoint narrowing touch this
-					-- list. The stats above are deliberately outside the filter:
-					-- they describe the window, not the sample drawn from it,
-					-- which is the whole reason they are computed here rather
-					-- than in the client -- and they stay right for a series
-					-- whose datapoints were not shipped at all.
-					filter (where
-						((select kind from reduction_kind) <> 'elect' or r.id is not null)
-						and d.series_id in (select series_id from datapoint_series_allowed)
-					)
-				-- A narrowed-out series has an empty list, not a null one: the
-				-- field means "the datapoints you were sent", and every series
-				-- has an answer to that even when the answer is none.
-				), json('[]')) as datapoints
+				sum(coalesce(d.double_value, d.int_value)) as value_sum
 			-- Grouping on a fixed-width, indexable column instead of rebuilding
 		-- and hashing a LIST per row. Measured on 294,607 datapoints: 5.0ms
 		-- by the array against 0.9ms by a single uuid.
 		from projected_dps d
+			group by d.series_id
+		),
+
+		-- The datapoints the caller is actually sent, shaped for the wire.
+		--
+		-- Separate from the stats above because the two answer different
+		-- questions over different rows. Stats describe the window, so they run
+		-- over every datapoint; this describes the sample drawn from it, so it
+		-- runs over the ones that survive the election and the narrowing.
+		--
+		-- Split rather than expressed as one aggregate with a FILTER, because
+		-- the filter prunes the aggregate's input but not the projection feeding
+		-- it: datapoint_json was evaluated for every row and 82% of the results
+		-- were then discarded. Measured on a 22-series Gauge, 19,319 datapoints
+		-- in and 3,598 kept: 283ms building all of them against 168ms building
+		-- the ones that ship.
+		ts_dps_json as (
+			select d.series_id,
+				to_json(list(datapoint_json(
+					d,
+					coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]')),
+					(select quantiles from input)
+				) order by d.timestamp desc)) as datapoints
+			from projected_dps d
 			left join retained_ids r on r.id = d.id
+			where ((select kind from reduction_kind) <> 'elect' or r.id is not null)
+			  and d.series_id in (select series_id from datapoint_series_allowed)
 			group by d.series_id
 		),
 		-- Pack each timeseries into the wire shape and order them so
@@ -1020,7 +1027,10 @@
 				t.attrs_key,
 				t.attributes_sample,
 				resource_json(r.attribute_ids, r.dropped_attributes_count),
-				t.datapoints,
+				-- Empty rather than null for a series that shipped none: the field
+				-- means "the datapoints you were sent", and every series has an
+				-- answer to that even when the answer is none.
+				coalesce(tj.datapoints, json('[]')),
 				series_stats_json(t.value_count, t.value_min, t.value_max, t.value_sum),
 				sv.views,
 				sp.sparkline
@@ -1037,6 +1047,8 @@
 			-- order is now total and deterministic.
 			) order by t.latest_ts desc, t.attrs_key)) as timeseries
 			from ts_dps_agg t
+			-- Left: a series narrowed out of the datapoint list has no row here.
+			left join ts_dps_json tj on tj.series_id = t.series_id
 			join metric_series ms on ms.id = t.series_id
 			join resources r on r.id = ms.resource_id
 			-- Left: a histogram series has no scalar views, and a scalar series
