@@ -159,6 +159,26 @@
 
   const timeContext = getTimeContext()
 
+  /* One scale instance per chart, not a fresh one per render.
+   *
+   * LineChart runs whatever it is given through createChartScale, which
+   * returns scale.copy() -- so this is a template, never shared mutable
+   * state, and one instance is safe. As an inline `xScale={scaleTime()}`
+   * prop it minted a new d3 scale object on every re-render of this
+   * component, and a new scale identity invalidates every Spline in the
+   * chart: each one rebuilds its path, walking every point.
+   *
+   * Instance scope rather than module scope deliberately. Module scope would
+   * share one object across every chart on the page, which is exactly the
+   * shared-mutable-state hazard the copy() protects against -- and relying on
+   * that copy for correctness rather than only for performance. */
+  const xScale = scaleTime()
+
+  /* Constant, so it is built once rather than per render. Passed inline it
+   * was a fresh object literal each time, which invalidates the tooltip
+   * context downstream for a value that never changes. */
+  const tooltipContext = { mode: 'bisect-x' } as const
+
   // Build the layerchart series array on the fly. Each entry carries
   // its own pre-grouped data so we don't re-traverse on every chart
   // re-render. Colour is looked up via the caller-provided `colorByKey`
@@ -417,6 +437,15 @@
       return `${u}/s`
     }
     return u || 'value'
+  })
+
+  /* Axis props as a $derived rather than an inline object literal, so the
+   * object changes identity only when the timezone or the y-axis label does.
+   * Inline, it minted a new outer object plus two nested ones plus two new
+   * `format` closures on every render, for values that almost never change. */
+  let chartProps = $derived({
+    xAxis: axisTime(timeContext.tz),
+    yAxis: axisValue(yAxisLabel),
   })
 
   /** Series the selection rule should drop colored dots on. Always
@@ -704,17 +733,14 @@
         bind:context={lineChartContext}
         x="date"
         y="value"
-        xScale={scaleTime()}
+        {xScale}
         yNice
         padding={chartPadding}
-        tooltipContext={{ mode: 'bisect-x' }}
+        {tooltipContext}
         series={chartSeries}
         onPointClick={handlePointClick}
         onTooltipClick={handleTooltipClick}
-        props={{
-          xAxis: axisTime(timeContext.tz),
-          yAxis: axisValue(yAxisLabel),
-        }}
+        props={chartProps}
       >
         {#snippet tooltip({ context }: { context: any })}
           {@const xDate = tooltipXDate(context)}
