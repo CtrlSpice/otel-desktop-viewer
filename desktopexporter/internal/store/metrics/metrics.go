@@ -782,7 +782,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // into one datapoint per series. The caller owns the time picker and so owns
 // this decision; the store obeys it. The window actually used comes back in the
 // response, so nobody has to infer it from bucketed timestamps.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64) (json.RawMessage, error) {
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string) (json.RawMessage, error) {
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON
@@ -803,7 +803,15 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	if quantiles == nil {
 		quantiles = []float64{}
 	}
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets).Scan(&raw); err != nil {
+	// Same untyped-nil dance as seriesArg, and for a different meaning: null is
+	// "nothing checked", so the Selected pool is empty and the chart draws All
+	// alone. An empty slice would bind as an empty array and say the same thing,
+	// but going through nil keeps the two parameters' conventions identical.
+	var selectedArg any
+	if len(selectedSeriesIDs) > 0 {
+		selectedArg = selectedSeriesIDs
+	}
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedArg).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}
@@ -835,7 +843,7 @@ func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startT
 	// 0 sparkline buckets: this call keeps only the aggregate envelope and drops
 	// the timeseries the sparklines hang off, so computing them would be work
 	// whose entire output is discarded a few lines below.
-	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0)
+	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0, nil)
 	if err != nil {
 		return nil, err
 	}

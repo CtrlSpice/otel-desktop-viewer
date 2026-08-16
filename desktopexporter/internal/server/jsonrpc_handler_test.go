@@ -1081,6 +1081,7 @@ func TestGetMetricAcceptsEveryParameter(t *testing.T) {
 		true,             // 8 fitToData
 		"120",            // 9 viewBuckets
 		"64",             // 10 sparklineBuckets
+		[]any{},          // 11 selectedSeriesIds
 	}
 
 	for n := 3; n <= len(full); n++ {

@@ -60,7 +60,16 @@
 				--
 				-- Half the pixel width, because the reduction emits two points per
 				-- bucket (see sparkline_extrema).
-				?::bigint as sparkline_buckets
+				?::bigint as sparkline_buckets,
+				-- Which series the reader has checked.
+				--
+				-- Distinct from series_ids, which narrows what the response
+				-- carries at all. This narrows nothing: it names the pool the
+				-- Selected aggregate folds, while the All aggregate keeps folding
+				-- every series in the stream. Null means nothing is checked, which
+				-- is a real state -- the All line then stands alone -- rather than
+				-- shorthand for all of them.
+				?::varchar[] as selected_series_ids
 		),
 		stream as (
 			select s.* from metric_streams s, input
@@ -434,6 +443,83 @@
 				) order by bucket_start)) as views
 			from scalar_view_agg
 			group by series_id
+		),
+
+		-- The cross-series aggregate: a pool of series folded into one line.
+		--
+		-- Two pools, because the chart draws up to two such lines -- the series
+		-- the reader has checked, and every series on the metric. The rules that
+		-- turn those into "Selected + All", a lone "All", or a single "Total" are
+		-- labelling decisions and stay with the view that draws them.
+		--
+		-- Folded from scalar_view_agg rather than from datapoints. Those rows are
+		-- already one per (series, bucket) on the shared absolute grid, so the
+		-- aggregate lands on exactly the boundaries the per-series view lines use.
+		-- The TypeScript this replaces built its own grid from the merged pool's
+		-- own first and last point, with a bucket count derived from the pool
+		-- size, and its own comment conceded that only lined up because the series
+		-- happened to share a scrape cadence.
+		--
+		--   sum   the pool's values added. For a cumulative counter that means
+		--         adding running totals, which is what "sum across series at time
+		--         t" says; delta-converting first would answer a different
+		--         question.
+		--   avg   a pooled mean -- every sample in the bucket over the count of
+		--         them -- not the mean of per-series means, which would weight a
+		--         sparse series the same as a dense one.
+		--   rate  the per-series rates added. Each is already sum(delta)/width, so
+		--         their sum is the pool's deltas over that same width.
+		scalar_pool_rows as (
+			select 'all' as pool, a.* from scalar_view_agg a
+			union all by name
+			select 'selected' as pool, a.*
+			from scalar_view_agg a, input i
+			where i.selected_series_ids is not null
+			  and list_contains(i.selected_series_ids, a.series_id::varchar)
+		),
+		-- No spine of its own, and no trimming of its own. Both are already done:
+		-- scalar_view_spine gives every series a row for each bucket in its own
+		-- span, empty ones included, and trims the leading and trailing empties
+		-- off each end. Folding those rows therefore keeps every interior gap --
+		-- a series that stopped reporting mid-window still contributes its empty
+		-- buckets to the pool -- and inherits the trim at both ends.
+		--
+		-- A second spine over the pool's own extent would add only the buckets no
+		-- series in the pool covered at all, which is not an outage but a stretch
+		-- of time the pool did not exist for. Emitting zeros there would invent
+		-- observations.
+		scalar_pool_agg as (
+			select pool,
+				bucket_start,
+				sum(sample_count) as sample_count,
+				sum(value_sum) as value_sum,
+				sum(value_sum) / nullif(sum(sample_count), 0) as value_avg,
+				sum(rate) as rate,
+				coalesce(bool_or(has_reset), false) as has_reset
+			from scalar_pool_rows
+			group by pool, bucket_start
+		),
+		-- Same bucket shape the per-series views use, so the client projects both
+		-- through one function instead of learning a second wire format.
+		scalar_pools_json as (
+			select
+				coalesce(to_json(list(json_object(
+					'bucketStart', bucket_start::varchar,
+					'sampleCount', sample_count,
+					'sum', value_sum,
+					'avg', value_avg,
+					'rate', rate,
+					'hasReset', has_reset
+				) order by bucket_start) filter (where pool = 'selected')), json('[]')) as selected,
+				coalesce(to_json(list(json_object(
+					'bucketStart', bucket_start::varchar,
+					'sampleCount', sample_count,
+					'sum', value_sum,
+					'avg', value_avg,
+					'rate', rate,
+					'hasReset', has_reset
+				) order by bucket_start) filter (where pool = 'all')), json('[]')) as all_series
+			from scalar_pool_agg
 		),
 
 		-- The shape of one series at sparkline resolution.
@@ -1039,6 +1125,15 @@
 			-- client can tell "no histogram merge happened" from "merged to
 			-- nothing".
 			'aggregate', (select aggregate from aggregate_agg),
+			-- The cross-series lines for a scalar metric, in the same bucket shape
+			-- the per-series views use. `selected` is empty when nothing is
+			-- checked, which the chart reads as "draw All alone" rather than as an
+			-- error. Both are present for histograms too and are empty there --
+			-- scalar_dps is Gauge and Sum only, so nothing reaches the fold.
+			'scalarAggregate', json_object(
+				'selected', coalesce((select selected from scalar_pools_json), json('[]')),
+				'all', coalesce((select all_series from scalar_pools_json), json('[]'))
+			),
 			-- How many datapoints the window actually holds, as opposed to how
 			-- many came back. Equal today; the moment the server reduces what it
 			-- returns, the difference is what the UI needs in order to say so.

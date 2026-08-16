@@ -297,6 +297,7 @@ type getMetricParams struct {
 	fitToData          bool
 	viewBuckets        int64
 	sparklineBuckets   int64
+	selectedSeriesIDs  []string
 }
 
 func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricParams, error) {
@@ -307,15 +308,15 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	}
 	// Everything past the third is optional and additive: targetBuckets,
 	// seriesIds, quantiles, tzOffsetNs, fitToData, viewBuckets,
-	// sparklineBuckets. A caller that predates any of them sends fewer and gets
-	// the old behaviour.
+	// sparklineBuckets, selectedSeriesIds. A caller that predates any of them
+	// sends fewer and gets the old behaviour.
 	//
 	// The upper bound was 4 and stayed 4 while four more parameters were added
 	// below it, so every request carrying them was rejected before it reached
 	// them. Nothing caught it: the store tests call GetMetric directly, and the
 	// handler tests only ever sent three. TestGetMetricAcceptsEveryParameter
 	// now sends a full set, so the bound cannot fall behind again silently.
-	if len(params) < 3 || len(params) > 10 {
+	if len(params) < 3 || len(params) > 11 {
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
@@ -419,6 +420,25 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 		}
 	}
 
+	// Which series the reader has checked, for the Selected cross-series line.
+	// Absent or null means none are checked -- a real state, in which the chart
+	// draws the All line by itself.
+	var selectedSeriesIDs []string
+	if len(params) >= 11 && params[10] != nil {
+		raw, ok := params[10].([]any)
+		if !ok {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+		selectedSeriesIDs = []string{}
+		for _, v := range raw {
+			id, ok := v.(string)
+			if !ok {
+				return out, jsonrpc2.ErrInvalidParams
+			}
+			selectedSeriesIDs = append(selectedSeriesIDs, id)
+		}
+	}
+
 	var fitToData bool
 	if len(params) >= 8 && params[7] != nil {
 		b, ok := params[7].(bool)
@@ -437,6 +457,7 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	out.fitToData = fitToData
 	out.viewBuckets = viewBuckets
 	out.sparklineBuckets = sparklineBuckets
+	out.selectedSeriesIDs = selectedSeriesIDs
 	return out, nil
 }
 
@@ -447,7 +468,7 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, args.streamID, args.startTime, args.endTime,
-			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets, args.sparklineBuckets)
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesIDs)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
