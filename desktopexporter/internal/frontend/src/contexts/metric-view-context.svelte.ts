@@ -48,7 +48,6 @@ import {
   DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
   DEFAULT_HISTOGRAM_QUANTILES,
   histogramSliceToDatapoint,
-  isHistogramAggregationError,
   parseQuantileSeriesKey,
   quantileKeyFromValue,
   type HistogramAggregationError,
@@ -68,7 +67,6 @@ import {
   AGG_KEY_TOTAL,
   availableAggregationViews,
   defaultAggregationViewFor,
-  isCumulativeTemporality,
   availableSeriesStatBadges,
   availableRateSlopeOverlay,
   rateSlopeAtPoint,
@@ -114,7 +112,6 @@ import {
 } from '@/components/metrics/utils/metric-timeseries-colors'
 import {
   getTimeContext,
-  isDefaultUnboundedWindow,
   selectionToQueryRangeMs,
 } from '@/contexts/time-context.svelte'
 import {
@@ -718,49 +715,11 @@ export function createMetricViewContext(
     const scalar = metricType === 'Gauge' || metricType === 'Sum'
     const source = m && scalar ? m.timeseries : []
 
-    // Projected per series and on demand, not all at once.
-    //
-    // A hidden series needs no chart points: rawTransformed filters to the
-    // visible set before the chart sees anything, and a row's sparkline and stat
-    // badges come from the store. Projecting one costs a Date per datapoint, so
-    // the work is worth deferring until a line is actually drawn.
-    //
-    // The cache lives inside this $derived, so it is discarded when the metric
-    // changes and no invalidation has to be arranged. Checking a series later
-    // projects it then, once.
-    const cache = new Map<string, ChartTimeseries>()
-    const byKey = new Map(source.map(ts => [ts.attributesKey, ts]))
     // Resolved once for the whole metric: which resource attributes tell the
     // series apart is a question about the set, not about any one of them.
     const labelByKey = seriesLabelsByKey(source)
     const labelFor = (ts: MetricTimeseries) =>
       labelByKey.get(ts.attributesKey) ?? ts.attributesKey
-
-    function project(key: string): ChartTimeseries | undefined {
-      const hit = cache.get(key)
-      if (hit) return hit
-      const ts = byKey.get(key)
-      if (!ts) return undefined
-      // No client-side thinning: the store's M4 election is the reduction, and
-      // it is sized so its output is what the chart draws.
-      const built = timeseriesToChartTimeseries([ts], labelFor).chartTimeseries[0]
-      if (built) cache.set(key, built)
-      return built
-    }
-
-    /** Source order throughout: the legend assigns colour positionally, so a
-     *  projected list must not reorder what the store sent. */
-    function projectMatching(
-      include: (key: string) => boolean
-    ): ChartTimeseries[] {
-      const out: ChartTimeseries[] = []
-      for (const ts of source) {
-        if (!include(ts.attributesKey)) continue
-        const built = project(ts.attributesKey)
-        if (built) out.push(built)
-      }
-      return out
-    }
 
     return {
       /** The unprojected series, for questions answerable from datapoint
@@ -773,10 +732,21 @@ export function createMetricViewContext(
         key: ts.attributesKey,
         label: labelFor(ts),
       })),
-      project,
-      projectAll: () => projectMatching(() => true),
+      /**
+       * The visible series as chart points, in the order the store sent them --
+       * the legend assigns colour positionally, so a projected list must not
+       * reorder it.
+       *
+       * No client-side thinning: the store's M4 election is the reduction, and
+       * it is sized so its output is what the chart draws. Nor any memo: the
+       * store now ships datapoints only for the series being drawn, so the
+       * series this skips are empty anyway.
+       */
       projectVisible: (visible: { has: (key: string) => boolean }) =>
-        projectMatching(key => visible.has(key)),
+        timeseriesToChartTimeseries(
+          source.filter(ts => visible.has(ts.attributesKey)),
+          labelFor
+        ).chartTimeseries,
     }
   })
 

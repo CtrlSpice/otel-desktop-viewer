@@ -31,7 +31,6 @@ import type {
   JsonAttributeType,
   JsonQueryNode,
   JsonAttributeMatch,
-  JsonAggregateBucket,
   JsonMetricAggregateEnvelope,
   JsonScalarAggregate,
   JsonScalarViewBucket,
