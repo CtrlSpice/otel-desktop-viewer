@@ -225,9 +225,11 @@ export interface MetricViewContext {
   readonly selectedDatapoint: DataPoint | undefined
 
   // -- Gauge/Sum chart wiring --
-  readonly gaugeSumChartTimeseries: ReturnType<
-    typeof timeseriesToChartTimeseries
-  >['chartTimeseries']
+  /** Series keys the metric carries, in store order. Deliberately keys rather
+   *  than projected points: the only question asked of it is whether the metric
+   *  has any scalar series at all, and projecting every one of them -- checked
+   *  or not -- to answer it is what this used to do. */
+  readonly gaugeSumSeriesKeys: readonly string[]
   readonly gaugeSumLegendTimeseries: LegendTimeseries[]
   readonly gaugeSumVisible: SvelteSet<string>
   readonly highlightedTimestamp: bigint | null
@@ -701,12 +703,66 @@ export function createMetricViewContext(
    */
   const gaugeSumGroups = $derived.by(() => {
     const m = getMetric()
-    if (!m || (metricType !== 'Gauge' && metricType !== 'Sum')) {
-      return { chartTimeseries: [], keys: [] as string[] }
+    const scalar = metricType === 'Gauge' || metricType === 'Sum'
+    const source = m && scalar ? m.timeseries : []
+
+    // Projected per series and on demand, not all at once.
+    //
+    // This used to project every series in the response the moment the metric
+    // arrived -- a Date per datapoint, for lines the chart was never asked to
+    // draw. Roughly half a metric's series are unchecked by default, and a
+    // hidden series needs no chart points at all: rawTransformed filters to the
+    // visible set before the chart sees anything, and the row's sparkline and
+    // stat badges now come from the store rather than from here.
+    //
+    // The cache lives inside this $derived, so it is discarded when the metric
+    // changes and no invalidation has to be arranged. Checking a series later
+    // projects it then, once.
+    const cache = new Map<string, ChartTimeseries>()
+    const byKey = new Map(source.map(ts => [ts.attributesKey, ts]))
+
+    function project(key: string): ChartTimeseries | undefined {
+      const hit = cache.get(key)
+      if (hit) return hit
+      const ts = byKey.get(key)
+      if (!ts) return undefined
+      // No client-side thinning: the store's M4 election is the reduction, and
+      // it is sized so its output is what the chart draws.
+      const built = timeseriesToChartTimeseries([ts]).chartTimeseries[0]
+      if (built) cache.set(key, built)
+      return built
     }
-    // No client-side thinning: the store's M4 election is the reduction, and
-    // it is sized so its output is what the chart draws.
-    return timeseriesToChartTimeseries(m.timeseries)
+
+    /** Source order throughout: the legend assigns colour positionally, so a
+     *  projected list must not reorder what the store sent. */
+    function projectMatching(
+      include: (key: string) => boolean
+    ): ChartTimeseries[] {
+      const out: ChartTimeseries[] = []
+      for (const ts of source) {
+        if (!include(ts.attributesKey)) continue
+        const built = project(ts.attributesKey)
+        if (built) out.push(built)
+      }
+      return out
+    }
+
+    return {
+      /** The unprojected series, for questions answerable from datapoint
+       *  counts and timestamps without building chart points. */
+      timeseries: source,
+      keys: source.map(ts => ts.attributesKey),
+      /** Key and label only -- what the store's own per-bucket views need,
+       *  since those are keyed by series and carry their own points. */
+      labels: source.map(ts => ({
+        key: ts.attributesKey,
+        label: ts.attributesKey === '' ? 'default' : ts.attributesKey,
+      })),
+      project,
+      projectAll: () => projectMatching(() => true),
+      projectVisible: (visible: { has: (key: string) => boolean }) =>
+        projectMatching(key => visible.has(key)),
+    }
   })
 
   const gaugeSumLegendTimeseries = $derived.by((): LegendTimeseries[] => {
@@ -823,10 +879,13 @@ export function createMetricViewContext(
    *  Only meaningful when aggregationView is aggregated; raw view ignores
    *  bucketCount entirely. */
   const sharedBucketCount = $derived.by((): number => {
-    const all = gaugeSumGroups.chartTimeseries
+    // Counted off the datapoints rather than projected chart points: on a
+    // Gauge or Sum stream every datapoint becomes exactly one point, so the
+    // two counts are equal and this one needs no Dates built to ask.
+    const all = gaugeSumGroups.timeseries
     if (all.length === 0) return SUM_AUTO_BUCKET_COUNT_CAP
     let total = 0
-    for (const s of all) total += s.points.length
+    for (const s of all) total += s.datapoints.length
     if (total === 0) return SUM_AUTO_BUCKET_COUNT_CAP
     const target = Math.ceil(total / Math.max(all.length, 1))
     return Math.min(SUM_AUTO_BUCKET_COUNT_CAP, Math.max(1, target))
@@ -846,19 +905,23 @@ export function createMetricViewContext(
    *    the aggregate rate. Bucket count is shared with the
    *    aggregate so step boundaries line up. */
   const rawTransformed = $derived.by(() => {
-    const all = gaugeSumGroups.chartTimeseries
-    if (all.length === 0)
+    if (gaugeSumGroups.keys.length === 0)
       return {
         series: [] as ChartTimeseries[],
         resets: new Map() as ResetIndicesByKey,
       }
-    const visible = all.filter(s => view.gaugeSumVisible.has(s.key))
+    // Rate draws the store's per-series buckets, which are keyed by series and
+    // carry their own points, so this branch projects nothing: only the key and
+    // label travel.
+    if (view.aggregationView === 'rate') {
+      return seriesFromViews(
+        gaugeSumGroups.labels.filter(s => view.gaugeSumVisible.has(s.key)),
+        'rate'
+      )
+    }
     const cumulative =
       metricType === 'Sum' && isCumulativeTemporality(temporality)
-    if (view.aggregationView === 'rate') {
-      return seriesFromViews(visible, 'rate')
-    }
-    return aggregateRaw(visible, {
+    return aggregateRaw(gaugeSumGroups.projectVisible(view.gaugeSumVisible), {
       cumulative,
       bucketCount: SUM_AUTO_BUCKET_COUNT_CAP,
     })
@@ -960,7 +1023,11 @@ export function createMetricViewContext(
 
   /** Aggregated mode: Selected + All cross-timeseries lines. */
   const aggregatedTransformed = $derived.by((): AggregateResult => {
-    const all = gaugeSumGroups.chartTimeseries
+    // The one consumer that genuinely needs every series: the "All" line pools
+    // the whole set by definition, hidden ones included. It is also never
+    // reached in raw view -- $derived is lazy, and both readers return before
+    // touching it -- so the default view still projects only what it draws.
+    const all = gaugeSumGroups.projectAll()
     if (all.length === 0) return { lines: [], presentKeys: [] }
     const selected = all.filter(s => view.gaugeSumVisible.has(s.key))
     const v = view.aggregationView as 'sum' | 'avg' | 'rate'
@@ -992,15 +1059,16 @@ export function createMetricViewContext(
   /** Show the optional all-series aggregate toggle in the chart control bar. */
   const showAllSeriesAggregateToggleVisible = $derived.by((): boolean => {
     if (view.aggregationView === 'raw') return false
-    if (gaugeSumGroups.keys.length < 2) return false
-    const all = gaugeSumGroups.chartTimeseries
-    if (all.length === 0) return false
-    const selectedCount = all.filter(s =>
-      view.gaugeSumVisible.has(s.key)
-    ).length
+    // Keys alone answer this -- it is a count of checkboxes, not of points.
+    const keys = gaugeSumGroups.keys
+    if (keys.length < 2) return false
+    let selectedCount = 0
+    for (const key of keys) {
+      if (view.gaugeSumVisible.has(key)) selectedCount++
+    }
     // All series checked → aggregate collapses to Total; nothing extra
     // to toggle.
-    return selectedCount !== all.length
+    return selectedCount !== keys.length
   })
 
   const showChartStatOverlaysToggleVisible = $derived.by((): boolean => {
@@ -1064,11 +1132,16 @@ export function createMetricViewContext(
         }
       }
       if (metricType === 'Gauge' || metricType === 'Sum') {
+        // Read off the datapoints' epoch milliseconds rather than projected
+        // points: this is the extent of the data, and asking for it used to
+        // force every series in the response to be projected -- including the
+        // unchecked ones -- purely to call getTime() on Dates it had just
+        // built.
         let min = Infinity
         let max = -Infinity
-        for (const ts of gaugeSumGroups.chartTimeseries) {
-          for (const p of ts.points) {
-            const t = p.date.getTime()
+        for (const ts of gaugeSumGroups.timeseries) {
+          for (const dp of ts.datapoints) {
+            const t = dp.timestampMs
             if (t < min) min = t
             if (t > max) max = t
           }
@@ -1542,14 +1615,21 @@ export function createMetricViewContext(
     const persistedAggregationView = streamId
       ? loadPersistedAggregationView(streamId, availableAggregationViewsList)
       : null
+    const defaultAggregation = defaultAggregationViewFor(
+      metricType,
+      temporality,
+      isMonotonic,
+      gaugeSumKeys.length
+    )
+    // Clamped to what this metric actually offers. The persisted value is
+    // already validated against the same list; the default was not, so the two
+    // rules only had to disagree once to seed a view the user could neither see
+    // selected nor switch away from. 'raw' is in the list unconditionally.
     view.aggregationView =
       persistedAggregationView ??
-      defaultAggregationViewFor(
-        metricType,
-        temporality,
-        isMonotonic,
-        gaugeSumKeys.length
-      )
+      (availableAggregationViewsList.includes(defaultAggregation)
+        ? defaultAggregation
+        : 'raw')
     view.showSelectionStatOverlays = true
     view.showAllSeriesAggregate = streamId
       ? loadPersistedShowAllSeriesAggregate(streamId)
@@ -2035,8 +2115,8 @@ export function createMetricViewContext(
       return selectedDatapoint
     },
 
-    get gaugeSumChartTimeseries() {
-      return gaugeSumGroups.chartTimeseries
+    get gaugeSumSeriesKeys() {
+      return gaugeSumGroups.keys
     },
     get gaugeSumLegendTimeseries() {
       return gaugeSumLegendTimeseries

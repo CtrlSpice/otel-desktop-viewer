@@ -198,7 +198,7 @@
         selectedRateSlope={ctx.selectedRateSlope}
         timeRange={ctx.chartDataTimeRange ?? null}
         onChartPointClick={ctx.onChartPointClick}
-        emptyMessage={ctx.gaugeSumChartTimeseries.length === 0
+        emptyMessage={ctx.gaugeSumSeriesKeys.length === 0
           ? 'No datapoints to chart'
           : ctx.gaugeSumVisible.size === 0
             ? 'Nothing to see here — select a timeseries below'

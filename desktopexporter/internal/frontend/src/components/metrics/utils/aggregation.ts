@@ -92,27 +92,42 @@ export function isCumulativeTemporality(temporality: string): boolean {
 /**
  * Default view for a metric on first open (no persisted choice).
  *
- *   - Cumulative Sum metrics → 'rate'. The raw chart is a featureless
- *     climbing staircase; rate (Δvalue / Δt) is what an operator is
- *     almost always looking for. Applies regardless of monotonicity:
- *     non-monotonic cumulative counters are rare and still benefit
- *     from delta-per-second over a bare running total.
+ *   - Cumulative *monotonic* Sum metrics → 'rate'. The raw chart is a
+ *     featureless climbing staircase; rate (Δvalue / Δt) is what an
+ *     operator is almost always looking for.
  *   - Everything else → 'raw'. Delta Sums, Gauges, and Sums of unknown
  *     temporality all look meaningful as-is, and the user can opt
  *     into aggregation from the menu.
  *
- * `_isMonotonic` and `_seriesCount` are kept in the signature even
- * though unused — callers already wire them, and they're cheap
- * future-proofing if we want to refine the rule later (e.g. only
- * default to Rate when seriesCount >= 2).
+ * Monotonicity is part of the test, and must stay in step with
+ * {@link availableAggregationViews}, which applies the same condition.
+ * Rate differences consecutive readings and reads a fall as a counter
+ * restart; a non-monotonic cumulative Sum is allowed to fall for real,
+ * so every decrease would be reported as a reset and the rate would be
+ * fiction.
+ *
+ * This tested temporality alone while the availability rule tested both,
+ * so a non-monotonic cumulative Sum defaulted to a view its own menu did
+ * not offer. Nothing rejected the mismatch: the tab bar rendered with no
+ * tab active, and every row's sparkline drew nothing, because the rate of
+ * a series' first bucket is null by definition and those series had only
+ * the one bucket.
+ *
+ * `_seriesCount` is kept in the signature though unused — callers already
+ * wire it, and it is cheap future-proofing if the rule ever needs it
+ * (e.g. only default to Rate when seriesCount >= 2).
  */
 export function defaultAggregationViewFor(
   metricType: string,
   temporality: string,
-  _isMonotonic: boolean | null,
+  isMonotonic: boolean | null,
   _seriesCount: number = 2
 ): AggregationView {
-  if (metricType === 'Sum' && isCumulativeTemporality(temporality)) {
+  if (
+    metricType === 'Sum' &&
+    isCumulativeTemporality(temporality) &&
+    isMonotonic === true
+  ) {
     return 'rate'
   }
   return 'raw'
