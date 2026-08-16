@@ -270,6 +270,11 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
         ...v,
         bucketStart: parseBigInt(v.bucketStart),
       })) ?? null,
+    sparkline:
+      json.sparkline?.map(p => ({
+        ...p,
+        timestamp: parseBigInt(p.timestamp),
+      })) ?? null,
   }
 }
 
@@ -512,7 +517,12 @@ export let telemetryAPI = {
     fitToData?: boolean,
     /** Resolution for the Sum / Average / Rate views, which bucket for a
      *  different chart than the election thins for. Omit for none. */
-    viewBuckets?: number
+    viewBuckets?: number,
+    /** Resolution for the per-row sparklines: buckets, each contributing its
+     *  min and its max, so this is half the sparkline's pixel width. A third
+     *  question again -- the election thins for the main chart, the views
+     *  bucket for another, this fits a list row. Omit for none. */
+    sparklineBuckets?: number
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -541,6 +551,10 @@ export let telemetryAPI = {
         { value: String(tzOffsetNs ?? 0), given: tzOffsetNs !== undefined },
         { value: fitToData ?? false, given: fitToData !== undefined },
         { value: String(viewBuckets ?? 0), given: viewBuckets !== undefined },
+        {
+          value: String(sparklineBuckets ?? 0),
+          given: sparklineBuckets !== undefined,
+        },
       ]
       while (optional.length > 0 && !optional[optional.length - 1].given) {
         optional.pop()

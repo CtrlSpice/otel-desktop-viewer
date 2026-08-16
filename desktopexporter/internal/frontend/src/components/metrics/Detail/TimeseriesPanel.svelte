@@ -7,7 +7,10 @@
    */
   import { tick } from 'svelte'
   import { SvelteSet } from 'svelte/reactivity'
-  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import {
+    getMetricViewContext,
+    SPARKLINE_WIDTH_PX,
+  } from '@/contexts/metric-view-context.svelte'
   import type { LegendTimeseries as PanelTimeseries } from '@/types/metric-chart-types'
   import type { MetricTimeseries } from '@/types/api-types'
   import { MAX_VISIBLE_TIMESERIES } from '@/components/metrics/utils/metric-timeseries-visible'
@@ -215,11 +218,13 @@
                   {/if}
                 </div>
                 {#if !sparklineSuppressed}
+                  <!-- The store reduced these points to this width, so the
+                       constant is shared rather than repeated here. -->
                   <div class="ts-row__sparkline">
                     <Sparkline
                       points={sparklinePoints}
                       color={sparklineColor}
-                      width={128}
+                      width={SPARKLINE_WIDTH_PX}
                     />
                   </div>
                 {/if}

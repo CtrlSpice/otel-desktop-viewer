@@ -296,6 +296,20 @@ export type JsonMetricTimeseries = {
   /** Per-bucket Sum / Average / Rate. Null for histogram series, which have no
    *  scalar to aggregate. */
   views: JsonScalarViewBucket[] | null
+  /** This series' shape at list-row resolution: the store's min and max per
+   *  bucket, sized for the 128px sparkline box rather than the chart. Sent for
+   *  every series, including unchecked ones -- the sparkline is how a user
+   *  decides what to check. Null for histograms, and when the caller asked for
+   *  no sparkline buckets. */
+  sparkline: JsonSparklinePoint[] | null
+}
+
+/** One point of a series' row sparkline. A bucket contributes its min and its
+ *  max, each at the timestamp it actually occurred, so a spike leans the way it
+ *  happened rather than being squared off to a bucket boundary. */
+export type JsonSparklinePoint = {
+  timestamp: string
+  value: number
 }
 
 export type JsonMetricData = {

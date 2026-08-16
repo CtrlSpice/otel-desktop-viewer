@@ -75,6 +75,7 @@
   import {
     METRIC_BUCKET_TARGET,
     SCALAR_VIEW_BUCKETS,
+    SPARKLINE_BUCKETS,
   } from '@/contexts/metric-view-context.svelte'
   import {
     DEFAULT_HISTOGRAM_QUANTILES,
@@ -456,7 +457,11 @@
           isDefaultUnboundedWindow(timeContext.selection),
           // Resolution for the Sum / Average / Rate views, which bucket for a
           // different chart than the election thins for.
-          SCALAR_VIEW_BUCKETS
+          SCALAR_VIEW_BUCKETS,
+          // Resolution for the per-row sparklines. The store sends one for
+          // every series, checked or not, because the sparkline is how the
+          // reader decides which series is worth checking.
+          SPARKLINE_BUCKETS
         )) ?? undefined
       // A slower earlier request must not overwrite a newer answer.
       if (token !== detailToken) return

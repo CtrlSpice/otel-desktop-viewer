@@ -86,6 +86,8 @@ function makeCumulativeSumMetric(): MetricData {
         // The store's view buckets; this fixture is about aggregation defaults,
         // not the views themselves.
         views: null,
+        // Likewise the row sparkline, which the store reduces separately.
+        sparkline: null,
       },
       {
         attributesKey: 'route=/b',
@@ -99,6 +101,8 @@ function makeCumulativeSumMetric(): MetricData {
         // The store's view buckets; this fixture is about aggregation defaults,
         // not the views themselves.
         views: null,
+        // Likewise the row sparkline, which the store reduces separately.
+        sparkline: null,
       },
     ],
   }

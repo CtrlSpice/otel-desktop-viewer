@@ -33,6 +33,7 @@ import type {
   ExponentialHistogramDataPoint,
   Attributes,
   ScalarViewBucket,
+  SparklinePoint,
 } from '@/types/api-types'
 import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
 import { distinguishingResourceAttributes } from '@/utils/series-labels'
@@ -157,6 +158,28 @@ export const METRIC_BUCKET_TARGET = CHART_POINTS_PER_SERIES / 4
  * it is a ceiling rather than an exact count.
  */
 export const SCALAR_VIEW_BUCKETS = 120
+
+/**
+ * How wide a row sparkline is drawn, in px.
+ *
+ * Exported so the reduction and the box it is drawn into cannot drift apart:
+ * TimeseriesPanel sizes the SVG from this, and SPARKLINE_BUCKETS is derived
+ * from it below.
+ */
+export const SPARKLINE_WIDTH_PX = 128
+
+/**
+ * How many buckets to reduce a series to for its row sparkline.
+ *
+ * Half the pixel width, because the store keeps each bucket's min and its max
+ * -- two points per bucket, so the row receives about one point per pixel.
+ *
+ * A third resolution, and deliberately neither of the other two. The row used
+ * to be handed the charting points: up to METRIC_BUCKET_TARGET * 4 of them, a
+ * budget sized for a chart hundreds of pixels wide, drawn into this box at
+ * roughly fifteen points per pixel, for every series in the panel.
+ */
+export const SPARKLINE_BUCKETS = SPARKLINE_WIDTH_PX / 2
 
 // --- Types --------------------------------------------------------
 
@@ -299,13 +322,16 @@ export interface MetricViewContext {
   /** Stem-rotated 10-colour pool (`pool[0]` = metric-type stem). */
   readonly timeseriesChartColors: string[]
   readonly legendFilterActive: boolean
-  /** Post-view chart points per Series tab row, keyed by `attributesKey`.
-   *  Shared source for sparklines and row stat badges. Reflects the
-   *  current AggregationView (rate vs raw bucketing). Covers every
-   *  candidate series, not just visible ones. Empty for histogram /
-   *  unspecified temporality. */
+  /** Sparkline points per Series tab row, keyed by `attributesKey`, reduced by
+   *  the store to the row's own width. Reflects the current AggregationView
+   *  (the rate buckets in rate view, the sparkline reduction otherwise).
+   *  Covers every candidate series, not just visible ones -- an unchecked row
+   *  keeps its shape, because that is what tells the reader to check it. Empty
+   *  for histogram / unspecified temporality. */
   readonly sparklineByKey: ReadonlyMap<string, readonly ChartPoint[]>
-  /** Min / max / avg / (sometimes) total per row, from {@link sparklineByKey}. */
+  /** Min / max / avg / (sometimes) total per row. From the store's whole-window
+   *  stats, except in rate view, where they describe {@link sparklineByKey}'s
+   *  transform instead. */
   readonly seriesStatsByKey: ReadonlyMap<string, SeriesStats>
   /** Which stat badges TimeseriesPanel should render for this metric/view. */
   readonly availableSeriesStatBadges: readonly SeriesStat[]
@@ -745,6 +771,21 @@ export function createMetricViewContext(
     return out
   }
 
+  /**
+   * The store's sparkline reduction as chart points.
+   *
+   * A projection and nothing more -- the reduction is min and max per bucket,
+   * done in SQL. Each point keeps the timestamp its sample actually occurred
+   * at rather than its bucket's start, so a spike leans the way it happened.
+   */
+  function sparklinePoints(points: SparklinePoint[] | null): ChartPoint[] {
+    if (!points) return []
+    return points.map(p => ({
+      date: new Date(Number(p.timestamp / 1_000_000n)),
+      value: p.value,
+    }))
+  }
+
   /** Per-series lines for a store-computed view, plus the buckets whose counter
    *  restarted -- which the rate chart marks. */
   function seriesFromViews(
@@ -823,23 +864,33 @@ export function createMetricViewContext(
     })
   })
 
-  /** Post-view chart points for each Series tab row (`attributesKey`).
+  /** Sparkline points for each Series tab row (`attributesKey`).
    *
-   *  Runs over EVERY candidate series (not just visible) so unchecked
-   *  rows still get a shape and stats to scan.
+   *  Runs over EVERY candidate series, not just the visible ones, so an
+   *  unchecked row still gets a shape: the sparkline is the affordance that
+   *  tells the reader which row is worth checking, so withholding it from the
+   *  rows they have not chosen yet defeats it.
    *
-   *  Transform follows the current aggregationView:
-   *    - 'rate'                  → per-series rate (matches the main
-   *                                chart's per-series rate transform).
-   *    - 'raw' / 'sum' / 'avg'   → bucketed raw values. Sum/Avg are
-   *                                cross-series aggregations that
-   *                                don't apply per row, so a row's
-   *                                own line stays in raw units.
+   *  Both branches are server-reduced and bounded by the row's own width. This
+   *  used to hand the row the *charting* points -- up to CHART_POINTS_PER_SERIES
+   *  of them, a budget sized for a chart hundreds of pixels wide -- and draw all
+   *  of them into a 128px box, roughly fifteen points per pixel, for every
+   *  series in the panel whether or not it was checked.
+   *
+   *  Source follows the current aggregationView:
+   *    - 'rate'                  → the store's rate buckets, the same numbers
+   *                                the main chart's per-series rate draws.
+   *    - 'raw' / 'sum' / 'avg'   → the store's sparkline reduction: min and max
+   *                                per bucket, so a spike survives at this size
+   *                                where an average would flatten it. Sum/Avg
+   *                                are cross-series aggregations that don't
+   *                                apply per row, so a row's own line stays in
+   *                                raw units.
    *
    *  Histogram metrics return an empty map — TimeseriesPanel renders
    *  a placeholder slot for histogram rows until per-series sparkbar
-   *  data is wired up. Sparklines and stat badges both read this map. */
-  const seriesRowPointsByKey = $derived.by(
+   *  data is wired up. */
+  const sparklinePointsByKey = $derived.by(
     (): ReadonlyMap<string, readonly ChartPoint[]> => {
       if (isHistogramKind) return new Map()
       // Unspecified temporality means we can't tell whether the values
@@ -849,52 +900,51 @@ export function createMetricViewContext(
       // for the same reason; row projections should follow that lead
       // rather than guessing.
       if (isUnspecifiedTemporality) return new Map()
-      const all = gaugeSumGroups.chartTimeseries
-      if (all.length === 0) return new Map()
-      const cumulative =
-        metricType === 'Sum' && isCumulativeTemporality(temporality)
-      const transformed =
-        view.aggregationView === 'rate'
-          ? seriesFromViews(all, 'rate')
-          : aggregateRaw(all, {
-              cumulative,
-              bucketCount: SUM_AUTO_BUCKET_COUNT_CAP,
-            })
       const out = new Map<string, readonly ChartPoint[]>()
-      for (const s of transformed.series) out.set(s.key, s.points)
+      const rate = view.aggregationView === 'rate'
+      for (const ts of getMetric()?.timeseries ?? []) {
+        out.set(
+          ts.attributesKey,
+          rate ? viewPoints(ts.views, 'rate') : sparklinePoints(ts.sparkline)
+        )
+      }
       return out
     }
   )
 
   const seriesStatsByKey = $derived.by((): ReadonlyMap<string, SeriesStats> => {
     const out = new Map<string, SeriesStats>()
+    if (isHistogramKind || isUnspecifiedTemporality) return out
 
-    // In the raw view the store's numbers win, because they are the only
-    // correct ones: seriesStatsFromPoints runs over chart points, which have
-    // already been thinned to CHART_POINTS_PER_SERIES, so its avg is the mean
-    // of a sample and its total is short by the thinning factor -- and `total`
-    // is offered as a badge for Sum + Delta + raw.
+    // Raw, Sum and Avg all leave a row's own line in raw units -- Sum and Avg
+    // are cross-series aggregations, and neither means anything applied to one
+    // series -- so all three read the store's stats. Those are computed over
+    // every datapoint in the window rather than the reduced ones the client
+    // holds, which is the only way to get them right: an avg taken over
+    // reduced points is the mean of a sample, and a total is short by the
+    // reduction factor. `total` is offered as a badge for Sum + Delta + raw.
     //
-    // Derived views (sum / avg / rate) keep computing client-side: those points
-    // are transformed rather than sampled, so their stats describe the
-    // transform, and no server-side equivalent would match.
-    const raw = view.aggregationView === 'raw'
-    const fromServer = new Map<string, SeriesStats>()
-    if (raw) {
-      for (const ts of getMetric()?.timeseries ?? []) {
-        const st = ts.stats
-        if (!st) continue
-        fromServer.set(ts.attributesKey, {
-          min: st.min,
-          max: st.max,
-          avg: st.avg,
-          total: st.sum,
-        })
+    // Rate is the exception, and for a reason rather than by omission: a rate
+    // row is a transform of the series, not the series in different units, so
+    // its stats have to describe the transform. They come off the store's rate
+    // buckets -- the same numbers the row's sparkline draws, so the badge and
+    // the shape above it can never disagree.
+    if (view.aggregationView === 'rate') {
+      for (const [key, points] of sparklinePointsByKey) {
+        out.set(key, seriesStatsFromPoints(points))
       }
+      return out
     }
 
-    for (const [key, points] of seriesRowPointsByKey) {
-      out.set(key, fromServer.get(key) ?? seriesStatsFromPoints(points))
+    for (const ts of getMetric()?.timeseries ?? []) {
+      const st = ts.stats
+      if (!st) continue
+      out.set(ts.attributesKey, {
+        min: st.min,
+        max: st.max,
+        avg: st.avg,
+        total: st.sum,
+      })
     }
     return out
   })
@@ -2115,7 +2165,7 @@ export function createMetricViewContext(
       return legendFilterActive
     },
     get sparklineByKey() {
-      return seriesRowPointsByKey
+      return sparklinePointsByKey
     },
     get seriesStatsByKey() {
       return seriesStatsByKey

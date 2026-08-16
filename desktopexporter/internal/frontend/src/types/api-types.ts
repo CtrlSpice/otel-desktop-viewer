@@ -272,6 +272,16 @@ export type MetricTimeseries = {
   stats: SeriesValueStats | null
   /** Per-bucket Sum / Average / Rate from the store. Null for histograms. */
   views: ScalarViewBucket[] | null
+  /** This series' shape at list-row resolution, reduced by the store to min and
+   *  max per bucket.
+   *
+   *  Separate from `datapoints` because it answers a separate question: what
+   *  does this line look like in 128 pixels? The row used to draw the charting
+   *  points -- up to 2,000 of them -- into that box, about fifteen per pixel,
+   *  for every series in the panel.
+   *
+   *  Present for unchecked series too. Null for histograms. */
+  sparkline: SparklinePoint[] | null
 }
 
 /** Per-series value statistics, computed server-side over the full window. */
