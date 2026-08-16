@@ -337,6 +337,10 @@ export type JsonMetricData = {
    *  not a histogram, or when no merge happened, so a client can tell that
    *  apart from "merged to nothing". */
   aggregate: JsonAggregateBucket[] | null
+  /** The cross-series lines for a scalar metric, in the same bucket shape the
+   *  per-series views use. `selected` is empty when nothing is checked, which
+   *  the chart reads as "draw All by itself". Both are empty for histograms. */
+  scalarAggregate: JsonScalarAggregate | null
   /** Datapoints in the window, which may exceed the number returned. */
   datapointCount: number
   /** The window the reduction actually divided.
@@ -354,6 +358,20 @@ export type JsonMetricData = {
 
 /** One time bucket of the cross-series merge. Carries bucket vectors because
  *  the heatmap draws them; per-series data carries only quantiles. */
+/** Both cross-series pools. `all` never narrows with the selection -- that is
+ *  what makes it "all" -- while `selected` follows the checkboxes. */
+export type JsonScalarAggregate = {
+  selected: JsonScalarViewBucket[]
+  all: JsonScalarViewBucket[]
+}
+
+/** What getMetricAggregate returns: one envelope serving both metric shapes,
+ *  each field null or empty on the shape it does not apply to. */
+export type JsonMetricAggregateEnvelope = {
+  aggregate: JsonAggregateBucket[] | null
+  scalarAggregate: JsonScalarAggregate | null
+}
+
 export type JsonAggregateBucket = {
   timestamp: string
   startTime: string

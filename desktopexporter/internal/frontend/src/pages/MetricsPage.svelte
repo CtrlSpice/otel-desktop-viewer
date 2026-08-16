@@ -1,5 +1,5 @@
 <script module lang="ts">
-  import type { MetricSummary } from '@/types/api-types'
+  import type { MetricSummary, ScalarAggregate } from '@/types/api-types'
   import { metricSummaryKey } from '@/types/api-types'
   import {
     compareByStringField,
@@ -167,6 +167,11 @@
   // either -- it is the merge asked a different question, so the store answers
   // it rather than the client approximating from what it already has.
   let selectedAggregateSummary = $state<JsonAggregateBucket | null>(null)
+  // The store's cross-series fold for a scalar metric: the checked pool and the
+  // full pool, on the same bucket grid the per-series views use. Refetched when
+  // the legend changes, which is the whole reason it is separate from the
+  // metric's own response.
+  let selectedScalarAggregate = $state<ScalarAggregate | null>(null)
 
   // Unreduced datapoints per series, fetched when a series is expanded.
   //
@@ -180,6 +185,7 @@
     () => selectedMetric,
     () => selectedAggregate,
     () => selectedAggregateSummary,
+    () => selectedScalarAggregate,
     key => seriesDatapoints.get(key)
   )
   const metricCtx = getMetricViewContext()
@@ -241,14 +247,26 @@
     const summary = page.selectedSummary
     // Read reactively so a toggle re-runs this. Sorted so a set rebuilt with
     // the same members does not look like a change.
-    const keys = [...metricCtx.histogramVisible].sort()
+    //
+    // Two selections, because the two metric shapes check different boxes and
+    // the store reads them through different parameters. A histogram narrows
+    // with seriesIds -- the merge sees only the checked series. A scalar narrows
+    // with nothing and names its checked set separately, because its All pool
+    // must keep folding every series: narrowing there would quietly turn "all"
+    // into "all of the checked ones".
+    const histogramKeys = [...metricCtx.histogramVisible].sort()
+    const scalarKeys = [...metricCtx.gaugeSumVisible].sort()
 
     // Wait for the metric itself. The legend selection is seeded from that
     // response, so fetching before it arrives asks for the empty set -- which
     // now correctly means "no series" and returns nothing.
-    if (!summary || !metricCtx.isHistogramKind || !selectedMetric) {
+    // Widened past histograms: a scalar metric's cross-series lines are folded
+    // by the same endpoint now, and they depend on the selection for the same
+    // reason the histogram merge does.
+    if (!summary || !selectedMetric) {
       selectedAggregate = null
       selectedAggregateSummary = null
+      selectedScalarAggregate = null
       return
     }
 
@@ -257,7 +275,7 @@
     clearTimeout(aggregateTimer)
     const token = ++aggregateToken
     aggregateTimer = setTimeout(() => {
-      void fetchAggregate(summary, keys, token)
+      void fetchAggregate(summary, histogramKeys, scalarKeys, token)
     }, 120)
 
     return () => clearTimeout(aggregateTimer)
@@ -265,7 +283,8 @@
 
   async function fetchAggregate(
     summary: MetricSummary,
-    keys: string[],
+    histogramKeys: string[],
+    scalarKeys: string[],
     token: number
   ) {
     try {
@@ -273,9 +292,9 @@
         timeContext.selection,
         Date.now()
       )
-// The store's quantiles, which are now the only ones. The client used to
-      // recompute them from the bucket vectors -- 2,700 walks for one render of
-      // this metric, 3,068 ms in a single task. That code is gone.
+      // The store's quantiles, computed once per datapoint from its bucket
+      // vector. Recomputing them per render costs seconds on the main thread:
+      // 2,700 bucket walks for one render of this metric.
       const quantiles = DEFAULT_HISTOGRAM_QUANTILES as unknown as number[]
       // Same answer as the detail fetch gives, so the aggregate is bucketed
       // over the window the series beneath it were bucketed over.
@@ -288,17 +307,22 @@
           startTime,
           endTime,
           HEATMAP_BUCKET_TARGET,
-          keys,
+          histogramKeys,
           quantiles,
           tzOffsetNs(),
-          fit
+          fit,
+          // The same grid getMetric asked for, or the pooled lines would be
+          // bucketed against different boundaries than the per-series lines
+          // drawn beneath them.
+          SCALAR_VIEW_BUCKETS,
+          scalarKeys
         ),
         telemetryAPI.getMetricAggregate(
           summary.id,
           startTime,
           endTime,
           1,
-          keys,
+          histogramKeys,
           quantiles,
           tzOffsetNs(),
           fit
@@ -306,14 +330,19 @@
       ])
       // A slower earlier request must not overwrite a newer answer.
       if (token === aggregateToken) {
-        selectedAggregate = buckets
-        selectedAggregateSummary = whole?.[0] ?? null
+        selectedAggregate = buckets?.aggregate ?? null
+        selectedAggregateSummary = whole?.aggregate?.[0] ?? null
+        // The scalar pools come off the bucketed call, which is the one asked
+        // for the view grid. The whole-window call collapses to a single bucket
+        // and has no line to draw.
+        selectedScalarAggregate = buckets?.scalarAggregate ?? null
       }
     } catch (err) {
       console.error('Failed to fetch metric aggregate:', err)
       if (token === aggregateToken) {
         selectedAggregate = null
         selectedAggregateSummary = null
+        selectedScalarAggregate = null
       }
     }
   }
@@ -448,11 +477,9 @@
           // response need them: the per-series lines and the merged columns.
           //
           // Histograms only. A quantile is a question about a bucket vector, so
-          // a Gauge or Sum has no answer to give -- and asking anyway was not
-          // free. Measured on f1.car.drs, a 22-series Gauge: 2,937 ms with
-          // quantiles against 298 ms without, for byte-identical output. Ten
-          // times the wait for a field that came back empty either way, on
-          // every metric the user clicked.
+          // a Gauge or Sum has no answer to give, and asking for one is not
+          // free: on a 22-series Gauge it costs 2,937 ms against 298 ms, for
+          // byte-identical output.
           isHistogramMetric
             ? (DEFAULT_HISTOGRAM_QUANTILES as unknown as number[])
             : undefined,

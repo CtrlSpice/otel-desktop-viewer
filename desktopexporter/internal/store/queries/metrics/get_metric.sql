@@ -452,13 +452,12 @@
 		-- turn those into "Selected + All", a lone "All", or a single "Total" are
 		-- labelling decisions and stay with the view that draws them.
 		--
-		-- Folded from scalar_view_agg rather than from datapoints. Those rows are
-		-- already one per (series, bucket) on the shared absolute grid, so the
-		-- aggregate lands on exactly the boundaries the per-series view lines use.
-		-- The TypeScript this replaces built its own grid from the merged pool's
-		-- own first and last point, with a bucket count derived from the pool
-		-- size, and its own comment conceded that only lined up because the series
-		-- happened to share a scrape cadence.
+		-- Folded from scalar_view_agg rather than from datapoints, which is what
+		-- puts the pooled line on the same boundaries as the per-series view
+		-- lines drawn beneath it: those rows are already one per (series, bucket)
+		-- on the shared absolute grid. A pool that derived its own grid from its
+		-- own extent would align with them only when every series happened to
+		-- share a scrape cadence.
 		--
 		--   sum   the pool's values added. For a cumulative counter that means
 		--         adding running totals, which is what "sum across series at time
@@ -525,17 +524,14 @@
 		-- The shape of one series at sparkline resolution.
 		--
 		-- A separate reduction because it answers a separate question: what does
-		-- this line look like in 128 pixels? The row sparkline used to be handed
-		-- the *elected* series -- up to 2,000 points -- and drew all of them into
-		-- a 128px box, roughly fifteen points per pixel, for every series in the
-		-- panel whether or not it was checked.
+		-- this line look like in 128 pixels? The election sizes a line for a chart
+		-- hundreds of pixels wide, which is fifteen points per pixel here.
 		--
 		-- min and max per bucket rather than an average, because a sparkline's one
 		-- job is shape, and averaging erases the spike that makes a row worth
-		-- clicking. That is also why it is not simply read off the views above:
-		-- their avg is the right answer for an axis-bearing chart and the wrong
-		-- one for a 18px glyph whose only purpose is to say "something happened
-		-- here."
+		-- clicking. That is also why this is not read off the views above: their
+		-- avg is the right answer for an axis-bearing chart and the wrong one for
+		-- an 18px glyph whose only purpose is to say "something happened here".
 		--
 		-- No spine. The views build one because an empty bucket is an answer there
 		-- (zero activity for Sum and Rate, no answer for Average); here it is only

@@ -1,3 +1,5 @@
+import type { JsonAggregateBucket } from '@/types/wire-types'
+
 export type RootSpan = {
   serviceName: string
   name: string
@@ -282,6 +284,27 @@ export type MetricTimeseries = {
    *
    *  Present for unchecked series too. Null for histograms. */
   sparkline: SparklinePoint[] | null
+}
+
+/** Both cross-series pools, as the store folded them.
+ *
+ *  Same bucket shape as {@link ScalarViewBucket}, deliberately: the chart
+ *  projects a pool through the same function it projects a per-series view
+ *  with, rather than learning a second format for the same idea.
+ *
+ *  `all` never narrows with the selection -- that is what makes it "all" --
+ *  while `selected` follows the checkboxes and is empty when nothing is
+ *  checked, which the chart draws as "All alone". */
+export type ScalarAggregate = {
+  selected: ScalarViewBucket[]
+  all: ScalarViewBucket[]
+}
+
+/** What getMetricAggregate resolves to: one envelope serving both metric
+ *  shapes, each field null on the shape it does not apply to. */
+export type MetricAggregateEnvelope = {
+  aggregate: JsonAggregateBucket[] | null
+  scalarAggregate: ScalarAggregate | null
 }
 
 /** Per-series value statistics, computed server-side over the full window. */

@@ -773,8 +773,11 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // question again: it fits a list row rather than a chart, and the reduction
 // keeps each bucket's min and max so a spike survives at that size. 0 skips it
 // and every series comes back with a null sparkline. It is computed for every
-// series in the response, including ones the caller has not selected, because
-// the sparkline is how a user decides which series to select.
+// series in the response, including unselected ones, because the sparkline is
+// how a user decides which series to select.
+// selectedSeriesIDs names the pool the Selected cross-series line folds. It
+// narrows nothing else: the All line keeps folding every series in the stream,
+// and nil means nothing is checked, so only the All line is drawn.
 // fitToData says the window is the absence of a choice rather than a request,
 // which lets the reduction divide the data's own extent instead of the window.
 // It matters most at the widest windows: "All" spans decades, so dividing it

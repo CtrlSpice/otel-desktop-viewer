@@ -11,6 +11,9 @@ import type {
   Stats,
   Exemplar,
   DataPoint,
+  ScalarAggregate,
+  ScalarViewBucket,
+  MetricAggregateEnvelope,
 } from '@/types/api-types'
 import type {
   JsonAttributeDefinition,
@@ -29,6 +32,9 @@ import type {
   JsonQueryNode,
   JsonAttributeMatch,
   JsonAggregateBucket,
+  JsonMetricAggregateEnvelope,
+  JsonScalarAggregate,
+  JsonScalarViewBucket,
 } from '@/types/wire-types'
 import { parseBigInt, parseNullableBigInt } from '@/utils/bigint'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
@@ -265,16 +271,32 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
     resource: json.resource,
     datapoints: json.datapoints.map(dataPointFromJSON),
     stats: json.stats ?? null,
-    views:
-      json.views?.map(v => ({
-        ...v,
-        bucketStart: parseBigInt(v.bucketStart),
-      })) ?? null,
+    views: json.views ? scalarViewBucketsFromJSON(json.views) : null,
     sparkline:
       json.sparkline?.map(p => ({
         ...p,
         timestamp: parseBigInt(p.timestamp),
       })) ?? null,
+  }
+}
+
+/** Bucket starts ride as strings for the same reason every other ns timestamp
+ *  does, and are promoted here so nothing downstream handles two encodings of
+ *  one idea. Shared by the per-series views and the cross-series pools, which
+ *  is the payoff of giving the pools the same bucket shape. */
+function scalarViewBucketsFromJSON(
+  json: JsonScalarViewBucket[]
+): ScalarViewBucket[] {
+  return json.map(b => ({ ...b, bucketStart: parseBigInt(b.bucketStart) }))
+}
+
+function scalarAggregateFromJSON(
+  json: JsonScalarAggregate | null
+): ScalarAggregate | null {
+  if (!json) return null
+  return {
+    selected: scalarViewBucketsFromJSON(json.selected),
+    all: scalarViewBucketsFromJSON(json.all),
   }
 }
 
@@ -590,12 +612,19 @@ export let telemetryAPI = {
     quantiles: number[],
     tzOffsetNs: number,
     fitToData: boolean,
-    viewBuckets = 0
-  ): Promise<JsonAggregateBucket[] | null> => {
+    viewBuckets = 0,
+    /** Which series are checked, for the scalar Selected pool.
+     *
+     *  Deliberately not `seriesIds`. That one narrows what the store returns;
+     *  this one names a pool and narrows nothing. Narrowing a scalar would not
+     *  trim the payload, it would redefine the answer -- "All" folded over a
+     *  narrowed set means "all of the checked ones". */
+    selectedSeriesIds?: string[]
+  ): Promise<MetricAggregateEnvelope | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
     try {
-      return await callRPC<JsonAggregateBucket[] | null>('getMetricAggregate', [
+      const raw = await callRPC<JsonMetricAggregateEnvelope | null>('getMetricAggregate', [
         streamId,
         startTimeNs,
         endTimeNs,
@@ -607,7 +636,17 @@ export let telemetryAPI = {
         // bucketed against a different window than the series beneath it.
         fitToData,
         String(viewBuckets),
+        // Placeholder for sparklineBuckets: this method drops the timeseries, so
+        // the store pins it to 0 regardless, but positional params mean the slot
+        // has to be filled to reach the one after it.
+        '0',
+        selectedSeriesIds ?? null,
       ])
+      if (!raw) return null
+      return {
+        aggregate: raw.aggregate,
+        scalarAggregate: scalarAggregateFromJSON(raw.scalarAggregate),
+      }
     } catch (error) {
       if (
         error instanceof JsonRpcError &&

@@ -33,6 +33,7 @@ import type {
   ExponentialHistogramDataPoint,
   Attributes,
   ScalarViewBucket,
+  ScalarAggregate,
   SparklinePoint,
 } from '@/types/api-types'
 import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
@@ -61,8 +62,6 @@ import {
   AGG_KEY_ALL,
   AGG_KEY_SELECTED,
   AGG_KEY_TOTAL,
-  aggregateRaw,
-  aggregateSelectedAndAll,
   availableAggregationViews,
   defaultAggregationViewFor,
   isCumulativeTemporality,
@@ -228,7 +227,7 @@ export interface MetricViewContext {
   /** Series keys the metric carries, in store order. Deliberately keys rather
    *  than projected points: the only question asked of it is whether the metric
    *  has any scalar series at all, and projecting every one of them -- checked
-   *  or not -- to answer it is what this used to do. */
+   *  or not -- would be a lot of work for a boolean. */
   readonly gaugeSumSeriesKeys: readonly string[]
   readonly gaugeSumLegendTimeseries: LegendTimeseries[]
   readonly gaugeSumVisible: SvelteSet<string>
@@ -438,6 +437,15 @@ export function createMetricViewContext(
   getAggregate: () => JsonAggregateBucket[] | null = () => null,
   /** The same merge over a single bucket spanning the window. */
   getAggregateSummary: () => JsonAggregateBucket | null = () => null,
+  /**
+   * The store's cross-series fold for a scalar metric: the checked pool and the
+   * full pool, on the same bucket grid the per-series views use.
+   *
+   * A getter for the same reason the histogram aggregate is one -- it depends
+   * on the legend selection, so the page refetches it while this layer only
+   * decides what the numbers mean.
+   */
+  getScalarAggregate: () => ScalarAggregate | null = () => null,
   /** Unreduced datapoints for one series, once the page has fetched them. */
   getSeriesDatapoints: (seriesKey: string) => DataPoint[] | undefined = () =>
     undefined
@@ -708,12 +716,10 @@ export function createMetricViewContext(
 
     // Projected per series and on demand, not all at once.
     //
-    // This used to project every series in the response the moment the metric
-    // arrived -- a Date per datapoint, for lines the chart was never asked to
-    // draw. Roughly half a metric's series are unchecked by default, and a
-    // hidden series needs no chart points at all: rawTransformed filters to the
-    // visible set before the chart sees anything, and the row's sparkline and
-    // stat badges now come from the store rather than from here.
+    // A hidden series needs no chart points: rawTransformed filters to the
+    // visible set before the chart sees anything, and a row's sparkline and stat
+    // badges come from the store. Projecting one costs a Date per datapoint, so
+    // the work is worth deferring until a line is actually drawn.
     //
     // The cache lives inside this $derived, so it is discarded when the metric
     // changes and no invalidation has to be arranged. Checking a series later
@@ -784,11 +790,9 @@ export function createMetricViewContext(
   //   - Raw (aggregationView === 'raw'): per-series lines, visibility-filtered.
   //     Same as before; the chart gets N lines for the checked series.
   //   - Aggregated (sum/avg/rate): up to 2 cross-timeseries aggregate
-  //     lines (Selected, All) via aggregateSelectedAndAll(). Collapse
-  //     rules: selected empty → one "All" line; selected covers all →
-  //     one "Total" line; otherwise 2.
-
-  const SUM_AUTO_BUCKET_COUNT_CAP = SCALAR_VIEW_BUCKETS
+  //     lines (Selected, All), folded by the store. Collapse rules:
+  //     selected empty → one "All" line; selected covers all → one
+  //     "Total" line; otherwise 2.
 
   /**
    * The store's per-bucket answer for one view, as chart points.
@@ -866,31 +870,6 @@ export function createMetricViewContext(
     return { series: out, resets }
   }
 
-  /** Shared bucket count for rate-view raw lines AND cross-series
-   *  aggregates so their staircases align.
-   *
-   *  Mirrors `combinePool`'s formula: target ≈ allPoints / poolSize
-   *  (= average points per series), capped at the chart-resolution
-   *  cap. When per-series `aggregateRate` and pooled aggregate both
-   *  receive this as `bucketCount`, they end up with the same N
-   *  buckets over (effectively) the same time span — the visible
-   *  series all share the metric's scrape cadence in practice.
-   *
-   *  Only meaningful when aggregationView is aggregated; raw view ignores
-   *  bucketCount entirely. */
-  const sharedBucketCount = $derived.by((): number => {
-    // Counted off the datapoints rather than projected chart points: on a
-    // Gauge or Sum stream every datapoint becomes exactly one point, so the
-    // two counts are equal and this one needs no Dates built to ask.
-    const all = gaugeSumGroups.timeseries
-    if (all.length === 0) return SUM_AUTO_BUCKET_COUNT_CAP
-    let total = 0
-    for (const s of all) total += s.datapoints.length
-    if (total === 0) return SUM_AUTO_BUCKET_COUNT_CAP
-    const target = Math.ceil(total / Math.max(all.length, 1))
-    return Math.min(SUM_AUTO_BUCKET_COUNT_CAP, Math.max(1, target))
-  })
-
   /** Per-series lines for the visibility-filtered set.
    *
    *  - In Raw / Sum / Avg views: pass through unchanged. The raw
@@ -919,12 +898,13 @@ export function createMetricViewContext(
         'rate'
       )
     }
-    const cumulative =
-      metricType === 'Sum' && isCumulativeTemporality(temporality)
-    return aggregateRaw(gaugeSumGroups.projectVisible(view.gaugeSumVisible), {
-      cumulative,
-      bucketCount: SUM_AUTO_BUCKET_COUNT_CAP,
-    })
+    // Raw / Sum / Avg all draw the series as it was sampled: Sum and Avg are
+    // cross-series aggregations, and neither means anything applied to one
+    // series.
+    return {
+      series: gaugeSumGroups.projectVisible(view.gaugeSumVisible),
+      resets: new Map() as ResetIndicesByKey,
+    }
   })
 
   /** Sparkline points for each Series tab row (`attributesKey`).
@@ -934,11 +914,9 @@ export function createMetricViewContext(
    *  tells the reader which row is worth checking, so withholding it from the
    *  rows they have not chosen yet defeats it.
    *
-   *  Both branches are server-reduced and bounded by the row's own width. This
-   *  used to hand the row the *charting* points -- up to CHART_POINTS_PER_SERIES
-   *  of them, a budget sized for a chart hundreds of pixels wide -- and draw all
-   *  of them into a 128px box, roughly fifteen points per pixel, for every
-   *  series in the panel whether or not it was checked.
+   *  Both branches are server-reduced and bounded by the row's own width, which
+   *  is a different budget from the chart's: CHART_POINTS_PER_SERIES into a
+   *  128px box is roughly fifteen points per pixel.
    *
    *  Source follows the current aggregationView:
    *    - 'rate'                  → the store's rate buckets, the same numbers
@@ -1021,21 +999,51 @@ export function createMetricViewContext(
     })
   })
 
-  /** Aggregated mode: Selected + All cross-timeseries lines. */
+  /** Aggregated mode: Selected + All cross-timeseries lines, as the store
+   *  folded them.
+   *
+   *  The collapse rules stay here because they are labelling, not arithmetic:
+   *  nothing checked draws All by itself; everything checked makes Selected and
+   *  All the same line, which is drawn once as Total; otherwise both.
+   *
+   *  The pools themselves come off the wire, folded over every datapoint on the
+   *  same absolute grid the per-series views use -- so the aggregate and the
+   *  lines beneath it share an x-axis by construction rather than by both
+   *  guessing the same bucket count. */
   const aggregatedTransformed = $derived.by((): AggregateResult => {
-    // The one consumer that genuinely needs every series: the "All" line pools
-    // the whole set by definition, hidden ones included. It is also never
-    // reached in raw view -- $derived is lazy, and both readers return before
-    // touching it -- so the default view still projects only what it draws.
-    const all = gaugeSumGroups.projectAll()
-    if (all.length === 0) return { lines: [], presentKeys: [] }
-    const selected = all.filter(s => view.gaugeSumVisible.has(s.key))
+    const pools = getScalarAggregate()
+    if (!pools) return { lines: [], presentKeys: [] }
     const v = view.aggregationView as 'sum' | 'avg' | 'rate'
-    const opts = {
-      cumulative: metricType === 'Sum' && isCumulativeTemporality(temporality),
-      bucketCount: sharedBucketCount,
+    const allPoints = viewPoints(pools.all, v)
+    if (allPoints.length === 0) return { lines: [], presentKeys: [] }
+
+    const checkedCount = view.gaugeSumVisible.size
+    const total = gaugeSumGroups.keys.length
+    // Selected covering everything means the two lines are identical; drawing
+    // both would just stack them.
+    if (checkedCount === 0 || checkedCount === total) {
+      const key = checkedCount === 0 ? AGG_KEY_ALL : AGG_KEY_TOTAL
+      const label = checkedCount === 0 ? 'All' : 'Total'
+      return {
+        lines: [{ key, label, points: allPoints }],
+        presentKeys: [key],
+      }
     }
-    return aggregateSelectedAndAll(selected, all, v, opts)
+
+    const lines: ChartTimeseries[] = []
+    const presentKeys: AggregateLineKey[] = []
+    const selectedPoints = viewPoints(pools.selected, v)
+    if (selectedPoints.length > 0) {
+      lines.push({
+        key: AGG_KEY_SELECTED,
+        label: 'Selected',
+        points: selectedPoints,
+      })
+      presentKeys.push(AGG_KEY_SELECTED)
+    }
+    lines.push({ key: AGG_KEY_ALL, label: 'All', points: allPoints })
+    presentKeys.push(AGG_KEY_ALL)
+    return { lines, presentKeys }
   })
 
   /** Which aggregate line keys are present (for legend + color slots).
@@ -1133,10 +1141,9 @@ export function createMetricViewContext(
       }
       if (metricType === 'Gauge' || metricType === 'Sum') {
         // Read off the datapoints' epoch milliseconds rather than projected
-        // points: this is the extent of the data, and asking for it used to
-        // force every series in the response to be projected -- including the
-        // unchecked ones -- purely to call getTime() on Dates it had just
-        // built.
+        // points. This is the extent of the data, so it needs no chart points --
+        // and asking for them here would force every series in the response to
+        // be projected, including ones no line is drawn for.
         let min = Infinity
         let max = -Infinity
         for (const ts of gaugeSumGroups.timeseries) {
