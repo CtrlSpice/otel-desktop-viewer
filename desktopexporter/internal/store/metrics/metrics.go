@@ -839,24 +839,58 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 // Runs the same query and keeps one field. The per-series work happens either
 // way -- the aggregate is built from the merged series -- so the saving is
 // payload, not computation.
-func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64) (json.RawMessage, error) {
-	// 0 sparkline buckets: this call keeps only the aggregate envelope and drops
+// It serves both metric shapes, and they use different parameters to say
+// different things -- which is the part to get right.
+//
+// A histogram merges the *checked* series into one histogram per bucket, so the
+// caller narrows with seriesIDs and the merge sees only those.
+//
+// A scalar needs both pools at once: the checked series and every series in the
+// stream. So the caller passes no seriesIDs at all and names the checked set in
+// selectedSeriesIDs instead. Narrowing here would not merely trim the payload,
+// it would redefine the answer -- "All" computed over a narrowed set is "all of
+// the checked ones", which is wrong and looks entirely plausible on a chart.
+//
+// The rule the two share: narrowing decides what is *sent*, never what is
+// *aggregated*.
+func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, selectedSeriesIDs []string) (json.RawMessage, error) {
+	// 0 sparkline buckets: this call keeps only the aggregate envelopes and drops
 	// the timeseries the sparklines hang off, so computing them would be work
 	// whose entire output is discarded a few lines below.
-	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0, nil)
+	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0, selectedSeriesIDs)
 	if err != nil {
 		return nil, err
 	}
 	var envelope struct {
-		Aggregate json.RawMessage `json:"aggregate"`
+		Aggregate       json.RawMessage `json:"aggregate"`
+		ScalarAggregate json.RawMessage `json:"scalarAggregate"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return nil, fmt.Errorf("GetMetricAggregate: %w: %w", ErrMetricsStoreInternal, err)
 	}
-	if envelope.Aggregate == nil {
-		return json.RawMessage("null"), nil
+	// Both fields travel, each null-able on its own: a scalar metric has no
+	// histogram merge and a histogram has no scalar pools, and the caller should
+	// not have to ask twice to find out which it got.
+	out, err := json.Marshal(struct {
+		Aggregate       json.RawMessage `json:"aggregate"`
+		ScalarAggregate json.RawMessage `json:"scalarAggregate"`
+	}{
+		Aggregate:       nullIfAbsent(envelope.Aggregate),
+		ScalarAggregate: nullIfAbsent(envelope.ScalarAggregate),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetMetricAggregate: %w: %w", ErrMetricsStoreInternal, err)
 	}
-	return envelope.Aggregate, nil
+	return out, nil
+}
+
+// nullIfAbsent keeps json.Marshal from writing a bare `null` field as invalid
+// empty bytes when the source key was missing rather than JSON null.
+func nullIfAbsent(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage("null")
+	}
+	return raw
 }
 
 // GetMetricAttributes returns every metric-side attribute name/scope/type this

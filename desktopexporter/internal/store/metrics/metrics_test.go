@@ -3235,24 +3235,40 @@ func TestGetMetricAggregate(t *testing.T) {
 	fromFull, _ := json.Marshal(m["aggregate"])
 
 	only, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0, false, 0)
+		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0, false, 0, nil)
 	})
 	require.NoError(t, err)
 
-	assert.JSONEq(t, string(fromFull), string(only),
+	// The call now carries both aggregates -- the histogram merge and the scalar
+	// pools -- because one endpoint serves both metric shapes and the caller
+	// should not have to ask twice to learn which it got.
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal(only, &envelope))
+	fromOnly, _ := json.Marshal(envelope["aggregate"])
+	assert.JSONEq(t, string(fromFull), string(fromOnly),
 		"the aggregate-only call must match GetMetric's aggregate field")
+
+	// A histogram has no scalar pools: scalar_dps is Gauge and Sum only, so
+	// nothing reaches the fold.
+	scalar, _ := envelope["scalarAggregate"].(map[string]any)
+	require.NotNil(t, scalar, "the field is present even when it is empty")
+	assert.Empty(t, scalar["all"], "a histogram contributes no scalar pool")
+	assert.Empty(t, scalar["selected"])
 
 	// And it honours the selection, which is the reason it exists.
 	var agg []map[string]any
-	require.NoError(t, json.Unmarshal(only, &agg))
+	fromOnlyRaw, _ := json.Marshal(envelope["aggregate"])
+	require.NoError(t, json.Unmarshal(fromOnlyRaw, &agg))
 	require.NotEmpty(t, agg)
 	allCount := agg[0]["count"].(float64)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, []string{}, nil, 0, false, 0)
+		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, []string{}, nil, 0, false, 0, nil)
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "null", string(raw),
+	var emptyEnvelope map[string]any
+	require.NoError(t, json.Unmarshal(raw, &emptyEnvelope))
+	assert.Nil(t, emptyEnvelope["aggregate"],
 		"an empty selection aggregates no series")
 
 	assert.Positive(t, allCount, "nil selection aggregates every series")

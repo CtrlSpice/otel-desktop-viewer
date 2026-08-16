@@ -681,10 +681,11 @@ func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.R
 	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		// sparklineBuckets is parsed but not forwarded: this method returns the
-		// aggregate envelope alone, and GetMetricAggregate pins the parameter to
+		// aggregate envelopes alone, and GetMetricAggregate pins the parameter to
 		// 0 for that reason. Accepting it keeps one parser for both methods.
 		return metrics.GetMetricAggregate(ctx, db, args.streamID, args.startTime, args.endTime,
-			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets)
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData,
+			args.viewBuckets, args.selectedSeriesIDs)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
