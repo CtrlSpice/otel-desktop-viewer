@@ -1082,6 +1082,8 @@ func TestGetMetricAcceptsEveryParameter(t *testing.T) {
 		"120",            // 9 viewBuckets
 		"64",             // 10 sparklineBuckets
 		[]any{},          // 11 selectedSeriesIds
+		[]any{},          // 12 datapointSeriesIds
+		"10",             // 13 datapointSeriesLimit
 	}
 
 	for n := 3; n <= len(full); n++ {

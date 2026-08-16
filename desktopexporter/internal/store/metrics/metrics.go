@@ -778,6 +778,13 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // selectedSeriesIDs names the pool the Selected cross-series line folds. It
 // narrows nothing else: the All line keeps folding every series in the stream,
 // and nil means nothing is checked, so only the All line is drawn.
+// datapointSeriesIDs and datapointSeriesLimit decide which series ship their
+// datapoints -- almost the whole payload. Every series keeps its row, stats,
+// view buckets and sparkline regardless, so the panel can still list the ones
+// nobody is drawing and the All aggregate can still fold them. The limit is
+// for a caller that cannot name the series it wants because it picks them from
+// this very response; it takes the first N in the response's own order. Nil
+// and 0 mean every series ships them.
 // fitToData says the window is the absence of a choice rather than a request,
 // which lets the reduction divide the data's own extent instead of the window.
 // It matters most at the widest windows: "All" spans decades, so dividing it
@@ -785,7 +792,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // into one datapoint per series. The caller owns the time picker and so owns
 // this decision; the store obeys it. The window actually used comes back in the
 // response, so nobody has to infer it from bucketed timestamps.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string) (json.RawMessage, error) {
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON
@@ -814,7 +821,14 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	if len(selectedSeriesIDs) > 0 {
 		selectedArg = selectedSeriesIDs
 	}
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedArg).Scan(&raw); err != nil {
+	// nil and empty are different questions here, as they are for seriesArg:
+	// nil means the caller is not naming series, so the limit decides, while an
+	// empty list names no series and ships no datapoints at all.
+	var datapointArg any
+	if datapointSeriesIDs != nil {
+		datapointArg = datapointSeriesIDs
+	}
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}
@@ -860,7 +874,11 @@ func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startT
 	// 0 sparkline buckets: this call keeps only the aggregate envelopes and drops
 	// the timeseries the sparklines hang off, so computing them would be work
 	// whose entire output is discarded a few lines below.
-	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0, selectedSeriesIDs)
+	// An empty datapoint list, not nil: this call keeps only the aggregate
+	// envelopes and discards the timeseries, so naming no series ships no
+	// datapoints. nil would mean "not narrowing", which with no limit ships
+	// every one of them for nothing.
+	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0, selectedSeriesIDs, []string{}, 0)
 	if err != nil {
 		return nil, err
 	}

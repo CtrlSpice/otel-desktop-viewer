@@ -288,16 +288,18 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 // They ask the same question of the same window; only the shape of the answer
 // differs, so the parsing lives once.
 type getMetricParams struct {
-	streamID           string
-	startTime, endTime int64
-	targetBuckets      int64
-	seriesIDs          []string
-	quantiles          []float64
-	tzOffsetNs         int64
-	fitToData          bool
-	viewBuckets        int64
-	sparklineBuckets   int64
-	selectedSeriesIDs  []string
+	streamID             string
+	startTime, endTime   int64
+	targetBuckets        int64
+	seriesIDs            []string
+	quantiles            []float64
+	tzOffsetNs           int64
+	fitToData            bool
+	viewBuckets          int64
+	sparklineBuckets     int64
+	selectedSeriesIDs    []string
+	datapointSeriesIDs   []string
+	datapointSeriesLimit int64
 }
 
 func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricParams, error) {
@@ -316,7 +318,7 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	// them. Nothing caught it: the store tests call GetMetric directly, and the
 	// handler tests only ever sent three. TestGetMetricAcceptsEveryParameter
 	// now sends a full set, so the bound cannot fall behind again silently.
-	if len(params) < 3 || len(params) > 11 {
+	if len(params) < 3 || len(params) > 13 {
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
@@ -439,6 +441,38 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 		}
 	}
 
+	// Which series ship their datapoints, and how many when the caller cannot
+	// name them. Absent means every series does, which is what every caller
+	// predating these parameters expects.
+	var datapointSeriesIDs []string
+	if len(params) >= 12 && params[11] != nil {
+		raw, ok := params[11].([]any)
+		if !ok {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+		// Non-nil before the loop: an empty array names no series and ships no
+		// datapoints, which is a different answer from the parameter being absent.
+		datapointSeriesIDs = []string{}
+		for _, v := range raw {
+			id, ok := v.(string)
+			if !ok {
+				return out, jsonrpc2.ErrInvalidParams
+			}
+			datapointSeriesIDs = append(datapointSeriesIDs, id)
+		}
+	}
+
+	var datapointSeriesLimit int64
+	if len(params) >= 13 && params[12] != nil {
+		datapointSeriesLimit, err = h.parseTimestampParam(params[12], "datapointSeriesLimit")
+		if err != nil {
+			return out, err
+		}
+		if datapointSeriesLimit < 0 {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+	}
+
 	var fitToData bool
 	if len(params) >= 8 && params[7] != nil {
 		b, ok := params[7].(bool)
@@ -458,6 +492,8 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	out.viewBuckets = viewBuckets
 	out.sparklineBuckets = sparklineBuckets
 	out.selectedSeriesIDs = selectedSeriesIDs
+	out.datapointSeriesIDs = datapointSeriesIDs
+	out.datapointSeriesLimit = datapointSeriesLimit
 	return out, nil
 }
 
@@ -468,7 +504,8 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, args.streamID, args.startTime, args.endTime,
-			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesIDs)
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesIDs,
+			args.datapointSeriesIDs, args.datapointSeriesLimit)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

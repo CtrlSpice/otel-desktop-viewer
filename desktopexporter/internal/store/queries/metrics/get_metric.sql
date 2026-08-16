@@ -69,7 +69,33 @@
 				-- every series in the stream. Null means nothing is checked, which
 				-- is a real state -- the All line then stands alone -- rather than
 				-- shorthand for all of them.
-				?::varchar[] as selected_series_ids
+				?::varchar[] as selected_series_ids,
+				-- Which series carry their datapoints.
+				--
+				-- The third narrowing parameter, and the narrowest: series_ids
+				-- drops a series from the response entirely, selected_series_ids
+				-- names an aggregate's pool, and this one decides only which
+				-- series ship the heavy half. Every series keeps its row, its
+				-- attributes, its stats, its view buckets and its sparkline
+				-- whatever this says -- the panel lists unchecked series, and the
+				-- All aggregate folds them.
+				--
+				-- Worth the separation because datapoints are almost the entire
+				-- payload: 1,553 KB of a 1,647 KB response on a 22-series Gauge,
+				-- against 184 KB of view buckets and 18 KB of sparklines.
+				?::varchar[] as datapoint_series_ids,
+				-- How many series carry datapoints when the caller cannot name
+				-- them, in the response's own order.
+				--
+				-- A caller opening a metric for the first time has no list to
+				-- send: it chooses its visible series from the response, so it
+				-- cannot name them in the request that fetches it. Its rule is
+				-- "the first N", and the response is ordered by latest activity,
+				-- so the same rule is expressible here. 0 means no limit.
+				--
+				-- Ignored when datapoint_series_ids is given, which is the case
+				-- where the caller does know.
+				?::bigint as datapoint_series_limit
 		),
 		stream as (
 			select s.* from metric_streams s, input
@@ -883,6 +909,32 @@
 			where m.distinct_bounds <= 1
 		),
 
+		-- Series in the order the response lists them: latest activity first,
+		-- ties broken by id. The same ordering the projection applies, so "the
+		-- first N series" means the same thing on both sides of the wire.
+		datapoint_series_rank as (
+			select series_id,
+				row_number() over (
+					order by max(timestamp) desc, series_id::varchar
+				) as rn
+			from filtered_dps
+			group by series_id
+		),
+		-- Which series ship datapoints. A named list wins; failing that a limit
+		-- applies; failing both, every series does, which is what a caller that
+		-- predates these parameters gets.
+		datapoint_series_allowed as (
+			select r.series_id
+			from datapoint_series_rank r, input i
+			where case
+				when i.datapoint_series_ids is not null
+					then list_contains(i.datapoint_series_ids, r.series_id::varchar)
+				when i.datapoint_series_limit > 0
+					then r.rn <= i.datapoint_series_limit
+				else true
+			end
+		),
+
 		ts_dps_agg as (
 			select
 				d.series_id,
@@ -920,17 +972,25 @@
 				min(coalesce(d.double_value, d.int_value)) as value_min,
 				max(coalesce(d.double_value, d.int_value)) as value_max,
 				sum(coalesce(d.double_value, d.int_value)) as value_sum,
-				to_json(list(datapoint_json(
+				coalesce(to_json(list(datapoint_json(
 					d,
 					coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]')),
 					(select quantiles from input)
 				) order by d.timestamp desc)
-					-- Only the reduction narrows the list. The stats above are
-					-- deliberately outside this filter: they describe the
-					-- window, not the sample drawn from it, which is the whole
-					-- reason they are computed here rather than in the client.
-					filter (where (select kind from reduction_kind) <> 'elect' or r.id is not null)
-				) as datapoints
+					-- Only the reduction and the datapoint narrowing touch this
+					-- list. The stats above are deliberately outside the filter:
+					-- they describe the window, not the sample drawn from it,
+					-- which is the whole reason they are computed here rather
+					-- than in the client -- and they stay right for a series
+					-- whose datapoints were not shipped at all.
+					filter (where
+						((select kind from reduction_kind) <> 'elect' or r.id is not null)
+						and d.series_id in (select series_id from datapoint_series_allowed)
+					)
+				-- A narrowed-out series has an empty list, not a null one: the
+				-- field means "the datapoints you were sent", and every series
+				-- has an answer to that even when the answer is none.
+				), json('[]')) as datapoints
 			-- Grouping on a fixed-width, indexable column instead of rebuilding
 		-- and hashing a LIST per row. Measured on 294,607 datapoints: 5.0ms
 		-- by the array against 0.9ms by a single uuid.
