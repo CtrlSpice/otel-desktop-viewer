@@ -429,11 +429,12 @@
       // rather than the line chart's point budget. Histogram datapoints carry a
       // bucket vector each, so the line-chart target fetched an order of
       // magnitude more payload than any heatmap can show.
-      const bucketTarget =
+      const isHistogramMetric =
         summary.metricType === 'Histogram' ||
         summary.metricType === 'ExponentialHistogram'
-          ? HEATMAP_BUCKET_TARGET
-          : METRIC_BUCKET_TARGET
+      const bucketTarget = isHistogramMetric
+        ? HEATMAP_BUCKET_TARGET
+        : METRIC_BUCKET_TARGET
       const result =
         (await telemetryAPI.getMetric(
           summary.id,
@@ -445,7 +446,16 @@
           undefined,
           // Computed by the store, read by the client. Both halves of the
           // response need them: the per-series lines and the merged columns.
-          DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
+          //
+          // Histograms only. A quantile is a question about a bucket vector, so
+          // a Gauge or Sum has no answer to give -- and asking anyway was not
+          // free. Measured on f1.car.drs, a 22-series Gauge: 2,937 ms with
+          // quantiles against 298 ms without, for byte-identical output. Ten
+          // times the wait for a field that came back empty either way, on
+          // every metric the user clicked.
+          isHistogramMetric
+            ? (DEFAULT_HISTOGRAM_QUANTILES as unknown as number[])
+            : undefined,
           // Bucket boundaries follow the reader's calendar rather than the
           // epoch. 0 is UTC, which is what the store assumes without this.
           tzOffsetNs(),
