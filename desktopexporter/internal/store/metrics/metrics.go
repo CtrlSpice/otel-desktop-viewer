@@ -769,6 +769,12 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // viewBuckets is the resolution the Sum / Average / Rate views aggregate onto,
 // which is a different question from targetBuckets: the election thins while
 // keeping the line's shape, the views bucket for a chart.
+// sparklineBuckets is the resolution of the per-series sparkline, a third
+// question again: it fits a list row rather than a chart, and the reduction
+// keeps each bucket's min and max so a spike survives at that size. 0 skips it
+// and every series comes back with a null sparkline. It is computed for every
+// series in the response, including ones the caller has not selected, because
+// the sparkline is how a user decides which series to select.
 // fitToData says the window is the absence of a choice rather than a request,
 // which lets the reduction divide the data's own extent instead of the window.
 // It matters most at the widest windows: "All" spans decades, so dividing it
@@ -776,7 +782,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // into one datapoint per series. The caller owns the time picker and so owns
 // this decision; the store obeys it. The window actually used comes back in the
 // response, so nobody has to infer it from bucketed timestamps.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64) (json.RawMessage, error) {
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64) (json.RawMessage, error) {
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON
@@ -797,7 +803,7 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	if quantiles == nil {
 		quantiles = []float64{}
 	}
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}
@@ -826,7 +832,10 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 // way -- the aggregate is built from the merged series -- so the saving is
 // payload, not computation.
 func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64) (json.RawMessage, error) {
-	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets)
+	// 0 sparkline buckets: this call keeps only the aggregate envelope and drops
+	// the timeseries the sparklines hang off, so computing them would be work
+	// whose entire output is discarded a few lines below.
+	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0)
 	if err != nil {
 		return nil, err
 	}

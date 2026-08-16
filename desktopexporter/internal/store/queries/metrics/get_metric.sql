@@ -49,7 +49,18 @@
 				-- the line's shape while thinning it; the view's job is chart
 				-- resolution for a different chart. Welding them would make a
 				-- change to one silently retune the other.
-				?::bigint as view_buckets
+				?::bigint as view_buckets,
+				-- How many buckets a row's sparkline reduces to.
+				--
+				-- A third resolution, and deliberately not either of the two above.
+				-- The election thins a line while keeping its shape for a chart
+				-- hundreds of pixels wide; the views bucket for a different chart;
+				-- this one fits a 128px box in a list row. Welding any two of them
+				-- together makes a change to one silently retune the other.
+				--
+				-- Half the pixel width, because the reduction emits two points per
+				-- bucket (see sparkline_extrema).
+				?::bigint as sparkline_buckets
 		),
 		stream as (
 			select s.* from metric_streams s, input
@@ -425,6 +436,86 @@
 			group by series_id
 		),
 
+		-- The shape of one series at sparkline resolution.
+		--
+		-- A separate reduction because it answers a separate question: what does
+		-- this line look like in 128 pixels? The row sparkline used to be handed
+		-- the *elected* series -- up to 2,000 points -- and drew all of them into
+		-- a 128px box, roughly fifteen points per pixel, for every series in the
+		-- panel whether or not it was checked.
+		--
+		-- min and max per bucket rather than an average, because a sparkline's one
+		-- job is shape, and averaging erases the spike that makes a row worth
+		-- clicking. That is also why it is not simply read off the views above:
+		-- their avg is the right answer for an axis-bearing chart and the wrong
+		-- one for a 18px glyph whose only purpose is to say "something happened
+		-- here."
+		--
+		-- No spine. The views build one because an empty bucket is an answer there
+		-- (zero activity for Sum and Rate, no answer for Average); here it is only
+		-- a gap in a shape, and at this size a straight segment across it says the
+		-- same thing as a hole. Emitting just the buckets that have samples keeps
+		-- this to a group-by.
+		sparkline_grid as (
+			-- reduction_span as a relation, not a scalar subquery: bucket_width_ns
+			-- filters a list with a lambda, and a subquery argument is inlined into
+			-- that lambda body where DuckDB rejects it. scalar_view_grid and the
+			-- reduction CTE take the same care for the same reason.
+			select bucket_width_ns(rs.span_ns, i.sparkline_buckets) as width_ns
+			from input i, reduction_span rs
+		),
+		sparkline_bucketed as (
+			select d.series_id,
+				floor_div(d.timestamp + (select tz_offset_ns from input),
+				          (select width_ns from sparkline_grid))
+					* (select width_ns from sparkline_grid)
+					- (select tz_offset_ns from input) as bucket_start,
+				d.timestamp,
+				d.value
+			from scalar_dps d
+			-- A caller asking for no sparklines gets a null width from the ladder,
+			-- and without this filter that is not the same as no sparkline: a null
+			-- bucket_start is still a group, so every datapoint in the series falls
+			-- into one of them and the row comes back with a two-point line
+			-- spanning the whole window. bucketed_dps guards the election for the
+			-- same reason.
+			where (select width_ns from sparkline_grid) is not null
+		),
+		-- Two points per bucket, each keeping the timestamp it actually occurred
+		-- at rather than the bucket's start: drawn in time order, a spike leans
+		-- the way it happened instead of being squared off to a boundary.
+		sparkline_extrema as (
+			select series_id,
+				bucket_start,
+				arg_min(timestamp, value) as min_ts,
+				min(value) as min_value,
+				arg_max(timestamp, value) as max_ts,
+				max(value) as max_value
+			from sparkline_bucketed
+			group by series_id, bucket_start
+		),
+		-- union, not union all: a bucket holding a single sample -- or a flat one
+		-- -- elects the same row as both its min and its max, and the set operator
+		-- drops the duplicate rather than making the path double back on itself.
+		sparkline_points as (
+			select series_id, min_ts as timestamp, min_value as value
+			from sparkline_extrema
+			union by name
+			select series_id, max_ts as timestamp, max_value as value
+			from sparkline_extrema
+		),
+		-- Histogram series produce nothing here: scalar_dps is Gauge and Sum only,
+		-- so the left join in the projection leaves their sparkline null.
+		sparkline_agg as (
+			select series_id,
+				to_json(list(json_object(
+					'timestamp', timestamp::varchar,
+					'value', value
+				) order by timestamp)) as sparkline
+			from sparkline_points
+			group by series_id
+		),
+
 		-- isfinite: DuckDB orders NaN above infinity, so one NaN sample would
 		-- win max() and elect itself as its bucket's representative, displacing
 		-- a real value. It cannot be charted either way, so it is excluded from
@@ -789,7 +880,8 @@
 				resource_json(r.attribute_ids, r.dropped_attributes_count),
 				t.datapoints,
 				series_stats_json(t.value_count, t.value_min, t.value_max, t.value_sum),
-				sv.views
+				sv.views,
+				sp.sparkline
 			-- attrs_key breaks ties, and the tie is the common case rather
 			-- than the exception: series of one metric are usually reported
 			-- together, so they share a latest_ts. DuckDB's sort is not
@@ -808,6 +900,12 @@
 			-- Left: a histogram series has no scalar views, and a scalar series
 			-- with nothing in the window has no buckets either.
 			left join scalar_views_agg sv on sv.series_id = t.series_id
+			-- Left for the same two reasons as the views, and unlike them it is
+			-- sent for every series the response carries rather than only the ones
+			-- the user has checked. The panel draws a sparkline on unchecked rows
+			-- too: it is the affordance that tells you which row is worth checking,
+			-- so withholding it from the rows you have not chosen yet defeats it.
+			left join sparkline_agg sp on sp.series_id = t.series_id
 		),
 		-- The cross-series aggregate: the selected series merged into one
 		-- histogram per time bucket, which is what a heatmap draws and what a

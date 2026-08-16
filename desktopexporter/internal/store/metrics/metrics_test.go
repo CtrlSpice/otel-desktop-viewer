@@ -263,7 +263,7 @@ func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0, nil, nil, 0, false, 0)
+		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -1797,7 +1797,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	require.True(t, ok)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false, 0)
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -1930,7 +1930,7 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false, 0)
+			time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2033,7 +2033,7 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 	streamID, ok := summaries[0]["id"].(string)
 	require.True(t, ok)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false, 0)
+		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2099,7 +2099,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	// them merge at all.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 1, nil, nil, 0, false, 0)
+			time.Now().UnixNano()+int64(time.Hour), 1, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2171,7 +2171,7 @@ func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
 			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
-			1, nil, nil, 0, false, 0)
+			1, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2259,7 +2259,7 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
 			base.Add(-6*time.Hour).UnixNano(), base.Add(6*time.Hour).UnixNano(),
-			0, nil, nil, 0, true, 12)
+			0, nil, nil, 0, true, 12, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2325,6 +2325,110 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 	assert.NotNil(t, first["avg"])
 }
 
+// TestGetMetric_Sparkline covers the third reduction: the shape of a series at
+// list-row resolution.
+//
+// It exists as its own reduction rather than reusing either of the other two,
+// and each half of that is asserted here. Against the election, it is bounded
+// by the row's pixels rather than the chart's -- the row sparkline used to be
+// handed the elected series, up to 2,000 points, and drew all of them into a
+// 128px box. Against the views, it keeps extremes rather than averaging them,
+// because a sparkline's whole job is to show that something happened, and a
+// mean over a wide bucket is exactly what hides a spike.
+func TestGetMetric_Sparkline(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	// Two hundred minutes of a quiet delta counter with a single one-minute
+	// spike in the middle. Averaged into eight buckets the spike is divided by
+	// twenty-five and disappears into the noise; kept as a bucket max it stays
+	// the tallest thing on the line, which is the point of the row.
+	const spike = 500.0
+	var dps []sumTestDP
+	attrs := map[string]string{"pod": "a"}
+	for i := range 200 {
+		value := 1.0
+		if i == 100 {
+			value = spike
+		}
+		dps = append(dps, sumTestDP{
+			timestamp: base.Add(time.Duration(i) * time.Minute),
+			value:     value,
+			attrs:     attrs,
+		})
+	}
+	fixture := makeSumFixtureT("spiky.total", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+
+	const buckets = 8
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID,
+			base.Add(-time.Hour).UnixNano(), base.Add(6*time.Hour).UnixNano(),
+			0, nil, nil, 0, true, 0, buckets)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	series, _ := metric["timeseries"].([]any)
+	require.Len(t, series, 1)
+	points, _ := series[0].(map[string]any)["sparkline"].([]any)
+	require.NotEmpty(t, points, "a scalar series carries a sparkline")
+
+	// Two points per bucket -- a min and a max -- so the ladder's rounding
+	// aside, the row never receives more than it has pixels for. Two hundred
+	// datapoints went in.
+	assert.LessOrEqual(t, len(points), 2*buckets,
+		"at most a min and a max per bucket")
+	assert.Less(t, len(points), 200, "and far fewer than the datapoints behind it")
+
+	var maxValue float64
+	var prev int64
+	for i, p := range points {
+		b := p.(map[string]any)
+		v := b["value"].(float64)
+		if v > maxValue {
+			maxValue = v
+		}
+		// Timestamps travel as strings, like every other ns value on the wire.
+		ts, err := strconv.ParseInt(b["timestamp"].(string), 10, 64)
+		require.NoError(t, err)
+		if i > 0 {
+			assert.Greater(t, ts, prev,
+				"points are ordered by time, and a bucket that elected the same "+
+					"row as both its min and its max contributes it once")
+		}
+		prev = ts
+	}
+
+	// The reason this is not read off the views: the spike is one sample in a
+	// bucket holding twenty-five, so an average would report about 21.
+	assert.Equal(t, spike, maxValue,
+		"the spike survives the reduction rather than being averaged away")
+
+	// Asking for no buckets is how a caller that draws no sparklines avoids
+	// paying for them, and it has to be legible as "absent" rather than empty.
+	rawNone, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID,
+			base.Add(-time.Hour).UnixNano(), base.Add(6*time.Hour).UnixNano(),
+			0, nil, nil, 0, true, 0, 0)
+	})
+	require.NoError(t, err)
+	var none map[string]any
+	require.NoError(t, json.Unmarshal(rawNone, &none))
+	noneSeries, _ := none["timeseries"].([]any)
+	require.Len(t, noneSeries, 1)
+	assert.Nil(t, noneSeries[0].(map[string]any)["sparkline"],
+		"zero buckets means no sparkline, not an empty one")
+}
+
 // TestExpHistogramMerge_RescalesBeforeSumming covers a series whose scale
 // drifts mid-flight: an SDK downscales as the observed range widens, so two
 // datapoints of the *same* series can carry different scales and offsets.
@@ -2372,7 +2476,7 @@ func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
 			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
-			1, nil, nil, 0, false, 0)
+			1, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2449,7 +2553,7 @@ func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
 			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
-			1, nil, nil, 0, false, 0)
+			1, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2509,7 +2613,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 
 	seriesKeys := func(ids []string) []string {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, ids, nil, 0, false, 0)
+			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, ids, nil, 0, false, 0, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2569,7 +2673,7 @@ func TestGetMetric_Quantiles(t *testing.T) {
 
 	datapoint := func(qs []float64) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, nil, qs, 0, false, 0)
+			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, nil, qs, 0, false, 0, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2637,7 +2741,7 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 1, nil, []float64{0.5}, 0, false, 0)
+			time.Now().UnixNano()+int64(time.Hour), 1, nil, []float64{0.5}, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -2722,7 +2826,7 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 
 	bucketCount := func(offsetNs int64) int {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, start, end, 3, nil, nil, offsetNs, false, 0)
+			return metrics.GetMetric(ctx, db, streamID, start, end, 3, nil, nil, offsetNs, false, 0, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2794,7 +2898,7 @@ func TestGetMetric_FitToDataSpansTheData(t *testing.T) {
 
 	get := func(fit bool) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, start, end, 8, nil, nil, 0, fit, 0)
+			return metrics.GetMetric(ctx, db, streamID, start, end, 8, nil, nil, 0, fit, 0, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2835,7 +2939,7 @@ func TestGetMetric_FitToDataSpansTheData(t *testing.T) {
 	// says a metric stopped reporting.
 	tight := base.Add(-6 * time.Hour).UnixNano()
 	rawTight, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, tight, end, 8, nil, nil, 0, false, 0)
+		return metrics.GetMetric(ctx, db, streamID, tight, end, 8, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var mTight map[string]any
@@ -2892,7 +2996,7 @@ func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, streamID,
 			base.UnixNano(), base.Add(60*time.Second).UnixNano(),
-			6, nil, nil, 0, false, 0)
+			6, nil, nil, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -2985,7 +3089,7 @@ func TestGetMetricAggregate(t *testing.T) {
 
 	// Same arguments to both calls.
 	full, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0, false, 0)
+		return metrics.GetMetric(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0, false, 0, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any

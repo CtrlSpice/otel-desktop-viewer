@@ -296,6 +296,7 @@ type getMetricParams struct {
 	tzOffsetNs         int64
 	fitToData          bool
 	viewBuckets        int64
+	sparklineBuckets   int64
 }
 
 func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricParams, error) {
@@ -305,15 +306,16 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	// Everything past the third is optional and additive: targetBuckets,
-	// seriesIds, quantiles, tzOffsetNs, fitToData, viewBuckets. A caller that
-	// predates any of them sends fewer and gets the old behaviour.
+	// seriesIds, quantiles, tzOffsetNs, fitToData, viewBuckets,
+	// sparklineBuckets. A caller that predates any of them sends fewer and gets
+	// the old behaviour.
 	//
 	// The upper bound was 4 and stayed 4 while four more parameters were added
 	// below it, so every request carrying them was rejected before it reached
 	// them. Nothing caught it: the store tests call GetMetric directly, and the
 	// handler tests only ever sent three. TestGetMetricAcceptsEveryParameter
 	// now sends a full set, so the bound cannot fall behind again silently.
-	if len(params) < 3 || len(params) > 9 {
+	if len(params) < 3 || len(params) > 10 {
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
@@ -403,6 +405,20 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 		}
 	}
 
+	// Resolution for the per-row sparklines. Absent means none, and a series
+	// then carries a null sparkline rather than the store guessing a width for a
+	// list row it cannot see.
+	var sparklineBuckets int64
+	if len(params) >= 10 && params[9] != nil {
+		sparklineBuckets, err = h.parseTimestampParam(params[9], "sparklineBuckets")
+		if err != nil {
+			return out, err
+		}
+		if sparklineBuckets < 0 {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+	}
+
 	var fitToData bool
 	if len(params) >= 8 && params[7] != nil {
 		b, ok := params[7].(bool)
@@ -420,6 +436,7 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	out.tzOffsetNs = tzOffsetNs
 	out.fitToData = fitToData
 	out.viewBuckets = viewBuckets
+	out.sparklineBuckets = sparklineBuckets
 	return out, nil
 }
 
@@ -430,7 +447,7 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, args.streamID, args.startTime, args.endTime,
-			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets)
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets, args.sparklineBuckets)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -642,6 +659,9 @@ func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.R
 		return nil, err
 	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		// sparklineBuckets is parsed but not forwarded: this method returns the
+		// aggregate envelope alone, and GetMetricAggregate pins the parameter to
+		// 0 for that reason. Accepting it keeps one parser for both methods.
 		return metrics.GetMetricAggregate(ctx, db, args.streamID, args.startTime, args.endTime,
 			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets)
 	})
