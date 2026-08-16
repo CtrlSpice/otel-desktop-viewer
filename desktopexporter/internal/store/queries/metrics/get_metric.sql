@@ -143,7 +143,11 @@
 		-- resolves each row's id array in place, so there is nothing to
 		-- pre-aggregate and join back.
 		exemplars_agg as (
-			select e.datapoint_id, json_group_array(exemplar_json(e)) as exemplars
+			-- Ordered, and totally: (timestamp, id) so two exemplars sharing an
+			-- instant still arrive in one order. json_group_array is a macro and
+			-- rejects ORDER BY, hence the list form.
+			select e.datapoint_id,
+				to_json(list(exemplar_json(e) order by e.timestamp, e.id)) as exemplars
 			from exemplars e
 			where e.datapoint_id in (select id from filtered_dps)
 			group by e.datapoint_id
@@ -163,7 +167,10 @@
 		representative as (
 			select mi.* from matched_ingests mi
 			inner join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
-			order by ild.last_dp_ts desc nulls last
+			-- id breaks the tie: ingests of one batch share the latest datapoint
+			-- timestamp, and an arbitrary pick let description and dropped counts
+			-- differ between two runs of the same request.
+			order by ild.last_dp_ts desc nulls last, mi.id
 			limit 1
 		),
 		-- Resource and scope come from the representative ingest, the same
@@ -341,7 +348,7 @@
 		-- which is fetched unreduced -- the chart drops what it cannot draw, the
 		-- record keeps what arrived.
 		scalar_dps as (
-			select d.series_id, d.timestamp,
+			select d.series_id, d.id, d.timestamp,
 				coalesce(d.double_value, d.int_value) as value
 			from filtered_dps d
 			where d.metric_type in ('Gauge', 'Sum')
@@ -350,12 +357,19 @@
 		scalar_lagged as (
 			select s.*,
 				lag(s.value) over (
-					partition by s.series_id order by s.timestamp
+					partition by s.series_id order by s.timestamp, s.id
 				) as prev_value
 			from scalar_dps s
 		),
+		-- id rides through so consumers join on the row itself. Joining on
+		-- (series, timestamp) had two failure modes with duplicate timestamps,
+		-- which OTLP permits: the lag ran in an arbitrary order among the
+		-- duplicates, and the join fanned out -- each duplicate matched every
+		-- delta at its instant, so the response carried the same datapoint
+		-- more than once.
 		scalar_deltas as (
 			select series_id,
+				id,
 				timestamp,
 				case when value < prev_value then value
 				     else value - prev_value
@@ -392,7 +406,7 @@
 				sd.is_reset
 			from scalar_dps d
 			left join scalar_deltas sd
-				on sd.series_id = d.series_id and sd.timestamp = d.timestamp
+				on sd.id = d.id
 		),
 		-- Each series' own first and last populated bucket.
 		--
@@ -595,9 +609,12 @@
 		sparkline_extrema as (
 			select series_id,
 				bucket_start,
-				arg_min(timestamp, value) as min_ts,
+				-- Tie-broken for the reason bucket_elected is: a flat bucket has
+				-- many rows at its minimum, and choosing among them arbitrarily
+				-- makes the same request draw a different line.
+				arg_min(timestamp, (value, timestamp)) as min_ts,
 				min(value) as min_value,
-				arg_max(timestamp, value) as max_ts,
+				arg_max(timestamp, (value, timestamp)) as max_ts,
 				max(value) as max_value
 			from sparkline_bucketed
 			group by series_id, bucket_start
@@ -619,7 +636,7 @@
 				to_json(list(json_object(
 					'timestamp', timestamp::varchar,
 					'value', value
-				) order by timestamp)) as sparkline
+				) order by timestamp, value)) as sparkline
 			from sparkline_points
 			group by series_id
 		),
@@ -632,11 +649,23 @@
 			select
 				series_id,
 				bucket_start,
-				arg_min(id, timestamp) as first_id,
-				arg_max(id, timestamp) as last_id,
-				arg_min(id, coalesce(double_value, int_value))
+				-- Ties broken by id, so the election is a function of the data
+				-- alone. arg_min(id, value) otherwise leaves the choice to
+				-- whichever row the aggregate saw first, and ties are the common
+				-- case rather than the exception: a gauge sitting at zero, or a
+				-- counter that did not move, gives a bucket many rows sharing its
+				-- minimum. The same request then returns a different set of
+				-- datapoints each time -- same stats, same first and last point,
+				-- a different count -- which is indefensible for a store whose
+				-- answers people compare across refreshes.
+				--
+				-- (value, id) is a struct, and DuckDB orders structs field by
+				-- field: "smallest value, and among those the smallest id".
+				arg_min(id, (timestamp, id)) as first_id,
+				arg_max(id, (timestamp, id)) as last_id,
+				arg_min(id, (coalesce(double_value, int_value), id))
 					filter (where isfinite(coalesce(double_value, int_value))) as min_id,
-				arg_max(id, coalesce(double_value, int_value))
+				arg_max(id, (coalesce(double_value, int_value), id))
 					filter (where isfinite(coalesce(double_value, int_value))) as max_id
 			from bucketed_dps
 			group by series_id, bucket_start
@@ -712,7 +741,7 @@
 				-- A real datapoint id, not a synthetic one: the last of the
 				-- bucket. Keeps ?dp= links and datapoint selection working
 				-- against something that exists.
-				arg_max(p.id, p.timestamp) as id,
+				arg_max(p.id, (p.timestamp, p.id)) as id,
 				-- The series' labels, which the merge would otherwise drop.
 				--
 				-- projected_dps unions this branch with filtered_dps `by name`,
@@ -779,8 +808,8 @@
 				case when any_value(p.aggregation_temporality) = 'Delta'
 					then sum_bucket_vectors(list(p.bucket_counts))
 					else coalesce(
-						diff_bucket_vectors(arg_max(p.bucket_counts, p.timestamp), arg_min(p.bucket_counts, p.timestamp)),
-						arg_max(p.bucket_counts, p.timestamp)
+						diff_bucket_vectors(arg_max(p.bucket_counts, (p.timestamp, p.id)), arg_min(p.bucket_counts, (p.timestamp, p.id))),
+						arg_max(p.bucket_counts, (p.timestamp, p.id))
 					)
 				end as bucket_counts,
 				any_value(p.target_scale) as scale,
@@ -793,16 +822,16 @@
 				case when any_value(p.aggregation_temporality) = 'Delta'
 					then sum_bucket_vectors(list(p.pos_p))
 					else coalesce(
-						diff_bucket_vectors(arg_max(p.pos_p, p.timestamp), arg_min(p.pos_p, p.timestamp)),
-						arg_max(p.pos_p, p.timestamp)
+						diff_bucket_vectors(arg_max(p.pos_p, (p.timestamp, p.id)), arg_min(p.pos_p, (p.timestamp, p.id))),
+						arg_max(p.pos_p, (p.timestamp, p.id))
 					)
 				end as positive_bucket_counts,
 				any_value(coalesce(p.neg_target_offset, 0)) as negative_bucket_offset,
 				case when any_value(p.aggregation_temporality) = 'Delta'
 					then sum_bucket_vectors(list(p.neg_p))
 					else coalesce(
-						diff_bucket_vectors(arg_max(p.neg_p, p.timestamp), arg_min(p.neg_p, p.timestamp)),
-						arg_max(p.neg_p, p.timestamp)
+						diff_bucket_vectors(arg_max(p.neg_p, (p.timestamp, p.id)), arg_min(p.neg_p, (p.timestamp, p.id))),
+						arg_max(p.neg_p, (p.timestamp, p.id))
 					)
 				end as negative_bucket_counts
 			from hist_padded p
@@ -867,7 +896,7 @@
 			select d.*, sd.delta as delta, sd.is_reset as is_reset
 			from filtered_dps d
 			left join scalar_deltas sd
-				on sd.series_id = d.series_id and sd.timestamp = d.timestamp
+				on sd.id = d.id
 		),
 		projected_dps as (
 			select * from filtered_with_deltas
@@ -998,7 +1027,7 @@
 					d,
 					coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]')),
 					(select quantiles from input)
-				) order by d.timestamp desc)) as datapoints
+				) order by d.timestamp desc, d.id)) as datapoints
 			from projected_dps d
 			left join retained_ids r on r.id = d.id
 			where ((select kind from reduction_kind) <> 'elect' or r.id is not null)

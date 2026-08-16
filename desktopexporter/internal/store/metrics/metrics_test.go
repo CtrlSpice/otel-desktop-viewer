@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -2323,6 +2324,132 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 	// across series at time t means adding the counters. Only Rate differences.
 	assert.NotNil(t, first["sum"])
 	assert.NotNil(t, first["avg"])
+}
+
+// TestGetMetric_Deterministic pins the answer to a question the store must
+// only have one answer to: the same request against the same data returns the
+// same bytes.
+//
+// The fixture is built from ties, because ties are where determinism goes to
+// die: a flat series whose datapoints share one timestamp and one value gives
+// every election -- first, last, min, max -- nothing to distinguish rows by
+// except the tiebreak, and a series with duplicate timestamps exercises the
+// delta join and the list ordering the same way. Found live: the same request
+// returned six different responses in six tries, differing in which datapoints
+// the M4 election kept.
+func TestGetMetric_Deterministic(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	var dps []sumTestDP
+	// Twelve rows on one instant at one value: the election's worst case.
+	flat := map[string]string{"pod": "flat"}
+	for range 12 {
+		dps = append(dps, sumTestDP{timestamp: base, value: 5, attrs: flat})
+	}
+	// A climb with a duplicated timestamp, which OTLP permits: two readings at
+	// t1 with different values. The lag and the delta join must not care.
+	dup := map[string]string{"pod": "dup"}
+	for i, v := range []struct {
+		min   int
+		value float64
+	}{{0, 1}, {1, 2}, {1, 3}, {2, 4}, {3, 5}} {
+		_ = i
+		dps = append(dps, sumTestDP{
+			timestamp: base.Add(time.Duration(v.min) * time.Minute),
+			value:     v.value,
+			attrs:     dup,
+		})
+	}
+	fixture := makeSumFixtureT("ties.total", pmetric.AggregationTemporalityCumulative, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+
+	get := func(targetBuckets int64) json.RawMessage {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, streamID,
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+				targetBuckets, nil, nil, 0, true, 4, 2, nil, nil, 0)
+		})
+		require.NoError(t, err)
+		return raw
+	}
+
+	// The headline property: byte-identical across runs, reduced and not.
+	for _, tb := range []int64{0, 1} {
+		first := get(tb)
+		for range 3 {
+			require.Equal(t, string(first), string(get(tb)),
+				"the same request must return the same bytes (targetBuckets=%d)", tb)
+		}
+	}
+
+	seriesByPod := func(raw json.RawMessage) map[string][]map[string]any {
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		out := map[string][]map[string]any{}
+		for _, entry := range m["timeseries"].([]any) {
+			ts := entry.(map[string]any)
+			var pod string
+			for _, a := range ts["attributes"].([]any) {
+				if a.(map[string]any)["key"] == "pod" {
+					pod = a.(map[string]any)["value"].(string)
+				}
+			}
+			for _, dp := range ts["datapoints"].([]any) {
+				out[pod] = append(out[pod], dp.(map[string]any))
+			}
+		}
+		return out
+	}
+
+	full := seriesByPod(get(0))
+	require.Len(t, full["flat"], 12)
+	require.Len(t, full["dup"], 5)
+
+	// No row appears twice. The delta join used to match on (series, timestamp),
+	// so each duplicated instant fanned out and the same datapoint shipped once
+	// per delta at that instant.
+	for pod, list := range full {
+		seen := map[string]bool{}
+		for _, dp := range list {
+			id := dp["id"].(string)
+			assert.False(t, seen[id], "%s: datapoint %s shipped twice", pod, id)
+			seen[id] = true
+		}
+	}
+
+	// Rows an ORDER BY cannot separate by timestamp arrive in id order --
+	// verified on the flat series, where every row shares the instant.
+	for i := 1; i < len(full["flat"]); i++ {
+		assert.Less(t, full["flat"][i-1]["id"].(string), full["flat"][i]["id"].(string),
+			"tied timestamps must order by id")
+	}
+
+	// The election's tie contract: among rows sharing a value, min and max
+	// elect by id, and on the flat series first/last collapse onto the same
+	// rows -- so exactly the smallest and largest id survive. DuckDB orders
+	// UUIDs as their text sorts (verified against the CLI), so the expectation
+	// is computable here.
+	ids := make([]string, 0, 12)
+	for _, dp := range full["flat"] {
+		ids = append(ids, dp["id"].(string))
+	}
+	slices.Sort(ids)
+	reduced := seriesByPod(get(1))
+	var got []string
+	for _, dp := range reduced["flat"] {
+		got = append(got, dp["id"].(string))
+	}
+	slices.Sort(got)
+	assert.Equal(t, []string{ids[0], ids[len(ids)-1]}, got,
+		"a fully tied bucket elects the smallest and largest id, nothing else")
 }
 
 // TestGetMetric_DatapointNarrowing covers the narrowest of the three series
