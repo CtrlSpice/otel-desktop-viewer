@@ -586,7 +586,12 @@ export let telemetryAPI = {
           given: sparklineBuckets !== undefined,
         },
         // Slot 11: the scalar Selected pool, which getMetric does not narrow by.
-        { value: null, given: datapointSeriesIds !== undefined || datapointSeriesLimit !== undefined },
+        {
+          value: null,
+          given:
+            datapointSeriesIds !== undefined ||
+            datapointSeriesLimit !== undefined,
+        },
         {
           value: datapointSeriesIds ?? null,
           given: datapointSeriesIds !== undefined,
@@ -642,24 +647,27 @@ export let telemetryAPI = {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
     try {
-      const raw = await callRPC<JsonMetricAggregateEnvelope | null>('getMetricAggregate', [
-        streamId,
-        startTimeNs,
-        endTimeNs,
-        String(targetBuckets),
-        seriesIds,
-        quantiles,
-        String(tzOffsetNs),
-        // Must match what getMetric sent for the same view, or the aggregate is
-        // bucketed against a different window than the series beneath it.
-        fitToData,
-        String(viewBuckets),
-        // Placeholder for sparklineBuckets: this method drops the timeseries, so
-        // the store pins it to 0 regardless, but positional params mean the slot
-        // has to be filled to reach the one after it.
-        '0',
-        selectedSeriesIds ?? null,
-      ])
+      const raw = await callRPC<JsonMetricAggregateEnvelope | null>(
+        'getMetricAggregate',
+        [
+          streamId,
+          startTimeNs,
+          endTimeNs,
+          String(targetBuckets),
+          seriesIds,
+          quantiles,
+          String(tzOffsetNs),
+          // Must match what getMetric sent for the same view, or the aggregate is
+          // bucketed against a different window than the series beneath it.
+          fitToData,
+          String(viewBuckets),
+          // Placeholder for sparklineBuckets: this method drops the timeseries, so
+          // the store pins it to 0 regardless, but positional params mean the slot
+          // has to be filled to reach the one after it.
+          '0',
+          selectedSeriesIds ?? null,
+        ]
+      )
       if (!raw) return null
       return {
         aggregate: raw.aggregate,

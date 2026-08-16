@@ -610,11 +610,13 @@ export function createMetricViewContext(
   }
 
   // -- Pure derivations of `metric` --
-  const metricType = $derived.by((): MetricType => {
-    const m = getMetric()
-    if (m?.metricType) return m.metricType
-    return m?.timeseries[0]?.datapoints[0]?.metricType ?? 'Empty'
-  })
+  // From the stream row, which carries it whether or not any datapoint came
+  // back. Reading it off the first series' first datapoint was a fallback for a
+  // response shape that predates the field, and it would answer 'Empty' for a
+  // metric whose datapoints were narrowed away -- which now happens by design.
+  const metricType = $derived.by(
+    (): MetricType => getMetric()?.metricType ?? 'Empty'
+  )
 
   function* allDatapoints(
     m: MetricData | undefined

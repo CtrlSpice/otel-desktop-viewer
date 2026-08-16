@@ -53,14 +53,62 @@ describe('the default aggregation view agrees with the offered ones', () => {
     isMonotonic: boolean | null
     seriesCount: number
   }[] = [
-    { name: 'cumulative monotonic Sum', metricType: 'Sum', temporality: 'Cumulative', isMonotonic: true, seriesCount: 3 },
-    { name: 'cumulative non-monotonic Sum', metricType: 'Sum', temporality: 'Cumulative', isMonotonic: false, seriesCount: 3 },
-    { name: 'cumulative Sum of unknown monotonicity', metricType: 'Sum', temporality: 'Cumulative', isMonotonic: null, seriesCount: 3 },
-    { name: 'delta Sum', metricType: 'Sum', temporality: 'Delta', isMonotonic: true, seriesCount: 3 },
-    { name: 'single-series cumulative monotonic Sum', metricType: 'Sum', temporality: 'Cumulative', isMonotonic: true, seriesCount: 1 },
-    { name: 'Gauge', metricType: 'Gauge', temporality: 'Unspecified', isMonotonic: null, seriesCount: 3 },
-    { name: 'single-series Gauge', metricType: 'Gauge', temporality: 'Unspecified', isMonotonic: null, seriesCount: 1 },
-    { name: 'Histogram', metricType: 'Histogram', temporality: 'Delta', isMonotonic: null, seriesCount: 3 },
+    {
+      name: 'cumulative monotonic Sum',
+      metricType: 'Sum',
+      temporality: 'Cumulative',
+      isMonotonic: true,
+      seriesCount: 3,
+    },
+    {
+      name: 'cumulative non-monotonic Sum',
+      metricType: 'Sum',
+      temporality: 'Cumulative',
+      isMonotonic: false,
+      seriesCount: 3,
+    },
+    {
+      name: 'cumulative Sum of unknown monotonicity',
+      metricType: 'Sum',
+      temporality: 'Cumulative',
+      isMonotonic: null,
+      seriesCount: 3,
+    },
+    {
+      name: 'delta Sum',
+      metricType: 'Sum',
+      temporality: 'Delta',
+      isMonotonic: true,
+      seriesCount: 3,
+    },
+    {
+      name: 'single-series cumulative monotonic Sum',
+      metricType: 'Sum',
+      temporality: 'Cumulative',
+      isMonotonic: true,
+      seriesCount: 1,
+    },
+    {
+      name: 'Gauge',
+      metricType: 'Gauge',
+      temporality: 'Unspecified',
+      isMonotonic: null,
+      seriesCount: 3,
+    },
+    {
+      name: 'single-series Gauge',
+      metricType: 'Gauge',
+      temporality: 'Unspecified',
+      isMonotonic: null,
+      seriesCount: 1,
+    },
+    {
+      name: 'Histogram',
+      metricType: 'Histogram',
+      temporality: 'Delta',
+      isMonotonic: null,
+      seriesCount: 3,
+    },
   ]
 
   for (const s of shapes) {
@@ -85,14 +133,8 @@ describe('the default aggregation view agrees with the offered ones', () => {
     // Non-monotonic means it may legitimately fall, and rate reads a fall as a
     // counter restart -- so the rate of one would report resets that never
     // happened.
-    expect(
-      defaultAggregationViewFor('Sum', 'Cumulative', false, 3)
-    ).toBe('raw')
-    expect(
-      defaultAggregationViewFor('Sum', 'Cumulative', null, 3)
-    ).toBe('raw')
-    expect(
-      defaultAggregationViewFor('Sum', 'Cumulative', true, 3)
-    ).toBe('rate')
+    expect(defaultAggregationViewFor('Sum', 'Cumulative', false, 3)).toBe('raw')
+    expect(defaultAggregationViewFor('Sum', 'Cumulative', null, 3)).toBe('raw')
+    expect(defaultAggregationViewFor('Sum', 'Cumulative', true, 3)).toBe('rate')
   })
 })
