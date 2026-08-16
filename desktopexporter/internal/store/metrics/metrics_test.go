@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"slices"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -2351,11 +2351,10 @@ func TestGetMetric_Deterministic(t *testing.T) {
 	// A climb with a duplicated timestamp, which OTLP permits: two readings at
 	// t1 with different values. The lag and the delta join must not care.
 	dup := map[string]string{"pod": "dup"}
-	for i, v := range []struct {
+	for _, v := range []struct {
 		min   int
 		value float64
 	}{{0, 1}, {1, 2}, {1, 3}, {2, 4}, {3, 5}} {
-		_ = i
 		dps = append(dps, sumTestDP{
 			timestamp: base.Add(time.Duration(v.min) * time.Minute),
 			value:     v.value,
