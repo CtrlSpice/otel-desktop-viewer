@@ -27,6 +27,7 @@ import { setContext, getContext, untrack } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import type {
   MetricData,
+  MetricTimeseries,
   MetricType,
   DataPoint,
   HistogramDataPoint,
@@ -37,7 +38,10 @@ import type {
   SparklinePoint,
 } from '@/types/api-types'
 import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
-import { distinguishingResourceAttributes } from '@/utils/series-labels'
+import {
+  distinguishingResourceAttributes,
+  seriesLabelsByKey,
+} from '@/utils/series-labels'
 import {
   seriesBucketsToSlices,
   buildVisibleSeriesQuantileChartTimeseries,
@@ -726,6 +730,11 @@ export function createMetricViewContext(
     // projects it then, once.
     const cache = new Map<string, ChartTimeseries>()
     const byKey = new Map(source.map(ts => [ts.attributesKey, ts]))
+    // Resolved once for the whole metric: which resource attributes tell the
+    // series apart is a question about the set, not about any one of them.
+    const labelByKey = seriesLabelsByKey(source)
+    const labelFor = (ts: MetricTimeseries) =>
+      labelByKey.get(ts.attributesKey) ?? ts.attributesKey
 
     function project(key: string): ChartTimeseries | undefined {
       const hit = cache.get(key)
@@ -734,7 +743,7 @@ export function createMetricViewContext(
       if (!ts) return undefined
       // No client-side thinning: the store's M4 election is the reduction, and
       // it is sized so its output is what the chart draws.
-      const built = timeseriesToChartTimeseries([ts]).chartTimeseries[0]
+      const built = timeseriesToChartTimeseries([ts], labelFor).chartTimeseries[0]
       if (built) cache.set(key, built)
       return built
     }
@@ -762,7 +771,7 @@ export function createMetricViewContext(
        *  since those are keyed by series and carry their own points. */
       labels: source.map(ts => ({
         key: ts.attributesKey,
-        label: ts.attributesKey === '' ? 'default' : ts.attributesKey,
+        label: labelFor(ts),
       })),
       project,
       projectAll: () => projectMatching(() => true),
@@ -1491,7 +1500,8 @@ export function createMetricViewContext(
     return buildVisibleSeriesQuantileChartTimeseries(
       perAttribute,
       activeQuantiles,
-      histogramVisibleKeys
+      histogramVisibleKeys,
+      seriesLabelsByKey(getMetric()?.timeseries ?? [])
     )
   })
 

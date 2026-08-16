@@ -216,7 +216,9 @@ function quantilePointsFromMergedSlices(
 export function buildVisibleSeriesQuantileChartTimeseries(
   perAttributeSlices: HistogramSlicePoint[],
   quantiles: readonly number[],
-  visibleKeys: Set<string>
+  visibleKeys: Set<string>,
+  /** Series id -> how a reader names it; see buildPerSeriesQuantileSeries. */
+  labelByKey?: ReadonlyMap<string, string>
 ): ChartTimeseries[] {
   const out: ChartTimeseries[] = []
   for (const q of quantiles) {
@@ -225,7 +227,8 @@ export function buildVisibleSeriesQuantileChartTimeseries(
     for (const line of buildPerSeriesQuantileSeries(
       perAttributeSlices,
       q,
-      visibleKeys
+      visibleKeys,
+      labelByKey
     )) {
       out.push({
         key: quantileSeriesKey(line.key, quantileKey),
@@ -285,7 +288,10 @@ export function seriesBucketsToSlices(
 export function buildPerSeriesQuantileSeries(
   perAttributeSlices: HistogramSlicePoint[],
   quantile: number,
-  visibleKeys: Set<string>
+  visibleKeys: Set<string>,
+  /** Series id -> how a reader names it. Ids are content-derived, so without
+   *  this a legend entry reads as a uuid. */
+  labelByKey?: ReadonlyMap<string, string>
 ): ChartTimeseries[] {
   const visible = filterVisibleSlices(perAttributeSlices, visibleKeys)
   const byKey = new Map<string, HistogramSlicePoint[]>()
@@ -299,7 +305,7 @@ export function buildPerSeriesQuantileSeries(
   for (const [key, slices] of byKey) {
     const points = quantilePointsFromMergedSlices(slices, quantile)
     if (points.length === 0) continue
-    out.push({ key, label: key, points })
+    out.push({ key, label: labelByKey?.get(key) ?? key, points })
   }
   out.sort((a, b) => a.key.localeCompare(b.key))
   return out

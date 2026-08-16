@@ -24,7 +24,15 @@ import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
  * backwards. It used to build forwards and sort, which re-ordered data the
  * store had already ordered.
  */
-export function timeseriesToChartTimeseries(timeseries: MetricTimeseries[]): {
+export function timeseriesToChartTimeseries(
+  timeseries: MetricTimeseries[],
+  /** How to name a series for a human. `attributesKey` is a content-derived id,
+   *  so it identifies a line but cannot label one -- a tooltip showing it reads
+   *  as a uuid. Resolving the label needs every series of the metric (to know
+   *  which resource attributes distinguish them), which this function is not
+   *  always given, so the caller supplies it. */
+  labelFor?: (ts: MetricTimeseries) => string
+): {
   chartTimeseries: ChartTimeseries[]
   /** Convenience: same `key` strings the timeseries have, in the
    * same order. Caller can seed `visibleKeys` from this without
@@ -62,7 +70,7 @@ export function timeseriesToChartTimeseries(timeseries: MetricTimeseries[]): {
     }
     chartTimeseries.push({
       key: ts.attributesKey,
-      label: ts.attributesKey === '' ? 'default' : ts.attributesKey,
+      label: labelFor?.(ts) ?? ts.attributesKey,
       points,
     })
     keys.push(ts.attributesKey)
