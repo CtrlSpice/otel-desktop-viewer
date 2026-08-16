@@ -78,6 +78,10 @@
     SPARKLINE_BUCKETS,
   } from '@/contexts/metric-view-context.svelte'
   import {
+    DEFAULT_VISIBLE_TIMESERIES,
+    persistedVisibleKeys,
+  } from '@/components/metrics/utils/metric-timeseries-visible'
+  import {
     DEFAULT_HISTOGRAM_QUANTILES,
     HEATMAP_BUCKET_TARGET,
     localOffsetNs,
@@ -438,7 +442,48 @@
   // waiting did not, which is why it looked like a rendering problem.
   let detailToken = 0
 
-  async function fetchMetricDetail(summary: MetricSummary) {
+  // Datapoints arrive only for the series being drawn, so checking a series
+  // that was not drawn before leaves it with an empty line until its datapoints
+  // are fetched. This notices that and asks for them.
+  //
+  // Debounced with the same 120ms the aggregate uses, and for the same reason:
+  // ticking through five series should ask once. Reseeding is off, because the
+  // reader's selection is what triggered this and re-deriving it from the
+  // response would throw the change away.
+  let datapointTimer: ReturnType<typeof setTimeout> | undefined
+
+  $effect(() => {
+    const summary = page.selectedSummary
+    const metric = selectedMetric
+    const visible = [...metricCtx.gaugeSumVisible].sort()
+    if (!summary || !metric || visible.length === 0) return
+
+    const missing = metric.timeseries.some(
+      ts =>
+        metricCtx.gaugeSumVisible.has(ts.attributesKey) &&
+        ts.datapoints.length === 0
+    )
+    if (!missing) return
+
+    clearTimeout(datapointTimer)
+    datapointTimer = setTimeout(() => {
+      void fetchMetricDetail(summary, visible, false)
+    }, 120)
+
+    return () => clearTimeout(datapointTimer)
+  })
+
+  async function fetchMetricDetail(
+    summary: MetricSummary,
+    /** Which series need their datapoints. Null on the first fetch of a metric,
+     *  where the selection is chosen from the response and the store applies
+     *  the same "first N" rule instead. */
+    datapointSeries: string[] | null = null,
+    /** Whether to reset the per-metric view state from the result. False when
+     *  refetching for datapoints the reader just asked for by checking a box:
+     *  reseeding there would discard the very change that triggered it. */
+    reseed = true
+  ) {
     const token = ++detailToken
     try {
       detailLoading = true
@@ -470,8 +515,9 @@
           startTime,
           endTime,
           bucketTarget,
-          // Every series for now. Narrowing to the legend selection needs the
-          // fetch to re-run on toggle, which is a separate change.
+          // Never narrowed here: dropping a series from the response would
+          // take its row, sparkline and view buckets with it. Only its
+          // datapoints are narrowed, further down.
           undefined,
           // Computed by the store, read by the client. Both halves of the
           // response need them: the per-series lines and the merged columns.
@@ -498,7 +544,14 @@
           // Resolution for the per-row sparklines. The store sends one for
           // every series, checked or not, because the sparkline is how the
           // reader decides which series is worth checking.
-          SPARKLINE_BUCKETS
+          SPARKLINE_BUCKETS,
+          // Datapoints only for the series that will be drawn -- the rest of
+          // each series still arrives. A previous visit's selection can be
+          // named outright; a first visit cannot, because the selection is
+          // chosen from this very response, so the store takes the same "first
+          // N" the seeding would.
+          datapointSeries ?? persistedVisibleKeys(summary.id) ?? undefined,
+          DEFAULT_VISIBLE_TIMESERIES
         )) ?? undefined
       // A slower earlier request must not overwrite a newer answer.
       if (token !== detailToken) return
@@ -506,7 +559,7 @@
       // Same statement, before anything renders: the chart must not build once
       // for the previous metric's visible set and colours, and again for this
       // one's.
-      metricCtx.seedForMetric(selectedMetric)
+      if (reseed) metricCtx.seedForMetric(selectedMetric)
     } catch (err) {
       console.error('Failed to fetch metric detail:', err)
       if (token !== detailToken) return

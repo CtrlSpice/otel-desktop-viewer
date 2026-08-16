@@ -544,7 +544,16 @@ export let telemetryAPI = {
      *  min and its max, so this is half the sparkline's pixel width. A third
      *  question again -- the election thins for the main chart, the views
      *  bucket for another, this fits a list row. Omit for none. */
-    sparklineBuckets?: number
+    sparklineBuckets?: number,
+    /** Which series should carry their datapoints -- almost the whole payload.
+     *  Every series still arrives with its row, stats, view buckets and
+     *  sparkline. Omit to leave it to `datapointSeriesLimit`; pass an empty
+     *  array to ask for none. */
+    datapointSeriesIds?: string[],
+    /** How many series carry datapoints when they cannot be named, in the
+     *  response's own order. For the first visit to a metric, where the visible
+     *  set is chosen from the response being fetched. */
+    datapointSeriesLimit?: number
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -576,6 +585,16 @@ export let telemetryAPI = {
         {
           value: String(sparklineBuckets ?? 0),
           given: sparklineBuckets !== undefined,
+        },
+        // Slot 11: the scalar Selected pool, which getMetric does not narrow by.
+        { value: null, given: datapointSeriesIds !== undefined || datapointSeriesLimit !== undefined },
+        {
+          value: datapointSeriesIds ?? null,
+          given: datapointSeriesIds !== undefined,
+        },
+        {
+          value: String(datapointSeriesLimit ?? 0),
+          given: datapointSeriesLimit !== undefined,
         },
       ]
       while (optional.length > 0 && !optional[optional.length - 1].given) {

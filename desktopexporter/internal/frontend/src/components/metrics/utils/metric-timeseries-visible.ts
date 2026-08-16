@@ -316,6 +316,18 @@ export function loadPersistedShowAllSeriesAggregate(
  * Pick visible timeseries keys for the current metric data.
  * Restores persisted keys that still exist; otherwise first N.
  */
+/**
+ * The visible keys a previous visit left behind, or null if there are none.
+ *
+ * Exposed so a fetch can name the series it needs before it has the response:
+ * resolveTimeseriesVisible answers the same question but needs the metric's
+ * current keys to fall back on, and that is exactly what the caller does not
+ * have yet.
+ */
+export function persistedVisibleKeys(metricStreamId: string): string[] | null {
+  return loadPersistedView(metricStreamId)?.visibleKeys ?? null
+}
+
 export function resolveTimeseriesVisible(
   currentKeys: readonly string[],
   metricStreamId: string,
