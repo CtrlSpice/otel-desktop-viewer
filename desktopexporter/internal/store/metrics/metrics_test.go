@@ -2326,6 +2326,123 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 	assert.NotNil(t, first["avg"])
 }
 
+// TestGetMetric_RateSlopeAndStats covers the two numbers derived from the
+// drawn rate line: the slope arriving at each drawn point, and the line's
+// extremes for the rate view's badges.
+//
+// Both used to be client arithmetic over the drawn points. The store now
+// states the drawn sequence once -- an empty bucket draws a zero, a bucket
+// with samples but no rate draws nothing -- and derives both from it, so the
+// overlay, the badges and the line cannot disagree.
+func TestGetMetric_RateSlopeAndStats(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	// A counter climbing a minute at a time with a five-minute silence: the
+	// gap draws zeros, and the slope into and out of the gap spans them.
+	var dps []sumTestDP
+	attrs := map[string]string{"pod": "a"}
+	for i := range 3 {
+		dps = append(dps, sumTestDP{
+			timestamp: base.Add(time.Duration(i) * time.Minute),
+			value:     float64(i + 1),
+			attrs:     attrs,
+		})
+	}
+	for i := range 3 {
+		dps = append(dps, sumTestDP{
+			timestamp: base.Add(time.Duration(8+i) * time.Minute),
+			value:     float64(10 * (i + 1)),
+			attrs:     attrs,
+		})
+	}
+	fixture := makeSumFixtureT("slope.total", pmetric.AggregationTemporalityCumulative, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			0, nil, nil, 0, true, 12, 0, nil, nil, 0)
+	})
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	series := m["timeseries"].([]any)
+	require.Len(t, series, 1)
+	ts := series[0].(map[string]any)
+	views := ts["views"].([]any)
+	require.NotEmpty(t, views)
+
+	// Recompute the drawn sequence from the response's own buckets and check
+	// every slope against it. The test may do arithmetic; the client may not.
+	type drawnPoint struct {
+		startNs float64
+		value   float64
+	}
+	var drawn []drawnPoint
+	var emptyBuckets, firstRateNull int
+	for _, v := range views {
+		b := v.(map[string]any)
+		start, err := strconv.ParseFloat(b["bucketStart"].(string), 64)
+		require.NoError(t, err)
+		sampleCount := b["sampleCount"].(float64)
+		rate, hasRate := b["rate"].(float64)
+		slope, hasSlope := b["slope"].(float64)
+
+		if sampleCount > 0 && !hasRate {
+			// A series' first bucket: no predecessor, nothing drawn, no slope.
+			firstRateNull++
+			assert.False(t, hasSlope, "an undrawn bucket has no slope")
+			continue
+		}
+		value := 0.0
+		if sampleCount > 0 {
+			value = rate
+		} else {
+			emptyBuckets++
+		}
+		if len(drawn) == 0 {
+			assert.False(t, hasSlope, "the first drawn point has no arriving segment")
+		} else {
+			prev := drawn[len(drawn)-1]
+			want := (value - prev.value) / ((start - prev.startNs) / 1e9)
+			require.True(t, hasSlope, "every drawn point after the first carries a slope")
+			assert.InDelta(t, want, slope, 1e-9,
+				"slope is Δrate over the seconds since the previous drawn point")
+		}
+		drawn = append(drawn, drawnPoint{start, value})
+	}
+	require.Positive(t, emptyBuckets, "the silence draws zeros, and they are in the sequence")
+	require.Positive(t, firstRateNull, "the cumulative first bucket is undrawn")
+
+	// The badges' numbers are the drawn line's, gap zeros included.
+	rs := ts["rateStats"].(map[string]any)
+	minWant, maxWant, sum := drawn[0].value, drawn[0].value, 0.0
+	for _, d := range drawn {
+		minWant, maxWant, sum = min(minWant, d.value), max(maxWant, d.value), sum+d.value
+	}
+	assert.InDelta(t, minWant, rs["min"], 1e-9, "gap zeros pull the minimum to the floor the chart shows")
+	assert.InDelta(t, maxWant, rs["max"], 1e-9)
+	assert.InDelta(t, sum/float64(len(drawn)), rs["avg"], 1e-9)
+
+	// The pools carry slope by the same rule; one bucket proves the field.
+	pools := m["scalarAggregate"].(map[string]any)
+	all := pools["all"].([]any)
+	require.NotEmpty(t, all)
+	var poolSlopes int
+	for _, v := range all {
+		if _, ok := v.(map[string]any)["slope"].(float64); ok {
+			poolSlopes++
+		}
+	}
+	assert.Positive(t, poolSlopes, "the pooled line's segments carry slopes too")
+}
+
 // TestGetMetric_Deterministic pins the answer to a question the store must
 // only have one answer to: the same request against the same data returns the
 // same bytes.

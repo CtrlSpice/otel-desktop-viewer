@@ -471,18 +471,53 @@
 			   and b.bucket_start = sp.bucket_start
 			group by sp.series_id, sp.bucket_start
 		),
-		scalar_views_agg as (
-			select series_id,
-				to_json(list(json_object(
-					'bucketStart', bucket_start::varchar,
-					'sampleCount', sample_count,
-					'sum', value_sum,
-					'avg', value_avg,
-					'rate', rate,
-					'hasReset', has_reset
-				) order by bucket_start)) as views
+		-- The rate line as it is drawn. An empty bucket draws a zero, a bucket
+		-- with samples but no rate -- a series' first -- draws nothing; these
+		-- are the chart's reading of the buckets, stated once here so the two
+		-- numbers derived from the drawn line (slope, badge extremes) cannot
+		-- drift from what is on screen.
+		scalar_view_drawn as (
+			select series_id, bucket_start,
+				case when sample_count = 0 then 0 else rate end as drawn_rate
 			from scalar_view_agg
+			where sample_count = 0 or rate is not null
+		),
+		-- Slope of the segment arriving at each drawn point: Δrate over the
+		-- seconds since the previous drawn point. Across a gap the previous
+		-- drawn point is the gap's zero, which is exactly the segment the chart
+		-- draws. The first drawn point has no arriving segment.
+		scalar_view_slope as (
+			select series_id, bucket_start,
+				(drawn_rate - lag(drawn_rate) over w)
+					/ ((bucket_start - lag(bucket_start) over w) / 1e9) as slope
+			from scalar_view_drawn
+			window w as (partition by series_id order by bucket_start)
+		),
+		-- Extremes of the drawn line, for the rate view's row badges. Gap zeros
+		-- included, because the chart shows them: an outage pulls the minimum
+		-- to the floor the reader sees.
+		scalar_rate_stats as (
+			select series_id,
+				json_object('min', min(drawn_rate), 'max', max(drawn_rate),
+				            'avg', avg(drawn_rate)) as rate_stats
+			from scalar_view_drawn
 			group by series_id
+		),
+		scalar_views_agg as (
+			select a.series_id,
+				to_json(list(json_object(
+					'bucketStart', a.bucket_start::varchar,
+					'sampleCount', a.sample_count,
+					'sum', a.value_sum,
+					'avg', a.value_avg,
+					'rate', a.rate,
+					'slope', sl.slope,
+					'hasReset', a.has_reset
+				) order by a.bucket_start)) as views
+			from scalar_view_agg a
+			left join scalar_view_slope sl
+				on sl.series_id = a.series_id and sl.bucket_start = a.bucket_start
+			group by a.series_id
 		),
 
 		-- The cross-series aggregate: a pool of series folded into one line.
@@ -540,25 +575,42 @@
 		),
 		-- Same bucket shape the per-series views use, so the client projects both
 		-- through one function instead of learning a second wire format.
+		scalar_pool_drawn as (
+			select pool, bucket_start,
+				case when sample_count = 0 then 0 else rate end as drawn_rate
+			from scalar_pool_agg
+			where sample_count = 0 or rate is not null
+		),
+		scalar_pool_slope as (
+			select pool, bucket_start,
+				(drawn_rate - lag(drawn_rate) over w)
+					/ ((bucket_start - lag(bucket_start) over w) / 1e9) as slope
+			from scalar_pool_drawn
+			window w as (partition by pool order by bucket_start)
+		),
 		scalar_pools_json as (
 			select
 				coalesce(to_json(list(json_object(
-					'bucketStart', bucket_start::varchar,
-					'sampleCount', sample_count,
-					'sum', value_sum,
-					'avg', value_avg,
-					'rate', rate,
-					'hasReset', has_reset
-				) order by bucket_start) filter (where pool = 'selected')), json('[]')) as selected,
+					'bucketStart', a.bucket_start::varchar,
+					'sampleCount', a.sample_count,
+					'sum', a.value_sum,
+					'avg', a.value_avg,
+					'rate', a.rate,
+					'slope', sl.slope,
+					'hasReset', a.has_reset
+				) order by a.bucket_start) filter (where a.pool = 'selected')), json('[]')) as selected,
 				coalesce(to_json(list(json_object(
-					'bucketStart', bucket_start::varchar,
-					'sampleCount', sample_count,
-					'sum', value_sum,
-					'avg', value_avg,
-					'rate', rate,
-					'hasReset', has_reset
-				) order by bucket_start) filter (where pool = 'all')), json('[]')) as all_series
-			from scalar_pool_agg
+					'bucketStart', a.bucket_start::varchar,
+					'sampleCount', a.sample_count,
+					'sum', a.value_sum,
+					'avg', a.value_avg,
+					'rate', a.rate,
+					'slope', sl.slope,
+					'hasReset', a.has_reset
+				) order by a.bucket_start) filter (where a.pool = 'all')), json('[]')) as all_series
+			from scalar_pool_agg a
+			left join scalar_pool_slope sl
+				on sl.pool = a.pool and sl.bucket_start = a.bucket_start
 		),
 
 		-- The shape of one series at sparkline resolution.
@@ -1061,6 +1113,7 @@
 				-- answer to that even when the answer is none.
 				coalesce(tj.datapoints, json('[]')),
 				series_stats_json(t.value_count, t.value_min, t.value_max, t.value_sum),
+				srs.rate_stats,
 				sv.views,
 				sp.sparkline
 			-- attrs_key breaks ties, and the tie is the common case rather
@@ -1089,6 +1142,8 @@
 			-- too: it is the affordance that tells you which row is worth checking,
 			-- so withholding it from the rows you have not chosen yet defeats it.
 			left join sparkline_agg sp on sp.series_id = t.series_id
+			-- Left for the reason the views are: histograms have no rate line.
+			left join scalar_rate_stats srs on srs.series_id = t.series_id
 		),
 		-- The cross-series aggregate: the selected series merged into one
 		-- histogram per time bucket, which is what a heatmap draws and what a
