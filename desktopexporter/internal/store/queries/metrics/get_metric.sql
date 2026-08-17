@@ -1051,10 +1051,13 @@
 				-- Histograms have no scalar to difference.
 				null::double as delta, null::boolean as is_reset
 			from hist_folded m
-			-- A bucket whose datapoints disagree about explicit bounds cannot
-			-- be merged; there is no rescale that reconciles two boundary sets.
-			-- Dropping the row would hide it, so the merge refuses to run and
-			-- the caller sees the unreduced series instead.
+			-- A bucket whose datapoints disagree about explicit bounds cannot be
+			-- merged; there is no rescale that reconciles two boundary sets, the
+			-- way downscale_exp_buckets reconciles two scales. So the row is
+			-- dropped -- and counted, by bounds_mismatch below, because a
+			-- silently missing bucket is indistinguishable from a gap in the
+			-- data. The reader is debugging an exporter; a histogram that
+			-- changed its boundaries mid-window is a finding, not noise.
 			where m.distinct_bounds <= 1
 		),
 
@@ -1241,9 +1244,25 @@
 		--
 		-- Histograms only. Summing gauges across series would be arithmetic
 		-- nobody asked for.
+		-- Buckets the per-series merge already refused. A series that could not
+		-- be merged along the time axis cannot contribute across series either,
+		-- and a cross-series total missing one of its series is not a total.
+		--
+		-- The check below in agg_merged cannot see this: hist_merged collapses a
+		-- bucket's bounds with any_value before this point, so by the time the
+		-- cross-series count(distinct explicit_bounds) runs there is one value
+		-- left per row whatever the datapoints underneath disagreed about. That
+		-- check catches series disagreeing with *each other*; this catches the
+		-- disagreement that was already flattened inside one.
+		agg_refused_buckets as (
+			select distinct bucket_start
+			from hist_folded
+			where distinct_bounds > 1
+		),
 		agg_scaled as (
 			select f.*, min(f.scale) over (partition by f.bucket_start) as agg_scale
 			from hist_folded f
+			where f.bucket_start not in (select bucket_start from agg_refused_buckets)
 		),
 		agg_downscaled as (
 			select a.*,
@@ -1316,6 +1335,21 @@
 					m.zero_threshold, m.scale) as neg_fold
 			from agg_merged m
 		),
+		-- How many merges were refused because their inputs disagreed about
+		-- explicit bounds: (series, bucket) rows on the per-series axis, and
+		-- buckets on the cross-series one. Reported rather than inferred -- the
+		-- client cannot tell a dropped bucket from a bucket that never had data.
+		bounds_mismatch as (
+			select
+				(select count(*) from hist_folded where distinct_bounds > 1)
+					as series_buckets,
+				-- Both routes to a refused cross-series merge: a contributing
+				-- series that could not merge within itself, and series that
+				-- could each merge but disagree with one another.
+				(select count(*) from agg_refused_buckets)
+				+ (select count(*) from agg_folds where distinct_bounds > 1)
+					as aggregate_buckets
+		),
 		aggregate_agg as (
 			select to_json(list(aggregate_bucket_json(
 				f.timestamp, f.start_time, f.count, f.sum, f.scale,
@@ -1380,6 +1414,16 @@
 			-- question -- and the client's was derived from the very reduction
 			-- it was trying to describe. Null start/end when the window is the
 			-- caller's own: it already knows it.
+			-- Null when nothing was refused, so the client tests one field
+			-- rather than two counts it would have to know to compare to zero.
+			'boundsMismatch', (
+				select case when series_buckets > 0 or aggregate_buckets > 0
+					then json_object(
+						'seriesBuckets', series_buckets,
+						'aggregateBuckets', aggregate_buckets)
+				end
+				from bounds_mismatch
+			),
 			'window', json_object(
 				'fittedToData', (select fit_to_data from input),
 				'startNs', case when (select fit_to_data from input)

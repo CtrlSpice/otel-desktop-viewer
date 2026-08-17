@@ -2753,6 +2753,90 @@ func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
 			"lists, so the client's \"check the first N\" checks series that have data")
 }
 
+// TestGetMetric_BoundsMismatchIsReported covers the one histogram disagreement
+// that cannot be reconciled: two datapoints in a bucket carrying different
+// explicit bounds.
+//
+// Scales can be reconciled -- downscale_exp_buckets moves both onto the coarser
+// one -- but boundaries cannot: there is no transformation that turns [10,20,30]
+// into [5,50,500] without inventing observations. So the merge is refused.
+//
+// Refusing is right; refusing silently is not. The bucket simply vanished, and
+// a missing bucket is indistinguishable from a stretch with no data -- so an
+// exporter that changed its histogram configuration mid-window, which is a real
+// finding for anyone debugging one, looked like an idle period.
+func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	attrs := map[string]string{"pod": "a"}
+	// Same bucket, two boundary sets: the SDK's view was reconfigured between
+	// these two readings.
+	dps := []histTestDP{
+		{
+			timestamp: base, attrs: attrs,
+			bounds: []float64{10, 20, 30}, counts: []uint64{1, 1, 0, 0},
+			count: 2, sum: 25, min: 5, max: 15,
+		},
+		{
+			timestamp: base.Add(time.Second), attrs: attrs,
+			bounds: []float64{5, 50, 500}, counts: []uint64{2, 0, 0, 0},
+			count: 2, sum: 4, min: 2, max: 2,
+		},
+	}
+	fixture := makeHistogramFixtureT("drift.hist", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+
+	get := func(targetBuckets int64) map[string]any {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, streamID,
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+				targetBuckets, nil, nil, 0, false, 0, 0, nil, nil, 0)
+		})
+		require.NoError(t, err)
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		return m
+	}
+
+	// Reduced: the merge is refused, the bucket is gone, and the response says
+	// so instead of leaving the reader to notice a hole.
+	reduced := get(1)
+	mismatch, _ := reduced["boundsMismatch"].(map[string]any)
+	require.NotNil(t, mismatch,
+		"a refused merge is reported, not merely omitted")
+	assert.Equal(t, float64(1), mismatch["seriesBuckets"],
+		"one (series, bucket) merge refused")
+	assert.Equal(t, float64(1), mismatch["aggregateBuckets"],
+		"and the cross-series merge over the same bucket, for the same reason")
+
+	// The rows really are absent -- this is a report of a refusal, not a
+	// warning attached to a merged-anyway row. With every bucket refused the
+	// series has nothing left to carry, so it drops out of the response
+	// entirely; the report is the only thing that says why.
+	assert.Empty(t, reduced["timeseries"],
+		"a series whose every bucket was refused has nothing to show")
+	assert.Nil(t, reduced["aggregate"],
+		"and the cross-series merge over those buckets is refused with it, "+
+			"rather than summing vectors measured against different boundaries")
+
+	// Unreduced: nothing is merged, so nothing is refused, and the datapoints
+	// arrive exactly as they were recorded -- differing bounds and all.
+	unreduced := get(0)
+	assert.Nil(t, unreduced["boundsMismatch"],
+		"no merge, no refusal to report")
+	uts := unreduced["timeseries"].([]any)
+	require.Len(t, uts, 1)
+	assert.Len(t, uts[0].(map[string]any)["datapoints"], 2,
+		"both readings survive when nothing is being merged")
+}
+
 // TestGetMetric_Deterministic pins the answer to a question the store must
 // only have one answer to: the same request against the same data returns the
 // same bytes.

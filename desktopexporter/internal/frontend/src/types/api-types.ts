@@ -310,6 +310,16 @@ export type MetricTimeseries = {
  *  `all` never narrows with the selection -- that is what makes it "all" --
  *  while `selected` follows the checkboxes and is empty when nothing is
  *  checked, which the chart draws as "All alone". */
+/** What the store refused to merge because its inputs carried different
+ *  explicit bounds. There is no rescale that reconciles two boundary sets, so
+ *  the merge cannot be done -- but doing nothing quietly leaves a hole that
+ *  reads as absent data, which for an exporter that reconfigured its histogram
+ *  mid-window is the finding itself. */
+export type BoundsMismatch = {
+  seriesBuckets: number
+  aggregateBuckets: number
+}
+
 export type ScalarAggregate = {
   selected: ScalarViewBucket[]
   all: ScalarViewBucket[]
@@ -352,6 +362,8 @@ export type MetricData = {
   /** How many datapoints the window holds, which is not necessarily how many
    *  were returned. Equal until the store starts reducing what it sends. */
   datapointCount: number
+  /** Merges refused for disagreeing explicit bounds; null when none were. */
+  boundsMismatch: BoundsMismatch | null
   /** The window the store's reduction actually divided.
    *
    *  Bounds are the data's own extent, and are null unless the caller said its

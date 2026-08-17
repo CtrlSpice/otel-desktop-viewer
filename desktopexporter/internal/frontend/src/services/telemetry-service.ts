@@ -304,6 +304,7 @@ function metricDataFromJSON(json: JsonMetricData): MetricData {
   return {
     ...json,
     timeseries: json.timeseries.map(timeseriesFromJSON),
+    boundsMismatch: json.boundsMismatch ?? null,
     window: {
       // Tolerated as absent so a response from a store that predates the field
       // still renders, on the same window the caller asked for.

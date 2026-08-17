@@ -357,6 +357,12 @@ export type JsonMetricData = {
   scalarAggregate: JsonScalarAggregate | null
   /** Datapoints in the window, which may exceed the number returned. */
   datapointCount: number
+  /** Merges the store refused because their inputs disagreed about explicit
+   *  bounds, or null when none were. Bounds cannot be reconciled the way scales
+   *  can, so the rows are dropped -- and a dropped bucket is indistinguishable
+   *  from one that never had data, which is why this is reported rather than
+   *  left to be noticed. */
+  boundsMismatch: JsonBoundsMismatch | null
   /** The window the reduction actually divided.
    *
    *  `fittedToData` echoes what was asked for; `startNs` / `endNs` are the
@@ -374,6 +380,15 @@ export type JsonMetricData = {
  *  the heatmap draws them; per-series data carries only quantiles. */
 /** Both cross-series pools. `all` never narrows with the selection -- that is
  *  what makes it "all" -- while `selected` follows the checkboxes. */
+export type JsonBoundsMismatch = {
+  /** (series, bucket) merges refused along the time axis. */
+  seriesBuckets: number
+  /** Cross-series bucket merges refused, by either route: a contributing
+   *  series that could not merge within itself, or series that disagree with
+   *  one another. */
+  aggregateBuckets: number
+}
+
 export type JsonScalarAggregate = {
   selected: JsonScalarViewBucket[]
   all: JsonScalarViewBucket[]

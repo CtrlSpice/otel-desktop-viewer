@@ -1338,6 +1338,23 @@ export function createMetricViewContext(
       return { ...empty, error: err, aggregatedError: err }
     }
 
+    // Bounds that changed mid-window. The store refuses those merges and says
+    // how many, because the alternative -- a chart with holes in it -- reads as
+    // an exporter that stopped reporting rather than one that was
+    // reconfigured. Reported only when nothing survived, so a window that
+    // merged most of its buckets still draws them.
+    const mismatch = m.boundsMismatch
+    if (mismatch && m.timeseries.every(ts => ts.datapoints.length === 0)) {
+      const err = histogramAggregationErrorToBucketSeriesError({
+        kind: 'boundsMismatch',
+        message:
+          `Histogram bounds disagree across datapoints in this window ` +
+          `(${mismatch.seriesBuckets} series buckets, ` +
+          `${mismatch.aggregateBuckets} aggregate buckets could not be merged)`,
+      })
+      return { ...empty, error: err, aggregatedError: err }
+    }
+
     // One slice per store bucket. The store has already bucketed, merged and
     // resolved temporality; re-doing any of that here was the 3s of blocked
     // main thread on every histogram selection, and got Cumulative wrong.

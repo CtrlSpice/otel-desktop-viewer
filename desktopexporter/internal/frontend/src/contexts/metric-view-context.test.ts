@@ -73,6 +73,9 @@ function makeCumulativeSumMetric(): MetricData {
     // The window as the caller asked for it: this fixture's assertions are
     // about aggregation views, not about the axis.
     window: { fittedToData: false, startNs: null, endNs: null },
+    // No merge was refused; this fixture's histograms-that-aren't have no
+    // bounds to disagree about.
+    boundsMismatch: null,
     timeseries: [
       {
         attributesKey: 'route=/a',
