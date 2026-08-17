@@ -357,6 +357,7 @@
             startMs={timeRange.startMs}
             endMs={timeRange.endMs}
             variant="legend"
+            fitToData={ctx.histogramAxisFitToData}
           />
         {/if}
         {#if onSelect}

@@ -1,5 +1,6 @@
 import type { Attribute } from '@/types/api-types'
 import type { MetricTimeseries } from '@/types/api-types'
+import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
 
 /**
  * Works out which resource attributes distinguish the series of one metric.
@@ -67,4 +68,32 @@ export function distinguishingResourceAttributes(
     )
   }
   return result
+}
+
+/**
+ * How a reader identifies each series: its own labels, plus whatever resource
+ * attributes tell it apart from its siblings when the metric spans several.
+ *
+ * Everything user-facing resolves through here. `attributesKey` is a
+ * content-derived id -- stable, unique, and completely unreadable -- so it is
+ * the right key for a map and the wrong thing to put in a tooltip.
+ */
+export function seriesLabelsByKey(
+  timeseries: MetricTimeseries[]
+): Map<string, string> {
+  const distinguishing = distinguishingResourceAttributes(timeseries)
+  const out = new Map<string, string>()
+  for (const ts of timeseries) {
+    const attrs = dedupeAttributes([
+      ...ts.attributes,
+      ...(distinguishing.get(ts.attributesKey) ?? []),
+    ])
+    out.set(
+      ts.attributesKey,
+      attrs.length === 0
+        ? 'default series'
+        : attrs.map(a => `${a.key}: ${a.value}`).join(' ')
+    )
+  }
+  return out
 }

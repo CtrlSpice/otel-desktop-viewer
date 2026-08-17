@@ -13,7 +13,6 @@
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import { metricTypeSeriesColor } from '@/components/metrics/utils/metric-type'
-  import { histogramQuantilesForDatapoint } from '@/components/metrics/utils/histogram-aggregation'
   import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
   import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
   import type {
@@ -60,7 +59,13 @@
     { key: '0.99', label: 'p99' },
   ]
 
-  let quantiles = $derived(histogramQuantilesForDatapoint(datapoint, QUANTILES))
+  // The store's quantiles for this datapoint. Not computed here: that walked
+  // the bucket list once per quantile for numbers already in the response.
+  let quantiles = $derived(
+    Object.fromEntries(
+      QUANTILES.map(q => [String(q), datapoint.quantiles?.[String(q)] ?? null])
+    ) as Record<string, number | null>
+  )
 
   let buckets = $derived.by((): Bucket[] => {
     if (datapoint.metricType === 'Histogram') {

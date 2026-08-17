@@ -3,7 +3,21 @@
    * Inline datapoint rows for a single timeseries. Nested under an
    * expanded series row in TimeseriesPanel. Selection, exemplar
    * expansion, and histogram snapshot sync go through MetricViewContext.
+   *
+   * Long lists are windowed rather than truncated. This is the view that
+   * answers "what did my service actually send", so every datapoint has to be
+   * reachable -- a cap with a "showing 500 of 17,076" note would be a smaller
+   * lie than merged rows, but still a lie. Rendering a row per datapoint is not
+   * an option either: a dense stream is hundreds of thousands of rows and the
+   * DOM will not take it.
+   *
+   * So the rows exist in the array and only the visible slice exists in the
+   * DOM, with spacer rows standing in for the rest. Heights are measured rather
+   * than assumed, because an expanded exemplar row is several times the height
+   * of a plain one; unmeasured rows use an estimate and correct themselves as
+   * they scroll into view.
    */
+  import { SvelteMap } from 'svelte/reactivity'
   import { formatDateTimeMs } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
@@ -29,6 +43,106 @@
   const timeContext = getTimeContext()
 
   let metricUnit = $derived(ctx.metric?.unit ?? '')
+
+  // Below this a list renders whole: no scroller, no spacers, no measurement.
+  // Windowing a short list costs more than it saves and would put a second
+  // scroll region inside the detail pane for twenty rows.
+  const VIRTUALIZE_ABOVE = 200
+  // Rows above and below the viewport, so a fast scroll does not show gaps
+  // before the next frame fills them.
+  const OVERSCAN = 10
+  // Only used for rows that have never been on screen. Close to a plain row's
+  // real height, so the scrollbar barely shifts as measurements replace it.
+  const ESTIMATED_ROW_PX = 24
+
+  let virtualize = $derived(datapoints.length > VIRTUALIZE_ABOVE)
+
+  let scrollTop = $state(0)
+  let viewportPx = $state(0)
+
+  // Measured heights, keyed by datapoint id rather than index: the array
+  // changes identity on every poll, and an id survives that.
+  const rowPx = new SvelteMap<string, number>()
+  const expansionPx = new SvelteMap<string, number>()
+
+  function heightOf(dp: DataPoint): number {
+    const base = rowPx.get(dp.id) ?? ESTIMATED_ROW_PX
+    if (!ctx.expandedDatapoints.has(dp.id)) return base
+    return base + (expansionPx.get(dp.id) ?? 0)
+  }
+
+  // Cumulative offsets, one longer than the list: offsets[i] is where row i
+  // starts and offsets[n] is the total height. Recomputed when the list or a
+  // measurement changes -- not on scroll, which only searches it.
+  let offsets = $derived.by((): number[] => {
+    if (!virtualize) return []
+    const out = new Array<number>(datapoints.length + 1)
+    out[0] = 0
+    for (let i = 0; i < datapoints.length; i++) {
+      out[i + 1] = out[i]! + heightOf(datapoints[i]!)
+    }
+    return out
+  })
+
+  /** First index whose row ends after `px`. */
+  function indexAt(px: number): number {
+    let lo = 0
+    let hi = datapoints.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (offsets[mid + 1]! <= px) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+
+  let range = $derived.by((): { start: number; end: number } => {
+    if (!virtualize) return { start: 0, end: datapoints.length }
+    // Before layout has measured the viewport, render a screenful rather than
+    // nothing -- otherwise the list is empty until the first scroll event.
+    const height = viewportPx || 400
+    const start = Math.max(0, indexAt(scrollTop) - OVERSCAN)
+    const end = Math.min(datapoints.length, indexAt(scrollTop + height) + 1 + OVERSCAN)
+    return { start, end }
+  })
+
+  let visible = $derived(datapoints.slice(range.start, range.end))
+  let padTopPx = $derived(virtualize ? (offsets[range.start] ?? 0) : 0)
+  let padBottomPx = $derived(
+    virtualize
+      ? (offsets[datapoints.length] ?? 0) - (offsets[range.end] ?? 0)
+      : 0
+  )
+
+  let columnCount = $derived(showSwatch ? 2 : 1)
+
+  /** Report a rendered element's height, ignoring no-op changes so the
+   *  ResizeObserver cannot drive a render loop. */
+  function measure(
+    node: HTMLElement,
+    args: { id: string; into: SvelteMap<string, number> }
+  ) {
+    let current = args
+    const report = () => {
+      const px = node.getBoundingClientRect().height
+      if (px <= 0) return
+      const prev = current.into.get(current.id)
+      if (prev !== undefined && Math.abs(prev - px) < 0.5) return
+      current.into.set(current.id, px)
+    }
+    const observer = new ResizeObserver(report)
+    observer.observe(node)
+    report()
+    return {
+      update(next: { id: string; into: SvelteMap<string, number> }) {
+        current = next
+        report()
+      },
+      destroy() {
+        observer.disconnect()
+      },
+    }
+  }
 
   function displayUnit(unit: string): string | null {
     const u = unit.trim()
@@ -80,107 +194,146 @@
   }
 </script>
 
+{#snippet datapointRows(dp: DataPoint)}
+  {@const selected = ctx.selectedDatapointId === dp.id}
+  {@const hasExtra = dp.flags > 0 || dp.exemplars.length > 0}
+  {@const expanded = hasExtra && ctx.expandedDatapoints.has(dp.id)}
+  {@const valueParts = datapointValueParts(dp)}
+  <tr
+    class="dp-list__row"
+    class:dp-list__row--selected={selected}
+    class:dp-list__row--expandable={hasExtra}
+    data-dp-id={dp.id}
+    onclick={() => ctx.onDatapointClick(dp)}
+    use:measure={{ id: dp.id, into: rowPx }}
+  >
+    {#if showSwatch}
+      <td class="dp-list__td dp-list__td--swatch">
+        <span
+          class="dp-list__swatch"
+          style:background-color={seriesColor}
+          aria-hidden="true"
+        ></span>
+      </td>
+    {/if}
+    <td
+      class="dp-list__td dp-list__td--content"
+      colspan={showSwatch ? undefined : 1}
+    >
+      <div class="dp-list__row-main">
+        <span class="dp-list__time tabular-nums"
+          >{formatDatapointTime(dp.timestamp)}</span
+        >
+        <div class="dp-list__trail">
+          <span class="dp-list__value-group">
+            <span class="dp-list__value tabular-nums">{valueParts.number}</span>
+            {#if valueParts.unit}
+              <span class="dp-list__unit">{valueParts.unit}</span>
+            {/if}
+          </span>
+          {#if hasExtra}
+            {#if dp.exemplars.length > 0}
+              <span class="badge-count">{dp.exemplars.length} ex</span>
+            {/if}
+            {#if dp.flags > 0}
+              <span class="badge badge-xs badge-soft badge-warning">flags</span>
+            {/if}
+          {/if}
+        </div>
+      </div>
+    </td>
+  </tr>
+  {#if expanded}
+    <tr
+      class="dp-list__expansion-row"
+      use:measure={{ id: dp.id, into: expansionPx }}
+    >
+      <td colspan={showSwatch ? 2 : 1} class="dp-list__expansion-cell">
+        <div class="dp-list__expansion">
+          {#if dp.flags > 0}
+            <div class="dp-list__detail">
+              <span class="dp-list__detail-label">flags</span>
+              <span class="dp-list__detail-value">{dp.flags}</span>
+            </div>
+          {/if}
+          {#each dp.exemplars as ex, i}
+            <div class="dp-list__exemplar">
+              <span class="dp-list__detail-label">exemplar {i + 1}</span>
+              <div class="dp-list__exemplar-fields">
+                <span class="dp-list__detail-value">value: {ex.value}</span>
+                <span class="dp-list__detail-value tabular-nums">
+                  time: {formatDatapointTime(ex.timestamp)}
+                </span>
+                {#if ex.traceID}
+                  {@const patch = exemplarSpanPatch(ex)}
+                  <a
+                    class="dp-list__detail-value link link-primary font-mono"
+                    href={itemHref('traces', ex.traceID, patch)}
+                    onclick={e => goToExemplarTrace(e, ex)}
+                  >trace: {ex.traceID}</a>
+                {/if}
+                {#if ex.spanID && ex.traceID}
+                  <a
+                    class="dp-list__detail-value link link-primary font-mono"
+                    href={itemHref('traces', ex.traceID, exemplarSpanPatch(ex))}
+                    onclick={e => goToExemplarTrace(e, ex)}
+                  >span: {ex.spanID}</a>
+                {:else if ex.spanID}
+                  <span class="dp-list__detail-value">span: {ex.spanID}</span>
+                {/if}
+                {#each dedupeAttributes(ex.filteredAttributes) as attr (attr.key)}
+                  <span class="dp-list__detail-value">{attr.key}: {attr.value}</span>
+                {/each}
+              </div>
+            </div>
+          {/each}
+        </div>
+      </td>
+    </tr>
+  {/if}
+{/snippet}
+
 {#if datapoints.length === 0}
   <p class="dp-list__empty" class:dp-list__empty--flush={flush}>No datapoints</p>
-{:else}
+{:else if !virtualize}
   <table class="dp-list" class:dp-list--flush={flush} aria-label="Datapoints">
     <tbody>
       {#each datapoints as dp (dp.id)}
-        {@const selected = ctx.selectedDatapointId === dp.id}
-        {@const hasExtra = dp.flags > 0 || dp.exemplars.length > 0}
-        {@const expanded = hasExtra && ctx.expandedDatapoints.has(dp.id)}
-        {@const valueParts = datapointValueParts(dp)}
-        <tr
-          class="dp-list__row"
-          class:dp-list__row--selected={selected}
-          class:dp-list__row--expandable={hasExtra}
-          data-dp-id={dp.id}
-          onclick={() => ctx.onDatapointClick(dp)}
-        >
-          {#if showSwatch}
-            <td class="dp-list__td dp-list__td--swatch">
-              <span
-                class="dp-list__swatch"
-                style:background-color={seriesColor}
-                aria-hidden="true"
-              ></span>
-            </td>
-          {/if}
-          <td
-            class="dp-list__td dp-list__td--content"
-            colspan={showSwatch ? undefined : 1}
-          >
-            <div class="dp-list__row-main">
-              <span class="dp-list__time tabular-nums"
-                >{formatDatapointTime(dp.timestamp)}</span
-              >
-              <div class="dp-list__trail">
-                <span class="dp-list__value-group">
-                  <span class="dp-list__value tabular-nums">{valueParts.number}</span>
-                  {#if valueParts.unit}
-                    <span class="dp-list__unit">{valueParts.unit}</span>
-                  {/if}
-                </span>
-                {#if hasExtra}
-                  {#if dp.exemplars.length > 0}
-                    <span class="badge-count">{dp.exemplars.length} ex</span>
-                  {/if}
-                  {#if dp.flags > 0}
-                    <span class="badge badge-xs badge-soft badge-warning">flags</span>
-                  {/if}
-                {/if}
-              </div>
-            </div>
-          </td>
-        </tr>
-        {#if expanded}
-          <tr class="dp-list__expansion-row">
-            <td colspan={showSwatch ? 2 : 1} class="dp-list__expansion-cell">
-              <div class="dp-list__expansion">
-                {#if dp.flags > 0}
-                  <div class="dp-list__detail">
-                    <span class="dp-list__detail-label">flags</span>
-                    <span class="dp-list__detail-value">{dp.flags}</span>
-                  </div>
-                {/if}
-                {#each dp.exemplars as ex, i}
-                  <div class="dp-list__exemplar">
-                    <span class="dp-list__detail-label">exemplar {i + 1}</span>
-                    <div class="dp-list__exemplar-fields">
-                      <span class="dp-list__detail-value">value: {ex.value}</span>
-                      <span class="dp-list__detail-value tabular-nums">
-                        time: {formatDatapointTime(ex.timestamp)}
-                      </span>
-                      {#if ex.traceID}
-                        {@const patch = exemplarSpanPatch(ex)}
-                        <a
-                          class="dp-list__detail-value link link-primary font-mono"
-                          href={itemHref('traces', ex.traceID, patch)}
-                          onclick={e => goToExemplarTrace(e, ex)}
-                        >trace: {ex.traceID}</a>
-                      {/if}
-                      {#if ex.spanID && ex.traceID}
-                        <a
-                          class="dp-list__detail-value link link-primary font-mono"
-                          href={itemHref('traces', ex.traceID, exemplarSpanPatch(ex))}
-                          onclick={e => goToExemplarTrace(e, ex)}
-                        >span: {ex.spanID}</a>
-                      {:else if ex.spanID}
-                        <span class="dp-list__detail-value">span: {ex.spanID}</span>
-                      {/if}
-                      {#each dedupeAttributes(ex.filteredAttributes) as attr (attr.key)}
-                        <span class="dp-list__detail-value">{attr.key}: {attr.value}</span>
-                      {/each}
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            </td>
-          </tr>
-        {/if}
+        {@render datapointRows(dp)}
       {/each}
     </tbody>
   </table>
+{:else}
+  <div
+    class="dp-list__scroller"
+    bind:clientHeight={viewportPx}
+    onscroll={e => (scrollTop = e.currentTarget.scrollTop)}
+  >
+    <table
+      class="dp-list"
+      class:dp-list--flush={flush}
+      aria-label="Datapoints"
+      aria-rowcount={datapoints.length}
+    >
+      <tbody>
+        <!-- Spacers stand in for the rows that are not in the DOM, so the
+             scrollbar reflects the whole list rather than the window. -->
+        {#if padTopPx > 0}
+          <tr aria-hidden="true" style:height="{padTopPx}px">
+            <td colspan={columnCount}></td>
+          </tr>
+        {/if}
+        {#each visible as dp (dp.id)}
+          {@render datapointRows(dp)}
+        {/each}
+        {#if padBottomPx > 0}
+          <tr aria-hidden="true" style:height="{padBottomPx}px">
+            <td colspan={columnCount}></td>
+          </tr>
+        {/if}
+      </tbody>
+    </table>
+  </div>
 {/if}
 
 <style lang="postcss">
@@ -201,6 +354,14 @@
   .dp-list__empty {
     @apply m-0 px-3 py-2 text-center text-xs italic;
     color: var(--color-muted);
+  }
+
+  /* Its own scroll region, so a long series does not push the rest of the
+     detail pane off screen. Only applied when the list is windowed. */
+  .dp-list__scroller {
+    @apply overflow-y-auto;
+    max-height: 24rem;
+    overscroll-behavior: contain;
   }
 
   .dp-list {

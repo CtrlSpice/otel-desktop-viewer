@@ -29,7 +29,7 @@
     type AggregationView,
     rateSlopeViewSymbol,
     rateSlopeBucketSegment,
-    seriesStatsFromPoints,
+    type SeriesStats,
   } from '@/components/metrics/utils/aggregation'
   import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
@@ -140,6 +140,11 @@
     /** Chart point click → caller resolves to a datapoint and syncs
      *  the Series tab. Aggregate synthetic lines should no-op upstream. */
     onChartPointClick?: (seriesKey: string, clickedAt: Date) => void
+    /** Per-series stats from the store, for the selected-series overlay.
+     *  The chart used to fold its own from the drawn points, whose average is
+     *  the mean of a reduced sample; these describe the window (raw views) or
+     *  the drawn transform (rate view), matching the row badges. */
+    seriesStats?: ReadonlyMap<string, SeriesStats>
   }
 
   let {
@@ -155,9 +160,30 @@
     selectedRateSlope = undefined,
     timeRange = null,
     onChartPointClick,
+    seriesStats,
   }: Props = $props()
 
   const timeContext = getTimeContext()
+
+  /* One scale instance per chart, not a fresh one per render.
+   *
+   * LineChart runs whatever it is given through createChartScale, which
+   * returns scale.copy() -- so this is a template, never shared mutable
+   * state, and one instance is safe. As an inline `xScale={scaleTime()}`
+   * prop it minted a new d3 scale object on every re-render of this
+   * component, and a new scale identity invalidates every Spline in the
+   * chart: each one rebuilds its path, walking every point.
+   *
+   * Instance scope rather than module scope deliberately. Module scope would
+   * share one object across every chart on the page, which is exactly the
+   * shared-mutable-state hazard the copy() protects against -- and relying on
+   * that copy for correctness rather than only for performance. */
+  const xScale = scaleTime()
+
+  /* Constant, so it is built once rather than per render. Passed inline it
+   * was a fresh object literal each time, which invalidates the tooltip
+   * context downstream for a value that never changes. */
+  const tooltipContext = { mode: 'bisect-x' } as const
 
   // Build the layerchart series array on the fly. Each entry carries
   // its own pre-grouped data so we don't re-traverse on every chart
@@ -419,6 +445,15 @@
     return u || 'value'
   })
 
+  /* Axis props as a $derived rather than an inline object literal, so the
+   * object changes identity only when the timezone or the y-axis label does.
+   * Inline, it minted a new outer object plus two nested ones plus two new
+   * `format` closures on every render, for values that almost never change. */
+  let chartProps = $derived({
+    xAxis: axisTime(timeContext.tz),
+    yAxis: axisValue(yAxisLabel),
+  })
+
   /** Series the selection rule should drop colored dots on. Always
    *  empty when nothing is selected. Otherwise: the user-selected
    *  series (if it's still in `chartSeries`) plus every aggregate
@@ -488,7 +523,8 @@
     const series = chartSeries.find(s => s.key === selectedSeriesKey)
     if (!series || series.data.length === 0) return []
 
-    const stats = seriesStatsFromPoints(series.data)
+    const stats = seriesStats?.get(selectedSeriesKey)
+    if (!stats) return []
     const color = series.color
     const marks: SeriesStatMark[] = []
 
@@ -704,17 +740,14 @@
         bind:context={lineChartContext}
         x="date"
         y="value"
-        xScale={scaleTime()}
+        {xScale}
         yNice
         padding={chartPadding}
-        tooltipContext={{ mode: 'bisect-x' }}
+        {tooltipContext}
         series={chartSeries}
         onPointClick={handlePointClick}
         onTooltipClick={handleTooltipClick}
-        props={{
-          xAxis: axisTime(timeContext.tz),
-          yAxis: axisValue(yAxisLabel),
-        }}
+        props={chartProps}
       >
         {#snippet tooltip({ context }: { context: any })}
           {@const xDate = tooltipXDate(context)}

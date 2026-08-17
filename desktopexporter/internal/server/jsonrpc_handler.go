@@ -69,6 +69,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchMetricSummaries(ctx, req)
 	case "getMetric":
 		return h.getMetric(ctx, req)
+	case "getMetricAggregate":
+		return h.getMetricAggregate(ctx, req)
 	case "clearTraces":
 		return h.clearTraces(ctx)
 	case "clearLogs":
@@ -282,27 +284,55 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 	return summaries, nil
 }
 
-func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+// getMetricParams is the parameter set getMetric and getMetricAggregate share.
+// They ask the same question of the same window; only the shape of the answer
+// differs, so the parsing lives once.
+type getMetricParams struct {
+	streamID             string
+	startTime, endTime   int64
+	targetBuckets        int64
+	seriesIDs            []string
+	quantiles            []float64
+	tzOffsetNs           int64
+	fitToData            bool
+	viewBuckets          int64
+	sparklineBuckets     int64
+	selectedSeriesIDs    []string
+	datapointSeriesIDs   []string
+	datapointSeriesLimit int64
+	tzName               string
+}
+
+func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricParams, error) {
+	var out getMetricParams
 	var params []any
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
+		return out, jsonrpc2.ErrInvalidParams
 	}
-	// The fourth parameter is optional: callers that predate it, or that want
-	// every datapoint, send three and get no reduction.
-	if len(params) < 3 || len(params) > 4 {
-		return nil, jsonrpc2.ErrInvalidParams
+	// Everything past the third is optional and additive: targetBuckets,
+	// seriesIds, quantiles, tzOffsetNs, fitToData, viewBuckets,
+	// sparklineBuckets, selectedSeriesIds. A caller that predates any of them
+	// sends fewer and gets the old behaviour.
+	//
+	// The upper bound was 4 and stayed 4 while four more parameters were added
+	// below it, so every request carrying them was rejected before it reached
+	// them. Nothing caught it: the store tests call GetMetric directly, and the
+	// handler tests only ever sent three. TestGetMetricAcceptsEveryParameter
+	// now sends a full set, so the bound cannot fall behind again silently.
+	if len(params) < 3 || len(params) > 14 {
+		return out, jsonrpc2.ErrInvalidParams
 	}
 	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	startTime, err := h.parseTimestampParam(params[1], "startTime")
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	endTime, err := h.parseTimestampParam(params[2], "endTime")
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	// How many time buckets to reduce the window to. The client knows its
 	// chart width; the store cannot.
@@ -310,10 +340,10 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	if len(params) >= 4 {
 		targetBuckets, err = h.parseTimestampParam(params[3], "targetBuckets")
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		if targetBuckets < 0 {
-			return nil, jsonrpc2.ErrInvalidParams
+			return out, jsonrpc2.ErrInvalidParams
 		}
 	}
 
@@ -323,19 +353,174 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	if len(params) >= 5 && params[4] != nil {
 		raw, ok := params[4].([]any)
 		if !ok {
-			return nil, jsonrpc2.ErrInvalidParams
+			return out, jsonrpc2.ErrInvalidParams
 		}
+		// Non-nil before the loop: an empty array means "no series", and
+		// appending nothing to a nil slice would leave it indistinguishable
+		// from the parameter being absent.
+		seriesIDs = []string{}
 		for _, v := range raw {
 			id, ok := v.(string)
 			if !ok {
-				return nil, jsonrpc2.ErrInvalidParams
+				return out, jsonrpc2.ErrInvalidParams
 			}
 			seriesIDs = append(seriesIDs, id)
 		}
 	}
 
+	// Which quantiles to compute per histogram datapoint. Absent or empty
+	// means none, so a caller drawing no overlays does not pay for them.
+	var quantiles []float64
+	if len(params) >= 6 && params[5] != nil {
+		raw, ok := params[5].([]any)
+		if !ok {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+		for _, v := range raw {
+			q, ok := v.(float64)
+			if !ok || q < 0 || q > 1 {
+				return out, jsonrpc2.ErrInvalidParams
+			}
+			quantiles = append(quantiles, q)
+		}
+	}
+
+	// The viewer's UTC offset in nanoseconds, so day boundaries fall where the
+	// reader's calendar puts them. Absent means UTC.
+	var tzOffsetNs int64
+	if len(params) >= 7 && params[6] != nil {
+		tzOffsetNs, err = h.parseTimestampParam(params[6], "tzOffsetNs")
+		if err != nil {
+			return out, err
+		}
+	}
+	// Whether the window is a request or the absence of one. Absent means it is
+	// a request, which is what every caller predating this parameter meant.
+	// Resolution for the scalar views. Absent means none, which is what a
+	// caller predating the parameter meant.
+	var viewBuckets int64
+	if len(params) >= 9 && params[8] != nil {
+		viewBuckets, err = h.parseTimestampParam(params[8], "viewBuckets")
+		if err != nil {
+			return out, err
+		}
+		if viewBuckets < 0 {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+	}
+
+	// Resolution for the per-row sparklines. Absent means none, and a series
+	// then carries a null sparkline rather than the store guessing a width for a
+	// list row it cannot see.
+	var sparklineBuckets int64
+	if len(params) >= 10 && params[9] != nil {
+		sparklineBuckets, err = h.parseTimestampParam(params[9], "sparklineBuckets")
+		if err != nil {
+			return out, err
+		}
+		if sparklineBuckets < 0 {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+	}
+
+	// Which series the reader has checked, for the Selected cross-series line.
+	// Absent or null means none are checked -- a real state, in which the chart
+	// draws the All line by itself.
+	var selectedSeriesIDs []string
+	if len(params) >= 11 && params[10] != nil {
+		raw, ok := params[10].([]any)
+		if !ok {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+		selectedSeriesIDs = []string{}
+		for _, v := range raw {
+			id, ok := v.(string)
+			if !ok {
+				return out, jsonrpc2.ErrInvalidParams
+			}
+			selectedSeriesIDs = append(selectedSeriesIDs, id)
+		}
+	}
+
+	// Which series ship their datapoints, and how many when the caller cannot
+	// name them. Absent means every series does, which is what every caller
+	// predating these parameters expects.
+	var datapointSeriesIDs []string
+	if len(params) >= 12 && params[11] != nil {
+		raw, ok := params[11].([]any)
+		if !ok {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+		// Non-nil before the loop: an empty array names no series and ships no
+		// datapoints, which is a different answer from the parameter being absent.
+		datapointSeriesIDs = []string{}
+		for _, v := range raw {
+			id, ok := v.(string)
+			if !ok {
+				return out, jsonrpc2.ErrInvalidParams
+			}
+			datapointSeriesIDs = append(datapointSeriesIDs, id)
+		}
+	}
+
+	var datapointSeriesLimit int64
+	if len(params) >= 13 && params[12] != nil {
+		datapointSeriesLimit, err = h.parseTimestampParam(params[12], "datapointSeriesLimit")
+		if err != nil {
+			return out, err
+		}
+		if datapointSeriesLimit < 0 {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+	}
+
+	// The IANA zone the viewer is displaying in. tzOffsetNs above is a single
+	// offset captured at one instant, so it is wrong on the other side of a DST
+	// transition; a zone name lets the query resolve the offset per datapoint.
+	// A caller that sends no zone keeps the single-offset behaviour.
+	var tzName string
+	if len(params) >= 14 && params[13] != nil {
+		name, ok := params[13].(string)
+		if !ok {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+		tzName = name
+	}
+
+	var fitToData bool
+	if len(params) >= 8 && params[7] != nil {
+		b, ok := params[7].(bool)
+		if !ok {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+		fitToData = b
+	}
+	out.streamID = streamID
+	out.startTime = startTime
+	out.endTime = endTime
+	out.targetBuckets = targetBuckets
+	out.seriesIDs = seriesIDs
+	out.quantiles = quantiles
+	out.tzOffsetNs = tzOffsetNs
+	out.fitToData = fitToData
+	out.viewBuckets = viewBuckets
+	out.sparklineBuckets = sparklineBuckets
+	out.selectedSeriesIDs = selectedSeriesIDs
+	out.datapointSeriesIDs = datapointSeriesIDs
+	out.datapointSeriesLimit = datapointSeriesLimit
+	out.tzName = tzName
+	return out, nil
+}
+
+func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	args, err := h.parseGetMetricParams(req)
+	if err != nil {
+		return nil, err
+	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs)
+		return metrics.GetMetric(ctx, db, args.streamID, args.startTime, args.endTime,
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesIDs, args.tzName,
+			args.datapointSeriesIDs, args.datapointSeriesLimit)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -535,6 +720,29 @@ func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Req
 	}
 
 	return attributes, nil
+}
+
+// getMetricAggregate takes the same parameters as getMetric and returns only
+// the cross-series aggregate. Separate method rather than a flag on getMetric:
+// the two are fetched on different triggers -- metric selection versus legend
+// selection -- so they are different requests, not one request in two modes.
+func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	args, err := h.parseGetMetricParams(req)
+	if err != nil {
+		return nil, err
+	}
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		// sparklineBuckets is parsed but not forwarded: this method returns the
+		// aggregate envelopes alone, and GetMetricAggregate pins the parameter to
+		// 0 for that reason. Accepting it keeps one parser for both methods.
+		return metrics.GetMetricAggregate(ctx, db, args.streamID, args.startTime, args.endTime,
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData,
+			args.viewBuckets, args.selectedSeriesIDs, args.tzName)
+	})
+	if err != nil {
+		return nil, h.handleStoreError(err)
+	}
+	return result, nil
 }
 
 func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {

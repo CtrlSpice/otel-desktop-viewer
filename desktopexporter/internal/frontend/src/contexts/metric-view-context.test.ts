@@ -36,6 +36,7 @@ function makeSumDatapoint(
   return {
     id,
     timestamp,
+    timestampMs: Number(timestamp / 1_000_000n),
     startTime: BigInt(BASE_TIMESTAMP_MS) * 1_000_000n,
     flags: 0,
     exemplars: [],
@@ -69,6 +70,13 @@ function makeCumulativeSumMetric(): MetricData {
     scopeDroppedAttributesCount: 0,
     scope: EMPTY_SCOPE,
     datapointCount: 0,
+    // The window as the caller asked for it: this fixture's assertions are
+    // about aggregation views, not about the axis.
+    window: { fittedToData: false, startNs: null, endNs: null },
+    lastSeenNs: BigInt(BASE_TIMESTAMP_MS + 60_000) * 1_000_000n,
+    // No merge was refused; this fixture's histograms-that-aren't have no
+    // bounds to disagree about.
+    boundsMismatch: null,
     timeseries: [
       {
         attributesKey: 'route=/a',
@@ -79,6 +87,17 @@ function makeCumulativeSumMetric(): MetricData {
           makeSumDatapoint('dp-a2', 60_000, 25),
         ],
         stats: null,
+        // The store's view buckets; this fixture is about aggregation defaults,
+        // not the views themselves.
+        views: null,
+        // Likewise the row sparkline, which the store reduces separately.
+        sparkline: null,
+        // And the drawn rate line's extremes, which need view buckets.
+        rateStats: null,
+        // What the window holds for this series, as opposed to what the
+        // response carried: equal here, since this fixture narrows nothing.
+        datapointCount: 2,
+        lastSeenNs: BigInt(BASE_TIMESTAMP_MS + 60_000) * 1_000_000n,
       },
       {
         attributesKey: 'route=/b',
@@ -89,6 +108,17 @@ function makeCumulativeSumMetric(): MetricData {
           makeSumDatapoint('dp-b2', 60_000, 9),
         ],
         stats: null,
+        // The store's view buckets; this fixture is about aggregation defaults,
+        // not the views themselves.
+        views: null,
+        // Likewise the row sparkline, which the store reduces separately.
+        sparkline: null,
+        // And the drawn rate line's extremes, which need view buckets.
+        rateStats: null,
+        // What the window holds for this series, as opposed to what the
+        // response carried: equal here, since this fixture narrows nothing.
+        datapointCount: 2,
+        lastSeenNs: BigInt(BASE_TIMESTAMP_MS + 60_000) * 1_000_000n,
       },
     ],
   }
@@ -213,6 +243,25 @@ describe('metric view context aggregation URL sync', () => {
     await tick()
 
     expect(reportedAggregationView()).toBe('raw')
+  })
+})
+
+describe('metric view context visibility seeding by metric shape', () => {
+  // The two legend sets belong to the two metric shapes, and a metric must seed
+  // only its own. Both are read through isHistogramKind everywhere in this
+  // context, so a stray set was invisible here -- but the aggregate fetch sends
+  // the histogram set as the store's narrowing parameter, and that parameter
+  // decides what the All pool folds. A scalar carrying a frozen ten-key
+  // histogram set therefore drew an "All" line over ten of its series.
+  it('leaves the histogram set empty for a scalar metric', () => {
+    const ctx = renderProbe('/metrics/m1')
+    expect(ctx.isHistogramKind).toBe(false)
+    expect([...ctx.histogramVisible]).toEqual([])
+  })
+
+  it('still seeds the scalar set for a scalar metric', () => {
+    const ctx = renderProbe('/metrics/m1')
+    expect([...ctx.gaugeSumVisible].sort()).toEqual(['route=/a', 'route=/b'])
   })
 })
 

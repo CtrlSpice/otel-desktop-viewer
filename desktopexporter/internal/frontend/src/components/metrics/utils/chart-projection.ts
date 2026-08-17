@@ -10,7 +10,6 @@ import type {
   SumDataPoint,
 } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
-import { downsampleLTTB } from '@/components/metrics/utils/metric-downsample'
 
 /**
  * Project backend-grouped MetricTimeseries into the {date, value}
@@ -20,13 +19,19 @@ import { downsampleLTTB } from '@/components/metrics/utils/metric-downsample'
  * timestamp desc). We preserve that order so positional colour
  * assignment in the legend matches the chart line colour 1:1.
  *
- * Datapoints arrive timestamp-desc inside each timeseries; we re-sort
- * ascending here because layerchart's LineChart expects
- * monotonically-increasing x values to draw a connected line.
+ * Datapoints arrive timestamp-desc inside each timeseries, and layerchart's
+ * LineChart wants monotonically-increasing x, so this walks each series
+ * backwards. It used to build forwards and sort, which re-ordered data the
+ * store had already ordered.
  */
 export function timeseriesToChartTimeseries(
   timeseries: MetricTimeseries[],
-  opts?: { downsampleTo?: number }
+  /** How to name a series for a human. `attributesKey` is a content-derived id,
+   *  so it identifies a line but cannot label one -- a tooltip showing it reads
+   *  as a uuid. Resolving the label needs every series of the metric (to know
+   *  which resource attributes distinguish them), which this function is not
+   *  always given, so the caller supplies it. */
+  labelFor?: (ts: MetricTimeseries) => string
 ): {
   chartTimeseries: ChartTimeseries[]
   /** Convenience: same `key` strings the timeseries have, in the
@@ -38,21 +43,34 @@ export function timeseriesToChartTimeseries(
   const keys: string[] = []
 
   for (const ts of timeseries) {
-    let points: ChartPoint[] = []
-    for (const dp of ts.datapoints) {
+    const points: ChartPoint[] = []
+    // Walked backwards, because the store sends datapoints newest-first and the
+    // chart wants oldest-first. That order is not incidental -- the datapoint
+    // list and "last seen" both read datapoints[0] as the newest -- so the
+    // chart adapts rather than the wire.
+    //
+    // This used to build the array forwards and then sort it, calling
+    // getTime() twice per comparison on data the store had already ordered:
+    // roughly 23,000 points per Gauge sorted into the order they arrived in,
+    // reversed. Iterating from the end is the same result at no cost.
+    for (let i = ts.datapoints.length - 1; i >= 0; i--) {
+      const dp = ts.datapoints[i]!
       if (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum') continue
       const typed = dp as GaugeDataPoint | SumDataPoint
       const value = typed.doubleValue ?? typed.intValue ?? 0
-      const t = Number(dp.timestamp / 1_000_000n)
-      points.push({ date: new Date(t), value })
-    }
-    points.sort((a, b) => a.date.getTime() - b.date.getTime())
-    if (opts?.downsampleTo) {
-      points = downsampleLTTB(points, opts.downsampleTo)
+      points.push({
+        // The store sends epoch milliseconds; dividing the nanosecond BigInt
+        // here cost one division per datapoint for no added precision.
+        date: new Date(dp.timestampMs),
+        value,
+        // Cumulative Sums only; a Gauge has no interval to describe.
+        delta: typed.metricType === 'Sum' ? (typed.delta ?? null) : null,
+        isReset: typed.metricType === 'Sum' ? (typed.isReset ?? null) : null,
+      })
     }
     chartTimeseries.push({
       key: ts.attributesKey,
-      label: ts.attributesKey === '' ? 'default' : ts.attributesKey,
+      label: labelFor?.(ts) ?? ts.attributesKey,
       points,
     })
     keys.push(ts.attributesKey)

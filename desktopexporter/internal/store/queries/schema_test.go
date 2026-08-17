@@ -1023,3 +1023,34 @@ func TestMacros_QuantileSkipsEmptyBuckets(t *testing.T) {
 		})
 	}
 }
+
+// TestMacros_DiffBucketVectorsUnsignedReset pins that a counter reset comes
+// back as NULL rather than as a query error.
+//
+// Bucket counts are UBIGINT. An unsigned subtraction raises rather than going
+// negative -- "Overflow in subtraction of UINT64 (0 - 1)" -- so the macro's own
+// negative check could never fire on the inputs it exists for. A cumulative
+// reset failed the whole request, and because DuckDB evaluates both arms of a
+// CASE, Delta histograms hit it too despite never wanting a difference.
+//
+// Surfaced by opening the app: every explicit-bounds histogram returned
+// "JSON RPC internal error".
+func TestMacros_DiffBucketVectorsUnsignedReset(t *testing.T) {
+	db := setupMacroDB(t)
+
+	t.Run("reset returns null, not an error", func(t *testing.T) {
+		var got sql.NullString
+		require.NoError(t, db.QueryRow(
+			`select diff_bucket_vectors([0, 1]::ubigint[], [1, 1]::ubigint[])::varchar`,
+		).Scan(&got))
+		assert.False(t, got.Valid, "a bucket going negative is a reset, reported as NULL")
+	})
+
+	t.Run("a normal difference still subtracts", func(t *testing.T) {
+		var got string
+		require.NoError(t, db.QueryRow(
+			`select diff_bucket_vectors([5, 9]::ubigint[], [2, 3]::ubigint[])::varchar`,
+		).Scan(&got))
+		assert.Equal(t, "[3, 6]", got)
+	})
+}
