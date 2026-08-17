@@ -285,6 +285,12 @@ export type MetricTimeseries = {
    *  datapoints after thinning, so an average taken there is the mean of a
    *  sample and a sum is short by the thinning factor. */
   stats: SeriesValueStats | null
+  /** Datapoints the window holds for this series, from the store. Not
+   *  `datapoints.length`, which is what this response carried after narrowing
+   *  and reduction. */
+  datapointCount: number
+  /** When this series last reported in the window. */
+  lastSeenNs: bigint | null
   /** Per-bucket Sum / Average / Rate from the store. Null for histograms. */
   views: ScalarViewBucket[] | null
   /** Extremes of the drawn rate line; null when there is no rate to draw. */
@@ -342,6 +348,8 @@ export type SeriesValueStats = {
 }
 
 export type MetricData = {
+  /** The window's most recent datapoint across every series. */
+  lastSeenNs: bigint | null
   id: string
   name: string
   description: string

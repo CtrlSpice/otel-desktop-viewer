@@ -672,12 +672,11 @@ export function createMetricViewContext(
     return false
   })
 
-  const totalDatapointCount = $derived(
-    getMetric()?.timeseries.reduce(
-      (acc, ts) => acc + ts.datapoints.length,
-      0
-    ) ?? 0
-  )
+  // What the window holds, which is what the reader is asking. Summing the
+  // datapoints that arrived answered "how much did I receive": narrowing ships
+  // them only for the series being drawn, and the reduction thins those, so on
+  // a 22-series Gauge the header read 5,908 of 19,319.
+  const totalDatapointCount = $derived(getMetric()?.datapointCount ?? 0)
 
   const queryRange = $derived(
     selectionToQueryRangeMs(timeContext.selection, Date.now())
@@ -1291,25 +1290,15 @@ export function createMetricViewContext(
     (): HistogramTimeseriesGroup[] => {
       const m = getMetric()
       if (!m || !isHistogramKind) return []
-      const startNs = BigInt(queryRange.start) * 1_000_000n
-      const endNs = BigInt(queryRange.end) * 1_000_000n
-      return m.timeseries.map(ts => {
-        let pointCount = 0
-        for (const dp of ts.datapoints) {
-          if (
-            dp.metricType !== 'Histogram' &&
-            dp.metricType !== 'ExponentialHistogram'
-          ) {
-            continue
-          }
-          if (dp.timestamp >= startNs && dp.timestamp < endNs) pointCount++
-        }
-        return {
-          key: ts.attributesKey,
-          attributes: ts.attributes,
-          pointCount,
-        }
-      })
+      // The store's count over the window, not a walk of what arrived. A
+      // narrowed-out series ships no datapoints at all, so counting them
+      // labelled it "0" beside a sparkline visibly full of data -- reading as a
+      // series that had stopped rather than one this response did not carry.
+      return m.timeseries.map(ts => ({
+        key: ts.attributesKey,
+        attributes: ts.attributes,
+        pointCount: ts.datapointCount,
+      }))
     }
   )
 

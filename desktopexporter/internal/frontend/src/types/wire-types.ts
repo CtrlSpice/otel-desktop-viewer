@@ -304,6 +304,12 @@ export type JsonMetricTimeseries = {
   datapoints: JsonDataPoint[]
   /** Server-computed stats over the whole window; null for histograms. */
   stats: JsonSeriesValueStats | null
+  /** Datapoints the window holds for this series, before narrowing and before
+   *  the reduction — so not the length of `datapoints`, which is what this
+   *  response happens to carry. */
+  datapointCount: number
+  /** When this series last reported in the window, ns as a string. */
+  lastSeenNs: string | null
   /** Extremes of the drawn rate line; null for histograms and for series with
    *  no rate to draw. The raw stats describe the values, these the transform. */
   rateStats: JsonSeriesRateStats | null
@@ -327,6 +333,9 @@ export type JsonSparklinePoint = {
 }
 
 export type JsonMetricData = {
+  /** The window's most recent datapoint across every series, ns as a string.
+   *  Independent of which series shipped datapoints. */
+  lastSeenNs: string | null
   id: string
   name: string
   // Coalesced server-side ('' for a stream with no ingests in the window).

@@ -1162,6 +1162,20 @@
 			end
 		),
 
+		-- What the window holds for each series, which is not what the response
+		-- carries for it: datapoints are narrowed to the series being drawn, and
+		-- reduced besides. Counted over filtered_dps, before either.
+		--
+		-- A legend that counted the datapoints it received answered "how much did
+		-- I receive" while the reader was asking "how much is there", and a
+		-- narrowed-out series read as one that had stopped reporting.
+		series_window_counts as (
+			select series_id,
+				count(*) as datapoint_count,
+				max(timestamp) as latest_ns
+			from filtered_dps
+			group by series_id
+		),
 		ts_dps_agg as (
 			select
 				d.series_id,
@@ -1259,6 +1273,8 @@
 				-- answer to that even when the answer is none.
 				coalesce(tj.datapoints, json('[]')),
 				series_stats_json(t.value_count, t.value_min, t.value_max, t.value_sum),
+				swc.datapoint_count,
+				swc.latest_ns::varchar,
 				srs.rate_stats,
 				sv.views,
 				sp.sparkline
@@ -1290,6 +1306,8 @@
 			left join sparkline_agg sp on sp.series_id = t.series_id
 			-- Left for the reason the views are: histograms have no rate line.
 			left join scalar_rate_stats srs on srs.series_id = t.series_id
+			-- Inner in effect: every series in ts_dps_agg came from filtered_dps.
+			left join series_window_counts swc on swc.series_id = t.series_id
 		),
 		-- The cross-series aggregate: the selected series merged into one
 		-- histogram per time bucket, which is what a heatmap draws and what a
@@ -1466,6 +1484,11 @@
 			-- How many datapoints the window actually holds, as opposed to how
 			-- many came back. Equal today; the moment the server reduces what it
 			-- returns, the difference is what the UI needs in order to say so.
+			-- The window's most recent datapoint, whatever the response carries.
+			-- Read off the extent rather than the first series' first datapoint,
+			-- which is only the right answer while that series happens to be one
+			-- of the ones shipped.
+			'lastSeenNs', (select max_ts from data_extent)::varchar,
 			'datapointCount', coalesce((select sum(dp_count) from (
 				select count(*) as dp_count from filtered_dps group by series_id
 			)), 0),

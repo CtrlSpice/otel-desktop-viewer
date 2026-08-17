@@ -2946,6 +2946,124 @@ func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
 		"a series reporting every second keeps the resolution it can support")
 }
 
+// TestGetMetric_CountsDescribeTheWindow pins the distinction between what the
+// window holds and what the response carries.
+//
+// Datapoints are narrowed to the series being drawn and reduced besides, so
+// counting the array that arrives answers "how much did I receive" while the
+// reader is asking "how much is there". On a 22-series Gauge the header read
+// 5,908 of 19,319, and twelve series showed a count of zero beside sparklines
+// visibly full of data -- reading as series that had stopped reporting rather
+// than ones this response did not carry.
+func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	var dps []sumTestDP
+	for _, pod := range []string{"a", "b", "c", "d"} {
+		for i := range 25 {
+			dps = append(dps, sumTestDP{
+				timestamp: base.Add(time.Duration(i) * time.Minute),
+				value:     float64(i),
+				attrs:     map[string]string{"pod": pod},
+			})
+		}
+	}
+	fixture := makeSumFixtureT("counts.total", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	// Narrowed hard: datapoints for one series of four.
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			0, nil, nil, 0, true, 0, 0, nil, nil, 1)
+	})
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	series := m["timeseries"].([]any)
+	require.Len(t, series, 4)
+
+	var shipped, counted int
+	for _, entry := range series {
+		ts := entry.(map[string]any)
+		shipped += len(ts["datapoints"].([]any))
+		counted += int(ts["datapointCount"].(float64))
+
+		// Every series knows its own total and when it last reported, whether
+		// or not this response carried a single one of its datapoints.
+		assert.Equal(t, float64(25), ts["datapointCount"],
+			"each series holds 25 datapoints in the window")
+		assert.NotNil(t, ts["lastSeenNs"],
+			"including the ones whose datapoints were narrowed away")
+	}
+
+	assert.Equal(t, 100, counted, "the per-series counts describe the window")
+	assert.Equal(t, 25, shipped, "while the response carried one series' worth")
+	assert.Equal(t, float64(100), m["datapointCount"],
+		"and the metric's own total agrees with the sum of its series")
+
+	// The metric's last-seen does not depend on which series shipped.
+	lastSeen, ok := m["lastSeenNs"].(string)
+	require.True(t, ok, "last seen is present even under narrowing")
+	ns, err := strconv.ParseInt(lastSeen, 10, 64)
+	require.NoError(t, err)
+	assert.Equal(t, base.Add(24*time.Minute).UnixNano(), ns,
+		"the most recent datapoint in the window, across every series")
+
+	// A reduced histogram is where "the window" and "the response" diverge
+	// most: the merge replaces a bucket's datapoints with one merged row, so
+	// counting the rows the projection carries reports buckets and calls them
+	// datapoints. The count has to come from before the merge.
+	bounds := []float64{10, 20, 30}
+	var hdps []histTestDP
+	for i := range 30 {
+		hdps = append(hdps, histTestDP{
+			timestamp: base.Add(time.Duration(i) * time.Minute),
+			attrs:     map[string]string{"pod": "h"},
+			bounds:    bounds,
+			counts:    []uint64{1, 1, 0, 0},
+			count:     2, sum: 25, min: 5, max: 15,
+		})
+	}
+	hfixture := makeHistogramFixtureT("counts.hist", pmetric.AggregationTemporalityDelta, hdps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, hfixture, s.FlushedIDs())
+	}))
+	var histID string
+	for _, sum := range searchMetricsAll(t, s, ctx) {
+		if sum["name"] == "counts.hist" {
+			histID = sum["id"].(string)
+		}
+	}
+	require.NotEmpty(t, histID)
+
+	hraw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		// Reduced to a handful of buckets, so the merge collapses 30 datapoints
+		// into far fewer rows.
+		return metrics.GetMetric(ctx, db, histID,
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			5, nil, nil, 0, true, 0, 0, nil, nil, 0)
+	})
+	require.NoError(t, err)
+	var hm map[string]any
+	require.NoError(t, json.Unmarshal(hraw, &hm))
+	hts := hm["timeseries"].([]any)[0].(map[string]any)
+	merged := len(hts["datapoints"].([]any))
+
+	assert.Equal(t, float64(30), hts["datapointCount"],
+		"the datapoints the window holds, not the merged rows standing in for them")
+	assert.Less(t, merged, 30,
+		"the merge really did collapse them, or this proves nothing")
+	assert.Equal(t, float64(30), hm["datapointCount"],
+		"and the metric's total counts datapoints too")
+}
+
 // TestGetMetric_Deterministic pins the answer to a question the store must
 // only have one answer to: the same request against the same data returns the
 // same bytes.

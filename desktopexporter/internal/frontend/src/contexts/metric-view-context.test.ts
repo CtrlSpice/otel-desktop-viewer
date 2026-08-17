@@ -73,6 +73,7 @@ function makeCumulativeSumMetric(): MetricData {
     // The window as the caller asked for it: this fixture's assertions are
     // about aggregation views, not about the axis.
     window: { fittedToData: false, startNs: null, endNs: null },
+    lastSeenNs: BigInt(BASE_TIMESTAMP_MS + 60_000) * 1_000_000n,
     // No merge was refused; this fixture's histograms-that-aren't have no
     // bounds to disagree about.
     boundsMismatch: null,
@@ -93,6 +94,10 @@ function makeCumulativeSumMetric(): MetricData {
         sparkline: null,
         // And the drawn rate line's extremes, which need view buckets.
         rateStats: null,
+        // What the window holds for this series, as opposed to what the
+        // response carried: equal here, since this fixture narrows nothing.
+        datapointCount: 2,
+        lastSeenNs: BigInt(BASE_TIMESTAMP_MS + 60_000) * 1_000_000n,
       },
       {
         attributesKey: 'route=/b',
@@ -110,6 +115,10 @@ function makeCumulativeSumMetric(): MetricData {
         sparkline: null,
         // And the drawn rate line's extremes, which need view buckets.
         rateStats: null,
+        // What the window holds for this series, as opposed to what the
+        // response carried: equal here, since this fixture narrows nothing.
+        datapointCount: 2,
+        lastSeenNs: BigInt(BASE_TIMESTAMP_MS + 60_000) * 1_000_000n,
       },
     ],
   }
