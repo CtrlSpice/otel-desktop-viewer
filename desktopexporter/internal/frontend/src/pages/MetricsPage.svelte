@@ -258,6 +258,11 @@
     // with nothing and names its checked set separately, because its All pool
     // must keep folding every series: narrowing there would quietly turn "all"
     // into "all of the checked ones".
+    //
+    // Which is why only one of these travels per request -- see fetchAggregate.
+    // Sending both sent a scalar's histogram set as seriesIds, and since that
+    // parameter narrows filtered_dps, every scalar aggregate downstream of it
+    // folded ten series and called the result All.
     const histogramKeys = [...metricCtx.histogramVisible].sort()
     const scalarKeys = [...metricCtx.gaugeSumVisible].sort()
 
@@ -305,13 +310,20 @@
       const fit = isDefaultUnboundedWindow(timeContext.selection)
       // Both shapes of the same question, issued together so they cannot
       // disagree about the window or the selection.
+      // The narrowing parameter belongs to the histogram merge alone. A scalar
+      // sends none: its pools are named by selectedSeriesIds, which narrows
+      // nothing.
+      const isHistogramMetric =
+        summary.metricType === 'Histogram' ||
+        summary.metricType === 'ExponentialHistogram'
+      const narrowTo = isHistogramMetric ? histogramKeys : null
       const [buckets, whole] = await Promise.all([
         telemetryAPI.getMetricAggregate(
           summary.id,
           startTime,
           endTime,
           HEATMAP_BUCKET_TARGET,
-          histogramKeys,
+          narrowTo,
           quantiles,
           tzOffsetNs(),
           fit,
@@ -326,7 +338,7 @@
           startTime,
           endTime,
           1,
-          histogramKeys,
+          narrowTo,
           quantiles,
           tzOffsetNs(),
           fit

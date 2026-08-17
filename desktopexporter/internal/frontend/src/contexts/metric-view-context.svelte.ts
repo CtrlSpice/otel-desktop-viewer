@@ -1651,7 +1651,18 @@ export function createMetricViewContext(
     const gsColors = seedColorAssignments(pool, gsVisible, gsKeys)
     // Histogram visibility, from the metric's own keys. No waiting: the series
     // are in the metric that was just handed to us.
-    const histKeys = m ? m.timeseries.map(ts => ts.attributesKey) : []
+    //
+    // Gated on the metric's shape, as gaugeSumKeys is. Seeding this for every
+    // shape left a Gauge holding a second, frozen selection that its own legend
+    // never touched -- harmless to every reader here, since they all branch on
+    // isHistogramKind, but not to the aggregate fetch, which sent it as the
+    // store's narrowing parameter and folded ten series into a line labelled
+    // All. Read from the metric rather than isHistogramKind so this does not
+    // depend on a derived having settled.
+    const histIsHistogram =
+      m?.metricType === 'Histogram' || m?.metricType === 'ExponentialHistogram'
+    const histKeys =
+      m && histIsHistogram ? m.timeseries.map(ts => ts.attributesKey) : []
     const histVisible = new SvelteSet(
       streamId && histKeys.length > 0
         ? resolveTimeseriesVisible(

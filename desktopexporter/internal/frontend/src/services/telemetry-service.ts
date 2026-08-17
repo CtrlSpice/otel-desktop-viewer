@@ -632,7 +632,11 @@ export let telemetryAPI = {
     startTime: number,
     endTime: number,
     targetBuckets: number,
-    seriesIds: string[],
+    /** Narrows what the query sees at all, so it decides what the histogram
+     *  merge folds. Null for a scalar metric: its All pool must keep folding
+     *  every series, and narrowing here would redefine the answer rather than
+     *  trim the payload. */
+    seriesIds: string[] | null,
     quantiles: number[],
     tzOffsetNs: number,
     fitToData: boolean,

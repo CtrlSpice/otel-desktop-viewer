@@ -234,6 +234,25 @@ describe('metric view context aggregation URL sync', () => {
   })
 })
 
+describe('metric view context visibility seeding by metric shape', () => {
+  // The two legend sets belong to the two metric shapes, and a metric must seed
+  // only its own. Both are read through isHistogramKind everywhere in this
+  // context, so a stray set was invisible here -- but the aggregate fetch sends
+  // the histogram set as the store's narrowing parameter, and that parameter
+  // decides what the All pool folds. A scalar carrying a frozen ten-key
+  // histogram set therefore drew an "All" line over ten of its series.
+  it('leaves the histogram set empty for a scalar metric', () => {
+    const ctx = renderProbe('/metrics/m1')
+    expect(ctx.isHistogramKind).toBe(false)
+    expect([...ctx.histogramVisible]).toEqual([])
+  })
+
+  it('still seeds the scalar set for a scalar metric', () => {
+    const ctx = renderProbe('/metrics/m1')
+    expect([...ctx.gaugeSumVisible].sort()).toEqual(['route=/a', 'route=/b'])
+  })
+})
+
 describe('metric view context datapoint URL sync', () => {
   it('selects the datapoint named in the URL on load', () => {
     renderProbe('/metrics/m1?dp=dp-b2')
