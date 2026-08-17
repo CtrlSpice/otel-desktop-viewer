@@ -467,13 +467,19 @@
   $effect(() => {
     const summary = page.selectedSummary
     const metric = selectedMetric
-    const visible = [...metricCtx.gaugeSumVisible].sort()
+    // The set the legend is actually writing to, which is the histogram's for a
+    // histogram. Watching the scalar set alone meant this never fired for one:
+    // gaugeSumVisible is empty for a histogram by construction, so the effect
+    // bailed on its first line and a narrowed-out series stayed blank forever.
+    // That is worse for a histogram than for a scalar, which at least keeps its
+    // sparkline, stats and view buckets -- a histogram series with no datapoints
+    // has nothing but its name.
+    const checked = metricCtx.currentVisibleKeys
+    const visible = [...checked].sort()
     if (!summary || !metric || visible.length === 0) return
 
     const missing = metric.timeseries.some(
-      ts =>
-        metricCtx.gaugeSumVisible.has(ts.attributesKey) &&
-        ts.datapoints.length === 0
+      ts => checked.has(ts.attributesKey) && ts.datapoints.length === 0
     )
     if (!missing) return
 

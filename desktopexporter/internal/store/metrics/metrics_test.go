@@ -2681,6 +2681,78 @@ func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
 	assert.NotNil(t, q["0.5"], "a window p50 over every observation in the span")
 }
 
+// TestGetMetric_DatapointLimitMatchesResponseOrder pins the agreement between
+// the two sides of "the first N series".
+//
+// The client cannot name the series it wants on a first visit -- it picks them
+// from the response -- so it sends a limit and checks the first N of what comes
+// back. That only works if the store's rank and the response's order name the
+// same series. They did not on the merge path: the rank read raw datapoint
+// timestamps while the projection replaces a merged row's timestamp with its
+// bucket start, so a reduced histogram shipped one set and the client drew
+// another. Measured on a 21-series histogram: three checked series arrived with
+// no datapoints, and three that were shipped theirs were never drawn.
+func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	bounds := []float64{10, 20, 30}
+	// Staggered start times, so raw recency and bucket recency disagree: every
+	// series' last datapoint lands in the same merged bucket, but their raw
+	// timestamps differ by seconds.
+	var dps []histTestDP
+	for series := range 8 {
+		attrs := map[string]string{"pod": fmt.Sprintf("pod-%d", series)}
+		for i := range 4 {
+			dps = append(dps, histTestDP{
+				timestamp: base.
+					Add(time.Duration(i) * time.Minute).
+					Add(time.Duration(series) * time.Second),
+				attrs:  attrs,
+				bounds: bounds,
+				counts: []uint64{1, 1, 0, 0},
+				count:  2, sum: 25, min: 5, max: 15,
+			})
+		}
+	}
+	fixture := makeHistogramFixtureT("order.hist", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	const limit = 3
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			// Reduced, which is what puts merged rows on bucket timestamps.
+			20, nil, nil, 0, true, 0, 0, nil, nil, limit)
+	})
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	series := m["timeseries"].([]any)
+	require.Len(t, series, 8)
+
+	firstN := map[string]bool{}
+	for _, entry := range series[:limit] {
+		firstN[entry.(map[string]any)["attributesKey"].(string)] = true
+	}
+	shipped := map[string]bool{}
+	for _, entry := range series {
+		ts := entry.(map[string]any)
+		if len(ts["datapoints"].([]any)) > 0 {
+			shipped[ts["attributesKey"].(string)] = true
+		}
+	}
+	require.Len(t, shipped, limit, "the limit ships exactly N series")
+	assert.Equal(t, firstN, shipped,
+		"the series the store ships datapoints for are the first N the response "+
+			"lists, so the client's \"check the first N\" checks series that have data")
+}
+
 // TestGetMetric_Deterministic pins the answer to a question the store must
 // only have one answer to: the same request against the same data returns the
 // same bytes.

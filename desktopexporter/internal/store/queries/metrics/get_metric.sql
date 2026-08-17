@@ -1062,11 +1062,22 @@
 		-- ties broken by id. The same ordering the projection applies, so "the
 		-- first N series" means the same thing on both sides of the wire.
 		datapoint_series_rank as (
+			-- Ranked over projected_dps, which is what the response is ordered
+			-- by. filtered_dps holds raw datapoints, and on the merge path the
+			-- projection replaces their timestamps with bucket starts -- so the
+			-- two disagreed about which series are "most recent" exactly when a
+			-- histogram was reduced. Measured on a 21-series histogram: three of
+			-- the ten series the client checks by default arrived with no
+			-- datapoints, while three it does not draw were shipped theirs.
+			--
+			-- max(timestamp) desc, series_id matches timeseries_agg's
+			-- "order by t.latest_ts desc, t.attrs_key", so "the first N" now
+			-- names one set of series on both sides of the wire.
 			select series_id,
 				row_number() over (
 					order by max(timestamp) desc, series_id::varchar
 				) as rn
-			from filtered_dps
+			from projected_dps
 			group by series_id
 		),
 		-- Which series ship datapoints. A named list wins; failing that a limit

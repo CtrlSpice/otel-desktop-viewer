@@ -273,6 +273,11 @@ export interface MetricViewContext {
   readonly histogramLegendTimeseries: LegendTimeseries[]
   readonly histogramTimeseriesCount: number
   readonly histogramVisible: SvelteSet<string>
+  /** The set the legend writes to for this metric's shape -- histogramVisible
+   *  for a histogram, gaugeSumVisible otherwise. Readers that care which series
+   *  the user checked, rather than which shape they belong to, should use this
+   *  and not branch themselves. */
+  readonly currentVisibleKeys: SvelteSet<string>
   /** True when the chart narrowed itself to the data because no window was
    *  asked for, so the axis can say so rather than quietly cropping. */
   readonly histogramAxisFitToData: boolean
@@ -2185,6 +2190,9 @@ export function createMetricViewContext(
     },
     get histogramVisible() {
       return view.histogramVisible
+    },
+    get currentVisibleKeys() {
+      return currentVisibleKeys()
     },
     get histogramAxisFitToData() {
       return histogramAxisWindow.fitToData
