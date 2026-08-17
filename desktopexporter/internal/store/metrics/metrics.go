@@ -792,7 +792,7 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // into one datapoint per series. The caller owns the time picker and so owns
 // this decision; the store obeys it. The window actually used comes back in the
 // response, so nobody has to infer it from bucketed timestamps.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON
@@ -824,11 +824,18 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	// nil and empty are different questions here, as they are for seriesArg:
 	// nil means the caller is not naming series, so the limit decides, while an
 	// empty list names no series and ships no datapoints at all.
+	// Empty means "no zone named", which the query reads as a null and answers
+	// with the single offset instead -- so a caller that sends no zone keeps the
+	// behaviour it had.
+	var tzArg any
+	if tzName != "" {
+		tzArg = tzName
+	}
 	var datapointArg any
 	if datapointSeriesIDs != nil {
 		datapointArg = datapointSeriesIDs
 	}
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}
@@ -870,7 +877,7 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 //
 // The rule the two share: narrowing decides what is *sent*, never what is
 // *aggregated*.
-func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, selectedSeriesIDs []string) (json.RawMessage, error) {
+func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
 	// 0 sparkline buckets: this call keeps only the aggregate envelopes and drops
 	// the timeseries the sparklines hang off, so computing them would be work
 	// whose entire output is discarded a few lines below.
@@ -878,7 +885,7 @@ func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startT
 	// envelopes and discards the timeseries, so naming no series ships no
 	// datapoints. nil would mean "not narrowing", which with no limit ships
 	// every one of them for nothing.
-	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0, selectedSeriesIDs, []string{}, 0)
+	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0, selectedSeriesIDs, tzName, []string{}, 0)
 	if err != nil {
 		return nil, err
 	}

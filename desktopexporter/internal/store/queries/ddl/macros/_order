@@ -31,6 +31,8 @@ exp_hist_quantile.sql
 hist_quantiles.sql
 exp_hist_quantiles.sql
 floor_div.sql
+tz_offset_ns_at.sql
+bucket_start_utc.sql
 downscale_exp_buckets.sql
 fold_below_cutoff.sql
 pad_left_to_offset.sql

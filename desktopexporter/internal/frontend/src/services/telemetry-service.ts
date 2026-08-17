@@ -557,7 +557,12 @@ export let telemetryAPI = {
     /** How many series carry datapoints when they cannot be named, in the
      *  response's own order. For the first visit to a metric, where the visible
      *  set is chosen from the response being fetched. */
-    datapointSeriesLimit?: number
+    datapointSeriesLimit?: number,
+    /** The IANA zone bucket boundaries should follow. `tzOffsetNs` is one
+     *  sample of this zone, taken at request time; a window that crosses a DST
+     *  transition needs the zone itself, and the store prefers it when both
+     *  arrive. Omit to keep the single offset. */
+    tzName?: string
   ): Promise<MetricData | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -605,6 +610,7 @@ export let telemetryAPI = {
           value: String(datapointSeriesLimit ?? 0),
           given: datapointSeriesLimit !== undefined,
         },
+        { value: tzName ?? null, given: tzName !== undefined },
       ]
       while (optional.length > 0 && !optional[optional.length - 1].given) {
         optional.pop()
@@ -651,7 +657,11 @@ export let telemetryAPI = {
      *  this one names a pool and narrows nothing. Narrowing a scalar would not
      *  trim the payload, it would redefine the answer -- "All" folded over a
      *  narrowed set means "all of the checked ones". */
-    selectedSeriesIds?: string[]
+    selectedSeriesIds?: string[],
+    /** The zone the buckets follow, as in getMetric -- and it must be the same
+     *  one, or the pooled lines are cut on different boundaries than the
+     *  per-series lines beneath them. */
+    tzName?: string
   ): Promise<MetricAggregateEnvelope | null> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -675,6 +685,10 @@ export let telemetryAPI = {
           // has to be filled to reach the one after it.
           '0',
           selectedSeriesIds ?? null,
+          // Placeholders for datapointSeriesIds and datapointSeriesLimit:
+          // this method returns no datapoints, but the zone sits past those
+          // slots and positional params cannot skip them.
+          ...(tzName !== undefined ? [null, '0', tzName] : []),
         ]
       )
       if (!raw) return null

@@ -68,7 +68,10 @@
     { value: 'seriesCount', label: 'Timeseries Count' },
   ]
 
-  export { metricTypeBadgeClass, metricTypeLabel } from '@/components/metrics/utils/metric-type'
+  export {
+    metricTypeBadgeClass,
+    metricTypeLabel,
+  } from '@/components/metrics/utils/metric-type'
 </script>
 
 <script lang="ts">
@@ -133,7 +136,10 @@
         timeContext.selection,
         Date.now()
       )
-      const results = await telemetryAPI.searchMetricSummaries(startTime, endTime)
+      const results = await telemetryAPI.searchMetricSummaries(
+        startTime,
+        endTime
+      )
       const s = await telemetryAPI.getStats()
       baselineStats = s.metrics
       polledStats = s.metrics
@@ -331,7 +337,8 @@
           // bucketed against different boundaries than the per-series lines
           // drawn beneath them.
           SCALAR_VIEW_BUCKETS,
-          scalarKeys
+          scalarKeys,
+          tzName()
         ),
         telemetryAPI.getMetricAggregate(
           summary.id,
@@ -341,7 +348,12 @@
           narrowTo,
           quantiles,
           tzOffsetNs(),
-          fit
+          fit,
+          // This call collapses to one bucket, but that bucket's boundaries
+          // still follow the calendar the other call's do.
+          0,
+          undefined,
+          tzName()
         ),
       ])
       // A slower earlier request must not overwrite a newer answer.
@@ -426,7 +438,12 @@
         // statistic the client computes anyway.
         [],
         tzOffsetNs(),
-        isDefaultUnboundedWindow(timeContext.selection)
+        isDefaultUnboundedWindow(timeContext.selection),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        tzName()
       )
       // The window may have moved while this was in flight; a late answer to a
       // superseded question must not land in the new cache.
@@ -444,6 +461,15 @@
   function tzOffsetNs(): number {
     if (timeContext.tz === 'UTC') return 0
     return Number(localOffsetNs(BigInt(Date.now()) * 1_000_000n))
+  }
+
+  /** The zone that offset was sampled from, so the store can resolve it per
+   *  datapoint instead of applying one sample to the whole window -- a window
+   *  crossing a DST transition changes offset partway through. Undefined in
+   *  UTC, which has no transitions to resolve. */
+  function tzName(): string | undefined {
+    if (timeContext.tz === 'UTC') return undefined
+    return Intl.DateTimeFormat().resolvedOptions().timeZone
   }
 
   // Which detail fetch is current. The aggregate fetch has had one of these
@@ -569,7 +595,8 @@
           // chosen from this very response, so the store takes the same "first
           // N" the seeding would.
           datapointSeries ?? persistedVisibleKeys(summary.id) ?? undefined,
-          DEFAULT_VISIBLE_TIMESERIES
+          DEFAULT_VISIBLE_TIMESERIES,
+          tzName()
         )) ?? undefined
       // A slower earlier request must not overwrite a newer answer.
       if (token !== detailToken) return
@@ -680,7 +707,7 @@
            snippet below): always present, spans main + detail
            regardless of content state, and DetailNav self-disables
            when there is nothing to navigate. -->
-        {#if page.selectedSummary}
+      {#if page.selectedSummary}
         {@const selectedSummary = page.selectedSummary}
         {#snippet metricChartHeaderBadge()}
           <SignalBadges
@@ -726,25 +753,25 @@
           </PaneHeader>
         {/if}
       {/if}
-        {#if displayError}
-          <div class="metrics-page__placeholder alert alert-error">
-            <span>Error: {displayError}</span>
-          </div>
-        {:else if page.loading && !hasMetricRows}
-          <div class="metrics-page__placeholder metrics-empty">
-            Loading metrics…
-          </div>
-        {:else if !page.loading && !hasMetricRows}
-          <div class="metrics-page__placeholder metrics-empty">
-            <p class="text-rp-subtle">No metrics in this time range</p>
-            <p class="mt-2 text-sm text-rp-muted">
-              Send telemetry to the exporter or adjust the time range
-            </p>
-          </div>
-        {:else}
-          <div class="metrics-page__chart">
-            <MetricChartView />
-          </div>
+      {#if displayError}
+        <div class="metrics-page__placeholder alert alert-error">
+          <span>Error: {displayError}</span>
+        </div>
+      {:else if page.loading && !hasMetricRows}
+        <div class="metrics-page__placeholder metrics-empty">
+          Loading metrics…
+        </div>
+      {:else if !page.loading && !hasMetricRows}
+        <div class="metrics-page__placeholder metrics-empty">
+          <p class="text-rp-subtle">No metrics in this time range</p>
+          <p class="mt-2 text-sm text-rp-muted">
+            Send telemetry to the exporter or adjust the time range
+          </p>
+        </div>
+      {:else}
+        <div class="metrics-page__chart">
+          <MetricChartView />
+        </div>
       {/if}
     {/snippet}
 

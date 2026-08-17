@@ -83,6 +83,11 @@
 				-- Worth the separation because datapoints are almost the entire
 				-- payload: 1,553 KB of a 1,647 KB response on a 22-series Gauge,
 				-- against 184 KB of view buckets and 18 KB of sparklines.
+				-- The viewer's IANA zone, so each bucket takes the offset in
+				-- force at its own moment rather than one captured at request
+				-- time. Null keeps the tz_offset_ns above as the only answer,
+				-- which is what a caller that names no zone gets.
+				?::varchar as tz_name,
 				?::varchar[] as datapoint_series_ids,
 				-- How many series carry datapoints when the caller cannot name
 				-- them, in the response's own order.
@@ -121,6 +126,11 @@
 		-- from metric_ingest_id, and datapoints is the largest table here.
 		filtered_dps as (
 			select d.*,
+				-- The offset this row's bucket is shifted by: the viewer's zone
+				-- resolved at this instant, or the single offset the caller sent
+				-- when it named no zone.
+				coalesce(tz_offset_ns_at(d.timestamp, input.tz_name),
+				         input.tz_offset_ns) as tz_shift,
 				s.metric_type as metric_type,
 				s.aggregation_temporality as aggregation_temporality,
 				s.is_monotonic as is_monotonic
@@ -332,10 +342,12 @@
 					when (select target_buckets from input) = 1
 						then coalesce((select min_ts from data_extent), d.timestamp)
 					else
-						floor_div(d.timestamp + (select tz_offset_ns from input),
-						          (select width_ns from reduction))
-							* (select width_ns from reduction)
-							- (select tz_offset_ns from input)
+						bucket_start_utc(
+							floor_div(d.timestamp + d.tz_shift,
+							          (select width_ns from reduction))
+								* (select width_ns from reduction),
+							(select tz_name from input),
+							(select tz_offset_ns from input))
 				end as bucket_start
 			from filtered_dps d
 			where (select width_ns from reduction) is not null
@@ -367,7 +379,7 @@
 		-- which is fetched unreduced -- the chart drops what it cannot draw, the
 		-- record keeps what arrived.
 		scalar_dps as (
-			select d.series_id, d.id, d.timestamp,
+			select d.series_id, d.id, d.timestamp, d.tz_shift,
 				coalesce(d.double_value, d.int_value) as value
 			from filtered_dps d
 			where d.metric_type in ('Gauge', 'Sum')
@@ -476,10 +488,15 @@
 		),
 		scalar_view_bucketed as (
 			select d.series_id,
-				floor_div(d.timestamp + (select tz_offset_ns from input),
+				floor_div(d.timestamp + d.tz_shift,
 				          (select width_ns from scalar_view_grid))
-					* (select width_ns from scalar_view_grid)
-					- (select tz_offset_ns from input) as bucket_start,
+					* (select width_ns from scalar_view_grid) as bucket_local,
+				bucket_start_utc(
+					floor_div(d.timestamp + d.tz_shift,
+					          (select width_ns from scalar_view_grid))
+						* (select width_ns from scalar_view_grid),
+					(select tz_name from input),
+					(select tz_offset_ns from input)) as bucket_start,
 				d.value,
 				sd.delta,
 				sd.is_reset
@@ -493,10 +510,12 @@
 		-- carry empty buckets for time before it existed, nor a series that
 		-- stopped trail them afterwards. The boundaries stay shared -- only the
 		-- extent differs -- so two series still line up where they overlap.
+		-- Measured on the local lattice, since that is what the spine steps
+		-- along. A local day is one width wide whatever the UTC clock did.
 		scalar_view_extent as (
 			select series_id,
-				min(bucket_start) as first_bucket,
-				max(bucket_start) as last_bucket
+				min(bucket_local) as first_bucket,
+				max(bucket_local) as last_bucket
 			from scalar_view_bucketed
 			group by series_id
 		),
@@ -506,12 +525,24 @@
 		-- is the answer, and a chart that joined the two sides would draw
 		-- straight through it. Leading and trailing empties are not, which is
 		-- what the extent above trims.
+		--
+		-- Stepped in local time and converted back per bucket, so a day stays a
+		-- day across a DST transition rather than the 24 UTC hours a uniform
+		-- stride would lay down. Distinct because the spring-forward gap has
+		-- local instants that never occur: the range still generates them and
+		-- two of them can convert onto one real bucket.
 		scalar_view_spine as (
-			select e.series_id,
-				unnest(range(e.first_bucket,
-				             e.last_bucket + g.width_ns,
-				             g.width_ns)) as bucket_start
-			from scalar_view_extent e, scalar_view_grid g
+			select distinct series_id, bucket_start
+			from (
+				select e.series_id,
+					bucket_start_utc(
+						unnest(range(e.first_bucket,
+						             e.last_bucket + g.width_ns,
+						             g.width_ns)),
+						(select tz_name from input),
+						(select tz_offset_ns from input)) as bucket_start
+				from scalar_view_extent e, scalar_view_grid g
+			)
 		),
 		-- One row per (series, bucket), carrying every view's answer.
 		--
@@ -723,10 +754,12 @@
 		),
 		sparkline_bucketed as (
 			select d.series_id,
-				floor_div(d.timestamp + (select tz_offset_ns from input),
-				          (select width_ns from sparkline_grid))
-					* (select width_ns from sparkline_grid)
-					- (select tz_offset_ns from input) as bucket_start,
+				bucket_start_utc(
+					floor_div(d.timestamp + d.tz_shift,
+					          (select width_ns from sparkline_grid))
+						* (select width_ns from sparkline_grid),
+					(select tz_name from input),
+					(select tz_offset_ns from input)) as bucket_start,
 				d.timestamp,
 				d.value
 			from scalar_dps d

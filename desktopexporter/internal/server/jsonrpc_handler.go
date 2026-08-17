@@ -300,6 +300,7 @@ type getMetricParams struct {
 	selectedSeriesIDs    []string
 	datapointSeriesIDs   []string
 	datapointSeriesLimit int64
+	tzName               string
 }
 
 func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricParams, error) {
@@ -318,7 +319,7 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	// them. Nothing caught it: the store tests call GetMetric directly, and the
 	// handler tests only ever sent three. TestGetMetricAcceptsEveryParameter
 	// now sends a full set, so the bound cannot fall behind again silently.
-	if len(params) < 3 || len(params) > 13 {
+	if len(params) < 3 || len(params) > 14 {
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
@@ -473,6 +474,19 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 		}
 	}
 
+	// The IANA zone the viewer is displaying in. tzOffsetNs above is a single
+	// offset captured at one instant, so it is wrong on the other side of a DST
+	// transition; a zone name lets the query resolve the offset per datapoint.
+	// A caller that sends no zone keeps the single-offset behaviour.
+	var tzName string
+	if len(params) >= 14 && params[13] != nil {
+		name, ok := params[13].(string)
+		if !ok {
+			return out, jsonrpc2.ErrInvalidParams
+		}
+		tzName = name
+	}
+
 	var fitToData bool
 	if len(params) >= 8 && params[7] != nil {
 		b, ok := params[7].(bool)
@@ -494,6 +508,7 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 	out.selectedSeriesIDs = selectedSeriesIDs
 	out.datapointSeriesIDs = datapointSeriesIDs
 	out.datapointSeriesLimit = datapointSeriesLimit
+	out.tzName = tzName
 	return out, nil
 }
 
@@ -504,7 +519,7 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, args.streamID, args.startTime, args.endTime,
-			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesIDs,
+			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesIDs, args.tzName,
 			args.datapointSeriesIDs, args.datapointSeriesLimit)
 	})
 	if err != nil {
@@ -722,7 +737,7 @@ func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.R
 		// 0 for that reason. Accepting it keeps one parser for both methods.
 		return metrics.GetMetricAggregate(ctx, db, args.streamID, args.startTime, args.endTime,
 			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.fitToData,
-			args.viewBuckets, args.selectedSeriesIDs)
+			args.viewBuckets, args.selectedSeriesIDs, args.tzName)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

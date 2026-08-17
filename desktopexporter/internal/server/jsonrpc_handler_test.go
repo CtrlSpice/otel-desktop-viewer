@@ -1084,6 +1084,7 @@ func TestGetMetricAcceptsEveryParameter(t *testing.T) {
 		[]any{},          // 11 selectedSeriesIds
 		[]any{},          // 12 datapointSeriesIds
 		"10",             // 13 datapointSeriesLimit
+		"Europe/London",  // 14 tzName
 	}
 
 	for n := 3; n <= len(full); n++ {
