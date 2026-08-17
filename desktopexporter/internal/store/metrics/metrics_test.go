@@ -2609,6 +2609,78 @@ func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
 		"and so does the sum, since every observation here has value 1")
 }
 
+// TestGetMetric_WindowSummaryIsOneBucket covers the request that asks a single
+// question about a whole span: one bucket, not "about one bucket".
+//
+// The ladder cannot express it. bucket_width_ns snaps to a nameable width and
+// bucketed_dps floors to absolute boundaries -- deliberately, so a chart's
+// columns stay put while the reader pans -- so a span that starts mid-rung
+// straddles two or three of them. The caller then reads the first and reports
+// it as the window: measured on the reference stream, 61% of the observations
+// under a p50 that belonged to the earlier fragment.
+//
+// Absolute boundaries are right for a chart and wrong for a summary, which is
+// why one bucket is a different request rather than a smaller number of them.
+func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	// 10:20 to 12:00 -- a 100 minute span, which the ladder serves with the
+	// 1 hour rung, so absolute flooring splits it across 10:00, 11:00 and 12:00.
+	base := time.Date(2026, 5, 24, 10, 20, 0, 0, time.UTC)
+	bounds := []float64{10, 20, 30}
+	attrs := map[string]string{"pod": "a"}
+	var dps []histTestDP
+	for i := range 21 {
+		dps = append(dps, histTestDP{
+			timestamp: base.Add(time.Duration(i*5) * time.Minute),
+			attrs:     attrs,
+			bounds:    bounds,
+			counts:    []uint64{1, 1, 0, 0},
+			count:     2,
+			sum:       25,
+			min:       5, max: 15,
+		})
+	}
+	fixture := makeHistogramFixtureT("window.hist", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricAggregate(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(3*time.Hour).UnixNano(),
+			1, nil, []float64{0.5}, 0, true, 0, nil)
+	})
+	require.NoError(t, err)
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal(raw, &envelope))
+	agg, _ := envelope["aggregate"].([]any)
+
+	require.Len(t, agg, 1,
+		"one bucket means one bucket: the caller reads [0] and calls it the window")
+	bucket := agg[0].(map[string]any)
+
+	// Every observation, not the share that fell in the first ladder rung.
+	assert.Equal(t, float64(42), bucket["count"],
+		"21 datapoints of 2 observations each")
+	assert.Equal(t, float64(525), bucket["sum"])
+	var vec float64
+	for _, c := range bucket["bucketCounts"].([]any) {
+		vec += c.(float64)
+	}
+	assert.Equal(t, bucket["count"], vec,
+		"the vector describes the same observations as the count")
+
+	// The quantile is the window's, which is the reason a summary cannot be
+	// repaired by adding buckets up client-side: quantiles do not sum.
+	q, _ := bucket["quantiles"].(map[string]any)
+	require.NotNil(t, q)
+	assert.NotNil(t, q["0.5"], "a window p50 over every observation in the span")
+}
+
 // TestGetMetric_Deterministic pins the answer to a question the store must
 // only have one answer to: the same request against the same data returns the
 // same bytes.

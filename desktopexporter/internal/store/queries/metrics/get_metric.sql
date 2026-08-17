@@ -314,10 +314,29 @@
 		-- BigInt division.
 		bucketed_dps as (
 			select d.*,
-				floor_div(d.timestamp + (select tz_offset_ns from input),
-				          (select width_ns from reduction))
-					* (select width_ns from reduction)
-					- (select tz_offset_ns from input) as bucket_start
+				case
+					-- One bucket is a different request, not a smaller number of
+					-- them. A window summary asks a single question about the
+					-- whole span, and the ladder cannot answer it: it snaps to a
+					-- nameable width and the flooring below is absolute, so a
+					-- span beginning mid-rung straddles two or three buckets and
+					-- the caller reading the first describes a fragment. Measured
+					-- on a 100-minute span: three buckets, of which the first
+					-- held 38% of the observations under its own p50.
+					--
+					-- Absolute boundaries are right for a chart -- columns stay
+					-- put while the reader pans -- and wrong for a summary, which
+					-- has no neighbours to stay aligned with. So the summary
+					-- groups on a constant and takes the data's own start as its
+					-- point on the time axis.
+					when (select target_buckets from input) = 1
+						then coalesce((select min_ts from data_extent), d.timestamp)
+					else
+						floor_div(d.timestamp + (select tz_offset_ns from input),
+						          (select width_ns from reduction))
+							* (select width_ns from reduction)
+							- (select tz_offset_ns from input)
+				end as bucket_start
 			from filtered_dps d
 			where (select width_ns from reduction) is not null
 		),
