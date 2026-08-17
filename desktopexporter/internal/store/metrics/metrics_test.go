@@ -4343,3 +4343,78 @@ func TestGetMetric_BucketsFollowTheZoneAcrossDST(t *testing.T) {
 			"so the Sunday ends an hour early and takes its last reading into "+
 			"the Monday -- the behaviour a zone-less caller keeps, and the bug")
 }
+
+// TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST is the histogram half of
+// the DST question. The scalar test above reads the view grid, which never
+// exercises the datapoint election -- histograms have no views, and their
+// merged rows land *on* bucket timestamps, so the election's bucket cutting is
+// directly visible here and nowhere else. A mutant reverting the election's
+// zone conversion survives the scalar test; this one is built to kill it.
+func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	// The same three moments as the scalar test: two on London's 25-hour local
+	// Sunday -- one while BST holds, one after the clocks went back -- and one
+	// the following Monday.
+	morning := time.Date(2026, 10, 24, 23, 30, 0, 0, time.UTC)
+	evening := time.Date(2026, 10, 25, 23, 30, 0, 0, time.UTC)
+	monday := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	dp := func(ts time.Time) histTestDP {
+		return histTestDP{
+			timestamp: ts,
+			attrs:     map[string]string{"pod": "a"},
+			bounds:    []float64{1, 2},
+			counts:    []uint64{1, 0, 0},
+			count:     1, sum: 0.5, min: 0.5, max: 0.5,
+		}
+	}
+	fixture := makeHistogramFixtureT("dst.hist", pmetric.AggregationTemporalityDelta,
+		[]histTestDP{dp(morning), dp(evening), dp(monday)})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	// Two target buckets over ~36 hours of data selects the one-day rung, and
+	// a histogram reduction merges rather than elects: each local day's rows
+	// fold into one row stamped with the bucket's start.
+	shape := func(tzName string, tzOffsetNs int64) []string {
+		t.Helper()
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+				morning.Add(-time.Minute).UnixNano(), monday.Add(time.Minute).UnixNano(),
+				2, nil, nil, tzOffsetNs, true, 0, 0, nil, tzName, nil, 0)
+		})
+		require.NoError(t, err)
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		dps := m["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+		var out []string
+		for _, v := range dps {
+			b := v.(map[string]any)
+			out = append(out, fmt.Sprintf("%s/%d",
+				b["timestamp"].(string), int(b["count"].(float64))))
+		}
+		sort.Strings(out)
+		return out
+	}
+	utc := func(day, hour int) string {
+		return strconv.FormatInt(
+			time.Date(2026, 10, day, hour, 0, 0, 0, time.UTC).UnixNano(), 10)
+	}
+	const bstOffsetNs = int64(time.Hour)
+
+	assert.Equal(t,
+		[]string{utc(24, 23) + "/2", utc(26, 0) + "/1"},
+		shape("Europe/London", bstOffsetNs),
+		"the two Sunday observations merge into the Sunday bucket and the "+
+			"Monday one stands alone, each stamped with its local midnight")
+
+	assert.Equal(t,
+		[]string{utc(24, 23) + "/1", utc(25, 23) + "/2"},
+		shape("", bstOffsetNs),
+		"the single offset ends the Sunday an hour early, carrying its second "+
+			"observation into the Monday -- the behaviour zone-less callers keep")
+}
