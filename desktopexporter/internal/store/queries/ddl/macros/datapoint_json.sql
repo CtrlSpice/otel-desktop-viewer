@@ -12,7 +12,7 @@
 --
 -- The common fields are merged with the type-specific ones rather than
 -- repeated in each branch, so a field every datapoint carries is written once.
-create or replace macro datapoint_json(d, exemplars, qs) as (
+create or replace macro datapoint_json(d, exemplars, exemplar_count, qs) as (
 		json_merge_patch(
 			json_object(
 				'id', d.id,
@@ -28,6 +28,10 @@ create or replace macro datapoint_json(d, exemplars, qs) as (
 				'timestampMs', d.timestamp // 1000000,
 				'startTime', d.start_time::varchar,
 				'flags', d.flags,
+				-- How many exemplars this datapoint holds, which is not always
+				-- how many arrived: the list is capped so one aggressively
+				-- sampled stream cannot decide the size of the response.
+				'exemplarCount', exemplar_count,
 				'exemplars', exemplars
 			),
 			case d.metric_type

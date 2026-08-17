@@ -190,6 +190,11 @@ type JsonBaseDataPoint = {
   startTime: string
   flags: number
   exemplars: JsonExemplar[]
+  /** How many exemplars this datapoint holds, which is not always how many
+   *  arrived. The store caps the list so one aggressively sampled stream
+   *  cannot decide the size of the response; when this exceeds
+   *  `exemplars.length`, the rest exist and were not sent. */
+  exemplarCount: number
 }
 
 export type JsonGaugeDataPoint = JsonBaseDataPoint & {

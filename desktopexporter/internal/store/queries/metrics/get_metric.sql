@@ -152,14 +152,42 @@
 		-- The dp_attrs_agg and exemplar_attrs CTEs are gone: attrs_json
 		-- resolves each row's id array in place, so there is nothing to
 		-- pre-aggregate and join back.
+		-- Exemplars are capped twice, because they grow the response in two
+		-- independent directions and neither had a ceiling.
+		--
+		-- This is the per-datapoint one: how many an SDK attached to a single
+		-- reading. OTel sets no limit, and listing them all made the response
+		-- grow with a number the viewer does not control -- measured at 5%%
+		-- exemplar density, going from one per datapoint to 64 took the
+		-- response from 1.7 MB to 14.6 MB while the datapoints drawn never
+		-- changed. Exemplars are a link to a trace, and a reader following one
+		-- link from a point does not need every trace that touched it.
+		exemplars_ranked as (
+			select e.*,
+				-- Same (timestamp, id) total order the list below reads, so the
+				-- cap keeps a prefix of what would have been sent rather than an
+				-- arbitrary subset -- and keeps it across identical requests.
+				row_number() over (partition by e.datapoint_id
+				                   order by e.timestamp, e.id) as rn
+			from exemplars e
+			where e.datapoint_id in (select id from filtered_dps)
+		),
 		exemplars_agg as (
 			-- Ordered, and totally: (timestamp, id) so two exemplars sharing an
 			-- instant still arrive in one order. json_group_array is a macro and
 			-- rejects ORDER BY, hence the list form.
 			select e.datapoint_id,
-				to_json(list(exemplar_json(e) order by e.timestamp, e.id)) as exemplars
-			from exemplars e
-			where e.datapoint_id in (select id from filtered_dps)
+				-- Five: a reader following a link out of one reading wants a
+				-- handful to choose from, not every trace that touched it.
+				to_json(list(exemplar_json(e) order by e.timestamp, e.id)
+				        filter (where e.rn <= 5)) as exemplars,
+				-- How many the datapoint actually holds. A cap that says
+				-- nothing is indistinguishable from a stream that sent five,
+				-- and quietly losing trace links is a poor showing from a tool
+				-- people open to find them. Counted before the filter, in the
+				-- same pass, so the client can say "5 of 64" rather than "5".
+				count(*) as exemplar_count
+			from exemplars_ranked e
 			group by e.datapoint_id
 		),
 		-- Per-ingest latest datapoint timestamp over the queried window
@@ -839,19 +867,52 @@
 			group by series_id, bucket_start
 		),
 
-		-- The ids that survive: the elected four per bucket, plus every
-		-- datapoint carrying an exemplar.
+		-- The exemplar-bearing datapoints a bucket keeps, and the second of the
+		-- two caps.
 		--
 		-- Exemplars are the link from a metric to a trace, and election is
 		-- driven by *value*, so the datapoints holding them are mostly not the
-		-- ones M4 keeps. Dropping them would quietly gut trace correlation on
-		-- exactly the dense streams this reduction exists for. They are sparse
-		-- by construction, so keeping all of them costs little.
+		-- ones M4 keeps. Dropping them outright would gut trace correlation on
+		-- exactly the dense streams this reduction exists for -- which is why
+		-- they are retained at all.
+		--
+		-- "They are sparse by construction, so keeping all of them costs
+		-- little" was the previous reasoning, and it was an assumption about
+		-- other people's SDK config rather than a property of this query. A
+		-- stream that samples aggressively breaks it: at 100%% density the
+		-- retention returned all 20,000 datapoints of a window that reduces to
+		-- 4,585, a 9.4 MB response, with the reduction not merely degraded but
+		-- entirely defeated. A bucket is a few pixels wide, and a reader
+		-- following a link out of one of them does not need fifty to choose
+		-- from.
+		exemplar_carriers as (
+			select id from (
+				select b.id,
+					-- Ordered by (timestamp, id) for the reason every other
+					-- choice in this query is: ties are common, and an
+					-- arbitrary pick makes the same request answer differently
+					-- on each refresh.
+					row_number() over (partition by b.series_id, b.bucket_start
+					                   order by b.timestamp, b.id) as rn
+				from bucketed_dps b
+				where exists (select 1 from exemplars e where e.datapoint_id = b.id)
+			)
+			-- Two, against the election's four. Exemplars are navigation, not
+			-- data -- nothing draws them -- so they should cost less than the
+			-- readings, and two links out of a few-pixel column is choice
+			-- enough. This is what puts a ceiling on the response: a bucket now
+			-- yields at most six datapoints instead of unboundedly many, so the
+			-- worst case is 1.5x the reduction budget rather than the whole
+			-- window.
+			where rn <= 2
+		),
+
+		-- The ids that survive: the elected four per bucket, plus that bucket's
+		-- capped exemplar carriers.
 		retained_ids as (
 			select unnest([first_id, last_id, min_id, max_id]) as id from bucket_elected
 			union
-			select d.id from filtered_dps d
-			where exists (select 1 from exemplars e where e.datapoint_id = d.id)
+			select id from exemplar_carriers
 		),
 
 		-- Histogram merge, Delta only.
@@ -1271,6 +1332,7 @@
 				to_json(list(datapoint_json(
 					d,
 					coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]')),
+					coalesce((select exemplar_count from exemplars_agg where exemplars_agg.datapoint_id = d.id), 0),
 					(select quantiles from input)
 				) order by d.timestamp desc, d.id)) as datapoints
 			from projected_dps d

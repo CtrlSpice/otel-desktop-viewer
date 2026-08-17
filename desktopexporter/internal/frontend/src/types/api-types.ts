@@ -161,6 +161,9 @@ type BaseDataPoint = {
   startTime: bigint
   flags: number
   exemplars: Exemplar[]
+  /** How many the datapoint holds, against `exemplars.length` sent. Greater
+   *  when the store's cap trimmed the list. */
+  exemplarCount: number
 }
 
 export type GaugeDataPoint = BaseDataPoint & {
