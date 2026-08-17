@@ -2837,6 +2837,115 @@ func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
 		"both readings survive when nothing is being merged")
 }
 
+// TestGetMetric_ViewGridRespectsCadence covers the grid the Sum, Average and
+// Rate views are drawn on: it may not divide finer than the data arrives.
+//
+// The ladder picks a width from the span and a bucket count and knows nothing
+// about cadence, so asking for 120 buckets of a series that reported 20 times
+// gives buckets narrower than the gaps between readings. scalar_view_spine then
+// emits every one of them, and Sum and Rate draw an empty bucket as the zero it
+// honestly is -- producing a sawtooth that is a property of the grid, not of the
+// data, and is indistinguishable from a series that really did stop and start.
+//
+// The cap is on the bucket count rather than the width, so the answer stays a
+// ladder rung: a reader can name a 1-minute boundary and cannot name a
+// 30.5-second one.
+func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	// Once a minute for twenty minutes, with no gaps: every bucket the grid
+	// produces should hold a reading.
+	var dps []sumTestDP
+	attrs := map[string]string{"pod": "a"}
+	for i := range 20 {
+		dps = append(dps, sumTestDP{
+			timestamp: base.Add(time.Duration(i) * time.Minute),
+			value:     float64(i + 1),
+			attrs:     attrs,
+		})
+	}
+	fixture := makeSumFixtureT("sparse.total", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			// 120 view buckets over 20 readings: six times more buckets than
+			// the series has intervals.
+			0, nil, nil, 0, true, 120, 0, nil, nil, 0)
+	})
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	views := m["timeseries"].([]any)[0].(map[string]any)["views"].([]any)
+	require.NotEmpty(t, views)
+
+	var empty int
+	var starts []int64
+	for _, v := range views {
+		b := v.(map[string]any)
+		if b["sampleCount"].(float64) == 0 {
+			empty++
+		}
+		start, err := strconv.ParseInt(b["bucketStart"].(string), 10, 64)
+		require.NoError(t, err)
+		starts = append(starts, start)
+	}
+
+	assert.Zero(t, empty,
+		"a series reporting on a steady cadence with no gaps should produce no "+
+			"empty buckets: every empty one here would draw as a zero the data "+
+			"does not contain")
+	assert.LessOrEqual(t, len(views), 20,
+		"no more buckets than the series has reporting intervals")
+
+	// The width is still a ladder rung, which is what makes a boundary nameable.
+	require.Greater(t, len(starts), 1)
+	width := starts[1] - starts[0]
+	assert.Equal(t, int64(time.Minute), width,
+		"one minute, the rung at the reporting cadence -- not the raw median gap")
+
+	// A dense series is not coarsened by the cap: it asks for fewer buckets than
+	// its cadence allows, so the ladder answers unchanged.
+	dense := []sumTestDP{}
+	for i := range 600 {
+		dense = append(dense, sumTestDP{
+			timestamp: base.Add(time.Duration(i) * time.Second),
+			value:     1,
+			attrs:     map[string]string{"pod": "dense"},
+		})
+	}
+	denseFixture := makeSumFixtureT("dense.total", pmetric.AggregationTemporalityDelta, dense)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, denseFixture, s.FlushedIDs())
+	}))
+	all := searchMetricsAll(t, s, ctx)
+	var denseID string
+	for _, sum := range all {
+		if sum["name"] == "dense.total" {
+			denseID = sum["id"].(string)
+		}
+	}
+	require.NotEmpty(t, denseID)
+	denseRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, denseID,
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			0, nil, nil, 0, true, 120, 0, nil, nil, 0)
+	})
+	require.NoError(t, err)
+	var dm map[string]any
+	require.NoError(t, json.Unmarshal(denseRaw, &dm))
+	denseViews := dm["timeseries"].([]any)[0].(map[string]any)["views"].([]any)
+	assert.Greater(t, len(denseViews), 20,
+		"a series reporting every second keeps the resolution it can support")
+}
+
 // TestGetMetric_Deterministic pins the answer to a question the store must
 // only have one answer to: the same request against the same data returns the
 // same bytes.

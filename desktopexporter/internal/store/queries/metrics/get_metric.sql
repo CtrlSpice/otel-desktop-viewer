@@ -406,13 +406,73 @@
 		-- sharedBucketCount papers over it by handing both paths the same bucket
 		-- *count*, and its comment concedes that only lines up because the
 		-- series happen to share a scrape cadence.
+		-- How often this stream reports, so a grid never divides finer than the
+		-- data arrives.
+		--
+		-- A ladder rung is chosen from the span and a bucket count, and knows
+		-- nothing about cadence -- so asking for 120 buckets of a series that
+		-- reported 31 times gives buckets narrower than the gaps between
+		-- readings. scalar_view_spine then emits every one of them, and Sum and
+		-- Rate draw an empty bucket as the zero it honestly is. Measured on
+		-- blue_flags: 31 datapoints across 65 buckets, 40 of them empty, the
+		-- line crossing between zero and non-zero 28 times. That sawtooth is
+		-- the resolution beating against the cadence, and it is indistinguishable
+		-- from a series that really did stop and start.
+		--
+		-- Median twice, and both times deliberately. Per series, because a mean
+		-- gap is dragged upwards by one outage -- a single ten-minute pause in a
+		-- one-second stream would coarsen the whole chart -- while the median
+		-- answers "how often does this normally report". Then across series,
+		-- because the grid is shared: one chatty or one silent series should not
+		-- set the width for the rest. A stream's series are usually one exporter
+		-- on one interval, so in the ordinary case these agree anyway.
+		--
+		-- Stream-wide rather than per-visible-series on purpose. The grid is
+		-- independent of the legend, so toggling a series cannot re-cut the
+		-- buckets underneath the chart, and the pooled lines keep their shape
+		-- when the selection changes.
+		series_gaps as (
+			select d.series_id,
+				d.timestamp - lag(d.timestamp) over (
+					partition by d.series_id order by d.timestamp, d.id
+				) as gap_ns
+			from scalar_dps d
+		),
+		series_cadence as (
+			select median(gap_ns) as cadence_ns
+			from (
+				select series_id, median(gap_ns) as gap_ns
+				from series_gaps
+				where gap_ns is not null and gap_ns > 0
+				group by series_id
+			)
+		),
+		-- reduction_span as a relation, not a scalar subquery: bucket_width_ns
+		-- filters a list with a lambda, and a subquery argument is inlined into
+		-- that lambda body where DuckDB rejects it. The reduction CTE above
+		-- takes the same care for the same reason.
 		scalar_view_grid as (
-			-- reduction_span as a relation, not a scalar subquery: bucket_width_ns
-			-- filters a list with a lambda, and a subquery argument is inlined
-			-- into that lambda body where DuckDB rejects it. The reduction CTE
-			-- above takes the same care for the same reason.
-			select bucket_width_ns(rs.span_ns, i.view_buckets) as width_ns
-			from input i, reduction_span rs
+			-- Never more buckets than the stream has reporting intervals.
+			--
+			-- The floor is applied to the bucket *count*, not to the width the
+			-- ladder returns. Taking the coarser of two widths would hand back a
+			-- number that is not a rung -- a 30.5-second bucket, whose boundaries
+			-- no reader can name -- and the ladder exists precisely so they can.
+			-- Capping the count instead lets the ladder answer as it always
+			-- does, one rung coarser.
+			--
+			-- It also keeps zero meaning zero: a caller asking for no views sends
+			-- 0, least() holds it at 0, and bucket_width_ns still returns null.
+			-- Flooring the width lost that, because greatest() ignores nulls
+			-- rather than propagating them, and "no grid" became a real grid to
+			-- divide by.
+			select bucket_width_ns(rs.span_ns,
+				case when c.cadence_ns is null or c.cadence_ns <= 0
+					then i.view_buckets
+					else least(i.view_buckets,
+					           greatest(1, (rs.span_ns // c.cadence_ns)::bigint))
+				end) as width_ns
+			from input i, reduction_span rs, series_cadence c
 		),
 		scalar_view_bucketed as (
 			select d.series_id,
@@ -650,12 +710,16 @@
 		-- same thing as a hole. Emitting just the buckets that have samples keeps
 		-- this to a group-by.
 		sparkline_grid as (
-			-- reduction_span as a relation, not a scalar subquery: bucket_width_ns
-			-- filters a list with a lambda, and a subquery argument is inlined into
-			-- that lambda body where DuckDB rejects it. scalar_view_grid and the
-			-- reduction CTE take the same care for the same reason.
-			select bucket_width_ns(rs.span_ns, i.sparkline_buckets) as width_ns
-			from input i, reduction_span rs
+			-- Capped on the cadence like the view grid, and for the same reason:
+			-- a row's shape should show the series, not the sampling rate of the
+			-- grid drawn over it.
+			select bucket_width_ns(rs.span_ns,
+				case when c.cadence_ns is null or c.cadence_ns <= 0
+					then i.sparkline_buckets
+					else least(i.sparkline_buckets,
+					           greatest(1, (rs.span_ns // c.cadence_ns)::bigint))
+				end) as width_ns
+			from input i, reduction_span rs, series_cadence c
 		),
 		sparkline_bucketed as (
 			select d.series_id,
