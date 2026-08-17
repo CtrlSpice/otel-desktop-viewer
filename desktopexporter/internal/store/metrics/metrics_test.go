@@ -2443,6 +2443,172 @@ func TestGetMetric_RateSlopeAndStats(t *testing.T) {
 	assert.Positive(t, poolSlopes, "the pooled line's segments carry slopes too")
 }
 
+// TestCumulativeHistogramMerge_DifferencesAcrossBuckets covers the reduction of
+// a cumulative histogram whose buckets hold one datapoint each.
+//
+// A cumulative reading is a running total, so a bucket's activity is measured
+// against the reading *before* it -- which is in the previous bucket whenever
+// the requested width is at or below the reporting cadence. Differencing within
+// the bucket instead has nothing to subtract and reports zero activity for a
+// series that is plainly counting, and it does so for every ordinary request:
+// the caller asks for a bucket count, not a width, so any cadence at or below
+// the resulting width lands here.
+//
+// The scalar path already answers this correctly (scalar_lagged differences
+// each datapoint against its predecessor in the series, then buckets); this
+// pins the histogram merge to the same rule.
+func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	bounds := []float64{10, 20, 30}
+	attrs := map[string]string{"pod": "a"}
+
+	// Running totals: two more observations every minute, all in the first
+	// bucket of the vector. Activity per minute is 2, forever.
+	var dps []histTestDP
+	for i := range 6 {
+		n := uint64(2 * (i + 1))
+		dps = append(dps, histTestDP{
+			timestamp: base.Add(time.Duration(i) * time.Minute),
+			attrs:     attrs,
+			bounds:    bounds,
+			counts:    []uint64{n, 0, 0, 0},
+			count:     n,
+			sum:       float64(n) * 5,
+			min:       5, max: 5,
+		})
+	}
+	fixture := makeHistogramFixtureT("climb.hist", pmetric.AggregationTemporalityCumulative, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+
+	get := func(targetBuckets int64) []map[string]any {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, streamID,
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+				targetBuckets, nil, nil, 0, true, 0, 0, nil, nil, 0)
+		})
+		require.NoError(t, err)
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		ts := m["timeseries"].([]any)
+		require.Len(t, ts, 1)
+		var out []map[string]any
+		for _, d := range ts[0].(map[string]any)["datapoints"].([]any) {
+			out = append(out, d.(map[string]any))
+		}
+		return out
+	}
+
+	// Unreduced: the running totals themselves, untouched.
+	unreduced := get(0)
+	require.Len(t, unreduced, 6)
+	assert.Equal(t, float64(12), unreduced[0]["count"],
+		"without a reduction a cumulative datapoint keeps its running total")
+
+	// Reduced onto minute buckets, which is the cadence: every bucket holds one
+	// datapoint and must be differenced against the previous bucket's.
+	for _, targetBuckets := range []int64{6, 60, 600} {
+		merged := get(targetBuckets)
+		require.NotEmpty(t, merged, "targetBuckets=%d", targetBuckets)
+
+		// The first reading establishes the baseline and measures no interval,
+		// exactly as the scalar path drops a series' first datapoint.
+		assert.Len(t, merged, 5,
+			"targetBuckets=%d: six readings describe five intervals", targetBuckets)
+
+		var total float64
+		for _, dp := range merged {
+			assert.Equal(t, float64(2), dp["count"],
+				"targetBuckets=%d: each minute adds two observations", targetBuckets)
+			assert.Equal(t, float64(10), dp["sum"],
+				"targetBuckets=%d: sum is differenced with count", targetBuckets)
+			buckets := dp["bucketCounts"].([]any)
+			var vec float64
+			for _, c := range buckets {
+				vec += c.(float64)
+			}
+			assert.Equal(t, dp["count"], vec,
+				"targetBuckets=%d: the vector agrees with the count on the same row",
+				targetBuckets)
+			total += dp["count"].(float64)
+		}
+		assert.Equal(t, float64(10), total,
+			"targetBuckets=%d: the intervals sum to the counter's climb (12-2)",
+			targetBuckets)
+	}
+}
+
+// TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields covers a counter
+// restart inside a merged bucket.
+//
+// The reset rule -- a fall means the counter restarted, so the later reading is
+// the activity since the restart -- has to reach every field of the row from
+// one decision. Applied per field it split: the scalars clamped with
+// greatest(max-min, 0) while the vectors detected the negative difference and
+// fell back to the later slice, so one datapoint could claim more observations
+// than its own buckets held. Nothing downstream can reconcile that, because the
+// count badge and the quantiles read different fields of the same row.
+func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	bounds := []float64{10, 20, 30}
+	attrs := map[string]string{"pod": "a"}
+	// Climb to 105, restart, climb to 8 -- all inside one merged bucket.
+	readings := []uint64{100, 105, 3, 8}
+	var dps []histTestDP
+	for i, n := range readings {
+		dps = append(dps, histTestDP{
+			timestamp: base.Add(time.Duration(i) * time.Second),
+			attrs:     attrs,
+			bounds:    bounds,
+			counts:    []uint64{n, 0, 0, 0},
+			count:     n,
+			sum:       float64(n),
+			min:       1, max: 1,
+		})
+	}
+	fixture := makeHistogramFixtureT("reset.hist", pmetric.AggregationTemporalityCumulative, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			1, nil, nil, 0, false, 0, 0, nil, nil, 0)
+	})
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	dpl := m["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+	require.Len(t, dpl, 1, "all four readings merge into one bucket")
+	dp := dpl[0].(map[string]any)
+
+	// 5 before the restart, then 3 (the reading itself), then 5 after.
+	assert.Equal(t, float64(13), dp["count"],
+		"activity is summed per reading, with the restart's own value counted once")
+
+	var vec float64
+	for _, c := range dp["bucketCounts"].([]any) {
+		vec += c.(float64)
+	}
+	assert.Equal(t, dp["count"], vec,
+		"the bucket vector and the count describe the same observations")
+	assert.Equal(t, dp["count"], dp["sum"],
+		"and so does the sum, since every observation here has value 1")
+}
+
 // TestGetMetric_Deterministic pins the answer to a question the store must
 // only have one answer to: the same request against the same data returns the
 // same bytes.

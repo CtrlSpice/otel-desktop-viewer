@@ -755,7 +755,17 @@
 		-- no-op and costs nothing.
 		hist_scaled as (
 			select b.*,
-				min(b.scale) over (partition by b.series_id, b.bucket_start) as target_scale
+				-- Delta aligns within the bucket, which is all it compares. A
+				-- cumulative reading is differenced against the one before it,
+				-- and that neighbour is in the previous bucket whenever a bucket
+				-- holds one datapoint -- so the whole series has to share a scale
+				-- or the subtraction spans two different bucket layouts. The cost
+				-- is resolution: a cumulative series aligns to its coarsest
+				-- scale rather than each bucket's.
+				case when b.aggregation_temporality = 'Cumulative'
+					then min(b.scale) over (partition by b.series_id)
+					else min(b.scale) over (partition by b.series_id, b.bucket_start)
+				end as target_scale
 			from bucketed_dps b
 			where (select kind from reduction_kind) = 'merge'
 		),
@@ -772,10 +782,19 @@
 		-- minimum pads the result out to an index nothing occupies.
 		hist_aligned as (
 			select d.*,
-				min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
-					over (partition by d.series_id, d.bucket_start) as pos_target_offset,
-				min(case when len(d.neg_d.counts) > 0 then d.neg_d.offset end)
-					over (partition by d.series_id, d.bucket_start) as neg_target_offset
+				-- Partitioned like target_scale above, and for the same reason.
+				case when d.aggregation_temporality = 'Cumulative'
+					then min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
+						over (partition by d.series_id)
+					else min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
+						over (partition by d.series_id, d.bucket_start)
+				end as pos_target_offset,
+				case when d.aggregation_temporality = 'Cumulative'
+					then min(case when len(d.neg_d.counts) > 0 then d.neg_d.offset end)
+						over (partition by d.series_id)
+					else min(case when len(d.neg_d.counts) > 0 then d.neg_d.offset end)
+						over (partition by d.series_id, d.bucket_start)
+				end as neg_target_offset
 			from hist_downscaled d
 		),
 		hist_padded as (
@@ -786,6 +805,67 @@
 					coalesce(a.neg_target_offset, a.neg_d.offset)) as neg_p
 			from hist_aligned a
 		),
+		-- Each reading against the one before it, for a cumulative series.
+		--
+		-- The scalar path does exactly this (scalar_lagged, scalar_deltas) and
+		-- for the same reason: a running total says what has happened since the
+		-- series began, so the activity in an interval is a difference between
+		-- consecutive readings -- which is a property of the pair, not of the
+		-- bucket either happens to fall in.
+		hist_lagged as (
+			select p.*,
+				lag(p.count) over w as prev_count,
+				lag(p.sum) over w as prev_sum,
+				lag(p.zero_count) over w as prev_zero_count,
+				lag(p.bucket_counts) over w as prev_bucket_counts,
+				lag(p.pos_p) over w as prev_pos_p,
+				lag(p.neg_p) over w as prev_neg_p
+			from hist_padded p
+			window w as (partition by p.series_id order by p.timestamp, p.id)
+		),
+		-- A cumulative reading becomes its own interval's activity; a Delta
+		-- reading already is one and passes through. After this the two
+		-- temporalities are the same thing and the merge just adds them.
+		--
+		-- One reset rule, applied per datapoint to every field of the row: a
+		-- fall means the counter restarted, and the later value is the activity
+		-- since the restart. Clamping the scalars and the vectors separately let
+		-- one row claim more observations than its buckets held.
+		--
+		-- A series' first reading measures no interval and is dropped, as
+		-- scalar_deltas drops its own -- N readings describe N-1 intervals.
+		hist_activity as (
+			select l.* exclude (
+					count, sum, zero_count, bucket_counts, pos_p, neg_p,
+					prev_count, prev_sum, prev_zero_count,
+					prev_bucket_counts, prev_pos_p, prev_neg_p
+				),
+				case when l.aggregation_temporality <> 'Cumulative' then l.count
+					when l.count < l.prev_count then l.count
+					else l.count - l.prev_count end as count,
+				case when l.aggregation_temporality <> 'Cumulative' then l.sum
+					when l.count < l.prev_count then l.sum
+					else l.sum - l.prev_sum end as sum,
+				case when l.aggregation_temporality <> 'Cumulative' then l.zero_count
+					when l.count < l.prev_count then l.zero_count
+					else l.zero_count - l.prev_zero_count end as zero_count,
+				case when l.aggregation_temporality <> 'Cumulative' then l.bucket_counts
+					else coalesce(
+						diff_bucket_vectors(l.bucket_counts, l.prev_bucket_counts),
+						l.bucket_counts) end as bucket_counts,
+				case when l.aggregation_temporality <> 'Cumulative' then l.pos_p
+					else coalesce(
+						diff_bucket_vectors(l.pos_p, l.prev_pos_p),
+						l.pos_p) end as pos_p,
+				case when l.aggregation_temporality <> 'Cumulative' then l.neg_p
+					else coalesce(
+						diff_bucket_vectors(l.neg_p, l.prev_neg_p),
+						l.neg_p) end as neg_p
+			from hist_lagged l
+			where l.aggregation_temporality <> 'Cumulative'
+			   or l.prev_count is not null
+		),
+
 		hist_merged as (
 			select
 				p.series_id,
@@ -832,61 +912,30 @@
 				any_value(p.aggregation_temporality) as aggregation_temporality,
 				any_value(p.flags) as flags,
 				any_value(p.is_monotonic) as is_monotonic,
-				-- Delta adds; Cumulative takes last minus first.
+				-- Adds, whatever the temporality. hist_activity has already
+				-- turned each cumulative reading into its own interval's
+				-- activity, so both shapes arrive here as per-datapoint
+				-- quantities and a bucket is their total.
 				--
-				-- The alignment chain above has already put every datapoint in
-				-- this bucket on a common scale and origin, so the earliest and
-				-- latest are directly comparable and the subtraction is a
-				-- straight element-wise difference.
-				--
-				-- diff_bucket_vectors returns NULL when any bucket would go
-				-- negative, which means the counter restarted. The clamp then
-				-- falls back to the later slice, because after a restart the
-				-- later value *is* the activity since the restart. That is a
-				-- different situation from failing to align, which is why the
-				-- two are not allowed to share an exit.
-				case when any_value(p.aggregation_temporality) = 'Delta'
-					then sum(p.count)
-					else greatest(max(p.count) - min(p.count), 0)
-				end as count,
-				case when any_value(p.aggregation_temporality) = 'Delta'
-					then sum(p.sum)
-					else greatest(max(p.sum) - min(p.sum), 0)
-				end as sum,
+				-- Differencing within the bucket instead reported zero for any
+				-- bucket holding one reading -- which is every bucket once the
+				-- requested width reaches the reporting cadence, and the caller
+				-- asks for a bucket count rather than a width.
+				sum(p.count) as count,
+				sum(p.sum) as sum,
 				-- Explicit bounds: identical across the group or the merge is
 				-- meaningless, and there is no rescale that reconciles them.
 				any_value(p.explicit_bounds) as explicit_bounds,
 				count(distinct p.explicit_bounds::varchar) as distinct_bounds,
-				case when any_value(p.aggregation_temporality) = 'Delta'
-					then sum_bucket_vectors(list(p.bucket_counts))
-					else coalesce(
-						diff_bucket_vectors(arg_max(p.bucket_counts, (p.timestamp, p.id)), arg_min(p.bucket_counts, (p.timestamp, p.id))),
-						arg_max(p.bucket_counts, (p.timestamp, p.id))
-					)
-				end as bucket_counts,
+				sum_bucket_vectors(list(p.bucket_counts)) as bucket_counts,
 				any_value(p.target_scale) as scale,
 				max(p.zero_threshold) as zero_threshold,
-				case when any_value(p.aggregation_temporality) = 'Delta'
-					then sum(p.zero_count)
-					else greatest(max(p.zero_count) - min(p.zero_count), 0)
-				end as zero_count,
+				sum(p.zero_count) as zero_count,
 				any_value(coalesce(p.pos_target_offset, 0)) as positive_bucket_offset,
-				case when any_value(p.aggregation_temporality) = 'Delta'
-					then sum_bucket_vectors(list(p.pos_p))
-					else coalesce(
-						diff_bucket_vectors(arg_max(p.pos_p, (p.timestamp, p.id)), arg_min(p.pos_p, (p.timestamp, p.id))),
-						arg_max(p.pos_p, (p.timestamp, p.id))
-					)
-				end as positive_bucket_counts,
+				sum_bucket_vectors(list(p.pos_p)) as positive_bucket_counts,
 				any_value(coalesce(p.neg_target_offset, 0)) as negative_bucket_offset,
-				case when any_value(p.aggregation_temporality) = 'Delta'
-					then sum_bucket_vectors(list(p.neg_p))
-					else coalesce(
-						diff_bucket_vectors(arg_max(p.neg_p, (p.timestamp, p.id)), arg_min(p.neg_p, (p.timestamp, p.id))),
-						arg_max(p.neg_p, (p.timestamp, p.id))
-					)
-				end as negative_bucket_counts
-			from hist_padded p
+				sum_bucket_vectors(list(p.neg_p)) as negative_bucket_counts
+			from hist_activity p
 			group by p.series_id, p.bucket_start
 		),
 
