@@ -1573,12 +1573,17 @@ export function createMetricViewContext(
       }
     }
     if (allAssigned) return
-    const pool = categoricalPalette(
-      MAX_VISIBLE_TIMESERIES,
-      metricTypeStem(metricType),
-      themeSignal.value
+    // The shape's own pool, not a fixed 22. seedColorAssignments indexes into
+    // it positionally, so the pool's size decides the hue -- and a histogram
+    // draws from a legend-sized palette everywhere else (timeseriesChartColors,
+    // and the toggle path when it grows one). Building a 22-slot palette here
+    // gave a histogram's series different colours depending on which branch of
+    // this same if/else ran, so a reconcile that added one series could restain
+    // the ones already on screen. The sibling branch above already passes
+    // timeseriesChartColors; this is the same pool for the same reason.
+    replaceColorAssignments(
+      seedColorAssignments(timeseriesChartColors, visible, legendKeys)
     )
-    replaceColorAssignments(seedColorAssignments(pool, visible, legendKeys))
   }
 
   /**
