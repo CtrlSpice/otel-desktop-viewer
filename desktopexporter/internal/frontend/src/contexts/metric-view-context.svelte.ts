@@ -55,6 +55,7 @@ import {
 } from '@/components/metrics/utils/histogram-aggregation'
 import {
   heatmapColumnSelectionAt,
+  heatmapColumnEndNs as columnEndNs,
   type HeatmapColumnSelection,
 } from '@/components/metrics/utils/heatmap-column-selection'
 import {
@@ -313,14 +314,21 @@ export interface MetricViewContext {
     HistogramDataPoint | ExponentialHistogramDataPoint | undefined
   readonly heatmapSelectedTimestamp: number | null
   /**
-   * The selected column's exact range in nanoseconds, for the page to fetch.
+   * The selected column's exact bounds in nanoseconds, for the page to fetch.
+   *
+   * Two primitives rather than one object, so that a recomputation which lands
+   * on the same column does not look like a change. The heatmap array gets a
+   * new identity on every aggregate response -- a legend toggle is enough -- and
+   * an object literal would take the fetch with it, blanking the panel and
+   * asking again for a column that never moved.
    *
    * End is inclusive and one nanosecond short of the next column's start: the
    * store filters `timestamp >= start and timestamp <= end` while it cuts
    * buckets half-open, so passing the next boundary pulls that column's first
    * reading in too and counts it in both.
    */
-  readonly heatmapColumnRangeNs: { startNs: bigint; endNs: bigint } | null
+  readonly heatmapColumnStartNs: bigint | null
+  readonly heatmapColumnEndNs: bigint | null
   /** Quantile line key (e.g. `"0.95"`) when selection came from a quantile chart point click. */
   readonly selectedQuantileKey: string | null
   readonly heatmapColumnSelection: HeatmapColumnSelection | null
@@ -1469,26 +1477,37 @@ export function createMetricViewContext(
     return Number(view.selectedHistogramBucketStart / 1_000_000n)
   })
 
-  const heatmapColumnRangeNs = $derived.by(
-    (): { startNs: bigint; endNs: bigint } | null => {
-      const startNs = view.selectedHistogramBucketStart
-      if (startNs === null) return null
-      const series = heatmapBucketSeries
-      if (!series || series.length < 2) return null
-      // Width from the grid the columns were drawn on, rather than a constant:
-      // the store picks the width off a ladder, so only the response knows it.
-      const sorted = [...new Set(series.map(s => s.timestamp))].sort((a, b) =>
-        a < b ? -1 : a > b ? 1 : 0
-      )
-      let width: bigint | null = null
-      for (let i = 1; i < sorted.length; i++) {
-        const gap = sorted[i]! - sorted[i - 1]!
-        if (width === null || gap < width) width = gap
-      }
-      if (width === null || width <= 0n) return null
-      return { startNs, endNs: startNs + width - 1n }
-    }
-  )
+  const heatmapColumnStartNs = $derived(view.selectedHistogramBucketStart)
+
+  /**
+   * Where the selected column ends, exclusive.
+   *
+   * The next column's own start, not the selected start plus a width. Columns
+   * are cut in local time, so they are not all the same number of nanoseconds
+   * wide: a local day is 23, 24 or 25 hours across a DST transition. Taking a
+   * width -- the smallest gap, say -- and adding it would fetch 23 hours of a
+   * 25-hour column and silently lose the other two, which is the very defect
+   * this fetch exists to remove.
+   *
+   * The last column has no next one, so it borrows the preceding gap. That is
+   * an approximation only for a trailing column mid-transition, and it errs by
+   * ending early rather than reaching into a column that does not exist.
+   *
+   * A lone column has no gap to borrow at all and falls back to the window's
+   * end, which is what a single column spans by definition.
+   */
+  const heatmapColumnEndNs = $derived.by((): bigint | null => {
+    const startNs = view.selectedHistogramBucketStart
+    if (startNs === null) return null
+    const series = heatmapBucketSeries
+    if (!series || series.length === 0) return null
+    const qr = selectionToQueryRangeMs(timeContext.selection, Date.now())
+    return columnEndNs(
+      series.map(s => s.timestamp),
+      startNs,
+      BigInt(Math.trunc(qr.end)) * 1_000_000n
+    )
+  })
 
   const heatmapColumnSelection = $derived.by(
     (): HeatmapColumnSelection | null => {
@@ -2280,8 +2299,11 @@ export function createMetricViewContext(
     get activeHistogramDp() {
       return activeHistogramDp
     },
-    get heatmapColumnRangeNs() {
-      return heatmapColumnRangeNs
+    get heatmapColumnStartNs() {
+      return heatmapColumnStartNs
+    },
+    get heatmapColumnEndNs() {
+      return heatmapColumnEndNs
     },
     get heatmapSelectedTimestamp() {
       return heatmapSelectedTimestamp

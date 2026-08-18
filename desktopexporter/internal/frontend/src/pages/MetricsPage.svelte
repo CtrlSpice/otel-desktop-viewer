@@ -490,9 +490,14 @@
   // aggregate, but one entry per series rather than one across them. fitToData
   // is false because the window here *is* the request, not the absence of one.
   $effect(() => {
-    const range = metricCtx.heatmapColumnRangeNs
+    // Read as two primitives, so a recomputation landing on the same column is
+    // not a change. The heatmap array gets a new identity on every aggregate
+    // response -- ticking one series in the legend is enough -- and depending on
+    // an object would refetch and blank the panel for a column that never moved.
+    const startNs = metricCtx.heatmapColumnStartNs
+    const endNs = metricCtx.heatmapColumnEndNs
     const summary = page.selectedSummary
-    if (!range || !summary) {
+    if (startNs === null || endNs === null || !summary) {
       columnDistribution = undefined
       return
     }
@@ -504,8 +509,11 @@
       try {
         const result = await telemetryAPI.getMetric(
           summary.id,
-          Number(range.startNs / 1_000_000n),
-          Number(range.endNs / 1_000_000n),
+          // Exact nanoseconds, not milliseconds: the end sits one nanosecond
+          // short of the next column, and rounding it would drop the column's
+          // final millisecond of readings.
+          startNs,
+          endNs,
           1,
           undefined,
           DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],

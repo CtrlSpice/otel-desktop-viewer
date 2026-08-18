@@ -4760,11 +4760,14 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	require.Len(t, summaries, 1)
 	id := summaries[0]["id"].(string)
 
-	p95 := func(target, from, to int64, atTimestamp *int64) float64 {
+	// fitToData is the caller's, because the two reads disagree about it and the
+	// test has to exercise what the app sends: the wide read treats an unbounded
+	// window as the absence of a choice, while the column read *is* the request.
+	p95 := func(target, from, to int64, fitToData bool, atTimestamp *int64) float64 {
 		t.Helper()
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 			return metrics.GetMetric(ctx, db, id, from, to,
-				target, nil, []float64{0.95}, 0, true, 0, 0, nil, "", nil, 0)
+				target, nil, []float64{0.95}, 0, fitToData, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4823,9 +4826,10 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	columnEnd := columnStart + columnWidth - 1
 
 	// What the old click read: the per-series bucket stamped at the column start.
-	atStart := p95(500, windowStart, windowEnd, &columnStart)
-	// What the column holds: one bucket over exactly the column's range.
-	whole := p95(1, columnStart, columnEnd, nil)
+	atStart := p95(500, windowStart, windowEnd, true, &columnStart)
+	// What the column holds: one bucket over exactly the column's range, fetched
+	// the way the page fetches it.
+	whole := p95(1, columnStart, columnEnd, false, nil)
 
 	assert.NotEqual(t, atStart, whole,
 		"a per-series bucket at the column start is not the column: if these agree "+
@@ -4842,7 +4846,7 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	require.Positive(t, perColumn)
 	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, id, columnStart, columnEnd,
-			1, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+			1, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var merged map[string]any
