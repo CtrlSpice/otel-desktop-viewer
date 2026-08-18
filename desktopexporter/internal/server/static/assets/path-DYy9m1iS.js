@@ -1,1 +1,0 @@
-import{a as e}from"./Path.canvas-y4E09lLn.js";function t(e){return function(){return e}}function n(t){let n=3;return t.digits=function(e){if(!arguments.length)return n;if(e==null)n=null;else{let t=Math.floor(e);if(!(t>=0))throw RangeError(`invalid digits: ${e}`);n=t}return t},()=>new e(n)}export{t as n,n as t};
