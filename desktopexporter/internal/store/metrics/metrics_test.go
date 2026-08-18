@@ -4706,3 +4706,151 @@ func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 		"and the other end matters too -- a request that returned instantly is "+
 			"as diagnostic as one that hung")
 }
+
+// TestGetMetric_ColumnWindowMergesTheWholeColumn pins the contract a heatmap
+// click depends on: asked for one bucket over one column's time range, the store
+// returns each series merged across that whole range.
+//
+// The click used to read a per-series datapoint stamped at the column's start
+// instead. That datapoint exists and lines up exactly -- both grids snap to the
+// same ladder and its rungs divide evenly, so a column start is always a
+// per-series bucket start -- but a column holds several per-series buckets, and
+// the first one is not the column. Measured on the grids the UI actually asks
+// for, a 30s column holds three 10s buckets, so the click described a third of
+// what was clicked, silently.
+//
+// The fixture makes that difference as large as it gets: fast readings at the
+// start of each column, slow ones after, which is the shape of a latency spike
+// and the reason someone clicks a heatmap in the first place.
+func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	// Enough readings that the heatmap's target is what sets its width. Fewer and
+	// the cadence floor clamps both grids to the 10s reporting interval, they come
+	// out identical, and there is no mismatch left to test: the finer grid can
+	// never be finer than the data reports.
+	const readings = 240
+	var dps []histTestDP
+	for i := range readings {
+		// One in three readings is fast; the rest are slow. With 10s readings and
+		// a 30s column, that puts the fast one exactly at each column start.
+		fast := i%3 == 0
+		counts := []uint64{100, 0, 0, 0}
+		sum, mn, mx := 50.0, 0.4, 0.9
+		if !fast {
+			counts = []uint64{0, 0, 0, 100}
+			sum, mn, mx = 5000.0, 40.0, 90.0
+		}
+		dps = append(dps, histTestDP{
+			timestamp: base.Add(time.Duration(i) * 10 * time.Second),
+			attrs:     map[string]string{"pod": "a"},
+			bounds:    []float64{1, 5, 10},
+			counts:    counts,
+			count:     100,
+			sum:       sum, min: mn, max: mx,
+		})
+	}
+	fixture := makeHistogramFixtureT("column.hist", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	id := summaries[0]["id"].(string)
+
+	p95 := func(target, from, to int64, atTimestamp *int64) float64 {
+		t.Helper()
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, id, from, to,
+				target, nil, []float64{0.95}, 0, true, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		for _, d := range m["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any) {
+			dp := d.(map[string]any)
+			if atTimestamp != nil {
+				v, err := strconv.ParseInt(dp["timestamp"].(string), 10, 64)
+				require.NoError(t, err)
+				if v != *atTimestamp {
+					continue
+				}
+			}
+			q, ok := dp["quantiles"].(map[string]any)
+			require.True(t, ok, "quantiles must be present")
+			return q["0.95"].(float64)
+		}
+		t.Fatal("no datapoint matched")
+		return 0
+	}
+
+	windowStart := base.Add(-time.Minute).UnixNano()
+	windowEnd := base.Add(time.Duration(readings)*10*time.Second + time.Minute).UnixNano()
+
+	// Find a column boundary the way the UI does: the heatmap's own grid.
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, id, windowStart, windowEnd,
+			100, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var heat map[string]any
+	require.NoError(t, json.Unmarshal(raw, &heat))
+	columns := heat["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+	require.Greater(t, len(columns), 2, "need several columns to measure a width")
+	first, err := strconv.ParseInt(columns[0].(map[string]any)["timestamp"].(string), 10, 64)
+	require.NoError(t, err)
+	second, err := strconv.ParseInt(columns[1].(map[string]any)["timestamp"].(string), 10, 64)
+	require.NoError(t, err)
+	columnWidth := first - second // datapoints arrive newest first
+	if columnWidth < 0 {
+		columnWidth = -columnWidth
+	}
+	require.Positive(t, columnWidth)
+
+	// A column in the middle, away from the window edges.
+	columnStart, err := strconv.ParseInt(
+		columns[len(columns)/2].(map[string]any)["timestamp"].(string), 10, 64)
+	require.NoError(t, err)
+
+	// The column's range, half-open. The store's window filter is inclusive at
+	// both ends (`timestamp >= start and timestamp <= end`) while floor_div cuts
+	// buckets half-open, so asking for [start, start+width] pulls in the next
+	// column's first reading and counts it twice -- once in each column. One
+	// nanosecond short of the next boundary is the range the column actually
+	// covers.
+	columnEnd := columnStart + columnWidth - 1
+
+	// What the old click read: the per-series bucket stamped at the column start.
+	atStart := p95(500, windowStart, windowEnd, &columnStart)
+	// What the column holds: one bucket over exactly the column's range.
+	whole := p95(1, columnStart, columnEnd, nil)
+
+	assert.NotEqual(t, atStart, whole,
+		"a per-series bucket at the column start is not the column: if these agree "+
+			"the fixture no longer distinguishes the two reads and the test proves nothing")
+	assert.Greater(t, whole, atStart,
+		"the column contains the slow readings its first bucket misses, so its p95 "+
+			"must be the higher of the two -- this is the number a click has to show")
+
+	// And the window must be exactly one column. Without this the test passes for
+	// any window at least a column wide, so a fix that fetched too much would
+	// look correct: the p95 would still be the high one, just drawn from readings
+	// outside the column the user clicked.
+	perColumn := columnWidth / (10 * int64(time.Second)) // readings inside one column
+	require.Positive(t, perColumn)
+	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, id, columnStart, columnEnd,
+			1, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var merged map[string]any
+	require.NoError(t, json.Unmarshal(raw, &merged))
+	mergedDps := merged["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+	require.Len(t, mergedDps, 1, "one bucket over one column is one merged datapoint")
+	assert.Equal(t, float64(perColumn*100), mergedDps[0].(map[string]any)["count"],
+		"the merged column must total exactly the readings inside it -- %d readings "+
+			"of 100 observations each; more means the fetched window is wider than "+
+			"the column", perColumn)
+}

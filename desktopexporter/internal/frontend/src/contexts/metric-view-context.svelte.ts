@@ -312,6 +312,15 @@ export interface MetricViewContext {
   readonly activeHistogramDp:
     HistogramDataPoint | ExponentialHistogramDataPoint | undefined
   readonly heatmapSelectedTimestamp: number | null
+  /**
+   * The selected column's exact range in nanoseconds, for the page to fetch.
+   *
+   * End is inclusive and one nanosecond short of the next column's start: the
+   * store filters `timestamp >= start and timestamp <= end` while it cuts
+   * buckets half-open, so passing the next boundary pulls that column's first
+   * reading in too and counts it in both.
+   */
+  readonly heatmapColumnRangeNs: { startNs: bigint; endNs: bigint } | null
   /** Quantile line key (e.g. `"0.95"`) when selection came from a quantile chart point click. */
   readonly selectedQuantileKey: string | null
   readonly heatmapColumnSelection: HeatmapColumnSelection | null
@@ -453,7 +462,18 @@ export function createMetricViewContext(
   getScalarAggregate: () => ScalarAggregate | null = () => null,
   /** Unreduced datapoints for one series, once the page has fetched them. */
   getSeriesDatapoints: (seriesKey: string) => DataPoint[] | undefined = () =>
-    undefined
+    undefined,
+  /**
+   * Each series merged over the selected heatmap column's time range, once the
+   * page has fetched it.
+   *
+   * A separate fetch because the column and the per-series lines are drawn at
+   * different resolutions and neither can be pinned to the other -- the heatmap
+   * wants a column per few pixels, the quantile lines want enough points not to
+   * step. Reading the per-series bucket that starts where the column starts
+   * looks right and is not: a column spans several of them.
+   */
+  getColumnDistribution: () => MetricData | undefined = () => undefined
 ): MetricViewContext {
   const timeContext = getTimeContext()
 
@@ -1449,6 +1469,27 @@ export function createMetricViewContext(
     return Number(view.selectedHistogramBucketStart / 1_000_000n)
   })
 
+  const heatmapColumnRangeNs = $derived.by(
+    (): { startNs: bigint; endNs: bigint } | null => {
+      const startNs = view.selectedHistogramBucketStart
+      if (startNs === null) return null
+      const series = heatmapBucketSeries
+      if (!series || series.length < 2) return null
+      // Width from the grid the columns were drawn on, rather than a constant:
+      // the store picks the width off a ladder, so only the response knows it.
+      const sorted = [...new Set(series.map(s => s.timestamp))].sort((a, b) =>
+        a < b ? -1 : a > b ? 1 : 0
+      )
+      let width: bigint | null = null
+      for (let i = 1; i < sorted.length; i++) {
+        const gap = sorted[i]! - sorted[i - 1]!
+        if (width === null || gap < width) width = gap
+      }
+      if (width === null || width <= 0n) return null
+      return { startNs, endNs: startNs + width - 1n }
+    }
+  )
+
   const heatmapColumnSelection = $derived.by(
     (): HeatmapColumnSelection | null => {
       if (view.selectedHistogramBucketStart === null) return null
@@ -1465,12 +1506,18 @@ export function createMetricViewContext(
   const quantilePointSelection = $derived.by(
     (): QuantilePointSelection | null => {
       if (view.selectedHistogramBucketStart === null) return null
-      const perAttribute = histogramAggregation.perAttribute
       const merged = heatmapBucketSeries
-      if (!Array.isArray(perAttribute) || perAttribute.length === 0) return null
       if (!merged || merged.length === 0) return null
+      // Null until the column arrives, deliberately. The wide response is on
+      // hand and answering from it would fill the panel instantly with the
+      // wrong third of the column -- a fast answer to a question nobody asked.
+      // An empty panel for one round trip is the honest reading.
+      const column = getColumnDistribution()
+      if (!column) return null
+      const columnSlices = seriesBucketsToSlices(column.timeseries)
+      if (columnSlices.length === 0) return null
       return quantilePointSelectionAt(
-        perAttribute,
+        columnSlices,
         merged,
         view.selectedHistogramBucketStart,
         histogramVisibleKeys,
@@ -2232,6 +2279,9 @@ export function createMetricViewContext(
     },
     get activeHistogramDp() {
       return activeHistogramDp
+    },
+    get heatmapColumnRangeNs() {
+      return heatmapColumnRangeNs
     },
     get heatmapSelectedTimestamp() {
       return heatmapSelectedTimestamp
