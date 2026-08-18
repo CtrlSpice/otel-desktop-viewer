@@ -41,7 +41,31 @@ type Store struct {
 	//
 	// Not reentrant: never call a locking Store method from inside a WithConn,
 	// WithDBRead, or WithDBWrite callback.
+	// mu orders access to db and conn. Read-held by queries *and by ingest*,
+	// write-held by pool mutations and Close.
+	//
+	// Ingest holding the read lock is the point. Appending on the dedicated
+	// connection and querying on the pool are two DuckDB connections to one
+	// database, and DuckDB's MVCC serves a reader alongside a writer without
+	// help from us -- verified by running pooled SELECTs against a continuous
+	// 20k-span appender ingest with no lock at all: 1,225 reads, no failures,
+	// no races. Excluding readers for the duration of a batch was therefore
+	// costing latency to buy nothing, and the cost scaled with batch size: a
+	// reader waited 159ms behind a 50,000-span batch to perform 0.2ms of work.
+	//
+	// What still must be exclusive is ingest against *pool mutations* -- clear,
+	// delete, retention prune and checkpoint -- and that is what the write lock
+	// now means. The sharpest reason is the orphan sweep: ingest inserts
+	// dictionary rows before flushing the owner rows that reference them, so a
+	// sweep interleaved in that window would delete rows the in-flight batch is
+	// about to point at. No error, no failed constraint, just attributes
+	// quietly missing.
 	mu sync.RWMutex
+
+	// ingestMu serializes ingest against itself. mu cannot: two ingest calls
+	// both hold it for reading, and a DuckDB appender belongs to the one
+	// connection that made it.
+	ingestMu sync.Mutex
 
 	// flushed records which dictionary rows this store has already written, so
 	// a batch whose attributes, resource and scope are all known can skip its
@@ -210,12 +234,22 @@ func (s *Store) Close() error {
 	return errors.Join(connErr, dbErr)
 }
 
-// WithConn runs fn against the store's dedicated appender connection under the
-// write lock. Ingest uses this: DuckDB appenders are bound to the connection
-// that created them, so ingest cannot run on the pool.
+// WithConn runs fn against the store's dedicated appender connection. Ingest
+// uses this: DuckDB appenders are bound to the connection that created them, so
+// ingest cannot run on the pool.
+//
+// Takes ingestMu to serialize against other ingest calls, then the *read* lock,
+// which lets queries run while a batch is being appended while still excluding
+// pool mutations and Close. See the note on mu.
+//
+// Lock order is ingestMu then mu, and nothing acquires them the other way
+// round, so the pair cannot deadlock.
 func (s *Store) WithConn(fn func(conn driver.Conn) error) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	if s.db == nil || s.conn == nil {
 		return ErrStoreConnectionClosed
@@ -225,7 +259,8 @@ func (s *Store) WithConn(fn func(conn driver.Conn) error) error {
 }
 
 // WithDBRead runs fn against the connection pool under the read lock. Use it
-// for SELECTs. Concurrent readers run in parallel and never overlap a writer.
+// for SELECTs. Concurrent readers run in parallel, and run alongside ingest;
+// they never overlap a pool mutation or Close.
 func (s *Store) WithDBRead(fn func(db *sql.DB) error) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -238,9 +273,9 @@ func (s *Store) WithDBRead(fn func(db *sql.DB) error) error {
 }
 
 // WithDBWrite runs fn against the connection pool under the write lock. Use it
-// for DELETE, checkpoint, and anything else that mutates. Sharing the write
-// lock with WithConn is the point: it keeps pool mutations from racing the
-// appender writes that ingest performs on a different connection.
+// for DELETE, checkpoint, and anything else that mutates. The write lock
+// excludes ingest, which holds mu for reading, so a pool mutation still cannot
+// race the appender writes ingest performs on a different connection.
 func (s *Store) WithDBWrite(fn func(db *sql.DB) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
