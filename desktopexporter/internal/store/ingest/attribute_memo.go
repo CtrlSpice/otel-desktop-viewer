@@ -27,6 +27,23 @@ import (
 // would buy isolation nothing needs and cost a parameter on three Ingest
 // signatures and their hundred-odd callers.
 //
+// "Needs no invalidation" is a claim about ids, not about rows, and the
+// difference is the dangerous part. This memo must never be read as "those rows
+// are already in the database" -- retention and SweepOrphans delete dictionary
+// rows the memo still holds ids for, and a memo that skipped re-registering
+// them would leave owner arrays pointing at rows that no longer exist. No
+// error, no failed constraint; the attributes would just stop appearing. What
+// prevents it is that AddAttributes registers the returned rows unconditionally
+// and the insert stays gated on FlushedIDs, which the sweep clears.
+// TestDictionaryIntegrityAcrossClearAndReingest in the store package is the
+// guard: it sweeps span attributes away and re-ingests content whose attributes
+// are byte-identical, so the re-ingest is served from here and must still write
+// the rows back. It predates this memo and was written for exactly this shape
+// of mistake.
+//
+// Memory is bounded and returned: 4095 five-label sets measure 3.65 MB, ~933 B
+// each, and a reset releases all of it.
+//
 // The returned slices are shared with the memo and with every later caller
 // holding the same set. Nothing mutates them today -- rows are read into the
 // dictionary map, ids go to an appender -- and nothing should start.
