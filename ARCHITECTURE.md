@@ -123,7 +123,7 @@ Ingest writes directly from OpenTelemetry pdata into DuckDB appenders. There are
 
 **Engine**: DuckDB via `github.com/duckdb/duckdb-go/v2` (CGO required).
 
-**Connection model**: `store.Store` holds two handles to one DuckDB database, ordered by a single `sync.RWMutex`.
+**Connection model**: `store.Store` holds two handles to one DuckDB database, ordered by a `sync.RWMutex` plus a second mutex that serializes ingest against itself.
 
 - `conn` — a dedicated `driver.Conn` from `connector.Connect`, used only by ingest. DuckDB appenders are bound to the connection that created them, so ingest cannot run on the pool.
 - `db` — a `*sql.DB` pool from `sql.OpenDB`, used by every query and by the delete/checkpoint paths. The pool is capped via `SetMaxOpenConns`, because each pooled connection is a real DuckDB connection with real memory cost.
@@ -132,13 +132,17 @@ Access is chosen by intent, not by handle:
 
 | Method | Lock | Handle | Used by |
 |--------|------|--------|---------|
-| `WithConn` | write | `conn` | ingest (appenders) |
+| `WithConn` | `ingestMu`, then read | `conn` | ingest (appenders) |
 | `WithDBWrite` | write | `db` | clear, delete, retention prune + checkpoint |
 | `WithDBRead` | read | `db` | all queries |
 
-The write lock is shared across both handles, so appender writes, deletes, and retention checkpoints are mutually exclusive even though they run on different connections. Reads run concurrently with one another and never overlap a write.
+The write lock means "no ingest and no queries", and belongs to pool mutations alone. Ingest takes the *read* lock, so queries run alongside a batch being appended; `ingestMu` is what keeps two ingest calls off one appender connection, which the read lock cannot do.
 
-What this does **not** guarantee: a query does not see rows that an in-flight ingest has appended but not yet flushed. DuckDB appenders buffer client-side and become visible on flush — automatically at the chunk threshold, or on `Flush`/`Close` at the end of each ingest call. Under load the UI can lag ingest by up to one batch. That is a visibility window, not a lost write.
+Ingest reading rather than writing is deliberate. Appending on `conn` and querying on `db` are two DuckDB connections to one database, and DuckDB's MVCC serves a reader alongside a writer unaided — verified by running pooled `SELECT`s against a continuous 20,000-span appender ingest with no lock at all: 1,225 reads, no failures, no races. Excluding readers for a batch's duration bought nothing and cost latency in proportion to batch size; a reader waited 159ms behind a 50,000-span batch to perform 0.2ms of work.
+
+Pool mutations must still exclude ingest, and the sharpest reason is the orphan sweep: ingest inserts dictionary rows before flushing the owner rows that reference them, so a sweep landing in that window would delete rows the in-flight batch is about to point at. No error and no failed constraint, since no foreign key reaches into a `uuid[]` — the attributes would simply stop appearing.
+
+What this does **not** guarantee: a query does not see rows that an in-flight ingest has appended but not yet flushed. DuckDB appenders buffer client-side and become visible on flush — automatically at the chunk threshold, or on `Flush`/`Close` at the end of each ingest call. Under load the UI can lag ingest by up to one batch. That is a visibility window, not a lost write. Queries running alongside ingest widens that window rather than changing its nature: a read can now land mid-batch, and can see dictionary rows whose owners have not flushed. Benign for queries, which join owner→attributes; the one visible effect is that the attribute-key dropdown may list a key a moment before its spans appear.
 
 `EnforceRetention` takes the write lock once per prune round rather than across a whole pass, so queries interleave between rounds instead of blocking for up to three checkpoints.
 
