@@ -60,6 +60,30 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
     )
   })
 
+  // The store caps how many exemplars a datapoint ships. The reader has to be
+  // able to tell a datapoint that held three from one that held three hundred,
+  // or the missing trace links look like traces that were never recorded.
+  it('says how many exemplars were withheld when the store capped the list', () => {
+    renderWithContexts(SeriesDatapointListHarness, {
+      datapoints: [makeDatapoint({ exemplarCount: 64 })],
+      expandDatapointId: 'dp-1',
+    })
+    expect(screen.getByText(/1 of 64 ex/)).toBeInTheDocument()
+    expect(screen.getByText(/showing 1 of 64/)).toBeInTheDocument()
+  })
+
+  it('names only the count it has when nothing was withheld', () => {
+    // No exemplarCount at all, which is what the store sends when the list is
+    // complete -- the overwhelmingly common case, and the one that must not
+    // render a "showing 1 of undefined" notice.
+    renderWithContexts(SeriesDatapointListHarness, {
+      datapoints: [makeDatapoint()],
+      expandDatapointId: 'dp-1',
+    })
+    expect(screen.getByText('1 ex')).toBeInTheDocument()
+    expect(screen.queryByText(/showing/)).not.toBeInTheDocument()
+  })
+
   it('navigates with span patch when an exemplar span link is clicked', async () => {
     renderWithContexts(SeriesDatapointListHarness, {
       datapoints: [makeDatapoint()],

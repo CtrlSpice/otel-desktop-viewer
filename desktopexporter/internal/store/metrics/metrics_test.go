@@ -4418,3 +4418,291 @@ func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 		"the single offset ends the Sunday an hour early, carrying its second "+
 			"observation into the Monday -- the behaviour zone-less callers keep")
 }
+
+// TestGetMetric_ExemplarsAreCappedPerBucket pins the ceiling on how much an
+// exemplar-dense stream can grow a reduced response.
+//
+// Exemplar-bearing datapoints are retained on top of the four M4 elects, so
+// trace links survive reduction. That retention used to be uncapped on the
+// reasoning that exemplars are sparse -- an assumption about other people's SDK
+// settings rather than anything this query controls. A stream sampling every
+// datapoint defeated the reduction outright: every row came back.
+func TestGetMetric_ExemplarsAreCappedPerBucket(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	// One bucket's worth of readings, every one of them carrying an exemplar.
+	const n = 60
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "exemplar-cap")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("cap-scope")
+	m := sm.Metrics().AppendEmpty()
+	m.SetName("capped.total")
+	sum := m.SetEmptySum()
+	sum.SetIsMonotonic(true)
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	for i := range n {
+		dp := sum.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(base.Add(time.Duration(i) * time.Second).UnixNano()))
+		dp.SetDoubleValue(float64(i % 7))
+		dp.Attributes().PutStr("pod", "a")
+		ex := dp.Exemplars().AppendEmpty()
+		ex.SetTimestamp(dp.Timestamp())
+		ex.SetDoubleValue(float64(i))
+		ex.SetTraceID(pcommon.TraceID([16]byte{byte(i), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}))
+		ex.SetSpanID(pcommon.SpanID([8]byte{byte(i), 2, 3, 4, 5, 6, 7, 8}))
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	// One target bucket, so the whole run reduces to a single bucket and the
+	// per-bucket ceiling is the whole response's ceiling.
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			1, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(raw, &got))
+	dps := got["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+
+	// Four elected plus at most two exemplar carriers, and the two sets
+	// overlap, so six is the ceiling rather than the expected count.
+	assert.LessOrEqual(t, len(dps), 6,
+		"a bucket yields at most the four M4 elects plus two exemplar carriers; "+
+			"without the cap all %d readings come back and the reduction does nothing", n)
+	assert.Greater(t, len(dps), 0, "the bucket should still yield its elected points")
+
+	// Trace correlation survives: the point of retaining carriers at all.
+	var withExemplars int
+	for _, d := range dps {
+		if ex, _ := d.(map[string]any)["exemplars"].([]any); len(ex) > 0 {
+			withExemplars++
+		}
+	}
+	assert.Greater(t, withExemplars, 0,
+		"capping must not become dropping -- a reader still needs a way into a trace")
+}
+
+// TestGetMetric_ExemplarListIsCappedAndCounted covers the other direction the
+// response grew in: how many exemplars one datapoint carries, which OTel does
+// not limit. The list is capped and the true count travels beside it, so a
+// client can say "5 of 60" rather than silently showing five.
+func TestGetMetric_ExemplarListIsCappedAndCounted(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	const perDatapoint = 60
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "exemplar-fanout")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("fanout-scope")
+	m := sm.Metrics().AppendEmpty()
+	m.SetName("fanout.total")
+	g := m.SetEmptyGauge()
+	dp := g.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(base.UnixNano()))
+	dp.SetDoubleValue(1)
+	dp.Attributes().PutStr("pod", "a")
+	for i := range perDatapoint {
+		ex := dp.Exemplars().AppendEmpty()
+		// Staggered, so the (timestamp, id) order the cap keeps a prefix of is
+		// a real order rather than an accident of insertion.
+		ex.SetTimestamp(pcommon.Timestamp(base.Add(time.Duration(i) * time.Millisecond).UnixNano()))
+		ex.SetDoubleValue(float64(i))
+		ex.SetTraceID(pcommon.TraceID([16]byte{byte(i), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}))
+		ex.SetSpanID(pcommon.SpanID([8]byte{byte(i), 2, 3, 4, 5, 6, 7, 8}))
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			0, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(raw, &got))
+	dps := got["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+	require.Len(t, dps, 1)
+	only := dps[0].(map[string]any)
+
+	assert.Len(t, only["exemplars"].([]any), 5,
+		"one datapoint ships at most five exemplars, whatever the SDK attached")
+	assert.Equal(t, float64(perDatapoint), only["exemplarCount"],
+		"and reports how many it actually holds, so the cap is visible rather "+
+			"than a silent loss of trace links")
+}
+
+// TestGetMetric_ExemplarSelectionKeepsBothExtremes pins which exemplars survive
+// the cap, not merely how many.
+//
+// The cap first kept a prefix in time order, which is reproducible and useless:
+// a reader following an exemplar is chasing the slow request or the one that
+// returned nothing, and time order hands them whichever happened first. Both
+// caps now rank from either extreme, so what survives spans the range.
+func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "exemplar-extremes")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("extremes-scope")
+	m := sm.Metrics().AppendEmpty()
+	m.SetName("extremes.gauge")
+	g := m.SetEmptyGauge()
+	dp := g.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(base.UnixNano()))
+	dp.SetDoubleValue(1)
+	dp.Attributes().PutStr("pod", "a")
+	// Values 100, 101, ... 119 in time order. Time order would keep 100-104;
+	// ranking from both ends keeps the extremes of the range instead. The
+	// slowest request is the one worth a trace link, and so is the fastest.
+	const n = 20
+	for i := range n {
+		ex := dp.Exemplars().AppendEmpty()
+		ex.SetTimestamp(pcommon.Timestamp(base.Add(time.Duration(i) * time.Millisecond).UnixNano()))
+		ex.SetDoubleValue(float64(100 + i))
+		ex.SetTraceID(pcommon.TraceID([16]byte{byte(i), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}))
+		ex.SetSpanID(pcommon.SpanID([8]byte{byte(i), 2, 3, 4, 5, 6, 7, 8}))
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			0, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(raw, &got))
+	dps := got["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+	require.Len(t, dps, 1)
+
+	var values []float64
+	for _, e := range dps[0].(map[string]any)["exemplars"].([]any) {
+		values = append(values, e.(map[string]any)["value"].(float64))
+	}
+	sort.Float64s(values)
+
+	// Five kept, working inward from both ends: 100, 101, 102 from the bottom
+	// and 118, 119 from the top -- or the mirror of that, which is the same
+	// spread. What matters is that both extremes are present and the middle is
+	// not.
+	require.Len(t, values, 5)
+	assert.Equal(t, 100.0, values[0],
+		"the lowest exemplar is one a reader would want and must survive the cap")
+	assert.Equal(t, 119.0, values[len(values)-1],
+		"so is the highest -- time-order selection would have dropped it")
+	assert.NotContains(t, values, 110.0,
+		"and the middle of the range is what the cap should be spending its "+
+			"budget on last")
+}
+
+// TestGetMetric_ExemplarCarriersAreTheExtremeOnes is the per-bucket half of the
+// same question: of the datapoints a bucket could retain for their exemplars,
+// which two does it keep? The ones whose exemplars reach lowest and highest,
+// not the two that happened first.
+func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "carrier-extremes")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("carrier-scope")
+	m := sm.Metrics().AppendEmpty()
+	m.SetName("carriers.total")
+	sum := m.SetEmptySum()
+	sum.SetIsMonotonic(true)
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+
+	// Twelve readings in one bucket, each carrying one exemplar.
+	//
+	// The exemplar extremes sit in the middle of the run, at i=5 and i=6, while
+	// the datapoint values rise monotonically. That separation is the whole
+	// fixture: M4 elects the first, last, smallest and largest *readings* --
+	// here i=0 and i=11 -- and those carry unremarkable exemplars. So the only
+	// thing that can put exemplar 10 or 99 in the response is the carrier cap
+	// choosing them, and a cap that kept the earliest two would ship three
+	// identical 55s and reach neither.
+	//
+	// An earlier version of this test ramped the exemplar values with time,
+	// which made the extremes coincide with the first and last readings -- the
+	// elects supplied them, and the test passed no matter what the carrier cap
+	// did.
+	const n = 12
+	for i := range n {
+		dp := sum.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(base.Add(time.Duration(i) * time.Second).UnixNano()))
+		dp.SetDoubleValue(float64(i))
+		dp.Attributes().PutStr("pod", "a")
+		value := 55.0
+		switch i {
+		case 5:
+			value = 10
+		case 6:
+			value = 99
+		}
+		ex := dp.Exemplars().AppendEmpty()
+		ex.SetTimestamp(dp.Timestamp())
+		ex.SetDoubleValue(value)
+		ex.SetTraceID(pcommon.TraceID([16]byte{byte(i), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}))
+		ex.SetSpanID(pcommon.SpanID([8]byte{byte(i), 2, 3, 4, 5, 6, 7, 8}))
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+
+	// One bucket for the whole run, so the per-bucket carrier cap is what
+	// decides the answer.
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			1, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(raw, &got))
+	dps := got["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+
+	var shipped []float64
+	for _, d := range dps {
+		for _, e := range d.(map[string]any)["exemplars"].([]any) {
+			shipped = append(shipped, e.(map[string]any)["value"].(float64))
+		}
+	}
+	sort.Float64s(shipped)
+	require.NotEmpty(t, shipped)
+
+	assert.Contains(t, shipped, 99.0,
+		"the bucket's most extreme exemplar is the one a reader is hunting, and "+
+			"no elected reading carries it -- only the carrier cap can")
+	assert.Contains(t, shipped, 10.0,
+		"and the other end matters too -- a request that returned instantly is "+
+			"as diagnostic as one that hung")
+}

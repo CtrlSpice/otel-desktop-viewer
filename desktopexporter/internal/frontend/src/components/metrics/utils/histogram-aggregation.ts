@@ -328,6 +328,8 @@ export function histogramSliceToDatapoint(
     timestampMs: Number(normalized.timestamp / 1_000_000n),
     startTime: normalized.timestamp,
     flags: 0,
+    // A merged datapoint is built from bucket vectors, which carry no
+    // exemplars -- so it holds none, and none were withheld.
     exemplars: [],
     count: normalized.totals.count,
     sum: normalized.totals.sum,

@@ -157,6 +157,12 @@
     ).dateTime
   }
 
+  /** Whether the store trimmed this datapoint's exemplar list. The field is
+   *  absent whenever it did not, which is almost always. */
+  function withheld(dp: DataPoint): boolean {
+    return dp.exemplarCount !== undefined && dp.exemplarCount > dp.exemplars.length
+  }
+
   function exemplarSpanPatch(ex: Exemplar) {
     return ex.spanID ? { [SPAN_PARAM]: ex.spanID } : undefined
   }
@@ -233,7 +239,13 @@
           </span>
           {#if hasExtra}
             {#if dp.exemplars.length > 0}
-              <span class="badge-count">{dp.exemplars.length} ex</span>
+              <span class="badge-count">
+                {#if withheld(dp)}
+                  {dp.exemplars.length} of {dp.exemplarCount} ex
+                {:else}
+                  {dp.exemplars.length} ex
+                {/if}
+              </span>
             {/if}
             {#if dp.flags > 0}
               <span class="badge badge-xs badge-soft badge-warning">flags</span>
@@ -254,6 +266,16 @@
             <div class="dp-list__detail">
               <span class="dp-list__detail-label">flags</span>
               <span class="dp-list__detail-value">{dp.flags}</span>
+            </div>
+          {/if}
+          {#if withheld(dp)}
+            <div class="dp-list__detail">
+              <span class="dp-list__detail-label">exemplars</span>
+              <span class="dp-list__detail-value">
+                showing {dp.exemplars.length} of {dp.exemplarCount} — the store
+                caps the list so one densely sampled stream cannot decide the
+                size of every response
+              </span>
             </div>
           {/if}
           {#each dp.exemplars as ex, i}
