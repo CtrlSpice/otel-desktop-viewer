@@ -59,6 +59,77 @@ const VALID_AGGREGATION_VIEWS: ReadonlySet<AggregationView> = new Set([
 ])
 
 /** Same identity as `metricSummaryKey` / drawer search — metric stream id. */
+/**
+ * Storage-format marker. Bumped when a stored view needs repairing rather than
+ * merely reading differently.
+ */
+const STORAGE_VERSION_KEY = 'metrics:view:storage-version'
+const STORAGE_VERSION = '1'
+
+/**
+ * Drop empty visible-key lists written by a bug, once.
+ *
+ * Per-metric view state used to be seeded in an $effect, which ran after the
+ * first render and could therefore run before the series keys had settled. It
+ * would then persist `visibleKeys: []` for a metric the user had never touched,
+ * and every later visit honoured it: a chart with nothing drawn and every
+ * series unticked. Seeding is synchronous now and cannot produce it.
+ *
+ * An empty list cannot be told from a deliberate one by inspection -- unticking
+ * every series is a legitimate thing to do and must survive a reload. So this
+ * runs exactly once, guarded by a version marker: entries emptied by the old
+ * code are cleared, and anything a user empties afterwards is left alone
+ * forever.
+ *
+ * Only `visibleKeys` is removed; the rest of the stored view (aggregation view,
+ * aggregate toggles) is a separate choice and is kept.
+ */
+export function repairEmptyPersistedVisibleKeys(): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    if (localStorage.getItem(STORAGE_VERSION_KEY) === STORAGE_VERSION) return
+
+    // Collected first, and read through the Storage API rather than
+    // Object.keys: enumerating a Storage as a plain object is a browser
+    // convenience, not part of the interface, and removing while iterating
+    // shifts every later index.
+    const storedKeys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key) storedKeys.push(key)
+    }
+
+    for (const key of storedKeys) {
+      if (!key.startsWith(STORAGE_PREFIX)) continue
+      if (key === STORAGE_VERSION_KEY) continue
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        continue
+      }
+      if (!parsed || typeof parsed !== 'object') continue
+      const obj = parsed as Record<string, unknown>
+      if (!Array.isArray(obj.visibleKeys) || obj.visibleKeys.length > 0)
+        continue
+
+      delete obj.visibleKeys
+      if (Object.keys(obj).length === 0) {
+        localStorage.removeItem(key)
+      } else {
+        localStorage.setItem(key, JSON.stringify(obj))
+      }
+    }
+
+    localStorage.setItem(STORAGE_VERSION_KEY, STORAGE_VERSION)
+  } catch {
+    // A storage that throws (private mode, quota) is not worth failing a page
+    // load over. The unrepaired state is the status quo, not a new fault.
+  }
+}
+
 export function metricViewStorageKey(metricStreamId: string): string {
   return `${STORAGE_PREFIX}${metricStreamId}`
 }
@@ -245,6 +316,18 @@ export function loadPersistedShowAllSeriesAggregate(
  * Pick visible timeseries keys for the current metric data.
  * Restores persisted keys that still exist; otherwise first N.
  */
+/**
+ * The visible keys a previous visit left behind, or null if there are none.
+ *
+ * Exposed so a fetch can name the series it needs before it has the response:
+ * resolveTimeseriesVisible answers the same question but needs the metric's
+ * current keys to fall back on, and that is exactly what the caller does not
+ * have yet.
+ */
+export function persistedVisibleKeys(metricStreamId: string): string[] | null {
+  return loadPersistedView(metricStreamId)?.visibleKeys ?? null
+}
+
 export function resolveTimeseriesVisible(
   currentKeys: readonly string[],
   metricStreamId: string,

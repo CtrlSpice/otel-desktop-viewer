@@ -764,7 +764,35 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 // seriesIDs narrows the response to those series; nil or empty returns every
 // series in the stream. The filter is applied before the reduction, so a
 // caller asking for two of ten series pays for two.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string) (json.RawMessage, error) {
+// quantiles are computed per histogram datapoint and returned keyed by the
+// quantile; empty skips the work.
+// viewBuckets is the resolution the Sum / Average / Rate views aggregate onto,
+// which is a different question from targetBuckets: the election thins while
+// keeping the line's shape, the views bucket for a chart.
+// sparklineBuckets is the resolution of the per-series sparkline, a third
+// question again: it fits a list row rather than a chart, and the reduction
+// keeps each bucket's min and max so a spike survives at that size. 0 skips it
+// and every series comes back with a null sparkline. It is computed for every
+// series in the response, including unselected ones, because the sparkline is
+// how a user decides which series to select.
+// selectedSeriesIDs names the pool the Selected cross-series line folds. It
+// narrows nothing else: the All line keeps folding every series in the stream,
+// and nil means nothing is checked, so only the All line is drawn.
+// datapointSeriesIDs and datapointSeriesLimit decide which series ship their
+// datapoints -- almost the whole payload. Every series keeps its row, stats,
+// view buckets and sparkline regardless, so the panel can still list the ones
+// nobody is drawing and the All aggregate can still fold them. The limit is
+// for a caller that cannot name the series it wants because it picks them from
+// this very response; it takes the first N in the response's own order. Nil
+// and 0 mean every series ships them.
+// fitToData says the window is the absence of a choice rather than a request,
+// which lets the reduction divide the data's own extent instead of the window.
+// It matters most at the widest windows: "All" spans decades, so dividing it
+// into targetBuckets gave buckets over a year wide and merged whole sessions
+// into one datapoint per series. The caller owns the time picker and so owns
+// this decision; the store obeys it. The window actually used comes back in the
+// response, so nobody has to infer it from bucketed timestamps.
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON
@@ -776,10 +804,38 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 	}
 
 	var raw []byte
-	if seriesIDs == nil {
-		seriesIDs = []string{}
+	// A nil slice binds as an empty array, not SQL NULL, so "all series" has
+	// to travel as an untyped nil. Empty then keeps its own meaning: no series.
+	var seriesArg any
+	if seriesIDs != nil {
+		seriesArg = seriesIDs
 	}
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesIDs).Scan(&raw); err != nil {
+	if quantiles == nil {
+		quantiles = []float64{}
+	}
+	// Same untyped-nil dance as seriesArg, and for a different meaning: null is
+	// "nothing checked", so the Selected pool is empty and the chart draws All
+	// alone. An empty slice would bind as an empty array and say the same thing,
+	// but going through nil keeps the two parameters' conventions identical.
+	var selectedArg any
+	if len(selectedSeriesIDs) > 0 {
+		selectedArg = selectedSeriesIDs
+	}
+	// nil and empty are different questions here, as they are for seriesArg:
+	// nil means the caller is not naming series, so the limit decides, while an
+	// empty list names no series and ships no datapoints at all.
+	// Empty means "no zone named", which the query reads as a null and answers
+	// with the single offset instead -- so a caller that sends no zone keeps the
+	// behaviour it had.
+	var tzArg any
+	if tzName != "" {
+		tzArg = tzName
+	}
+	var datapointArg any
+	if datapointSeriesIDs != nil {
+		datapointArg = datapointSeriesIDs
+	}
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}
@@ -791,6 +847,78 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 		return nil, fmt.Errorf("GetMetric: %w: query returned null", ErrMetricsStoreInternal)
 	}
 	return json.RawMessage(raw), nil
+}
+
+// GetMetricAggregate returns only the cross-series aggregate: the selected
+// series merged into one histogram per time bucket.
+//
+// Exists as its own call because the two halves of a metric response have
+// different lifetimes. Per-series quantiles are additive -- fetch them once for
+// every series and any subset's lines are already in hand -- while the
+// aggregate is specific to the selection and has to be recomputed when the
+// legend changes. Binding both to one fetch would either re-ship the per-series
+// payload on every toggle, or make selecting a metric fetch twice, because the
+// legend selection is seeded from the response it would depend on.
+//
+// Runs the same query and keeps one field. The per-series work happens either
+// way -- the aggregate is built from the merged series -- so the saving is
+// payload, not computation.
+// It serves both metric shapes, and they use different parameters to say
+// different things -- which is the part to get right.
+//
+// A histogram merges the *checked* series into one histogram per bucket, so the
+// caller narrows with seriesIDs and the merge sees only those.
+//
+// A scalar needs both pools at once: the checked series and every series in the
+// stream. So the caller passes no seriesIDs at all and names the checked set in
+// selectedSeriesIDs instead. Narrowing here would not merely trim the payload,
+// it would redefine the answer -- "All" computed over a narrowed set is "all of
+// the checked ones", which is wrong and looks entirely plausible on a chart.
+//
+// The rule the two share: narrowing decides what is *sent*, never what is
+// *aggregated*.
+func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
+	// 0 sparkline buckets: this call keeps only the aggregate envelopes and drops
+	// the timeseries the sparklines hang off, so computing them would be work
+	// whose entire output is discarded a few lines below.
+	// An empty datapoint list, not nil: this call keeps only the aggregate
+	// envelopes and discards the timeseries, so naming no series ships no
+	// datapoints. nil would mean "not narrowing", which with no limit ships
+	// every one of them for nothing.
+	raw, err := GetMetric(ctx, db, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, 0, selectedSeriesIDs, tzName, []string{}, 0)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		Aggregate       json.RawMessage `json:"aggregate"`
+		ScalarAggregate json.RawMessage `json:"scalarAggregate"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, fmt.Errorf("GetMetricAggregate: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	// Both fields travel, each null-able on its own: a scalar metric has no
+	// histogram merge and a histogram has no scalar pools, and the caller should
+	// not have to ask twice to find out which it got.
+	out, err := json.Marshal(struct {
+		Aggregate       json.RawMessage `json:"aggregate"`
+		ScalarAggregate json.RawMessage `json:"scalarAggregate"`
+	}{
+		Aggregate:       nullIfAbsent(envelope.Aggregate),
+		ScalarAggregate: nullIfAbsent(envelope.ScalarAggregate),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetMetricAggregate: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	return out, nil
+}
+
+// nullIfAbsent keeps json.Marshal from writing a bare `null` field as invalid
+// empty bytes when the source key was missing rather than JSON null.
+func nullIfAbsent(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage("null")
+	}
+	return raw
 }
 
 // GetMetricAttributes returns every metric-side attribute name/scope/type this

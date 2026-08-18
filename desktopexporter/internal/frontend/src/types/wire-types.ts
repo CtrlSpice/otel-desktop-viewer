@@ -184,9 +184,17 @@ export type JsonExemplar = {
 type JsonBaseDataPoint = {
   id: string
   timestamp: string
+  /** The same instant in epoch milliseconds, as a number. Charts want ms and
+   *  would otherwise divide the nanosecond BigInt once per datapoint. */
+  timestampMs: number
   startTime: string
   flags: number
   exemplars: JsonExemplar[]
+  /** How many exemplars this datapoint holds, sent only when that exceeds how
+   *  many arrived -- the store caps the list so one aggressively sampled stream
+   *  cannot decide the size of the response. Absent is the ordinary case and
+   *  means nothing was withheld, so read it as `exemplars.length`. */
+  exemplarCount?: number
 }
 
 export type JsonGaugeDataPoint = JsonBaseDataPoint & {
@@ -203,6 +211,11 @@ export type JsonSumDataPoint = JsonBaseDataPoint & {
   valueType: string
   isMonotonic: boolean
   aggregationTemporality: string
+  /** Activity since the previous reading of this series. Cumulative only;
+   *  null on the first datapoint, which describes no interval. */
+  delta?: number | null
+  /** Whether the counter restarted in that interval. */
+  isReset?: boolean | null
 }
 
 export type JsonHistogramDataPoint = JsonBaseDataPoint & {
@@ -213,6 +226,11 @@ export type JsonHistogramDataPoint = JsonBaseDataPoint & {
   max: number
   bucketCounts: number[]
   explicitBounds: number[]
+  /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
+   *  the store from this datapoint's buckets; null when none were requested.
+   *  Keys are the quantile as the server formatted it, so look up by the same
+   *  string the request sent. */
+  quantiles: Record<string, number | null> | null
   aggregationTemporality: string
 }
 
@@ -229,6 +247,11 @@ export type JsonExponentialHistogramDataPoint = JsonBaseDataPoint & {
   positiveBucketCounts: number[]
   negativeBucketOffset: number
   negativeBucketCounts: number[]
+  /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
+   *  the store from this datapoint's buckets; null when none were requested.
+   *  Keys are the quantile as the server formatted it, so look up by the same
+   *  string the request sent. */
+  quantiles: Record<string, number | null> | null
   aggregationTemporality: string
 }
 
@@ -237,6 +260,30 @@ export type JsonDataPoint =
   | JsonSumDataPoint
   | JsonHistogramDataPoint
   | JsonExponentialHistogramDataPoint
+
+/** One bucket of a scalar series' Sum / Average / Rate views, as the store
+ *  computed them. sum, avg and rate are null when the bucket holds no samples:
+ *  Sum and Rate read that as no activity, Average has to skip it, and a zero
+ *  here would decide that for both. */
+export type JsonScalarViewBucket = {
+  bucketStart: string
+  sampleCount: number
+  sum: number | null
+  avg: number | null
+  rate: number | null
+  /** Slope of the drawn rate line's segment arriving at this bucket, in
+   *  rate-units per second. Null for buckets the rate view does not draw and
+   *  for the first it does, which no segment arrives at. */
+  slope: number | null
+  hasReset: boolean
+}
+
+/** Extremes of a series' drawn rate line, for the rate view's badges. */
+export type JsonSeriesRateStats = {
+  min: number
+  max: number
+  avg: number
+}
 
 export type JsonMetricTimeseries = {
   /**
@@ -262,9 +309,38 @@ export type JsonMetricTimeseries = {
   datapoints: JsonDataPoint[]
   /** Server-computed stats over the whole window; null for histograms. */
   stats: JsonSeriesValueStats | null
+  /** Datapoints the window holds for this series, before narrowing and before
+   *  the reduction — so not the length of `datapoints`, which is what this
+   *  response happens to carry. */
+  datapointCount: number
+  /** When this series last reported in the window, ns as a string. */
+  lastSeenNs: string | null
+  /** Extremes of the drawn rate line; null for histograms and for series with
+   *  no rate to draw. The raw stats describe the values, these the transform. */
+  rateStats: JsonSeriesRateStats | null
+  /** Per-bucket Sum / Average / Rate. Null for histogram series, which have no
+   *  scalar to aggregate. */
+  views: JsonScalarViewBucket[] | null
+  /** This series' shape at list-row resolution: the store's min and max per
+   *  bucket, sized for the 128px sparkline box rather than the chart. Sent for
+   *  every series, including unchecked ones -- the sparkline is how a user
+   *  decides what to check. Null for histograms, and when the caller asked for
+   *  no sparkline buckets. */
+  sparkline: JsonSparklinePoint[] | null
+}
+
+/** One point of a series' row sparkline. A bucket contributes its min and its
+ *  max, each at the timestamp it actually occurred, so a spike leans the way it
+ *  happened rather than being squared off to a bucket boundary. */
+export type JsonSparklinePoint = {
+  timestamp: string
+  value: number
 }
 
 export type JsonMetricData = {
+  /** The window's most recent datapoint across every series, ns as a string.
+   *  Independent of which series shipped datapoints. */
+  lastSeenNs: string | null
   id: string
   name: string
   // Coalesced server-side ('' for a stream with no ingests in the window).
@@ -284,8 +360,83 @@ export type JsonMetricData = {
   scopeDroppedAttributesCount: number
   scope: JsonScopeData
   timeseries: JsonMetricTimeseries[]
+  /** The selected series merged into one histogram per time bucket -- what a
+   *  heatmap draws and what a window summary describes. Null when the metric is
+   *  not a histogram, or when no merge happened, so a client can tell that
+   *  apart from "merged to nothing". */
+  aggregate: JsonAggregateBucket[] | null
+  /** The cross-series lines for a scalar metric, in the same bucket shape the
+   *  per-series views use. `selected` is empty when nothing is checked, which
+   *  the chart reads as "draw All by itself". Both are empty for histograms. */
+  scalarAggregate: JsonScalarAggregate | null
   /** Datapoints in the window, which may exceed the number returned. */
   datapointCount: number
+  /** Merges the store refused because their inputs disagreed about explicit
+   *  bounds, or null when none were. Bounds cannot be reconciled the way scales
+   *  can, so the rows are dropped -- and a dropped bucket is indistinguishable
+   *  from one that never had data, which is why this is reported rather than
+   *  left to be noticed. */
+  boundsMismatch: JsonBoundsMismatch | null
+  /** The window the reduction actually divided.
+   *
+   *  `fittedToData` echoes what was asked for; `startNs` / `endNs` are the
+   *  data's own extent and are null unless it was. Reported rather than
+   *  inferred: the timestamps in the response are bucket starts, so deriving
+   *  the axis from them describes the reduction with its own output. */
+  window: {
+    fittedToData: boolean
+    startNs: string | null
+    endNs: string | null
+  }
+}
+
+/** One time bucket of the cross-series merge. Carries bucket vectors because
+ *  the heatmap draws them; per-series data carries only quantiles. */
+/** Both cross-series pools. `all` never narrows with the selection -- that is
+ *  what makes it "all" -- while `selected` follows the checkboxes. */
+export type JsonBoundsMismatch = {
+  /** (series, bucket) merges refused along the time axis. */
+  seriesBuckets: number
+  /** Cross-series bucket merges refused, by either route: a contributing
+   *  series that could not merge within itself, or series that disagree with
+   *  one another. */
+  aggregateBuckets: number
+}
+
+export type JsonScalarAggregate = {
+  selected: JsonScalarViewBucket[]
+  all: JsonScalarViewBucket[]
+}
+
+/** What getMetricAggregate returns: one envelope serving both metric shapes,
+ *  each field null or empty on the shape it does not apply to. */
+export type JsonMetricAggregateEnvelope = {
+  aggregate: JsonAggregateBucket[] | null
+  scalarAggregate: JsonScalarAggregate | null
+}
+
+export type JsonAggregateBucket = {
+  timestamp: string
+  startTime: string
+  count: number
+  sum: number
+  /** Derived from the buckets: a merge cannot carry the observed min and max
+   *  through, because for cumulative it is a subtraction. */
+  min: number
+  max: number
+  /** Explicit-bounds histograms carry these; exponential ones carry the
+   *  scale/offset fields below. A bucket has one representation or the other,
+   *  never both, so the absent set is omitted rather than sent as nulls. */
+  bucketCounts?: number[]
+  explicitBounds?: number[]
+  scale?: number
+  zeroThreshold?: number
+  zeroCount?: number
+  positiveBucketOffset?: number
+  positiveBucketCounts?: number[]
+  negativeBucketOffset?: number
+  negativeBucketCounts?: number[]
+  quantiles: Record<string, number | null> | null
 }
 
 export type JsonMetricSummary = {

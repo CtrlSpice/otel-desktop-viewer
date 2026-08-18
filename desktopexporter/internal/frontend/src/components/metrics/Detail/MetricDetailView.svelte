@@ -43,7 +43,7 @@
     if (m.unit) n++
     if (ctx.temporality) n++
     if (ctx.isMonotonic !== null) n++
-    if (m.timeseries[0]?.datapoints[0]) n++ // last seen
+    if (m.lastSeenNs !== null) n++ // last seen
     n++ // datapoint count
     return n
   })
@@ -167,18 +167,18 @@
                   fieldType="bool"
                 />
               {/if}
-              {#if metric.timeseries[0]?.datapoints[0]}
-                <!-- "last seen" = the most recent datapoint
-                     timestamp across all timeseries. Free from
-                     the ordering invariant: timeseries arrive
-                     newest-activity-first and each timeseries'
-                     datapoints arrive timestamp-desc, so the
-                     [0][0] element is the metric-wide latest.
-                     Source-derived; honest. -->
+              {#if metric.lastSeenNs !== null}
+                <!-- The window's most recent datapoint, from the
+                     store. Reading timeseries[0].datapoints[0]
+                     relied on that series having shipped its
+                     datapoints, which narrowing no longer
+                     guarantees: name a persisted selection that
+                     excludes the most recent series and the
+                     field simply disappeared. -->
                 <MetricField
                   fieldName="last seen"
                   fieldValue={formatTimestamp(
-                    metric.timeseries[0].datapoints[0].timestamp,
+                    metric.lastSeenNs,
                     timeContext.tz,
                     'milliseconds'
                   )}

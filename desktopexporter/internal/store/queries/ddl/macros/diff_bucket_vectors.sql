@@ -14,6 +14,14 @@
 -- the later value *is* the activity. Distinguishing "reset" from "could not
 -- align" matters -- conflating them reports a running total as though it were
 -- a delta.
+--
+-- Both sides are cast to a signed type before subtracting, because bucket
+-- counts are UBIGINT and an unsigned subtraction raises rather than going
+-- negative: "Overflow in subtraction of UINT64 (0 - 1)". The negative check
+-- below could therefore never fire on the very inputs it exists for -- a reset
+-- came back as a query error instead of a fallback. DuckDB also evaluates both
+-- arms of the surrounding CASE, so this was reachable for Delta histograms
+-- too, which never wanted a difference at all.
 create or replace macro diff_bucket_vectors(a, b) as (
     case
         when a is null then null
@@ -22,7 +30,7 @@ create or replace macro diff_bucket_vectors(a, b) as (
             select case when list_min(d) < 0 then null else d end
             from (select list_transform(
                 list_zip(a, b),
-                lambda x: coalesce(x[1], 0) - coalesce(x[2], 0)
+                lambda x: coalesce(x[1], 0)::bigint - coalesce(x[2], 0)::bigint
             ) as d)
         )
     end

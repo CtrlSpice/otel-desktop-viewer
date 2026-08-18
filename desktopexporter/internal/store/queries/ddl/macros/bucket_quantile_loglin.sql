@@ -1,36 +1,29 @@
+-- Log-linear counterpart of bucket_quantile_linear, for exponential-histogram
+-- buckets whose widths grow geometrically. See there for why the accumulation
+-- is a window rather than a prefix re-sum, why it is not split into a shared
+-- macro, and why the unnest alias is not `t`.
 create or replace macro bucket_quantile_loglin(buckets, q) as (
 		case
 			when buckets is null or len(buckets) = 0 then null
 			when coalesce(list_sum(list_transform(buckets, lambda b: b.cnt)), 0) <= 0 then null
 			else (
-				with
-					params as (
-						select q * list_sum(list_transform(buckets, lambda b: b.cnt)) as target
-					),
-					with_acc as (
-						select list_transform(buckets, lambda b, i: {
-							'lo': b.lo, 'hi': b.hi, 'cnt': b.cnt,
-							'acc_prev': case when i = 1 then 0
-								else list_sum(list_transform(list_slice(buckets, 1, i - 1), lambda x: x.cnt))
-							end,
-							'acc': list_sum(list_transform(list_slice(buckets, 1, i), lambda x: x.cnt))
-						}) as bs
-					),
-					chosen as (
-						select
-							params.target as target,
-							-- cnt > 0 first: a quantile is never *inside* an empty
-							-- bucket. For q > 0 this changes nothing, since an empty
-							-- bucket's running total equals its predecessor's and the
-							-- earlier bucket already satisfies the target. It matters
-							-- only at q = 0, where target is 0 and the leading zero
-							-- bucket that exp_buckets always emits would otherwise be
-							-- selected with cnt = 0 -- the 0/0 the interp kernels now
-							-- guard against.
-							list_filter(with_acc.bs, lambda b: b.cnt > 0 and b.acc >= params.target)[1] as b
-						from with_acc, params
-					)
-				select interp_loglin(b.lo, b.hi, b.acc_prev, b.cnt, target) from chosen
+				with acc as (
+					select
+						b.lo as lo, b.hi as hi, b.cnt as cnt, i as i,
+						coalesce(sum(b.cnt) over (
+							order by i rows between unbounded preceding and 1 preceding
+						), 0) as acc_prev,
+						sum(b.cnt) over (
+							order by i rows between unbounded preceding and current row
+						) as acc
+					from unnest(buckets) with ordinality as bqgx(b, i)
+				),
+				total as (select max(acc) as n from acc)
+				select interp_loglin(acc.lo, acc.hi, acc.acc_prev, acc.cnt, q * total.n)
+				from acc, total
+				where acc.cnt > 0 and acc.acc >= q * total.n
+				order by acc.i
+				limit 1
 			)
 		end
 	)

@@ -54,6 +54,35 @@ interface TimeContext {
 /** Default preset row index for `PresetTimeRanges` PRESETS (0 = All). */
 const DEFAULT_PRESET_INDEX_ALL = 0
 
+/**
+ * Whether the window is the unbounded default rather than something asked for.
+ *
+ * "All" is the absence of a choice, not a choice: it means "I have not told you
+ * what I am interested in". A view is free to fit itself to its own data in
+ * that case. Every other selection -- a preset like 15m, a custom range, a
+ * bounded recent one -- is a request, and cropping it would hide the emptiness
+ * that is part of the answer.
+ *
+ * The test is the window, not the route taken to it. `setSelection` records
+ * every selection into the recents list, the default "All" included, so
+ * clicking that chip re-enters the identical window as type `recent`. Keying on
+ * `presetIndex` made the same window draw two different ways depending on which
+ * control produced it, which is not a distinction anyone asked for.
+ *
+ * A start at the epoch is what "All" is: nobody chooses 1970 as a lower bound.
+ * The end is not part of the test -- an unbounded start already says the window
+ * was never about time.
+ */
+export function isDefaultUnboundedWindow(selection: TimeSelection): boolean {
+  if (
+    selection.type === 'preset' &&
+    selection.presetIndex === DEFAULT_PRESET_INDEX_ALL
+  ) {
+    return true
+  }
+  return selection.start === 0
+}
+
 /** Build selection state; `preset` uses `presetIndex ?? DEFAULT_PRESET_INDEX_ALL` when omitted. */
 function timeSelectionFromArgs(
   start: number,

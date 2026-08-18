@@ -25,9 +25,14 @@ function createMemoryStorage(): Storage {
   }
 }
 
+// Node's experimental global implements some of Storage and not the rest, so
+// probing a single method is not enough -- it has getItem but no clear, which
+// only surfaced when a test tried to reset between cases.
 const storageIsBroken =
   typeof localStorage === 'undefined' ||
-  typeof localStorage.getItem !== 'function'
+  typeof localStorage.getItem !== 'function' ||
+  typeof localStorage.clear !== 'function' ||
+  typeof localStorage.key !== 'function'
 
 if (typeof document !== 'undefined' && storageIsBroken) {
   Object.defineProperty(globalThis, 'localStorage', {

@@ -116,6 +116,31 @@
       .sort((a, b) => a.seriesKey.localeCompare(b.seriesKey))
   })
 
+  /** Series id -> how a reader names it.
+   *
+   *  Each incoming line is labelled "<attributes> · p95", and its key encodes
+   *  the same series plus the quantile. Stripping the pill off the label gives
+   *  the series' own name, which is what the tooltip and the legend want:
+   *  the key on its own is a content-derived id and reads as a uuid. */
+  let seriesLabelByKey = $derived.by(() => {
+    const out = new Map<string, string>()
+    for (const ts of timeseries) {
+      const parsed = parseQuantileSeriesKey(ts.key)
+      if (!parsed) continue
+      if (out.has(parsed.seriesKey)) continue
+      const pill = ` · ${quantileLabelForKey(parsed.quantileKey)}`
+      out.set(
+        parsed.seriesKey,
+        ts.label.endsWith(pill) ? ts.label.slice(0, -pill.length) : ts.label
+      )
+    }
+    return out
+  })
+
+  function seriesLabel(seriesKey: string): string {
+    return seriesLabelByKey.get(seriesKey) ?? seriesKey
+  }
+
   let chartSeries = $derived.by(() =>
     timeseries.map(ts => {
       const parsed = parseQuantileSeriesKey(ts.key)
@@ -168,7 +193,7 @@
       rows.push({
         key: `${entry.seriesKey}:${quantileKey}`,
         color,
-        label: entry.seriesKey,
+        label: seriesLabel(entry.seriesKey),
         valueText:
           value === null || value === undefined
             ? '—'
@@ -371,7 +396,7 @@
                           : undefined}
                       {#if value !== undefined}
                         <Tooltip.Item
-                          label="{group.seriesKey} · {quantileLabelForKey(line.quantileKey)}"
+                          label="{seriesLabel(group.seriesKey)} · {quantileLabelForKey(line.quantileKey)}"
                           {value}
                           color={group.color}
                           format={formatMetricValue}

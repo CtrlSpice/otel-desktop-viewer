@@ -1,3 +1,5 @@
+import type { JsonAggregateBucket } from '@/types/wire-types'
+
 export type RootSpan = {
   serviceName: string
   name: string
@@ -153,9 +155,15 @@ export type Exemplar = {
 type BaseDataPoint = {
   id: string
   timestamp: bigint
+  /** The same instant in epoch milliseconds, from the store. Charts read this
+   *  rather than dividing `timestamp` per datapoint. */
+  timestampMs: number
   startTime: bigint
   flags: number
   exemplars: Exemplar[]
+  /** How many the datapoint holds, present only when the store's cap trimmed
+   *  the list. Absent means `exemplars` is all of them. */
+  exemplarCount?: number
 }
 
 export type GaugeDataPoint = BaseDataPoint & {
@@ -172,6 +180,11 @@ export type SumDataPoint = BaseDataPoint & {
   valueType: string
   isMonotonic: boolean
   aggregationTemporality: string
+  /** Activity since the previous reading of this series, from the store.
+   *  Cumulative only; null on a series' first datapoint. */
+  delta?: number | null
+  /** Whether the counter restarted in that interval. */
+  isReset?: boolean | null
 }
 
 export type HistogramDataPoint = BaseDataPoint & {
@@ -183,6 +196,11 @@ export type HistogramDataPoint = BaseDataPoint & {
   bucketCounts: number[]
   explicitBounds: number[]
   aggregationTemporality: string
+  /** Quantiles computed by the store for this bucket, keyed by the quantile
+   *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
+   *  deriving them here walked every bucket of every series once per quantile
+   *  and cost seconds on the main thread. */
+  quantiles?: Record<string, number | null> | null
 }
 
 export type ExponentialHistogramDataPoint = BaseDataPoint & {
@@ -199,6 +217,11 @@ export type ExponentialHistogramDataPoint = BaseDataPoint & {
   negativeBucketOffset: number
   negativeBucketCounts: number[]
   aggregationTemporality: string
+  /** Quantiles computed by the store for this bucket, keyed by the quantile
+   *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
+   *  deriving them here walked every bucket of every series once per quantile
+   *  and cost seconds on the main thread. */
+  quantiles?: Record<string, number | null> | null
 }
 
 export type DataPoint =
@@ -225,6 +248,31 @@ export type DataPoint =
 // timestamp desc); datapoints inside a timeseries arrive
 // timestamp-desc as well. Both orderings are guaranteed by the
 // backend SQL.
+/** One bucket of a scalar series' Sum / Average / Rate views, computed by the
+ *  store. Null values mean the bucket held no samples -- not that the answer
+ *  was zero. */
+export type ScalarViewBucket = {
+  bucketStart: bigint
+  sampleCount: number
+  sum: number | null
+  avg: number | null
+  rate: number | null
+  /** Slope of the drawn rate line's segment arriving at this bucket, in
+   *  rate-units per second, from the store. Null for undrawn buckets and the
+   *  first drawn one. */
+  slope: number | null
+  hasReset: boolean
+}
+
+/** Extremes of a series' drawn rate line, computed by the store over the same
+ *  sequence the chart draws -- gap zeros included, because the reader sees
+ *  them. */
+export type SeriesRateStats = {
+  min: number
+  max: number
+  avg: number
+}
+
 export type MetricTimeseries = {
   /** Series id -- stable across restarts, unique per (stream, resource, labels). */
   attributesKey: string
@@ -240,6 +288,57 @@ export type MetricTimeseries = {
    *  datapoints after thinning, so an average taken there is the mean of a
    *  sample and a sum is short by the thinning factor. */
   stats: SeriesValueStats | null
+  /** Datapoints the window holds for this series, from the store. Not
+   *  `datapoints.length`, which is what this response carried after narrowing
+   *  and reduction. */
+  datapointCount: number
+  /** When this series last reported in the window. */
+  lastSeenNs: bigint | null
+  /** Per-bucket Sum / Average / Rate from the store. Null for histograms. */
+  views: ScalarViewBucket[] | null
+  /** Extremes of the drawn rate line; null when there is no rate to draw. */
+  rateStats: SeriesRateStats | null
+  /** This series' shape at list-row resolution, reduced by the store to min and
+   *  max per bucket.
+   *
+   *  Separate from `datapoints` because it answers a separate question: what
+   *  does this line look like in 128 pixels? The row used to draw the charting
+   *  points -- up to 2,000 of them -- into that box, about fifteen per pixel,
+   *  for every series in the panel.
+   *
+   *  Present for unchecked series too. Null for histograms. */
+  sparkline: SparklinePoint[] | null
+}
+
+/** Both cross-series pools, as the store folded them.
+ *
+ *  Same bucket shape as {@link ScalarViewBucket}, deliberately: the chart
+ *  projects a pool through the same function it projects a per-series view
+ *  with, rather than learning a second format for the same idea.
+ *
+ *  `all` never narrows with the selection -- that is what makes it "all" --
+ *  while `selected` follows the checkboxes and is empty when nothing is
+ *  checked, which the chart draws as "All alone". */
+/** What the store refused to merge because its inputs carried different
+ *  explicit bounds. There is no rescale that reconciles two boundary sets, so
+ *  the merge cannot be done -- but doing nothing quietly leaves a hole that
+ *  reads as absent data, which for an exporter that reconfigured its histogram
+ *  mid-window is the finding itself. */
+export type BoundsMismatch = {
+  seriesBuckets: number
+  aggregateBuckets: number
+}
+
+export type ScalarAggregate = {
+  selected: ScalarViewBucket[]
+  all: ScalarViewBucket[]
+}
+
+/** What getMetricAggregate resolves to: one envelope serving both metric
+ *  shapes, each field null on the shape it does not apply to. */
+export type MetricAggregateEnvelope = {
+  aggregate: JsonAggregateBucket[] | null
+  scalarAggregate: ScalarAggregate | null
 }
 
 /** Per-series value statistics, computed server-side over the full window. */
@@ -252,6 +351,8 @@ export type SeriesValueStats = {
 }
 
 export type MetricData = {
+  /** The window's most recent datapoint across every series. */
+  lastSeenNs: bigint | null
   id: string
   name: string
   description: string
@@ -272,6 +373,19 @@ export type MetricData = {
   /** How many datapoints the window holds, which is not necessarily how many
    *  were returned. Equal until the store starts reducing what it sends. */
   datapointCount: number
+  /** Merges refused for disagreeing explicit bounds; null when none were. */
+  boundsMismatch: BoundsMismatch | null
+  /** The window the store's reduction actually divided.
+   *
+   *  Bounds are the data's own extent, and are null unless the caller said its
+   *  window was the absence of a choice. A chart draws this rather than
+   *  re-deriving it: the timestamps in the response are bucket starts, so
+   *  measuring them describes the reduction using its own output. */
+  window: {
+    fittedToData: boolean
+    startNs: bigint | null
+    endNs: bigint | null
+  }
 }
 
 // Sparkline point shape used by detail charts (not the drawer summary).

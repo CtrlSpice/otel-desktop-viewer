@@ -11,6 +11,9 @@ import type {
   Stats,
   Exemplar,
   DataPoint,
+  ScalarAggregate,
+  ScalarViewBucket,
+  MetricAggregateEnvelope,
 } from '@/types/api-types'
 import type {
   JsonAttributeDefinition,
@@ -28,6 +31,9 @@ import type {
   JsonAttributeType,
   JsonQueryNode,
   JsonAttributeMatch,
+  JsonMetricAggregateEnvelope,
+  JsonScalarAggregate,
+  JsonScalarViewBucket,
 } from '@/types/wire-types'
 import { parseBigInt, parseNullableBigInt } from '@/utils/bigint'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
@@ -70,6 +76,21 @@ const ERR_CODE_METRIC_NOT_FOUND = -32003
 // Helper function to convert milliseconds to nanoseconds
 function toNanoseconds(milliseconds: number): string {
   return milliseconds === 0 ? '0' : milliseconds.toString() + '000000'
+}
+
+/**
+ * A time bound for a query: milliseconds, or exact nanoseconds as a bigint.
+ *
+ * Milliseconds are what every view works in and what the pickers produce. A
+ * bigint is for the caller that needs a boundary the millisecond grid cannot
+ * express -- fetching one heatmap column means ending one nanosecond short of
+ * the next column's start, and rounding that to milliseconds would drop the
+ * column's last millisecond of readings.
+ */
+export type QueryTimeBound = number | bigint
+
+function boundToNanoseconds(bound: QueryTimeBound): string {
+  return typeof bound === 'bigint' ? bound.toString() : toNanoseconds(bound)
 }
 
 /** Thrown when a request is abandoned. Callers that supersede their own
@@ -264,6 +285,35 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
     resource: json.resource,
     datapoints: json.datapoints.map(dataPointFromJSON),
     stats: json.stats ?? null,
+    datapointCount: json.datapointCount ?? 0,
+    lastSeenNs: parseNullableBigInt(json.lastSeenNs ?? null),
+    views: json.views ? scalarViewBucketsFromJSON(json.views) : null,
+    rateStats: json.rateStats ?? null,
+    sparkline:
+      json.sparkline?.map(p => ({
+        ...p,
+        timestamp: parseBigInt(p.timestamp),
+      })) ?? null,
+  }
+}
+
+/** Bucket starts ride as strings for the same reason every other ns timestamp
+ *  does, and are promoted here so nothing downstream handles two encodings of
+ *  one idea. Shared by the per-series views and the cross-series pools, which
+ *  is the payoff of giving the pools the same bucket shape. */
+function scalarViewBucketsFromJSON(
+  json: JsonScalarViewBucket[]
+): ScalarViewBucket[] {
+  return json.map(b => ({ ...b, bucketStart: parseBigInt(b.bucketStart) }))
+}
+
+function scalarAggregateFromJSON(
+  json: JsonScalarAggregate | null
+): ScalarAggregate | null {
+  if (!json) return null
+  return {
+    selected: scalarViewBucketsFromJSON(json.selected),
+    all: scalarViewBucketsFromJSON(json.all),
   }
 }
 
@@ -271,6 +321,15 @@ function metricDataFromJSON(json: JsonMetricData): MetricData {
   return {
     ...json,
     timeseries: json.timeseries.map(timeseriesFromJSON),
+    boundsMismatch: json.boundsMismatch ?? null,
+    lastSeenNs: parseNullableBigInt(json.lastSeenNs ?? null),
+    window: {
+      // Tolerated as absent so a response from a store that predates the field
+      // still renders, on the same window the caller asked for.
+      fittedToData: json.window?.fittedToData ?? false,
+      startNs: parseNullableBigInt(json.window?.startNs ?? null),
+      endNs: parseNullableBigInt(json.window?.endNs ?? null),
+    },
   }
 }
 
@@ -475,27 +534,183 @@ export let telemetryAPI = {
 
   getMetric: async (
     streamId: string,
-    startTime: number,
-    endTime: number,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
     /** How many time buckets to reduce the window to. Omit for every
      *  datapoint. The store keeps up to four points per bucket -- first, last,
      *  smallest, largest -- so the drawn line is the same as it would be with
      *  every point, and it ignores this entirely for histograms, which need
      *  merging rather than sampling. */
-    targetBuckets?: number
+    targetBuckets?: number,
+    /** Restrict the response to these series. Omit for all of them. The store
+     *  narrows before reducing, so asking for two of ten costs two. */
+    seriesIds?: string[],
+    /** Quantiles to compute per histogram datapoint, keyed by the quantile in
+     *  the response. Omit to skip the work. */
+    quantiles?: number[],
+    /** The viewer's UTC offset in nanoseconds, so bucket boundaries fall where
+     *  the reader's calendar puts them. Omit for UTC. */
+    tzOffsetNs?: number,
+    /** Whether this window is the absence of a choice rather than a request.
+     *  The store then divides the data's own extent instead of the window,
+     *  which is what keeps "All" from merging a whole session into one bucket.
+     *  Omit to treat the window as a request. */
+    fitToData?: boolean,
+    /** Resolution for the Sum / Average / Rate views, which bucket for a
+     *  different chart than the election thins for. Omit for none. */
+    viewBuckets?: number,
+    /** Resolution for the per-row sparklines: buckets, each contributing its
+     *  min and its max, so this is half the sparkline's pixel width. A third
+     *  question again -- the election thins for the main chart, the views
+     *  bucket for another, this fits a list row. Omit for none. */
+    sparklineBuckets?: number,
+    /** Which series should carry their datapoints -- almost the whole payload.
+     *  Every series still arrives with its row, stats, view buckets and
+     *  sparkline. Omit to leave it to `datapointSeriesLimit`; pass an empty
+     *  array to ask for none. */
+    datapointSeriesIds?: string[],
+    /** How many series carry datapoints when they cannot be named, in the
+     *  response's own order. For the first visit to a metric, where the visible
+     *  set is chosen from the response being fetched. */
+    datapointSeriesLimit?: number,
+    /** The IANA zone bucket boundaries should follow. `tzOffsetNs` is one
+     *  sample of this zone, taken at request time; a window that crosses a DST
+     *  transition needs the zone itself, and the store prefers it when both
+     *  arrive. Omit to keep the single offset. */
+    tzName?: string
   ): Promise<MetricData | null> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
+    const startTimeNs = boundToNanoseconds(startTime)
+    const endTimeNs = boundToNanoseconds(endTime)
     // Not-found arrives as a JSON-RPC error (one wire convention across all
     // signals); translate it to null here so callers keep a simple contract.
     try {
+      // Positional params: a later one requires the earlier, so a caller
+      // passing quantiles without a resolution still sends a placeholder.
+      //
+      // Built as a list and trimmed from the end rather than as one conditional
+      // per parameter. The conditional form made every parameter name every
+      // parameter after it, so adding one meant editing every line above it --
+      // four edits to add a fifth, each silently optional.
+      //
+      // seriesIds sends null, not [] -- the three states are distinct on the
+      // wire: absent or null means every series, an empty array means none.
+      // Sending [] for "no filter" asked the store for no series, which it
+      // correctly answered with nothing.
+      const optional: { value: unknown; given: boolean }[] = [
+        {
+          value: String(targetBuckets ?? 0),
+          given: targetBuckets !== undefined,
+        },
+        { value: seriesIds ?? null, given: seriesIds !== undefined },
+        { value: quantiles ?? [], given: quantiles !== undefined },
+        { value: String(tzOffsetNs ?? 0), given: tzOffsetNs !== undefined },
+        { value: fitToData ?? false, given: fitToData !== undefined },
+        { value: String(viewBuckets ?? 0), given: viewBuckets !== undefined },
+        {
+          value: String(sparklineBuckets ?? 0),
+          given: sparklineBuckets !== undefined,
+        },
+        // Slot 11: the scalar Selected pool, which getMetric does not narrow by.
+        {
+          value: null,
+          given:
+            datapointSeriesIds !== undefined ||
+            datapointSeriesLimit !== undefined,
+        },
+        {
+          value: datapointSeriesIds ?? null,
+          given: datapointSeriesIds !== undefined,
+        },
+        {
+          value: String(datapointSeriesLimit ?? 0),
+          given: datapointSeriesLimit !== undefined,
+        },
+        { value: tzName ?? null, given: tzName !== undefined },
+      ]
+      while (optional.length > 0 && !optional[optional.length - 1].given) {
+        optional.pop()
+      }
       const rawData = await callRPC<JsonMetricData>('getMetric', [
         streamId,
         startTimeNs,
         endTimeNs,
-        ...(targetBuckets ? [String(targetBuckets)] : []),
+        ...optional.map(p => p.value),
       ])
       return metricDataFromJSON(rawData)
+    } catch (error) {
+      if (
+        error instanceof JsonRpcError &&
+        error.code === ERR_CODE_METRIC_NOT_FOUND
+      ) {
+        return null
+      }
+      throw error
+    }
+  },
+
+  /** The cross-series aggregate alone, for when only the legend selection
+   *  changed. Per-series quantiles are additive and come with the metric; this
+   *  is the part that depends on which series are visible, so it is the part
+   *  worth refetching on a toggle. */
+  getMetricAggregate: async (
+    streamId: string,
+    startTime: number,
+    endTime: number,
+    targetBuckets: number,
+    /** Narrows what the query sees at all, so it decides what the histogram
+     *  merge folds. Null for a scalar metric: its All pool must keep folding
+     *  every series, and narrowing here would redefine the answer rather than
+     *  trim the payload. */
+    seriesIds: string[] | null,
+    quantiles: number[],
+    tzOffsetNs: number,
+    fitToData: boolean,
+    viewBuckets = 0,
+    /** Which series are checked, for the scalar Selected pool.
+     *
+     *  Deliberately not `seriesIds`. That one narrows what the store returns;
+     *  this one names a pool and narrows nothing. Narrowing a scalar would not
+     *  trim the payload, it would redefine the answer -- "All" folded over a
+     *  narrowed set means "all of the checked ones". */
+    selectedSeriesIds?: string[],
+    /** The zone the buckets follow, as in getMetric -- and it must be the same
+     *  one, or the pooled lines are cut on different boundaries than the
+     *  per-series lines beneath them. */
+    tzName?: string
+  ): Promise<MetricAggregateEnvelope | null> => {
+    const startTimeNs = toNanoseconds(startTime)
+    const endTimeNs = toNanoseconds(endTime)
+    try {
+      const raw = await callRPC<JsonMetricAggregateEnvelope | null>(
+        'getMetricAggregate',
+        [
+          streamId,
+          startTimeNs,
+          endTimeNs,
+          String(targetBuckets),
+          seriesIds,
+          quantiles,
+          String(tzOffsetNs),
+          // Must match what getMetric sent for the same view, or the aggregate is
+          // bucketed against a different window than the series beneath it.
+          fitToData,
+          String(viewBuckets),
+          // Placeholder for sparklineBuckets: this method drops the timeseries, so
+          // the store pins it to 0 regardless, but positional params mean the slot
+          // has to be filled to reach the one after it.
+          '0',
+          selectedSeriesIds ?? null,
+          // Placeholders for datapointSeriesIds and datapointSeriesLimit:
+          // this method returns no datapoints, but the zone sits past those
+          // slots and positional params cannot skip them.
+          ...(tzName !== undefined ? [null, '0', tzName] : []),
+        ]
+      )
+      if (!raw) return null
+      return {
+        aggregate: raw.aggregate,
+        scalarAggregate: scalarAggregateFromJSON(raw.scalarAggregate),
+      }
     } catch (error) {
       if (
         error instanceof JsonRpcError &&

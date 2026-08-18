@@ -1,5 +1,5 @@
 <script module lang="ts">
-  import type { MetricSummary } from '@/types/api-types'
+  import type { MetricSummary, ScalarAggregate } from '@/types/api-types'
   import { metricSummaryKey } from '@/types/api-types'
   import {
     compareByStringField,
@@ -68,19 +68,38 @@
     { value: 'seriesCount', label: 'Timeseries Count' },
   ]
 
-  export { metricTypeBadgeClass, metricTypeLabel } from '@/components/metrics/utils/metric-type'
+  export {
+    metricTypeBadgeClass,
+    metricTypeLabel,
+  } from '@/components/metrics/utils/metric-type'
 </script>
 
 <script lang="ts">
-  import { METRIC_BUCKET_TARGET } from '@/contexts/metric-view-context.svelte'
+  import {
+    METRIC_BUCKET_TARGET,
+    SCALAR_VIEW_BUCKETS,
+    SPARKLINE_BUCKETS,
+  } from '@/contexts/metric-view-context.svelte'
+  import {
+    DEFAULT_VISIBLE_TIMESERIES,
+    persistedVisibleKeys,
+  } from '@/components/metrics/utils/metric-timeseries-visible'
+  import {
+    DEFAULT_HISTOGRAM_QUANTILES,
+    HEATMAP_BUCKET_TARGET,
+    localOffsetNs,
+  } from '@/components/metrics/utils/histogram-aggregation'
+  import type { JsonAggregateBucket } from '@/types/wire-types'
   import { untrack } from 'svelte'
+  import { SvelteMap } from 'svelte/reactivity'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
+    isDefaultUnboundedWindow,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import { navigateToItem } from '@/route'
-  import type { MetricData, MetricStats } from '@/types/api-types'
+  import type { DataPoint, MetricData, MetricStats } from '@/types/api-types'
   import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
@@ -117,7 +136,10 @@
         timeContext.selection,
         Date.now()
       )
-      const results = await telemetryAPI.searchMetricSummaries(startTime, endTime)
+      const results = await telemetryAPI.searchMetricSummaries(
+        startTime,
+        endTime
+      )
       const s = await telemetryAPI.getStats()
       baselineStats = s.metrics
       polledStats = s.metrics
@@ -147,7 +169,46 @@
   let selectedMetric = $state<MetricData | undefined>(undefined)
   let detailLoading = $state(false)
 
-  createMetricViewContext(() => selectedMetric)
+  // The store's cross-series merge for the current legend selection. Null
+  // until the first fetch resolves, and whenever the metric changes.
+  let selectedAggregate = $state<JsonAggregateBucket[] | null>(null)
+  // The same merge over one bucket spanning the window. A window summary is
+  // not the last column of a chart, and it is not the columns added together
+  // either -- it is the merge asked a different question, so the store answers
+  // it rather than the client approximating from what it already has.
+  let selectedAggregateSummary = $state<JsonAggregateBucket | null>(null)
+  // The store's cross-series fold for a scalar metric: the checked pool and the
+  // full pool, on the same bucket grid the per-series views use. Refetched when
+  // the legend changes, which is the whole reason it is separate from the
+  // metric's own response.
+  let selectedScalarAggregate = $state<ScalarAggregate | null>(null)
+
+  // Unreduced datapoints per series, fetched when a series is expanded.
+  //
+  // Keyed by series id, cleared whenever the metric or the window changes so a
+  // stale series can never be shown under a new question. A SvelteMap because
+  // the list reads it during render.
+  let seriesDatapoints = new SvelteMap<string, DataPoint[]>()
+  let seriesDatapointsKey = $state('')
+
+  // Each series merged over the selected heatmap column, fetched on click.
+  //
+  // The column and the per-series lines are drawn at different resolutions, and
+  // neither can be pinned to the other: the heatmap wants a column per few
+  // pixels, the quantile lines want enough points not to visibly step. So the
+  // only way to answer "what did each series look like in this column" is to
+  // ask for that column.
+  let columnDistribution = $state<MetricData | undefined>(undefined)
+  let columnToken = 0
+
+  createMetricViewContext(
+    () => selectedMetric,
+    () => selectedAggregate,
+    () => selectedAggregateSummary,
+    () => selectedScalarAggregate,
+    key => seriesDatapoints.get(key),
+    () => columnDistribution
+  )
   const metricCtx = getMetricViewContext()
 
   let hasMetricRows = $derived(page.items.length > 0)
@@ -189,11 +250,348 @@
     if (summary) fetchMetricDetail(summary)
   })
 
+  // The aggregate is fetched separately from the metric, because the two have
+  // different lifetimes. Per-series quantiles are additive -- fetched once with
+  // the metric, and any subset's lines are already in hand -- while the merge
+  // is specific to the selection and has to be recomputed when the legend
+  // changes.
+  //
+  // Folding this into the detail effect would break that effect's contract: it
+  // depends on the metric identity alone and untracks the summary, because
+  // polling churns object references and re-fetching would clobber legend
+  // state. It would also fetch twice per metric, since the legend selection is
+  // seeded from the response it would then depend on.
+  let aggregateTimer: ReturnType<typeof setTimeout> | undefined
+  let aggregateToken = 0
+
+  $effect(() => {
+    const summary = page.selectedSummary
+    // Read reactively so a toggle re-runs this. Sorted so a set rebuilt with
+    // the same members does not look like a change.
+    //
+    // Two selections, because the two metric shapes check different boxes and
+    // the store reads them through different parameters. A histogram narrows
+    // with seriesIds -- the merge sees only the checked series. A scalar narrows
+    // with nothing and names its checked set separately, because its All pool
+    // must keep folding every series: narrowing there would quietly turn "all"
+    // into "all of the checked ones".
+    //
+    // Which is why only one of these travels per request -- see fetchAggregate.
+    // Sending both sent a scalar's histogram set as seriesIds, and since that
+    // parameter narrows filtered_dps, every scalar aggregate downstream of it
+    // folded ten series and called the result All.
+    const histogramKeys = [...metricCtx.histogramVisible].sort()
+    const scalarKeys = [...metricCtx.gaugeSumVisible].sort()
+
+    // Wait for the metric itself. The legend selection is seeded from that
+    // response, so fetching before it arrives asks for the empty set -- which
+    // now correctly means "no series" and returns nothing.
+    // Widened past histograms: a scalar metric's cross-series lines are folded
+    // by the same endpoint now, and they depend on the selection for the same
+    // reason the histogram merge does.
+    if (!summary || !selectedMetric) {
+      selectedAggregate = null
+      selectedAggregateSummary = null
+      selectedScalarAggregate = null
+      return
+    }
+
+    // Coalesce rapid toggles into one request. Ticking through five series
+    // should ask the store once, not five times.
+    clearTimeout(aggregateTimer)
+    const token = ++aggregateToken
+    aggregateTimer = setTimeout(() => {
+      void fetchAggregate(summary, histogramKeys, scalarKeys, token)
+    }, 120)
+
+    return () => clearTimeout(aggregateTimer)
+  })
+
+  async function fetchAggregate(
+    summary: MetricSummary,
+    histogramKeys: string[],
+    scalarKeys: string[],
+    token: number
+  ) {
+    try {
+      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+        timeContext.selection,
+        Date.now()
+      )
+      // The store's quantiles, computed once per datapoint from its bucket
+      // vector. Recomputing them per render costs seconds on the main thread:
+      // 2,700 bucket walks for one render of this metric.
+      const quantiles = DEFAULT_HISTOGRAM_QUANTILES as unknown as number[]
+      // Same answer as the detail fetch gives, so the aggregate is bucketed
+      // over the window the series beneath it were bucketed over.
+      const fit = isDefaultUnboundedWindow(timeContext.selection)
+      // Both shapes of the same question, issued together so they cannot
+      // disagree about the window or the selection.
+      // The narrowing parameter belongs to the histogram merge alone. A scalar
+      // sends none: its pools are named by selectedSeriesIds, which narrows
+      // nothing.
+      const isHistogramMetric =
+        summary.metricType === 'Histogram' ||
+        summary.metricType === 'ExponentialHistogram'
+      const narrowTo = isHistogramMetric ? histogramKeys : null
+      const [buckets, whole] = await Promise.all([
+        telemetryAPI.getMetricAggregate(
+          summary.id,
+          startTime,
+          endTime,
+          HEATMAP_BUCKET_TARGET,
+          narrowTo,
+          quantiles,
+          tzOffsetNs(),
+          fit,
+          // The same grid getMetric asked for, or the pooled lines would be
+          // bucketed against different boundaries than the per-series lines
+          // drawn beneath them.
+          SCALAR_VIEW_BUCKETS,
+          scalarKeys,
+          tzName()
+        ),
+        telemetryAPI.getMetricAggregate(
+          summary.id,
+          startTime,
+          endTime,
+          1,
+          narrowTo,
+          quantiles,
+          tzOffsetNs(),
+          fit,
+          // This call collapses to one bucket, but that bucket's boundaries
+          // still follow the calendar the other call's do.
+          0,
+          undefined,
+          tzName()
+        ),
+      ])
+      // A slower earlier request must not overwrite a newer answer.
+      if (token === aggregateToken) {
+        selectedAggregate = buckets?.aggregate ?? null
+        selectedAggregateSummary = whole?.aggregate?.[0] ?? null
+        // The scalar pools come off the bucketed call, which is the one asked
+        // for the view grid. The whole-window call collapses to a single bucket
+        // and has no line to draw.
+        selectedScalarAggregate = buckets?.scalarAggregate ?? null
+      }
+    } catch (err) {
+      console.error('Failed to fetch metric aggregate:', err)
+      if (token === aggregateToken) {
+        selectedAggregate = null
+        selectedAggregateSummary = null
+        selectedScalarAggregate = null
+      }
+    }
+  }
+
   function selectMetric(key: string) {
     page.selectItem(key)
   }
 
-  async function fetchMetricDetail(summary: MetricSummary) {
+  // Expanding a series fetches that series as it was sent: no reduction, no
+  // quantiles, one series.
+  //
+  // The chart may show a reduction -- that is what a chart is for. The list may
+  // not: it is the view that answers "what did my service actually send", and
+  // for a reduced histogram `metric.timeseries[].datapoints` are the store's
+  // merged buckets rather than datapoints. On the reference capture the window
+  // held 17,076 and the response carried 3,094.
+  //
+  // Fetched on expansion rather than with the metric because it is the only
+  // place that wants every row, and narrow enough to be cheap: the store
+  // filters by series before reducing, so one series of that same metric is
+  // 1,001 datapoints in 132 ms. Asking for all of them up front would put the
+  // whole unreduced stream on the wire to render twenty rows.
+  $effect(() => {
+    const summary = page.selectedSummary
+    const expanded = [...metricCtx.expandedTimeseries]
+    const { start, end } = selectionToQueryRangeMs(
+      timeContext.selection,
+      Date.now()
+    )
+    // One key per (metric, window). When it changes every cached series is
+    // answering a question nobody asked any more.
+    const key = summary ? `${summary.id}:${start}:${end}:${timeContext.tz}` : ''
+    if (key !== seriesDatapointsKey) {
+      seriesDatapointsKey = key
+      seriesDatapoints.clear()
+    }
+    if (!summary || expanded.length === 0) return
+
+    for (const seriesKey of expanded) {
+      if (seriesDatapoints.has(seriesKey)) continue
+      void fetchSeriesDatapoints(summary.id, seriesKey, start, end, key)
+    }
+  })
+
+  const seriesInFlight = new Set<string>()
+
+  async function fetchSeriesDatapoints(
+    streamId: string,
+    seriesKey: string,
+    startTime: number,
+    endTime: number,
+    cacheKey: string
+  ) {
+    if (seriesInFlight.has(seriesKey)) return
+    seriesInFlight.add(seriesKey)
+    try {
+      const result = await telemetryAPI.getMetric(
+        streamId,
+        startTime,
+        endTime,
+        // No reduction. This is the request the whole feature is about.
+        0,
+        [seriesKey],
+        // None: the list shows what arrived, and quantiles are a derived
+        // statistic the client computes anyway.
+        [],
+        tzOffsetNs(),
+        isDefaultUnboundedWindow(timeContext.selection),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        tzName()
+      )
+      // The window may have moved while this was in flight; a late answer to a
+      // superseded question must not land in the new cache.
+      if (cacheKey !== seriesDatapointsKey) return
+      const series = result?.timeseries.find(t => t.attributesKey === seriesKey)
+      if (series) seriesDatapoints.set(seriesKey, series.datapoints)
+    } catch (err) {
+      console.error('Failed to fetch series datapoints:', err)
+    } finally {
+      seriesInFlight.delete(seriesKey)
+    }
+  }
+
+  /** The offset to align store-side buckets to, in nanoseconds. */
+  function tzOffsetNs(): number {
+    if (timeContext.tz === 'UTC') return 0
+    return Number(localOffsetNs(BigInt(Date.now()) * 1_000_000n))
+  }
+
+  /** The zone that offset was sampled from, so the store can resolve it per
+   *  datapoint instead of applying one sample to the whole window -- a window
+   *  crossing a DST transition changes offset partway through. Undefined in
+   *  UTC, which has no transitions to resolve. */
+  function tzName(): string | undefined {
+    if (timeContext.tz === 'UTC') return undefined
+    return Intl.DateTimeFormat().resolvedOptions().timeZone
+  }
+
+  // Fetch the clicked heatmap column's per-series distribution.
+  //
+  // targetBuckets is 1 and the window is the column, so the store merges each
+  // series across exactly that range -- the same merge it does for the
+  // aggregate, but one entry per series rather than one across them. fitToData
+  // is false because the window here *is* the request, not the absence of one.
+  $effect(() => {
+    // Read as two primitives, so a recomputation landing on the same column is
+    // not a change. The heatmap array gets a new identity on every aggregate
+    // response -- ticking one series in the legend is enough -- and depending on
+    // an object would refetch and blank the panel for a column that never moved.
+    const startNs = metricCtx.heatmapColumnStartNs
+    const endNs = metricCtx.heatmapColumnEndNs
+    const summary = page.selectedSummary
+    if (startNs === null || endNs === null || !summary) {
+      columnDistribution = undefined
+      return
+    }
+    const token = ++columnToken
+    // Cleared first, so a stale column can never be read against a new
+    // selection while the new one is in flight.
+    columnDistribution = undefined
+    void (async () => {
+      try {
+        const result = await telemetryAPI.getMetric(
+          summary.id,
+          // Exact nanoseconds, not milliseconds: the end sits one nanosecond
+          // short of the next column, and rounding it would drop the column's
+          // final millisecond of readings.
+          startNs,
+          endNs,
+          1,
+          undefined,
+          DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
+          tzOffsetNs(),
+          false,
+          0,
+          0,
+          undefined,
+          undefined,
+          tzName()
+        )
+        if (token !== columnToken) return
+        columnDistribution = result ?? undefined
+      } catch (err) {
+        if (token !== columnToken) return
+        console.error('Failed to fetch heatmap column distribution:', err)
+        columnDistribution = undefined
+      }
+    })()
+  })
+
+  // Which detail fetch is current. The aggregate fetch has had one of these
+  // since it was split out; this one did not, so a response for a metric the
+  // user had already navigated away from would still be assigned -- showing the
+  // wrong metric's data, and building the chart a second time to do it. Walking
+  // the list with the pager reproduced it every time; clicking one metric and
+  // waiting did not, which is why it looked like a rendering problem.
+  let detailToken = 0
+
+  // Datapoints arrive only for the series being drawn, so checking a series
+  // that was not drawn before leaves it with an empty line until its datapoints
+  // are fetched. This notices that and asks for them.
+  //
+  // Debounced with the same 120ms the aggregate uses, and for the same reason:
+  // ticking through five series should ask once. Reseeding is off, because the
+  // reader's selection is what triggered this and re-deriving it from the
+  // response would throw the change away.
+  let datapointTimer: ReturnType<typeof setTimeout> | undefined
+
+  $effect(() => {
+    const summary = page.selectedSummary
+    const metric = selectedMetric
+    // The set the legend is actually writing to, which is the histogram's for a
+    // histogram. Watching the scalar set alone meant this never fired for one:
+    // gaugeSumVisible is empty for a histogram by construction, so the effect
+    // bailed on its first line and a narrowed-out series stayed blank forever.
+    // That is worse for a histogram than for a scalar, which at least keeps its
+    // sparkline, stats and view buckets -- a histogram series with no datapoints
+    // has nothing but its name.
+    const checked = metricCtx.currentVisibleKeys
+    const visible = [...checked].sort()
+    if (!summary || !metric || visible.length === 0) return
+
+    const missing = metric.timeseries.some(
+      ts => checked.has(ts.attributesKey) && ts.datapoints.length === 0
+    )
+    if (!missing) return
+
+    clearTimeout(datapointTimer)
+    datapointTimer = setTimeout(() => {
+      void fetchMetricDetail(summary, visible, false)
+    }, 120)
+
+    return () => clearTimeout(datapointTimer)
+  })
+
+  async function fetchMetricDetail(
+    summary: MetricSummary,
+    /** Which series need their datapoints. Null on the first fetch of a metric,
+     *  where the selection is chosen from the response and the store applies
+     *  the same "first N" rule instead. */
+    datapointSeries: string[] | null = null,
+    /** Whether to reset the per-metric view state from the result. False when
+     *  refetching for datapoints the reader just asked for by checking a box:
+     *  reseeding there would discard the very change that triggered it. */
+    reseed = true
+  ) {
+    const token = ++detailToken
     try {
       detailLoading = true
       const { start: startTime, end: endTime } = selectionToQueryRangeMs(
@@ -208,18 +606,77 @@
       // This is what stops a dense stream shipping tens of megabytes to draw a
       // few thousand pixels: measured at 46.4 MB and 640 ms down to 0.36 MB and
       // 60 ms on a 242,324-datapoint stream.
-      selectedMetric =
+      // A histogram gets the heatmap's target, which is a resolution decision
+      // rather than the line chart's point budget. Histogram datapoints carry a
+      // bucket vector each, so the line-chart target fetched an order of
+      // magnitude more payload than any heatmap can show.
+      const isHistogramMetric =
+        summary.metricType === 'Histogram' ||
+        summary.metricType === 'ExponentialHistogram'
+      const bucketTarget = isHistogramMetric
+        ? HEATMAP_BUCKET_TARGET
+        : METRIC_BUCKET_TARGET
+      const result =
         (await telemetryAPI.getMetric(
           summary.id,
           startTime,
           endTime,
-          METRIC_BUCKET_TARGET
+          bucketTarget,
+          // Never narrowed here: dropping a series from the response would
+          // take its row, sparkline and view buckets with it. Only its
+          // datapoints are narrowed, further down.
+          undefined,
+          // Computed by the store, read by the client. Both halves of the
+          // response need them: the per-series lines and the merged columns.
+          //
+          // Histograms only. A quantile is a question about a bucket vector, so
+          // a Gauge or Sum has no answer to give, and asking for one is not
+          // free: on a 22-series Gauge it costs 2,937 ms against 298 ms, for
+          // byte-identical output.
+          isHistogramMetric
+            ? (DEFAULT_HISTOGRAM_QUANTILES as unknown as number[])
+            : undefined,
+          // Bucket boundaries follow the reader's calendar rather than the
+          // epoch. 0 is UTC, which is what the store assumes without this.
+          tzOffsetNs(),
+          // "All" is the absence of a choice, so the store divides the data's
+          // own extent instead of the window. Without this the reduction
+          // divided decades: a two-hour session came back as a single bucket
+          // per series, and no amount of client-side axis fitting could put
+          // back the resolution that was never sent.
+          isDefaultUnboundedWindow(timeContext.selection),
+          // Resolution for the Sum / Average / Rate views, which bucket for a
+          // different chart than the election thins for.
+          SCALAR_VIEW_BUCKETS,
+          // Resolution for the per-row sparklines. The store sends one for
+          // every series, checked or not, because the sparkline is how the
+          // reader decides which series is worth checking.
+          SPARKLINE_BUCKETS,
+          // Datapoints only for the series that will be drawn -- the rest of
+          // each series still arrives. A previous visit's selection can be
+          // named outright; a first visit cannot, because the selection is
+          // chosen from this very response, so the store takes the same "first
+          // N" the seeding would.
+          datapointSeries ?? persistedVisibleKeys(summary.id) ?? undefined,
+          DEFAULT_VISIBLE_TIMESERIES,
+          tzName()
         )) ?? undefined
+      // A slower earlier request must not overwrite a newer answer.
+      if (token !== detailToken) return
+      selectedMetric = result
+      // Same statement, before anything renders: the chart must not build once
+      // for the previous metric's visible set and colours, and again for this
+      // one's.
+      if (reseed) metricCtx.seedForMetric(selectedMetric)
     } catch (err) {
       console.error('Failed to fetch metric detail:', err)
+      if (token !== detailToken) return
       selectedMetric = undefined
+      metricCtx.seedForMetric(undefined)
     } finally {
-      detailLoading = false
+      // Only the current request owns the spinner; a superseded one clearing it
+      // would say "loaded" while the answer is still on its way.
+      if (token === detailToken) detailLoading = false
     }
   }
 
@@ -313,7 +770,7 @@
            snippet below): always present, spans main + detail
            regardless of content state, and DetailNav self-disables
            when there is nothing to navigate. -->
-        {#if page.selectedSummary}
+      {#if page.selectedSummary}
         {@const selectedSummary = page.selectedSummary}
         {#snippet metricChartHeaderBadge()}
           <SignalBadges
@@ -359,25 +816,25 @@
           </PaneHeader>
         {/if}
       {/if}
-        {#if displayError}
-          <div class="metrics-page__placeholder alert alert-error">
-            <span>Error: {displayError}</span>
-          </div>
-        {:else if page.loading && !hasMetricRows}
-          <div class="metrics-page__placeholder metrics-empty">
-            Loading metrics…
-          </div>
-        {:else if !page.loading && !hasMetricRows}
-          <div class="metrics-page__placeholder metrics-empty">
-            <p class="text-rp-subtle">No metrics in this time range</p>
-            <p class="mt-2 text-sm text-rp-muted">
-              Send telemetry to the exporter or adjust the time range
-            </p>
-          </div>
-        {:else}
-          <div class="metrics-page__chart">
-            <MetricChartView />
-          </div>
+      {#if displayError}
+        <div class="metrics-page__placeholder alert alert-error">
+          <span>Error: {displayError}</span>
+        </div>
+      {:else if page.loading && !hasMetricRows}
+        <div class="metrics-page__placeholder metrics-empty">
+          Loading metrics…
+        </div>
+      {:else if !page.loading && !hasMetricRows}
+        <div class="metrics-page__placeholder metrics-empty">
+          <p class="text-rp-subtle">No metrics in this time range</p>
+          <p class="mt-2 text-sm text-rp-muted">
+            Send telemetry to the exporter or adjust the time range
+          </p>
+        </div>
+      {:else}
+        <div class="metrics-page__chart">
+          <MetricChartView />
+        </div>
       {/if}
     {/snippet}
 

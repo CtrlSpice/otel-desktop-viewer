@@ -217,7 +217,28 @@ func AttributeSet(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) 
 	if attrs.Len() == 0 {
 		return nil, nil
 	}
+	// Content maps to ids by a pure function, so the same series reporting
+	// again asks a question already answered. See attribute_memo.go.
+	//
+	// Hashed once and the fingerprint carried through, so a set the memo cannot
+	// serve -- a high-cardinality label, or a value type it declines to hash --
+	// pays for one pass and not two.
+	fp, cacheable := fingerprint(attrs, scope)
+	if cacheable {
+		if rows, ids, ok := memoLookup(fp, attrs, scope); ok {
+			return rows, ids
+		}
+	}
+	rows, ids := attributeSetUncached(attrs, scope)
+	if cacheable {
+		memoStore(fp, attrs, scope, rows, ids)
+	}
+	return rows, ids
+}
 
+// attributeSetUncached is the derivation itself, unchanged by the memo in front
+// of it -- which is what lets a test assert the two agree on arbitrary input.
+func attributeSetUncached(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) {
 	rows := make([]Attribute, 0, attrs.Len())
 	for k, v := range attrs.All() {
 		value, typ := util.ValueToStringAndType(v)

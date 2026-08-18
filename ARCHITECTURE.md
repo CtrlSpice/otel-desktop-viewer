@@ -1,6 +1,6 @@
 # otel-desktop-viewer Architecture
 
-otel-desktop-viewer is a custom [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector) distribution with a single custom **`desktop` exporter**. The exporter receives OTLP traces, metrics, and logs, stores them in **DuckDB**, and serves a **Svelte 5** web UI over **HTTP + JSON-RPC**.
+otel-desktop-viewer is a custom [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector) distribution built from two custom components: a **`desktop` exporter** that writes OTLP traces, metrics, and logs into storage, and a **`duckdb` extension** that owns the **DuckDB** store and serves a **Svelte 5** web UI over **HTTP + JSON-RPC**.
 
 The design optimizes for local development: easy install, minimal moving parts, fast analytical queries over telemetry, and a UI for exploring all three signals.
 
@@ -10,7 +10,8 @@ The design optimizes for local development: easy install, minimal moving parts, 
 flowchart TB
   subgraph ingest [Ingestion]
     SDK[OTel SDK / Collector / test apps] -->|OTLP gRPC :4317 or HTTP :4318| OTLP[otlp receiver]
-    OTLP --> Desktop[desktop exporter]
+    OTLP --> Batch[batch processor]
+    Batch --> Desktop[desktop exporter]
     Desktop --> Spans[spans.Ingest]
     Desktop --> Metrics[metrics.Ingest]
     Desktop --> Logs[logs.Ingest]
@@ -28,10 +29,14 @@ flowchart TB
     RPC -->|JSON| Browser
   end
 
-  Desktop -->|starts at collector boot| HTTP[HTTP server :8000]
+  DuckDBExt[duckdb extension] -->|starts before any pipeline| HTTP[HTTP server :8000]
+  DuckDBExt -->|owns| DuckDB
+  Desktop -->|resolves store via host.GetExtensions| DuckDBExt
   HTTP --> Static
   HTTP --> RPC
 ```
+
+The `desktop` exporter writes; it does not own the store. Ownership of the DuckDB database, the HTTP server, and the retention loop lives in a separate `duckdb` extension, which the collector starts before any pipeline component and stops after — exactly the lifetime the store needs. Each signal's exporter instance finds the shared store by looking it up in the collector's extensions map at `Start`.
 
 **Default ports**
 
@@ -49,12 +54,12 @@ otel-desktop-viewer/
 ├── main.go                    # CLI entry; builds inline collector config from flags
 ├── main_others.go / main_windows.go
 ├── components.go              # OCB-generated component registry
-├── desktopexporter/           # Custom exporter package
-│   ├── factory.go             # Exporter factory + shared-component wiring
-│   ├── exporter.go            # pushTraces / pushMetrics / pushLogs
+├── desktopexporter/           # Custom exporter package (write-only)
+│   ├── factory.go             # Exporter factory
+│   ├── exporter.go            # pushTraces / pushMetrics / pushLogs; resolves the store from the duckdb extension
+│   ├── duckdbextension/       # Owns the store, HTTP server, and retention loop
 │   └── internal/
 │       ├── server/            # HTTP server, JSON-RPC, embedded static assets
-│       ├── sharedcomponent/   # Thread-safe shared exporter instance per config
 │       ├── store/             # DuckDB store, schema, ingest, search, query
 │       └── frontend/          # Svelte 5 + Vite UI
 ├── scripts/                   # OTLP seed scripts for local dev
@@ -66,7 +71,7 @@ The root module builds the collector binary. The frontend builds into `desktopex
 
 ## Collector binary
 
-Built with the [OpenTelemetry Collector Builder (OCB)](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder). Generated files (`main.go`, `components.go`) should not be edited by hand except where already customized. The distribution currently builds against **collector v0.157.0 / v1.63.0** (`go.mod`); `components.go` also records module versions in `ReceiverModules` / `ProcessorModules` metadata strings (keep these in sync when bumping). Requires **Go 1.26**.
+Built with the [OpenTelemetry Collector Builder (OCB)](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder). Generated files (`main.go`, `components.go`) should not be edited by hand except where already customized. The distribution currently builds against **collector v0.158.0 / v1.64.0** (`go.mod`); `components.go` also records module versions in `ReceiverModules` / `ProcessorModules` / `ExtensionModules` metadata strings (keep these in sync when bumping). Requires **Go 1.26**.
 
 **Registered components** (`components.go`):
 
@@ -74,15 +79,18 @@ Built with the [OpenTelemetry Collector Builder (OCB)](https://github.com/open-t
 |------|-----------|---------------------------|
 | Receiver | `otlp` (HTTP + gRPC) | Yes |
 | Exporter | `desktop` | Yes |
-| Processor | `batch` | Registered, **not wired** into default pipelines |
+| Processor | `batch` | Yes, wired into all three default pipelines |
+| Extension | `duckdb` (`desktopexporter/duckdbextension`) | Yes; owns the store, the HTTP server, and retention |
 
 **Default pipelines** (built from CLI flags in `main.go`):
 
 ```
-traces:  otlp → desktop
-metrics: otlp → desktop
-logs:    otlp → desktop
+traces:  otlp → batch → desktop
+metrics: otlp → batch → desktop
+logs:    otlp → batch → desktop
 ```
+
+`batch` merges on `send_batch_size: 8192` or a `1s` timeout, whichever comes first — sized so the exporter's own ingest deadline stays meaningful (see Lifecycle, below) and so light, interactive traffic still lands within a second rather than waiting for a merge threshold it will never reach.
 
 **CLI flags**
 
@@ -90,40 +98,44 @@ logs:    otlp → desktop
 |------|---------|---------|
 | `--http` | 4318 | OTLP HTTP listen port |
 | `--grpc` | 4317 | OTLP gRPC listen port |
-| `--browser-port` | 8000 | UI + JSON-RPC port |
+| `--browser-port` | 8000 | UI + JSON-RPC port (`duckdb` extension's `endpoint`) |
 | `--host` | localhost | Bind address for all endpoints |
 | `--db` | *(empty)* | DuckDB file path; empty = in-memory |
 | `--db-max-size` | *(empty)* | Store size cap (e.g. `512MB`, `2GB`); oldest telemetry pruned when exceeded. `0` disables pruning. Defaults to 512 MB in-memory, 2 GB on disk. |
 | `--open-browser` | true | Open UI on startup |
+| `--telemetry` | false | Emit the viewer's own traces and metrics back to its own OTLP receiver, so the collector's operation is visible in its own UI. Sets both the `desktop` exporter's and the `duckdb` extension's telemetry mode to `self`; ingest spans are suppressed in that mode so instrumenting the write does not itself generate more writes to measure. |
 
 Configuration is injected as inline YAML resolver URIs at startup. There is no `--config` file path exposed by the CLI today, though the underlying collector supports YAML providers.
 
-## Desktop exporter
+## Desktop exporter and DuckDB extension
 
-The `desktop` exporter is the heart of the application. For a given config it owns:
+Ownership of the store split from the exporter into a separate collector **extension**. The `desktop` exporter is now write-only: it has no state of its own beyond a store reference, resolved at startup. The `duckdb` extension (`desktopexporter/duckdbextension/`) owns:
 
 1. A **DuckDB store** (`internal/store`)
 2. An **HTTP server** (`internal/server`) that serves the UI and JSON-RPC
+3. The **retention loop**
 
-Trace, metrics, and logs exporters are created separately by the collector factory, but they **share one `desktopExporter` instance** per config via a local `sharedcomponent` package (`internal/sharedcomponent/`, mutex-guarded; wired from `factory.go`). This ensures a single database and a single HTTP listener.
+This split exists because the collector starts extensions before any pipeline component and shuts them down after (documented ordering of `service.Start` / `service.Shutdown`), which is exactly the lifetime the store needs: up before the first ingest, alive until the last queued write has drained. It also replaces a hand-rolled `sharedcomponent` package that used to give the three signal exporters one instance to share per config — that package is gone; sharing now happens through the extensions map instead of through shared construction.
+
+Trace, metrics, and logs exporters are still created separately by the collector factory, and each is an **independent `desktopExporter` instance** with no state shared between them at construction time. What they share is the extension: at `Start`, each walks `host.GetExtensions()` for anything satisfying a small `storeHost` interface (`Store() *store.Store`) and keeps that pointer. Exactly one store-owning extension must be configured — none is a startup error telling the operator to add `duckdb` under `extensions`, and more than one is also rejected rather than picking a target by map iteration order.
 
 **Ingest path** (`exporter.go`):
 
 ```
-OTLP pdata → exporterhelper → pushTraces|pushMetrics|pushLogs → store.WithConn → spans|metrics|logs.Ingest
+OTLP pdata → batch processor → exporterhelper sending queue → pushTraces|pushMetrics|pushLogs → store.WithConn → spans|metrics|logs.Ingest
 ```
 
-Ingest writes directly from OpenTelemetry pdata into DuckDB appenders. There are no intermediate Go domain structs between OTLP and storage.
+Ingest writes directly from OpenTelemetry pdata into DuckDB appenders. There are no intermediate Go domain structs between OTLP and storage. The exporter's own `sending_queue` is enabled by default (one consumer, `BlockOnOverflow`, no batching of its own — batching is the `batch` processor's job) so OTLP receipt is decoupled from the DuckDB write; disabling it restores a synchronous path where the client blocks on, and sees the error from, the store write. Each push imposes an `IngestTimeout` of 30s as a backstop against a hung write holding the store's write lock indefinitely, not as a latency control — deliberately far above the working range, because tripping it means a batch is cut short mid-flush.
 
-**Lifecycle**: `newDesktopExporter` opens the store and HTTP server using the factory startup context. `Start()` binds the listen address synchronously (bind failures such as port-in-use propagate to the collector), then serves HTTP on a background goroutine. Ingest paths check `ctx.Err()` before work and on every record (metrics pass 1 included); `CloseAppenders` on exit flushes buffered rows. When a retention cap is configured, a background loop enforces it every 30 seconds. `Shutdown()` cancels the retention loop and waits for it to finish, gracefully shuts down the HTTP server and waits for the serve goroutine, then closes the store.
+**Lifecycle**: the `duckdb` extension's `Start` opens the store, builds the HTTP server, and — if a retention cap applies — starts the retention loop; `Shutdown` reverses that order: cancel the retention loop and wait for it, shut down the HTTP server and wait for its serve goroutine, then close the store. Closing the store takes its write lock, which would otherwise wait on any in-flight reader past the collector's shutdown deadline; the extension bounds that close by `ctx` and logs a warning rather than hang; an unclosed store loses at most its WAL, which DuckDB replays on next open. The exporter's own `Start` is comparatively trivial: it just resolves the shared store from the extensions map. Ingest paths check `ctx.Err()` before work and on every record (metrics pass 1 included); `CloseAppenders` on exit flushes buffered rows.
 
-**Retention**: `--db-max-size` sets a byte cap on stored telemetry. When usage exceeds the cap, the oldest traces, logs, and metrics are pruned. `getStats` reports current usage and the configured cap alongside signal counts.
+**Retention**: `--db-max-size` sets a byte cap on stored telemetry, applied to the `duckdb` extension's config. When usage exceeds the cap, the oldest traces, logs, and metrics are pruned by a loop that runs every 30 seconds. `getStats` reports current usage and the configured cap alongside signal counts.
 
 ## Storage (DuckDB)
 
 **Engine**: DuckDB via `github.com/duckdb/duckdb-go/v2` (CGO required).
 
-**Connection model**: `store.Store` holds two handles to one DuckDB database, ordered by a single `sync.RWMutex`.
+**Connection model**: `store.Store` holds two handles to one DuckDB database, ordered by a `sync.RWMutex` plus a second mutex that serializes ingest against itself.
 
 - `conn` — a dedicated `driver.Conn` from `connector.Connect`, used only by ingest. DuckDB appenders are bound to the connection that created them, so ingest cannot run on the pool.
 - `db` — a `*sql.DB` pool from `sql.OpenDB`, used by every query and by the delete/checkpoint paths. The pool is capped via `SetMaxOpenConns`, because each pooled connection is a real DuckDB connection with real memory cost.
@@ -132,13 +144,17 @@ Access is chosen by intent, not by handle:
 
 | Method | Lock | Handle | Used by |
 |--------|------|--------|---------|
-| `WithConn` | write | `conn` | ingest (appenders) |
+| `WithConn` | `ingestMu`, then read | `conn` | ingest (appenders) |
 | `WithDBWrite` | write | `db` | clear, delete, retention prune + checkpoint |
 | `WithDBRead` | read | `db` | all queries |
 
-The write lock is shared across both handles, so appender writes, deletes, and retention checkpoints are mutually exclusive even though they run on different connections. Reads run concurrently with one another and never overlap a write.
+The write lock means "no ingest and no queries", and belongs to pool mutations alone. Ingest takes the *read* lock, so queries run alongside a batch being appended; `ingestMu` is what keeps two ingest calls off one appender connection, which the read lock cannot do.
 
-What this does **not** guarantee: a query does not see rows that an in-flight ingest has appended but not yet flushed. DuckDB appenders buffer client-side and become visible on flush — automatically at the chunk threshold, or on `Flush`/`Close` at the end of each ingest call. Under load the UI can lag ingest by up to one batch. That is a visibility window, not a lost write.
+Ingest reading rather than writing is deliberate. Appending on `conn` and querying on `db` are two DuckDB connections to one database, and DuckDB's MVCC serves a reader alongside a writer unaided — verified by running pooled `SELECT`s against a continuous 20,000-span appender ingest with no lock at all: 1,225 reads, no failures, no races. Excluding readers for a batch's duration bought nothing and cost latency in proportion to batch size; a reader waited 159ms behind a 50,000-span batch to perform 0.2ms of work.
+
+Pool mutations must still exclude ingest, and the sharpest reason is the orphan sweep: ingest inserts dictionary rows before flushing the owner rows that reference them, so a sweep landing in that window would delete rows the in-flight batch is about to point at. No error and no failed constraint, since no foreign key reaches into a `uuid[]` — the attributes would simply stop appearing.
+
+What this does **not** guarantee: a query does not see rows that an in-flight ingest has appended but not yet flushed. DuckDB appenders buffer client-side and become visible on flush — automatically at the chunk threshold, or on `Flush`/`Close` at the end of each ingest call. Under load the UI can lag ingest by up to one batch. That is a visibility window, not a lost write. Queries running alongside ingest widens that window rather than changing its nature: a read can now land mid-batch, and can see dictionary rows whose owners have not flushed. Benign for queries, which join owner→attributes; the one visible effect is that the attribute-key dropdown may list a key a moment before its spans appear.
 
 `EnforceRetention` takes the write lock once per prune round rather than across a whole pass, so queries interleave between rounds instead of blocking for up to three checkpoints.
 
@@ -146,7 +162,7 @@ What this does **not** guarantee: a query does not see rows that an in-flight in
 
 ### Schema
 
-Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file per object — `types/`, `tables/`, `indexes/`, `macros/` — applied in order on store creation. The order is explicit Go lists in `queries/ddl_order.go` rather than a directory walk, because it is load-bearing and because a file nobody sequenced should fail loudly instead of sorting itself into the middle of the schema. `store/schema` retains only `version.go`, whose queries run *before* this DDL to decide whether running it is safe at all.
+Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file per object — `types/`, `tables/`, `indexes/`, `macros/` — applied in order on store creation. The order is read at init from an `_order` manifest file in each directory (`queries/ddl_order.go`), one filename per line, rather than a directory walk: creation order is load-bearing (a table must follow the tables it references; a macro must follow the macros it calls), so it has to be written down somewhere a directory listing can't silently reshuffle, and a file nobody sequenced fails loudly at startup instead of sorting itself into the middle of the schema. `store/schema` retains only `version.go`, whose queries run *before* this DDL to decide whether running it is safe at all.
 
 **Core tables**
 
@@ -205,9 +221,15 @@ Ingest is **two-pass**, and per OTLP request costs three small inserts and no re
 
 The dictionary inserts cannot use an appender: appenders have no conflict handling, and a constraint violation errors at flush and takes the whole chunk with it. The high-volume tables have no dedupe requirement and keep the appender.
 
-`store/ingest/` holds the shared pieces: `dictionary.go` (hashing and id construction), `flushed.go` (a per-store cache of ids already written, so a repeat batch skips the insert entirely — invalidated in the one function that deletes dictionary rows), and `sweep.go`.
+`store/ingest/` holds the shared pieces: `dictionary.go` (hashing and id construction), `flushed.go` (a per-store cache of ids already written, so a repeat batch skips the insert entirely — invalidated in the one function that deletes dictionary rows), `attribute_memo.go`, and `sweep.go`.
+
+`attribute_memo.go` caches attribute-set *derivation* — content hashed to (dictionary rows, id array) — process-wide rather than per store, for the duration of the process. It is a different cache from `flushed.go` and sits in front of it: deriving the same label set is a pure function whose answer can never go stale, so unlike `FlushedIDs` it needs no invalidation when rows are deleted, only when the memo's own fixed capacity (4096 distinct sets) is reached, at which point it resets wholesale rather than evicting entry-by-entry. It pays off on the repetition across batches — a stream reporting the same handful of label sets on every interval — and costs a little on a set it can never serve, such as a high-cardinality label that mints a new set every datapoint.
 
 ## Query layer and API
+
+### SQL as files, rendered through text/template
+
+Every read-path query is a `.sql` file under `queries/{spans,logs,metrics}/`, embedded via `go:embed` and parsed once at package init into a `text/template`. `queries.Render(name, data)` fills in the named conditional fragments and returns the final SQL string; `data` is normally a struct whose fields are those fragments, named rather than positional, so adding or reordering one cannot silently change which fragment lands where. `Option("missingkey=error")` makes a misspelled field fail loudly at render instead of writing `<no value>` into the query, and every embedded file is checked against the registry of query names in both directions at startup, so a renamed file cannot leave a dangling reference and an orphaned file cannot sit unnoticed. Golden tests in the signal packages pin the rendered text byte for byte, which is what makes editing these files safe. This replaced hundreds of lines of positional `fmt.Sprintf` assembly, which could not be syntax-highlighted, could not be pasted into a DuckDB shell, and made the order of `%s` verbs against a trailing argument list load-bearing in a way that a swapped pair still produced SQL that parsed.
 
 ### JSON rows from DuckDB
 
@@ -215,11 +237,24 @@ Query functions build JSON in SQL using `json_object`, `to_json(list(...))`, etc
 
 Ordered aggregation is `to_json(list(x order by k))` rather than `json_group_array`, which is a macro and therefore rejects `ORDER BY` inside it. Attribute arrays are ordered by key on the read path, which is also what makes the JSON deterministic — the previous output followed scan order with no `ORDER BY` anywhere, so it was never actually order-stable.
 
-**Shared shapes live in SQL macros** (`MacroCreationQueries`), layered the way the histogram math already was: leaf value helpers (`attrs_json`, `attr_value`, `has_attr`, `trace_id_wire`, `span_id_wire`), then component objects (`resource_json`, `scope_json`, `attribute_def_json`). `attrs_json(ids)` alone replaced the same unnest-and-join fragment repeated across spans, logs and metrics.
+**Shared shapes live in SQL macros** (`queries.Macros()`, created in the `_order` sequence described under Schema above), layered the way the histogram math already was: leaf value helpers (`attrs_json`, `attr_value`, `has_attr`, `trace_id_wire`, `span_id_wire`), then component objects (`resource_json`, `scope_json`, `attribute_def_json`). `attrs_json(ids)` alone replaced the same unnest-and-join fragment repeated across spans, logs and metrics.
 
 **Why**: Response shape is defined once in SQL. No duplicate struct tags, no scan-then-marshal step. The frontend is the primary consumer.
 
 **Trade-off**: Response structure is not statically typed in Go; it lives in SQL strings, and macros are invisible to Go tooling — a typo surfaces at runtime, which is what the macro unit tests exist for.
+
+### Metric aggregation
+
+`get_metric.sql` is where metric aggregation lives — entirely in SQL, computed once per request rather than shipped as raw datapoints for the frontend to reduce. For the time window and target resolution a caller asks for, one query does:
+
+- **M4 reduction** for Gauge and Sum series: the earliest, latest, smallest, and largest datapoint per series per bucket, which draws a chart line identical to the one every point would draw (the extremes of each pixel column are always kept) rather than a sampled approximation.
+- **Histogram merge** for Histogram and ExponentialHistogram series: bucket counts are added (Delta) or differenced against the previous reading (Cumulative) rather than sampled, because a histogram datapoint carries counts, not a point on a line — sampling one would discard the observations in the rest.
+- **Quantiles**, computed per requested percentile per bucket from the merged histogram, rather than shipping raw bucket vectors for the client to reduce.
+- **Scalar views** (Sum / Average / Rate) on a resolution distinct from both the chart reduction and the per-row sparkline, aggregated on a shared absolute-time grid so toggling which series are visible cannot re-cut the buckets underneath the chart.
+- **Sparklines**, a third, coarser resolution sized for a ~128px row rather than a full-width chart.
+- **Cross-series pools** ("Selected" and "All"), folding checked series or every series in the stream into one aggregate line, computed from the same per-series view rows so the pooled line aligns with the per-series lines drawn beneath it.
+
+**Exemplars are capped in two independent directions.** Per datapoint, at most 5 exemplars are listed, ranked by distance from either extreme of the datapoint's own exemplar values (so the set spans the range rather than clustering at one end); a datapoint carries `exemplarCount` only when its actual count exceeds what was listed, so its absence can be read as "nothing was withheld." Per bucket, at most 2 exemplar-bearing datapoints are retained as carriers — again ranked from both ends, this time by how far their exemplars reach — so a bucket a few pixels wide caps at six datapoints total (four from M4 plus up to two exemplar carriers) rather than costing as much as the densest stream that landed in it.
 
 ### Search
 
@@ -247,7 +282,7 @@ Attribute *discovery* is served from the dictionary (`store/attributes`), which 
 | `POST /rpc` | JSON-RPC 2.0 (`golang.org/x/exp/jsonrpc2`); request bodies capped at 1 MB |
 | `GET /*` | Embedded static files; extension-less unknown paths fall back to `index.html` for client-side routing |
 
-CORS is enabled for local dev (Vite on port 3001).
+CORS allows any origin (`http://*`, `https://*`), which is what lets the Vite dev server on port 3001 reach `/rpc` without a proxy configured per environment — the tradeoff is acceptable because the server binds to `localhost` by default and carries no auth.
 
 **Static assets**
 
@@ -269,6 +304,7 @@ CORS is enabled for local dev (Vite on port 3001).
 | `getLogAttributes` | Attribute discovery for logs |
 | `searchMetricSummaries` | Metric stream list |
 | `getMetric` | Metric detail and time series for one stream in a time window |
+| `getMetricAggregate` | Re-fetch just the cross-series aggregate envelope (and, for a histogram, the merged quantiles) for a new legend selection, without re-shipping the per-series payload `getMetric` already returned |
 | `getMetricAttributes` | Attribute discovery for metrics |
 | `getStats` | Signal counts plus store `sizeBytes` / `maxSizeBytes` (used for polling and retention UI) |
 | `clearTraces` / `clearLogs` / `clearMetrics` | Delete all data for a signal |
@@ -288,6 +324,7 @@ Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The AP
 | `-32007` | Invalid search query tree |
 | `-32008` | Invalid span ID param |
 | `-32009` | Invalid metric stream ID param |
+| `-32010` | Request canceled (the caller went away mid-query — a UI navigation or a closed tab — surfaced as its own code so cancellation is not logged as an internal error) |
 
 ## Frontend
 
@@ -347,7 +384,7 @@ Three-pane model via `PageLayout.svelte` and `SignalListDrawer.svelte`:
 
 `services/telemetry-service.ts` posts JSON-RPC requests to `/rpc`. Wire payloads are typed in `types/wire-types.ts` (`Json*` interfaces); revivers convert them to domain types in `types/api-types.ts`. Search queries are sent as query trees; time ranges are converted to nanosecond strings for the backend.
 
-**Metrics**: The backend returns raw datapoints; histogram quantiles, rates, heatmaps, and legend state are computed client-side in `metric-view-context.svelte.ts`.
+**Metrics**: Aggregation is not a frontend concern. `get_metric.sql` (see Metric aggregation, above) computes the M4-reduced or histogram-merged series, quantiles, Sum/Average/Rate views, sparklines, and cross-series pools; the response already carries them. `metric-view-context.svelte.ts` and its helpers in `components/metrics/utils/` derive presentation state from that payload — which histogram tab is active, heatmap column/row layout and color scale, legend visibility and selection, chart projections — not the numbers themselves. Toggling the legend selection re-fetches only the aggregate envelope via `getMetricAggregate`, since per-series quantiles are already in hand and only the cross-series fold depends on which series are checked.
 
 ### Real-time updates
 
@@ -361,8 +398,9 @@ The UI **polls** `getStats` on an interval to detect new data and show refresh a
 App / SDK
   → OTLP (gRPC or HTTP)
   → otlp receiver
-  → desktop exporter (exporterhelper)
-  → spans|metrics|logs.Ingest
+  → batch processor (merges on size or a 1s timeout)
+  → desktop exporter (sending queue → pushTraces|pushMetrics|pushLogs)
+  → store resolved from the duckdb extension → spans|metrics|logs.Ingest
   → pass 1: hash attributes → insert dictionary, then resources/scopes
   → pass 2: DuckDB appenders (owners carrying uuid[] references)
 ```
@@ -418,6 +456,7 @@ Or run production-like: `make build && ./otel-desktop-viewer` (embedded assets, 
 | Datapoints | Single table with NULLs | Simpler than per-type tables; columnar NULL compression |
 | Attributes | Content-hashed dictionary + `uuid[]` on owners | Dedupes at the atom; ids known before write, so ingest needs no read-back |
 | Attribute ids | sha256 truncated to 128 bits | Fits `uuid`; birthday bound is far below the machine's own error rate. Audited by an independent SQL macro rather than trusted |
+| Store ownership | `duckdb` extension, not the `desktop` exporter | Matches the collector's extension lifecycle (up before any pipeline, down after) to the lifetime the store actually needs |
 | Ingest | pdata → DuckDB appenders | No intermediate Go structs |
 | API responses | JSON rows from SQL | SQL is the single source of truth for response shape |
 | Transport | JSON-RPC over HTTP | One endpoint; typed methods; no REST surface |
@@ -430,12 +469,11 @@ These appear in older notes or collector capabilities but are **not** part of th
 
 - WebSocket push / live tail
 - `--config` YAML file exposed on the CLI (inline flag-built config only)
-- `batch` processor in default pipelines
-- `exporterhelper.WithRetry()` on the desktop exporter
+- `exporterhelper.WithRetry()` on the desktop exporter — a local DuckDB write failure is not transient the way a network export failure is, and replaying a partially applied batch would collide with already-written primary keys
 
 ## Related files
 
-**Backend entry and wiring**: `main.go`, `components.go`, `desktopexporter/factory.go`, `desktopexporter/exporter.go`, `desktopexporter/internal/sharedcomponent/`
+**Backend entry and wiring**: `main.go`, `components.go`, `desktopexporter/factory.go`, `desktopexporter/exporter.go`, `desktopexporter/duckdbextension/`
 
 **Server and API**: `desktopexporter/internal/server/server.go`, `jsonrpc_handler.go`, `errors.go`
 
