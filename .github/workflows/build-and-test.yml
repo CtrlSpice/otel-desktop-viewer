@@ -153,3 +153,12 @@ jobs:
 
     - name: Format check (Prettier)
       run: npm run format:check
+
+    # The built bundle is committed and served by the Go binary, so it can go
+    # stale without any source file changing -- a dependency bump alone is
+    # enough. Nothing caught that, and the drift would surface inside whichever
+    # unrelated PR next ran build-ts. Runs from the repo root because the
+    # comparison spans both the frontend and the embedded copy.
+    - name: Built assets are current
+      working-directory: ${{ github.workspace }}
+      run: make build-ts-check

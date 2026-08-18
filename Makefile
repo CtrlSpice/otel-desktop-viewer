@@ -99,6 +99,29 @@ dev-go: kill-port
 build-ts:
 	cd desktopexporter/internal/frontend && npm run build && rm -rf ../../internal/server/static/* && cp -r dist/* ../../internal/server/static/
 
+# The built bundle is committed, so it can fall out of step with the sources
+# and with package-lock.json -- and nothing noticed. A dependency bump changes
+# the output without touching a single source file, so the lockfile and the
+# bundle disagree from the moment it merges, and the drift lands in whichever
+# unrelated PR next runs build-ts.
+#
+# Vite's output is reproducible: same sources and same lockfile give
+# byte-identical files, hashed names included. So a rebuild that differs from
+# what is committed means what is committed is stale, and that is a check
+# rather than a guess.
+#
+# .gitkeep is excluded because it is ours -- it keeps the directory in git and
+# build-ts's globs never touch it.
+.PHONY: build-ts-check
+build-ts-check:
+	cd desktopexporter/internal/frontend && npm run build
+	@diff -r --exclude=.gitkeep \
+		desktopexporter/internal/frontend/dist \
+		desktopexporter/internal/server/static \
+		|| (echo ""; \
+		    echo "internal/server/static is stale. Run 'make build-ts' and commit the result."; \
+		    exit 1)
+
 .PHONY: format-ts
 format-ts:
 	cd desktopexporter/internal/frontend && npm run format
@@ -129,7 +152,7 @@ run: build-ts
 # local ran `format:check`, so seven unformatted files went out across several
 # commits before CI caught them.
 .PHONY: test
-test: format-go-check format-ts-check validate-ts test-go test-ts
+test: format-go-check format-ts-check validate-ts build-ts-check test-go test-ts
 
 .PHONY: release-dry-run
 release-dry-run:
