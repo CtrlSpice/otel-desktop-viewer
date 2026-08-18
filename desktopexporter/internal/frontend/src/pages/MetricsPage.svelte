@@ -191,12 +191,23 @@
   let seriesDatapoints = new SvelteMap<string, DataPoint[]>()
   let seriesDatapointsKey = $state('')
 
+  // Each series merged over the selected heatmap column, fetched on click.
+  //
+  // The column and the per-series lines are drawn at different resolutions, and
+  // neither can be pinned to the other: the heatmap wants a column per few
+  // pixels, the quantile lines want enough points not to visibly step. So the
+  // only way to answer "what did each series look like in this column" is to
+  // ask for that column.
+  let columnDistribution = $state<MetricData | undefined>(undefined)
+  let columnToken = 0
+
   createMetricViewContext(
     () => selectedMetric,
     () => selectedAggregate,
     () => selectedAggregateSummary,
     () => selectedScalarAggregate,
-    key => seriesDatapoints.get(key)
+    key => seriesDatapoints.get(key),
+    () => columnDistribution
   )
   const metricCtx = getMetricViewContext()
 
@@ -471,6 +482,58 @@
     if (timeContext.tz === 'UTC') return undefined
     return Intl.DateTimeFormat().resolvedOptions().timeZone
   }
+
+  // Fetch the clicked heatmap column's per-series distribution.
+  //
+  // targetBuckets is 1 and the window is the column, so the store merges each
+  // series across exactly that range -- the same merge it does for the
+  // aggregate, but one entry per series rather than one across them. fitToData
+  // is false because the window here *is* the request, not the absence of one.
+  $effect(() => {
+    // Read as two primitives, so a recomputation landing on the same column is
+    // not a change. The heatmap array gets a new identity on every aggregate
+    // response -- ticking one series in the legend is enough -- and depending on
+    // an object would refetch and blank the panel for a column that never moved.
+    const startNs = metricCtx.heatmapColumnStartNs
+    const endNs = metricCtx.heatmapColumnEndNs
+    const summary = page.selectedSummary
+    if (startNs === null || endNs === null || !summary) {
+      columnDistribution = undefined
+      return
+    }
+    const token = ++columnToken
+    // Cleared first, so a stale column can never be read against a new
+    // selection while the new one is in flight.
+    columnDistribution = undefined
+    void (async () => {
+      try {
+        const result = await telemetryAPI.getMetric(
+          summary.id,
+          // Exact nanoseconds, not milliseconds: the end sits one nanosecond
+          // short of the next column, and rounding it would drop the column's
+          // final millisecond of readings.
+          startNs,
+          endNs,
+          1,
+          undefined,
+          DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
+          tzOffsetNs(),
+          false,
+          0,
+          0,
+          undefined,
+          undefined,
+          tzName()
+        )
+        if (token !== columnToken) return
+        columnDistribution = result ?? undefined
+      } catch (err) {
+        if (token !== columnToken) return
+        console.error('Failed to fetch heatmap column distribution:', err)
+        columnDistribution = undefined
+      }
+    })()
+  })
 
   // Which detail fetch is current. The aggregate fetch has had one of these
   // since it was split out; this one did not, so a response for a metric the

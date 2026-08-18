@@ -154,3 +154,39 @@ export function heatmapColumnSelectionAt(
     quantiles,
   }
 }
+
+/**
+ * Where a selected heatmap column ends, exclusive by one nanosecond.
+ *
+ * The next column's own start, not the selected start plus a width. Columns are
+ * cut in local time, so they are not all the same number of nanoseconds wide: a
+ * local day is 23, 24 or 25 hours across a DST transition. Deriving a single
+ * width -- the smallest gap, say -- and adding it would fetch 23 hours of a
+ * 25-hour column and silently lose the other two, which is the defect fetching
+ * the column exists to remove.
+ *
+ * One nanosecond short because the store filters `timestamp >= start and
+ * timestamp <= end` while it cuts buckets half-open; ending on the next
+ * boundary pulls that column's first reading in and counts it in both columns.
+ *
+ * The last column has no next one and borrows the preceding gap, which errs by
+ * ending early rather than reaching into a column that does not exist. A lone
+ * column has no gap to borrow and takes the window's end, which is what a single
+ * column spans by definition.
+ */
+export function heatmapColumnEndNs(
+  columnStarts: readonly bigint[],
+  selectedStartNs: bigint,
+  windowEndNs: bigint
+): bigint | null {
+  const sorted = [...new Set(columnStarts)].sort((a, b) =>
+    a < b ? -1 : a > b ? 1 : 0
+  )
+  const i = sorted.indexOf(selectedStartNs)
+  if (i >= 0 && i + 1 < sorted.length) return sorted[i + 1]! - 1n
+  if (sorted.length >= 2) {
+    const lastGap = sorted[sorted.length - 1]! - sorted[sorted.length - 2]!
+    if (lastGap > 0n) return selectedStartNs + lastGap - 1n
+  }
+  return windowEndNs > selectedStartNs ? windowEndNs : null
+}

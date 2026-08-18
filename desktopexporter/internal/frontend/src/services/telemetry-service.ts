@@ -78,6 +78,21 @@ function toNanoseconds(milliseconds: number): string {
   return milliseconds === 0 ? '0' : milliseconds.toString() + '000000'
 }
 
+/**
+ * A time bound for a query: milliseconds, or exact nanoseconds as a bigint.
+ *
+ * Milliseconds are what every view works in and what the pickers produce. A
+ * bigint is for the caller that needs a boundary the millisecond grid cannot
+ * express -- fetching one heatmap column means ending one nanosecond short of
+ * the next column's start, and rounding that to milliseconds would drop the
+ * column's last millisecond of readings.
+ */
+export type QueryTimeBound = number | bigint
+
+function boundToNanoseconds(bound: QueryTimeBound): string {
+  return typeof bound === 'bigint' ? bound.toString() : toNanoseconds(bound)
+}
+
 /** Thrown when a request is abandoned. Callers that supersede their own
  *  requests should swallow this rather than surfacing it as an error -- the
  *  result was discarded on purpose. */
@@ -519,8 +534,8 @@ export let telemetryAPI = {
 
   getMetric: async (
     streamId: string,
-    startTime: number,
-    endTime: number,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
     /** How many time buckets to reduce the window to. Omit for every
      *  datapoint. The store keeps up to four points per bucket -- first, last,
      *  smallest, largest -- so the drawn line is the same as it would be with
@@ -564,8 +579,8 @@ export let telemetryAPI = {
      *  arrive. Omit to keep the single offset. */
     tzName?: string
   ): Promise<MetricData | null> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
+    const startTimeNs = boundToNanoseconds(startTime)
+    const endTimeNs = boundToNanoseconds(endTime)
     // Not-found arrives as a JSON-RPC error (one wire convention across all
     // signals); translate it to null here so callers keep a simple contract.
     try {
