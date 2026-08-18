@@ -157,6 +157,12 @@
     ).dateTime
   }
 
+  /** Whether the store trimmed this datapoint's exemplar list. The field is
+   *  absent whenever it did not, which is almost always. */
+  function withheld(dp: DataPoint): boolean {
+    return dp.exemplarCount !== undefined && dp.exemplarCount > dp.exemplars.length
+  }
+
   function exemplarSpanPatch(ex: Exemplar) {
     return ex.spanID ? { [SPAN_PARAM]: ex.spanID } : undefined
   }
@@ -234,7 +240,7 @@
           {#if hasExtra}
             {#if dp.exemplars.length > 0}
               <span class="badge-count">
-                {#if dp.exemplarCount > dp.exemplars.length}
+                {#if withheld(dp)}
                   {dp.exemplars.length} of {dp.exemplarCount} ex
                 {:else}
                   {dp.exemplars.length} ex
@@ -262,7 +268,7 @@
               <span class="dp-list__detail-value">{dp.flags}</span>
             </div>
           {/if}
-          {#if dp.exemplarCount > dp.exemplars.length}
+          {#if withheld(dp)}
             <div class="dp-list__detail">
               <span class="dp-list__detail-label">exemplars</span>
               <span class="dp-list__detail-value">

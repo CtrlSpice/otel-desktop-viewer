@@ -40,7 +40,6 @@ function makeSumDatapoint(
     startTime: BigInt(BASE_TIMESTAMP_MS) * 1_000_000n,
     flags: 0,
     exemplars: [],
-    exemplarCount: 0,
     metricType: 'Sum',
     doubleValue: value,
     intValue: null,

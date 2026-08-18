@@ -162,15 +162,52 @@
 		-- response from 1.7 MB to 14.6 MB while the datapoints drawn never
 		-- changed. Exemplars are a link to a trace, and a reader following one
 		-- link from a point does not need every trace that touched it.
+		-- Both caps below rank by distance from either extreme, so what survives
+		-- spans the range rather than clustering.
+		--
+		-- Keeping a prefix in time order was the obvious thing and the wrong
+		-- one: someone following an exemplar is chasing the slow request, or the
+		-- one that returned nothing, and time order hands them whichever
+		-- happened first. Ranking from both ends at once -- least(rank ascending,
+		-- rank descending) -- takes the extremes first and works inward, so a cap
+		-- of two is exactly the lowest and the highest, and a cap of five is the
+		-- three most extreme from one end and two from the other.
+		--
+		-- It is the same reasoning M4 already applies to the readings themselves:
+		-- a bucket keeps its min and its max because those are the points that
+		-- say something. Grafana samples exemplars by value for the same reason,
+		-- though it takes only the high end.
+		--
+		-- Non-finite and missing values sort last rather than winning: DuckDB
+		-- orders NaN above every number, so a single NaN exemplar would otherwise
+		-- take the high slot in every bucket it appeared in.
 		exemplars_ranked as (
 			select e.*,
-				-- Same (timestamp, id) total order the list below reads, so the
-				-- cap keeps a prefix of what would have been sent rather than an
-				-- arbitrary subset -- and keeps it across identical requests.
 				row_number() over (partition by e.datapoint_id
-				                   order by e.timestamp, e.id) as rn
-			from exemplars e
-			where e.datapoint_id in (select id from filtered_dps)
+				                   order by e.from_end, e.id) as rn
+			from (
+				select e.*,
+					least(
+						row_number() over (partition by e.datapoint_id
+							order by case when isfinite(e.value) then e.value end
+							         asc nulls last, e.id),
+						row_number() over (partition by e.datapoint_id
+							order by case when isfinite(e.value) then e.value end
+							         desc nulls last, e.id)
+					) as from_end
+				from exemplars e
+				where e.datapoint_id in (select id from filtered_dps)
+			) e
+		),
+
+		-- How far each datapoint's exemplars reach in either direction, so the
+		-- carrier cap below can rank datapoints the same way.
+		exemplar_extents as (
+			select datapoint_id,
+				min(value) filter (where isfinite(value)) as low,
+				max(value) filter (where isfinite(value)) as high
+			from exemplars_ranked
+			group by datapoint_id
 		),
 		exemplars_agg as (
 			-- Ordered, and totally: (timestamp, id) so two exemplars sharing an
@@ -885,25 +922,39 @@
 		-- entirely defeated. A bucket is a few pixels wide, and a reader
 		-- following a link out of one of them does not need fifty to choose
 		-- from.
+		-- Which exemplar-bearing datapoints a bucket keeps, ranked from both
+		-- ends as above: the one whose exemplars reach lowest and the one whose
+		-- reach highest. The join replaces an existence test, since a datapoint
+		-- has an extent exactly when it carries an exemplar.
 		exemplar_carriers as (
 			select id from (
-				select b.id,
-					-- Ordered by (timestamp, id) for the reason every other
-					-- choice in this query is: ties are common, and an
-					-- arbitrary pick makes the same request answer differently
-					-- on each refresh.
-					row_number() over (partition by b.series_id, b.bucket_start
-					                   order by b.timestamp, b.id) as rn
-				from bucketed_dps b
-				where exists (select 1 from exemplars e where e.datapoint_id = b.id)
+				select id,
+					row_number() over (partition by series_id, bucket_start
+					                   order by from_end, id) as rn
+				from (
+					select b.id, b.series_id, b.bucket_start,
+						least(
+							row_number() over (partition by b.series_id, b.bucket_start
+								order by x.low asc nulls last, b.id),
+							row_number() over (partition by b.series_id, b.bucket_start
+								order by x.high desc nulls last, b.id)
+						) as from_end
+					from bucketed_dps b
+					join exemplar_extents x on x.datapoint_id = b.id
+				)
 			)
 			-- Two, against the election's four. Exemplars are navigation, not
 			-- data -- nothing draws them -- so they should cost less than the
-			-- readings, and two links out of a few-pixel column is choice
-			-- enough. This is what puts a ceiling on the response: a bucket now
-			-- yields at most six datapoints instead of unboundedly many, so the
-			-- worst case is 1.5x the reduction budget rather than the whole
-			-- window.
+			-- readings, and the lowest and highest out of a few-pixel column is
+			-- choice enough. This is what puts a ceiling on the response: a
+			-- bucket now yields at most six datapoints instead of unboundedly
+			-- many, so the worst case is 1.5x the reduction budget rather than
+			-- the whole window.
+			--
+			-- Note this bounds the datapoints kept *because* they carry
+			-- exemplars. An elected datapoint that happens to carry one is
+			-- retained on its own merits and ships its exemplars too, so a
+			-- bucket can hold up to six carriers in all.
 			where rn <= 2
 		),
 

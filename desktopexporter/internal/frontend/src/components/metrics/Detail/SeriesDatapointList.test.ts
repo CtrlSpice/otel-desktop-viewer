@@ -21,7 +21,6 @@ function makeDatapoint(overrides: Partial<SumDataPoint> = {}): SumDataPoint {
     timestampMs: 1_700_000_000_000,
     startTime: 1_700_000_000_000_000_000n,
     flags: 0,
-    exemplarCount: 0,
     metricType: 'Sum',
     doubleValue: 42,
     intValue: null,
@@ -74,8 +73,11 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
   })
 
   it('names only the count it has when nothing was withheld', () => {
+    // No exemplarCount at all, which is what the store sends when the list is
+    // complete -- the overwhelmingly common case, and the one that must not
+    // render a "showing 1 of undefined" notice.
     renderWithContexts(SeriesDatapointListHarness, {
-      datapoints: [makeDatapoint({ exemplarCount: 1 })],
+      datapoints: [makeDatapoint()],
       expandDatapointId: 'dp-1',
     })
     expect(screen.getByText('1 ex')).toBeInTheDocument()

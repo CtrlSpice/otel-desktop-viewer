@@ -13,6 +13,17 @@
 -- The common fields are merged with the type-specific ones rather than
 -- repeated in each branch, so a field every datapoint carries is written once.
 create or replace macro datapoint_json(d, exemplars, exemplar_count, qs) as (
+		-- exemplarCount rides in an outer patch rather than the object below,
+		-- so that it can be *absent* rather than zero.
+		--
+		-- It answers "were any exemplars withheld", and the answer is no for
+		-- almost every datapoint that will ever exist -- the reference corpus
+		-- contains no exemplars at all. Emitting it unconditionally cost 6.6% of
+		-- a zero-exemplar response, which is a poor trade in a change whose
+		-- whole subject is payload. A null in a merge patch deletes the key
+		-- (RFC 7386), so the common case pays nothing and the client reads
+		-- absence as "you have them all".
+		json_merge_patch(
 		json_merge_patch(
 			json_object(
 				'id', d.id,
@@ -28,10 +39,6 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, qs) as (
 				'timestampMs', d.timestamp // 1000000,
 				'startTime', d.start_time::varchar,
 				'flags', d.flags,
-				-- How many exemplars this datapoint holds, which is not always
-				-- how many arrived: the list is capped so one aggressively
-				-- sampled stream cannot decide the size of the response.
-				'exemplarCount', exemplar_count,
 				'exemplars', exemplars
 			),
 			case d.metric_type
@@ -88,5 +95,9 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, qs) as (
 					'aggregationTemporality', d.aggregation_temporality
 				)
 			end
+		),
+		json_object('exemplarCount',
+			case when exemplar_count > json_array_length(exemplars)
+				then exemplar_count end)
 		)
 	)
