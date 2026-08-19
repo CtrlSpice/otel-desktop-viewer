@@ -544,20 +544,20 @@
     return out
   })
 
-  let allCollapsed = $derived(
-    collapsibleSpanIds.length > 0 &&
-      collapsibleSpanIds.every(id => effectiveCollapsed.has(id))
-  )
-
-  function toggleCollapseAll() {
+  // Two verbs, not a toggle. A toggle labelled by the current state only
+  // offers expand-all once every last parent is collapsed, so from any mixed
+  // arrangement there was no way to open everything. Each of these is
+  // idempotent -- invoking it in a state it already produced writes the same
+  // state again, which is a no-op worth exactly nothing to prevent.
+  function setAll(collapsed: boolean) {
     if (searchShape) {
       const next = new Map<string, boolean>()
-      for (const id of collapsibleSpanIds) next.set(id, !allCollapsed)
+      for (const id of collapsibleSpanIds) next.set(id, collapsed)
       searchOverrides = next
     } else {
       setCollapsedForTrace(
         traceID,
-        allCollapsed ? new Set() : new Set(collapsibleSpanIds)
+        collapsed ? new Set(collapsibleSpanIds) : new Set()
       )
     }
     void clampScroll()
@@ -768,10 +768,18 @@
         <button
           type="button"
           class="btn btn-ghost btn-xs"
-          onclick={toggleCollapseAll}
-          aria-label={allCollapsed ? 'Expand all spans' : 'Collapse all spans'}
+          onclick={() => setAll(false)}
+          aria-label="Expand all spans"
         >
-          {allCollapsed ? 'Expand all' : 'Collapse all'}
+          Expand all
+        </button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs"
+          onclick={() => setAll(true)}
+          aria-label="Collapse all spans"
+        >
+          Collapse all
         </button>
       {/if}
     {/snippet}

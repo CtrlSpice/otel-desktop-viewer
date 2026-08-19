@@ -181,22 +181,50 @@ describe('WaterfallView collapse ownership', () => {
     expect(rowIds()).toEqual(['a', 'b', 'c'])
   })
 
-  it('collapse-all folds every parent, expand-all restores', async () => {
+  it('collapse-all and expand-all are separate, always-live, idempotent', async () => {
     renderTree()
     await tick()
 
-    const btn = () =>
-      [...document.querySelectorAll('button')].find(b =>
-        /Collapse all|Expand all/.test(b.textContent ?? '')
+    const byLabel = (label: string) =>
+      [...document.querySelectorAll('button')].find(
+        b => b.getAttribute('aria-label') === label
       )!
-    expect(btn().textContent).toContain('Collapse all')
+    const collapseAll = () => byLabel('Collapse all spans')
+    const expandAll = () => byLabel('Expand all spans')
 
-    btn().click()
+    // Both present at once, in every state -- not a toggle.
+    expect(collapseAll()).toBeTruthy()
+    expect(expandAll()).toBeTruthy()
+
+    collapseAll().click()
     await tick()
     expect(rowIds()).toEqual(['a'])
-    expect(btn().textContent).toContain('Expand all')
 
-    btn().click()
+    // Idempotent: invoking again from the state it produced changes nothing.
+    collapseAll().click()
+    await tick()
+    expect(rowIds()).toEqual(['a'])
+
+    expandAll().click()
+    await tick()
+    expect(rowIds()).toEqual(ALL_IDS)
+    expandAll().click()
+    await tick()
+    expect(rowIds()).toEqual(ALL_IDS)
+  })
+
+  // The gap the old toggle had: its label followed the current state, so from
+  // a mixed arrangement it only ever offered collapse-all, and there was no
+  // way to open everything short of collapsing everything first.
+  it('expand-all works from a mixed arrangement', async () => {
+    renderTree()
+    await tick()
+    await collapseRow('c')
+    expect(rowIds()).toEqual(['a', 'b', 'c'])
+
+    ;[...document.querySelectorAll('button')]
+      .find(b => b.getAttribute('aria-label') === 'Expand all spans')!
+      .click()
     await tick()
     expect(rowIds()).toEqual(ALL_IDS)
   })
