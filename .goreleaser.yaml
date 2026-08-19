@@ -140,6 +140,29 @@ changelog:
 
 release:
   name_template: "v{{ .Version }}"
+  # Goreleaser builds the notes from commit subjects, which is fine for a list
+  # of changes and useless for the one thing a reader needs before upgrading.
+  # The store refuses a database written by a different schema version rather
+  # than guessing at its shape, so an upgrade that crosses one is a stop, not a
+  # migration -- and that belongs above the commits, not somewhere inside them.
+  #
+  # The first paragraph is evergreen: it states the rule, which holds for every
+  # release. The second names the version this one breaks with and should be
+  # updated or dropped when the next release does not cross a schema change.
+  header: |
+    ## Before you upgrade
+
+    The store keeps a schema version and will not open a database written by a
+    different one. It says so and stops, naming the file and what to do:
+    delete it, or pass a different `--db`. Nothing is migrated and nothing is
+    silently reinterpreted.
+
+    **This release crosses that line from 0.4.x.** Databases written by 0.4.x
+    will not open. If you run with `--db` and want to keep looking at what is
+    in there, keep a 0.4.x binary around; otherwise delete the file and let
+    0.5.0 make a new one. Running without `--db` is unaffected, since that is
+    in-memory and starts empty every time.
+
   footer: >-
     ---
     Released by [CtrlSpice](https://github.com/CtrlSpice) using [GoReleaser](https://github.com/goreleaser/goreleaser).
