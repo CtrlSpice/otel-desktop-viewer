@@ -11,16 +11,3 @@ export function ancestorIdsOf(
   }
   return ancestors
 }
-
-/** Remove collapsed markers on every ancestor of spanId. Mutates collapsed in place. */
-export function expandAncestorsForSpan(
-  collapsed: Set<string>,
-  spanId: string,
-  parentOf: ReadonlyMap<string, string | null>
-): boolean {
-  let changed = false
-  for (const id of ancestorIdsOf(spanId, parentOf)) {
-    if (collapsed.delete(id)) changed = true
-  }
-  return changed
-}

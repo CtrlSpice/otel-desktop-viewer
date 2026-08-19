@@ -5,6 +5,7 @@ import { waitFor } from '@testing-library/svelte'
 import WaterfallView from './WaterfallView.svelte'
 import type { SpanNode } from '@/types/api-types'
 import { renderWithContexts } from '@/test/render-helpers'
+import { resetCollapseStoreForTests } from './waterfall-collapse-store'
 import { scrollMock } from '@/test/mock-virtual-list'
 
 vi.mock('@humanspeak/svelte-virtual-list', async () => {
@@ -49,8 +50,8 @@ function spanNode(
   }
 }
 
-/** a → b → c → d → e → f; auto-collapse hides f under collapsed e. */
-function deepCollapsedTree(): SpanNode[] {
+/** a → b → c → d → e → f: deep enough that the old heuristic collapsed it. */
+function deepTree(): SpanNode[] {
   return [
     spanNode('a', null, 0),
     spanNode('b', 'a', 1),
@@ -61,40 +62,205 @@ function deepCollapsedTree(): SpanNode[] {
   ]
 }
 
-describe('WaterfallView span selection reveal', () => {
+const ALL_IDS = ['a', 'b', 'c', 'd', 'e', 'f']
+
+function renderTree(overrides: Record<string, unknown> = {}) {
+  return renderWithContexts(WaterfallView, {
+    spans: deepTree(),
+    selectedSpanID: null,
+    onSelectSpan: vi.fn(),
+    ...overrides,
+  })
+}
+
+function rowIds(): string[] {
+  return [...document.querySelectorAll('tr[data-span-id]')].map(r =>
+    r.getAttribute('data-span-id')!
+  )
+}
+
+/** Collapse a row through its real toggle, the way a reader does. */
+async function collapseRow(id: string) {
+  const btn = document.querySelector<HTMLElement>(
+    `tr[data-span-id="${id}"] button[aria-expanded="true"]`
+  )
+  expect(btn, `row ${id} should have an expanded toggle`).not.toBeNull()
+  btn!.click()
+  await tick()
+}
+
+describe('WaterfallView collapse ownership', () => {
   beforeEach(() => {
     scrollMock.mockClear()
+    resetCollapseStoreForTests()
   })
 
-  it('expands collapsed ancestors and center-scrolls the selected span', async () => {
-    renderWithContexts(WaterfallView, {
-      spans: deepCollapsedTree(),
-      selectedSpanID: 'f',
-      onSelectSpan: vi.fn(),
-    })
+  // The old default was a heuristic: collapse any parent at depth 4 or with a
+  // dozen descendants. Two reports guessed independently that the tree was
+  // reacting to its own size, and both were right.
+  it('opens fully expanded, however deep the trace', async () => {
+    renderTree()
+    await tick()
+    expect(rowIds()).toEqual(ALL_IDS)
+  })
 
+  // #348. The set used to be assigned by an effect that re-ran whenever the
+  // spans array changed identity, so any re-render threw the reader's
+  // arrangement away.
+  it("keeps the reader's collapse when the spans array changes identity", async () => {
+    const { rerender } = renderTree()
+    await tick()
+    await collapseRow('c')
+    expect(rowIds()).toEqual(['a', 'b', 'c'])
+
+    await rerender({
+      componentProps: {
+        spans: deepTree(),
+        selectedSpanID: null,
+        onSelectSpan: vi.fn(),
+      },
+    })
+    await tick()
+    expect(rowIds()).toEqual(['a', 'b', 'c'])
+  })
+
+  // The component is torn down by loading states, trace switches, and layout
+  // changes. State lives outside it precisely so that none of those read as
+  // "the waterfall collapsed itself".
+  it("keeps the reader's collapse across unmount and remount", async () => {
+    const first = renderTree()
+    await tick()
+    await collapseRow('c')
+    first.unmount()
+
+    renderTree()
+    await tick()
+    expect(rowIds()).toEqual(['a', 'b', 'c'])
+  })
+
+  // The rule the reveal must obey: if the reader closed the branch, the
+  // selection living inside it is not a reason to open it again.
+  it('does not reopen a collapsed branch that contains the selection', async () => {
+    const { rerender } = renderTree({ selectedSpanID: 'f' })
     await waitFor(() => {
       expect(document.querySelector('tr[data-span-id="f"]')).toBeInTheDocument()
     })
 
-    expect(scrollMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        index: expect.any(Number),
-        align: 'center',
-        smoothScroll: true,
-        shouldThrowOnBounds: false,
-      })
-    )
-  })
+    await collapseRow('c')
+    expect(rowIds()).toEqual(['a', 'b', 'c'])
 
-  it('keeps a deep span hidden until it is selected', async () => {
-    renderWithContexts(WaterfallView, {
-      spans: deepCollapsedTree(),
-      selectedSpanID: 'a',
-      onSelectSpan: vi.fn(),
+    // A fresh response arrives while the selection still points into the
+    // closed branch -- the exact shape that used to undo the collapse.
+    await rerender({
+      componentProps: {
+        spans: deepTree(),
+        selectedSpanID: 'f',
+        onSelectSpan: vi.fn(),
+      },
     })
     await tick()
+    expect(rowIds()).toEqual(['a', 'b', 'c'])
+  })
 
-    expect(document.querySelector('tr[data-span-id="f"]')).toBeNull()
+  // Selecting a hidden span scrolls toward it -- to the nearest visible
+  // ancestor -- rather than expanding anything.
+  it('scrolls to the nearest visible ancestor of a hidden selection', async () => {
+    const { rerender } = renderTree()
+    await tick()
+    await collapseRow('c')
+    scrollMock.mockClear()
+
+    await rerender({
+      componentProps: {
+        spans: deepTree(),
+        selectedSpanID: 'f',
+        onSelectSpan: vi.fn(),
+      },
+    })
+    await waitFor(() => expect(scrollMock).toHaveBeenCalled())
+    expect(rowIds()).toEqual(['a', 'b', 'c'])
+  })
+
+  it('collapse-all folds every parent, expand-all restores', async () => {
+    renderTree()
+    await tick()
+
+    const btn = () =>
+      [...document.querySelectorAll('button')].find(b =>
+        /Collapse all|Expand all/.test(b.textContent ?? '')
+      )!
+    expect(btn().textContent).toContain('Collapse all')
+
+    btn().click()
+    await tick()
+    expect(rowIds()).toEqual(['a'])
+    expect(btn().textContent).toContain('Expand all')
+
+    btn().click()
+    await tick()
+    expect(rowIds()).toEqual(ALL_IDS)
+  })
+
+  // Search is a lens: it shapes the tree while active and leaves the reader's
+  // arrangement untouched underneath.
+  it("restores the reader's arrangement when a search clears", async () => {
+    const { rerender } = renderTree()
+    await tick()
+    await collapseRow('e')
+    expect(rowIds()).toEqual(['a', 'b', 'c', 'd', 'e'])
+
+    // A search response: only 'c' matches, so its childless subtree collapses
+    // and unrelated branches fold away.
+    const searched = deepTree().map(n => ({
+      ...n,
+      matched: n.spanData.spanID === 'c',
+    }))
+    await rerender({
+      componentProps: {
+        spans: searched,
+        selectedSpanID: null,
+        onSelectSpan: vi.fn(),
+      },
+    })
+    await tick()
+    const during = rowIds()
+    expect(during).toContain('c')
+    expect(during).not.toContain('f')
+
+    // Clearing the search puts back exactly what the reader had: 'e' still
+    // collapsed, nothing else touched.
+    await rerender({
+      componentProps: {
+        spans: deepTree(),
+        selectedSpanID: null,
+        onSelectSpan: vi.fn(),
+      },
+    })
+    await tick()
+    expect(rowIds()).toEqual(['a', 'b', 'c', 'd', 'e'])
+  })
+
+  it('center-scrolls a newly selected visible span', async () => {
+    const { rerender } = renderTree()
+    await tick()
+    scrollMock.mockClear()
+
+    await rerender({
+      componentProps: {
+        spans: deepTree(),
+        selectedSpanID: 'f',
+        onSelectSpan: vi.fn(),
+      },
+    })
+    await waitFor(() =>
+      expect(scrollMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          index: expect.any(Number),
+          align: 'center',
+          smoothScroll: true,
+          shouldThrowOnBounds: false,
+        })
+      )
+    )
   })
 })
