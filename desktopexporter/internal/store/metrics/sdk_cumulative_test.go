@@ -19,32 +19,23 @@ import (
 	otelmetric "go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
-	cpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
-// collector is a minimal OTLP metrics service that keeps what it is sent.
+// collector receives exported metrics the same way the viewer's own receiver
+// does: pmetricotlp.RegisterGRPCServer, the registration otlpreceiver uses at
+// otlp.go:105, whose Export is handed a decoded pmetricotlp.ExportRequest. The
+// decode is pdata's, not ours -- this type only keeps what arrives.
 type collector struct {
-	cpb.UnimplementedMetricsServiceServer
+	pmetricotlp.UnimplementedGRPCServer
 	batches []pmetric.Metrics
 }
 
-func (c *collector) Export(_ context.Context, req *cpb.ExportMetricsServiceRequest) (*cpb.ExportMetricsServiceResponse, error) {
-	// Round-trip through the wire bytes rather than reading fields across: the
-	// point of this test is that nothing of ours interprets the SDK's output.
-	raw, err := proto.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-	er := pmetricotlp.NewExportRequest()
-	if err := er.UnmarshalProto(raw); err != nil {
-		return nil, err
-	}
+func (c *collector) Export(_ context.Context, req pmetricotlp.ExportRequest) (pmetricotlp.ExportResponse, error) {
 	md := pmetric.NewMetrics()
-	er.Metrics().CopyTo(md)
+	req.Metrics().CopyTo(md)
 	c.batches = append(c.batches, md)
-	return &cpb.ExportMetricsServiceResponse{}, nil
+	return pmetricotlp.NewExportResponse(), nil
 }
 
 // TestCumulativeMergeAgainstTheOtelSDK is the independence check the merge was
@@ -58,9 +49,11 @@ func (c *collector) Export(_ context.Context, req *cpb.ExportMetricsServiceReque
 // wrong merge yields plausible quantiles rather than an error.
 //
 // Here the running totals come from the OpenTelemetry Go SDK, encoded by its own
-// OTLP exporter and decoded straight into pdata. Nothing between the instrument
-// and the store is ours, so agreement means our reading of cumulative matches
-// the SDK's -- an implementation written by people who never saw this query.
+// OTLP exporter, and decoded by pdata's gRPC server -- the same registration the
+// viewer's receiver uses. The glue below keeps what arrives and does no
+// arithmetic, so no code of ours produces or interprets the cumulative values
+// under test. Agreement therefore means our reading of cumulative matches an
+// implementation written by people who never saw this query.
 //
 // The observations are chosen so the answer is known independently of both: the
 // second collection's values, and only those, are what a merge across the window
@@ -72,7 +65,7 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	require.NoError(t, err)
 	sink := &collector{}
 	srv := grpc.NewServer()
-	cpb.RegisterMetricsServiceServer(srv, sink)
+	pmetricotlp.RegisterGRPCServer(srv, sink)
 	go func() { _ = srv.Serve(lis) }()
 	defer srv.Stop()
 
