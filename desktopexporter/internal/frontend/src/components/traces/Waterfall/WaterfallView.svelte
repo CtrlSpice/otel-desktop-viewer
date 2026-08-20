@@ -32,7 +32,11 @@
    *  a degenerate interpolation. */
   const MIN_TRACE_PALETTE = 5
 
-  export type EventMarker = { percent: number; name: string; eventIndex: number }
+  export type EventMarker = {
+    percent: number
+    name: string
+    eventIndex: number
+  }
 
   export type WaterfallRowData = {
     spanNode: SpanNode
@@ -57,17 +61,14 @@
       start: parseBigInt(spans[0].spanData.startTime),
       end: parseBigInt(spans[0].spanData.endTime),
     }
-    const { start, end } = spans.reduce(
-      (acc, node) => {
-        const st = parseBigInt(node.spanData.startTime)
-        const en = parseBigInt(node.spanData.endTime)
-        return {
-          start: st < acc.start ? st : acc.start,
-          end: en > acc.end ? en : acc.end,
-        }
-      },
-      seed
-    )
+    const { start, end } = spans.reduce((acc, node) => {
+      const st = parseBigInt(node.spanData.startTime)
+      const en = parseBigInt(node.spanData.endTime)
+      return {
+        start: st < acc.start ? st : acc.start,
+        end: en > acc.end ? en : acc.end,
+      }
+    }, seed)
     return { start, end, duration: end - start }
   }
 
@@ -254,10 +255,13 @@
   } from '@/components/shared/utils/table-keyboard-nav'
   import {
     buildChildrenBySpanId,
-    computeAutoCollapsedParents,
     computeSearchCollapsedParents,
-  } from './waterfall-auto-collapse'
-  import { expandAncestorsForSpan } from './waterfall-reveal'
+  } from './waterfall-tree'
+  import { ancestorIdsOf } from './waterfall-reveal'
+  import {
+    collapsedForTrace,
+    setCollapsedForTrace,
+  } from './waterfall-collapse-store'
 
   const WATERFALL_ROW_HEIGHT_PX = 28
   const GRID_PAGE_STEP = 8
@@ -279,7 +283,7 @@
   function hasCollapsedAncestor(
     id: string,
     parentOf: Map<string, string | null>,
-    collapsed: Set<string>
+    collapsed: ReadonlySet<string>
   ): boolean {
     const pid = parentOf.get(id) ?? null
     if (pid === null) return false
@@ -290,7 +294,7 @@
   function rowVisibilityMap(
     spans: readonly { spanData: { spanID: string } }[],
     parentBySpanId: Map<string, string | null>,
-    collapsedParents: Set<string>
+    collapsedParents: ReadonlySet<string>
   ): Map<string, boolean> {
     return new Map(
       spans.map(n => [
@@ -327,15 +331,15 @@
   let bounds = $derived(getTraceBounds(spans))
   let rows = $derived(buildWaterfallRows(spans, bounds, themeSignal.value))
 
-  let traceTimeRange = $derived.by(():
-    | { startMs: number; endMs: number }
-    | undefined => {
-    if (spans.length === 0) return undefined
-    return {
-      startMs: Number(bounds.start / 1_000_000n),
-      endMs: Number(bounds.end / 1_000_000n),
+  let traceTimeRange = $derived.by(
+    (): { startMs: number; endMs: number } | undefined => {
+      if (spans.length === 0) return undefined
+      return {
+        startMs: Number(bounds.start / 1_000_000n),
+        endMs: Number(bounds.end / 1_000_000n),
+      }
     }
-  })
+  )
 
   let headerName = $derived.by(() => {
     if (spans.length === 0) return 'Trace'
@@ -471,17 +475,91 @@
   // --- Expand/collapse ---
 
   /** Span IDs whose descendant rows are hidden (`visibility: collapse` on child `<tr>`s). */
-  let collapsedParents = $state<Set<string>>(new Set())
+  // Collapse state has exactly three writers, all of them reader gestures on
+  // this tree: the row toggle, the keyboard arrows, and the collapse-all
+  // button. Nothing else writes it -- not a resize, not a refetch, not a
+  // search, not selecting a span. Every prior variant of "the waterfall
+  // collapsed itself" (#348, #230) came from something other than the reader
+  // holding a pen.
+  let traceID = $derived(spans[0]?.spanData.traceID ?? '')
+  let userCollapsed = $derived(collapsedForTrace(traceID))
+
+  // Search is a lens over the reader's state, not a mutation of it. While a
+  // search is active the tree takes the search's shape -- branches with no
+  // match fold away -- and toggles made during the search live in an overlay
+  // scoped to this response. Clearing the search puts the reader's own
+  // arrangement back exactly, because it was never touched.
+  let searchShape = $derived.by((): Set<string> | null =>
+    hasActiveSearch
+      ? computeSearchCollapsedParents(
+          spans,
+          matchedIDs,
+          ancestorsOfMatched,
+          childrenBySpanId
+        )
+      : null
+  )
+  let searchOverrides = $state(new Map<string, boolean>())
+  $effect(() => {
+    // A new response is a new match set, so the overlay resets with it. This
+    // writes only the overlay -- the reader's own set is not in reach.
+    void spans
+    searchOverrides = new Map()
+  })
+
+  let effectiveCollapsed = $derived.by((): ReadonlySet<string> => {
+    if (!searchShape) return userCollapsed
+    const out = new Set(searchShape)
+    for (const [id, collapsed] of searchOverrides) {
+      if (collapsed) out.add(id)
+      else out.delete(id)
+    }
+    return out
+  })
 
   let rowVisibilityBySpanId = $derived(
-    rowVisibilityMap(spans, parentBySpanId, collapsedParents)
+    rowVisibilityMap(spans, parentBySpanId, effectiveCollapsed)
   )
 
   function toggleCollapse(spanID: string) {
-    const next = new Set(collapsedParents)
-    if (next.has(spanID)) next.delete(spanID)
-    else next.add(spanID)
-    collapsedParents = next
+    if (searchShape) {
+      const next = new Map(searchOverrides)
+      next.set(spanID, !effectiveCollapsed.has(spanID))
+      searchOverrides = next
+    } else {
+      const next = new Set(userCollapsed)
+      if (!next.delete(spanID)) next.add(spanID)
+      setCollapsedForTrace(traceID, next)
+    }
+    void clampScroll()
+  }
+
+  /** Every parent that has children, for collapse-all. */
+  let collapsibleSpanIds = $derived.by(() => {
+    const out: string[] = []
+    for (const node of spans) {
+      const id = node.spanData.spanID
+      if ((childrenBySpanId.get(id)?.length ?? 0) > 0) out.push(id)
+    }
+    return out
+  })
+
+  // Two verbs, not a toggle. A toggle labelled by the current state only
+  // offers expand-all once every last parent is collapsed, so from any mixed
+  // arrangement there was no way to open everything. Each of these is
+  // idempotent -- invoking it in a state it already produced writes the same
+  // state again, which is a no-op worth exactly nothing to prevent.
+  function setAll(collapsed: boolean) {
+    if (searchShape) {
+      const next = new Map<string, boolean>()
+      for (const id of collapsibleSpanIds) next.set(id, collapsed)
+      searchOverrides = next
+    } else {
+      setCollapsedForTrace(
+        traceID,
+        collapsed ? new Set(collapsibleSpanIds) : new Set()
+      )
+    }
     void clampScroll()
   }
 
@@ -489,32 +567,13 @@
 
   let visibleRows = $derived.by(() =>
     rows.filter(
-      row =>
-        rowVisibilityBySpanId.get(row.spanNode.spanData.spanID) ?? true
+      row => rowVisibilityBySpanId.get(row.spanNode.spanData.spanID) ?? true
     )
   )
 
   let rowBySpanId = $derived.by(
     () => new Map(rows.map(row => [row.spanNode.spanData.spanID, row]))
   )
-
-  // Auto-collapse (depth/subtree hybrid) or search-driven collapse.
-  $effect(() => {
-    if (hasActiveSearch) {
-      collapsedParents = computeSearchCollapsedParents(
-        spans,
-        matchedIDs,
-        ancestorsOfMatched,
-        childrenBySpanId
-      )
-      return
-    }
-    if (spans.length === 0) {
-      collapsedParents = new Set()
-      return
-    }
-    collapsedParents = computeAutoCollapsedParents(spans, childrenBySpanId)
-  })
 
   type VirtualListRef = {
     scroll: (options: {
@@ -530,24 +589,26 @@
   let activeScroll: Promise<void> = Promise.resolve()
 
   function visibleRowIndex(spanId: string): number {
-    return visibleRows.findIndex(
-      row => row.spanNode.spanData.spanID === spanId
-    )
+    return visibleRows.findIndex(row => row.spanNode.spanData.spanID === spanId)
   }
 
-  function ensureSpanExpanded(spanId: string): boolean {
-    const next = new Set(collapsedParents)
-    const changed = expandAncestorsForSpan(next, spanId, parentBySpanId)
-    if (changed) collapsedParents = next
-    return changed
-  }
-
+  // A scroll, not an edit. This used to expand every collapsed ancestor of
+  // the selected span, which meant collapsing a branch that contained the
+  // selection quietly undid itself. If the reader closed the branch, the
+  // selected row being inside it is not a reason to open it again -- so a
+  // hidden selection scrolls to the nearest visible ancestor instead, and the
+  // detail panel shows the span either way.
   async function revealAndScrollToSpan(
     spanId: string,
     smoothScroll = true
   ): Promise<void> {
-    if (ensureSpanExpanded(spanId)) await tick()
-    const idx = visibleRowIndex(spanId)
+    let idx = visibleRowIndex(spanId)
+    if (idx < 0) {
+      for (const aid of ancestorIdsOf(spanId, parentBySpanId)) {
+        idx = visibleRowIndex(aid)
+        if (idx >= 0) break
+      }
+    }
     if (idx < 0 || !vlistRef) return
     activeScroll = vlistRef.scroll({
       index: idx,
@@ -607,7 +668,7 @@
     const hasChildren = (row?.tree.childrenCount ?? 0) > 0
 
     if (e.key === 'ArrowRight' || e.key === 'l') {
-      if (hasChildren && collapsedParents.has(currentId)) {
+      if (hasChildren && effectiveCollapsed.has(currentId)) {
         toggleCollapse(currentId)
         e.preventDefault()
       }
@@ -615,7 +676,7 @@
     }
 
     if (e.key === 'ArrowLeft' || e.key === 'h') {
-      if (hasChildren && !collapsedParents.has(currentId)) {
+      if (hasChildren && !effectiveCollapsed.has(currentId)) {
         toggleCollapse(currentId)
       } else {
         const parentId = parentBySpanId.get(currentId) ?? null
@@ -660,9 +721,11 @@
     e.preventDefault()
 
     const currentIdx =
-      focusedId != null ? visibleRowIndex(focusedId) : selectedSpanID
-        ? visibleRowIndex(selectedSpanID)
-        : -1
+      focusedId != null
+        ? visibleRowIndex(focusedId)
+        : selectedSpanID
+          ? visibleRowIndex(selectedSpanID)
+          : -1
 
     if (currentIdx < 0) {
       navigateVisibleRow(0)
@@ -686,101 +749,122 @@
 </script>
 
 <div class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}">
-    <PaneHeader
-      mode="title"
-      title={headerName}
-      subtitle={headerService || undefined}
-      timeRange={traceTimeRange}
-      ariaLabel="Trace waterfall"
-    >
-      {#snippet badge()}
-        <SignalBadges
-          signal="trace"
-          spanCount={spans.length}
-          errorCount={headerErrorCount}
-        />
-      {/snippet}
-    </PaneHeader>
-    <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
-      <div class="col-resize-context waterfall-view__grid-host">
-        <table
-          class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
+  <PaneHeader
+    mode="title"
+    title={headerName}
+    subtitle={headerService || undefined}
+    timeRange={traceTimeRange}
+    ariaLabel="Trace waterfall"
+  >
+    {#snippet badge()}
+      <SignalBadges
+        signal="trace"
+        spanCount={spans.length}
+        errorCount={headerErrorCount}
+      />
+    {/snippet}
+    {#snippet right()}
+      {#if collapsibleSpanIds.length > 0}
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs"
+          onclick={() => setAll(false)}
+          aria-label="Expand all spans"
         >
-          <thead class="header-surface waterfall-view__thead">
-            <WaterfallTimeAxisHeader
-              traceDurationNs={bounds.duration}
-              {targetTickCount}
-              tickLabelWidth={TICK_LABEL_SLOT_PX}
+          Expand all
+        </button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs"
+          onclick={() => setAll(true)}
+          aria-label="Collapse all spans"
+        >
+          Collapse all
+        </button>
+      {/if}
+    {/snippet}
+  </PaneHeader>
+  <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
+    <div class="col-resize-context waterfall-view__grid-host">
+      <table
+        class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
+      >
+        <thead class="header-surface waterfall-view__thead">
+          <WaterfallTimeAxisHeader
+            traceDurationNs={bounds.duration}
+            {targetTickCount}
+            tickLabelWidth={TICK_LABEL_SLOT_PX}
+            {spanColWidth}
+            {serviceColWidth}
+            onResizeSpanCol={w => {
+              const next = applyColumnResize(wfCols, colWidths, 0, w)
+              if (next !== colWidths) colWidths = next
+            }}
+            onResizeServiceCol={w => {
+              const next = applyColumnResize(wfCols, colWidths, 1, w)
+              if (next !== colWidths) colWidths = next
+            }}
+          />
+        </thead>
+      </table>
+      <div
+        bind:this={gridHostEl}
+        class="waterfall-view__vlist-host"
+        role="grid"
+        aria-label="Span waterfall"
+        aria-rowcount={visibleRows.length}
+        aria-colcount={3}
+        tabindex="-1"
+        onkeydown={handleGridKeydown}
+      >
+        <VirtualList
+          bind:this={vlistRef}
+          items={visibleRows}
+          defaultEstimatedItemHeight={WATERFALL_ROW_HEIGHT_PX}
+          bufferSize={12}
+          containerClass="waterfall-vlist"
+          viewportClass="waterfall-vlist-viewport"
+          itemsClass="waterfall-vlist-items"
+        >
+          {#snippet renderItem(row)}
+            {@const sid = row.spanNode.spanData.spanID}
+            <WaterfallRow
+              {row}
+              {barGridPercents}
+              selected={sid === selectedSpanID}
+              visible={true}
+              subtreeCollapsed={effectiveCollapsed.has(sid)}
+              matched={hasActiveSearch && matchedIDs.has(sid)}
               {spanColWidth}
               {serviceColWidth}
-              onResizeSpanCol={w => {
-                const next = applyColumnResize(wfCols, colWidths, 0, w)
-                if (next !== colWidths) colWidths = next
+              onRowClick={() => {
+                onSelectSpan(sid)
+                void focusRowTr(sid)
               }}
-              onResizeServiceCol={w => {
-                const next = applyColumnResize(wfCols, colWidths, 1, w)
-                if (next !== colWidths) colWidths = next
-              }}
+              onSelectEvent={eventIndex => onSelectEvent?.(sid, eventIndex)}
+              onToggleExpand={() => toggleCollapse(sid)}
             />
-          </thead>
-        </table>
-        <div
-          bind:this={gridHostEl}
-          class="waterfall-view__vlist-host"
-          role="grid"
-          aria-label="Span waterfall"
-          aria-colcount={3}
-          tabindex="-1"
-          onkeydown={handleGridKeydown}
-        >
-          <VirtualList
-            bind:this={vlistRef}
-            items={visibleRows}
-            defaultEstimatedItemHeight={WATERFALL_ROW_HEIGHT_PX}
-            bufferSize={12}
-            containerClass="waterfall-vlist"
-            viewportClass="waterfall-vlist-viewport"
-            itemsClass="waterfall-vlist-items"
-          >
-            {#snippet renderItem(row)}
-              {@const sid = row.spanNode.spanData.spanID}
-              <WaterfallRow
-                {row}
-                {barGridPercents}
-                selected={sid === selectedSpanID}
-                visible={true}
-                subtreeCollapsed={collapsedParents.has(sid)}
-                matched={hasActiveSearch && matchedIDs.has(sid)}
-                {spanColWidth}
-                {serviceColWidth}
-                onRowClick={() => {
-                  onSelectSpan(sid)
-                  void focusRowTr(sid)
-                }}
-                onSelectEvent={eventIndex => onSelectEvent?.(sid, eventIndex)}
-                onToggleExpand={() => toggleCollapse(sid)}
-              />
-            {/snippet}
-          </VirtualList>
-        </div>
-        {#each barPositions as bar}
-          <div
-            class="col-resize-bar col-resize-bar--guide"
-            class:col-resize-bar--active={activeResizeCol === bar.index}
-            style:left="{bar.left}px"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize {wfCols[bar.index].id} column"
-            onpointerdown={e => handleStartResize(bar.index, e)}
-          >
-            <div class="col-resize-bar__line"></div>
-          </div>
-        {/each}
+          {/snippet}
+        </VirtualList>
       </div>
+      {#each barPositions as bar}
+        <div
+          class="col-resize-bar col-resize-bar--guide"
+          class:col-resize-bar--active={activeResizeCol === bar.index}
+          style:left="{bar.left}px"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize {wfCols[bar.index].id} column"
+          onpointerdown={e => handleStartResize(bar.index, e)}
+        >
+          <div class="col-resize-bar__line"></div>
+        </div>
+      {/each}
     </div>
-    {#if footer}
-      {@render footer()}
-    {/if}
+  </div>
+  {#if footer}
+    {@render footer()}
+  {/if}
 </div>
 
 <style lang="postcss">
@@ -853,5 +937,4 @@
     width: 100%;
     table-layout: fixed;
   }
-
 </style>
