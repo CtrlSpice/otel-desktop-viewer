@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql/driver"
+	"encoding/binary"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -286,6 +288,7 @@ type Dictionary struct {
 	attributes map[duckdb.UUID]Attribute
 	resources  map[duckdb.UUID]Resource
 	scopes     map[duckdb.UUID]Scope
+	bounds     map[duckdb.UUID][]float64
 
 	// flushed is the store's record of what is already in the database. May be
 	// nil, which disables the optimisation and restores the always-insert
@@ -303,6 +306,7 @@ func NewDictionary(flushed *FlushedIDs) *Dictionary {
 		attributes: map[duckdb.UUID]Attribute{},
 		resources:  map[duckdb.UUID]Resource{},
 		scopes:     map[duckdb.UUID]Scope{},
+		bounds:     map[duckdb.UUID][]float64{},
 		flushed:    flushed,
 	}
 }
@@ -315,6 +319,36 @@ func (d *Dictionary) AddAttributes(attrs pcommon.Map, scope string) []duckdb.UUI
 		d.attributes[r.ID] = r
 	}
 	return ids
+}
+
+// BoundsID derives the dictionary id for one explicit-bounds vector.
+//
+// Hashed over the IEEE-754 bits of each bound rather than a decimal rendering:
+// bits are the value's identity with no formatting decision to drift between
+// producers, and a count prefix makes the encoding unambiguous the same way
+// hashID's length prefixes do. Pure and cheap, which is what lets pass 2
+// recompute it at append time instead of threading it through dpIdentity.
+func BoundsID(bounds []float64) duckdb.UUID {
+	h := sha256.New()
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], uint64(len(bounds)))
+	h.Write(buf[:])
+	for _, b := range bounds {
+		binary.BigEndian.PutUint64(buf[:], math.Float64bits(b))
+		h.Write(buf[:])
+	}
+	var id duckdb.UUID
+	copy(id[:], h.Sum(nil)[:16])
+	return id
+}
+
+// AddBounds records one explicit-bounds vector and returns its id.
+func (d *Dictionary) AddBounds(bounds []float64) duckdb.UUID {
+	id := BoundsID(bounds)
+	if _, ok := d.bounds[id]; !ok {
+		d.bounds[id] = bounds
+	}
+	return id
 }
 
 // AddResource records a resource and returns its id.
@@ -364,7 +398,10 @@ func (d *Dictionary) Flush(ctx context.Context, conn driver.Conn) error {
 	if err := d.flushResources(ctx, conn); err != nil {
 		return err
 	}
-	return d.flushScopes(ctx, conn)
+	if err := d.flushScopes(ctx, conn); err != nil {
+		return err
+	}
+	return d.flushBounds(ctx, conn)
 }
 
 // flushRows is the sequence every dictionary flush shares: filter down to
@@ -425,6 +462,23 @@ func (d *Dictionary) flushAttributes(ctx context.Context, conn driver.Conn) erro
 				scopes = append(scopes, a.Scope)
 			}
 			return []any{ids, keys, values, types, scopes}
+		})
+}
+
+const boundsUpsert = `insert into histogram_bounds (id, bounds)
+	select unnest(?::varchar[])::uuid, unnest(?::double[][])
+	on conflict (id) do nothing`
+
+func (d *Dictionary) flushBounds(ctx context.Context, conn driver.Conn) error {
+	return flushRows(ctx, conn, d.flushed, d.bounds, boundsUpsert, "histogram_bounds",
+		func(rows map[duckdb.UUID][]float64) []any {
+			ids := make([]string, 0, len(rows))
+			vectors := make([][]float64, 0, len(rows))
+			for id, b := range rows {
+				ids = append(ids, formatUUID(id))
+				vectors = append(vectors, b)
+			}
+			return []any{ids, vectors}
 		})
 }
 

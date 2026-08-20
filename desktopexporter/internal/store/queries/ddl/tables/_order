@@ -17,5 +17,6 @@ logs.sql
 metric_streams.sql
 metric_series.sql
 metric_ingests.sql
+histogram_bounds.sql
 datapoints.sql
 exemplars.sql

@@ -125,7 +125,12 @@
 		-- than a denormalized column on datapoints: it is a primary-key lookup
 		-- from metric_ingest_id, and datapoints is the largest table here.
 		filtered_dps as (
-			select d.*,
+			-- bounds_id resolves to the vector here, under the name the rest
+			-- of the query has always read, so the dictionary is invisible
+			-- past this point. The join is a primary-key lookup against a
+			-- table with one row per distinct instrument configuration.
+			select d.* exclude (bounds_id),
+				hb.bounds as explicit_bounds,
 				-- The offset this row's bucket is shifted by: the viewer's zone
 				-- resolved at this instant, or the single offset the caller sent
 				-- when it named no zone.
@@ -134,7 +139,9 @@
 				s.metric_type as metric_type,
 				s.aggregation_temporality as aggregation_temporality,
 				s.is_monotonic as is_monotonic
-			from datapoints d, input, stream s
+			from datapoints d
+			left join histogram_bounds hb on hb.id = d.bounds_id,
+				input, stream s
 			where d.stream_id = input.stream_id
 			  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
 			  -- Narrowing here rather than after the merge: the reduction and

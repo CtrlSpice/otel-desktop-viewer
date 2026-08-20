@@ -361,6 +361,16 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 // is flushed before collectSeries runs, because series rows reference these ids
 // and no foreign key can enforce that ordering into a uuid[].
 func addMetricAttributes(dict *ingest.Dictionary, metric pmetric.Metric, out [][]duckdb.UUID) [][]duckdb.UUID {
+	// Bounds vectors are dictionary rows the datapoints will reference, so
+	// they must be registered in this pass: the dictionary flushes before the
+	// appenders open, and a foreign key holds datapoints to it. Pass 2 does
+	// not need the ids handed over -- BoundsID is a pure hash, so the appender
+	// recomputes it from the same bytes.
+	if metric.Type() == pmetric.MetricTypeHistogram {
+		for _, dp := range metric.Histogram().DataPoints().All() {
+			dict.AddBounds(dp.ExplicitBounds().AsRaw())
+		}
+	}
 	eachDatapoint(metric, func(attrs pcommon.Map, exemplars pmetric.ExemplarSlice) {
 		out = append(out, ingest.NonNil(dict.AddAttributes(attrs, ingest.ScopeDatapoint)))
 		addExemplarAttributes(dict, exemplars)
@@ -664,7 +674,7 @@ func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, streamID, 
 		if err := appenders["datapoints"].AppendRow(
 			datapointID, streamID, ident.series, ingestID, int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
 			nil, nil, nil,
-			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), dp.BucketCounts().AsRaw(), dp.ExplicitBounds().AsRaw(),
+			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), dp.BucketCounts().AsRaw(), ingest.BoundsID(dp.ExplicitBounds().AsRaw()),
 			nil, nil, nil, nil, nil, nil, nil,
 			ident.attrs,
 		); err != nil {

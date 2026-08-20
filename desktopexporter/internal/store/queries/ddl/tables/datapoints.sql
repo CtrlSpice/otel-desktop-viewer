@@ -22,7 +22,12 @@ create table if not exists datapoints (
 		min double,
 		max double,
 		bucket_counts ubigint[],
-		explicit_bounds double[],
+		-- References histogram_bounds instead of carrying the vector. The
+		-- reference costs a fixed 16 bytes; the vector it replaces repeats
+		-- identically on every datapoint of a histogram series, and uuid
+		-- columns do not dictionary-compress the way varchars do -- the
+		-- dedupe has to be structural.
+		bounds_id uuid,
 		scale integer,
 		zero_count ubigint,
 		zero_threshold double,
@@ -42,5 +47,6 @@ create table if not exists datapoints (
 		attribute_ids uuid[] not null,
 		foreign key (stream_id) references metric_streams(id),
 		foreign key (series_id) references metric_series(id),
-		foreign key (metric_ingest_id) references metric_ingests(id)
+		foreign key (metric_ingest_id) references metric_ingests(id),
+		foreign key (bounds_id) references histogram_bounds(id)
 	)

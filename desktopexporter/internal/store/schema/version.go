@@ -49,7 +49,12 @@ package schema
 //
 // Files written before versioning existed carry no stamp at all and are
 // detected separately.
-const Version = 4
+//
+// Version 5 moved explicit_bounds off datapoints into the histogram_bounds
+// dictionary, referenced by bounds_id. A version 4 file has the vector where
+// this build expects a reference, so its histogram datapoints are unreadable
+// under this schema, not merely stale.
+const Version = 5
 
 // VersionTableQuery creates the version table.
 //
