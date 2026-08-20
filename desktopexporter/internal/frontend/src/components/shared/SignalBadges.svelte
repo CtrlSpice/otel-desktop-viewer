@@ -28,6 +28,7 @@
      *  pane lists timeseries directly below the header, so most
      *  callers there omit it. */
     seriesCount?: number
+    seriesCardinality?: number
   }
 
   type TraceProps = {
@@ -63,12 +64,29 @@
     {metricTypeBadge.label}
   </span>
   {#if props.seriesCount !== undefined}
-    <span
-      class="badge-count"
-      title="{props.seriesCount} time series in range"
-    >
-      {props.seriesCount} series
-    </span>
+    {@const total = props.seriesCardinality}
+    {#if total !== undefined && total > props.seriesCount}
+      <!-- Both, because they answer different questions and the difference is
+           the interesting part: series go quiet, and a count that silently
+           drops looks like data loss rather than a narrower window. Shown as
+           one badge rather than two so the relationship is legible at a
+           glance. -->
+      <span
+        class="badge-count"
+        title="{props.seriesCount} of {total} series reported in this range; the stream has {total} in all"
+      >
+        {props.seriesCount} of {total} series
+      </span>
+    {:else}
+      <!-- Equal, which is the unbounded-window case: one number, because
+           "12 of 12" is noise. -->
+      <span
+        class="badge-count"
+        title="{props.seriesCount} time series in range"
+      >
+        {props.seriesCount} series
+      </span>
+    {/if}
   {/if}
 {:else if props.signal === 'trace'}
   <span class="badge-count">

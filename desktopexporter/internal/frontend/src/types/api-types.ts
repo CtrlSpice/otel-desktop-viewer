@@ -406,6 +406,7 @@ export type MetricSummary = {
   serviceName: string
   // Distinct attribute sets (timeseries) seen in the queried window.
   seriesCount: number
+  seriesCardinality: number
   // In-range datapoints for this metric stream.
   dataPointCount: number
   // Most recent scalar value for Gauge/Sum metrics; null for histograms.

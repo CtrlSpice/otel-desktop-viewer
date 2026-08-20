@@ -457,7 +457,11 @@ export type JsonMetricSummary = {
   // seriesCount/dataPointCount/lastSeen all come from left joins, but the
   // search time-condition guarantees every filtered stream has at least
   // one in-window datapoint, so all three CTEs always produce a row.
+  /** Series that reported inside the requested window. */
   seriesCount: number
+  /** Series the stream has ever had, whatever the window. Equal to
+   *  seriesCount on an unbounded range, lower than it never. */
+  seriesCardinality: number
   dataPointCount: number
   lastValue: number | null
   lastSeen: string

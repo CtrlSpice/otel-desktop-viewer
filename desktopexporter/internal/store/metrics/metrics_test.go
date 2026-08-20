@@ -4944,3 +4944,58 @@ func TestHistogramBoundsAreStoredOnce(t *testing.T) {
 	}))
 	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from histogram_bounds`))
 }
+
+// TestSeriesCountsAreWindowAndLifetime pins the two numbers apart.
+//
+// The card used to show one count whose meaning changed with the window and
+// said so only in a tooltip: narrow the range and "21 series" became "3
+// series", which reads as data going missing rather than as a different
+// question being answered. Both are now reported, and this fails if either
+// starts answering the other's question -- in particular if seriesCount is
+// ever "optimised" into a count over metric_series, which agrees on an
+// unbounded window and diverges exactly where it matters.
+func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	// Twelve series on the stream; only three of them report in the first
+	// minute, which is the window the narrow search below asks about.
+	var dps []sumTestDP
+	for i := range 12 {
+		pod := map[string]string{"pod": string(rune('a' + i))}
+		at := base.Add(time.Duration(i) * 10 * time.Minute)
+		if i < 3 {
+			at = base.Add(time.Duration(i) * 10 * time.Second)
+		}
+		dps = append(dps, sumTestDP{timestamp: at, value: float64(i), attrs: pod})
+	}
+	fixture := makeSumFixtureT("cardinality.total", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	summarise := func(from, to time.Time) map[string]any {
+		t.Helper()
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, from.UnixNano(), to.UnixNano(), nil)
+		})
+		require.NoError(t, err)
+		var rows []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &rows))
+		require.Len(t, rows, 1)
+		return rows[0]
+	}
+
+	whole := summarise(base.Add(-time.Hour), base.Add(4*time.Hour))
+	assert.Equal(t, float64(12), whole["seriesCount"],
+		"every series reported somewhere in an unbounded window")
+	assert.Equal(t, float64(12), whole["seriesCardinality"],
+		"and the lifetime total agrees there, which is why one number hid this")
+
+	narrow := summarise(base.Add(-time.Second), base.Add(time.Minute))
+	assert.Equal(t, float64(3), narrow["seriesCount"],
+		"three series reported in this minute, so that is what the window count says")
+	assert.Equal(t, float64(12), narrow["seriesCardinality"],
+		"the stream still has twelve series; narrowing the window did not delete nine")
+}
