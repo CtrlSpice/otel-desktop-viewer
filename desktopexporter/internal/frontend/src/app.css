@@ -1530,8 +1530,15 @@ button:focus-visible:not(.btn) {
 
 /* Detail KV cell: [key: value] */
 .detail-cell {
-  @apply py-1 pl-4 pr-2 text-sm align-middle truncate;
+  /* Was `truncate` (nowrap + ellipsis). Values now wrap and clamp instead --
+     see ExpandableValue -- so the cell must permit line breaks. max-width: 0
+     stays: it is what makes a table cell take its width from the layout rather
+     than from its content, and it is still what keeps the value column from
+     being sized by its longest string. align-top because a wrapped value makes
+     the row taller than its key. */
+  @apply py-1 pl-4 pr-2 text-sm align-top;
   max-width: 0;
+  overflow: hidden;
 }
 
 .detail-cell__key {

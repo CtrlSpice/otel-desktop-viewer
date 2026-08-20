@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ExpandableValue from '@/components/shared/ExpandableValue.svelte'
   import type { Snippet } from 'svelte'
 
   type Props = {
@@ -27,18 +28,31 @@
 {#if !hidden}
   <tr class="table-row" class:log-field--multiline={multiline}>
     <td class="detail-cell" class:log-field__cell--multiline={multiline}>
-      <span class="detail-cell__key">
-        {fieldName}{#if showType}
-          {' '}<span class="detail-cell__type">({fieldType})</span>{/if}:
-      </span>
+      {#snippet keyLabel()}
+        <span class="detail-cell__key">
+          {fieldName}{#if showType}
+            {' '}<span class="detail-cell__type">({fieldType})</span>{/if}:
+        </span>
+      {/snippet}
       {#if value}
+        {@render keyLabel()}
         {@render value()}
-      {:else}
+      {:else if multiline}
+        <!-- Log bodies are always shown whole: the body is the record, and
+             clamping it would hide the thing the row exists for. -->
+        {@render keyLabel()}
         <span
-          class="detail-cell__value"
-          class:log-field__value--multiline={multiline}
-          class:tabular-nums={fieldType === 'timestamp'}
-        >{fieldValue}</span>
+          class="detail-cell__value log-field__value--multiline"
+          class:tabular-nums={fieldType === 'timestamp'}>{fieldValue}</span
+        >
+      {:else}
+        <ExpandableValue resetKey={fieldValue}>
+          {@render keyLabel()}
+          <span
+            class="detail-cell__value"
+            class:tabular-nums={fieldType === 'timestamp'}>{fieldValue}</span
+          >
+        </ExpandableValue>
       {/if}
     </td>
   </tr>
