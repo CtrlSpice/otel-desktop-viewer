@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ExpandableValue from '@/components/shared/ExpandableValue.svelte'
   type Props = {
     fieldType: string
     fieldName: string
@@ -21,11 +22,17 @@
 {#if !hidden}
   <tr class="table-row" class:table-row--nested={nested}>
     <td class="detail-cell">
-      <span class="detail-cell__key">
-        {fieldName}
-        <span class="detail-cell__type">({fieldType})</span>{#if isRoot}<span class="detail-cell__type"> (root)</span>{/if}:
-      </span>
-      <span class="detail-cell__value">{fieldValue}</span>
+      {#snippet keyLabel()}
+        <span class="detail-cell__key">
+          {fieldName}
+          <span class="detail-cell__type">({fieldType})</span>{#if isRoot}<span
+              class="detail-cell__type"
+            >
+              (root)</span
+            >{/if}:
+        </span>
+      {/snippet}
+      <ExpandableValue {keyLabel} value={fieldValue} />
     </td>
   </tr>
 {/if}

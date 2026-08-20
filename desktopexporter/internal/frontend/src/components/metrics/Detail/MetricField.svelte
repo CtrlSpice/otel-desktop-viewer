@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ExpandableValue from '@/components/shared/ExpandableValue.svelte'
   // Mirror of SpanField (TraceDetails/DetailView/SpanField.svelte).
   // Same DOM shape -- <tr class="table-row"> with detail-cell + badges --
   // so metric and span detail tables visually agree without sharing a
@@ -24,8 +25,13 @@
 {#if !hidden}
   <tr class="table-row" class:table-row--nested={nested}>
     <td class="detail-cell">
-      <span class="detail-cell__key">{fieldName} <span class="detail-cell__type">({fieldType})</span>:</span>
-      <span class="detail-cell__value">{fieldValue}</span>
+      {#snippet keyLabel()}
+        <span class="detail-cell__key"
+          >{fieldName}
+          <span class="detail-cell__type">({fieldType})</span>:</span
+        >
+      {/snippet}
+      <ExpandableValue {keyLabel} value={fieldValue} />
     </td>
   </tr>
 {/if}
