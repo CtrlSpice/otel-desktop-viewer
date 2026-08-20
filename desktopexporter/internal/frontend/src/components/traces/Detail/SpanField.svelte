@@ -22,7 +22,7 @@
 {#if !hidden}
   <tr class="table-row" class:table-row--nested={nested}>
     <td class="detail-cell">
-      <ExpandableValue resetKey={fieldValue}>
+      {#snippet keyLabel()}
         <span class="detail-cell__key">
           {fieldName}
           <span class="detail-cell__type">({fieldType})</span>{#if isRoot}<span
@@ -31,8 +31,8 @@
               (root)</span
             >{/if}:
         </span>
-        <span class="detail-cell__value">{fieldValue}</span>
-      </ExpandableValue>
+      {/snippet}
+      <ExpandableValue {keyLabel} value={fieldValue} />
     </td>
   </tr>
 {/if}

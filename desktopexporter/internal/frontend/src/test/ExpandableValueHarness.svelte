@@ -1,12 +1,13 @@
 <script lang="ts">
-  // ExpandableValue takes its content as a snippet, which a test cannot pass
-  // directly to render(); this stands in for a field component.
+  // ExpandableValue takes its key as a snippet, which render() cannot pass
+  // directly; this stands in for a field component.
   import ExpandableValue from '@/components/shared/ExpandableValue.svelte'
 
   let { value }: { value: string } = $props()
 </script>
 
-<ExpandableValue resetKey={value}>
+{#snippet keyLabel()}
   <span class="detail-cell__key">field:</span>
-  <span class="detail-cell__value">{value}</span>
-</ExpandableValue>
+{/snippet}
+
+<ExpandableValue {keyLabel} {value} />

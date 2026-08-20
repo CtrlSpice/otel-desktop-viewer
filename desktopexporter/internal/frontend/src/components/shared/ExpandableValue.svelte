@@ -1,50 +1,61 @@
 <script lang="ts">
   /*
-   * A detail row that wraps to a few lines and offers the rest on request.
+   * One "key: value" row of a detail panel, laid out so it survives arbitrary
+   * attribute names.
    *
-   * Wraps the whole "key: value" pair rather than the value alone. Clamping
-   * needs `display: -webkit-box`, which makes its box block-level -- put that
-   * on the value and the key is pushed onto its own line, doubling the height
-   * of every row in a panel whose job is to be scanned. Around the pair, the
-   * two spans flow as one run of text and the clamp counts lines of that.
+   * The pair is a wrapping flex row. When key and value both fit, they sit on
+   * one line as before. When they do not, the value moves to its own line and
+   * gets the full width of the pane. Flex decides that, not a measurement, so
+   * it re-decides on every resize for free.
    *
-   * Values used to be cut to one line with an ellipsis, which fails twice on
-   * what people read here. It cuts mid-token -- a trace id sliced through its
-   * hex, a URL losing its path -- and the cut lands wherever the pane happens
-   * to end, so the same field shows a different amount at different widths.
+   * The alternative was a fixed key column, and real data rules it out: a k8s
+   * annotation key like
+   * `k8s.pod.annotations.kubectl.kubernetes.io/last-applied-configuration`
+   * measures 473px, so a column sized to hold it leaves negative room for
+   * values in a 390px pane. Its only escape is truncating keys, and a key you
+   * cannot read is a field you cannot identify. This layout degrades the other
+   * way: the longer the content, the more rows stack, until every row is
+   * stacked -- which is just the safe layout, reached gradually.
    *
-   * Wrapping everything without limit is worse: one stack trace buries every
-   * field beneath it. Three lines covers the overwhelming majority with no
-   * interaction at all, and only genuinely long values clip.
+   * Keys wrap and are never clamped, for the same reason: identifying the
+   * field is the precondition for reading it.
    *
-   * The control is a button, not the text. Clicking the text is what the
-   * request asked for, but it fights selecting and copying -- the other thing
-   * people do with these values -- and truncated text is not a discoverable
-   * affordance. It appears only when something is actually hidden.
+   * Values clamp to three lines and offer the rest on a button. Values used to
+   * be cut to one line with an ellipsis, which cut mid-token -- a trace id
+   * sliced through its hex -- at a point that moved with the pane width.
+   * Wrapping without a limit is worse: one stack trace buries every field
+   * under it, and this panel exists to be scanned.
+   *
+   * The control is a button rather than the text itself, because clicking the
+   * text fights selecting and copying, which is the other thing people do with
+   * these values.
    */
   import type { Snippet } from 'svelte'
 
   type Props = {
-    /** Key and value, rendered inline inside the clamp. */
-    children: Snippet
-    /** Changing this resets the expansion: a different span asks a different question. */
-    resetKey?: unknown
+    /** The key, rendered by the caller so each signal keeps its own markup. */
+    keyLabel: Snippet
+    value: string
+    /** Extra classes for the value (tabular-nums, font-mono, ...). */
+    valueClass?: string
   }
 
-  let { children, resetKey }: Props = $props()
+  let { keyLabel, value, valueClass = '' }: Props = $props()
 
   let expanded = $state(false)
   let clipped = $state(false)
   let el = $state<HTMLElement | null>(null)
 
+  // Clicking between spans should not leave a field open from the previous
+  // one: the same field on the next span is a different question.
   $effect(() => {
-    void resetKey
+    void value
     expanded = false
   })
 
-  // Measured, not guessed from length: whether three lines is enough depends on
-  // the pane's width, which the string cannot know. Re-measured on resize, so
-  // dragging the sidebar keeps the control honest.
+  // Measured, not guessed from length: whether three lines is enough depends
+  // on the width the value ends up with, which the string cannot know. The
+  // observer keeps it honest as the pane is dragged.
   $effect(() => {
     const node = el
     if (!node) return
@@ -59,42 +70,55 @@
   })
 </script>
 
-<span
-  bind:this={el}
-  class="expandable-value"
-  class:expandable-value--clamped={!expanded}>{@render children()}</span
->{#if clipped}
-  <button
-    type="button"
-    class="expandable-value__toggle"
-    onclick={() => (expanded = !expanded)}
-    aria-expanded={expanded}>{expanded ? 'Show less' : 'Show more'}</button
+<span class="detail-pair">
+  {@render keyLabel()}
+  <span
+    bind:this={el}
+    class="detail-pair__value {valueClass}"
+    class:detail-pair__value--clamped={!expanded}>{value}</span
   >
-{/if}
+  {#if clipped}
+    <button
+      type="button"
+      class="detail-pair__toggle"
+      onclick={() => (expanded = !expanded)}
+      aria-expanded={expanded}>{expanded ? 'Show less' : 'Show more'}</button
+    >
+  {/if}
+</span>
 
 <style lang="postcss">
   @reference "../../app.css";
 
-  .expandable-value {
-    /* Breaks inside a long unbroken token, which is what these values are:
-       ids, URLs, base64. Without it a single 200-character word overflows the
-       pane rather than wrapping inside it. */
+  .detail-pair {
+    @apply flex flex-wrap items-baseline;
+    column-gap: 0.375rem;
+  }
+
+  .detail-pair__value {
+    /* flex-auto, not flex-1: Tailwind's flex-1 is `flex: 1 1 0%`, and a
+       zero basis means the value is always considered to fit beside the key,
+       so it never moves to its own line -- it just wraps in the sliver left
+       over. An auto basis makes flex compare the value's own width against the
+       space remaining, which is the question this layout is asking.
+       min-width: 0 lets it wrap once it is there. */
+    @apply min-w-0 flex-auto text-base-content;
     overflow-wrap: anywhere;
   }
 
-  .expandable-value--clamped {
+  .detail-pair__value--clamped {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
     overflow: hidden;
   }
 
-  .expandable-value__toggle {
-    @apply cursor-pointer text-xs underline decoration-dotted underline-offset-2;
+  .detail-pair__toggle {
+    @apply shrink-0 cursor-pointer text-xs underline decoration-dotted underline-offset-2;
     color: var(--color-subtle);
   }
 
-  .expandable-value__toggle:hover {
+  .detail-pair__toggle:hover {
     @apply text-base-content;
   }
 </style>

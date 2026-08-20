@@ -1543,7 +1543,12 @@ button:focus-visible:not(.btn) {
 
 .detail-cell__key {
   color: var(--color-subtle);
-  @apply mr-1.5;
+  /* No right margin: the pair is a flex row with its own column-gap, and a
+     margin here would also indent a key that wrapped onto its own line.
+     shrink-0 would overflow the pane on a long annotation key, so it wraps
+     instead -- and it is never clamped, because a key you cannot read is a
+     field you cannot identify. */
+  overflow-wrap: anywhere;
 }
 
 .detail-cell__value {

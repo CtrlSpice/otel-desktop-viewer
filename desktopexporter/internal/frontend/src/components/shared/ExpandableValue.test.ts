@@ -52,7 +52,7 @@ describe('ExpandableValue', () => {
     })
     await tick()
     const clamped = () =>
-      !!container.querySelector('.expandable-value--clamped')
+      !!container.querySelector('.detail-pair__value--clamped')
 
     expect(clamped()).toBe(true)
     screen.getByRole('button', { name: 'Show more' }).click()
@@ -73,10 +73,12 @@ describe('ExpandableValue', () => {
     await tick()
     screen.getByRole('button', { name: 'Show more' }).click()
     await tick()
-    expect(container.querySelector('.expandable-value--clamped')).toBeNull()
+    expect(container.querySelector('.detail-pair__value--clamped')).toBeNull()
 
     await rerender({ value: 'b'.repeat(500) })
     await tick()
-    expect(container.querySelector('.expandable-value--clamped')).not.toBeNull()
+    expect(
+      container.querySelector('.detail-pair__value--clamped')
+    ).not.toBeNull()
   })
 })

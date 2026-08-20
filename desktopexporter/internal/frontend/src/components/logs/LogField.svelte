@@ -46,13 +46,11 @@
           class:tabular-nums={fieldType === 'timestamp'}>{fieldValue}</span
         >
       {:else}
-        <ExpandableValue resetKey={fieldValue}>
-          {@render keyLabel()}
-          <span
-            class="detail-cell__value"
-            class:tabular-nums={fieldType === 'timestamp'}>{fieldValue}</span
-          >
-        </ExpandableValue>
+        <ExpandableValue
+          {keyLabel}
+          value={fieldValue ?? ''}
+          valueClass={fieldType === 'timestamp' ? 'tabular-nums' : ''}
+        />
       {/if}
     </td>
   </tr>
