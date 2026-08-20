@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -152,26 +155,70 @@ func staticFS() (fs.FS, error) {
 // client router owns the route (e.g. a deep-linked /traces/{id} or a refreshed
 // /metrics). Paths with a file extension that do not exist 404 normally. Non-GET
 // requests fall through to the file server.
+// Cache policy for the embedded frontend. Two populations, two rules.
+//
+// Everything under assets/ is content-hashed by Vite, so its URL changes
+// whenever its bytes do and it can be cached forever. index.html is the
+// opposite: a stable name whose contents *name* those hashed files. Cache it
+// and someone who upgrades the binary keeps HTML pointing at chunks the new
+// build does not contain -- a blank page and a pile of 404s, cleared only by a
+// hard reload nobody knows to do. no-cache does not mean "do not store", it
+// means "revalidate before use", which is exactly the difference.
+//
+// Nothing was sent before: assets come from an embed.FS, whose files report a
+// zero mod time, and Go deliberately omits Last-Modified when the time is
+// zero. It never synthesises an ETag either. So there was no freshness
+// directive and no validator, and the browser re-fetched all 2MB on every load.
+const (
+	immutableCacheControl  = "public, max-age=31536000, immutable"
+	revalidateCacheControl = "no-cache"
+)
+
 func spaHandler(fsys fs.FS, logger *zap.Logger) http.Handler {
 	fileServer := http.FileServerFS(fsys)
-	serveIndex := func(writer http.ResponseWriter) {
-		bytes, err := fs.ReadFile(fsys, "index.html")
-		if err != nil {
-			logger.Error("reading index.html", zap.Error(err))
+
+	// The validator Go will not invent. Computed once: the FS is embedded, so
+	// these bytes cannot change while the process runs. It turns each
+	// revalidation of index.html into a 304 rather than another copy of the
+	// document.
+	indexBytes, indexErr := fs.ReadFile(fsys, "index.html")
+	indexETag := ""
+	if indexErr == nil {
+		sum := sha256.Sum256(indexBytes)
+		indexETag = `"` + hex.EncodeToString(sum[:16]) + `"`
+	}
+
+	serveIndex := func(writer http.ResponseWriter, request *http.Request) {
+		if indexErr != nil {
+			logger.Error("reading index.html", zap.Error(indexErr))
 			http.Error(writer, "Failed to load page", http.StatusInternalServerError)
 			return
 		}
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-		writer.Write(bytes)
+		writer.Header().Set("Cache-Control", revalidateCacheControl)
+		writer.Header().Set("ETag", indexETag)
+		// ServeContent rather than Write, for the conditional request handling:
+		// it answers a matching If-None-Match with 304 and no body. The zero
+		// mod time is what kept Last-Modified out; the ETag above replaces it.
+		http.ServeContent(writer, request, "index.html", time.Time{}, bytes.NewReader(indexBytes))
 	}
+
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method == http.MethodGet || request.Method == http.MethodHead {
 			name := strings.TrimPrefix(path.Clean(request.URL.Path), "/")
 			if info, err := fs.Stat(fsys, name); name == "" || err != nil || info.IsDir() {
 				if path.Ext(name) == "" {
-					serveIndex(writer)
+					serveIndex(writer, request)
 					return
 				}
+			}
+			// Keyed on the assets/ prefix rather than "anything the file
+			// server handles", because a direct GET /index.html lands here
+			// too -- and that is the one file this header must never reach.
+			if strings.HasPrefix(name, "assets/") {
+				writer.Header().Set("Cache-Control", immutableCacheControl)
+			} else {
+				writer.Header().Set("Cache-Control", revalidateCacheControl)
 			}
 		}
 		fileServer.ServeHTTP(writer, request)

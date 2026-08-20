@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
@@ -190,4 +191,75 @@ func TestStartBindConflict(t *testing.T) {
 
 	err = s.Start()
 	require.Error(t, err)
+}
+
+// TestStaticCacheHeaders covers the two populations the embedded frontend
+// splits into, and the one mistake that would be expensive.
+//
+// Nothing was sent before this: assets are served from an embed.FS, whose files
+// report a zero mod time, and Go omits Last-Modified when the time is zero and
+// never synthesises an ETag. No freshness directive, no validator, so the
+// browser re-fetched the whole 2MB frontend on every page load.
+func TestStaticCacheHeaders(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.html":              &fstest.MapFile{Data: []byte("<!doctype html><div id=app>")},
+		"assets/index-abc123.js":  &fstest.MapFile{Data: []byte("console.log(1)")},
+		"assets/style-def456.css": &fstest.MapFile{Data: []byte("body{}")},
+	}
+	handler := spaHandler(fsys, zap.NewNop())
+
+	get := func(target string) *http.Response {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		return rec.Result()
+	}
+
+	t.Run("hashed assets are immutable", func(t *testing.T) {
+		for _, target := range []string{"/assets/index-abc123.js", "/assets/style-def456.css"} {
+			resp := get(target)
+			assert.Equal(t, immutableCacheControl, resp.Header.Get("Cache-Control"),
+				"%s is content-hashed, so its URL changes when its bytes do", target)
+		}
+	})
+
+	// The dangerous one. index.html has a stable name and its contents name the
+	// hashed files, so caching it hands an upgraded binary's user stale HTML
+	// pointing at chunks that no longer exist.
+	t.Run("index.html is never immutable", func(t *testing.T) {
+		for _, target := range []string{"/", "/traces", "/index.html"} {
+			resp := get(target)
+			cc := resp.Header.Get("Cache-Control")
+			assert.Equal(t, revalidateCacheControl, cc, "%s must revalidate", target)
+			assert.NotContains(t, cc, "immutable",
+				"%s serves the document that names every hashed asset", target)
+		}
+	})
+
+	// Relied on rather than implemented: since Go 1.23, serveError deletes
+	// Cache-Control, Etag, Last-Modified and Content-Encoding on the error
+	// path, because a caller may have set them for the success case. Without
+	// that, a request for an asset that does not exist would be answered with
+	// a year-long immutable 404 -- and a later build that adds the file could
+	// not dislodge it. Asserted because the whole prefix rule leans on it.
+	t.Run("a missing asset is not cached", func(t *testing.T) {
+		resp := get("/assets/never-existed-000000.js")
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+		assert.Empty(t, resp.Header.Get("Cache-Control"),
+			"a 404 must not inherit the immutable header meant for real assets")
+	})
+
+	t.Run("index carries an ETag and honours If-None-Match", func(t *testing.T) {
+		resp := get("/")
+		etag := resp.Header.Get("ETag")
+		require.NotEmpty(t, etag, "no validator means revalidation re-sends the whole document")
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("If-None-Match", etag)
+		handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusNotModified, rec.Code,
+			"a matching validator should cost a 304, not another copy")
+		assert.Empty(t, rec.Body.String())
+	})
 }
