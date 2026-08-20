@@ -4858,3 +4858,89 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 			"of 100 observations each; more means the fetched window is wider than "+
 			"the column", perColumn)
 }
+
+// TestHistogramBoundsAreStoredOnce pins the bounds dictionary: the vector is a
+// property of the instrument, so a series reporting all session writes it one
+// time, however many datapoints arrive -- and a stream whose bounds genuinely
+// change mid-flight gets a second row, not a collision, because OTel only
+// makes fixed bounds a practice, never a promise.
+func TestHistogramBoundsAreStoredOnce(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	boundsA := []float64{1, 5, 10}
+	boundsB := []float64{2, 4, 8, 16}
+	var dps []histTestDP
+	for i := range 40 {
+		b := boundsA
+		counts := []uint64{1, 2, 3, 4}
+		if i >= 30 {
+			// The pathological case: the SDK was reconfigured mid-stream.
+			b = boundsB
+			counts = []uint64{1, 2, 3, 4, 5}
+		}
+		dps = append(dps, histTestDP{
+			timestamp: base.Add(time.Duration(i) * 10 * time.Second),
+			attrs:     map[string]string{"pod": "a"},
+			bounds:    b,
+			counts:    counts,
+			count:     10, sum: 30, min: 0.5, max: 9.5,
+		})
+	}
+	fixture := makeHistogramFixtureT("bounds.hist", pmetric.AggregationTemporalityDelta, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from histogram_bounds`),
+		"40 datapoints carry 2 distinct bounds vectors, so the dictionary holds 2 rows")
+	assert.Zero(t, countRows(t, s, ctx,
+		`select count(*) from datapoints
+		 where bounds_id is not null
+		   and not exists (select 1 from histogram_bounds hb where hb.id = bounds_id)`),
+		"every reference resolves; nothing may point at a row that is not there")
+
+	// The wire is unchanged: each datapoint comes back with the exact vector
+	// it arrived with, resolved through the dictionary.
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			0, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(raw, &got))
+	seen := map[int]int{}
+	for _, ts := range got["timeseries"].([]any) {
+		for _, d := range ts.(map[string]any)["datapoints"].([]any) {
+			eb := d.(map[string]any)["explicitBounds"].([]any)
+			seen[len(eb)]++
+		}
+	}
+	assert.Equal(t, map[int]int{3: 30, 4: 10}, seen,
+		"each datapoint resolves its own vector -- 30 with the original bounds, "+
+			"10 with the reconfigured ones")
+
+	// Sweep: clearing the metrics orphans both rows, and the sweep takes them.
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return metrics.Clear(ctx, db)
+	}))
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
+	}))
+	assert.Zero(t, countRows(t, s, ctx, `select count(*) from histogram_bounds`),
+		"bounds nothing references are garbage, and retention measures garbage "+
+			"as if it were data")
+
+	// And re-ingest after the sweep still works: the FlushedIDs entries for the
+	// swept rows must have been forgotten, or the dictionary skips the insert
+	// and the datapoints' foreign key has nothing to point at.
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, makeHistogramFixtureT("bounds.hist",
+			pmetric.AggregationTemporalityDelta, dps), s.FlushedIDs())
+	}))
+	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from histogram_bounds`))
+}

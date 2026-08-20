@@ -76,6 +76,15 @@ var sweepQueries = []string{
 	) returning id::varchar`,
 
 	`delete from attributes where id not in (` + liveAttributeIDs + `) returning id::varchar`,
+
+	// Bounds are referenced only by datapoints, and through a real foreign
+	// key rather than a LIST -- but the sweep still has to run, because a
+	// foreign key stops a bad delete, it does not collect a row nothing
+	// points at. bounds_id is nullable (only explicit-bucket histograms carry
+	// one), hence the is-not-null guard on the live set.
+	`delete from histogram_bounds where id not in (
+		select bounds_id from datapoints where bounds_id is not null
+	) returning id::varchar`,
 }
 
 // SweepOrphans deletes dictionary, resource and scope rows nothing references.

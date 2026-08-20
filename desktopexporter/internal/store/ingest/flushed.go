@@ -106,7 +106,7 @@ type idQueryer interface {
 // NewFlushedIDs.
 func LoadFlushedIDs(ctx context.Context, db idQueryer) (*FlushedIDs, error) {
 	f := NewFlushedIDs()
-	for _, table := range [...]string{"attributes", "resources", "scopes"} {
+	for _, table := range [...]string{"attributes", "resources", "scopes", "histogram_bounds"} {
 		if err := warmFlushedFrom(ctx, db, table, f); err != nil {
 			return nil, fmt.Errorf("LoadFlushedIDs: %w: %w", ErrIngestInternal, err)
 		}
