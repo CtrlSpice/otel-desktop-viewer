@@ -1,16 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/confmap"
 	envprovider "go.opentelemetry.io/collector/confmap/provider/envprovider"
 	yamlprovider "go.opentelemetry.io/collector/confmap/provider/yamlprovider"
-	"go.opentelemetry.io/collector/confmap/xconfmap"
 	"go.opentelemetry.io/collector/otelcol"
 )
 
@@ -90,7 +92,7 @@ func validateServiceTelemetry(t *testing.T, o configOptions) error {
 	if err := sub.Unmarshal(telCfg); err != nil {
 		return err
 	}
-	return xconfmap.Validate(telCfg)
+	return confmap.Validate(telCfg)
 }
 
 func TestCollectorURIsResolve(t *testing.T) {
@@ -185,4 +187,69 @@ func TestSelfTelemetryFollowsGRPCEndpoint(t *testing.T) {
 
 	joined := strings.Join(collectorURIs(o), "\n")
 	assert.Contains(t, joined, "http://127.0.0.1:15317")
+}
+
+// TestStartupFailureIsNotAnsweredWithUsage covers the difference between "you
+// typed the command wrong" and "the collector could not start".
+//
+// Cobra cannot tell them apart on its own: by default any error out of RunE
+// gets the full flag listing and a second printing of the error. The common
+// way this binary exits non-zero is someone upgrading across a schema change,
+// and the sentence telling them what to do was landing under a screen of
+// flags. Flags are parsed before RunE, so silencing there keeps usage for the
+// case usage is actually for.
+func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
+	// The same settings main() builds. A bare struct has no config providers,
+	// and NewCollector answers that with log.Fatal -- which takes the test
+	// process with it before anything can be asserted.
+	set := otelcol.CollectorSettings{
+		BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"},
+		Factories: components,
+		ConfigProviderSettings: otelcol.ConfigProviderSettings{
+			ResolverSettings: confmap.ResolverSettings{
+				ProviderFactories: []confmap.ProviderFactory{
+					envprovider.NewFactory(),
+					yamlprovider.NewFactory(),
+				},
+			},
+		},
+	}
+
+	t.Run("a bad flag still prints usage", func(t *testing.T) {
+		cmd := newCommand(set)
+		cmd.SetArgs([]string{"--nonsense-flag"})
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		err := cmd.Execute()
+		require.Error(t, err)
+		assert.Contains(t, out.String(), "Usage:",
+			"a mistyped flag is exactly what usage exists to explain")
+	})
+
+	// Asserting that RunE *arms* the silencing, not merely that the command
+	// does not carry it. An earlier version of this test only checked the
+	// latter, which is the default -- it passed with the fix reverted, and said
+	// nothing at all.
+	t.Run("reaching RunE arms the silencing", func(t *testing.T) {
+		cmd := newCommand(set)
+		require.False(t, cmd.SilenceUsage,
+			"not on the command, or a mistyped flag would be silenced too")
+		require.False(t, cmd.SilenceErrors)
+
+		// Run with flags that parse but a config that cannot start, so RunE is
+		// entered and fails. What it did to the command on the way in is the
+		// thing under test.
+		cmd.SetArgs([]string{"--db", filepath.Join(t.TempDir(), "no", "such", "dir", "x.db")})
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		_ = cmd.Execute()
+
+		assert.True(t, cmd.SilenceUsage,
+			"RunE must silence usage: past flag parsing, a failure is not a usage mistake")
+		assert.True(t, cmd.SilenceErrors)
+		assert.NotContains(t, out.String(), "Usage:",
+			"a startup failure must not be answered with the flag listing")
+	})
 }
