@@ -236,6 +236,19 @@ func TestStaticCacheHeaders(t *testing.T) {
 		}
 	})
 
+	// Relied on rather than implemented: since Go 1.23, serveError deletes
+	// Cache-Control, Etag, Last-Modified and Content-Encoding on the error
+	// path, because a caller may have set them for the success case. Without
+	// that, a request for an asset that does not exist would be answered with
+	// a year-long immutable 404 -- and a later build that adds the file could
+	// not dislodge it. Asserted because the whole prefix rule leans on it.
+	t.Run("a missing asset is not cached", func(t *testing.T) {
+		resp := get("/assets/never-existed-000000.js")
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+		assert.Empty(t, resp.Header.Get("Cache-Control"),
+			"a 404 must not inherit the immutable header meant for real assets")
+	})
+
 	t.Run("index carries an ETag and honours If-None-Match", func(t *testing.T) {
 		resp := get("/")
 		etag := resp.Header.Get("ETag")
