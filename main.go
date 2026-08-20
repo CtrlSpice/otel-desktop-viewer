@@ -203,6 +203,19 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 		Use:     set.BuildInfo.Command,
 		Version: set.BuildInfo.Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Set here rather than on the command, because reaching RunE is
+			// what proves the flags were fine: cobra parses them first, so a
+			// mistyped flag never gets this far and still prints usage, which
+			// is what usage is for.
+			//
+			// Past this point a failure is the collector declining to start,
+			// and answering that with the full flag listing buries it. The
+			// common case is someone upgrading across a schema change, where
+			// the sentence telling them what to do was printed under a screen
+			// of flags and then repeated by cobra on top of the log lines that
+			// already carried it.
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
 			set.ConfigProviderSettings.ResolverSettings.URIs = collectorURIs(configOptions{
 				host:          hostFlag,
 				httpPort:      httpPortFlag,

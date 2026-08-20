@@ -94,8 +94,14 @@ jobs:
       run: go build -o otel-desktop-viewer
       if: matrix.os != 'windows-latest'
 
-    - name: Exporter Go Tests
-      run: cd desktopexporter; go test ./...
+    # ./... from the repo root, not from desktopexporter. Scoping it to the
+    # subdirectory left the root package -- the CLI, its flag wiring and the
+    # composed collector config -- untested by anything. main_test.go stopped
+    # compiling when a collector bump removed xconfmap.Validate, and nothing
+    # reported it: seven tests, including the ones covering the flags a release
+    # ships, were silently absent for a whole dependency cycle.
+    - name: Go Tests
+      run: go test ./...
 
   # Go source checks that need no CGO and no DuckDB toolchain, so they run once
   # on Linux rather than across the build matrix (which includes Windows, where

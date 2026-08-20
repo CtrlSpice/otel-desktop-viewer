@@ -48,7 +48,7 @@ refresh-macros:
 
 .PHONY: test-go
 test-go:
-	cd desktopexporter && go test ./...
+	go test ./...
 
 .PHONY: run-go
 run-go:
