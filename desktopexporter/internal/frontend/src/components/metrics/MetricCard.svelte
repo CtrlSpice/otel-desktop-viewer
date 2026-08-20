@@ -19,11 +19,7 @@
   let key = $derived(metricSummaryKey(metric))
 
   let lastSeenParts = $derived(
-    formatTimestampParts(
-      metric.lastSeen,
-      timeContext.tz,
-      'milliseconds'
-    )
+    formatTimestampParts(metric.lastSeen, timeContext.tz, 'milliseconds')
   )
 
   let description = $derived((metric.description ?? '').trim())
@@ -61,6 +57,7 @@
       aggregationTemporality={metric.aggregationTemporality}
       isMonotonic={metric.isMonotonic}
       seriesCount={metric.seriesCount}
+      seriesCardinality={metric.seriesCardinality}
     />
   {/snippet}
 

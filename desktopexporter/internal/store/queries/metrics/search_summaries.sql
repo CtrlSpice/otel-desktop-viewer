@@ -31,11 +31,32 @@
 			where mi.stream_id in (select id from filtered_streams)
 			group by mi.stream_id
 		),
+		-- Two counts, because the card was showing one number that could mean
+		-- either and said which only in a tooltip.
+		--
+		-- series_count is window-scoped: how many series actually reported in
+		-- the range being looked at. It belongs with the numbers beside it --
+		-- datapoint_count, last_value and the time range are all window-scoped
+		-- too -- and it is the one that changes as you pan.
+		--
+		-- series_cardinality is the stream's lifetime total, straight off
+		-- metric_series. Narrow the window on a race and the first drops to
+		-- three while the second stays at twenty-one; neither is wrong, and
+		-- showing only one of them makes the other look like a bug.
+		--
 		-- Counting series is now counting one indexable column, rather than
 		-- distinct (resource, label-array) pairs.
 		stream_series_count as (
 			select stream_id, count(distinct series_id) as series_count
 			from filtered_dps
+			group by stream_id
+		),
+		-- One row per series, so this counts a small table rather than
+		-- re-scanning datapoints.
+		stream_series_cardinality as (
+			select stream_id, count(*) as series_cardinality
+			from metric_series
+			where stream_id in (select id from filtered_streams)
 			group by stream_id
 		),
 		stream_datapoint_count as (
@@ -65,6 +86,7 @@
 			end,
 			'serviceName', fs.service_name,
 			'seriesCount', ssc.series_count,
+			'seriesCardinality', coalesce(ssx.series_cardinality, 0),
 			'dataPointCount', sdc.datapoint_count,
 			'lastValue', slv.last_value,
 			'lastSeen', sldp.last_dp_ts::varchar
@@ -73,6 +95,7 @@
 		left join stream_latest_dp sldp on sldp.stream_id = fs.id
 		left join stream_description sd on sd.stream_id = fs.id
 		left join stream_series_count ssc on ssc.stream_id = fs.id
+		left join stream_series_cardinality ssx on ssx.stream_id = fs.id
 		left join stream_datapoint_count sdc on sdc.stream_id = fs.id
 		left join stream_last_value slv on slv.stream_id = fs.id
 	

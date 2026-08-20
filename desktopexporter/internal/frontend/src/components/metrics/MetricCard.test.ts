@@ -19,6 +19,7 @@ function makeMetric(overrides: Partial<MetricSummary> = {}): MetricSummary {
     isMonotonic: null,
     serviceName: 'orders-service',
     seriesCount: 3,
+    seriesCardinality: 3,
     dataPointCount: 120,
     lastValue: 42.5,
     lastSeen: 1_700_000_000_000_000_000n,
@@ -101,5 +102,28 @@ describe('MetricCard', () => {
     renderCard({ metric: makeMetric({ id: 'metric-42' }), onclick })
     await userEvent.click(screen.getByRole('button'))
     expect(onclick).toHaveBeenCalledWith('metric-42')
+  })
+})
+
+describe('MetricCard series counts', () => {
+  // One number that changed meaning with the window read as data going
+  // missing. Both are shown when they differ, and the pair is what says
+  // "these series went quiet" rather than "these series are gone".
+  it('shows both counts when the window holds fewer than the stream has', () => {
+    renderWithContexts(MetricCard, {
+      metric: makeMetric({ seriesCount: 3, seriesCardinality: 21 }),
+      onclick: vi.fn(),
+    })
+    expect(screen.getByText('3 of 21 series')).toBeInTheDocument()
+  })
+
+  // The unbounded-window case, where they agree: "21 of 21" is noise.
+  it('shows one count when they agree', () => {
+    renderWithContexts(MetricCard, {
+      metric: makeMetric({ seriesCount: 21, seriesCardinality: 21 }),
+      onclick: vi.fn(),
+    })
+    expect(screen.getByText('21 series')).toBeInTheDocument()
+    expect(screen.queryByText(/of 21 series/)).not.toBeInTheDocument()
   })
 })
