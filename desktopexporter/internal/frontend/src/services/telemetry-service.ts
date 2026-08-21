@@ -206,7 +206,10 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
 
   return {
     traceID: json.traceID,
-    // Older stores predate the field; absent means nothing was dropped.
+    // The query always emits this, so the fallback is not version skew --
+    // frontend and backend ship in the same binary and cannot disagree. It
+    // guards a hand-rolled or replayed response, and keeps the field a plain
+    // number so no caller has to consider undefined.
     unplacedSpanCount: json.unplacedSpanCount ?? 0,
     // events is coalesced to [] server-side and matched is always
     // emitted (literal true when no search criteria), so no fallbacks;
