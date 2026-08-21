@@ -2,30 +2,48 @@
 		with recursive
 		{{.CTEs}},
 
-		spans_tree as (
-			select
-				s.trace_id, s.span_id, s.parent_span_id, s.start_time,
-				0 as depth,
-				array[row_number() over (order by
-					case when s.parent_span_id is null then 0 else 1 end,
-					s.start_time
-				)] as sort_path
+		-- This trace's spans, isolated once, before the walk begins.
+		--
+		-- The recursive arm below runs once per level of the tree, and a
+		-- recursive CTE cannot use an index on its working table: DuckDB
+		-- re-joins whatever relation the arm names on every iteration. Naming
+		-- `spans` there means each level hash-joins the entire table, so the
+		-- cost of fetching one trace tracks how much telemetry the store holds
+		-- rather than how big the trace is -- a point lookup priced as a scan.
+		-- Measured on a 2.3M-span store, fetching a 159-span trace 14 levels
+		-- deep: 54ms naming `spans`, 5ms naming this CTE, same rows out.
+		--
+		-- `materialized` is the load-bearing word. Without it DuckDB is free to
+		-- inline the definition into each reference, which puts the full-table
+		-- scan back exactly where it was removed from.
+		trace_spans as materialized (
+			select s.trace_id, s.span_id, s.parent_span_id, s.start_time
 			from spans s, search_params
 			where s.trace_id = search_params.trace_id
-				and (s.parent_span_id is null or s.parent_span_id not in (
-					select span_id from spans where trace_id = search_params.trace_id
-				))
+		),
+
+		spans_tree as (
+			select
+				t.trace_id, t.span_id, t.parent_span_id, t.start_time,
+				0 as depth,
+				array[row_number() over (order by
+					case when t.parent_span_id is null then 0 else 1 end,
+					t.start_time
+				)] as sort_path
+			from trace_spans t
+			where t.parent_span_id is null
+				or t.parent_span_id not in (select span_id from trace_spans)
 
 			union all
 
 			select
-				s.trace_id, s.span_id, s.parent_span_id, s.start_time,
+				t.trace_id, t.span_id, t.parent_span_id, t.start_time,
 				st.depth + 1,
 				st.sort_path || array[row_number() over (
-					partition by st.span_id order by s.start_time
+					partition by st.span_id order by t.start_time
 				)] as sort_path
-			from spans s
-			join spans_tree st on s.parent_span_id = st.span_id and s.trace_id = st.trace_id
+			from trace_spans t
+			join spans_tree st on t.parent_span_id = st.span_id
 		){{.MatchedCTE}},
 
 		-- The walk's result joined back to its payload, once.
