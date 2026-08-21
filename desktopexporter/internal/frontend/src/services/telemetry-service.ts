@@ -229,6 +229,10 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
         },
         depth: spanNode.depth,
         matched: spanNode.matched,
+        // Spread only when present: absent on every span of a healthy trace.
+        ...(spanNode.salvaged
+          ? { salvaged: spanNode.salvaged, cyclePoint: spanNode.cyclePoint }
+          : {}),
       }
     }),
   }

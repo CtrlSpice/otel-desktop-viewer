@@ -35,6 +35,24 @@
   }: Props = $props()
 
   let span = $derived(row.spanNode.spanData)
+
+  /**
+   * Two different messages, because the spans are in two different positions.
+   * Every span in a stranded subtree is *affected*: it was recovered by the
+   * cycle-aware walk and would otherwise be missing entirely. Exactly one is
+   * the *cause* -- its parent link points back into its own subtree, which is
+   * what stranded the rest.
+   */
+  let cycleLabel = $derived(
+    row.spanNode.cyclePoint
+      ? 'This span causes the cycle: its parent is inside its own subtree, ' +
+        'so nothing here can be reached from the trace root. Likely an ' +
+        'instrumentation bug in the service that emitted it.'
+      : row.spanNode.salvaged
+        ? 'Recovered from a broken part of this trace: a parent link forms a ' +
+          'loop, so these spans have no place under the root.'
+        : ''
+  )
   let durationLabel = $derived(formatDuration(span.endTime - span.startTime))
   let serviceName = $derived(getServiceName(span.resource) ?? 'unknown')
 
@@ -99,6 +117,17 @@
       >
         {span.name}
       </span>
+      {#if cycleLabel}
+        <span
+          class="waterfall-row__cycle"
+          class:waterfall-row__cycle--offender={row.spanNode.cyclePoint}
+          title={cycleLabel}
+          aria-label={cycleLabel}
+        >
+          <!-- Icon slot: swap this glyph for the artwork once it lands. -->
+          <span aria-hidden="true">{row.spanNode.cyclePoint ? '\u26A0' : '\u21BB'}</span>
+        </span>
+      {/if}
       <span class="col-resize-marker" aria-hidden="true"></span>
     </div>
   </td>
@@ -182,6 +211,19 @@
 
   .waterfall-row__title {
     @apply min-w-0 flex-1;
+  }
+
+  /* Marks a span the cycle-aware walk recovered. flex-none so it survives the
+     title's truncation rather than being squeezed out of a narrow column --
+     the badge is the reason the row is worth reading. */
+  .waterfall-row__cycle {
+    @apply flex-none text-warning/80 text-xs leading-none;
+  }
+
+  /* The span that caused it, which earns more weight than the ones it
+     stranded. */
+  .waterfall-row__cycle--offender {
+    @apply text-warning text-sm font-bold;
   }
 
   .waterfall-row__td-service {

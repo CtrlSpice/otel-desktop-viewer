@@ -1,6 +1,6 @@
 
 		with recursive
-		{{.CTEs}},
+		search_params as (select try_cast(? as uuid) as trace_id),
 
 		-- This trace's spans, isolated once, before the walk begins.
 		--
@@ -69,16 +69,89 @@
 				st.sort_path || array[r.sibling_rank] as sort_path
 			from ranked r
 			join spans_tree st on r.parent_span_id = st.span_id
-		){{.MatchedCTE}},
+		),
+		matched_spans as (
+			select s.span_id
+			from search_params, spans s
+		join resources r on r.id = s.resource_id
+		join scopes sc on sc.id = s.scope_id
+			where s.trace_id = search_params.trace_id AND (list_contains(s.attribute_ids, '9f1f8762-3dcf-10ee-4b04-db74f7de5b59'::uuid))
+		),
+
+		-- Spans the walk above could not reach, recovered best-effort.
+		--
+		-- Unreachable means the span's parent is present but the span is not
+		-- descended from any root, which -- with one parent per span -- means
+		-- it sits on a cycle. Nothing outside points into a cycle, so there is
+		-- no edge to follow in; an entry has to be chosen.
+		--
+		-- Every unreached span is seeded as its own entry rather than
+		-- identifying stranded components first, which would need real graph
+		-- work for no gain: a span reached from several entries is deduped
+		-- below, keeping the one from the earliest entry. For a lone A<->B
+		-- cycle that yields A at depth 0 and B beneath it, which is the shape
+		-- a reader can actually follow.
+		salvage_seed as materialized (
+			select r.*, row_number() over (order by r.start_time, r.span_id) as entry_rank
+			from ranked r
+			where r.span_id not in (select span_id from spans_tree)
+		),
+
+		-- The walk that may enter a cycle, so it carries its own ancestry and
+		-- refuses to revisit. DuckDB has no CYCLE clause; this is the pattern
+		-- its docs prescribe for traversing a graph that may contain one.
+		salvage_walk as (
+			select sd.span_id, sd.parent_span_id, sd.trace_id, sd.start_time,
+				sd.entry_rank, 0 as depth, [sd.span_id] as visited
+			from salvage_seed sd
+
+			union all
+
+			select r.span_id, r.parent_span_id, r.trace_id, r.start_time,
+				sw.entry_rank, sw.depth + 1, list_append(sw.visited, r.span_id)
+			from salvage_seed r
+			join salvage_walk sw on r.parent_span_id = sw.span_id
+			where list_position(sw.visited, r.span_id) is null
+		),
+
+		-- One placement per span: the earliest entry that reaches it.
+		salvaged as materialized (
+			select span_id, parent_span_id, trace_id, start_time, depth, entry_rank
+			from salvage_walk
+			qualify row_number() over (
+				partition by span_id order by entry_rank, depth
+			) = 1
+		),
+
+		-- The two walks, unioned, with the flags the UI needs.
+		--
+		-- cycle_point marks the span whose parent link is the lie: it is a
+		-- display root of a salvaged chain whose own parent turns up further
+		-- down that chain. Sorting salvaged trees after every real root keeps
+		-- them out of the way of a trace that is otherwise fine.
+		walked as (
+			select trace_id, span_id, parent_span_id, start_time, depth, sort_path,
+				false as salvaged, false as cycle_point
+			from spans_tree
+
+			union all
+
+			select sv.trace_id, sv.span_id, sv.parent_span_id, sv.start_time, sv.depth,
+				array[1000000 + sv.entry_rank::int] ||
+					case when sv.depth = 0 then []::int[] else array[sv.depth] end,
+				true,
+				sv.depth = 0 and sv.parent_span_id in (select span_id from salvaged)
+			from salvaged sv
+		),
 
 		-- The walk's result joined back to its payload, once.
 		tree as materialized (
-			select st.depth, st.sort_path,
+			select st.depth, st.sort_path, st.salvaged, st.cycle_point,
 				s.span_id, s.parent_span_id, s.trace_id, s.trace_state, s.name, s.kind,
 				s.start_time, s.end_time, s.resource_id, s.scope_id, s.attribute_ids,
 				s.dropped_attributes_count, s.dropped_events_count, s.dropped_links_count,
 				s.status_code, s.status_message
-			from spans_tree st
+			from walked st
 			join spans s on s.span_id = st.span_id
 		),
 
@@ -208,20 +281,31 @@
 		),
 
 		ordered_spans as (
-			select json_object(
+			-- salvaged/cyclePoint ride an outer merge patch rather than the
+			-- object itself, so they cost nothing on the overwhelming majority
+			-- of traces where nothing is salvaged. Emitting two false booleans
+			-- per span would put ~30 bytes on every row of a 5,735-span trace
+			-- to describe a condition that almost never holds.
+			select json_merge_patch(
+				json_object(
 					'spanData', span_data_json(
 						ts, sa.attrs, ed.events, ld.links,
 						rd.seq, scd.seq, (select t from trace_start)
 					),
-				'depth', ts.depth,
-				'matched', {{.MatchedExpr}}
+					'depth', ts.depth,
+					'matched', case when ms.span_id is not null then true else false end
+				),
+				case when ts.salvaged
+					then json_object('salvaged', true, 'cyclePoint', ts.cycle_point)
+					else json('{}')
+				end
 			) as span_json,
 				ts.sort_path
 			from tree ts
 			join resource_data rd on rd.id = ts.resource_id
 			join scope_data scd on scd.id = ts.scope_id
 			left join span_attrs sa on sa.id = ts.span_id
-			{{.MatchedJoin}}
+			left join matched_spans ms on ts.span_id = ms.span_id
 			left join event_data ed on ts.span_id = ed.span_id
 			left join link_data ld on ts.span_id = ld.span_id
 		)
@@ -258,12 +342,9 @@
 				'spans', coalesce(to_json(list(span_json order by sort_path)), json('[]'))
 			) as varchar)
 		end as trace,
-		-- Returned as its own column, not dug back out of the JSON.
-		--
-		-- The caller branches on this to decide whether the trace needs the
-		-- salvage query, and parsing a 171KB response in Go to read one
-		-- integer would put that cost on every healthy trace -- which is the
-		-- whole thing this split exists to avoid.
+		-- Same shape as search_spans so one scan path serves both. After
+		-- salvage this should be 0; anything left is a span even the
+		-- cycle-aware walk could not reach, which would be a bug worth seeing.
 		(select n from unplaced_count) as unplaced
 		from ordered_spans
 	

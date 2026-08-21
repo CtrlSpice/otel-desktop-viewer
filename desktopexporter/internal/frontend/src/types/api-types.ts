@@ -34,6 +34,10 @@ export type SpanNode = {
   spanData: SpanData
   depth: number
   matched: boolean
+  /** Recovered from a stranded (cyclic) part of the trace; absent normally. */
+  salvaged?: true
+  /** The span whose parent link closes the loop. */
+  cyclePoint?: boolean
 }
 
 export type SpanData = {

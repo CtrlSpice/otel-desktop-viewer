@@ -73,6 +73,7 @@ describe('telemetryAPI.searchSpans rehydration', () => {
   const wire = {
     traceID: 'abc123',
     traceStart: '1700000000000000000',
+    unplacedSpanCount: 0,
     resources: {
       '7': {
         attributes: [
@@ -227,5 +228,92 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     expect(trace.spans[0].spanData.events[0].timestamp).toBe(
       1700000000000000123n
     )
+  })
+
+  // unplacedSpanCount and the per-span salvaged/cyclePoint flags are what the
+  // UI reads to warn about a trace with a broken parent chain. A decoder that
+  // dropped or defaulted these wrongly would make a malformed trace look
+  // healthy, or an ordinary trace look broken.
+  it('preserves unplacedSpanCount when the wire reports zero', async () => {
+    const trace = await fetchTrace()
+    expect(trace.unplacedSpanCount).toBe(0)
+  })
+
+  it('preserves unplacedSpanCount when the wire reports spans stranded on a cycle', async () => {
+    stubRpcResponse({
+      jsonrpc: '2.0',
+      id: 1,
+      result: { ...wire, unplacedSpanCount: 3 },
+    })
+    const trace = await telemetryAPI.searchSpans('abc123')
+    expect(trace.unplacedSpanCount).toBe(3)
+  })
+
+  it('defaults unplacedSpanCount to 0 when an older store omits the field', async () => {
+    const { unplacedSpanCount: _drop, ...wireWithoutField } = wire
+    stubRpcResponse({
+      jsonrpc: '2.0',
+      id: 1,
+      result: wireWithoutField,
+    })
+    const trace = await telemetryAPI.searchSpans('abc123')
+    expect(trace.unplacedSpanCount).toBe(0)
+  })
+
+  it('does not invent salvaged or cyclePoint on spans the wire never flagged', async () => {
+    const trace = await fetchTrace()
+    for (const span of trace.spans) {
+      expect('salvaged' in span).toBe(false)
+      expect('cyclePoint' in span).toBe(false)
+    }
+  })
+
+  it('preserves salvaged and cyclePoint on a span recovered from a cycle', async () => {
+    stubRpcResponse({
+      jsonrpc: '2.0',
+      id: 1,
+      result: {
+        ...wire,
+        unplacedSpanCount: 0,
+        spans: [
+          ...wire.spans,
+          {
+            spanData: {
+              ...wire.spans[1].spanData,
+              spanID: 'cccc',
+              parentSpanID: 'dddd',
+            },
+            depth: 0,
+            matched: true,
+            salvaged: true,
+            cyclePoint: false,
+          },
+          {
+            spanData: {
+              ...wire.spans[1].spanData,
+              spanID: 'dddd',
+              parentSpanID: 'cccc',
+            },
+            depth: 1,
+            matched: true,
+            salvaged: true,
+            cyclePoint: true,
+          },
+        ],
+      },
+    })
+    const trace = await telemetryAPI.searchSpans('abc123')
+
+    const recovered = trace.spans.find(s => s.spanData.spanID === 'cccc')!
+    expect(recovered.salvaged).toBe(true)
+    expect(recovered.cyclePoint).toBe(false)
+
+    const offender = trace.spans.find(s => s.spanData.spanID === 'dddd')!
+    expect(offender.salvaged).toBe(true)
+    expect(offender.cyclePoint).toBe(true)
+
+    // The two healthy spans from the base fixture are untouched.
+    expect('salvaged' in trace.spans[0]).toBe(false)
+    expect('salvaged' in trace.spans[1]).toBe(false)
   })
 })

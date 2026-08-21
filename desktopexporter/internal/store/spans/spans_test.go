@@ -1746,6 +1746,9 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	healthy := "000000000000000000000000000000a1"
 	withCycle := "000000000000000000000000000000a2"
 	allCycle := "000000000000000000000000000000a3"
+	cycleWithSubtree := "000000000000000000000000000000a4"
+	twoCycles := "000000000000000000000000000000a5"
+	orphanAndCycle := "000000000000000000000000000000a6"
 
 	traces := ptrace.NewTraces()
 	// Healthy: root with two children.
@@ -1758,44 +1761,112 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	add(traces, withCycle, "0000000000000013", "0000000000000012", 20)
 	// Nothing but a self-parenting span: no root exists at all.
 	add(traces, allCycle, "0000000000000021", "0000000000000021", 0)
+	// A two-span cycle with a healthy two-span subtree beneath one member.
+	add(traces, cycleWithSubtree, "0000000000000031", "0000000000000032", 0)
+	add(traces, cycleWithSubtree, "0000000000000032", "0000000000000031", 10)
+	add(traces, cycleWithSubtree, "0000000000000033", "0000000000000031", 20)
+	add(traces, cycleWithSubtree, "0000000000000034", "0000000000000033", 30)
+	// Two cycles that share nothing.
+	add(traces, twoCycles, "0000000000000041", "0000000000000042", 0)
+	add(traces, twoCycles, "0000000000000042", "0000000000000041", 10)
+	add(traces, twoCycles, "0000000000000043", "0000000000000044", 20)
+	add(traces, twoCycles, "0000000000000044", "0000000000000043", 30)
+	// A real root, an orphan whose parent is absent, and a cycle.
+	add(traces, orphanAndCycle, "0000000000000051", "", 0)
+	add(traces, orphanAndCycle, "0000000000000052", "00000000000000ff", 10)
+	add(traces, orphanAndCycle, "0000000000000053", "0000000000000054", 20)
+	add(traces, orphanAndCycle, "0000000000000054", "0000000000000053", 30)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	}))
 
-	get := func(traceHex string) (int, int) {
+	type walked struct {
+		placed     int
+		unplaced   int
+		salvaged   int
+		cyclePoint int
+	}
+	get := func(traceHex string) walked {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 			return spans.SearchSpans(ctx, db, traceHex, nil)
 		})
 		require.NoError(t, err)
 		var td struct {
-			UnplacedSpanCount int               `json:"unplacedSpanCount"`
-			Spans             []json.RawMessage `json:"spans"`
+			UnplacedSpanCount int `json:"unplacedSpanCount"`
+			Spans             []struct {
+				Salvaged   bool `json:"salvaged"`
+				CyclePoint bool `json:"cyclePoint"`
+			} `json:"spans"`
 		}
 		require.NoError(t, json.Unmarshal(raw, &td))
-		return len(td.Spans), td.UnplacedSpanCount
+		w := walked{placed: len(td.Spans), unplaced: td.UnplacedSpanCount}
+		for _, sp := range td.Spans {
+			if sp.Salvaged {
+				w.salvaged++
+			}
+			if sp.CyclePoint {
+				w.cyclePoint++
+			}
+		}
+		return w
 	}
 
-	t.Run("healthy trace reports none", func(t *testing.T) {
-		placed, unplaced := get(healthy)
-		assert.Equal(t, 3, placed, "all three spans should be placed")
-		assert.Equal(t, 0, unplaced, "a well-formed trace has nothing unplaced")
+	t.Run("healthy trace carries no flags", func(t *testing.T) {
+		w := get(healthy)
+		assert.Equal(t, 3, w.placed, "all three spans placed")
+		assert.Equal(t, 0, w.unplaced)
+		assert.Equal(t, 0, w.salvaged, "nothing to salvage in a well-formed trace")
+		assert.Equal(t, 0, w.cyclePoint)
 	})
 
-	t.Run("cycle is reported, not silently dropped", func(t *testing.T) {
-		placed, unplaced := get(withCycle)
-		// The root is placed; the two spans pointing at each other are not.
-		assert.Equal(t, 1, placed, "only the root can be placed")
-		assert.Equal(t, 2, unplaced, "both cycle members must be reported")
+	t.Run("cycle members are salvaged, not dropped", func(t *testing.T) {
+		w := get(withCycle)
+		// The root walks normally; both cycle members are recovered beneath a
+		// chosen entry rather than vanishing.
+		assert.Equal(t, 3, w.placed, "root plus both cycle members")
+		assert.Equal(t, 0, w.unplaced, "salvage recovered everything")
+		assert.Equal(t, 2, w.salvaged, "both cycle members flagged as salvaged")
+		assert.Equal(t, 1, w.cyclePoint, "exactly one span carries the blame")
 	})
 
-	t.Run("a trace that is entirely a cycle still answers", func(t *testing.T) {
-		// The dangerous shape: nothing is reachable, so the walk yields no
-		// rows at all. The query must still return a well-formed response
-		// rather than null, or the UI cannot distinguish "malformed" from
-		// "no such trace".
-		placed, unplaced := get(allCycle)
-		assert.Equal(t, 0, placed)
-		assert.Equal(t, 1, unplaced, "the self-parenting span must be reported")
+	t.Run("a subtree hanging off a cycle comes back too", func(t *testing.T) {
+		// Salvage must not stop at the cycle members: spans descended from one
+		// are perfectly well-formed and were stranded only by association.
+		w := get(cycleWithSubtree)
+		assert.Equal(t, 4, w.placed, "both cycle members plus the two below them")
+		assert.Equal(t, 0, w.unplaced)
+		assert.Equal(t, 4, w.salvaged)
+		assert.Equal(t, 1, w.cyclePoint, "only the closing link is at fault")
+	})
+
+	t.Run("two independent cycles are blamed separately", func(t *testing.T) {
+		// One cyclePoint per cycle, not one for the trace -- otherwise the
+		// second loop is invisible once the first is reported.
+		w := get(twoCycles)
+		assert.Equal(t, 4, w.placed)
+		assert.Equal(t, 0, w.unplaced)
+		assert.Equal(t, 4, w.salvaged)
+		assert.Equal(t, 2, w.cyclePoint, "each cycle names its own offender")
+	})
+
+	t.Run("an orphan and a cycle in one trace stay distinct", func(t *testing.T) {
+		// The orphan has an absent parent, so the ordinary walk promotes it to
+		// a root and it is not salvaged. Only the cycle is.
+		w := get(orphanAndCycle)
+		assert.Equal(t, 4, w.placed, "root, orphan, and both cycle members")
+		assert.Equal(t, 0, w.unplaced)
+		assert.Equal(t, 2, w.salvaged, "the orphan walks normally; only the cycle is salvaged")
+		assert.Equal(t, 1, w.cyclePoint)
+	})
+
+	t.Run("a trace that is entirely a cycle still renders", func(t *testing.T) {
+		// Previously this walked to nothing at all. The self-parenting span is
+		// its own entry, and the walk refuses to revisit it.
+		w := get(allCycle)
+		assert.Equal(t, 1, w.placed, "the span is shown rather than dropped")
+		assert.Equal(t, 0, w.unplaced)
+		assert.Equal(t, 1, w.salvaged)
+		assert.Equal(t, 1, w.cyclePoint, "its parent link points at itself")
 	})
 }
