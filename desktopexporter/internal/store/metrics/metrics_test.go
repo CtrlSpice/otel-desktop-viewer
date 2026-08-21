@@ -4999,3 +4999,121 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 	assert.Equal(t, float64(12), narrow["seriesCardinality"],
 		"the stream still has twelve series; narrowing the window did not delete nine")
 }
+
+// TestIngest_SingleBucketHistogram covers a histogram whose bucket_counts has
+// one element and whose explicit_bounds therefore has none -- the "everything
+// falls in one bucket" shape, which OTLP explicitly permits and the
+// OpenTelemetry demo emits.
+//
+// pcommon renders an empty Float64Slice as a *nil* []float64, not an empty one
+// (AsRaw appends onto a nil destination, and appending nothing to nil yields
+// nil). That nil travelled into the dictionary's bounds map and out again as a
+// nil inner slice of the [][]float64 handed to the driver, which dereferenced
+// it and took the process down -- a panic during ingest, not an error, so the
+// batch could not even be rejected cleanly.
+//
+// Every existing histogram fixture supplies at least one bound, which is why
+// the whole suite passed while the crash was reachable from any real demo.
+func TestIngest_SingleBucketHistogram(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	fixture := makeHistogramFixtureT("single.bucket", pmetric.AggregationTemporalityDelta, []histTestDP{{
+		timestamp: base,
+		bounds:    nil,
+		counts:    []uint64{7},
+		count:     7, sum: 3.5, min: 0.5, max: 0.5,
+	}})
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}), "ingesting a single-bucket histogram must not fail")
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1, "the metric must be readable after ingest")
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	ts, _ := metric["timeseries"].([]any)
+	require.Len(t, ts, 1)
+	dps, _ := ts[0].(map[string]any)["datapoints"].([]any)
+	require.Len(t, dps, 1, "the datapoint must survive the round trip")
+
+	// The empty bounds vector must read back as an empty list, not null: the
+	// renderer distinguishes "no bounds" from "bounds missing".
+	dp, _ := dps[0].(map[string]any)
+	require.Contains(t, dp, "explicitBounds")
+	bounds, ok := dp["explicitBounds"].([]any)
+	require.True(t, ok, "explicitBounds should be a list, got %T", dp["explicitBounds"])
+	assert.Empty(t, bounds, "a single-bucket histogram has zero bounds")
+}
+
+// TestIngest_NilArraysReachingTheAppender pins the other two array shapes the
+// demo produces that the F1 corpus never did: a histogram with no buckets at
+// all, and an exponential histogram with no negative buckets -- the ordinary
+// case for any latency instrument, since durations are never negative.
+// pcommon renders both as nil, exactly as it does the empty bounds vector in
+// TestIngest_SingleBucketHistogram.
+//
+// These two go to the appender rather than to a query parameter, and the
+// appender converts a nil slice into an empty list instead of dereferencing
+// it. That asymmetry between the two ways an array reaches DuckDB is the whole
+// reason the bounds crash was confined to one column, and it is not obvious
+// from either call site, so it is worth holding still: if the appender ever
+// stops absorbing nil, this fails next to the code that would need the same
+// normalisation AddBounds now does.
+func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+
+	t.Run("histogram with no buckets", func(t *testing.T) {
+		s, ctx, teardown := setupStore(t)
+		defer teardown()
+
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "nil-arrays")
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("no.buckets")
+		h := m.SetEmptyHistogram()
+		h.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+		dp := h.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(base.UnixNano()))
+		dp.SetCount(0)
+		require.Nil(t, dp.BucketCounts().AsRaw(), "precondition: bucket_counts is nil, not empty")
+
+		require.NoError(t, s.WithConn(func(c driver.Conn) error {
+			return metrics.Ingest(ctx, c, md, s.FlushedIDs())
+		}))
+	})
+
+	t.Run("exponential histogram with no negative buckets", func(t *testing.T) {
+		s, ctx, teardown := setupStore(t)
+		defer teardown()
+
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "nil-arrays")
+		m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m.SetName("no.negatives")
+		e := m.SetEmptyExponentialHistogram()
+		e.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+		dp := e.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(base.UnixNano()))
+		dp.SetCount(3)
+		dp.SetScale(0)
+		dp.Positive().BucketCounts().FromRaw([]uint64{1, 2})
+		require.Nil(t, dp.Negative().BucketCounts().AsRaw(), "precondition: negative buckets are nil")
+
+		require.NoError(t, s.WithConn(func(c driver.Conn) error {
+			return metrics.Ingest(ctx, c, md, s.FlushedIDs())
+		}))
+	})
+}
