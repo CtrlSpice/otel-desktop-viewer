@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -252,4 +253,69 @@ func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
 		assert.NotContains(t, out.String(), "Usage:",
 			"a startup failure must not be answered with the flag listing")
 	})
+}
+
+// TestComponentModuleVersionsMatchGoMod keeps the versions this binary reports
+// for its components in step with the ones it is actually built against.
+//
+// components.go carries them as literal strings and is labelled generated, but
+// there is no manifest to regenerate it from -- it is hand-maintained, and a
+// dependency bump touches go.mod without touching it. That is how the receiver
+// and processor came to report v0.157.0 in a binary built against v0.158.0:
+// `otel-desktop-viewer components` named a version that was not there, and
+// nothing noticed for a whole release cycle.
+//
+// Reading go.mod rather than hardcoding the expected version, so this asserts
+// agreement rather than becoming a third place to update.
+func TestComponentModuleVersionsMatchGoMod(t *testing.T) {
+	gomod, err := os.ReadFile("go.mod")
+	require.NoError(t, err)
+
+	// module path -> version, from the require blocks.
+	pinned := map[string]string{}
+	for _, line := range strings.Split(string(gomod), "\n") {
+		fields := strings.Fields(strings.TrimSuffix(strings.TrimSpace(line), " // indirect"))
+		if len(fields) == 2 && strings.HasPrefix(fields[0], "go.opentelemetry.io/") &&
+			strings.HasPrefix(fields[1], "v") {
+			pinned[fields[0]] = fields[1]
+		}
+	}
+	require.NotEmpty(t, pinned, "parsed no module versions out of go.mod")
+
+	factories, err := components()
+	require.NoError(t, err)
+
+	// Every collector module the binary advertises must name the pinned version.
+	reported := map[component.Type]string{}
+	for k, v := range factories.ReceiverModules {
+		reported[k] = v
+	}
+	for k, v := range factories.ProcessorModules {
+		reported[k] = v
+	}
+	for k, v := range factories.ExporterModules {
+		reported[k] = v
+	}
+	for k, v := range factories.ExtensionModules {
+		reported[k] = v
+	}
+	require.NotEmpty(t, reported)
+
+	checked := 0
+	for typ, decl := range reported {
+		path, version, found := strings.Cut(decl, " ")
+		if !found {
+			// Our own modules are declared without a version, which is correct:
+			// they are this repo, not a dependency.
+			continue
+		}
+		want, ok := pinned[path]
+		if !ok {
+			continue
+		}
+		assert.Equalf(t, want, version,
+			"component %q reports %s at %s, but go.mod pins %s", typ, path, version, want)
+		checked++
+	}
+	assert.Positive(t, checked, "no versioned collector modules were compared")
 }
