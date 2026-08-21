@@ -343,9 +343,30 @@ func BoundsID(bounds []float64) duckdb.UUID {
 }
 
 // AddBounds records one explicit-bounds vector and returns its id.
+//
+// A nil vector is normalised to an empty one before it is stored. A histogram
+// whose observations all land in a single bucket carries no bounds at all --
+// legal OTLP, and what the OpenTelemetry demo emits -- and pcommon renders
+// that empty Float64Slice as nil rather than as an empty slice, because AsRaw
+// appends onto a nil destination and appending nothing to nil leaves nil.
+// Stored as-is, that nil arrives at the driver as a nil element of the
+// [][]float64 bound to a double[][] parameter, which dereferences it: a panic
+// inside ingest, so the process dies instead of the batch being rejected.
+//
+// The sibling arrays are safe already, but incidentally rather than by
+// intent: formatUUIDs allocates with make and so returns an empty slice for
+// nil input, and NonNil states the same invariant for the appender's uuid[]
+// columns. Bounds are the one vector handed to the driver with no rendering
+// step in between, so nothing normalised them on the way past.
+//
+// Identity is unchanged by this: BoundsID hashes a count prefix followed by
+// that many values, so nil and empty have always produced the same id.
 func (d *Dictionary) AddBounds(bounds []float64) duckdb.UUID {
 	id := BoundsID(bounds)
 	if _, ok := d.bounds[id]; !ok {
+		if bounds == nil {
+			bounds = []float64{}
+		}
 		d.bounds[id] = bounds
 	}
 	return id
