@@ -239,6 +239,20 @@
 				-- which was over half the response.
 				'resources', coalesce((select json_group_object(seq::varchar, obj) from resource_data), json('{}')),
 				'scopes', coalesce((select json_group_object(seq::varchar, obj) from scope_data), json('{}')),
+				-- Spans the walk could not place under any root.
+				--
+				-- A span becomes a root when its parent is absent from the
+				-- trace, so anything left unreached still has a parent present
+				-- -- which, with at most one parent per span, means it sits on
+				-- a cycle. Malformed input rather than anything OTLP permits,
+				-- and it cannot hang the walk, because a cycle member never
+				-- qualifies as a root and the walk only ever descends into
+				-- children. It is dropped instead, and dropping it silently is
+				-- the part worth fixing: the trace renders short with nothing
+				-- saying so.
+				--
+				-- Free to compute: both counts are already materialised.
+				'unplacedSpanCount', (select count(*) from trace_spans) - (select count(*) from tree),
 				'spans', coalesce(to_json(list(span_json order by sort_path)), json('[]'))
 			) as varchar)
 		end as trace

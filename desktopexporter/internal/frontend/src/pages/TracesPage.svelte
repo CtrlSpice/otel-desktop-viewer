@@ -359,6 +359,17 @@
           </p>
         </div>
       {:else if traceData}
+        {#if traceData.unplacedSpanCount > 0}
+          <div class="traces-page__unplaced alert alert-warning" role="alert">
+            <span>
+              {traceData.unplacedSpanCount}
+              {traceData.unplacedSpanCount === 1 ? 'span is' : 'spans are'} missing
+              from this trace. Their parent links form a loop, so they have no
+              place in the tree — usually an instrumentation bug in the service
+              that emitted them.
+            </span>
+          </div>
+        {/if}
         <WaterfallView
           spans={traceData.spans}
           {selectedSpanID}
@@ -405,6 +416,13 @@
 
   .traces-page__placeholder {
     @apply m-[var(--layout-gap)];
+  }
+
+  /* Sits above the waterfall rather than replacing it: the spans that could
+     be placed are still worth looking at, and the notice explains why the
+     trace is short. */
+  .traces-page__unplaced {
+    @apply mx-[var(--layout-gap)] mt-[var(--layout-gap)] mb-0 text-sm;
   }
 
   .traces-empty {

@@ -206,6 +206,8 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
 
   return {
     traceID: json.traceID,
+    // Older stores predate the field; absent means nothing was dropped.
+    unplacedSpanCount: json.unplacedSpanCount ?? 0,
     // events is coalesced to [] server-side and matched is always
     // emitted (literal true when no search criteria), so no fallbacks;
     // links rides the spanData spread untouched.

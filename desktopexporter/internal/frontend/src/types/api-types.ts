@@ -21,6 +21,12 @@ export type TraceSummary = {
 
 export type TraceData = {
   traceID: string
+  /**
+   * Spans in the trace that could not be placed under any root, and so are
+   * missing from `spans`. Normally 0; non-zero means malformed parent links
+   * (a cycle), which the UI surfaces rather than rendering a short trace.
+   */
+  unplacedSpanCount: number
   spans: SpanNode[]
 }
 

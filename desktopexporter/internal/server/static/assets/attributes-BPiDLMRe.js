@@ -1,0 +1,1 @@
+import{t as e}from"./dist-DLEbDt5R.js";function t(e){return typeof e==`object`&&!!e&&typeof e!=`function`}function n(n,r,...i){return t(n)?{...n,class:e(r,...i,n.class)}:{class:e(r,...i)}}export{n as t};

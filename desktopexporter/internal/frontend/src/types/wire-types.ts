@@ -131,6 +131,16 @@ export type JsonTraceData = {
   resources: Record<string, JsonResourceData>
   /** Distinct scopes in this trace, keyed by a store-stable sequence number. */
   scopes: Record<string, JsonScopeData>
+  /**
+   * Spans present in the trace that could not be placed under any root, and
+   * so are absent from `spans`.
+   *
+   * Normally 0. A span whose parent is missing is promoted to a root and
+   * rendered as its own tree, so the only way to be unplaced is to sit on a
+   * parent cycle -- malformed input. Reported rather than silently dropped,
+   * because otherwise the trace just renders short.
+   */
+  unplacedSpanCount: number
   spans: JsonSpanNode[]
 }
 

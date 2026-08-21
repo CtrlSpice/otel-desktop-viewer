@@ -1710,3 +1710,92 @@ func TestSchemaURLsAreStored(t *testing.T) {
 	assert.Equal(t, resURL, gotRes, "the resource schema url must survive ingest")
 	assert.Equal(t, scopeURL, gotScope, "the scope schema url must survive ingest")
 }
+
+// TestSearchSpansReportsUnplacedSpans covers spans the walk cannot place under
+// any root.
+//
+// A span whose parent is absent from the trace is promoted to a root and
+// rendered as its own tree, so being unplaced requires a parent that *is*
+// present -- and with at most one parent per span, that means a cycle. It is
+// malformed input rather than anything OTLP permits, and it cannot hang the
+// walk: a span on a cycle never qualifies as a root, and the walk only ever
+// descends into children, so a cycle is unreachable rather than infinite.
+//
+// Unreachable spans were previously dropped in silence, which renders the
+// trace short with nothing saying so. unplacedSpanCount reports them.
+func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC).UnixNano()
+	add := func(tr ptrace.Traces, traceHex, spanHex, parentHex string, offset int64) {
+		rs := tr.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", "cycle-test")
+		sp := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		sp.SetTraceID(mustDecodeTraceID(traceHex))
+		sp.SetSpanID(mustDecodeSpanID(spanHex))
+		if parentHex != "" {
+			sp.SetParentSpanID(mustDecodeSpanID(parentHex))
+		}
+		sp.SetName("span-" + spanHex)
+		sp.SetKind(ptrace.SpanKindInternal)
+		sp.SetStartTimestamp(pcommon.Timestamp(base + offset))
+		sp.SetEndTimestamp(pcommon.Timestamp(base + offset + 1000))
+	}
+
+	healthy := "000000000000000000000000000000a1"
+	withCycle := "000000000000000000000000000000a2"
+	allCycle := "000000000000000000000000000000a3"
+
+	traces := ptrace.NewTraces()
+	// Healthy: root with two children.
+	add(traces, healthy, "0000000000000001", "", 0)
+	add(traces, healthy, "0000000000000002", "0000000000000001", 10)
+	add(traces, healthy, "0000000000000003", "0000000000000001", 20)
+	// A reachable root plus a two-span cycle hanging off nothing.
+	add(traces, withCycle, "0000000000000011", "", 0)
+	add(traces, withCycle, "0000000000000012", "0000000000000013", 10)
+	add(traces, withCycle, "0000000000000013", "0000000000000012", 20)
+	// Nothing but a self-parenting span: no root exists at all.
+	add(traces, allCycle, "0000000000000021", "0000000000000021", 0)
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+	}))
+
+	get := func(traceHex string) (int, int) {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return spans.SearchSpans(ctx, db, traceHex, nil)
+		})
+		require.NoError(t, err)
+		var td struct {
+			UnplacedSpanCount int               `json:"unplacedSpanCount"`
+			Spans             []json.RawMessage `json:"spans"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &td))
+		return len(td.Spans), td.UnplacedSpanCount
+	}
+
+	t.Run("healthy trace reports none", func(t *testing.T) {
+		placed, unplaced := get(healthy)
+		assert.Equal(t, 3, placed, "all three spans should be placed")
+		assert.Equal(t, 0, unplaced, "a well-formed trace has nothing unplaced")
+	})
+
+	t.Run("cycle is reported, not silently dropped", func(t *testing.T) {
+		placed, unplaced := get(withCycle)
+		// The root is placed; the two spans pointing at each other are not.
+		assert.Equal(t, 1, placed, "only the root can be placed")
+		assert.Equal(t, 2, unplaced, "both cycle members must be reported")
+	})
+
+	t.Run("a trace that is entirely a cycle still answers", func(t *testing.T) {
+		// The dangerous shape: nothing is reachable, so the walk yields no
+		// rows at all. The query must still return a well-formed response
+		// rather than null, or the UI cannot distinguish "malformed" from
+		// "no such trace".
+		placed, unplaced := get(allCycle)
+		assert.Equal(t, 0, placed)
+		assert.Equal(t, 1, unplaced, "the self-parenting span must be reported")
+	})
+}
