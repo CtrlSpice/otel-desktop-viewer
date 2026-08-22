@@ -56,6 +56,15 @@ func storeRead[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 }
 
 func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	// Object params are rewritten into the positional array every handler
+	// below already reads, so named and positional calls share one code path
+	// and cannot drift apart. Array params pass through untouched.
+	normalized, err := normalizeParams(req.Method, req.Params)
+	if err != nil {
+		return nil, err
+	}
+	req.Params = normalized
+
 	switch req.Method {
 	case "searchTraces":
 		return h.searchTraces(ctx, req)
