@@ -43,6 +43,7 @@
 
 <script lang="ts">
   import type { SpanData } from '@/types/api-types'
+  import { BiohazardIcon } from '@/icons'
   import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import SpanField from './SpanField.svelte'
@@ -59,12 +60,21 @@
 
   type Props = {
     span: SpanData | undefined
+    /** Node-level flags from the salvage walk; absent on healthy traces. */
+    salvaged?: boolean
+    cyclePoint?: boolean
     selectedEventIndex?: number | null
     /** Empty: show all Fields rows. Non-empty: only selected search fields / attributes. */
     columnFilter?: FieldDefinition[]
   }
 
-  let { span, selectedEventIndex = null, columnFilter = [] }: Props = $props()
+  let {
+    span,
+    salvaged = false,
+    cyclePoint = false,
+    selectedEventIndex = null,
+    columnFilter = [],
+  }: Props = $props()
 
   let timeContext = getTimeContext()
 
@@ -196,6 +206,18 @@
 
     <div class="detail-view__scroll">
       {#if activeTab === 'fields'}
+        {#if cyclePoint}
+          <div class="detail-view__paradox detail-view__paradox--offender" role="alert">
+            <BiohazardIcon aria-hidden="true" /> This span causes a cycle: its parent span id points into
+            its own subtree, so nothing here can be reached from the trace
+            root. Likely an instrumentation bug in the emitting service.
+          </div>
+        {:else if salvaged}
+          <div class="detail-view__paradox" role="alert">
+            {'\u26A0'} Recovered from a broken part of this trace: a parent
+            link forms a loop, so this span has no place under the root.
+          </div>
+        {/if}
         <FieldGroup label="Span" count={spanFieldCount} bind:open={spanOpen}>
           <table class="detail-fields w-full" aria-label="Span fields">
             <tbody>
@@ -340,6 +362,27 @@
   .detail-view__scroll {
     @apply flex-1 min-h-0 overflow-y-auto;
     scrollbar-width: thin;
+  }
+
+  /* Repeats the waterfall's cycle marks where the reader is actually
+     looking. Same split as the rows: warning gold for every stranded span,
+     error red for the one whose parent link caused it. */
+  .detail-view__paradox {
+    @apply m-2 rounded px-3 py-2 text-xs text-warning;
+    background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  }
+
+  .detail-view__paradox--offender {
+    @apply text-error;
+    background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  }
+
+  /* Preflight makes svg block-level, which broke the line after the icon.
+     :global because the svg is rendered by the icon component, out of reach
+     of scoped selectors. Baseline nudge matches how the glyph banner sits. */
+  .detail-view__paradox :global(svg) {
+    display: inline-block;
+    vertical-align: -0.125em;
   }
 
   .detail-view__empty {

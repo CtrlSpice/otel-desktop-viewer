@@ -155,12 +155,12 @@
   let hasTraceRows = $derived(page.items.length > 0)
   let displayError = $derived(page.error ?? actionError)
 
-  let selectedSpan = $derived(
-    traceData?.spans.find(n => n.spanData.spanID === selectedSpanID)
-      ?.spanData ??
-      traceData?.spans[0]?.spanData ??
+  let selectedNode = $derived(
+    traceData?.spans.find(n => n.spanData.spanID === selectedSpanID) ??
+      traceData?.spans[0] ??
       undefined
   )
+  let selectedSpan = $derived(selectedNode?.spanData)
 
   let resolvedEventIndex = $derived.by((): number | null => {
     const span = selectedSpan
@@ -389,7 +389,12 @@
     {/snippet}
 
     {#snippet detail()}
-      <DetailView span={selectedSpan} selectedEventIndex={resolvedEventIndex} />
+      <DetailView
+        span={selectedSpan}
+        salvaged={selectedNode?.salvaged ?? false}
+        cyclePoint={selectedNode?.cyclePoint ?? false}
+        selectedEventIndex={resolvedEventIndex}
+      />
     {/snippet}
 
     {#snippet pageFooter()}
