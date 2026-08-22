@@ -3,7 +3,10 @@
   import MetricsPage from '@/pages/MetricsPage.svelte'
   import LogsPage from '@/pages/LogsPage.svelte'
   import TracesPage from '@/pages/TracesPage.svelte'
-  import { createRouteContext, getRouteContext } from '@/contexts/route-context.svelte'
+  import {
+    createRouteContext,
+    getRouteContext,
+  } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
 
   createRouteContext()
@@ -17,10 +20,13 @@
   }
 
   const Page = $derived(
-    under('/traces') ? TracesPage
-    : under('/metrics') ? MetricsPage
-    : under('/logs') ? LogsPage
-    : HomePage
+    under('/traces')
+      ? TracesPage
+      : under('/metrics')
+        ? MetricsPage
+        : under('/logs')
+          ? LogsPage
+          : HomePage
   )
 </script>
 

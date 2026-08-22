@@ -47,8 +47,8 @@
   let cycleLabel = $derived(
     row.spanNode.cyclePoint
       ? 'This span causes the cycle: its parent is inside its own subtree, ' +
-        'so nothing here can be reached from the trace root. Likely an ' +
-        'instrumentation bug in the service that emitted it.'
+          'so nothing here can be reached from the trace root. Likely an ' +
+          'instrumentation bug in the service that emitted it.'
       : row.spanNode.salvaged
         ? 'Recovered from a broken part of this trace: a parent link forms a ' +
           'loop, so these spans have no place under the root.'

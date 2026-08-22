@@ -20,11 +20,7 @@
   const timeContext = getTimeContext()
 
   let startParts = $derived(
-    formatTimestampParts(
-      trace.startTime,
-      timeContext.tz,
-      'milliseconds'
-    )
+    formatTimestampParts(trace.startTime, timeContext.tz, 'milliseconds')
   )
 
   // Not "yet": a promoted-orphan or salvaged-cycle trace has no null-parent

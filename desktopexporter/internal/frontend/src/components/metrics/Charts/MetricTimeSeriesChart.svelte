@@ -3,7 +3,10 @@
   import { bisector } from 'd3-array'
   import { scaleTime } from 'd3-scale'
   import { curveStepAfter } from 'd3-shape'
-  import { formatMetricValue, formatRateSlopeValue } from '@/components/metrics/utils/format-metric-value'
+  import {
+    formatMetricValue,
+    formatRateSlopeValue,
+  } from '@/components/metrics/utils/format-metric-value'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { formatDateTime } from '@/utils/time'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
@@ -42,9 +45,7 @@
 
   function isAggregateKey(key: string): key is AggregateLineKey {
     return (
-      key === AGG_KEY_SELECTED ||
-      key === AGG_KEY_ALL ||
-      key === AGG_KEY_TOTAL
+      key === AGG_KEY_SELECTED || key === AGG_KEY_ALL || key === AGG_KEY_TOTAL
     )
   }
 
@@ -55,7 +56,7 @@
     return buildAggregateSummaryRows(
       aggregateKeysInOrder(keys),
       aggregationView,
-      (key) => valueAt(key),
+      key => valueAt(key),
       formatMetricValue
     )
   }
@@ -64,9 +65,7 @@
     return keys
       .filter(isAggregateKey)
       .slice()
-      .sort(
-        (a, b) => (AGG_TOTAL_ORDER[a] ?? 99) - (AGG_TOTAL_ORDER[b] ?? 99)
-      )
+      .sort((a, b) => (AGG_TOTAL_ORDER[a] ?? 99) - (AGG_TOTAL_ORDER[b] ?? 99))
   }
 
   /** Nearest point at `x` — layerchart's default tooltip matches exact
@@ -397,12 +396,7 @@
     const key = highlightSeriesKey(details) ?? details.series?.key
     if (key && isAggregateKey(key)) return
     e.stopPropagation()
-    dispatchChartPointClick(
-      e,
-      details,
-      highlightSeriesKey(details),
-      'point'
-    )
+    dispatchChartPointClick(e, details, highlightSeriesKey(details), 'point')
   }
 
   /** Chart-area click under bisect-x tooltip — disambiguate series by
@@ -638,7 +632,9 @@
       } else if (mark.kind === 'avg' || mark.kind === 'slope') {
         if (minY !== undefined && maxY !== undefined) {
           placement =
-            Math.abs(mark.y - minY) <= Math.abs(maxY - mark.y) ? 'above' : 'below'
+            Math.abs(mark.y - minY) <= Math.abs(maxY - mark.y)
+              ? 'above'
+              : 'below'
         } else if (minY !== undefined) {
           placement = 'above'
         } else {
@@ -687,7 +683,7 @@
   /** Mini-legend: selected series row plus a single aggregate summary line. */
   let selectionLegendRows = $derived.by((): SelectionLegendRow[] => {
     if (selectionDots.length === 0) return []
-    const seriesDots = selectionDots.filter((d) => !isAggregateKey(d.key))
+    const seriesDots = selectionDots.filter(d => !isAggregateKey(d.key))
     const labelByKey = new Map(chartSeries.map(s => [s.key, s.label] as const))
     return seriesDots.map((d): SelectionLegendRow => ({
       key: d.key,
@@ -702,10 +698,13 @@
 
   let selectionAggregateRows = $derived.by((): AggregateSummaryRow[] => {
     if (highlightDate === null) return []
-    return aggregateSummaryRowsAt(selectionDots.map((d) => d.key), (key) => {
-      const dot = selectionDots.find((d) => d.key === key)
-      return dot?.value
-    })
+    return aggregateSummaryRowsAt(
+      selectionDots.map(d => d.key),
+      key => {
+        const dot = selectionDots.find(d => d.key === key)
+        return dot?.value
+      }
+    )
   })
 </script>
 
@@ -735,282 +734,289 @@
       class="metric-time-series-chart__plot"
       bind:clientHeight={plotAreaHeight}
     >
-    <MetricChartPlot height={plotAreaHeight > 0 ? plotAreaHeight : height}>
-      <LineChart
-        bind:context={lineChartContext}
-        x="date"
-        y="value"
-        {xScale}
-        yNice
-        padding={chartPadding}
-        {tooltipContext}
-        series={chartSeries}
-        onPointClick={handlePointClick}
-        onTooltipClick={handleTooltipClick}
-        props={chartProps}
-      >
-        {#snippet tooltip({ context }: { context: any })}
-          {@const xDate = tooltipXDate(context)}
-          {@const rawItems = chartSeries
-            .filter(s => !isAggregateKey(s.key))
-            .slice()
-            .sort((a, b) =>
-              String(a.label ?? a.key).localeCompare(String(b.label ?? b.key))
-            )}
-          {@const aggItems = chartSeries
-            .filter(s => isAggregateKey(s.key))
-            .slice()
-            .sort(
-              (a, b) =>
-                (AGG_TOTAL_ORDER[a.key] ?? 99) - (AGG_TOTAL_ORDER[b.key] ?? 99)
-            )}
-          {@const headerLabel =
-            xDate != null
-              ? formatDateTime(xDate.getTime(), timeContext.tz, 'milliseconds')
-              : undefined}
-          <Tooltip.Root {context}>
-            {#snippet children()}
-              <Tooltip.Header value={headerLabel} />
-              <Tooltip.List>
-                {#each rawItems as s (s.key)}
-                  {@const value =
-                    xDate != null ? nearestValueAt(s.data, xDate) : undefined}
-                  {#if value !== undefined}
-                    <Tooltip.Item
-                      label={s.label}
-                      {value}
-                      color={s.color}
-                      format={formatMetricValue}
-                      valueAlign="right"
-                    />
+      <MetricChartPlot height={plotAreaHeight > 0 ? plotAreaHeight : height}>
+        <LineChart
+          bind:context={lineChartContext}
+          x="date"
+          y="value"
+          {xScale}
+          yNice
+          padding={chartPadding}
+          {tooltipContext}
+          series={chartSeries}
+          onPointClick={handlePointClick}
+          onTooltipClick={handleTooltipClick}
+          props={chartProps}
+        >
+          {#snippet tooltip({ context }: { context: any })}
+            {@const xDate = tooltipXDate(context)}
+            {@const rawItems = chartSeries
+              .filter(s => !isAggregateKey(s.key))
+              .slice()
+              .sort((a, b) =>
+                String(a.label ?? a.key).localeCompare(String(b.label ?? b.key))
+              )}
+            {@const aggItems = chartSeries
+              .filter(s => isAggregateKey(s.key))
+              .slice()
+              .sort(
+                (a, b) =>
+                  (AGG_TOTAL_ORDER[a.key] ?? 99) -
+                  (AGG_TOTAL_ORDER[b.key] ?? 99)
+              )}
+            {@const headerLabel =
+              xDate != null
+                ? formatDateTime(
+                    xDate.getTime(),
+                    timeContext.tz,
+                    'milliseconds'
+                  )
+                : undefined}
+            <Tooltip.Root {context}>
+              {#snippet children()}
+                <Tooltip.Header value={headerLabel} />
+                <Tooltip.List>
+                  {#each rawItems as s (s.key)}
+                    {@const value =
+                      xDate != null ? nearestValueAt(s.data, xDate) : undefined}
+                    {#if value !== undefined}
+                      <Tooltip.Item
+                        label={s.label}
+                        {value}
+                        color={s.color}
+                        format={formatMetricValue}
+                        valueAlign="right"
+                      />
+                    {/if}
+                  {/each}
+                  {#if aggItems.length > 0 && xDate != null}
+                    {@const aggregateRows = aggregateSummaryRowsAt(
+                      aggItems.map(s => s.key),
+                      key => {
+                        const series = aggItems.find(s => s.key === key)
+                        return series
+                          ? nearestValueAt(series.data, xDate)
+                          : undefined
+                      }
+                    )}
+                    {#if aggregateRows.length > 0}
+                      <Tooltip.Separator />
+                      <ChartAggregateSummaryRows
+                        rows={aggregateRows}
+                        class="lc-tooltip-agg-summary"
+                      />
+                    {/if}
                   {/if}
-                {/each}
-                {#if aggItems.length > 0 && xDate != null}
-                  {@const aggregateRows = aggregateSummaryRowsAt(
-                    aggItems.map((s) => s.key),
-                    (key) => {
-                      const series = aggItems.find((s) => s.key === key)
-                      return series ? nearestValueAt(series.data, xDate) : undefined
-                    }
-                  )}
-                  {#if aggregateRows.length > 0}
-                    <Tooltip.Separator />
-                    <ChartAggregateSummaryRows
-                      rows={aggregateRows}
-                      class="lc-tooltip-agg-summary"
-                    />
-                  {/if}
-                {/if}
-              </Tooltip.List>
-            {/snippet}
-          </Tooltip.Root>
-        {/snippet}
+                </Tooltip.List>
+              {/snippet}
+            </Tooltip.Root>
+          {/snippet}
 
-        {#snippet aboveMarks({ context }: { context: any })}
-          {@const xLeft = context.xRange[0]}
-          {@const xRight = context.xRange[1]}
-          {@const yTop = context.yRange[1]}
-          {@const yBot = context.yRange[0]}
-          {#if seriesStatMarks.length > 0 || selectedPointValueY !== null}
-            <g
-              class="series-stat-overlay"
-              style:--marker-color={seriesStatMarks[0]?.color ??
-                chartSeries.find(s => s.key === selectedSeriesKey)?.color}
-            >
-              {#if selectedPointValueY !== null}
-                {@const yPx = context.yScale(selectedPointValueY)}
-                {@const hitHalf = STAT_LINE_HIT_PX / 2}
-                <g class="series-stat-line-group">
-                  <rect
-                    class="series-stat-hitbox"
-                    x={xLeft}
-                    y={yPx - hitHalf}
-                    width={xRight - xLeft}
-                    height={STAT_LINE_HIT_PX}
-                  />
-                  <Line
-                    x1={xLeft}
-                    x2={xRight}
-                    y1={yPx}
-                    y2={yPx}
-                    class="series-stat-line series-stat-line--point-value"
-                  />
-                </g>
-              {/if}
-              {#each seriesStatMarks as mark (mark.kind)}
-                {@const dotPx = context.xScale(mark.dotDate)}
-                {@const dotYPx = context.yScale(mark.y)}
-                {@const vPx = context.xScale(mark.dotDate)}
-                {@const plotBandTop = Math.min(yTop, yBot)}
-                {@const plotBandHeight = Math.abs(yBot - yTop)}
-                {@const hitHalf = STAT_LINE_HIT_PX / 2}
-                <g class="series-stat-marker">
-                  <title>{mark.title}</title>
-                  {#if mark.kind === 'slope' && mark.slopeFrom && mark.slopeTo}
-                    {@const segX1 = context.xScale(mark.slopeFrom.date)}
-                    {@const segY1 = context.yScale(mark.slopeFrom.value)}
-                    {@const segX2 = context.xScale(mark.slopeTo.date)}
-                    {@const segY2 = context.yScale(mark.slopeTo.value)}
-                    <g class="series-stat-line-group">
-                      <Line
-                        x1={segX1}
-                        y1={segY1}
-                        x2={segX2}
-                        y2={segY2}
-                        class="series-stat-hitbox series-stat-hitbox--line"
-                      />
-                      <Line
-                        x1={segX1}
-                        y1={segY1}
-                        x2={segX2}
-                        y2={segY2}
-                        class="series-stat-line"
-                        markerEnd="arrow"
-                      />
-                    </g>
-                  {:else}
-                    {@const yPx = dotYPx}
-                    <g class="series-stat-line-group">
-                      <rect
-                        class="series-stat-hitbox"
-                        x={xLeft}
-                        y={yPx - hitHalf}
-                        width={xRight - xLeft}
-                        height={STAT_LINE_HIT_PX}
-                      />
-                      <Line
-                        x1={xLeft}
-                        x2={xRight}
-                        y1={yPx}
-                        y2={yPx}
-                        class="series-stat-line"
-                      />
-                    </g>
-                    {#if mark.showVertical}
+          {#snippet aboveMarks({ context }: { context: any })}
+            {@const xLeft = context.xRange[0]}
+            {@const xRight = context.xRange[1]}
+            {@const yTop = context.yRange[1]}
+            {@const yBot = context.yRange[0]}
+            {#if seriesStatMarks.length > 0 || selectedPointValueY !== null}
+              <g
+                class="series-stat-overlay"
+                style:--marker-color={seriesStatMarks[0]?.color ??
+                  chartSeries.find(s => s.key === selectedSeriesKey)?.color}
+              >
+                {#if selectedPointValueY !== null}
+                  {@const yPx = context.yScale(selectedPointValueY)}
+                  {@const hitHalf = STAT_LINE_HIT_PX / 2}
+                  <g class="series-stat-line-group">
+                    <rect
+                      class="series-stat-hitbox"
+                      x={xLeft}
+                      y={yPx - hitHalf}
+                      width={xRight - xLeft}
+                      height={STAT_LINE_HIT_PX}
+                    />
+                    <Line
+                      x1={xLeft}
+                      x2={xRight}
+                      y1={yPx}
+                      y2={yPx}
+                      class="series-stat-line series-stat-line--point-value"
+                    />
+                  </g>
+                {/if}
+                {#each seriesStatMarks as mark (mark.kind)}
+                  {@const dotPx = context.xScale(mark.dotDate)}
+                  {@const dotYPx = context.yScale(mark.y)}
+                  {@const vPx = context.xScale(mark.dotDate)}
+                  {@const plotBandTop = Math.min(yTop, yBot)}
+                  {@const plotBandHeight = Math.abs(yBot - yTop)}
+                  {@const hitHalf = STAT_LINE_HIT_PX / 2}
+                  <g class="series-stat-marker">
+                    <title>{mark.title}</title>
+                    {#if mark.kind === 'slope' && mark.slopeFrom && mark.slopeTo}
+                      {@const segX1 = context.xScale(mark.slopeFrom.date)}
+                      {@const segY1 = context.yScale(mark.slopeFrom.value)}
+                      {@const segX2 = context.xScale(mark.slopeTo.date)}
+                      {@const segY2 = context.yScale(mark.slopeTo.value)}
+                      <g class="series-stat-line-group">
+                        <Line
+                          x1={segX1}
+                          y1={segY1}
+                          x2={segX2}
+                          y2={segY2}
+                          class="series-stat-hitbox series-stat-hitbox--line"
+                        />
+                        <Line
+                          x1={segX1}
+                          y1={segY1}
+                          x2={segX2}
+                          y2={segY2}
+                          class="series-stat-line"
+                          markerEnd="arrow"
+                        />
+                      </g>
+                    {:else}
+                      {@const yPx = dotYPx}
                       <g class="series-stat-line-group">
                         <rect
                           class="series-stat-hitbox"
-                          x={vPx - hitHalf}
-                          y={plotBandTop}
-                          width={STAT_LINE_HIT_PX}
-                          height={plotBandHeight}
+                          x={xLeft}
+                          y={yPx - hitHalf}
+                          width={xRight - xLeft}
+                          height={STAT_LINE_HIT_PX}
                         />
                         <Line
-                          x1={vPx}
-                          x2={vPx}
-                          y1={yTop}
-                          y2={yBot}
+                          x1={xLeft}
+                          x2={xRight}
+                          y1={yPx}
+                          y2={yPx}
                           class="series-stat-line"
                         />
                       </g>
+                      {#if mark.showVertical}
+                        <g class="series-stat-line-group">
+                          <rect
+                            class="series-stat-hitbox"
+                            x={vPx - hitHalf}
+                            y={plotBandTop}
+                            width={STAT_LINE_HIT_PX}
+                            height={plotBandHeight}
+                          />
+                          <Line
+                            x1={vPx}
+                            x2={vPx}
+                            y1={yTop}
+                            y2={yBot}
+                            class="series-stat-line"
+                          />
+                        </g>
+                      {/if}
                     {/if}
-                  {/if}
-                  <circle
-                    cx={dotPx}
-                    cy={dotYPx}
-                    r="4"
-                    fill={mark.color}
-                    class="series-stat-dot"
-                  />
-                </g>
-              {/each}
-              {#if highlightDate}
-                {@const px = context.xScale(highlightDate)}
-                <g class="selection-overlay" aria-hidden="true">
-                  <Line
-                    x1={px}
-                    x2={px}
-                    y1={yTop}
-                    y2={yBot}
-                    class="highlight-rule"
-                  />
-                  {#each selectionDots as dot (dot.key)}
-                    {@const py = context.yScale(dot.value)}
-                    <!-- Halo ring drawn first so the colored dot sits on
+                    <circle
+                      cx={dotPx}
+                      cy={dotYPx}
+                      r="4"
+                      fill={mark.color}
+                      class="series-stat-dot"
+                    />
+                  </g>
+                {/each}
+                {#if highlightDate}
+                  {@const px = context.xScale(highlightDate)}
+                  <g class="selection-overlay" aria-hidden="true">
+                    <Line
+                      x1={px}
+                      x2={px}
+                      y1={yTop}
+                      y2={yBot}
+                      class="highlight-rule"
+                    />
+                    {#each selectionDots as dot (dot.key)}
+                      {@const py = context.yScale(dot.value)}
+                      <!-- Halo ring drawn first so the colored dot sits on
                          top. Stroke-only so the line's own color shows
                          through the center, keeping the dot readable
                          against overlapping series. -->
-                    <circle
-                      cx={px}
-                      cy={py}
-                      r="8"
-                      class="selection-dot-halo"
-                      class:selection-dot-halo--selected={dot.isSelected}
-                    />
-                    <circle
-                      cx={px}
-                      cy={py}
-                      r="6"
-                      fill={dot.color}
-                      class="selection-dot"
-                      class:selection-dot--selected={dot.isSelected}
-                    />
-                  {/each}
-                </g>
-              {/if}
-            </g>
-          {:else if highlightDate}
-            {@const px = context.xScale(highlightDate)}
-            <g class="selection-overlay" aria-hidden="true">
-              <Line
-                x1={px}
-                x2={px}
-                y1={yTop}
-                y2={yBot}
-                class="highlight-rule"
-              />
-              {#each selectionDots as dot (dot.key)}
-                {@const py = context.yScale(dot.value)}
-                <circle
-                  cx={px}
-                  cy={py}
-                  r="8"
-                  class="selection-dot-halo"
-                  class:selection-dot-halo--selected={dot.isSelected}
+                      <circle
+                        cx={px}
+                        cy={py}
+                        r="8"
+                        class="selection-dot-halo"
+                        class:selection-dot-halo--selected={dot.isSelected}
+                      />
+                      <circle
+                        cx={px}
+                        cy={py}
+                        r="6"
+                        fill={dot.color}
+                        class="selection-dot"
+                        class:selection-dot--selected={dot.isSelected}
+                      />
+                    {/each}
+                  </g>
+                {/if}
+              </g>
+            {:else if highlightDate}
+              {@const px = context.xScale(highlightDate)}
+              <g class="selection-overlay" aria-hidden="true">
+                <Line
+                  x1={px}
+                  x2={px}
+                  y1={yTop}
+                  y2={yBot}
+                  class="highlight-rule"
                 />
-                <circle
-                  cx={px}
-                  cy={py}
-                  r="6"
-                  fill={dot.color}
-                  class="selection-dot"
-                  class:selection-dot--selected={dot.isSelected}
-                />
-              {/each}
-            </g>
-          {/if}
-        {/snippet}
-      </LineChart>
-      {#each seriesStatTooltipPlacements as mark (mark.kind)}
-        <div
-          class="series-stat-tooltip"
-          class:series-stat-tooltip--above={mark.placement === 'above'}
-          class:series-stat-tooltip--below={mark.placement === 'below'}
-          style:left="{mark.left}px"
-          style:top="{mark.top}px"
-          title={mark.title}
-          aria-hidden="true"
-        >
-          <div class="chart-selection-legend chart-selection-legend--stat">
-            <ul class="chart-selection-legend__rows">
-              <li class="chart-selection-legend__row">
-                <span
-                  class="chart-selection-legend__dot"
-                  style:--color={mark.color}
-                  aria-hidden="true"
-                ></span>
-                <span class="chart-selection-legend__label"
-                  >{mark.statLabel}</span
-                >
-                <span class="chart-selection-legend__value"
-                  >{mark.valueText}</span
-                >
-              </li>
-            </ul>
+                {#each selectionDots as dot (dot.key)}
+                  {@const py = context.yScale(dot.value)}
+                  <circle
+                    cx={px}
+                    cy={py}
+                    r="8"
+                    class="selection-dot-halo"
+                    class:selection-dot-halo--selected={dot.isSelected}
+                  />
+                  <circle
+                    cx={px}
+                    cy={py}
+                    r="6"
+                    fill={dot.color}
+                    class="selection-dot"
+                    class:selection-dot--selected={dot.isSelected}
+                  />
+                {/each}
+              </g>
+            {/if}
+          {/snippet}
+        </LineChart>
+        {#each seriesStatTooltipPlacements as mark (mark.kind)}
+          <div
+            class="series-stat-tooltip"
+            class:series-stat-tooltip--above={mark.placement === 'above'}
+            class:series-stat-tooltip--below={mark.placement === 'below'}
+            style:left="{mark.left}px"
+            style:top="{mark.top}px"
+            title={mark.title}
+            aria-hidden="true"
+          >
+            <div class="chart-selection-legend chart-selection-legend--stat">
+              <ul class="chart-selection-legend__rows">
+                <li class="chart-selection-legend__row">
+                  <span
+                    class="chart-selection-legend__dot"
+                    style:--color={mark.color}
+                    aria-hidden="true"
+                  ></span>
+                  <span class="chart-selection-legend__label"
+                    >{mark.statLabel}</span
+                  >
+                  <span class="chart-selection-legend__value"
+                    >{mark.valueText}</span
+                  >
+                </li>
+              </ul>
+            </div>
           </div>
-        </div>
-      {/each}
-    </MetricChartPlot>
+        {/each}
+      </MetricChartPlot>
     </div>
   </div>
 {:else}

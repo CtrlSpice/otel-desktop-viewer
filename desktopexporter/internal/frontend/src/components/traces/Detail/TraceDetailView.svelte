@@ -6,13 +6,11 @@
     selected: FieldDefinition[],
     searchFieldName: string
   ): boolean {
-    if (selected.length === 0) return true;
+    if (selected.length === 0) return true
     return selected.some(
       f =>
-        f.searchScope === 'field' &&
-        'name' in f &&
-        f.name === searchFieldName
-    );
+        f.searchScope === 'field' && 'name' in f && f.name === searchFieldName
+    )
   }
 
   export function detailAttributeVisible(
@@ -20,7 +18,7 @@
     key: string,
     attributeScope: AttributeScope
   ): boolean {
-    if (selected.length === 0) return true;
+    if (selected.length === 0) return true
     return selected.some(
       f =>
         f.searchScope === 'attribute' &&
@@ -28,23 +26,25 @@
         'attributeScope' in f &&
         f.name === key &&
         f.attributeScope === attributeScope
-    );
+    )
   }
 
   /** Duration is not a search field; tie visibility to start/end time columns. */
   export function detailDurationVisible(selected: FieldDefinition[]): boolean {
-    if (selected.length === 0) return true;
+    if (selected.length === 0) return true
     return (
       detailSearchFieldVisible(selected, 'startTime') ||
       detailSearchFieldVisible(selected, 'endTime')
-    );
+    )
   }
 </script>
 
 <script lang="ts">
   import type { SpanData } from '@/types/api-types'
   import { BiohazardIcon } from '@/icons'
-  import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader, {
+    type PaneTab,
+  } from '@/components/shared/PaneHeader.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import SpanField from './SpanField.svelte'
   import EventsPanel from './EventsPanel.svelte'
@@ -52,11 +52,7 @@
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { setSpanInQuery } from '@/route'
-  import {
-    LeftToRightListBulletIcon,
-    LinkIcon,
-    StopWatchIcon,
-  } from '@/icons'
+  import { LeftToRightListBulletIcon, LinkIcon, StopWatchIcon } from '@/icons'
 
   type Props = {
     span: SpanData | undefined
@@ -82,7 +78,7 @@
 
   let isRoot = $derived(!span?.parentSpanID)
   let durationLabel = $derived(
-    span ? formatDuration(span.endTime - span.startTime) : '',
+    span ? formatDuration(span.endTime - span.startTime) : ''
   )
   let spanAttributes = $derived(span?.attributes ?? [])
   let resourceAttributes = $derived(span?.resource.attributes ?? [])
@@ -207,97 +203,168 @@
     <div class="detail-view__scroll">
       {#if activeTab === 'fields'}
         {#if cyclePoint}
-          <div class="detail-view__paradox detail-view__paradox--offender" role="alert">
-            <BiohazardIcon aria-hidden="true" /> This span causes a cycle: its parent span id points into
-            its own subtree, so nothing here can be reached from the trace
-            root. Likely an instrumentation bug in the emitting service.
+          <div
+            class="detail-view__paradox detail-view__paradox--offender"
+            role="alert"
+          >
+            <BiohazardIcon aria-hidden="true" /> This span causes a cycle: its parent
+            span id points into its own subtree, so nothing here can be reached from
+            the trace root. Likely an instrumentation bug in the emitting service.
           </div>
         {:else if salvaged}
           <div class="detail-view__paradox" role="alert">
-            {'\u26A0'} Recovered from a broken part of this trace: a parent
-            link forms a loop, so this span has no place under the root.
+            {'\u26A0'} Recovered from a broken part of this trace: a parent link forms
+            a loop, so this span has no place under the root.
           </div>
         {/if}
         <FieldGroup label="Span" count={spanFieldCount} bind:open={spanOpen}>
           <table class="detail-fields w-full" aria-label="Span fields">
             <tbody>
               {#if detailSearchFieldVisible(columnFilter, 'name')}
-                <SpanField fieldName="name" fieldValue={span.name} fieldType="string" {isRoot} />
+                <SpanField
+                  fieldName="name"
+                  fieldValue={span.name}
+                  fieldType="string"
+                  {isRoot}
+                />
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'kind')}
-                <SpanField fieldName="kind" fieldValue={span.kind} fieldType="string" />
+                <SpanField
+                  fieldName="kind"
+                  fieldValue={span.kind}
+                  fieldType="string"
+                />
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'startTime')}
                 <SpanField
                   fieldName="start time"
-                  fieldValue={formatTimestamp(span.startTime, timeContext.tz, 'nanoseconds')}
+                  fieldValue={formatTimestamp(
+                    span.startTime,
+                    timeContext.tz,
+                    'nanoseconds'
+                  )}
                   fieldType="timestamp"
                 />
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'endTime')}
                 <SpanField
                   fieldName="end time"
-                  fieldValue={formatTimestamp(span.endTime, timeContext.tz, 'nanoseconds')}
+                  fieldValue={formatTimestamp(
+                    span.endTime,
+                    timeContext.tz,
+                    'nanoseconds'
+                  )}
                   fieldType="timestamp"
                 />
               {/if}
               {#if detailDurationVisible(columnFilter)}
-                <SpanField fieldName="duration" fieldValue={durationLabel} fieldType="string" />
+                <SpanField
+                  fieldName="duration"
+                  fieldValue={durationLabel}
+                  fieldType="string"
+                />
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'statusCode')}
-                <SpanField fieldName="status code" fieldValue={span.statusCode} fieldType="string" />
+                <SpanField
+                  fieldName="status code"
+                  fieldValue={span.statusCode}
+                  fieldType="string"
+                />
               {/if}
               {#if span.statusCode !== 'Unset' && span.statusCode !== 'Ok' && detailSearchFieldVisible(columnFilter, 'statusMessage')}
-                <SpanField fieldName="status message" fieldValue={span.statusMessage} fieldType="string" />
+                <SpanField
+                  fieldName="status message"
+                  fieldValue={span.statusMessage}
+                  fieldType="string"
+                />
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'traceID')}
-                <SpanField fieldName="trace id" fieldValue={span.traceID} fieldType="string" />
+                <SpanField
+                  fieldName="trace id"
+                  fieldValue={span.traceID}
+                  fieldType="string"
+                />
               {/if}
               {#if !isRoot && detailSearchFieldVisible(columnFilter, 'parentSpanID')}
                 <tr class="table-row">
                   <td class="detail-cell">
                     <span class="detail-cell__key">
-                      parent span id <span class="detail-cell__type">(string)</span>:
+                      parent span id <span class="detail-cell__type"
+                        >(string)</span
+                      >:
                     </span>
                     <button
                       type="button"
                       class="detail-cell__value link link-primary font-mono"
                       onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
-                    >{span.parentSpanID}</button>
+                      >{span.parentSpanID}</button
+                    >
                   </td>
                 </tr>
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'spanID')}
-                <SpanField fieldName="span id" fieldValue={span.spanID} fieldType="string" />
+                <SpanField
+                  fieldName="span id"
+                  fieldValue={span.spanID}
+                  fieldType="string"
+                />
               {/if}
               {#each spanAttributes as attr (attr.key)}
                 {#if detailAttributeVisible(columnFilter, attr.key, 'span')}
-                  <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} />
+                  <SpanField
+                    fieldName={attr.key}
+                    fieldValue={attr.value}
+                    fieldType={attr.type}
+                  />
                 {/if}
               {/each}
               {#if span.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedAttributesCount')}
-                <SpanField fieldName="dropped attributes count" fieldValue={span.droppedAttributesCount.toString()} fieldType="uint32" />
+                <SpanField
+                  fieldName="dropped attributes count"
+                  fieldValue={span.droppedAttributesCount.toString()}
+                  fieldType="uint32"
+                />
               {/if}
               {#if span.droppedEventsCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedEventsCount')}
-                <SpanField fieldName="dropped events count" fieldValue={span.droppedEventsCount.toString()} fieldType="uint32" />
+                <SpanField
+                  fieldName="dropped events count"
+                  fieldValue={span.droppedEventsCount.toString()}
+                  fieldType="uint32"
+                />
               {/if}
               {#if span.droppedLinksCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedLinksCount')}
-                <SpanField fieldName="dropped links count" fieldValue={span.droppedLinksCount.toString()} fieldType="uint32" />
+                <SpanField
+                  fieldName="dropped links count"
+                  fieldValue={span.droppedLinksCount.toString()}
+                  fieldType="uint32"
+                />
               {/if}
             </tbody>
           </table>
         </FieldGroup>
 
-        <FieldGroup label="Resource" count={resourceFieldCount} bind:open={resourceOpen}>
+        <FieldGroup
+          label="Resource"
+          count={resourceFieldCount}
+          bind:open={resourceOpen}
+        >
           <table class="detail-fields w-full" aria-label="Resource attributes">
             <tbody>
               {#each resourceAttributes as attr (attr.key)}
                 {#if detailAttributeVisible(columnFilter, attr.key, 'resource')}
-                  <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} />
+                  <SpanField
+                    fieldName={attr.key}
+                    fieldValue={attr.value}
+                    fieldType={attr.type}
+                  />
                 {/if}
               {/each}
               {#if span.resource.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'resource.droppedAttributesCount')}
-                <SpanField fieldName="dropped attributes count" fieldValue={span.resource.droppedAttributesCount.toString()} fieldType="uint32" />
+                <SpanField
+                  fieldName="dropped attributes count"
+                  fieldValue={span.resource.droppedAttributesCount.toString()}
+                  fieldType="uint32"
+                />
               {/if}
             </tbody>
           </table>
@@ -307,18 +374,34 @@
           <table class="detail-fields w-full" aria-label="Scope attributes">
             <tbody>
               {#if span.scope.name && detailSearchFieldVisible(columnFilter, 'scope.name')}
-                <SpanField fieldName="scope name" fieldValue={span.scope.name} fieldType="string" />
+                <SpanField
+                  fieldName="scope name"
+                  fieldValue={span.scope.name}
+                  fieldType="string"
+                />
               {/if}
               {#if span.scope.version && detailSearchFieldVisible(columnFilter, 'scope.version')}
-                <SpanField fieldName="scope version" fieldValue={span.scope.version} fieldType="string" />
+                <SpanField
+                  fieldName="scope version"
+                  fieldValue={span.scope.version}
+                  fieldType="string"
+                />
               {/if}
               {#each scopeAttributes as attr (attr.key)}
                 {#if detailAttributeVisible(columnFilter, attr.key, 'scope')}
-                  <SpanField fieldName={attr.key} fieldValue={attr.value} fieldType={attr.type} />
+                  <SpanField
+                    fieldName={attr.key}
+                    fieldValue={attr.value}
+                    fieldType={attr.type}
+                  />
                 {/if}
               {/each}
               {#if span.scope.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'scope.droppedAttributesCount')}
-                <SpanField fieldName="dropped attributes count" fieldValue={span.scope.droppedAttributesCount.toString()} fieldType="uint32" />
+                <SpanField
+                  fieldName="dropped attributes count"
+                  fieldValue={span.scope.droppedAttributesCount.toString()}
+                  fieldType="uint32"
+                />
               {/if}
             </tbody>
           </table>

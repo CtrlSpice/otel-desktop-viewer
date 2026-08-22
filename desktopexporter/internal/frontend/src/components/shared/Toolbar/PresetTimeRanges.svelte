@@ -42,9 +42,7 @@
         ? 'chrome-btn--active'
         : 'chrome-btn--inactive'}"
       aria-pressed={selected}
-      aria-label={preset.label === 'All'
-        ? 'All time'
-        : `Last ${preset.label}`}
+      aria-label={preset.label === 'All' ? 'All time' : `Last ${preset.label}`}
       onclick={() => applyPreset(index)}
     >
       {preset.label}

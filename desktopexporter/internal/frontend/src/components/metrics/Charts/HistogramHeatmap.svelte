@@ -134,8 +134,7 @@
           bucketOrder = (bounds[i - 1]! + bounds[i]!) / 2
           label = formatBound(bucketOrder)
         } else {
-          bucketOrder =
-            bounds.length > 0 ? bounds[bounds.length - 1]! : 0
+          bucketOrder = bounds.length > 0 ? bounds[bounds.length - 1]! : 0
           label =
             bounds.length > 0
               ? `≥${formatBound(bounds[bounds.length - 1])}`
@@ -280,9 +279,7 @@
   /** Scroll viewport width — measured on the plot area. */
   let plotContainerWidth = $derived(Math.max(containerWidth, 0))
 
-  let maxPlotHeight = $derived(
-    Math.max(0, plotBoxHeight - PLOT_INSET_Y)
-  )
+  let maxPlotHeight = $derived(Math.max(0, plotBoxHeight - PLOT_INSET_Y))
 
   let baseLayout = $derived.by(() =>
     computeHeatmapLayout({
@@ -378,84 +375,81 @@
       bind:clientWidth={containerWidth}
       bind:clientHeight={plotAreaHeight}
     >
+      <div class="heatmap-scroll" class:heatmap-scroll--active={heatmapScrolls}>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
-          class="heatmap-scroll"
-          class:heatmap-scroll--active={heatmapScrolls}
+          class="heatmap-wrapper"
+          class:heatmap-wrapper--clickable={!!onSelect}
+          style:width="{scrollChartWidth}px"
+          style:height="{chartRenderHeight}px"
+          onclick={handleHeatmapClick}
+          onkeydown={e => {
+            if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault()
+            }
+          }}
+          role={onSelect ? 'button' : undefined}
+          tabindex={onSelect ? 0 : undefined}
         >
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-          <div
-            class="heatmap-wrapper"
-            class:heatmap-wrapper--clickable={!!onSelect}
-            style:width="{scrollChartWidth}px"
-            style:height="{chartRenderHeight}px"
-            onclick={handleHeatmapClick}
-            onkeydown={e => {
-              if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
-                e.preventDefault()
-              }
-            }}
-            role={onSelect ? 'button' : undefined}
-            tabindex={onSelect ? 0 : undefined}
+          <Chart
+            data={heatmapData}
+            x="time"
+            xScale={xBandScale}
+            xDomain={timeDomain}
+            y="bucket"
+            yScale={yBandScale}
+            yDomain={bucketDomain}
+            c="count"
+            cScale={scaleThreshold()}
+            cDomain={cellColorThresholds}
+            cRange={cellColorRange}
+            width={scrollChartWidth}
+            height={chartRenderHeight}
+            padding={heatmapPlotPadding}
+            tooltipContext={{ mode: 'band' }}
           >
-            <Chart
-              data={heatmapData}
-              x="time"
-              xScale={xBandScale}
-              xDomain={timeDomain}
-              y="bucket"
-              yScale={yBandScale}
-              yDomain={bucketDomain}
-              c="count"
-              cScale={scaleThreshold()}
-              cDomain={cellColorThresholds}
-              cRange={cellColorRange}
-              width={scrollChartWidth}
-              height={chartRenderHeight}
-              padding={heatmapPlotPadding}
-              tooltipContext={{ mode: 'band' }}
-            >
-              <Layer>
-                <Axis
-                  placement="bottom"
-                  {...axisTime(timeContext.tz)}
-                  ticks={visibleTimeTicks}
+            <Layer>
+              <Axis
+                placement="bottom"
+                {...axisTime(timeContext.tz)}
+                ticks={visibleTimeTicks}
+              />
+              <Axis
+                placement="left"
+                {...axisBucketBounds(unit)}
+                ticks={visibleBucketTicks}
+              />
+              <Cell x="time" y="bucket" fill="count" />
+              {#if selectedColumnX !== null}
+                <Rect
+                  x={selectedColumnX}
+                  y={0}
+                  width={columnPitch}
+                  height={maxPlotHeight}
+                  class="heatmap-selection"
                 />
-                <Axis
-                  placement="left"
-                  {...axisBucketBounds(unit)}
-                  ticks={visibleBucketTicks}
-                />
-                <Cell x="time" y="bucket" fill="count" />
-                {#if selectedColumnX !== null}
-                  <Rect
-                    x={selectedColumnX}
-                    y={0}
-                    width={columnPitch}
-                    height={maxPlotHeight}
-                    class="heatmap-selection"
+              {/if}
+              <Highlight area={{ class: 'heatmap-hover-column' }} axis="x" />
+            </Layer>
+            <Tooltip.Root>
+              {#snippet children({ data }: { data: HeatmapDatum })}
+                <Tooltip.Header class="text-center"
+                  >{formatTooltipTime(data.time)}</Tooltip.Header
+                >
+                <Tooltip.List>
+                  <Tooltip.Item label="bucket" value={data.bucket} />
+                  <Tooltip.Separator />
+                  <Tooltip.Item
+                    label="count"
+                    value={data.count}
+                    format="integer"
                   />
-                {/if}
-                <Highlight area={{ class: 'heatmap-hover-column' }} axis="x" />
-              </Layer>
-              <Tooltip.Root>
-                {#snippet children({ data }: { data: HeatmapDatum })}
-                  <Tooltip.Header class="text-center"
-                    >{formatTooltipTime(data.time)}</Tooltip.Header
-                  >
-                  <Tooltip.List>
-                    <Tooltip.Item label="bucket" value={data.bucket} />
-                    <Tooltip.Separator />
-                    <Tooltip.Item
-                      label="count"
-                      value={data.count}
-                      format="integer"
-                    />
-                  </Tooltip.List>
-                {/snippet}
-              </Tooltip.Root>
-            </Chart>
-          </div>
+                </Tooltip.List>
+              {/snippet}
+            </Tooltip.Root>
+          </Chart>
         </div>
+      </div>
     </div>
   </div>
 {/if}
@@ -486,13 +480,15 @@
     pointer-events: none;
   }
 
-  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend--columns) {
+  .metric-heatmap-chart__selection-legend
+    :global(.chart-selection-legend--columns) {
     width: max-content;
     min-width: 0;
     max-width: none;
   }
 
-  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__columns) {
+  .metric-heatmap-chart__selection-legend
+    :global(.chart-selection-legend__columns) {
     display: flex;
     flex-wrap: nowrap;
     align-items: flex-start;
@@ -507,26 +503,31 @@
     padding-left: 0.55rem;
   }
 
-  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__rows) {
+  .metric-heatmap-chart__selection-legend
+    :global(.chart-selection-legend__rows) {
     grid-template-columns: auto auto;
     column-gap: 0.35rem;
     row-gap: 0.12rem;
     min-width: 0;
   }
 
-  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__dot) {
+  .metric-heatmap-chart__selection-legend
+    :global(.chart-selection-legend__dot) {
     display: none;
   }
 
-  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__label) {
+  .metric-heatmap-chart__selection-legend
+    :global(.chart-selection-legend__label) {
     color: var(--color-subtle);
   }
 
-  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__label::after) {
+  .metric-heatmap-chart__selection-legend
+    :global(.chart-selection-legend__label::after) {
     content: ':';
   }
 
-  .metric-heatmap-chart__selection-legend :global(.chart-selection-legend__value) {
+  .metric-heatmap-chart__selection-legend
+    :global(.chart-selection-legend__value) {
     @apply text-base-content;
   }
 
@@ -560,7 +561,11 @@
 
   /* Full-column hover band (Highlight axis="x"). */
   .heatmap-wrapper :global(.heatmap-hover-column) {
-    --fill-color: color-mix(in oklab, var(--color-primary, #eb6f92) 14%, transparent);
+    --fill-color: color-mix(
+      in oklab,
+      var(--color-primary, #eb6f92) 14%,
+      transparent
+    );
     pointer-events: none;
   }
 

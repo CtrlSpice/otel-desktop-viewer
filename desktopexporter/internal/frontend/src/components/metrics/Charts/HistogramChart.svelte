@@ -296,9 +296,7 @@
   let parentWidth = $state(0)
   let chartContext = $state<any>(undefined)
 
-  let chartRenderHeight = $derived(
-    plotAreaHeight > 0 ? plotAreaHeight : height
-  )
+  let chartRenderHeight = $derived(plotAreaHeight > 0 ? plotAreaHeight : height)
 
   let chartWidth = $derived.by(() => {
     const natural = buckets.length * BAR_SLOT_WIDTH
@@ -331,8 +329,7 @@
     if (label == null) return
     const bucket = buckets.find(b => b.label === label)
     if (!bucket) return
-    pinnedBucketLabel =
-      pinnedBucketLabel === bucket.label ? null : bucket.label
+    pinnedBucketLabel = pinnedBucketLabel === bucket.label ? null : bucket.label
   }
 
   // --- Tooltip helpers ---
@@ -414,7 +411,10 @@
             <ChartSelectionLegend timestamp={selectionTimestamp} rows={[]} />
           {/if}
           {#if enableValueBucketPin && pinnedBucket}
-            <div class="metric-histogram-bar-chart__value-pin-legend" aria-live="polite">
+            <div
+              class="metric-histogram-bar-chart__value-pin-legend"
+              aria-live="polite"
+            >
               <ChartSelectionLegend
                 timestamp={formatBucketRange(pinnedBucket)}
                 rows={valuePinLegendRows}
@@ -470,93 +470,94 @@
                 yAxis: axisCount(),
               }}
             >
-            {#snippet tooltip()}
-              <Tooltip.Root>
-                {#snippet children({ data }: { data: Bucket })}
-                  <Tooltip.Header class="text-center"
-                    >{formatBucketRange(data)}</Tooltip.Header
-                  >
-                  <Tooltip.List>
-                    <Tooltip.Item
-                      label="count"
-                      value={data.count}
-                      format="integer"
-                    />
-                    <Tooltip.Item
-                      label="of total"
-                      value={formatPct(data.count)}
-                    />
-                  </Tooltip.List>
-                {/snippet}
-              </Tooltip.Root>
-            {/snippet}
+              {#snippet tooltip()}
+                <Tooltip.Root>
+                  {#snippet children({ data }: { data: Bucket })}
+                    <Tooltip.Header class="text-center"
+                      >{formatBucketRange(data)}</Tooltip.Header
+                    >
+                    <Tooltip.List>
+                      <Tooltip.Item
+                        label="count"
+                        value={data.count}
+                        format="integer"
+                      />
+                      <Tooltip.Item
+                        label="of total"
+                        value={formatPct(data.count)}
+                      />
+                    </Tooltip.List>
+                  {/snippet}
+                </Tooltip.Root>
+              {/snippet}
 
-            {#snippet aboveMarks({ context }: { context: any })}
-              {@const xs = context.xScale}
-              {@const bw =
-                typeof xs.bandwidth === 'function' ? xs.bandwidth() : 0}
-              {@const yTop = context.yRange[1]}
-              {@const yBot = context.yRange[0]}
-              {#if pinnedBucket}
-                {@const step =
-                  typeof xs.step === 'function' ? xs.step() : bw}
-                {@const outer =
-                  typeof xs.padding === 'function'
-                    ? (xs.padding() * step) / 2
-                    : 0}
-                {@const x0 = xs(pinnedBucket.label)}
-                <Rect
-                  x={x0 != null ? x0 - outer : 0}
-                  y={Math.min(yTop, yBot)}
-                  width={step}
-                  height={Math.abs(yBot - yTop)}
-                  class="value-bucket-pin-highlight"
-                />
-              {/if}
-              {#each quantileMarks as m (m.key)}
-                {@const x0 = xs(buckets[m.bucketIndex].label)}
-                {@const px = x0 + bw * m.fraction}
-                <g class="quantile-marker" style:--marker-color={m.color}>
-                  <title>{m.label} {formatQuantileValue(m.value)}</title>
-                  <Line
-                    x1={px}
-                    x2={px}
-                    y1={yTop}
-                    y2={yBot}
-                    class="quantile-line"
+              {#snippet aboveMarks({ context }: { context: any })}
+                {@const xs = context.xScale}
+                {@const bw =
+                  typeof xs.bandwidth === 'function' ? xs.bandwidth() : 0}
+                {@const yTop = context.yRange[1]}
+                {@const yBot = context.yRange[0]}
+                {#if pinnedBucket}
+                  {@const step = typeof xs.step === 'function' ? xs.step() : bw}
+                  {@const outer =
+                    typeof xs.padding === 'function'
+                      ? (xs.padding() * step) / 2
+                      : 0}
+                  {@const x0 = xs(pinnedBucket.label)}
+                  <Rect
+                    x={x0 != null ? x0 - outer : 0}
+                    y={Math.min(yTop, yBot)}
+                    width={step}
+                    height={Math.abs(yBot - yTop)}
+                    class="value-bucket-pin-highlight"
                   />
-                </g>
-              {/each}
-            {/snippet}
-          </BarChart>
-          {#each quantileLabelPlacements as mark (mark.key)}
-            <div
-              class="series-stat-tooltip series-stat-tooltip--above"
-              style:left="{mark.left}px"
-              style:top="{mark.top}px"
-              title={mark.title}
-              aria-hidden="true"
-            >
-              <div class="chart-selection-legend chart-selection-legend--stat">
-                <ul class="chart-selection-legend__rows">
-                  <li class="chart-selection-legend__row">
-                    <span
-                      class="chart-selection-legend__dot"
-                      style:--color={mark.color}
-                      aria-hidden="true"
-                    ></span>
-                    <span class="chart-selection-legend__label"
-                      >{mark.statLabel}</span
-                    >
-                    <span class="chart-selection-legend__value"
-                      >{mark.valueText}</span
-                    >
-                  </li>
-                </ul>
+                {/if}
+                {#each quantileMarks as m (m.key)}
+                  {@const x0 = xs(buckets[m.bucketIndex].label)}
+                  {@const px = x0 + bw * m.fraction}
+                  <g class="quantile-marker" style:--marker-color={m.color}>
+                    <title>{m.label} {formatQuantileValue(m.value)}</title>
+                    <Line
+                      x1={px}
+                      x2={px}
+                      y1={yTop}
+                      y2={yBot}
+                      class="quantile-line"
+                    />
+                  </g>
+                {/each}
+              {/snippet}
+            </BarChart>
+            {#each quantileLabelPlacements as mark (mark.key)}
+              <div
+                class="series-stat-tooltip series-stat-tooltip--above"
+                style:left="{mark.left}px"
+                style:top="{mark.top}px"
+                title={mark.title}
+                aria-hidden="true"
+              >
+                <div
+                  class="chart-selection-legend chart-selection-legend--stat"
+                >
+                  <ul class="chart-selection-legend__rows">
+                    <li class="chart-selection-legend__row">
+                      <span
+                        class="chart-selection-legend__dot"
+                        style:--color={mark.color}
+                        aria-hidden="true"
+                      ></span>
+                      <span class="chart-selection-legend__label"
+                        >{mark.statLabel}</span
+                      >
+                      <span class="chart-selection-legend__value"
+                        >{mark.valueText}</span
+                      >
+                    </li>
+                  </ul>
+                </div>
               </div>
-            </div>
-          {/each}
-        </MetricChartPlot>
+            {/each}
+          </MetricChartPlot>
         </div>
       </div>
     </div>
@@ -585,17 +586,20 @@
     pointer-events: none;
   }
 
-  .metric-histogram-bar-chart__value-pin-legend :global(.chart-selection-legend__rows) {
+  .metric-histogram-bar-chart__value-pin-legend
+    :global(.chart-selection-legend__rows) {
     grid-template-columns: auto auto;
     column-gap: 0.35rem;
     row-gap: 0.12rem;
   }
 
-  .metric-histogram-bar-chart__value-pin-legend :global(.chart-selection-legend__dot) {
+  .metric-histogram-bar-chart__value-pin-legend
+    :global(.chart-selection-legend__dot) {
     display: none;
   }
 
-  .metric-histogram-bar-chart__value-pin-legend :global(.chart-selection-legend__label) {
+  .metric-histogram-bar-chart__value-pin-legend
+    :global(.chart-selection-legend__label) {
     color: var(--color-subtle);
   }
 
@@ -604,7 +608,8 @@
     content: ':';
   }
 
-  .metric-histogram-bar-chart__value-pin-legend :global(.chart-selection-legend__value) {
+  .metric-histogram-bar-chart__value-pin-legend
+    :global(.chart-selection-legend__value) {
     @apply text-base-content;
   }
 

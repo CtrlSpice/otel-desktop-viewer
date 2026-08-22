@@ -3,35 +3,35 @@
    * PaneHeader: the single header strip used by every pane in the
    * unified layout. Three modes, one visual contract.
    *
- * Modes
- *   • title       — plain bold label on the bar background, no lift.
- *                   Use for panes with no tab navigation (e.g. "Fields",
- *                   "Timeseries", "Log Record").
- *   • tabs        — daisyUI tabs-lift strip. Active tab lifts into the
- *                   pane body below. Use when the pane has 2+ navigable
- *                   views.
- *   • title-tabs  — flat title on the left + lift tabs on the right.
- *                   Use when the pane has a stable label AND tabs that
- *                   switch a sub-view inside the same pane.
- *   • toolbar     — chrome strip with no title or lift tabs. Use the
- *                   `right` snippet for a full-width control row (e.g.
- *                   time-range preset pills in the datetime popover).
- *
- * tabLayout (for `tabs` and `title-tabs`)
- *   • 'left'   — tabs pack to the start at their intrinsic width and
- *                a flexible trail fills the remaining space. Use for
- *                primary nav strips (e.g. the drawer) where a `right`
- *                slot needs to be pushed all the way to the edge.
- *   • 'right'  — tabs pack to the end; a lead spacer pushes them over.
- *                Use with `title-tabs` (title left, tabs right). No trail.
- *   • 'equal'  — tabs share the row evenly, each taking 1fr of the
- *                tablist. Use for inspector tab strips (Fields /
- *                Events / Links) so labels line up across panes.
- *
- * Right slot
- *   Optional `right` snippet for status/controls that live on the same
- *   strip as the title/tabs (counts, badges, mini buttons). Always
- *   right-aligned via the bar's own flex layout.
+   * Modes
+   *   • title       — plain bold label on the bar background, no lift.
+   *                   Use for panes with no tab navigation (e.g. "Fields",
+   *                   "Timeseries", "Log Record").
+   *   • tabs        — daisyUI tabs-lift strip. Active tab lifts into the
+   *                   pane body below. Use when the pane has 2+ navigable
+   *                   views.
+   *   • title-tabs  — flat title on the left + lift tabs on the right.
+   *                   Use when the pane has a stable label AND tabs that
+   *                   switch a sub-view inside the same pane.
+   *   • toolbar     — chrome strip with no title or lift tabs. Use the
+   *                   `right` snippet for a full-width control row (e.g.
+   *                   time-range preset pills in the datetime popover).
+   *
+   * tabLayout (for `tabs` and `title-tabs`)
+   *   • 'left'   — tabs pack to the start at their intrinsic width and
+   *                a flexible trail fills the remaining space. Use for
+   *                primary nav strips (e.g. the drawer) where a `right`
+   *                slot needs to be pushed all the way to the edge.
+   *   • 'right'  — tabs pack to the end; a lead spacer pushes them over.
+   *                Use with `title-tabs` (title left, tabs right). No trail.
+   *   • 'equal'  — tabs share the row evenly, each taking 1fr of the
+   *                tablist. Use for inspector tab strips (Fields /
+   *                Events / Links) so labels line up across panes.
+   *
+   * Right slot
+   *   Optional `right` snippet for status/controls that live on the same
+   *   strip as the title/tabs (counts, badges, mini buttons). Always
+   *   right-aligned via the bar's own flex layout.
    *
    * Consumer contract
    *   The active lift tab merges into the surface directly below the
@@ -130,10 +130,7 @@
   }
 
   export type PaneHeaderProps =
-    | TitleProps
-    | TabsProps
-    | TitleTabsProps
-    | ToolbarProps
+    TitleProps | TabsProps | TitleTabsProps | ToolbarProps
 </script>
 
 <script lang="ts">
@@ -149,7 +146,6 @@
       ? 'pane-header--stacked'
       : ''
   )
-
 </script>
 
 {#snippet metaRow()}
@@ -172,9 +168,9 @@
 
 {#snippet badgeStrip(badges: PaneBadge[])}
   {#each badges as badge (badge.label)}
-    <span
-      class="{badge.class ?? DEFAULT_BADGE_CLASS} tabular-nums shrink-0"
-    >{badge.label}</span>
+    <span class="{badge.class ?? DEFAULT_BADGE_CLASS} tabular-nums shrink-0"
+      >{badge.label}</span
+    >
   {/each}
 {/snippet}
 
@@ -201,44 +197,42 @@
   ariaLabel: string,
   layout: PaneTabLayout
 )}
-  <div
-    class="pane-header__tab-scroll pane-header__tab-scroll--{layout}"
-  >
+  <div class="pane-header__tab-scroll pane-header__tab-scroll--{layout}">
     <div
       role="tablist"
       aria-label={ariaLabel}
       class="tabs tabs-lift {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
     >
-    {#if layout === 'right'}
-      <span class="pane-header__tab-lead" aria-hidden="true"></span>
-    {/if}
-    {#each tabs as tab (tab.id)}
-      {@const active = tab.id === activeID}
-      <button
-        type="button"
-        role="tab"
-        class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
-          ? 'tab-active [--tab-bg:var(--color-base-200)]'
-          : ''}"
-        aria-selected={active}
-        disabled={tab.disabled}
-        title={tab.label}
-        onclick={() => !tab.disabled && onSelect(tab.id)}
-      >
-        {#if tab.icon}
-          <span class="pane-header__tab-icon shrink-0">
-            {@render tab.icon()}
-          </span>
-        {/if}
-        <span class="pane-header__tab-label">{tab.label}</span>
-        {#if tab.count !== undefined}
-          <span class="badge-count">{tab.count}</span>
-        {/if}
-      </button>
-    {/each}
-    {#if layout === 'left'}
-      <span class="pane-header__tab-trail" aria-hidden="true"></span>
-    {/if}
+      {#if layout === 'right'}
+        <span class="pane-header__tab-lead" aria-hidden="true"></span>
+      {/if}
+      {#each tabs as tab (tab.id)}
+        {@const active = tab.id === activeID}
+        <button
+          type="button"
+          role="tab"
+          class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
+            ? 'tab-active [--tab-bg:var(--color-base-200)]'
+            : ''}"
+          aria-selected={active}
+          disabled={tab.disabled}
+          title={tab.label}
+          onclick={() => !tab.disabled && onSelect(tab.id)}
+        >
+          {#if tab.icon}
+            <span class="pane-header__tab-icon shrink-0">
+              {@render tab.icon()}
+            </span>
+          {/if}
+          <span class="pane-header__tab-label">{tab.label}</span>
+          {#if tab.count !== undefined}
+            <span class="badge-count">{tab.count}</span>
+          {/if}
+        </button>
+      {/each}
+      {#if layout === 'left'}
+        <span class="pane-header__tab-trail" aria-hidden="true"></span>
+      {/if}
     </div>
   </div>
 {/snippet}
@@ -250,16 +244,16 @@
     aria-label={props.ariaLabel ?? props.title}
   >
     <div class="pane-header__top">
-    <div class="pane-header__title-row">
-      <span class="pane-header__title">{props.title}</span>
-      {#if props.subtitle?.trim()}
-        <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
+      <div class="pane-header__title-row">
+        <span class="pane-header__title">{props.title}</span>
+        {#if props.subtitle?.trim()}
+          <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
+        {/if}
+        {@render badgeBlock(props.badges, props.badge)}
+      </div>
+      {#if props.right}
+        <div class="pane-header__right">{@render props.right()}</div>
       {/if}
-      {@render badgeBlock(props.badges, props.badge)}
-    </div>
-    {#if props.right}
-      <div class="pane-header__right">{@render props.right()}</div>
-    {/if}
     </div>
     {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
       {@render metaRow()}
@@ -442,13 +436,15 @@
   /* Left layout (drawer / tabs-only): tabs pack to the start at intrinsic
      width, a flexible trail fills the remaining space so a `right` slot
      can be pushed to the edge. Title-tabs uses its own rules below. */
-  .pane-header:not(.pane-header--title-tabs) :global(.tabs.pane-header__tabs--left) {
+  .pane-header:not(.pane-header--title-tabs)
+    :global(.tabs.pane-header__tabs--left) {
     display: inline-flex !important;
     width: max-content !important;
     min-width: 100%;
   }
 
-  .pane-header:not(.pane-header--title-tabs) :global(.tabs.pane-header__tabs--left > .tab) {
+  .pane-header:not(.pane-header--title-tabs)
+    :global(.tabs.pane-header__tabs--left > .tab) {
     flex: 0 0 auto !important;
     min-width: max-content;
   }

@@ -36,8 +36,12 @@
     flush?: boolean
   }
 
-  let { datapoints, showSwatch = false, seriesColor, flush = false }: Props =
-    $props()
+  let {
+    datapoints,
+    showSwatch = false,
+    seriesColor,
+    flush = false,
+  }: Props = $props()
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
@@ -102,7 +106,10 @@
     // nothing -- otherwise the list is empty until the first scroll event.
     const height = viewportPx || 400
     const start = Math.max(0, indexAt(scrollTop) - OVERSCAN)
-    const end = Math.min(datapoints.length, indexAt(scrollTop + height) + 1 + OVERSCAN)
+    const end = Math.min(
+      datapoints.length,
+      indexAt(scrollTop + height) + 1 + OVERSCAN
+    )
     return { start, end }
   })
 
@@ -151,16 +158,16 @@
   }
 
   function formatDatapointTime(timestamp: bigint): string {
-    return formatDateTimeMs(
-      Number(timestamp / 1_000_000n),
-      timeContext.tz
-    ).dateTime
+    return formatDateTimeMs(Number(timestamp / 1_000_000n), timeContext.tz)
+      .dateTime
   }
 
   /** Whether the store trimmed this datapoint's exemplar list. The field is
    *  absent whenever it did not, which is almost always. */
   function withheld(dp: DataPoint): boolean {
-    return dp.exemplarCount !== undefined && dp.exemplarCount > dp.exemplars.length
+    return (
+      dp.exemplarCount !== undefined && dp.exemplarCount > dp.exemplars.length
+    )
   }
 
   function exemplarSpanPatch(ex: Exemplar) {
@@ -173,9 +180,10 @@
     navigateToItem('traces', ex.traceID, 'push', exemplarSpanPatch(ex))
   }
 
-  function datapointValueParts(
-    dp: DataPoint
-  ): { number: string; unit: string | null } {
+  function datapointValueParts(dp: DataPoint): {
+    number: string
+    unit: string | null
+  } {
     const unit = displayUnit(metricUnit)
     if (dp.metricType === 'Gauge' || dp.metricType === 'Sum') {
       const raw = dp.doubleValue ?? dp.intValue
@@ -272,9 +280,9 @@
             <div class="dp-list__detail">
               <span class="dp-list__detail-label">exemplars</span>
               <span class="dp-list__detail-value">
-                showing {dp.exemplars.length} of {dp.exemplarCount} — the store
-                caps the list so one densely sampled stream cannot decide the
-                size of every response
+                showing {dp.exemplars.length} of {dp.exemplarCount} — the store caps
+                the list so one densely sampled stream cannot decide the size of every
+                response
               </span>
             </div>
           {/if}
@@ -292,19 +300,22 @@
                     class="dp-list__detail-value link link-primary font-mono"
                     href={itemHref('traces', ex.traceID, patch)}
                     onclick={e => goToExemplarTrace(e, ex)}
-                  >trace: {ex.traceID}</a>
+                    >trace: {ex.traceID}</a
+                  >
                 {/if}
                 {#if ex.spanID && ex.traceID}
                   <a
                     class="dp-list__detail-value link link-primary font-mono"
                     href={itemHref('traces', ex.traceID, exemplarSpanPatch(ex))}
-                    onclick={e => goToExemplarTrace(e, ex)}
-                  >span: {ex.spanID}</a>
+                    onclick={e => goToExemplarTrace(e, ex)}>span: {ex.spanID}</a
+                  >
                 {:else if ex.spanID}
                   <span class="dp-list__detail-value">span: {ex.spanID}</span>
                 {/if}
                 {#each dedupeAttributes(ex.filteredAttributes) as attr (attr.key)}
-                  <span class="dp-list__detail-value">{attr.key}: {attr.value}</span>
+                  <span class="dp-list__detail-value"
+                    >{attr.key}: {attr.value}</span
+                  >
                 {/each}
               </div>
             </div>
@@ -316,7 +327,9 @@
 {/snippet}
 
 {#if datapoints.length === 0}
-  <p class="dp-list__empty" class:dp-list__empty--flush={flush}>No datapoints</p>
+  <p class="dp-list__empty" class:dp-list__empty--flush={flush}>
+    No datapoints
+  </p>
 {:else if !virtualize}
   <table class="dp-list" class:dp-list--flush={flush} aria-label="Datapoints">
     <tbody>

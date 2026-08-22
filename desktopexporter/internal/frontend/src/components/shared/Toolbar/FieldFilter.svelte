@@ -20,9 +20,17 @@
     columnVisibility?: ColumnVisibility[]
   }
 
-  let { signal, selectedFields, onToggleField, label, columnVisibility }: Props = $props()
+  let {
+    signal,
+    selectedFields,
+    onToggleField,
+    label,
+    columnVisibility,
+  }: Props = $props()
 
-  function getColumnCategory(fieldName: string): ColumnVisibility['category'] | null {
+  function getColumnCategory(
+    fieldName: string
+  ): ColumnVisibility['category'] | null {
     if (!columnVisibility) return null
     return columnVisibility.find(c => c.fieldID === fieldName)?.category ?? null
   }
@@ -164,7 +172,15 @@
           >
             {#if pinned}
               <span class="field-filter__lock" aria-label="Pinned column">
-                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg
+                  class="h-3 w-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>

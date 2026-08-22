@@ -11,7 +11,9 @@
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import LogField from '@/components/logs/LogField.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
-  import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader, {
+    type PaneTab,
+  } from '@/components/shared/PaneHeader.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { Stats } from '@/types/api-types'
   import luluImage from '@/assets/images/lulu.webp'
@@ -126,9 +128,11 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
         <section class="section home-endpoint-section">
           <h2 class="section-title">Configure your OTLP exporter</h2>
           <p class="section-description">
-            Point your OpenTelemetry SDK, collector, or agent at this viewer with
-            the OTLP exporter settings below. Copy the variables for your protocol,
-            then paste them into a terminal session, a <code class="home-inline-code">.env</code>
+            Point your OpenTelemetry SDK, collector, or agent at this viewer
+            with the OTLP exporter settings below. Copy the variables for your
+            protocol, then paste them into a terminal session, a <code
+              class="home-inline-code">.env</code
+            >
             file, or wherever you usually set environment variables for the process
             that exports telemetry.
           </p>
@@ -151,7 +155,10 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
                   aria-label={endpointCopied ? 'Copied' : 'Copy snippet'}
                 >
                   {#if endpointCopied}
-                    <CheckmarkCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <CheckmarkCircleIcon
+                      class="h-4 w-4 shrink-0"
+                      aria-hidden="true"
+                    />
                   {:else}
                     <CopyIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
                   {/if}
@@ -197,117 +204,123 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
         <PaneHeader mode="title" title="Overview" ariaLabel="Overview" />
 
         <div class="home-page__detail-scroll">
-        {#snippet signalOverviewHeader(
-          href: string,
-          label: string,
-          Icon: Component,
-          count: number
-        )}
-          <div class="home-summary__header">
-            <a
-              {href}
-              class="home-summary__icon-link"
-              aria-label="View all {label.toLowerCase()}"
-            >
-              <Icon class="h-4 w-4 shrink-0" aria-hidden="true" />
-            </a>
-            <span class="home-summary__title">{label}</span>
-            <span class="badge-count home-summary__badge">{count}</span>
-          </div>
-        {/snippet}
-
-        <FieldGroup label="Traces">
-          {#snippet headerAction()}
-            {@render signalOverviewHeader(
-              '/traces',
-              'Traces',
-              BarChartHorizontalIcon,
-              stats?.traces.traceCount ?? 0
-            )}
+          {#snippet signalOverviewHeader(
+            href: string,
+            label: string,
+            Icon: Component,
+            count: number
+          )}
+            <div class="home-summary__header">
+              <a
+                {href}
+                class="home-summary__icon-link"
+                aria-label="View all {label.toLowerCase()}"
+              >
+                <Icon class="h-4 w-4 shrink-0" aria-hidden="true" />
+              </a>
+              <span class="home-summary__title">{label}</span>
+              <span class="badge-count home-summary__badge">{count}</span>
+            </div>
           {/snippet}
-          <table class="detail-fields w-full" aria-label="Traces overview">
-            <tbody>
-              <LogField
-                fieldName="spans"
-                fieldType="uint32"
-                showType={false}
-                fieldValue={String(stats?.traces.spanCount ?? 0)}
-              />
-              <LogField
-                fieldName="services"
-                fieldType="uint32"
-                showType={false}
-                fieldValue={String(stats?.traces.serviceCount ?? 0)}
-              />
-              <LogField
-                fieldName="errors"
-                fieldType="uint32"
-                showType={false}
-                fieldValue={String(stats?.traces.errorCount ?? 0)}
-              />
-              <LogField
-                fieldName="last received"
-                fieldType="string"
-                showType={false}
-                fieldValue={formatRelativeTime(stats?.traces.lastReceived ?? null)}
-              />
-            </tbody>
-          </table>
-        </FieldGroup>
 
-        <FieldGroup label="Metrics">
-          {#snippet headerAction()}
-            {@render signalOverviewHeader(
-              '/metrics',
-              'Metrics',
-              ChartHistogramIcon,
-              stats?.metrics.metricCount ?? 0
-            )}
-          {/snippet}
-          <table class="detail-fields w-full" aria-label="Metrics overview">
-            <tbody>
-              <LogField
-                fieldName="data points"
-                fieldType="uint32"
-                showType={false}
-                fieldValue={String(stats?.metrics.dataPointCount ?? 0)}
-              />
-              <LogField
-                fieldName="last received"
-                fieldType="string"
-                showType={false}
-                fieldValue={formatRelativeTime(stats?.metrics.lastReceived ?? null)}
-              />
-            </tbody>
-          </table>
-        </FieldGroup>
+          <FieldGroup label="Traces">
+            {#snippet headerAction()}
+              {@render signalOverviewHeader(
+                '/traces',
+                'Traces',
+                BarChartHorizontalIcon,
+                stats?.traces.traceCount ?? 0
+              )}
+            {/snippet}
+            <table class="detail-fields w-full" aria-label="Traces overview">
+              <tbody>
+                <LogField
+                  fieldName="spans"
+                  fieldType="uint32"
+                  showType={false}
+                  fieldValue={String(stats?.traces.spanCount ?? 0)}
+                />
+                <LogField
+                  fieldName="services"
+                  fieldType="uint32"
+                  showType={false}
+                  fieldValue={String(stats?.traces.serviceCount ?? 0)}
+                />
+                <LogField
+                  fieldName="errors"
+                  fieldType="uint32"
+                  showType={false}
+                  fieldValue={String(stats?.traces.errorCount ?? 0)}
+                />
+                <LogField
+                  fieldName="last received"
+                  fieldType="string"
+                  showType={false}
+                  fieldValue={formatRelativeTime(
+                    stats?.traces.lastReceived ?? null
+                  )}
+                />
+              </tbody>
+            </table>
+          </FieldGroup>
 
-        <FieldGroup label="Logs">
-          {#snippet headerAction()}
-            {@render signalOverviewHeader(
-              '/logs',
-              'Logs',
-              LogIcon,
-              stats?.logs.logCount ?? 0
-            )}
-          {/snippet}
-          <table class="detail-fields w-full" aria-label="Logs overview">
-            <tbody>
-              <LogField
-                fieldName="errors"
-                fieldType="uint32"
-                showType={false}
-                fieldValue={String(stats?.logs.errorCount ?? 0)}
-              />
-              <LogField
-                fieldName="last received"
-                fieldType="string"
-                showType={false}
-                fieldValue={formatRelativeTime(stats?.logs.lastReceived ?? null)}
-              />
-            </tbody>
-          </table>
-        </FieldGroup>
+          <FieldGroup label="Metrics">
+            {#snippet headerAction()}
+              {@render signalOverviewHeader(
+                '/metrics',
+                'Metrics',
+                ChartHistogramIcon,
+                stats?.metrics.metricCount ?? 0
+              )}
+            {/snippet}
+            <table class="detail-fields w-full" aria-label="Metrics overview">
+              <tbody>
+                <LogField
+                  fieldName="data points"
+                  fieldType="uint32"
+                  showType={false}
+                  fieldValue={String(stats?.metrics.dataPointCount ?? 0)}
+                />
+                <LogField
+                  fieldName="last received"
+                  fieldType="string"
+                  showType={false}
+                  fieldValue={formatRelativeTime(
+                    stats?.metrics.lastReceived ?? null
+                  )}
+                />
+              </tbody>
+            </table>
+          </FieldGroup>
+
+          <FieldGroup label="Logs">
+            {#snippet headerAction()}
+              {@render signalOverviewHeader(
+                '/logs',
+                'Logs',
+                LogIcon,
+                stats?.logs.logCount ?? 0
+              )}
+            {/snippet}
+            <table class="detail-fields w-full" aria-label="Logs overview">
+              <tbody>
+                <LogField
+                  fieldName="errors"
+                  fieldType="uint32"
+                  showType={false}
+                  fieldValue={String(stats?.logs.errorCount ?? 0)}
+                />
+                <LogField
+                  fieldName="last received"
+                  fieldType="string"
+                  showType={false}
+                  fieldValue={formatRelativeTime(
+                    stats?.logs.lastReceived ?? null
+                  )}
+                />
+              </tbody>
+            </table>
+          </FieldGroup>
         </div>
 
         <p class="home-detail__coming-soon">more coming soon…</p>

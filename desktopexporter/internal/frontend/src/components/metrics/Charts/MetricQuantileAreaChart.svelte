@@ -1,16 +1,8 @@
 <script lang="ts">
-  import {
-    quantileMergedSelectionLegendRows,
-  } from '@/components/metrics/utils/heatmap-column-selection'
+  import { quantileMergedSelectionLegendRows } from '@/components/metrics/utils/heatmap-column-selection'
   import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
-  import {
-    LineChart,
-    Line,
-    Spline,
-    Tooltip,
-    type ChartState,
-  } from 'layerchart'
+  import { LineChart, Line, Spline, Tooltip, type ChartState } from 'layerchart'
   import { bisector } from 'd3-array'
   import { curveStepAfter } from 'd3-shape'
   import { scaleTime } from 'd3-scale'
@@ -307,11 +299,7 @@
     e.stopPropagation()
     const key = details.point?.seriesKey ?? ''
     const meta = lineMetaByKey.get(key)
-    dispatchPointClick(
-      date,
-      meta?.seriesKey ?? key,
-      meta?.quantileKey ?? null
-    )
+    dispatchPointClick(date, meta?.seriesKey ?? key, meta?.quantileKey ?? null)
   }
 
   function handleTooltipClick(e: MouseEvent, detail: { data: unknown }) {
@@ -343,7 +331,9 @@
             {#if mergedSelectionRows.length > 0}
               <div class="metric-quantile-area-chart__merged-totals">
                 <ChartSelectionLegend
-                  timestamp={seriesQuantileRows.length > 0 ? '' : selectionTimestamp}
+                  timestamp={seriesQuantileRows.length > 0
+                    ? ''
+                    : selectionTimestamp}
                   rows={mergedSelectionRows}
                 />
               </div>
@@ -396,7 +386,9 @@
                           : undefined}
                       {#if value !== undefined}
                         <Tooltip.Item
-                          label="{seriesLabel(group.seriesKey)} · {quantileLabelForKey(line.quantileKey)}"
+                          label="{seriesLabel(
+                            group.seriesKey
+                          )} · {quantileLabelForKey(line.quantileKey)}"
                           {value}
                           color={group.color}
                           format={formatMetricValue}
@@ -422,7 +414,11 @@
             {/each}
           {/snippet}
 
-          {#snippet aboveMarks({ context }: { context: ChartState<ChartPoint> })}
+          {#snippet aboveMarks({
+            context,
+          }: {
+            context: ChartState<ChartPoint>
+          })}
             {#if selectedDate && context.yScale}
               {@const px = context.xScale(selectedDate)}
               {@const yTop = context.yRange[1]}
@@ -467,7 +463,8 @@
     @apply flex shrink-0 items-start justify-between gap-2 px-1 pb-1 pt-0.5;
   }
 
-  .metric-quantile-area-chart__header :global(.chart-time-range-legend__prefix) {
+  .metric-quantile-area-chart__header
+    :global(.chart-time-range-legend__prefix) {
     color: var(--color-subtle);
   }
 
@@ -481,28 +478,35 @@
     pointer-events: none;
   }
 
-  .metric-quantile-area-chart__selection-legend :global(.chart-selection-legend__label) {
+  .metric-quantile-area-chart__selection-legend
+    :global(.chart-selection-legend__label) {
     color: var(--color-subtle);
   }
 
-  .metric-quantile-area-chart__selection-legend :global(.chart-selection-legend__label::after) {
+  .metric-quantile-area-chart__selection-legend
+    :global(.chart-selection-legend__label::after) {
     content: ':';
   }
 
-  .metric-quantile-area-chart__selection-legend :global(.chart-selection-legend__value) {
+  .metric-quantile-area-chart__selection-legend
+    :global(.chart-selection-legend__value) {
     @apply text-base-content;
   }
 
-  .metric-quantile-area-chart__merged-totals :global(.chart-selection-legend__rows) {
+  .metric-quantile-area-chart__merged-totals
+    :global(.chart-selection-legend__rows) {
     grid-template-columns: 1fr;
   }
 
-  .metric-quantile-area-chart__merged-totals :global(.chart-selection-legend__dot),
-  .metric-quantile-area-chart__merged-totals :global(.chart-selection-legend__label) {
+  .metric-quantile-area-chart__merged-totals
+    :global(.chart-selection-legend__dot),
+  .metric-quantile-area-chart__merged-totals
+    :global(.chart-selection-legend__label) {
     display: none;
   }
 
-  .metric-quantile-area-chart__merged-totals :global(.chart-selection-legend__value) {
+  .metric-quantile-area-chart__merged-totals
+    :global(.chart-selection-legend__value) {
     text-align: left;
     white-space: nowrap;
     color: var(--color-subtle);

@@ -70,9 +70,7 @@
     aggregateRows = [],
   }: Props = $props()
 
-  let hasRowColumns = $derived(
-    rowColumns.some(column => column.length > 0)
-  )
+  let hasRowColumns = $derived(rowColumns.some(column => column.length > 0))
 </script>
 
 {#if timestamp || rows.length > 0 || hasRowColumns || aggregateRows.length > 0}
@@ -95,28 +93,31 @@
                 </div>
               {/if}
               <ul class="chart-selection-legend__rows">
-              {#each column as row (row.key)}
-                <li
-                  class="chart-selection-legend__row"
-                  class:chart-selection-legend__row--primary={row.isPrimary}
-                >
-                  <span
-                    class="chart-selection-legend__dot"
-                    style:--color={row.color}
-                    aria-hidden="true"
-                  ></span>
-                  <span class="chart-selection-legend__label">
-                    {#if row.glyph}<span
-                        class="chart-selection-legend__glyph"
-                        title={row.glyphTitle ?? undefined}
-                        aria-label={row.glyphTitle ?? undefined}
-                      >{row.glyph}</span>
-                    {/if}{row.label}
-                  </span>
-                  <span class="chart-selection-legend__value">{row.valueText}</span>
-                </li>
-              {/each}
-            </ul>
+                {#each column as row (row.key)}
+                  <li
+                    class="chart-selection-legend__row"
+                    class:chart-selection-legend__row--primary={row.isPrimary}
+                  >
+                    <span
+                      class="chart-selection-legend__dot"
+                      style:--color={row.color}
+                      aria-hidden="true"
+                    ></span>
+                    <span class="chart-selection-legend__label">
+                      {#if row.glyph}<span
+                          class="chart-selection-legend__glyph"
+                          title={row.glyphTitle ?? undefined}
+                          aria-label={row.glyphTitle ?? undefined}
+                          >{row.glyph}</span
+                        >
+                      {/if}{row.label}
+                    </span>
+                    <span class="chart-selection-legend__value"
+                      >{row.valueText}</span
+                    >
+                  </li>
+                {/each}
+              </ul>
             </div>
           {/if}
         {/each}
@@ -137,8 +138,8 @@
               {#if row.glyph}<span
                   class="chart-selection-legend__glyph"
                   title={row.glyphTitle ?? undefined}
-                  aria-label={row.glyphTitle ?? undefined}
-                >{row.glyph}</span>
+                  aria-label={row.glyphTitle ?? undefined}>{row.glyph}</span
+                >
               {/if}{row.label}
             </span>
             <span class="chart-selection-legend__value">{row.valueText}</span>

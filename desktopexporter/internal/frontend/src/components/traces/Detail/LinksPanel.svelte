@@ -30,7 +30,11 @@
 
 {#each links as link, index (index)}
   {@const patch = spanPatch(link)}
-  <FieldGroup label={link.traceID} count={linkFieldCount(link)} open={index === 0}>
+  <FieldGroup
+    label={link.traceID}
+    count={linkFieldCount(link)}
+    open={index === 0}
+  >
     <table class="detail-fields w-full" aria-label="Link {link.traceID}">
       <tbody>
         <tr class="table-row">
@@ -41,8 +45,8 @@
             <a
               class="detail-cell__value link link-primary font-mono"
               href={itemHref('traces', link.traceID, patch)}
-              onclick={e => goToLink(e, link)}
-            >{link.traceID}</a>
+              onclick={e => goToLink(e, link)}>{link.traceID}</a
+            >
           </td>
         </tr>
         <tr class="table-row">
@@ -53,8 +57,8 @@
             <a
               class="detail-cell__value link link-primary font-mono"
               href={itemHref('traces', link.traceID, patch)}
-              onclick={e => goToLink(e, link)}
-            >{link.spanID}</a>
+              onclick={e => goToLink(e, link)}>{link.spanID}</a
+            >
           </td>
         </tr>
         <SpanField

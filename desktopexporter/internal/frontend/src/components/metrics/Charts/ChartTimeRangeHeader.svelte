@@ -33,9 +33,7 @@
   let startLabel = $derived(
     formatDateTime(startMs, timeContext.tz, 'milliseconds')
   )
-  let endLabel = $derived(
-    formatDateTime(endMs, timeContext.tz, 'milliseconds')
-  )
+  let endLabel = $derived(formatDateTime(endMs, timeContext.tz, 'milliseconds'))
 </script>
 
 {#if variant === 'legend'}

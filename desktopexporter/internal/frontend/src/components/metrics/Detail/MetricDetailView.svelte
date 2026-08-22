@@ -12,7 +12,9 @@
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
-  import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader, {
+    type PaneTab,
+  } from '@/components/shared/PaneHeader.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import { LeftToRightListBulletIcon, BarChartHorizontalIcon } from '@/icons'
   import MetricField from './MetricField.svelte'

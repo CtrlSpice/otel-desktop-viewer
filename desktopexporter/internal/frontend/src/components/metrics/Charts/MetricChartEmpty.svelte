@@ -9,11 +9,7 @@
   let { height = DEFAULT_METRIC_CHART_HEIGHT, message }: Props = $props()
 </script>
 
-<div
-  class="metric-chart-empty"
-  style:height="{height}px"
-  role="status"
->
+<div class="metric-chart-empty" style:height="{height}px" role="status">
   {message}
 </div>
 

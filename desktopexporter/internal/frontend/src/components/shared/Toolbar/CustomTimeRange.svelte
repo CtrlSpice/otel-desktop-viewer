@@ -34,16 +34,12 @@
       }
 
   type ParseResult =
-    | { success: true; timestamp: number }
-    | { success: false; error: string }
+    { success: true; timestamp: number } | { success: false; error: string }
 
   // Initialize custom text fields when in custom mode
   $effect(() => {
     if (ctx.selection.type === 'custom') {
-      customStartText = formatDateTimeMs(
-        ctx.selection.start,
-        ctx.tz
-      ).dateTime
+      customStartText = formatDateTimeMs(ctx.selection.start, ctx.tz).dateTime
       customEndText = formatDateTimeMs(ctx.selection.end, ctx.tz).dateTime
       customFieldIssue = null
     } else {

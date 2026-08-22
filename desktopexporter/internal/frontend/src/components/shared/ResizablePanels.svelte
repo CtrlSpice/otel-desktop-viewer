@@ -6,33 +6,33 @@
   } from '@/contexts/panel-split-resize-context.svelte'
 
   /** Default split when no prop / storage; keep in sync with prop default below */
-  const DEFAULT_LEFT_WIDTH = 0.7;
+  const DEFAULT_LEFT_WIDTH = 0.7
 
   type Props = {
-    leftPanel: any;
-    rightPanel: any;
+    leftPanel: any
+    rightPanel: any
     /** Stacked layout only: use the bottom panel header as the resize
      *  handle instead of a separate divider strip. */
     stackedResizeHandle?: 'bar' | 'panel-header'
-    defaultLeftWidth?: number;
+    defaultLeftWidth?: number
     /** Minimum left fraction of the container (0..1). */
-    minLeftWidth?: number;
+    minLeftWidth?: number
     /** Minimum right fraction of the container (0..1). */
-    minRightWidth?: number;
+    minRightWidth?: number
     /** Optional absolute pixel floor for the left pane. When set,
      *  the drag clamps to MAX(fraction floor, pixel floor). Lets
      *  callers guarantee enough room for fixed-size chrome (e.g.
      *  a tab strip) regardless of viewport width. */
-    minLeftPx?: number;
+    minLeftPx?: number
     /** Optional absolute pixel floor for the right pane. */
-    minRightPx?: number;
+    minRightPx?: number
     /** Optional absolute pixel ceiling for the left pane. */
-    maxLeftPx?: number;
+    maxLeftPx?: number
     /** Optional absolute pixel ceiling for the right pane. */
-    maxRightPx?: number;
-    storageKey?: string;
-    stackBreakpoint?: number;
-  };
+    maxRightPx?: number
+    storageKey?: string
+    stackBreakpoint?: number
+  }
 
   let {
     leftPanel,
@@ -47,29 +47,29 @@
     maxRightPx,
     storageKey,
     stackBreakpoint = 800,
-  }: Props = $props();
+  }: Props = $props()
 
-  let leftWidth = $state(DEFAULT_LEFT_WIDTH);
-  let appliedInitialDefault = $state(false);
-  let isDragging = $state(false);
+  let leftWidth = $state(DEFAULT_LEFT_WIDTH)
+  let appliedInitialDefault = $state(false)
+  let isDragging = $state(false)
 
   $effect.pre(() => {
-    if (appliedInitialDefault) return;
-    leftWidth = defaultLeftWidth;
-    appliedInitialDefault = true;
-  });
-  let containerRef = $state<HTMLDivElement | null>(null);
-  let dividerRef = $state<HTMLElement | null>(null);
-  let containerWidth = $state(0);
-  let containerHeight = $state(0);
+    if (appliedInitialDefault) return
+    leftWidth = defaultLeftWidth
+    appliedInitialDefault = true
+  })
+  let containerRef = $state<HTMLDivElement | null>(null)
+  let dividerRef = $state<HTMLElement | null>(null)
+  let containerWidth = $state(0)
+  let containerHeight = $state(0)
 
   /** Matches CSS `gap` on the flex container (`--panel-split-flex-gap`). */
   function panelSplitGapPx(): number {
-    if (!containerRef) return 8;
-    const s = getComputedStyle(containerRef);
-    const raw = stacked ? s.rowGap : s.columnGap;
-    const px = parseFloat(raw);
-    return Number.isFinite(px) ? px : 8;
+    if (!containerRef) return 8
+    const s = getComputedStyle(containerRef)
+    const raw = stacked ? s.rowGap : s.columnGap
+    const px = parseFloat(raw)
+    return Number.isFinite(px) ? px : 8
   }
 
   let stacked = $derived(containerWidth > 0 && containerWidth < stackBreakpoint)
@@ -110,215 +110,217 @@
      both pixel floors exceed the container: prefer the right pane's
      floor (detail strip / timeseries list). */
   let splitBounds = $derived.by(() => {
-    const dim = stacked ? containerHeight : containerWidth;
+    const dim = stacked ? containerHeight : containerWidth
     if (dim <= 0) {
       return {
         minLeft: minLeftWidth,
         minRight: minRightWidth,
         maxLeft: 1 - minRightWidth,
-      };
+      }
     }
 
-    const leftPxFrac = minLeftPx ? minLeftPx / dim : 0;
-    const rightPxFrac = minRightPx ? minRightPx / dim : 0;
-    let minLeft = Math.max(minLeftWidth, leftPxFrac);
-    let minRight = Math.max(minRightWidth, rightPxFrac);
+    const leftPxFrac = minLeftPx ? minLeftPx / dim : 0
+    const rightPxFrac = minRightPx ? minRightPx / dim : 0
+    let minLeft = Math.max(minLeftWidth, leftPxFrac)
+    let minRight = Math.max(minRightWidth, rightPxFrac)
 
     if (maxRightPx) {
-      minLeft = Math.max(minLeft, 1 - maxRightPx / dim);
+      minLeft = Math.max(minLeft, 1 - maxRightPx / dim)
     }
 
-    let maxLeft = 1 - minRight;
+    let maxLeft = 1 - minRight
     if (maxLeftPx) {
-      maxLeft = Math.min(maxLeft, maxLeftPx / dim);
+      maxLeft = Math.min(maxLeft, maxLeftPx / dim)
     }
 
     if (minLeft + minRight > 1) {
       if (minRight <= 1 - minLeftWidth) {
-        minLeft = Math.max(minLeftWidth, 1 - minRight);
+        minLeft = Math.max(minLeftWidth, 1 - minRight)
       } else {
-        minLeft = minLeftWidth;
-        minRight = minRightWidth;
-        maxLeft = 1 - minRight;
-        if (maxLeftPx) maxLeft = Math.min(maxLeft, maxLeftPx / dim);
-        if (maxRightPx) minLeft = Math.max(minLeft, 1 - maxRightPx / dim);
+        minLeft = minLeftWidth
+        minRight = minRightWidth
+        maxLeft = 1 - minRight
+        if (maxLeftPx) maxLeft = Math.min(maxLeft, maxLeftPx / dim)
+        if (maxRightPx) minLeft = Math.max(minLeft, 1 - maxRightPx / dim)
       }
     }
 
-    if (minLeft > maxLeft) maxLeft = minLeft;
+    if (minLeft > maxLeft) maxLeft = minLeft
 
-    return { minLeft, minRight, maxLeft };
-  });
-  let effectiveMinLeft = $derived(splitBounds.minLeft);
-  let effectiveMinRight = $derived(splitBounds.minRight);
-  let effectiveMaxLeft = $derived(splitBounds.maxLeft);
+    return { minLeft, minRight, maxLeft }
+  })
+  let effectiveMinLeft = $derived(splitBounds.minLeft)
+  let effectiveMinRight = $derived(splitBounds.minRight)
+  let effectiveMaxLeft = $derived(splitBounds.maxLeft)
 
   $effect(() => {
     if (storageKey) {
-      let saved = localStorage.getItem(storageKey);
+      let saved = localStorage.getItem(storageKey)
       if (saved) {
-        let parsed = parseFloat(saved);
+        let parsed = parseFloat(saved)
         if (
           !isNaN(parsed) &&
           parsed >= effectiveMinLeft &&
           parsed <= effectiveMaxLeft
         ) {
-          leftWidth = parsed;
+          leftWidth = parsed
         }
       }
     }
-  });
+  })
 
   /* Re-clamp the current width whenever the effective minimums move.
      This catches the viewport-shrink case: if the user makes the
      window narrow enough that the current split would put one pane
      below its pixel floor, snap it back to the floor. */
   $effect(() => {
-    const lo = effectiveMinLeft;
-    const hi = effectiveMaxLeft;
-    if (lo > hi) return;
-    if (leftWidth < lo) leftWidth = lo;
-    else if (leftWidth > hi) leftWidth = hi;
-  });
+    const lo = effectiveMinLeft
+    const hi = effectiveMaxLeft
+    if (lo > hi) return
+    if (leftWidth < lo) leftWidth = lo
+    else if (leftWidth > hi) leftWidth = hi
+  })
 
   function saveWidth() {
     if (storageKey) {
-      localStorage.setItem(storageKey, leftWidth.toString());
+      localStorage.setItem(storageKey, leftWidth.toString())
     }
   }
 
-  let dragStartPos = 0;
-  let dragStartWidth = 0;
-  let dragFlexSpace = 1;
-  let activePointerID: number | null = null;
-  let captureEl: HTMLElement | null = null;
+  let dragStartPos = 0
+  let dragStartWidth = 0
+  let dragFlexSpace = 1
+  let activePointerID: number | null = null
+  let captureEl: HTMLElement | null = null
 
   function onWindowPointerMove(e: PointerEvent) {
-    if (!isDragging || e.pointerId !== activePointerID) return;
-    const currentPos = stacked ? e.clientY : e.clientX;
-    const deltaPx = currentPos - dragStartPos;
+    if (!isDragging || e.pointerId !== activePointerID) return
+    const currentPos = stacked ? e.clientY : e.clientX
+    const deltaPx = currentPos - dragStartPos
     leftWidth = Math.max(
       effectiveMinLeft,
       Math.min(effectiveMaxLeft, dragStartWidth + deltaPx / dragFlexSpace)
-    );
+    )
   }
 
   function endDrag() {
-    if (!isDragging) return;
-    const pointerId = activePointerID;
-    const el = captureEl;
-    isDragging = false;
-    activePointerID = null;
-    captureEl = null;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    window.removeEventListener('pointermove', onWindowPointerMove);
-    window.removeEventListener('pointerup', onWindowPointerEnd);
-    window.removeEventListener('pointercancel', onWindowPointerEnd);
+    if (!isDragging) return
+    const pointerId = activePointerID
+    const el = captureEl
+    isDragging = false
+    activePointerID = null
+    captureEl = null
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    window.removeEventListener('pointermove', onWindowPointerMove)
+    window.removeEventListener('pointerup', onWindowPointerEnd)
+    window.removeEventListener('pointercancel', onWindowPointerEnd)
     if (el && pointerId !== null) {
       try {
-        el.releasePointerCapture(pointerId);
+        el.releasePointerCapture(pointerId)
       } catch {
         /* capture already released */
       }
     }
-    saveWidth();
+    saveWidth()
   }
 
   function onWindowPointerEnd(e: PointerEvent) {
-    if (!isDragging || e.pointerId !== activePointerID) return;
-    endDrag();
+    if (!isDragging || e.pointerId !== activePointerID) return
+    endDrag()
   }
 
   function handlePointerDown(e: PointerEvent) {
-    if (isDragging) return;
-    e.preventDefault();
-    const target = e.currentTarget as HTMLElement;
-    captureEl = target;
-    activePointerID = e.pointerId;
+    if (isDragging) return
+    e.preventDefault()
+    const target = e.currentTarget as HTMLElement
+    captureEl = target
+    activePointerID = e.pointerId
     try {
-      target.setPointerCapture(e.pointerId);
+      target.setPointerCapture(e.pointerId)
     } catch {
       /* ignore — window listeners still end the drag */
     }
-    isDragging = true;
-    dragStartPos = stacked ? e.clientY : e.clientX;
-    dragStartWidth = leftWidth;
+    isDragging = true
+    dragStartPos = stacked ? e.clientY : e.clientX
+    dragStartWidth = leftWidth
 
     if (containerRef) {
-      const rect = containerRef.getBoundingClientRect();
+      const rect = containerRef.getBoundingClientRect()
       if (stacked && usePanelHeaderResize) {
-        dragFlexSpace = Math.max(1, rect.height);
+        dragFlexSpace = Math.max(1, rect.height)
       } else if (dividerRef) {
-        const g = panelSplitGapPx();
-        const divSize = stacked ? dividerRef.offsetHeight : dividerRef.offsetWidth;
+        const g = panelSplitGapPx()
+        const divSize = stacked
+          ? dividerRef.offsetHeight
+          : dividerRef.offsetWidth
         dragFlexSpace = Math.max(
           1,
           (stacked ? rect.height : rect.width) - divSize - 2 * g
-        );
+        )
       }
     }
 
-    document.body.style.cursor = stacked ? 'row-resize' : 'col-resize';
-    document.body.style.userSelect = 'none';
-    window.addEventListener('pointermove', onWindowPointerMove);
-    window.addEventListener('pointerup', onWindowPointerEnd);
-    window.addEventListener('pointercancel', onWindowPointerEnd);
+    document.body.style.cursor = stacked ? 'row-resize' : 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onWindowPointerMove)
+    window.addEventListener('pointerup', onWindowPointerEnd)
+    window.addEventListener('pointercancel', onWindowPointerEnd)
   }
 
   function handlePointerMove(e: PointerEvent) {
-    onWindowPointerMove(e);
+    onWindowPointerMove(e)
   }
 
   function handlePointerUp(e: PointerEvent) {
-    onWindowPointerEnd(e);
+    onWindowPointerEnd(e)
   }
 
-  onDestroy(endDrag);
+  onDestroy(endDrag)
 
   function handleDoubleClick() {
-    leftWidth = defaultLeftWidth;
-    saveWidth();
+    leftWidth = defaultLeftWidth
+    saveWidth()
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    const step = e.shiftKey ? 0.05 : 0.01;
-    const lo = effectiveMinLeft;
-    const hi = effectiveMaxLeft;
+    const step = e.shiftKey ? 0.05 : 0.01
+    const lo = effectiveMinLeft
+    const hi = effectiveMaxLeft
     if (stacked) {
       if (e.key === 'ArrowUp' && leftWidth > lo) {
-        e.preventDefault();
-        leftWidth = Math.max(lo, leftWidth - step);
-        saveWidth();
+        e.preventDefault()
+        leftWidth = Math.max(lo, leftWidth - step)
+        saveWidth()
       } else if (e.key === 'ArrowDown' && leftWidth < hi) {
-        e.preventDefault();
-        leftWidth = Math.min(hi, leftWidth + step);
-        saveWidth();
+        e.preventDefault()
+        leftWidth = Math.min(hi, leftWidth + step)
+        saveWidth()
       }
     } else {
       if (e.key === 'ArrowLeft' && leftWidth > lo) {
-        e.preventDefault();
-        leftWidth = Math.max(lo, leftWidth - step);
-        saveWidth();
+        e.preventDefault()
+        leftWidth = Math.max(lo, leftWidth - step)
+        saveWidth()
       } else if (e.key === 'ArrowRight' && leftWidth < hi) {
-        e.preventDefault();
-        leftWidth = Math.min(hi, leftWidth + step);
-        saveWidth();
+        e.preventDefault()
+        leftWidth = Math.min(hi, leftWidth + step)
+        saveWidth()
       }
     }
   }
 
   $effect(() => {
-    if (!containerRef) return;
+    if (!containerRef) return
     const ro = new ResizeObserver(entries => {
       for (const entry of entries) {
-        containerWidth = entry.contentRect.width;
-        containerHeight = entry.contentRect.height;
+        containerWidth = entry.contentRect.width
+        containerHeight = entry.contentRect.height
       }
-    });
-    ro.observe(containerRef);
-    return () => ro.disconnect();
-  });
+    })
+    ro.observe(containerRef)
+    return () => ro.disconnect()
+  })
 </script>
 
 {#if stacked}

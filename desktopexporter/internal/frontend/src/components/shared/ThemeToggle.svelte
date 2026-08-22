@@ -34,7 +34,7 @@
       setTheme(saved as ThemeName)
     } else {
       const prefersDark = window.matchMedia(
-        '(prefers-color-scheme: dark)',
+        '(prefers-color-scheme: dark)'
       ).matches
       setTheme(prefersDark ? 'rose-pine-moon' : 'rose-pine-dawn')
     }
@@ -45,7 +45,7 @@
       ? 'Dawn'
       : currentTheme === 'rose-pine-moon'
         ? 'Moon'
-        : 'Pine',
+        : 'Pine'
   )
   // aria-label states current state ("active"); the tooltip just names the
   // theme, since a hovering user already sees which one is showing.

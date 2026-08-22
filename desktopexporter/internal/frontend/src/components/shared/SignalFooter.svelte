@@ -27,15 +27,7 @@
 
 <div class="signal-footer">
   <span aria-hidden="true"></span>
-  <DetailNav
-    {index}
-    {total}
-    {label}
-    {onFirst}
-    {onPrev}
-    {onNext}
-    {onLast}
-  />
+  <DetailNav {index} {total} {label} {onFirst} {onPrev} {onNext} {onLast} />
   {#if onDelete}
     <div
       class="tooltip tooltip-left tooltip-error"
