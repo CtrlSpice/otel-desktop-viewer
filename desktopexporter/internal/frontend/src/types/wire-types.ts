@@ -378,6 +378,14 @@ export type JsonMetricData = {
   name: string
   // Coalesced server-side ('' for a stream with no ingests in the window).
   description: string
+  /**
+   * OTLP Metric.metadata: an attribute map describing the instrument itself,
+   * not the labels that identify a series. Coalesced to [] server-side.
+   *
+   * Read from the same representative ingest description comes from, since
+   * both are per-batch rather than part of stream identity.
+   */
+  metadata: JsonAttribute[]
   unit: string
   metricType: JsonMetricType
   // Projected straight off metric_streams, where "not applicable" is

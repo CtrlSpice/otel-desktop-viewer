@@ -42,6 +42,8 @@
     if (!m) return 0
     let n = 2 // name + type are always present
     if (m.description) n++
+    // OTLP Metric.metadata: one row per entry, like span attributes.
+    n += m.metadata.length
     if (m.unit) n++
     if (ctx.temporality) n++
     if (ctx.isMonotonic !== null) n++
@@ -49,14 +51,18 @@
     n++ // datapoint count
     return n
   })
-  type MetadataAttr = {
+  // An attribute of whatever *emitted* the metric -- its resource or its
+  // instrumentation scope -- for the two panels below the metric's own
+  // fields. Not OTLP's Metric.metadata, which describes the instrument and
+  // renders up with name and description.
+  type EmitterAttr = {
     key: string
     value: string
     type: string
     scope: 'resource' | 'scope'
   }
 
-  let resourceAttrs = $derived.by((): MetadataAttr[] => {
+  let resourceAttrs = $derived.by((): EmitterAttr[] => {
     const m = ctx.metric
     if (!m) return []
     return dedupeAttributes(m.resource.attributes).map(a => ({
@@ -67,11 +73,11 @@
     }))
   })
 
-  let scopeAttrs = $derived.by((): MetadataAttr[] => {
+  let scopeAttrs = $derived.by((): EmitterAttr[] => {
     const m = ctx.metric
     if (!m) return []
     const attrs = dedupeAttributes(m.scope.attributes)
-    const out: MetadataAttr[] = []
+    const out: EmitterAttr[] = []
     if (m.scope.name) {
       out.push({
         key: 'name',
@@ -143,6 +149,19 @@
                   fieldType="string"
                 />
               {/if}
+              <!--
+                Metric.metadata describes the instrument, so it sits with
+                description rather than with the resource and scope panels
+                below -- those group attributes of the *emitter*. Rendered one
+                row per entry, the way span attributes are.
+              -->
+              {#each metric.metadata as attr (attr.key)}
+                <MetricField
+                  fieldName={attr.key}
+                  fieldValue={attr.value}
+                  fieldType={attr.type}
+                />
+              {/each}
               <MetricField
                 fieldName="type"
                 fieldValue={ctx.metricType}

@@ -370,6 +370,8 @@ export type MetricData = {
   id: string
   name: string
   description: string
+  /** OTLP Metric.metadata: describes the instrument, not any one series. */
+  metadata: Attributes
   unit: string
   /** Stream-level type from metric_streams (getMetric only). */
   metricType?: MetricType

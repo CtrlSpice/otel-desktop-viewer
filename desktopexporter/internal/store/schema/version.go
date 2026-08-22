@@ -61,7 +61,14 @@ package schema
 // an existing table, which `create table if not exists` will not add to a
 // version 5 file -- that file keeps its narrower spans table and the first
 // ingest fails on the appender's column count.
-const Version = 6
+//
+// Version 7 adds metadata_ids to metric_ingests, for OTLP's Metric.metadata --
+// an attribute map describing the instrument rather than identifying a series.
+// It sits beside description because both vary per batch and neither is part
+// of stream identity. Same mechanism as versions 3 and 6: a new column on an
+// existing table, so a version 6 file fails the metric appender's column count
+// on its first metric batch.
+const Version = 7
 
 // VersionTableQuery creates the version table.
 //
