@@ -1,0 +1,1 @@
+import{s as e}from"./common-Bx7RCDLH.js";function t(e){return typeof e==`object`&&!!e&&typeof e!=`function`}function n(n,r,...i){return t(n)?{...n,class:e(r,...i,n.class)}:{class:e(r,...i)}}export{n as t};
