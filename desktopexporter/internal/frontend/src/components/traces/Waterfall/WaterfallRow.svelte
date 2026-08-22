@@ -4,6 +4,7 @@
   import { formatDuration } from '@/utils/time'
   import { getServiceName } from '@/utils/resource'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
+  import { BiohazardIcon } from '@/icons'
   import WaterfallEventDots from './WaterfallEventDots.svelte'
 
   type Props = {
@@ -124,8 +125,11 @@
           title={cycleLabel}
           aria-label={cycleLabel}
         >
-          <!-- Icon slot: swap this glyph for the artwork once it lands. -->
-          <span aria-hidden="true">{row.spanNode.cyclePoint ? '\u26A0' : '\u21BB'}</span>
+          {#if row.spanNode.cyclePoint}
+            <BiohazardIcon aria-hidden="true" />
+          {:else}
+            <span aria-hidden="true">{'\u26A0'}</span>
+          {/if}
         </span>
       {/if}
       <span class="col-resize-marker" aria-hidden="true"></span>
@@ -215,15 +219,15 @@
 
   /* Marks a span the cycle-aware walk recovered. flex-none so it survives the
      title's truncation rather than being squeezed out of a narrow column --
-     the badge is the reason the row is worth reading. */
+     the badge is the reason the row is worth reading. One glyph, two colors:
+     every stranded span warns in the theme's warning gold, and only the span
+     whose parent link caused it escalates to the error red. */
   .waterfall-row__cycle {
-    @apply flex-none text-warning/80 text-xs leading-none;
+    @apply flex-none text-warning text-xs leading-none;
   }
 
-  /* The span that caused it, which earns more weight than the ones it
-     stranded. */
   .waterfall-row__cycle--offender {
-    @apply text-warning text-sm font-bold;
+    @apply text-error text-sm font-bold;
   }
 
   .waterfall-row__td-service {

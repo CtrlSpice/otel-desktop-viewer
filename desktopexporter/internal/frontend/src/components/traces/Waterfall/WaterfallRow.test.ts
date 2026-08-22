@@ -108,9 +108,10 @@ describe('WaterfallRow cycle badge', () => {
     expect(badge!.getAttribute('title')).toContain(
       'Recovered from a broken part of this trace'
     )
-    // The recovery glyph, not the offender's warning glyph.
-    expect(badge!.textContent).toContain('↻')
-    expect(badge!.textContent).not.toContain('⚠')
+    // Warning glyph in the warning tint: no offender escalation, no biohazard.
+    expect(badge!.textContent).toContain('⚠')
+    expect(badge!.querySelector('svg')).toBeNull()
+    expect(badge!.classList.contains('waterfall-row__cycle--offender')).toBe(false)
   })
 
   it('shows the offender badge and distinct wording when cyclePoint is true', () => {
@@ -123,8 +124,10 @@ describe('WaterfallRow cycle badge', () => {
     expect(badge!.getAttribute('aria-label')).toContain(
       'This span causes the cycle'
     )
-    expect(badge!.textContent).toContain('⚠')
-    expect(badge!.textContent).not.toContain('↻')
+    // The biohazard svg, not the warning glyph.
+    expect(badge!.querySelector('svg')).not.toBeNull()
+    expect(badge!.textContent).not.toContain('⚠')
+    expect(badge!.classList.contains('waterfall-row__cycle--offender')).toBe(true)
   })
 
   it('gives the offender and the spans it stranded distinguishable labels', () => {
