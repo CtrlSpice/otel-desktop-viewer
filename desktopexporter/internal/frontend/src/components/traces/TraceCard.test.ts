@@ -34,11 +34,11 @@ describe('TraceCard', () => {
     expect(button).toHaveTextContent('(orders-service)')
   })
 
-  it('falls back to a placeholder title when the trace has no root span yet', () => {
+  it('falls back to a placeholder title when the trace has no root span', () => {
     renderCard({
       trace: makeTrace({ hasRootSpan: false, rootSpan: undefined }),
     })
-    expect(screen.getByText('No root span yet')).toBeInTheDocument()
+    expect(screen.getByText('No root span')).toBeInTheDocument()
   })
 
   it('renders the formatted start time and duration', () => {
