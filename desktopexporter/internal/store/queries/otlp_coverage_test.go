@@ -73,18 +73,20 @@ func TestSchemaCoversOTLP(t *testing.T) {
 	// metric_ingests.metadata_ids still passed.
 	type storedAt struct{ table, column string }
 	elsewhere := map[string]storedAt{
-		"Exemplars": {"exemplars", "datapoint_id"},
+		"NumberDataPoint.Exemplars":               {"exemplars", "datapoint_id"},
+		"HistogramDataPoint.Exemplars":            {"exemplars", "datapoint_id"},
+		"ExponentialHistogramDataPoint.Exemplars": {"exemplars", "datapoint_id"},
 		// Field is plural and prefixed; the column is the ordinary one.
-		"FilteredAttributes": {"exemplars", "attribute_ids"},
-		"ExplicitBounds":     {"datapoints", "bounds_id"},
-		"Positive":           {"datapoints", "positive_bucket_counts"},
-		"Negative":           {"datapoints", "negative_bucket_counts"},
+		"Exemplar.FilteredAttributes":            {"exemplars", "attribute_ids"},
+		"HistogramDataPoint.ExplicitBounds":      {"datapoints", "bounds_id"},
+		"ExponentialHistogramDataPoint.Positive": {"datapoints", "positive_bucket_counts"},
+		"ExponentialHistogramDataPoint.Negative": {"datapoints", "negative_bucket_counts"},
 		// The oneof carrying a metric's datapoints. Not a field in its own
 		// right; which arm is set is metric_streams.metric_type.
-		"Gauge":                {"metric_streams", "metric_type"},
-		"Sum":                  {"metric_streams", "metric_type"},
-		"Histogram":            {"metric_streams", "metric_type"},
-		"ExponentialHistogram": {"metric_streams", "metric_type"},
+		"Metric.Gauge":                {"metric_streams", "metric_type"},
+		"Metric.Sum":                  {"metric_streams", "metric_type"},
+		"Metric.Histogram":            {"metric_streams", "metric_type"},
+		"Metric.ExponentialHistogram": {"metric_streams", "metric_type"},
 	}
 
 	// Accessors that describe pdata's own plumbing rather than OTLP content.
@@ -119,19 +121,19 @@ func TestSchemaCoversOTLP(t *testing.T) {
 	// metric_streams while its per-batch fields (description, metadata) are on
 	// metric_ingests, and both are "stored".
 	cases := []struct {
-		what   string
+		what   string // bare pdata type name, used to key the maps above
 		val    any
 		tables []string
 	}{
-		{"ptrace.Span", ptrace.NewSpan(), []string{"spans"}},
-		{"ptrace.SpanEvent", ptrace.NewSpanEvent(), []string{"events"}},
-		{"ptrace.SpanLink", ptrace.NewSpanLink(), []string{"links"}},
-		{"plog.LogRecord", plog.NewLogRecord(), []string{"logs"}},
-		{"pmetric.NumberDataPoint", pmetric.NewNumberDataPoint(), []string{"datapoints"}},
-		{"pmetric.HistogramDataPoint", pmetric.NewHistogramDataPoint(), []string{"datapoints"}},
-		{"pmetric.ExponentialHistogramDataPoint", pmetric.NewExponentialHistogramDataPoint(), []string{"datapoints"}},
-		{"pmetric.Exemplar", pmetric.NewExemplar(), []string{"exemplars"}},
-		{"pmetric.Metric", pmetric.NewMetric(), []string{"metric_streams", "metric_ingests"}},
+		{"Span", ptrace.NewSpan(), []string{"spans"}},
+		{"SpanEvent", ptrace.NewSpanEvent(), []string{"events"}},
+		{"SpanLink", ptrace.NewSpanLink(), []string{"links"}},
+		{"LogRecord", plog.NewLogRecord(), []string{"logs"}},
+		{"NumberDataPoint", pmetric.NewNumberDataPoint(), []string{"datapoints"}},
+		{"HistogramDataPoint", pmetric.NewHistogramDataPoint(), []string{"datapoints"}},
+		{"ExponentialHistogramDataPoint", pmetric.NewExponentialHistogramDataPoint(), []string{"datapoints"}},
+		{"Exemplar", pmetric.NewExemplar(), []string{"exemplars"}},
+		{"Metric", pmetric.NewMetric(), []string{"metric_streams", "metric_ingests"}},
 	}
 
 	// Fields OTLP defines that this store does not keep, on purpose.
@@ -142,7 +144,7 @@ func TestSchemaCoversOTLP(t *testing.T) {
 	// it, and nobody has to rediscover why it is absent. If one ever becomes
 	// supported, delete the line and the test starts guarding it.
 	notSupported := map[string]string{
-		"Summary": "Summary is not supported. Its quantiles are precomputed and " +
+		"Metric.Summary": "Summary is not supported. Its quantiles are precomputed and " +
 			"'cannot always be merged in a meaningful way' (metrics.proto), so it " +
 			"does not fit the aggregation path histograms use. eachDatapoint " +
 			"handles Gauge, Sum, Histogram and ExponentialHistogram only.",
@@ -175,10 +177,11 @@ func TestSchemaCoversOTLP(t *testing.T) {
 				if strings.HasPrefix(m.Name, "Set") || notAField[m.Name] {
 					continue
 				}
-				if _, ok := elsewhere[m.Name]; ok {
+				key := tc.what + "." + m.Name
+				if _, ok := elsewhere[key]; ok {
 					continue
 				}
-				if _, ok := notSupported[m.Name]; ok {
+				if _, ok := notSupported[key]; ok {
 					continue
 				}
 

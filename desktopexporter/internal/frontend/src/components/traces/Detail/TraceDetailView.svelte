@@ -132,6 +132,7 @@
     if (detailSearchFieldVisible(f, 'traceID')) n++
     if (!isRoot && detailSearchFieldVisible(f, 'parentSpanID')) n++
     if (detailSearchFieldVisible(f, 'spanID')) n++
+    if (span.flags > 0 && detailFlagsVisible(f)) n++
     for (const attr of span.attributes) {
       if (detailAttributeVisible(f, attr.key, 'span')) n++
     }
