@@ -9,6 +9,7 @@ create or replace macro link_json(l, attrs) as (
         'spanID', span_id_wire(l.linked_span_id),
         'traceState', l.trace_state,
         'droppedAttributesCount', l.dropped_attributes_count,
+        'flags', l.flags,
         'attributes', coalesce(attrs, json('[]'))
     )
 )

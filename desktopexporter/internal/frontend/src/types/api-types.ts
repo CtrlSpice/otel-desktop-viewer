@@ -45,6 +45,8 @@ export type SpanData = {
   traceState: string
   spanID: string
   parentSpanID: string | null
+  /** W3C trace flags, plus whether the parent context was remote. */
+  flags: number
 
   name: string
   kind: string
@@ -98,6 +100,8 @@ export type LinkData = {
   traceState: string
   attributes: Attributes
   droppedAttributesCount: number
+  /** W3C trace flags for the linked context. */
+  flags: number
 }
 
 export type LogData = {

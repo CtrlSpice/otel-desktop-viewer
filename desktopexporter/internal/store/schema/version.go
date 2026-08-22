@@ -54,7 +54,7 @@ package schema
 // dictionary, referenced by bounds_id. A version 4 file has the vector where
 // this build expects a reference, so its histogram datapoints are unreadable
 // under this schema, not merely stale.
-const Version = 5
+const Version = 6
 
 // VersionTableQuery creates the version table.
 //

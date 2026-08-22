@@ -1870,3 +1870,72 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 1, w.cyclePoint, "its parent link points at itself")
 	})
 }
+
+// TestSpanAndLinkFlagsRoundTrip pins that a span's flags survive the store.
+//
+// They did not, until they did: logs and metric datapoints stored theirs from
+// the start while spans and links dropped them at ingest, so a span read back
+// was not the span that went in. Flags carry the W3C sampled bit and, for a
+// span, whether the parent context was remote -- exactly the fields anything
+// reconstructing OTLP from this store would need and silently not find.
+//
+// Asserted through SearchSpans rather than by selecting the column, because
+// the column existing is not the claim. The claim is that the value reaches
+// the wire, which means surviving the recursive walk's explicit column list
+// and the JSON macro -- the two places this was actually missing.
+func TestSpanAndLinkFlagsRoundTrip(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	const (
+		traceIDHex = "000000000000000000000000000000aa"
+		spanFlags  = uint32(0x101) // sampled, plus the is_remote bit
+		linkFlags  = uint32(0x1)   // sampled
+	)
+
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "flags-test")
+	sp := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	sp.SetTraceID([16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xaa})
+	sp.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 1})
+	sp.SetName("flagged")
+	sp.SetFlags(spanFlags)
+	sp.SetStartTimestamp(1000)
+	sp.SetEndTimestamp(2000)
+
+	link := sp.Links().AppendEmpty()
+	link.SetTraceID([16]byte{0xbb})
+	link.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 2})
+	link.SetFlags(linkFlags)
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+	}))
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchSpans(ctx, db, traceIDHex, nil)
+	})
+	require.NoError(t, err)
+
+	var out struct {
+		Spans []struct {
+			SpanData struct {
+				Name  string `json:"name"`
+				Flags uint32 `json:"flags"`
+				Links []struct {
+					Flags uint32 `json:"flags"`
+				} `json:"links"`
+			} `json:"spanData"`
+		} `json:"spans"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &out))
+	require.Len(t, out.Spans, 1)
+
+	got := out.Spans[0].SpanData
+	assert.Equal(t, "flagged", got.Name)
+	assert.Equal(t, spanFlags, got.Flags, "span flags must survive ingest and the walk")
+	require.Len(t, got.Links, 1)
+	assert.Equal(t, linkFlags, got.Links[0].Flags, "link flags must survive too")
+}
