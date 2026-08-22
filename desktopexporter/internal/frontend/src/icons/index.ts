@@ -3,6 +3,7 @@
  * Add `YourName.svelte` here using the same identifier as the file stem.
  */
 import ArrowDownIcon from './ArrowDownIcon.svelte'
+import BiohazardIcon from './BiohazardIcon.svelte'
 import ArrowLeftDoubleIcon from './ArrowLeftDoubleIcon.svelte'
 import ArrowLeftIcon from './ArrowLeftIcon.svelte'
 import ArrowRightDoubleIcon from './ArrowRightDoubleIcon.svelte'
@@ -26,11 +27,13 @@ import HomeIcon from './HomeIcon.svelte'
 import FallingStarIcon from './FallingStarIcon.svelte'
 import MoonIcon from './MoonIcon.svelte'
 import ReloadIcon from './Reload.svelte'
+import SalvageIcon from './SalvageIcon.svelte'
 import SortingIcon from './SortingIcon.svelte'
 import SunIcon from './SunIcon.svelte'
 import TrashIcon from './TrashIcon.svelte'
 
 export {
+  BiohazardIcon,
   ArrowDownIcon,
   ArrowLeftDoubleIcon,
   ArrowLeftIcon,
@@ -55,6 +58,7 @@ export {
   FallingStarIcon,
   MoonIcon,
   ReloadIcon,
+  SalvageIcon,
   SortingIcon,
   SunIcon,
   TrashIcon,

@@ -90,6 +90,16 @@ const (
 	// payload, and the resource/scope maps the wire format references.
 	SearchSpans Name = "spans/search_spans.sql"
 
+	// SalvageSpans is SearchSpans plus a second, cycle-aware walk that
+	// recovers spans the ordinary walk cannot reach.
+	//
+	// A separate query rather than more CTEs on SearchSpans because the
+	// salvage machinery costs a reproducible ~8% on every trace fetch, and it
+	// finds something on almost none of them: zero spans across 122,224 in a
+	// real capture. SearchSpans returns the count of what it could not place,
+	// and only a non-zero count sends the caller here.
+	SalvageSpans Name = "spans/salvage_spans.sql"
+
 	// SearchTraces lists trace summaries for the trace list view.
 	SearchTraces Name = "spans/search_traces.sql"
 
@@ -112,7 +122,7 @@ const (
 // queryNames is every read-path query. Kept beside the constants so adding one
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
-	SearchSpans, SearchTraces,
+	SearchSpans, SalvageSpans, SearchTraces,
 	GetMetric, GetMetricAttributes,
 	GetLog, GetLogAttributes,
 	SearchMetricSummaries, SearchLogs,

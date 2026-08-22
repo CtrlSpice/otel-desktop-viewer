@@ -194,6 +194,15 @@
 		-- than its parent, and min() is also indifferent to whether the trace
 		-- has a root at all -- which matters, since a trace whose parent is
 		-- missing is displayed as rooted anyway.
+		-- Counted once and referenced twice: the response carries it for the
+		-- client, and it comes back as its own column so the caller can branch
+		-- without parsing. Written as two inline subqueries it was evaluated
+		-- twice, which measured at ~11ms on a 245k-span store -- not the free
+		-- subtraction of two materialised counts it looks like.
+		unplaced_count as (
+			select (select count(*) from trace_spans) - (select count(*) from tree) as n
+		),
+
 		trace_start as (
 			select min(start_time) as t from tree
 		),
@@ -232,8 +241,29 @@
 				-- which was over half the response.
 				'resources', coalesce((select json_group_object(seq::varchar, obj) from resource_data), json('{}')),
 				'scopes', coalesce((select json_group_object(seq::varchar, obj) from scope_data), json('{}')),
+				-- Spans the walk could not place under any root.
+				--
+				-- A span becomes a root when its parent is absent from the
+				-- trace, so anything left unreached still has a parent present
+				-- -- which, with at most one parent per span, means it sits on
+				-- a cycle. Malformed input rather than anything OTLP permits,
+				-- and it cannot hang the walk, because a cycle member never
+				-- qualifies as a root and the walk only ever descends into
+				-- children. It is dropped instead, and dropping it silently is
+				-- the part worth fixing: the trace renders short with nothing
+				-- saying so.
+				--
+				-- Free to compute: both counts are already materialised.
+				'unplacedSpanCount', (select n from unplaced_count),
 				'spans', coalesce(to_json(list(span_json order by sort_path)), json('[]'))
 			) as varchar)
-		end as trace
+		end as trace,
+		-- Returned as its own column, not dug back out of the JSON.
+		--
+		-- The caller branches on this to decide whether the trace needs the
+		-- salvage query, and parsing a 171KB response in Go to read one
+		-- integer would put that cost on every healthy trace -- which is the
+		-- whole thing this split exists to avoid.
+		(select n from unplaced_count) as unplaced
 		from ordered_spans
 	

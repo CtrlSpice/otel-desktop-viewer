@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,23 +52,35 @@ var goldenCases = []struct {
 //
 // Regenerate with: go test ./internal/store/spans/ -run Golden -update-golden
 func TestSearchSpansSQLGolden(t *testing.T) {
-	for _, tc := range goldenCases {
-		t.Run(tc.name, func(t *testing.T) {
-			query, _, err := searchSpansSQL(tc.traceID, tc.criteria)
-			require.NoError(t, err)
+	// Both trace-fetch queries, because they are separate templates now: the
+	// hot path, and the cycle-aware variant it falls back to. They share their
+	// parameters and their search-predicate plumbing, so an edit meant for both
+	// can silently land in only one.
+	for _, q := range []struct {
+		prefix string
+		name   queries.Name
+	}{
+		{"search_spans", queries.SearchSpans},
+		{"salvage_spans", queries.SalvageSpans},
+	} {
+		for _, tc := range goldenCases {
+			t.Run(q.prefix+"_"+tc.name, func(t *testing.T) {
+				query, _, err := renderSpansQuery(q.name, tc.traceID, tc.criteria)
+				require.NoError(t, err)
 
-			path := filepath.Join("testdata", "search_spans_"+tc.name+".sql")
-			if *updateGolden {
-				require.NoError(t, os.MkdirAll("testdata", 0o755))
-				require.NoError(t, os.WriteFile(path, []byte(query), 0o644))
-				return
-			}
+				path := filepath.Join("testdata", q.prefix+"_"+tc.name+".sql")
+				if *updateGolden {
+					require.NoError(t, os.MkdirAll("testdata", 0o755))
+					require.NoError(t, os.WriteFile(path, []byte(query), 0o644))
+					return
+				}
 
-			want, err := os.ReadFile(path)
-			require.NoError(t, err, "missing golden file; run with -update-golden")
-			require.Equal(t, string(want), query,
-				"rendered SQL changed. If deliberate, re-run with -update-golden and read the diff carefully")
-		})
+				want, err := os.ReadFile(path)
+				require.NoError(t, err, "missing golden file; run with -update-golden")
+				require.Equal(t, string(want), query,
+					"rendered SQL changed. If deliberate, re-run with -update-golden and read the diff carefully")
+			})
+		}
 	}
 }
 

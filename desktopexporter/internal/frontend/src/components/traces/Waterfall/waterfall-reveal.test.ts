@@ -19,3 +19,41 @@ describe('ancestorIdsOf', () => {
     expect(ancestorIdsOf('a', parentOf)).toEqual([])
   })
 })
+
+describe('ancestorIdsOf with parent cycles', () => {
+  // parentSpanID is reported data, not verified structure. A salvaged trace
+  // can put two spans in each other's ancestry; the walk must terminate and
+  // return the chain up to the first repeat, not hang the main thread.
+  it('terminates on a two-span cycle and reports the single honest step', () => {
+    const parentOf = new Map<string, string | null>([
+      ['old-biff', 'young-biff'],
+      ['young-biff', 'old-biff'],
+    ])
+    expect(ancestorIdsOf('old-biff', parentOf)).toEqual(['young-biff'])
+    expect(ancestorIdsOf('young-biff', parentOf)).toEqual(['old-biff'])
+  })
+
+  it('terminates on a self-parenting span with no ancestors', () => {
+    const parentOf = new Map<string, string | null>([['fry', 'fry']])
+    expect(ancestorIdsOf('fry', parentOf)).toEqual([])
+  })
+
+  it('walks a healthy chain exactly as before', () => {
+    const parentOf = new Map<string, string | null>([
+      ['grandchild', 'child'],
+      ['child', 'root'],
+      ['root', null],
+    ])
+    expect(ancestorIdsOf('grandchild', parentOf)).toEqual(['child', 'root'])
+  })
+
+  it('stops where a long chain feeds into a cycle', () => {
+    const parentOf = new Map<string, string | null>([
+      ['leaf', 'mid'],
+      ['mid', 'loop-a'],
+      ['loop-a', 'loop-b'],
+      ['loop-b', 'loop-a'],
+    ])
+    expect(ancestorIdsOf('leaf', parentOf)).toEqual(['mid', 'loop-a', 'loop-b'])
+  })
+})

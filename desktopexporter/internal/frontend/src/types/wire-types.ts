@@ -112,6 +112,19 @@ export type JsonSpanNode = {
   depth: number
   // Always emitted: literal true when no search criteria, else per-span.
   matched: boolean
+  /**
+   * Present only on spans recovered from a stranded part of the trace -- ones
+   * the ordinary walk could not reach because their parent links form a loop.
+   * Absent on every span of a well-formed trace, which is why it is optional
+   * rather than a boolean on every row.
+   */
+  salvaged?: true
+  /**
+   * Present alongside `salvaged`. True on the one span whose parent link is
+   * the lie: it heads a salvaged chain, and its own parent turns up further
+   * down that same chain.
+   */
+  cyclePoint?: boolean
 }
 
 export type JsonTraceData = {
@@ -131,6 +144,16 @@ export type JsonTraceData = {
   resources: Record<string, JsonResourceData>
   /** Distinct scopes in this trace, keyed by a store-stable sequence number. */
   scopes: Record<string, JsonScopeData>
+  /**
+   * Spans present in the trace that could not be placed under any root, and
+   * so are absent from `spans`.
+   *
+   * Normally 0. A span whose parent is missing is promoted to a root and
+   * rendered as its own tree, so the only way to be unplaced is to sit on a
+   * parent cycle -- malformed input. Reported rather than silently dropped,
+   * because otherwise the trace just renders short.
+   */
+  unplacedSpanCount: number
   spans: JsonSpanNode[]
 }
 

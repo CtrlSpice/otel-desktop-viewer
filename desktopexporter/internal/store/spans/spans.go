@@ -317,6 +317,22 @@ func searchTracesSQL(startTime, endTime int64, criteria any) (string, []any, err
 // SearchSpans returns spans for a single trace, optionally filtered by search criteria.
 // When criteria is nil, all spans for the trace are returned (replacing GetTrace).
 // When criteria is provided, only matching spans are returned (replacing SearchTraceSpans).
+// SearchSpans fetches one whole trace.
+//
+// Two queries, and only ever one of them for a well-formed trace. The ordinary
+// walk cannot reach a span whose parent chain forms a cycle -- nothing outside
+// a cycle points into it -- so recovering those spans needs a second walk that
+// picks its own entry point and carries its ancestry to avoid spinning.
+//
+// That second walk was first written as more CTEs on this query, which cost a
+// reproducible ~8% on every trace fetch (32.5ms to 35.2ms, three interleaved
+// rounds) to find something on almost no traces: zero unreachable spans across
+// 122,224 in a real capture. Here the healthy path is untouched, and a trace
+// pays for salvage only by being broken.
+//
+// The count comes back as its own column rather than being parsed out of the
+// response, so the branch costs a scanned integer instead of unmarshalling
+// 171KB.
 func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
 	query, args, err := searchSpansSQL(traceID, criteria)
 	if err != nil {
@@ -324,11 +340,42 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 	}
 
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+	var unplaced int64
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw, &unplaced); err != nil {
 		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
 		return nil, fmt.Errorf("SearchSpans: %w", ErrTraceIDNotFound)
+	}
+	if unplaced == 0 {
+		return json.RawMessage(raw), nil
+	}
+
+	// Something is stranded. Re-run with the cycle-aware walk, which returns
+	// the whole trace again rather than a fragment to merge -- simpler, and
+	// affordable precisely because it is the rare path.
+	salvaged, err := salvageSpans(ctx, db, traceID, criteria)
+	if err != nil {
+		// The ordinary result is still correct as far as it goes, and short a
+		// few spans is better than an error page.
+		return json.RawMessage(raw), nil
+	}
+	return salvaged, nil
+}
+
+// salvageSpans runs the cycle-aware variant of the trace fetch.
+func salvageSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
+	query, args, err := renderSpansQuery(queries.SalvageSpans, traceID, criteria)
+	if err != nil {
+		return nil, err
+	}
+	var raw []byte
+	var unplaced int64
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw, &unplaced); err != nil {
+		return nil, fmt.Errorf("salvageSpans: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("salvageSpans: %w", ErrTraceIDNotFound)
 	}
 	return json.RawMessage(raw), nil
 }
@@ -340,6 +387,13 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 // makes moving these query bodies into .sql files provable as a no-op rather
 // than merely believed to be one.
 func searchSpansSQL(traceID string, criteria any) (string, []any, error) {
+	return renderSpansQuery(queries.SearchSpans, traceID, criteria)
+}
+
+// renderSpansQuery renders either trace-fetch query. Both take identical
+// parameters and differ only in whether they carry the salvage walk, so the
+// search-predicate plumbing is shared rather than duplicated.
+func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -385,7 +439,7 @@ func searchSpansSQL(traceID string, criteria any) (string, []any, error) {
 	// performance difference -- DuckDB already materialises a recursive CTE once
 	// and reuses it across references, and the re-derivations were PK-indexed
 	// joins over a few thousand rows. Kept for the structure, not the speed.
-	query, err := queries.Render(queries.SearchSpans, searchSpansParams{
+	query, err := queries.Render(name, searchSpansParams{
 		CTEs:        cteSQL,
 		MatchedCTE:  matchedCTE,
 		MatchedExpr: matchedExpr,

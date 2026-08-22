@@ -155,12 +155,12 @@
   let hasTraceRows = $derived(page.items.length > 0)
   let displayError = $derived(page.error ?? actionError)
 
-  let selectedSpan = $derived(
-    traceData?.spans.find(n => n.spanData.spanID === selectedSpanID)
-      ?.spanData ??
-      traceData?.spans[0]?.spanData ??
+  let selectedNode = $derived(
+    traceData?.spans.find(n => n.spanData.spanID === selectedSpanID) ??
+      traceData?.spans[0] ??
       undefined
   )
+  let selectedSpan = $derived(selectedNode?.spanData)
 
   let resolvedEventIndex = $derived.by((): number | null => {
     const span = selectedSpan
@@ -359,6 +359,17 @@
           </p>
         </div>
       {:else if traceData}
+        {#if traceData.unplacedSpanCount > 0}
+          <div class="traces-page__unplaced alert alert-warning" role="alert">
+            <span>
+              {traceData.unplacedSpanCount}
+              {traceData.unplacedSpanCount === 1 ? 'span is' : 'spans are'} missing
+              from this trace. Their parent links form a loop, so they have no
+              place in the tree — usually an instrumentation bug in the service
+              that emitted them.
+            </span>
+          </div>
+        {/if}
         <WaterfallView
           spans={traceData.spans}
           {selectedSpanID}
@@ -378,7 +389,12 @@
     {/snippet}
 
     {#snippet detail()}
-      <DetailView span={selectedSpan} selectedEventIndex={resolvedEventIndex} />
+      <DetailView
+        span={selectedSpan}
+        salvaged={selectedNode?.salvaged ?? false}
+        cyclePoint={selectedNode?.cyclePoint ?? false}
+        selectedEventIndex={resolvedEventIndex}
+      />
     {/snippet}
 
     {#snippet pageFooter()}
@@ -405,6 +421,13 @@
 
   .traces-page__placeholder {
     @apply m-[var(--layout-gap)];
+  }
+
+  /* Sits above the waterfall rather than replacing it: the spans that could
+     be placed are still worth looking at, and the notice explains why the
+     trace is short. */
+  .traces-page__unplaced {
+    @apply mx-[var(--layout-gap)] mt-[var(--layout-gap)] mb-0 text-sm;
   }
 
   .traces-empty {

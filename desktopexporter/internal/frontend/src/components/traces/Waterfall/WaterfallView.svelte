@@ -254,8 +254,8 @@
     type KeyDelta,
   } from '@/components/shared/utils/table-keyboard-nav'
   import {
-    buildChildrenBySpanId,
     computeSearchCollapsedParents,
+    buildStructuralMaps,
   } from './waterfall-tree'
   import { ancestorIdsOf } from './waterfall-reveal'
   import {
@@ -280,15 +280,24 @@
   // --- Visibility from collapse state (pure) ---
 
   /** Walk ancestors via the parent map; true if any ancestor is in the collapsed set. */
+  // Iterative with a visited set, because parentSpanID is reported data, not
+  // verified structure: a salvaged trace (see cyclePoint) can make two spans
+  // each other's ancestor, and this runs for every span on every render --
+  // the recursive version overflowed the stack the moment a cycle trace
+  // loaded, before any interaction at all.
   function hasCollapsedAncestor(
     id: string,
     parentOf: Map<string, string | null>,
     collapsed: ReadonlySet<string>
   ): boolean {
-    const pid = parentOf.get(id) ?? null
-    if (pid === null) return false
-    if (collapsed.has(pid)) return true
-    return hasCollapsedAncestor(pid, parentOf, collapsed)
+    const seen = new Set([id])
+    let pid = parentOf.get(id) ?? null
+    while (pid !== null && !seen.has(pid)) {
+      if (collapsed.has(pid)) return true
+      seen.add(pid)
+      pid = parentOf.get(pid) ?? null
+    }
+    return false
   }
 
   function rowVisibilityMap(
@@ -447,11 +456,11 @@
     spans.length > 0 && matchedIDs.size > 0 && spans.some(n => !n.matched)
   )
 
-  let parentBySpanId = $derived(
-    new Map(
-      spans.map(n => [n.spanData.spanID, n.spanData.parentSpanID] as const)
-    )
-  )
+  // Structural, not parentSpanID-based: collapse, visibility and reveal all
+  // operate on the tree as rendered, so orphans and salvaged cycle entries at
+  // depth 0 behave as roots instead of being hidden by their own "children".
+  let structuralMaps = $derived(buildStructuralMaps(spans))
+  let parentBySpanId = $derived(structuralMaps.parentBySpanId)
 
   function computeAncestorsOfMatched(
     matched: Set<string>,
@@ -563,7 +572,7 @@
     void clampScroll()
   }
 
-  let childrenBySpanId = $derived.by(() => buildChildrenBySpanId(spans))
+  let childrenBySpanId = $derived(structuralMaps.childrenBySpanId)
 
   let visibleRows = $derived.by(() =>
     rows.filter(

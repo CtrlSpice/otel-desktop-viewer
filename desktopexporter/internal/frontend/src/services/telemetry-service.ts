@@ -206,6 +206,11 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
 
   return {
     traceID: json.traceID,
+    // The query always emits this, so the fallback is not version skew --
+    // frontend and backend ship in the same binary and cannot disagree. It
+    // guards a hand-rolled or replayed response, and keeps the field a plain
+    // number so no caller has to consider undefined.
+    unplacedSpanCount: json.unplacedSpanCount ?? 0,
     // events is coalesced to [] server-side and matched is always
     // emitted (literal true when no search criteria), so no fallbacks;
     // links rides the spanData spread untouched.
@@ -227,6 +232,10 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
         },
         depth: spanNode.depth,
         matched: spanNode.matched,
+        // Spread only when present: absent on every span of a healthy trace.
+        ...(spanNode.salvaged
+          ? { salvaged: spanNode.salvaged, cyclePoint: spanNode.cyclePoint }
+          : {}),
       }
     }),
   }
