@@ -13,7 +13,12 @@
   class="shrink-0 {className}"
   aria-hidden="true"
 >
-  <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <g
+    stroke="currentColor"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
     <rect x="3" y="4" width="18" height="18" rx="2" />
     <path d="M16 2v4M8 2v4M3 10h18" />
     <path d="M12 14v2l1.5 1.5" />

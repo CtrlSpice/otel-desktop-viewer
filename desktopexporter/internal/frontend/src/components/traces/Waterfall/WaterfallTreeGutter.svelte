@@ -21,8 +21,7 @@
     onToggleExpand: () => void
   }
 
-  let { depth, tree, color, subtreeCollapsed, onToggleExpand }: Props =
-    $props()
+  let { depth, tree, color, subtreeCollapsed, onToggleExpand }: Props = $props()
 
   let hasChildren = $derived(tree.childrenCount > 0)
   let childCount = $derived(tree.childrenCount)
@@ -67,16 +66,10 @@
         <div class="seg seg--passthrough"></div>
       {:else if kind === 'tee'}
         <div class="seg seg--tee"></div>
-        <div
-          class="seg__arm"
-          style:width="calc(var(--waterfall-gutter-col) - var(--waterfall-gutter-hub) / 2)"
-        ></div>
+        <div class="seg__arm"></div>
       {:else if kind === 'elbow'}
         <div class="seg seg--elbow"></div>
-        <div
-          class="seg__arm seg__arm--elbow"
-          style:width="calc(var(--waterfall-gutter-col) - var(--waterfall-gutter-hub) / 2)"
-        ></div>
+        <div class="seg__arm seg__arm--elbow"></div>
       {/if}
     </div>
   {/each}
@@ -112,8 +105,20 @@
           fill="none"
           aria-hidden="true"
         >
-          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" />
-          <path d="M10 8l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          <circle
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="1.5"
+          />
+          <path
+            d="M10 8l4 4-4 4"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
         </svg>
       </button>
     {:else}
@@ -173,6 +178,10 @@
     top: 50%;
     left: 50%;
     height: 0;
+    /* Static, so it lives here rather than as a style: directive. Inline, the
+       calc exceeded printWidth and prettier-plugin-svelte wrapped it inside
+       the quotes, which svelte-check reads as an unterminated string. */
+    width: calc(var(--waterfall-gutter-col) - var(--waterfall-gutter-hub) / 2);
   }
 
   .seg__arm--elbow {
@@ -211,7 +220,9 @@
     width: var(--waterfall-gutter-hub);
     height: var(--waterfall-gutter-hub);
     opacity: 0;
-    transition: opacity 0.1s, transform 0.15s;
+    transition:
+      opacity 0.1s,
+      transform 0.15s;
   }
 
   .gutter__btn-caret--down {

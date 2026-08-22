@@ -348,9 +348,7 @@
           <span>Error: {displayError}</span>
         </div>
       {:else if page.loading && !hasTraceRows}
-        <div class="traces-page__placeholder traces-empty">
-          Loading traces…
-        </div>
+        <div class="traces-page__placeholder traces-empty">Loading traces…</div>
       {:else if !page.loading && !hasTraceRows}
         <div class="traces-page__placeholder traces-empty">
           <p class="text-rp-subtle">No traces in this time range</p>
@@ -364,9 +362,9 @@
             <span>
               {traceData.unplacedSpanCount}
               {traceData.unplacedSpanCount === 1 ? 'span is' : 'spans are'} missing
-              from this trace. Their parent links form a loop, so they have no
-              place in the tree — usually an instrumentation bug in the service
-              that emitted them.
+              from this trace. Their parent links form a loop, so they have no place
+              in the tree — usually an instrumentation bug in the service that emitted
+              them.
             </span>
           </div>
         {/if}

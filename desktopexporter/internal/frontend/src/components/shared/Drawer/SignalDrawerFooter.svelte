@@ -17,9 +17,7 @@
     metric: 'metrics',
   }
 
-  let countLabel = $derived(
-    `${count} ${count === 1 ? label : PLURAL[label]}`
-  )
+  let countLabel = $derived(`${count} ${count === 1 ? label : PLURAL[label]}`)
 
   let deleteAriaLabel = $derived(`Delete all ${PLURAL[label]}`)
 </script>

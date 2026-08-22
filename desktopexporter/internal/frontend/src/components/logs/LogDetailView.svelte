@@ -26,7 +26,7 @@
   let severityLabel = $derived(
     log
       ? `${buildSeverityLabel(log.severityText, log.severityNumber)} (${log.severityNumber})`
-      : '',
+      : ''
   )
 
   let logOpen = $state(true)
@@ -126,8 +126,8 @@
                   <a
                     class="detail-cell__value link link-primary font-mono"
                     href={itemHref('traces', traceID, traceSpanPatch)}
-                    onclick={goToTrace}
-                  >{traceID}</a>
+                    onclick={goToTrace}>{traceID}</a
+                  >
                 {/snippet}
               </LogField>
             {/if}
@@ -138,8 +138,8 @@
                   <a
                     class="detail-cell__value link link-primary font-mono"
                     href={itemHref('traces', traceID, traceSpanPatch)}
-                    onclick={goToTrace}
-                  >{log.spanID}</a>
+                    onclick={goToTrace}>{log.spanID}</a
+                  >
                 {/snippet}
               </LogField>
             {:else if log.spanID}

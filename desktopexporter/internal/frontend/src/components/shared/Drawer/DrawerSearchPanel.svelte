@@ -123,7 +123,8 @@
                 <span>{opt.label}</span>
                 {#if opt.value === sortValue}
                   <ArrowUpIcon
-                    class="anchor-popover-menu__option-icon {sortDirection === 'desc'
+                    class="anchor-popover-menu__option-icon {sortDirection ===
+                    'desc'
                       ? 'rotate-180'
                       : ''}"
                     aria-hidden="true"

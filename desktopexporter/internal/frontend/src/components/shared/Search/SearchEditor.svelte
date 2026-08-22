@@ -23,7 +23,10 @@
   } from '@/contexts/time-context.svelte'
   import type { TimeContext } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
-  import { beginListUpdate, cancelPendingListUpdates } from '@/components/shared/utils/list-update-seq'
+  import {
+    beginListUpdate,
+    cancelPendingListUpdates,
+  } from '@/components/shared/utils/list-update-seq'
   import type { FilterDescriptor } from '@/components/shared/Toolbar/filter-types'
   import { queryLanguageSupport } from './codemirror/query-language'
   import { createQueryCompletionSource } from './codemirror/completions'
@@ -271,9 +274,18 @@
   }
 
   /** Emit results with the query tree attached so consumers can reuse it. */
-  function emitResults(results: any, queryTree?: QueryNode, updateSeq?: number) {
+  function emitResults(
+    results: any,
+    queryTree?: QueryNode,
+    updateSeq?: number
+  ) {
     if (!alive || updateSeq === undefined) return
-    onSearchResults?.({ signal, results, queryTree, updateSeq } as SearchResultEvent)
+    onSearchResults?.({
+      signal,
+      results,
+      queryTree,
+      updateSeq,
+    } as SearchResultEvent)
   }
 
   function onSubmit() {

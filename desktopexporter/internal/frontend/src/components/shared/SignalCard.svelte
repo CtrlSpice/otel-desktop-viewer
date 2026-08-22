@@ -61,8 +61,8 @@
     <span class="signal-row__title-cluster" {title}>
       <span
         class="signal-row__title"
-        class:signal-row__title--muted={titleMuted}
-      >{title}</span>
+        class:signal-row__title--muted={titleMuted}>{title}</span
+      >
       {#if subtitle}
         <span class="signal-row__subtitle"> ({subtitle})</span>
       {/if}
@@ -285,5 +285,4 @@
     @apply flex min-h-[var(--signal-card-row-h)] min-w-0 flex-wrap items-center gap-x-2 gap-y-0 leading-snug;
     color: var(--color-subtle);
   }
-
 </style>

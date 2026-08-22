@@ -44,8 +44,7 @@
     aria-label="Lulu the axolotl and her telescope contemplate AGGREGATION_TEMPORALITY_UNSPECIFIED, which the OTel spec says MUST not be used."
   >
     <div>
-      <pre class="callout-ascii"
->╭───────────────────────────────────────────╮
+      <pre class="callout-ascii">╭───────────────────────────────────────────╮
 │ Look, Lulu. AggregationTemporality
 │ defines how a metric aggregator reports
 │ aggregated values. It describes how
@@ -58,8 +57,7 @@
     </div>
 
     <div>
-      <pre class="callout-ascii"
->        ╭────────────────────────────────╮
+      <pre class="callout-ascii">        ╭────────────────────────────────╮
         │ But what's that shadowy place  
         │ over there?                    
         ╰──────────╭─────────────────────▒▓▓██████▓▒░
@@ -68,8 +66,7 @@
     </div>
 
     <div>
-      <pre class="callout-ascii"
->╭───────────────────────────────╮
+      <pre class="callout-ascii">╭───────────────────────────────╮
 │ UNSPECIFIED is the default    
 │ AggregationTemporality, Lulu. 
 │                               

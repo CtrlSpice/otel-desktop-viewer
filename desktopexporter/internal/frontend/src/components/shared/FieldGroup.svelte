@@ -59,8 +59,7 @@
   <details
     class="field-group"
     {open}
-    ontoggle={e =>
-      setOpen((e.currentTarget as HTMLDetailsElement).open)}
+    ontoggle={e => setOpen((e.currentTarget as HTMLDetailsElement).open)}
   >
     <summary class="field-group__heading">
       {#if heading}

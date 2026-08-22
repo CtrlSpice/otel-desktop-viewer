@@ -31,14 +31,12 @@
       ? ctx.histogramLegendTimeseries
       : ctx.gaugeSumLegendTimeseries
   )
-  let visibleKeys = $derived(
-    ctx.visibleSeries
-  )
+  let visibleKeys = $derived(ctx.visibleSeries)
 
   let timeseriesByKey = $derived.by((): Map<string, MetricTimeseries> => {
     const m = ctx.metric
     if (!m) return new Map()
-    return new Map(m.timeseries.map((ts) => [ts.attributesKey, ts]))
+    return new Map(m.timeseries.map(ts => [ts.attributesKey, ts]))
   })
 
   let capReached = $derived(
@@ -99,7 +97,7 @@
     const m = ctx.metric
     if (!m) return null
     for (const ts of m.timeseries) {
-      if (ts.datapoints.some((dp) => dp.id === dpID)) {
+      if (ts.datapoints.some(dp => dp.id === dpID)) {
         return ts.attributesKey
       }
     }
@@ -158,7 +156,9 @@
       {@const seriesColor = ctx.timeseriesColorByKey.get(ts.key)}
       {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
       {@const fg =
-        checked && seriesColor ? readableTextColor(seriesColor) : chartNeutral()}
+        checked && seriesColor
+          ? readableTextColor(seriesColor)
+          : chartNeutral()}
       {@const hasAttrs = dedupeAttributes(ts.attributes).length > 0}
       {@const rowHeaderAttrs = headerAttrs(ts.attributes)}
       {@const tooltip = attrsTooltip(ts.attributes)}
@@ -183,7 +183,7 @@
         <FieldGroup
           label={headerLabel}
           open={expanded}
-          onOpenChange={(open) => setTimeseriesOpen(ts.key, open)}
+          onOpenChange={open => setTimeseriesOpen(ts.key, open)}
         >
           {#snippet headerAction()}
             <div class="ts-row__header">
@@ -203,7 +203,7 @@
                     style:color={fg}
                     {checked}
                     disabled={checkboxDisabled}
-                    onchange={(e) =>
+                    onchange={e =>
                       toggle(
                         ts.key,
                         (e.currentTarget as HTMLInputElement).checked
@@ -212,7 +212,9 @@
                 </label>
                 <div class="ts-row__attrs" title={tooltip}>
                   {#if hasAttrs}
-                    <span class="ts-row__attrs-text">{attrsTooltip(rowHeaderAttrs)}</span>
+                    <span class="ts-row__attrs-text"
+                      >{attrsTooltip(rowHeaderAttrs)}</span
+                    >
                   {:else}
                     <span class="ts-row__default-label">default series</span>
                   {/if}
@@ -234,8 +236,12 @@
                   {#each statBadges as stat (stat)}
                     {@const value = rowStats[stat]}
                     {#if value !== undefined}
-                      <span class="badge-count" title={statBadgeTitle(stat, value)}>
-                        {STAT_LABEL[stat]} {formatMetricValue(value)}
+                      <span
+                        class="badge-count"
+                        title={statBadgeTitle(stat, value)}
+                      >
+                        {STAT_LABEL[stat]}
+                        {formatMetricValue(value)}
                       </span>
                     {/if}
                   {/each}
@@ -246,7 +252,10 @@
 
           {#if metricTs}
             {#if hasAttrs}
-              <table class="detail-fields w-full" aria-label="Timeseries fields">
+              <table
+                class="detail-fields w-full"
+                aria-label="Timeseries fields"
+              >
                 <tbody>
                   {#each dedupeAttributes(metricTs.attributes) as attr (attr.key)}
                     <MetricField
@@ -269,7 +278,7 @@
               label="Datapoints"
               count={listDatapoints.length}
               open={datapointsOpen}
-              onOpenChange={(open) => setDatapointsOpen(ts.key, open)}
+              onOpenChange={open => setDatapointsOpen(ts.key, open)}
             >
               <SeriesDatapointList datapoints={listDatapoints} flush />
             </FieldGroup>
@@ -283,8 +292,7 @@
 
   {#if capReached && !ctx.isHistogramKind}
     <p class="ts-panel__cap-note">
-      Cap of {MAX_VISIBLE_TIMESERIES} timeseries reached. Uncheck one to enable
-      another.
+      Cap of {MAX_VISIBLE_TIMESERIES} timeseries reached. Uncheck one to enable another.
     </p>
   {/if}
 </div>

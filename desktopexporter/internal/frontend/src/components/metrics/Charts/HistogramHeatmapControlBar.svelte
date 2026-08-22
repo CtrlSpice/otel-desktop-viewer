@@ -21,7 +21,10 @@
   })
 </script>
 
-<div class="metric-chart-control-bar heatmap-control-bar" aria-label="Heatmap chart controls">
+<div
+  class="metric-chart-control-bar heatmap-control-bar"
+  aria-label="Heatmap chart controls"
+>
   {#if legendScale}
     <Legend
       scale={legendScale}

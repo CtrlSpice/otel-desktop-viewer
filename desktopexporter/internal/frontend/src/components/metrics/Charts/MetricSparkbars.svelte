@@ -51,7 +51,10 @@
     {width}
   />
 {:else}
-  <div class="flex items-center justify-center text-base-content/30 text-[0.6rem]" style:height="{height}px">
+  <div
+    class="flex items-center justify-center text-base-content/30 text-[0.6rem]"
+    style:height="{height}px"
+  >
     —
   </div>
 {/if}

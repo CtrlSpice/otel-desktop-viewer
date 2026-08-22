@@ -20,7 +20,7 @@
       class="checkbox checkbox-xs checkbox-soft chart-stat-overlays-toggle__checkbox"
       checked={ctx.showSelectionStatOverlays}
       aria-label="Show chart stat overlays"
-      onchange={(e) =>
+      onchange={e =>
         ctx.setShowSelectionStatOverlays(
           (e.currentTarget as HTMLInputElement).checked
         )}

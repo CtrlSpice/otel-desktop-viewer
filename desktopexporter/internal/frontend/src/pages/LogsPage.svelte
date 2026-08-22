@@ -7,11 +7,7 @@
 
   // --- Sort ---
 
-  export type LogSortColumn =
-    | 'timestamp'
-    | 'severity'
-    | 'service'
-    | 'body'
+  export type LogSortColumn = 'timestamp' | 'severity' | 'service' | 'body'
   export type LogSortDirection = 'asc' | 'desc'
 
   // The list page now operates on LogSummary (the card-shaped
@@ -79,7 +75,11 @@
         timeContext.selection,
         Date.now()
       )
-      const results = await telemetryAPI.searchLogs(startTime, endTime, undefined)
+      const results = await telemetryAPI.searchLogs(
+        startTime,
+        endTime,
+        undefined
+      )
       const s = await telemetryAPI.getStats()
       baselineLogCount = s.logs.logCount
       polledLogCount = s.logs.logCount
@@ -198,28 +198,28 @@
 
     {#snippet main()}
       {#if displayError}
-          <div class="logs-page__placeholder alert alert-error">
-            <span>Error: {displayError}</span>
-          </div>
-        {:else if page.loading && !hasLogRows}
-          <div class="logs-page__placeholder logs-empty">Loading logs…</div>
-        {:else if !page.loading && !hasLogRows}
-          <div class="logs-page__placeholder logs-empty">
-            <p class="text-rp-subtle">No logs in this time range</p>
-            <p class="mt-2 text-sm text-rp-muted">
-              Send telemetry to the exporter or adjust the time range
-            </p>
-          </div>
-        {:else if detailFetcher.loading && !detailFetcher.data}
-          <div class="logs-page__placeholder logs-empty">
-            Loading log details…
-          </div>
-        {:else if detailFetcher.error}
-          <div class="logs-page__placeholder alert alert-error">
-            <span>Error: {detailFetcher.error}</span>
-          </div>
-        {:else}
-          <LogDetailPanel log={detailFetcher.data ?? undefined} />
+        <div class="logs-page__placeholder alert alert-error">
+          <span>Error: {displayError}</span>
+        </div>
+      {:else if page.loading && !hasLogRows}
+        <div class="logs-page__placeholder logs-empty">Loading logs…</div>
+      {:else if !page.loading && !hasLogRows}
+        <div class="logs-page__placeholder logs-empty">
+          <p class="text-rp-subtle">No logs in this time range</p>
+          <p class="mt-2 text-sm text-rp-muted">
+            Send telemetry to the exporter or adjust the time range
+          </p>
+        </div>
+      {:else if detailFetcher.loading && !detailFetcher.data}
+        <div class="logs-page__placeholder logs-empty">
+          Loading log details…
+        </div>
+      {:else if detailFetcher.error}
+        <div class="logs-page__placeholder alert alert-error">
+          <span>Error: {detailFetcher.error}</span>
+        </div>
+      {:else}
+        <LogDetailPanel log={detailFetcher.data ?? undefined} />
       {/if}
     {/snippet}
 

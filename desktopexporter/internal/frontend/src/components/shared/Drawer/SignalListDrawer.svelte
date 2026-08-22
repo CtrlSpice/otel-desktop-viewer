@@ -31,9 +31,14 @@
   } from '@/icons'
   import ThemeToggle from '@/components/shared/ThemeToggle.svelte'
   import DrawerNavTabs from '@/components/shared/Drawer/DrawerNavTabs.svelte'
-  import { NAV_ITEMS, isNavItemActive } from '@/components/shared/Drawer/DrawerNavTabs.svelte'
+  import {
+    NAV_ITEMS,
+    isNavItemActive,
+  } from '@/components/shared/Drawer/DrawerNavTabs.svelte'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
-  import PaneHeader, { type PaneTab } from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader, {
+    type PaneTab,
+  } from '@/components/shared/PaneHeader.svelte'
   import { navigate, navigateToSignal, type SignalName } from '@/route'
   import { getRouteContext } from '@/contexts/route-context.svelte'
 
@@ -129,7 +134,8 @@
 
   const routeContext = getRouteContext()
   let activeNavID = $derived(
-    NAV_ITEMS.find(n => isNavItemActive(n.id, routeContext.route.path))?.id ?? NAV_ITEMS[0].id
+    NAV_ITEMS.find(n => isNavItemActive(n.id, routeContext.route.path))?.id ??
+      NAV_ITEMS[0].id
   )
 
   // --- auto-scroll the virtual list when the selection changes ---
@@ -213,35 +219,35 @@
       {#if !effectivelyOpen}
         <div class="signal-drawer__collapsed-rail">
           <div class="signal-drawer__collapsed-group">
-          {#if railOnly}
-            <span
-              class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right"
-              data-tip="Waiting for data"
-              aria-disabled="true"
-            >
-              <ArrowRightIcon
-                class="h-[17px] w-[17px] opacity-40"
-                aria-hidden="true"
-              />
-            </span>
-          {:else}
-            <!--
+            {#if railOnly}
+              <span
+                class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right"
+                data-tip="Waiting for data"
+                aria-disabled="true"
+              >
+                <ArrowRightIcon
+                  class="h-[17px] w-[17px] opacity-40"
+                  aria-hidden="true"
+                />
+              </span>
+            {:else}
+              <!--
               data-tip matches aria-label: a chevron labelled with the signal
               name ("Traces") reads as a filter, not an expander, and a visible
               label that disagrees with the accessible name trips WCAG 2.5.3.
             -->
-            <label
-              for={drawerID}
-              class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right cursor-pointer"
-              data-tip="Open sidebar"
-              aria-label="Open sidebar"
-            >
-              <ArrowRightIcon
-                class="h-[17px] w-[17px] animate-[spin-half_200ms_ease-out]"
-                aria-hidden="true"
-              />
-            </label>
-          {/if}
+              <label
+                for={drawerID}
+                class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right cursor-pointer"
+                data-tip="Open sidebar"
+                aria-label="Open sidebar"
+              >
+                <ArrowRightIcon
+                  class="h-[17px] w-[17px] animate-[spin-half_200ms_ease-out]"
+                  aria-hidden="true"
+                />
+              </label>
+            {/if}
           </div>
 
           <div class="separator w-8" aria-hidden="true"></div>
@@ -259,34 +265,32 @@
             {#if onRefresh}
               <button
                 type="button"
-              class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right {refreshPulse &&
-              refreshAsideTip
-                ? 'tooltip-secondary'
-                : ''}"
-              data-tip={refreshPulse && refreshAsideTip
-                ? refreshAsideTip
-                : 'Refresh'}
-              class:signal-drawer__refresh--has-new-data={refreshPulse}
-              onclick={onRefresh}
-              aria-label={refreshPulse
-                ? `Refresh — ${refreshAsideTip}`
-                : 'Refresh'}
-            >
-              {#if refreshPulse && refreshAsideTip}
-                <div class="sr-only" aria-live="polite" aria-atomic="true">
-                  {refreshAsideTip}
-                </div>
-              {/if}
-              {#if refreshPulse}
-                <span
-                  class="signal-drawer__new-data-dot"
+                class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right {refreshPulse &&
+                refreshAsideTip
+                  ? 'tooltip-secondary'
+                  : ''}"
+                data-tip={refreshPulse && refreshAsideTip
+                  ? refreshAsideTip
+                  : 'Refresh'}
+                class:signal-drawer__refresh--has-new-data={refreshPulse}
+                onclick={onRefresh}
+                aria-label={refreshPulse
+                  ? `Refresh — ${refreshAsideTip}`
+                  : 'Refresh'}
+              >
+                {#if refreshPulse && refreshAsideTip}
+                  <div class="sr-only" aria-live="polite" aria-atomic="true">
+                    {refreshAsideTip}
+                  </div>
+                {/if}
+                {#if refreshPulse}
+                  <span class="signal-drawer__new-data-dot" aria-hidden="true"
+                  ></span>
+                {/if}
+                <ReloadIcon
+                  class="relative z-[1] h-[17px] w-[17px] shrink-0"
                   aria-hidden="true"
-                ></span>
-              {/if}
-              <ReloadIcon
-                class="relative z-[1] h-[17px] w-[17px] shrink-0"
-                aria-hidden="true"
-              />
+                />
               </button>
             {/if}
             <ThemeToggle
@@ -298,9 +302,15 @@
 
       <!-- Expanded: unified header panel (tabs + chrome + search + toolbar) -->
       {#if effectivelyOpen}
-        {#snippet tracesIcon()}<BarChartHorizontalIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
-        {#snippet metricsIcon()}<ChartHistogramIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
-        {#snippet logsIcon()}<LogIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
+        {#snippet tracesIcon()}<BarChartHorizontalIcon
+            class="h-[15px] w-[15px] shrink-0"
+          />{/snippet}
+        {#snippet metricsIcon()}<ChartHistogramIcon
+            class="h-[15px] w-[15px] shrink-0"
+          />{/snippet}
+        {#snippet logsIcon()}<LogIcon
+            class="h-[15px] w-[15px] shrink-0"
+          />{/snippet}
         {@const navTabs: PaneTab[] = [
           { id: 'traces', label: 'Traces', icon: tracesIcon },
           { id: 'metrics', label: 'Metrics', icon: metricsIcon },
@@ -311,7 +321,7 @@
             mode="tabs"
             tabs={navTabs}
             activeID={activeNavID}
-            onSelect={(id) => {
+            onSelect={id => {
               const item = NAV_ITEMS.find(n => n.id === id)
               // Switching signal is navigational: push (back returns to prior).
               if (item) navigateToSignal(item.id as SignalName)
@@ -327,7 +337,10 @@
                 onclick={() => navigate('/')}
                 aria-label="Home"
               >
-                <HomeIcon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
+                <HomeIcon
+                  class="h-[17px] w-[17px] shrink-0"
+                  aria-hidden="true"
+                />
               </button>
               <ThemeToggle
                 class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom"
@@ -407,33 +420,32 @@
 
       <!-- Expanded: list (unmounted when collapsed so footer/count cannot leak) -->
       {#if effectivelyOpen}
-      <div
-        class="signal-drawer__body"
-        bind:this={drawerBodyEl}
-      >
-        {#if showEmptyState}
-          <div class="signal-drawer__empty" role="status">
-            <p class="signal-drawer__empty-title">No {label.toLowerCase()} found</p>
-            <p class="signal-drawer__empty-hint">
-              Try widening the time range or clearing the search.
-            </p>
-          </div>
-        {:else}
-          <VirtualList
-            bind:this={vlistRef}
-            {items}
-            defaultEstimatedItemHeight={72}
-            bufferSize={10}
-            containerClass="signal-drawer__vlist"
-            viewportClass="signal-drawer__vlist-viewport"
-            itemsClass="signal-drawer__vlist-items"
-          >
-            {#snippet renderItem(item)}
-              {@render itemSnippet(item, selectedID === itemKey(item))}
-            {/snippet}
-          </VirtualList>
-        {/if}
-      </div>
+        <div class="signal-drawer__body" bind:this={drawerBodyEl}>
+          {#if showEmptyState}
+            <div class="signal-drawer__empty" role="status">
+              <p class="signal-drawer__empty-title">
+                No {label.toLowerCase()} found
+              </p>
+              <p class="signal-drawer__empty-hint">
+                Try widening the time range or clearing the search.
+              </p>
+            </div>
+          {:else}
+            <VirtualList
+              bind:this={vlistRef}
+              {items}
+              defaultEstimatedItemHeight={72}
+              bufferSize={10}
+              containerClass="signal-drawer__vlist"
+              viewportClass="signal-drawer__vlist-viewport"
+              itemsClass="signal-drawer__vlist-items"
+            >
+              {#snippet renderItem(item)}
+                {@render itemSnippet(item, selectedID === itemKey(item))}
+              {/snippet}
+            </VirtualList>
+          {/if}
+        </div>
       {/if}
 
       <!-- Expanded: footer -->
@@ -483,7 +495,8 @@
     overflow: visible;
   }
 
-  .signal-drawer :global(.drawer-toggle:not(:checked) ~ .drawer-side .signal-drawer__panel),
+  .signal-drawer
+    :global(.drawer-toggle:not(:checked) ~ .drawer-side .signal-drawer__panel),
   .signal-drawer :global(.signal-drawer__header .pane-header) {
     overflow: visible;
   }
@@ -506,8 +519,12 @@
 
   /* ── Collapsed: open-sidebar toggle pinned to the top ── */
   @keyframes spin-half {
-    from { transform: rotate(180deg); }
-    to { transform: rotate(0deg); }
+    from {
+      transform: rotate(180deg);
+    }
+    to {
+      transform: rotate(0deg);
+    }
   }
 
   .signal-drawer__collapsed-rail {
@@ -564,9 +581,9 @@
     }
   }
 
-  .signal-drawer__refresh.signal-drawer__refresh--has-new-data:not(
-      :hover
-    ):not(:focus-visible)
+  .signal-drawer__refresh.signal-drawer__refresh--has-new-data:not(:hover):not(
+      :focus-visible
+    )
     .signal-drawer__new-data-dot {
     animation: signal-drawer-new-data-dot-pulse 2.8s ease-in-out infinite;
   }

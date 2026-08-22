@@ -48,7 +48,8 @@
     <ArrowLeftIcon class="h-3.5 w-3.5" aria-hidden="true" />
   </button>
   <span class="detail-nav__counter tabular-nums" aria-live="polite">
-    {displayPosition} / {total} {plural}
+    {displayPosition} / {total}
+    {plural}
   </span>
   <button
     type="button"

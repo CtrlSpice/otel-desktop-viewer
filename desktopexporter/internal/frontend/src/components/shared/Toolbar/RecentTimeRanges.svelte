@@ -1,34 +1,34 @@
 <script lang="ts">
-  import { getTimeContext } from '@/contexts/time-context.svelte';
-  import FieldGroup from '@/components/shared/FieldGroup.svelte';
-  import { DateTimeIcon } from '@/icons';
+  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import { DateTimeIcon } from '@/icons'
   import {
     formatDateTimeMs,
     loadRecentTimeRanges,
     MAX_RECENT_TIME_RANGES,
     type RecentTimeRange,
-  } from '@/utils/time';
+  } from '@/utils/time'
 
-  let ctx = getTimeContext();
+  let ctx = getTimeContext()
   if (!ctx) {
     throw new Error(
       'Time context not found. Make sure createTimeContext() is called at the root level.'
-    );
+    )
   }
 
-  let recentTimeRanges = $state<RecentTimeRange[]>([]);
+  let recentTimeRanges = $state<RecentTimeRange[]>([])
 
   $effect(() => {
-    void ctx.selection.start;
-    void ctx.selection.end;
-    void ctx.selection.type;
-    recentTimeRanges = loadRecentTimeRanges().slice(0, MAX_RECENT_TIME_RANGES);
-  });
+    void ctx.selection.start
+    void ctx.selection.end
+    void ctx.selection.type
+    recentTimeRanges = loadRecentTimeRanges().slice(0, MAX_RECENT_TIME_RANGES)
+  })
 
   function applyRecentTimeRange(index: number) {
-    let entry = recentTimeRanges[index];
-    if (!entry) return;
-    ctx.setSelection(entry.start, entry.end, 'recent');
+    let entry = recentTimeRanges[index]
+    if (!entry) return
+    ctx.setSelection(entry.start, entry.end, 'recent')
   }
 </script>
 
@@ -41,9 +41,7 @@
     {/if}
   {/snippet}
   {#if recentTimeRanges.length === 0}
-    <div class="recent-range-empty">
-      No recent time ranges
-    </div>
+    <div class="recent-range-empty">No recent time ranges</div>
   {:else}
     {#each recentTimeRanges as entry, index}
       {@const startFmt = formatDateTimeMs(entry.start, ctx.tz)}

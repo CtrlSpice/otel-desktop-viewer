@@ -12,12 +12,16 @@
     seriesColor?: string
   }
 
-  let { points, height = 32, width, seriesColor = 'var(--color-primary)' }: Props =
-    $props()
+  let {
+    points,
+    height = 32,
+    width,
+    seriesColor = 'var(--color-primary)',
+  }: Props = $props()
 
   let sparkData = $derived.by((): SparkPoint[] => {
     return points
-      .map((p) => ({ date: Number(p.timestamp / 1_000_000n), value: p.value }))
+      .map(p => ({ date: Number(p.timestamp / 1_000_000n), value: p.value }))
       .sort((a, b) => a.date - b.date)
   })
 </script>
@@ -48,7 +52,10 @@
     {width}
   />
 {:else}
-  <div class="flex items-center justify-center text-base-content/30 text-[0.6rem]" style:height="{height}px">
+  <div
+    class="flex items-center justify-center text-base-content/30 text-[0.6rem]"
+    style:height="{height}px"
+  >
     —
   </div>
 {/if}

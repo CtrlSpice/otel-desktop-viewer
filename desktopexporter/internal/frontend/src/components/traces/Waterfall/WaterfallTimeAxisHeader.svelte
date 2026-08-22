@@ -251,7 +251,10 @@
   }
 </script>
 
-<tr class="waterfall-time-axis-header" style:--tick-label-w="{tickLabelWidth}px">
+<tr
+  class="waterfall-time-axis-header"
+  style:--tick-label-w="{tickLabelWidth}px"
+>
   <th
     scope="col"
     class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-span"

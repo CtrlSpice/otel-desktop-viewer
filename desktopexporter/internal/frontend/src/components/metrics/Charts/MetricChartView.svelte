@@ -40,7 +40,9 @@
   const timeContext = getTimeContext()
 
   let activeQuantileKeys = $derived(
-    QUANTILE_LABELS.map(q => q.key).filter(k => ctx.activeQuantileOverlays.has(k))
+    QUANTILE_LABELS.map(q => q.key).filter(k =>
+      ctx.activeQuantileOverlays.has(k)
+    )
   )
 
   let histogramBucketTimestamp = $derived.by((): string => {
@@ -114,7 +116,10 @@
         {:else if ctx.heatmapBucketSeries === null}
           <div class="metric-chart-view__placeholder">No histogram data</div>
         {:else if ctx.heatmapBucketSeries.length === 0}
-          <MetricChartEmpty height={plotHeight} message="No bucket data in range" />
+          <MetricChartEmpty
+            height={plotHeight}
+            message="No bucket data in range"
+          />
         {:else}
           <HistogramHeatmap
             points={ctx.heatmapBucketSeries}
@@ -130,11 +135,14 @@
         {#if ctx.bucketSeriesError}
           {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
         {:else if ctx.quantileChartTimeseries.length === 0}
-          <MetricChartEmpty height={plotHeight} message={quantileEmptyMessage} />
+          <MetricChartEmpty
+            height={plotHeight}
+            message={quantileEmptyMessage}
+          />
         {:else}
           <MetricQuantileAreaChart
             timeseries={ctx.quantileChartTimeseries}
-            activeQuantileKeys={activeQuantileKeys}
+            {activeQuantileKeys}
             unit={ctx.metric!.unit}
             height={plotHeight}
             timeRange={ctx.chartDataTimeRange ?? null}
@@ -147,7 +155,10 @@
         {#if ctx.histogramChartError}
           {@render bucketSeriesErrorMessage(ctx.histogramChartError)}
         {:else if !ctx.histogramChartDatapoint}
-          <MetricChartEmpty height={plotHeight} message={histogramEmptyMessage} />
+          <MetricChartEmpty
+            height={plotHeight}
+            message={histogramEmptyMessage}
+          />
         {:else}
           <HistogramChart
             datapoint={ctx.histogramChartDatapoint}

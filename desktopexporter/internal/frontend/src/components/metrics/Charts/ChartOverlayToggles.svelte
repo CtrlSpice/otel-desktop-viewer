@@ -47,11 +47,7 @@
   }: Props<string> = $props()
 </script>
 
-<div
-  class="chart-overlay-toggles"
-  role="group"
-  aria-label={ariaLabel}
->
+<div class="chart-overlay-toggles" role="group" aria-label={ariaLabel}>
   {#each overlays as overlay (overlay.id)}
     {@const active = activeOverlays.has(overlay.id)}
     <button
@@ -86,7 +82,11 @@
      against the surrounding header chrome. Reuses primary tone so the
      accent matches the rest of the app's "this is selected" cue. */
   .chart-overlay-toggles__pill--active {
-    background-color: color-mix(in oklab, var(--color-primary) 18%, transparent);
+    background-color: color-mix(
+      in oklab,
+      var(--color-primary) 18%,
+      transparent
+    );
     color: var(--color-base-content);
     @apply font-medium;
   }
