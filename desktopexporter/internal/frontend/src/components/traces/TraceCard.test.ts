@@ -34,7 +34,7 @@ describe('TraceCard', () => {
     expect(button).toHaveTextContent('(orders-service)')
   })
 
-  it('falls back to a placeholder title when the trace has no root span yet', () => {
+  it('falls back to a placeholder title when the trace has no root span', () => {
     renderCard({
       trace: makeTrace({ hasRootSpan: false, rootSpan: undefined }),
     })
