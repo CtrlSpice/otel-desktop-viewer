@@ -51,40 +51,43 @@ jobs:
       with:
         go-version: '1.26'
 
-    # MSYS2 provides GCC and build tools needed for CGO compilation on Windows
+    # DuckDB is cgo, and its Windows support is a *prebuilt* static library --
+    # duckdb-go-bindings/lib/windows-amd64 -- so the compiler here has to match
+    # the one that archive was built with, not merely be a working gcc.
     #
-    # update: false skips `pacman -Syuu`, which was re-syncing and upgrading the
-    # whole distribution on every run -- 74-97s, against a package set that is
-    # cached and pinned right here. A build toolchain that changes underneath us
-    # between two runs of the same commit is a liability, not a feature: it makes
-    # "it passed yesterday" unanswerable.
+    # C:\mingw64 is that compiler. It ships with the runner image, and it is what
+    # every Windows build has silently used: this workflow installed a UCRT64
+    # toolchain through setup-msys2 and then put `C:\msys64\ucrt64\bin` on PATH,
+    # which is not where setup-msys2 installs and holds no gcc, so cgo fell
+    # through to the next of the five gccs on the image (#324).
     #
-    # When to refresh it, deliberately:
-    #   - alongside a Go version bump, since those are one toolchain decision and
-    #     should be reviewed together
-    #   - when a build failure actually implicates the compiler
-    #   - when a package below needs a version this base does not carry
+    # Pointing PATH at the MSYS2 toolchain instead -- the apparent fix -- breaks
+    # the link: its gcc 16.1.0 uses a different TLS model, and libduckdb_static.a
+    # fails on undefined `__emutls_v._ZSt11__once_call`. Measured, not guessed.
     #
-    # How: flip this to true for one run and put it back, or delete the
-    # msys2-pkgs-* entry from the Actions cache. Editing the install list below
-    # also re-keys the cache on its own, since the key hashes that list.
-    - name: Set up MSYS2 (Windows)
-      if: matrix.os == 'windows-latest'
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: UCRT64
-        update: false
-        # Required packages:
-        # - mingw-w64-ucrt-x86_64-gcc: GCC compiler for Windows x64 with modern C runtime (UCRT)
-        # - mingw-w64-ucrt-x86_64-toolchain: Complete toolchain including make, binutils, and other build tools
-        install: >-
-          mingw-w64-ucrt-x86_64-gcc
-          mingw-w64-ucrt-x86_64-toolchain
-
-    - name: Add MSYS2 to PATH (Windows)
+    # So the accident was benign and the intent was wrong. This names the working
+    # compiler deliberately rather than inheriting it from PATH order, and the
+    # 61s that installed an unusable toolchain goes away.
+    - name: Pin the C toolchain cgo uses (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
+        $bin = 'C:\mingw64\bin'
+        if (-not (Test-Path (Join-Path $bin 'gcc.exe'))) {
+          Write-Host "::error::No gcc at $bin. The windows runner image has shipped one there; if that changed, a toolchain matching duckdb-go-bindings' prebuilt libduckdb_static.a must be installed instead. See #324."
+          exit 1
+        }
+        echo $bin >> $env:GITHUB_PATH
+
+    - name: Verify cgo uses it (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        $actual = (Get-Command gcc -ErrorAction SilentlyContinue).Source
+        Write-Host "cgo will use $actual"
+        if ($actual -ne 'C:\mingw64\bin\gcc.exe') {
+          Write-Host "::error::cgo would use $actual, not the pinned C:\mingw64 toolchain."
+          exit 1
+        }
+        gcc --version | Select-Object -First 1
 
     - name: Build
       run: go build -o otel-desktop-viewer.exe
