@@ -134,17 +134,18 @@ func TestSchemaCoversOTLP(t *testing.T) {
 		{"pmetric.Metric", pmetric.NewMetric(), []string{"metric_streams", "metric_ingests"}},
 	}
 
-	// Fields OTLP defines that this store does not keep at all.
+	// Fields OTLP defines that this store does not keep, on purpose.
 	//
 	// Distinct from `elsewhere`, and deliberately so: that map says "stored,
-	// look over there" and is verified. This one says "not stored", and exists
-	// to make the gap legible rather than absent. An entry here is a bug with
-	// a reason, not a decision -- if one becomes supported, delete the line
-	// and the test starts guarding it.
-	knownGaps := map[string]string{
-		"Summary": "Summary metrics are dropped whole at ingest: eachDatapoint " +
-			"handles Gauge, Sum, Histogram and ExponentialHistogram only, and " +
-			"datapoints has no quantile column.",
+	// look over there" and is verified against a real column. This one says
+	// "not stored, and that is the decision" -- so the test does not fail over
+	// it, and nobody has to rediscover why it is absent. If one ever becomes
+	// supported, delete the line and the test starts guarding it.
+	notSupported := map[string]string{
+		"Summary": "Summary is not supported. Its quantiles are precomputed and " +
+			"'cannot always be merged in a meaningful way' (metrics.proto), so it " +
+			"does not fit the aggregation path histograms use. eachDatapoint " +
+			"handles Gauge, Sum, Histogram and ExponentialHistogram only.",
 	}
 
 	// Every exception must point at a column that is really there.
@@ -177,7 +178,7 @@ func TestSchemaCoversOTLP(t *testing.T) {
 				if _, ok := elsewhere[m.Name]; ok {
 					continue
 				}
-				if _, ok := knownGaps[m.Name]; ok {
+				if _, ok := notSupported[m.Name]; ok {
 					continue
 				}
 
