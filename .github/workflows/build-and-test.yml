@@ -77,6 +77,27 @@ jobs:
         Write-Host "cgo will use $($gcc.Source)"
         gcc --version | Select-Object -First 1
 
+    - name: Set up MSYS2 (Windows)
+      id: msys2
+      if: matrix.os == 'windows-latest'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: false
+        install: >-
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-toolchain
+
+    # TEMPORARY: where did it actually go, and what does it call itself?
+    - name: Locate the installed toolchain (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        Write-Host "msys2-location output = '${{ steps.msys2.outputs.msys2-location }}'"
+        Get-ChildItem -Path C:\, D:\a\_temp -Filter msys64 -Directory -ErrorAction SilentlyContinue |
+          ForEach-Object { Write-Host "root: $($_.FullName)" }
+        Get-ChildItem -Path C:\, D:\a\_temp -Recurse -Depth 4 -Filter gcc.exe -ErrorAction SilentlyContinue |
+          ForEach-Object { Write-Host "gcc: $($_.FullName)" }
+
     - name: Build
       run: go build -o otel-desktop-viewer.exe
       if: matrix.os == 'windows-latest'
