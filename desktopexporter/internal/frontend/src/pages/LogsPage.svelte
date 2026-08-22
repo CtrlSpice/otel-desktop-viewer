@@ -119,15 +119,15 @@
     detailFetcher.key = page.selectedId
   })
 
-  function selectLog(logId: string) {
-    page.selectItem(logId)
+  function selectLog(logID: string) {
+    page.selectItem(logID)
   }
 
-  async function handleDeleteLog(logId: string) {
+  async function handleDeleteLog(logID: string) {
     actionError = null
     try {
-      await telemetryAPI.deleteLogByID(logId)
-      if (page.selectedId === logId) {
+      await telemetryAPI.deleteLogByID(logID)
+      if (page.selectedId === logID) {
         navigateToItem('logs', null, 'replace')
       }
       await page.runListFetch()

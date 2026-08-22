@@ -1676,7 +1676,7 @@ export function createMetricViewContext(
    * metric the moment it does.
    */
   function seedForMetric(m: MetricData | undefined) {
-    const streamId = m?.id
+    const streamID = m?.id
 
     view.selectedDatapointId = null
     view.selectionSource = null
@@ -1692,8 +1692,8 @@ export function createMetricViewContext(
     // fall back to the smart default (cumulative Sum → Rate, else Raw).
     // Gauge metrics never read aggregationView, so the value here is don't-care
     // for them; the menu component checks metricType before rendering.
-    const persistedAggregationView = streamId
-      ? loadPersistedAggregationView(streamId, availableAggregationViewsList)
+    const persistedAggregationView = streamID
+      ? loadPersistedAggregationView(streamID, availableAggregationViewsList)
       : null
     const defaultAggregation = defaultAggregationViewFor(
       metricType,
@@ -1711,8 +1711,8 @@ export function createMetricViewContext(
         ? defaultAggregation
         : 'raw')
     view.showSelectionStatOverlays = true
-    view.showAllSeriesAggregate = streamId
-      ? loadPersistedShowAllSeriesAggregate(streamId)
+    view.showAllSeriesAggregate = streamID
+      ? loadPersistedShowAllSeriesAggregate(streamID)
       : false
     view.activeQuantileOverlays = new SvelteSet([
       DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
@@ -1720,8 +1720,8 @@ export function createMetricViewContext(
 
     const gsKeys = gaugeSumKeys
     const gsVisible = new SvelteSet(
-      streamId
-        ? resolveTimeseriesVisible(gsKeys, streamId)
+      streamID
+        ? resolveTimeseriesVisible(gsKeys, streamID)
         : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
     )
     view.gaugeSumVisible = gsVisible
@@ -1746,10 +1746,10 @@ export function createMetricViewContext(
     const histKeys =
       m && histIsHistogram ? m.timeseries.map(ts => ts.attributesKey) : []
     const histVisible = new SvelteSet(
-      streamId && histKeys.length > 0
+      streamID && histKeys.length > 0
         ? resolveTimeseriesVisible(
             histKeys,
-            streamId,
+            streamID,
             DEFAULT_VISIBLE_TIMESERIES,
             null
           )
@@ -1757,7 +1757,7 @@ export function createMetricViewContext(
     )
     view.histogramVisible = histVisible
     histogramVisibleSeededForStreamId =
-      histKeys.length > 0 ? (streamId ?? null) : null
+      histKeys.length > 0 ? (streamID ?? null) : null
     if (histKeys.length > 0) {
       const histPool = categoricalPalette(
         Math.max(histKeys.length, 1),
@@ -1812,8 +1812,8 @@ export function createMetricViewContext(
   // within a stream; seeding cannot see those, because it runs once per metric.
   $effect(() => {
     const m = getMetric()
-    const streamId = m?.id
-    if (!streamId) return
+    const streamID = m?.id
+    if (!streamID) return
 
     if (metricType === 'Gauge' || metricType === 'Sum') {
       const keys = gaugeSumGroups.keys
@@ -1831,7 +1831,7 @@ export function createMetricViewContext(
       const next = reconcileTimeseriesVisible(
         view.gaugeSumVisible,
         keys,
-        streamId
+        streamID
       )
 
       if (!visibleKeyListsEqual(view.gaugeSumVisible, next)) {
@@ -1853,7 +1853,7 @@ export function createMetricViewContext(
     const next = reconcileTimeseriesVisible(
       view.histogramVisible,
       keys,
-      streamId,
+      streamID,
       null
     )
     if (!visibleKeyListsEqual(view.histogramVisible, next)) {
@@ -1931,8 +1931,8 @@ export function createMetricViewContext(
     // Persist the coerced value too: otherwise localStorage keeps the
     // stale (now-invalid) choice and we re-coerce on every load until
     // the user touches the menu.
-    const streamId = getMetric()?.id
-    if (streamId) savePersistedAggregationView(streamId, next)
+    const streamID = getMetric()?.id
+    if (streamID) savePersistedAggregationView(streamID, next)
   })
 
   // -- Methods --
@@ -1957,16 +1957,16 @@ export function createMetricViewContext(
 
   function setAggregationView(next: AggregationView) {
     view.aggregationView = next
-    const streamId = getMetric()?.id
-    if (streamId) savePersistedAggregationView(streamId, next)
+    const streamID = getMetric()?.id
+    if (streamID) savePersistedAggregationView(streamID, next)
     // localStorage still remembers it per metric.
     writeMetricUrl('replace')
   }
 
   function setShowAllSeriesAggregate(next: boolean) {
     view.showAllSeriesAggregate = next
-    const streamId = getMetric()?.id
-    if (streamId) savePersistedShowAllSeriesAggregate(streamId, next)
+    const streamID = getMetric()?.id
+    if (streamID) savePersistedShowAllSeriesAggregate(streamID, next)
   }
 
   function setActiveQuantileOverlay(quantileKey: string) {
@@ -1986,7 +1986,7 @@ export function createMetricViewContext(
   }
 
   function toggleTimeseriesVisible(key: string, checked: boolean) {
-    const streamId = getMetric()?.id
+    const streamID = getMetric()?.id
     let pool = timeseriesChartColors
     const assigned = new Map(view.timeseriesColorByKey)
     if (checked) {
@@ -2009,27 +2009,27 @@ export function createMetricViewContext(
       if (checked) next.add(key)
       else next.delete(key)
       view.histogramVisible = next
-      if (streamId) savePersistedTimeseriesVisible(streamId, next)
+      if (streamID) savePersistedTimeseriesVisible(streamID, next)
       return
     }
     const next = new SvelteSet(view.gaugeSumVisible)
     if (checked) next.add(key)
     else next.delete(key)
     view.gaugeSumVisible = next
-    if (streamId) savePersistedTimeseriesVisible(streamId, next)
+    if (streamID) savePersistedTimeseriesVisible(streamID, next)
   }
 
   function clearAllTimeseriesVisible() {
     replaceColorAssignments(new Map())
-    const streamId = getMetric()?.id
+    const streamID = getMetric()?.id
     if (isHistogramKind) {
       view.histogramVisible = new SvelteSet()
-      if (streamId)
-        savePersistedTimeseriesVisible(streamId, view.histogramVisible)
+      if (streamID)
+        savePersistedTimeseriesVisible(streamID, view.histogramVisible)
       return
     }
     view.gaugeSumVisible = new SvelteSet()
-    if (streamId) savePersistedTimeseriesVisible(streamId, view.gaugeSumVisible)
+    if (streamID) savePersistedTimeseriesVisible(streamID, view.gaugeSumVisible)
   }
 
   function onDatapointClick(dp: DataPoint) {
