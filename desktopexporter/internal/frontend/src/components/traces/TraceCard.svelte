@@ -27,7 +27,9 @@
     )
   )
 
-  let titleLabel = $derived(trace.rootSpan?.name ?? 'No root span yet')
+  // Not "yet": a promoted-orphan or salvaged-cycle trace has no null-parent
+  // span and is not waiting for one.
+  let titleLabel = $derived(trace.rootSpan?.name ?? 'No root span')
   let serviceLabel = $derived(trace.rootSpan?.serviceName)
   let titleMuted = $derived(!trace.hasRootSpan)
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -115,7 +116,7 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 
 func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -149,7 +150,7 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 
 func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -196,7 +197,7 @@ func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
 
 func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) < 2 || len(params) > 3 {
@@ -245,7 +246,7 @@ func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 // its tool-minted UUID (the same id returned in Search summaries).
 func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) != 1 {
@@ -266,7 +267,7 @@ func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any
 
 func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) < 2 || len(params) > 3 {
@@ -315,7 +316,7 @@ type getMetricParams struct {
 func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricParams, error) {
 	var out getMetricParams
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	// Everything past the third is optional and additive: targetBuckets,
@@ -386,9 +387,28 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 			return out, jsonrpc2.ErrInvalidParams
 		}
 		for _, v := range raw {
-			q, ok := v.(float64)
-			if !ok || q < 0 || q > 1 {
-				return out, jsonrpc2.ErrInvalidParams
+			// Quantiles are genuinely fractional, so float64 is the right type
+			// here -- unlike timestamps. They arrive as json.Number because
+			// params are decoded with UseNumber; float64 stays accepted so a
+			// caller that decoded params some other way still works.
+			var q float64
+			switch n := v.(type) {
+			case json.Number:
+				f, err := n.Float64()
+				if err != nil {
+					return out, fmt.Errorf("quantiles must be numbers, got %q: %w",
+						n.String(), jsonrpc2.ErrInvalidParams)
+				}
+				q = f
+			case float64:
+				q = n
+			default:
+				return out, fmt.Errorf("quantiles must be numbers, got %T: %w",
+					v, jsonrpc2.ErrInvalidParams)
+			}
+			if q < 0 || q > 1 {
+				return out, fmt.Errorf("quantiles must be between 0 and 1, got %v: %w",
+					q, jsonrpc2.ErrInvalidParams)
 			}
 			quantiles = append(quantiles, q)
 		}
@@ -562,7 +582,7 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 // on a single stream_id.
 func (h *JSONRPCHandler) deleteMetricStream(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) != 1 {
@@ -651,7 +671,7 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 // signals can carry it.
 func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) != 1 {
@@ -673,7 +693,7 @@ func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Req
 
 func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -703,7 +723,7 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 
 func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -756,7 +776,7 @@ func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.R
 
 func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -786,7 +806,7 @@ func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.
 
 func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -811,7 +831,7 @@ func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrp
 
 func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	if len(params) != 1 {
@@ -855,7 +875,7 @@ func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 // a DB cast error reported as a generic internal error.
 func (h *JSONRPCHandler) parseIDParams(req *jsonrpc2.Request, invalidIDErr error, normalize func(string) (string, error)) ([]any, error) {
 	var params []any
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -926,14 +946,58 @@ func normalizeSpanID(s string) (string, error) {
 // parseTimestampParam parses a timestamp parameter that must be a JSON string
 // containing a base-10 int64. Large integers travel as strings to avoid
 // float64 precision loss in JSON.
+// parseTimestampParam reads a whole number sent either as a JSON string or as
+// a JSON number.
+//
+// Strings were the original and only accepted form, for a real reason:
+// nanosecond timestamps are around 1.8e18, and JSON numbers decoded into `any`
+// become float64, which is exact only to 2^53. Three of four realistic
+// timestamps lose precision that way -- by up to 65ns -- which would move a
+// query boundary silently rather than failing.
+//
+// So numbers are accepted, but only because params are decoded with
+// UseNumber: a JSON number arrives as json.Number, which is text, and parses
+// to int64 exactly. float64 is rejected outright rather than rounded, since
+// reaching this function with one means the decoder was bypassed and the
+// precision is already gone.
+//
+// The error says which parameter and what was wrong with it. The bare
+// "invalid params" this used to return gave a caller nothing to act on, which
+// costs time even when the caller can read this file.
 func (h *JSONRPCHandler) parseTimestampParam(param any, paramName string) (int64, error) {
-	s, ok := param.(string)
-	if !ok {
-		return 0, jsonrpc2.ErrInvalidParams
+	var text string
+	switch v := param.(type) {
+	case string:
+		text = v
+	case json.Number:
+		text = v.String()
+	case float64:
+		return 0, fmt.Errorf(
+			"%s decoded as float64, which cannot hold a nanosecond timestamp exactly: %w",
+			paramName, jsonrpc2.ErrInvalidParams)
+	default:
+		return 0, fmt.Errorf(
+			"%s must be a whole number, as a JSON number or a decimal string, got %T: %w",
+			paramName, param, jsonrpc2.ErrInvalidParams)
 	}
-	parsed, err := strconv.ParseInt(s, 10, 64)
+
+	parsed, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
-		return 0, jsonrpc2.ErrInvalidParams
+		return 0, fmt.Errorf(
+			"%s must be a whole number, got %q: %w",
+			paramName, text, jsonrpc2.ErrInvalidParams)
 	}
 	return parsed, nil
+}
+
+// decodeParams unmarshals a request's params with UseNumber, so JSON numbers
+// arrive as json.Number rather than float64 and keep full integer precision.
+//
+// Every params decode in this file goes through here. Using json.Unmarshal
+// directly would silently reintroduce the float64 rounding that
+// parseTimestampParam exists to avoid.
+func decodeParams(raw json.RawMessage, dst any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	return dec.Decode(dst)
 }

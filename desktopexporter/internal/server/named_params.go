@@ -24,6 +24,14 @@ import (
 //
 // Adding a parameter means appending here as well, and a test walks every
 // method to catch a list that has fallen behind its handler's bounds.
+//
+// deleteSpansByTraceID, deleteSpanByID and deleteLogByID are deliberately
+// absent. They are variadic -- parseIDParams reads the whole params array as
+// the list of ids, so ["a","b"] is two ids rather than one parameter holding
+// two. There is no position to give a name to, and modelling them as a single
+// named slot would nest the array one level deeper and break the delete. A
+// named call to them is refused with a message saying so, which is the honest
+// answer.
 var methodParamNames = map[string][]string{
 	"searchTraces":          {"startTime", "endTime", "query"},
 	"searchSpans":           {"traceID", "query"},
@@ -48,10 +56,7 @@ var methodParamNames = map[string][]string{
 	"searchAttributes":       {"term"},
 	"getAttributesByTraceID": {"traceID"},
 	"getTraceSpanCount":      {"traceID"},
-	"deleteSpansByTraceID":   {"traceIDs"},
-	"deleteSpanByID":         {"spanID"},
-	"deleteLogByID":          {"logID"},
-	"deleteMetricStream":     {"streamIDs"},
+	"deleteMetricStream":     {"streamID"},
 }
 
 // normalizeParams rewrites object-form params into the positional array form.
@@ -72,6 +77,13 @@ func normalizeParams(method string, raw json.RawMessage) (json.RawMessage, error
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return raw, nil
+	}
+
+	// An empty object means "no parameters", which is true of every method --
+	// including the ones with nothing to name. Rejecting it would break
+	// `params: {}`, a perfectly ordinary way to call getStats.
+	if bytes.Equal(bytes.Join(bytes.Fields(trimmed), nil), []byte("{}")) {
+		return json.RawMessage("[]"), nil
 	}
 
 	names, ok := methodParamNames[method]

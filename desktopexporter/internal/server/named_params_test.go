@@ -96,13 +96,17 @@ func TestPositionalParamsPassThroughUntouched(t *testing.T) {
 // without a name list, which would otherwise fail only when somebody first
 // tried to call it by name.
 func TestEveryMethodHasParamNames(t *testing.T) {
-	// Methods that genuinely take no parameters.
-	noParams := map[string]bool{
+	// Methods with no positional slot to name. Either they take no parameters
+	// at all, or they are variadic: parseIDParams reads the whole params array
+	// as the id list, so there is no position that means one thing.
+	unnamed := map[string]bool{
 		"clearTraces": true, "clearLogs": true, "clearMetrics": true,
-		"getStats": true,
+		"getStats":             true,
+		"deleteSpansByTraceID": true, "deleteSpanByID": true,
+		"deleteLogByID": true,
 	}
 	for _, m := range dispatchedMethods() {
-		if noParams[m] {
+		if unnamed[m] {
 			continue
 		}
 		_, ok := methodParamNames[m]
@@ -123,4 +127,56 @@ func dispatchedMethods() []string {
 		out = append(out, string(m[1]))
 	}
 	return out
+}
+
+// TestVariadicMethodsRefuseNamedParams pins the exception, because it is the
+// one shape a name table cannot express.
+//
+// deleteSpansByTraceID and friends read the whole params array as the list of
+// ids: ["a","b"] is two ids, not one parameter holding two. Modelling that as
+// a named slot would nest the array a level deeper and delete nothing. Refusal
+// with an explanation beats a silent no-op.
+func TestVariadicMethodsRefuseNamedParams(t *testing.T) {
+	for _, method := range []string{
+		"deleteSpansByTraceID", "deleteSpanByID", "deleteLogByID",
+	} {
+		t.Run(method, func(t *testing.T) {
+			_, err := normalizeParams(method, json.RawMessage(`{"traceIDs":["a","b"]}`))
+			require.Error(t, err)
+			require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+			require.Contains(t, err.Error(), "named parameters")
+
+			// The array form still works, untouched.
+			got, err := normalizeParams(method, json.RawMessage(`["a","b"]`))
+			require.NoError(t, err)
+			require.Equal(t, json.RawMessage(`["a","b"]`), got)
+		})
+	}
+}
+
+// TestDeleteMetricStreamTakesOneID guards the singular/plural slip this
+// nearly shipped with: the method takes a bare id, not a list.
+func TestDeleteMetricStreamTakesOneID(t *testing.T) {
+	got, err := normalizeParams("deleteMetricStream", json.RawMessage(`{"streamID":"s1"}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `["s1"]`, string(got))
+
+	_, err = normalizeParams("deleteMetricStream", json.RawMessage(`{"streamIDs":["s1"]}`))
+	require.Error(t, err, "the plural name must not silently work")
+}
+
+// TestEmptyObjectMeansNoParams covers the shape that has no name to look up.
+//
+// `params: {}` is an ordinary way to call a method that takes nothing, and it
+// must not depend on the method appearing in the name table -- getStats has no
+// entry and never will. Found by calling getStats after the table went in, not
+// by any test above, which is why it is a test now.
+func TestEmptyObjectMeansNoParams(t *testing.T) {
+	for _, method := range []string{"getStats", "clearTraces", "searchTraces"} {
+		for _, raw := range []string{`{}`, ` { } `} {
+			got, err := normalizeParams(method, json.RawMessage(raw))
+			require.NoError(t, err, "%s with %q", method, raw)
+			require.JSONEq(t, `[]`, string(got))
+		}
+	}
 }

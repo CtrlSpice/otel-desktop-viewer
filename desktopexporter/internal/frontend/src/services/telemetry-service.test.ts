@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { telemetryAPI, JsonRpcError } from './telemetry-service'
+import type { QueryNode } from '@/components/shared/Search/queryTree'
 
 // The backend signals not-found with JSON-RPC errors (one convention across
 // all signals; see internal/server/errors.go). getMetric's callers expect
@@ -315,5 +316,179 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     // The two healthy spans from the base fixture are untouched.
     expect('salvaged' in trace.spans[0]).toBe(false)
     expect('salvaged' in trace.spans[1]).toBe(false)
+  })
+})
+
+// What the client puts on the wire, which nothing else here looks at.
+//
+// Every test above stubs fetch and reads the response, so all of them pass
+// whether the request carried named parameters, positional ones, or nothing
+// recognisable at all. That blindness has cost twice already: deleteMetricStream
+// was registered under a plural name it does not take, and `params: {}` was
+// rejected for every method with nothing to name. Both reached a running server
+// before anyone noticed, because a green suite said nothing about the request.
+//
+// So these pin the request instead of the response. They are deliberately exact
+// -- a full deep-equal on params rather than a check that some key is present --
+// because the failures worth catching are a renamed key, an extra key, and a
+// silent return to positional arrays, and a loose assertion sees none of them.
+function captureRequest() {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ jsonrpc: '2.0', id: 1, result: [] }),
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return () => JSON.parse(fetchMock.mock.calls[0][1].body)
+}
+
+describe('request parameters', () => {
+  // Named methods, with the exact object each one is expected to send.
+  // toNanoseconds renders milliseconds as a decimal string, hence '2000000'.
+  const named: [string, () => Promise<unknown>, Record<string, unknown>][] = [
+    [
+      'searchAttributes',
+      () => telemetryAPI.searchAttributes('http'),
+      { term: 'http' },
+    ],
+    [
+      'getTraceAttributes',
+      () => telemetryAPI.getTraceAttributes(2, 5),
+      { startTime: '2000000', endTime: '5000000' },
+    ],
+    [
+      'getAttributesByTraceID',
+      () => telemetryAPI.getAttributesByTraceID('abc'),
+      { traceID: 'abc' },
+    ],
+    [
+      'getLogAttributes',
+      () => telemetryAPI.getLogAttributes(2, 5),
+      { startTime: '2000000', endTime: '5000000' },
+    ],
+    [
+      'getMetricAttributes',
+      () => telemetryAPI.getMetricAttributes(2, 5),
+      { startTime: '2000000', endTime: '5000000' },
+    ],
+    [
+      'searchTraces',
+      () => telemetryAPI.searchTraces(2, 5),
+      { startTime: '2000000', endTime: '5000000' },
+    ],
+    [
+      'searchLogs',
+      () => telemetryAPI.searchLogs(2, 5),
+      { startTime: '2000000', endTime: '5000000' },
+    ],
+    [
+      'searchMetricSummaries',
+      () => telemetryAPI.searchMetricSummaries(2, 5),
+      { startTime: '2000000', endTime: '5000000' },
+    ],
+    [
+      'getTraceSpanCount',
+      () => telemetryAPI.getTraceSpanCount('abc'),
+      { traceID: 'abc' },
+    ],
+    [
+      'deleteMetricStream',
+      () => telemetryAPI.deleteMetricStream('s1'),
+      { streamID: 's1' },
+    ],
+  ]
+
+  it.each(named)(
+    '%s sends exactly its named parameters',
+    async (method, invoke, expected) => {
+      const sent = captureRequest()
+      await invoke().catch(() => {})
+      const request = sent()
+      expect(request.method).toBe(method)
+      expect(Array.isArray(request.params)).toBe(false)
+      expect(request.params).toEqual(expected)
+    }
+  )
+
+  // searchSpans is separate: it returns an object rather than an array, so the
+  // shared stub's `result: []` would fail to rehydrate before the assertion runs.
+  it('searchSpans sends its traceID by name', async () => {
+    const sent = captureRequest()
+    await telemetryAPI.searchSpans('abc123').catch(() => {})
+    expect(sent().params).toEqual({ traceID: 'abc123' })
+  })
+
+  // The reason the ternaries went. An omitted query must be an absent key --
+  // not null, and not a third array slot -- because the store reads a present
+  // `query` as a filter to apply and would return a narrowed result for a
+  // search the user never typed.
+  //
+  // Note what this does *not* pin: `named` dropping undefined keys is not
+  // observable here, because JSON.stringify omits undefined-valued keys anyway.
+  // Deleting that filter leaves the wire bytes identical, so no test at this
+  // level can fail on it. The filter earns its place by making the intent
+  // explicit and the return type honest, not by changing the request. The
+  // distinction that does survive serialisation is null and [] -- both real
+  // values, both sent -- which is what the getMetric tests cover.
+  it('omits query entirely when no query tree is supplied', async () => {
+    const sent = captureRequest()
+    await telemetryAPI.searchTraces(2, 5).catch(() => {})
+    expect('query' in sent().params).toBe(false)
+  })
+
+  it('includes query when a query tree is supplied', async () => {
+    const tree = {
+      id: 'q1',
+      type: 'condition',
+      query: {
+        field: { name: 'name', type: 'string', searchScope: 'global' },
+        operator: { symbol: 'contains' },
+        value: 'checkout',
+      },
+    } as unknown as QueryNode
+
+    const sent = captureRequest()
+    await telemetryAPI.searchTraces(2, 5, tree).catch(() => {})
+    const params = sent().params
+    expect(Object.keys(params).sort()).toEqual([
+      'endTime',
+      'query',
+      'startTime',
+    ])
+    expect(params.query).toMatchObject({ id: 'q1', type: 'condition' })
+  })
+
+  // The deliberate exceptions. parseIDParams reads the whole params array as
+  // the id list, so wrapping it in an object would nest the array a level
+  // deeper and delete nothing.
+  it.each([
+    [
+      'deleteSpansByTraceID',
+      () => telemetryAPI.deleteTraces(['a', 'b']),
+      ['a', 'b'],
+    ],
+    ['deleteLogByID', () => telemetryAPI.deleteLogByID('log-1'), ['log-1']],
+  ])(
+    '%s stays positional, because its params are the ids',
+    async (method, invoke, expected) => {
+      const sent = captureRequest()
+      await invoke().catch(() => {})
+      const request = sent()
+      expect(request.method).toBe(method)
+      expect(request.params).toEqual(expected)
+    }
+  )
+
+  // Methods with nothing to name send no params at all, rather than an empty
+  // object or an empty array.
+  it.each([
+    ['clearTraces', () => telemetryAPI.clearTraces()],
+    ['clearLogs', () => telemetryAPI.clearLogs()],
+    ['clearMetrics', () => telemetryAPI.clearMetrics()],
+  ])('%s sends no params', async (method, invoke) => {
+    const sent = captureRequest()
+    await invoke().catch(() => {})
+    const request = sent()
+    expect(request.method).toBe(method)
+    expect('params' in request).toBe(false)
   })
 })

@@ -111,6 +111,26 @@ export function isAbortError(err: unknown): boolean {
   )
 }
 
+// Named parameters, built by describing them rather than by placing them.
+//
+// The server accepts params as an object as well as an array, and an object
+// is what these calls want: JSON-RPC positional params have no notion of a
+// hole, so sending the fifth argument meant also sending the first four --
+// placeholders, defaults chosen to mean "ignore me", and a trailing trim to
+// undo the ones nobody asked for. None of that described metrics. It described
+// counting.
+//
+// `named` drops the keys the caller never supplied and keeps everything else,
+// which is the entire mechanism. The distinction it must preserve is that
+// `undefined` means "not supplied" while `null` and `[]` are real values a
+// caller can mean -- for seriesIDs those are three different requests: every
+// series, every series, and no series respectively.
+function named<T extends object>(params: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined)
+  ) as Partial<T>
+}
+
 // Generic JSON-RPC transport. T is a compile-time assertion of the wire
 // shape (see wire-types.ts), not runtime validation -- the backend is
 // trusted to serve what its projections declare.
@@ -381,9 +401,10 @@ export let telemetryAPI = {
   // no time range.
   searchAttributes: async (term: string): Promise<JsonAttributeMatch[]> => {
     if (!term.trim()) return []
-    const rawData = await callRPC<JsonAttributeMatch[]>('searchAttributes', [
-      term,
-    ])
+    const rawData = await callRPC<JsonAttributeMatch[]>(
+      'searchAttributes',
+      named({ term })
+    )
     if (!Array.isArray(rawData)) {
       console.warn('searchAttributes: Expected array, got:', typeof rawData)
       return []
@@ -398,10 +419,9 @@ export let telemetryAPI = {
   ): Promise<FieldDefinition[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = [startTimeNs, endTimeNs]
     const rawData = await callRPC<JsonAttributeDefinition[]>(
       'getTraceAttributes',
-      params
+      named({ startTime: startTimeNs, endTime: endTimeNs })
     )
 
     // Validate that we received an array
@@ -424,7 +444,7 @@ export let telemetryAPI = {
   ): Promise<FieldDefinition[]> => {
     const rawData = await callRPC<JsonAttributeDefinition[]>(
       'getAttributesByTraceID',
-      [traceID]
+      named({ traceID })
     )
     if (!Array.isArray(rawData)) {
       console.warn(
@@ -443,10 +463,9 @@ export let telemetryAPI = {
   ): Promise<FieldDefinition[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = [startTimeNs, endTimeNs]
     const rawData = await callRPC<JsonAttributeDefinition[]>(
       'getLogAttributes',
-      params
+      named({ startTime: startTimeNs, endTime: endTimeNs })
     )
 
     if (!Array.isArray(rawData)) {
@@ -469,10 +488,14 @@ export let telemetryAPI = {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
 
-    const params = queryTree
-      ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
-      : [startTimeNs, endTimeNs]
-    const rawData = await callRPC<JsonTraceSummary[]>('searchTraces', params)
+    const rawData = await callRPC<JsonTraceSummary[]>(
+      'searchTraces',
+      named({
+        startTime: startTimeNs,
+        endTime: endTimeNs,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+      })
+    )
     return traceSummariesFromJSON(rawData)
   },
 
@@ -484,10 +507,14 @@ export let telemetryAPI = {
     queryTree?: QueryNode,
     signal?: AbortSignal
   ): Promise<TraceData> => {
-    const params = queryTree
-      ? [traceID, convertQueryTreeForBackend(queryTree)]
-      : [traceID]
-    const rawData = await callRPC<JsonTraceData>('searchSpans', params, signal)
+    const rawData = await callRPC<JsonTraceData>(
+      'searchSpans',
+      named({
+        traceID,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+      }),
+      signal
+    )
     return traceDataFromJSON(rawData)
   },
 
@@ -507,15 +534,19 @@ export let telemetryAPI = {
   ): Promise<LogSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = queryTree
-      ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
-      : [startTimeNs, endTimeNs]
-    const rawData = await callRPC<JsonLogSummary[]>('searchLogs', params)
+    const rawData = await callRPC<JsonLogSummary[]>(
+      'searchLogs',
+      named({
+        startTime: startTimeNs,
+        endTime: endTimeNs,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+      })
+    )
     return logSummariesFromJSON(rawData)
   },
 
   getLog: async (logID: string): Promise<LogData> => {
-    const rawData = await callRPC<JsonLogData>('getLog', [logID])
+    const rawData = await callRPC<JsonLogData>('getLog', named({ logID }))
     return logDataFromJSON(rawData)
   },
 
@@ -531,12 +562,13 @@ export let telemetryAPI = {
   ): Promise<MetricSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = queryTree
-      ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
-      : [startTimeNs, endTimeNs]
     const rawData = await callRPC<JsonMetricSummary[]>(
       'searchMetricSummaries',
-      params
+      named({
+        startTime: startTimeNs,
+        endTime: endTimeNs,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+      })
     )
     return metricSummariesFromJSON(rawData)
   },
@@ -593,58 +625,29 @@ export let telemetryAPI = {
     // Not-found arrives as a JSON-RPC error (one wire convention across all
     // signals); translate it to null here so callers keep a simple contract.
     try {
-      // Positional params: a later one requires the earlier, so a caller
-      // passing quantiles without a resolution still sends a placeholder.
-      //
-      // Built as a list and trimmed from the end rather than as one conditional
-      // per parameter. The conditional form made every parameter name every
-      // parameter after it, so adding one meant editing every line above it --
-      // four edits to add a fifth, each silently optional.
-      //
-      // seriesIDs sends null, not [] -- the three states are distinct on the
-      // wire: absent or null means every series, an empty array means none.
-      // Sending [] for "no filter" asked the store for no series, which it
-      // correctly answered with nothing.
-      const optional: { value: unknown; given: boolean }[] = [
-        {
-          value: String(targetBuckets ?? 0),
-          given: targetBuckets !== undefined,
-        },
-        { value: seriesIDs ?? null, given: seriesIDs !== undefined },
-        { value: quantiles ?? [], given: quantiles !== undefined },
-        { value: String(tzOffsetNs ?? 0), given: tzOffsetNs !== undefined },
-        { value: fitToData ?? false, given: fitToData !== undefined },
-        { value: String(viewBuckets ?? 0), given: viewBuckets !== undefined },
-        {
-          value: String(sparklineBuckets ?? 0),
-          given: sparklineBuckets !== undefined,
-        },
-        // Slot 11: the scalar Selected pool, which getMetric does not narrow by.
-        {
-          value: null,
-          given:
-            datapointSeriesIDs !== undefined ||
-            datapointSeriesLimit !== undefined,
-        },
-        {
-          value: datapointSeriesIDs ?? null,
-          given: datapointSeriesIDs !== undefined,
-        },
-        {
-          value: String(datapointSeriesLimit ?? 0),
-          given: datapointSeriesLimit !== undefined,
-        },
-        { value: tzName ?? null, given: tzName !== undefined },
-      ]
-      while (optional.length > 0 && !optional[optional.length - 1].given) {
-        optional.pop()
-      }
-      const rawData = await callRPC<JsonMetricData>('getMetric', [
-        streamID,
-        startTimeNs,
-        endTimeNs,
-        ...optional.map(p => p.value),
-      ])
+      const rawData = await callRPC<JsonMetricData>(
+        'getMetric',
+        named({
+          streamID,
+          startTime: startTimeNs,
+          endTime: endTimeNs,
+          targetBuckets,
+          // null and [] are different requests: null (or absent) means every
+          // series, [] means none. Only undefined is dropped.
+          seriesIDs,
+          quantiles,
+          tzOffsetNs,
+          fitToData,
+          viewBuckets,
+          sparklineBuckets,
+          // selectedSeriesIDs is deliberately absent: getMetric does not narrow
+          // by the scalar Selected pool. Positionally it had to be sent as a
+          // null placeholder so the parameters after it could be reached.
+          datapointSeriesIDs,
+          datapointSeriesLimit,
+          tzName,
+        })
+      )
       return metricDataFromJSON(rawData)
     } catch (error) {
       if (
@@ -692,28 +695,26 @@ export let telemetryAPI = {
     try {
       const raw = await callRPC<JsonMetricAggregateEnvelope | null>(
         'getMetricAggregate',
-        [
+        named({
           streamID,
-          startTimeNs,
-          endTimeNs,
-          String(targetBuckets),
+          startTime: startTimeNs,
+          endTime: endTimeNs,
+          targetBuckets,
           seriesIDs,
           quantiles,
-          String(tzOffsetNs),
-          // Must match what getMetric sent for the same view, or the aggregate is
-          // bucketed against a different window than the series beneath it.
+          tzOffsetNs,
+          // Must match what getMetric sent for the same view, or the
+          // aggregate is bucketed against a different window than the series
+          // beneath it.
           fitToData,
-          String(viewBuckets),
-          // Placeholder for sparklineBuckets: this method drops the timeseries, so
-          // the store pins it to 0 regardless, but positional params mean the slot
-          // has to be filled to reach the one after it.
-          '0',
-          selectedSeriesIDs ?? null,
-          // Placeholders for datapointSeriesIDs and datapointSeriesLimit:
-          // this method returns no datapoints, but the zone sits past those
-          // slots and positional params cannot skip them.
-          ...(tzName !== undefined ? [null, '0', tzName] : []),
-        ]
+          viewBuckets,
+          // sparklineBuckets, datapointSeriesIDs and datapointSeriesLimit are
+          // simply not sent: this method drops the timeseries and returns no
+          // datapoints. Positionally each had to be filled with a placeholder
+          // so that tzName, which sits past them, could be reached at all.
+          selectedSeriesIDs: selectedSeriesIDs ?? null,
+          tzName,
+        })
       )
       if (!raw) return null
       return {
@@ -737,10 +738,9 @@ export let telemetryAPI = {
   ): Promise<FieldDefinition[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = [startTimeNs, endTimeNs]
     const rawData = await callRPC<JsonAttributeDefinition[]>(
       'getMetricAttributes',
-      params
+      named({ startTime: startTimeNs, endTime: endTimeNs })
     )
 
     if (!Array.isArray(rawData)) {
@@ -758,7 +758,7 @@ export let telemetryAPI = {
   // Takes a bare stream id, not an array: metrics address a stream by a single
   // uuid everywhere (see getMetric), unlike deleteLogByID / deleteTraces.
   deleteMetricStream: (streamID: string) =>
-    callRPC<string>('deleteMetricStream', [streamID]),
+    callRPC<string>('deleteMetricStream', named({ streamID })),
   clearMetrics: () => callRPC<string>('clearMetrics', undefined),
 
   // Stats methods
@@ -768,7 +768,7 @@ export let telemetryAPI = {
   },
 
   getTraceSpanCount: async (traceID: string): Promise<number> => {
-    return await callRPC<number>('getTraceSpanCount', [traceID])
+    return await callRPC<number>('getTraceSpanCount', named({ traceID }))
   },
 }
 

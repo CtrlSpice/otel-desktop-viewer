@@ -339,7 +339,13 @@ func TestGetTraceAttributes(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+		// ErrorIs, not Equal: the error now wraps the sentinel so it can say
+		// which parameter was wrong and what arrived. The code on the wire is
+		// unchanged; only the message gained detail, and a caller who cannot
+		// read this file needs that detail more than we need identity.
+		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+		assert.Contains(t, err.Error(), "startTime")
+		assert.Contains(t, err.Error(), "pumpkin")
 	})
 }
 
@@ -1102,4 +1108,80 @@ func TestGetMetricAcceptsEveryParameter(t *testing.T) {
 	_, err = handler.Handle(context.Background(),
 		createRequest("getMetric", append(append([]any{}, full...), "extra")))
 	assert.Error(t, err, "a parameter beyond the known list must be refused")
+}
+
+// TestTimestampParamsAcceptNumbersWithoutLosingPrecision covers the trap that
+// numeric timestamps used to fall into.
+//
+// A nanosecond timestamp is around 1.8e18, far past float64's exact-integer
+// limit of 2^53. Decoded the ordinary way, three of four realistic timestamps
+// round -- by up to 65ns -- which would move a query boundary without failing.
+// Params are decoded with UseNumber so a JSON number arrives as text and
+// parses exactly; this proves the decode path, not just the parser.
+func TestTimestampParamsAcceptNumbersWithoutLosingPrecision(t *testing.T) {
+	h := &JSONRPCHandler{}
+
+	// Values chosen because they do NOT survive a float64 round trip.
+	lossy := []int64{
+		1787348704416123456,
+		1787348704416123457,
+		1787277368394484963,
+	}
+
+	for _, want := range lossy {
+		require.NotEqual(t, want, int64(float64(want)),
+			"fixture must actually be lossy through float64, or it proves nothing")
+
+		t.Run(fmt.Sprintf("number_%d", want), func(t *testing.T) {
+			var params []any
+			require.NoError(t, decodeParams(
+				json.RawMessage(fmt.Sprintf(`[%d, %d]`, want, want)), &params))
+
+			got, err := h.parseTimestampParam(params[0], "startTime")
+			require.NoError(t, err)
+			require.Equal(t, want, got, "decoded through a JSON number, exactly")
+		})
+
+		t.Run(fmt.Sprintf("string_%d", want), func(t *testing.T) {
+			var params []any
+			require.NoError(t, decodeParams(
+				json.RawMessage(fmt.Sprintf(`["%d"]`, want)), &params))
+
+			got, err := h.parseTimestampParam(params[0], "startTime")
+			require.NoError(t, err)
+			require.Equal(t, want, got, "the original string form still works")
+		})
+	}
+}
+
+// TestTimestampParamErrorsSayWhatIsWrong guards the half that matters to a
+// caller who cannot read this file: the message, not just the code.
+func TestTimestampParamErrorsSayWhatIsWrong(t *testing.T) {
+	h := &JSONRPCHandler{}
+
+	t.Run("float64 is refused rather than rounded", func(t *testing.T) {
+		// Reaching the parser with a float64 means the decoder was bypassed and
+		// the precision is already gone. Rounding it would hide that.
+		_, err := h.parseTimestampParam(float64(1787348704416123456), "startTime")
+		require.Error(t, err)
+		require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+		require.Contains(t, err.Error(), "startTime")
+		require.Contains(t, err.Error(), "float64")
+	})
+
+	t.Run("wrong type names the parameter and the type", func(t *testing.T) {
+		_, err := h.parseTimestampParam(true, "endTime")
+		require.Error(t, err)
+		require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+		require.Contains(t, err.Error(), "endTime")
+		require.Contains(t, err.Error(), "bool")
+	})
+
+	t.Run("unparseable text is quoted back", func(t *testing.T) {
+		var params []any
+		require.NoError(t, decodeParams(json.RawMessage(`["not-a-number"]`), &params))
+		_, err := h.parseTimestampParam(params[0], "startTime")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `"not-a-number"`)
+	})
 }
