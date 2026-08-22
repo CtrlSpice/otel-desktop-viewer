@@ -269,19 +269,15 @@
     // Read reactively so a toggle re-runs this. Sorted so a set rebuilt with
     // the same members does not look like a change.
     //
-    // Two selections, because the two metric shapes check different boxes and
-    // the store reads them through different parameters. A histogram narrows
-    // with seriesIDs -- the merge sees only the checked series. A scalar narrows
-    // with nothing and names its checked set separately, because its All pool
-    // must keep folding every series: narrowing there would quietly turn "all"
-    // into "all of the checked ones".
-    //
-    // Which is why only one of these travels per request -- see fetchAggregate.
-    // Sending both sent a scalar's histogram set as seriesIDs, and since that
-    // parameter narrows filtered_dps, every scalar aggregate downstream of it
-    // folded ten series and called the result All.
-    const histogramKeys = [...metricCtx.histogramVisible].sort()
-    const scalarKeys = [...metricCtx.gaugeSumVisible].sort()
+    // One selection; which parameter carries it is the shape's decision, made
+    // in fetchAggregate. A histogram narrows with seriesIDs -- the merge sees
+    // only the checked series. A scalar narrows with nothing and names its
+    // checked set separately, because its All pool must keep folding every
+    // series: narrowing there would quietly turn "all" into "all of the
+    // checked ones". Sending the selection through the wrong parameter once
+    // folded ten series into a line labelled All, back when two boxes made
+    // that possible.
+    const visibleKeys = [...metricCtx.visibleSeries].sort()
 
     // Wait for the metric itself. The legend selection is seeded from that
     // response, so fetching before it arrives asks for the empty set -- which
@@ -301,7 +297,7 @@
     clearTimeout(aggregateTimer)
     const token = ++aggregateToken
     aggregateTimer = setTimeout(() => {
-      void fetchAggregate(summary, histogramKeys, scalarKeys, token)
+      void fetchAggregate(summary, visibleKeys, token)
     }, 120)
 
     return () => clearTimeout(aggregateTimer)
@@ -309,8 +305,7 @@
 
   async function fetchAggregate(
     summary: MetricSummary,
-    histogramKeys: string[],
-    scalarKeys: string[],
+    visibleKeys: string[],
     token: number
   ) {
     try {
@@ -333,7 +328,12 @@
       const isHistogramMetric =
         summary.metricType === 'Histogram' ||
         summary.metricType === 'ExponentialHistogram'
-      const narrowTo = isHistogramMetric ? histogramKeys : null
+      // The selection travels through exactly one parameter per shape. The
+      // other side gets its empty form deliberately, not another copy: a
+      // histogram's selection sent as selectedSeriesIDs, or a scalar's as
+      // seriesIDs, narrows an aggregate that must fold every series.
+      const narrowTo = isHistogramMetric ? visibleKeys : null
+      const scalarSelected = isHistogramMetric ? [] : visibleKeys
       const [buckets, whole] = await Promise.all([
         telemetryAPI.getMetricAggregate(
           summary.id,
@@ -348,7 +348,7 @@
           // bucketed against different boundaries than the per-series lines
           // drawn beneath them.
           SCALAR_VIEW_BUCKETS,
-          scalarKeys,
+          scalarSelected,
           tzName()
         ),
         telemetryAPI.getMetricAggregate(
@@ -556,14 +556,12 @@
   $effect(() => {
     const summary = page.selectedSummary
     const metric = selectedMetric
-    // The set the legend is actually writing to, which is the histogram's for a
-    // histogram. Watching the scalar set alone meant this never fired for one:
-    // gaugeSumVisible is empty for a histogram by construction, so the effect
-    // bailed on its first line and a narrowed-out series stayed blank forever.
-    // That is worse for a histogram than for a scalar, which at least keeps its
-    // sparkline, stats and view buckets -- a histogram series with no datapoints
-    // has nothing but its name.
-    const checked = metricCtx.currentVisibleKeys
+    // One visibility set for every shape now. This used to watch the scalar
+    // set alone, which is empty for a histogram by construction, so the effect
+    // bailed on its first line and a narrowed-out histogram series stayed
+    // blank forever -- worse for a histogram than for a scalar, which at least
+    // keeps its sparkline, stats and view buckets.
+    const checked = metricCtx.visibleSeries
     const visible = [...checked].sort()
     if (!summary || !metric || visible.length === 0) return
 

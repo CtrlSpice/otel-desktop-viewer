@@ -64,7 +64,7 @@
   let quantileEmptyMessage = $derived.by((): string => {
     if (ctx.bucketSeriesError) return 'Cannot chart quantiles for this metric'
     if (ctx.histogramTimeseriesCount === 0) return 'No datapoints to chart'
-    if (ctx.histogramVisible.size === 0) {
+    if (ctx.visibleSeries.size === 0) {
       return 'Nothing to see here — select a timeseries below'
     }
     return 'No quantile data in range'
@@ -201,7 +201,7 @@
         seriesStats={ctx.seriesStatsByKey}
         emptyMessage={ctx.gaugeSumSeriesKeys.length === 0
           ? 'No datapoints to chart'
-          : ctx.gaugeSumVisible.size === 0
+          : ctx.visibleSeries.size === 0
             ? 'Nothing to see here — select a timeseries below'
             : 'No datapoints in selected timeseries'}
       />

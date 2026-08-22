@@ -246,22 +246,20 @@ describe('metric view context aggregation URL sync', () => {
   })
 })
 
-describe('metric view context visibility seeding by metric shape', () => {
-  // The two legend sets belong to the two metric shapes, and a metric must seed
-  // only its own. Both are read through isHistogramKind everywhere in this
-  // context, so a stray set was invisible here -- but the aggregate fetch sends
-  // the histogram set as the store's narrowing parameter, and that parameter
-  // decides what the All pool folds. A scalar carrying a frozen ten-key
-  // histogram set therefore drew an "All" line over ten of its series.
-  it('leaves the histogram set empty for a scalar metric', () => {
+describe('metric view context visibility seeding', () => {
+  // One visible-series set for every metric shape. It was two -- a metric
+  // seeding the wrong shape's box once left a scalar carrying a frozen
+  // ten-key histogram set, which the aggregate fetch sent as the store's
+  // narrowing parameter and drew an "All" line over ten of its series. With
+  // one box that class is structurally gone, and the hazard inverts: seeding
+  // used to write both boxes back to back, so if that pattern survived the
+  // merge, the histogram branch's empty seed would land second and clobber
+  // the scalar's. A scalar seeing its own keys is therefore also the proof
+  // that exactly one seed was written.
+  it("seeds the set with the scalar metric's own keys, unclobbered", () => {
     const ctx = renderProbe('/metrics/m1')
     expect(ctx.isHistogramKind).toBe(false)
-    expect([...ctx.histogramVisible]).toEqual([])
-  })
-
-  it('still seeds the scalar set for a scalar metric', () => {
-    const ctx = renderProbe('/metrics/m1')
-    expect([...ctx.gaugeSumVisible].sort()).toEqual(['route=/a', 'route=/b'])
+    expect([...ctx.visibleSeries].sort()).toEqual(['route=/a', 'route=/b'])
   })
 })
 

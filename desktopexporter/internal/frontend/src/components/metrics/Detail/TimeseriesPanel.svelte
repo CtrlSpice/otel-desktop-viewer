@@ -32,7 +32,7 @@
       : ctx.gaugeSumLegendTimeseries
   )
   let visibleKeys = $derived(
-    ctx.isHistogramKind ? ctx.histogramVisible : ctx.gaugeSumVisible
+    ctx.visibleSeries
   )
 
   let timeseriesByKey = $derived.by((): Map<string, MetricTimeseries> => {
