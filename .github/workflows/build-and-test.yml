@@ -68,6 +68,24 @@ jobs:
     # How: flip this to true for one run and put it back, or delete the
     # msys2-pkgs-* entry from the Actions cache. Editing the install list below
     # also re-keys the cache on its own, since the key hashes that list.
+    # TEMPORARY (#324): which gcc does the build actually use?
+    # The PATH step below names C:\msys64, the runner's preinstalled MSYS2,
+    # while setup-msys2 installs under RUNNER_TEMP. If the preinstalled one
+    # already carries a ucrt64 gcc, the setup step's 61s buys nothing.
+    - name: Probe preinstalled toolchain (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        Write-Host "RUNNER_TEMP = $env:RUNNER_TEMP"
+        foreach ($root in @("C:\msys64", "$env:RUNNER_TEMP\msys64")) {
+          $gcc = Join-Path $root "ucrt64\bin\gcc.exe"
+          if (Test-Path $gcc) {
+            Write-Host "FOUND $gcc"
+            & $gcc --version | Select-Object -First 1
+          } else {
+            Write-Host "absent: $gcc"
+          }
+        }
+
     - name: Set up MSYS2 (Windows)
       if: matrix.os == 'windows-latest'
       uses: msys2/setup-msys2@v2
@@ -85,6 +103,14 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: |
         echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
+
+    # TEMPORARY (#324): the gcc cgo will resolve, after the PATH edit above.
+    - name: Probe resolved gcc (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        $g = Get-Command gcc -ErrorAction SilentlyContinue
+        if ($g) { Write-Host "gcc resolves to $($g.Source)"; gcc --version | Select-Object -First 1 }
+        else { Write-Host "gcc NOT on PATH" }
 
     - name: Build
       run: go build -o otel-desktop-viewer.exe
