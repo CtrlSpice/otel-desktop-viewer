@@ -77,9 +77,9 @@ describe('TraceDetailView paradox banner', () => {
     const banner = document.querySelector('.detail-view__paradox')
     expect(banner).not.toBeNull()
     expect(banner!.textContent).toContain('Recovered from a broken part')
-    expect(
-      banner!.classList.contains('detail-view__paradox--offender')
-    ).toBe(false)
+    expect(banner!.classList.contains('detail-view__paradox--offender')).toBe(
+      false
+    )
   })
 
   it('escalates for the span that causes the cycle', () => {
@@ -91,8 +91,8 @@ describe('TraceDetailView paradox banner', () => {
     const banner = document.querySelector('.detail-view__paradox')
     expect(banner).not.toBeNull()
     expect(banner!.textContent).toContain('causes a cycle')
-    expect(
-      banner!.classList.contains('detail-view__paradox--offender')
-    ).toBe(true)
+    expect(banner!.classList.contains('detail-view__paradox--offender')).toBe(
+      true
+    )
   })
 })

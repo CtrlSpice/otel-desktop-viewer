@@ -111,7 +111,9 @@ describe('WaterfallRow cycle badge', () => {
     // Warning glyph in the warning tint: no offender escalation, no biohazard.
     expect(badge!.textContent).toContain('⚠')
     expect(badge!.querySelector('svg')).toBeNull()
-    expect(badge!.classList.contains('waterfall-row__cycle--offender')).toBe(false)
+    expect(badge!.classList.contains('waterfall-row__cycle--offender')).toBe(
+      false
+    )
   })
 
   it('shows the offender badge and distinct wording when cyclePoint is true', () => {
@@ -127,7 +129,9 @@ describe('WaterfallRow cycle badge', () => {
     // The biohazard svg, not the warning glyph.
     expect(badge!.querySelector('svg')).not.toBeNull()
     expect(badge!.textContent).not.toContain('⚠')
-    expect(badge!.classList.contains('waterfall-row__cycle--offender')).toBe(true)
+    expect(badge!.classList.contains('waterfall-row__cycle--offender')).toBe(
+      true
+    )
   })
 
   it('gives the offender and the spans it stranded distinguishable labels', () => {
@@ -137,12 +141,10 @@ describe('WaterfallRow cycle badge', () => {
     const { container: offenderContainer } = renderRow(
       makeRow({ salvaged: true, cyclePoint: true })
     )
-    const recoveredLabel = cycleBadge(recoveredContainer)!.getAttribute(
-      'aria-label'
-    )
-    const offenderLabel = cycleBadge(offenderContainer)!.getAttribute(
-      'aria-label'
-    )
+    const recoveredLabel =
+      cycleBadge(recoveredContainer)!.getAttribute('aria-label')
+    const offenderLabel =
+      cycleBadge(offenderContainer)!.getAttribute('aria-label')
     expect(recoveredLabel).not.toBe(offenderLabel)
   })
 })

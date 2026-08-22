@@ -2,7 +2,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/svelte'
 import TracesPage from './TracesPage.svelte'
-import type { TraceSummary, TraceData, Stats, SpanNode } from '@/types/api-types'
+import type {
+  TraceSummary,
+  TraceData,
+  Stats,
+  SpanNode,
+} from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 // TracesPage is the only place the unplaced-span warning banner is rendered
