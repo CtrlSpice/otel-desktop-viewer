@@ -63,26 +63,28 @@ func TestSchemaCoversOTLP(t *testing.T) {
 		return out
 	}
 
-	// Fields OTLP puts on one message that this schema deliberately keeps
-	// somewhere else. Each entry is a claim that the value is stored, just not
-	// in this table -- so removing one should make the test fail, not pass.
-	elsewhere := map[string]string{
-		"Attributes":         "attributes dictionary, via attribute_ids",
-		"FilteredAttributes": "attributes dictionary, via attribute_ids",
-		"Metadata":           "attributes dictionary, via metadata_ids",
-		"Exemplars":          "exemplars table",
-		"ExplicitBounds":     "histogram_bounds table, hashed and shared",
-		"QuantileValues":     "datapoints, as the summary quantile columns",
-		"Positive":           "datapoints, as the exponential bucket columns",
-		"Negative":           "datapoints, as the exponential bucket columns",
-		"Description":        "metric_ingests: per batch, not stream identity",
+	// Fields whose value lives in a shape the name cannot find: a different
+	// table, or columns spelled nothing like the field.
+	//
+	// Each entry names the table and column that must exist. That is the whole
+	// point -- an exception that merely skipped the field would turn this test
+	// off for it, which is exactly the bug it is meant to catch. Verified: a
+	// first draft listed Metadata as a comment string, and deleting
+	// metric_ingests.metadata_ids still passed.
+	type storedAt struct{ table, column string }
+	elsewhere := map[string]storedAt{
+		"Exemplars": {"exemplars", "datapoint_id"},
+		// Field is plural and prefixed; the column is the ordinary one.
+		"FilteredAttributes": {"exemplars", "attribute_ids"},
+		"ExplicitBounds":     {"datapoints", "bounds_id"},
+		"Positive":           {"datapoints", "positive_bucket_counts"},
+		"Negative":           {"datapoints", "negative_bucket_counts"},
 		// The oneof carrying a metric's datapoints. Not a field in its own
 		// right; which arm is set is metric_streams.metric_type.
-		"Gauge":                "datapoints, selected by metric_type",
-		"Sum":                  "datapoints, selected by metric_type",
-		"Histogram":            "datapoints, selected by metric_type",
-		"ExponentialHistogram": "datapoints, selected by metric_type",
-		"Summary":              "datapoints, selected by metric_type",
+		"Gauge":                {"metric_streams", "metric_type"},
+		"Sum":                  {"metric_streams", "metric_type"},
+		"Histogram":            {"metric_streams", "metric_type"},
+		"ExponentialHistogram": {"metric_streams", "metric_type"},
 	}
 
 	// Accessors that describe pdata's own plumbing rather than OTLP content.
@@ -106,26 +108,60 @@ func TestSchemaCoversOTLP(t *testing.T) {
 		return strings.ToLower(b.String())
 	}
 
+	// pmetric.SummaryDataPoint is deliberately absent, and that absence is the
+	// finding rather than an oversight: eachDatapoint handles Gauge, Sum,
+	// Histogram and ExponentialHistogram, and nothing else. A Summary metric
+	// is dropped whole at ingest -- not one field of it, all of it -- so there
+	// is no table to check it against. Listing it here with an excuse would
+	// have hidden that. Filed separately.
+	//
+	// A pdata message can map to more than one table: a Metric's identity is
+	// metric_streams while its per-batch fields (description, metadata) are on
+	// metric_ingests, and both are "stored".
 	cases := []struct {
-		what  string
-		val   any
-		table string
+		what   string
+		val    any
+		tables []string
 	}{
-		{"ptrace.Span", ptrace.NewSpan(), "spans"},
-		{"ptrace.SpanEvent", ptrace.NewSpanEvent(), "events"},
-		{"ptrace.SpanLink", ptrace.NewSpanLink(), "links"},
-		{"plog.LogRecord", plog.NewLogRecord(), "logs"},
-		{"pmetric.NumberDataPoint", pmetric.NewNumberDataPoint(), "datapoints"},
-		{"pmetric.HistogramDataPoint", pmetric.NewHistogramDataPoint(), "datapoints"},
-		{"pmetric.ExponentialHistogramDataPoint", pmetric.NewExponentialHistogramDataPoint(), "datapoints"},
-		{"pmetric.SummaryDataPoint", pmetric.NewSummaryDataPoint(), "datapoints"},
-		{"pmetric.Exemplar", pmetric.NewExemplar(), "exemplars"},
-		{"pmetric.Metric", pmetric.NewMetric(), "metric_streams"},
+		{"ptrace.Span", ptrace.NewSpan(), []string{"spans"}},
+		{"ptrace.SpanEvent", ptrace.NewSpanEvent(), []string{"events"}},
+		{"ptrace.SpanLink", ptrace.NewSpanLink(), []string{"links"}},
+		{"plog.LogRecord", plog.NewLogRecord(), []string{"logs"}},
+		{"pmetric.NumberDataPoint", pmetric.NewNumberDataPoint(), []string{"datapoints"}},
+		{"pmetric.HistogramDataPoint", pmetric.NewHistogramDataPoint(), []string{"datapoints"}},
+		{"pmetric.ExponentialHistogramDataPoint", pmetric.NewExponentialHistogramDataPoint(), []string{"datapoints"}},
+		{"pmetric.Exemplar", pmetric.NewExemplar(), []string{"exemplars"}},
+		{"pmetric.Metric", pmetric.NewMetric(), []string{"metric_streams", "metric_ingests"}},
+	}
+
+	// Fields OTLP defines that this store does not keep at all.
+	//
+	// Distinct from `elsewhere`, and deliberately so: that map says "stored,
+	// look over there" and is verified. This one says "not stored", and exists
+	// to make the gap legible rather than absent. An entry here is a bug with
+	// a reason, not a decision -- if one becomes supported, delete the line
+	// and the test starts guarding it.
+	knownGaps := map[string]string{
+		"Summary": "Summary metrics are dropped whole at ingest: eachDatapoint " +
+			"handles Gauge, Sum, Histogram and ExponentialHistogram only, and " +
+			"datapoints has no quantile column.",
+	}
+
+	// Every exception must point at a column that is really there.
+	for field, at := range elsewhere {
+		require.Truef(t, columns(at.table)[at.column],
+			"%s is excused as living in %s.%s, but that column does not exist",
+			field, at.table, at.column)
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.what, func(t *testing.T) {
-			cols := columns(tc.table)
+			cols := map[string]bool{}
+			for _, tbl := range tc.tables {
+				for c := range columns(tbl) {
+					cols[c] = true
+				}
+			}
 			typ := reflect.TypeOf(tc.val)
 
 			var missing []string
@@ -141,6 +177,9 @@ func TestSchemaCoversOTLP(t *testing.T) {
 				if _, ok := elsewhere[m.Name]; ok {
 					continue
 				}
+				if _, ok := knownGaps[m.Name]; ok {
+					continue
+				}
 
 				n := snake(m.Name)
 				candidates := []string{
@@ -148,6 +187,8 @@ func TestSchemaCoversOTLP(t *testing.T) {
 					strings.TrimSuffix(n, "_unix_nano"),
 					strings.ReplaceAll(n, "timestamp", "time"),
 					n + "_ids", n + "_id", n + "_count",
+					// Attributes -> attribute_ids: field plural, column singular.
+					strings.TrimSuffix(n, "s") + "_ids",
 				}
 				found := false
 				for _, c := range candidates {
@@ -173,10 +214,10 @@ func TestSchemaCoversOTLP(t *testing.T) {
 
 			sort.Strings(missing)
 			require.Emptyf(t, missing,
-				"%s has fields with nowhere to go in %q: %s\n\n"+
+				"%s has fields with nowhere to go in %v: %s\n\n"+
 					"Either add a column, or -- if the value is stored in another "+
 					"table -- add it to the `elsewhere` map above saying where.",
-				tc.what, tc.table, strings.Join(missing, ", "))
+				tc.what, tc.tables, strings.Join(missing, ", "))
 		})
 	}
 }
