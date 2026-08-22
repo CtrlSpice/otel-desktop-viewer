@@ -51,14 +51,31 @@ jobs:
       with:
         go-version: '1.26'
 
-    # EXPERIMENT (#324): no MSYS2 step at all -- does the preinstalled
-    # mingw64 build it?
-    - name: Report the C toolchain cgo will use (Windows)
+    # DuckDB is cgo, so Windows needs a C compiler. It does not need one
+    # installed here: the runner image ships mingw64 at C:\mingw64 and puts it
+    # on PATH, which is what cgo has actually been resolving all along.
+    #
+    # This used to run msys2/setup-msys2 and then prepend C:\msys64\ucrt64\bin.
+    # Probed on a real run (#324): before that step, neither C:\msys64 nor
+    # RUNNER_TEMP\msys64 held a ucrt64 gcc, and after it, gcc still resolved to
+    # C:\mingw64\bin\gcc.exe. Sixty-one seconds -- eight extracting the base,
+    # forty-eight installing 43 packages past a cache hit -- built a toolchain
+    # no compile ever used.
+    #
+    # The cost of leaning on the image is that the image can change. This step
+    # is the alarm: without it a removed preinstall surfaces as a cgo error
+    # deep in a DuckDB build, which reads like a code problem. Reinstating
+    # MSYS2 is the fix if it ever fires.
+    - name: Check the C toolchain cgo needs (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        $g = Get-Command gcc -ErrorAction SilentlyContinue
-        if ($g) { Write-Host "gcc resolves to $($g.Source)"; gcc --version | Select-Object -First 1 }
-        else { Write-Host "gcc NOT on PATH" }
+        $gcc = Get-Command gcc -ErrorAction SilentlyContinue
+        if (-not $gcc) {
+          Write-Host "::error::No gcc on PATH. The windows runner image used to ship one at C:\mingw64; if that has changed, restore the msys2/setup-msys2 step removed in #324."
+          exit 1
+        }
+        Write-Host "cgo will use $($gcc.Source)"
+        gcc --version | Select-Object -First 1
 
     - name: Build
       run: go build -o otel-desktop-viewer.exe
