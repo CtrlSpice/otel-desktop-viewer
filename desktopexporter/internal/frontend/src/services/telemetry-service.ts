@@ -401,9 +401,10 @@ export let telemetryAPI = {
   // no time range.
   searchAttributes: async (term: string): Promise<JsonAttributeMatch[]> => {
     if (!term.trim()) return []
-    const rawData = await callRPC<JsonAttributeMatch[]>('searchAttributes', [
-      term,
-    ])
+    const rawData = await callRPC<JsonAttributeMatch[]>(
+      'searchAttributes',
+      named({ term })
+    )
     if (!Array.isArray(rawData)) {
       console.warn('searchAttributes: Expected array, got:', typeof rawData)
       return []
@@ -418,10 +419,9 @@ export let telemetryAPI = {
   ): Promise<FieldDefinition[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = [startTimeNs, endTimeNs]
     const rawData = await callRPC<JsonAttributeDefinition[]>(
       'getTraceAttributes',
-      params
+      named({ startTime: startTimeNs, endTime: endTimeNs })
     )
 
     // Validate that we received an array
@@ -444,7 +444,7 @@ export let telemetryAPI = {
   ): Promise<FieldDefinition[]> => {
     const rawData = await callRPC<JsonAttributeDefinition[]>(
       'getAttributesByTraceID',
-      [traceID]
+      named({ traceID })
     )
     if (!Array.isArray(rawData)) {
       console.warn(
@@ -463,10 +463,9 @@ export let telemetryAPI = {
   ): Promise<FieldDefinition[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = [startTimeNs, endTimeNs]
     const rawData = await callRPC<JsonAttributeDefinition[]>(
       'getLogAttributes',
-      params
+      named({ startTime: startTimeNs, endTime: endTimeNs })
     )
 
     if (!Array.isArray(rawData)) {
@@ -489,10 +488,14 @@ export let telemetryAPI = {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
 
-    const params = queryTree
-      ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
-      : [startTimeNs, endTimeNs]
-    const rawData = await callRPC<JsonTraceSummary[]>('searchTraces', params)
+    const rawData = await callRPC<JsonTraceSummary[]>(
+      'searchTraces',
+      named({
+        startTime: startTimeNs,
+        endTime: endTimeNs,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+      })
+    )
     return traceSummariesFromJSON(rawData)
   },
 
@@ -504,10 +507,14 @@ export let telemetryAPI = {
     queryTree?: QueryNode,
     signal?: AbortSignal
   ): Promise<TraceData> => {
-    const params = queryTree
-      ? [traceID, convertQueryTreeForBackend(queryTree)]
-      : [traceID]
-    const rawData = await callRPC<JsonTraceData>('searchSpans', params, signal)
+    const rawData = await callRPC<JsonTraceData>(
+      'searchSpans',
+      named({
+        traceID,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+      }),
+      signal
+    )
     return traceDataFromJSON(rawData)
   },
 
@@ -527,10 +534,14 @@ export let telemetryAPI = {
   ): Promise<LogSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = queryTree
-      ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
-      : [startTimeNs, endTimeNs]
-    const rawData = await callRPC<JsonLogSummary[]>('searchLogs', params)
+    const rawData = await callRPC<JsonLogSummary[]>(
+      'searchLogs',
+      named({
+        startTime: startTimeNs,
+        endTime: endTimeNs,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+      })
+    )
     return logSummariesFromJSON(rawData)
   },
 
@@ -551,12 +562,13 @@ export let telemetryAPI = {
   ): Promise<MetricSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = queryTree
-      ? [startTimeNs, endTimeNs, convertQueryTreeForBackend(queryTree)]
-      : [startTimeNs, endTimeNs]
     const rawData = await callRPC<JsonMetricSummary[]>(
       'searchMetricSummaries',
-      params
+      named({
+        startTime: startTimeNs,
+        endTime: endTimeNs,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+      })
     )
     return metricSummariesFromJSON(rawData)
   },
@@ -726,10 +738,9 @@ export let telemetryAPI = {
   ): Promise<FieldDefinition[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
-    const params = [startTimeNs, endTimeNs]
     const rawData = await callRPC<JsonAttributeDefinition[]>(
       'getMetricAttributes',
-      params
+      named({ startTime: startTimeNs, endTime: endTimeNs })
     )
 
     if (!Array.isArray(rawData)) {
