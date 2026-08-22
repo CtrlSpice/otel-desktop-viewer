@@ -56,7 +56,7 @@ describe('createSignalListPage integration', () => {
     expect(screen.getByTestId('item-ids').textContent).toBe('a,b,c')
   })
 
-  it('derives selectedId from the URL path', async () => {
+  it('derives selectedID from the URL path', async () => {
     renderProbe('/logs/log-b', [
       { id: 'log-a', name: 'a' },
       { id: 'log-b', name: 'b' },

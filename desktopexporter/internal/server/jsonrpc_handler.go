@@ -56,6 +56,15 @@ func storeRead[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 }
 
 func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	// Object params are rewritten into the positional array every handler
+	// below already reads, so named and positional calls share one code path
+	// and cannot drift apart. Array params pass through untouched.
+	normalized, err := normalizeParams(req.Method, req.Params)
+	if err != nil {
+		return nil, err
+	}
+	req.Params = normalized
+
 	switch req.Method {
 	case "searchTraces":
 		return h.searchTraces(ctx, req)
@@ -310,8 +319,8 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	// Everything past the third is optional and additive: targetBuckets,
-	// seriesIds, quantiles, tzOffsetNs, fitToData, viewBuckets,
-	// sparklineBuckets, selectedSeriesIds. A caller that predates any of them
+	// seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets,
+	// sparklineBuckets, selectedSeriesIDs. A caller that predates any of them
 	// sends fewer and gets the old behaviour.
 	//
 	// The upper bound was 4 and stayed 4 while four more parameters were added

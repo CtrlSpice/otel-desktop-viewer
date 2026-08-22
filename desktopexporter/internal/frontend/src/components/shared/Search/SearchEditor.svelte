@@ -137,11 +137,11 @@
   const placeholderCompartment = new Compartment()
 
   // --- state: filter popover ---
-  let activeFilterId = $state<string | null>(null)
+  let activeFilterID = $state<string | null>(null)
   let filterPopoverEl = $state<HTMLDivElement | null>(null)
 
   let activeFilter = $derived(
-    activeFilterId ? (filters.find(f => f.id === activeFilterId) ?? null) : null
+    activeFilterID ? (filters.find(f => f.id === activeFilterID) ?? null) : null
   )
 
   // --- state: help dialog ---
@@ -343,18 +343,18 @@
   }
 
   function toggleFilter(id: string) {
-    activeFilterId = activeFilterId === id ? null : id
+    activeFilterID = activeFilterID === id ? null : id
   }
 
   /** Close filter popover when clicking outside. */
   $effect(() => {
-    if (!activeFilterId) return
+    if (!activeFilterID) return
     const handleClick = (e: MouseEvent) => {
       const target = e.target as Node
       if (filterPopoverEl?.contains(target)) return
       const btn = (target as Element).closest?.('[data-filter-id]')
       if (btn) return
-      activeFilterId = null
+      activeFilterID = null
     }
     document.addEventListener('click', handleClick, true)
     return () => document.removeEventListener('click', handleClick, true)

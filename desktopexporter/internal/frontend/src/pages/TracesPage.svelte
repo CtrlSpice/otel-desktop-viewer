@@ -94,7 +94,7 @@
 
   const page = createSignalListPage<TraceSummary>({
     signal: 'traces',
-    getItemId: trace => trace.traceID,
+    getItemID: trace => trace.traceID,
     initialSort: { column: 'startTime', direction: 'desc' },
     compare: (a, b, col, dir) =>
       compareTraceSummaries(
@@ -228,16 +228,16 @@
         fetchCtl.signal
       )
       traceData = result
-      const spanIds = result.spans.map(n => n.spanData.spanID)
+      const spanIDs = result.spans.map(n => n.spanData.spanID)
       const urlSpan = getSpanFromQuery()
       let desired: string | null
       if (queryTree) {
         const firstMatch = result.spans.find(n => n.matched)
-        desired = firstMatch?.spanData.spanID ?? spanIds[0] ?? null
-      } else if (urlSpan && spanIds.includes(urlSpan)) {
+        desired = firstMatch?.spanData.spanID ?? spanIDs[0] ?? null
+      } else if (urlSpan && spanIDs.includes(urlSpan)) {
         desired = urlSpan
       } else {
-        desired = spanIds[0] ?? null
+        desired = spanIDs[0] ?? null
       }
       if (desired !== urlSpan) setSpanInQuery(desired)
     } catch (err) {
@@ -275,7 +275,7 @@
     actionError = null
     try {
       await telemetryAPI.deleteTraces([traceID])
-      if (page.selectedId === traceID) {
+      if (page.selectedID === traceID) {
         navigateToItem('traces', null, 'replace')
         traceData = null
       }
@@ -295,8 +295,8 @@
 <div class="traces-page">
   <PageLayout
     items={page.sortedItems}
-    selectedId={page.selectedId}
-    drawerId="signal-drawer"
+    selectedID={page.selectedID}
+    drawerID="signal-drawer"
     drawerLabel="Traces"
     onRefresh={page.handleRefresh}
     refreshPulse={page.refreshPulse}

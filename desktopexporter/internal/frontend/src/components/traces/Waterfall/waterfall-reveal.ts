@@ -1,4 +1,4 @@
-/** Walk parentSpanID links from spanId up to the trace root.
+/** Walk parentSpanID links from spanID up to the trace root.
  *
  * Carries a visited set because parentSpanID is reported data, not verified
  * structure: a trace with a parent cycle (see `salvaged`/`cyclePoint`) makes
@@ -7,12 +7,12 @@
  * the first repeat -- same rule the server's tree walk applies in SQL.
  */
 export function ancestorIdsOf(
-  spanId: string,
+  spanID: string,
   parentOf: ReadonlyMap<string, string | null>
 ): string[] {
   const ancestors: string[] = []
-  const seen = new Set([spanId])
-  let pid = parentOf.get(spanId) ?? null
+  const seen = new Set([spanID])
+  let pid = parentOf.get(spanID) ?? null
   while (pid !== null && !seen.has(pid)) {
     seen.add(pid)
     ancestors.push(pid)

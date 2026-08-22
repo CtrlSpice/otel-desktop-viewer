@@ -70,7 +70,7 @@
 
   const page = createSignalListPage<LogSummary>({
     signal: 'logs',
-    getItemId: log => log.id,
+    getItemID: log => log.id,
     initialSort: { column: 'timestamp', direction: 'desc' },
     compare: (a, b, col, dir) =>
       compareLogs(a, b, col as LogSortColumn, dir as LogSortDirection),
@@ -102,7 +102,7 @@
     },
   })
 
-  // selectedLogId is the user's pick from the list (the LogSummary `id`),
+  // selectedLogID is the user's pick from the list (the LogSummary `id`),
   // read from the route path. The detail fetcher round-trips to getLog(id) for
   // the full LogData on demand, with a debounce that keeps held-arrow keyboard
   // nav from firing a request per row.
@@ -116,18 +116,18 @@
   let displayError = $derived(page.error ?? actionError)
 
   $effect(() => {
-    detailFetcher.key = page.selectedId
+    detailFetcher.key = page.selectedID
   })
 
-  function selectLog(logId: string) {
-    page.selectItem(logId)
+  function selectLog(logID: string) {
+    page.selectItem(logID)
   }
 
-  async function handleDeleteLog(logId: string) {
+  async function handleDeleteLog(logID: string) {
     actionError = null
     try {
-      await telemetryAPI.deleteLogByID(logId)
-      if (page.selectedId === logId) {
+      await telemetryAPI.deleteLogByID(logID)
+      if (page.selectedID === logID) {
         navigateToItem('logs', null, 'replace')
       }
       await page.runListFetch()
@@ -151,8 +151,8 @@
 <div class="logs-page">
   <PageLayout
     items={page.sortedItems}
-    selectedId={page.selectedId}
-    drawerId="signal-drawer"
+    selectedID={page.selectedID}
+    drawerID="signal-drawer"
     drawerLabel="Logs"
     onRefresh={page.handleRefresh}
     refreshPulse={page.refreshPulse}

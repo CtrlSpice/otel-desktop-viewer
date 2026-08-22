@@ -30,9 +30,9 @@ export type QueryNode =
     }
 
 // Generate unique ID
-let nextId = 0
-export function generateId(): string {
-  return `query-${++nextId}`
+let nextID = 0
+export function generateID(): string {
+  return `query-${++nextID}`
 }
 
 // Add a new condition with optional logical operator
@@ -49,7 +49,7 @@ export function addConditionToTree(
   // First condition: We create a single condition node (no logical operator)
   if (!queryTree) {
     return {
-      id: generateId(),
+      id: generateID(),
       type: 'condition',
       query: newCondition,
     }
@@ -62,13 +62,13 @@ export function addConditionToTree(
       throw new Error('Use AND/OR to add conditions')
     }
     return {
-      id: generateId(),
+      id: generateID(),
       type: 'group',
       group: {
         operator,
         children: [
           queryTree,
-          { id: generateId(), type: 'condition', query: newCondition },
+          { id: generateID(), type: 'condition', query: newCondition },
         ],
       },
     }
@@ -77,20 +77,20 @@ export function addConditionToTree(
     if (operator && operator !== queryTree.group!.operator) {
       // Different operator: create new group structure
       return {
-        id: generateId(),
+        id: generateID(),
         type: 'group',
         group: {
           operator,
           children: [
             queryTree, // Wrap existing group
-            { id: generateId(), type: 'condition', query: newCondition },
+            { id: generateID(), type: 'condition', query: newCondition },
           ],
         },
       }
     } else {
       // Same operator or no operator: add to existing group
       queryTree.group!.children.push({
-        id: generateId(),
+        id: generateID(),
         type: 'condition',
         query: newCondition,
       })

@@ -198,7 +198,7 @@
     <PaneHeader
       mode="tabs"
       {tabs}
-      activeId={activeTab}
+      activeID={activeTab}
       onSelect={id => (activeTab = id as Tab)}
       ariaLabel="Span detail tabs"
       tabLayout="equal"

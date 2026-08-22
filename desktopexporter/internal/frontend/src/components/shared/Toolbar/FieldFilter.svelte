@@ -24,7 +24,7 @@
 
   function getColumnCategory(fieldName: string): ColumnVisibility['category'] | null {
     if (!columnVisibility) return null
-    return columnVisibility.find(c => c.fieldId === fieldName)?.category ?? null
+    return columnVisibility.find(c => c.fieldID === fieldName)?.category ?? null
   }
 
   let popoverOpen = $state(false)

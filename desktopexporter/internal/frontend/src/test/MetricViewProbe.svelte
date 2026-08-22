@@ -27,7 +27,7 @@
 
 <output data-testid="aggregation-view">{metricCtx.aggregationView}</output>
 <output data-testid="selected-datapoint-id"
-  >{metricCtx.selectedDatapointId ?? ''}</output
+  >{metricCtx.selectedDatapointID ?? ''}</output
 >
 <output data-testid="available-aggregation-views"
   >{metricCtx.availableAggregationViews.join(',')}</output

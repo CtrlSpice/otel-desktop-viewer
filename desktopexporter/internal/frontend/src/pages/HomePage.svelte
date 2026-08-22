@@ -86,8 +86,8 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
   <PageLayout
     items={[]}
     railOnly
-    selectedId={null}
-    drawerId="signal-drawer"
+    selectedID={null}
+    drawerID="signal-drawer"
     drawerLabel="Home"
     resizableStorageKey="home-panels"
     defaultMainWidth={0.58}
@@ -136,7 +136,7 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
             <PaneHeader
               mode="tabs"
               tabs={ENDPOINT_TABS}
-              activeId={endpointTab}
+              activeID={endpointTab}
               onSelect={id => {
                 if (isEndpointTab(id)) endpointTab = id
               }}

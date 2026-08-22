@@ -60,7 +60,7 @@ export interface TableNavOptions {
    * Receives the current row's ID (null if nothing focused).
    * Return `true` to suppress default nav for this event.
    */
-  onKey?: (e: KeyboardEvent, currentId: string | null) => boolean
+  onKey?: (e: KeyboardEvent, currentID: string | null) => boolean
   /** Skip rows with aria-hidden="true" (useful for collapsible trees). Default false. */
   skipHidden?: boolean
 }
@@ -100,15 +100,15 @@ export function tableNav(node: HTMLElement, opts: TableNavOptions) {
 
     const focused = document.activeElement as HTMLElement | null
     const currentIdx = focused ? rows.indexOf(focused) : -1
-    const currentId =
+    const currentID =
       currentIdx >= 0 ? (focused!.dataset[dataKey()] ?? null) : null
 
-    if (current.onKey?.(e, currentId)) return
+    if (current.onKey?.(e, currentID)) return
 
     if (e.key === 'Enter' || e.key === ' ') {
-      if (currentId) {
+      if (currentID) {
         e.preventDefault()
-        ;(current.onActivate ?? current.onSelect)(currentId)
+        ;(current.onActivate ?? current.onSelect)(currentID)
       }
       return
     }
@@ -142,9 +142,9 @@ export function tableNav(node: HTMLElement, opts: TableNavOptions) {
     if (nextIdx === currentIdx) return
 
     const nextRow = rows[nextIdx]
-    const nextId = nextRow.dataset[dataKey()]
-    if (nextId) {
-      current.onSelect(nextId)
+    const nextID = nextRow.dataset[dataKey()]
+    if (nextID) {
+      current.onSelect(nextID)
       focusAndScroll(nextRow)
     }
   }

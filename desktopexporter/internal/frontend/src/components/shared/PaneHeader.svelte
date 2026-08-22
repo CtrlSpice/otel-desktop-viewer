@@ -108,7 +108,7 @@
   type TabsProps = CommonProps & {
     mode: 'tabs'
     tabs: PaneTab[]
-    activeId: string
+    activeID: string
     onSelect: (id: string) => void
     tabLayout?: PaneTabLayout
   }
@@ -119,7 +119,7 @@
     /** Optional service name shown as "(service)" after the title. */
     subtitle?: string
     tabs: PaneTab[]
-    activeId: string
+    activeID: string
     onSelect: (id: string) => void
     tabLayout?: PaneTabLayout
   }
@@ -196,7 +196,7 @@
 
 {#snippet tabStrip(
   tabs: PaneTab[],
-  activeId: string,
+  activeID: string,
   onSelect: (id: string) => void,
   ariaLabel: string,
   layout: PaneTabLayout
@@ -213,7 +213,7 @@
       <span class="pane-header__tab-lead" aria-hidden="true"></span>
     {/if}
     {#each tabs as tab (tab.id)}
-      {@const active = tab.id === activeId}
+      {@const active = tab.id === activeID}
       <button
         type="button"
         role="tab"
@@ -270,7 +270,7 @@
     <div class="pane-header__top pane-header__top--tabs">
       {@render tabStrip(
         props.tabs,
-        props.activeId,
+        props.activeID,
         props.onSelect,
         props.ariaLabel ?? 'Pane tabs',
         props.tabLayout ?? 'left'
@@ -309,7 +309,7 @@
       </div>
       {@render tabStrip(
         props.tabs,
-        props.activeId,
+        props.activeID,
         props.onSelect,
         props.ariaLabel ?? `${props.title} tabs`,
         props.tabLayout ?? 'right'

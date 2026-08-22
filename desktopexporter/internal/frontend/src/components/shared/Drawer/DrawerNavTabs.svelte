@@ -44,8 +44,8 @@
     logs: p => p === '/logs' || p.startsWith('/logs/'),
   }
 
-  export function isNavItemActive(itemId: string, path: string): boolean {
-    return (ACTIVE_RULES[itemId] ?? (() => false))(path)
+  export function isNavItemActive(itemID: string, path: string): boolean {
+    return (ACTIVE_RULES[itemID] ?? (() => false))(path)
   }
 </script>
 

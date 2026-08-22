@@ -209,7 +209,7 @@ export interface MetricViewContext {
   readonly totalDatapointCount: number
 
   // -- Selection / view state --
-  readonly selectedDatapointId: string | null
+  readonly selectedDatapointID: string | null
   /** Where the current datapoint selection came from. Chart clicks
    *  drive the plot overlay only; detail-pane scroll/expand waits for
    *  unified routing. */
@@ -489,7 +489,7 @@ export function createMetricViewContext(
   // the metric identity changes; otherwise written only by methods
   // on this context.
   const view = $state({
-    selectedDatapointId: null as string | null,
+    selectedDatapointID: null as string | null,
     // Explicitly chosen series, independent of any datapoint selection.
     selectedSeriesKey: null as string | null,
     selectionSource: null as 'chart' | 'detail' | null,
@@ -516,7 +516,7 @@ export function createMetricViewContext(
   })
 
   /** Histogram visibility is seeded once per stream id. */
-  let histogramVisibleSeededForStreamId: string | null = null
+  let histogramVisibleSeededForStreamID: string | null = null
 
   // --- URL <-> metric sub-view sync ---------------------------------
   //
@@ -524,7 +524,7 @@ export function createMetricViewContext(
   // MetricsPage); these four item-scoped query params carry the sub-view so a
   // shared snapshot link and the browser back/forward buttons restore it:
   //   agg=<aggregationView>   htab=<activeHistogramTab>
-  //   hscope=<histogramScope> dp=<selectedDatapointId>
+  //   hscope=<histogramScope> dp=<selectedDatapointID>
   // Tab/datapoint picks push a history entry (navigational); aggregation/scope
   // adjustments replace (silent). The heatmap/quantile bucket selection stays
   // transient (not a stable datapoint id) and is out of the URL this iteration.
@@ -541,15 +541,15 @@ export function createMetricViewContext(
   let urlMetricViewSnapshot: MetricViewQuery | null = null
 
   function metricParseContext(): MetricViewParseContext {
-    const datapointIds = new Set<string>()
-    for (const dp of allDatapoints(getMetric())) datapointIds.add(dp.id)
+    const datapointIDs = new Set<string>()
+    for (const dp of allDatapoints(getMetric())) datapointIDs.add(dp.id)
     const seriesKeys = new Set<string>()
     for (const ts of getMetric()?.timeseries ?? [])
       seriesKeys.add(ts.attributesKey)
     return {
       isHistogramKind,
       allowedAggs: availableAggregationViewsList,
-      datapointIds,
+      datapointIDs,
       seriesKeys,
     }
   }
@@ -560,14 +560,14 @@ export function createMetricViewContext(
         kind: 'histogram',
         htab: view.activeHistogramTab,
         hscope: view.histogramScope,
-        dp: view.selectedDatapointId,
+        dp: view.selectedDatapointID,
         series: selectedSeriesKey,
       }
     }
     return {
       kind: 'timeseries',
       agg: view.aggregationView === 'raw' ? null : view.aggregationView,
-      dp: view.selectedDatapointId,
+      dp: view.selectedDatapointID,
       series: selectedSeriesKey,
     }
   }
@@ -599,10 +599,10 @@ export function createMetricViewContext(
     }
 
     if (q.dp) {
-      view.selectedDatapointId = q.dp
+      view.selectedDatapointID = q.dp
       view.selectionSource = 'detail'
     } else {
-      view.selectedDatapointId = null
+      view.selectedDatapointID = null
       view.selectionSource = null
     }
 
@@ -1241,9 +1241,9 @@ export function createMetricViewContext(
   // -- Selection-derived values --
   const selectedDatapoint = $derived.by((): DataPoint | undefined => {
     const m = getMetric()
-    if (!m || !view.selectedDatapointId) return undefined
+    if (!m || !view.selectedDatapointID) return undefined
     for (const dp of allDatapoints(m)) {
-      if (dp.id === view.selectedDatapointId) return dp
+      if (dp.id === view.selectedDatapointID) return dp
     }
     return undefined
   })
@@ -1267,7 +1267,7 @@ export function createMetricViewContext(
 
     // A selected datapoint is the more specific answer and wins: it names both
     // the series and the point within it.
-    const id = view.selectedDatapointId
+    const id = view.selectedDatapointID
     if (id !== null) {
       for (const ts of m.timeseries) {
         if (ts.datapoints.some(dp => dp.id === id)) return ts.attributesKey
@@ -1676,9 +1676,9 @@ export function createMetricViewContext(
    * metric the moment it does.
    */
   function seedForMetric(m: MetricData | undefined) {
-    const streamId = m?.id
+    const streamID = m?.id
 
-    view.selectedDatapointId = null
+    view.selectedDatapointID = null
     view.selectionSource = null
     view.selectedHistogramBucketStart = null
     view.selectedQuantileKey = null
@@ -1692,8 +1692,8 @@ export function createMetricViewContext(
     // fall back to the smart default (cumulative Sum → Rate, else Raw).
     // Gauge metrics never read aggregationView, so the value here is don't-care
     // for them; the menu component checks metricType before rendering.
-    const persistedAggregationView = streamId
-      ? loadPersistedAggregationView(streamId, availableAggregationViewsList)
+    const persistedAggregationView = streamID
+      ? loadPersistedAggregationView(streamID, availableAggregationViewsList)
       : null
     const defaultAggregation = defaultAggregationViewFor(
       metricType,
@@ -1711,8 +1711,8 @@ export function createMetricViewContext(
         ? defaultAggregation
         : 'raw')
     view.showSelectionStatOverlays = true
-    view.showAllSeriesAggregate = streamId
-      ? loadPersistedShowAllSeriesAggregate(streamId)
+    view.showAllSeriesAggregate = streamID
+      ? loadPersistedShowAllSeriesAggregate(streamID)
       : false
     view.activeQuantileOverlays = new SvelteSet([
       DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
@@ -1720,8 +1720,8 @@ export function createMetricViewContext(
 
     const gsKeys = gaugeSumKeys
     const gsVisible = new SvelteSet(
-      streamId
-        ? resolveTimeseriesVisible(gsKeys, streamId)
+      streamID
+        ? resolveTimeseriesVisible(gsKeys, streamID)
         : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
     )
     view.gaugeSumVisible = gsVisible
@@ -1746,18 +1746,18 @@ export function createMetricViewContext(
     const histKeys =
       m && histIsHistogram ? m.timeseries.map(ts => ts.attributesKey) : []
     const histVisible = new SvelteSet(
-      streamId && histKeys.length > 0
+      streamID && histKeys.length > 0
         ? resolveTimeseriesVisible(
             histKeys,
-            streamId,
+            streamID,
             DEFAULT_VISIBLE_TIMESERIES,
             null
           )
         : []
     )
     view.histogramVisible = histVisible
-    histogramVisibleSeededForStreamId =
-      histKeys.length > 0 ? (streamId ?? null) : null
+    histogramVisibleSeededForStreamID =
+      histKeys.length > 0 ? (streamID ?? null) : null
     if (histKeys.length > 0) {
       const histPool = categoricalPalette(
         Math.max(histKeys.length, 1),
@@ -1812,8 +1812,8 @@ export function createMetricViewContext(
   // within a stream; seeding cannot see those, because it runs once per metric.
   $effect(() => {
     const m = getMetric()
-    const streamId = m?.id
-    if (!streamId) return
+    const streamID = m?.id
+    if (!streamID) return
 
     if (metricType === 'Gauge' || metricType === 'Sum') {
       const keys = gaugeSumGroups.keys
@@ -1831,7 +1831,7 @@ export function createMetricViewContext(
       const next = reconcileTimeseriesVisible(
         view.gaugeSumVisible,
         keys,
-        streamId
+        streamID
       )
 
       if (!visibleKeyListsEqual(view.gaugeSumVisible, next)) {
@@ -1853,7 +1853,7 @@ export function createMetricViewContext(
     const next = reconcileTimeseriesVisible(
       view.histogramVisible,
       keys,
-      streamId,
+      streamID,
       null
     )
     if (!visibleKeyListsEqual(view.histogramVisible, next)) {
@@ -1870,7 +1870,7 @@ export function createMetricViewContext(
   // (2c) Auto-clear selection when its owning timeseries goes hidden.
   //
   // The datapoints panel scopes what's shown by the visible set, so a
-  // selectedDatapointId pointing at a hidden timeseries becomes an
+  // selectedDatapointID pointing at a hidden timeseries becomes an
   // orphan: invisible in the list, but still wired up to chart markers,
   // detail pane, etc. Snap it to null whenever its timeseries is no
   // longer in the active visibility filter (gaugeSumVisible for
@@ -1878,7 +1878,7 @@ export function createMetricViewContext(
   // metric kinds because the only thing that varies is which set we
   // consult.
   $effect(() => {
-    const id = view.selectedDatapointId
+    const id = view.selectedDatapointID
     if (id === null) return
 
     const m = getMetric()
@@ -1894,7 +1894,7 @@ export function createMetricViewContext(
     if (ownerKey === null) {
       // Stale id (data refresh dropped the datapoint). Clear so the
       // detail pane doesn't render against ghost data.
-      view.selectedDatapointId = null
+      view.selectedDatapointID = null
       view.selectionSource = null
       return
     }
@@ -1907,7 +1907,7 @@ export function createMetricViewContext(
           : null
     if (visible === null) return
     if (!visible.has(ownerKey)) {
-      view.selectedDatapointId = null
+      view.selectedDatapointID = null
       view.selectionSource = null
     }
   })
@@ -1931,8 +1931,8 @@ export function createMetricViewContext(
     // Persist the coerced value too: otherwise localStorage keeps the
     // stale (now-invalid) choice and we re-coerce on every load until
     // the user touches the menu.
-    const streamId = getMetric()?.id
-    if (streamId) savePersistedAggregationView(streamId, next)
+    const streamID = getMetric()?.id
+    if (streamID) savePersistedAggregationView(streamID, next)
   })
 
   // -- Methods --
@@ -1957,16 +1957,16 @@ export function createMetricViewContext(
 
   function setAggregationView(next: AggregationView) {
     view.aggregationView = next
-    const streamId = getMetric()?.id
-    if (streamId) savePersistedAggregationView(streamId, next)
+    const streamID = getMetric()?.id
+    if (streamID) savePersistedAggregationView(streamID, next)
     // localStorage still remembers it per metric.
     writeMetricUrl('replace')
   }
 
   function setShowAllSeriesAggregate(next: boolean) {
     view.showAllSeriesAggregate = next
-    const streamId = getMetric()?.id
-    if (streamId) savePersistedShowAllSeriesAggregate(streamId, next)
+    const streamID = getMetric()?.id
+    if (streamID) savePersistedShowAllSeriesAggregate(streamID, next)
   }
 
   function setActiveQuantileOverlay(quantileKey: string) {
@@ -1986,7 +1986,7 @@ export function createMetricViewContext(
   }
 
   function toggleTimeseriesVisible(key: string, checked: boolean) {
-    const streamId = getMetric()?.id
+    const streamID = getMetric()?.id
     let pool = timeseriesChartColors
     const assigned = new Map(view.timeseriesColorByKey)
     if (checked) {
@@ -2009,41 +2009,41 @@ export function createMetricViewContext(
       if (checked) next.add(key)
       else next.delete(key)
       view.histogramVisible = next
-      if (streamId) savePersistedTimeseriesVisible(streamId, next)
+      if (streamID) savePersistedTimeseriesVisible(streamID, next)
       return
     }
     const next = new SvelteSet(view.gaugeSumVisible)
     if (checked) next.add(key)
     else next.delete(key)
     view.gaugeSumVisible = next
-    if (streamId) savePersistedTimeseriesVisible(streamId, next)
+    if (streamID) savePersistedTimeseriesVisible(streamID, next)
   }
 
   function clearAllTimeseriesVisible() {
     replaceColorAssignments(new Map())
-    const streamId = getMetric()?.id
+    const streamID = getMetric()?.id
     if (isHistogramKind) {
       view.histogramVisible = new SvelteSet()
-      if (streamId)
-        savePersistedTimeseriesVisible(streamId, view.histogramVisible)
+      if (streamID)
+        savePersistedTimeseriesVisible(streamID, view.histogramVisible)
       return
     }
     view.gaugeSumVisible = new SvelteSet()
-    if (streamId) savePersistedTimeseriesVisible(streamId, view.gaugeSumVisible)
+    if (streamID) savePersistedTimeseriesVisible(streamID, view.gaugeSumVisible)
   }
 
   function onDatapointClick(dp: DataPoint) {
     view.selectionSource = 'detail'
     view.selectedHistogramBucketStart = null
     view.selectedQuantileKey = null
-    view.selectedDatapointId = view.selectedDatapointId === dp.id ? null : dp.id
-    if (view.selectedDatapointId === null) {
+    view.selectedDatapointID = view.selectedDatapointID === dp.id ? null : dp.id
+    if (view.selectedDatapointID === null) {
       view.selectionSource = null
     }
-    if (isHistogramKind && view.selectedDatapointId !== null) {
+    if (isHistogramKind && view.selectedDatapointID !== null) {
       view.activeHistogramTab = 'histogram'
       view.histogramScope = 'bucket'
-    } else if (isHistogramKind && view.selectedDatapointId === null) {
+    } else if (isHistogramKind && view.selectedDatapointID === null) {
       view.histogramScope = 'window'
     }
     if (dp.exemplars.length > 0) {
@@ -2099,7 +2099,7 @@ export function createMetricViewContext(
     for (const dp of ts.datapoints) {
       if (dp.timestamp === targetNs) {
         view.selectionSource = 'chart'
-        view.selectedDatapointId = dp.id
+        view.selectedDatapointID = dp.id
         writeMetricUrl('push')
         return
       }
@@ -2117,7 +2117,7 @@ export function createMetricViewContext(
     }
     if (best) {
       view.selectionSource = 'chart'
-      view.selectedDatapointId = best.id
+      view.selectedDatapointID = best.id
       writeMetricUrl('push')
     }
   }
@@ -2184,8 +2184,8 @@ export function createMetricViewContext(
       return totalDatapointCount
     },
 
-    get selectedDatapointId() {
-      return view.selectedDatapointId
+    get selectedDatapointID() {
+      return view.selectedDatapointID
     },
     get selectionSource() {
       return view.selectionSource

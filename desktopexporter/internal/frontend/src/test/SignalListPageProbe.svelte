@@ -13,7 +13,7 @@
 
   const page = createSignalListPage<Item>({
     signal: 'logs',
-    getItemId: item => item.id,
+    getItemID: item => item.id,
     fetchList: () => fetchList(),
     compare: (a, b) => a.name.localeCompare(b.name),
     initialSort: { column: 'name', direction: 'asc' },
@@ -26,7 +26,7 @@
 
 <output data-testid="loading">{page.loading}</output>
 <output data-testid="mounted">{page.mounted}</output>
-<output data-testid="selected-id">{page.selectedId ?? ''}</output>
+<output data-testid="selected-id">{page.selectedID ?? ''}</output>
 <output data-testid="selected-index">{page.selectedIndex}</output>
 <output data-testid="item-count">{page.sortedItems.length}</output>
 <output data-testid="item-ids">

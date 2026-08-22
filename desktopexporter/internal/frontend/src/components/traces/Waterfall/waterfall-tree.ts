@@ -31,11 +31,11 @@ export function isErrorSpan(span: SpanData): boolean {
 export function buildStructuralMaps(
   spans: readonly { spanData: { spanID: string }; depth: number }[]
 ): {
-  parentBySpanId: Map<string, string | null>
-  childrenBySpanId: Map<string, string[]>
+  parentBySpanID: Map<string, string | null>
+  childrenBySpanID: Map<string, string[]>
 } {
-  const parentBySpanId = new Map<string, string | null>()
-  const childrenBySpanId = new Map<string, string[]>()
+  const parentBySpanID = new Map<string, string | null>()
+  const childrenBySpanID = new Map<string, string[]>()
   // stack[d] holds the most recent row seen at depth d; a row's structural
   // parent is the nearest preceding row one level up.
   const stack: string[] = []
@@ -43,19 +43,19 @@ export function buildStructuralMaps(
     const id = n.spanData.spanID
     const depth = Math.max(0, n.depth)
     const parent = depth === 0 ? null : (stack[depth - 1] ?? null)
-    parentBySpanId.set(id, parent)
+    parentBySpanID.set(id, parent)
     if (parent !== null) {
-      const list = childrenBySpanId.get(parent)
+      const list = childrenBySpanID.get(parent)
       if (list) list.push(id)
-      else childrenBySpanId.set(parent, [id])
+      else childrenBySpanID.set(parent, [id])
     }
     stack[depth] = id
     stack.length = depth + 1
   }
-  return { parentBySpanId, childrenBySpanId }
+  return { parentBySpanID, childrenBySpanID }
 }
 
-export function buildChildrenBySpanId(
+export function buildChildrenBySpanID(
   spans: readonly SpanNode[]
 ): Map<string, string[]> {
   const map = new Map<string, string[]>()
@@ -97,19 +97,19 @@ export function computeSearchCollapsedParents(
   spans: readonly SpanNode[],
   matchedIDs: ReadonlySet<string>,
   ancestorsOfMatched: ReadonlySet<string>,
-  childrenBySpanId: ReadonlyMap<string, readonly string[]>
+  childrenBySpanID: ReadonlyMap<string, readonly string[]>
 ): Set<string> {
   const relevant = new Set([...matchedIDs, ...ancestorsOfMatched])
   const toCollapse = new Set<string>()
   for (const node of spans) {
     const sid = node.spanData.spanID
-    const hasKids = (childrenBySpanId.get(sid)?.length ?? 0) > 0
+    const hasKids = (childrenBySpanID.get(sid)?.length ?? 0) > 0
     if (!hasKids) continue
     if (!relevant.has(sid)) {
       toCollapse.add(sid)
     } else if (
       matchedIDs.has(sid) &&
-      !hasRelevantDescendant(sid, childrenBySpanId, relevant)
+      !hasRelevantDescendant(sid, childrenBySpanID, relevant)
     ) {
       toCollapse.add(sid)
     }

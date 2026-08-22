@@ -95,11 +95,11 @@
     else expandedDatapointSections.delete(key)
   }
 
-  function seriesKeyForDatapointId(dpId: string): string | null {
+  function seriesKeyForDatapointID(dpID: string): string | null {
     const m = ctx.metric
     if (!m) return null
     for (const ts of m.timeseries) {
-      if (ts.datapoints.some((dp) => dp.id === dpId)) {
+      if (ts.datapoints.some((dp) => dp.id === dpID)) {
         return ts.attributesKey
       }
     }
@@ -133,10 +133,10 @@
   })
 
   $effect(() => {
-    const dpId = ctx.selectedDatapointId
-    if (!dpId || ctx.selectionSource === 'chart') return
+    const dpID = ctx.selectedDatapointID
+    if (!dpID || ctx.selectionSource === 'chart') return
 
-    const seriesKey = seriesKeyForDatapointId(dpId)
+    const seriesKey = seriesKeyForDatapointID(dpID)
     if (seriesKey) {
       ctx.expandedTimeseries.add(seriesKey)
       expandedDatapointSections.add(seriesKey)
@@ -144,7 +144,7 @@
 
     tick().then(() => {
       document
-        .querySelector(`[data-dp-id="${dpId}"]`)
+        .querySelector(`[data-dp-id="${dpID}"]`)
         ?.scrollIntoView({ block: 'nearest' })
     })
   })

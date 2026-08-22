@@ -130,14 +130,14 @@ export function repairEmptyPersistedVisibleKeys(): void {
   }
 }
 
-export function metricViewStorageKey(metricStreamId: string): string {
-  return `${STORAGE_PREFIX}${metricStreamId}`
+export function metricViewStorageKey(metricStreamID: string): string {
+  return `${STORAGE_PREFIX}${metricStreamID}`
 }
 
-function loadPersistedView(metricStreamId: string): PersistedMetricView | null {
+function loadPersistedView(metricStreamID: string): PersistedMetricView | null {
   if (typeof localStorage === 'undefined') return null
   try {
-    const raw = localStorage.getItem(metricViewStorageKey(metricStreamId))
+    const raw = localStorage.getItem(metricViewStorageKey(metricStreamID))
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return null
@@ -184,12 +184,12 @@ function serializePersistedView(view: PersistedMetricView): string {
 }
 
 function writePersistedView(
-  metricStreamId: string,
+  metricStreamID: string,
   view: PersistedMetricView
 ): void {
   if (typeof localStorage === 'undefined') return
   localStorage.setItem(
-    metricViewStorageKey(metricStreamId),
+    metricViewStorageKey(metricStreamID),
     serializePersistedView(view)
   )
 }
@@ -223,12 +223,12 @@ function mergePersistedView(
  * a different write path and must not be clobbered here.
  */
 export function savePersistedTimeseriesVisible(
-  metricStreamId: string,
+  metricStreamID: string,
   keys: Iterable<string>
 ): void {
-  const existing = loadPersistedView(metricStreamId)
+  const existing = loadPersistedView(metricStreamID)
   writePersistedView(
-    metricStreamId,
+    metricStreamID,
     mergePersistedView(existing, { visibleKeys: [...keys] })
   )
 }
@@ -239,12 +239,12 @@ export function savePersistedTimeseriesVisible(
  * modify-write discipline so the two writers don't fight.
  */
 export function savePersistedAggregationView(
-  metricStreamId: string,
+  metricStreamID: string,
   aggregationView: AggregationView
 ): void {
-  const existing = loadPersistedView(metricStreamId)
+  const existing = loadPersistedView(metricStreamID)
   writePersistedView(
-    metricStreamId,
+    metricStreamID,
     mergePersistedView(existing, {
       visibleKeys: existing?.visibleKeys ?? [],
       aggregationView,
@@ -254,12 +254,12 @@ export function savePersistedAggregationView(
 
 /** Persist whether the optional all-series aggregate line is shown. */
 export function savePersistedShowAllSeriesAggregate(
-  metricStreamId: string,
+  metricStreamID: string,
   showAllSeriesAggregate: boolean
 ): void {
-  const existing = loadPersistedView(metricStreamId)
+  const existing = loadPersistedView(metricStreamID)
   writePersistedView(
-    metricStreamId,
+    metricStreamID,
     mergePersistedView(existing, {
       visibleKeys: existing?.visibleKeys ?? [],
       showAllSeriesAggregate,
@@ -269,12 +269,12 @@ export function savePersistedShowAllSeriesAggregate(
 
 /** Persist whether the optional all-series quantile lines are shown. */
 export function savePersistedShowAllSeriesQuantileAggregate(
-  metricStreamId: string,
+  metricStreamID: string,
   showAllSeriesQuantileAggregate: boolean
 ): void {
-  const existing = loadPersistedView(metricStreamId)
+  const existing = loadPersistedView(metricStreamID)
   writePersistedView(
-    metricStreamId,
+    metricStreamID,
     mergePersistedView(existing, {
       visibleKeys: existing?.visibleKeys ?? [],
       showAllSeriesQuantileAggregate,
@@ -283,10 +283,10 @@ export function savePersistedShowAllSeriesQuantileAggregate(
 }
 
 export function loadPersistedShowAllSeriesQuantileAggregate(
-  metricStreamId: string
+  metricStreamID: string
 ): boolean {
   return (
-    loadPersistedView(metricStreamId)?.showAllSeriesQuantileAggregate === true
+    loadPersistedView(metricStreamID)?.showAllSeriesQuantileAggregate === true
   )
 }
 
@@ -297,19 +297,19 @@ export function loadPersistedShowAllSeriesQuantileAggregate(
  * 1-series). Caller decides the fallback.
  */
 export function loadPersistedAggregationView(
-  metricStreamId: string,
+  metricStreamID: string,
   allowed: readonly AggregationView[]
 ): AggregationView | null {
-  const v = loadPersistedView(metricStreamId)?.aggregationView
+  const v = loadPersistedView(metricStreamID)?.aggregationView
   if (v === undefined) return null
   return allowed.includes(v) ? v : null
 }
 
 /** Read persisted all-series aggregate toggle. Defaults to false. */
 export function loadPersistedShowAllSeriesAggregate(
-  metricStreamId: string
+  metricStreamID: string
 ): boolean {
-  return loadPersistedView(metricStreamId)?.showAllSeriesAggregate === true
+  return loadPersistedView(metricStreamID)?.showAllSeriesAggregate === true
 }
 
 /**
@@ -324,17 +324,17 @@ export function loadPersistedShowAllSeriesAggregate(
  * current keys to fall back on, and that is exactly what the caller does not
  * have yet.
  */
-export function persistedVisibleKeys(metricStreamId: string): string[] | null {
-  return loadPersistedView(metricStreamId)?.visibleKeys ?? null
+export function persistedVisibleKeys(metricStreamID: string): string[] | null {
+  return loadPersistedView(metricStreamID)?.visibleKeys ?? null
 }
 
 export function resolveTimeseriesVisible(
   currentKeys: readonly string[],
-  metricStreamId: string,
+  metricStreamID: string,
   initialVisible: number = DEFAULT_VISIBLE_TIMESERIES,
   maxChecked: number | null = MAX_VISIBLE_TIMESERIES
 ): string[] {
-  const persisted = loadPersistedView(metricStreamId)?.visibleKeys ?? null
+  const persisted = loadPersistedView(metricStreamID)?.visibleKeys ?? null
   if (persisted !== null) {
     const current = new Set(currentKeys)
     const kept = persisted.filter(k => current.has(k))
@@ -347,7 +347,7 @@ export function resolveTimeseriesVisible(
 export function reconcileTimeseriesVisible(
   visible: ReadonlySet<string>,
   currentKeys: readonly string[],
-  metricStreamId: string,
+  metricStreamID: string,
   maxChecked: number | null = MAX_VISIBLE_TIMESERIES
 ): string[] {
   const current = new Set(currentKeys)
@@ -357,7 +357,7 @@ export function reconcileTimeseriesVisible(
   if (capped.length > 0 || !hadStale) return capped
   return resolveTimeseriesVisible(
     currentKeys,
-    metricStreamId,
+    metricStreamID,
     DEFAULT_VISIBLE_TIMESERIES,
     maxChecked
   )

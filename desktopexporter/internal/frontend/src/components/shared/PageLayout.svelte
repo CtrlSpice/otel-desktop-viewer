@@ -30,8 +30,8 @@
     items: T[]
     /** Force-collapse the drawer into a thin nav rail (Home). */
     railOnly?: boolean
-    selectedId: string | null
-    drawerId: string
+    selectedID: string | null
+    drawerID: string
     /** Tooltip label on the collapsed open-drawer button. */
     drawerLabel: string
     itemKey?: (item: T) => string
@@ -76,8 +76,8 @@
   let {
     items,
     railOnly,
-    selectedId,
-    drawerId,
+    selectedID,
+    drawerID,
     drawerLabel,
     itemKey,
     itemSnippet,
@@ -113,8 +113,8 @@
   <SignalListDrawer
     {items}
     {railOnly}
-    {selectedId}
-    {drawerId}
+    {selectedID}
+    {drawerID}
     label={drawerLabel}
     itemSnippet={noopItem}
     {itemKey}

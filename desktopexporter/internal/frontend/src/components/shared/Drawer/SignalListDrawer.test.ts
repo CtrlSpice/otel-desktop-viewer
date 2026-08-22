@@ -53,8 +53,8 @@ const TypedDrawer = SignalListDrawer<DrawerItem>
 function renderDrawer(props: Record<string, unknown> = {}) {
   return renderWithContexts(TypedDrawer, {
     items,
-    selectedId: null,
-    drawerId: 'traces-drawer',
+    selectedID: null,
+    drawerID: 'traces-drawer',
     label: 'Traces',
     itemSnippet,
     children: pageContent,
@@ -78,7 +78,7 @@ describe('SignalListDrawer', () => {
 
   it('tells the item snippet which row is selected', () => {
     setTestUrl('/traces/trace-2')
-    renderDrawer({ selectedId: 'trace-2' })
+    renderDrawer({ selectedID: 'trace-2' })
     expect(screen.getByText('POST /orders (selected)')).toBeInTheDocument()
     expect(screen.getByText('GET /checkout')).toBeInTheDocument()
   })

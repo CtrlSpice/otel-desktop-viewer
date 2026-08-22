@@ -3,7 +3,7 @@
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import {
-    createPopoverId,
+    createPopoverID,
     setupAnchorPopover,
   } from '@/components/shared/utils/anchor-popover'
   import type { SearchResultEvent } from '@/types/api-types'
@@ -42,7 +42,7 @@
   let sortTriggerEl = $state<HTMLButtonElement | null>(null)
   let sortPopoverOpen = $state(false)
 
-  const sortPopoverId = createPopoverId('sort-popover')
+  const sortPopoverID = createPopoverID('sort-popover')
 
   let currentSortLabel = $derived(
     sortOptions.find(o => o.value === sortValue)?.label ?? 'Sort'
@@ -88,7 +88,7 @@
         bind:this={sortTriggerEl}
         type="button"
         class="drawer-header-btn drawer-header-btn--inactive shrink-0 tooltip tooltip-bottom"
-        popovertarget={sortPopoverId}
+        popovertarget={sortPopoverID}
         aria-expanded={sortPopoverOpen}
         aria-label={sortAriaLabel}
         data-tip="Sort"
@@ -99,7 +99,7 @@
       <div
         bind:this={sortPopoverEl}
         popover="auto"
-        id={sortPopoverId}
+        id={sortPopoverID}
         class="anchor-popover anchor-popover--anchored anchor-popover--menu"
       >
         <ul class="anchor-popover-menu" role="menu" aria-label="Sort by">

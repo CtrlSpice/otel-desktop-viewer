@@ -127,7 +127,7 @@
 
   const page = createSignalListPage<MetricSummary>({
     signal: 'metrics',
-    getItemId: metricSummaryKey,
+    getItemID: metricSummaryKey,
     initialSort: { column: 'lastSeen', direction: 'desc' },
     compare: (a, b, col, dir) =>
       compareMetrics(a, b, col as MetricSortColumn, dir as MetricSortDirection),
@@ -271,13 +271,13 @@
     //
     // Two selections, because the two metric shapes check different boxes and
     // the store reads them through different parameters. A histogram narrows
-    // with seriesIds -- the merge sees only the checked series. A scalar narrows
+    // with seriesIDs -- the merge sees only the checked series. A scalar narrows
     // with nothing and names its checked set separately, because its All pool
     // must keep folding every series: narrowing there would quietly turn "all"
     // into "all of the checked ones".
     //
     // Which is why only one of these travels per request -- see fetchAggregate.
-    // Sending both sent a scalar's histogram set as seriesIds, and since that
+    // Sending both sent a scalar's histogram set as seriesIDs, and since that
     // parameter narrows filtered_dps, every scalar aggregate downstream of it
     // folded ten series and called the result All.
     const histogramKeys = [...metricCtx.histogramVisible].sort()
@@ -328,7 +328,7 @@
       // Both shapes of the same question, issued together so they cannot
       // disagree about the window or the selection.
       // The narrowing parameter belongs to the histogram merge alone. A scalar
-      // sends none: its pools are named by selectedSeriesIds, which narrows
+      // sends none: its pools are named by selectedSeriesIDs, which narrows
       // nothing.
       const isHistogramMetric =
         summary.metricType === 'Histogram' ||
@@ -429,7 +429,7 @@
   const seriesInFlight = new Set<string>()
 
   async function fetchSeriesDatapoints(
-    streamId: string,
+    streamID: string,
     seriesKey: string,
     startTime: number,
     endTime: number,
@@ -439,7 +439,7 @@
     seriesInFlight.add(seriesKey)
     try {
       const result = await telemetryAPI.getMetric(
-        streamId,
+        streamID,
         startTime,
         endTime,
         // No reduction. This is the request the whole feature is about.
@@ -687,7 +687,7 @@
       // Clear the detail pane before refetching: the $effect above keys off
       // page.selectedSummary, and the deleted stream is gone from the next
       // list fetch, so leaving it set would render a stale chart.
-      if (page.selectedId === streamID) {
+      if (page.selectedID === streamID) {
         navigateToItem('metrics', null, 'replace')
         selectedMetric = undefined
       }
@@ -715,8 +715,8 @@
 <div class="metrics-page">
   <PageLayout
     items={page.sortedItems}
-    selectedId={page.selectedId}
-    drawerId="signal-drawer"
+    selectedID={page.selectedID}
+    drawerID="signal-drawer"
     drawerLabel="Metrics"
     onRefresh={page.handleRefresh}
     refreshPulse={page.refreshPulse}
@@ -791,7 +791,7 @@
             tabs={showChartAggregationTabs
               ? chartAggregationTabs
               : histogramChartTabs}
-            activeId={showChartAggregationTabs
+            activeID={showChartAggregationTabs
               ? metricCtx.aggregationView
               : metricCtx.activeHistogramTab}
             onSelect={id => {

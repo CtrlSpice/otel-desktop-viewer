@@ -519,8 +519,8 @@ export let telemetryAPI = {
     return logDataFromJSON(rawData)
   },
 
-  deleteLogByID: (logId: string) =>
-    callRPC<JsonDeleteResult>('deleteLogByID', [logId]),
+  deleteLogByID: (logID: string) =>
+    callRPC<JsonDeleteResult>('deleteLogByID', [logID]),
   clearLogs: () => callRPC<string>('clearLogs', undefined),
 
   // Metric methods
@@ -542,7 +542,7 @@ export let telemetryAPI = {
   },
 
   getMetric: async (
-    streamId: string,
+    streamID: string,
     startTime: QueryTimeBound,
     endTime: QueryTimeBound,
     /** How many time buckets to reduce the window to. Omit for every
@@ -553,7 +553,7 @@ export let telemetryAPI = {
     targetBuckets?: number,
     /** Restrict the response to these series. Omit for all of them. The store
      *  narrows before reducing, so asking for two of ten costs two. */
-    seriesIds?: string[],
+    seriesIDs?: string[],
     /** Quantiles to compute per histogram datapoint, keyed by the quantile in
      *  the response. Omit to skip the work. */
     quantiles?: number[],
@@ -577,7 +577,7 @@ export let telemetryAPI = {
      *  Every series still arrives with its row, stats, view buckets and
      *  sparkline. Omit to leave it to `datapointSeriesLimit`; pass an empty
      *  array to ask for none. */
-    datapointSeriesIds?: string[],
+    datapointSeriesIDs?: string[],
     /** How many series carry datapoints when they cannot be named, in the
      *  response's own order. For the first visit to a metric, where the visible
      *  set is chosen from the response being fetched. */
@@ -601,7 +601,7 @@ export let telemetryAPI = {
       // parameter after it, so adding one meant editing every line above it --
       // four edits to add a fifth, each silently optional.
       //
-      // seriesIds sends null, not [] -- the three states are distinct on the
+      // seriesIDs sends null, not [] -- the three states are distinct on the
       // wire: absent or null means every series, an empty array means none.
       // Sending [] for "no filter" asked the store for no series, which it
       // correctly answered with nothing.
@@ -610,7 +610,7 @@ export let telemetryAPI = {
           value: String(targetBuckets ?? 0),
           given: targetBuckets !== undefined,
         },
-        { value: seriesIds ?? null, given: seriesIds !== undefined },
+        { value: seriesIDs ?? null, given: seriesIDs !== undefined },
         { value: quantiles ?? [], given: quantiles !== undefined },
         { value: String(tzOffsetNs ?? 0), given: tzOffsetNs !== undefined },
         { value: fitToData ?? false, given: fitToData !== undefined },
@@ -623,12 +623,12 @@ export let telemetryAPI = {
         {
           value: null,
           given:
-            datapointSeriesIds !== undefined ||
+            datapointSeriesIDs !== undefined ||
             datapointSeriesLimit !== undefined,
         },
         {
-          value: datapointSeriesIds ?? null,
-          given: datapointSeriesIds !== undefined,
+          value: datapointSeriesIDs ?? null,
+          given: datapointSeriesIDs !== undefined,
         },
         {
           value: String(datapointSeriesLimit ?? 0),
@@ -640,7 +640,7 @@ export let telemetryAPI = {
         optional.pop()
       }
       const rawData = await callRPC<JsonMetricData>('getMetric', [
-        streamId,
+        streamID,
         startTimeNs,
         endTimeNs,
         ...optional.map(p => p.value),
@@ -662,7 +662,7 @@ export let telemetryAPI = {
    *  is the part that depends on which series are visible, so it is the part
    *  worth refetching on a toggle. */
   getMetricAggregate: async (
-    streamId: string,
+    streamID: string,
     startTime: number,
     endTime: number,
     targetBuckets: number,
@@ -670,18 +670,18 @@ export let telemetryAPI = {
      *  merge folds. Null for a scalar metric: its All pool must keep folding
      *  every series, and narrowing here would redefine the answer rather than
      *  trim the payload. */
-    seriesIds: string[] | null,
+    seriesIDs: string[] | null,
     quantiles: number[],
     tzOffsetNs: number,
     fitToData: boolean,
     viewBuckets = 0,
     /** Which series are checked, for the scalar Selected pool.
      *
-     *  Deliberately not `seriesIds`. That one narrows what the store returns;
+     *  Deliberately not `seriesIDs`. That one narrows what the store returns;
      *  this one names a pool and narrows nothing. Narrowing a scalar would not
      *  trim the payload, it would redefine the answer -- "All" folded over a
      *  narrowed set means "all of the checked ones". */
-    selectedSeriesIds?: string[],
+    selectedSeriesIDs?: string[],
     /** The zone the buckets follow, as in getMetric -- and it must be the same
      *  one, or the pooled lines are cut on different boundaries than the
      *  per-series lines beneath them. */
@@ -693,11 +693,11 @@ export let telemetryAPI = {
       const raw = await callRPC<JsonMetricAggregateEnvelope | null>(
         'getMetricAggregate',
         [
-          streamId,
+          streamID,
           startTimeNs,
           endTimeNs,
           String(targetBuckets),
-          seriesIds,
+          seriesIDs,
           quantiles,
           String(tzOffsetNs),
           // Must match what getMetric sent for the same view, or the aggregate is
@@ -708,8 +708,8 @@ export let telemetryAPI = {
           // the store pins it to 0 regardless, but positional params mean the slot
           // has to be filled to reach the one after it.
           '0',
-          selectedSeriesIds ?? null,
-          // Placeholders for datapointSeriesIds and datapointSeriesLimit:
+          selectedSeriesIDs ?? null,
+          // Placeholders for datapointSeriesIDs and datapointSeriesLimit:
           // this method returns no datapoints, but the zone sits past those
           // slots and positional params cannot skip them.
           ...(tzName !== undefined ? [null, '0', tzName] : []),
