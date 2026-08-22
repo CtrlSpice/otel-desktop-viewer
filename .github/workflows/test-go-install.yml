@@ -19,6 +19,7 @@ jobs:
 
     # MSYS2 provides GCC and build tools needed for CGO compilation on Windows
     - name: Set up MSYS2 (Windows)
+      id: msys2
       uses: msys2/setup-msys2@v2
       with:
         msystem: UCRT64
@@ -27,9 +28,47 @@ jobs:
           mingw-w64-ucrt-x86_64-gcc
           mingw-w64-ucrt-x86_64-toolchain
 
+    # Point cgo at the toolchain installed just above, and prove it took.
+    #
+    # This used to read `echo "C:\msys64\ucrt64\bin"`, which is not where
+    # setup-msys2 installs -- it installs under RUNNER_TEMP, and reports the
+    # path as its msys2-location output. C:\msys64 does exist on the runner
+    # image, but carries no ucrt64 gcc, so the line added a directory with no
+    # compiler in it and cgo fell through to whatever else was on PATH.
+    #
+    # That mattered because the image ships five: C:\mingw32, C:\mingw64,
+    # C:\rtools45, C:\Strawberry\c, plus the one we install. cgo was
+    # resolving C:\mingw64\bin\gcc.exe -- picked by PATH order, not by us,
+    # and free to change when the image does. Probed on a real run (#324).
+    #
+    # The check is the load-bearing half. Naming the right directory is only
+    # correct until something prepends another gcc, and the failure mode is
+    # silent: it still builds, just not with the pinned toolchain.
     - name: Add MSYS2 to PATH (Windows)
       run: |
-        echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
+        $bin = Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'ucrt64\bin'
+        if (-not (Test-Path (Join-Path $bin 'gcc.exe'))) {
+          Write-Host "::error::No gcc in $bin -- setup-msys2 did not install where its msys2-location output says."
+          exit 1
+        }
+        echo $bin >> $env:GITHUB_PATH
+
+    # Prove the pinned toolchain is the one cgo will use. The runner image ships
+    # five compilers, and while the PATH line named a directory without a gcc,
+    # cgo silently resolved C:\mingw64\bin\gcc.exe instead (#324). Nothing
+    # failed, so nothing reported it.
+    - name: Verify cgo uses the pinned toolchain (Windows)
+      run: |
+        $expected = Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'ucrt64\bin\gcc.exe'
+        $actual = (Get-Command gcc -ErrorAction SilentlyContinue).Source
+        Write-Host "expected: $expected"
+        Write-Host "actual:   $actual"
+        if ($actual -ne $expected) {
+          Write-Host "::error::cgo would use $actual, not the toolchain this workflow installs."
+          exit 1
+        }
+        gcc --version | Select-Object -First 1
+
 
     - name: Test go install
       run: |

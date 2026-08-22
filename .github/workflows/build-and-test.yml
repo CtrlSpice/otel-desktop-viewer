@@ -51,32 +51,7 @@ jobs:
       with:
         go-version: '1.26'
 
-    # DuckDB is cgo, so Windows needs a C compiler. It does not need one
-    # installed here: the runner image ships mingw64 at C:\mingw64 and puts it
-    # on PATH, which is what cgo has actually been resolving all along.
-    #
-    # This used to run msys2/setup-msys2 and then prepend C:\msys64\ucrt64\bin.
-    # Probed on a real run (#324): before that step, neither C:\msys64 nor
-    # RUNNER_TEMP\msys64 held a ucrt64 gcc, and after it, gcc still resolved to
-    # C:\mingw64\bin\gcc.exe. Sixty-one seconds -- eight extracting the base,
-    # forty-eight installing 43 packages past a cache hit -- built a toolchain
-    # no compile ever used.
-    #
-    # The cost of leaning on the image is that the image can change. This step
-    # is the alarm: without it a removed preinstall surfaces as a cgo error
-    # deep in a DuckDB build, which reads like a code problem. Reinstating
-    # MSYS2 is the fix if it ever fires.
-    - name: Check the C toolchain cgo needs (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        $gcc = Get-Command gcc -ErrorAction SilentlyContinue
-        if (-not $gcc) {
-          Write-Host "::error::No gcc on PATH. The windows runner image used to ship one at C:\mingw64; if that has changed, restore the msys2/setup-msys2 step removed in #324."
-          exit 1
-        }
-        Write-Host "cgo will use $($gcc.Source)"
-        gcc --version | Select-Object -First 1
-
+    # MSYS2 provides the GCC that cgo needs to compile DuckDB on Windows.
     - name: Set up MSYS2 (Windows)
       id: msys2
       if: matrix.os == 'windows-latest'
@@ -88,15 +63,47 @@ jobs:
           mingw-w64-ucrt-x86_64-gcc
           mingw-w64-ucrt-x86_64-toolchain
 
-    # TEMPORARY: where did it actually go, and what does it call itself?
-    - name: Locate the installed toolchain (Windows)
+    # Point cgo at the toolchain installed just above.
+    #
+    # This used to read `echo "C:\msys64\ucrt64\bin"`, which is not where
+    # setup-msys2 installs -- it installs under RUNNER_TEMP and reports the
+    # path as its msys2-location output. C:\msys64 does exist on the runner
+    # image but carries no ucrt64 gcc, so the line added a directory with no
+    # compiler in it, and cgo fell through to whatever else was on PATH.
+    - name: Add MSYS2 to PATH (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        Write-Host "msys2-location output = '${{ steps.msys2.outputs.msys2-location }}'"
-        Get-ChildItem -Path C:\, D:\a\_temp -Filter msys64 -Directory -ErrorAction SilentlyContinue |
-          ForEach-Object { Write-Host "root: $($_.FullName)" }
-        Get-ChildItem -Path C:\, D:\a\_temp -Recurse -Depth 4 -Filter gcc.exe -ErrorAction SilentlyContinue |
-          ForEach-Object { Write-Host "gcc: $($_.FullName)" }
+        $bin = Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'ucrt64\bin'
+        if (-not (Test-Path (Join-Path $bin 'gcc.exe'))) {
+          Write-Host "::error::No gcc in $bin -- setup-msys2 did not install where its msys2-location output says."
+          exit 1
+        }
+        echo $bin >> $env:GITHUB_PATH
+
+    # Prove the pinned toolchain is the one cgo will use, rather than assuming
+    # the PATH edit won.
+    #
+    # The runner image ships five compilers -- C:\mingw32, C:\mingw64,
+    # C:\rtools45, C:\Strawberry\c, and the one installed above -- and for as
+    # long as the PATH line named a directory without a gcc, cgo resolved
+    # C:\mingw64\bin\gcc.exe. Nothing failed, so nothing said so, and the
+    # compiler behind every Windows build was chosen by PATH order and free to
+    # change with the image (#324).
+    #
+    # A silent wrong toolchain is the failure this guards. It has already
+    # happened once, in all three workflows at the same time.
+    - name: Verify cgo uses the pinned toolchain (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        $expected = Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'ucrt64\bin\gcc.exe'
+        $actual = (Get-Command gcc -ErrorAction SilentlyContinue).Source
+        Write-Host "expected: $expected"
+        Write-Host "actual:   $actual"
+        if ($actual -ne $expected) {
+          Write-Host "::error::cgo would use $actual, not the toolchain this workflow installs."
+          exit 1
+        }
+        gcc --version | Select-Object -First 1
 
     - name: Build
       run: go build -o otel-desktop-viewer.exe
