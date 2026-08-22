@@ -30,6 +30,11 @@ const (
 	ScopeLog       = "log"
 	ScopeDatapoint = "datapoint"
 	ScopeExemplar  = "exemplar"
+	// Metric.metadata: an attribute map on the metric itself, distinct from
+	// the datapoint labels that identify a series. Deliberately absent from
+	// the discovery allowlist in get_metric_attributes.sql, so it is stored
+	// and displayed without becoming a search field.
+	ScopeMetricMetadata = "metadata"
 )
 
 // Attribute is one dictionary row: a distinct (key, value, type, scope).

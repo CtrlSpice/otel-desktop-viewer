@@ -55,3 +55,32 @@ describe('LinksPanel trace correlation', () => {
     )
   })
 })
+
+// The header badge counts the rows the panel renders, and the two are computed
+// in different places -- linkFieldCount() by arithmetic, the rows by markup --
+// so nothing but a test holds them together. Adding the flags row without
+// adding it to the count went unnoticed precisely because every fixture here
+// used flags: 0, where the arithmetic happens to be right either way.
+describe('LinksPanel field count', () => {
+  beforeEach(() => setTestUrl('/traces/trace-1?start=0&end=1'))
+
+  const rows = () => document.querySelectorAll('tr.table-row').length
+  const badge = () =>
+    document.querySelector('.badge-count')?.textContent?.trim()
+
+  it('counts every rendered row when the link carries flags', () => {
+    renderWithContexts(LinksPanel, {
+      links: [makeLink({ flags: 1, attributes: [] })],
+    })
+    expect(document.body.textContent).toContain('flags')
+    expect(badge()).toBe(String(rows()))
+  })
+
+  it('still agrees when there are no flags', () => {
+    renderWithContexts(LinksPanel, {
+      links: [makeLink({ flags: 0, attributes: [] })],
+    })
+    expect(document.body.textContent).not.toContain('flags')
+    expect(badge()).toBe(String(rows()))
+  })
+})

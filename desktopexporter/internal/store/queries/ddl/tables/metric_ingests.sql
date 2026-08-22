@@ -8,6 +8,10 @@ create table if not exists metric_ingests (
 		id uuid primary key,
 		stream_id uuid not null,
 		description varchar,
+		-- Metric.metadata: an attribute map on the metric itself, not on its
+		-- datapoints. Lives here beside description for the same reason --
+		-- it can differ between batches of one stream and is not identity.
+		metadata_ids uuid[] not null default [],
 		resource_id uuid not null,
 		scope_id uuid not null,
 		-- OTLP carries a schema_url on the *batch* wrapper (ResourceSpans /

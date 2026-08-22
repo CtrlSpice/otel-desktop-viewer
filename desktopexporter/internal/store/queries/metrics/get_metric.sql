@@ -1605,6 +1605,9 @@
 		-- coalesced so the wire shape stays non-null either way.
 		select cast(json_object(
 			'id', s.id, 'name', s.name, 'description', coalesce(r.description, ''), 'unit', s.unit,
+			-- The metric's own metadata map, from the same representative ingest
+			-- description comes from: both are per-batch and neither is identity.
+			'metadata', coalesce(attrs_json(r.metadata_ids), json('[]')),
 			'metricType', s.metric_type,
 			'aggregationTemporality', s.aggregation_temporality,
 			'isMonotonic', s.is_monotonic,

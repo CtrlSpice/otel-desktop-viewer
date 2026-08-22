@@ -295,12 +295,16 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 
 				ingestID := duckdb.UUID(uuid.New())
 
+				// Hashed in pass 1; NonNil because AttributeSet returns nil for an
+				// empty map while the column is NOT NULL.
+				_, metadataIDs := ingest.AttributeSet(metric.Metadata(), ingest.ScopeMetricMetadata)
 				if err := appenders["metric_ingests"].AppendRow(
-					ingestID,             // ID UUID
-					streamID,             // StreamID UUID
-					metric.Description(), // Description VARCHAR
-					resourceID,           // ResourceID UUID
-					scopeID,              // ScopeID UUID
+					ingestID,                   // ID UUID
+					streamID,                   // StreamID UUID
+					metric.Description(),       // Description VARCHAR
+					ingest.NonNil(metadataIDs), // MetadataIDs UUID[] (NOT NULL; [] when absent)
+					resourceID,                 // ResourceID UUID
+					scopeID,                    // ScopeID UUID
 					// Batch-level, from the OTLP wrappers rather than the
 					// Resource / InstrumentationScope messages, neither of
 					// which carries the field.
@@ -371,6 +375,11 @@ func addMetricAttributes(dict *ingest.Dictionary, metric pmetric.Metric, out [][
 			dict.AddBounds(dp.ExplicitBounds().AsRaw())
 		}
 	}
+	// The metric's own metadata map, which is not a datapoint label: it
+	// describes the instrument rather than identifying a series, so it takes
+	// its own scope and never enters series identity.
+	dict.AddAttributes(metric.Metadata(), ingest.ScopeMetricMetadata)
+
 	eachDatapoint(metric, func(attrs pcommon.Map, exemplars pmetric.ExemplarSlice) {
 		out = append(out, ingest.NonNil(dict.AddAttributes(attrs, ingest.ScopeDatapoint)))
 		addExemplarAttributes(dict, exemplars)

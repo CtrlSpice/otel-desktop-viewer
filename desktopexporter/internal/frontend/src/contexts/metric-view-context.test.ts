@@ -59,6 +59,7 @@ function makeCumulativeSumMetric(): MetricData {
     id: 'm1',
     name: 'http.server.requests',
     description: 'Total inbound requests',
+    metadata: [],
     unit: '1',
     metricType: 'Sum',
     aggregationTemporality: 'Cumulative',

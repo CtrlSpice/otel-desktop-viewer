@@ -5117,3 +5117,76 @@ func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
 		}))
 	})
 }
+
+// TestMetricMetadataRoundTrip pins OTLP's Metric.metadata through the store.
+//
+// It was the last field of any signal that arrived and was discarded: a
+// systematic diff of pdata's getters against the schema found nothing else
+// missing once span and link flags landed. Metadata describes the instrument
+// -- not the labels that identify a series -- so it lives on metric_ingests
+// beside description, which varies per batch for the same reason.
+//
+// The scope matters as much as the value. Metadata attributes go into the
+// dictionary under their own scope, which is deliberately absent from the
+// allowlist in get_metric_attributes.sql: stored and displayed, but never
+// offered as a search field. That exclusion is asserted here, because the
+// allowlist is the only thing keeping it out and a later edit could widen it
+// without anyone noticing.
+func TestMetricMetadataRoundTrip(t *testing.T) {
+	s, ctx, teardown := setupStore(t)
+	defer teardown()
+
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "metadata-test")
+	m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("requests.total")
+	m.SetDescription("inbound requests")
+	m.Metadata().PutStr("owner", "checkout-team")
+	m.Metadata().PutStr("slo", "99.9")
+	dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	dp.SetDoubleValue(42)
+	dp.Attributes().PutStr("route", "/cart")
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+
+	got := getMetricFullByName(t, s, ctx, "requests.total")
+
+	meta, ok := got["metadata"].([]any)
+	require.True(t, ok, "metadata must be present on the wire, got %T", got["metadata"])
+	pairs := map[string]string{}
+	for _, e := range meta {
+		a := e.(map[string]any)
+		pairs[a["key"].(string)] = a["value"].(string)
+	}
+	require.Equal(t, map[string]string{"owner": "checkout-team", "slo": "99.9"}, pairs)
+
+	// The datapoint's own label must not have leaked into metadata, and vice
+	// versa: they are different maps under different scopes.
+	require.NotContains(t, pairs, "route")
+
+	// Stored under its own scope...
+	var n int
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(
+			`select count(*) from attributes where scope = 'metadata'`).Scan(&n)
+	}))
+	require.Equal(t, 2, n, "both metadata attributes belong to the metadata scope")
+
+	// ...and that scope stays out of attribute discovery, so metadata never
+	// becomes a search field.
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricAttributes(ctx, db, 0, maxNano)
+	})
+	require.NoError(t, err)
+	var defs []map[string]any
+	require.NoError(t, json.Unmarshal(raw, &defs))
+	for _, d := range defs {
+		require.NotEqual(t, "metadata", d["attributeScope"],
+			"metadata must not be offered as a searchable attribute scope")
+		require.NotEqual(t, "owner", d["name"])
+	}
+}
