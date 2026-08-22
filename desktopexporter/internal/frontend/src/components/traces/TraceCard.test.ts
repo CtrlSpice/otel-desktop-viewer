@@ -38,7 +38,7 @@ describe('TraceCard', () => {
     renderCard({
       trace: makeTrace({ hasRootSpan: false, rootSpan: undefined }),
     })
-    expect(screen.getByText('No root span yet')).toBeInTheDocument()
+    expect(screen.getByText('No root span')).toBeInTheDocument()
   })
 
   it('renders the formatted start time and duration', () => {
