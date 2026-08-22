@@ -77,6 +77,7 @@ function makeSpanNode(id: string): SpanNode {
     matched: true,
     spanData: {
       spanID: id,
+      flags: 0,
       parentSpanID: null,
       traceID: 'trace-1',
       name: id,

@@ -54,7 +54,14 @@ package schema
 // dictionary, referenced by bounds_id. A version 4 file has the vector where
 // this build expects a reference, so its histogram datapoints are unreadable
 // under this schema, not merely stale.
-const Version = 5
+// Version 6 adds flags to spans and links: the W3C trace flags, and on a span
+// the bit saying whether the parent context was remote. Logs and metric
+// datapoints had stored theirs from the start, so this is the same field
+// arriving late rather than a new idea. Like version 3, it is a new column on
+// an existing table, which `create table if not exists` will not add to a
+// version 5 file -- that file keeps its narrower spans table and the first
+// ingest fails on the appender's column count.
+const Version = 6
 
 // VersionTableQuery creates the version table.
 //

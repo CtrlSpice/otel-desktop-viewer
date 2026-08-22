@@ -73,6 +73,13 @@
             fieldType={attr.type}
           />
         {/each}
+        {#if link.flags > 0}
+          <SpanField
+            fieldName="flags"
+            fieldValue={link.flags.toString()}
+            fieldType="uint32"
+          />
+        {/if}
         {#if link.droppedAttributesCount > 0}
           <SpanField
             fieldName="dropped attributes count"

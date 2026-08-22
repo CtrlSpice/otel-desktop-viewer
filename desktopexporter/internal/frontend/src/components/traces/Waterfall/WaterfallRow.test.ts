@@ -17,6 +17,7 @@ function makeSpanData(overrides: Partial<SpanData> = {}): SpanData {
     traceState: '',
     spanID: 'span-1',
     parentSpanID: null,
+    flags: 0,
     name: 'span-1',
     kind: 'Internal',
     startTime: 0n,

@@ -18,6 +18,7 @@ create or replace macro span_data_json(
         'traceState', ts.trace_state,
         'spanID', span_id_wire(ts.span_id),
         'parentSpanID', case when ts.parent_span_id is not null then span_id_wire(ts.parent_span_id) end,
+        'flags', ts.flags,
         'name', ts.name,
         'kind', ts.kind,
         -- Offset from traceStart, and duration from the span's own start.

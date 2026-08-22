@@ -21,6 +21,7 @@ function makeLink(overrides: Partial<LinkData> = {}): LinkData {
     traceState: '',
     attributes: [],
     droppedAttributesCount: 0,
+    flags: 0,
     ...overrides,
   }
 }

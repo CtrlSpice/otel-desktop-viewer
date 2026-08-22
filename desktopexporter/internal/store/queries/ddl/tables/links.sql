@@ -6,5 +6,7 @@ create table if not exists links (
 		trace_state varchar,
 		attribute_ids uuid[] not null,
 		dropped_attributes_count uinteger,
+		-- As on spans: W3C trace flags for the linked context.
+		flags uinteger,
 		foreign key (span_id) references spans(span_id)
 	)

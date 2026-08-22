@@ -65,6 +65,8 @@ export type JsonLinkData = {
   spanID: string
   traceState: string
   droppedAttributesCount: number
+  /** W3C trace flags for the linked context. Same reasoning as on the span. */
+  flags: number
   attributes: JsonAttribute[]
 }
 
@@ -86,6 +88,14 @@ export type JsonSpanData = {
   traceState: string
   spanID: string
   parentSpanID: string | null
+  /**
+   * W3C trace flags, plus the bit saying whether the parent context was remote.
+   *
+   * Stored and sent because it is part of the span: dropping it meant a span
+   * read back out of the store was not the span that went in, and logs and
+   * metric datapoints had always kept theirs.
+   */
+  flags: number
   name: string
   kind: string
   /** Nanoseconds after JsonTraceData.traceStart. */

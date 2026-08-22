@@ -24,6 +24,7 @@ function spanNode(
     matched: true,
     spanData: {
       spanID: id,
+      flags: 0,
       parentSpanID: parentID,
       traceID: 'trace-1',
       name: id,

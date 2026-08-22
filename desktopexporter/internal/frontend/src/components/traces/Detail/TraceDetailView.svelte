@@ -37,6 +37,19 @@
       detailSearchFieldVisible(selected, 'endTime')
     )
   }
+
+  /**
+   * Flags is not a search field either; tie visibility to the span identity
+   * columns it qualifies. Making it searchable means adding it to the field
+   * registry, which is a query-grammar change and a separate decision.
+   */
+  export function detailFlagsVisible(selected: FieldDefinition[]): boolean {
+    if (selected.length === 0) return true
+    return (
+      detailSearchFieldVisible(selected, 'spanID') ||
+      detailSearchFieldVisible(selected, 'parentSpanID')
+    )
+  }
 </script>
 
 <script lang="ts">
@@ -307,6 +320,13 @@
                   fieldName="span id"
                   fieldValue={span.spanID}
                   fieldType="string"
+                />
+              {/if}
+              {#if span.flags > 0 && detailFlagsVisible(columnFilter)}
+                <SpanField
+                  fieldName="flags"
+                  fieldValue={span.flags.toString()}
+                  fieldType="uint32"
                 />
               {/if}
               {#each spanAttributes as attr (attr.key)}

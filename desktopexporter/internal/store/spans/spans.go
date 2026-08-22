@@ -173,6 +173,7 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 					span.TraceState().AsRaw(),     // TraceState VARCHAR
 					spanUUID,                      // SpanID UUID
 					parentSpanUUID,                // ParentSpanID UUID
+					uint32(span.Flags()),          // Flags UINTEGER
 					span.Name(),                   // Name VARCHAR
 					span.Kind().String(),          // Kind VARCHAR
 					int64(span.StartTimestamp()),  // StartTime BIGINT
@@ -226,6 +227,7 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 						link.TraceState().AsRaw(),     // TraceState VARCHAR
 						linkAttrIDs,                   // AttributeIDs UUID[]
 						link.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
+						uint32(link.Flags()),          // Flags UINTEGER
 					)
 					if err != nil {
 						return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)

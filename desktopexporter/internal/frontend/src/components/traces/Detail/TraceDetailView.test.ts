@@ -17,6 +17,7 @@ function makeSpan(overrides: Partial<SpanData> = {}): SpanData {
   return {
     spanID: 'child-span',
     parentSpanID: 'parent-span',
+    flags: 0,
     traceID: 'trace-1',
     name: 'child',
     startTime: 0n,
