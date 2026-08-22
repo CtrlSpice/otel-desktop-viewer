@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SpanNode } from '@/types/api-types'
 import {
-  buildChildrenBySpanId,
+  buildChildrenBySpanID,
   buildStructuralMaps,
   computeSearchCollapsedParents,
   isErrorSpan,
@@ -9,7 +9,7 @@ import {
 
 function spanNode(
   id: string,
-  parentId: string | null,
+  parentID: string | null,
   depth: number,
   statusCode: 'Ok' | 'Error' = 'Ok'
 ): SpanNode {
@@ -18,7 +18,7 @@ function spanNode(
     matched: true,
     spanData: {
       spanID: id,
-      parentSpanID: parentId,
+      parentSpanID: parentID,
       traceID: 'trace-1',
       name: id,
       startTime: 0n,
@@ -61,7 +61,7 @@ describe('isErrorSpan', () => {
 
 describe('computeSearchCollapsedParents with parent cycles', () => {
   // A salvaged trace can make two spans each other's child in
-  // childrenBySpanId. The relevance walk must terminate rather than
+  // childrenBySpanID. The relevance walk must terminate rather than
   // overflow the stack -- parentSpanID is reported data, not verified
   // structure.
   it('survives a two-span cycle while search is active', () => {
@@ -70,7 +70,7 @@ describe('computeSearchCollapsedParents with parent cycles', () => {
       spanNode('old-biff', 'young-biff', 0),
       spanNode('young-biff', 'old-biff', 1),
     ]
-    const children = buildChildrenBySpanId(spans)
+    const children = buildChildrenBySpanID(spans)
     // Only the root matches; both cycle members are irrelevant, have kids
     // (each other), and must be collapsed rather than looped over.
     const collapsed = computeSearchCollapsedParents(
@@ -88,7 +88,7 @@ describe('computeSearchCollapsedParents with parent cycles', () => {
       spanNode('loop-b', 'loop-a', 1),
       spanNode('treasure', 'loop-b', 2),
     ]
-    const children = buildChildrenBySpanId(spans)
+    const children = buildChildrenBySpanID(spans)
     // loop-a matches and treasure (its transitive descendant through the
     // cycle) is relevant, so loop-a must NOT be collapsed: the walk has to
     // reach through the cycle exactly once, not refuse to enter it.
@@ -110,12 +110,12 @@ describe('buildStructuralMaps', () => {
       spanNode('grandchild', 'child', 2),
       spanNode('child2', 'root', 1),
     ]
-    const { parentBySpanId, childrenBySpanId } = buildStructuralMaps(spans)
-    expect(parentBySpanId.get('root')).toBeNull()
-    expect(parentBySpanId.get('child')).toBe('root')
-    expect(parentBySpanId.get('grandchild')).toBe('child')
-    expect(parentBySpanId.get('child2')).toBe('root')
-    expect(childrenBySpanId.get('root')).toEqual(['child', 'child2'])
+    const { parentBySpanID, childrenBySpanID } = buildStructuralMaps(spans)
+    expect(parentBySpanID.get('root')).toBeNull()
+    expect(parentBySpanID.get('child')).toBe('root')
+    expect(parentBySpanID.get('grandchild')).toBe('child')
+    expect(parentBySpanID.get('child2')).toBe('root')
+    expect(childrenBySpanID.get('root')).toEqual(['child', 'child2'])
   })
 
   it('treats a promoted orphan at depth 0 as a root, not a child of a ghost', () => {
@@ -124,10 +124,10 @@ describe('buildStructuralMaps', () => {
       spanNode('orphan', 'not-in-response', 0),
       spanNode('orphan-kid', 'orphan', 1),
     ]
-    const { parentBySpanId, childrenBySpanId } = buildStructuralMaps(spans)
-    expect(parentBySpanId.get('orphan')).toBeNull()
-    expect(parentBySpanId.get('orphan-kid')).toBe('orphan')
-    expect(childrenBySpanId.has('not-in-response')).toBe(false)
+    const { parentBySpanID, childrenBySpanID } = buildStructuralMaps(spans)
+    expect(parentBySpanID.get('orphan')).toBeNull()
+    expect(parentBySpanID.get('orphan-kid')).toBe('orphan')
+    expect(childrenBySpanID.has('not-in-response')).toBe(false)
   })
 
   it('a salvaged cycle entry is a root and never its own descendant', () => {
@@ -139,11 +139,11 @@ describe('buildStructuralMaps', () => {
       spanNode('old-biff', 'young-biff', 0),
       spanNode('young-biff', 'old-biff', 1),
     ]
-    const { parentBySpanId, childrenBySpanId } = buildStructuralMaps(spans)
-    expect(parentBySpanId.get('old-biff')).toBeNull()
-    expect(parentBySpanId.get('young-biff')).toBe('old-biff')
-    expect(childrenBySpanId.get('old-biff')).toEqual(['young-biff'])
-    expect(childrenBySpanId.has('young-biff')).toBe(false)
+    const { parentBySpanID, childrenBySpanID } = buildStructuralMaps(spans)
+    expect(parentBySpanID.get('old-biff')).toBeNull()
+    expect(parentBySpanID.get('young-biff')).toBe('old-biff')
+    expect(childrenBySpanID.get('old-biff')).toEqual(['young-biff'])
+    expect(childrenBySpanID.has('young-biff')).toBe(false)
   })
 
   it('a second tree after a deep one does not inherit stale stack entries', () => {
@@ -153,8 +153,8 @@ describe('buildStructuralMaps', () => {
       spanNode('root-b', null, 0),
       spanNode('b-kid', 'root-b', 1),
     ]
-    const { parentBySpanId } = buildStructuralMaps(spans)
-    expect(parentBySpanId.get('root-b')).toBeNull()
-    expect(parentBySpanId.get('b-kid')).toBe('root-b')
+    const { parentBySpanID } = buildStructuralMaps(spans)
+    expect(parentBySpanID.get('root-b')).toBeNull()
+    expect(parentBySpanID.get('b-kid')).toBe('root-b')
   })
 })

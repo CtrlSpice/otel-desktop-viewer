@@ -1,6 +1,6 @@
 import { type FieldDefinition } from '@/constants/fields'
 import { OPERATORS, type Operator } from '@/constants/operators'
-import { type QueryNode, generateId } from './queryTree'
+import { type QueryNode, generateID } from './queryTree'
 
 // Token Types For Lexer
 type TokenType =
@@ -347,7 +347,7 @@ class Parser {
 
       // Create group node
       left = {
-        id: generateId(),
+        id: generateID(),
         type: 'group',
         group: {
           operator,
@@ -431,7 +431,7 @@ class Parser {
 
     // Create condition node
     return {
-      id: generateId(),
+      id: generateID(),
       type: 'condition',
       query: {
         field,
@@ -779,7 +779,7 @@ export function parseQuery(
 // Create Global Text Search Query
 function createGlobalTextSearch(input: string): QueryNode {
   return {
-    id: generateId(),
+    id: generateID(),
     type: 'condition',
     query: {
       field: {

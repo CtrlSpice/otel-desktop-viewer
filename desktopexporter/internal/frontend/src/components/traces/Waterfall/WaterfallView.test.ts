@@ -16,7 +16,7 @@ vi.mock('@humanspeak/svelte-virtual-list', async () => {
 
 function spanNode(
   id: string,
-  parentId: string | null,
+  parentID: string | null,
   depth: number
 ): SpanNode {
   return {
@@ -24,7 +24,7 @@ function spanNode(
     matched: true,
     spanData: {
       spanID: id,
-      parentSpanID: parentId,
+      parentSpanID: parentID,
       traceID: 'trace-1',
       name: id,
       startTime: BigInt(depth) * 1_000_000n,
@@ -73,7 +73,7 @@ function renderTree(overrides: Record<string, unknown> = {}) {
   })
 }
 
-function rowIds(): string[] {
+function rowIDs(): string[] {
   return [...document.querySelectorAll('tr[data-span-id]')].map(r =>
     r.getAttribute('data-span-id')!
   )
@@ -101,7 +101,7 @@ describe('WaterfallView collapse ownership', () => {
   it('opens fully expanded, however deep the trace', async () => {
     renderTree()
     await tick()
-    expect(rowIds()).toEqual(ALL_IDS)
+    expect(rowIDs()).toEqual(ALL_IDS)
   })
 
   // #348. The set used to be assigned by an effect that re-ran whenever the
@@ -111,7 +111,7 @@ describe('WaterfallView collapse ownership', () => {
     const { rerender } = renderTree()
     await tick()
     await collapseRow('c')
-    expect(rowIds()).toEqual(['a', 'b', 'c'])
+    expect(rowIDs()).toEqual(['a', 'b', 'c'])
 
     await rerender({
       componentProps: {
@@ -121,7 +121,7 @@ describe('WaterfallView collapse ownership', () => {
       },
     })
     await tick()
-    expect(rowIds()).toEqual(['a', 'b', 'c'])
+    expect(rowIDs()).toEqual(['a', 'b', 'c'])
   })
 
   // The component is torn down by loading states, trace switches, and layout
@@ -135,7 +135,7 @@ describe('WaterfallView collapse ownership', () => {
 
     renderTree()
     await tick()
-    expect(rowIds()).toEqual(['a', 'b', 'c'])
+    expect(rowIDs()).toEqual(['a', 'b', 'c'])
   })
 
   // The rule the reveal must obey: if the reader closed the branch, the
@@ -147,7 +147,7 @@ describe('WaterfallView collapse ownership', () => {
     })
 
     await collapseRow('c')
-    expect(rowIds()).toEqual(['a', 'b', 'c'])
+    expect(rowIDs()).toEqual(['a', 'b', 'c'])
 
     // A fresh response arrives while the selection still points into the
     // closed branch -- the exact shape that used to undo the collapse.
@@ -159,7 +159,7 @@ describe('WaterfallView collapse ownership', () => {
       },
     })
     await tick()
-    expect(rowIds()).toEqual(['a', 'b', 'c'])
+    expect(rowIDs()).toEqual(['a', 'b', 'c'])
   })
 
   // Selecting a hidden span scrolls toward it -- to the nearest visible
@@ -178,7 +178,7 @@ describe('WaterfallView collapse ownership', () => {
       },
     })
     await waitFor(() => expect(scrollMock).toHaveBeenCalled())
-    expect(rowIds()).toEqual(['a', 'b', 'c'])
+    expect(rowIDs()).toEqual(['a', 'b', 'c'])
   })
 
   it('collapse-all and expand-all are separate, always-live, idempotent', async () => {
@@ -198,19 +198,19 @@ describe('WaterfallView collapse ownership', () => {
 
     collapseAll().click()
     await tick()
-    expect(rowIds()).toEqual(['a'])
+    expect(rowIDs()).toEqual(['a'])
 
     // Idempotent: invoking again from the state it produced changes nothing.
     collapseAll().click()
     await tick()
-    expect(rowIds()).toEqual(['a'])
+    expect(rowIDs()).toEqual(['a'])
 
     expandAll().click()
     await tick()
-    expect(rowIds()).toEqual(ALL_IDS)
+    expect(rowIDs()).toEqual(ALL_IDS)
     expandAll().click()
     await tick()
-    expect(rowIds()).toEqual(ALL_IDS)
+    expect(rowIDs()).toEqual(ALL_IDS)
   })
 
   // The gap the old toggle had: its label followed the current state, so from
@@ -220,13 +220,13 @@ describe('WaterfallView collapse ownership', () => {
     renderTree()
     await tick()
     await collapseRow('c')
-    expect(rowIds()).toEqual(['a', 'b', 'c'])
+    expect(rowIDs()).toEqual(['a', 'b', 'c'])
 
     ;[...document.querySelectorAll('button')]
       .find(b => b.getAttribute('aria-label') === 'Expand all spans')!
       .click()
     await tick()
-    expect(rowIds()).toEqual(ALL_IDS)
+    expect(rowIDs()).toEqual(ALL_IDS)
   })
 
   // Search is a lens: it shapes the tree while active and leaves the reader's
@@ -235,7 +235,7 @@ describe('WaterfallView collapse ownership', () => {
     const { rerender } = renderTree()
     await tick()
     await collapseRow('e')
-    expect(rowIds()).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(rowIDs()).toEqual(['a', 'b', 'c', 'd', 'e'])
 
     // A search response: only 'c' matches, so its childless subtree collapses
     // and unrelated branches fold away.
@@ -251,7 +251,7 @@ describe('WaterfallView collapse ownership', () => {
       },
     })
     await tick()
-    const during = rowIds()
+    const during = rowIDs()
     expect(during).toContain('c')
     expect(during).not.toContain('f')
 
@@ -265,7 +265,7 @@ describe('WaterfallView collapse ownership', () => {
       },
     })
     await tick()
-    expect(rowIds()).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(rowIDs()).toEqual(['a', 'b', 'c', 'd', 'e'])
   })
 
   it('center-scrolls a newly selected visible span', async () => {

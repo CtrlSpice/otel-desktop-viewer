@@ -30,7 +30,7 @@ export type MetricViewQuery =
 export type MetricViewParseContext = {
   isHistogramKind: boolean
   allowedAggs: readonly string[]
-  datapointIds: ReadonlySet<string>
+  datapointIDs: ReadonlySet<string>
   /** Series ids present on the current metric. */
   seriesKeys: ReadonlySet<string>
 }
@@ -42,7 +42,7 @@ const HSCOPE_VALUES = ['window', 'bucket'] as const
  * Validates the `dp` query param against known datapoint ids.
  *
  * @param query - raw route query
- * @param datapointIds - ids present on the current metric
+ * @param datapointIDs - ids present on the current metric
  * @returns validated datapoint id, or `null`
  *
  * @remarks Stale ids from shared links become `null`. Datapoint ids are minted
@@ -51,10 +51,10 @@ const HSCOPE_VALUES = ['window', 'bucket'] as const
  */
 function parseDatapointParam(
   query: Record<string, string>,
-  datapointIds: ReadonlySet<string>
+  datapointIDs: ReadonlySet<string>
 ): string | null {
   const dp = query.dp || null
-  return dp && datapointIds.has(dp) ? dp : null
+  return dp && datapointIDs.has(dp) ? dp : null
 }
 
 /**
@@ -176,7 +176,7 @@ export function parseMetricViewQuery(
   query: Record<string, string>,
   ctx: MetricViewParseContext
 ): MetricViewQuery {
-  const dp = parseDatapointParam(query, ctx.datapointIds)
+  const dp = parseDatapointParam(query, ctx.datapointIDs)
   const series = parseSeriesParam(query, ctx.seriesKeys)
   return ctx.isHistogramKind
     ? parseHistogramMetricViewQuery(query, dp, series)

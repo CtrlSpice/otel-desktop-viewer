@@ -49,7 +49,7 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
   it('links exemplar trace and span ids with span in the href', () => {
     renderWithContexts(SeriesDatapointListHarness, {
       datapoints: [makeDatapoint()],
-      expandDatapointId: 'dp-1',
+      expandDatapointID: 'dp-1',
     })
     expect(
       screen.getByRole('link', { name: 'trace: trace-ex' })
@@ -66,7 +66,7 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
   it('says how many exemplars were withheld when the store capped the list', () => {
     renderWithContexts(SeriesDatapointListHarness, {
       datapoints: [makeDatapoint({ exemplarCount: 64 })],
-      expandDatapointId: 'dp-1',
+      expandDatapointID: 'dp-1',
     })
     expect(screen.getByText(/1 of 64 ex/)).toBeInTheDocument()
     expect(screen.getByText(/showing 1 of 64/)).toBeInTheDocument()
@@ -78,7 +78,7 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
     // render a "showing 1 of undefined" notice.
     renderWithContexts(SeriesDatapointListHarness, {
       datapoints: [makeDatapoint()],
-      expandDatapointId: 'dp-1',
+      expandDatapointID: 'dp-1',
     })
     expect(screen.getByText('1 ex')).toBeInTheDocument()
     expect(screen.queryByText(/showing/)).not.toBeInTheDocument()
@@ -87,7 +87,7 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
   it('navigates with span patch when an exemplar span link is clicked', async () => {
     renderWithContexts(SeriesDatapointListHarness, {
       datapoints: [makeDatapoint()],
-      expandDatapointId: 'dp-1',
+      expandDatapointID: 'dp-1',
     })
     await userEvent.click(screen.getByRole('link', { name: 'span: span-ex' }))
     expect(navigateToItem).toHaveBeenCalledWith('traces', 'trace-ex', 'push', {

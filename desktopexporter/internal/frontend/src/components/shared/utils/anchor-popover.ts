@@ -15,7 +15,7 @@ function outwardGapPx(): number {
   return rootFontSizePx() * 1.5
 }
 
-export function createPopoverId(prefix: string): string {
+export function createPopoverID(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`
 }
 

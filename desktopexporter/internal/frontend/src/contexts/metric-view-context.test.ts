@@ -141,7 +141,7 @@ function reportedAggregationView(): string {
   return screen.getByTestId('aggregation-view').textContent?.trim() ?? ''
 }
 
-function reportedSelectedDatapointId(): string {
+function reportedSelectedDatapointID(): string {
   return screen.getByTestId('selected-datapoint-id').textContent?.trim() ?? ''
 }
 
@@ -268,21 +268,21 @@ describe('metric view context visibility seeding by metric shape', () => {
 describe('metric view context datapoint URL sync', () => {
   it('selects the datapoint named in the URL on load', () => {
     renderProbe('/metrics/m1?dp=dp-b2')
-    expect(reportedSelectedDatapointId()).toBe('dp-b2')
+    expect(reportedSelectedDatapointID()).toBe('dp-b2')
   })
 
   it('ignores a datapoint id the metric does not have', () => {
     renderProbe('/metrics/m1?dp=dp-nope')
-    expect(reportedSelectedDatapointId()).toBe('')
+    expect(reportedSelectedDatapointID()).toBe('')
   })
 
   it('clears the selection when the browser goes back to a URL without dp', async () => {
     renderProbe('/metrics/m1?dp=dp-b2')
-    expect(reportedSelectedDatapointId()).toBe('dp-b2')
+    expect(reportedSelectedDatapointID()).toBe('dp-b2')
 
     externalNavigationTo('/metrics/m1')
     await tick()
 
-    expect(reportedSelectedDatapointId()).toBe('')
+    expect(reportedSelectedDatapointID()).toBe('')
   })
 })

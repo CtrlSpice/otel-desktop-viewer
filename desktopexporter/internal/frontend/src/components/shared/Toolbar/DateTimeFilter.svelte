@@ -2,7 +2,7 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { formatDateTimeRangeLabel } from '@/utils/time'
   import {
-    createPopoverId,
+    createPopoverID,
     setupAnchorPopover,
     type PopoverAnchor,
   } from '@/components/shared/utils/anchor-popover'
@@ -21,7 +21,7 @@
   let triggerEl = $state<HTMLButtonElement | null>(null)
   let popoverOpen = $state(false)
 
-  const popoverId = createPopoverId('datetime-popover')
+  const popoverID = createPopoverID('datetime-popover')
 
   let previousStartTime = $state(ctx.selection?.start)
   let previousEndTime = $state(ctx.selection?.end)
@@ -80,7 +80,7 @@
   bind:this={triggerEl}
   type="button"
   class={className}
-  popovertarget={popoverId}
+  popovertarget={popoverID}
   aria-expanded={popoverOpen}
   aria-label={ariaLabel}
   data-tip="Time range"
@@ -102,7 +102,7 @@
 <div
   bind:this={popoverEl}
   popover="auto"
-  id={popoverId}
+  id={popoverID}
   class="anchor-popover anchor-popover--anchored anchor-popover--wide"
 >
   <PaneHeader mode="toolbar" ariaLabel="Time range presets">

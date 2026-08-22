@@ -28,7 +28,7 @@ export type SortDirection = 'asc' | 'desc'
 
 export type SignalListPageOptions<TItem> = {
   signal: SignalName
-  getItemId: (item: TItem) => string
+  getItemID: (item: TItem) => string
   fetchList: () => Promise<TItem[]>
   compare: (
     a: TItem,
@@ -51,7 +51,7 @@ export type SignalListPage<TItem> = {
   readonly sortColumn: string
   readonly sortDirection: SortDirection
   readonly sortedItems: TItem[]
-  readonly selectedId: string | null
+  readonly selectedID: string | null
   readonly selectedIndex: number
   readonly selectedSummary: TItem | undefined
   readonly refreshPulse: boolean
@@ -70,13 +70,13 @@ export type SignalListPage<TItem> = {
 const POLL_INTERVAL_MS = 3000
 
 /** Index of the item whose id matches, or -1 when id is missing / not found. */
-export function findItemIndexById<T>(
+export function findItemIndexByID<T>(
   items: readonly T[],
   id: string | null | undefined,
-  getItemId: (item: T) => string
+  getItemID: (item: T) => string
 ): number {
   if (!id) return -1
-  return items.findIndex(item => getItemId(item) === id)
+  return items.findIndex(item => getItemID(item) === id)
 }
 
 /** Clamps selectedIndex + delta into [0, length - 1]; -1 when nav is impossible. */
@@ -118,7 +118,7 @@ export function createSignalListPage<TItem>(
 
   let lastValidIndex = $state(0)
 
-  let selectedId = $derived(
+  let selectedID = $derived(
     signalIdFromPath(opts.signal, routeContext.route.path)
   )
 
@@ -131,12 +131,12 @@ export function createSignalListPage<TItem>(
   })
 
   let selectedIndex = $derived(
-    findItemIndexById(sortedItems, selectedId, opts.getItemId)
+    findItemIndexByID(sortedItems, selectedID, opts.getItemID)
   )
 
   let selectedSummary = $derived(
-    selectedId
-      ? sortedItems.find(item => opts.getItemId(item) === selectedId)
+    selectedID
+      ? sortedItems.find(item => opts.getItemID(item) === selectedID)
       : undefined
   )
 
@@ -151,15 +151,15 @@ export function createSignalListPage<TItem>(
   // never replaced before the list has finished fetching.
   $effect(() => {
     if (!mounted || loading) return
-    const id = selectedId
-    const idx = findItemIndexById(sortedItems, id, opts.getItemId)
+    const id = selectedID
+    const idx = findItemIndexByID(sortedItems, id, opts.getItemID)
     if (idx >= 0) {
       lastValidIndex = idx
     } else if (sortedItems.length > 0) {
       const fallback =
         sortedItems[resolveFallbackIndex(lastValidIndex, sortedItems.length)]
       if (fallback) {
-        navigateToItem(opts.signal, opts.getItemId(fallback), 'replace')
+        navigateToItem(opts.signal, opts.getItemID(fallback), 'replace')
       }
     } else if (id) {
       navigateToItem(opts.signal, null, 'replace')
@@ -216,17 +216,17 @@ export function createSignalListPage<TItem>(
     const target = clampNavTargetIndex(selectedIndex, delta, sortedItems.length)
     if (target < 0 || target === selectedIndex) return
     const next = sortedItems[target]
-    if (next) navigateToItem(opts.signal, opts.getItemId(next), 'replace')
+    if (next) navigateToItem(opts.signal, opts.getItemID(next), 'replace')
   }
 
   function selectFirst() {
     const first = sortedItems[0]
-    if (first) navigateToItem(opts.signal, opts.getItemId(first), 'replace')
+    if (first) navigateToItem(opts.signal, opts.getItemID(first), 'replace')
   }
 
   function selectLast() {
     const last = sortedItems[sortedItems.length - 1]
-    if (last) navigateToItem(opts.signal, opts.getItemId(last), 'replace')
+    if (last) navigateToItem(opts.signal, opts.getItemID(last), 'replace')
   }
 
   function handleRefresh() {
@@ -272,8 +272,8 @@ export function createSignalListPage<TItem>(
     get sortedItems() {
       return sortedItems
     },
-    get selectedId() {
-      return selectedId
+    get selectedID() {
+      return selectedID
     },
     get selectedIndex() {
       return selectedIndex

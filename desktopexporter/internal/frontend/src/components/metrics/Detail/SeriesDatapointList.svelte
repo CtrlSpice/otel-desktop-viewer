@@ -201,7 +201,7 @@
 </script>
 
 {#snippet datapointRows(dp: DataPoint)}
-  {@const selected = ctx.selectedDatapointId === dp.id}
+  {@const selected = ctx.selectedDatapointID === dp.id}
   {@const hasExtra = dp.flags > 0 || dp.exemplars.length > 0}
   {@const expanded = hasExtra && ctx.expandedDatapoints.has(dp.id)}
   {@const valueParts = datapointValueParts(dp)}

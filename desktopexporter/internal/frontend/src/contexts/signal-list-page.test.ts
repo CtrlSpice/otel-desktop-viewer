@@ -2,24 +2,24 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampNavTargetIndex,
-  findItemIndexById,
+  findItemIndexByID,
   resolveFallbackIndex,
 } from '@/contexts/signal-list-page.svelte'
 
-describe('findItemIndexById', () => {
+describe('findItemIndexByID', () => {
   const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
-  const getId = (item: { id: string }) => item.id
+  const getID = (item: { id: string }) => item.id
 
   it('returns -1 when id is null', () => {
-    expect(findItemIndexById(items, null, getId)).toBe(-1)
+    expect(findItemIndexByID(items, null, getID)).toBe(-1)
   })
 
   it('returns -1 when id is not in the list', () => {
-    expect(findItemIndexById(items, 'missing', getId)).toBe(-1)
+    expect(findItemIndexByID(items, 'missing', getID)).toBe(-1)
   })
 
   it('returns the matching index', () => {
-    expect(findItemIndexById(items, 'b', getId)).toBe(1)
+    expect(findItemIndexByID(items, 'b', getID)).toBe(1)
   })
 })
 

@@ -10,14 +10,14 @@ import {
 const timeseriesCtx = {
   isHistogramKind: false,
   allowedAggs: ['raw', 'sum', 'avg', 'rate'],
-  datapointIds: new Set(['dp-1', 'dp-2']),
+  datapointIDs: new Set(['dp-1', 'dp-2']),
   seriesKeys: new Set(['series-1', 'series-2']),
 }
 
 const histogramCtx = {
   isHistogramKind: true,
   allowedAggs: ['raw'],
-  datapointIds: new Set(['dp-h1']),
+  datapointIDs: new Set(['dp-h1']),
   seriesKeys: new Set(['series-h1']),
 }
 

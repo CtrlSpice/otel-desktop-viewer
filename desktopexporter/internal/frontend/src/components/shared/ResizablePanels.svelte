@@ -190,11 +190,11 @@
   let dragStartPos = 0;
   let dragStartWidth = 0;
   let dragFlexSpace = 1;
-  let activePointerId: number | null = null;
+  let activePointerID: number | null = null;
   let captureEl: HTMLElement | null = null;
 
   function onWindowPointerMove(e: PointerEvent) {
-    if (!isDragging || e.pointerId !== activePointerId) return;
+    if (!isDragging || e.pointerId !== activePointerID) return;
     const currentPos = stacked ? e.clientY : e.clientX;
     const deltaPx = currentPos - dragStartPos;
     leftWidth = Math.max(
@@ -205,10 +205,10 @@
 
   function endDrag() {
     if (!isDragging) return;
-    const pointerId = activePointerId;
+    const pointerId = activePointerID;
     const el = captureEl;
     isDragging = false;
-    activePointerId = null;
+    activePointerID = null;
     captureEl = null;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
@@ -226,7 +226,7 @@
   }
 
   function onWindowPointerEnd(e: PointerEvent) {
-    if (!isDragging || e.pointerId !== activePointerId) return;
+    if (!isDragging || e.pointerId !== activePointerID) return;
     endDrag();
   }
 
@@ -235,7 +235,7 @@
     e.preventDefault();
     const target = e.currentTarget as HTMLElement;
     captureEl = target;
-    activePointerId = e.pointerId;
+    activePointerID = e.pointerId;
     try {
       target.setPointerCapture(e.pointerId);
     } catch {

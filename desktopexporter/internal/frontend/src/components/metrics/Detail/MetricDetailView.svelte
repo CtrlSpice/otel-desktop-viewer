@@ -114,7 +114,7 @@
     <PaneHeader
       mode="tabs"
       {tabs}
-      activeId={activeTab}
+      activeID={activeTab}
       onSelect={id => (activeTab = id as 'fields' | 'series')}
       ariaLabel="Metric detail tabs"
       tabLayout="equal"

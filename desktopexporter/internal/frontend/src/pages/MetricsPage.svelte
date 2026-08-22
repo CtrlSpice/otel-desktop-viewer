@@ -127,7 +127,7 @@
 
   const page = createSignalListPage<MetricSummary>({
     signal: 'metrics',
-    getItemId: metricSummaryKey,
+    getItemID: metricSummaryKey,
     initialSort: { column: 'lastSeen', direction: 'desc' },
     compare: (a, b, col, dir) =>
       compareMetrics(a, b, col as MetricSortColumn, dir as MetricSortDirection),
@@ -687,7 +687,7 @@
       // Clear the detail pane before refetching: the $effect above keys off
       // page.selectedSummary, and the deleted stream is gone from the next
       // list fetch, so leaving it set would render a stale chart.
-      if (page.selectedId === streamID) {
+      if (page.selectedID === streamID) {
         navigateToItem('metrics', null, 'replace')
         selectedMetric = undefined
       }
@@ -715,8 +715,8 @@
 <div class="metrics-page">
   <PageLayout
     items={page.sortedItems}
-    selectedId={page.selectedId}
-    drawerId="signal-drawer"
+    selectedID={page.selectedID}
+    drawerID="signal-drawer"
     drawerLabel="Metrics"
     onRefresh={page.handleRefresh}
     refreshPulse={page.refreshPulse}
@@ -791,7 +791,7 @@
             tabs={showChartAggregationTabs
               ? chartAggregationTabs
               : histogramChartTabs}
-            activeId={showChartAggregationTabs
+            activeID={showChartAggregationTabs
               ? metricCtx.aggregationView
               : metricCtx.activeHistogramTab}
             onSelect={id => {

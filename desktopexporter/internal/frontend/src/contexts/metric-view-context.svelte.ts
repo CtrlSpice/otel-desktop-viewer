@@ -209,7 +209,7 @@ export interface MetricViewContext {
   readonly totalDatapointCount: number
 
   // -- Selection / view state --
-  readonly selectedDatapointId: string | null
+  readonly selectedDatapointID: string | null
   /** Where the current datapoint selection came from. Chart clicks
    *  drive the plot overlay only; detail-pane scroll/expand waits for
    *  unified routing. */
@@ -489,7 +489,7 @@ export function createMetricViewContext(
   // the metric identity changes; otherwise written only by methods
   // on this context.
   const view = $state({
-    selectedDatapointId: null as string | null,
+    selectedDatapointID: null as string | null,
     // Explicitly chosen series, independent of any datapoint selection.
     selectedSeriesKey: null as string | null,
     selectionSource: null as 'chart' | 'detail' | null,
@@ -516,7 +516,7 @@ export function createMetricViewContext(
   })
 
   /** Histogram visibility is seeded once per stream id. */
-  let histogramVisibleSeededForStreamId: string | null = null
+  let histogramVisibleSeededForStreamID: string | null = null
 
   // --- URL <-> metric sub-view sync ---------------------------------
   //
@@ -524,7 +524,7 @@ export function createMetricViewContext(
   // MetricsPage); these four item-scoped query params carry the sub-view so a
   // shared snapshot link and the browser back/forward buttons restore it:
   //   agg=<aggregationView>   htab=<activeHistogramTab>
-  //   hscope=<histogramScope> dp=<selectedDatapointId>
+  //   hscope=<histogramScope> dp=<selectedDatapointID>
   // Tab/datapoint picks push a history entry (navigational); aggregation/scope
   // adjustments replace (silent). The heatmap/quantile bucket selection stays
   // transient (not a stable datapoint id) and is out of the URL this iteration.
@@ -541,15 +541,15 @@ export function createMetricViewContext(
   let urlMetricViewSnapshot: MetricViewQuery | null = null
 
   function metricParseContext(): MetricViewParseContext {
-    const datapointIds = new Set<string>()
-    for (const dp of allDatapoints(getMetric())) datapointIds.add(dp.id)
+    const datapointIDs = new Set<string>()
+    for (const dp of allDatapoints(getMetric())) datapointIDs.add(dp.id)
     const seriesKeys = new Set<string>()
     for (const ts of getMetric()?.timeseries ?? [])
       seriesKeys.add(ts.attributesKey)
     return {
       isHistogramKind,
       allowedAggs: availableAggregationViewsList,
-      datapointIds,
+      datapointIDs,
       seriesKeys,
     }
   }
@@ -560,14 +560,14 @@ export function createMetricViewContext(
         kind: 'histogram',
         htab: view.activeHistogramTab,
         hscope: view.histogramScope,
-        dp: view.selectedDatapointId,
+        dp: view.selectedDatapointID,
         series: selectedSeriesKey,
       }
     }
     return {
       kind: 'timeseries',
       agg: view.aggregationView === 'raw' ? null : view.aggregationView,
-      dp: view.selectedDatapointId,
+      dp: view.selectedDatapointID,
       series: selectedSeriesKey,
     }
   }
@@ -599,10 +599,10 @@ export function createMetricViewContext(
     }
 
     if (q.dp) {
-      view.selectedDatapointId = q.dp
+      view.selectedDatapointID = q.dp
       view.selectionSource = 'detail'
     } else {
-      view.selectedDatapointId = null
+      view.selectedDatapointID = null
       view.selectionSource = null
     }
 
@@ -1241,9 +1241,9 @@ export function createMetricViewContext(
   // -- Selection-derived values --
   const selectedDatapoint = $derived.by((): DataPoint | undefined => {
     const m = getMetric()
-    if (!m || !view.selectedDatapointId) return undefined
+    if (!m || !view.selectedDatapointID) return undefined
     for (const dp of allDatapoints(m)) {
-      if (dp.id === view.selectedDatapointId) return dp
+      if (dp.id === view.selectedDatapointID) return dp
     }
     return undefined
   })
@@ -1267,7 +1267,7 @@ export function createMetricViewContext(
 
     // A selected datapoint is the more specific answer and wins: it names both
     // the series and the point within it.
-    const id = view.selectedDatapointId
+    const id = view.selectedDatapointID
     if (id !== null) {
       for (const ts of m.timeseries) {
         if (ts.datapoints.some(dp => dp.id === id)) return ts.attributesKey
@@ -1678,7 +1678,7 @@ export function createMetricViewContext(
   function seedForMetric(m: MetricData | undefined) {
     const streamID = m?.id
 
-    view.selectedDatapointId = null
+    view.selectedDatapointID = null
     view.selectionSource = null
     view.selectedHistogramBucketStart = null
     view.selectedQuantileKey = null
@@ -1756,7 +1756,7 @@ export function createMetricViewContext(
         : []
     )
     view.histogramVisible = histVisible
-    histogramVisibleSeededForStreamId =
+    histogramVisibleSeededForStreamID =
       histKeys.length > 0 ? (streamID ?? null) : null
     if (histKeys.length > 0) {
       const histPool = categoricalPalette(
@@ -1870,7 +1870,7 @@ export function createMetricViewContext(
   // (2c) Auto-clear selection when its owning timeseries goes hidden.
   //
   // The datapoints panel scopes what's shown by the visible set, so a
-  // selectedDatapointId pointing at a hidden timeseries becomes an
+  // selectedDatapointID pointing at a hidden timeseries becomes an
   // orphan: invisible in the list, but still wired up to chart markers,
   // detail pane, etc. Snap it to null whenever its timeseries is no
   // longer in the active visibility filter (gaugeSumVisible for
@@ -1878,7 +1878,7 @@ export function createMetricViewContext(
   // metric kinds because the only thing that varies is which set we
   // consult.
   $effect(() => {
-    const id = view.selectedDatapointId
+    const id = view.selectedDatapointID
     if (id === null) return
 
     const m = getMetric()
@@ -1894,7 +1894,7 @@ export function createMetricViewContext(
     if (ownerKey === null) {
       // Stale id (data refresh dropped the datapoint). Clear so the
       // detail pane doesn't render against ghost data.
-      view.selectedDatapointId = null
+      view.selectedDatapointID = null
       view.selectionSource = null
       return
     }
@@ -1907,7 +1907,7 @@ export function createMetricViewContext(
           : null
     if (visible === null) return
     if (!visible.has(ownerKey)) {
-      view.selectedDatapointId = null
+      view.selectedDatapointID = null
       view.selectionSource = null
     }
   })
@@ -2036,14 +2036,14 @@ export function createMetricViewContext(
     view.selectionSource = 'detail'
     view.selectedHistogramBucketStart = null
     view.selectedQuantileKey = null
-    view.selectedDatapointId = view.selectedDatapointId === dp.id ? null : dp.id
-    if (view.selectedDatapointId === null) {
+    view.selectedDatapointID = view.selectedDatapointID === dp.id ? null : dp.id
+    if (view.selectedDatapointID === null) {
       view.selectionSource = null
     }
-    if (isHistogramKind && view.selectedDatapointId !== null) {
+    if (isHistogramKind && view.selectedDatapointID !== null) {
       view.activeHistogramTab = 'histogram'
       view.histogramScope = 'bucket'
-    } else if (isHistogramKind && view.selectedDatapointId === null) {
+    } else if (isHistogramKind && view.selectedDatapointID === null) {
       view.histogramScope = 'window'
     }
     if (dp.exemplars.length > 0) {
@@ -2099,7 +2099,7 @@ export function createMetricViewContext(
     for (const dp of ts.datapoints) {
       if (dp.timestamp === targetNs) {
         view.selectionSource = 'chart'
-        view.selectedDatapointId = dp.id
+        view.selectedDatapointID = dp.id
         writeMetricUrl('push')
         return
       }
@@ -2117,7 +2117,7 @@ export function createMetricViewContext(
     }
     if (best) {
       view.selectionSource = 'chart'
-      view.selectedDatapointId = best.id
+      view.selectedDatapointID = best.id
       writeMetricUrl('push')
     }
   }
@@ -2184,8 +2184,8 @@ export function createMetricViewContext(
       return totalDatapointCount
     },
 
-    get selectedDatapointId() {
-      return view.selectedDatapointId
+    get selectedDatapointID() {
+      return view.selectedDatapointID
     },
     get selectionSource() {
       return view.selectionSource

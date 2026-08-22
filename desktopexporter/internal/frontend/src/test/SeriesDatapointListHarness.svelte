@@ -5,14 +5,14 @@
 
   type Props = {
     datapoints: DataPoint[]
-    expandDatapointId?: string
+    expandDatapointID?: string
   }
-  let { datapoints, expandDatapointId }: Props = $props()
+  let { datapoints, expandDatapointID }: Props = $props()
 
   const ctx = createMetricViewContext(() => undefined)
 
   $effect(() => {
-    if (expandDatapointId) ctx.expandedDatapoints.add(expandDatapointId)
+    if (expandDatapointID) ctx.expandedDatapoints.add(expandDatapointID)
   })
 </script>
 

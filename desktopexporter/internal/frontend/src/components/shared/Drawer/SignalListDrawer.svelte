@@ -39,8 +39,8 @@
 
   type Props<T> = {
     items: T[]
-    selectedId: string | null
-    drawerId: string
+    selectedID: string | null
+    drawerID: string
     label: string
     itemSnippet: Snippet<[item: T, selected: boolean]>
     itemKey?: (item: T) => string
@@ -63,8 +63,8 @@
 
   let {
     items,
-    selectedId,
-    drawerId,
+    selectedID,
+    drawerID,
     label,
     itemSnippet,
     // Default assumes items carry an `id` (logs, metrics); pages whose
@@ -128,12 +128,12 @@
   }
 
   const routeContext = getRouteContext()
-  let activeNavId = $derived(
+  let activeNavID = $derived(
     NAV_ITEMS.find(n => isNavItemActive(n.id, routeContext.route.path))?.id ?? NAV_ITEMS[0].id
   )
 
   // --- auto-scroll the virtual list when the selection changes ---
-  // Only fires when `selectedId` actually changes (not on items reshuffles),
+  // Only fires when `selectedID` actually changes (not on items reshuffles),
   // so the user is free to scroll the list independently.
   type VirtualListRef = {
     scroll: (options: {
@@ -175,7 +175,7 @@
   }
 
   $effect(() => {
-    const id = selectedId
+    const id = selectedID
     if (!effectivelyOpen || !vlistRef || !id) return
     if (id === lastScrolledSelection) return
     const idx = items.findIndex(item => itemKey(item) === id)
@@ -193,7 +193,7 @@
 
 <div class="signal-drawer drawer drawer-open">
   <input
-    id={drawerId}
+    id={drawerID}
     type="checkbox"
     class="drawer-toggle signal-drawer-toggle"
     checked={effectivelyOpen}
@@ -231,7 +231,7 @@
               label that disagrees with the accessible name trips WCAG 2.5.3.
             -->
             <label
-              for={drawerId}
+              for={drawerID}
               class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right cursor-pointer"
               data-tip="Open sidebar"
               aria-label="Open sidebar"
@@ -310,7 +310,7 @@
           <PaneHeader
             mode="tabs"
             tabs={navTabs}
-            activeId={activeNavId}
+            activeID={activeNavID}
             onSelect={(id) => {
               const item = NAV_ITEMS.find(n => n.id === id)
               // Switching signal is navigational: push (back returns to prior).
@@ -333,7 +333,7 @@
                 class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom"
               />
               <label
-                for={drawerId}
+                for={drawerID}
                 class="drawer-header-btn drawer-header-btn--inactive cursor-pointer tooltip tooltip-bottom"
                 data-tip="Collapse sidebar"
                 aria-label="Collapse sidebar"
@@ -429,7 +429,7 @@
             itemsClass="signal-drawer__vlist-items"
           >
             {#snippet renderItem(item)}
-              {@render itemSnippet(item, selectedId === itemKey(item))}
+              {@render itemSnippet(item, selectedID === itemKey(item))}
             {/snippet}
           </VirtualList>
         {/if}

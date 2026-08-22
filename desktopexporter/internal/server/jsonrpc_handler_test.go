@@ -1075,14 +1075,14 @@ func TestGetMetricAcceptsEveryParameter(t *testing.T) {
 		"0",              // 2 start
 		maxTime,          // 3 end
 		"100",            // 4 targetBuckets
-		[]any{},          // 5 seriesIds
+		[]any{},          // 5 seriesIDs
 		[]any{0.5, 0.95}, // 6 quantiles
 		"0",              // 7 tzOffsetNs
 		true,             // 8 fitToData
 		"120",            // 9 viewBuckets
 		"64",             // 10 sparklineBuckets
-		[]any{},          // 11 selectedSeriesIds
-		[]any{},          // 12 datapointSeriesIds
+		[]any{},          // 11 selectedSeriesIDs
+		[]any{},          // 12 datapointSeriesIDs
 		"10",             // 13 datapointSeriesLimit
 		"Europe/London",  // 14 tzName
 	}

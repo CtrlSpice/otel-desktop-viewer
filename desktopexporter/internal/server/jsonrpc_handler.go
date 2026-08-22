@@ -310,8 +310,8 @@ func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request) (getMetricP
 		return out, jsonrpc2.ErrInvalidParams
 	}
 	// Everything past the third is optional and additive: targetBuckets,
-	// seriesIds, quantiles, tzOffsetNs, fitToData, viewBuckets,
-	// sparklineBuckets, selectedSeriesIds. A caller that predates any of them
+	// seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets,
+	// sparklineBuckets, selectedSeriesIDs. A caller that predates any of them
 	// sends fewer and gets the old behaviour.
 	//
 	// The upper bound was 4 and stayed 4 while four more parameters were added

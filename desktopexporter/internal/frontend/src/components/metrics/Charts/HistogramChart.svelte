@@ -79,14 +79,14 @@
     return buckets.find(b => b.label === pinnedBucketLabel) ?? null
   })
 
-  let pinDatapointId = $state<string | undefined>(undefined)
+  let pinDatapointID = $state<string | undefined>(undefined)
 
   $effect(() => {
     const id = datapoint.id
-    if (pinDatapointId !== undefined && pinDatapointId !== id) {
+    if (pinDatapointID !== undefined && pinDatapointID !== id) {
       pinnedBucketLabel = null
     }
-    pinDatapointId = id
+    pinDatapointID = id
   })
 
   $effect(() => {

@@ -302,7 +302,7 @@
 
   function rowVisibilityMap(
     spans: readonly { spanData: { spanID: string } }[],
-    parentBySpanId: Map<string, string | null>,
+    parentBySpanID: Map<string, string | null>,
     collapsedParents: ReadonlySet<string>
   ): Map<string, boolean> {
     return new Map(
@@ -310,7 +310,7 @@
         n.spanData.spanID,
         !hasCollapsedAncestor(
           n.spanData.spanID,
-          parentBySpanId,
+          parentBySpanID,
           collapsedParents
         ),
       ])
@@ -460,7 +460,7 @@
   // operate on the tree as rendered, so orphans and salvaged cycle entries at
   // depth 0 behave as roots instead of being hidden by their own "children".
   let structuralMaps = $derived(buildStructuralMaps(spans))
-  let parentBySpanId = $derived(structuralMaps.parentBySpanId)
+  let parentBySpanID = $derived(structuralMaps.parentBySpanID)
 
   function computeAncestorsOfMatched(
     matched: Set<string>,
@@ -478,7 +478,7 @@
   }
 
   let ancestorsOfMatched = $derived(
-    computeAncestorsOfMatched(matchedIDs, parentBySpanId)
+    computeAncestorsOfMatched(matchedIDs, parentBySpanID)
   )
 
   // --- Expand/collapse ---
@@ -504,7 +504,7 @@
           spans,
           matchedIDs,
           ancestorsOfMatched,
-          childrenBySpanId
+          childrenBySpanID
         )
       : null
   )
@@ -526,8 +526,8 @@
     return out
   })
 
-  let rowVisibilityBySpanId = $derived(
-    rowVisibilityMap(spans, parentBySpanId, effectiveCollapsed)
+  let rowVisibilityBySpanID = $derived(
+    rowVisibilityMap(spans, parentBySpanID, effectiveCollapsed)
   )
 
   function toggleCollapse(spanID: string) {
@@ -544,11 +544,11 @@
   }
 
   /** Every parent that has children, for collapse-all. */
-  let collapsibleSpanIds = $derived.by(() => {
+  let collapsibleSpanIDs = $derived.by(() => {
     const out: string[] = []
     for (const node of spans) {
       const id = node.spanData.spanID
-      if ((childrenBySpanId.get(id)?.length ?? 0) > 0) out.push(id)
+      if ((childrenBySpanID.get(id)?.length ?? 0) > 0) out.push(id)
     }
     return out
   })
@@ -561,26 +561,26 @@
   function setAll(collapsed: boolean) {
     if (searchShape) {
       const next = new Map<string, boolean>()
-      for (const id of collapsibleSpanIds) next.set(id, collapsed)
+      for (const id of collapsibleSpanIDs) next.set(id, collapsed)
       searchOverrides = next
     } else {
       setCollapsedForTrace(
         traceID,
-        collapsed ? new Set(collapsibleSpanIds) : new Set()
+        collapsed ? new Set(collapsibleSpanIDs) : new Set()
       )
     }
     void clampScroll()
   }
 
-  let childrenBySpanId = $derived(structuralMaps.childrenBySpanId)
+  let childrenBySpanID = $derived(structuralMaps.childrenBySpanID)
 
   let visibleRows = $derived.by(() =>
     rows.filter(
-      row => rowVisibilityBySpanId.get(row.spanNode.spanData.spanID) ?? true
+      row => rowVisibilityBySpanID.get(row.spanNode.spanData.spanID) ?? true
     )
   )
 
-  let rowBySpanId = $derived.by(
+  let rowBySpanID = $derived.by(
     () => new Map(rows.map(row => [row.spanNode.spanData.spanID, row]))
   )
 
@@ -597,8 +597,8 @@
   let lastScrolledSelection: string | null = null
   let activeScroll: Promise<void> = Promise.resolve()
 
-  function visibleRowIndex(spanId: string): number {
-    return visibleRows.findIndex(row => row.spanNode.spanData.spanID === spanId)
+  function visibleRowIndex(spanID: string): number {
+    return visibleRows.findIndex(row => row.spanNode.spanData.spanID === spanID)
   }
 
   // A scroll, not an edit. This used to expand every collapsed ancestor of
@@ -608,12 +608,12 @@
   // hidden selection scrolls to the nearest visible ancestor instead, and the
   // detail panel shows the span either way.
   async function revealAndScrollToSpan(
-    spanId: string,
+    spanID: string,
     smoothScroll = true
   ): Promise<void> {
-    let idx = visibleRowIndex(spanId)
+    let idx = visibleRowIndex(spanID)
     if (idx < 0) {
-      for (const aid of ancestorIdsOf(spanId, parentBySpanId)) {
+      for (const aid of ancestorIdsOf(spanID, parentBySpanID)) {
         idx = visibleRowIndex(aid)
         if (idx >= 0) break
       }
@@ -644,11 +644,11 @@
 
   let gridHostEl = $state<HTMLDivElement | null>(null)
 
-  async function focusRowTr(spanId: string) {
+  async function focusRowTr(spanID: string) {
     await tick()
     await activeScroll
     await tick()
-    const safe = escapeForSelector(spanId)
+    const safe = escapeForSelector(spanID)
     scrollContainerEl
       ?.querySelector<HTMLTableRowElement>(`tr[data-span-id="${safe}"]`)
       ?.focus()
@@ -670,28 +670,28 @@
     void focusRowTr(id)
   }
 
-  function handleTreeKeys(e: KeyboardEvent, currentId: string | null): boolean {
-    if (!currentId) return false
+  function handleTreeKeys(e: KeyboardEvent, currentID: string | null): boolean {
+    if (!currentID) return false
 
-    const row = rowBySpanId.get(currentId)
+    const row = rowBySpanID.get(currentID)
     const hasChildren = (row?.tree.childrenCount ?? 0) > 0
 
     if (e.key === 'ArrowRight' || e.key === 'l') {
-      if (hasChildren && effectiveCollapsed.has(currentId)) {
-        toggleCollapse(currentId)
+      if (hasChildren && effectiveCollapsed.has(currentID)) {
+        toggleCollapse(currentID)
         e.preventDefault()
       }
       return true
     }
 
     if (e.key === 'ArrowLeft' || e.key === 'h') {
-      if (hasChildren && !effectiveCollapsed.has(currentId)) {
-        toggleCollapse(currentId)
+      if (hasChildren && !effectiveCollapsed.has(currentID)) {
+        toggleCollapse(currentID)
       } else {
-        const parentId = parentBySpanId.get(currentId) ?? null
-        if (parentId) {
-          onSelectSpan(parentId)
-          void focusRowTr(parentId)
+        const parentID = parentBySpanID.get(currentID) ?? null
+        if (parentID) {
+          onSelectSpan(parentID)
+          void focusRowTr(parentID)
         }
       }
       e.preventDefault()
@@ -706,16 +706,16 @@
     if (visibleRows.length === 0) return
 
     const focused = document.activeElement as HTMLElement | null
-    const focusedId =
-      focused?.dataset.spanId ??
+    const focusedID =
+      focused?.dataset.spanID ??
       (selectedSpanID && focused?.closest(`tr[data-span-id]`)
         ? selectedSpanID
         : null)
 
-    if (handleTreeKeys(e, focusedId ?? selectedSpanID)) return
+    if (handleTreeKeys(e, focusedID ?? selectedSpanID)) return
 
     if (e.key === 'Enter' || e.key === ' ') {
-      const id = focusedId ?? selectedSpanID
+      const id = focusedID ?? selectedSpanID
       if (id) {
         e.preventDefault()
         onSelectSpan(id)
@@ -730,8 +730,8 @@
     e.preventDefault()
 
     const currentIdx =
-      focusedId != null
-        ? visibleRowIndex(focusedId)
+      focusedID != null
+        ? visibleRowIndex(focusedID)
         : selectedSpanID
           ? visibleRowIndex(selectedSpanID)
           : -1
@@ -773,7 +773,7 @@
       />
     {/snippet}
     {#snippet right()}
-      {#if collapsibleSpanIds.length > 0}
+      {#if collapsibleSpanIDs.length > 0}
         <button
           type="button"
           class="btn btn-ghost btn-xs"
