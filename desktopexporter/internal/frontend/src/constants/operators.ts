@@ -19,6 +19,13 @@ export const OPERATORS = {
   // Set Operations
   IN: { label: 'is one of', symbol: 'IN' },
   NOT_IN: { label: 'is not one of', symbol: 'NOT IN' },
+  // Derived operators: never listed in a field's operator set. IS NULL is
+  // legal wherever = is, IS NOT NULL wherever != is, NOT REGEXP wherever
+  // REGEXP is -- the walker maps a bare NULL value or a !~ sigil onto these
+  // so the backend gets an explicit operator instead of a sentinel value.
+  IS_NULL: { label: 'is null', symbol: 'IS NULL' },
+  IS_NOT_NULL: { label: 'is not null', symbol: 'IS NOT NULL' },
+  NOT_REGEX: { label: 'does not match regex', symbol: 'NOT REGEXP' },
 } as const
 
 export type Operator = (typeof OPERATORS)[keyof typeof OPERATORS]

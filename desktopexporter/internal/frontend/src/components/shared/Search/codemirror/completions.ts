@@ -9,12 +9,12 @@ import type { FieldDefinition } from '@/constants/fields'
 import { OPERATORS } from '@/constants/operators'
 import {
   Array as ArrayTerm,
-  Field as FieldTerm,
+  FieldName as FieldTerm,
   KeywordOperator,
   Null,
   Operator as OperatorTerm,
   QuotedString,
-  Value as ValueTerm,
+  Word as ValueTerm,
 } from './query.parser.terms'
 
 const LOGICAL_COMPLETIONS: Completion[] = [
@@ -172,7 +172,7 @@ export function createQueryCompletionSource(
     }
 
     // After logical op: fields.
-    if (node.name === 'LogicalOp') {
+    if (node.name === 'And' || node.name === 'Or') {
       return fieldCompletions(context, getFields())
     }
 
@@ -187,8 +187,8 @@ export function createQueryCompletionSource(
     const parentNode = node.parent
 
     if (
-      node.name === 'Field' &&
-      parentNode?.name === 'Comparison' &&
+      (node.name === 'FieldName' ||
+        (node.name === 'Word' && parentNode?.name === 'FieldName')) &&
       context.pos > node.to
     ) {
       const fieldText = context.state.sliceDoc(node.from, node.to)

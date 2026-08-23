@@ -213,21 +213,15 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		expression = strings.ReplaceAll(expression, rawToken, rawParamName)
 	}
 
-	if value == "NULL" {
-		switch operator {
-		case "=":
-			operatorString = "IS NULL"
-		case "!=":
-			operatorString = "IS NOT NULL"
-		default:
-			return "", fmt.Errorf("operator %s not supported with NULL value: %w", operator, ErrInvalidQuery)
-		}
-
-		result := expression
+	// IS NULL / IS NOT NULL arrive as explicit operators. They used to be
+	// inferred from the sentinel value "NULL", which made the literal string
+	// "NULL" unsearchable -- a quoted "NULL" in a query was indistinguishable
+	// from the null check by the time it reached this function.
+	if operator == "IS NULL" || operator == "IS NOT NULL" {
 		if hasPlaceholder {
-			return strings.ReplaceAll(result, condToken, operatorString), nil
+			return strings.ReplaceAll(expression, condToken, operator), nil
 		}
-		return result + " " + operatorString, nil
+		return expression + " " + operator, nil
 	}
 
 	if query.Field != nil && strings.HasSuffix(query.Field.Type, "[]") {
@@ -255,9 +249,20 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 	}
 
 	switch operator {
-	case "=", "!=", ">", ">=", "<", "<=", "REGEXP":
+	case "=", "!=", ">", ">=", "<", "<=":
 		*params = append(*params, NamedParam{paramName, bindValue})
 		operatorString = operator + " " + paramName
+	// DuckDB has no infix REGEXP -- `x REGEXP y` is a parser error, which
+	// made every regex search fail from the day the operator shipped, and no
+	// test executed one to notice. ~ and !~ are DuckDB's native full-match
+	// regex operators; !~ on a NULL value yields NULL and excludes the row,
+	// the same shape NOT LIKE gives NOT CONTAINS.
+	case "REGEXP":
+		*params = append(*params, NamedParam{paramName, bindValue})
+		operatorString = "~ " + paramName
+	case "NOT REGEXP":
+		*params = append(*params, NamedParam{paramName, bindValue})
+		operatorString = "!~ " + paramName
 	case "CONTAINS":
 		*params = append(*params, NamedParam{paramName, "%" + value + "%"})
 		operatorString = "LIKE " + paramName
@@ -369,8 +374,21 @@ func handleArrayOperator(expression string, query *Query, params *[]NamedParam) 
 	}
 }
 
-// ParseArrayValue parses array values from frontend format "[value1,value2,value3]"
+// ParseArrayValue parses an array value off the wire. The parser sends JSON
+// -- `["a,b","c"]` -- because a quoted element may contain commas, which the
+// legacy "[a,b,c]" comma split corrupted into three wrong values. The split
+// remains as the fallback for values that are not valid JSON arrays.
 func ParseArrayValue(value string) []any {
+	var decoded []string
+	if err := json.Unmarshal([]byte(value), &decoded); err == nil {
+		// nil for empty, matching the legacy path: callers branch on len.
+		var result []any
+		for _, v := range decoded {
+			result = append(result, v)
+		}
+		return result
+	}
+
 	value = strings.Trim(value, "[]")
 	parts := strings.Split(value, ",")
 	var result []any

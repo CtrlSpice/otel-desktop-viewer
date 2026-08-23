@@ -20,6 +20,35 @@ const fields: FieldDefinition[] = [
   },
 ]
 
+const contractFields: FieldDefinition[] = [
+  ...fields,
+  {
+    name: 'statusCode',
+    type: 'string',
+    searchScope: 'field',
+    description: 'span status code',
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
+    ],
+  },
+  {
+    name: 'body',
+    type: 'string',
+    searchScope: 'field',
+    description: 'log body',
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.CONTAINS,
+      OPERATORS.NOT_CONTAINS,
+      OPERATORS.REGEX,
+    ],
+  },
+]
+
 const valueOf = (input: string): unknown => {
   const tree = parseQuery(input, fields) as any
   return (tree?.query ?? tree)?.value
@@ -36,10 +65,16 @@ describe('queryParser value normalization', () => {
     'http.method=GET',
     'http.method = GET',
     "http.method = 'GET'",
-    'http.method = `GET`',
     'http.method = GET ',
   ])('%s yields GET', input => {
     expect(valueOf(input)).toBe('GET')
+  })
+
+  // Backticks are not a quote style. The old hand-written lexer accepted
+  // them; the grammar never did, so the editor underlined what the parser
+  // accepted. The grammar is the language now, and it has two quote styles.
+  it('backticks are rejected, not treated as quotes', () => {
+    expect(() => parseQuery('http.method = `GET`', fields)).toThrow()
   })
 
   // Quoting is how a user says "the whitespace is part of the value", so it
@@ -111,5 +146,84 @@ describe('plain text is still a global search', () => {
       fields
     ) as any
     expect(tree.type).toBe('group')
+  })
+})
+
+// The contract the Lezer unification changed, pinned. Each of these was
+// either impossible or silently wrong under the hand-written parser.
+describe('unified grammar contract', () => {
+  it('AND binds tighter than OR', () => {
+    const n: any = parseQuery(
+      'body = a OR body = b AND body = c',
+      contractFields
+    )
+    expect(n.type).toBe('group')
+    expect(n.group.operator).toBe('OR')
+    const [left, right] = n.group.children
+    expect(left.type).toBe('condition')
+    expect(right.type).toBe('group')
+    expect(right.group.operator).toBe('AND')
+  })
+
+  it('a bare NULL is the null check, carried as an explicit operator', () => {
+    const q: any = parseQuery('body = NULL', contractFields)
+    expect(q.query.operator.symbol).toBe('IS NULL')
+    const q2: any = parseQuery('body != nil', contractFields)
+    expect(q2.query.operator.symbol).toBe('IS NOT NULL')
+  })
+
+  it('a quoted "NULL" is the literal string, not the null check', () => {
+    const q: any = parseQuery('body = "NULL"', contractFields)
+    expect(q.query.operator.symbol).toBe('=')
+    expect(q.query.value).toBe('NULL')
+  })
+
+  it('array values travel as JSON, so quoted commas survive', () => {
+    const q: any = parseQuery('statusCode IN ["a,b", "c"]', contractFields)
+    expect(JSON.parse(q.query.value)).toEqual(['a,b', 'c'])
+  })
+
+  it('=~ and !~ are the PromQL spellings of the regex operators', () => {
+    const q: any = parseQuery('body =~ foo.*', contractFields)
+    expect(q.query.operator.symbol).toBe('REGEXP')
+    const q2: any = parseQuery('body !~ foo.*', contractFields)
+    expect(q2.query.operator.symbol).toBe('NOT REGEXP')
+  })
+
+  it('keyword operators are case-insensitive in lowercase form', () => {
+    const q: any = parseQuery('body contains foo', contractFields)
+    expect(q.query.operator.symbol).toBe('CONTAINS')
+    const q2: any = parseQuery('statusCode not in [a, b]', contractFields)
+    expect(q2.query.operator.symbol).toBe('NOT IN')
+  })
+
+  it('a NOT typo is an error, never a silent free-text search', () => {
+    // The old parser submitted this as a global text search for the literal
+    // string, while the editor underlined it as an error. The two now agree
+    // that a query using the language and failing to parse is an error.
+    expect(() => parseQuery('body NOT 5', contractFields)).toThrow()
+    expect(validateQuery('body NOT 5', contractFields).length).toBeGreaterThan(
+      0
+    )
+  })
+
+  it('URLs work as unquoted values, up to an equals sign', () => {
+    // ':' '/' '?' '&' are all value characters now (the old lexer stopped at
+    // ':'). '=' cannot be: with no-space comparisons like http.method=GET in
+    // the language, an '=' inside an unquoted value would be indistinguishable
+    // from the operator. A URL with query parameters needs quotes.
+    const q: any = parseQuery('body = http://example.com/x', contractFields)
+    expect(q.query.value).toBe('http://example.com/x')
+    const q2: any = parseQuery(
+      'body = "http://example.com/x?y=1"',
+      contractFields
+    )
+    expect(q2.query.value).toBe('http://example.com/x?y=1')
+  })
+
+  it('plain words are still a global text search', () => {
+    const q: any = parseQuery('checkout latency', contractFields)
+    expect(q.query.field.searchScope).toBe('global')
+    expect(q.query.value).toBe('checkout latency')
   })
 })
