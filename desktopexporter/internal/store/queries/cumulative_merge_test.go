@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -121,13 +120,7 @@ func literal(c []int64) string {
 // TestCumulativeMergeMatchesReference drives random cumulative pairs through
 // the SQL macros and the Go reference and requires them to agree.
 func TestCumulativeMergeMatchesReference(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-	for _, stmt := range queries.Macros() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
+	db := macroDB(t)
 
 	rng := rand.New(rand.NewSource(20260811))
 	cases, resets := 0, 0

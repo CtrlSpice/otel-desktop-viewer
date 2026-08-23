@@ -89,6 +89,7 @@ func TestSearchSpansSQLGolden(t *testing.T) {
 // the text. A golden file would look identical either way, since the id is not
 // in it -- which is the point.
 func TestSearchSpansSQLBindsTraceID(t *testing.T) {
+	t.Parallel()
 	query, args, err := searchSpansSQL("00000000000000000000000000000099", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, args)

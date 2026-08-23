@@ -1,7 +1,6 @@
 package queries_test
 
 import (
-	"database/sql"
 	"strings"
 	"testing"
 
@@ -13,9 +12,7 @@ import (
 // Every DDL statement must actually execute. Compiling proves only that the
 // strings are valid Go.
 func TestAllDDLExecutes(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
+	db := freshDB(t)
 
 	for _, stmt := range queries.Types() {
 		db.Exec(stmt.SQL) // "already exists" is fine
@@ -36,17 +33,9 @@ func TestAllDDLExecutes(t *testing.T) {
 // The wire format keys resources and scopes by seq, so the sequence defaults
 // have to actually fire on insert.
 func TestSequencesAssignShortKeys(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
+	db := freshDB(t)
 
-	for _, group := range [][]queries.Statement{queries.Types(), queries.Tables()} {
-		for _, stmt := range group {
-			db.Exec(stmt.SQL)
-		}
-	}
-
-	_, err = db.Exec(`insert into attributes values
+	_, err := db.Exec(`insert into attributes values
 		('11111111-1111-1111-1111-111111111111','service.name','checkout','string','resource')`)
 	require.NoError(t, err)
 

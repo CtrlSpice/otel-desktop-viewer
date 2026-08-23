@@ -16,11 +16,11 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
-	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.
@@ -34,14 +34,6 @@ func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 		return err
 	})
 	return out, err
-}
-
-func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
-	t.Helper()
-	ctx := context.Background()
-	s, err := store.NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	return s, ctx, func() { s.Close() }
 }
 
 func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, args ...any) int {
@@ -270,8 +262,8 @@ func attrMap(attrs []attrKeyValue) map[string]string {
 
 // TestLogOrdering verifies that logs are returned newest-first by effective time (timestamp or observedTimestamp).
 func TestLogOrdering(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
@@ -291,8 +283,8 @@ func TestLogOrdering(t *testing.T) {
 
 // TestEmptyLogs verifies handling of empty log lists and empty store.
 func TestEmptyLogs(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, plog.NewLogs(), s.FlushedIDs())
@@ -313,8 +305,8 @@ func TestEmptyLogs(t *testing.T) {
 // that decides. Asserting that they survive Clear is the new contract, not a
 // dropped assertion. See spans.TestClearTraces for the same shape.
 func TestClearLogs(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
@@ -358,8 +350,8 @@ func TestClearLogs(t *testing.T) {
 
 // TestLogSuite runs a comprehensive suite on the same three-log dataset.
 func TestLogSuite(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
@@ -528,8 +520,8 @@ func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context, star
 // rather than nothing. (2) has no such escape -- those keys exist only outside
 // the window.
 func TestGetLogAttributes(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
@@ -585,8 +577,8 @@ func TestGetLogAttributes(t *testing.T) {
 
 // TestDeleteLogsByIDs verifies that multiple logs can be deleted by their IDs.
 func TestDeleteLogsByIDs(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
@@ -610,8 +602,8 @@ func TestDeleteLogsByIDs(t *testing.T) {
 
 // TestDeleteLogsByIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteLogsByIDs_Empty(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	err := s.WithDBWrite(func(db *sql.DB) error {
 		return logs.DeleteLogsByIDs(ctx, db, []any{})
@@ -626,8 +618,8 @@ func TestDeleteLogsByIDs_Empty(t *testing.T) {
 // the interval ingests consistently. Sized from the constant: this said 250
 // against an interval that had been raised to 500.
 func TestIngestLogs_LargeBatchStaysConsistent(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	const batchSize = logs.FlushInterval + 1
@@ -665,8 +657,8 @@ func TestIngestLogs_LargeBatchStaysConsistent(t *testing.T) {
 }
 
 func TestIngest_CanceledContext(t *testing.T) {
-	s, _, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -678,8 +670,8 @@ func TestIngest_CanceledContext(t *testing.T) {
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
-	s, _, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ldata := createTestLogsPdataN(time.Now().UnixNano(), 100)
@@ -698,8 +690,8 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 // TestSearchLogs tests logs.Search with various query types.
 func TestSearchLogs(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	ldata := createTestLogsPdata(baseTime)
@@ -1119,8 +1111,8 @@ func TestSearchLogs(t *testing.T) {
 // on the standard fixture which stamps service.name = test-service on
 // the resource for every record.
 func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	t.Parallel()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	err := s.WithConn(func(conn driver.Conn) error {

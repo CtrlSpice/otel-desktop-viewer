@@ -1,13 +1,11 @@
 package queries_test
 
 import (
-	"database/sql"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -30,23 +28,14 @@ import (
 // wrong in a way that looks fine.
 //
 // Two choices worth stating. Columns come from duckdb_columns() against a
-// schema this test actually creates, not from parsing the .sql files, so a
+// schema that was really executed -- the harness creates it and fails the
+// package if any table does not build -- not from parsing the .sql files, so a
 // column that fails to materialise cannot pass. And fields are matched by
 // name, which is loose -- a column named for a field it does not really hold
 // would satisfy this. It catches absence, which is the failure that happened
 // twice, not misuse.
 func TestSchemaCoversOTLP(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-
-	for _, stmt := range queries.Types() {
-		db.Exec(stmt.SQL) // "already exists" is fine
-	}
-	for _, stmt := range queries.Tables() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
+	db := macroDB(t)
 
 	columns := func(table string) map[string]bool {
 		rows, err := db.Query(

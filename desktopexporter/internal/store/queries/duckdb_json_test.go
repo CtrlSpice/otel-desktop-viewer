@@ -12,7 +12,7 @@ import (
 // ::varchar cast without scientific notation. DuckDB's `/` operator returns
 // DOUBLE even for bigint operands; we use `//` (integer division) instead.
 func TestBucketStartTypePrecision(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	rows, err := db.Query(`
 		with params as (

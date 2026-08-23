@@ -25,6 +25,7 @@ func attrMap(kv map[string]string) pcommon.Map {
 // The whole model rests on this: the same content must produce the same id
 // across batches and process restarts, with no database round trip.
 func TestAttributeIDIsContentDerived(t *testing.T) {
+	t.Parallel()
 	a := ingest.AttributeID("http.method", "GET", "string", ingest.ScopeSpan)
 	b := ingest.AttributeID("http.method", "GET", "string", ingest.ScopeSpan)
 	assert.Equal(t, a, b, "same content must give the same id")
@@ -41,6 +42,7 @@ func TestAttributeIDIsContentDerived(t *testing.T) {
 // same, and a value containing the separator could impersonate a different
 // split of the same bytes.
 func TestHashFramingIsUnambiguous(t *testing.T) {
+	t.Parallel()
 	assert.NotEqual(t,
 		ingest.AttributeID("ab", "c", "string", ingest.ScopeSpan),
 		ingest.AttributeID("a", "bc", "string", ingest.ScopeSpan))
@@ -56,6 +58,7 @@ func TestHashFramingIsUnambiguous(t *testing.T) {
 // makes scope dedupe work at all (ScopeID still hashes this array; resources
 // no longer do, see the ResourceID tests below).
 func TestAttributeSetIsOrderIndependent(t *testing.T) {
+	t.Parallel()
 	one := pcommon.NewMap()
 	one.PutStr("b", "2")
 	one.PutStr("a", "1")
@@ -86,6 +89,7 @@ func TestAttributeSetIsOrderIndependent(t *testing.T) {
 // service.instance.id, must land on different resource ids -- otherwise two
 // running processes collapse into one resource.
 func TestResourceIdentityIncludesInstanceID(t *testing.T) {
+	t.Parallel()
 	a := attrMap(map[string]string{"service.name": "checkout", "service.instance.id": "i-1"})
 	b := attrMap(map[string]string{"service.name": "checkout", "service.instance.id": "i-2"})
 	assert.NotEqual(t, ingest.ResourceID(a), ingest.ResourceID(b),
@@ -95,6 +99,7 @@ func TestResourceIdentityIncludesInstanceID(t *testing.T) {
 // service.namespace scopes service.name, per the spec's own pairing, so it
 // has to participate too.
 func TestResourceIdentityIncludesNamespace(t *testing.T) {
+	t.Parallel()
 	a := attrMap(map[string]string{"service.namespace": "ns-a", "service.name": "checkout", "service.instance.id": "i-1"})
 	b := attrMap(map[string]string{"service.namespace": "ns-b", "service.name": "checkout", "service.instance.id": "i-1"})
 	assert.NotEqual(t, ingest.ResourceID(a), ingest.ResourceID(b))
@@ -105,6 +110,7 @@ func TestResourceIdentityIncludesNamespace(t *testing.T) {
 // used to fail: telemetry.sdk.* arriving mid-stream minted a new resource for
 // the same running process.
 func TestResourceIdentityIgnoresNonIdentifyingAttributes(t *testing.T) {
+	t.Parallel()
 	a := attrMap(map[string]string{"service.name": "checkout", "service.instance.id": "i-1", "region": "us-east-1"})
 	b := attrMap(map[string]string{
 		"service.name": "checkout", "service.instance.id": "i-1",
@@ -121,6 +127,7 @@ func TestResourceIdentityIgnoresNonIdentifyingAttributes(t *testing.T) {
 // hash differently under a fallback that used the rest of the attribute set
 // to compensate for the missing field.
 func TestResourceIdentityAbsentInstanceIDCollapses(t *testing.T) {
+	t.Parallel()
 	a := attrMap(map[string]string{"service.name": "checkout", "region": "us-east-1"})
 	b := attrMap(map[string]string{
 		"service.name": "checkout", "pod": "checkout-7f9c", "telemetry.sdk.name": "opentelemetry",
@@ -131,6 +138,7 @@ func TestResourceIdentityAbsentInstanceIDCollapses(t *testing.T) {
 
 // Two scopes with identical (empty) attributes are still different scopes.
 func TestScopeIdentityIncludesNameAndVersion(t *testing.T) {
+	t.Parallel()
 	var none []struct{}
 	_ = none
 	empty := pcommon.NewMap()
@@ -156,6 +164,7 @@ func newStore(t *testing.T) *store.Store {
 // duplicate anything -- that is the whole point of content-derived ids plus
 // `on conflict do nothing`.
 func TestFlushIsIdempotent(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	ctx := context.Background()
 
@@ -201,6 +210,7 @@ func TestFlushIsIdempotent(t *testing.T) {
 // calls out as undetectable: a later batch would trust the cache, skip the
 // insert, and leave an owner's array pointing at a row that was never there.
 func TestFailedFlushDoesNotMarkAsFlushed(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	ctx := context.Background()
 
@@ -226,6 +236,7 @@ func TestFailedFlushDoesNotMarkAsFlushed(t *testing.T) {
 // enforces this -- DuckDB cannot FK into a LIST -- so it is checked rather than
 // assumed.
 func TestFlushedArraysReferenceRealAttributes(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	ctx := context.Background()
 
@@ -257,6 +268,7 @@ func TestFlushedArraysReferenceRealAttributes(t *testing.T) {
 // independent reimplementation, so this catches a bug in the Go hashing itself
 // rather than only storage corruption.
 func TestStoredIDsMatchTheSQLMacro(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	ctx := context.Background()
 
