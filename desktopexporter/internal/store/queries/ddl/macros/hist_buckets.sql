@@ -1,5 +1,6 @@
 -- Bucket builders. Each emits a list of {lo, hi, cnt} structs in CDF walking order.
--- Cumulative counts are NOT computed here; bucket_quantile_* adds them.
+-- Cumulative counts are NOT computed here; get_metric.sql's quantile
+-- CTEs (dp_q_acc / agg_q_acc) add them in one windowed pass.
 -- Explicit-bound histogram. counts has len(bounds)+1 entries.
 -- Open extreme buckets (i=1 and i=len(counts)) are clamped to bounds[1] / bounds[end]
 -- so quantile interpolation in those regions returns the boundary value

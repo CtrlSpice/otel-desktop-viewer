@@ -3,7 +3,6 @@ package queries_test
 import (
 	"database/sql"
 	"fmt"
-	"math"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
@@ -67,124 +66,6 @@ func TestMacros_InterpolationKernels(t *testing.T) {
 			got, ok := scalarFloat(t, db, tc.query)
 			require.True(t, ok, "result should not be NULL")
 			assert.InDelta(t, tc.want, got, 1e-9)
-		})
-	}
-}
-
-func TestMacros_HistogramQuantile(t *testing.T) {
-	db := macroDB(t)
-
-	cases := []struct {
-		name  string
-		query string
-		want  float64
-	}{
-		{
-			// counts cumulative: 0, 50, 100, 100, 100. Total=100, p50 target=50.
-			// First bucket with acc >= 50 is bucket 2 (1,2]. Linear interp
-			// at fraction 1.0 gives 2.0 (the upper bound).
-			name:  "p50 lands cleanly on a bucket boundary",
-			query: "select hist_quantile([1.0, 2.0, 5.0, 10.0], [0, 50, 50, 0, 0], 0.5)",
-			want:  2.0,
-		},
-		{
-			// counts cumulative: 0, 10, 30, 60, 100. p95 target=95.
-			// Lands in the unbounded tail (bucket 5), where lo=hi=10.0,
-			// so we clamp to the last known bound.
-			name:  "p95 in unbounded tail clamps to last known bound",
-			query: "select hist_quantile([1.0, 2.0, 5.0, 10.0], [0, 10, 20, 30, 40], 0.95)",
-			want:  10.0,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := scalarFloat(t, db, tc.query)
-			require.True(t, ok, "result should not be NULL")
-			assert.InDelta(t, tc.want, got, 1e-9)
-		})
-	}
-}
-
-func TestMacros_ExpHistogramQuantile(t *testing.T) {
-	db := macroDB(t)
-
-	cases := []struct {
-		name  string
-		query string
-		want  float64
-		delta float64
-	}{
-		{
-			// scale=0 -> base=2. pos_counts=[50,50] at offset=0:
-			//   bucket1 (1,2] cnt=50, bucket2 (2,4] cnt=50. Total=100.
-			// p50 target=50 -> first bucket at acc>=50 is bucket1.
-			// loglin: 1 * (2/1)^(50/50) = 2.0.
-			name:  "positive-only p50 (scale=0, two equal buckets)",
-			query: "select exp_hist_quantile(0, 0, [], 0, 0, [50, 50], 0.5)",
-			want:  2.0,
-			delta: 1e-9,
-		},
-		{
-			// All weight in zero bucket. p50 -> zero bucket -> 0.
-			name:  "zero-only p50 returns 0",
-			query: "select exp_hist_quantile(0, 0, [], 100, 0, [], 0.5)",
-			want:  0.0,
-			delta: 1e-9,
-		},
-		{
-			// neg=[10,10], zero=20, pos=[10,10] at scale=0. Total=60.
-			// CDF acc: 10, 20, 40, 50, 60. p50 target=30 -> first acc>=30
-			// is the zero bucket (acc=40). Loglin over [0,0] falls back to
-			// linear -> 0.
-			name:  "symmetric three-region p50 lands in zero bucket",
-			query: "select exp_hist_quantile(0, 0, [10, 10], 20, 0, [10, 10], 0.5)",
-			want:  0.0,
-			delta: 1e-9,
-		},
-		{
-			// Reference dataset hand-computed in the planning notes.
-			// scale=2 -> base = 2^(2^-2) = 2^0.25 ~= 1.189.
-			// counts=[1200,3800,4200,2100,720,280,70,22,6,2] at offset=6.
-			// Hand calc predicted p95 ~= 6.35.
-			name:  "reference dataset p95 matches hand calc",
-			query: "select exp_hist_quantile(2, 0, [], 0, 6, [1200, 3800, 4200, 2100, 720, 280, 70, 22, 6, 2], 0.95)",
-			want:  6.349604207872798,
-			delta: 1e-6,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := scalarFloat(t, db, tc.query)
-			require.True(t, ok, "result should not be NULL")
-			assert.InDelta(t, tc.want, got, tc.delta)
-		})
-	}
-}
-
-func TestMacros_NullSafety(t *testing.T) {
-	db := macroDB(t)
-
-	cases := []struct {
-		name  string
-		query string
-	}{
-		{
-			name:  "hist_quantile on empty bounds returns NULL",
-			query: "select hist_quantile(cast([] as double[]), cast([] as integer[]), 0.5)",
-		},
-		{
-			name:  "hist_quantile with NULL bounds returns NULL",
-			query: "select hist_quantile(cast(NULL as double[]), [10], 0.5)",
-		},
-		{
-			name:  "exp_hist_quantile with all-zero counts returns NULL",
-			query: "select exp_hist_quantile(0, 0, [], 0, 0, [], 0.5)",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, ok := scalarFloat(t, db, tc.query)
-			assert.False(t, ok, "result should be NULL")
 		})
 	}
 }
@@ -418,14 +299,10 @@ func TestMacros_DownscaleExpBuckets(t *testing.T) {
 
 	// Compose with sum_bucket_vectors: downscale stream A from scale 1 to
 	// scale 0, then merge with stream B (already at scale 0). Verify the
-	// merged bucket counts. We deliberately stop short of feeding the result
-	// into exp_hist_quantile here because DuckDB's type inference through
-	// the deeply-nested macro chain (exp_hist_quantile -> exp_buckets ->
-	// exp_pos_buckets) gets confused about whether the merged counts are
-	// BIGINT[] or BIGINT[][] when the downscale output flows through a CTE
-	// column, and the workaround would obscure what's being tested.
-	// TestMacros_SumBucketVectors already covers sum_bucket_vectors -> hist_quantile,
-	// and the per-bucket assertions above prove downscale's correctness.
+	// merged bucket counts. Quantiles of a merged result are covered end to
+	// end in metrics_test (TestGetMetric_QuantileHandWorked), through the
+	// aggregate path; the per-bucket assertions above prove downscale's
+	// correctness.
 	t.Run("composes with sum_bucket_vectors", func(t *testing.T) {
 		// Stream A at scale 1, offset 0, counts [10, 20, 30, 40] (4 buckets).
 		// Stream B at scale 0, offset 0, counts [15, 35] (2 buckets).
@@ -791,24 +668,10 @@ func TestMacros_SumBucketVectors(t *testing.T) {
 		assert.False(t, v.Valid, "indexing a NULL result should be NULL")
 	})
 
-	// End-to-end: merge two streams that share bounds, then run hist_quantile
-	// on the summed bucket vector. Two streams over bounds [1, 2, 5, 10]:
-	//   A counts = [0, 50,  50,  0, 0]
-	//   B counts = [0, 30,  50, 20, 0]
-	//   sum     = [0, 80, 100, 20, 0]  total = 200
-	// p50 target = 100. CDF acc = 0, 80, 180, 200, 200. First acc >= 100 is
-	// bucket 3 (lo=2, hi=5, cnt=100, acc_prev=80). Linear interp:
-	//   2 + (5 - 2) * (100 - 80) / 100 = 2.6
-	t.Run("end-to-end with hist_quantile on merged streams", func(t *testing.T) {
-		got, ok := scalarFloat(t, db,
-			`select hist_quantile(
-				[1.0, 2.0, 5.0, 10.0],
-				sum_bucket_vectors([[0, 50, 50, 0, 0], [0, 30, 50, 20, 0]]),
-				0.5
-			)`)
-		require.True(t, ok, "result should not be NULL")
-		assert.InDelta(t, 2.6, got, 1e-9)
-	})
+	// The end-to-end case that merged two streams and took p50 of the sum
+	// now lives in metrics_test (TestGetMetric_QuantileHandWorked, "aggregate
+	// p50 over merged series"), where it runs through the real aggregate
+	// path instead of composing macros by hand.
 }
 
 func TestMacros_Idempotent(t *testing.T) {
@@ -925,65 +788,6 @@ func TestMacros_BucketExtents(t *testing.T) {
 			require.True(t, mn.Valid, "expected extents, got NULL")
 			assert.Equal(t, tc.min, mn.Float64, "min")
 			assert.Equal(t, tc.max, mx.Float64, "max")
-		})
-	}
-}
-
-// TestMacros_QuantileSkipsEmptyBuckets pins that a quantile is never taken from
-// a bucket holding nothing.
-//
-// exp_buckets always emits a zero bucket, even when zero_count is 0. At q = 0
-// the target is 0, so that empty bucket's running total already satisfies
-// acc >= target and it used to be selected -- yielding 0/0 in the interpolation
-// kernel, and a NaN quantile, for a histogram whose smallest observation was
-// well above zero.
-//
-// For q > 0 the filter is a no-op: an empty bucket's running total equals its
-// predecessor's, so if it meets the target the earlier bucket already did and
-// is chosen first. The p50 cases here are what would regress if that reasoning
-// were wrong.
-func TestMacros_QuantileSkipsEmptyBuckets(t *testing.T) {
-	db := macroDB(t)
-
-	cases := []struct {
-		name  string
-		query string
-		want  float64
-	}{
-		{
-			// scale=0 -> base=2, buckets (1,2] and (2,4] and (4,8].
-			// No zero region, so the smallest observation is above 1.
-			name:  "q=0 returns the first populated bucket's lower edge, not 0",
-			query: "select exp_hist_quantile(0, 0, [], 0, 0, [10, 20, 30], 0.0)",
-			want:  1.0,
-		},
-		{
-			// A genuine zero region: the zero bucket is populated, so it is
-			// selected on its merits and 0 is the right answer.
-			name:  "q=0 with a real zero region still returns 0",
-			query: "select exp_hist_quantile(0, 0, [], 5, 0, [10, 20, 30], 0.0)",
-			want:  0.0,
-		},
-		{
-			// An empty bucket in the middle must not absorb the target.
-			name:  "empty interior bucket is skipped",
-			query: "select exp_hist_quantile(0, 0, [], 0, 0, [10, 0, 30], 0.25)",
-			want:  2.0,
-		},
-		{
-			// Unchanged by the filter -- guards the "no-op for q > 0" claim.
-			name:  "p50 unaffected",
-			query: "select exp_hist_quantile(0, 0, [], 0, 0, [10, 20, 30], 0.5)",
-			want:  4.0,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			var got float64
-			require.NoError(t, db.QueryRow(tc.query).Scan(&got))
-			require.False(t, math.IsNaN(got), "quantile must not be NaN")
-			assert.InDelta(t, tc.want, got, 1e-9)
 		})
 	}
 }

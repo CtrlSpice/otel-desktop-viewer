@@ -1,9 +1,9 @@
 -- datapoint_json: one datapoint in wire shape, whatever its metric type.
 --
 -- Takes the row as a struct, so the caller passes `d` rather than sixteen
--- columns in an order that has to stay right. exemplars and qs arrive as
+-- columns in an order that has to stay right. exemplars and quantiles arrive as
 -- arguments instead of being read inside: exemplars is a correlated lookup and
--- qs comes from the input CTE, and a macro that reaches for a table binds that
+-- quantiles is a correlated per-row value, and a macro that reaches for a table binds that
 -- reference when the macro is created -- which couples macro creation order to
 -- table creation order and is what ruled out attr_dict as a table macro.
 --
@@ -12,7 +12,7 @@
 --
 -- The common fields are merged with the type-specific ones rather than
 -- repeated in each branch, so a field every datapoint carries is written once.
-create or replace macro datapoint_json(d, exemplars, exemplar_count, qs) as (
+create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) as (
 		-- exemplarCount rides in an outer patch rather than the object below,
 		-- so that it can be *absent* rather than zero.
 		--
@@ -71,8 +71,10 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, qs) as (
 					'max', d.max,
 					'bucketCounts', d.bucket_counts,
 					'explicitBounds', d.explicit_bounds,
-					'quantiles', case when len(qs) = 0 then null
-						else hist_quantiles(d.explicit_bounds, d.bucket_counts, qs) end,
+					-- Precomputed by get_metric.sql's dp_quantiles chain -- a scalar
+					-- macro computing these per row cost a sub-plan per datapoint.
+					-- Null when no quantiles were requested, as the old guard had it.
+					'quantiles', quantiles,
 					'aggregationTemporality', d.aggregation_temporality
 				)
 				when 'ExponentialHistogram' then json_object(
@@ -87,11 +89,7 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, qs) as (
 					'positiveBucketCounts', d.positive_bucket_counts,
 					'negativeBucketOffset', d.negative_bucket_offset,
 					'negativeBucketCounts', d.negative_bucket_counts,
-					'quantiles', case when len(qs) = 0 then null
-						else exp_hist_quantiles(d.scale,
-							d.negative_bucket_offset, d.negative_bucket_counts,
-							d.zero_count,
-							d.positive_bucket_offset, d.positive_bucket_counts, qs) end,
+					'quantiles', quantiles,
 					'aggregationTemporality', d.aggregation_temporality
 				)
 			end

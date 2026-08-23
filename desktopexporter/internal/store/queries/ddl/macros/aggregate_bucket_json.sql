@@ -11,7 +11,7 @@
 -- place. Written the other way round -- folding in the caller and passing the
 -- total -- the addition would be repeated at every call site, and the wire
 -- would depend on each one remembering it.
-create or replace macro aggregate_bucket_json(timestamp_, start_time, count_, sum_, scale, zero_threshold, zero_count, pos_fold, neg_fold, bounds, counts, qs) as (
+create or replace macro aggregate_bucket_json(timestamp_, start_time, count_, sum_, scale, zero_threshold, zero_count, pos_fold, neg_fold, bounds, counts, quantiles) as (
 		case when bounds is not null and len(bounds) > 0 then
 			-- Explicit bounds. The exponential fields stay out entirely rather than
 			-- being emitted as nulls: a datapoint carries one representation or the
@@ -25,8 +25,9 @@ create or replace macro aggregate_bucket_json(timestamp_, start_time, count_, su
 				'max', (bucket_extents(hist_buckets(bounds, counts))).max,
 				'bucketCounts', counts,
 				'explicitBounds', bounds,
-				'quantiles', case when len(qs) = 0 then null
-					else hist_quantiles(bounds, counts, qs) end
+				-- Precomputed by get_metric.sql's agg_quantiles chain; null when
+				-- no quantiles were requested, as the old guard had it.
+				'quantiles', quantiles
 			)
 		else
 			json_object(
@@ -47,11 +48,7 @@ create or replace macro aggregate_bucket_json(timestamp_, start_time, count_, su
 				'positiveBucketCounts', pos_fold.counts,
 				'negativeBucketOffset', neg_fold.offset,
 				'negativeBucketCounts', neg_fold.counts,
-				'quantiles', case when len(qs) = 0 then null
-					else exp_hist_quantiles(scale,
-						neg_fold.offset, neg_fold.counts,
-						zero_count + pos_fold.folded + neg_fold.folded,
-						pos_fold.offset, pos_fold.counts, qs) end
+				'quantiles', quantiles
 			)
 		end
 	)
