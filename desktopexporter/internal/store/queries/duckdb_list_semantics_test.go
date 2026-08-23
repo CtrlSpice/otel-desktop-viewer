@@ -1,10 +1,8 @@
 package queries_test
 
 import (
-	"database/sql"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -25,9 +23,7 @@ import (
 // an explanation rather than somewhere downstream as a wrong histogram. If it
 // ever fails, read the two macros below before touching this file.
 func TestListSliceBoundsAreAsymmetric(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
+	db := macroDB(t)
 
 	q := func(sqlText string) string {
 		var got string
@@ -57,16 +53,7 @@ func TestListSliceBoundsAreAsymmetric(t *testing.T) {
 // `cutoff < offset_` branch catches everything below, so this is the test that
 // notices if that branch is ever relaxed.
 func TestFoldBelowCutoffConservesCounts(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-	for _, stmt := range queries.Types() {
-		db.Exec(stmt.SQL)
-	}
-	for _, stmt := range queries.Macros() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
+	db := macroDB(t)
 
 	var bad int
 	require.NoError(t, db.QueryRow(`

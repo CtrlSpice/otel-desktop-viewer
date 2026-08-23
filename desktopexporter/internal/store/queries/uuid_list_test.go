@@ -1,10 +1,8 @@
 package queries_test
 
 import (
-	"database/sql"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,14 +20,8 @@ import (
 // must delete, and a malformed id must raise rather than report a successful
 // no-op.
 func TestUUIDListRejectsMalformedIDs(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-	for _, stmt := range queries.Macros() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
-	_, err = db.Exec(`create table t (id uuid)`)
+	db := freshDB(t)
+	_, err := db.Exec(`create table t (id uuid)`)
 	require.NoError(t, err)
 	_, err = db.Exec(`insert into t values ('720cea1f-6c57-2438-d9b1-098fa86ecc3b')`)
 	require.NoError(t, err)
@@ -59,13 +51,7 @@ func TestUUIDListRejectsMalformedIDs(t *testing.T) {
 // characters, so the truncation never fires and a macro that returned the body
 // untouched would pass every end-to-end check.
 func TestBodyPreviewTruncates(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-	for _, stmt := range queries.Macros() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
+	db := macroDB(t)
 
 	var long, short int
 	var emptyOK, nullOK bool

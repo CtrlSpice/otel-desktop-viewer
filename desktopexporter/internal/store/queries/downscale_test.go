@@ -1,11 +1,9 @@
 package queries_test
 
 import (
-	"database/sql"
 	"fmt"
 	"testing"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -27,16 +25,7 @@ import (
 // which is why several cases below start at an offset that does not divide
 // evenly.
 func TestDownscaleExpBuckets(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-	for _, stmt := range queries.Types() {
-		db.Exec(stmt.SQL)
-	}
-	for _, stmt := range queries.Macros() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
+	db := macroDB(t)
 
 	cases := []struct {
 		name   string
@@ -123,16 +112,7 @@ func TestDownscaleExpBuckets(t *testing.T) {
 // class of bounds error that hand-written cases can miss -- a slice that skips
 // an input or counts one twice changes the sum.
 func TestDownscaleConservesTotal(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-	for _, stmt := range queries.Types() {
-		db.Exec(stmt.SQL)
-	}
-	for _, stmt := range queries.Macros() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
+	db := macroDB(t)
 
 	var bad int
 	require.NoError(t, db.QueryRow(`

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
-	"github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,23 +14,6 @@ import (
 // setupMacroDB stands up a fresh in-memory DuckDB and applies all macro
 // creation queries. Tests that only need the macros (no tables/indexes) use
 // this rather than store.NewStore to avoid an import cycle (store -> schema).
-func setupMacroDB(t *testing.T) *sql.DB {
-	t.Helper()
-
-	connector, err := duckdb.NewConnector("", nil)
-	require.NoError(t, err, "duckdb connector should open")
-	t.Cleanup(func() { _ = connector.Close() })
-
-	db := sql.OpenDB(connector)
-	t.Cleanup(func() { _ = db.Close() })
-
-	for i, q := range queries.Macros() {
-		_, err := db.Exec(q.SQL)
-		require.NoErrorf(t, err, "creating macro %d should succeed", i)
-	}
-	return db
-}
-
 // scalarFloat runs a query that returns one numeric column and returns the
 // value as a float64. The bool indicates whether the result was non-NULL.
 func scalarFloat(t *testing.T, db *sql.DB, query string) (float64, bool) {
@@ -42,7 +24,7 @@ func scalarFloat(t *testing.T, db *sql.DB, query string) (float64, bool) {
 }
 
 func TestMacros_InterpolationKernels(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	cases := []struct {
 		name  string
@@ -90,7 +72,7 @@ func TestMacros_InterpolationKernels(t *testing.T) {
 }
 
 func TestMacros_HistogramQuantile(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	cases := []struct {
 		name  string
@@ -124,7 +106,7 @@ func TestMacros_HistogramQuantile(t *testing.T) {
 }
 
 func TestMacros_ExpHistogramQuantile(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	cases := []struct {
 		name  string
@@ -180,7 +162,7 @@ func TestMacros_ExpHistogramQuantile(t *testing.T) {
 }
 
 func TestMacros_NullSafety(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	cases := []struct {
 		name  string
@@ -208,7 +190,7 @@ func TestMacros_NullSafety(t *testing.T) {
 }
 
 func TestMacros_BucketBuilderShapes(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	// Float bucket bounds. Each row asserts one struct field of one element
 	// in the list returned by a builder.
@@ -294,7 +276,7 @@ func TestMacros_BucketBuilderShapes(t *testing.T) {
 }
 
 func TestMacros_FloorDiv(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	// The whole point of this macro vs. SQL's `/` is correct rounding for
 	// negative numerators. Cases cover:
@@ -330,7 +312,7 @@ func TestMacros_FloorDiv(t *testing.T) {
 }
 
 func TestMacros_DownscaleExpBuckets(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	// Each case names the input and the expected output struct, then we probe
 	// individual fields (offset, len(counts), and specific counts entries) via
@@ -466,7 +448,7 @@ func TestMacros_DownscaleExpBuckets(t *testing.T) {
 }
 
 func TestMacros_FoldBelowCutoff(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	// Each subtest probes one field of the returned struct against an
 	// expected int64. The triple {counts, offset, folded} fully describes
@@ -637,7 +619,7 @@ func TestMacros_FoldBelowCutoff(t *testing.T) {
 }
 
 func TestMacros_PadLeftToOffset(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	// Each subtest probes a single position of the result via [] indexing,
 	// matching the BucketBuilderShapes / DownscaleExpBuckets style.
@@ -748,7 +730,7 @@ func TestMacros_PadLeftToOffset(t *testing.T) {
 }
 
 func TestMacros_SumBucketVectors(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	// Probe individual elements of the returned list via [] indexing -- same
 	// pattern TestMacros_BucketBuilderShapes uses to avoid the complexity of
@@ -834,7 +816,7 @@ func TestMacros_Idempotent(t *testing.T) {
 	// "already exists" errors. This is the protection against the historical
 	// DuckDB quirk where some CREATE statements weren't idempotent and had
 	// to be tolerated at the bootstrap layer.
-	db := setupMacroDB(t)
+	db := macroDB(t)
 	for i, q := range queries.Macros() {
 		_, err := db.Exec(q.SQL)
 		require.NoErrorf(t, err, "re-running macro %d should succeed", i)
@@ -850,13 +832,7 @@ func TestMacros_Idempotent(t *testing.T) {
 // across the full scale range: the bucket at the cutoff must be wholly at or
 // below the threshold, and the next one must not be.
 func TestMacros_ExpZeroCutoff(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-	for _, stmt := range queries.Macros() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
+	db := macroDB(t)
 
 	thresholds := []float64{1e-9, 0.001, 0.5, 1, 1.5, 2, 3.7, 6.25, 1024}
 	for scale := -5; scale <= 12; scale++ {
@@ -883,13 +859,7 @@ func TestMacros_ExpZeroCutoff(t *testing.T) {
 // No zero region means nothing to fold, and fold_below_cutoff reads NULL as
 // "fold nothing".
 func TestMacros_ExpZeroCutoffWithoutAZeroRegion(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-	for _, stmt := range queries.Macros() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
+	db := macroDB(t)
 
 	for _, threshold := range []any{0.0, -1.0, nil} {
 		var cutoff sql.NullInt64
@@ -903,13 +873,7 @@ func TestMacros_ExpZeroCutoffWithoutAZeroRegion(t *testing.T) {
 // is a subtraction and you cannot subtract two minima to get the minimum of the
 // activity between them -- so the range is rebuilt from the buckets instead.
 func TestMacros_BucketExtents(t *testing.T) {
-	db, err := sql.Open("duckdb", "")
-	require.NoError(t, err)
-	defer db.Close()
-	for _, stmt := range queries.Macros() {
-		_, err := db.Exec(stmt.SQL)
-		require.NoErrorf(t, err, "%s", stmt.Name)
-	}
+	db := macroDB(t)
 
 	for _, tc := range []struct {
 		name     string
@@ -979,7 +943,7 @@ func TestMacros_BucketExtents(t *testing.T) {
 // is chosen first. The p50 cases here are what would regress if that reasoning
 // were wrong.
 func TestMacros_QuantileSkipsEmptyBuckets(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	cases := []struct {
 		name  string
@@ -1036,7 +1000,7 @@ func TestMacros_QuantileSkipsEmptyBuckets(t *testing.T) {
 // Surfaced by opening the app: every explicit-bounds histogram returned
 // "JSON RPC internal error".
 func TestMacros_DiffBucketVectorsUnsignedReset(t *testing.T) {
-	db := setupMacroDB(t)
+	db := macroDB(t)
 
 	t.Run("reset returns null, not an error", func(t *testing.T) {
 		var got sql.NullString
