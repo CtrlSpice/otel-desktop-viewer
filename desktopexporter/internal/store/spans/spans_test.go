@@ -16,11 +16,11 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.
@@ -34,14 +34,6 @@ func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 		return err
 	})
 	return out, err
-}
-
-func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
-	t.Helper()
-	ctx := context.Background()
-	s, err := store.NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	return s, ctx, func() { s.Close() }
 }
 
 func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, args ...any) int {
@@ -179,8 +171,7 @@ type rootSpanJSON struct {
 
 // TestTraceSummaryOrdering verifies that trace summaries are ordered by start time (newest first).
 func TestTraceSummaryOrdering(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	traces, trace1Hex, trace2Hex, trace3Hex := buildTracesForSummaryOrdering(baseTime)
@@ -212,8 +203,7 @@ func TestTraceSummaryOrdering(t *testing.T) {
 
 // TestTraceNotFound verifies error handling for non-existent trace IDs.
 func TestTraceNotFound(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchSpans(ctx, db, "00000000-0000-0000-0000-000000000000", nil)
@@ -224,8 +214,7 @@ func TestTraceNotFound(t *testing.T) {
 
 // TestEmptySpans verifies handling of empty span lists and empty stores.
 func TestEmptySpans(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, ptrace.NewTraces(), s.FlushedIDs())
@@ -247,8 +236,7 @@ func TestEmptySpans(t *testing.T) {
 // asserting they *survive* is the point, not an omission. ingest.SweepOrphans
 // is the only thing that may delete them.
 func TestClearTraces(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -334,8 +322,7 @@ func spanDataFromSearchSpans(t *testing.T, raw json.RawMessage, i int) (name, sp
 
 // TestTraceSuite runs a comprehensive suite of tests on a single trace.
 func TestTraceSuite(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000000000000000000000000099"
@@ -439,8 +426,7 @@ func TestTraceSuite(t *testing.T) {
 
 // TestSearchTraces tests SearchTraces with various query types.
 func TestSearchTraces(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000000000000000000000000099"
@@ -1108,8 +1094,7 @@ func TestSearchTraces(t *testing.T) {
 // the constant was raised from 50 to 500 the hardcoded 51 quietly stopped
 // being a large batch at all.
 func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	const batchSize = spans.FlushInterval + 1
 	traces := createTestTracesPdataN(batchSize)
@@ -1173,8 +1158,7 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 }
 
 func TestIngest_CanceledContext(t *testing.T) {
-	s, _, teardown := setupStore(t)
-	defer teardown()
+	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -1186,8 +1170,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
-	s, _, teardown := setupStore(t)
-	defer teardown()
+	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	traces := createTestTracesPdataN(100)
@@ -1206,8 +1189,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 // TestDeleteSpansByIDs verifies that multiple spans can be deleted by their SpanIDs, including child rows.
 func TestDeleteSpansByIDs(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -1283,8 +1265,7 @@ func TestDeleteSpansByIDs(t *testing.T) {
 
 // TestDeleteSpansByIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteSpansByIDs_Empty(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	err := s.WithDBWrite(func(db *sql.DB) error {
 		return spans.DeleteSpansByIDs(ctx, db, []any{})
@@ -1294,8 +1275,7 @@ func TestDeleteSpansByIDs_Empty(t *testing.T) {
 
 // TestSearchSpansWith32CharHexTraceID verifies that SearchSpans finds a trace when given the 32-char hex form (no hyphens).
 func TestSearchSpansWith32CharHexTraceID(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -1313,8 +1293,7 @@ func TestSearchSpansWith32CharHexTraceID(t *testing.T) {
 
 // TestDeleteSpansByTraceIDs verifies that spans for multiple traces are deleted, including child rows.
 func TestDeleteSpansByTraceIDs(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
 	testTraceID := "00000000000000000000000000000099"
@@ -1358,8 +1337,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 
 // TestDeleteSpansByTraceIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteSpansByTraceIDs_Empty(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	err := s.WithDBWrite(func(db *sql.DB) error {
 		return spans.DeleteSpansByTraceIDs(ctx, db, []any{})
@@ -1624,8 +1602,7 @@ func createTestTracePdata() ptrace.Traces {
 // path forgot to write the column, or the resource attribute row was
 // dropped, both of which would silently break service filtering.
 func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	traces, _, _, _ := buildTracesForSummaryOrdering(baseTime)
@@ -1679,8 +1656,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 // spans rather than part of resource or scope identity: the same scope emitted
 // through two pipelines stamping different urls is still one scope.
 func TestSchemaURLsAreStored(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	const resURL = "https://opentelemetry.io/schemas/1.27.0"
 	const scopeURL = "https://opentelemetry.io/schemas/1.24.0"
@@ -1724,8 +1700,7 @@ func TestSchemaURLsAreStored(t *testing.T) {
 // Unreachable spans were previously dropped in silence, which renders the
 // trace short with nothing saying so. unplacedSpanCount reports them.
 func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC).UnixNano()
 	add := func(tr ptrace.Traces, traceHex, spanHex, parentHex string, offset int64) {
@@ -1884,8 +1859,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 // the wire, which means surviving the recursive walk's explicit column list
 // and the JSON macro -- the two places this was actually missing.
 func TestSpanAndLinkFlagsRoundTrip(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	const (
 		traceIDHex = "000000000000000000000000000000aa"

@@ -1,7 +1,6 @@
 package ingest_test
 
 import (
-	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -9,12 +8,12 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
-	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.
@@ -30,19 +29,10 @@ func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 	return out, err
 }
 
-func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
-	t.Helper()
-	ctx := context.Background()
-	s, err := store.NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	return s, ctx, func() { s.Close() }
-}
-
 // TestNewAppenders_ErrorPath verifies that when appender creation fails partway through,
 // we close any appenders already created before returning the error (no leak).
 func TestNewAppenders_ErrorPath(t *testing.T) {
-	s, _, teardown := setupStore(t)
-	defer teardown()
+	s, _ := storetest.New(t)
 
 	tables := []string{"attributes", "nonexistent_table"}
 	var appenders map[string]*duckdb.Appender
@@ -86,8 +76,7 @@ func TestNewAppenders_ErrorPath(t *testing.T) {
 // load-bearing here rather than incidental: without it the appender's own flush
 // would fail the FK, which is itself a check that the two halves agree.
 func TestFlushAppenders_MakesDataVisible(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	// Build the dictionary side the way logs.Ingest does, so the ids the
 	// appender writes are the ids the dictionary rows were keyed by.

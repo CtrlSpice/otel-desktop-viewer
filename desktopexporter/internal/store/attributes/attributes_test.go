@@ -11,12 +11,12 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/attributes"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	"go.uber.org/zap"
 )
 
 type match struct {
@@ -29,10 +29,7 @@ type match struct {
 
 func setup(t *testing.T) (*store.Store, context.Context) {
 	t.Helper()
-	ctx := context.Background()
-	s, err := store.NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	t.Cleanup(func() { s.Close() })
+	s, ctx := storetest.New(t)
 
 	td := ptrace.NewTraces()
 	rs := td.ResourceSpans().AppendEmpty()

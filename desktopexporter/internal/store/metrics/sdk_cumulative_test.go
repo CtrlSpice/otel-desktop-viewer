@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -114,8 +115,7 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	// send exactly this on exit.
 	require.GreaterOrEqual(t, len(sink.batches), 2, "one batch per collection")
 
-	s, storeCtx, teardown := setupStore(t)
-	defer teardown()
+	s, storeCtx := storetest.New(t)
 	for _, md := range sink.batches {
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 			return metrics.Ingest(storeCtx, conn, md, s.FlushedIDs())

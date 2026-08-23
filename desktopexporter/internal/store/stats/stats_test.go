@@ -15,13 +15,13 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/stats"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	"go.uber.org/zap"
 )
 
 // readStore runs a query under the store's read lock and returns its result.
@@ -35,14 +35,6 @@ func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 		return err
 	})
 	return out, err
-}
-
-func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
-	t.Helper()
-	ctx := context.Background()
-	s, err := store.NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	return s, ctx, func() { s.Close() }
 }
 
 func mustDecodeTraceID(s string) [16]byte {
@@ -111,8 +103,7 @@ func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {
 }
 
 func TestGetStats_Empty(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	result := getStats(t, s, ctx)
 
@@ -132,8 +123,7 @@ func TestGetStats_Empty(t *testing.T) {
 }
 
 func TestGetStats_WithTraces(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	tr := buildTestTraces(baseTime)
@@ -156,8 +146,7 @@ func TestGetStats_WithTraces(t *testing.T) {
 }
 
 func TestGetStats_WithLogs(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 	lg := buildTestLogs(baseTime)
@@ -177,8 +166,7 @@ func TestGetStats_WithLogs(t *testing.T) {
 }
 
 func TestGetStats_WithMetrics(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	m := buildTestMetrics()
 
@@ -197,8 +185,7 @@ func TestGetStats_WithMetrics(t *testing.T) {
 }
 
 func TestGetStats_AllSignals(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
 

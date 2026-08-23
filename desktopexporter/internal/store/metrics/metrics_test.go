@@ -17,11 +17,11 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.uber.org/zap"
 )
 
 const maxNano = 1<<63 - 1
@@ -49,14 +49,6 @@ func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 		return err
 	})
 	return out, err
-}
-
-func setupStore(t *testing.T) (*store.Store, context.Context, func()) {
-	t.Helper()
-	ctx := context.Background()
-	s, err := store.NewStore(ctx, "", zap.NewNop())
-	require.NoError(t, err)
-	return s, ctx, func() { s.Close() }
 }
 
 func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, args ...any) int {
@@ -274,8 +266,7 @@ func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name
 
 // TestMetricSuite runs tests on ingested metrics using SearchMetrics (DB-generated JSON).
 func TestMetricSuite(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
@@ -724,8 +715,7 @@ func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, u
 // is gone and (b) nothing else was touched.
 func TestDeleteMetricStream(t *testing.T) {
 	t.Run("removes a single Gauge by name+unit+scope+service", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		err := s.WithConn(func(conn driver.Conn) error {
 			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
@@ -754,8 +744,7 @@ func TestDeleteMetricStream(t *testing.T) {
 	})
 
 	t.Run("collapses multiple ingestions of the same logical metric", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		// Three independent batches => three metric_ingests rows for the
 		// same logical Gauge, all sharing one metric_streams row.
@@ -791,8 +780,7 @@ func TestDeleteMetricStream(t *testing.T) {
 	})
 
 	t.Run("unit discriminates same-name metrics", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		md := pmetric.NewMetrics()
 		rm := md.ResourceMetrics().AppendEmpty()
@@ -829,8 +817,7 @@ func TestDeleteMetricStream(t *testing.T) {
 	})
 
 	t.Run("service.name discriminates same-name metrics from different services", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		md := pmetric.NewMetrics()
 		for _, svc := range []string{"svc-a", "svc-b"} {
@@ -866,8 +853,7 @@ func TestDeleteMetricStream(t *testing.T) {
 	})
 
 	t.Run("is_monotonic discriminates Sum metrics", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		md := pmetric.NewMetrics()
 		rm := md.ResourceMetrics().AppendEmpty()
@@ -907,8 +893,7 @@ func TestDeleteMetricStream(t *testing.T) {
 	})
 
 	t.Run("no-match identity is a no-op", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		err := s.WithConn(func(conn driver.Conn) error {
 			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
@@ -925,8 +910,7 @@ func TestDeleteMetricStream(t *testing.T) {
 	})
 
 	t.Run("cascade removes attributes, exemplars, datapoints", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		err := s.WithConn(func(conn driver.Conn) error {
 			return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
@@ -1021,8 +1005,7 @@ func TestDeleteMetricStream(t *testing.T) {
 // This test is the find-or-insert mirror of the cascade-delete test:
 // together they pin down the two halves of "identity is canonical."
 func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	const batches = 5
 	for i := 0; i < batches; i++ {
@@ -1107,8 +1090,7 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s, ctx, teardown := setupStore(t)
-			defer teardown()
+			s, ctx := storetest.New(t)
 
 			err := s.WithConn(func(conn driver.Conn) error {
 				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pcommon.InstrumentationScope, pcommon.Resource) {}), s.FlushedIDs())
@@ -1136,8 +1118,7 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 // inconsistent service names for the same identity), this test will
 // catch it.
 func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
@@ -1162,8 +1143,7 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 
 // TestEmptyMetrics verifies empty metric list and empty store.
 func TestEmptyMetrics(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, pmetric.NewMetrics(), s.FlushedIDs())
@@ -1176,8 +1156,7 @@ func TestEmptyMetrics(t *testing.T) {
 
 // TestClearMetrics verifies that all metrics can be cleared, including child rows.
 func TestClearMetrics(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
@@ -1215,8 +1194,7 @@ func TestClearMetrics(t *testing.T) {
 }
 
 func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	ts := time.Unix(1700000000, 0)
 	md := pmetric.NewMetrics()
@@ -1448,8 +1426,7 @@ func findMetricID(t *testing.T, s *store.Store, ctx context.Context, name string
 // which is unobservable by design. Sized from the constant so it cannot stop
 // being a large batch when the constant moves.
 func TestIngestMetrics_LargeBatchStaysConsistent(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	const batchSize = metrics.FlushInterval + 1
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -1491,8 +1468,7 @@ func TestIngestMetrics_LargeBatchStaysConsistent(t *testing.T) {
 }
 
 func TestIngest_CanceledContext(t *testing.T) {
-	s, _, teardown := setupStore(t)
-	defer teardown()
+	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -1504,8 +1480,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
-	s, _, teardown := setupStore(t)
-	defer teardown()
+	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -1525,8 +1500,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 // by drawer cards: stream id, series count, scalar last value, last seen.
 func TestSearchSummaries_CardFields(t *testing.T) {
 	t.Run("Gauge", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		ts := time.Unix(1700000000, 0)
 		md := pmetric.NewMetrics()
@@ -1560,8 +1534,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 	})
 
 	t.Run("HistogramOmitsLastValue", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		bounds := []float64{1.0, 2.0}
 		ts := time.Unix(1700000000, 0)
@@ -1590,8 +1563,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 // first makes it one array-overlap scan (39.2ms -> 7.7ms on the reference
 // capture), so the coverage gap is now just a gap.
 func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
@@ -1770,8 +1742,7 @@ func buildTwoReplicaMetrics(t *testing.T) pmetric.Metrics {
 // rows and two series. Collapsing replicas that actually identified
 // themselves would be a worse bug than the one this whole change fixes.
 func TestMetricSeries_SplitByResource(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), s.FlushedIDs())
@@ -1834,8 +1805,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 // fallback is gone. Absent means absent: the telemetry never claimed these
 // were different instances, so we do not either.
 func TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	md := pmetric.NewMetrics()
 	base := time.Now().UnixNano()
@@ -1889,8 +1859,7 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses(t *testing.T) {
 // content-derived id from (stream, resource, labels) is the same every time the
 // same series arrives.
 func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	seriesIDs := func() []string {
 		var out []string
@@ -1998,8 +1967,7 @@ func buildInstanceMetrics(t *testing.T, extra map[string]string, base int64) pme
 // test asserted two as the "correct" half of the split, back when a resource
 // id still carried the attribute set as identity. It no longer does.
 func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Now().UnixNano()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
@@ -2071,8 +2039,7 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 //	folded           = buckets 0 and 1 = 5 + 7 = 12
 //	result           = [3] at offset 2, zeroCount 1 + 2 + 12 = 15
 func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
 	fixture := makeExpHistogramFixtureT("http.duration", pmetric.AggregationTemporalityDelta, []expHistTestDP{
@@ -2140,8 +2107,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 // The bug needed a reduction to appear at all, which is why no existing test
 // saw it: they either request no reduction or never look at the labels.
 func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	// Two series, told apart only by their labels, each with two datapoints
@@ -2210,8 +2176,7 @@ func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
 // skip it -- the mean of nothing is not nought. Emitting 0 would bake one
 // view's reading into all three.
 func TestGetMetric_ScalarViewBuckets(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	// A counter climbing by one a minute, with a five-minute silence in the
@@ -2335,8 +2300,7 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 // with samples but no rate draws nothing -- and derives both from it, so the
 // overlay, the badges and the line cannot disagree.
 func TestGetMetric_RateSlopeAndStats(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	// A counter climbing a minute at a time with a five-minute silence: the
@@ -2458,8 +2422,7 @@ func TestGetMetric_RateSlopeAndStats(t *testing.T) {
 // each datapoint against its predecessor in the series, then buckets); this
 // pins the histogram merge to the same rule.
 func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	bounds := []float64{10, 20, 30}
@@ -2556,8 +2519,7 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 // than its own buckets held. Nothing downstream can reconcile that, because the
 // count badge and the quantiles read different fields of the same row.
 func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	bounds := []float64{10, 20, 30}
@@ -2622,8 +2584,7 @@ func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
 // Absolute boundaries are right for a chart and wrong for a summary, which is
 // why one bucket is a different request rather than a smaller number of them.
 func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	// 10:20 to 12:00 -- a 100 minute span, which the ladder serves with the
 	// 1 hour rung, so absolute flooring splits it across 10:00, 11:00 and 12:00.
@@ -2693,8 +2654,7 @@ func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
 // another. Measured on a 21-series histogram: three checked series arrived with
 // no datapoints, and three that were shipped theirs were never drawn.
 func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	bounds := []float64{10, 20, 30}
@@ -2766,8 +2726,7 @@ func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
 // exporter that changed its histogram configuration mid-window, which is a real
 // finding for anyone debugging one, looked like an idle period.
 func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	attrs := map[string]string{"pod": "a"}
@@ -2851,8 +2810,7 @@ func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
 // ladder rung: a reader can name a 1-minute boundary and cannot name a
 // 30.5-second one.
 func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	// Once a minute for twenty minutes, with no gaps: every bucket the grid
@@ -2956,8 +2914,7 @@ func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
 // visibly full of data -- reading as series that had stopped reporting rather
 // than ones this response did not carry.
 func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	var dps []sumTestDP
@@ -3076,8 +3033,7 @@ func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
 // returned six different responses in six tries, differing in which datapoints
 // the M4 election kept.
 func TestGetMetric_Deterministic(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	var dps []sumTestDP
@@ -3199,8 +3155,7 @@ func TestGetMetric_Deterministic(t *testing.T) {
 // aggregate folds them. Narrowing that reached the aggregates would turn "all"
 // into "all of the checked ones", which is wrong and looks plausible.
 func TestGetMetric_DatapointNarrowing(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	var dps []sumTestDP
@@ -3316,8 +3271,7 @@ func TestGetMetric_DatapointNarrowing(t *testing.T) {
 // average is pooled over every sample rather than averaged over per-series
 // averages.
 func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	// Deliberately lopsided: "dense" reports ten times a minute at value 1,
@@ -3454,8 +3408,7 @@ func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
 // because a sparkline's whole job is to show that something happened, and a
 // mean over a wide bucket is exactly what hides a spike.
 func TestGetMetric_Sparkline(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	// Two hundred minutes of a quiet delta counter with a single one-minute
@@ -3560,8 +3513,7 @@ func TestGetMetric_Sparkline(t *testing.T) {
 // That implementation is gone -- the store does the merging now -- and this
 // test exists so the behaviour did not leave with it.
 func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	fixture := makeExpHistogramFixtureT("rescale.duration", pmetric.AggregationTemporalityDelta, []expHistTestDP{
@@ -3640,8 +3592,7 @@ func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
 //
 // Also ported from the deleted TypeScript merge.
 func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	fixture := makeExpHistogramFixtureT("cumulative.duration", pmetric.AggregationTemporalityCumulative, []expHistTestDP{
@@ -3702,8 +3653,7 @@ func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
 //
 // Empty means all, which is what every caller predating the parameter sends.
 func TestGetMetric_SeriesFilter(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
 	var dps []expHistTestDP
@@ -3770,8 +3720,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 //
 // Empty means none, so a caller drawing no overlays does not pay for them.
 func TestGetMetric_Quantiles(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
 	fixture := makeExpHistogramFixtureT("q.duration", pmetric.AggregationTemporalityDelta, []expHistTestDP{{
@@ -3833,8 +3782,7 @@ func TestGetMetric_Quantiles(t *testing.T) {
 //
 // Totals: A has 60 observations, B has 10, so the aggregate must report 70.
 func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
 	fixture := makeExpHistogramFixtureT("agg.duration", pmetric.AggregationTemporalityDelta, []expHistTestDP{
@@ -3912,8 +3860,7 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 // and it is why this test reaches back before 1970 rather than only checking a
 // present-day offset.
 func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	// Two datapoints either side of midnight UTC. Under a -5h offset they fall
 	// on the same local day; under UTC they straddle two.
@@ -3985,8 +3932,7 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 // window must keep dividing itself, so its buckets stay anchored where the
 // caller put them.
 func TestGetMetric_FitToDataSpansTheData(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	// Ten minutes of datapoints a minute apart, inside a window that spans
 	// decades. That ratio is the whole point: at 8 target buckets the requested
@@ -4079,8 +4025,7 @@ func TestGetMetric_FitToDataSpansTheData(t *testing.T) {
 // lands on exactly 10s: 60s / 6 admits 10s and refuses 5s. Pinning the width is
 // what lets the assertion be "on the grid" rather than "self-consistent".
 func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	// 13:00:00 UTC is a whole minute, so it is already on the 10s grid and the
 	// expected bucket starts are base, base+10s, base+20s exactly.
@@ -4180,8 +4125,7 @@ func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
 // arguments -- it runs the same query and keeps one field, and this is what
 // stops those two drifting.
 func TestGetMetricAggregate(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
 	var dps []expHistTestDP
@@ -4333,8 +4277,7 @@ func mapKeys(m map[string]any) []string {
 // to the whole window puts the two readings below on different local days, so a
 // day bucket splits a day that did not end.
 func TestGetMetric_BucketsFollowTheZoneAcrossDST(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	// Both readings fall on local Sunday 25 October 2026 in London: the first
 	// half an hour into it while BST is still in force, the second half an hour
@@ -4420,8 +4363,7 @@ func TestGetMetric_BucketsFollowTheZoneAcrossDST(t *testing.T) {
 // directly visible here and nowhere else. A mutant reverting the election's
 // zone conversion survives the scalar test; this one is built to kill it.
 func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	// The same three moments as the scalar test: two on London's 25-hour local
 	// Sunday -- one while BST holds, one after the clocks went back -- and one
@@ -4497,8 +4439,7 @@ func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 // settings rather than anything this query controls. A stream sampling every
 // datapoint defeated the reduction outright: every row came back.
 func TestGetMetric_ExemplarsAreCappedPerBucket(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	// One bucket's worth of readings, every one of them carrying an exemplar.
@@ -4565,8 +4506,7 @@ func TestGetMetric_ExemplarsAreCappedPerBucket(t *testing.T) {
 // not limit. The list is capped and the true count travels beside it, so a
 // client can say "5 of 60" rather than silently showing five.
 func TestGetMetric_ExemplarListIsCappedAndCounted(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	const perDatapoint = 60
@@ -4624,8 +4564,7 @@ func TestGetMetric_ExemplarListIsCappedAndCounted(t *testing.T) {
 // returned nothing, and time order hands them whichever happened first. Both
 // caps now rank from either extreme, so what survives spans the range.
 func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	md := pmetric.NewMetrics()
@@ -4693,8 +4632,7 @@ func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
 // which two does it keep? The ones whose exemplars reach lowest and highest,
 // not the two that happened first.
 func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	md := pmetric.NewMetrics()
@@ -4792,8 +4730,7 @@ func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 // start of each column, slow ones after, which is the shape of a latency spike
 // and the reason someone clicks a heatmap in the first place.
 func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	// Enough readings that the heatmap's target is what sets its width. Fewer and
@@ -4934,8 +4871,7 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 // change mid-flight gets a second row, not a collision, because OTel only
 // makes fixed bounds a practice, never a promise.
 func TestHistogramBoundsAreStoredOnce(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	boundsA := []float64{1, 5, 10}
@@ -5024,8 +4960,7 @@ func TestHistogramBoundsAreStoredOnce(t *testing.T) {
 // ever "optimised" into a count over metric_series, which agrees on an
 // unbounded window and diverges exactly where it matters.
 func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	// Twelve series on the stream; only three of them report in the first
@@ -5084,8 +5019,7 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 // Every existing histogram fixture supplies at least one bound, which is why
 // the whole suite passed while the crash was reachable from any real demo.
 func TestIngest_SingleBucketHistogram(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 	fixture := makeHistogramFixtureT("single.bucket", pmetric.AggregationTemporalityDelta, []histTestDP{{
@@ -5143,8 +5077,7 @@ func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 
 	t.Run("histogram with no buckets", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		md := pmetric.NewMetrics()
 		rm := md.ResourceMetrics().AppendEmpty()
@@ -5164,8 +5097,7 @@ func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
 	})
 
 	t.Run("exponential histogram with no negative buckets", func(t *testing.T) {
-		s, ctx, teardown := setupStore(t)
-		defer teardown()
+		s, ctx := storetest.New(t)
 
 		md := pmetric.NewMetrics()
 		rm := md.ResourceMetrics().AppendEmpty()
@@ -5202,8 +5134,7 @@ func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
 // allowlist is the only thing keeping it out and a later edit could widen it
 // without anyone noticing.
 func TestMetricMetadataRoundTrip(t *testing.T) {
-	s, ctx, teardown := setupStore(t)
-	defer teardown()
+	s, ctx := storetest.New(t)
 
 	md := pmetric.NewMetrics()
 	rm := md.ResourceMetrics().AppendEmpty()
