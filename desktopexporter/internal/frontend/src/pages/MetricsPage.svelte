@@ -351,21 +351,34 @@
           scalarSelected,
           tzName()
         ),
-        telemetryAPI.getMetricAggregate(
-          summary.id,
-          startTime,
-          endTime,
-          1,
-          narrowTo,
-          quantiles,
-          tzOffsetNs(),
-          fit,
-          // This call collapses to one bucket, but that bucket's boundaries
-          // still follow the calendar the other call's do.
-          0,
-          undefined,
-          tzName()
-        ),
+        // The whole-window merge, and only a histogram has one.
+        //
+        // Its single field feeds the summary distribution; a Gauge or Sum has
+        // no bucket vectors to merge, so the answer is null by construction --
+        // the store proves it rather than discovering it, since
+        // aggregateShapeFor drops the merge chain outright for those types.
+        // Asking anyway spent a round trip and a full query plan per legend
+        // toggle to be told null, measured at 23ms against a 27ms toggle.
+        //
+        // The scalar pools do not come from here. They ride on the bucketed
+        // call above, which is the one asked for the view grid.
+        isHistogramMetric
+          ? telemetryAPI.getMetricAggregate(
+              summary.id,
+              startTime,
+              endTime,
+              1,
+              narrowTo,
+              quantiles,
+              tzOffsetNs(),
+              fit,
+              // This call collapses to one bucket, but that bucket's
+              // boundaries still follow the calendar the other call's do.
+              0,
+              undefined,
+              tzName()
+            )
+          : null,
       ])
       // A slower earlier request must not overwrite a newer answer.
       if (token === aggregateToken) {
