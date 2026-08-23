@@ -123,6 +123,24 @@
     page.selectItem(logID)
   }
 
+  // Refresh reloads the list, and the open record has to come with it.
+  //
+  // Traces and metrics get this for free: their detail effects read the
+  // selected summary *object*, and reloading the list replaces that object,
+  // so the effect re-runs. This page keys on the log id instead -- a string a
+  // reload does not change -- so the detail pane would keep whatever it
+  // fetched the first time.
+  //
+  // Today nothing visible turns on that, because a log record never changes
+  // after it is written, so a refetch returns identical bytes. But that is a
+  // property of the data, not of this page, and it is not stated anywhere the
+  // next person to touch this will look. Refreshing explicitly costs one
+  // request on a button the user pressed, and removes the need to know it.
+  function handleRefresh() {
+    page.handleRefresh()
+    detailFetcher.refresh()
+  }
+
   async function handleDeleteLog(logID: string) {
     actionError = null
     try {
@@ -154,7 +172,7 @@
     selectedID={page.selectedID}
     drawerID="signal-drawer"
     drawerLabel="Logs"
-    onRefresh={page.handleRefresh}
+    onRefresh={handleRefresh}
     refreshPulse={page.refreshPulse}
     refreshAsideTip={page.refreshAsideTip}
     loading={page.loading}
