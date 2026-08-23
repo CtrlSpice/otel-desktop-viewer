@@ -818,6 +818,26 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endT
 // getMetric runs the query in whichever shape params asks for. Both shapes take
 // the same arguments and the same CTEs; only the projection differs.
 func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
+	// Deduplicate the quantile list, keeping first-occurrence order.
+	//
+	// The quantile CTEs build the wire object with map(), and DuckDB raises
+	// "Map keys must be unique" on a duplicate -- so a request carrying the
+	// same quantile twice would fail whole. The old json_group_object path
+	// tolerated that silently, and nothing between the RPC handler and here
+	// dedupes, so this is where the tolerance lives now. Order is preserved
+	// because the object's keys deliberately follow request order.
+	if len(quantiles) > 1 {
+		seen := make(map[float64]bool, len(quantiles))
+		deduped := quantiles[:0:0]
+		for _, q := range quantiles {
+			if !seen[q] {
+				seen[q] = true
+				deduped = append(deduped, q)
+			}
+		}
+		quantiles = deduped
+	}
+
 	// Everything filters by stream_id.
 	// matched_ingests is "ingests for this stream that produced at least
 	// one datapoint in the time window." All identity columns the JSON

@@ -3883,6 +3883,11 @@ func TestGetMetric_QuantileHandWorked(t *testing.T) {
 		// An empty bucket in the middle must not absorb the target.
 		{"empty interior bucket is skipped",
 			0, 0, 0, []uint64{10, 0, 30}, 0, nil, 0.25, ptrF(2.0), 1e-9},
+		// Unchanged by the filter -- guards the "no-op for q > 0" claim: the
+		// cnt > 0 pick rule must skip only *empty* buckets, never shift a
+		// quantile that lands past one.
+		{"p50 unaffected by the empty-bucket skip",
+			0, 0, 0, []uint64{10, 20, 30}, 0, nil, 0.5, ptrF(4.0), 1e-9},
 		// Nothing observed anywhere: the key is present and null.
 		{"empty exponential histogram yields a null quantile",
 			0, 0, 0, nil, 0, nil, 0.5, nil, 0},
@@ -3981,6 +3986,25 @@ func TestGetMetric_QuantileHandWorked(t *testing.T) {
 	// p50 target = 100. CDF acc = 0, 80, 180, 200, 200. First acc >= 100 is
 	// bucket 3 (lo=2, hi=5, cnt=100, acc_prev=80). Linear interp:
 	//   2 + (5 - 2) * (100 - 80) / 100 = 2.6
+	// A duplicated quantile must be tolerated, not fatal. The wire object is
+	// built with map(), which raises on a duplicate key, so getMetric dedupes
+	// the request first -- json_group_object used to absorb this silently,
+	// and a caller that could send [0.5, 0.5] yesterday still can.
+	t.Run("duplicate quantiles are tolerated", func(t *testing.T) {
+		id := findMetricID(t, s, ctx, "hw.exp.0")
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, id, 0, end, 0, nil,
+				[]float64{0.5, 0.5, 0.95, 0.5}, 0, false, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err, "a duplicated quantile must not fail the request")
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		dps := m["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+		qobj := dps[0].(map[string]any)["quantiles"].(map[string]any)
+		assert.Len(t, qobj, 2, "duplicates collapse; distinct quantiles survive")
+		assert.InDelta(t, 2.0, qobj["0.5"], 1e-9)
+	})
+
 	t.Run("aggregate p50 over merged series", func(t *testing.T) {
 		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 			return metrics.Ingest(ctx, conn,
