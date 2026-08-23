@@ -69,6 +69,16 @@ func TestDownscaleExpBuckets(t *testing.T) {
 			want: "{'offset': 0, 'counts': [11, 7]}",
 		},
 		{
+			// Four output buckets from an offset that does not sit on a
+			// 2^levels boundary: the interesting middle case, where the first
+			// bucket is partial and the rest are full. Original indices 5..11
+			// at levels 1 fall in buckets 2,3,3,4,4,5,5 -- so bucket 2 gets
+			// only the count at index 5, and each later bucket gets a pair.
+			name:   "several buckets from an unaligned offset",
+			counts: "[1,2,3,4,5,6,7]", offset: 5, levels: 1,
+			want: "{'offset': 2, 'counts': [1, 5, 9, 13]}",
+		},
+		{
 			// Negative offsets are ordinary here -- exponential histogram
 			// buckets below 1 have them -- and floor_div rounds toward
 			// negative infinity, so -4/2 = -2 rather than truncating to -1.
