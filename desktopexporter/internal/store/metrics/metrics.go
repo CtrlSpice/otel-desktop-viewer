@@ -918,7 +918,7 @@ func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startT
 	// 0 sparkline buckets and an empty datapoint list are still passed, so a
 	// caller reading this does not have to work out that the pruning already
 	// covers them.
-	raw, err := getMetric(ctx, db, getMetricParams{AggregateOnly: true},
+	raw, err := getMetric(ctx, db, aggregateShapeFor(ctx, db, streamID),
 		streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles,
 		tzOffsetNs, fitToData, viewBuckets, 0, selectedSeriesIDs, tzName,
 		[]string{}, 0)
@@ -1343,6 +1343,42 @@ type getMetricParams struct {
 	// GetMetricAggregate returns. It drops `timeseries` -- the field that
 	// carries the per-series pipelines and most of the planning cost.
 	AggregateOnly bool
+
+	// NoHistogramMerge and NoScalarPools drop a chain whose output is already
+	// known to be empty for this metric's shape, so the planner never builds
+	// it. scalar_dps admits Gauge and Sum only, so a histogram's pools are
+	// always []; the histogram merge needs bucket vectors, so a scalar's
+	// aggregate is always null.
+	//
+	// Only worth setting alongside AggregateOnly. In the full projection
+	// `timeseries` reaches into both chains anyway -- measured, dropping
+	// scalarAggregate there saved nothing -- so the pruning has no room to
+	// work until the per-series fields are gone.
+	NoHistogramMerge bool
+	NoScalarPools    bool
+}
+
+// aggregateShapeFor decides which chains a metric's aggregate can possibly
+// need. A primary-key lookup on metric_streams, measured at 0.09ms, against
+// 120ms saved on a scalar metric.
+func aggregateShapeFor(ctx context.Context, db *sql.DB, streamID string) getMetricParams {
+	p := getMetricParams{AggregateOnly: true}
+	var metricType string
+	err := db.QueryRowContext(ctx,
+		`select metric_type from metric_streams where id = ?::uuid`, streamID).Scan(&metricType)
+	if err != nil {
+		// Unknown shape: ask for both, which is what this call did before the
+		// pruning existed. A stream id that does not resolve fails in the main
+		// query with ErrStreamIDNotFound, and that is the error worth showing.
+		return p
+	}
+	switch metricType {
+	case "Histogram", "ExponentialHistogram":
+		p.NoScalarPools = true
+	case "Gauge", "Sum":
+		p.NoHistogramMerge = true
+	}
+	return p
 }
 
 type searchSummariesParams struct {

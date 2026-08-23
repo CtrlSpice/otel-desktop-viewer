@@ -1629,16 +1629,19 @@
 			-- Null rather than [] when there is nothing to aggregate, so the
 			-- client can tell "no histogram merge happened" from "merged to
 			-- nothing".
-			'aggregate', (select aggregate from aggregate_agg),
+			'aggregate', {{if .NoHistogramMerge}}null{{else}}(select aggregate from aggregate_agg){{end}},
 			-- The cross-series lines for a scalar metric, in the same bucket shape
 			-- the per-series views use. `selected` is empty when nothing is
 			-- checked, which the chart reads as "draw All alone" rather than as an
 			-- error. Both are present for histograms too and are empty there --
 			-- scalar_dps is Gauge and Sum only, so nothing reaches the fold.
-			'scalarAggregate', json_object(
+			'scalarAggregate', {{if .NoScalarPools}}json_object(
+				'selected', json('[]'),
+				'all', json('[]')
+			){{else}}json_object(
 				'selected', coalesce((select selected from scalar_pools_json), json('[]')),
 				'all', coalesce((select all_series from scalar_pools_json), json('[]'))
-			){{if not .AggregateOnly}},
+			){{end}}{{if not .AggregateOnly}},
 			-- How many datapoints the window actually holds, as opposed to how
 			-- many came back. Equal today; the moment the server reduces what it
 			-- returns, the difference is what the UI needs in order to say so.
