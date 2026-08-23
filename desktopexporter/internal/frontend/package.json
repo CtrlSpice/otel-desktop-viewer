@@ -16,12 +16,12 @@
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
-    "@codemirror/commands": "^6.10.4",
+    "@codemirror/commands": "^6.11.0",
     "@codemirror/language": "^6.12.4",
     "@codemirror/legacy-modes": "^6.5.3",
     "@codemirror/lint": "^6.9.7",
     "@codemirror/state": "^6.7.1",
-    "@codemirror/view": "^6.43.8",
+    "@codemirror/view": "^6.43.9",
     "@fontsource/atkinson-hyperlegible-mono": "^5.3.0",
     "@fontsource/atkinson-hyperlegible-next": "^5.3.0",
     "@hugeicons/core-free-icons": "^4.2.3",
@@ -34,9 +34,9 @@
     "d3-interpolate": "^3.0.1",
     "d3-scale": "^4.0.2",
     "d3-shape": "^3.2.0",
-    "daisyui": "^5.7.16",
+    "daisyui": "^5.7.19",
     "layerchart": "^2.2.0",
-    "svelte": "^5.56.8"
+    "svelte": "^5.56.9"
   },
   "devDependencies": {
     "@lezer/generator": "^1.8.0",
@@ -44,7 +44,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/svelte": "^5.4.2",
-    "@testing-library/user-event": "^14.6.4",
+    "@testing-library/user-event": "^14.6.5",
     "@tsconfig/svelte": "^5.0.8",
     "@types/d3-interpolate": "^3.0.4",
     "@types/d3-scale": "^4.0.9",
@@ -55,10 +55,10 @@
     "postcss": "^8.5.26",
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
-    "svelte-check": "^4.7.5",
+    "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vite": "^8.2.1",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
