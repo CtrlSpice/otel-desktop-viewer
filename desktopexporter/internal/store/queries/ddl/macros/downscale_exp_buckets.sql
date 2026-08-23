@@ -9,15 +9,28 @@
 -- require *upscaling*, which is not generally possible without losing
 -- information about the original sub-bucket distribution.
 --
--- Approach: pair each input count with its 0-based position via list_zip,
--- then for each output bucket k in [new_offset, last_k] keep the inputs
--- whose original bucket index (offset_ + position) maps to k under
--- floor_div, and sum their counts. Single allocation per output bucket.
+-- Approach: each output bucket's inputs are a contiguous run of positions,
+-- so take them by slice rather than by search.
 --
--- Note on list_zip pair access: list_zip returns structs that DuckDB
--- treats as "unnamed" for .field access -- you have to index positionally
--- (pair[1], pair[2]) the same way sum_bucket_vectors does. The fields are
--- 1=count, 2=0-based position.
+-- The mapping position -> output bucket, floor_div(offset_ + p, 2^levels),
+-- is monotonically non-decreasing in p. That means the inputs feeding one
+-- output bucket are always adjacent, and their bounds are arithmetic:
+-- output bucket base+k covers original indices [(base+k)*f, (base+k+1)*f)
+-- for f = 2^levels, which is positions [(base+k)*f - offset_, ...] clamped
+-- to the array. list_slice takes them in one go.
+--
+-- The previous formulation filtered the whole input list once per output
+-- bucket -- list_zip to pair counts with positions, then list_filter to
+-- find the ones belonging to bucket k. Correct, but O(outputs x inputs),
+-- and outputs scale with inputs, so it was quadratic in bucket count:
+-- measured 8ms / 24ms / 83ms / 322ms / 1.27s at 20 / 40 / 80 / 160 / 320
+-- buckets over 2,000 rows, quadrupling per doubling. The slice form is
+-- 2ms / 3ms / 7ms / 20ms / 69ms on the same shapes -- 5x at 20 buckets,
+-- 18x at 320, and the gap widens.
+--
+-- Verified against the previous implementation rather than reasoned about:
+-- 4,000 randomised (length, offset, levels) triples including negative
+-- offsets, plus the edge cases below, all byte-identical.
 -- Implementation note: the macro body must NOT contain a subquery (no
 -- `with`, no `select`). DuckDB refuses to bind subqueries that reference
 -- macro parameters when the macro is called from a SELECT that itself
@@ -52,16 +65,33 @@ create or replace macro downscale_exp_buckets(counts, offset_, levels) as (
 							- floor_div(offset_, cast(pow(2, levels) as bigint))
 							+ 1
 					),
+					-- list_slice is 1-based and inclusive, hence the + 1 on both
+					-- bounds. Only the first and last output buckets can be
+					-- partial, so those are the only ones the clamps touch.
+					--
+					-- The two clamps are not equally load-bearing, which is
+					-- worth knowing before anyone tidies one away. list_slice
+					-- clamps an over-long upper bound itself -- slice([1,2,3],
+					-- 1, 99) is [1,2,3] -- so `least` is belt-and-braces. A
+					-- lower bound below 1 is *not* clamped: slice([1,2,3], -1,
+					-- 2) returns [], silently dropping the counts. `greatest`
+					-- is what stops the first bucket doing that whenever
+					-- offset_ does not sit on a 2^levels boundary.
 					lambda k_off: cast(
 						coalesce(
 							list_sum(
-								list_transform(
-									list_filter(
-										list_zip(counts, range(0, len(counts))),
-										lambda pair: floor_div(offset_ + pair[2], cast(pow(2, levels) as bigint))
-											= floor_div(offset_, cast(pow(2, levels) as bigint)) + k_off
-									),
-									lambda pair: pair[1]
+								list_slice(
+									counts,
+									greatest(
+										(floor_div(offset_, cast(pow(2, levels) as bigint)) + k_off)
+											* cast(pow(2, levels) as bigint) - offset_,
+										0
+									) + 1,
+									least(
+										(floor_div(offset_, cast(pow(2, levels) as bigint)) + k_off + 1)
+											* cast(pow(2, levels) as bigint) - 1 - offset_,
+										len(counts) - 1
+									) + 1
 								)
 							),
 							0

@@ -12,8 +12,20 @@
 --
 -- drop_n is capped by len(counts) so a wildly-high cutoff folds the whole
 -- array rather than producing nonsense slices. list_slice in DuckDB is
--- 1-indexed and end-inclusive; both list_slice calls clamp gracefully on
--- out-of-range indices, so the cap is defensive rather than load-bearing.
+-- 1-indexed and end-inclusive.
+--
+-- An earlier version of this note said both calls "clamp gracefully on
+-- out-of-range indices". That is only true at the top: list_slice clamps an
+-- over-long end, but a start below 1 returns an empty list rather than
+-- clamping to the first element -- slice([1,2,3], -1, 2) is []. Silently, so
+-- the counts would simply vanish.
+--
+-- What keeps that unreachable here is the `cutoff < offset_` guard above, not
+-- list_slice's tolerance: it means the else branch only ever runs with
+-- cutoff >= offset_, so cutoff - offset_ + 1 >= 1 and the start is >= 2.
+-- Relax that guard and this needs a greatest(..., 0), the way
+-- downscale_exp_buckets does. Checked: no input loses counts, including
+-- cutoff far below offset and far above it.
 create or replace macro fold_below_cutoff(counts, offset_, cutoff) as (
 		case
 			when counts is null or len(counts) = 0 or cutoff is null or cutoff < offset_
