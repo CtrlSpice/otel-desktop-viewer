@@ -32,6 +32,7 @@ func readStore[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 // TestNewAppenders_ErrorPath verifies that when appender creation fails partway through,
 // we close any appenders already created before returning the error (no leak).
 func TestNewAppenders_ErrorPath(t *testing.T) {
+	t.Parallel()
 	s, _ := storetest.New(t)
 
 	tables := []string{"attributes", "nonexistent_table"}
@@ -76,6 +77,7 @@ func TestNewAppenders_ErrorPath(t *testing.T) {
 // load-bearing here rather than incidental: without it the appender's own flush
 // would fail the FK, which is itself a check that the two halves agree.
 func TestFlushAppenders_MakesDataVisible(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	// Build the dictionary side the way logs.Ingest does, so the ids the
@@ -188,6 +190,7 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 // TestFlushAppenders_CloseAppenders_NilEmptySafe verifies that FlushAppenders and
 // CloseAppenders do not panic when given nil or empty inputs (documented as safe).
 func TestFlushAppenders_CloseAppenders_NilEmptySafe(t *testing.T) {
+	t.Parallel()
 	assert.NotPanics(t, func() { ingest.FlushAppenders(nil, nil) })
 	assert.NotPanics(t, func() { ingest.FlushAppenders(nil, []string{"x"}) })
 	assert.NotPanics(t, func() { ingest.FlushAppenders(map[string]*duckdb.Appender{}, nil) })

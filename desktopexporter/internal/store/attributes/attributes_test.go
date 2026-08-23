@@ -84,6 +84,7 @@ func search(t *testing.T, s *store.Store, ctx context.Context, term string) []ma
 // The question the feature exists to answer: a value seen in the UI, traced
 // back to the keys that hold it -- across signals, in one call.
 func TestSearchFindsKeysByValue(t *testing.T) {
+	t.Parallel()
 	s, ctx := setup(t)
 	got := search(t, s, ctx, "checkout")
 
@@ -111,6 +112,7 @@ func TestSearchFindsKeysByValue(t *testing.T) {
 }
 
 func TestSearchMatchesKeyNamesToo(t *testing.T) {
+	t.Parallel()
 	s, ctx := setup(t)
 	// "status" appears in no value, only in a key name.
 	got := search(t, s, ctx, "status")
@@ -119,11 +121,13 @@ func TestSearchMatchesKeyNamesToo(t *testing.T) {
 }
 
 func TestSearchIsCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	s, ctx := setup(t)
 	assert.ElementsMatch(t, search(t, s, ctx, "CHECKOUT"), search(t, s, ctx, "checkout"))
 }
 
 func TestSearchEmptyAndNoMatch(t *testing.T) {
+	t.Parallel()
 	s, ctx := setup(t)
 	assert.Empty(t, search(t, s, ctx, ""), "an empty term is not a request for everything")
 	assert.Empty(t, search(t, s, ctx, "   "))
@@ -134,6 +138,7 @@ func TestSearchEmptyAndNoMatch(t *testing.T) {
 // escaping, typing % returns the entire dictionary, which looks like a bug and
 // is a slow one.
 func TestSearchEscapesLikeWildcards(t *testing.T) {
+	t.Parallel()
 	s, ctx := setup(t)
 	assert.Empty(t, search(t, s, ctx, "%"), "%% must be a literal, not a wildcard")
 	assert.Empty(t, search(t, s, ctx, "_"))
@@ -143,6 +148,7 @@ func TestSearchEscapesLikeWildcards(t *testing.T) {
 // Samples are bounded, or a broad term returns the dictionary through the back
 // door.
 func TestSearchBoundsSampleValues(t *testing.T) {
+	t.Parallel()
 	s, ctx := setup(t)
 	got := search(t, s, ctx, "/")
 

@@ -19,6 +19,7 @@ import (
 // The dedupe claim, end to end: many spans sharing a resource must produce one
 // resource row and one set of dictionary entries, not one copy per span.
 func TestIngestDedupesAcrossSpans(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, err := store.NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)

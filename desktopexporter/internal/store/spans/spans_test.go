@@ -171,6 +171,7 @@ type rootSpanJSON struct {
 
 // TestTraceSummaryOrdering verifies that trace summaries are ordered by start time (newest first).
 func TestTraceSummaryOrdering(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -203,6 +204,7 @@ func TestTraceSummaryOrdering(t *testing.T) {
 
 // TestTraceNotFound verifies error handling for non-existent trace IDs.
 func TestTraceNotFound(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -214,6 +216,7 @@ func TestTraceNotFound(t *testing.T) {
 
 // TestEmptySpans verifies handling of empty span lists and empty stores.
 func TestEmptySpans(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -236,6 +239,7 @@ func TestEmptySpans(t *testing.T) {
 // asserting they *survive* is the point, not an omission. ingest.SweepOrphans
 // is the only thing that may delete them.
 func TestClearTraces(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
@@ -322,6 +326,7 @@ func spanDataFromSearchSpans(t *testing.T, raw json.RawMessage, i int) (name, sp
 
 // TestTraceSuite runs a comprehensive suite of tests on a single trace.
 func TestTraceSuite(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
@@ -426,6 +431,7 @@ func TestTraceSuite(t *testing.T) {
 
 // TestSearchTraces tests SearchTraces with various query types.
 func TestSearchTraces(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
@@ -1094,6 +1100,7 @@ func TestSearchTraces(t *testing.T) {
 // the constant was raised from 50 to 500 the hardcoded 51 quietly stopped
 // being a large batch at all.
 func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	const batchSize = spans.FlushInterval + 1
@@ -1158,6 +1165,7 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 }
 
 func TestIngest_CanceledContext(t *testing.T) {
+	t.Parallel()
 	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1170,6 +1178,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
+	t.Parallel()
 	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1189,6 +1198,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 // TestDeleteSpansByIDs verifies that multiple spans can be deleted by their SpanIDs, including child rows.
 func TestDeleteSpansByIDs(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
@@ -1265,6 +1275,7 @@ func TestDeleteSpansByIDs(t *testing.T) {
 
 // TestDeleteSpansByIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteSpansByIDs_Empty(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	err := s.WithDBWrite(func(db *sql.DB) error {
@@ -1275,6 +1286,7 @@ func TestDeleteSpansByIDs_Empty(t *testing.T) {
 
 // TestSearchSpansWith32CharHexTraceID verifies that SearchSpans finds a trace when given the 32-char hex form (no hyphens).
 func TestSearchSpansWith32CharHexTraceID(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
@@ -1293,6 +1305,7 @@ func TestSearchSpansWith32CharHexTraceID(t *testing.T) {
 
 // TestDeleteSpansByTraceIDs verifies that spans for multiple traces are deleted, including child rows.
 func TestDeleteSpansByTraceIDs(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	traces := createTestTracePdata()
@@ -1337,6 +1350,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 
 // TestDeleteSpansByTraceIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteSpansByTraceIDs_Empty(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	err := s.WithDBWrite(func(db *sql.DB) error {
@@ -1602,6 +1616,7 @@ func createTestTracePdata() ptrace.Traces {
 // path forgot to write the column, or the resource attribute row was
 // dropped, both of which would silently break service filtering.
 func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -1656,6 +1671,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 // spans rather than part of resource or scope identity: the same scope emitted
 // through two pipelines stamping different urls is still one scope.
 func TestSchemaURLsAreStored(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	const resURL = "https://opentelemetry.io/schemas/1.27.0"
@@ -1700,6 +1716,7 @@ func TestSchemaURLsAreStored(t *testing.T) {
 // Unreachable spans were previously dropped in silence, which renders the
 // trace short with nothing saying so. unplacedSpanCount reports them.
 func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC).UnixNano()
@@ -1859,6 +1876,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 // the wire, which means surviving the recursive walk's explicit column list
 // and the JSON macro -- the two places this was actually missing.
 func TestSpanAndLinkFlagsRoundTrip(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	const (

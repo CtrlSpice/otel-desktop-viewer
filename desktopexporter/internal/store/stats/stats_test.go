@@ -103,6 +103,7 @@ func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {
 }
 
 func TestGetStats_Empty(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	result := getStats(t, s, ctx)
@@ -123,6 +124,7 @@ func TestGetStats_Empty(t *testing.T) {
 }
 
 func TestGetStats_WithTraces(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -146,6 +148,7 @@ func TestGetStats_WithTraces(t *testing.T) {
 }
 
 func TestGetStats_WithLogs(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -166,6 +169,7 @@ func TestGetStats_WithLogs(t *testing.T) {
 }
 
 func TestGetStats_WithMetrics(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	m := buildTestMetrics()
@@ -185,6 +189,7 @@ func TestGetStats_WithMetrics(t *testing.T) {
 }
 
 func TestGetStats_AllSignals(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()

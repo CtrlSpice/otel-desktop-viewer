@@ -60,6 +60,7 @@ func (c *collector) Export(_ context.Context, req pmetricotlp.ExportRequest) (pm
 // second collection's values, and only those, are what a merge across the window
 // must report.
 func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")

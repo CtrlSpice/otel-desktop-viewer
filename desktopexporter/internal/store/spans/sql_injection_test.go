@@ -38,6 +38,7 @@ var injectionPayloads = []string{
 // rendered, not re-parsed, so a fragment containing template syntax cannot
 // cause a second round of expansion.
 func TestSearchSpansSQLBindsHostileInput(t *testing.T) {
+	t.Parallel()
 	for _, payload := range injectionPayloads {
 		t.Run(payload, func(t *testing.T) {
 			// A non-equality operator so the query keeps the value comparison

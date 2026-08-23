@@ -19,6 +19,15 @@ func mapOf(build func(m pcommon.Map)) pcommon.Map {
 // stands in front of a pure function, so for every input the cached answer must
 // be the answer the derivation would have given. Each case is asked twice --
 // once cold, once warm -- because only the second is served by the memo.
+// The tests in this file are deliberately not parallel.
+//
+// The memo is one process-global table with global hit and miss counters, so
+// a test that asserts "89 misses and 17,711 hits" is asserting about the whole
+// process. Any other test ingesting at the same time moves those numbers, and
+// so does another memo test calling ResetAttributeMemo halfway through this
+// one. Go runs every non-parallel test to completion before the parallel ones
+// resume, which is what keeps these six isolated -- so leaving t.Parallel()
+// off is load-bearing here, not an omission.
 func TestAttributeMemoAgreesWithDerivation(t *testing.T) {
 	cases := []struct {
 		name  string

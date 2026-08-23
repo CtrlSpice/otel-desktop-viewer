@@ -262,6 +262,7 @@ func attrMap(attrs []attrKeyValue) map[string]string {
 
 // TestLogOrdering verifies that logs are returned newest-first by effective time (timestamp or observedTimestamp).
 func TestLogOrdering(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -282,6 +283,7 @@ func TestLogOrdering(t *testing.T) {
 
 // TestEmptyLogs verifies handling of empty log lists and empty store.
 func TestEmptyLogs(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -303,6 +305,7 @@ func TestEmptyLogs(t *testing.T) {
 // that decides. Asserting that they survive Clear is the new contract, not a
 // dropped assertion. See spans.TestClearTraces for the same shape.
 func TestClearLogs(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -347,6 +350,7 @@ func TestClearLogs(t *testing.T) {
 
 // TestLogSuite runs a comprehensive suite on the same three-log dataset.
 func TestLogSuite(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -516,6 +520,7 @@ func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context, star
 // rather than nothing. (2) has no such escape -- those keys exist only outside
 // the window.
 func TestGetLogAttributes(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -572,6 +577,7 @@ func TestGetLogAttributes(t *testing.T) {
 
 // TestDeleteLogsByIDs verifies that multiple logs can be deleted by their IDs.
 func TestDeleteLogsByIDs(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -596,6 +602,7 @@ func TestDeleteLogsByIDs(t *testing.T) {
 
 // TestDeleteLogsByIDs_Empty verifies that deleting with an empty list is a no-op.
 func TestDeleteLogsByIDs_Empty(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	err := s.WithDBWrite(func(db *sql.DB) error {
@@ -611,6 +618,7 @@ func TestDeleteLogsByIDs_Empty(t *testing.T) {
 // the interval ingests consistently. Sized from the constant: this said 250
 // against an interval that had been raised to 500.
 func TestIngestLogs_LargeBatchStaysConsistent(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -649,6 +657,7 @@ func TestIngestLogs_LargeBatchStaysConsistent(t *testing.T) {
 }
 
 func TestIngest_CanceledContext(t *testing.T) {
+	t.Parallel()
 	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -661,6 +670,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
+	t.Parallel()
 	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -680,6 +690,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 // TestSearchLogs tests logs.Search with various query types.
 func TestSearchLogs(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
@@ -1100,6 +1111,7 @@ func TestSearchLogs(t *testing.T) {
 // on the standard fixture which stamps service.name = test-service on
 // the resource for every record.
 func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()

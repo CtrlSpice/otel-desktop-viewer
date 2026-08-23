@@ -266,6 +266,7 @@ func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name
 
 // TestMetricSuite runs tests on ingested metrics using SearchMetrics (DB-generated JSON).
 func TestMetricSuite(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -714,6 +715,7 @@ func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, u
 // DeleteMetricStream, and checks that (a) every row backing that stream
 // is gone and (b) nothing else was touched.
 func TestDeleteMetricStream(t *testing.T) {
+	t.Parallel()
 	t.Run("removes a single Gauge by name+unit+scope+service", func(t *testing.T) {
 		s, ctx := storetest.New(t)
 
@@ -1005,6 +1007,7 @@ func TestDeleteMetricStream(t *testing.T) {
 // This test is the find-or-insert mirror of the cascade-delete test:
 // together they pin down the two halves of "identity is canonical."
 func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	const batches = 5
@@ -1050,6 +1053,7 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 // assert each change yields a fresh stream so a future "be permissive"
 // regression won't silently merge two semantically distinct streams.
 func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
+	t.Parallel()
 	mk := func(t *testing.T, mutate func(m pmetric.Metric, scope pcommon.InstrumentationScope, res pcommon.Resource)) pmetric.Metrics {
 		t.Helper()
 		md := pmetric.NewMetrics()
@@ -1118,6 +1122,7 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 // inconsistent service names for the same identity), this test will
 // catch it.
 func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -1143,6 +1148,7 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 
 // TestEmptyMetrics verifies empty metric list and empty store.
 func TestEmptyMetrics(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -1156,6 +1162,7 @@ func TestEmptyMetrics(t *testing.T) {
 
 // TestClearMetrics verifies that all metrics can be cleared, including child rows.
 func TestClearMetrics(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -1194,6 +1201,7 @@ func TestClearMetrics(t *testing.T) {
 }
 
 func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	ts := time.Unix(1700000000, 0)
@@ -1426,6 +1434,7 @@ func findMetricID(t *testing.T, s *store.Store, ctx context.Context, name string
 // which is unobservable by design. Sized from the constant so it cannot stop
 // being a large batch when the constant moves.
 func TestIngestMetrics_LargeBatchStaysConsistent(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	const batchSize = metrics.FlushInterval + 1
@@ -1468,6 +1477,7 @@ func TestIngestMetrics_LargeBatchStaysConsistent(t *testing.T) {
 }
 
 func TestIngest_CanceledContext(t *testing.T) {
+	t.Parallel()
 	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1480,6 +1490,7 @@ func TestIngest_CanceledContext(t *testing.T) {
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
+	t.Parallel()
 	s, _ := storetest.New(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1499,6 +1510,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 // TestSearchSummaries_CardFields verifies the slim summary projection used
 // by drawer cards: stream id, series count, scalar last value, last seen.
 func TestSearchSummaries_CardFields(t *testing.T) {
+	t.Parallel()
 	t.Run("Gauge", func(t *testing.T) {
 		s, ctx := storetest.New(t)
 
@@ -1563,6 +1575,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 // first makes it one array-overlap scan (39.2ms -> 7.7ms on the reference
 // capture), so the coverage gap is now just a gap.
 func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
@@ -1742,6 +1755,7 @@ func buildTwoReplicaMetrics(t *testing.T) pmetric.Metrics {
 // rows and two series. Collapsing replicas that actually identified
 // themselves would be a worse bug than the one this whole change fixes.
 func TestMetricSeries_SplitByResource(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
@@ -1805,6 +1819,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 // fallback is gone. Absent means absent: the telemetry never claimed these
 // were different instances, so we do not either.
 func TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	md := pmetric.NewMetrics()
@@ -1859,6 +1874,7 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses(t *testing.T) {
 // content-derived id from (stream, resource, labels) is the same every time the
 // same series arrives.
 func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	seriesIDs := func() []string {
@@ -1967,6 +1983,7 @@ func buildInstanceMetrics(t *testing.T, extra map[string]string, base int64) pme
 // test asserted two as the "correct" half of the split, back when a resource
 // id still carried the attribute set as identity. It no longer does.
 func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Now().UnixNano()
@@ -2039,6 +2056,7 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 //	folded           = buckets 0 and 1 = 5 + 7 = 12
 //	result           = [3] at offset 2, zeroCount 1 + 2 + 12 = 15
 func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
@@ -2107,6 +2125,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 // The bug needed a reduction to appear at all, which is why no existing test
 // saw it: they either request no reduction or never look at the labels.
 func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -2176,6 +2195,7 @@ func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
 // skip it -- the mean of nothing is not nought. Emitting 0 would bake one
 // view's reading into all three.
 func TestGetMetric_ScalarViewBuckets(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -2300,6 +2320,7 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 // with samples but no rate draws nothing -- and derives both from it, so the
 // overlay, the badges and the line cannot disagree.
 func TestGetMetric_RateSlopeAndStats(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -2422,6 +2443,7 @@ func TestGetMetric_RateSlopeAndStats(t *testing.T) {
 // each datapoint against its predecessor in the series, then buckets); this
 // pins the histogram merge to the same rule.
 func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -2519,6 +2541,7 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 // than its own buckets held. Nothing downstream can reconcile that, because the
 // count badge and the quantiles read different fields of the same row.
 func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -2584,6 +2607,7 @@ func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
 // Absolute boundaries are right for a chart and wrong for a summary, which is
 // why one bucket is a different request rather than a smaller number of them.
 func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	// 10:20 to 12:00 -- a 100 minute span, which the ladder serves with the
@@ -2654,6 +2678,7 @@ func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
 // another. Measured on a 21-series histogram: three checked series arrived with
 // no datapoints, and three that were shipped theirs were never drawn.
 func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -2726,6 +2751,7 @@ func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
 // exporter that changed its histogram configuration mid-window, which is a real
 // finding for anyone debugging one, looked like an idle period.
 func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -2810,6 +2836,7 @@ func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
 // ladder rung: a reader can name a 1-minute boundary and cannot name a
 // 30.5-second one.
 func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -2914,6 +2941,7 @@ func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
 // visibly full of data -- reading as series that had stopped reporting rather
 // than ones this response did not carry.
 func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -3033,6 +3061,7 @@ func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
 // returned six different responses in six tries, differing in which datapoints
 // the M4 election kept.
 func TestGetMetric_Deterministic(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -3155,6 +3184,7 @@ func TestGetMetric_Deterministic(t *testing.T) {
 // aggregate folds them. Narrowing that reached the aggregates would turn "all"
 // into "all of the checked ones", which is wrong and looks plausible.
 func TestGetMetric_DatapointNarrowing(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -3271,6 +3301,7 @@ func TestGetMetric_DatapointNarrowing(t *testing.T) {
 // average is pooled over every sample rather than averaged over per-series
 // averages.
 func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -3408,6 +3439,7 @@ func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
 // because a sparkline's whole job is to show that something happened, and a
 // mean over a wide bucket is exactly what hides a spike.
 func TestGetMetric_Sparkline(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -3513,6 +3545,7 @@ func TestGetMetric_Sparkline(t *testing.T) {
 // That implementation is gone -- the store does the merging now -- and this
 // test exists so the behaviour did not leave with it.
 func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -3592,6 +3625,7 @@ func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
 //
 // Also ported from the deleted TypeScript merge.
 func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -3653,6 +3687,7 @@ func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
 //
 // Empty means all, which is what every caller predating the parameter sends.
 func TestGetMetric_SeriesFilter(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
@@ -3720,6 +3755,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 //
 // Empty means none, so a caller drawing no overlays does not pay for them.
 func TestGetMetric_Quantiles(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
@@ -3782,6 +3818,7 @@ func TestGetMetric_Quantiles(t *testing.T) {
 //
 // Totals: A has 60 observations, B has 10, so the aggregate must report 70.
 func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
@@ -3860,6 +3897,7 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 // and it is why this test reaches back before 1970 rather than only checking a
 // present-day offset.
 func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	// Two datapoints either side of midnight UTC. Under a -5h offset they fall
@@ -3932,6 +3970,7 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 // window must keep dividing itself, so its buckets stay anchored where the
 // caller put them.
 func TestGetMetric_FitToDataSpansTheData(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	// Ten minutes of datapoints a minute apart, inside a window that spans
@@ -4025,6 +4064,7 @@ func TestGetMetric_FitToDataSpansTheData(t *testing.T) {
 // lands on exactly 10s: 60s / 6 admits 10s and refuses 5s. Pinning the width is
 // what lets the assertion be "on the grid" rather than "self-consistent".
 func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	// 13:00:00 UTC is a whole minute, so it is already on the 10s grid and the
@@ -4125,6 +4165,7 @@ func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
 // arguments -- it runs the same query and keeps one field, and this is what
 // stops those two drifting.
 func TestGetMetricAggregate(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Now().Add(-time.Minute)
@@ -4277,6 +4318,7 @@ func mapKeys(m map[string]any) []string {
 // to the whole window puts the two readings below on different local days, so a
 // day bucket splits a day that did not end.
 func TestGetMetric_BucketsFollowTheZoneAcrossDST(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	// Both readings fall on local Sunday 25 October 2026 in London: the first
@@ -4363,6 +4405,7 @@ func TestGetMetric_BucketsFollowTheZoneAcrossDST(t *testing.T) {
 // directly visible here and nowhere else. A mutant reverting the election's
 // zone conversion survives the scalar test; this one is built to kill it.
 func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	// The same three moments as the scalar test: two on London's 25-hour local
@@ -4439,6 +4482,7 @@ func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 // settings rather than anything this query controls. A stream sampling every
 // datapoint defeated the reduction outright: every row came back.
 func TestGetMetric_ExemplarsAreCappedPerBucket(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
@@ -4506,6 +4550,7 @@ func TestGetMetric_ExemplarsAreCappedPerBucket(t *testing.T) {
 // not limit. The list is capped and the true count travels beside it, so a
 // client can say "5 of 60" rather than silently showing five.
 func TestGetMetric_ExemplarListIsCappedAndCounted(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
@@ -4564,6 +4609,7 @@ func TestGetMetric_ExemplarListIsCappedAndCounted(t *testing.T) {
 // returned nothing, and time order hands them whichever happened first. Both
 // caps now rank from either extreme, so what survives spans the range.
 func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
@@ -4632,6 +4678,7 @@ func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
 // which two does it keep? The ones whose exemplars reach lowest and highest,
 // not the two that happened first.
 func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
@@ -4730,6 +4777,7 @@ func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 // start of each column, slow ones after, which is the shape of a latency spike
 // and the reason someone clicks a heatmap in the first place.
 func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
@@ -4871,6 +4919,7 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 // change mid-flight gets a second row, not a collision, because OTel only
 // makes fixed bounds a practice, never a promise.
 func TestHistogramBoundsAreStoredOnce(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
@@ -4960,6 +5009,7 @@ func TestHistogramBoundsAreStoredOnce(t *testing.T) {
 // ever "optimised" into a count over metric_series, which agrees on an
 // unbounded window and diverges exactly where it matters.
 func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
@@ -5019,6 +5069,7 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 // Every existing histogram fixture supplies at least one bound, which is why
 // the whole suite passed while the crash was reachable from any real demo.
 func TestIngest_SingleBucketHistogram(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
@@ -5074,6 +5125,7 @@ func TestIngest_SingleBucketHistogram(t *testing.T) {
 // stops absorbing nil, this fails next to the code that would need the same
 // normalisation AddBounds now does.
 func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
 
 	t.Run("histogram with no buckets", func(t *testing.T) {
@@ -5134,6 +5186,7 @@ func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
 // allowlist is the only thing keeping it out and a later edit could widen it
 // without anyone noticing.
 func TestMetricMetadataRoundTrip(t *testing.T) {
+	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	md := pmetric.NewMetrics()
