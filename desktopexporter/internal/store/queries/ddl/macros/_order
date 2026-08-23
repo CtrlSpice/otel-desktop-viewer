@@ -24,12 +24,6 @@ exp_pos_buckets.sql
 exp_neg_buckets.sql
 exp_zero_bucket.sql
 exp_buckets.sql
-bucket_quantile_linear.sql
-bucket_quantile_loglin.sql
-hist_quantile.sql
-exp_hist_quantile.sql
-hist_quantiles.sql
-exp_hist_quantiles.sql
 floor_div.sql
 tz_offset_ns_at.sql
 bucket_start_utc.sql

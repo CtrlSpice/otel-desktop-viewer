@@ -3800,6 +3800,213 @@ func TestGetMetric_Quantiles(t *testing.T) {
 		"no quantiles requested means none computed")
 }
 
+// TestGetMetric_QuantileHandWorked pins the quantile arithmetic to values
+// worked out by hand, through the real query rather than against macro
+// literals.
+//
+// These cases lived in schema_test as literal calls to hist_quantile and
+// exp_hist_quantile. Those macros are gone -- each computed its walk in a
+// per-row sub-plan, and the walk now happens once, set-based, inside
+// get_metric.sql's quantile CTEs -- so the arithmetic they pinned is pinned
+// here instead, where it exercises the code that actually ships. The
+// hand-derivations in the comments are unchanged from the originals.
+func TestGetMetric_QuantileHandWorked(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	base := time.Now().Add(-time.Minute)
+
+	histCases := []struct {
+		name   string
+		counts []uint64
+		bounds []float64
+		q      float64
+		want   *float64
+	}{
+		// counts cumulative: 0, 50, 100, 100, 100. Total=100, p50 target=50.
+		// First bucket with acc >= 50 is bucket 2 (1,2]. Linear interp at
+		// fraction 1.0 gives 2.0 (the upper bound).
+		{"p50 lands cleanly on a bucket boundary",
+			[]uint64{0, 50, 50, 0, 0}, []float64{1, 2, 5, 10}, 0.5, ptrF(2.0)},
+		// counts cumulative: 0, 10, 30, 60, 100. p95 target=95. Lands in the
+		// unbounded tail (bucket 5), where lo=hi=10.0, so we clamp to the
+		// last known bound.
+		{"p95 in unbounded tail clamps to last known bound",
+			[]uint64{0, 10, 20, 30, 40}, []float64{1, 2, 5, 10}, 0.95, ptrF(10.0)},
+		// No bounds at all: nothing to interpolate against, so the requested
+		// key is present and null rather than absent or an error.
+		{"no bounds yields a null quantile",
+			[]uint64{10}, nil, 0.5, nil},
+		// A populated layout with nothing observed: same null, via the
+		// all-zero guard rather than the missing-bounds one.
+		{"all-zero counts yield a null quantile",
+			[]uint64{0, 0, 0, 0, 0}, []float64{1, 2, 5, 10}, 0.5, nil},
+	}
+	expCases := []struct {
+		name      string
+		scale     int32
+		zeroCount uint64
+		posOffset int32
+		posCounts []uint64
+		negOffset int32
+		negCounts []uint64
+		q         float64
+		want      *float64
+		delta     float64
+	}{
+		// scale=0 -> base=2. pos_counts=[50,50] at offset=0: bucket1 (1,2]
+		// cnt=50, bucket2 (2,4] cnt=50. Total=100. p50 target=50 -> first
+		// bucket at acc>=50 is bucket1. loglin: 1 * (2/1)^(50/50) = 2.0.
+		{"positive-only p50 (scale=0, two equal buckets)",
+			0, 0, 0, []uint64{50, 50}, 0, nil, 0.5, ptrF(2.0), 1e-9},
+		// All weight in zero bucket. p50 -> zero bucket -> 0.
+		{"zero-only p50 returns 0",
+			0, 100, 0, nil, 0, nil, 0.5, ptrF(0.0), 1e-9},
+		// neg=[10,10], zero=20, pos=[10,10] at scale=0. Total=60. CDF acc:
+		// 10, 20, 40, 50, 60. p50 target=30 -> first acc>=30 is the zero
+		// bucket (acc=40). Loglin over [0,0] falls back to linear -> 0.
+		{"symmetric three-region p50 lands in zero bucket",
+			0, 20, 0, []uint64{10, 10}, 0, []uint64{10, 10}, 0.5, ptrF(0.0), 1e-9},
+		// Reference dataset hand-computed in the planning notes. scale=2 ->
+		// base = 2^(2^-2) = 2^0.25 ~= 1.189. Hand calc predicted p95 ~= 6.35.
+		{"reference dataset p95 matches hand calc",
+			2, 0, 6, []uint64{1200, 3800, 4200, 2100, 720, 280, 70, 22, 6, 2}, 0, nil,
+			0.95, ptrF(6.349604207872798), 1e-6},
+		// scale=0 -> buckets (1,2], (2,4], (4,8]. No zero region, so the
+		// smallest observation is above 1: q=0 returns the first populated
+		// bucket's lower edge, not 0.
+		{"q=0 returns the first populated bucket's lower edge",
+			0, 0, 0, []uint64{10, 20, 30}, 0, nil, 0.0, ptrF(1.0), 1e-9},
+		// A genuine zero region: the zero bucket is populated, so it is
+		// selected on its merits and 0 is the right answer.
+		{"q=0 with a real zero region still returns 0",
+			0, 5, 0, []uint64{10, 20, 30}, 0, nil, 0.0, ptrF(0.0), 1e-9},
+		// An empty bucket in the middle must not absorb the target.
+		{"empty interior bucket is skipped",
+			0, 0, 0, []uint64{10, 0, 30}, 0, nil, 0.25, ptrF(2.0), 1e-9},
+		// Nothing observed anywhere: the key is present and null.
+		{"empty exponential histogram yields a null quantile",
+			0, 0, 0, nil, 0, nil, 0.5, nil, 0},
+	}
+
+	// One metric per case; each reads its single datapoint's quantile object
+	// off the wire.
+	for i, tc := range histCases {
+		name := fmt.Sprintf("hw.hist.%d", i)
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			var total uint64
+			for _, c := range tc.counts {
+				total += c
+			}
+			return metrics.Ingest(ctx, conn,
+				makeHistogramFixtureT(name, pmetric.AggregationTemporalityDelta, []histTestDP{{
+					timestamp: base, bounds: tc.bounds, counts: tc.counts,
+					count: total, sum: float64(total),
+				}}), s.FlushedIDs())
+		}))
+	}
+	for i, tc := range expCases {
+		name := fmt.Sprintf("hw.exp.%d", i)
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn,
+				makeExpHistogramFixtureT(name, pmetric.AggregationTemporalityDelta, []expHistTestDP{{
+					timestamp: base, scale: tc.scale,
+					zeroCount: tc.zeroCount, zeroThreshold: 0,
+					posOffset: tc.posOffset, posCounts: tc.posCounts,
+					negOffset: tc.negOffset, negCounts: tc.negCounts,
+				}}), s.FlushedIDs())
+		}))
+	}
+
+	end := time.Now().UnixNano() + int64(time.Hour)
+	// Returns the quantile's value and whether its key survived to the wire.
+	//
+	// A quantile that cannot be computed does not arrive as a null-valued
+	// key: datapoint_json assembles its output with json_merge_patch, and
+	// RFC 7386 deletes null members recursively, so the key is stripped and
+	// the client reads absence. That was already true before the quantile
+	// walk moved into the CTEs -- the old macros returned null and the merge
+	// stripped it the same way -- it was just never pinned at wire level:
+	// the deleted schema_test cases asserted on the macros directly, one
+	// layer below where the stripping happens.
+	quantileOf := func(name string, q float64) (any, bool) {
+		id := findMetricID(t, s, ctx, name)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, id, 0, end, 0, nil, []float64{q}, 0, false, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		dps := m["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+		require.Len(t, dps, 1)
+		qobj, ok := dps[0].(map[string]any)["quantiles"].(map[string]any)
+		require.True(t, ok, "quantiles must be an object even when empty")
+		// Each call requests exactly one quantile, so read the object's only
+		// entry rather than reconstruct its key -- DuckDB spells the key from
+		// the double (0.0 -> "0.0") where Go's FormatFloat would say "0".
+		require.LessOrEqual(t, len(qobj), 1)
+		for _, v := range qobj {
+			return v, true
+		}
+		return nil, false
+	}
+
+	for i, tc := range histCases {
+		t.Run(tc.name, func(t *testing.T) {
+			v, present := quantileOf(fmt.Sprintf("hw.hist.%d", i), tc.q)
+			if tc.want == nil {
+				assert.False(t, present, "an uncomputable quantile is stripped, not null")
+			} else {
+				require.True(t, present)
+				assert.InDelta(t, *tc.want, v, 1e-9)
+			}
+		})
+	}
+	for i, tc := range expCases {
+		t.Run(tc.name, func(t *testing.T) {
+			v, present := quantileOf(fmt.Sprintf("hw.exp.%d", i), tc.q)
+			if tc.want == nil {
+				assert.False(t, present, "an uncomputable quantile is stripped, not null")
+			} else {
+				require.True(t, present)
+				assert.InDelta(t, *tc.want, v, tc.delta)
+			}
+		})
+	}
+
+	// End-to-end merge, from schema_test's sum_bucket_vectors suite: two
+	// series over bounds [1, 2, 5, 10]:
+	//   A counts = [0, 50,  50,  0, 0]
+	//   B counts = [0, 30,  50, 20, 0]
+	//   sum     = [0, 80, 100, 20, 0]  total = 200
+	// p50 target = 100. CDF acc = 0, 80, 180, 200, 200. First acc >= 100 is
+	// bucket 3 (lo=2, hi=5, cnt=100, acc_prev=80). Linear interp:
+	//   2 + (5 - 2) * (100 - 80) / 100 = 2.6
+	t.Run("aggregate p50 over merged series", func(t *testing.T) {
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn,
+				makeHistogramFixtureT("hw.merge", pmetric.AggregationTemporalityDelta, []histTestDP{
+					{timestamp: base, attrs: map[string]string{"route": "/a"},
+						bounds: []float64{1, 2, 5, 10}, counts: []uint64{0, 50, 50, 0, 0}, count: 100, sum: 100},
+					{timestamp: base, attrs: map[string]string{"route": "/b"},
+						bounds: []float64{1, 2, 5, 10}, counts: []uint64{0, 30, 50, 20, 0}, count: 100, sum: 100},
+				}), s.FlushedIDs())
+		}))
+		id := findMetricID(t, s, ctx, "hw.merge")
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricAggregate(ctx, db, id, 0, end, 1, nil, []float64{0.5}, 0, false, 1, nil, "")
+		})
+		require.NoError(t, err)
+		var env map[string]any
+		require.NoError(t, json.Unmarshal(raw, &env))
+		agg := env["aggregate"].([]any)
+		require.Len(t, agg, 1)
+		q := agg[0].(map[string]any)["quantiles"].(map[string]any)
+		assert.InDelta(t, 2.6, q["0.5"], 1e-9)
+	})
+}
+
+func ptrF(v float64) *float64 { return &v }
+
 // TestGetMetric_CrossSeriesAggregate covers the merge that lets the client stop
 // combining series itself.
 //

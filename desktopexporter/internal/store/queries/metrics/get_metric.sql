@@ -1385,18 +1385,90 @@
 		-- were then discarded. Measured on a 22-series Gauge, 19,319 datapoints
 		-- in and 3,598 kept: 283ms building all of them against 168ms building
 		-- the ones that ship.
+		shipped_dps as (
+			select d.* from projected_dps d
+			left join retained_ids r on r.id = d.id
+			where ((select kind from reduction_kind) <> 'elect' or r.id is not null)
+			  and d.series_id in (select series_id from datapoint_series_allowed)
+		),
+		-- Per-datapoint quantiles, computed relationally instead of inside
+		-- datapoint_json.
+		--
+		-- The macro used to call hist_quantiles per row, and that macro's body
+		-- is a subquery: an unnest of the bucket list plus a window over it.
+		-- A scalar macro whose body is a subquery costs a whole sub-plan per
+		-- evaluation, so three quantiles across N shipped datapoints built 3N
+		-- miniature plans to add up 160 integers each -- measured at 2,000
+		-- rows: 246ms as the macro, 12ms as this chain. In-situ, three
+		-- quantiles added 74ms to an explicit-bounds GetMetric and 42ms to an
+		-- exponential one.
+		--
+		-- Both flavours reduce to "build {lo, hi, cnt} buckets, walk them":
+		-- hist_buckets and exp_buckets are pure list ops, and the two walkers
+		-- differed only in interpolation kernel, chosen per row below.
+		dp_qsrc as (
+			select d.id,
+				case when d.metric_type = 'Histogram'
+					then hist_buckets(d.explicit_bounds, d.bucket_counts)
+					else exp_buckets(d.scale,
+						d.negative_bucket_offset, d.negative_bucket_counts,
+						d.zero_count,
+						d.positive_bucket_offset, d.positive_bucket_counts) end as buckets,
+				d.metric_type = 'Histogram' as is_linear
+			from shipped_dps d
+			where d.metric_type in ('Histogram', 'ExponentialHistogram')
+			  and len((select quantiles from input)) > 0
+		),
+		-- One unnest, one windowed accumulation per datapoint -- the walk the
+		-- macro rebuilt per quantile happens exactly once per row here.
+		dp_q_acc as (
+			select b.id, b.is_linear, u.b.lo as lo, u.b.hi as hi, u.b.cnt as cnt, u.i as i,
+				coalesce(sum(u.b.cnt) over (partition by b.id order by u.i
+					rows between unbounded preceding and 1 preceding), 0) as acc_prev,
+				sum(u.b.cnt) over (partition by b.id order by u.i
+					rows between unbounded preceding and current row) as acc,
+				sum(u.b.cnt) over (partition by b.id) as n
+			from dp_qsrc b, unnest(b.buckets) with ordinality u(b, i)
+		),
+		-- First bucket whose running total crosses the target, per (row, q).
+		-- cnt > 0 keeps a quantile out of empty buckets, which matters at the
+		-- leading zero bucket exp_buckets always emits -- same reasoning the
+		-- macro documented.
+		dp_q_picked as (
+			select a.id, qq.q,
+				case when a.is_linear
+					then interp_linear(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n)
+					else interp_loglin(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n) end as v,
+				row_number() over (partition by a.id, qq.q order by a.i) as rn
+			from dp_q_acc a, (select unnest((select quantiles from input)) as q) qq
+			where a.n > 0 and a.cnt > 0 and a.acc >= qq.q * a.n
+		),
+		-- The wire object, keys in request order. Built from ordered lists via
+		-- map rather than json_group_object: that aggregate follows input
+		-- order, which is nondeterministic under parallelism -- the old macro
+		-- actually shipped its keys in varying order, harmless only because
+		-- the client looks them up by name. The left join is what keeps an
+		-- empty histogram emitting every requested key, valued null, exactly
+		-- as the macro's guards did.
+		dp_quantiles as (
+			select t.id, to_json(map(
+				list(t.q::varchar order by t.qi),
+				list(p.v order by t.qi))) as quantiles
+			from (select b.id, qq.q, qq.qi from dp_qsrc b,
+				(select u.q, u.i as qi from unnest((select quantiles from input)) with ordinality u(q, i)) qq) t
+			left join dp_q_picked p on p.id = t.id and p.q = t.q and p.rn = 1
+			group by t.id
+		),
 		ts_dps_json as (
 			select d.series_id,
 				to_json(list(datapoint_json(
 					d,
 					coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]')),
 					coalesce((select exemplar_count from exemplars_agg where exemplars_agg.datapoint_id = d.id), 0),
-					(select quantiles from input)
+					dq.quantiles
 				) order by d.timestamp desc, d.id)) as datapoints
-			from projected_dps d
-			left join retained_ids r on r.id = d.id
-			where ((select kind from reduction_kind) <> 'elect' or r.id is not null)
-			  and d.series_id in (select series_id from datapoint_series_allowed)
+			from shipped_dps d
+			left join dp_quantiles dq on dq.id = d.id
 			group by d.series_id
 		),
 		-- Pack each timeseries into the wire shape and order them so
@@ -1585,14 +1657,59 @@
 				+ (select count(*) from agg_folds where distinct_bounds > 1)
 					as aggregate_buckets
 		),
+		-- The merged buckets' quantiles, same chain as dp_quantiles above and
+		-- for the same reason. Keyed by bucket_start; the exponential inputs
+		-- are the folded structs and the fold-adjusted zero count, exactly
+		-- what aggregate_bucket_json hands its exp branch.
+		agg_qsrc as (
+			select f.bucket_start,
+				case when f.explicit_bounds is not null and len(f.explicit_bounds) > 0
+					then hist_buckets(f.explicit_bounds, f.bucket_counts)
+					else exp_buckets(f.scale,
+						f.neg_fold."offset", f.neg_fold.counts,
+						f.zero_count + f.pos_fold.folded + f.neg_fold.folded,
+						f.pos_fold."offset", f.pos_fold.counts) end as buckets,
+				(f.explicit_bounds is not null and len(f.explicit_bounds) > 0) as is_linear
+			from agg_folds f
+			where f.distinct_bounds <= 1
+			  and len((select quantiles from input)) > 0
+		),
+		agg_q_acc as (
+			select b.bucket_start, b.is_linear, u.b.lo as lo, u.b.hi as hi, u.b.cnt as cnt, u.i as i,
+				coalesce(sum(u.b.cnt) over (partition by b.bucket_start order by u.i
+					rows between unbounded preceding and 1 preceding), 0) as acc_prev,
+				sum(u.b.cnt) over (partition by b.bucket_start order by u.i
+					rows between unbounded preceding and current row) as acc,
+				sum(u.b.cnt) over (partition by b.bucket_start) as n
+			from agg_qsrc b, unnest(b.buckets) with ordinality u(b, i)
+		),
+		agg_q_picked as (
+			select a.bucket_start, qq.q,
+				case when a.is_linear
+					then interp_linear(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n)
+					else interp_loglin(a.lo, a.hi, a.acc_prev, a.cnt, qq.q * a.n) end as v,
+				row_number() over (partition by a.bucket_start, qq.q order by a.i) as rn
+			from agg_q_acc a, (select unnest((select quantiles from input)) as q) qq
+			where a.n > 0 and a.cnt > 0 and a.acc >= qq.q * a.n
+		),
+		agg_quantiles as (
+			select t.bucket_start, to_json(map(
+				list(t.q::varchar order by t.qi),
+				list(p.v order by t.qi))) as quantiles
+			from (select b.bucket_start, qq.q, qq.qi from agg_qsrc b,
+				(select u.q, u.i as qi from unnest((select quantiles from input)) with ordinality u(q, i)) qq) t
+			left join agg_q_picked p on p.bucket_start = t.bucket_start and p.q = t.q and p.rn = 1
+			group by t.bucket_start
+		),
 		aggregate_agg as (
 			select to_json(list(aggregate_bucket_json(
 				f.timestamp, f.start_time, f.count, f.sum, f.scale,
 				f.zero_threshold, f.zero_count, f.pos_fold, f.neg_fold,
 				f.explicit_bounds, f.bucket_counts,
-				(select quantiles from input)
+				aq.quantiles
 			) order by f.bucket_start)) as aggregate
 			from agg_folds f
+			left join agg_quantiles aq on aq.bucket_start = f.bucket_start
 			-- A bucket whose series disagree about bounds cannot be merged.
 			-- Dropping it is what the time-axis merge does too; showing a sum
 			-- across incompatible layouts would be a plausible chart of nothing.
