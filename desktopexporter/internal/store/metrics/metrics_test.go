@@ -4252,6 +4252,75 @@ func TestGetMetricAggregate(t *testing.T) {
 		"an empty selection aggregates no series")
 
 	assert.Positive(t, allCount, "nil selection aggregates every series")
+
+	// The envelope carries these two fields and nothing else.
+	//
+	// It is built by SQL now rather than assembled in Go, so a stray field in
+	// the projection would travel silently: the caller reads the two it knows
+	// about and never notices the rest. That matters more than the bytes --
+	// the projection is what the planner prunes from, so a field nobody reads
+	// still drags its whole CTE chain into the plan.
+	assert.ElementsMatch(t, []string{"aggregate", "scalarAggregate"},
+		mapKeys(envelope),
+		"the aggregate call must project exactly its envelope")
+
+	// A scalar is the mirror image, and the reason the shape is chosen per
+	// metric: no histogram merge to report, but real pools.
+	t.Run("scalar metric reports pools and no merge", func(t *testing.T) {
+		var sums []sumTestDP
+		for i := 0; i < 4; i++ {
+			sums = append(sums, sumTestDP{
+				timestamp: base.Add(time.Duration(i) * time.Second),
+				value:     float64(10 * (i + 1)),
+				attrs:     map[string]string{"route": "/scalar"},
+			})
+		}
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn,
+				makeSumFixtureT("agg.scalar", pmetric.AggregationTemporalityCumulative, sums),
+				s.FlushedIDs())
+		}))
+		scalarID := findMetricID(t, s, ctx, "agg.scalar")
+
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricAggregate(ctx, db, scalarID, 0, end, 1, nil, nil, 0, false, 4, nil, "")
+		})
+		require.NoError(t, err)
+		var env map[string]any
+		require.NoError(t, json.Unmarshal(raw, &env))
+
+		assert.ElementsMatch(t, []string{"aggregate", "scalarAggregate"}, mapKeys(env))
+		// Null, not empty: a Sum has no bucket vectors, so there is no merge to
+		// report, and the client tells that apart from "merged to nothing".
+		assert.Nil(t, env["aggregate"], "a scalar has no histogram merge")
+		pools, _ := env["scalarAggregate"].(map[string]any)
+		require.NotNil(t, pools)
+		assert.NotEmpty(t, pools["all"], "a scalar contributes an All pool")
+	})
+
+	// The full projection keeps every field, which the shared template makes
+	// worth asserting: one stray conditional would truncate the real response
+	// and every test above would still pass, because none of them read it.
+	t.Run("the full projection is unaffected", func(t *testing.T) {
+		m := getMetricFullByName(t, s, ctx, "agg.only")
+		for _, k := range []string{
+			"id", "name", "description", "unit", "metricType", "resource",
+			"scope", "timeseries", "aggregate", "scalarAggregate",
+			"lastSeenNs", "datapointCount", "window",
+		} {
+			assert.Containsf(t, m, k, "getMetric must still emit %q", k)
+		}
+	})
+}
+
+// mapKeys is the sorted key set of a decoded JSON object.
+func mapKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TestGetMetric_BucketsFollowTheZoneAcrossDST pins bucketing to the viewer's
