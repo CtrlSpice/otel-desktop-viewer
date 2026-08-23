@@ -928,15 +928,6 @@ func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startT
 	return raw, nil
 }
 
-// nullIfAbsent keeps json.Marshal from writing a bare `null` field as invalid
-// empty bytes when the source key was missing rather than JSON null.
-func nullIfAbsent(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 {
-		return json.RawMessage("null")
-	}
-	return raw
-}
-
 // GetMetricAttributes returns every metric-side attribute name/scope/type this
 // store knows about. The time range is accepted and ignored -- see the note on
 // spans.GetTraceAttributes.
@@ -1329,8 +1320,6 @@ func boolValueToIdentityString(v driver.Value, metricType string) string {
 	return ""
 }
 
-// searchSummariesParams are the fragments SearchSummaries assembles into
-// queries/metrics/search_summaries.sql.
 // getMetricParams selects which shape of response the projection builds.
 //
 // The CTE definitions are identical either way; only the final json_object
@@ -1381,6 +1370,8 @@ func aggregateShapeFor(ctx context.Context, db *sql.DB, streamID string) getMetr
 	return p
 }
 
+// searchSummariesParams are the fragments SearchSummaries assembles into
+// queries/metrics/search_summaries.sql.
 type searchSummariesParams struct {
 	// CTEs is the search_params CTE holding the time bounds.
 	CTEs string
