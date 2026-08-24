@@ -227,3 +227,37 @@ describe('unified grammar contract', () => {
     expect(q.query.value).toBe('checkout latency')
   })
 })
+
+// Words that merely start with a keyword must stay words. AND/OR are
+// specialized from Word -- exact-text match -- rather than standalone tokens,
+// because a token above Word in the precedence list overrides longest-match
+// in Lezer: "orders" lexed as Or + "ders", and every value, field, or free
+// text beginning with "or"/"and"/"in"/"not" shattered. Found live, not by
+// unit tests, because no fixture value happened to start with a keyword.
+describe('keyword-prefixed words', () => {
+  it.each([
+    ['body = orders', 'orders'],
+    ['body = android', 'android'],
+    ['body = information', 'information'],
+    ['body = nothing', 'nothing'],
+    ['body = ANDES', 'ANDES'],
+  ])('%s keeps the value intact', (input, want) => {
+    const q: any = parseQuery(input, contractFields)
+    expect(q.query.value).toBe(want)
+  })
+
+  it('free text starting with a keyword prefix stays free text', () => {
+    const q: any = parseQuery('orderly android', contractFields)
+    expect(q.query.field.searchScope).toBe('global')
+    expect(q.query.value).toBe('orderly android')
+  })
+
+  it('mixed precedence with keyword-prefixed values', () => {
+    const n: any = parseQuery(
+      'body = Server OR body = Client AND body contains orders',
+      contractFields
+    )
+    expect(n.group.operator).toBe('OR')
+    expect(n.group.children[1].group.operator).toBe('AND')
+  })
+})

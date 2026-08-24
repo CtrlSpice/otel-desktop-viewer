@@ -14,21 +14,25 @@ const spec_Word = {
   null: 90,
   NIL: 92,
   nil: 94,
+  AND: 96,
+  and: 98,
+  OR: 100,
+  or: 102,
 }
 export const parser = LRParser.deserialize({
   version: 14,
   states:
-    "%jOVQPOOOVQPO'#C^OkQPO'#C`OOQO'#Cl'#ClO!fQPO'#C_OOQO'#Cm'#CmOOQO'#Cw'#CwQ#TQPOOOOQO'#Cv'#CvO#]QPO,58xOOQO'#Cd'#CdOOQO'#Ce'#CeOOQO'#Cf'#CfOOQO'#Ch'#ChO#hQPO'#CgOOQO'#Cc'#CcOOQO'#Cz'#CzO#vQPO,58yOVQPO,59YOVQPO,59[OOQO1G.d1G.dOOQO,59R,59ROOQO,59T,59TO$_QPO'#CkOOQO'#DT'#DTOOQO1G.e1G.eOOQO1G.t1G.tO$fQPO1G.vO$tQPO'#DVO$|QPO,59VO#vQPO'#CrO%RQPO,59qOOQO1G.q1G.qOOQO,59^,59^OOQO-E6p-E6p",
+    "%vOVQPOOOVQPO'#C^OkQPO'#C`OOQO'#Cl'#ClO!lQPO'#C_OOQO'#Cm'#CmOOQO'#Cw'#CwQ#ZQPOOOOQO'#Cv'#CvO#iQPO,58xOOQO'#Cd'#CdOOQO'#Ce'#CeOOQO'#Cf'#CfOOQO'#Ch'#ChO#zQPO'#CgOOQO'#Cc'#CcOOQO'#Cz'#CzO$YQPO,58yOOQO'#Co'#CoOVQPO,59YOOQO'#Cq'#CqOVQPO,59[OOQO1G.d1G.dOOQO,59R,59ROOQO,59T,59TO$qQPO'#CkOOQO'#DT'#DTOOQO1G.e1G.eOOQO1G.t1G.tO$xQPO1G.vO%^QPO'#DVO%fQPO,59VO$YQPO'#CrO%kQPO,59qOOQO1G.q1G.qOOQO,59^,59^OOQO-E6p-E6p",
   stateData:
-    '%b~OiOS~OTQOlPO|RO}RO!ORO!PRO~OUSXcaXeaXgaXoSXpSXqSXrSXsSXtSXuSXvSXmaX~OU`OoYOpYOqZOrZOs[Ot[Ou]Ov]O~OcbOecO~OcbOecOmdO~OoYOpYOs[Ot[O~OThO^hOxgO|RO}RO!ORO!PRO~O{yP~P#vOcbOedigdimdi~OznO{yX~O{pO~OznO{ya~Oce^UT^~',
-  goto: '#wzPP{{!RPP!X![!b!e!b!k!bP!n!s{#OP#OP#UPPP#[#OPP#hPPPPPPPP#kP#tXUOPbcXSOPbcR`SQ_SRe^R_SQ_SRf^R^SVhagnWTOPbcVhagnXWOPbcQolRroQVOQXPQjbRkcRaSQiaQlgRqnRmg',
+    '%x~OiOS~OTQOlPO|RO}RO!ORO!PRO~OUSXgaXoSXpSXqSXrSXsSXtSXuSXvSX!QaX!RaX!SaX!TaXmaX~OU`OoYOpYOqZOrZOs[Ot[Ou]Ov]O~O!QbO!RbO!SdO!TdO~OmfO!QbO!RbO!SdO!TdO~OoYOpYOs[Ot[O~OTjO^jOxiO|RO}RO!ORO!PRO~O{yP~P$YO!QbO!RbOgdi!Sdi!Tdimdi~OzpO{yX~O{rO~OzpO{ya~O^UTU~',
+  goto: '$QzPP{{!RPP!X![!b!e!b!k!bP!n!s{#O#U#O#Z#_PPP#e#OPP#qPPPPPPPP#tP#}XUOPceXSOPceR`SQ_SRg^R_SQ_SRh^R^SVjaipWTOPceVjaipXWOPceVcVXmTeVXQqnRtqQVOQXPQlcRmeRaSQkaQniRspRoi',
   nodeNames:
     '⚠ Query Group Comparison FieldName Word Operator KeywordOperator Contains Regexp In NotContains Not NotIn QuotedString Array Null FreeText AndExpression And OrExpression Or',
-  maxTerm: 47,
+  maxTerm: 51,
   skippedNodes: [0],
   repeatNodeCount: 1,
   tokenData:
-    "6[~R!QX^$Xpq$Xqr$|rs%[st&xtu%Vuv&xvw&xwx(Yxy)qyz)vz{&x{|&x|}){}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!^!_*Q!_!`*Y!`!a*Q!a!b&x!b!c&x!c!d*b!d!q&x!q!r.r!r!}&x!}#O1l#O#P&x#P#Q1q#Q#R%V#R#S&x#T#U1v#U#c&x#c#d4t#d#o&x#o#p&x#p#q&x#q#r&x#y#z$X$f$g$X#BY#BZ$X$IS$I_$X$I|$JO$X$JT$JU$X$KV$KW$X&FU&FV$X~$^Yi~X^$Xpq$X#y#z$X$f$g$X#BY#BZ$X$IS$I_$X$I|$JO$X$JT$JU$X$KV$KW$X&FU&FV$X~%PQ!_!`%V#r#s%V~%[OU~~%_VOr%[rs%ts#O%[#O#P%y#P;'S%[;'S;=`&r<%lO%[~%yO^~~%|RO;'S%[;'S;=`&V;=`O%[~&YWOr%[rs%ts#O%[#O#P%y#P;'S%[;'S;=`&r;=`<%l%[<%lO%[~&uP;=`<%l%[~&}cT~st&xuv&xvw&xz{&x{|&x}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!a!b&x!b!c&x!c!}&x#O#P&x#R#S&x#T#o&x#o#p&x#p#q&x#q#r&x~(]VOw(Ywx%tx#O(Y#O#P(r#P;'S(Y;'S;=`)k<%lO(Y~(uRO;'S(Y;'S;=`)O;=`O(Y~)RWOw(Ywx%tx#O(Y#O#P(r#P;'S(Y;'S;=`)k;=`<%l(Y<%lO(Y~)nP;=`<%l(Y~)vOl~~){Om~~*QOz~~*VPU~!_!`%V~*_PU~#r#s%V~*geT~st&xuv&xvw&xz{&x{|&x}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!a!b&x!b!c&x!c!p&x!p!q+x!q!}&x#O#P&x#R#S&x#T#o&x#o#p&x#p#q&x#q#r&x~+}eT~st&xuv&xvw&xz{&x{|&x}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!a!b&x!b!c&x!c!f&x!f!g-`!g!}&x#O#P&x#R#S&x#T#o&x#o#p&x#p#q&x#q#r&x~-gcc~T~st&xuv&xvw&xz{&x{|&x}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!a!b&x!b!c&x!c!}&x#O#P&x#R#S&x#T#o&x#o#p&x#p#q&x#q#r&x~.weT~st&xuv&xvw&xz{&x{|&x}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!a!b&x!b!c&x!c!t&x!t!u0Y!u!}&x#O#P&x#R#S&x#T#o&x#o#p&x#p#q&x#q#r&x~0ace~T~st&xuv&xvw&xz{&x{|&x}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!a!b&x!b!c&x!c!}&x#O#P&x#R#S&x#T#o&x#o#p&x#p#q&x#q#r&x~1qOx~~1vO{~~1{eT~st&xuv&xvw&xz{&x{|&x}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!a!b&x!b!c&x!c!}&x#O#P&x#R#S&x#T#b&x#b#c3^#c#o&x#o#p&x#p#q&x#q#r&x~3ceT~st&xuv&xvw&xz{&x{|&x}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!a!b&x!b!c&x!c!}&x#O#P&x#R#S&x#T#W&x#W#X-`#X#o&x#o#p&x#p#q&x#q#r&x~4yeT~st&xuv&xvw&xz{&x{|&x}!O&x!O!P&x!P!Q&x!Q![&x![!]&x!a!b&x!b!c&x!c!}&x#O#P&x#R#S&x#T#f&x#f#g0Y#g#o&x#o#p&x#p#q&x#q#r&x",
+    "*Y~RzX^#upq#uqr$jrs$xst&ftu$suv&fvw&fwx'vxy)_yz)dz{&f{|&f|})i}!O&f!O!P&f!P!Q&f!Q![&f![!]&f!^!_)n!_!`)v!`!a)n!a!b&f!b!c&f!c!}&f!}#O*O#O#P&f#P#Q*T#Q#R$s#R#S&f#T#o&f#o#p&f#p#q&f#q#r&f#y#z#u$f$g#u#BY#BZ#u$IS$I_#u$I|$JO#u$JT$JU#u$KV$KW#u&FU&FV#u~#zYi~X^#upq#u#y#z#u$f$g#u#BY#BZ#u$IS$I_#u$I|$JO#u$JT$JU#u$KV$KW#u&FU&FV#u~$mQ!_!`$s#r#s$s~$xOU~~${VOr$xrs%bs#O$x#O#P%g#P;'S$x;'S;=`&`<%lO$x~%gO^~~%jRO;'S$x;'S;=`%s;=`O$x~%vWOr$xrs%bs#O$x#O#P%g#P;'S$x;'S;=`&`;=`<%l$x<%lO$x~&cP;=`<%l$x~&kcT~st&fuv&fvw&fz{&f{|&f}!O&f!O!P&f!P!Q&f!Q![&f![!]&f!a!b&f!b!c&f!c!}&f#O#P&f#R#S&f#T#o&f#o#p&f#p#q&f#q#r&f~'yVOw'vwx%bx#O'v#O#P(`#P;'S'v;'S;=`)X<%lO'v~(cRO;'S'v;'S;=`(l;=`O'v~(oWOw'vwx%bx#O'v#O#P(`#P;'S'v;'S;=`)X;=`<%l'v<%lO'v~)[P;=`<%l'v~)dOl~~)iOm~~)nOz~~)sPU~!_!`$s~){PU~#r#s$s~*TOx~~*YO{~",
   tokenizers: [0],
   topRules: { Query: [0, 1] },
   specialized: [
@@ -37,5 +41,5 @@ export const parser = LRParser.deserialize({
       get: (value: string) => spec_Word[value as keyof typeof spec_Word] || -1,
     },
   ],
-  tokenPrec: 195,
+  tokenPrec: 219,
 })

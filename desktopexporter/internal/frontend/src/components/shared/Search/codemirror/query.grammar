@@ -23,6 +23,9 @@ KeywordOperator {
   Contains | Regexp | In | NotContains { Not Contains } | NotIn { Not In }
 }
 
+And { @specialize<Word, "AND"> | @specialize<Word, "and"> }
+Or  { @specialize<Word, "OR">  | @specialize<Word, "or"> }
+
 Contains { @specialize<Word, "CONTAINS"> | @specialize<Word, "contains"> }
 Regexp   { @specialize<Word, "REGEXP">   | @specialize<Word, "regexp"> }
 In       { @specialize<Word, "IN">       | @specialize<Word, "in"> }
@@ -49,12 +52,9 @@ commaSep<content> { "" | content ("," content)* }
     "'" (![\\\'] | "\\" _)* "'"
   }
 
-  And { "AND" | "and" }
-  Or { "OR" | "or" }
-
   space { @whitespace+ }
 
-  @precedence { And, Or, QuotedString, Operator, Word }
+  @precedence { QuotedString, Operator, Word }
 }
 
 @skip { space }
