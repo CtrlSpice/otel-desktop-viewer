@@ -4,6 +4,6 @@
 		from (
 			select distinct a.key, a.scope, a.type
 			from attributes a
-			where a.scope in ('resource', 'scope', 'datapoint', 'exemplar')
+			where a.scope in ('resource', 'scope', 'datapoint', 'exemplar', 'metadata')
 		) sub
 	
