@@ -129,12 +129,19 @@ function namedChildren(node: SyntaxNode): SyntaxNode[] {
   return out
 }
 
-// A structured query is one that uses the language: comparisons, groups,
-// AND/OR. Anything else -- however mangled -- is free text, searched
-// globally. An erroneous *structured* query is an error, never free text:
-// `duration NOT 5` used to be submitted as a global search for the literal
-// string "duration NOT 5", underlined red in the editor and silently wrong
-// on the wire.
+// A structured query is one that uses the language's *operators*:
+// comparisons, keyword operators, AND/OR. Anything else -- however mangled
+// -- is free text, searched globally. An erroneous *structured* query is an
+// error, never free text: `duration NOT 5` used to be submitted as a global
+// search for the literal string "duration NOT 5", underlined red in the
+// editor and silently wrong on the wire.
+//
+// A Group node deliberately does NOT count. Parentheses are ordinary
+// characters in log bodies and error text -- "(error)", "(500) internal
+// error" -- and the grammar eagerly parses a leading paren as a Group, so
+// counting Groups turned every parenthetical remark into a hard parse
+// error. The old lexer's heuristic was "has an operator or logical token",
+// and this is that rule expressed over the tree.
 function surveyTree(tree: ReturnType<typeof parser.parse>): {
   structured: boolean
   firstError: { from: number; to: number } | null
@@ -145,9 +152,10 @@ function surveyTree(tree: ReturnType<typeof parser.parse>): {
     enter(n) {
       if (
         n.name === 'Comparison' ||
-        n.name === 'Group' ||
         n.name === 'AndExpression' ||
-        n.name === 'OrExpression'
+        n.name === 'OrExpression' ||
+        n.name === 'Operator' ||
+        n.name === 'KeywordOperator'
       ) {
         structured = true
       }
@@ -186,7 +194,16 @@ function walkExpression(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     case 'Comparison':
       return walkComparison(ctx, node)
     case 'FreeText':
-      fail(ctx, node.from, node.to, unexpectedTokenMessage(text(ctx, node)))
+      // Reached only when the query is structured elsewhere -- a bare word
+      // sitting inside AND/OR or a group, like `x = 1 AND foo`. The quoting
+      // hint would be wrong here; the word is not a value missing its
+      // quotes, it is a condition missing its operator.
+      fail(
+        ctx,
+        node.from,
+        node.to,
+        `Unexpected "${text(ctx, node)}" — conditions take the form field operator value`
+      )
       return null
     default:
       return null
@@ -250,6 +267,14 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     for (const item of namedChildren(valueNode)) {
       if (item.name === 'Null') {
         fail(ctx, item.from, item.to, 'NULL is not allowed inside an array')
+        return null
+      }
+      if (item.name === 'Array') {
+        // The grammar recurses, so [[a],b] parses cleanly -- but the wire
+        // format is a flat list, and the old parser rejected nesting too.
+        // Without this the nested array's raw source text, brackets and
+        // all, would travel as one string element.
+        fail(ctx, item.from, item.to, 'Arrays cannot be nested')
         return null
       }
       items.push(

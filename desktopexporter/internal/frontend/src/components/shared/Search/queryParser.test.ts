@@ -261,3 +261,47 @@ describe('keyword-prefixed words', () => {
     expect(n.group.children[1].group.operator).toBe('AND')
   })
 })
+
+// Review findings on the unification, pinned. Each of these was a regression
+// or a silent misbehavior the reviewer caught before merge.
+describe('review findings', () => {
+  it('parenthetical free text is a global search, not an error', () => {
+    // The grammar eagerly parses a leading "(" as a Group; counting Groups
+    // as structure turned every parenthetical remark into a parse error.
+    for (const input of [
+      '(error)',
+      '(retrying) connection failed',
+      '(500) internal error',
+    ]) {
+      const q: any = parseQuery(input, contractFields)
+      expect(q.query.field.searchScope, input).toBe('global')
+      expect(q.query.value).toBe(input)
+      expect(validateQuery(input, contractFields)).toEqual([])
+    }
+  })
+
+  it('grouped conditions are still structured', () => {
+    const n: any = parseQuery('(body = a OR body = b)', contractFields)
+    expect(n.type).toBe('group')
+  })
+
+  it('a lone operator is still an error, not free text', () => {
+    expect(() => parseQuery('= 5', contractFields)).toThrow()
+    expect(validateQuery('= 5', contractFields).length).toBeGreaterThan(0)
+  })
+
+  it('nested arrays are rejected, not silently stringified', () => {
+    expect(() => parseQuery('statusCode IN [[a],b]', contractFields)).toThrow(
+      /nested/i
+    )
+    expect(
+      validateQuery('statusCode IN [[a],b]', contractFields).length
+    ).toBeGreaterThan(0)
+  })
+
+  it('a bare word inside a structured query gets an operator hint, not a quoting hint', () => {
+    expect(() => parseQuery('body = 1 AND foo', contractFields)).toThrow(
+      /field operator value/
+    )
+  })
+})

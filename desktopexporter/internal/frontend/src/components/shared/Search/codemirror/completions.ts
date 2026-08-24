@@ -188,12 +188,16 @@ export function createQueryCompletionSource(
         const fieldNode = comparison.getChild(FieldTerm)
         if (fieldNode) {
           const fieldText = context.state.sliceDoc(fieldNode.from, fieldNode.to)
-          return valueCompletions(
-            context,
-            fieldText,
-            getFields(),
-            valueNode.from
-          )
+          // For a scalar the value node is the token itself. For an Array,
+          // valueNode.from is the opening bracket -- anchoring there made
+          // accepting a suggestion replace "[Ok, E" with a single bare
+          // value, destroying the array. Anchor at the item being typed.
+          let from = valueNode.from
+          if (valueNode.name === 'Array') {
+            const item = context.matchBefore(/[\w.]*/)
+            from = item && item.from < pos ? item.from : pos
+          }
+          return valueCompletions(context, fieldText, getFields(), from)
         }
       }
     }
@@ -287,6 +291,17 @@ export function createQueryCompletionSource(
         /(?:^|[\s(])(?:AND|OR)$/i.test(before)
       ) {
         return fieldCompletions(context, getFields(), word.from)
+      }
+    }
+
+    // Right after "AND " or "OR ", before any letters are typed: the
+    // cursor resolves into the AndExpression/OrExpression parent, not the
+    // And/Or token, so the node-name branch above never sees it. What
+    // precedes the cursor tells the truth directly.
+    if (!word) {
+      const before = context.state.sliceDoc(0, context.pos).trim()
+      if (/(?:^|[\s(])(?:AND|OR)$/i.test(before)) {
+        return fieldCompletions(context, getFields())
       }
     }
 

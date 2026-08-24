@@ -115,3 +115,20 @@ describe('id shapes', () => {
     ])
   })
 })
+
+describe('review findings', () => {
+  it('array item completions anchor at the item, not the bracket', () => {
+    const first = complete('statusCode IN [O')
+    expect(first).not.toBeNull()
+    expect(first!.from).toBe('statusCode IN ['.length)
+    const later = complete('statusCode IN [Ok, E')
+    expect(later).not.toBeNull()
+    expect(later!.from).toBe('statusCode IN [Ok, '.length)
+  })
+
+  it('offers fields immediately after AND, before any typing', () => {
+    const r = complete('kind = Server AND ')
+    expect(r).not.toBeNull()
+    expect(r!.options.map(o => o.label)).toContain('kind')
+  })
+})

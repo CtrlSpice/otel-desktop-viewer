@@ -102,7 +102,13 @@ func TestIDProbeRefusesWhatItCannotGuarantee(t *testing.T) {
 		{"value with spaces", str, &search.Query{FieldOperator: "=", Value: " GET "}, true},
 		{"not-equals", str, &search.Query{FieldOperator: "!=", Value: "GET"}, false},
 		{"contains", str, &search.Query{FieldOperator: "CONTAINS", Value: "GE"}, false},
-		{"NULL sentinel", str, &search.Query{FieldOperator: "=", Value: "NULL"}, false},
+		// The literal string "NULL" is an ordinary equality now. It used to
+		// be refused here because the old wire format smuggled the null check
+		// through as `= "NULL"`, and a content-derived id for that would have
+		// matched attributes literally valued NULL. The null check has been
+		// its own IS NULL operator since the grammar unification, so the
+		// refusal would only slow down a legitimate search for the text.
+		{"literal NULL string equality", str, &search.Query{FieldOperator: "=", Value: "NULL"}, true},
 		// The declared type is trusted -- for an attribute field it is the
 		// token ingest wrote, served back by discovery -- so a non-string
 		// type takes the fast path under that type. An int64's stored text
