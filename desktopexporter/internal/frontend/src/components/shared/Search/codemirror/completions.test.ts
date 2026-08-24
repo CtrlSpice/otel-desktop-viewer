@@ -132,3 +132,32 @@ describe('review findings', () => {
     expect(r!.options.map(o => o.label)).toContain('kind')
   })
 })
+
+// The three completion edges from the second #405 review (issue #406).
+describe('array quote and group edges', () => {
+  it('offers nothing right after a closed quoted item', () => {
+    // `["Ok"|` -- the only valid next characters are `,` or `]`; anything
+    // accepted here would glue onto the closed string.
+    expect(complete('statusCode IN ["Ok"')).toBeNull()
+  })
+
+  it('closes a manually typed opening quote on accept', () => {
+    const r = complete('statusCode IN ["O')
+    expect(r).not.toBeNull()
+    const ok = r!.options.find(o => o.label === 'Ok') as
+      { label: string; apply?: string } | undefined
+    expect(ok?.apply).toBe('Ok"')
+  })
+
+  it('still anchors per item after a closed item and comma', () => {
+    const r = complete('statusCode IN ["Ok", E')
+    expect(r).not.toBeNull()
+    expect(r!.from).toBe('statusCode IN ["Ok", '.length)
+  })
+
+  it('offers fields after AND followed by an open paren', () => {
+    const r = complete('kind = Server AND (')
+    expect(r).not.toBeNull()
+    expect(r!.options.map(o => o.label)).toContain('kind')
+  })
+})
