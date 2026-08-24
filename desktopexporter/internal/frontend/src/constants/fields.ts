@@ -55,6 +55,7 @@ export type AttributeScope =
   | 'log'
   | 'datapoint'
   | 'exemplar'
+  | 'metadata'
 
 export type FieldDefinition =
   | {
@@ -405,6 +406,21 @@ export const SPAN_FIELDS: FieldDefinition[] = [
       OPERATORS.LESS_THAN,
     ],
     description: 'Number of event attributes dropped due to limits',
+  },
+  {
+    name: 'flags',
+    type: 'int64',
+    searchScope: 'field',
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
+    description:
+      'W3C trace flags for the span context (bit 0 sampled, bit 1 remote parent)',
+  },
+  {
+    name: 'link.flags',
+    type: 'int64',
+    searchScope: 'field',
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
+    description: 'W3C trace flags for the linked context',
   },
   {
     name: 'link.traceID',

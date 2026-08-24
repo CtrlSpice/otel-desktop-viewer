@@ -9,13 +9,14 @@ import type { FieldDefinition } from '@/constants/fields'
 import { OPERATORS } from '@/constants/operators'
 import {
   Array as ArrayTerm,
-  Field as FieldTerm,
+  FieldName as FieldTerm,
   KeywordOperator,
   Null,
   Operator as OperatorTerm,
   QuotedString,
-  Value as ValueTerm,
+  Word as ValueTerm,
 } from './query.parser.terms'
+import { parser } from './query.parser'
 
 const LOGICAL_COMPLETIONS: Completion[] = [
   {
@@ -28,12 +29,39 @@ const LOGICAL_COMPLETIONS: Completion[] = [
   },
 ]
 
-function logicalCompletionsFrom(from: number): CompletionResult {
-  return {
-    from,
-    options: LOGICAL_COMPLETIONS,
-    validFor: /^\s*(AND|OR)?$/i,
+/**
+ * Whether the text is a complete, error-free structured expression -- the
+ * state after which AND and OR are the only tokens the grammar accepts.
+ *
+ * Unclosed groups are balanced before parsing, so a condition typed inside
+ * parentheses still counts as complete: `(a = 1` continues with AND/OR just
+ * as `a = 1` does, the closer simply hasn't been typed yet.
+ */
+function expressionIsComplete(text: string): boolean {
+  let trimmed = text.trim()
+  if (!trimmed || trimmed.endsWith('(')) return false
+  let depth = 0
+  for (const c of trimmed) {
+    if (c === '(') depth++
+    else if (c === ')') depth--
   }
+  if (depth > 0) trimmed += ')'.repeat(depth)
+  let structured = false
+  let hasError = false
+  parser.parse(trimmed).iterate({
+    enter(n) {
+      if (
+        n.name === 'Comparison' ||
+        n.name === 'Group' ||
+        n.name === 'AndExpression' ||
+        n.name === 'OrExpression'
+      ) {
+        structured = true
+      }
+      if (n.type.isError) hasError = true
+    },
+  })
+  return structured && !hasError
 }
 
 function findAncestor(node: SyntaxNode, name: string): SyntaxNode | null {
@@ -83,6 +111,11 @@ function idPatternCompletions(
     from: word.from,
     to: word.to,
     options,
+    // The options are whole conditions built around the typed hex, so they
+    // must not be re-filtered against it: CodeMirror's fuzzy matcher scores
+    // "spanID = <hex>" so poorly against the bare hex that the suggestions
+    // never rendered at all.
+    filter: false,
   }
 }
 
@@ -135,6 +168,17 @@ export function createQueryCompletionSource(
         const fieldNode = comparison.getChild(FieldTerm)
         if (fieldNode) {
           const fieldText = context.state.sliceDoc(fieldNode.from, fieldNode.to)
+          // Cursor still touching a symbol operator: it may be mid-typing --
+          // `>` on the way to `>=` -- so offer the operators anchored at the
+          // symbol's start. Past the operator, the value position begins.
+          if (node.name === 'Operator' && pos <= node.to) {
+            return operatorCompletions(
+              context,
+              fieldText,
+              getFields(),
+              node.from
+            )
+          }
           return valueCompletions(context, fieldText, getFields())
         }
       }
@@ -144,35 +188,43 @@ export function createQueryCompletionSource(
         const fieldNode = comparison.getChild(FieldTerm)
         if (fieldNode) {
           const fieldText = context.state.sliceDoc(fieldNode.from, fieldNode.to)
-          return valueCompletions(
-            context,
-            fieldText,
-            getFields(),
-            valueNode.from
-          )
-        }
-      }
-
-      // After a complete value: AND / OR (space after value, or end of input).
-      if (field && opNode && valueNode && pos >= valueNode.to) {
-        const gap = context.state.sliceDoc(valueNode.to, pos)
-        const atDocEnd = pos === context.state.doc.length
-        if (/^\s*$/.test(gap) && (gap.length >= 1 || atDocEnd)) {
-          return logicalCompletionsFrom(pos)
+          // For a scalar the value node is the token itself. For an Array,
+          // valueNode.from is the opening bracket -- anchoring there made
+          // accepting a suggestion replace "[Ok, E" with a single bare
+          // value, destroying the array. Anchor at the item being typed.
+          let from = valueNode.from
+          if (valueNode.name === 'Array') {
+            const item = context.matchBefore(/[\w.]*/)
+            from = item && item.from < pos ? item.from : pos
+          }
+          return valueCompletions(context, fieldText, getFields(), from)
         }
       }
     }
 
-    const groupNode = findAncestor(node, 'Group')
-    if (groupNode && context.pos >= groupNode.to) {
-      const afterGroup = context.state.sliceDoc(groupNode.to, context.pos)
-      if (/^\s*$/.test(afterGroup)) {
-        return logicalCompletionsFrom(context.pos)
+    // A finished expression continues with AND or OR and nothing else --
+    // this is the branch that makes the logical operators actually appear.
+    // The comparison-scoped branch above only fires while the cursor still
+    // resolves inside the Comparison node, which one space past the value it
+    // no longer does; the fallthrough used to offer field names there, which
+    // the grammar cannot accept after a complete condition.
+    {
+      const partial = context.matchBefore(/[A-Za-z]*/)
+      const before = context.state.sliceDoc(
+        0,
+        partial ? partial.from : context.pos
+      )
+      if (expressionIsComplete(before)) {
+        return {
+          from: partial?.from ?? context.pos,
+          options: LOGICAL_COMPLETIONS,
+          validFor: /^(AND|OR)?$/i,
+        }
       }
     }
 
     // After logical op: fields.
-    if (node.name === 'LogicalOp') {
+    if (node.name === 'And' || node.name === 'Or') {
       return fieldCompletions(context, getFields())
     }
 
@@ -187,49 +239,69 @@ export function createQueryCompletionSource(
     const parentNode = node.parent
 
     if (
-      node.name === 'Field' &&
-      parentNode?.name === 'Comparison' &&
+      (node.name === 'FieldName' ||
+        (node.name === 'Word' && parentNode?.name === 'FieldName')) &&
       context.pos > node.to
     ) {
       const fieldText = context.state.sliceDoc(node.from, node.to)
       return operatorCompletions(context, fieldText, getFields())
     }
 
+    // Typing an operator after a bare field name -- `name C` on the way to
+    // CONTAINS, or `duration >` on the way to >=. The text before the
+    // partial must parse to exactly one free-standing word: that is a field
+    // name awaiting its operator. Symbol prefixes are matched as a separate
+    // character class since they are not word characters.
+    const opPartial = context.matchBefore(/[A-Za-z]+|[=!<>~^$]+/)
+    if (opPartial && opPartial.from > 0) {
+      const before = context.state.sliceDoc(0, opPartial.from).trim()
+      if (before !== '') {
+        const t = parser.parse(before).topNode
+        const only = t.firstChild
+        if (
+          only &&
+          only.name === 'FreeText' &&
+          !only.nextSibling &&
+          only.from === 0 &&
+          only.to === before.length
+        ) {
+          return operatorCompletions(
+            context,
+            before,
+            getFields(),
+            opPartial.from
+          )
+        }
+      }
+    }
+
+    // Typing the first word of a new condition: what precedes the word is
+    // empty, an open paren, or a logical operator. This used to be decided
+    // by a block of regexes over the raw text -- including a second spelling
+    // of the whole operator list, which is the same split-brain the grammar
+    // unification removed -- and every other context that block served is
+    // now answered from the tree above. AND/OR are matched as whole words;
+    // "operand" does not end with the operator AND.
     const word = context.matchBefore(/[\w.]+/)
     if (word) {
-      const beforeWord = context.state.sliceDoc(
-        Math.max(0, word.from - 20),
-        word.from
-      )
-      const trimmed = beforeWord.trimEnd()
-
+      const before = context.state.sliceDoc(0, word.from).trim()
       if (
-        trimmed === '' ||
-        /\b(AND|OR)\s*$/i.test(trimmed) ||
-        trimmed.endsWith('(')
+        before === '' ||
+        before.endsWith('(') ||
+        /(?:^|[\s(])(?:AND|OR)$/i.test(before)
       ) {
         return fieldCompletions(context, getFields(), word.from)
       }
+    }
 
-      if (
-        /=|!|>|<|~|\^|\$/.test(trimmed.slice(-1)) ||
-        /\b(CONTAINS|IN|REGEXP|NOT IN|NOT CONTAINS)\s*$/i.test(trimmed)
-      ) {
-        const line = context.state.sliceDoc(
-          context.state.doc.lineAt(word.from).from,
-          word.from
-        )
-        const fieldMatch = line.match(
-          /([\w.]+)\s*(?:=|!=|>|<|>=|<=|=~|!~|\^|\$|CONTAINS|REGEXP|NOT CONTAINS|NOT IN|IN)\s*$/i
-        )
-        if (fieldMatch) {
-          return valueCompletions(
-            context,
-            fieldMatch[1],
-            getFields(),
-            word.from
-          )
-        }
+    // Right after "AND " or "OR ", before any letters are typed: the
+    // cursor resolves into the AndExpression/OrExpression parent, not the
+    // And/Or token, so the node-name branch above never sees it. What
+    // precedes the cursor tells the truth directly.
+    if (!word) {
+      const before = context.state.sliceDoc(0, context.pos).trim()
+      if (/(?:^|[\s(])(?:AND|OR)$/i.test(before)) {
+        return fieldCompletions(context, getFields())
       }
     }
 
@@ -271,7 +343,8 @@ function fieldCompletions(
 function operatorCompletions(
   context: CompletionContext,
   fieldName: string,
-  fields: FieldDefinition[]
+  fields: FieldDefinition[],
+  from?: number
 ): CompletionResult | null {
   const field = fields.find(
     f =>
@@ -279,10 +352,16 @@ function operatorCompletions(
       f.name.toLowerCase() === fieldName.toLowerCase()
   )
 
-  const ops =
+  // The derived operators are wire spellings, not query syntax: the null
+  // check is typed `= NULL` and negated regex is typed `!~`, so offering
+  // "IS NULL" or "NOT REGEXP" here would complete into text the grammar
+  // cannot parse.
+  const derived = new Set(['IS NULL', 'IS NOT NULL', 'NOT REGEXP'])
+  const ops = (
     field && field.searchScope !== 'global'
       ? field.operators
       : Object.values(OPERATORS)
+  ).filter(op => !derived.has(op.symbol))
 
   const options: Completion[] = ops.map(op => ({
     label: op.symbol,
@@ -291,8 +370,14 @@ function operatorCompletions(
   }))
 
   return {
-    from: context.pos,
+    from: from ?? context.pos,
     options,
+    // Keep the list open and filtering while an operator is being typed.
+    // Without this the dropdown closed on the first keystroke: the result
+    // was anchored at the cursor with nothing marking further typing as a
+    // continuation, so "C" on the way to CONTAINS dismissed the list that
+    // had just offered it.
+    validFor: /^[\w=!<>~^$]*$/,
   }
 }
 

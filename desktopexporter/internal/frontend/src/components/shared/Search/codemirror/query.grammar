@@ -1,33 +1,41 @@
-@precedence { logical @left }
+@precedence { and @left, or @left }
 
 @top Query { expression }
 
-expression { condition (!logical LogicalOp expression)? }
+expression { condition | AndExpression | OrExpression }
+
+AndExpression { expression !and And expression }
+OrExpression { expression !or Or expression }
 
 condition { Group | Comparison | FreeText }
 
-FreeText { Value | Field }
+FreeText { Word | Null }
 
 Group { "(" expression ")" }
 
-Comparison { Field operator value }
+Comparison { FieldName operator value }
+
+FieldName { Word }
 
 operator { Operator | KeywordOperator }
 
 KeywordOperator {
-  @specialize<Field, "CONTAINS"> |
-  @specialize<Field, "REGEXP"> |
-  @specialize<Field, "IN"> |
-  @specialize<Field, "NOT"> |
-  @specialize<Field, "NOT CONTAINS"> |
-  @specialize<Field, "NOT IN">
+  Contains | Regexp | In | NotContains { Not Contains } | NotIn { Not In }
 }
 
-value { QuotedString | Array | Value | Null }
+And { @specialize<Word, "AND"> | @specialize<Word, "and"> }
+Or  { @specialize<Word, "OR">  | @specialize<Word, "or"> }
+
+Contains { @specialize<Word, "CONTAINS"> | @specialize<Word, "contains"> }
+Regexp   { @specialize<Word, "REGEXP">   | @specialize<Word, "regexp"> }
+In       { @specialize<Word, "IN">       | @specialize<Word, "in"> }
+Not      { @specialize<Word, "NOT">      | @specialize<Word, "not"> }
+
+value { QuotedString | Array | Word | Null }
 
 Null {
-  @specialize<Field, "NULL"> |
-  @specialize<Field, "NIL">
+  @specialize<Word, "NULL"> | @specialize<Word, "null"> |
+  @specialize<Word, "NIL">  | @specialize<Word, "nil">
 }
 
 Array { "[" commaSep<value> "]" }
@@ -35,26 +43,18 @@ Array { "[" commaSep<value> "]" }
 commaSep<content> { "" | content ("," content)* }
 
 @tokens {
-  Field { $[a-zA-Z_] $[a-zA-Z0-9_.\-]* }
+  Word { $[a-zA-Z0-9_./:\-+@#%&*?{}|\\]+ }
 
-  Operator {
-    "=" | "!=" | ">" | "<" | ">=" | "<=" | "=~" | "!~" | "^" | "$"
-  }
-
-  valueChar { $[a-zA-Z0-9_./:\-+@#%&*?{}|\\] }
-
-  Value { valueChar+ }
+  Operator { "=" | "!=" | ">" | "<" | ">=" | "<=" | "=~" | "!~" | "^" | "$" }
 
   QuotedString {
     '"' (![\\\"] | "\\" _)* '"' |
     "'" (![\\\'] | "\\" _)* "'"
   }
 
-  LogicalOp { "AND" | "OR" }
-
   space { @whitespace+ }
 
-  @precedence { LogicalOp, QuotedString, Operator, Field, Value }
+  @precedence { QuotedString, Operator, Word }
 }
 
 @skip { space }

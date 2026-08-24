@@ -1931,3 +1931,65 @@ func TestSpanAndLinkFlagsRoundTrip(t *testing.T) {
 	require.Len(t, got.Links, 1)
 	assert.Equal(t, linkFlags, got.Links[0].Flags, "link flags must survive too")
 }
+
+// The flags columns existed before they were searchable: stored at ingest,
+// served in the JSON, and absent from both the span and link column
+// allow-lists -- so `flags = 257` was rejected as an unknown field while the
+// value sat in the row. These pin the whole path: parse-side field
+// definitions are the frontend's, but the mapper and SQL are exercised here
+// with the same trees the walker sends.
+func TestSearchTracesByFlags(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "flags-search")
+	sp := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	sp.SetTraceID([16]byte{0xcc})
+	sp.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 3})
+	sp.SetName("flagged-search")
+	sp.SetFlags(0x101) // sampled + is_remote
+	sp.SetStartTimestamp(1000)
+	sp.SetEndTimestamp(2000)
+	link := sp.Links().AppendEmpty()
+	link.SetTraceID([16]byte{0xdd})
+	link.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 4})
+	link.SetFlags(1)
+
+	// A second, unflagged span so a match is a match, not the whole table.
+	sp2 := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	sp2.SetTraceID([16]byte{0xee})
+	sp2.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 5})
+	sp2.SetName("unflagged")
+	sp2.SetStartTimestamp(1000)
+	sp2.SetEndTimestamp(2000)
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+	}))
+
+	run := func(fieldName string, value string) []map[string]any {
+		query := &search.QueryNode{
+			ID:   "q1",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: fieldName, SearchScope: "field", Type: "int64"},
+				FieldOperator: "=",
+				Value:         value,
+			},
+		}
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return spans.SearchTraces(ctx, db, 0, 10_000, query)
+		})
+		require.NoError(t, err)
+		var out []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &out))
+		return out
+	}
+
+	assert.Len(t, run("flags", "257"), 1, "flags = 257 finds the sampled+remote span")
+	assert.Len(t, run("flags", "9"), 0, "flags = 9 matches nothing")
+	assert.Len(t, run("link.flags", "1"), 1, "link.flags = 1 finds the span whose link is sampled")
+	assert.Len(t, run("link.flags", "2"), 0)
+}

@@ -79,7 +79,11 @@ func IDProbe(arrayExpr string, field *search.FieldDefinition, query *search.Quer
 	if query == nil || field == nil {
 		return ""
 	}
-	if query.FieldOperator != "=" || query.Value == "NULL" {
+	// Only exact equality has a content-derived id. The literal string
+	// "NULL" is an ordinary value here: the null check arrives as its own
+	// IS NULL operator since the sentinel wire format was removed, so it
+	// can never reach this function disguised as an equality.
+	if query.FieldOperator != "=" {
 		return ""
 	}
 	if !slices.Contains(AttrTypes, field.Type) {

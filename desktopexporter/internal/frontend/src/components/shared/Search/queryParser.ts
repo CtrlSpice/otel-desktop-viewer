@@ -1,484 +1,22 @@
 import { type FieldDefinition } from '@/constants/fields'
 import { OPERATORS, type Operator } from '@/constants/operators'
 import { type QueryNode, generateID } from './queryTree'
-
-// Token Types For Lexer
-type TokenType =
-  | 'FIELD'
-  | 'OPERATOR'
-  | 'VALUE'
-  | 'LOGICAL'
-  | 'LPAREN'
-  | 'RPAREN'
-  | 'LBRACKET'
-  | 'RBRACKET'
-  | 'COMMA'
-  | 'EOF'
-
-interface Token {
-  type: TokenType
-  value: string
-  position: number
-}
-
-// Tokenizer: Converts Text Into Tokens
-class Lexer {
-  private input: string
-  private position: number = 0
-  private current: string = ''
-
-  constructor(input: string) {
-    this.input = input
-    this.current = input[0] || ''
-  }
-
-  // Advance To Next Character
-  private advance(): void {
-    this.position++
-    this.current = this.input[this.position] || ''
-  }
-
-  // Peek At Next Character Without Advancing
-  private peek(offset: number = 1): string {
-    return this.input[this.position + offset] || ''
-  }
-
-  // Skip Whitespace
-  private skipWhitespace(): void {
-    while (this.current && /\s/.test(this.current)) {
-      this.advance()
-    }
-  }
-
-  // Read A String (quoted or unquoted)
-  private readString(): string {
-    let result = ''
-    const quote = this.current
-
-    if (quote === '"' || quote === "'" || quote === '`') {
-      // Quoted string (supports single, double, and backtick for template literals)
-      this.advance() // Skip opening quote
-      while (this.current && this.current !== quote) {
-        if (this.current === '\\') {
-          this.advance()
-          const escaped: string = this.current
-          if (escaped) {
-            // Handle escape sequences
-            if (escaped === 'n') {
-              result += '\n'
-            } else if (escaped === 't') {
-              result += '\t'
-            } else if (escaped === 'r') {
-              result += '\r'
-            } else if (escaped === '\\') {
-              result += '\\'
-            } else if (escaped === quote) {
-              result += quote
-            } else {
-              result += escaped
-            }
-            this.advance()
-          }
-        } else {
-          result += this.current
-          this.advance()
-        }
-      }
-      if (this.current === quote) {
-        this.advance() // Skip closing quote
-      }
-    } else {
-      // Unquoted string - read until whitespace or special char
-      while (
-        this.current &&
-        !/[\s()[\],]/.test(this.current) &&
-        !this.isOperatorStart()
-      ) {
-        result += this.current
-        this.advance()
-      }
-    }
-
-    return result
-  }
-
-  // Check If Current Position Starts An Operator
-  private isOperatorStart(): boolean {
-    const twoChar = this.current + this.peek()
-    return (
-      this.current === ':' ||
-      this.current === '=' ||
-      this.current === '!' ||
-      this.current === '>' ||
-      this.current === '<' ||
-      this.current === '~' ||
-      this.current === '^' ||
-      this.current === '$' ||
-      twoChar === '^=' ||
-      twoChar === '$='
-    )
-  }
-
-  // Read An Operator
-  private readOperator(): string {
-    const twoChar = this.current + this.peek()
-
-    // Check two-character operators first
-    if (['!=', '!~', '>=', '<=', '=~', '^=', '$='].includes(twoChar)) {
-      this.advance()
-      this.advance()
-      return twoChar
-    }
-
-    // Single character operators
-    const op = this.current
-    this.advance()
-    return op
-  }
-
-  // Read A Keyword Or Identifier
-  private readKeywordOrIdentifier(): string {
-    let result = ''
-    while (this.current && /[a-zA-Z0-9_.\-]/.test(this.current)) {
-      result += this.current
-      this.advance()
-    }
-    return result
-  }
-
-  // Get Next Token
-  public nextToken(): Token {
-    this.skipWhitespace()
-
-    const position = this.position
-
-    // End of input
-    if (!this.current) {
-      return { type: 'EOF', value: '', position }
-    }
-
-    // Parentheses
-    if (this.current === '(') {
-      this.advance()
-      return { type: 'LPAREN', value: '(', position }
-    }
-    if (this.current === ')') {
-      this.advance()
-      return { type: 'RPAREN', value: ')', position }
-    }
-
-    // Brackets for arrays
-    if (this.current === '[') {
-      this.advance()
-      return { type: 'LBRACKET', value: '[', position }
-    }
-    if (this.current === ']') {
-      this.advance()
-      return { type: 'RBRACKET', value: ']', position }
-    }
-
-    // Comma
-    if (this.current === ',') {
-      this.advance()
-      return { type: 'COMMA', value: ',', position }
-    }
-
-    // Operator
-    if (this.isOperatorStart()) {
-      const op = this.readOperator()
-      return { type: 'OPERATOR', value: op, position }
-    }
-
-    // Quoted string (single, double, or backtick)
-    if (this.current === '"' || this.current === "'" || this.current === '`') {
-      const value = this.readString()
-      return { type: 'VALUE', value, position }
-    }
-
-    // Keyword or identifier
-    const word = this.readKeywordOrIdentifier()
-    const upperWord = word.toUpperCase()
-
-    // Check if it's a logical operator (case-insensitive)
-    if (upperWord === 'AND' || upperWord === 'OR') {
-      return { type: 'LOGICAL', value: upperWord, position }
-    }
-
-    // Check if it's a keyword operator (case-insensitive: IN, CONTAINS, REGEXP, NOT IN, NOT CONTAINS)
-    if (
-      upperWord === 'IN' ||
-      upperWord === 'CONTAINS' ||
-      upperWord === 'REGEXP'
-    ) {
-      return { type: 'OPERATOR', value: upperWord, position }
-    }
-
-    // Handle "NOT IN" and "NOT CONTAINS" as special cases (case-insensitive)
-    if (upperWord === 'NOT') {
-      this.skipWhitespace()
-      const next = this.readKeywordOrIdentifier()
-      const upperNext = next.toUpperCase()
-      if (upperNext === 'IN') {
-        return { type: 'OPERATOR', value: 'NOT IN', position }
-      }
-      if (upperNext === 'CONTAINS') {
-        return { type: 'OPERATOR', value: 'NOT CONTAINS', position }
-      }
-      throw new Error(`Unexpected token: NOT ${next}`)
-    }
-
-    // Check for null values (case-insensitive)
-    if (upperWord === 'NULL' || upperWord === 'NIL') {
-      return { type: 'VALUE', value: 'NULL', position }
-    }
-
-    if (word) {
-      return { type: 'FIELD', value: word, position }
-    }
-
-    // Unrecognized character — consume it so we never loop forever.
-    const ch = this.current
-    this.advance()
-    return { type: 'VALUE', value: ch, position }
-  }
-
-  // Tokenize entire input
-  public tokenize(): Token[] {
-    let tokens: Token[] = []
-    let token = this.nextToken()
-
-    while (token.type !== 'EOF') {
-      tokens.push(token)
-      token = this.nextToken()
-    }
-
-    return tokens
-  }
-}
-
-// Parser: Converts Tokens Into QueryNode Tree
-class Parser {
-  private tokens: Token[]
-  private position: number = 0
-  private availableFields: FieldDefinition[]
-
-  constructor(tokens: Token[], availableFields: FieldDefinition[]) {
-    this.tokens = tokens
-    this.availableFields = availableFields
-  }
-
-  // Get Current Token
-  private current(): Token | undefined {
-    return this.tokens[this.position]
-  }
-
-  // Advance To Next Token
-  private advance(): void {
-    this.position++
-  }
-
-  // Check If Current Token Matches Type
-  private check(type: TokenType): boolean {
-    const token = this.current()
-    return token !== undefined && token.type === type
-  }
-
-  // Consume Token Of Expected Type
-  private consume(type: TokenType, message: string): Token {
-    const token = this.current()
-    if (!token || token.type !== type) {
-      throw new Error(message)
-    }
-    this.advance()
-    return token
-  }
-
-  // Find Field By Name
-  // Note: Fields searched by name will always have a name property (not global scope)
-  private findField(name: string): FieldDefinition | undefined {
-    return this.availableFields.find(
-      f =>
-        f.searchScope !== 'global' &&
-        f.name.toLowerCase() === name.toLowerCase()
-    )
-  }
-
-  // Find Operator By Symbol
-  private findOperator(symbol: string): Operator | undefined {
-    for (let op of Object.values(OPERATORS)) {
-      if (op.symbol === symbol) {
-        return op
-      }
-    }
-    return undefined
-  }
-
-  // Parse: query → expression
-  public parse(): QueryNode | null {
-    if (!this.current()) {
-      return null
-    }
-    const node = this.parseExpression()
-
-    // Everything must be consumed. Without this an unquoted multi-word value
-    // parsed as its first word and the rest vanished: `service.name = Red Bull
-    // Racing` searched for `Red` and returned confidently wrong results.
-    //
-    // validateQuery has always reported this, so the editor underlined it --
-    // but parseQuery did not, so a query that was submitted anyway ran
-    // truncated. The two now agree.
-    const leftover = this.current()
-    if (leftover && leftover.type !== 'EOF') {
-      throw new Error(unexpectedTokenMessage(leftover.value))
-    }
-    return node
-  }
-
-  // Parse: expression → term ( ( "AND" | "OR" ) term )*
-  private parseExpression(): QueryNode {
-    let left = this.parseTerm()
-
-    while (this.check('LOGICAL')) {
-      const operatorToken = this.current()!
-      const operator = operatorToken.value as 'AND' | 'OR'
-      this.advance()
-
-      const right = this.parseTerm()
-
-      // Create group node
-      left = {
-        id: generateID(),
-        type: 'group',
-        group: {
-          operator,
-          children: [left, right],
-        },
-      }
-    }
-
-    return left
-  }
-
-  // Parse: term → "(" expression ")" | condition
-  private parseTerm(): QueryNode {
-    // Parenthesized expression
-    if (this.check('LPAREN')) {
-      this.advance() // consume '('
-      const expr = this.parseExpression()
-      this.consume('RPAREN', 'Expected closing parenthesis')
-      return expr
-    }
-
-    // Condition
-    return this.parseCondition()
-  }
-
-  // Parse: condition → field operator value
-  private parseCondition(): QueryNode {
-    // Parse field
-    const fieldToken = this.consume('FIELD', 'Expected field name')
-    const field = this.findField(fieldToken.value)
-
-    if (!field) {
-      throw new Error(`Unknown field: ${fieldToken.value}`)
-    }
-
-    // At this point, field cannot be global (findField excludes them)
-    // TypeScript needs explicit narrowing for union types
-    if (field.searchScope === 'global') {
-      throw new Error(
-        'Internal error: unexpected global field in operator query'
-      )
-    }
-
-    // Parse operator
-    const operatorToken = this.consume('OPERATOR', 'Expected operator')
-    const operator = this.findOperator(operatorToken.value)
-
-    if (!operator) {
-      throw new Error(`Unknown operator: ${operatorToken.value}`)
-    }
-
-    // Validate operator is allowed for this field
-    if (!field.operators.some(op => op.symbol === operator.symbol)) {
-      throw new Error(
-        `Operator '${operator.symbol}' is not valid for field '${field.name}'`
-      )
-    }
-
-    // Parse value
-    let value: string = ''
-
-    // Check for array value (IN, NOT IN)
-    if (this.check('LBRACKET')) {
-      value = this.parseArray()
-    } else {
-      const valueToken = this.current()
-      if (
-        !valueToken ||
-        (valueToken.type !== 'VALUE' && valueToken.type !== 'FIELD')
-      ) {
-        throw new Error('Expected value')
-      }
-      value = valueToken.value
-      this.advance()
-    }
-
-    // Normalize null values
-    if (value.toUpperCase() === 'NULL' || value.toUpperCase() === 'NIL') {
-      value = 'NULL'
-    }
-
-    // Create condition node
-    return {
-      id: generateID(),
-      type: 'condition',
-      query: {
-        field,
-        operator,
-        value,
-      },
-    }
-  }
-
-  // Parse: array → "[" value ( "," value )* "]"
-  private parseArray(): string {
-    this.consume('LBRACKET', 'Expected [')
-
-    let values: string[] = []
-
-    // Parse first value
-    if (!this.check('RBRACKET')) {
-      const valueToken = this.current()
-      if (
-        !valueToken ||
-        (valueToken.type !== 'VALUE' && valueToken.type !== 'FIELD')
-      ) {
-        throw new Error('Expected value in array')
-      }
-      values.push(valueToken.value)
-      this.advance()
-
-      // Parse remaining values
-      while (this.check('COMMA')) {
-        this.advance() // consume comma
-        const valueToken = this.current()
-        if (
-          !valueToken ||
-          (valueToken.type !== 'VALUE' && valueToken.type !== 'FIELD')
-        ) {
-          throw new Error('Expected value after comma')
-        }
-        values.push(valueToken.value)
-        this.advance()
-      }
-    }
-
-    this.consume('RBRACKET', 'Expected ]')
-
-    return `[${values.join(',')}]`
-  }
-}
+import { parser } from './codemirror/query.parser'
+import type { SyntaxNode } from '@lezer/common'
+
+// One grammar, one parse.
+//
+// This file used to hold a second, hand-written lexer and parser for the
+// query language, alongside the Lezer grammar the editor highlights with.
+// Two implementations of one language drifted exactly the way two
+// implementations drift: the editor accepted `=~` the parser rejected,
+// the parser accepted backticks the editor underlined, a NOT typo the
+// editor flagged was silently submitted as free text. Now the Lezer tree
+// -- the same one CodeMirror builds incrementally on every keystroke --
+// is the only syntax authority, and this file only walks it: syntax
+// errors are error nodes in the tree, semantics (field names, operator
+// compatibility) are checked against the same definitions the
+// completions use.
 
 // Validation error with position info for the linter
 export interface ValidationError {
@@ -487,292 +25,296 @@ export interface ValidationError {
   message: string
 }
 
-// Lightweight validator that collects all errors without building a QueryNode tree
-export function validateQuery(
-  input: string,
-  availableFields: FieldDefinition[]
-): ValidationError[] {
-  if (!input.trim()) return []
-
-  let tokens: Token[]
-  try {
-    tokens = new Lexer(input).tokenize()
-  } catch (error) {
-    return [
-      {
-        from: 0,
-        to: input.length,
-        message: error instanceof Error ? error.message : 'Tokenization failed',
-      },
-    ]
-  }
-
-  const errors: ValidationError[] = []
-  let pos = 0
-
-  function current(): Token | undefined {
-    return tokens[pos]
-  }
-
-  function advance(): void {
-    pos++
-  }
-
-  function findField(name: string): FieldDefinition | undefined {
-    return availableFields.find(
-      f =>
-        f.searchScope !== 'global' &&
-        f.name.toLowerCase() === name.toLowerCase()
-    )
-  }
-
-  function findOperator(symbol: string): Operator | undefined {
-    for (let op of Object.values(OPERATORS)) {
-      if (op.symbol === symbol) return op
-    }
-    return undefined
-  }
-
-  function tokenEnd(token: Token): number {
-    return token.position + token.value.length
-  }
-
-  function validateExpression(): void {
-    validateTerm()
-    while (current()?.type === 'LOGICAL') {
-      advance()
-      if (!current() || current()!.type === 'EOF') {
-        const last = tokens[pos - 1]
-        errors.push({
-          from: last.position,
-          to: tokenEnd(last),
-          message: 'Expected condition after logical operator',
-        })
-        return
-      }
-      validateTerm()
-    }
-  }
-
-  function validateTerm(): void {
-    const token = current()
-    if (!token) return
-
-    if (token.type === 'LPAREN') {
-      advance()
-      validateExpression()
-      const closing = current()
-      if (!closing || closing.type !== 'RPAREN') {
-        errors.push({
-          from: token.position,
-          to: token.position + 1,
-          message: 'Expected closing parenthesis',
-        })
-      } else {
-        advance()
-      }
-      return
-    }
-
-    validateCondition()
-  }
-
-  function validateCondition(): void {
-    const fieldToken = current()
-    if (!fieldToken || fieldToken.type !== 'FIELD') {
-      if (fieldToken) {
-        errors.push({
-          from: fieldToken.position,
-          to: tokenEnd(fieldToken),
-          message: 'Expected field name',
-        })
-        advance()
-      }
-      return
-    }
-
-    const field = findField(fieldToken.value)
-    if (!field) {
-      errors.push({
-        from: fieldToken.position,
-        to: tokenEnd(fieldToken),
-        message: `Unknown field: ${fieldToken.value}`,
-      })
-    }
-    advance()
-
-    const opToken = current()
-    if (!opToken || opToken.type !== 'OPERATOR') {
-      if (opToken) {
-        errors.push({
-          from: opToken.position,
-          to: tokenEnd(opToken),
-          message: 'Expected operator',
-        })
-      } else if (fieldToken) {
-        errors.push({
-          from: fieldToken.position,
-          to: tokenEnd(fieldToken),
-          message: 'Expected operator after field',
-        })
-      }
-      return
-    }
-
-    const operator = findOperator(opToken.value)
-    if (!operator) {
-      errors.push({
-        from: opToken.position,
-        to: tokenEnd(opToken),
-        message: `Unknown operator: ${opToken.value}`,
-      })
-    } else if (
-      field &&
-      field.searchScope !== 'global' &&
-      !field.operators.some(op => op.symbol === operator.symbol)
-    ) {
-      errors.push({
-        from: opToken.position,
-        to: tokenEnd(opToken),
-        message: `Operator '${operator.symbol}' is not valid for field '${field.name}'`,
-      })
-    }
-    advance()
-
-    // Validate value
-    const valToken = current()
-    if (
-      !valToken ||
-      (valToken.type !== 'VALUE' &&
-        valToken.type !== 'FIELD' &&
-        valToken.type !== 'LBRACKET')
-    ) {
-      errors.push({
-        from: opToken.position,
-        to: tokenEnd(opToken),
-        message: 'Expected value',
-      })
-      return
-    }
-
-    if (valToken.type === 'LBRACKET') {
-      validateArray()
-    } else {
-      advance()
-    }
-  }
-
-  function validateArray(): void {
-    const openBracket = current()!
-    advance()
-
-    if (current()?.type === 'RBRACKET') {
-      advance()
-      return
-    }
-
-    const firstVal = current()
-    if (!firstVal || (firstVal.type !== 'VALUE' && firstVal.type !== 'FIELD')) {
-      errors.push({
-        from: openBracket.position,
-        to: openBracket.position + 1,
-        message: 'Expected value in array',
-      })
-      return
-    }
-    advance()
-
-    while (current()?.type === 'COMMA') {
-      advance()
-      const val = current()
-      if (!val || (val.type !== 'VALUE' && val.type !== 'FIELD')) {
-        const comma = tokens[pos - 1]
-        errors.push({
-          from: comma.position,
-          to: tokenEnd(comma),
-          message: 'Expected value after comma',
-        })
-        return
-      }
-      advance()
-    }
-
-    if (current()?.type !== 'RBRACKET') {
-      errors.push({
-        from: openBracket.position,
-        to: openBracket.position + 1,
-        message: 'Expected ]',
-      })
-    } else {
-      advance()
-    }
-  }
-
-  // If the token stream has no operators or logical keywords, parseQuery
-  // will treat this as global text search -- not an error.
-  const hasStructuredSyntax = tokens.some(
-    t => t.type === 'OPERATOR' || t.type === 'LOGICAL'
-  )
-  if (!hasStructuredSyntax) return []
-
-  validateExpression()
-
-  // Check for unconsumed tokens
-  if (current() && current()!.type !== 'EOF') {
-    const leftover = current()!
-    errors.push({
-      from: leftover.position,
-      to: tokenEnd(leftover),
-      message: unexpectedTokenMessage(leftover.value),
-    })
-  }
-
-  return errors
-}
-
 // Shared by the parser and the validator so the editor's underline and the
 // error a submitted query produces say the same thing. Names the fix rather
 // than just the symptom: the overwhelmingly common cause is an unquoted value
 // containing a space.
 function unexpectedTokenMessage(value: string): string {
+  if (!value.trim()) return 'Incomplete expression'
   return (
     `Unexpected "${value}". Values containing spaces must be quoted, ` +
     `for example: service.name = "Red Bull Racing"`
   )
 }
 
-// Main Parse Function
-export function parseQuery(
-  input: string,
+// Unescape a QuotedString token's text: strip the quotes, resolve the
+// escapes the language supports. Anything else after a backslash is kept
+// as itself, so "\d" survives into regex values.
+function unquote(text: string): string {
+  const quote = text[0]
+  const body = text.slice(1, text.endsWith(quote) ? -1 : undefined)
+  let out = ''
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i]
+    if (c !== '\\') {
+      out += c
+      continue
+    }
+    const next = body[++i]
+    if (next === undefined) break
+    if (next === 'n') out += '\n'
+    else if (next === 't') out += '\t'
+    else if (next === 'r') out += '\r'
+    else out += next
+  }
+  return out
+}
+
+type NamedField = Exclude<FieldDefinition, { searchScope: 'global' }>
+
+function findField(
+  name: string,
   availableFields: FieldDefinition[]
-): QueryNode | null {
-  if (!input.trim()) {
+): NamedField | undefined {
+  return availableFields.find(
+    (f): f is NamedField =>
+      f.searchScope !== 'global' && f.name.toLowerCase() === name.toLowerCase()
+  )
+}
+
+function findOperator(symbol: string): Operator | undefined {
+  for (const op of Object.values(OPERATORS)) {
+    if (op.symbol === symbol) return op
+  }
+  return undefined
+}
+
+// The symbol an operator node resolves to. Symbol operators mostly map to
+// themselves; the regex sigils are spelled the PromQL way in query text and
+// the SQL way on the wire.
+const SIGIL_ALIASES: Record<string, string> = {
+  '=~': 'REGEXP',
+  '!~': 'NOT REGEXP',
+}
+
+const KEYWORD_SYMBOLS: Record<string, string> = {
+  Contains: 'CONTAINS',
+  Regexp: 'REGEXP',
+  In: 'IN',
+  NotContains: 'NOT CONTAINS',
+  NotIn: 'NOT IN',
+}
+
+// Which operator a field must allow for a derived operator to be legal.
+// `field = NULL` has always been legal wherever `=` is, so IS NULL rides on
+// =; the negations ride on what they negate.
+const COMPAT_ALIASES: Record<string, string> = {
+  'IS NULL': '=',
+  'IS NOT NULL': '!=',
+  'NOT REGEXP': 'REGEXP',
+}
+
+interface WalkContext {
+  input: string
+  availableFields: FieldDefinition[]
+  // parse mode throws on the first problem; validate mode collects them all
+  errors: ValidationError[] | null
+}
+
+function fail(ctx: WalkContext, from: number, to: number, message: string) {
+  if (ctx.errors) {
+    ctx.errors.push({ from, to, message })
+    return
+  }
+  throw new Error(message)
+}
+
+function text(ctx: WalkContext, node: SyntaxNode): string {
+  return ctx.input.slice(node.from, node.to)
+}
+
+function namedChildren(node: SyntaxNode): SyntaxNode[] {
+  const out: SyntaxNode[] = []
+  for (let c = node.firstChild; c; c = c.nextSibling) out.push(c)
+  return out
+}
+
+// A structured query is one that uses the language's *operators*:
+// comparisons, keyword operators, AND/OR. Anything else -- however mangled
+// -- is free text, searched globally. An erroneous *structured* query is an
+// error, never free text: `duration NOT 5` used to be submitted as a global
+// search for the literal string "duration NOT 5", underlined red in the
+// editor and silently wrong on the wire.
+//
+// A Group node deliberately does NOT count. Parentheses are ordinary
+// characters in log bodies and error text -- "(error)", "(500) internal
+// error" -- and the grammar eagerly parses a leading paren as a Group, so
+// counting Groups turned every parenthetical remark into a hard parse
+// error. The old lexer's heuristic was "has an operator or logical token",
+// and this is that rule expressed over the tree.
+function surveyTree(tree: ReturnType<typeof parser.parse>): {
+  structured: boolean
+  firstError: { from: number; to: number } | null
+} {
+  let structured = false
+  let firstError: { from: number; to: number } | null = null
+  tree.iterate({
+    enter(n) {
+      if (
+        n.name === 'Comparison' ||
+        n.name === 'AndExpression' ||
+        n.name === 'OrExpression' ||
+        n.name === 'Operator' ||
+        n.name === 'KeywordOperator'
+      ) {
+        structured = true
+      }
+      if (n.type.isError && !firstError) {
+        firstError = { from: n.from, to: n.to }
+      }
+    },
+  })
+  return { structured, firstError }
+}
+
+function walkExpression(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
+  switch (node.name) {
+    case 'AndExpression':
+    case 'OrExpression': {
+      const operator = node.name === 'AndExpression' ? 'AND' : 'OR'
+      const parts = namedChildren(node).filter(
+        c => c.name !== 'And' && c.name !== 'Or'
+      )
+      const children: QueryNode[] = []
+      for (const part of parts) {
+        const child = walkExpression(ctx, part)
+        if (child) children.push(child)
+      }
+      if (children.length < 2) return children[0] ?? null
+      return {
+        id: generateID(),
+        type: 'group',
+        group: { operator, children },
+      }
+    }
+    case 'Group': {
+      const inner = node.firstChild
+      return inner ? walkExpression(ctx, inner) : null
+    }
+    case 'Comparison':
+      return walkComparison(ctx, node)
+    case 'FreeText':
+      // Reached only when the query is structured elsewhere -- a bare word
+      // sitting inside AND/OR or a group, like `x = 1 AND foo`. The quoting
+      // hint would be wrong here; the word is not a value missing its
+      // quotes, it is a condition missing its operator.
+      fail(
+        ctx,
+        node.from,
+        node.to,
+        `Unexpected "${text(ctx, node)}" — conditions take the form field operator value`
+      )
+      return null
+    default:
+      return null
+  }
+}
+
+function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
+  const fieldNode = node.getChild('FieldName')
+  const opNode = node.getChild('Operator') ?? node.getChild('KeywordOperator')
+  const valueNode =
+    node.getChild('QuotedString') ??
+    node.getChild('Array') ??
+    node.getChild('Word') ??
+    node.getChild('Null')
+
+  if (!fieldNode || !opNode) {
+    fail(ctx, node.from, node.to, 'Incomplete expression')
     return null
   }
 
-  try {
-    const lexer = new Lexer(input)
-    const tokens = lexer.tokenize()
-    const parser = new Parser(tokens, availableFields)
-    return parser.parse()
-  } catch (error) {
-    // If the input has no operator or logical tokens, it's plain text --
-    // treat as global search. Otherwise it's a malformed structured query.
-    try {
-      const tokens = new Lexer(input).tokenize()
-      const hasStructuredSyntax = tokens.some(
-        t => t.type === 'OPERATOR' || t.type === 'LOGICAL'
-      )
-      if (!hasStructuredSyntax) {
-        return createGlobalTextSearch(input.trim())
-      }
-    } catch {
-      return createGlobalTextSearch(input.trim())
-    }
+  const fieldName = text(ctx, fieldNode)
+  const field = findField(fieldName, ctx.availableFields)
+  if (!field) {
+    fail(ctx, fieldNode.from, fieldNode.to, `Unknown field: ${fieldName}`)
+  }
 
-    throw new Error(
-      error instanceof Error ? error.message : 'Failed to parse query'
-    )
+  let symbol: string
+  if (opNode.name === 'Operator') {
+    const raw = text(ctx, opNode)
+    symbol = SIGIL_ALIASES[raw] ?? raw
+  } else {
+    const kw = opNode.firstChild
+    symbol = kw ? (KEYWORD_SYMBOLS[kw.name] ?? '') : ''
+  }
+
+  if (!valueNode) {
+    fail(ctx, opNode.from, opNode.to, 'Expected value')
+    return null
+  }
+
+  let value: string
+  if (valueNode.name === 'Null') {
+    // A bare NULL/NIL keyword is the null check; a quoted "NULL" stays the
+    // literal string, which the old parser could not distinguish.
+    if (symbol === '=') symbol = 'IS NULL'
+    else if (symbol === '!=') symbol = 'IS NOT NULL'
+    else {
+      fail(
+        ctx,
+        valueNode.from,
+        valueNode.to,
+        `Operator '${symbol}' cannot be used with NULL`
+      )
+      return null
+    }
+    value = ''
+  } else if (valueNode.name === 'QuotedString') {
+    value = unquote(text(ctx, valueNode))
+  } else if (valueNode.name === 'Array') {
+    const items: string[] = []
+    for (const item of namedChildren(valueNode)) {
+      if (item.name === 'Null') {
+        fail(ctx, item.from, item.to, 'NULL is not allowed inside an array')
+        return null
+      }
+      if (item.name === 'Array') {
+        // The grammar recurses, so [[a],b] parses cleanly -- but the wire
+        // format is a flat list, and the old parser rejected nesting too.
+        // Without this the nested array's raw source text, brackets and
+        // all, would travel as one string element.
+        fail(ctx, item.from, item.to, 'Arrays cannot be nested')
+        return null
+      }
+      items.push(
+        item.name === 'QuotedString'
+          ? unquote(text(ctx, item))
+          : text(ctx, item)
+      )
+    }
+    // JSON, not a comma-join: a quoted value may itself contain commas,
+    // which the old "[a,b,c]" serialization corrupted on the way through
+    // the backend's comma split.
+    value = JSON.stringify(items)
+  } else {
+    value = text(ctx, valueNode)
+  }
+
+  const operator = findOperator(symbol)
+  if (!operator) {
+    fail(ctx, opNode.from, opNode.to, `Unknown operator: ${text(ctx, opNode)}`)
+    return null
+  }
+
+  if (field) {
+    const required = COMPAT_ALIASES[symbol] ?? symbol
+    if (!field.operators.some(op => op.symbol === required)) {
+      fail(
+        ctx,
+        opNode.from,
+        opNode.to,
+        `Operator '${symbol}' is not valid for field '${field.name}'`
+      )
+    }
+  }
+
+  if (!field) return null
+
+  return {
+    id: generateID(),
+    type: 'condition',
+    query: { field, operator, value },
   }
 }
 
@@ -782,11 +324,62 @@ function createGlobalTextSearch(input: string): QueryNode {
     id: generateID(),
     type: 'condition',
     query: {
-      field: {
-        searchScope: 'global',
-      },
+      field: { searchScope: 'global' },
       operator: OPERATORS.CONTAINS,
       value: input.trim(),
     },
   }
+}
+
+// Main Parse Function
+export function parseQuery(
+  input: string,
+  availableFields: FieldDefinition[]
+): QueryNode | null {
+  if (!input.trim()) return null
+
+  const tree = parser.parse(input)
+  const { structured, firstError } = surveyTree(tree)
+
+  if (!structured) return createGlobalTextSearch(input)
+
+  if (firstError) {
+    throw new Error(
+      unexpectedTokenMessage(input.slice(firstError.from, firstError.to))
+    )
+  }
+
+  const ctx: WalkContext = { input, availableFields, errors: null }
+  const root = tree.topNode.firstChild
+  return root ? walkExpression(ctx, root) : null
+}
+
+// Lightweight validator: same tree, same walk, but collects every problem
+// with its position instead of throwing on the first.
+export function validateQuery(
+  input: string,
+  availableFields: FieldDefinition[]
+): ValidationError[] {
+  if (!input.trim()) return []
+
+  const tree = parser.parse(input)
+  const { structured, firstError } = surveyTree(tree)
+
+  if (!structured) return []
+
+  const errors: ValidationError[] = []
+  if (firstError) {
+    errors.push({
+      from: firstError.from,
+      to: Math.max(firstError.to, firstError.from + 1),
+      message: unexpectedTokenMessage(
+        input.slice(firstError.from, firstError.to)
+      ),
+    })
+  }
+
+  const ctx: WalkContext = { input, availableFields, errors }
+  const root = tree.topNode.firstChild
+  if (root) walkExpression(ctx, root)
+  return errors
 }

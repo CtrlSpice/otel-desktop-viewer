@@ -592,16 +592,22 @@
   <div class="help-dialog-body">
     <div class="help-query-lines">
       <p>
-        Each query follows the pattern <code class="q-field">field</code>
+        Type plain words to search everything — fields, attributes, and values
+        alike
+      </p>
+      <p>
+        Or filter precisely with <code class="q-field">field</code>
         <code class="q-operator">operator</code>
         <code class="q-value">value</code>
       </p>
       <p>
         Combine filters with <code class="q-logic">AND</code> or
-        <code class="q-logic">OR</code>
+        <code class="q-logic">OR</code> — <code class="q-logic">AND</code> binds
+        tighter, parentheses <code class="q-paren">( )</code> override
       </p>
       <p>
-        Use parentheses <code class="q-paren">( )</code> to control grouping
+        Quote values containing spaces:
+        <code class="q-value">"Red Bull Racing"</code> — keywords work lowercase too
       </p>
     </div>
 
@@ -647,6 +653,11 @@
             <code class="help-op-code">=~</code>,
             <code class="help-op-code">!~</code>,
             <code class="help-op-code">REGEXP</code>
+            <span class="help-op-note">
+              full match — wrap substrings: <code class="help-op-code"
+                >.*checkout.*</code
+              ></span
+            >
           </td>
         </tr>
         <tr>
@@ -654,6 +665,21 @@
           <td>
             <code class="help-op-code">IN</code>,
             <code class="help-op-code">NOT IN</code>
+            <span class="help-op-note">
+              <code class="help-op-code">kind IN [Server, Client]</code></span
+            >
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">Null</th>
+          <td>
+            <code class="help-op-code">= NULL</code>,
+            <code class="help-op-code">!= NULL</code>
+            <span class="help-op-note">
+              bare <code class="help-op-code">NULL</code> or
+              <code class="help-op-code">nil</code> checks for absence; quoted
+              <code class="help-op-code">"NULL"</code> is the literal text</span
+            >
           </td>
         </tr>
       </tbody>

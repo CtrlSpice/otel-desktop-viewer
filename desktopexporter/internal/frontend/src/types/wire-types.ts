@@ -581,6 +581,7 @@ export type JsonAttributeScope =
   | 'log'
   | 'datapoint'
   | 'exemplar'
+  | 'metadata'
 
 export type JsonAttributeDefinition = {
   name: string

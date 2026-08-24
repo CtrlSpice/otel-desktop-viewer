@@ -170,27 +170,63 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expectedParams: []NamedParam{{"value_2", []any{"test1", "test2", "test3"}}},
 		},
 		{
-			name:           "NULL value with equals",
+			// The null check arrives as its own operator now. It used to be
+			// inferred from the sentinel value "NULL", which made the literal
+			// string unsearchable -- see the case below this pair.
+			name:           "IS NULL operator",
 			expression:     "Name",
-			operator:       "=",
-			value:          "NULL",
+			operator:       "IS NULL",
+			value:          "",
 			expectedSQL:    "Name IS NULL",
 			expectedParams: nil,
 		},
 		{
-			name:           "NULL value with not equals",
+			name:           "IS NOT NULL operator",
 			expression:     "Name",
-			operator:       "!=",
-			value:          "NULL",
+			operator:       "IS NOT NULL",
+			value:          "",
 			expectedSQL:    "Name IS NOT NULL",
 			expectedParams: nil,
 		},
 		{
-			name:       "unsupported operator with NULL",
-			expression: "Name",
-			operator:   "CONTAINS",
-			value:      "NULL",
-			wantErr:    true,
+			// A value that happens to be the string NULL is just a value. The
+			// old sentinel turned this into IS NULL, so a log body reading
+			// "NULL" could never be searched for.
+			name:           "the literal string NULL is searchable",
+			expression:     "Name",
+			operator:       "=",
+			value:          "NULL",
+			expectedSQL:    "Name = value_2",
+			expectedParams: []NamedParam{{"value_2", "NULL"}},
+		},
+		{
+			// DuckDB's regex operators are ~ and !~; infix REGEXP does not
+			// exist in its grammar, which kept every regex search failing at
+			// the SQL parser from the day the operator shipped.
+			name:           "REGEXP maps to the ~ operator",
+			expression:     "Name",
+			operator:       "REGEXP",
+			value:          "foo.*",
+			expectedSQL:    "Name ~ value_2",
+			expectedParams: []NamedParam{{"value_2", "foo.*"}},
+		},
+		{
+			name:           "NOT REGEXP maps to the !~ operator",
+			expression:     "Name",
+			operator:       "NOT REGEXP",
+			value:          "foo.*",
+			expectedSQL:    "Name !~ value_2",
+			expectedParams: []NamedParam{{"value_2", "foo.*"}},
+		},
+		{
+			// JSON arrays are the wire format now, so a quoted element may
+			// contain the comma the legacy split corrupted on.
+			name:           "JSON array value with an embedded comma",
+			expression:     "Name",
+			operator:       "IN",
+			value:          `["a,b","c"]`,
+			expectedSQL:    "Name IN value_2",
+			expectedParams: []NamedParam{{"value_2", []any{"a,b", "c"}}},
 		},
 		{
 			name:       "unsupported operator",
@@ -216,10 +252,10 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expectedParams: []NamedParam{{"value_2", "%test%"}},
 		},
 		{
-			name:           "placeholder expression NULL",
+			name:           "placeholder expression IS NULL",
 			expression:     "s.SearchText {COND}",
-			operator:       "=",
-			value:          "NULL",
+			operator:       "IS NULL",
+			value:          "",
 			expectedSQL:    "s.SearchText IS NULL",
 			expectedParams: nil,
 		},
@@ -603,4 +639,28 @@ func TestBuildConditions_MissingField(t *testing.T) {
 	var conditions []string
 	err := BuildConditions(node, &conditions, &params, mapper)
 	assert.Error(t, err)
+}
+
+// A named-field mapper that returns several expressions must produce valid
+// SQL. No shipping mapper does this yet, which is exactly why it needs a pin:
+// the first one to try would have hit the old code path that joined the
+// top-level condition list with a bare space -- syntactically invalid SQL
+// discovered at query time by whichever user typed the right search.
+func TestMultiExpressionNamedFieldJoinsWithAND(t *testing.T) {
+	node := &QueryNode{
+		Type: "condition",
+		Query: &Query{
+			Field:         &FieldDefinition{Name: "twoPlaces", SearchScope: "field", Type: "string"},
+			FieldOperator: "=",
+			Value:         "x",
+		},
+	}
+	mapper := func(field *FieldDefinition, query *Query, params *[]NamedParam) ([]string, error) {
+		return []string{"a.col", "b.col"}, nil
+	}
+	cte, where, args, err := BuildSearchSQL(node, 0, 10, mapper, "t >= time_start")
+	require.NoError(t, err)
+	assert.Equal(t, "((a.col = value_2 AND b.col = value_3)) AND t >= time_start", where)
+	assert.Contains(t, cte, "value_2")
+	assert.Len(t, args, 4)
 }

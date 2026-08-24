@@ -154,6 +154,15 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    # The query-language parser is generated from query.grammar and committed.
+    # An edit to the grammar without regeneration would leave the editor
+    # parsing yesterday's language -- exactly the split-brain the grammar
+    # unification removed. Regenerate and require a clean diff.
+    - name: Generated parser matches the grammar
+      run: |
+        npm run generate:grammar
+        git diff --exit-code src/components/shared/Search/codemirror/
+
     - name: Type check (svelte-check)
       run: npm run check
 

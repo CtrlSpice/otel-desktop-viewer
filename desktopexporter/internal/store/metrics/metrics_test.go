@@ -17,6 +17,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -5460,17 +5461,96 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 	}))
 	require.Equal(t, 2, n, "both metadata attributes belong to the metadata scope")
 
-	// ...and that scope stays out of attribute discovery, so metadata never
-	// becomes a search field.
+	// ...and discovery offers it under that scope. This assertion used to be
+	// inverted: discovery deliberately hid metadata because the search mapper
+	// had no case for it, and a discovered-but-unsearchable field would have
+	// been a dropdown entry that errors when picked. The mapper handles the
+	// metadata scope now (see TestSearchSummariesByMetricMetadata), so hiding
+	// it would be the dangling half.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricAttributes(ctx, db, 0, maxNano)
 	})
 	require.NoError(t, err)
 	var defs []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &defs))
+	offered := false
 	for _, d := range defs {
-		require.NotEqual(t, "metadata", d["attributeScope"],
-			"metadata must not be offered as a searchable attribute scope")
-		require.NotEqual(t, "owner", d["name"])
+		if d["attributeScope"] == "metadata" && d["name"] == "owner" {
+			offered = true
+		}
 	}
+	require.True(t, offered, "metadata keys must be offered as searchable: %v", defs)
+}
+
+// Metric.metadata was stored (metric_ingests.metadata_ids) but reachable by
+// no search: the mapper had no "metadata" scope and the discovery query did
+// not list it, so its keys never appeared in the attribute dropdown and a
+// hand-written condition was rejected. Pins the mapper's both paths -- the
+// IDProbe equality fast path and the attr_value fallback -- plus discovery.
+func TestSearchSummariesByMetricMetadata(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	base := time.Now().Add(-time.Minute)
+
+	md := makeSumFixtureT("meta.metric", pmetric.AggregationTemporalityCumulative, []sumTestDP{{
+		timestamp: base, value: 1, attrs: map[string]string{"r": "/x"},
+	}})
+	md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).
+		Metadata().PutStr("workload.type", "batch")
+	plain := makeSumFixtureT("meta.plain", pmetric.AggregationTemporalityCumulative, []sumTestDP{{
+		timestamp: base, value: 1, attrs: map[string]string{"r": "/y"},
+	}})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		if err := metrics.Ingest(ctx, conn, md, s.FlushedIDs()); err != nil {
+			return err
+		}
+		return metrics.Ingest(ctx, conn, plain, s.FlushedIDs())
+	}))
+	end := time.Now().UnixNano() + int64(time.Hour)
+
+	run := func(operator, value string) []map[string]any {
+		query := &search.QueryNode{
+			ID:   "q1",
+			Type: "condition",
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
+					Name: "workload.type", SearchScope: "attribute",
+					AttributeScope: "metadata", Type: "string",
+				},
+				FieldOperator: operator,
+				Value:         value,
+			},
+		}
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.SearchSummaries(ctx, db, 0, end, query)
+		})
+		require.NoError(t, err)
+		var out []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &out))
+		return out
+	}
+
+	// Equality takes the IDProbe fast path; CONTAINS takes attr_value.
+	eq := run("=", "batch")
+	require.Len(t, eq, 1)
+	assert.Equal(t, "meta.metric", eq[0]["name"])
+	like := run("CONTAINS", "atc")
+	require.Len(t, like, 1)
+	assert.Equal(t, "meta.metric", like[0]["name"])
+	assert.Empty(t, run("=", "interactive"))
+
+	// Discovery lists the key under its scope, so the dropdown can offer it.
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricAttributes(ctx, db, 0, end)
+	})
+	require.NoError(t, err)
+	var attrs []map[string]any
+	require.NoError(t, json.Unmarshal(raw, &attrs))
+	found := false
+	for _, a := range attrs {
+		if a["name"] == "workload.type" && a["attributeScope"] == "metadata" {
+			found = true
+		}
+	}
+	assert.True(t, found, "discovery must surface metadata keys: %v", attrs)
 }

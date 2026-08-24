@@ -626,6 +626,7 @@ const spanSearchFrom = `from search_params, spans s
 		join scopes sc on sc.id = s.scope_id`
 
 var spanColumns = map[string]struct{}{
+	"flags":                    {},
 	"trace_id":                 {},
 	"trace_state":              {},
 	"span_id":                  {},
@@ -663,6 +664,7 @@ var eventColumns = map[string]struct{}{
 }
 
 var linkColumns = map[string]struct{}{
+	"flags":                    {},
 	"id":                       {},
 	"span_id":                  {},
 	"trace_id":                 {},

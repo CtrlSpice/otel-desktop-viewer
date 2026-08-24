@@ -1198,6 +1198,12 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 				"m.id in (select d.metric_ingest_id from exemplars e" +
 					" join datapoints d on d.id = e.datapoint_id where " + p + ")")}, nil
 		}
+	case "metadata":
+		// Metric.metadata lives on the ingest row itself, so no subquery: m
+		// is metric_ingests in metricSearchFrom.
+		if p := ingest.IDProbe("m.metadata_ids", field, query, ingest.ScopeMetricMetadata); p != "" {
+			return []string{search.Complete(p)}, nil
+		}
 	}
 
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
@@ -1218,6 +1224,9 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 	case "exemplar":
 		return []string{fmt.Sprintf(matchIngestByLabel,
 			"exemplars e join datapoints d on d.id = e.datapoint_id", "e.attribute_ids", keyParam)}, nil
+	case "metadata":
+		return []string{fmt.Sprintf(
+			"attr_value(m.metadata_ids, %s) {COND}", keyParam)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidMetricQuery)
 	}

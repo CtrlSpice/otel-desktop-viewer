@@ -3,12 +3,12 @@ import { styleTags, tags as t } from '@lezer/highlight'
 import { parser } from './query.parser'
 
 const queryHighlighting = styleTags({
-  Field: t.propertyName,
+  'FieldName/Word': t.propertyName,
   Operator: t.compareOperator,
-  KeywordOperator: t.operatorKeyword,
-  LogicalOp: t.logicOperator,
+  'KeywordOperator/...': t.operatorKeyword,
+  'And Or': t.logicOperator,
   QuotedString: t.string,
-  Value: t.literal,
+  Word: t.literal,
   Null: t.null,
   'Array/[ Array/]': t.squareBracket,
   'Group/( Group/)': t.paren,
