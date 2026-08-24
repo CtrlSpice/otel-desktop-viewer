@@ -336,10 +336,16 @@ function operatorCompletions(
       f.name.toLowerCase() === fieldName.toLowerCase()
   )
 
-  const ops =
+  // The derived operators are wire spellings, not query syntax: the null
+  // check is typed `= NULL` and negated regex is typed `!~`, so offering
+  // "IS NULL" or "NOT REGEXP" here would complete into text the grammar
+  // cannot parse.
+  const derived = new Set(['IS NULL', 'IS NOT NULL', 'NOT REGEXP'])
+  const ops = (
     field && field.searchScope !== 'global'
       ? field.operators
       : Object.values(OPERATORS)
+  ).filter(op => !derived.has(op.symbol))
 
   const options: Completion[] = ops.map(op => ({
     label: op.symbol,
