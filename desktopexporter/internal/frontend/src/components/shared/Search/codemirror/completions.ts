@@ -29,14 +29,6 @@ const LOGICAL_COMPLETIONS: Completion[] = [
   },
 ]
 
-function logicalCompletionsFrom(from: number): CompletionResult {
-  return {
-    from,
-    options: LOGICAL_COMPLETIONS,
-    validFor: /^\s*(AND|OR)?$/i,
-  }
-}
-
 /**
  * Whether the text is a complete, error-free structured expression -- the
  * state after which AND and OR are the only tokens the grammar accepts.
@@ -47,7 +39,7 @@ function logicalCompletionsFrom(from: number): CompletionResult {
  */
 function expressionIsComplete(text: string): boolean {
   let trimmed = text.trim()
-  if (!trimmed) return false
+  if (!trimmed || trimmed.endsWith('(')) return false
   let depth = 0
   for (const c of trimmed) {
     if (c === '(') depth++
@@ -119,6 +111,11 @@ function idPatternCompletions(
     from: word.from,
     to: word.to,
     options,
+    // The options are whole conditions built around the typed hex, so they
+    // must not be re-filtered against it: CodeMirror's fuzzy matcher scores
+    // "spanID = <hex>" so poorly against the bare hex that the suggestions
+    // never rendered at all.
+    filter: false,
   }
 }
 
@@ -188,15 +185,6 @@ export function createQueryCompletionSource(
           )
         }
       }
-
-      // After a complete value: AND / OR (space after value, or end of input).
-      if (field && opNode && valueNode && pos >= valueNode.to) {
-        const gap = context.state.sliceDoc(valueNode.to, pos)
-        const atDocEnd = pos === context.state.doc.length
-        if (/^\s*$/.test(gap) && (gap.length >= 1 || atDocEnd)) {
-          return logicalCompletionsFrom(pos)
-        }
-      }
     }
 
     // A finished expression continues with AND or OR and nothing else --
@@ -217,14 +205,6 @@ export function createQueryCompletionSource(
           options: LOGICAL_COMPLETIONS,
           validFor: /^(AND|OR)?$/i,
         }
-      }
-    }
-
-    const groupNode = findAncestor(node, 'Group')
-    if (groupNode && context.pos >= groupNode.to) {
-      const afterGroup = context.state.sliceDoc(groupNode.to, context.pos)
-      if (/^\s*$/.test(afterGroup)) {
-        return logicalCompletionsFrom(context.pos)
       }
     }
 
@@ -252,41 +232,22 @@ export function createQueryCompletionSource(
       return operatorCompletions(context, fieldText, getFields())
     }
 
+    // Typing the first word of a new condition: what precedes the word is
+    // empty, an open paren, or a logical operator. This used to be decided
+    // by a block of regexes over the raw text -- including a second spelling
+    // of the whole operator list, which is the same split-brain the grammar
+    // unification removed -- and every other context that block served is
+    // now answered from the tree above. AND/OR are matched as whole words;
+    // "operand" does not end with the operator AND.
     const word = context.matchBefore(/[\w.]+/)
     if (word) {
-      const beforeWord = context.state.sliceDoc(
-        Math.max(0, word.from - 20),
-        word.from
-      )
-      const trimmed = beforeWord.trimEnd()
-
+      const before = context.state.sliceDoc(0, word.from).trim()
       if (
-        trimmed === '' ||
-        /\b(AND|OR)\s*$/i.test(trimmed) ||
-        trimmed.endsWith('(')
+        before === '' ||
+        before.endsWith('(') ||
+        /(?:^|[\s(])(?:AND|OR)$/i.test(before)
       ) {
         return fieldCompletions(context, getFields(), word.from)
-      }
-
-      if (
-        /=|!|>|<|~|\^|\$/.test(trimmed.slice(-1)) ||
-        /\b(CONTAINS|IN|REGEXP|NOT IN|NOT CONTAINS)\s*$/i.test(trimmed)
-      ) {
-        const line = context.state.sliceDoc(
-          context.state.doc.lineAt(word.from).from,
-          word.from
-        )
-        const fieldMatch = line.match(
-          /([\w.]+)\s*(?:=|!=|>|<|>=|<=|=~|!~|\^|\$|CONTAINS|REGEXP|NOT CONTAINS|NOT IN|IN)\s*$/i
-        )
-        if (fieldMatch) {
-          return valueCompletions(
-            context,
-            fieldMatch[1],
-            getFields(),
-            word.from
-          )
-        }
       }
     }
 
