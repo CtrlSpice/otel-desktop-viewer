@@ -16,6 +16,7 @@ import {
   QuotedString,
   Word as ValueTerm,
 } from './query.parser.terms'
+import { parser } from './query.parser'
 
 const LOGICAL_COMPLETIONS: Completion[] = [
   {
@@ -34,6 +35,41 @@ function logicalCompletionsFrom(from: number): CompletionResult {
     options: LOGICAL_COMPLETIONS,
     validFor: /^\s*(AND|OR)?$/i,
   }
+}
+
+/**
+ * Whether the text is a complete, error-free structured expression -- the
+ * state after which AND and OR are the only tokens the grammar accepts.
+ *
+ * Unclosed groups are balanced before parsing, so a condition typed inside
+ * parentheses still counts as complete: `(a = 1` continues with AND/OR just
+ * as `a = 1` does, the closer simply hasn't been typed yet.
+ */
+function expressionIsComplete(text: string): boolean {
+  let trimmed = text.trim()
+  if (!trimmed) return false
+  let depth = 0
+  for (const c of trimmed) {
+    if (c === '(') depth++
+    else if (c === ')') depth--
+  }
+  if (depth > 0) trimmed += ')'.repeat(depth)
+  let structured = false
+  let hasError = false
+  parser.parse(trimmed).iterate({
+    enter(n) {
+      if (
+        n.name === 'Comparison' ||
+        n.name === 'Group' ||
+        n.name === 'AndExpression' ||
+        n.name === 'OrExpression'
+      ) {
+        structured = true
+      }
+      if (n.type.isError) hasError = true
+    },
+  })
+  return structured && !hasError
 }
 
 function findAncestor(node: SyntaxNode, name: string): SyntaxNode | null {
@@ -159,6 +195,27 @@ export function createQueryCompletionSource(
         const atDocEnd = pos === context.state.doc.length
         if (/^\s*$/.test(gap) && (gap.length >= 1 || atDocEnd)) {
           return logicalCompletionsFrom(pos)
+        }
+      }
+    }
+
+    // A finished expression continues with AND or OR and nothing else --
+    // this is the branch that makes the logical operators actually appear.
+    // The comparison-scoped branch above only fires while the cursor still
+    // resolves inside the Comparison node, which one space past the value it
+    // no longer does; the fallthrough used to offer field names there, which
+    // the grammar cannot accept after a complete condition.
+    {
+      const partial = context.matchBefore(/[A-Za-z]*/)
+      const before = context.state.sliceDoc(
+        0,
+        partial ? partial.from : context.pos
+      )
+      if (expressionIsComplete(before)) {
+        return {
+          from: partial?.from ?? context.pos,
+          options: LOGICAL_COMPLETIONS,
+          validFor: /^(AND|OR)?$/i,
         }
       }
     }
