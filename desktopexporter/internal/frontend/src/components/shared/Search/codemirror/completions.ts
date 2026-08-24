@@ -168,6 +168,17 @@ export function createQueryCompletionSource(
         const fieldNode = comparison.getChild(FieldTerm)
         if (fieldNode) {
           const fieldText = context.state.sliceDoc(fieldNode.from, fieldNode.to)
+          // Cursor still touching a symbol operator: it may be mid-typing --
+          // `>` on the way to `>=` -- so offer the operators anchored at the
+          // symbol's start. Past the operator, the value position begins.
+          if (node.name === 'Operator' && pos <= node.to) {
+            return operatorCompletions(
+              context,
+              fieldText,
+              getFields(),
+              node.from
+            )
+          }
           return valueCompletions(context, fieldText, getFields())
         }
       }
@@ -232,6 +243,34 @@ export function createQueryCompletionSource(
       return operatorCompletions(context, fieldText, getFields())
     }
 
+    // Typing an operator after a bare field name -- `name C` on the way to
+    // CONTAINS, or `duration >` on the way to >=. The text before the
+    // partial must parse to exactly one free-standing word: that is a field
+    // name awaiting its operator. Symbol prefixes are matched as a separate
+    // character class since they are not word characters.
+    const opPartial = context.matchBefore(/[A-Za-z]+|[=!<>~^$]+/)
+    if (opPartial && opPartial.from > 0) {
+      const before = context.state.sliceDoc(0, opPartial.from).trim()
+      if (before !== '') {
+        const t = parser.parse(before).topNode
+        const only = t.firstChild
+        if (
+          only &&
+          only.name === 'FreeText' &&
+          !only.nextSibling &&
+          only.from === 0 &&
+          only.to === before.length
+        ) {
+          return operatorCompletions(
+            context,
+            before,
+            getFields(),
+            opPartial.from
+          )
+        }
+      }
+    }
+
     // Typing the first word of a new condition: what precedes the word is
     // empty, an open paren, or a logical operator. This used to be decided
     // by a block of regexes over the raw text -- including a second spelling
@@ -289,7 +328,8 @@ function fieldCompletions(
 function operatorCompletions(
   context: CompletionContext,
   fieldName: string,
-  fields: FieldDefinition[]
+  fields: FieldDefinition[],
+  from?: number
 ): CompletionResult | null {
   const field = fields.find(
     f =>
@@ -315,8 +355,14 @@ function operatorCompletions(
   }))
 
   return {
-    from: context.pos,
+    from: from ?? context.pos,
     options,
+    // Keep the list open and filtering while an operator is being typed.
+    // Without this the dropdown closed on the first keystroke: the result
+    // was anchored at the cursor with nothing marking further typing as a
+    // continuation, so "C" on the way to CONTAINS dismissed the list that
+    // had just offered it.
+    validFor: /^[\w=!<>~^$]*$/,
   }
 }
 
