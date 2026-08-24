@@ -196,6 +196,24 @@ export function createQueryCompletionSource(
           if (valueNode.name === 'Array') {
             const item = context.matchBefore(/[\w.]*/)
             from = item && item.from < pos ? item.from : pos
+            // A quote immediately before the anchor is one of two states,
+            // told apart by counting quotes since the bracket: an odd count
+            // means the quote OPENED the item being typed -- `["O|` -- so
+            // accepting must close it; an even count means the quote CLOSED
+            // the previous item -- `["Ok"|` -- where the only valid next
+            // characters are a comma or the bracket, so nothing is offered.
+            const prev = context.state.sliceDoc(Math.max(0, from - 1), from)
+            if (prev === '"' || prev === "'") {
+              const sinceBracket = context.state.sliceDoc(valueNode.from, from)
+              const quotes = (sinceBracket.match(/["']/g) ?? []).length
+              if (quotes % 2 === 0) return null
+              const r = valueCompletions(context, fieldText, getFields(), from)
+              if (!r) return null
+              return {
+                ...r,
+                options: r.options.map(o => ({ ...o, apply: o.label + prev })),
+              }
+            }
           }
           return valueCompletions(context, fieldText, getFields(), from)
         }
@@ -299,7 +317,11 @@ export function createQueryCompletionSource(
     // And/Or token, so the node-name branch above never sees it. What
     // precedes the cursor tells the truth directly.
     if (!word) {
-      const before = context.state.sliceDoc(0, context.pos).trim()
+      // Trailing open parens are transparent: `AND (` is the same "a
+      // condition starts here" position as `AND `.
+      const before = context.state
+        .sliceDoc(0, context.pos)
+        .replace(/[(\s]+$/, '')
       if (/(?:^|[\s(])(?:AND|OR)$/i.test(before)) {
         return fieldCompletions(context, getFields())
       }
