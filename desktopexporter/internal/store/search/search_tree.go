@@ -122,9 +122,19 @@ func buildCondition(query *Query, conditions *[]string, params *[]NamedParam, ma
 		sqlConditions = append(sqlConditions, sqlCondition)
 	}
 
-	if field.SearchScope == "global" && len(sqlConditions) > 1 {
-		joinedConditions := strings.Join(sqlConditions, " OR ")
-		*conditions = append(*conditions, "("+joinedConditions+")")
+	// A mapper may return several expressions for one condition. For a
+	// global search they are alternatives -- the value may live in any of
+	// those places -- so they join with OR. For a named field they are
+	// requirements and join with AND. Appending them unjoined was the old
+	// behaviour, and it was a trap: BuildSearchSQL later joined the top-level
+	// list with a bare space, so the first named-field mapper to return two
+	// expressions would have produced syntactically invalid SQL.
+	if len(sqlConditions) > 1 {
+		joiner := " AND "
+		if field.SearchScope == "global" {
+			joiner = " OR "
+		}
+		*conditions = append(*conditions, "("+strings.Join(sqlConditions, joiner)+")")
 	} else {
 		*conditions = append(*conditions, sqlConditions...)
 	}
@@ -442,7 +452,12 @@ func BuildSearchSQL(queryNode *QueryNode, startTime, endTime int64, mapper Field
 	}
 
 	if len(conditions) > 0 {
-		whereSQL = "(" + strings.Join(conditions, " ") + ") AND " + timeCondition
+		// One condition or one group reaches here as exactly one string --
+		// buildCondition and buildGroup each append a single joined element --
+		// so a multi-element list means a caller bug. Join defensively with
+		// AND rather than the bare space this once was, which produced
+		// syntactically invalid SQL the first time anything appended two.
+		whereSQL = "(" + strings.Join(conditions, " AND ") + ") AND " + timeCondition
 	} else {
 		whereSQL = timeCondition
 	}

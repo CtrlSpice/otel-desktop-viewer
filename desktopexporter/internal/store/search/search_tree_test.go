@@ -640,3 +640,27 @@ func TestBuildConditions_MissingField(t *testing.T) {
 	err := BuildConditions(node, &conditions, &params, mapper)
 	assert.Error(t, err)
 }
+
+// A named-field mapper that returns several expressions must produce valid
+// SQL. No shipping mapper does this yet, which is exactly why it needs a pin:
+// the first one to try would have hit the old code path that joined the
+// top-level condition list with a bare space -- syntactically invalid SQL
+// discovered at query time by whichever user typed the right search.
+func TestMultiExpressionNamedFieldJoinsWithAND(t *testing.T) {
+	node := &QueryNode{
+		Type: "condition",
+		Query: &Query{
+			Field:         &FieldDefinition{Name: "twoPlaces", SearchScope: "field", Type: "string"},
+			FieldOperator: "=",
+			Value:         "x",
+		},
+	}
+	mapper := func(field *FieldDefinition, query *Query, params *[]NamedParam) ([]string, error) {
+		return []string{"a.col", "b.col"}, nil
+	}
+	cte, where, args, err := BuildSearchSQL(node, 0, 10, mapper, "t >= time_start")
+	require.NoError(t, err)
+	assert.Equal(t, "((a.col = value_2 AND b.col = value_3)) AND t >= time_start", where)
+	assert.Contains(t, cte, "value_2")
+	assert.Len(t, args, 4)
+}
