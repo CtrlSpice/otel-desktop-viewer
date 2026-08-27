@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 )
@@ -122,4 +123,29 @@ func prepareSpanArg(conn driver.Conn, v any) (driver.Value, error) {
 		return nil, err
 	}
 	return driver.DefaultParameterConverter.ConvertValue(v)
+}
+
+// recordSpanRejections tallies what this batch was refused, one row per kind.
+//
+// The sample is the refused span's own id. For an already-stored rejection that
+// row is in the store, so it is a working link -- better than keeping a copy of
+// something we already have.
+func recordSpanRejections(ctx context.Context, conn driver.Conn, r ingest.Rejected, spanIDs []duckdb.UUID) error {
+	if r.Count() == 0 {
+		return nil
+	}
+	records := ingest.Tally("traces", r,
+		func(reason error) string {
+			if errors.Is(reason, ErrSpanAlreadyStored) {
+				return ingest.KindAlreadyStored
+			}
+			return ingest.KindRefused
+		},
+		func(ordinal int) string {
+			if ordinal < 0 || ordinal >= len(spanIDs) {
+				return ""
+			}
+			return spanIDs[ordinal].String()
+		})
+	return ingest.RecordRejections(ctx, conn, records)
 }

@@ -136,8 +136,21 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 	// Pass 2: append, retrying in halves so a bad row costs only itself. The
 	// skipped ordinals go in as pre-rejected rather than being tallied on
 	// afterwards, so every rejection is built in one place and in walk order.
-	return appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
+	rejected, err := appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
 		spanAttrs, eventAttrs, linkAttrs, skip)
+	if err != nil {
+		return rejected, err
+	}
+
+	// Recorded after the appends commit, never inside them: a rejection
+	// describes a batch that succeeded, and rolling it back with a failed
+	// attempt would lose the only trace that anything was refused.
+	if err := recordSpanRejections(ctx, conn, rejected, spanIDs); err != nil {
+		// The telemetry landed. Failing the batch because we could not write
+		// a note about it would turn a report into an outage.
+		return rejected, nil
+	}
+	return rejected, nil
 }
 
 // appendPass writes the spans keep selects, by ordinal rather than id so two
