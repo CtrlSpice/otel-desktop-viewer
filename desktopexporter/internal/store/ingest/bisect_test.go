@@ -159,3 +159,32 @@ func ordinalsOf(r ingest.Rejected) []int {
 	}
 	return out
 }
+
+// Two bad items in opposite halves are searched independently, and each keeps
+// its own reason. Reason() is only a one-line summary; Reasons() is the record.
+func TestBisectingWrite_BothHalvesBadSurfaceBothReasons(t *testing.T) {
+	t.Parallel()
+	errLow := errors.New("low half fault")
+	errHigh := errors.New("high half fault")
+
+	var attempts int
+	rep, err := ingest.BisectingWrite(t.Context(), 8, nil, func(lo, hi int) error {
+		attempts++
+		for i := lo; i < hi; i++ {
+			switch i {
+			case 1:
+				return errLow
+			case 6:
+				return errHigh
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err, "row faults are reported, not returned")
+
+	assert.Equal(t, []int{1, 6}, ordinalsOf(rep))
+	assert.ErrorIs(t, rep.Items[0].Reason, errLow)
+	assert.ErrorIs(t, rep.Items[1].Reason, errHigh, "the second half's fault is not overwritten by the first's")
+	assert.Equal(t, map[string]int{errLow.Error(): 1, errHigh.Error(): 1}, rep.Reasons())
+	assert.Equal(t, 11, attempts, "both halves searched, neither abandoned after the other failed")
+}
