@@ -40,16 +40,28 @@ func FlushAppenders(appenders map[string]*duckdb.Appender, tables []string) erro
 	return nil
 }
 
-// CloseAppenders closes appenders in the order of tables, so close order is deterministic.
+// CloseAppenders closes every appender in reverse order of tables, matching
+// FlushAppenders so parents are written before dependents, and returns the
+// first failure.
+//
+// Every appender is closed even after one fails, because Close is also what
+// destroys the appender and releases its buffered chunk -- skipping the rest
+// would leak. Only the first error is returned, though. Ingest runs in a
+// transaction, so the first failure aborts it and every appender closed
+// afterwards reports the same derived "Current transaction is aborted (please
+// ROLLBACK)" rather than a fault of its own. Joining those buried the real
+// cause under two copies of a message telling the reader to do something the
+// caller already does.
+//
 // Safe to call with nil map or nil/empty tables.
 func CloseAppenders(appenders map[string]*duckdb.Appender, tables []string) error {
-	var errs []error
+	var firstErr error
 	for i := len(tables) - 1; i >= 0; i-- {
 		if a := appenders[tables[i]]; a != nil {
-			if err := a.Close(); err != nil {
-				errs = append(errs, err)
+			if err := a.Close(); err != nil && firstErr == nil {
+				firstErr = err
 			}
 		}
 	}
-	return errors.Join(errs...)
+	return firstErr
 }

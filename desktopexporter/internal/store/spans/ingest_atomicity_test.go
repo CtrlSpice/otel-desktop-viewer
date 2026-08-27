@@ -119,3 +119,44 @@ func TestIngest_FailedBatchDoesNotPoisonDictionaryCache(t *testing.T) {
 	`)
 	assert.Zero(t, dangling, "spans reference dictionary rows that do not exist")
 }
+
+// Repeated failures must not wedge the connection.
+//
+// Ingest owns one long-lived connection for the life of the process, so a
+// transaction left open by a rollback that did not happen would fail every
+// later batch with "transaction already active" -- one bad sender silencing
+// every other one. The appenders are also rebuilt per batch on that same
+// connection after a flush error, which is the other thing that has to survive.
+func TestIngest_RepeatedFailuresLeaveConnectionUsable(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	for i := range 3 {
+		err := s.WithConn(func(conn driver.Conn) error {
+			return spans.Ingest(ctx, conn, tracesWithDuplicateSpanID(600), s.FlushedIDs())
+		})
+		require.Error(t, err, "batch %d should fail", i)
+		assert.Zero(t, countRows(t, s, ctx, "select count(*) from spans"),
+			"batch %d left rows behind", i)
+	}
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, createTestTracePdata(), s.FlushedIDs())
+	}), "a good batch after three failed ones must still ingest")
+	assert.Equal(t, 9, countRows(t, s, ctx, "select count(*) from spans"))
+}
+
+// The failure has to say what happened. A duplicate key is a user-facing
+// condition -- their sender is reusing span ids -- so the message must survive
+// the joins on the way out rather than being flattened into "ingest failed".
+func TestIngest_DuplicateErrorNamesTheConstraint(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	err := s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, tracesWithDuplicateSpanID(600), s.FlushedIDs())
+	})
+	require.Error(t, err)
+	t.Logf("error surfaced to the exporter:\n%v", err)
+	assert.Contains(t, err.Error(), "PRIMARY KEY or UNIQUE constraint")
+}
