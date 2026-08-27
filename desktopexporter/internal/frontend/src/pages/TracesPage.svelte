@@ -43,15 +43,6 @@
         : -cmp
       : a.traceID.localeCompare(b.traceID)
   }
-
-  const SORT_OPTIONS = [
-    { value: 'startTime', label: 'Start Time' },
-    { value: 'duration', label: 'Duration' },
-    { value: 'rootSpanName', label: 'Root Span Name' },
-    { value: 'serviceName', label: 'Service Name' },
-    { value: 'spanCount', label: 'Span Count' },
-    { value: 'errorCount', label: 'Error Count' },
-  ]
 </script>
 
 <script lang="ts">
@@ -76,7 +67,11 @@
     TraceStats,
   } from '@/types/api-types'
   import type { QueryNode } from '@/components/shared/Search/queryTree'
-  import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
+  import {
+    createSignalListPage,
+    type SortOption,
+  } from '@/contexts/signal-list-page.svelte'
+
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
@@ -84,6 +79,15 @@
   import DetailView from '@/components/traces/Detail/TraceDetailView.svelte'
   import WaterfallView from '@/components/traces/Waterfall/WaterfallView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
+
+  const SORT_OPTIONS: SortOption[] = [
+    { value: 'startTime', label: 'Start Time', defaultDirection: 'desc' },
+    { value: 'duration', label: 'Duration', defaultDirection: 'desc' },
+    { value: 'rootSpanName', label: 'Root Span Name' },
+    { value: 'serviceName', label: 'Service Name' },
+    { value: 'spanCount', label: 'Span Count', defaultDirection: 'desc' },
+    { value: 'errorCount', label: 'Error Count', defaultDirection: 'desc' },
+  ]
 
   let timeContext = getTimeContext()
   const routeContext = getRouteContext()

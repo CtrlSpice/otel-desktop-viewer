@@ -32,13 +32,6 @@
 
     return cmp !== 0 ? (dir === 'asc' ? cmp : -cmp) : a.id.localeCompare(b.id)
   }
-
-  const SORT_OPTIONS = [
-    { value: 'timestamp', label: 'Timestamp' },
-    { value: 'body', label: 'Body' },
-    { value: 'service', label: 'Service Name' },
-    { value: 'severity', label: 'Severity' },
-  ]
 </script>
 
 <script lang="ts">
@@ -49,7 +42,10 @@
   } from '@/contexts/time-context.svelte'
   import { navigateToItem } from '@/route'
   import type { LogData } from '@/types/api-types'
-  import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
+  import {
+    createSignalListPage,
+    type SortOption,
+  } from '@/contexts/signal-list-page.svelte'
   import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
@@ -57,6 +53,13 @@
   import LogCard from '@/components/logs/LogCard.svelte'
   import LogDetailPanel from '@/components/logs/LogDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
+
+  const SORT_OPTIONS: SortOption[] = [
+    { value: 'timestamp', label: 'Timestamp', defaultDirection: 'desc' },
+    { value: 'body', label: 'Body' },
+    { value: 'service', label: 'Service Name' },
+    { value: 'severity', label: 'Severity', defaultDirection: 'desc' },
+  ]
 
   let timeContext = getTimeContext()
 
