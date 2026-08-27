@@ -87,7 +87,7 @@
 				s.dropped_attributes_count, s.dropped_events_count, s.dropped_links_count,
 				s.status_code, s.status_message
 			from spans_tree st
-			join spans s on s.span_id = st.span_id
+			join spans s on s.trace_id = st.trace_id and s.span_id = st.span_id
 		),
 
 		-- The attributes this trace references, as one MAP, probed by the three
@@ -121,9 +121,11 @@
 			where id in (
 				select unnest(attribute_ids) from tree
 				union select unnest(e.attribute_ids) from events e
-					where e.span_id in (select span_id from tree)
+					where exists (select 1 from tree t
+					where t.trace_id = e.trace_id and t.span_id = e.span_id)
 				union select unnest(l.attribute_ids) from links l
-					where l.span_id in (select span_id from tree)
+					where exists (select 1 from tree t
+					where t.trace_id = l.trace_id and t.span_id = l.span_id)
 			)
 		),
 
@@ -141,7 +143,7 @@
 		-- 0.19s CPU. attrs_mapped orders by (key, id) exactly as attrs_json
 		-- does, so the rendered JSON is byte-identical to both earlier forms.
 		span_attrs as (
-			select ts.span_id as id, attrs_mapped(ts.attribute_ids, dm.m) as attrs
+			select ts.trace_id, ts.span_id as id, attrs_mapped(ts.attribute_ids, dm.m) as attrs
 			from tree ts, dict_map dm
 			where len(ts.attribute_ids) > 0
 		),
@@ -149,33 +151,37 @@
 		event_attrs as (
 			select e.id, attrs_mapped(e.attribute_ids, dm.m) as attrs
 			from events e, dict_map dm
-			where e.span_id in (select span_id from tree)
+			where exists (select 1 from tree t
+					where t.trace_id = e.trace_id and t.span_id = e.span_id)
 				and len(e.attribute_ids) > 0
 		),
 
 		link_attrs as (
 			select l.id, attrs_mapped(l.attribute_ids, dm.m) as attrs
 			from links l, dict_map dm
-			where l.span_id in (select span_id from tree)
+			where exists (select 1 from tree t
+					where t.trace_id = l.trace_id and t.span_id = l.span_id)
 				and len(l.attribute_ids) > 0
 		),
 
 		event_data as (
-			select e.span_id,
+			select e.trace_id, e.span_id,
 				to_json(list(event_json(e, ea.attrs) order by e.timestamp)) as events
 			from events e
 			left join event_attrs ea on ea.id = e.id
-			where e.span_id in (select span_id from tree)
-			group by e.span_id
+			where exists (select 1 from tree t
+					where t.trace_id = e.trace_id and t.span_id = e.span_id)
+			group by e.trace_id, e.span_id
 		),
 
 		link_data as (
-			select l.span_id,
+			select l.trace_id, l.span_id,
 				json_group_array(link_json(l, la.attrs)) as links
 			from links l
 			left join link_attrs la on la.id = l.id
-			where l.span_id in (select span_id from tree)
-			group by l.span_id
+			where exists (select 1 from tree t
+					where t.trace_id = l.trace_id and t.span_id = l.span_id)
+			group by l.trace_id, l.span_id
 		),
 
 		-- Resource and scope JSON is built once per *distinct owner*, which is
@@ -228,10 +234,10 @@
 			from tree ts
 			join resource_data rd on rd.id = ts.resource_id
 			join scope_data scd on scd.id = ts.scope_id
-			left join span_attrs sa on sa.id = ts.span_id
+			left join span_attrs sa on sa.trace_id = ts.trace_id and sa.id = ts.span_id
 			left join matched_spans ms on ts.span_id = ms.span_id
-			left join event_data ed on ts.span_id = ed.span_id
-			left join link_data ld on ts.span_id = ld.span_id
+			left join event_data ed on ts.trace_id = ed.trace_id and ts.span_id = ed.span_id
+			left join link_data ld on ts.trace_id = ld.trace_id and ts.span_id = ld.span_id
 		)
 
 		select case

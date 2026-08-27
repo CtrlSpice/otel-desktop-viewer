@@ -11,11 +11,17 @@ import (
 	"github.com/google/uuid"
 )
 
-// ErrSpanAlreadyStored is the reason a span was skipped because its id is
-// already in the store, or repeated earlier in the same batch. Span ids are
-// required to be unique, so this means the sender is reusing them -- most often
-// a replayed capture.
-var ErrSpanAlreadyStored = errors.New("span id already stored")
+// ErrSpanAlreadyStored is the reason a span was skipped because the store
+// already holds it, or because an earlier span in the same batch claimed the
+// same identity.
+var ErrSpanAlreadyStored = errors.New("span already stored")
+
+// spanKey identifies one span. A span id is only required to be unique within
+// its trace, so the trace is part of the identity rather than context.
+type spanKey struct {
+	trace duckdb.UUID
+	span  duckdb.UUID
+}
 
 // spanUUID is the span's 8-byte id widened into a uuid, zero-padded high.
 func spanUUID(id [8]byte) duckdb.UUID {
@@ -24,87 +30,112 @@ func spanUUID(id [8]byte) duckdb.UUID {
 	return duckdb.UUID(padded)
 }
 
-// skipAlreadyStored returns the ordinals whose span id the store already holds,
-// or which repeat an earlier ordinal in this batch. The first occurrence of a
-// repeated id is kept.
+// skipAlreadyStored returns the ordinals the store already holds, or which
+// repeat an earlier ordinal in this batch. The first occurrence is kept.
 //
 // Bisection would find these anyway, but only by failing: every row bad means
 // 2n-1 transactions, measured at ~1ms per span, so replaying a large capture
 // spends minutes discovering one row at a time what one indexed lookup answers
-// at once. It also gives a truer reason than a constraint violation surfaced
-// from a failed flush.
-func skipAlreadyStored(ctx context.Context, conn driver.Conn, ids []duckdb.UUID) (map[int]error, error) {
-	if len(ids) == 0 {
+// at once.
+func skipAlreadyStored(ctx context.Context, conn driver.Conn, keys []spanKey) (map[int]error, error) {
+	if len(keys) == 0 {
 		return nil, nil
 	}
 
-	stored, err := storedSpanIDs(ctx, conn, ids)
+	stored, err := storedSpans(ctx, conn, keys)
 	if err != nil {
 		return nil, err
 	}
 
 	skip := map[int]error{}
-	seen := make(map[duckdb.UUID]struct{}, len(ids))
-	for ordinal, id := range ids {
-		_, repeated := seen[id]
-		if _, ok := stored[id]; ok || repeated {
+	seen := make(map[spanKey]struct{}, len(keys))
+	for ordinal, key := range keys {
+		_, repeated := seen[key]
+		if _, ok := stored[key]; ok || repeated {
 			skip[ordinal] = ErrSpanAlreadyStored
 			continue
 		}
-		seen[id] = struct{}{}
+		seen[key] = struct{}{}
 	}
 	return skip, nil
 }
 
-// storedSpanIDs returns which of ids the spans table already holds. One bound
-// array argument, so the statement text is the same whatever the batch holds,
-// and span_id is the primary key so each probe is an index lookup.
+// storedSpans returns which of keys the spans table already holds. Two bound
+// arrays, so the statement text is the same whatever the batch holds, and
+// (trace_id, span_id) is the primary key so each probe is an index lookup.
 //
 // Runs on conn rather than the pool: ingest already holds the store's locks,
 // and reaching back through a locking Store method from inside WithConn would
 // deadlock.
-func storedSpanIDs(ctx context.Context, conn driver.Conn, ids []duckdb.UUID) (map[duckdb.UUID]struct{}, error) {
+func storedSpans(ctx context.Context, conn driver.Conn, keys []spanKey) (map[spanKey]struct{}, error) {
 	queryer, ok := conn.(driver.QueryerContext)
 	if !ok {
-		return nil, fmt.Errorf("storedSpanIDs: %w: connection cannot query", ErrSpansStoreInternal)
+		return nil, fmt.Errorf("storedSpans: %w: connection cannot query", ErrSpansStoreInternal)
 	}
 
-	text := make([]string, len(ids))
-	for i, id := range ids {
-		text[i] = id.String()
+	traces := make([]string, len(keys))
+	spanIDs := make([]string, len(keys))
+	for i, k := range keys {
+		traces[i] = k.trace.String()
+		spanIDs[i] = k.span.String()
 	}
 
-	const q = `select span_id::varchar from spans
-		where span_id in (select unnest(?::varchar[])::uuid)`
+	// The two arrays are unnested together so they stay paired: a span id is
+	// only looked for under the trace it arrived with.
+	const q = `select s.trace_id::varchar, s.span_id::varchar
+		from spans s
+		join (select unnest(?::varchar[])::uuid as trace_id,
+		             unnest(?::varchar[])::uuid as span_id) w
+			on w.trace_id = s.trace_id and w.span_id = s.span_id`
 
-	arg, err := prepareSpanArg(conn, text)
+	traceArg, err := prepareSpanArg(conn, traces)
 	if err != nil {
-		return nil, fmt.Errorf("storedSpanIDs: %w: %w", ErrSpansStoreInternal, err)
+		return nil, fmt.Errorf("storedSpans: %w: %w", ErrSpansStoreInternal, err)
+	}
+	spanArg, err := prepareSpanArg(conn, spanIDs)
+	if err != nil {
+		return nil, fmt.Errorf("storedSpans: %w: %w", ErrSpansStoreInternal, err)
 	}
 
-	rows, err := queryer.QueryContext(ctx, q, []driver.NamedValue{{Ordinal: 1, Value: arg}})
+	rows, err := queryer.QueryContext(ctx, q, []driver.NamedValue{
+		{Ordinal: 1, Value: traceArg},
+		{Ordinal: 2, Value: spanArg},
+	})
 	if err != nil {
-		return nil, fmt.Errorf("storedSpanIDs: %w: %w", ErrSpansStoreInternal, err)
+		return nil, fmt.Errorf("storedSpans: %w: %w", ErrSpansStoreInternal, err)
 	}
 	defer rows.Close()
 
-	out := make(map[duckdb.UUID]struct{})
-	dest := make([]driver.Value, 1)
+	out := make(map[spanKey]struct{})
+	dest := make([]driver.Value, 2)
 	for {
 		if err := rows.Next(dest); err != nil {
 			break
 		}
-		s, ok := dest[0].(string)
-		if !ok {
+		traceText, ok1 := dest[0].(string)
+		spanText, ok2 := dest[1].(string)
+		if !ok1 || !ok2 {
 			continue
 		}
-		parsed, err := uuid.Parse(s)
+		trace, err := parseUUIDText(traceText)
 		if err != nil {
-			return nil, fmt.Errorf("storedSpanIDs: %w: %w", ErrSpansStoreInternal, err)
+			return nil, fmt.Errorf("storedSpans: %w: %w", ErrSpansStoreInternal, err)
 		}
-		out[duckdb.UUID(parsed)] = struct{}{}
+		span, err := parseUUIDText(spanText)
+		if err != nil {
+			return nil, fmt.Errorf("storedSpans: %w: %w", ErrSpansStoreInternal, err)
+		}
+		out[spanKey{trace: trace, span: span}] = struct{}{}
 	}
 	return out, nil
+}
+
+func parseUUIDText(s string) (duckdb.UUID, error) {
+	parsed, err := uuid.Parse(s)
+	if err != nil {
+		return duckdb.UUID{}, err
+	}
+	return duckdb.UUID(parsed), nil
 }
 
 // prepareSpanArg converts a Go value into something the duckdb driver will bind,
@@ -128,9 +159,9 @@ func prepareSpanArg(conn driver.Conn, v any) (driver.Value, error) {
 // recordSpanRejections tallies what this batch was refused, one row per kind.
 //
 // The sample is the refused span's own id. For an already-stored rejection that
-// row is in the store, so it is a working link -- better than keeping a copy of
-// something we already have.
-func recordSpanRejections(ctx context.Context, conn driver.Conn, r ingest.Rejected, spanIDs []duckdb.UUID) error {
+// row is in the store, so it is a working link rather than a copy of something
+// we already have.
+func recordSpanRejections(ctx context.Context, conn driver.Conn, r ingest.Rejected, keys []spanKey) error {
 	if r.Count() == 0 {
 		return nil
 	}
@@ -142,10 +173,10 @@ func recordSpanRejections(ctx context.Context, conn driver.Conn, r ingest.Reject
 			return ingest.KindRefused
 		},
 		func(ordinal int) string {
-			if ordinal < 0 || ordinal >= len(spanIDs) {
+			if ordinal < 0 || ordinal >= len(keys) {
 				return ""
 			}
-			return spanIDs[ordinal].String()
+			return keys[ordinal].span.String()
 		})
 	return ingest.RecordRejections(ctx, conn, records)
 }

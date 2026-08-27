@@ -101,16 +101,19 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 	// so a future edit that desynchronises the two passes fails loudly instead
 	// of silently pairing a span with another span's attributes.
 	var spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID
-	// Span ids in walk order, so dedupe below can speak in the same ordinals
-	// the append pass and bisection do.
-	var spanIDs []duckdb.UUID
+	// Span identities in walk order, so dedupe below can speak in the same
+	// ordinals the append pass and bisection do.
+	var spanKeys []spanKey
 
 	for ri, resourceSpan := range traces.ResourceSpans().All() {
 		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource())
 		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
 			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope())
 			for _, span := range scopeSpan.Spans().All() {
-				spanIDs = append(spanIDs, spanUUID(span.SpanID()))
+				spanKeys = append(spanKeys, spanKey{
+					trace: duckdb.UUID(span.TraceID()),
+					span:  spanUUID(span.SpanID()),
+				})
 				spanAttrs = append(spanAttrs, dict.AddAttributes(span.Attributes(), ingest.ScopeSpan))
 				for _, event := range span.Events().All() {
 					eventAttrs = append(eventAttrs, dict.AddAttributes(event.Attributes(), ingest.ScopeEvent))
@@ -128,7 +131,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 
 	// Skip ids the store already holds before writing rather than after
 	// failing: bisection would find them, but one transaction at a time.
-	skip, err := skipAlreadyStored(ctx, conn, spanIDs)
+	skip, err := skipAlreadyStored(ctx, conn, spanKeys)
 	if err != nil {
 		return ingest.Rejected{}, err
 	}
@@ -145,7 +148,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 	// Recorded after the appends commit, never inside them: a rejection
 	// describes a batch that succeeded, and rolling it back with a failed
 	// attempt would lose the only trace that anything was refused.
-	if err := recordSpanRejections(ctx, conn, rejected, spanIDs); err != nil {
+	if err := recordSpanRejections(ctx, conn, rejected, spanKeys); err != nil {
 		// The telemetry landed. Failing the batch because we could not write
 		// a note about it would turn a report into an outage.
 		return rejected, nil
@@ -252,6 +255,7 @@ func appendPass(
 					eventCur++
 					err = appenders["events"].AppendRow(
 						duckdb.UUID(uuid.New()),        // ID UUID
+						traceUUID,                      // TraceID UUID
 						spanUUID,                       // SpanID UUID
 						event.Name(),                   // Name VARCHAR
 						int64(event.Timestamp()),       // Timestamp BIGINT
@@ -274,8 +278,9 @@ func appendPass(
 					linkCur++
 					err = appenders["links"].AppendRow(
 						duckdb.UUID(uuid.New()),       // ID UUID
-						spanUUID,                      // SpanID UUID
-						linkTraceUUID,                 // TraceID UUID
+						traceUUID,                     // TraceID UUID (owner)
+						spanUUID,                      // SpanID UUID (owner)
+						linkTraceUUID,                 // LinkedTraceID UUID
 						linkSpanUUID,                  // LinkedSpanID UUID
 						link.TraceState().AsRaw(),     // TraceState VARCHAR
 						linkAttrIDs,                   // AttributeIDs UUID[]
@@ -580,9 +585,18 @@ func DeleteSpansByIDs(ctx context.Context, db *sql.DB, spanIDs []any) error {
 	// One bound list per statement, rather than one placeholder per id: the
 	// SQL is static and cannot disagree with the argument count.
 	ids := util.ToStringList(spanIDs)
+	// Children are found by the pair that owns them. Matching on span_id alone
+	// would take another trace's events wherever two traces share a span id,
+	// which the composite key permits.
+	//
+	// A span id no longer identifies one span, so this deletes every span
+	// carrying one of these ids -- which is what it did before, and what the
+	// child deletes now match.
 	childQueries := []string{
-		`delete from links where span_id in (select id from uuid_list(?))`,
-		`delete from events where span_id in (select id from uuid_list(?))`,
+		`delete from links where (trace_id, span_id) in
+			(select trace_id, span_id from spans where span_id in (select id from uuid_list(?)))`,
+		`delete from events where (trace_id, span_id) in
+			(select trace_id, span_id from spans where span_id in (select id from uuid_list(?)))`,
 		`delete from spans where span_id in (select id from uuid_list(?))`,
 	}
 	for _, q := range childQueries {
@@ -600,8 +614,8 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	}
 	ids := util.ToStringList(traceIDs)
 	childQueries := []string{
-		`delete from links where span_id in (select span_id from spans where trace_id in (select id from uuid_list(?)))`,
-		`delete from events where span_id in (select span_id from spans where trace_id in (select id from uuid_list(?)))`,
+		`delete from links where trace_id in (select id from uuid_list(?))`,
+		`delete from events where trace_id in (select id from uuid_list(?))`,
 		`delete from spans where trace_id in (select id from uuid_list(?))`,
 	}
 	for _, q := range childQueries {
@@ -717,11 +731,20 @@ var eventColumns = map[string]struct{}{
 	"dropped_attributes_count": {},
 }
 
+// A child reaches its owning span by the pair that identifies one. Matching on
+// span_id alone would pull in another trace's events wherever two traces happen
+// to share a span id -- which the composite key now permits, because a span id
+// is only unique within its trace.
+const (
+	eventOwner = "e.trace_id = s.trace_id and e.span_id = s.span_id"
+	linkOwner  = "l.trace_id = s.trace_id and l.span_id = s.span_id"
+)
+
 var linkColumns = map[string]struct{}{
 	"flags":                    {},
 	"id":                       {},
 	"span_id":                  {},
-	"trace_id":                 {},
+	"linked_trace_id":          {},
 	"linked_span_id":           {},
 	"trace_state":              {},
 	"dropped_attributes_count": {},
@@ -766,16 +789,19 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 		if err := util.ValidateColumnName(snake, eventColumns); err != nil {
 			return "", fmt.Errorf("event field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
-		return fmt.Sprintf("exists(select 1 from events e where e.span_id = s.span_id and e.%s {COND})", snake), nil
+		return fmt.Sprintf("exists(select 1 from events e where %s and e.%s {COND})", eventOwner, snake), nil
 	}
 	if col, found := strings.CutPrefix(field.Name, "link."); found {
 		snake := util.CamelToSnake(col)
-		// The served link JSON calls the linked target "spanID" (OTLP wire
-		// shape); the owning span is implicit in where the link appears.
-		// Alias the wire name to the linked_span_id column so searching
-		// what the UI displays actually matches.
-		if snake == "span_id" {
+		// The served link JSON calls the linked target "spanID" and
+		// "traceID" (OTLP wire shape); the owning span is implicit in where
+		// the link appears. Alias both wire names to the linked_ columns so
+		// searching what the UI displays actually matches.
+		switch snake {
+		case "span_id":
 			snake = "linked_span_id"
+		case "trace_id":
+			snake = "linked_trace_id"
 		}
 		if err := util.ValidateColumnName(snake, linkColumns); err != nil {
 			return "", fmt.Errorf("link field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
@@ -786,10 +812,10 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 		switch snake {
 		case "linked_span_id":
 			colExpr = "right(replace(l." + snake + "::varchar, '-', ''), 16)"
-		case "trace_id":
-			colExpr = "replace(l.trace_id::varchar, '-', '')"
+		case "linked_trace_id":
+			colExpr = "replace(l.linked_trace_id::varchar, '-', '')"
 		}
-		return fmt.Sprintf("exists(select 1 from links l where l.span_id = s.span_id and %s {COND})", colExpr), nil
+		return fmt.Sprintf("exists(select 1 from links l where %s and %s {COND})", linkOwner, colExpr), nil
 	}
 	if field.Name == "duration" {
 		return "(s.end_time - s.start_time)", nil
@@ -853,12 +879,12 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 	case "event":
 		if p := ingest.IDProbe("e.attribute_ids", field, query, ingest.ScopeEvent); p != "" {
 			return []string{search.Complete(
-				"exists(select 1 from events e where e.span_id = s.span_id and " + p + ")")}, nil
+				"exists(select 1 from events e where " + eventOwner + " and " + p + ")")}, nil
 		}
 	case "link":
 		if p := ingest.IDProbe("l.attribute_ids", field, query, ingest.ScopeLink); p != "" {
 			return []string{search.Complete(
-				"exists(select 1 from links l where l.span_id = s.span_id and " + p + ")")}, nil
+				"exists(select 1 from links l where " + linkOwner + " and " + p + ")")}, nil
 		}
 	}
 
@@ -880,13 +906,13 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 		return []string{fmt.Sprintf(`exists(
 			select 1 from events e, unnest(e.attribute_ids) as t(aid)
 			join attributes a on a.id = t.aid
-			where e.span_id = s.span_id and a.key = %s and a.value {COND}
+			where e.trace_id = s.trace_id and e.span_id = s.span_id and a.key = %s and a.value {COND}
 		)`, keyParam)}, nil
 	case "link":
 		return []string{fmt.Sprintf(`exists(
 			select 1 from links l, unnest(l.attribute_ids) as t(aid)
 			join attributes a on a.id = t.aid
-			where l.span_id = s.span_id and a.key = %s and a.value {COND}
+			where l.trace_id = s.trace_id and l.span_id = s.span_id and a.key = %s and a.value {COND}
 		)`, keyParam)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
@@ -905,8 +931,8 @@ func mapTraceGlobalExpressions() ([]string, error) {
 		"CAST(s.trace_state AS VARCHAR) {COND}",
 		"CAST(sc.name AS VARCHAR) {COND}",
 		"CAST(sc.version AS VARCHAR) {COND}",
-		"exists(select 1 from events e where e.span_id = s.span_id and CAST(e.name AS VARCHAR) {COND})",
-		"exists(select 1 from links l where l.span_id = s.span_id and (replace(l.trace_id::varchar, '-', '') {COND} or CAST(l.trace_state AS VARCHAR) {COND} or right(replace(l.linked_span_id::varchar, '-', ''), 16) {COND}))",
+		"exists(select 1 from events e where " + eventOwner + " and CAST(e.name AS VARCHAR) {COND})",
+		"exists(select 1 from links l where " + linkOwner + " and (replace(l.linked_trace_id::varchar, '-', '') {COND} or CAST(l.trace_state AS VARCHAR) {COND} or right(replace(l.linked_span_id::varchar, '-', ''), 16) {COND}))",
 		// Free-text search over attributes now takes three clauses where it used
 		// to take one. Under the old schema every attribute a span could reach
 		// -- its own, its resource's, its scope's, and every event's and link's
@@ -918,8 +944,8 @@ func mapTraceGlobalExpressions() ([]string, error) {
 		// concatenating those three arrays is one unnest. Events and links are
 		// separate rows and need their own EXISTS.
 		matchAnyAttribute("unnest(s.attribute_ids || r.attribute_ids || sc.attribute_ids) as t(aid)", ""),
-		matchAnyAttribute("events e, unnest(e.attribute_ids) as t(aid)", "e.span_id = s.span_id and "),
-		matchAnyAttribute("links l, unnest(l.attribute_ids) as t(aid)", "l.span_id = s.span_id and "),
+		matchAnyAttribute("events e, unnest(e.attribute_ids) as t(aid)", eventOwner+" and "),
+		matchAnyAttribute("links l, unnest(l.attribute_ids) as t(aid)", linkOwner+" and "),
 	}, nil
 }
 
