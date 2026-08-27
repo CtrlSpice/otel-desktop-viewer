@@ -59,20 +59,33 @@ var (
 // trade for a desktop tool sharing RAM with the user's actual work.
 const flushIntervalLogs = 500
 
+// scopeKey identifies a scope by its position in the batch: the ri'th
+// resource's si'th scope.
+type scopeKey struct{ ri, si int }
+
 // Ingest ingests log records from pdata into the logs table.
 // The caller must hold any required lock on the connection.
 //
 // Two passes, matching spans.Ingest: hash and resolve resource/scope
 // identities, flush the dictionary, then append the log rows with the id
 // arrays. See spans.Ingest for why the dictionary cannot ride the appender.
-func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *ingest.FlushedIDs) (err error) {
+// Ingest is IngestReport for callers with nowhere to put the report. Records
+// the store refused are still skipped rather than failing the batch; this form
+// just cannot say how many there were.
+func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *ingest.FlushedIDs) error {
+	_, err := IngestReport(ctx, conn, logs, flushed)
+	return err
+}
+
+// IngestReport ingests a batch and reports the records it could not write. A
+// non-empty Rejected is not a failure: the batch landed, minus those rows.
+func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *ingest.FlushedIDs) (ingest.Rejected, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return ingest.Rejected{}, err
 	}
 
 	// Pass 1: dictionary.
 	dict := ingest.NewDictionary(flushed)
-	type scopeKey struct{ ri, si int }
 	resourceIDs := map[int]duckdb.UUID{}
 	scopeIDs := map[scopeKey]duckdb.UUID{}
 
@@ -93,10 +106,34 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *inge
 	}
 
 	if err := dict.Flush(ctx, conn); err != nil {
-		return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 	}
 
-	// Pass 2: append.
+	// Pass 2: append, retrying in narrowing halves so one unwritable record
+	// costs its own place in the batch rather than everyone else's.
+	return ingest.BisectingWrite(ctx, len(logAttrs), func(lo, hi int) error {
+		return ingest.InTransaction(ctx, conn, func() error {
+			return appendPass(ctx, conn, logs, resourceIDs, scopeIDs, logAttrs,
+				func(ordinal int) bool { return ordinal >= lo && ordinal < hi })
+		})
+	})
+}
+
+// appendPass writes the log rows keep says to write.
+//
+// keep is indexed by the record's ordinal in the walk, not by any id: ordinals
+// are what bisection halves, and they keep two occurrences of a repeated
+// identity separable. A skipped record still advances the cursor, because
+// logAttrs is consumed by position and pass 1 filled it for every record.
+func appendPass(
+	ctx context.Context,
+	conn driver.Conn,
+	logs plog.Logs,
+	resourceIDs map[int]duckdb.UUID,
+	scopeIDs map[scopeKey]duckdb.UUID,
+	logAttrs [][]duckdb.UUID,
+	keep func(ordinal int) bool,
+) (err error) {
 	tables := []string{"logs"}
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
@@ -122,6 +159,11 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *inge
 			for _, log := range scopeLogs.LogRecords().All() {
 				if err := ctx.Err(); err != nil {
 					return err
+				}
+
+				if !keep(logCur) {
+					logCur++ // consumed by position, so still step over it
+					continue
 				}
 
 				var traceUUID *duckdb.UUID
