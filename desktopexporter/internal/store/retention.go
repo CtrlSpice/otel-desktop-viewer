@@ -228,9 +228,15 @@ func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
+	// Children are matched by (trace_id, span_id), the pair that identifies a
+	// span. Matching on span_id alone deleted the children of a *newer* span
+	// in a different trace that happened to share the id -- which the
+	// composite key permits, since a span id is only unique within its trace.
 	for _, q := range []string{
-		`delete from links where span_id in (select span_id from spans where start_time < ?)`,
-		`delete from events where span_id in (select span_id from spans where start_time < ?)`,
+		`delete from links where (trace_id, span_id) in
+			(select trace_id, span_id from spans where start_time < ?)`,
+		`delete from events where (trace_id, span_id) in
+			(select trace_id, span_id from spans where start_time < ?)`,
 		`delete from spans where start_time < ?`,
 	} {
 		if _, err := db.ExecContext(ctx, q, cutoff); err != nil {
