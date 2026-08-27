@@ -188,16 +188,17 @@ describe('metric view context aggregation URL sync', () => {
     expect(reportedAggregationView()).toBe('rate')
   })
 
-  // Issue #235: the serializer omits `agg` for 'raw', so an absent param on
-  // back/forward IS the state the user navigated to.
-  it('resets to raw when the browser goes back to a URL without an aggregation', async () => {
-    renderProbe('/metrics/m1?agg=rate')
-    expect(reportedAggregationView()).toBe('rate')
+  // Issue #235: an absent `agg` means nobody wrote one, not 'raw'. Going back
+  // to a URL that predates any aggregation write keeps the smart default --
+  // the state that URL was actually showing -- instead of resetting.
+  it('keeps the smart default when the browser goes back to a URL without an aggregation', async () => {
+    renderProbe('/metrics/m1?agg=sum')
+    expect(reportedAggregationView()).toBe('sum')
 
     externalNavigationTo('/metrics/m1')
     await tick()
 
-    expect(reportedAggregationView()).toBe('raw')
+    expect(reportedAggregationView()).toBe('rate')
   })
 
   it('ignores an aggregation dropped from the URL behind its back', async () => {
@@ -233,7 +234,7 @@ describe('metric view context aggregation URL sync', () => {
     expect(reportedAggregationView()).toBe('sum')
   })
 
-  it('resets to raw when the browser goes back past its own write', async () => {
+  it('returns to the smart default when the browser goes back past its own write', async () => {
     const ctx = renderProbe('/metrics/m1')
 
     ctx.setAggregationView('sum')
@@ -243,7 +244,19 @@ describe('metric view context aggregation URL sync', () => {
     externalNavigationTo('/metrics/m1')
     await tick()
 
-    expect(reportedAggregationView()).toBe('raw')
+    expect(reportedAggregationView()).toBe('rate')
+  })
+
+  // The reachable form of #235: the datapoint write pushes a history entry
+  // carrying the aggregation, so Back lands on the param-free URL that came
+  // before it. That URL was showing the smart default, not raw.
+  it('spells out raw rather than omitting it', async () => {
+    const ctx = renderProbe('/metrics/m1')
+
+    ctx.setAggregationView('raw')
+    await tick()
+
+    expect(window.location.search).toBe('?agg=raw')
   })
 })
 

@@ -58,16 +58,6 @@
       : metricSummaryKey(a).localeCompare(metricSummaryKey(b))
   }
 
-  const SORT_OPTIONS = [
-    { value: 'lastSeen', label: 'Last Seen' },
-    { value: 'name', label: 'Name' },
-    { value: 'metricType', label: 'Type' },
-    { value: 'serviceName', label: 'Service Name' },
-    { value: 'description', label: 'Description' },
-    { value: 'dataPointCount', label: 'Datapoint Count' },
-    { value: 'seriesCount', label: 'Timeseries Count' },
-  ]
-
   export {
     metricTypeBadgeClass,
     metricTypeLabel,
@@ -100,7 +90,10 @@
   } from '@/contexts/time-context.svelte'
   import { navigateToItem } from '@/route'
   import type { DataPoint, MetricData, MetricStats } from '@/types/api-types'
-  import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
+  import {
+    createSignalListPage,
+    type SortOption,
+  } from '@/contexts/signal-list-page.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
@@ -118,6 +111,24 @@
     getMetricViewContext,
     type HistogramTab,
   } from '@/contexts/metric-view-context.svelte'
+
+  const SORT_OPTIONS: SortOption[] = [
+    { value: 'lastSeen', label: 'Last Seen', defaultDirection: 'desc' },
+    { value: 'name', label: 'Name' },
+    { value: 'metricType', label: 'Type' },
+    { value: 'serviceName', label: 'Service Name' },
+    { value: 'description', label: 'Description' },
+    {
+      value: 'dataPointCount',
+      label: 'Datapoint Count',
+      defaultDirection: 'desc',
+    },
+    {
+      value: 'seriesCount',
+      label: 'Timeseries Count',
+      defaultDirection: 'desc',
+    },
+  ]
 
   let timeContext = getTimeContext()
 

@@ -26,6 +26,14 @@ import {
 
 export type SortDirection = 'asc' | 'desc'
 
+export type SortOption = {
+  value: string
+  label: string
+  /** Direction a first click on this column lands on. Magnitude and time
+   * columns want the largest/newest first; text columns read A–Z. */
+  defaultDirection?: SortDirection
+}
+
 export type SignalListPageOptions<TItem> = {
   signal: SignalName
   getItemID: (item: TItem) => string

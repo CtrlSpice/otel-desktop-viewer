@@ -71,15 +71,11 @@ const DEFAULT_PRESET_INDEX_ALL = 0
  *
  * A start at the epoch is what "All" is: nobody chooses 1970 as a lower bound.
  * The end is not part of the test -- an unbounded start already says the window
- * was never about time.
+ * was never about time. The "All" preset carries start === 0 by construction,
+ * so no preset-index check is needed -- keeping one would reintroduce the
+ * route-taken distinction this comment just argued against.
  */
 export function isDefaultUnboundedWindow(selection: TimeSelection): boolean {
-  if (
-    selection.type === 'preset' &&
-    selection.presetIndex === DEFAULT_PRESET_INDEX_ALL
-  ) {
-    return true
-  }
   return selection.start === 0
 }
 

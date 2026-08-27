@@ -8,6 +8,11 @@ import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 const sortOptions = [
   { value: 'time', label: 'Start time' },
   { value: 'duration', label: 'Duration' },
+  {
+    value: 'spanCount',
+    label: 'Span count',
+    defaultDirection: 'desc' as const,
+  },
 ]
 
 // The popover JS API (methods + popovertarget invokers) comes from the shared
@@ -104,6 +109,16 @@ describe('DrawerSearchPanel toolbar segment', () => {
     expect(
       screen.getByRole('menuitemradio', { name: 'Start time' })
     ).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('requests descending order when a magnitude field is chosen first', async () => {
+    const onSortChange = vi.fn()
+    renderPanel({ segment: 'toolbar', onSortChange })
+    await openSortMenu()
+    await userEvent.click(
+      screen.getByRole('menuitemradio', { name: 'Span count' })
+    )
+    expect(onSortChange).toHaveBeenCalledWith('spanCount', 'desc')
   })
 
   it('requests ascending order when a different field is chosen', async () => {

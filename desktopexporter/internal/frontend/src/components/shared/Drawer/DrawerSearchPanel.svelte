@@ -9,7 +9,7 @@
   import type { SearchResultEvent } from '@/types/api-types'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
 
-  type SortOption = { value: string; label: string }
+  import type { SortOption } from '@/contexts/signal-list-page.svelte'
 
   type DrawerSearchPanelSegment = 'full' | 'toolbar' | 'search'
 
@@ -66,6 +66,11 @@
     })
   })
 
+  function nextDirection(opt: SortOption): 'asc' | 'desc' {
+    if (opt.value !== sortValue) return opt.defaultDirection ?? 'asc'
+    return sortDirection === 'asc' ? 'desc' : 'asc'
+  }
+
   function selectSort(value: string, dir: 'asc' | 'desc') {
     onSortChange?.(value, dir)
     sortPopoverEl?.hidePopover()
@@ -112,13 +117,7 @@
                 class="anchor-popover-menu__option {opt.value === sortValue
                   ? 'anchor-popover-menu__option--active'
                   : ''}"
-                onclick={() =>
-                  selectSort(
-                    opt.value,
-                    opt.value === sortValue && sortDirection === 'asc'
-                      ? 'desc'
-                      : 'asc'
-                  )}
+                onclick={() => selectSort(opt.value, nextDirection(opt))}
               >
                 <span>{opt.label}</span>
                 {#if opt.value === sortValue}
