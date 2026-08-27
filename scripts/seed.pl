@@ -853,6 +853,31 @@ sub _orphan_spans_trace {
     return { label => "$svc/partial-batch", groups => $groups };
 }
 
+# Two spans carrying the same span id -- a sender reusing ids, which is what
+# a replayed capture or a fixture numbering spans per trace looks like. The
+# store keeps the first and refuses the second, and says so on the home page
+# rather than dropping the batch. _assemble keys span ids by `key`, so two
+# rows sharing one produce two spans with one id.
+sub _duplicate_span_id_trace {
+    my $tid = trace_id();
+    my $svc = 'replay-lab';
+    my $groups = _assemble($tid, [
+        { svc => $svc, key => 'root', name => 'replay/session', kind => KIND_SERVER,
+          s => 0, e => 400,
+          attrs  => [ attr('replay.source', 'captured-session.otlp') ],
+          events => [[ 'replay.start', 0, [ attr('replay.attempt', 2) ] ]] },
+        { svc => $svc, key => 'shared', parent => 'root', name => 'replay/emit (first)',
+          kind => KIND_CLIENT, s => 20, e => 180,
+          attrs  => [ attr('note', 'kept: first span to claim this id') ],
+          events => [[ 'span.emitted', 25, [] ]] },
+        { svc => $svc, key => 'shared', parent => 'root', name => 'replay/emit (duplicate id)',
+          kind => KIND_CLIENT, s => 200, e => 380,
+          attrs  => [ attr('note', 'refused: same span id as the one above') ],
+          events => [[ 'span.re-emitted', 205, [] ]] },
+    ], versions => { $svc => '0.0.1' });
+    return { label => "$svc/duplicate-span-id", groups => $groups };
+}
+
 # No true root: the head's parent is absent, but the head has its own
 # children -> a subtree dangling under a missing parent.
 sub _orphan_subtree_trace {
@@ -1001,6 +1026,7 @@ sub _trace_scenarios {
         _deep_hierarchy_trace(),
         _orphan_spans_trace(),
         _orphan_subtree_trace(),
+        _duplicate_span_id_trace(),
         _large_multiservice_trace(),
     );
 }

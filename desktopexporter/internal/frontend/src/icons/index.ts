@@ -27,12 +27,14 @@ import HomeIcon from './HomeIcon.svelte'
 import FallingStarIcon from './FallingStarIcon.svelte'
 import MoonIcon from './MoonIcon.svelte'
 import ReloadIcon from './Reload.svelte'
+import AlertIcon from './AlertIcon.svelte'
 import SalvageIcon from './SalvageIcon.svelte'
 import SortingIcon from './SortingIcon.svelte'
 import SunIcon from './SunIcon.svelte'
 import TrashIcon from './TrashIcon.svelte'
 
 export {
+  AlertIcon,
   BiohazardIcon,
   ArrowDownIcon,
   ArrowLeftDoubleIcon,

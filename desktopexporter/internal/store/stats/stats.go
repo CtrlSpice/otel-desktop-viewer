@@ -63,7 +63,18 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 				-- (source recency), not collector wall-clock arrival.
 				-- Mirrors traces/logs which also use source timestamps.
 				'lastReceived',   cast(max(timestamp) as varchar)
-			) from datapoints)
+			) from datapoints),
+			-- Telemetry the store would not write. Empty in the ordinary case,
+			-- so the home page shows the section only when there is something
+			-- to say. Ordered by recency.
+			'rejections', coalesce((select to_json(list(json_object(
+				'signal',      signal,
+				'kind',        kind,
+				'occurrences', occurrences,
+				'sample',      sample,
+				'firstSeen',   cast(first_seen as varchar),
+				'lastSeen',    cast(last_seen as varchar)
+			) order by last_seen desc)) from ingest_rejections), json('[]'))
 		) as varchar) as stats
 	`
 

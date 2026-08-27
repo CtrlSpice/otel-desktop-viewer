@@ -456,10 +456,22 @@ export type MetricStats = {
   lastReceived: bigint | null
 }
 
+/** Telemetry the store refused, one entry per signal and kind. */
+export type Rejection = {
+  signal: 'traces' | 'logs' | 'metrics'
+  kind: string
+  occurrences: number
+  /** A span id to link to; null when nothing in the store represents it. */
+  sample: string | null
+  firstSeen: bigint | null
+  lastSeen: bigint | null
+}
+
 export type Stats = {
   traces: TraceStats
   logs: LogStats
   metrics: MetricStats
+  rejections: Rejection[]
 }
 
 // Discriminated union for search results.

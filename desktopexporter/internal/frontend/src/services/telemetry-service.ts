@@ -388,6 +388,13 @@ function statsFromJSON(json: JsonStats): Stats {
       ...json.metrics,
       lastReceived: parseNullableBigInt(json.metrics.lastReceived),
     },
+    // Defaulted rather than required: a store written before rejections
+    // existed serves stats without the field.
+    rejections: (json.rejections ?? []).map(r => ({
+      ...r,
+      firstSeen: parseNullableBigInt(r.firstSeen),
+      lastSeen: parseNullableBigInt(r.lastSeen),
+    })),
   }
 }
 

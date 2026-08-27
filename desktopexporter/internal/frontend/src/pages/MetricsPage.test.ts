@@ -118,6 +118,7 @@ function makeStats(): Stats {
     },
     logs: { logCount: 0, errorCount: 0, lastReceived: null },
     metrics: { metricCount: 1, dataPointCount: 4, lastReceived: null },
+    rejections: [],
   }
 }
 

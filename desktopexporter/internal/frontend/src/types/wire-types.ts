@@ -531,6 +531,17 @@ export type JsonMetricStats = {
   lastReceived: string | null
 }
 
+// Telemetry the store would not write, one row per signal and kind. Empty in
+// the ordinary case. Ordered by recency by the backend.
+export type JsonRejection = {
+  signal: 'traces' | 'logs' | 'metrics'
+  kind: string
+  occurrences: number
+  sample: string | null
+  firstSeen: string
+  lastSeen: string
+}
+
 export type JsonStats = {
   // Served by the backend but not yet consumed by the UI.
   storage: {
@@ -540,6 +551,7 @@ export type JsonStats = {
   traces: JsonTraceStats
   logs: JsonLogStats
   metrics: JsonMetricStats
+  rejections: JsonRejection[]
 }
 
 // --- Attribute discovery (getTraceAttributes / getLogAttributes /
