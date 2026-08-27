@@ -27,6 +27,7 @@ const maxPoolConns = 4
 var (
 	ErrStoreConnectionClosed = errors.New("store connection is closed")
 	ErrStoreInitFailed       = errors.New("store initialization failed")
+	ErrStoreTransaction      = errors.New("store transaction failed")
 )
 
 type Store struct {
@@ -244,7 +245,18 @@ func (s *Store) Close() error {
 //
 // Lock order is ingestMu then mu, and nothing acquires them the other way
 // round, so the pair cannot deadlock.
-func (s *Store) WithConn(fn func(conn driver.Conn) error) error {
+//
+// fn runs inside a transaction, so a batch that fails partway leaves nothing
+// behind. Without one, ingest commits at every appender flush and at every
+// appender close, and those are neither atomic with each other nor ordered
+// usefully: a duplicate span id fails the spans appender while the links and
+// events appended alongside it commit regardless, orphaning children whose
+// parent row was rejected -- and every collector retry lays down another set.
+// DuckDB appenders honour a transaction opened on their own connection
+// (verified: flush inside a transaction, then rollback, leaves no rows), so
+// wrapping here fixes all three signals at once, in the same place their
+// serialization already lives.
+func (s *Store) WithConn(fn func(conn driver.Conn) error) (err error) {
 	s.ingestMu.Lock()
 	defer s.ingestMu.Unlock()
 
@@ -254,6 +266,37 @@ func (s *Store) WithConn(fn func(conn driver.Conn) error) error {
 	if s.db == nil || s.conn == nil {
 		return ErrStoreConnectionClosed
 	}
+
+	exec, ok := s.conn.(driver.ExecerContext)
+	if !ok {
+		return fmt.Errorf("WithConn: %w: connection cannot execute statements", ErrStoreTransaction)
+	}
+	ctx := context.Background()
+	if _, err := exec.ExecContext(ctx, "begin transaction", nil); err != nil {
+		return fmt.Errorf("WithConn: %w: begin: %w", ErrStoreTransaction, err)
+	}
+
+	defer func() {
+		if err != nil {
+			// FlushedIDs marks dictionary ids the moment their insert
+			// succeeds, which a rollback then unmakes. Left alone, the next
+			// batch would skip re-inserting rows that no longer exist and its
+			// spans would carry uuid[] references into nothing -- no foreign
+			// key catches that, attrs_json just joins empty, and attributes
+			// silently stop appearing. Forget is the coarse invalidation that
+			// is always safe: it costs one dictionary flush per sender to
+			// rebuild, on a path only an already-failed batch reaches.
+			s.flushed.Forget()
+			if _, rbErr := exec.ExecContext(ctx, "rollback", nil); rbErr != nil {
+				err = errors.Join(err, fmt.Errorf("WithConn: rollback: %w", rbErr))
+			}
+			return
+		}
+		if _, cErr := exec.ExecContext(ctx, "commit", nil); cErr != nil {
+			s.flushed.Forget()
+			err = fmt.Errorf("WithConn: %w: commit: %w", ErrStoreTransaction, cErr)
+		}
+	}()
 
 	return fn(s.conn)
 }
