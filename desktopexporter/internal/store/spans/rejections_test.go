@@ -13,13 +13,13 @@ import (
 type rejectionRow struct {
 	kind        string
 	occurrences int64
-	sample      string
+	samples     int64
 }
 
 func readRejections(t *testing.T, s *store.Store) []rejectionRow {
 	t.Helper()
 	out, err := readStore(s, func(db *sql.DB) ([]rejectionRow, error) {
-		rows, err := db.Query(`select kind, occurrences, coalesce(sample, '')
+		rows, err := db.Query(`select kind, occurrences, len(samples)
 			from ingest_rejections order by kind`)
 		if err != nil {
 			return nil, err
@@ -28,7 +28,7 @@ func readRejections(t *testing.T, s *store.Store) []rejectionRow {
 		var got []rejectionRow
 		for rows.Next() {
 			var r rejectionRow
-			if err := rows.Scan(&r.kind, &r.occurrences, &r.sample); err != nil {
+			if err := rows.Scan(&r.kind, &r.occurrences, &r.samples); err != nil {
 				return nil, err
 			}
 			got = append(got, r)
@@ -56,7 +56,7 @@ func TestRejections_ResendRecordsOneAggregateRow(t *testing.T) {
 	require.Len(t, got, 1, "one row per (signal, kind), not per span")
 	assert.Equal(t, "span_already_stored", got[0].kind)
 	assert.EqualValues(t, 9, got[0].occurrences)
-	assert.NotEmpty(t, got[0].sample, "a span id to link to")
+	assert.EqualValues(t, 9, got[0].samples, "one sample per distinct refused span")
 }
 
 // Repeating the resend accumulates into the same row rather than growing the
@@ -73,4 +73,6 @@ func TestRejections_RepeatedResendsAccumulateInOneRow(t *testing.T) {
 	got := readRejections(t, s)
 	require.Len(t, got, 1, "a replay loop must not grow the table")
 	assert.EqualValues(t, 27, got[0].occurrences, "3 resends of 9 spans")
+	assert.EqualValues(t, 9, got[0].samples,
+		"the same nine identities re-refused must dedupe, not fill the bound")
 }

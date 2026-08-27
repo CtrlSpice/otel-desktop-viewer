@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -43,40 +42,6 @@ func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, 
 		return db.QueryRowContext(ctx, query, args...).Scan(&n)
 	}))
 	return n
-}
-
-// queryIDs collects a single uuid column as strings, ready to feed straight back
-// as `in (...)` parameters.
-//
-// The dictionary made this necessary: an assertion about "the attributes this
-// span referenced" has to capture those ids *before* the span row is deleted,
-// because afterwards there is no array left to unnest. Select the column as
-// ::varchar -- the driver hands a raw uuid back as bytes, and the round trip as
-// text is what lets the ids go back out as ordinary query parameters.
-func queryIDs(t *testing.T, s *store.Store, ctx context.Context, query string, args ...any) []any {
-	t.Helper()
-	var out []any
-	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		rows, err := db.QueryContext(ctx, query, args...)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			out = append(out, id)
-		}
-		return rows.Err()
-	}))
-	return out
-}
-
-// placeholders builds "?, ?, ?" for an n-parameter `in (...)` clause.
-func placeholders(n int) string {
-	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }
 
 // mustDecodeTraceID decodes a 32-char hex string to 16 bytes (trace ID).
@@ -1194,94 +1159,6 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
-}
-
-// TestDeleteSpansByIDs verifies that multiple spans can be deleted by their SpanIDs, including child rows.
-func TestDeleteSpansByIDs(t *testing.T) {
-	t.Parallel()
-	s, ctx := storetest.New(t)
-
-	traces := createTestTracePdata()
-	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
-	})
-	assert.NoError(t, err)
-
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, "00000000-0000-0000-0000-000000000099", nil)
-	})
-	assert.NoError(t, err)
-	assert.Equal(t, 9, getTraceSpansCount(t, raw))
-
-	deletedIDs := []any{
-		"00000000-0000-0000-0000-000000000001",
-		"00000000-0000-0000-0000-000000000002",
-		"00000000-0000-0000-0000-000000000003",
-	}
-
-	// Capture the dictionary ids these spans reference before they go, because
-	// afterwards there is no span row left to unnest. Each of these three spans
-	// carries its own distinctly-named attributes in the fixture (root.*,
-	// child.*, child2.*), so every span-scoped id here is referenced by nothing
-	// else -- which is what makes the post-sweep assertion below exact rather
-	// than approximate.
-	spanAttrIDs := queryIDs(t, s, ctx, `
-		select distinct a.id::varchar
-		from (select unnest(attribute_ids) as id from spans where span_id in (?, ?, ?)) x
-		join attributes a on a.id = x.id
-		where a.scope = 'span'
-	`, deletedIDs...)
-	require.NotEmpty(t, spanAttrIDs, "deleted spans should have attributes")
-	inSpanAttrIDs := "select count(*) from attributes where id in (" + placeholders(len(spanAttrIDs)) + ")"
-
-	attrsTotalBefore := countRows(t, s, ctx, "select count(*) from attributes")
-
-	err = s.WithDBWrite(func(db *sql.DB) error {
-		return spans.DeleteSpansByIDs(ctx, db, deletedIDs)
-	})
-	assert.NoError(t, err)
-
-	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, "00000000-0000-0000-0000-000000000099", nil)
-	})
-	assert.NoError(t, err)
-	assert.Equal(t, 6, getTraceSpansCount(t, raw))
-
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events where span_id in (?, ?, ?)", deletedIDs...))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links where span_id in (?, ?, ?)", deletedIDs...))
-
-	// The delete-by-id path no longer removes attribute rows. It cannot: the
-	// dictionary is shared, so deciding a row is dead needs a whole-database
-	// view that a targeted delete does not have.
-	assert.Equal(t, attrsTotalBefore, countRows(t, s, ctx, "select count(*) from attributes"),
-		"DeleteSpansByIDs must leave the dictionary alone")
-	assert.Equal(t, len(spanAttrIDs), countRows(t, s, ctx, inSpanAttrIDs, spanAttrIDs...))
-
-	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
-		return ingest.SweepOrphans(ctx, db, s.FlushedIDs())
-	}))
-
-	// Now the sweep collects them -- and only them.
-	assert.Equal(t, 0, countRows(t, s, ctx, inSpanAttrIDs, spanAttrIDs...),
-		"SweepOrphans must collect the attributes the deleted spans were the last referrers of")
-	// The resource attributes survive, because the six remaining spans still
-	// point at the same resource row. A sweep that over-collected would take
-	// these with it, and service filtering would break silently.
-	assert.Equal(t, 1, countRows(t, s, ctx,
-		"select count(*) from attributes where scope = 'resource' and key = 'service.name'"),
-		"shared resource attributes must survive: live spans still reference them")
-	assert.Equal(t, 1, countRows(t, s, ctx, "select count(*) from resources"))
-}
-
-// TestDeleteSpansByIDs_Empty verifies that deleting with an empty list is a no-op.
-func TestDeleteSpansByIDs_Empty(t *testing.T) {
-	t.Parallel()
-	s, ctx := storetest.New(t)
-
-	err := s.WithDBWrite(func(db *sql.DB) error {
-		return spans.DeleteSpansByIDs(ctx, db, []any{})
-	})
-	assert.NoError(t, err)
 }
 
 // TestSearchSpansWith32CharHexTraceID verifies that SearchSpans finds a trace when given the 32-char hex form (no hyphens).

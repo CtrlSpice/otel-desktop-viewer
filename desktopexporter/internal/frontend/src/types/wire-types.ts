@@ -537,7 +537,9 @@ export type JsonRejection = {
   signal: 'traces' | 'logs' | 'metrics'
   kind: string
   occurrences: number
-  sample: string | null
+  // The most recently refused spans, newest first, deduped, bounded at write
+  // time. Wire form, minted by SQL: the struct fields are named for the wire.
+  samples: { traceID: string; spanID: string }[]
   firstSeen: string
   lastSeen: string
 }
@@ -619,7 +621,7 @@ export type JsonAttributeMatch = JsonAttributeDefinition & {
 
 // --- Mutation results ---
 
-// deleteSpansByTraceID / deleteSpanByID / deleteLogByID.
+// deleteSpansByTraceID / deleteLogByID.
 // `count` is the number of IDs accepted, not rows removed.
 export type JsonDeleteResult = {
   message: string

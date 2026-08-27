@@ -296,3 +296,81 @@ func TestSweepIfOverCapSkipsSweepUnderCap(t *testing.T) {
 	assert.Equal(t, int64(total), count(t, s, "attributes"),
 		"under the cap there is nothing to protect against, so the sweep must not run")
 }
+
+// Pruning an old span must not take the children of a newer span in another
+// trace that shares its span id -- which the composite key permits, since a
+// span id is only unique within its trace. Matching children on span_id alone
+// did exactly that: the old trace's ids matched the new trace's events and
+// links, and retention destroyed them under a living parent.
+func TestEnforceRetentionPrunesChildrenByTraceAndSpan(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+
+	seedOwners(t, s)
+	// Bulk rows so retention has something worth pruning; their timestamps
+	// (range * 1ms) are ancient next to the two probe traces below.
+	seedSpans(t, s, 5000)
+
+	// One span id, two traces: old will fall to the prune, new must survive
+	// whole. now is far above every seeded timestamp, so the cutoff -- a
+	// quantile over start_time -- lands between the bulk and the new probe.
+	const sharedSpanID = "00000000-0000-0000-dddd-dddddddddddd"
+	const oldTrace = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	const newTrace = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	now := int64(1) << 60
+
+	for _, tr := range []struct {
+		trace string
+		start int64
+	}{
+		{oldTrace, 1}, // older than every bulk row
+		{newTrace, now},
+	} {
+		_, err = s.db.Exec(`
+			insert into spans (trace_id, span_id, name, start_time, end_time,
+			                   resource_id, scope_id, attribute_ids)
+			values (?::uuid, ?::uuid, 'probe', ?, ?, ?::uuid, ?::uuid, [])`,
+			tr.trace, sharedSpanID, tr.start, tr.start+1, seedResourceID, seedScopeID)
+		require.NoError(t, err)
+		_, err = s.db.Exec(`
+			insert into events (id, trace_id, span_id, name, timestamp, attribute_ids)
+			values (uuid(), ?::uuid, ?::uuid, 'probe-event', ?, [])`,
+			tr.trace, sharedSpanID, tr.start)
+		require.NoError(t, err)
+		_, err = s.db.Exec(`
+			insert into links (id, trace_id, span_id, attribute_ids)
+			values (uuid(), ?::uuid, ?::uuid, [])`,
+			tr.trace, sharedSpanID)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, s.EnforceRetention(ctx, 1))
+
+	// The old probe span must be gone and the new one intact.
+	var oldSpans, newSpans, newEvents, newLinks int64
+	require.NoError(t, s.db.QueryRow(
+		`select count(*) from spans where trace_id = ?::uuid`, oldTrace).Scan(&oldSpans))
+	require.NoError(t, s.db.QueryRow(
+		`select count(*) from spans where trace_id = ?::uuid`, newTrace).Scan(&newSpans))
+	require.NoError(t, s.db.QueryRow(
+		`select count(*) from events where trace_id = ?::uuid`, newTrace).Scan(&newEvents))
+	require.NoError(t, s.db.QueryRow(
+		`select count(*) from links where trace_id = ?::uuid`, newTrace).Scan(&newLinks))
+
+	assert.Zero(t, oldSpans, "the old trace's span should have been pruned")
+	require.EqualValues(t, 1, newSpans, "the new trace's span must survive the prune")
+	assert.EqualValues(t, 1, newEvents,
+		"the surviving span's events were deleted through a span-id-only match")
+	assert.EqualValues(t, 1, newLinks,
+		"the surviving span's links were deleted through a span-id-only match")
+
+	// And no orphans in the other direction: every remaining child has its span.
+	var orphanEvents int64
+	require.NoError(t, s.db.QueryRow(`
+		select count(*) from events e
+		where not exists (select 1 from spans sp
+			where sp.trace_id = e.trace_id and sp.span_id = e.span_id)`).Scan(&orphanEvents))
+	assert.Zero(t, orphanEvents, "pruning left events whose span is gone")
+}

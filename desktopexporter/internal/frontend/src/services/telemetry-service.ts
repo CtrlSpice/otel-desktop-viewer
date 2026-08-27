@@ -392,6 +392,7 @@ function statsFromJSON(json: JsonStats): Stats {
     // existed serves stats without the field.
     rejections: (json.rejections ?? []).map(r => ({
       ...r,
+      samples: r.samples ?? [],
       firstSeen: parseNullableBigInt(r.firstSeen),
       lastSeen: parseNullableBigInt(r.lastSeen),
     })),

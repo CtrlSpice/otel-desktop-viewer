@@ -71,7 +71,7 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 				'signal',      signal,
 				'kind',        kind,
 				'occurrences', occurrences,
-				'sample',      sample,
+				'samples',     samples,
 				'firstSeen',   cast(first_seen as varchar),
 				'lastSeen',    cast(last_seen as varchar)
 			) order by last_seen desc)) from ingest_rejections), json('[]'))

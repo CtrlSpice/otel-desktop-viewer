@@ -68,7 +68,19 @@ package schema
 // of stream identity. Same mechanism as versions 3 and 6: a new column on an
 // existing table, so a version 6 file fails the metric appender's column count
 // on its first metric batch.
-const Version = 8
+//
+// Version 8 rekeys spans on (trace_id, span_id): a span id is only required
+// to be unique within its trace, and the old span_id-only primary key
+// rejected conformant senders whose ids repeat across traces. events and
+// links gained the owning trace_id and reference the pair, and links renamed
+// its trace_id to linked_trace_id. New columns and changed constraints on
+// existing tables, so a version 7 file is unreadable under this schema.
+//
+// Version 9 replaces ingest_rejections' sample and detail columns with a
+// bounded samples array -- the most recent refused spans, both halves of each
+// identity, newest first. A version 8 file keeps the old columns, so the
+// rejection insert and the stats read would both fail against it.
+const Version = 9
 
 // VersionTableQuery creates the version table.
 //

@@ -47,7 +47,7 @@ import (
 //
 // A cache of "rows that exist" is only wrong when something deletes one. Every
 // other table in this schema is deleted from several places -- spans alone go
-// through retention, Clear, DeleteSpansByIDs and DeleteSpansByTraceIDs -- and a
+// through retention, Clear and DeleteSpansByTraceIDs -- and a
 // cache over those would have four chances to drift.
 //
 // Dictionary rows have exactly one deleter: SweepOrphans. So invalidation lives

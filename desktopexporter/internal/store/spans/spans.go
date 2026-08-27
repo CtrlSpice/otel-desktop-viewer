@@ -577,36 +577,6 @@ func Clear(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// DeleteSpansByIDs deletes multiple spans by their IDs.
-func DeleteSpansByIDs(ctx context.Context, db *sql.DB, spanIDs []any) error {
-	if len(spanIDs) == 0 {
-		return nil
-	}
-	// One bound list per statement, rather than one placeholder per id: the
-	// SQL is static and cannot disagree with the argument count.
-	ids := util.ToStringList(spanIDs)
-	// Children are found by the pair that owns them. Matching on span_id alone
-	// would take another trace's events wherever two traces share a span id,
-	// which the composite key permits.
-	//
-	// A span id no longer identifies one span, so this deletes every span
-	// carrying one of these ids -- which is what it did before, and what the
-	// child deletes now match.
-	childQueries := []string{
-		`delete from links where (trace_id, span_id) in
-			(select trace_id, span_id from spans where span_id in (select id from uuid_list(?)))`,
-		`delete from events where (trace_id, span_id) in
-			(select trace_id, span_id from spans where span_id in (select id from uuid_list(?)))`,
-		`delete from spans where span_id in (select id from uuid_list(?))`,
-	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, ids); err != nil {
-			return fmt.Errorf("DeleteSpansByIDs: %w: %w", ErrSpansStoreInternal, err)
-		}
-	}
-	return nil
-}
-
 // DeleteSpansByTraceIDs deletes all spans for multiple traces.
 func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) error {
 	if len(traceIDs) == 0 {
