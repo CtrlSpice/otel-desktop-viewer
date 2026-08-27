@@ -22,14 +22,15 @@ func appendSpansBisecting(
 	resourceIDs map[int]duckdb.UUID,
 	scopeIDs map[scopeKey]duckdb.UUID,
 	spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID,
-	skip map[int]bool,
+	skip map[int]error,
 ) (ingest.Rejected, error) {
-	return ingest.BisectingWrite(ctx, len(spanAttrs), func(lo, hi int) error {
+	return ingest.BisectingWrite(ctx, len(spanAttrs), skip, func(lo, hi int) error {
 		return ingest.InTransaction(ctx, conn, func() error {
 			return appendPass(ctx, conn, traces, resourceIDs, scopeIDs,
 				spanAttrs, eventAttrs, linkAttrs,
 				func(ordinal int) bool {
-					return ordinal >= lo && ordinal < hi && !skip[ordinal]
+					_, skipped := skip[ordinal]
+					return ordinal >= lo && ordinal < hi && !skipped
 				})
 		})
 	})

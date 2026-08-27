@@ -306,7 +306,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 		return ingest.Rejected{}, err
 	}
 	// Pass 2: append, retrying in halves so a bad metric costs only itself.
-	return ingest.BisectingWrite(ctx, countMetrics(m), func(lo, hi int) error {
+	return ingest.BisectingWrite(ctx, countMetrics(m), nil, func(lo, hi int) error {
 		return ingest.InTransaction(ctx, conn, func() error {
 			return appendPass(ctx, conn, m, streamIDs, resourceIDs, scopeIDs, dpIdents,
 				func(ordinal int) bool { return ordinal >= lo && ordinal < hi })

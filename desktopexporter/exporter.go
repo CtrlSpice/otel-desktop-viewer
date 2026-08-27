@@ -152,13 +152,15 @@ func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error 
 // error, no dropped_items, nothing. unit names what was counted, since a
 // metrics batch is measured in datapoints but refused a metric at a time.
 func (e *desktopExporter) reportRejected(signal, unit string, items int, r ingest.Rejected) {
-	if r.Count == 0 {
+	if r.Count() == 0 {
 		return
 	}
 	e.logger.Warn("store refused part of a batch",
 		zap.String("signal", signal),
-		zap.Int("rejected", r.Count),
+		zap.Int("rejected", r.Count()),
 		zap.Int("batch_"+unit, items),
-		zap.NamedError("reason", r.Reason),
+		// Every distinct reason, because a batch can be refused for more than
+		// one and naming only the first would hide the others.
+		zap.Any("reasons", r.Reasons()),
 	)
 }

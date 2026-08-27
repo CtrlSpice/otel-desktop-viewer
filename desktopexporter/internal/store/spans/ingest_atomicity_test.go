@@ -82,9 +82,9 @@ func TestIngest_OneDuplicateDoesNotCostTheBatch(t *testing.T) {
 	rep, err := ingestReport(t, s, tracesWithDuplicateSpanID(600, 1))
 	require.NoError(t, err, "a duplicate row must not fail the batch")
 
-	assert.Equal(t, 1, rep.Count, "exactly one span should have been rejected")
-	require.Error(t, rep.Reason)
-	assert.ErrorIs(t, rep.Reason, spans.ErrSpanAlreadyStored,
+	assert.Equal(t, 1, rep.Count(), "exactly one span should have been rejected")
+	require.Error(t, rep.Reason())
+	assert.ErrorIs(t, rep.Reason(), spans.ErrSpanAlreadyStored,
 		"the report should say why, so a sender can tell its ids are being reused")
 
 	assert.Equal(t, 599, countRows(t, s, ctx, "select count(*) from spans"))
@@ -103,7 +103,7 @@ func TestIngest_ManyDuplicatesCostOnlyThemselves(t *testing.T) {
 	rep, err := ingestReport(t, s, tracesWithDuplicateSpanID(600, 25))
 	require.NoError(t, err)
 
-	assert.Equal(t, 25, rep.Count)
+	assert.Equal(t, 25, rep.Count())
 	assert.Equal(t, 575, countRows(t, s, ctx, "select count(*) from spans"))
 }
 
@@ -120,7 +120,7 @@ func TestIngest_ResendRejectedWithoutFailing(t *testing.T) {
 
 	rep, err := ingestReport(t, s, createTestTracePdata())
 	require.NoError(t, err, "a resent batch must not be an error")
-	assert.Equal(t, 9, rep.Count, "every span in a resend is already stored")
+	assert.Equal(t, 9, rep.Count(), "every span in a resend is already stored")
 	assert.Equal(t, 9, countRows(t, s, ctx, "select count(*) from spans"),
 		"a resend must not duplicate rows")
 	assert.Equal(t, events, countRows(t, s, ctx, "select count(*) from events"),
@@ -195,7 +195,7 @@ func TestIngest_FirstOccurrenceOfARepeatedIDWins(t *testing.T) {
 
 	rep, err := ingestReport(t, s, tr)
 	require.NoError(t, err)
-	assert.Equal(t, 1, rep.Count)
+	assert.Equal(t, 1, rep.Count())
 	assert.Equal(t, 1, countRows(t, s, ctx, "select count(*) from spans"))
 	assert.Equal(t, 1, countRows(t, s, ctx,
 		"select count(*) from spans where name = 'first'"),
@@ -214,7 +214,7 @@ func TestIngest_MixedResendKeepsTheNewSpans(t *testing.T) {
 	// 150 spans, ids 1..150: the first 100 are already stored.
 	rep, err := ingestReport(t, s, tracesWithDuplicateSpanID(150, 0))
 	require.NoError(t, err)
-	assert.Equal(t, 100, rep.Count, "the overlap should be reported")
+	assert.Equal(t, 100, rep.Count(), "the overlap should be reported")
 	assert.Equal(t, 150, countRows(t, s, ctx, "select count(*) from spans"),
 		"the 50 new spans should have landed")
 }

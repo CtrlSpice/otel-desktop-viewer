@@ -32,7 +32,7 @@ func spanUUID(id [8]byte) duckdb.UUID {
 // spends minutes discovering one row at a time what one indexed lookup answers
 // at once. It also gives a truer reason than a constraint violation surfaced
 // from a failed flush.
-func skipAlreadyStored(ctx context.Context, conn driver.Conn, ids []duckdb.UUID) (map[int]bool, error) {
+func skipAlreadyStored(ctx context.Context, conn driver.Conn, ids []duckdb.UUID) (map[int]error, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -42,12 +42,12 @@ func skipAlreadyStored(ctx context.Context, conn driver.Conn, ids []duckdb.UUID)
 		return nil, err
 	}
 
-	skip := map[int]bool{}
+	skip := map[int]error{}
 	seen := make(map[duckdb.UUID]struct{}, len(ids))
 	for ordinal, id := range ids {
 		_, repeated := seen[id]
 		if _, ok := stored[id]; ok || repeated {
-			skip[ordinal] = true
+			skip[ordinal] = ErrSpanAlreadyStored
 			continue
 		}
 		seen[id] = struct{}{}

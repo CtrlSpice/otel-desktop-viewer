@@ -133,20 +133,11 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 		return ingest.Rejected{}, err
 	}
 
-	// Pass 2: append, retrying in halves so a bad row costs only itself.
-	rejected, err := appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
+	// Pass 2: append, retrying in halves so a bad row costs only itself. The
+	// skipped ordinals go in as pre-rejected rather than being tallied on
+	// afterwards, so every rejection is built in one place and in walk order.
+	return appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
 		spanAttrs, eventAttrs, linkAttrs, skip)
-	if err != nil {
-		return rejected, err
-	}
-
-	if len(skip) > 0 {
-		rejected.Count += len(skip)
-		if rejected.Reason == nil {
-			rejected.Reason = ErrSpanAlreadyStored
-		}
-	}
-	return rejected, nil
 }
 
 // appendPass writes the spans keep selects, by ordinal rather than id so two

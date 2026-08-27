@@ -109,7 +109,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed
 	}
 
 	// Pass 2: append, retrying in halves so a bad record costs only itself.
-	return ingest.BisectingWrite(ctx, len(logAttrs), func(lo, hi int) error {
+	return ingest.BisectingWrite(ctx, len(logAttrs), nil, func(lo, hi int) error {
 		return ingest.InTransaction(ctx, conn, func() error {
 			return appendPass(ctx, conn, logs, resourceIDs, scopeIDs, logAttrs,
 				func(ordinal int) bool { return ordinal >= lo && ordinal < hi })
