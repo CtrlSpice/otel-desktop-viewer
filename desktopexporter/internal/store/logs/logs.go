@@ -221,8 +221,10 @@ func appendPass(
 	// The two passes must have visited the same logs; a divergence would pair
 	// each record past that point with another record's attributes, silently.
 	if logCur != len(logAttrs) {
-		return fmt.Errorf("Ingest: %w: pass mismatch (logs %d/%d)",
-			ErrLogsStoreInternal, logCur, len(logAttrs))
+		// ErrNotRowFault: a fault in this code, identical for every subset,
+		// so bisection must surface it instead of blaming rows.
+		return fmt.Errorf("Ingest: %w: %w: pass mismatch (logs %d/%d)",
+			ErrLogsStoreInternal, ingest.ErrNotRowFault, logCur, len(logAttrs))
 	}
 
 	return nil

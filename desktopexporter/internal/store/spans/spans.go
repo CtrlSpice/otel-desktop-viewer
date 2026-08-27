@@ -294,8 +294,12 @@ func appendPass(
 	// other span's attributes -- corruption with no error, which is why this is
 	// checked rather than assumed.
 	if spanCur != len(spanAttrs) || eventCur != len(eventAttrs) || linkCur != len(linkAttrs) {
-		return fmt.Errorf("Ingest: %w: pass mismatch (spans %d/%d, events %d/%d, links %d/%d)",
-			ErrSpansStoreInternal, spanCur, len(spanAttrs),
+		// ErrNotRowFault because this is a fault in this code, not in any
+		// row: it fails identically for every subset, so bisecting it would
+		// blame each span in turn and report the whole thing as a quiet
+		// tally rather than the loud failure it is meant to be.
+		return fmt.Errorf("Ingest: %w: %w: pass mismatch (spans %d/%d, events %d/%d, links %d/%d)",
+			ErrSpansStoreInternal, ingest.ErrNotRowFault, spanCur, len(spanAttrs),
 			eventCur, len(eventAttrs), linkCur, len(linkAttrs))
 	}
 

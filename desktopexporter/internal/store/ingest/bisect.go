@@ -1,6 +1,35 @@
 package ingest
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrNotRowFault marks a failure that no individual row caused, so bisection
+// must surface it rather than search for a culprit.
+//
+// # Why this has to be said explicitly
+//
+// BisectingWrite is a search, and it rests on one assumption: remove the guilty
+// item and the rest succeeds. That is true of a duplicate key and false of a
+// fault belonging to the operation itself, which fails identically for every
+// subset. Given one of those, the search does not report it -- it halves all
+// the way down, finds every single-row window failing, and returns "every row
+// was rejected" with a nil error. The same shape as `git bisect` handed a test
+// script that fails on every commit: it does not conclude the script is broken,
+// it names an innocent commit with total confidence.
+//
+// The stakes are highest for the checks that exist to be loud. The pass
+// mismatch guards in spans, logs and metrics fire when the two passes disagree
+// about how many items exist -- a bug in our own code, whose whole purpose is
+// to fail noisily instead of pairing every owner past that point with another
+// owner's attributes. Run through an unguarded bisection, that alarm becomes a
+// silent tally, and resilience machinery ends up eating the one error it was
+// most important to hear.
+//
+// Wrap with %w. Anything not wrapped is still treated as row-specific and
+// isolated, which is the right default for a fault we do not recognise.
+var ErrNotRowFault = errors.New("not attributable to any single row")
 
 // Rejected reports how many items an ingest could not write.
 //
@@ -83,9 +112,24 @@ func BisectingWrite(ctx context.Context, total int, attempt func(lo, hi int) err
 			continue
 		}
 
+		// A fault no row caused fails every half identically, so narrowing
+		// would blame each row in turn and report none of it as an error.
+		if errors.Is(err, ErrNotRowFault) {
+			return rejected, err
+		}
+
 		if w.hi-w.lo == 1 {
 			// Narrowed to one item and it still will not go in. This is the
 			// row the batch was being thrown away for.
+			//
+			// Unless the context just went away underneath it: a cancelled
+			// attempt says nothing about the row it happened to be carrying,
+			// and recording it would report a rejection for work that was
+			// never really tried. The loop head catches this too, but only
+			// after the count has already been taken.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return rejected, ctxErr
+			}
 			rejected.Count++
 			if rejected.Reason == nil {
 				rejected.Reason = err

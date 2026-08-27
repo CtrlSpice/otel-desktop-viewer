@@ -426,8 +426,10 @@ func appendPass(
 	// same order. A divergence would file every point past it under another
 	// series -- wrong lines on a chart, with no error anywhere.
 	if dpCur != len(dpIdents) {
-		return fmt.Errorf("Ingest: %w: datapoint pass mismatch (%d/%d)",
-			ErrMetricsStoreInternal, dpCur, len(dpIdents))
+		// ErrNotRowFault: a fault in this code, identical for every subset,
+		// so bisection must surface it instead of blaming metrics.
+		return fmt.Errorf("Ingest: %w: %w: datapoint pass mismatch (%d/%d)",
+			ErrMetricsStoreInternal, ingest.ErrNotRowFault, dpCur, len(dpIdents))
 	}
 
 	return nil
