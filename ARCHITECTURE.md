@@ -362,15 +362,15 @@ Every URL write takes an explicit `HistoryMode` (`'push' | 'replace'`, defined i
 
 No global store library. State uses Svelte **context modules** (`.svelte.ts`) and page-local `$state`:
 
-| Context | Scope |
-|---------|-------|
-| `route-context.svelte.ts` | Reactive view of the current URL (path + query) |
-| `time-context.svelte.ts` | App-wide time range and timezone |
-| `metric-view-context.svelte.ts` | Per-metrics-page chart aggregation, heatmaps, legend |
-| `panel-split-resize-context.svelte.ts` | Resizable panel preferences |
-| `theme.svelte.ts` | DaisyUI theme via `data-theme` |
+| Module | Scope |
+|--------|-------|
+| `contexts/route-context.svelte.ts` | Reactive view of the current URL (path + query) |
+| `contexts/time-context.svelte.ts` | App-wide time range and timezone |
+| `contexts/metric-view-context.svelte.ts` | Per-metrics-page chart aggregation, heatmaps, legend |
+| `contexts/signal-list-page.svelte.ts` | Shared list-page orchestration (fetch, sort, selection); a factory each page holds directly rather than a context |
+| `state/theme.svelte.ts` | DaisyUI theme via `data-theme` |
 
-Each signal page owns list/selection state locally.
+Each signal page owns list/selection state locally, through the factory above.
 
 ### UI layout pattern
 
