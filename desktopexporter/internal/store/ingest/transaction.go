@@ -53,18 +53,36 @@ func InTransaction(ctx context.Context, conn driver.Conn, fn func() error) (err 
 		return fmt.Errorf("InTransaction: %w: begin: %w", ErrIngestInternal, err)
 	}
 
+	// Closing a transaction ignores cancellation, in both directions.
+	//
+	// Ingest owns one connection for the life of the process, so a transaction
+	// left open does not fail one batch -- it fails every batch after it, with
+	// "cannot start a transaction within a transaction", and that `begin`
+	// returns early without ever reaching a rollback. The wedge is permanent
+	// until restart.
+	//
+	// Cancellation can arrive at either end. A cancelled ctx must not abandon
+	// the rollback, and it must not abandon the commit either: by then fn has
+	// already succeeded and the rows are written, so refusing to commit buys
+	// nothing and leaves the transaction open on a context error. The work is
+	// finished; closing the books is not optional.
+	closeCtx := context.WithoutCancel(ctx)
+
 	defer func() {
 		if err != nil {
-			// Rollback runs even when ctx is already done: the context that
-			// cancelled the work must not also abandon the transaction, or the
-			// connection stays wedged for every batch after this one.
-			if _, rbErr := exec.ExecContext(context.WithoutCancel(ctx), "rollback", nil); rbErr != nil {
+			if _, rbErr := exec.ExecContext(closeCtx, "rollback", nil); rbErr != nil {
 				err = errors.Join(err, fmt.Errorf("InTransaction: rollback: %w", rbErr))
 			}
 			return
 		}
-		if _, cErr := exec.ExecContext(ctx, "commit", nil); cErr != nil {
+		if _, cErr := exec.ExecContext(closeCtx, "commit", nil); cErr != nil {
 			err = fmt.Errorf("InTransaction: %w: commit: %w", ErrIngestInternal, cErr)
+			// A commit that failed may or may not have closed the transaction.
+			// Rolling back is harmless when it did and essential when it did
+			// not, and either way this is the last chance to close it.
+			if _, rbErr := exec.ExecContext(closeCtx, "rollback", nil); rbErr != nil {
+				err = errors.Join(err, fmt.Errorf("InTransaction: rollback after failed commit: %w", rbErr))
+			}
 		}
 	}()
 
