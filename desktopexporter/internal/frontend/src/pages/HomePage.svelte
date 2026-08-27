@@ -15,6 +15,7 @@
   import PaneHeader, {
     type PaneTab,
   } from '@/components/shared/PaneHeader.svelte'
+  import { itemHref, SPAN_PARAM } from '@/route'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { Stats } from '@/types/api-types'
   import luluImage from '@/assets/images/lulu.webp'
@@ -378,6 +379,29 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
                       showType={false}
                       fieldValue={formatRelativeTime(r.lastSeen)}
                     />
+                    {#if r.samples.length > 0}
+                      <LogField
+                        fieldName="samples"
+                        fieldType="string"
+                        showType={false}
+                        multiline={true}
+                      >
+                        {#snippet value()}
+                          <span class="home-rejected-samples">
+                            {#each r.samples as sample (sample.traceID + sample.spanID)}
+                              <a
+                                class="link link-primary font-mono text-xs"
+                                href={itemHref('traces', sample.traceID, {
+                                  [SPAN_PARAM]: sample.spanID,
+                                })}
+                              >
+                                {sample.spanID}
+                              </a>
+                            {/each}
+                          </span>
+                        {/snippet}
+                      </LogField>
+                    {/if}
                   {/each}
                 </tbody>
               </table>
@@ -446,6 +470,10 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
      page to send anyone to, so it is a marker rather than an affordance. */
   .home-summary__icon-link--warning {
     @apply pointer-events-none btn-warning bg-warning/10 text-warning;
+  }
+
+  .home-rejected-samples {
+    @apply inline-flex flex-wrap gap-x-2 gap-y-0.5;
   }
 
   .home-summary__icon-link:hover {

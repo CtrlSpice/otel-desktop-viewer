@@ -46,3 +46,5 @@ diff_bucket_vectors.sql
 bucket_extents.sql
 aggregate_bucket_json.sql
 bucket_width_ns.sql
+samples_from_arrays.sql
+merge_samples.sql

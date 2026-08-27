@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/duckdb/duckdb-go/v2"
@@ -156,6 +157,18 @@ func prepareSpanArg(conn driver.Conn, v any) (driver.Value, error) {
 	return driver.DefaultParameterConverter.ConvertValue(v)
 }
 
+// traceIDWire and spanIDWire render stored uuids the way OTLP and the UI do:
+// dash-less hex, the low 16 characters for a span. Mirrors the trace_id_wire
+// and span_id_wire macros.
+func traceIDWire(id duckdb.UUID) string {
+	return strings.ReplaceAll(id.String(), "-", "")
+}
+
+func spanIDWire(id duckdb.UUID) string {
+	hex := traceIDWire(id)
+	return hex[len(hex)-16:]
+}
+
 // recordSpanRejections tallies what this batch was refused, one row per kind.
 //
 // The sample is the refused span's own id. For an already-stored rejection that
@@ -172,11 +185,13 @@ func recordSpanRejections(ctx context.Context, conn driver.Conn, r ingest.Reject
 			}
 			return ingest.KindRefused
 		},
-		func(ordinal int) string {
+		func(ordinal int) (string, string) {
 			if ordinal < 0 || ordinal >= len(keys) {
-				return ""
+				return "", ""
 			}
-			return keys[ordinal].span.String()
+			// Wire form, matching trace_id_wire / span_id_wire: dash-less
+			// hex, the low 16 for a span, which is what the routes expect.
+			return traceIDWire(keys[ordinal].trace), spanIDWire(keys[ordinal].span)
 		})
 	return ingest.RecordRejections(ctx, conn, records)
 }

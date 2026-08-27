@@ -382,9 +382,12 @@ func TestGetStats_CarriesRejections(t *testing.T) {
 			Signal      string `json:"signal"`
 			Kind        string `json:"kind"`
 			Occurrences int    `json:"occurrences"`
-			Sample      string `json:"sample"`
-			FirstSeen   string `json:"firstSeen"`
-			LastSeen    string `json:"lastSeen"`
+			Samples     []struct {
+				TraceID string `json:"traceID"`
+				SpanID  string `json:"spanID"`
+			} `json:"samples"`
+			FirstSeen string `json:"firstSeen"`
+			LastSeen  string `json:"lastSeen"`
 		} `json:"rejections"`
 	}
 	require.NoError(t, json.Unmarshal(rawStats(t, s, ctx), &got))
@@ -394,7 +397,16 @@ func TestGetStats_CarriesRejections(t *testing.T) {
 	assert.Equal(t, "traces", r.Signal)
 	assert.Equal(t, "span_already_stored", r.Kind)
 	assert.Positive(t, r.Occurrences)
-	assert.NotEmpty(t, r.Sample)
+	require.NotEmpty(t, r.Samples, "a full link needs the identities")
+	assert.LessOrEqual(t, len(r.Samples), 10, "bounded at write time")
+	seen := map[string]bool{}
+	for _, p := range r.Samples {
+		assert.Len(t, p.TraceID, 32, "wire form: dash-less hex")
+		assert.Len(t, p.SpanID, 16, "wire form: the low 16")
+		key := p.TraceID + p.SpanID
+		assert.False(t, seen[key], "samples are deduped by pair")
+		seen[key] = true
+	}
 	assert.NotEmpty(t, r.FirstSeen)
 	assert.NotEmpty(t, r.LastSeen)
 }

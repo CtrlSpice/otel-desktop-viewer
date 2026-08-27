@@ -17,13 +17,15 @@ create table if not exists ingest_rejections (
 		id uuid primary key,
 		signal varchar not null,
 		kind varchar not null,
-		-- A span id from the most recent occurrence. For an already-stored
-		-- rejection the span is in the store, so this is a working link --
-		-- better than keeping a copy of a row we already have.
-		sample varchar,
-		-- Only for a rejection no id can stand in for, where the row was
-		-- genuinely lost and nothing in the store represents it.
-		detail json,
+		-- The most recently refused spans, newest first, in OTLP wire form
+		-- (dash-less hex), each ready for a /traces/{trace}?span={span} link.
+		-- Both halves per entry, because a span id only identifies a span
+		-- within its trace. Bounded at write time, deduped by pair, so a
+		-- replay loop cannot grow it. The shape is the diagnosis: entries
+		-- sharing one trace say replay, one pair repeating says an
+		-- instrumentation bug minting a fixed id, varied traces from one
+		-- service point at that service's generator.
+		samples struct("traceID" varchar, "spanID" varchar)[] not null default [],
 		first_seen bigint not null,
 		last_seen bigint not null,
 		occurrences ubigint not null default 1

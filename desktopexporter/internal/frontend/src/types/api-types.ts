@@ -461,8 +461,9 @@ export type Rejection = {
   signal: 'traces' | 'logs' | 'metrics'
   kind: string
   occurrences: number
-  /** A span id to link to; null when nothing in the store represents it. */
-  sample: string | null
+  /** Most recently refused spans, newest first, wire form, bounded. Empty
+   * when nothing in the store represents the refused rows. */
+  samples: { traceID: string; spanID: string }[]
   firstSeen: bigint | null
   lastSeen: bigint | null
 }
