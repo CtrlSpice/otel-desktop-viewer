@@ -1,7 +1,7 @@
 create table if not exists spans (
 		trace_id uuid,
 		trace_state varchar,
-		span_id uuid primary key,
+		span_id uuid not null,
 		parent_span_id uuid,
 		-- W3C trace flags plus the is_remote bit for the parent context.
 		-- Logs and metric datapoints have always stored theirs; spans and
@@ -51,6 +51,12 @@ create table if not exists spans (
 		-- and the appender takes a plain string more happily than a nullable.
 		resource_schema_url varchar not null default '',
 		scope_schema_url varchar not null default '',
+		-- Composite, because a span id is only required to be unique within
+		-- its trace. Global uniqueness is a property of random 8-byte
+		-- generation, not a guarantee, and keying on span_id alone rejected
+		-- conformant senders whose ids are unique per trace but not across
+		-- traces -- fixtures, replays, any deterministic generator.
+		primary key (trace_id, span_id),
 		foreign key (resource_id) references resources(id),
 		foreign key (scope_id) references scopes(id)
 	)

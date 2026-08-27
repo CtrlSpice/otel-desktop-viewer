@@ -68,7 +68,7 @@ package schema
 // of stream identity. Same mechanism as versions 3 and 6: a new column on an
 // existing table, so a version 6 file fails the metric appender's column count
 // on its first metric batch.
-const Version = 7
+const Version = 8
 
 // VersionTableQuery creates the version table.
 //
