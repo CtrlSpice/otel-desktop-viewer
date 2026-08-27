@@ -89,6 +89,19 @@ type metricStatsJSON struct {
 	LastReceived   *string `json:"lastReceived"`
 }
 
+// rawStats returns the stats payload unparsed, for fields statsJSON does not
+// model.
+func rawStats(t *testing.T, s *store.Store, ctx context.Context) json.RawMessage {
+	t.Helper()
+	sizeBytes, err := s.SizeBytes(ctx)
+	require.NoError(t, err)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return stats.GetStats(ctx, db, sizeBytes, s.RetentionCap())
+	})
+	require.NoError(t, err)
+	return raw
+}
+
 func getStats(t *testing.T, s *store.Store, ctx context.Context) statsJSON {
 	t.Helper()
 	sizeBytes, err := s.SizeBytes(ctx)
@@ -331,4 +344,57 @@ func buildTestMetrics() pmetric.Metrics {
 	dp2.SetDoubleValue(1500.0)
 
 	return m
+}
+
+// A clean store reports no rejections, and the field is an empty array rather
+// than null so the frontend can render it without a guard.
+func TestGetStats_NoRejectionsWhenNothingRefused(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	baseTime := time.Now().UnixNano()
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, buildTestTraces(baseTime), s.FlushedIDs())
+	}))
+
+	var got struct {
+		Rejections []map[string]any `json:"rejections"`
+	}
+	require.NoError(t, json.Unmarshal(rawStats(t, s, ctx), &got))
+	assert.NotNil(t, got.Rejections, "must be [] rather than null")
+	assert.Empty(t, got.Rejections)
+}
+
+// Resending a batch surfaces in the stats the home page already polls.
+func TestGetStats_CarriesRejections(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	baseTime := time.Now().UnixNano()
+	for range 2 {
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return spans.Ingest(ctx, conn, buildTestTraces(baseTime), s.FlushedIDs())
+		}))
+	}
+
+	var got struct {
+		Rejections []struct {
+			Signal      string `json:"signal"`
+			Kind        string `json:"kind"`
+			Occurrences int    `json:"occurrences"`
+			Sample      string `json:"sample"`
+			FirstSeen   string `json:"firstSeen"`
+			LastSeen    string `json:"lastSeen"`
+		} `json:"rejections"`
+	}
+	require.NoError(t, json.Unmarshal(rawStats(t, s, ctx), &got))
+
+	require.Len(t, got.Rejections, 1, "one row per signal and kind")
+	r := got.Rejections[0]
+	assert.Equal(t, "traces", r.Signal)
+	assert.Equal(t, "span_already_stored", r.Kind)
+	assert.Positive(t, r.Occurrences)
+	assert.NotEmpty(t, r.Sample)
+	assert.NotEmpty(t, r.FirstSeen)
+	assert.NotEmpty(t, r.LastSeen)
 }

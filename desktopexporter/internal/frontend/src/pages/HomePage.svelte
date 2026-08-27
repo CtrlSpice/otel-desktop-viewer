@@ -3,6 +3,7 @@
   import {
     BarChartHorizontalIcon,
     ChartHistogramIcon,
+    AlertIcon,
     CheckmarkCircleIcon,
     CopyIcon,
     LogIcon,
@@ -62,6 +63,24 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
     } catch (e) {
       console.error('Failed to fetch stats:', e)
     }
+  }
+
+  // Only ever a handful of entries -- the backend keys them by signal and
+  // kind, so a replay loop that refuses thousands of spans is still one row.
+  let rejections = $derived(stats?.rejections ?? [])
+  let rejectedTotal = $derived(
+    rejections.reduce((sum, r) => sum + r.occurrences, 0)
+  )
+
+  // The kind is stored, so it survives a frontend that has not been taught
+  // about a new one: fall back to the raw token rather than showing nothing.
+  const REJECTION_LABELS: Record<string, string> = {
+    span_already_stored: 'duplicate span id',
+    span_refused: 'rejected by the store',
+  }
+
+  function rejectionLabel(kind: string): string {
+    return REJECTION_LABELS[kind] ?? kind
   }
 
   function formatRelativeTime(timestampNs: bigint | null | undefined): string {
@@ -321,9 +340,54 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
               </tbody>
             </table>
           </FieldGroup>
+
+          {#if rejections.length > 0}
+            <FieldGroup label="Dropped on ingest">
+              {#snippet headerAction()}
+                <div class="home-summary__header">
+                  <span
+                    class="home-summary__icon-link home-summary__icon-link--warning"
+                    aria-hidden="true"
+                  >
+                    <AlertIcon class="h-4 w-4 shrink-0" />
+                  </span>
+                  <span class="home-summary__title">Dropped on ingest</span>
+                  <span
+                    class="badge badge-xs badge-soft badge-warning home-summary__badge tabular-nums"
+                    title="Telemetry this viewer received but did not store"
+                  >
+                    {rejectedTotal}
+                  </span>
+                </div>
+              {/snippet}
+              <table
+                class="detail-fields w-full"
+                aria-label="Dropped on ingest"
+              >
+                <tbody>
+                  {#each rejections as r (r.signal + r.kind)}
+                    <LogField
+                      fieldName={rejectionLabel(r.kind)}
+                      fieldType={r.signal}
+                      showType={true}
+                      fieldValue={String(r.occurrences)}
+                    />
+                    <LogField
+                      fieldName="last seen"
+                      fieldType="string"
+                      showType={false}
+                      fieldValue={formatRelativeTime(r.lastSeen)}
+                    />
+                  {/each}
+                </tbody>
+              </table>
+            </FieldGroup>
+          {/if}
         </div>
 
-        <p class="home-detail__coming-soon">more coming soon…</p>
+        {#if rejections.length === 0}
+          <p class="home-detail__coming-soon">more coming soon…</p>
+        {/if}
       </div>
     {/snippet}
 
@@ -376,6 +440,12 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
 
   .home-summary__icon-link {
     @apply btn btn-soft btn-primary btn-sm btn-circle h-8 w-8 min-h-8 shrink-0 border-transparent bg-primary/10 text-primary no-underline shadow-none;
+  }
+
+  /* Same circle as the signal groups, warning-toned. Not a link: there is no
+     page to send anyone to, so it is a marker rather than an affordance. */
+  .home-summary__icon-link--warning {
+    @apply pointer-events-none btn-warning bg-warning/10 text-warning;
   }
 
   .home-summary__icon-link:hover {
