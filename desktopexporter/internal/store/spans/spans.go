@@ -26,6 +26,9 @@ var (
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
+// scopeKey identifies a scope by position: the ri'th resource's si'th scope.
+type scopeKey struct{ ri, si int }
+
 // flushIntervalSpans bounds how many spans accumulate in the appenders before
 // they are pushed to DuckDB. It exists to cap memory on a pathological batch,
 // not to make writes visible sooner -- nothing reads mid-batch, since ingest
@@ -60,30 +63,31 @@ func resourceServiceName(attrs pcommon.Map) string {
 	return ""
 }
 
-// Ingest ingests trace spans from pdata into the spans, events, links, and
-// attributes tables. The caller must hold any required lock on the connection.
+// Ingest is IngestReport for callers with nowhere to put the report. Refused
+// rows are still skipped rather than failing the batch.
+func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) error {
+	_, err := IngestReport(ctx, conn, traces, flushed)
+	return err
+}
+
+// IngestReport ingests trace spans into the spans, events, links and attributes
+// tables, reporting the spans it could not write. A non-empty Rejected is not a
+// failure: the batch landed without them. The caller must hold any required
+// lock on the connection.
 //
-// Two passes. The first walks the resource/scope hierarchy, hashing every
-// attribute into a Dictionary and resolving each resource and scope to a
-// content-derived id; it then writes the dictionary in three inserts. The
-// second opens the appenders and walks again, appending owners with the id
-// arrays the first pass produced.
-//
-// The split exists because the dictionary needs conflict handling and the
-// appender has none: its whole surface is AppendRow/Flush/Clear/Close, and a
-// duplicate errors at flush and takes the chunk with it. Ordering is safe
-// because the inserts commit before any appender flush, and the appenders open
-// after the resolve -- the same shape metrics.Ingest already used for its
-// stream upsert.
-func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (err error) {
+// Two passes. The first hashes every attribute into a Dictionary, resolves each
+// resource and scope to a content-derived id, and writes the dictionary in
+// three inserts. The second appends the owner rows with the id arrays the first
+// produced. They are split because the dictionary needs conflict handling and
+// the appender has none.
+func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (ingest.Rejected, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return ingest.Rejected{}, err
 	}
 
 	// Pass 1: hash everything and resolve resource/scope identities.
 	dict := ingest.NewDictionary(flushed)
 
-	type scopeKey struct{ ri, si int }
 	resourceIDs := map[int]duckdb.UUID{}
 	scopeIDs := map[scopeKey]duckdb.UUID{}
 
@@ -97,12 +101,16 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 	// so a future edit that desynchronises the two passes fails loudly instead
 	// of silently pairing a span with another span's attributes.
 	var spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID
+	// Span ids in walk order, so dedupe below can speak in the same ordinals
+	// the append pass and bisection do.
+	var spanIDs []duckdb.UUID
 
 	for ri, resourceSpan := range traces.ResourceSpans().All() {
 		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource())
 		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
 			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope())
 			for _, span := range scopeSpan.Spans().All() {
+				spanIDs = append(spanIDs, spanUUID(span.SpanID()))
 				spanAttrs = append(spanAttrs, dict.AddAttributes(span.Attributes(), ingest.ScopeSpan))
 				for _, event := range span.Events().All() {
 					eventAttrs = append(eventAttrs, dict.AddAttributes(event.Attributes(), ingest.ScopeEvent))
@@ -115,10 +123,48 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 	}
 
 	if err := dict.Flush(ctx, conn); err != nil {
-		return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 	}
 
-	// Pass 2: append the signal rows.
+	// Skip ids the store already holds before writing rather than after
+	// failing: bisection would find them, but one transaction at a time.
+	skip, err := skipAlreadyStored(ctx, conn, spanIDs)
+	if err != nil {
+		return ingest.Rejected{}, err
+	}
+
+	// Pass 2: append, retrying in halves so a bad row costs only itself. The
+	// skipped ordinals go in as pre-rejected rather than being tallied on
+	// afterwards, so every rejection is built in one place and in walk order.
+	rejected, err := appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
+		spanAttrs, eventAttrs, linkAttrs, skip)
+	if err != nil {
+		return rejected, err
+	}
+
+	// Recorded after the appends commit, never inside them: a rejection
+	// describes a batch that succeeded, and rolling it back with a failed
+	// attempt would lose the only trace that anything was refused.
+	if err := recordSpanRejections(ctx, conn, rejected, spanIDs); err != nil {
+		// The telemetry landed. Failing the batch because we could not write
+		// a note about it would turn a report into an outage.
+		return rejected, nil
+	}
+	return rejected, nil
+}
+
+// appendPass writes the spans keep selects, by ordinal rather than id so two
+// occurrences of one id stay separable. Skipped spans still advance all three
+// cursors, which are consumed by position.
+func appendPass(
+	ctx context.Context,
+	conn driver.Conn,
+	traces ptrace.Traces,
+	resourceIDs map[int]duckdb.UUID,
+	scopeIDs map[scopeKey]duckdb.UUID,
+	spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID,
+	keep func(ordinal int) bool,
+) (err error) {
 	tables := []string{"events", "links", "spans"}
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
@@ -145,6 +191,13 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 			for _, span := range scopeSpan.Spans().All() {
 				if err := ctx.Err(); err != nil {
 					return err
+				}
+
+				if !keep(spanCur) {
+					spanCur++
+					eventCur += span.Events().Len()
+					linkCur += span.Links().Len()
+					continue
 				}
 
 				traceUUID := duckdb.UUID(span.TraceID())
@@ -249,8 +302,9 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 	// other span's attributes -- corruption with no error, which is why this is
 	// checked rather than assumed.
 	if spanCur != len(spanAttrs) || eventCur != len(eventAttrs) || linkCur != len(linkAttrs) {
-		return fmt.Errorf("Ingest: %w: pass mismatch (spans %d/%d, events %d/%d, links %d/%d)",
-			ErrSpansStoreInternal, spanCur, len(spanAttrs),
+		// ErrNotRowFault: our bug, not a row's, so bisection must not search.
+		return fmt.Errorf("Ingest: %w: %w: pass mismatch (spans %d/%d, events %d/%d, links %d/%d)",
+			ErrSpansStoreInternal, ingest.ErrNotRowFault, spanCur, len(spanAttrs),
 			eventCur, len(eventAttrs), linkCur, len(linkAttrs))
 	}
 

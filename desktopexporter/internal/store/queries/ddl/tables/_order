@@ -20,3 +20,4 @@ metric_ingests.sql
 histogram_bounds.sql
 datapoints.sql
 exemplars.sql
+ingest_rejections.sql

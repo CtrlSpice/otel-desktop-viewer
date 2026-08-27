@@ -244,6 +244,9 @@ func (s *Store) Close() error {
 //
 // Lock order is ingestMu then mu, and nothing acquires them the other way
 // round, so the pair cannot deadlock.
+//
+// No transaction here: ingest opens one per bisection attempt, and DuckDB has
+// no nested transactions. See ingest.InTransaction.
 func (s *Store) WithConn(fn func(conn driver.Conn) error) error {
 	s.ingestMu.Lock()
 	defer s.ingestMu.Unlock()

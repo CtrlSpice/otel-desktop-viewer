@@ -10,7 +10,10 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
+	"go.uber.org/zap"
+
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
@@ -33,6 +36,10 @@ type storeHost interface {
 type desktopExporter struct {
 	tel *telemetry.Telemetry
 
+	// logger reports rows the store refused. Those are not errors -- the batch
+	// landed without them -- so nothing else would ever mention them.
+	logger *zap.Logger
+
 	// store is resolved in Start and never changes afterwards. The collector
 	// guarantees extensions are started first, so by the time the pipeline
 	// calls the push functions this is non-nil.
@@ -44,7 +51,11 @@ func newDesktopExporter(cfg *Config, settings component.TelemetrySettings) (*des
 	if err != nil {
 		return nil, err
 	}
-	return &desktopExporter{tel: tel}, nil
+	logger := settings.Logger
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &desktopExporter{tel: tel, logger: logger}, nil
 }
 
 // Start resolves the shared store from the collector's extensions. Exactly one
@@ -89,11 +100,16 @@ func (e *desktopExporter) pushTraces(ctx context.Context, source ptrace.Traces) 
 	ctx, cancel := withIngestTimeout(ctx)
 	defer cancel()
 
-	ctx, end := e.tel.Ingest(ctx, "traces", source.SpanCount())
+	items := source.SpanCount()
+	ctx, end := e.tel.Ingest(ctx, "traces", items)
+	var rejected ingest.Rejected
 	err := e.store.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, source, e.store.FlushedIDs())
+		var iErr error
+		rejected, iErr = spans.IngestReport(ctx, conn, source, e.store.FlushedIDs())
+		return iErr
 	})
 	end(err)
+	e.reportRejected("traces", "spans", items, rejected)
 	return err
 }
 
@@ -101,11 +117,16 @@ func (e *desktopExporter) pushMetrics(ctx context.Context, source pmetric.Metric
 	ctx, cancel := withIngestTimeout(ctx)
 	defer cancel()
 
-	ctx, end := e.tel.Ingest(ctx, "metrics", source.DataPointCount())
+	items := source.DataPointCount()
+	ctx, end := e.tel.Ingest(ctx, "metrics", items)
+	var rejected ingest.Rejected
 	err := e.store.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, source, e.store.FlushedIDs())
+		var iErr error
+		rejected, iErr = metrics.IngestReport(ctx, conn, source, e.store.FlushedIDs())
+		return iErr
 	})
 	end(err)
+	e.reportRejected("metrics", "metrics", items, rejected)
 	return err
 }
 
@@ -113,10 +134,33 @@ func (e *desktopExporter) pushLogs(ctx context.Context, source plog.Logs) error 
 	ctx, cancel := withIngestTimeout(ctx)
 	defer cancel()
 
-	ctx, end := e.tel.Ingest(ctx, "logs", source.LogRecordCount())
+	items := source.LogRecordCount()
+	ctx, end := e.tel.Ingest(ctx, "logs", items)
+	var rejected ingest.Rejected
 	err := e.store.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, source, e.store.FlushedIDs())
+		var iErr error
+		rejected, iErr = logs.IngestReport(ctx, conn, source, e.store.FlushedIDs())
+		return iErr
 	})
 	end(err)
+	e.reportRejected("logs", "records", items, rejected)
 	return err
+}
+
+// reportRejected logs rows the store would not take. The batch itself
+// succeeded, so without this the sender sees telemetry silently missing: no
+// error, no dropped_items, nothing. unit names what was counted, since a
+// metrics batch is measured in datapoints but refused a metric at a time.
+func (e *desktopExporter) reportRejected(signal, unit string, items int, r ingest.Rejected) {
+	if r.Count() == 0 {
+		return
+	}
+	e.logger.Warn("store refused part of a batch",
+		zap.String("signal", signal),
+		zap.Int("rejected", r.Count()),
+		zap.Int("batch_"+unit, items),
+		// Every distinct reason, because a batch can be refused for more than
+		// one and naming only the first would hide the others.
+		zap.Any("reasons", r.Reasons()),
+	)
 }

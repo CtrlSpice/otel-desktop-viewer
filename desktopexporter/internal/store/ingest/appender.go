@@ -12,8 +12,8 @@ var (
 	ErrIngestInternal = errors.New("ingest internal error")
 )
 
-// NewAppenders creates one appender per table name, keyed by table name.
-// Caller must call CloseAppenders(appenders, tables) when done so appenders are closed in creation order.
+// NewAppenders opens one appender per table, keyed by name. Caller must
+// CloseAppenders.
 func NewAppenders(conn driver.Conn, tables []string) (map[string]*duckdb.Appender, error) {
 	out := make(map[string]*duckdb.Appender, len(tables))
 	for _, table := range tables {
@@ -27,8 +27,8 @@ func NewAppenders(conn driver.Conn, tables []string) (map[string]*duckdb.Appende
 	return out, nil
 }
 
-// FlushAppenders flushes appenders in reverse order of tables (parents before dependents)
-// so FK references exist when rows are written. Safe to call with nil map or nil/empty tables.
+// FlushAppenders flushes in reverse table order, so parents land before the
+// rows referencing them.
 func FlushAppenders(appenders map[string]*duckdb.Appender, tables []string) error {
 	for i := len(tables) - 1; i >= 0; i-- {
 		if a := appenders[tables[i]]; a != nil {
@@ -40,16 +40,17 @@ func FlushAppenders(appenders map[string]*duckdb.Appender, tables []string) erro
 	return nil
 }
 
-// CloseAppenders closes appenders in the order of tables, so close order is deterministic.
-// Safe to call with nil map or nil/empty tables.
+// CloseAppenders closes every appender in reverse table order and returns the
+// first error. It keeps closing after a failure because Close releases each
+// buffered chunk; later errors only report that the transaction is aborted.
 func CloseAppenders(appenders map[string]*duckdb.Appender, tables []string) error {
-	var errs []error
+	var firstErr error
 	for i := len(tables) - 1; i >= 0; i-- {
 		if a := appenders[tables[i]]; a != nil {
-			if err := a.Close(); err != nil {
-				errs = append(errs, err)
+			if err := a.Close(); err != nil && firstErr == nil {
+				firstErr = err
 			}
 		}
 	}
-	return errors.Join(errs...)
+	return firstErr
 }

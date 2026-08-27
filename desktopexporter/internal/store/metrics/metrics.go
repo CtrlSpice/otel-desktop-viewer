@@ -32,6 +32,38 @@ var (
 // the others.
 const flushIntervalMetrics = 100
 
+// scopeKey identifies a scope by position: the ri'th resource's si'th scope.
+type scopeKey struct{ ri, si int }
+
+// countMetrics counts metrics, the unit bisection blames. Walked rather than
+// read from pass 1's coords, which skips unresolvable identities and so would
+// not line up with pass 2's ordinals.
+func countMetrics(m pmetric.Metrics) int {
+	n := 0
+	for _, rm := range m.ResourceMetrics().All() {
+		for _, sm := range rm.ScopeMetrics().All() {
+			n += sm.Metrics().Len()
+		}
+	}
+	return n
+}
+
+// metricDatapointCount mirrors appendPass's type switch, so a skipped metric
+// steps dpCur over exactly the datapoints that pass would have written.
+func metricDatapointCount(metric pmetric.Metric) int {
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		return metric.Gauge().DataPoints().Len()
+	case pmetric.MetricTypeSum:
+		return metric.Sum().DataPoints().Len()
+	case pmetric.MetricTypeHistogram:
+		return metric.Histogram().DataPoints().Len()
+	case pmetric.MetricTypeExponentialHistogram:
+		return metric.ExponentialHistogram().DataPoints().Len()
+	}
+	return 0
+}
+
 // Ingest writes the metric data in m to the metric_streams,
 // metric_ingests, datapoints, exemplars, and attributes tables. The
 // caller must hold any required lock on the connection.
@@ -51,8 +83,17 @@ const flushIntervalMetrics = 100
 // The two-pass shape exists so the upsert sees ALL identities at once
 // and resolves them in one round-trip; doing the upsert per metric
 // would be O(metrics) round-trips per batch.
-func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *ingest.FlushedIDs) (err error) {
-	tables := []string{"exemplars", "datapoints", "metric_ingests"}
+// Ingest is IngestReport for callers with nowhere to put the report. Metrics
+// the store refused are still skipped rather than failing the batch; this form
+// just cannot say how many there were.
+func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *ingest.FlushedIDs) error {
+	_, err := IngestReport(ctx, conn, m, flushed)
+	return err
+}
+
+// IngestReport ingests a batch and reports the metrics it could not write. A
+// non-empty Rejected is not a failure: the batch landed, minus those metrics.
+func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *ingest.FlushedIDs) (_ ingest.Rejected, err error) {
 
 	// Pass 1: collect every distinct identity in this OTLP request, plus
 	// per-identity service_name (denormalized onto metric_streams). We
@@ -73,7 +114,6 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	// the bulk of it: on the reference capture they are 82% of all attribute
 	// rows, resolving to 89 distinct sets across 294,607 datapoints.
 	dict := ingest.NewDictionary(flushed)
-	type scopeKey struct{ ri, si int }
 	resourceIDs := map[int]duckdb.UUID{}
 	scopeIDs := map[scopeKey]duckdb.UUID{}
 
@@ -89,7 +129,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scope)
 			for mi, metric := range scopeMetric.Metrics().All() {
 				if err := ctx.Err(); err != nil {
-					return err
+					return ingest.Rejected{}, err
 				}
 				identity := streamIdentityFromMetric(metric, scope.Name(), scope.Version(), serviceName)
 				identitySet[identity] = struct{}{}
@@ -99,10 +139,10 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 		}
 	}
 	if len(coords) == 0 {
-		return nil
+		return ingest.Rejected{}, nil
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return ingest.Rejected{}, err
 	}
 	identities := make([]streamIdentity, 0, len(identitySet))
 	for id := range identitySet {
@@ -115,7 +155,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	// to match the spans/logs single-file layout.
 	dconn, ok := conn.(*duckdb.Conn)
 	if !ok {
-		return fmt.Errorf("Ingest: %w: connection is not a *duckdb.Conn", ErrMetricsStoreInternal)
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: connection is not a *duckdb.Conn", ErrMetricsStoreInternal)
 	}
 	prepareArg := func(v any) (driver.Value, error) {
 		nv := driver.NamedValue{Value: v}
@@ -145,7 +185,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	serviceNames := make([]string, 0, len(identities))
 	for _, id := range identities {
 		if err := ctx.Err(); err != nil {
-			return err
+			return ingest.Rejected{}, err
 		}
 		newStreamIDs = append(newStreamIDs, uuid.NewString())
 		names = append(names, id.Name)
@@ -162,7 +202,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 		newStreamIDs, names, units, types, temporalities, monotonics,
 		scopeNames, scopeVersions, serviceNames)
 	if err != nil {
-		return fmt.Errorf("Ingest: %w: prep insert arg: %w", ErrMetricsStoreInternal, err)
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: prep insert arg: %w", ErrMetricsStoreInternal, err)
 	}
 
 	const insertSQL = `insert into metric_streams (id, name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
@@ -170,7 +210,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 		        unnest(?::varchar[]), unnest(?::boolean[]), unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[])
 		 on conflict (name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name) do nothing`
 	if _, err := dconn.ExecContext(ctx, insertSQL, insertArgs); err != nil {
-		return fmt.Errorf("Ingest: %w: stream insert: %w", ErrMetricsStoreInternal, err)
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: stream insert: %w", ErrMetricsStoreInternal, err)
 	}
 
 	// The same eight arrays, joined against rather than OR'd together. The
@@ -180,7 +220,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 		names, units, types, temporalities, monotonics,
 		scopeNames, scopeVersions, serviceNames)
 	if err != nil {
-		return fmt.Errorf("Ingest: %w: prep select arg: %w", ErrMetricsStoreInternal, err)
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: prep select arg: %w", ErrMetricsStoreInternal, err)
 	}
 
 	const selectSQL = `select s.id, s.name, s.unit, s.metric_type, s.aggregation_temporality,
@@ -197,7 +237,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 		    and s.scope_version = w.scope_version and s.service_name = w.service_name`
 	rows, err := dconn.QueryContext(ctx, selectSQL, selectArgs)
 	if err != nil {
-		return fmt.Errorf("Ingest: %w: stream select: %w", ErrMetricsStoreInternal, err)
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: stream select: %w", ErrMetricsStoreInternal, err)
 	}
 
 	streamIDs := make(map[streamIdentity]duckdb.UUID, len(identities))
@@ -205,19 +245,19 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	for {
 		if err := ctx.Err(); err != nil {
 			rows.Close()
-			return err
+			return ingest.Rejected{}, err
 		}
 		if err := rows.Next(dest); err != nil {
 			if err.Error() == "EOF" {
 				break
 			}
 			rows.Close()
-			return fmt.Errorf("Ingest: %w: stream scan: %w", ErrMetricsStoreInternal, err)
+			return ingest.Rejected{}, fmt.Errorf("Ingest: %w: stream scan: %w", ErrMetricsStoreInternal, err)
 		}
 		sid, err := decodeStreamID(dest[0])
 		if err != nil {
 			rows.Close()
-			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+			return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 		metricType := stringOrEmpty(dest[3])
 		key := streamIdentity{
@@ -235,7 +275,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	rows.Close()
 
 	if len(streamIDs) != len(identities) {
-		return fmt.Errorf("Ingest: %w: resolved %d of %d stream identities", ErrMetricsStoreInternal, len(streamIDs), len(identities))
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: resolved %d of %d stream identities", ErrMetricsStoreInternal, len(streamIDs), len(identities))
 	}
 
 	// Pass 2: open the appenders and walk the request again, writing
@@ -244,7 +284,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	// alternative would be carrying stream IDs alongside coords, but
 	// the lookup is O(1) and keeps the inner loop self-contained).
 	if err := dict.Flush(ctx, conn); err != nil {
-		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 	}
 
 	// Resolve every datapoint's series before any of them are appended.
@@ -260,11 +300,33 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	// the store, and one derivation each is all they get.
 	dpIdents, seriesRows, err := collectSeries(ctx, m, streamIDs, resourceIDs, dpAttrIDs)
 	if err != nil {
-		return err
+		return ingest.Rejected{}, err
 	}
 	if err := insertSeries(ctx, dconn, prepareArg, seriesRows); err != nil {
-		return err
+		return ingest.Rejected{}, err
 	}
+	// Pass 2: append, retrying in halves so a bad metric costs only itself.
+	return ingest.BisectingWrite(ctx, countMetrics(m), nil, func(lo, hi int) error {
+		return ingest.InTransaction(ctx, conn, func() error {
+			return appendPass(ctx, conn, m, streamIDs, resourceIDs, scopeIDs, dpIdents,
+				func(ordinal int) bool { return ordinal >= lo && ordinal < hi })
+		})
+	})
+}
+
+// appendPass writes the metrics keep selects, by ordinal. Skipped metrics still
+// step dpCur over their datapoints, since dpIdents is consumed by position.
+func appendPass(
+	ctx context.Context,
+	conn driver.Conn,
+	m pmetric.Metrics,
+	streamIDs map[streamIdentity]duckdb.UUID,
+	resourceIDs map[int]duckdb.UUID,
+	scopeIDs map[scopeKey]duckdb.UUID,
+	dpIdents []dpIdentity,
+	keep func(ordinal int) bool,
+) (err error) {
+	tables := []string{"exemplars", "datapoints", "metric_ingests"}
 	dpCur := 0
 
 	appenders, err := ingest.NewAppenders(conn, tables)
@@ -276,6 +338,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	}()
 
 	metricCount := 0
+	metricOrdinal := 0
 	for ri, resourceMetric := range m.ResourceMetrics().All() {
 		resource := resourceMetric.Resource()
 		serviceName := serviceNameFromAttrs(resource.Attributes())
@@ -287,6 +350,14 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 				if err := ctx.Err(); err != nil {
 					return err
 				}
+
+				ordinal := metricOrdinal
+				metricOrdinal++
+				if !keep(ordinal) {
+					dpCur += metricDatapointCount(metric)
+					continue
+				}
+
 				identity := streamIdentityFromMetric(metric, scope.Name(), scope.Version(), serviceName)
 				streamID, ok := streamIDs[identity]
 				if !ok {
@@ -346,8 +417,9 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 	// same order. A divergence would file every point past it under another
 	// series -- wrong lines on a chart, with no error anywhere.
 	if dpCur != len(dpIdents) {
-		return fmt.Errorf("Ingest: %w: datapoint pass mismatch (%d/%d)",
-			ErrMetricsStoreInternal, dpCur, len(dpIdents))
+		// ErrNotRowFault: our bug, not a row's, so bisection must not search.
+		return fmt.Errorf("Ingest: %w: %w: datapoint pass mismatch (%d/%d)",
+			ErrMetricsStoreInternal, ingest.ErrNotRowFault, dpCur, len(dpIdents))
 	}
 
 	return nil
