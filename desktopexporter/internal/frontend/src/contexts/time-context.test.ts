@@ -3,6 +3,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import { tick } from 'svelte'
 import { screen } from '@testing-library/svelte'
 import type { TimeContext } from '@/contexts/time-context.svelte'
+import { isDefaultUnboundedWindow } from '@/contexts/time-context.svelte'
 import { loadRecentTimeRanges } from '@/utils/time'
 import TimeProbe from '@/test/TimeProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -228,5 +229,30 @@ describe('time context setTz', () => {
     setTestUrl('/traces')
     renderProbe()
     expect(reportedTz()).toBe('local')
+  })
+})
+
+describe('isDefaultUnboundedWindow', () => {
+  it('treats a start at the epoch as the unbounded default, whatever produced it', () => {
+    // The test is the window, not the route taken to it: the "All" preset, a
+    // recent re-entry of it, and a custom range from zero are the same window.
+    for (const type of ['preset', 'custom', 'recent'] as const) {
+      expect(
+        isDefaultUnboundedWindow({ type, start: 0, end: 1000, presetIndex: 3 })
+      ).toBe(true)
+    }
+  })
+
+  it('treats any bounded start as a request', () => {
+    // Including the case the removed branch used to misread: preset index 0
+    // with a nonzero start would have claimed unbounded by route alone.
+    expect(
+      isDefaultUnboundedWindow({
+        type: 'preset',
+        start: 1_000,
+        end: 2_000,
+        presetIndex: 0,
+      })
+    ).toBe(false)
   })
 })
