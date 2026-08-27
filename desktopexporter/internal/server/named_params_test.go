@@ -102,8 +102,8 @@ func TestEveryMethodHasParamNames(t *testing.T) {
 	unnamed := map[string]bool{
 		"clearTraces": true, "clearLogs": true, "clearMetrics": true,
 		"getStats":             true,
-		"deleteSpansByTraceID": true, "deleteSpanByID": true,
-		"deleteLogByID": true,
+		"deleteSpansByTraceID": true,
+		"deleteLogByID":        true,
 	}
 	for _, m := range dispatchedMethods() {
 		if unnamed[m] {
@@ -138,7 +138,7 @@ func dispatchedMethods() []string {
 // with an explanation beats a silent no-op.
 func TestVariadicMethodsRefuseNamedParams(t *testing.T) {
 	for _, method := range []string{
-		"deleteSpansByTraceID", "deleteSpanByID", "deleteLogByID",
+		"deleteSpansByTraceID", "deleteLogByID",
 	} {
 		t.Run(method, func(t *testing.T) {
 			_, err := normalizeParams(method, json.RawMessage(`{"traceIDs":["a","b"]}`))

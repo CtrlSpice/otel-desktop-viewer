@@ -91,8 +91,6 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.deleteMetricStream(ctx, req)
 	case "deleteSpansByTraceID":
 		return h.deleteSpansByTraceID(ctx, req)
-	case "deleteSpanByID":
-		return h.deleteSpanByID(ctx, req)
 	case "deleteLogByID":
 		return h.deleteLogByID(ctx, req)
 	case "getTraceAttributes":
@@ -622,25 +620,6 @@ func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2
 	}, nil
 }
 
-// deleteSpanByID deletes one or more specific spans by their IDs.
-func (h *JSONRPCHandler) deleteSpanByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	spanIDs, err := h.parseIDParams(req, ErrInvalidSpanID, normalizeSpanID)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := h.store.WithDBWrite(func(db *sql.DB) error {
-		return spans.DeleteSpansByIDs(ctx, db, spanIDs)
-	}); err != nil {
-		return nil, h.handleStoreError(err)
-	}
-
-	return map[string]any{
-		"message": "Spans deleted successfully",
-		"count":   len(spanIDs),
-	}, nil
-}
-
 // deleteLogByID deletes one or more specific logs by their IDs.
 func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	logIDs, err := h.parseIDParams(req, ErrInvalidLogID, normalizeUUID)
@@ -930,17 +909,6 @@ func normalizeUUID(s string) (string, error) {
 		return "", err
 	}
 	return id.String(), nil
-}
-
-// normalizeSpanID additionally accepts the 16-char hex span ID the API serves
-// in span payloads (OTLP span IDs are 8 bytes). Ingest zero-pads those into
-// the low bytes of the span_id uuid column, so the same padding is applied
-// here before the lookup.
-func normalizeSpanID(s string) (string, error) {
-	if len(s) == 16 {
-		return normalizeUUID("0000000000000000" + s)
-	}
-	return normalizeUUID(s)
 }
 
 // parseTimestampParam parses a timestamp parameter that must be a JSON string

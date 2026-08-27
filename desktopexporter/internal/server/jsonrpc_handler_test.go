@@ -359,7 +359,6 @@ func TestDeleteParamValidation(t *testing.T) {
 		invalidErr error
 	}{
 		{"deleteSpansByTraceID", ErrInvalidTraceID},
-		{"deleteSpanByID", ErrInvalidSpanID},
 		{"deleteLogByID", ErrInvalidLogID},
 	}
 
@@ -420,13 +419,11 @@ func TestDeleteParamValidation(t *testing.T) {
 				assert.Equal(t, 2, response["count"])
 			})
 
-			// Span payloads carry 16-char hex span IDs (OTLP wire form);
-			// only deleteSpanByID accepts them.
+			// 16-char hex is a span ID wire form; neither remaining delete
+			// method accepts one.
 			t.Run("16-Hex Wire Form", func(t *testing.T) {
 				result, err := handler.Handle(ctx, createRequest(tc.method, []string{"0000000000000001"}))
-				if tc.method == "deleteSpanByID" {
-					assert.NoError(t, err)
-				} else {
+				{
 					assert.Nil(t, result)
 					assert.Equal(t, tc.invalidErr, err)
 				}
@@ -595,27 +592,6 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 	var summaries []map[string]any
 	assert.NoError(t, json.Unmarshal(raw, &summaries))
 	assert.Len(t, summaries, 0, "trace should be gone after delete")
-}
-
-func TestDeleteSpanByID(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
-	ctx := context.Background()
-
-	// The API serves span IDs in 16-char hex wire form; delete must round-trip it.
-	result, err := handler.Handle(ctx, createRequest("deleteSpanByID", []string{"0000000000000001"}))
-	assert.NoError(t, err)
-	response, ok := result.(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, 1, response["count"])
-
-	searchResult, err := handler.Handle(ctx, createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
-	assert.NoError(t, err)
-	raw, ok := searchResult.(json.RawMessage)
-	require.True(t, ok)
-	var summaries []map[string]any
-	assert.NoError(t, json.Unmarshal(raw, &summaries))
-	assert.Len(t, summaries, 0, "the trace's only span should be gone after delete")
 }
 
 func TestDeleteLogByID(t *testing.T) {

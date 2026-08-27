@@ -25,7 +25,7 @@ import (
 // Adding a parameter means appending here as well, and a test walks every
 // method to catch a list that has fallen behind its handler's bounds.
 //
-// deleteSpansByTraceID, deleteSpanByID and deleteLogByID are deliberately
+// deleteSpansByTraceID and deleteLogByID are deliberately
 // absent. They are variadic -- parseIDParams reads the whole params array as
 // the list of ids, so ["a","b"] is two ids rather than one parameter holding
 // two. There is no position to give a name to, and modelling them as a single

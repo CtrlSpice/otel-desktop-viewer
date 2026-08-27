@@ -621,7 +621,7 @@ export type JsonAttributeMatch = JsonAttributeDefinition & {
 
 // --- Mutation results ---
 
-// deleteSpansByTraceID / deleteSpanByID / deleteLogByID.
+// deleteSpansByTraceID / deleteLogByID.
 // `count` is the number of IDs accepted, not rows removed.
 export type JsonDeleteResult = {
   message: string
