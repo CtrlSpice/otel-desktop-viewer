@@ -26,6 +26,10 @@ var (
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
+// scopeKey identifies a scope by its position in the batch: the ri'th resource's
+// si'th scope. Pass 1 resolves each to a dictionary id and pass 2 reads it back.
+type scopeKey struct{ ri, si int }
+
 // flushIntervalSpans bounds how many spans accumulate in the appenders before
 // they are pushed to DuckDB. It exists to cap memory on a pathological batch,
 // not to make writes visible sooner -- nothing reads mid-batch, since ingest
@@ -75,15 +79,26 @@ func resourceServiceName(attrs pcommon.Map) string {
 // because the inserts commit before any appender flush, and the appenders open
 // after the resolve -- the same shape metrics.Ingest already used for its
 // stream upsert.
-func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (err error) {
+// Ingest is IngestReport for callers with nowhere to put the report. Rows the
+// store refused are still skipped rather than failing the batch; this form just
+// cannot tell you how many there were.
+func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) error {
+	_, err := IngestReport(ctx, conn, traces, flushed)
+	return err
+}
+
+// IngestReport ingests a batch and reports the spans it could not write.
+//
+// A non-empty RejectedSpans is not a failure: the batch landed, minus the rows
+// the store refused. Only a fault that stops the whole batch returns an error.
+func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (ingest.Rejected, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return ingest.Rejected{}, err
 	}
 
 	// Pass 1: hash everything and resolve resource/scope identities.
 	dict := ingest.NewDictionary(flushed)
 
-	type scopeKey struct{ ri, si int }
 	resourceIDs := map[int]duckdb.UUID{}
 	scopeIDs := map[scopeKey]duckdb.UUID{}
 
@@ -115,10 +130,31 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 	}
 
 	if err := dict.Flush(ctx, conn); err != nil {
-		return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 	}
 
-	// Pass 2: append the signal rows.
+	// Pass 2: append the signal rows, retrying in narrowing halves so a bad row
+	// costs its own batch rather than everyone else's.
+	return appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
+		spanAttrs, eventAttrs, linkAttrs)
+}
+
+// appendPass writes the signal rows for the spans keep says to write.
+//
+// keep is indexed by the span's ordinal in the walk, not by its id: a batch can
+// carry the same span id twice, and the two occurrences have to be separable so
+// the first can be kept and the second dropped. Skipped spans still advance the
+// event and link cursors, because those slices are consumed by position and
+// pass 1 filled them for every span whether or not this pass writes it.
+func appendPass(
+	ctx context.Context,
+	conn driver.Conn,
+	traces ptrace.Traces,
+	resourceIDs map[int]duckdb.UUID,
+	scopeIDs map[scopeKey]duckdb.UUID,
+	spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID,
+	keep func(ordinal int) bool,
+) (err error) {
 	tables := []string{"events", "links", "spans"}
 	appenders, err := ingest.NewAppenders(conn, tables)
 	if err != nil {
@@ -145,6 +181,15 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 			for _, span := range scopeSpan.Spans().All() {
 				if err := ctx.Err(); err != nil {
 					return err
+				}
+
+				if !keep(spanCur) {
+					// Consumed by position, so a span this pass declines to
+					// write still has to be stepped over in all three slices.
+					spanCur++
+					eventCur += span.Events().Len()
+					linkCur += span.Links().Len()
+					continue
 				}
 
 				traceUUID := duckdb.UUID(span.TraceID())
