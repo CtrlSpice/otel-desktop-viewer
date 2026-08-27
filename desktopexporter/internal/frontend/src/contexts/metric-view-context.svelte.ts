@@ -537,6 +537,11 @@ export function createMetricViewContext(
   // per-metric effect first applies the URL.
   let urlMetricViewSnapshot: MetricViewQuery | null = null
 
+  // What seeding resolved the aggregation to for the current metric
+  // (persisted choice, else the smart default). This is the state a URL with
+  // no `agg` was showing, so it is what an absent param restores.
+  let seededAggregationView: AggregationView = 'raw'
+
   function metricParseContext(): MetricViewParseContext {
     const datapointIDs = new Set<string>()
     for (const dp of allDatapoints(getMetric())) datapointIDs.add(dp.id)
@@ -563,7 +568,10 @@ export function createMetricViewContext(
     }
     return {
       kind: 'timeseries',
-      agg: view.aggregationView === 'raw' ? null : view.aggregationView,
+      // 'raw' is written out like any other value. Omitting it made "the user
+      // chose raw" and "nobody ever wrote an aggregation" the same URL, and
+      // nothing downstream could tell them apart (#235).
+      agg: view.aggregationView,
       dp: view.selectedDatapointID,
       series: selectedSeriesKey,
     }
@@ -572,24 +580,19 @@ export function createMetricViewContext(
   /**
    * Applies the URL's metric sub-view to the view state.
    *
-   * `resetMissingAgg` picks the semantics for an absent `agg` param
-   * (`q.agg` is pre-validated: null when missing or invalid):
-   * - `false` (metric load): keep the smart default / persisted choice the
-   *   per-metric effect just set. A bare URL carries no opinion on load.
-   * - `true` (external navigation): reset to 'raw'. The serializer omits
-   *   `agg` for 'raw', so on back/forward an absent param IS the state the
-   *   user navigated to (#235).
+   * An absent `agg` (`q.agg` is pre-validated: null when missing or invalid)
+   * restores what seeding resolved for this metric, because that is the state
+   * the URL was showing before anything wrote an aggregation to it. It used to
+   * mean 'raw', which was only ever right by accident: every write now spells
+   * the aggregation out, so a param-free URL is one the app never wrote, and
+   * going back to it returns to the metric's default rather than to raw (#235).
    */
-  function applyMetricUrlToView(resetMissingAgg: boolean): void {
+  function applyMetricUrlToView(): void {
     const q = parseMetricViewQuery(readRoute().query, metricParseContext())
     urlMetricViewSnapshot = q
 
     if (q.kind === 'timeseries') {
-      if (q.agg) {
-        view.aggregationView = q.agg as AggregationView
-      } else if (resetMissingAgg) {
-        view.aggregationView = 'raw'
-      }
+      view.aggregationView = (q.agg as AggregationView) ?? seededAggregationView
     } else {
       view.activeHistogramTab = q.htab
       view.histogramScope = q.hscope
@@ -1698,11 +1701,12 @@ export function createMetricViewContext(
     // already validated against the same list; the default was not, so the two
     // rules only had to disagree once to seed a view the user could neither see
     // selected nor switch away from. 'raw' is in the list unconditionally.
-    view.aggregationView =
+    seededAggregationView =
       persistedAggregationView ??
       (availableAggregationViewsList.includes(defaultAggregation)
         ? defaultAggregation
         : 'raw')
+    view.aggregationView = seededAggregationView
     view.showSelectionStatOverlays = true
     view.showAllSeriesAggregate = streamID
       ? loadPersistedShowAllSeriesAggregate(streamID)
@@ -1771,7 +1775,7 @@ export function createMetricViewContext(
     // No untrack needed any more: this is a plain call from the fetch, not a
     // reactive scope, so reading the router query here cannot make a
     // time-window write re-trigger the whole per-metric reset.
-    applyMetricUrlToView(false)
+    applyMetricUrlToView()
   }
 
   // -- Effects (the only mutating side-channels) --
@@ -1795,7 +1799,7 @@ export function createMetricViewContext(
       ) {
         return
       }
-      applyMetricUrlToView(true)
+      applyMetricUrlToView()
     })
     return unsubscribe
   })
