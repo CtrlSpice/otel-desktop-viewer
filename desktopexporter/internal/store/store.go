@@ -27,7 +27,6 @@ const maxPoolConns = 4
 var (
 	ErrStoreConnectionClosed = errors.New("store connection is closed")
 	ErrStoreInitFailed       = errors.New("store initialization failed")
-	ErrStoreTransaction      = errors.New("store transaction failed")
 )
 
 type Store struct {
@@ -246,11 +245,8 @@ func (s *Store) Close() error {
 // Lock order is ingestMu then mu, and nothing acquires them the other way
 // round, so the pair cannot deadlock.
 //
-// No transaction is opened here. Ingest owns its own, per appender pass,
-// because a failed pass is retried in narrowing halves to isolate the rows
-// that caused it -- and DuckDB has neither nested transactions ("cannot start
-// a transaction within a transaction") nor SAVEPOINT, so each attempt has to
-// be top level. See ingest.InTransaction.
+// No transaction here: ingest opens one per bisection attempt, and DuckDB has
+// no nested transactions. See ingest.InTransaction.
 func (s *Store) WithConn(fn func(conn driver.Conn) error) error {
 	s.ingestMu.Lock()
 	defer s.ingestMu.Unlock()

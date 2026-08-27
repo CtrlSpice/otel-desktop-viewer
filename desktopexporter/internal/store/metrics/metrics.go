@@ -32,14 +32,12 @@ var (
 // the others.
 const flushIntervalMetrics = 100
 
-// scopeKey identifies a scope by its position in the batch: the ri'th
-// resource's si'th scope.
+// scopeKey identifies a scope by position: the ri'th resource's si'th scope.
 type scopeKey struct{ ri, si int }
 
-// countMetrics is the number of metrics in the batch, which is the unit
-// bisection blames and the unit flushIntervalMetrics already counts. Walked
-// rather than taken from pass 1's coords, which skips identities it cannot
-// resolve and so would not line up with pass 2's ordinals.
+// countMetrics counts metrics, the unit bisection blames. Walked rather than
+// read from pass 1's coords, which skips unresolvable identities and so would
+// not line up with pass 2's ordinals.
 func countMetrics(m pmetric.Metrics) int {
 	n := 0
 	for _, rm := range m.ResourceMetrics().All() {
@@ -50,9 +48,8 @@ func countMetrics(m pmetric.Metrics) int {
 	return n
 }
 
-// metricDatapointCount mirrors the type switch in appendPass exactly. A metric
-// that pass skips still has to step dpCur over its datapoints, and a type the
-// switch does not write contributes none.
+// metricDatapointCount mirrors appendPass's type switch, so a skipped metric
+// steps dpCur over exactly the datapoints that pass would have written.
 func metricDatapointCount(metric pmetric.Metric) int {
 	switch metric.Type() {
 	case pmetric.MetricTypeGauge:
@@ -308,8 +305,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	if err := insertSeries(ctx, dconn, prepareArg, seriesRows); err != nil {
 		return ingest.Rejected{}, err
 	}
-	// Pass 2: append, retrying in narrowing halves so one unwritable metric
-	// costs its own place in the batch rather than everyone else's.
+	// Pass 2: append, retrying in halves so a bad metric costs only itself.
 	return ingest.BisectingWrite(ctx, countMetrics(m), func(lo, hi int) error {
 		return ingest.InTransaction(ctx, conn, func() error {
 			return appendPass(ctx, conn, m, streamIDs, resourceIDs, scopeIDs, dpIdents,
@@ -318,11 +314,8 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	})
 }
 
-// appendPass writes the metric rows keep says to write.
-//
-// keep is indexed by the metric's ordinal in the walk. A skipped metric still
-// steps dpCur over its datapoints, because dpIdents is consumed by position and
-// collectSeries filled it for every metric whether or not this pass writes it.
+// appendPass writes the metrics keep selects, by ordinal. Skipped metrics still
+// step dpCur over their datapoints, since dpIdents is consumed by position.
 func appendPass(
 	ctx context.Context,
 	conn driver.Conn,
@@ -361,8 +354,6 @@ func appendPass(
 				ordinal := metricOrdinal
 				metricOrdinal++
 				if !keep(ordinal) {
-					// dpIdents is consumed by position, so a metric this pass
-					// declines to write still has to be stepped over.
 					dpCur += metricDatapointCount(metric)
 					continue
 				}
@@ -426,8 +417,7 @@ func appendPass(
 	// same order. A divergence would file every point past it under another
 	// series -- wrong lines on a chart, with no error anywhere.
 	if dpCur != len(dpIdents) {
-		// ErrNotRowFault: a fault in this code, identical for every subset,
-		// so bisection must surface it instead of blaming metrics.
+		// ErrNotRowFault: our bug, not a row's, so bisection must not search.
 		return fmt.Errorf("Ingest: %w: %w: datapoint pass mismatch (%d/%d)",
 			ErrMetricsStoreInternal, ingest.ErrNotRowFault, dpCur, len(dpIdents))
 	}

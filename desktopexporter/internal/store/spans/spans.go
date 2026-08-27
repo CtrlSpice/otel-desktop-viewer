@@ -26,8 +26,7 @@ var (
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
-// scopeKey identifies a scope by its position in the batch: the ri'th resource's
-// si'th scope. Pass 1 resolves each to a dictionary id and pass 2 reads it back.
+// scopeKey identifies a scope by position: the ri'th resource's si'th scope.
 type scopeKey struct{ ri, si int }
 
 // flushIntervalSpans bounds how many spans accumulate in the appenders before
@@ -64,33 +63,23 @@ func resourceServiceName(attrs pcommon.Map) string {
 	return ""
 }
 
-// Ingest ingests trace spans from pdata into the spans, events, links, and
-// attributes tables. The caller must hold any required lock on the connection.
-//
-// Two passes. The first walks the resource/scope hierarchy, hashing every
-// attribute into a Dictionary and resolving each resource and scope to a
-// content-derived id; it then writes the dictionary in three inserts. The
-// second opens the appenders and walks again, appending owners with the id
-// arrays the first pass produced.
-//
-// The split exists because the dictionary needs conflict handling and the
-// appender has none: its whole surface is AppendRow/Flush/Clear/Close, and a
-// duplicate errors at flush and takes the chunk with it. Ordering is safe
-// because the inserts commit before any appender flush, and the appenders open
-// after the resolve -- the same shape metrics.Ingest already used for its
-// stream upsert.
-// Ingest is IngestReport for callers with nowhere to put the report. Rows the
-// store refused are still skipped rather than failing the batch; this form just
-// cannot tell you how many there were.
+// Ingest is IngestReport for callers with nowhere to put the report. Refused
+// rows are still skipped rather than failing the batch.
 func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) error {
 	_, err := IngestReport(ctx, conn, traces, flushed)
 	return err
 }
 
-// IngestReport ingests a batch and reports the spans it could not write.
+// IngestReport ingests trace spans into the spans, events, links and attributes
+// tables, reporting the spans it could not write. A non-empty Rejected is not a
+// failure: the batch landed without them. The caller must hold any required
+// lock on the connection.
 //
-// A non-empty RejectedSpans is not a failure: the batch landed, minus the rows
-// the store refused. Only a fault that stops the whole batch returns an error.
+// Two passes. The first hashes every attribute into a Dictionary, resolves each
+// resource and scope to a content-derived id, and writes the dictionary in
+// three inserts. The second appends the owner rows with the id arrays the first
+// produced. They are split because the dictionary needs conflict handling and
+// the appender has none.
 func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (ingest.Rejected, error) {
 	if err := ctx.Err(); err != nil {
 		return ingest.Rejected{}, err
@@ -133,19 +122,14 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 	}
 
-	// Pass 2: append the signal rows, retrying in narrowing halves so a bad row
-	// costs its own batch rather than everyone else's.
+	// Pass 2: append, retrying in halves so a bad row costs only itself.
 	return appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
 		spanAttrs, eventAttrs, linkAttrs)
 }
 
-// appendPass writes the signal rows for the spans keep says to write.
-//
-// keep is indexed by the span's ordinal in the walk, not by its id: a batch can
-// carry the same span id twice, and the two occurrences have to be separable so
-// the first can be kept and the second dropped. Skipped spans still advance the
-// event and link cursors, because those slices are consumed by position and
-// pass 1 filled them for every span whether or not this pass writes it.
+// appendPass writes the spans keep selects, by ordinal rather than id so two
+// occurrences of one id stay separable. Skipped spans still advance all three
+// cursors, which are consumed by position.
 func appendPass(
 	ctx context.Context,
 	conn driver.Conn,
@@ -184,8 +168,6 @@ func appendPass(
 				}
 
 				if !keep(spanCur) {
-					// Consumed by position, so a span this pass declines to
-					// write still has to be stepped over in all three slices.
 					spanCur++
 					eventCur += span.Events().Len()
 					linkCur += span.Links().Len()
@@ -294,10 +276,7 @@ func appendPass(
 	// other span's attributes -- corruption with no error, which is why this is
 	// checked rather than assumed.
 	if spanCur != len(spanAttrs) || eventCur != len(eventAttrs) || linkCur != len(linkAttrs) {
-		// ErrNotRowFault because this is a fault in this code, not in any
-		// row: it fails identically for every subset, so bisecting it would
-		// blame each span in turn and report the whole thing as a quiet
-		// tally rather than the loud failure it is meant to be.
+		// ErrNotRowFault: our bug, not a row's, so bisection must not search.
 		return fmt.Errorf("Ingest: %w: %w: pass mismatch (spans %d/%d, events %d/%d, links %d/%d)",
 			ErrSpansStoreInternal, ingest.ErrNotRowFault, spanCur, len(spanAttrs),
 			eventCur, len(eventAttrs), linkCur, len(linkAttrs))

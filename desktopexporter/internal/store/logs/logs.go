@@ -59,8 +59,7 @@ var (
 // trade for a desktop tool sharing RAM with the user's actual work.
 const flushIntervalLogs = 500
 
-// scopeKey identifies a scope by its position in the batch: the ri'th
-// resource's si'th scope.
+// scopeKey identifies a scope by position: the ri'th resource's si'th scope.
 type scopeKey struct{ ri, si int }
 
 // Ingest ingests log records from pdata into the logs table.
@@ -109,8 +108,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed
 		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
 	}
 
-	// Pass 2: append, retrying in narrowing halves so one unwritable record
-	// costs its own place in the batch rather than everyone else's.
+	// Pass 2: append, retrying in halves so a bad record costs only itself.
 	return ingest.BisectingWrite(ctx, len(logAttrs), func(lo, hi int) error {
 		return ingest.InTransaction(ctx, conn, func() error {
 			return appendPass(ctx, conn, logs, resourceIDs, scopeIDs, logAttrs,
@@ -119,12 +117,8 @@ func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed
 	})
 }
 
-// appendPass writes the log rows keep says to write.
-//
-// keep is indexed by the record's ordinal in the walk, not by any id: ordinals
-// are what bisection halves, and they keep two occurrences of a repeated
-// identity separable. A skipped record still advances the cursor, because
-// logAttrs is consumed by position and pass 1 filled it for every record.
+// appendPass writes the records keep selects, by ordinal. Skipped records
+// still advance logCur, which is consumed by position.
 func appendPass(
 	ctx context.Context,
 	conn driver.Conn,
@@ -162,7 +156,7 @@ func appendPass(
 				}
 
 				if !keep(logCur) {
-					logCur++ // consumed by position, so still step over it
+					logCur++
 					continue
 				}
 
@@ -221,8 +215,7 @@ func appendPass(
 	// The two passes must have visited the same logs; a divergence would pair
 	// each record past that point with another record's attributes, silently.
 	if logCur != len(logAttrs) {
-		// ErrNotRowFault: a fault in this code, identical for every subset,
-		// so bisection must surface it instead of blaming rows.
+		// ErrNotRowFault: our bug, not a row's, so bisection must not search.
 		return fmt.Errorf("Ingest: %w: %w: pass mismatch (logs %d/%d)",
 			ErrLogsStoreInternal, ingest.ErrNotRowFault, logCur, len(logAttrs))
 	}
