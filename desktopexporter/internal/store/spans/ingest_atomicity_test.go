@@ -84,10 +84,7 @@ func TestIngest_OneDuplicateDoesNotCostTheBatch(t *testing.T) {
 
 	assert.Equal(t, 1, rep.Count, "exactly one span should have been rejected")
 	require.Error(t, rep.Reason)
-	// DuckDB words this two ways -- "Duplicate key ... violates primary key
-	// constraint" when the collision is with a stored row, "PRIMARY KEY or
-	// UNIQUE constraint violation: duplicate key" when it is within the batch.
-	assert.Contains(t, rep.Reason.Error(), "uplicate key",
+	assert.ErrorIs(t, rep.Reason, spans.ErrSpanAlreadyStored,
 		"the report should say why, so a sender can tell its ids are being reused")
 
 	assert.Equal(t, 599, countRows(t, s, ctx, "select count(*) from spans"))
@@ -171,4 +168,53 @@ func TestIngest_NoDanglingAttributeReferences(t *testing.T) {
 		from (select unnest(attribute_ids) as id from spans) x
 		where not exists (select 1 from attributes a where a.id = x.id)
 	`), "spans reference dictionary rows that do not exist")
+}
+
+// When a batch repeats an id, the first occurrence is the one that lands.
+// Bisection attempts ranges in order to make this true rather than incidental,
+// and dedupe keeps the first ordinal it sees for the same reason.
+func TestIngest_FirstOccurrenceOfARepeatedIDWins(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	tr := ptrace.NewTraces()
+	rs := tr.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "first-wins")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("sc")
+	traceID := mustDecodeTraceID("000000000000000000000000000000cc")
+
+	for _, name := range []string{"first", "second"} {
+		sp := ss.Spans().AppendEmpty()
+		sp.SetTraceID(traceID)
+		sp.SetSpanID(mustDecodeSpanID("0000000000000001")) // same id twice
+		sp.SetName(name)
+		sp.SetStartTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		sp.SetEndTimestamp(pcommon.Timestamp(time.Now().UnixNano() + 1))
+	}
+
+	rep, err := ingestReport(t, s, tr)
+	require.NoError(t, err)
+	assert.Equal(t, 1, rep.Count)
+	assert.Equal(t, 1, countRows(t, s, ctx, "select count(*) from spans"))
+	assert.Equal(t, 1, countRows(t, s, ctx,
+		"select count(*) from spans where name = 'first'"),
+		"the first occurrence should be the one stored")
+}
+
+// A batch mixing stored and new spans keeps the new ones.
+func TestIngest_MixedResendKeepsTheNewSpans(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	_, err := ingestReport(t, s, tracesWithDuplicateSpanID(100, 0))
+	require.NoError(t, err)
+	require.Equal(t, 100, countRows(t, s, ctx, "select count(*) from spans"))
+
+	// 150 spans, ids 1..150: the first 100 are already stored.
+	rep, err := ingestReport(t, s, tracesWithDuplicateSpanID(150, 0))
+	require.NoError(t, err)
+	assert.Equal(t, 100, rep.Count, "the overlap should be reported")
+	assert.Equal(t, 150, countRows(t, s, ctx, "select count(*) from spans"),
+		"the 50 new spans should have landed")
 }

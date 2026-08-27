@@ -101,12 +101,16 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 	// so a future edit that desynchronises the two passes fails loudly instead
 	// of silently pairing a span with another span's attributes.
 	var spanAttrs, eventAttrs, linkAttrs [][]duckdb.UUID
+	// Span ids in walk order, so dedupe below can speak in the same ordinals
+	// the append pass and bisection do.
+	var spanIDs []duckdb.UUID
 
 	for ri, resourceSpan := range traces.ResourceSpans().All() {
 		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource())
 		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
 			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope())
 			for _, span := range scopeSpan.Spans().All() {
+				spanIDs = append(spanIDs, spanUUID(span.SpanID()))
 				spanAttrs = append(spanAttrs, dict.AddAttributes(span.Attributes(), ingest.ScopeSpan))
 				for _, event := range span.Events().All() {
 					eventAttrs = append(eventAttrs, dict.AddAttributes(event.Attributes(), ingest.ScopeEvent))
@@ -122,9 +126,27 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
 	}
 
+	// Skip ids the store already holds before writing rather than after
+	// failing: bisection would find them, but one transaction at a time.
+	skip, err := skipAlreadyStored(ctx, conn, spanIDs)
+	if err != nil {
+		return ingest.Rejected{}, err
+	}
+
 	// Pass 2: append, retrying in halves so a bad row costs only itself.
-	return appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
-		spanAttrs, eventAttrs, linkAttrs)
+	rejected, err := appendSpansBisecting(ctx, conn, traces, resourceIDs, scopeIDs,
+		spanAttrs, eventAttrs, linkAttrs, skip)
+	if err != nil {
+		return rejected, err
+	}
+
+	if len(skip) > 0 {
+		rejected.Count += len(skip)
+		if rejected.Reason == nil {
+			rejected.Reason = ErrSpanAlreadyStored
+		}
+	}
+	return rejected, nil
 }
 
 // appendPass writes the spans keep selects, by ordinal rather than id so two
