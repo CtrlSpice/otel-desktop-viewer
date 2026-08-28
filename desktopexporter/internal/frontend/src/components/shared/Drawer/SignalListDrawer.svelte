@@ -744,11 +744,16 @@
     padding-top: var(--layout-gap);
   }
 
-  /* Chrome vertically centered on the full header strip; tabs stay below. */
+  /* Chrome shares the tab row's centerline, not the header strip's. The
+     strip is taller than the tab row (12px of top padding), so centering
+     on the strip floated the buttons 6px above the tab labels. Anchoring
+     to the bottom and padding by (tab row 40px - button 32px) / 2 puts
+     button centers on the label line instead. */
   .signal-drawer__header :global(.pane-header__right) {
-    @apply absolute inset-y-0 right-0 z-10 flex items-center gap-2 pr-2;
+    @apply absolute inset-y-0 right-0 z-10 flex items-end gap-2 pr-2;
     height: auto;
     margin: 0;
+    padding-bottom: 4px;
   }
 
   .signal-drawer__header :global(.pane-header__tab-scroll) {
