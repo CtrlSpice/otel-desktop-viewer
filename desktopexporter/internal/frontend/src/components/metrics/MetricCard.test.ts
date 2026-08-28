@@ -114,7 +114,12 @@ describe('MetricCard series counts', () => {
       metric: makeMetric({ seriesCount: 3, seriesCardinality: 21 }),
       onclick: vi.fn(),
     })
-    expect(screen.getByText('3 of 21 series')).toBeInTheDocument()
+    expect(
+      screen.getByText((_, el) =>
+        el?.classList.contains('badge-count') === true &&
+        el.textContent?.replace(/\s+/g, ' ').trim() === '3 of 21 series'
+      )
+    ).toBeInTheDocument()
   })
 
   // The unbounded-window case, where they agree: "21 of 21" is noise.
@@ -123,7 +128,12 @@ describe('MetricCard series counts', () => {
       metric: makeMetric({ seriesCount: 21, seriesCardinality: 21 }),
       onclick: vi.fn(),
     })
-    expect(screen.getByText('21 series')).toBeInTheDocument()
+    expect(
+      screen.getByText((_, el) =>
+        el?.classList.contains('badge-count') === true &&
+        el.textContent?.replace(/\s+/g, ' ').trim() === '21 series'
+      )
+    ).toBeInTheDocument()
     expect(screen.queryByText(/of 21 series/)).not.toBeInTheDocument()
   })
 })

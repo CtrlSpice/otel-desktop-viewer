@@ -75,7 +75,9 @@
         class="badge-count"
         title="{props.seriesCount} of {total} series reported in this range; the stream has {total} in all"
       >
-        {props.seriesCount} of {total} series
+        {props.seriesCount} of {total}<span class="badge-count__unit"
+          >{' '}series</span
+        >
       </span>
     {:else}
       <!-- Equal, which is the unbounded-window case: one number, because
@@ -84,15 +86,22 @@
         class="badge-count"
         title="{props.seriesCount} time series in range"
       >
-        {props.seriesCount} series
+        {props.seriesCount}<span class="badge-count__unit">{' '}series</span>
       </span>
     {/if}
   {/if}
 {:else if props.signal === 'trace'}
-  <span class="badge-count">
-    {props.spanCount} span{props.spanCount !== 1 ? 's' : ''}
+  <span
+    class="badge-count"
+    title="{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}"
+  >
+    {props.spanCount}<span class="badge-count__unit"
+      >{' '}span{props.spanCount !== 1 ? 's' : ''}</span
+    >
   </span>
   {#if props.errorCount > 0}
+    <!-- The err badge keeps its noun at every width: with the label gone
+         a bare red number would lean on colour alone to say "errors". -->
     <span class="badge badge-xs badge-soft badge-error tabular-nums">
       {props.errorCount} err
     </span>
@@ -106,3 +115,19 @@
     {label} ({props.severityNumber})
   </span>
 {/if}
+
+<style lang="postcss">
+  /* Inside a narrowed drawer (the drawer panel is a size container), the
+     noun folds away and its width goes to the row's title -- +40px on a
+     typical row, exactly where long Kubernetes names hurt. The full
+     phrase survives in the badge's title attribute, and the err badge is
+     exempt above. The threshold is the shared panel default
+     (PANEL_DEFAULT_REM): at or above the default the noun fits; below it,
+     the person narrowed the list and the name matters more. Outside any
+     container -- the detail pane header -- this never applies. */
+  @container (width < 28rem) {
+    .badge-count__unit {
+      display: none;
+    }
+  }
+</style>

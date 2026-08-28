@@ -688,6 +688,34 @@
       color-mix(in oklab, var(--color-base-300) 70%, transparent);
   }
 
+  /* Now that the drawer's width is a variable, its contents adapt by
+     container query -- the nav tabs fold to icons, the row badges to
+     bare counts -- instead of compressing into layouts nobody designed.
+     The containers are these two full-width children rather than the
+     panel itself: the panel's width feeds the daisyUI drawer grid's
+     side-track sizing, and inline-size containment zeroes an element's
+     intrinsic contribution to layout -- keeping containment off the
+     panel keeps that interaction off the table. The children stretch to
+     the panel's width, so querying them means the same thing. */
+  .signal-drawer__header,
+  .signal-drawer__body {
+    container-type: inline-size;
+  }
+
+  /* Two designed states for the nav tabs, never a squeeze. The full
+     labeled strip needs a measured 24.41rem (274.5px strip + 112px
+     chrome reserve + 4px padding); below that the scrollable strip
+     slides under the floating header chrome, which has no background --
+     the Logs tab renders straight through the icons. Under 25rem, the
+     clean value above that need, labels fold to sr-only (the accessible
+     name survives) and each tab shrinks to its icon. Icon-only needs
+     251px, so it fits at every width down to the 22rem floor. */
+  @container (width < 25rem) {
+    .signal-drawer__header :global(.pane-header__tab-label) {
+      @apply sr-only;
+    }
+  }
+
   .signal-drawer__panel--instant {
     transition: none !important;
   }
