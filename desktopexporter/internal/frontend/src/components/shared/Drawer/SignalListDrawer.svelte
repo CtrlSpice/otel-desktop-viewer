@@ -239,7 +239,11 @@
     } else if (e.key === 'ArrowRight') {
       drawerWidth.preview(drawerWidth.rem + step)
     } else if (e.key === 'Home') {
+      // reset() persists itself; preventDefault still matters, or the
+      // browser adds its native Home handling -- a scroll jump to the
+      // top -- on top of the width reset.
       drawerWidth.reset()
+      e.preventDefault()
       return
     } else {
       return

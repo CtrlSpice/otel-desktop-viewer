@@ -392,6 +392,24 @@ describe('SignalListDrawer drag to collapse and reopen', () => {
     ).toBeInTheDocument()
   })
 
+  it('claims the Home key so resetting cannot also scroll the page', async () => {
+    // Every state-mutating branch must preventDefault, or the browser
+    // stacks its native handling (Home: scroll to top) on the reset.
+    localStorage.setItem(DRAWER_OPEN_KEY, 'true')
+    const { drawerWidth } = await import('@/state/drawer-width.svelte')
+    drawerWidth.preview(30)
+    renderDrawer()
+    const el = handle(true)
+    const ev = new KeyboardEvent('keydown', {
+      key: 'Home',
+      bubbles: true,
+      cancelable: true,
+    })
+    el.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(drawerWidth.rem).toBe(28)
+  })
+
   it('closes on ArrowLeft at the floor and reopens on ArrowRight', async () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'true')
     const { drawerWidth, MIN_DRAWER_WIDTH_REM } =
