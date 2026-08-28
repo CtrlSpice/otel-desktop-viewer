@@ -80,6 +80,36 @@ function rowIDs(): string[] {
   )
 }
 
+function navigationSpans(): SpanNode[] {
+  const spans = [
+    spanNode('healthy-before', null, 0),
+    spanNode('error-1', null, 0),
+    spanNode('exception-only', null, 0),
+    spanNode('healthy-middle', null, 0),
+    spanNode('error-2', null, 0),
+    spanNode('healthy-after', null, 0),
+  ]
+  spans[1]!.spanData.statusCode = 'Error'
+  spans[2]!.spanData.events = [
+    {
+      name: 'exception',
+      timestamp: 0n,
+      attributes: [],
+      droppedAttributesCount: 0,
+    },
+  ]
+  spans[4]!.spanData.statusCode = 'Error'
+  return spans
+}
+
+function buttonByLabel(label: string): HTMLButtonElement {
+  const button = [
+    ...document.querySelectorAll<HTMLButtonElement>('button'),
+  ].find(candidate => candidate.getAttribute('aria-label') === label)
+  expect(button, `button labelled "${label}" should exist`).toBeTruthy()
+  return button!
+}
+
 /** Collapse a row through its real toggle, the way a reader does. */
 async function collapseRow(id: string) {
   const btn = document.querySelector<HTMLElement>(
@@ -89,6 +119,141 @@ async function collapseRow(id: string) {
   btn!.click()
   await tick()
 }
+
+describe('WaterfallView error navigation', () => {
+  beforeEach(() => {
+    scrollMock.mockClear()
+    resetCollapseStoreForTests()
+  })
+
+  it('walks status errors forward and backward in waterfall order', async () => {
+    const spans = navigationSpans()
+    const onSelectSpan = vi.fn()
+    const view = renderTree({ spans, onSelectSpan })
+    await tick()
+
+    buttonByLabel('Next error').click()
+    expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
+
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
+    })
+    buttonByLabel('Next error').click()
+    expect(onSelectSpan).toHaveBeenLastCalledWith('error-2')
+
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: 'error-2', onSelectSpan },
+    })
+    buttonByLabel('Previous error').click()
+    expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
+  })
+
+  it('chooses the nearest directional status error from a healthy span', async () => {
+    const spans = navigationSpans()
+    const onSelectSpan = vi.fn()
+    const view = renderTree({
+      spans,
+      selectedSpanID: 'healthy-middle',
+      onSelectSpan,
+    })
+    await tick()
+
+    buttonByLabel('Previous error').click()
+    expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
+
+    buttonByLabel('Next error').click()
+    expect(onSelectSpan).toHaveBeenLastCalledWith('error-2')
+
+    onSelectSpan.mockClear()
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: null, onSelectSpan },
+    })
+    expect(buttonByLabel('Previous error')).toBeDisabled()
+    buttonByLabel('Next error').click()
+    expect(onSelectSpan).toHaveBeenCalledWith('error-1')
+  })
+
+  it('disables unavailable directions without wrapping or selecting', async () => {
+    const spans = navigationSpans()
+    const onSelectSpan = vi.fn()
+    const view = renderTree({
+      spans,
+      selectedSpanID: 'error-1',
+      onSelectSpan,
+    })
+    await tick()
+
+    const previous = buttonByLabel('Previous error')
+    expect(previous).toBeDisabled()
+    previous.click()
+    expect(onSelectSpan).not.toHaveBeenCalled()
+
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: 'error-2', onSelectSpan },
+    })
+    const next = buttonByLabel('Next error')
+    expect(next).toBeDisabled()
+    next.click()
+    expect(onSelectSpan).not.toHaveBeenCalled()
+
+    const healthySpans = spans.map(node => ({
+      ...node,
+      spanData: { ...node.spanData, statusCode: 'Ok', events: [] },
+    }))
+    await view.rerender({
+      componentProps: {
+        spans: healthySpans,
+        selectedSpanID: null,
+        onSelectSpan,
+      },
+    })
+    expect(
+      document.querySelector('button[aria-label="Previous error"]')
+    ).not.toBeInTheDocument()
+    expect(
+      document.querySelector('button[aria-label="Next error"]')
+    ).not.toBeInTheDocument()
+  })
+
+  it('excludes exception-only spans so navigation agrees with the error badge', async () => {
+    const spans = navigationSpans()
+    const onSelectSpan = vi.fn()
+    renderTree({
+      spans,
+      selectedSpanID: 'error-1',
+      onSelectSpan,
+    })
+    await tick()
+
+    expect(document.body).toHaveTextContent('2 err')
+    buttonByLabel('Next error').click()
+    expect(onSelectSpan).toHaveBeenCalledWith('error-2')
+    expect(onSelectSpan).not.toHaveBeenCalledWith('exception-only')
+  })
+
+  it("uses selection scrolling without reopening the reader's collapsed branch", async () => {
+    const spans = deepTree()
+    spans[5]!.spanData.statusCode = 'Error'
+    const onSelectSpan = vi.fn()
+    const view = renderTree({
+      spans,
+      selectedSpanID: 'b',
+      onSelectSpan,
+    })
+    await tick()
+    await collapseRow('c')
+    scrollMock.mockClear()
+
+    buttonByLabel('Next error').click()
+    expect(onSelectSpan).toHaveBeenCalledWith('f')
+
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: 'f', onSelectSpan },
+    })
+    await waitFor(() => expect(scrollMock).toHaveBeenCalled())
+    expect(rowIDs()).toEqual(['a', 'b', 'c'])
+  })
+})
 
 describe('WaterfallView collapse ownership', () => {
   beforeEach(() => {

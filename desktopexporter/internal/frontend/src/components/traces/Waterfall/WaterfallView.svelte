@@ -244,6 +244,7 @@
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
+  import { ArrowLeftIcon, ArrowRightIcon } from '@/icons'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
@@ -362,9 +363,42 @@
     return root ? (getServiceName(root.spanData.resource)?.trim() ?? '') : ''
   })
 
-  let headerErrorCount = $derived(
-    spans.filter(n => n.spanData.statusCode === 'Error').length
+  let errorSpans = $derived(
+    spans.filter(node => node.spanData.statusCode === 'Error')
   )
+  let headerErrorCount = $derived(errorSpans.length)
+
+  let selectedSpanIndex = $derived(
+    selectedSpanID === null
+      ? -1
+      : spans.findIndex(node => node.spanData.spanID === selectedSpanID)
+  )
+
+  let previousErrorSpanID = $derived.by(() => {
+    if (selectedSpanIndex < 0) return null
+    return (
+      spans
+        .slice(0, selectedSpanIndex)
+        .findLast(node => node.spanData.statusCode === 'Error')?.spanData
+        .spanID ?? null
+    )
+  })
+
+  let nextErrorSpanID = $derived.by(() => {
+    const startIndex = selectedSpanIndex < 0 ? 0 : selectedSpanIndex + 1
+    return (
+      spans.slice(startIndex).find(node => node.spanData.statusCode === 'Error')
+        ?.spanData.spanID ?? null
+    )
+  })
+
+  function selectPreviousError() {
+    if (previousErrorSpanID) onSelectSpan(previousErrorSpanID)
+  }
+
+  function selectNextError() {
+    if (nextErrorSpanID) onSelectSpan(nextErrorSpanID)
+  }
 
   // --- Column widths (resizable) ---
   import {
@@ -773,6 +807,30 @@
       />
     {/snippet}
     {#snippet right()}
+      {#if errorSpans.length > 0}
+        <div role="group" aria-label="Error navigation" class="flex shrink-0">
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-square tooltip tooltip-bottom"
+            data-tip="Previous error"
+            onclick={selectPreviousError}
+            disabled={previousErrorSpanID === null}
+            aria-label="Previous error"
+          >
+            <ArrowLeftIcon class="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-square tooltip tooltip-bottom"
+            data-tip="Next error"
+            onclick={selectNextError}
+            disabled={nextErrorSpanID === null}
+            aria-label="Next error"
+          >
+            <ArrowRightIcon class="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      {/if}
       {#if collapsibleSpanIDs.length > 0}
         <button
           type="button"
