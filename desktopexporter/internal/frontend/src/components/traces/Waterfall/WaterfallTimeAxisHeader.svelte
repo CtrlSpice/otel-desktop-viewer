@@ -211,8 +211,11 @@
     tickLabelWidth?: number
     spanColWidth: number
     serviceColWidth: number
-    onResizeSpanCol: (width: number) => void
-    onResizeServiceCol: (width: number) => void
+    /** The header's separators are alternative grab handles for the
+     *  view's column bars -- the drag itself (mechanics, cascade,
+     *  persistence) lives in one place, with the view. This component
+     *  only says which bar was grabbed. */
+    onStartResize: (barId: 'span' | 'service', e: PointerEvent) => void
   }
 
   let {
@@ -221,34 +224,10 @@
     tickLabelWidth = 80,
     spanColWidth,
     serviceColWidth,
-    onResizeSpanCol,
-    onResizeServiceCol,
+    onStartResize,
   }: Props = $props()
 
   let axis = $derived(waterfallTimeAxis(traceDurationNs, targetTickCount))
-
-  function startResize(
-    currentWidth: number,
-    onResize: (width: number) => void,
-    e: PointerEvent
-  ) {
-    const startX = e.clientX
-    const startWidth = currentWidth
-    const target = e.currentTarget as HTMLElement
-    target.setPointerCapture(e.pointerId)
-
-    function onMove(ev: PointerEvent) {
-      onResize(startWidth + (ev.clientX - startX))
-    }
-
-    function onUp() {
-      target.removeEventListener('pointermove', onMove)
-      target.removeEventListener('pointerup', onUp)
-    }
-
-    target.addEventListener('pointermove', onMove)
-    target.addEventListener('pointerup', onUp)
-  }
 </script>
 
 <tr
@@ -265,7 +244,8 @@
       class="resize-handle"
       role="separator"
       aria-orientation="vertical"
-      onpointerdown={e => startResize(spanColWidth, onResizeSpanCol, e)}
+      aria-label="Resize span column"
+      onpointerdown={e => onStartResize('span', e)}
     ></div>
   </th>
   <th
@@ -278,7 +258,8 @@
       class="resize-handle"
       role="separator"
       aria-orientation="vertical"
-      onpointerdown={e => startResize(serviceColWidth, onResizeServiceCol, e)}
+      aria-label="Resize service column"
+      onpointerdown={e => onStartResize('service', e)}
     ></div>
   </th>
   <th scope="col" class="waterfall-time-axis-header__th-ruler">
@@ -353,6 +334,10 @@
 
   .resize-handle {
     @apply absolute top-0 bottom-0 flex items-center justify-center cursor-col-resize;
+    /* Without this the browser can claim the gesture for scrolling on
+       touch or a precision trackpad, cancelling the drag mid-gesture.
+       Same rule as .col-resize-bar. */
+    touch-action: none;
     right: -3px;
     width: 7px;
     z-index: 2;

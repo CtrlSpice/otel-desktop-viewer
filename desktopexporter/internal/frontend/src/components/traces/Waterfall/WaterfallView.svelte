@@ -239,7 +239,7 @@
 </script>
 
 <script lang="ts">
-  import { tick, untrack } from 'svelte'
+  import { onDestroy, tick, untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
@@ -402,14 +402,15 @@
 
   // --- Column widths (resizable) ---
   import {
-    fixed,
     flex,
-    computeInitialWidths,
-    redistributeWidths,
-    computeBarPositions,
-    applyColumnResize,
+    initialWidths,
+    fitWidths,
+    reconcileWidths,
+    barPositions as computeBarPositions,
     startColumnResize,
+    type ColumnWidths,
   } from '@/components/shared/utils/column-resize'
+  import type { DragHandle } from '@/components/shared/utils/drag'
 
   const wfCols = [
     flex('span', 140, 2),
@@ -417,29 +418,67 @@
     flex('timeline', 240, 4),
   ]
 
-  let activeResizeCol = $state<number | null>(null)
-  let colWidths = $state(wfCols.map(d => d.min))
+  /* Widths key by column id, never position: the column set is about to
+   * become user-configurable, and a stored or derived width must land on
+   * the column it belongs to no matter what was added or removed around
+   * it. Stored widths from a different column set reconcile on load. */
+  const COLUMN_WIDTHS_KEY = 'waterfall-column-widths'
 
-  let spanColWidth = $derived(colWidths[0])
-  let serviceColWidth = $derived(colWidths[1])
+  function loadStoredWidths(): ColumnWidths {
+    if (typeof localStorage === 'undefined') return {}
+    try {
+      const parsed: unknown = JSON.parse(
+        localStorage.getItem(COLUMN_WIDTHS_KEY) ?? 'null'
+      )
+      if (parsed === null || typeof parsed !== 'object') return {}
+      const out: ColumnWidths = {}
+      for (const [id, w] of Object.entries(parsed)) {
+        if (typeof w === 'number' && Number.isFinite(w)) out[id] = w
+      }
+      return out
+    } catch {
+      return {}
+    }
+  }
+
+  function saveColumnWidths() {
+    if (typeof localStorage === 'undefined') return
+    try {
+      localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(colWidths))
+    } catch {
+      // A full or blocked store costs the preference, not the drag.
+    }
+  }
+
+  let activeResizeCol = $state<string | null>(null)
+  let colWidths = $state<ColumnWidths>(initialWidths(wfCols, 800))
+  let colDrag: DragHandle | null = null
+
+  let spanColWidth = $derived(colWidths['span'] ?? 0)
+  let serviceColWidth = $derived(colWidths['service'] ?? 0)
 
   let barPositions = $derived(computeBarPositions(wfCols, colWidths))
 
-  function handleStartResize(colIndex: number, e: PointerEvent) {
-    activeResizeCol = colIndex
-    startColumnResize(
+  function handleStartResize(barId: string, e: PointerEvent) {
+    if (activeResizeCol !== null) return
+    activeResizeCol = barId
+    colDrag = startColumnResize(
       wfCols,
-      () => colWidths,
-      colIndex,
+      colWidths,
+      barId,
       e,
       next => {
         colWidths = next
       },
       () => {
         activeResizeCol = null
+        colDrag = null
+        saveColumnWidths()
       }
     )
   }
+
+  onDestroy(() => colDrag?.cancel())
 
   let scrollContainerEl = $state<HTMLDivElement | null>(null)
   let scrollContainerW = $state(800)
@@ -447,13 +486,17 @@
   $effect(() => {
     if (!scrollContainerEl) return
     untrack(() => {
-      colWidths = computeInitialWidths(wfCols, scrollContainerEl!.clientWidth)
+      colWidths = reconcileWidths(
+        wfCols,
+        loadStoredWidths(),
+        scrollContainerEl!.clientWidth
+      )
     })
     const ro = new ResizeObserver(entries => {
       const w = entries[0]?.contentRect.width ?? 800
       scrollContainerW = w
       if (activeResizeCol === null) {
-        colWidths = redistributeWidths(wfCols, colWidths, w)
+        colWidths = fitWidths(wfCols, colWidths, w)
       }
     })
     ro.observe(scrollContainerEl)
@@ -863,14 +906,7 @@
             tickLabelWidth={TICK_LABEL_SLOT_PX}
             {spanColWidth}
             {serviceColWidth}
-            onResizeSpanCol={w => {
-              const next = applyColumnResize(wfCols, colWidths, 0, w)
-              if (next !== colWidths) colWidths = next
-            }}
-            onResizeServiceCol={w => {
-              const next = applyColumnResize(wfCols, colWidths, 1, w)
-              if (next !== colWidths) colWidths = next
-            }}
+            onStartResize={handleStartResize}
           />
         </thead>
       </table>
@@ -914,15 +950,15 @@
           {/snippet}
         </VirtualList>
       </div>
-      {#each barPositions as bar}
+      {#each barPositions as bar (bar.id)}
         <div
           class="col-resize-bar col-resize-bar--guide"
-          class:col-resize-bar--active={activeResizeCol === bar.index}
+          class:col-resize-bar--active={activeResizeCol === bar.id}
           style:left="{bar.left}px"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize {wfCols[bar.index].id} column"
-          onpointerdown={e => handleStartResize(bar.index, e)}
+          aria-label="Resize {bar.id} column"
+          onpointerdown={e => handleStartResize(bar.id, e)}
         >
           <div class="col-resize-bar__line"></div>
         </div>
