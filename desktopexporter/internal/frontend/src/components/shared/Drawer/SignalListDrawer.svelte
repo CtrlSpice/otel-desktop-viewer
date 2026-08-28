@@ -19,7 +19,7 @@
 
 <script lang="ts" generics="T">
   import type { Snippet } from 'svelte'
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import {
     ArrowRightIcon,
@@ -30,6 +30,12 @@
     HomeIcon,
   } from '@/icons'
   import ThemeToggle from '@/components/shared/ThemeToggle.svelte'
+  import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
+  import {
+    drawerWidth,
+    MIN_DRAWER_WIDTH_REM,
+    MAX_DRAWER_WIDTH_REM,
+  } from '@/state/drawer-width.svelte'
   import DrawerNavTabs from '@/components/shared/Drawer/DrawerNavTabs.svelte'
   import {
     NAV_ITEMS,
@@ -104,6 +110,55 @@
 
   const initialDrawerOpen = loadDrawerOpen()
   let drawerOpen = $state(initialDrawerOpen)
+  // Resize state. The width tween is suppressed while dragging: a 200ms
+  // transition on a value changing every pointermove makes the edge lag the
+  // cursor instead of tracking it.
+  let isResizing = $state(false)
+  let drag: DragHandle | null = null
+
+  function remPerPx(): number {
+    const root = parseFloat(getComputedStyle(document.documentElement).fontSize)
+    return Number.isFinite(root) && root > 0 ? 1 / root : 1 / 16
+  }
+
+  function handleResizeStart(e: PointerEvent) {
+    if (isResizing) return
+    isResizing = true
+    const startRem = drawerWidth.rem
+    const perPx = remPerPx()
+    drag = startDrag(e, {
+      axis: 'x',
+      onMove: delta => drawerWidth.preview(startRem + delta * perPx),
+      onEnd: () => {
+        isResizing = false
+        drag = null
+        drawerWidth.commit()
+      },
+    })
+  }
+
+  // Keyboard resizing, because a divider that only answers to a mouse is not
+  // a control. Arrows nudge, Home restores the default.
+  function handleResizeKeydown(e: KeyboardEvent) {
+    const step = e.shiftKey ? 4 : 1
+    if (e.key === 'ArrowLeft') {
+      drawerWidth.preview(drawerWidth.rem - step)
+    } else if (e.key === 'ArrowRight') {
+      drawerWidth.preview(drawerWidth.rem + step)
+    } else if (e.key === 'Home') {
+      drawerWidth.reset()
+      return
+    } else {
+      return
+    }
+    e.preventDefault()
+    drawerWidth.commit()
+  }
+
+  // A drag outliving its handle would leave the body cursor and text
+  // selection suppressed for the rest of the session.
+  onDestroy(() => drag?.cancel())
+
   // Suppress width tween when remounting across signal routes (same preference).
   let skipWidthTransition = $state(
     shouldSkipDrawerWidthTransition(initialDrawerOpen)
@@ -213,9 +268,30 @@
 
   <div class="drawer-side">
     <div
-      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-open:w-[28rem] is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
-      class:signal-drawer__panel--instant={skipWidthTransition}
+      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
+      class:signal-drawer__panel--instant={skipWidthTransition || isResizing}
+      style={effectivelyOpen ? `width: ${drawerWidth.rem}rem` : undefined}
     >
+      {#if effectivelyOpen && !railOnly}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <div
+          class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
+          class:col-resize-bar--active={isResizing}
+          onpointerdown={handleResizeStart}
+          ondblclick={() => drawerWidth.reset()}
+          onkeydown={handleResizeKeydown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the list"
+          aria-valuenow={Math.round(drawerWidth.rem)}
+          aria-valuemin={MIN_DRAWER_WIDTH_REM}
+          aria-valuemax={MAX_DRAWER_WIDTH_REM}
+          tabindex="0"
+        >
+          <div class="col-resize-bar__line"></div>
+        </div>
+      {/if}
       {#if !effectivelyOpen}
         <div class="signal-drawer__collapsed-rail">
           <div class="signal-drawer__collapsed-group">
@@ -502,13 +578,22 @@
   }
 
   .signal-drawer__panel {
-    @apply transition-[width] duration-200;
+    @apply relative transition-[width] duration-200;
     border-right: 1px solid
       color-mix(in oklab, var(--color-base-300) 70%, transparent);
   }
 
   .signal-drawer__panel--instant {
     transition: none !important;
+  }
+
+  /* Sits on the panel's trailing edge, over the border it replaces as the
+     grab target. The shared .col-resize-bar supplies the cursor, hit width
+     and line; this only places it. */
+  .signal-drawer__resize {
+    @apply absolute top-0 right-0 bottom-0 z-30;
+    margin-left: 0;
+    margin-right: calc(var(--resize-bar-hit-width) / -2);
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -1,3 +1,5 @@
+import { startDrag, type DragHandle } from './drag'
+
 export type ColumnDef = {
   id: string
   min: number
@@ -139,27 +141,22 @@ export function startColumnResize(
   e: PointerEvent,
   onResize: (widths: number[]) => void,
   onEnd: () => void
-) {
-  e.preventDefault()
-  const startX = e.clientX
+): DragHandle {
   const startW = currentWidths()[colIndex]
-  const target = e.currentTarget as HTMLElement
-  target.setPointerCapture(e.pointerId)
 
-  function onMove(ev: PointerEvent) {
-    const desired = startW + (ev.clientX - startX)
-    const next = applyColumnResize(defs, currentWidths(), colIndex, desired)
-    if (next !== currentWidths()) onResize(next)
-  }
-
-  function end() {
-    onEnd()
-    target.removeEventListener('pointermove', onMove)
-    target.removeEventListener('pointerup', end)
-    target.removeEventListener('pointercancel', end)
-  }
-
-  target.addEventListener('pointermove', onMove)
-  target.addEventListener('pointerup', end)
-  target.addEventListener('pointercancel', end)
+  // Listeners, capture, body cursor and selection all come from startDrag;
+  // what stays here is the column geometry.
+  return startDrag(e, {
+    axis: 'x',
+    onMove: delta => {
+      const next = applyColumnResize(
+        defs,
+        currentWidths(),
+        colIndex,
+        startW + delta
+      )
+      if (next !== currentWidths()) onResize(next)
+    },
+    onEnd,
+  })
 }
