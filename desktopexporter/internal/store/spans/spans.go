@@ -531,6 +531,36 @@ func GetTraceAttributes(ctx context.Context, db *sql.DB, startTime, endTime int6
 	return traceAttributeKeys(ctx, db)
 }
 
+// GetSpanNames returns distinct span names matching term, most frequent
+// first, as a JSON string array. Backs value completion in the search box:
+// the user has typed `name = ` and the useful answer is which names exist.
+//
+// term is a substring match, case-insensitive, with LIKE wildcards escaped so
+// a literal % or _ in the term matches itself. An empty term returns the top
+// names by frequency, which is what the empty value position wants. limit is
+// clamped by the caller.
+func GetSpanNames(ctx context.Context, db *sql.DB, term string, limit int) (json.RawMessage, error) {
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
+	query := `
+		select cast(coalesce(
+			to_json(list(sub.name order by sub.cnt desc, sub.name)),
+			to_json([])) as varchar)
+		from (
+			select name, count(*) as cnt
+			from spans
+			where name <> '' and name ilike '%' || ? || '%' escape '\'
+			group by name
+			order by cnt desc, name
+			limit ?
+		) sub
+	`
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetSpanNames: %w: %w", ErrSpansStoreInternal, err)
+	}
+	return json.RawMessage(raw), nil
+}
+
 // GetAttributesByTraceID returns the same store-wide key list as
 // GetTraceAttributes. Narrowing to one trace would cost the unnest described
 // there; both callers populate the same dropdown.

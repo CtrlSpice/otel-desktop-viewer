@@ -99,6 +99,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getLogAttributes(ctx, req)
 	case "getMetricAttributes":
 		return h.getMetricAttributes(ctx, req)
+	case "getSpanNames":
+		return h.getSpanNames(ctx, req)
 	case "searchAttributes":
 		return h.searchAttributes(ctx, req)
 	case "getAttributesByTraceID":
@@ -663,6 +665,42 @@ func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Req
 
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		return attributes.Search(ctx, db, term)
+	})
+	if err != nil {
+		return nil, h.handleStoreError(err)
+	}
+	return result, nil
+}
+
+// getSpanNames returns distinct span names matching a term, most frequent
+// first, for value completion in the traces search box. The limit is clamped
+// rather than trusted: the caller wants a dropdown, not a dump.
+func (h *JSONRPCHandler) getSpanNames(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := decodeParams(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if len(params) != 2 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	term, ok := params[0].(string)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	// Same decoder targetBuckets uses: accepts a JSON number or a string.
+	limit, err := h.parseTimestampParam(params[1], "limit")
+	if err != nil {
+		return nil, err
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetSpanNames(ctx, db, term, int(limit))
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
