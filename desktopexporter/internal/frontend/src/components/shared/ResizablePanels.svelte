@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { remToFraction } from '@/state/panel-width'
+  import { startDrag, type DragHandle } from './utils/drag'
 
   /** Default split when no prop / storage; keep in sync with prop default below */
   const DEFAULT_LEFT_WIDTH = 0.7
@@ -73,22 +74,32 @@
 
   let stacked = $derived(containerWidth > 0 && containerWidth < stackBreakpoint)
 
+  /* The space the two panes actually divide: the container minus the
+     divider and the two flex gaps. Every pixel-to-fraction conversion
+     in this component must use this, not the raw container -- the
+     fractions are flex-grow shares of exactly this space, so a value
+     converted against the container under-delivers by the divider and
+     gaps (~24px, which took a 352px floor to ~347 rendered). */
+  function flexSpacePx(): number {
+    const raw = stacked ? containerHeight : containerWidth
+    if (raw <= 0) return 0
+    const divSize = dividerRef
+      ? stacked
+        ? dividerRef.offsetHeight
+        : dividerRef.offsetWidth
+      : 0
+    return Math.max(1, raw - divSize - 2 * panelSplitGapPx())
+  }
+
   /* The default this split starts at and resets to. The rem form wins
-     once the container is measured: converting against the flex space
-     (container minus divider and gaps) makes the *rendered* right pane
-     land on the rem width, the same space drags translate pixels
-     through (dragFlexSpace). While stacked the split divides height,
-     so a width in rem does not apply and the fraction default holds. */
+     once the container is measured, so the *rendered* right pane lands
+     on the rem width. While stacked the split divides height, so a
+     width in rem does not apply and the fraction default holds. */
   function resolvedDefaultLeft(): number {
     if (defaultRightRem == null || stacked || containerWidth <= 0) {
       return defaultLeftWidth
     }
-    const divSize = dividerRef?.offsetWidth ?? 0
-    const flexSpace = Math.max(
-      1,
-      containerWidth - divSize - 2 * panelSplitGapPx()
-    )
-    return 1 - remToFraction(defaultRightRem, flexSpace)
+    return 1 - remToFraction(defaultRightRem, flexSpacePx())
   }
 
   $effect.pre(() => {
@@ -97,16 +108,23 @@
     // width; hold the fraction fallback until the first measurement so
     // the first applied default is the right one.
     if (defaultRightRem != null && containerWidth <= 0) return
-    leftWidth = resolvedDefaultLeft()
+    // A stored split owns initialization. Because this effect waits for
+    // the measurement, it fires after the storage effect has already
+    // applied the saved value -- writing the default here would clobber
+    // it on every load.
+    const stored = storageKey ? localStorage.getItem(storageKey) : null
+    if (stored === null || Number.isNaN(Number.parseFloat(stored))) {
+      leftWidth = resolvedDefaultLeft()
+    }
     appliedInitialDefault = true
   })
 
-  /* Pixel floors/ceilings → fractions of the container axis (width
-     when side-by-side, height when stacked). Graceful fallback when
-     both pixel floors exceed the container: prefer the right pane's
-     floor (detail strip / timeseries list). */
+  /* Pixel floors/ceilings → fractions of the flex space (width when
+     side-by-side, height when stacked). Graceful fallback when both
+     pixel floors exceed the container: prefer the right pane's floor
+     (detail strip / timeseries list). */
   let splitBounds = $derived.by(() => {
-    const dim = stacked ? containerHeight : containerWidth
+    const dim = flexSpacePx()
     if (dim <= 0) {
       return {
         minLeft: minLeftWidth,
@@ -154,12 +172,14 @@
       let saved = localStorage.getItem(storageKey)
       if (saved) {
         let parsed = parseFloat(saved)
-        if (
-          !isNaN(parsed) &&
-          parsed >= effectiveMinLeft &&
-          parsed <= effectiveMaxLeft
-        ) {
-          leftWidth = parsed
+        // Clamped, not rejected: a split saved on a wide window used to
+        // be discarded wholesale on a narrow one, silently reverting to
+        // the default. The nearest legal split is what the person meant.
+        if (!isNaN(parsed)) {
+          leftWidth = Math.max(
+            effectiveMinLeft,
+            Math.min(effectiveMaxLeft, parsed)
+          )
         }
       }
     }
@@ -183,94 +203,34 @@
     }
   }
 
-  let dragStartPos = 0
-  let dragStartWidth = 0
-  let dragFlexSpace = 1
-  let activePointerID: number | null = null
-  let captureEl: HTMLElement | null = null
-
-  function onWindowPointerMove(e: PointerEvent) {
-    if (!isDragging || e.pointerId !== activePointerID) return
-    const currentPos = stacked ? e.clientY : e.clientX
-    const deltaPx = currentPos - dragStartPos
-    leftWidth = Math.max(
-      effectiveMinLeft,
-      Math.min(effectiveMaxLeft, dragStartWidth + deltaPx / dragFlexSpace)
-    )
-  }
-
-  function endDrag() {
-    if (!isDragging) return
-    const pointerId = activePointerID
-    const el = captureEl
-    isDragging = false
-    activePointerID = null
-    captureEl = null
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    window.removeEventListener('pointermove', onWindowPointerMove)
-    window.removeEventListener('pointerup', onWindowPointerEnd)
-    window.removeEventListener('pointercancel', onWindowPointerEnd)
-    if (el && pointerId !== null) {
-      try {
-        el.releasePointerCapture(pointerId)
-      } catch {
-        /* capture already released */
-      }
-    }
-    saveWidth()
-  }
-
-  function onWindowPointerEnd(e: PointerEvent) {
-    if (!isDragging || e.pointerId !== activePointerID) return
-    endDrag()
-  }
+  let drag: DragHandle | null = null
 
   function handlePointerDown(e: PointerEvent) {
     if (isDragging) return
-    e.preventDefault()
-    const target = e.currentTarget as HTMLElement
-    captureEl = target
-    activePointerID = e.pointerId
-    try {
-      target.setPointerCapture(e.pointerId)
-    } catch {
-      /* ignore — window listeners still end the drag */
-    }
     isDragging = true
-    dragStartPos = stacked ? e.clientY : e.clientX
-    dragStartWidth = leftWidth
-
-    if (containerRef) {
-      const rect = containerRef.getBoundingClientRect()
-      if (dividerRef) {
-        const g = panelSplitGapPx()
-        const divSize = stacked
-          ? dividerRef.offsetHeight
-          : dividerRef.offsetWidth
-        dragFlexSpace = Math.max(
-          1,
-          (stacked ? rect.height : rect.width) - divSize - 2 * g
+    const startWidth = leftWidth
+    // Pinned for the drag: a fraction moves per pixel of flex space,
+    // and remeasuring mid-drag would make the mapping wobble.
+    const flexSpace = flexSpacePx() || 1
+    drag = startDrag(e, {
+      axis: stacked ? 'y' : 'x',
+      onMove: delta => {
+        leftWidth = Math.max(
+          effectiveMinLeft,
+          Math.min(effectiveMaxLeft, startWidth + delta / flexSpace)
         )
-      }
-    }
-
-    document.body.style.cursor = stacked ? 'row-resize' : 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', onWindowPointerMove)
-    window.addEventListener('pointerup', onWindowPointerEnd)
-    window.addEventListener('pointercancel', onWindowPointerEnd)
+      },
+      onEnd: () => {
+        isDragging = false
+        drag = null
+        saveWidth()
+      },
+    })
   }
 
-  function handlePointerMove(e: PointerEvent) {
-    onWindowPointerMove(e)
-  }
-
-  function handlePointerUp(e: PointerEvent) {
-    onWindowPointerEnd(e)
-  }
-
-  onDestroy(endDrag)
+  // A drag outliving its component would leave the body cursor and
+  // text selection suppressed for the rest of the session.
+  onDestroy(() => drag?.cancel())
 
   function handleDoubleClick() {
     leftWidth = resolvedDefaultLeft()
@@ -336,12 +296,11 @@
       class="col-resize-bar col-resize-bar--row-in-flow"
       class:col-resize-bar--active={isDragging}
       onpointerdown={handlePointerDown}
-      onpointermove={handlePointerMove}
-      onpointerup={handlePointerUp}
       ondblclick={handleDoubleClick}
       onkeydown={handleKeydown}
       role="separator"
       aria-orientation="horizontal"
+      aria-label="Resize the panels"
       aria-valuenow={Math.round(leftWidth * 100)}
       aria-valuemin={Math.round(effectiveMinLeft * 100)}
       aria-valuemax={Math.round(effectiveMaxLeft * 100)}
@@ -376,12 +335,11 @@
       class="col-resize-bar col-resize-bar--in-flow"
       class:col-resize-bar--active={isDragging}
       onpointerdown={handlePointerDown}
-      onpointermove={handlePointerMove}
-      onpointerup={handlePointerUp}
       ondblclick={handleDoubleClick}
       onkeydown={handleKeydown}
       role="separator"
       aria-orientation="vertical"
+      aria-label="Resize the panels"
       aria-valuenow={Math.round(leftWidth * 100)}
       aria-valuemin={Math.round(effectiveMinLeft * 100)}
       aria-valuemax={Math.round(effectiveMaxLeft * 100)}
