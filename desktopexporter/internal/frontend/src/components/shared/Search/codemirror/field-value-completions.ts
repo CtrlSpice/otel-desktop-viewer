@@ -6,14 +6,17 @@ import {
 import { syntaxTree } from '@codemirror/language'
 import type { SyntaxNode } from '@lezer/common'
 import { FieldName as FieldTerm } from './query.parser.terms'
+import type { FieldDefinition } from '@/constants/fields'
 
 /**
- * Value completion for span names: `name = ` offers the names the store
- * actually holds (#412).
+ * Value completion for plain-column fields: `name = ` offers the names the
+ * store actually holds (#412), and any field marked `discoverableValues`
+ * works the same way.
  *
  * @remarks
- * Span names are a plain column, not attributes, so the dictionary-backed
- * value discovery cannot see them; this asks a dedicated RPC instead.
+ * These are columns, not attributes, so the dictionary-backed value
+ * discovery cannot see them; a dedicated RPC serves them instead. The server
+ * allowlists the same fields the definitions mark; the two change together.
  *
  * One fetch, then local filtering. The store query scans every span row per
  * call (a contains-match cannot use an index, and frequency ordering must
@@ -42,17 +45,32 @@ function findAncestor(node: SyntaxNode, name: string): SyntaxNode | null {
   return null
 }
 
-export function createSpanNameValueSource(
-  fetchNames: (term: string, limit: number) => Promise<string[]>,
-  signal: string
+export function createFieldValueSource(
+  fetchValues: (
+    signal: string,
+    field: string,
+    term: string,
+    limit: number
+  ) => Promise<string[]>,
+  signal: string,
+  getFields: () => FieldDefinition[]
 ) {
-  return async function spanNameValueSource(
+  // One fetch per field per editor session; every keystroke after filters
+  // the cached list locally. The promise is cached rather than the values so
+  // concurrent triggers share one flight.
+  const cache = new Map<string, Promise<string[]>>()
+  const fetchOnce = (field: string) => {
+    let hit = cache.get(field)
+    if (!hit) {
+      hit = fetchValues(signal, field, '', FETCH_LIMIT)
+      cache.set(field, hit)
+    }
+    return hit
+  }
+
+  return async function fieldValueSource(
     context: CompletionContext
   ): Promise<CompletionResult | null> {
-    // Span names are a traces concept; the metrics editor's `name` field is
-    // a metric name and gets nothing from this source.
-    if (signal !== 'traces') return null
-
     const tree = syntaxTree(context.state)
     const node = tree.resolveInner(context.pos, -1)
     const comparison = findAncestor(node, 'Comparison')
@@ -61,7 +79,13 @@ export function createSpanNameValueSource(
     const field = comparison.getChild(FieldTerm)
     if (!field) return null
     const fieldText = context.state.sliceDoc(field.from, field.to)
-    if (fieldText.toLowerCase() !== 'name') return null
+    const def = getFields().find(
+      (f): f is Extract<FieldDefinition, { searchScope: 'field' }> =>
+        f.searchScope === 'field' &&
+        f.discoverableValues === true &&
+        f.name.toLowerCase() === fieldText.toLowerCase()
+    )
+    if (!def) return null
 
     const op =
       comparison.getChild('Operator') ?? comparison.getChild('KeywordOperator')
@@ -95,11 +119,12 @@ export function createSpanNameValueSource(
 
     let names: string[]
     try {
-      // Empty term: the server returns the top names by frequency, which is
-      // exactly what the empty value position should offer.
-      names = await fetchNames('', FETCH_LIMIT)
+      names = await fetchOnce(def.name)
     } catch {
-      // Completion is a convenience; typing still works without it.
+      // Completion is a convenience; typing still works without it. Dropped
+      // from the cache so the next trigger retries rather than failing
+      // forever on one bad fetch.
+      cache.delete(def.name)
       return null
     }
     if (context.aborted || names.length === 0) return null
@@ -113,7 +138,7 @@ export function createSpanNameValueSource(
       const apply = openQuote
         ? escaped + (autoClosed ? '' : q)
         : q + escaped + q
-      return { label: name, type: 'text', detail: 'span name', apply }
+      return { label: name, type: 'text', detail: def.description, apply }
     })
 
     return {

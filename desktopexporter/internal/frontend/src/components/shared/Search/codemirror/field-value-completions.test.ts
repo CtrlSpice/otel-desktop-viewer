@@ -1,16 +1,27 @@
 import { describe, expect, it, vi } from 'vitest'
 import { EditorState } from '@codemirror/state'
 import { CompletionContext } from '@codemirror/autocomplete'
-import { createSpanNameValueSource } from './span-name-completions'
+import { createFieldValueSource } from './field-value-completions'
+import { getFieldsBySignal } from '@/constants/fields'
 import { queryLanguage } from './query-language'
 
 const NAMES = ['checkout/pay', 'checkout/verify', 'db select "users"']
 
 function makeSource(
   signal = 'traces',
-  fetch: (term: string, limit: number) => Promise<string[]> = async () => NAMES
+  fetch: (
+    signal: string,
+    field: string,
+    term: string,
+    limit: number
+  ) => Promise<string[]> = async () => NAMES
 ) {
-  return { source: createSpanNameValueSource(fetch, signal), fetch }
+  return {
+    source: createFieldValueSource(fetch, signal, () =>
+      getFieldsBySignal(signal as 'traces' | 'logs' | 'metrics')
+    ),
+    fetch,
+  }
 }
 
 async function run(
@@ -74,17 +85,39 @@ describe('span name value completions', () => {
     expect(db?.apply).toBe('db select "users"\'')
   })
 
-  it('stays out of other fields, other signals, and free text', async () => {
+  it('stays out of non-discoverable fields and free text', async () => {
     expect(await run('kind = ')).toBeNull()
-    expect(await run('name = ', 'metrics')).toBeNull()
+    expect(await run('statusMessage = ')).toBeNull()
     expect(await run('che')).toBeNull()
+  })
+
+  it('serves any discoverable field, per signal', async () => {
+    const fetch = vi.fn(async () => ['ms', 's'])
+    const { source } = makeSource('metrics', fetch)
+    const state = EditorState.create({
+      doc: 'unit = ',
+      extensions: [queryLanguage],
+    })
+    const r = await source(new CompletionContext(state, 7, false))
+    expect(r).not.toBeNull()
+    expect(fetch).toHaveBeenCalledWith('metrics', 'unit', '', 500)
+  })
+
+  it('fetches each field once per session, shared across triggers', async () => {
+    const fetch = vi.fn(async () => NAMES)
+    const { source } = makeSource('traces', fetch)
+    for (const doc of ['name = ', 'name = c', 'name = ch']) {
+      const state = EditorState.create({ doc, extensions: [queryLanguage] })
+      await source(new CompletionContext(state, doc.length, false))
+    }
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it('stays out once the value is closed', async () => {
     expect(await run('name = "a" ')).toBeNull()
   })
 
-  it('fetches once with an empty term and the session limit', async () => {
+  it('fetches with an empty term and the session limit', async () => {
     const fetch = vi.fn(async () => NAMES)
     const { source } = makeSource('traces', fetch)
     const state = EditorState.create({
@@ -92,7 +125,7 @@ describe('span name value completions', () => {
       extensions: [queryLanguage],
     })
     await source(new CompletionContext(state, 7, false))
-    expect(fetch).toHaveBeenCalledWith('', 500)
+    expect(fetch).toHaveBeenCalledWith('traces', 'name', '', 500)
   })
 
   it('returns nothing when the fetch fails', async () => {

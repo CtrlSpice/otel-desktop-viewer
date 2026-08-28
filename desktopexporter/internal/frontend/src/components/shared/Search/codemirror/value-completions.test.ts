@@ -6,6 +6,7 @@ import { queryLanguageSupport } from './query-language'
 import type { JsonAttributeMatch } from '@/types/wire-types'
 import { OPERATORS } from '@/constants/operators'
 import type { AttributeScope, FieldDefinition } from '@/constants/fields'
+import { getFieldsBySignal } from '@/constants/fields'
 
 const matches: JsonAttributeMatch[] = [
   {
@@ -212,5 +213,74 @@ describe('only suggests fields this editor can search', () => {
       vi.fn().mockResolvedValue(sameNameWrongScope)
     )
     expect(result).toBeNull()
+  })
+})
+
+describe('bare-text discovery of enums and columns', () => {
+  const fields = getFieldsBySignal('traces')
+
+  function discoverySource(
+    fetch = async (): Promise<string[]> => ['checkout/pay', 'checkout/verify']
+  ) {
+    return createValueDiscoverySource(
+      async () => [],
+      () => fields,
+      fetch,
+      'traces'
+    )
+  }
+
+  async function discover(doc: string, source = discoverySource()) {
+    const state = EditorState.create({
+      doc,
+      extensions: [queryLanguageSupport()],
+    })
+    return source(new CompletionContext(state, doc.length, false))
+  }
+
+  it('offers an enum comparison from bare text', async () => {
+    const r = await discover('Serv')
+    expect(r).not.toBeNull()
+    expect(r!.options.map(o => o.label)).toContain('kind = Server')
+  })
+
+  it('does not let plentiful attributes starve enums out of the list', async () => {
+    // Eight attribute matches would fill the cap on their own; the quota
+    // keeps room so `kind = Server` still surfaces.
+    const manyAttrs = async (): Promise<JsonAttributeMatch[]> =>
+      Array.from({ length: 8 }, (_, i) => ({
+        name: 'service.name',
+        attributeScope: 'resource' as AttributeScope,
+        type: 'string',
+        matchCount: 1,
+        sampleValues: [`service-${i}`],
+      }))
+    const source = createValueDiscoverySource(
+      manyAttrs,
+      () => fields,
+      async () => [],
+      'traces'
+    )
+    const r = await discover('Serv', source)
+    expect(r).not.toBeNull()
+    expect(r!.options.map(o => o.label)).toContain('kind = Server')
+  })
+
+  it('offers a column comparison from bare text, quoted', async () => {
+    const r = await discover('checkout')
+    expect(r).not.toBeNull()
+    expect(r!.options.map(o => o.label)).toContain('name = "checkout/pay"')
+  })
+
+  it('fetches column values once across keystrokes', async () => {
+    const fetch = vi.fn(async () => ['checkout/pay'])
+    const source = discoverySource(fetch)
+    await discover('chec', source)
+    await discover('check', source)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('stays quiet mid-comparison, as before', async () => {
+    expect(await discover('name = check')).toBeNull()
   })
 })

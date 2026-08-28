@@ -43,7 +43,7 @@ func namedSpans(names map[string]int) ptrace.Traces {
 func spanNames(t *testing.T, s *store.Store, term string, limit int64) []string {
 	t.Helper()
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.GetSpanNames(t.Context(), db, term, limit)
+		return spans.GetFieldValues(t.Context(), db, "name", term, limit)
 	})
 	require.NoError(t, err)
 	var out []string
@@ -82,4 +82,15 @@ func TestGetSpanNames(t *testing.T) {
 
 	// No match is an empty array, not null.
 	assert.NotNil(t, spanNames(t, s, "no-such-name", 10))
+}
+
+// A field outside the allowlist is an error, not an empty list: the allowlist
+// is the security boundary, and a typo should be loud.
+func TestGetFieldValuesRefusesUnknownField(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetFieldValues(ctx, db, "statusMessage", "", 10)
+	})
+	require.ErrorIs(t, err, spans.ErrInvalidTraceQuery)
 }

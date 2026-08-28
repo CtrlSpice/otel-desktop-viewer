@@ -531,32 +531,44 @@ func GetTraceAttributes(ctx context.Context, db *sql.DB, startTime, endTime int6
 	return traceAttributeKeys(ctx, db)
 }
 
-// GetSpanNames returns distinct span names matching term, most frequent
-// first, as a JSON string array. Backs value completion in the search box:
-// the user has typed `name = ` and the useful answer is which names exist.
-//
-// term is a substring match, case-insensitive, with LIKE wildcards escaped so
-// a literal % or _ in the term matches itself. An empty term returns the top
-// names by frequency, which is what the empty value position wants. limit is
-// clamped by the caller.
-func GetSpanNames(ctx context.Context, db *sql.DB, term string, limit int64) (json.RawMessage, error) {
-	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
-	query := `
+// fieldValueQueries names the span columns whose values the search box may
+// complete, keyed by the search grammar's field name. An allowlist of whole
+// baked queries rather than an identifier spliced into one: a field name from
+// the wire never becomes SQL.
+var fieldValueQueries = map[string]string{
+	"name": `
 		select cast(coalesce(
-			to_json(list(sub.name order by sub.cnt desc, sub.name)),
+			to_json(list(sub.v order by sub.cnt desc, sub.v)),
 			to_json([])) as varchar)
 		from (
-			select name, count(*) as cnt
+			select name as v, count(*) as cnt
 			from spans
 			where name <> '' and name ilike '%' || ? || '%' escape '\'
 			group by name
 			order by cnt desc, name
 			limit ?
 		) sub
-	`
+	`,
+}
+
+// GetFieldValues returns distinct values of one completable span column
+// matching term, most frequent first, as a JSON string array. Backs value
+// completion in the search box.
+//
+// term is a substring match, case-insensitive, with LIKE wildcards escaped so
+// a literal % or _ in the term matches itself. An empty term returns the top
+// values by frequency, which is what the empty value position wants. limit is
+// clamped by the caller. A field not in the allowlist is an error rather than
+// an empty result, so a typo in a caller shows up as one.
+func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
+	query, ok := fieldValueQueries[field]
+	if !ok {
+		return nil, fmt.Errorf("GetFieldValues: %w: field %q has no value completion", ErrInvalidTraceQuery, field)
+	}
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetSpanNames: %w: %w", ErrSpansStoreInternal, err)
+		return nil, fmt.Errorf("GetFieldValues: %w: %w", ErrSpansStoreInternal, err)
 	}
 	return json.RawMessage(raw), nil
 }

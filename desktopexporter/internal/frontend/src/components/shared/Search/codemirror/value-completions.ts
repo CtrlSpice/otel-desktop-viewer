@@ -85,8 +85,30 @@ function optionsForMatch(match: JsonAttributeMatch): Completion[] {
  */
 export function createValueDiscoverySource(
   search: (term: string) => Promise<JsonAttributeMatch[]>,
-  getFields: () => FieldDefinition[]
+  getFields: () => FieldDefinition[],
+  fetchFieldValues?: (
+    signal: string,
+    field: string,
+    term: string,
+    limit: number
+  ) => Promise<string[]>,
+  signal?: string
 ) {
+  // Column values are fetched once per field per session and filtered
+  // locally; the dictionary lookup stays per-keystroke because it is cheap
+  // and term-dependent. The promise is cached so concurrent triggers share
+  // one flight.
+  const columnCache = new Map<string, Promise<string[]>>()
+  const columnValues = (field: string): Promise<string[]> => {
+    if (!fetchFieldValues || !signal) return Promise.resolve([])
+    let hit = columnCache.get(field)
+    if (!hit) {
+      hit = fetchFieldValues(signal, field, '', 500)
+      columnCache.set(field, hit)
+    }
+    return hit
+  }
+
   return async function valueDiscoverySource(
     context: CompletionContext
   ): Promise<CompletionResult | null> {
@@ -137,9 +159,69 @@ export function createValueDiscoverySource(
       )
     )
 
-    const options = searchable
-      .flatMap(optionsForMatch)
-      .slice(0, MAX_SUGGESTIONS)
+    const term = word.text.toLowerCase()
+    const fieldDefs = getFields().filter(
+      (f): f is Extract<FieldDefinition, { searchScope: 'field' }> =>
+        f.searchScope === 'field'
+    )
+
+    // Enum fields carry their values in the definition, so matching them
+    // costs nothing: `Serv` offers `kind = Server`.
+    const enumOptions: Completion[] = fieldDefs
+      .filter(f => f.enumValues)
+      .flatMap(f =>
+        (f.enumValues ?? [])
+          .filter(v => v.toLowerCase().includes(term))
+          .map(v => ({
+            label: `${f.name} = ${v}`,
+            type: 'text' as const,
+            detail: f.name,
+          }))
+      )
+
+    // Discoverable columns: the cached top values, filtered locally.
+    const columnOptions: Completion[] = (
+      await Promise.all(
+        fieldDefs
+          .filter(f => f.discoverableValues)
+          .map(async f => {
+            let values: string[]
+            try {
+              values = await columnValues(f.name)
+            } catch {
+              columnCache.delete(f.name)
+              return []
+            }
+            return values
+              .filter(v => v.toLowerCase().includes(term))
+              .map(v => ({
+                label: `${f.name} = "${v.replace(/(["\\])/g, '\\$1')}"`,
+                type: 'text' as const,
+                detail: f.name,
+              }))
+          })
+      )
+    ).flat()
+    if (context.aborted) return null
+
+    // Fair-share the cap: attributes are usually plentiful and would starve
+    // the other two categories out of the list entirely -- `Serv` should
+    // offer `kind = Server` even when eight service.* attributes match.
+    // Each category gets a quota, then leftovers backfill spare capacity.
+    const attributeOptions = searchable.flatMap(optionsForMatch)
+    const quotas: [Completion[], number][] = [
+      [attributeOptions, 4],
+      [enumOptions, 2],
+      [columnOptions, 2],
+    ]
+    const options = quotas.flatMap(([group, quota]) => group.slice(0, quota))
+    for (const [group, quota] of quotas) {
+      if (options.length >= MAX_SUGGESTIONS) break
+      options.push(
+        ...group.slice(quota, quota + MAX_SUGGESTIONS - options.length)
+      )
+    }
+    options.length = Math.min(options.length, MAX_SUGGESTIONS)
     if (options.length === 0) return null
 
     return {

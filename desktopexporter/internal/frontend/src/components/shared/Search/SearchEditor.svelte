@@ -30,7 +30,7 @@
   import type { FilterDescriptor } from '@/components/shared/Toolbar/filter-types'
   import { queryLanguageSupport } from './codemirror/query-language'
   import { createQueryCompletionSource } from './codemirror/completions'
-  import { createSpanNameValueSource } from '@/components/shared/Search/codemirror/span-name-completions'
+  import { createFieldValueSource } from '@/components/shared/Search/codemirror/field-value-completions'
   import { createValueDiscoverySource } from './codemirror/value-completions'
   import { createQueryLinter } from './codemirror/linter'
   import { queryTheme, ensureTooltipStyles } from './codemirror/theme'
@@ -397,11 +397,17 @@
             createQueryCompletionSource(() => availableFields),
             createValueDiscoverySource(
               telemetryAPI.searchAttributes,
+              () => availableFields,
+              telemetryAPI.getFieldValues,
+              signal
+            ),
+            // Column values for discoverable fields (`name = `, `unit = `).
+            // Fetches once per field and filters locally; see the source.
+            createFieldValueSource(
+              telemetryAPI.getFieldValues,
+              signal,
               () => availableFields
             ),
-            // Span-name values for `name = ` in the traces editor. Fetches
-            // once and filters locally; see the source for why.
-            createSpanNameValueSource(telemetryAPI.getSpanNames, signal),
           ],
           activateOnTyping: true,
           icons: false,

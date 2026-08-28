@@ -54,7 +54,7 @@ var methodParamNames = map[string][]string{
 	"getLogAttributes":       {"startTime", "endTime"},
 	"getMetricAttributes":    {"startTime", "endTime"},
 	"searchAttributes":       {"term"},
-	"getSpanNames":           {"term", "limit"},
+	"getFieldValues":         {"signal", "field", "term", "limit"},
 	"getAttributesByTraceID": {"traceID"},
 	"getTraceSpanCount":      {"traceID"},
 	"deleteMetricStream":     {"streamID"},

@@ -407,13 +407,19 @@ export let telemetryAPI = {
   // hold it. Cross-signal by nature -- the dictionary it reads is shared by
   // traces, logs and metrics -- so unlike getXAttributes it takes no signal and
   // no time range.
-  // Distinct span names, most frequent first. Fetched once per completion
-  // session with a generous limit; CodeMirror filters the list client-side
-  // per keystroke (validFor), so this does not round-trip while typing.
-  getSpanNames: async (term: string, limit: number): Promise<string[]> => {
+  // Distinct values of one completable column, most frequent first. Fetched
+  // once per field per completion session with a generous limit; the editor
+  // filters the list client-side per keystroke, so this does not round-trip
+  // while typing. The server allowlists which fields answer.
+  getFieldValues: async (
+    signal: string,
+    field: string,
+    term: string,
+    limit: number
+  ): Promise<string[]> => {
     const rawData = await callRPC<string[]>(
-      'getSpanNames',
-      named({ term, limit })
+      'getFieldValues',
+      named({ signal, field, term, limit })
     )
     return Array.isArray(rawData) ? rawData : []
   },
