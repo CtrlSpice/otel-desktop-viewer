@@ -104,6 +104,11 @@
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
+  import {
+    PANEL_DEFAULT_REM,
+    PANEL_MIN_REM,
+    remToPx,
+  } from '@/state/panel-width'
   import { aggregationViewTabs } from '@/components/metrics/utils/aggregation-view-tabs'
   import { histogramViewTabs } from '@/components/metrics/utils/histogram-view-tabs'
   import {
@@ -746,7 +751,9 @@
     loading={page.loading}
     itemKey={metricSummaryKey}
     resizableStorageKey="metric-detail-panels"
-    minDetailPx={352}
+    defaultDetailRem={PANEL_DEFAULT_REM}
+    minMainPx={remToPx(PANEL_DEFAULT_REM)}
+    minDetailPx={remToPx(PANEL_MIN_REM)}
   >
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel

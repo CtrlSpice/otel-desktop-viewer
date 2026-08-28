@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
+  import { remToFraction } from '@/state/panel-width'
 
   /** Default split when no prop / storage; keep in sync with prop default below */
   const DEFAULT_LEFT_WIDTH = 0.7
@@ -10,6 +11,14 @@
     /** Stacked layout only: use the bottom panel header as the resize
      *  handle instead of a separate divider strip. */
     defaultLeftWidth?: number
+    /** Absolute default for the right pane, in rem. A fraction default
+     *  gives the pane a different pixel width at every window size;
+     *  this holds "the same width" across windows -- and across panels,
+     *  since the drawer's default is also rem. Wins over
+     *  defaultLeftWidth once the container is measured; a stored split
+     *  still beats both. Ignored while stacked (it is a width, and the
+     *  stacked split divides height). */
+    defaultRightRem?: number
     /** Minimum left fraction of the container (0..1). */
     minLeftWidth?: number
     /** Minimum right fraction of the container (0..1). */
@@ -33,6 +42,7 @@
     leftPanel,
     rightPanel,
     defaultLeftWidth = DEFAULT_LEFT_WIDTH,
+    defaultRightRem,
     minLeftWidth = 0.3,
     minRightWidth = 0.2,
     minLeftPx,
@@ -47,11 +57,6 @@
   let appliedInitialDefault = $state(false)
   let isDragging = $state(false)
 
-  $effect.pre(() => {
-    if (appliedInitialDefault) return
-    leftWidth = defaultLeftWidth
-    appliedInitialDefault = true
-  })
   let containerRef = $state<HTMLDivElement | null>(null)
   let dividerRef = $state<HTMLElement | null>(null)
   let containerWidth = $state(0)
@@ -67,6 +72,34 @@
   }
 
   let stacked = $derived(containerWidth > 0 && containerWidth < stackBreakpoint)
+
+  /* The default this split starts at and resets to. The rem form wins
+     once the container is measured: converting against the flex space
+     (container minus divider and gaps) makes the *rendered* right pane
+     land on the rem width, the same space drags translate pixels
+     through (dragFlexSpace). While stacked the split divides height,
+     so a width in rem does not apply and the fraction default holds. */
+  function resolvedDefaultLeft(): number {
+    if (defaultRightRem == null || stacked || containerWidth <= 0) {
+      return defaultLeftWidth
+    }
+    const divSize = dividerRef?.offsetWidth ?? 0
+    const flexSpace = Math.max(
+      1,
+      containerWidth - divSize - 2 * panelSplitGapPx()
+    )
+    return 1 - remToFraction(defaultRightRem, flexSpace)
+  }
+
+  $effect.pre(() => {
+    if (appliedInitialDefault) return
+    // A rem default cannot be converted before the container reports a
+    // width; hold the fraction fallback until the first measurement so
+    // the first applied default is the right one.
+    if (defaultRightRem != null && containerWidth <= 0) return
+    leftWidth = resolvedDefaultLeft()
+    appliedInitialDefault = true
+  })
 
   /* Pixel floors/ceilings → fractions of the container axis (width
      when side-by-side, height when stacked). Graceful fallback when
@@ -240,7 +273,7 @@
   onDestroy(endDrag)
 
   function handleDoubleClick() {
-    leftWidth = defaultLeftWidth
+    leftWidth = resolvedDefaultLeft()
     saveWidth()
   }
 

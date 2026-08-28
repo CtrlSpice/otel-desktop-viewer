@@ -15,14 +15,19 @@ async function freshStore() {
 describe('drawer width', () => {
   beforeEach(() => localStorage.clear())
 
-  it('bounds the width to half again either side of the default', async () => {
+  it('shares the panel-wide default and bounds', async () => {
+    // One set of rules for every side panel; the drawer only renames them.
     const {
       DEFAULT_DRAWER_WIDTH_REM,
       MIN_DRAWER_WIDTH_REM,
       MAX_DRAWER_WIDTH_REM,
     } = await freshStore()
-    expect(MIN_DRAWER_WIDTH_REM).toBe(DEFAULT_DRAWER_WIDTH_REM * 0.5)
-    expect(MAX_DRAWER_WIDTH_REM).toBe(DEFAULT_DRAWER_WIDTH_REM * 1.5)
+    const { PANEL_DEFAULT_REM, PANEL_MIN_REM, PANEL_MAX_REM } = await import(
+      './panel-width'
+    )
+    expect(DEFAULT_DRAWER_WIDTH_REM).toBe(PANEL_DEFAULT_REM)
+    expect(MIN_DRAWER_WIDTH_REM).toBe(PANEL_MIN_REM)
+    expect(MAX_DRAWER_WIDTH_REM).toBe(PANEL_MAX_REM)
   })
 
   it('starts at the default with nothing stored', async () => {
@@ -68,7 +73,7 @@ describe('drawer width', () => {
   })
 
   it('resets to the default and persists it', async () => {
-    localStorage.setItem(KEY, '20')
+    localStorage.setItem(KEY, '24')
     const { drawerWidth, DEFAULT_DRAWER_WIDTH_REM } = await freshStore()
     drawerWidth.reset()
     expect(drawerWidth.rem).toBe(DEFAULT_DRAWER_WIDTH_REM)

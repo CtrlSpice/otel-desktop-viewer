@@ -79,6 +79,11 @@
   import DetailView from '@/components/traces/Detail/TraceDetailView.svelte'
   import WaterfallView from '@/components/traces/Waterfall/WaterfallView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
+  import {
+    PANEL_DEFAULT_REM,
+    PANEL_MIN_REM,
+    remToPx,
+  } from '@/state/panel-width'
 
   const SORT_OPTIONS: SortOption[] = [
     { value: 'startTime', label: 'Start Time', defaultDirection: 'desc' },
@@ -308,7 +313,9 @@
     loading={page.loading}
     itemKey={t => t.traceID}
     resizableStorageKey="trace-detail-panels"
-    minDetailPx={352}
+    defaultDetailRem={PANEL_DEFAULT_REM}
+    minMainPx={remToPx(PANEL_DEFAULT_REM)}
+    minDetailPx={remToPx(PANEL_MIN_REM)}
   >
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel

@@ -11,26 +11,27 @@
  * holds when the root font size changes.
  */
 
-/** Matches the width the drawer had before it could be resized. */
-export const DEFAULT_DRAWER_WIDTH_REM = 28
+import {
+  PANEL_DEFAULT_REM,
+  PANEL_MIN_REM,
+  PANEL_MAX_REM,
+  clampPanelRem as clamp,
+} from './panel-width'
 
 /**
- * Half again either side of the default, rather than two chosen numbers.
- *
- * Anchoring the bounds to the default keeps them meaningful if it ever
- * changes, and half is enough range to matter: narrow enough to hand the
- * waterfall real space on a laptop, wide enough on a big display to stop
- * trace names, services and durations competing for the same inches --
- * which is the complaint (#345).
+ * The shared panel rules under the drawer's own names. The bounds are wider
+ * above the default than below it (22 / 28 / 40) on purpose: #345 was a
+ * complaint that the list could not get *wider*, so that is where the room
+ * is. The floor is inherited from the detail pane's tab strip -- stricter
+ * than the list itself needs, which beats the 14rem this store first
+ * shipped with, a width that truncated the service name and duration.
+ * Derivations live in `panel-width.ts`.
  */
-export const MIN_DRAWER_WIDTH_REM = DEFAULT_DRAWER_WIDTH_REM * 0.5
-export const MAX_DRAWER_WIDTH_REM = DEFAULT_DRAWER_WIDTH_REM * 1.5
+export const DEFAULT_DRAWER_WIDTH_REM = PANEL_DEFAULT_REM
+export const MIN_DRAWER_WIDTH_REM = PANEL_MIN_REM
+export const MAX_DRAWER_WIDTH_REM = PANEL_MAX_REM
 
 const STORAGE_KEY = 'signal-drawer-width'
-
-function clamp(rem: number): number {
-  return Math.min(MAX_DRAWER_WIDTH_REM, Math.max(MIN_DRAWER_WIDTH_REM, rem))
-}
 
 function load(): number {
   if (typeof localStorage === 'undefined') return DEFAULT_DRAWER_WIDTH_REM
