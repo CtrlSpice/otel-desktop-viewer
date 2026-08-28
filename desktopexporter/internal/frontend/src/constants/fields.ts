@@ -66,6 +66,11 @@ export type FieldDefinition =
       description: string
       /** If set, search autocomplete offers these literals after the operator. */
       enumValues?: readonly string[]
+      /** If set, the store serves this field's distinct values through
+       * getFieldValues, and autocomplete offers them -- in the value position
+       * and from bare text. The server allowlists the same names; the two
+       * lists change together. */
+      discoverableValues?: true
     }
   | {
       name: string
@@ -235,6 +240,7 @@ export const SPAN_FIELDS: FieldDefinition[] = [
   },
   {
     name: 'name',
+    discoverableValues: true,
     type: 'string',
     searchScope: 'field',
     operators: [
@@ -572,6 +578,7 @@ export const LOG_FIELDS: FieldDefinition[] = [
   },
   {
     name: 'eventName',
+    discoverableValues: true,
     type: 'string',
     searchScope: 'field',
     operators: [
@@ -591,6 +598,7 @@ export const LOG_FIELDS: FieldDefinition[] = [
 export const METRIC_FIELDS: FieldDefinition[] = [
   {
     name: 'name',
+    discoverableValues: true,
     type: 'string',
     searchScope: 'field',
     operators: [
@@ -619,6 +627,7 @@ export const METRIC_FIELDS: FieldDefinition[] = [
   },
   {
     name: 'unit',
+    discoverableValues: true,
     type: 'string',
     searchScope: 'field',
     operators: [

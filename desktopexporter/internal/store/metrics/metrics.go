@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
@@ -840,6 +841,51 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// fieldValueQueries names the metric columns whose values the search box may
+// complete, keyed by the search grammar's field name. An allowlist of whole
+// baked queries rather than an identifier spliced into one: a field name from
+// the wire never becomes SQL. metric_streams holds one row per logical
+// stream, so these scan a tiny table, not the datapoints.
+var fieldValueQueries = map[string]string{
+	"name": `
+		select cast(coalesce(to_json(list(sub.v order by sub.v)), to_json([])) as varchar)
+		from (
+			select distinct name as v
+			from metric_streams
+			where name ilike '%' || ? || '%' escape '\'
+			order by name
+			limit ?
+		) sub
+	`,
+	"unit": `
+		select cast(coalesce(to_json(list(sub.v order by sub.v)), to_json([])) as varchar)
+		from (
+			select distinct unit as v
+			from metric_streams
+			where unit <> '' and unit ilike '%' || ? || '%' escape '\'
+			order by unit
+			limit ?
+		) sub
+	`,
+}
+
+// GetFieldValues returns distinct values of one completable metric column
+// matching term. Same contract as spans.GetFieldValues; alphabetical rather
+// than by frequency, because metric_streams has no row count to rank by and
+// stream names read best sorted.
+func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
+	query, ok := fieldValueQueries[field]
+	if !ok {
+		return nil, fmt.Errorf("GetFieldValues: %w: field %q has no value completion", ErrInvalidMetricQuery, field)
+	}
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetFieldValues: %w: %w", ErrMetricsStoreInternal, err)
 	}
 	return json.RawMessage(raw), nil
 }

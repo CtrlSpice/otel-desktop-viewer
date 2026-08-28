@@ -1161,3 +1161,89 @@ func TestTimestampParamErrorsSayWhatIsWrong(t *testing.T) {
 		require.Contains(t, err.Error(), `"not-a-number"`)
 	})
 }
+
+// getFieldValues is the search box's value-completion source. Its guards are
+// what keep an allowlist an allowlist, so they are pinned rather than left to
+// the named-params table walk, which only checks the method has a name list.
+func TestGetFieldValues(t *testing.T) {
+	handler, teardown := setupHandlerWithData(t)
+	defer teardown()
+	ctx := context.Background()
+
+	decode := func(t *testing.T, result any) []string {
+		t.Helper()
+		raw, ok := result.(json.RawMessage)
+		require.True(t, ok, "expected json.RawMessage, got %T", result)
+		var out []string
+		require.NoError(t, json.Unmarshal(raw, &out))
+		return out
+	}
+
+	t.Run("serves an allowlisted field", func(t *testing.T) {
+		result, err := handler.Handle(ctx,
+			createRequest("getFieldValues", []any{"traces", "name", "", 10}))
+		require.NoError(t, err)
+		assert.NotEmpty(t, decode(t, result))
+	})
+
+	t.Run("named params reach the same place", func(t *testing.T) {
+		result, err := handler.Handle(ctx, createRequest("getFieldValues",
+			map[string]any{
+				"signal": "traces", "field": "name", "term": "", "limit": 10,
+			}))
+		require.NoError(t, err)
+		assert.NotEmpty(t, decode(t, result))
+	})
+
+	t.Run("clamps a limit above the ceiling", func(t *testing.T) {
+		// Not an error: a caller asking for everything gets a dropdown's
+		// worth. The clamp is the only thing standing between a completion
+		// keystroke and a full column dump.
+		result, err := handler.Handle(ctx,
+			createRequest("getFieldValues", []any{"traces", "name", "", 100000}))
+		require.NoError(t, err)
+		assert.LessOrEqual(t, len(decode(t, result)), 500)
+	})
+
+	t.Run("clamps a limit below one", func(t *testing.T) {
+		for _, limit := range []any{0, -5} {
+			result, err := handler.Handle(ctx,
+				createRequest("getFieldValues", []any{"traces", "name", "", limit}))
+			require.NoError(t, err, "limit %v", limit)
+			assert.Len(t, decode(t, result), 1, "limit %v", limit)
+		}
+	})
+
+	t.Run("refuses a field outside the allowlist", func(t *testing.T) {
+		// statusMessage is a real span column, deliberately not completable:
+		// the allowlist is a boundary, not a convenience.
+		_, err := handler.Handle(ctx,
+			createRequest("getFieldValues", []any{"traces", "statusMessage", "", 10}))
+		require.Error(t, err)
+	})
+
+	t.Run("refuses an unknown signal", func(t *testing.T) {
+		_, err := handler.Handle(ctx,
+			createRequest("getFieldValues", []any{"spans", "name", "", 10}))
+		require.Error(t, err)
+	})
+
+	t.Run("refuses a malformed call", func(t *testing.T) {
+		cases := []struct {
+			name   string
+			params any
+		}{
+			{"too few params", []any{"traces", "name", ""}},
+			{"too many params", []any{"traces", "name", "", 10, "extra"}},
+			{"non-string signal", []any{1, "name", "", 10}},
+			{"non-string field", []any{"traces", 1, "", 10}},
+			{"non-string term", []any{"traces", "name", 1, 10}},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := handler.Handle(ctx, createRequest("getFieldValues", tc.params))
+				assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
+			})
+		}
+	})
+}

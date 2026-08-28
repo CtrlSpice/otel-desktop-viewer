@@ -5,6 +5,7 @@ import {
 } from '@codemirror/autocomplete'
 import type { JsonAttributeMatch } from '@/types/wire-types'
 import type { FieldDefinition } from '@/constants/fields'
+import type { FieldValueCache } from './field-value-cache'
 
 /**
  * Value-first completion: the user types text they can see in the UI, and the
@@ -85,7 +86,10 @@ function optionsForMatch(match: JsonAttributeMatch): Completion[] {
  */
 export function createValueDiscoverySource(
   search: (term: string) => Promise<JsonAttributeMatch[]>,
-  getFields: () => FieldDefinition[]
+  getFields: () => FieldDefinition[],
+  // Column values come from the shared per-session cache; the dictionary
+  // lookup above stays per-keystroke because it is cheap and term-dependent.
+  fieldValues?: FieldValueCache
 ) {
   return async function valueDiscoverySource(
     context: CompletionContext
@@ -137,9 +141,70 @@ export function createValueDiscoverySource(
       )
     )
 
-    const options = searchable
-      .flatMap(optionsForMatch)
-      .slice(0, MAX_SUGGESTIONS)
+    const term = word.text.toLowerCase()
+    const fieldDefs = getFields().filter(
+      (f): f is Extract<FieldDefinition, { searchScope: 'field' }> =>
+        f.searchScope === 'field'
+    )
+
+    // Enum fields carry their values in the definition, so matching them
+    // costs nothing: `Serv` offers `kind = Server`.
+    const enumOptions: Completion[] = fieldDefs
+      .filter(f => f.enumValues)
+      .flatMap(f =>
+        (f.enumValues ?? [])
+          .filter(v => v.toLowerCase().includes(term))
+          .map(v => ({
+            label: `${f.name} = ${v}`,
+            type: 'text' as const,
+            detail: f.name,
+          }))
+      )
+
+    // Discoverable columns: the cached top values, filtered locally.
+    const columnOptions: Completion[] = (
+      await Promise.all(
+        fieldDefs
+          .filter(f => f.discoverableValues)
+          .map(async f => {
+            if (!fieldValues) return []
+            let values: string[]
+            try {
+              values = await fieldValues.values(f.name)
+            } catch {
+              // The cache evicts the failed fetch; nothing to offer here.
+              return []
+            }
+            return values
+              .filter(v => v.toLowerCase().includes(term))
+              .map(v => ({
+                label: `${f.name} = "${v.replace(/(["\\])/g, '\\$1')}"`,
+                type: 'text' as const,
+                detail: f.name,
+              }))
+          })
+      )
+    ).flat()
+    if (context.aborted) return null
+
+    // Fair-share the cap: attributes are usually plentiful and would starve
+    // the other two categories out of the list entirely -- `Serv` should
+    // offer `kind = Server` even when eight service.* attributes match.
+    // Each category gets a quota, then leftovers backfill spare capacity.
+    const attributeOptions = searchable.flatMap(optionsForMatch)
+    const quotas: [Completion[], number][] = [
+      [attributeOptions, 4],
+      [enumOptions, 2],
+      [columnOptions, 2],
+    ]
+    const options = quotas.flatMap(([group, quota]) => group.slice(0, quota))
+    for (const [group, quota] of quotas) {
+      if (options.length >= MAX_SUGGESTIONS) break
+      options.push(
+        ...group.slice(quota, quota + MAX_SUGGESTIONS - options.length)
+      )
+    }
+    options.length = Math.min(options.length, MAX_SUGGESTIONS)
     if (options.length === 0) return null
 
     return {

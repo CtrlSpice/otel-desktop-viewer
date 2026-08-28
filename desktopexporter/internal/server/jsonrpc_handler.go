@@ -99,6 +99,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getLogAttributes(ctx, req)
 	case "getMetricAttributes":
 		return h.getMetricAttributes(ctx, req)
+	case "getFieldValues":
+		return h.getFieldValues(ctx, req)
 	case "searchAttributes":
 		return h.searchAttributes(ctx, req)
 	case "getAttributesByTraceID":
@@ -663,6 +665,65 @@ func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Req
 
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		return attributes.Search(ctx, db, term)
+	})
+	if err != nil {
+		return nil, h.handleStoreError(err)
+	}
+	return result, nil
+}
+
+// getFieldValues returns distinct values of one completable column, for
+// value completion in the search box. Which fields complete is decided by
+// each signal package's allowlist, so an unknown field is an invalid-params
+// answer rather than an empty list -- a typo should look like one. The limit
+// is clamped rather than trusted: the caller wants a dropdown, not a dump.
+func (h *JSONRPCHandler) getFieldValues(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := decodeParams(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if len(params) != 4 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	signal, ok := params[0].(string)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	field, ok := params[1].(string)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	term, ok := params[2].(string)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	// Same decoder targetBuckets uses: accepts a JSON number or a string.
+	limit, err := h.parseTimestampParam(params[3], "limit")
+	if err != nil {
+		return nil, err
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	// A map rather than a switch: the named-params coverage test reads
+	// Handle's dispatch cases out of this file by pattern, and a case-shaped
+	// signal dispatch would show up in it as three phantom methods.
+	bySignal := map[string]func(context.Context, *sql.DB, string, string, int64) (json.RawMessage, error){
+		"traces":  spans.GetFieldValues,
+		"logs":    logs.GetFieldValues,
+		"metrics": metrics.GetFieldValues,
+	}
+	get, ok := bySignal[signal]
+	if !ok {
+		return nil, fmt.Errorf("%w: unknown signal %q", jsonrpc2.ErrInvalidParams, signal)
+	}
+
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return get(ctx, db, field, term, limit)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
