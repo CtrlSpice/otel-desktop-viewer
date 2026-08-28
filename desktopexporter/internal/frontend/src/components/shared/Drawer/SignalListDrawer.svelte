@@ -786,6 +786,12 @@
      ABOVE the tabs; the tabs stay the bottom row because lift tabs
      visually merge into the surface below them.
 
+     This is the least annoying collapse option (icon-only tabs and
+     tabs-covering-chrome were both built and rejected), and it stands
+     until the home screen becomes useful once the resource.service.name
+     view and cross-signal search land -- revisit this header then, not
+     before.
+
      The threshold is measured: strip 274.5px + chrome 120px + padding
      is ~396.5px of single-row need, and 25.5rem (408px) is the clean
      value above it. */
