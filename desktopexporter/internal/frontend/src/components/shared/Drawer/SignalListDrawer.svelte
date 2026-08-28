@@ -769,8 +769,38 @@
     padding-bottom: 4px;
   }
 
+  /* Tabs outrank the chrome: primary navigation never truncates,
+     scrolls, or hides. Without the old 7rem chrome reserve the full
+     labeled strip needs ~283px, which fits at every legal width down
+     to the 352px floor -- so the strip never overflows, and it is the
+     *icons* that yield instead, covered left to right as the drawer
+     narrows. Home goes first (the rail has one too); the collapse
+     chevron, rightmost, survives longest. The strip sits above the
+     chrome and carries the header surface so covered icons are
+     occluded, not blended through. */
   .signal-drawer__header :global(.pane-header__tab-scroll) {
-    padding-right: 7rem;
+    position: relative;
+    z-index: 20;
+    /* The layer is above the chrome, but only the tabs themselves are
+       solid: the tablist's flexible trail spans the icons, and an
+       opaque, clickable trail would both hide them and eat their
+       clicks. So the layer is click-transparent and paintless except
+       for the buttons, which re-enable pointer events and carry the
+       header surface (the active tab's own --tab-bg wins). */
+    pointer-events: none;
+  }
+
+  .signal-drawer__header :global(.pane-header__tab) {
+    pointer-events: auto;
+    background-color: var(--tab-bg, var(--color-base-300));
+  }
+
+  /* No chrome reserve: tabs claim the row (see the tabs-outrank-chrome
+     rule above), and without a reserve the strip fits at every legal
+     width, so it never scrolls. A sliver of trailing padding keeps the
+     Logs tab's lifted corner off the panel edge. */
+  .signal-drawer__header :global(.pane-header__tab-scroll) {
+    padding-right: 0.75rem;
   }
 
   /* Refresh + new-data indicator */
