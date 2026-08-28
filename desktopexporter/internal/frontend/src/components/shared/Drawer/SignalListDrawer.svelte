@@ -121,27 +121,99 @@
     return Number.isFinite(root) && root > 0 ? 1 / root : 1 / 16
   }
 
+  /* Dragging well past the floor collapses the drawer to its rail, and
+   * dragging outward from the rail opens it again -- the overshoot
+   * pattern IDE sidebars use. Distance, not a dwell timer: the drag
+   * already expresses intent as distance, the state change previews live
+   * under the pointer (pull back and it reverses), and nothing fires on
+   * someone who merely paused at the floor to think. The two thresholds
+   * differ so the boundary has hysteresis and cannot flicker. */
+  const COLLAPSE_OVERSHOOT_REM = 6
+  const REOPEN_OVERSHOOT_REM = 5
+
+  function persistDrawerOpen(open: boolean) {
+    syncDrawerOpenPreference(open)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(DRAWER_OPEN_KEY, String(open))
+    }
+  }
+
   function handleResizeStart(e: PointerEvent) {
     if (isResizing) return
     isResizing = true
-    const startRem = drawerWidth.rem
+    const wasOpen = drawerOpen
+    const rememberedRem = drawerWidth.rem
+    // Open drags measure from the current width. Closed drags seed just
+    // under the reopen threshold, so a short outward tug opens the drawer
+    // rather than demanding the pointer travel the whole missing width.
+    const seedRem = wasOpen
+      ? rememberedRem
+      : MIN_DRAWER_WIDTH_REM - COLLAPSE_OVERSHOOT_REM
     const perPx = remPerPx()
+    let lastDesired = seedRem
     drag = startDrag(e, {
       axis: 'x',
-      onMove: delta => drawerWidth.preview(startRem + delta * perPx),
+      onMove: delta => {
+        // Unclamped: the store pins the width at the floor, and the pixels
+        // past it are what measure intent to close or open.
+        lastDesired = seedRem + delta * perPx
+        drawerWidth.preview(lastDesired)
+        const overshoot = MIN_DRAWER_WIDTH_REM - lastDesired
+        if (drawerOpen && overshoot > COLLAPSE_OVERSHOOT_REM) {
+          drawerOpen = false
+        } else if (!drawerOpen && overshoot < REOPEN_OVERSHOOT_REM) {
+          drawerOpen = true
+        }
+      },
       onEnd: () => {
         isResizing = false
         drag = null
+        if (!drawerOpen) {
+          // Ends closed -- whether it started that way or was closed by
+          // this drag, the remembered width survives uncommitted:
+          // reopening should restore the width the person actually chose,
+          // not the floor they dragged through on the way out.
+          drawerWidth.preview(rememberedRem)
+          if (wasOpen) persistDrawerOpen(false)
+          return
+        }
+        if (!wasOpen) {
+          persistDrawerOpen(true)
+          if (lastDesired < MIN_DRAWER_WIDTH_REM) {
+            // A tug that never cleared the floor means "open it", not
+            // "open it at the floor".
+            drawerWidth.preview(rememberedRem)
+            return
+          }
+        }
         drawerWidth.commit()
       },
     })
   }
 
   // Keyboard resizing, because a divider that only answers to a mouse is not
-  // a control. Arrows nudge, Home restores the default.
+  // a control. Arrows nudge, Home restores the default -- and the collapse
+  // mirrors the drag: another ArrowLeft at the floor closes the drawer,
+  // ArrowRight or Enter on the closed handle opens it at its remembered
+  // width. The handle stays mounted in both states, so focus survives the
+  // toggle.
   function handleResizeKeydown(e: KeyboardEvent) {
+    if (!drawerOpen) {
+      if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === 'Home') {
+        drawerOpen = true
+        persistDrawerOpen(true)
+        e.preventDefault()
+      }
+      return
+    }
     const step = e.shiftKey ? 4 : 1
     if (e.key === 'ArrowLeft') {
+      if (drawerWidth.rem <= MIN_DRAWER_WIDTH_REM) {
+        drawerOpen = false
+        persistDrawerOpen(false)
+        e.preventDefault()
+        return
+      }
       drawerWidth.preview(drawerWidth.rem - step)
     } else if (e.key === 'ArrowRight') {
       drawerWidth.preview(drawerWidth.rem + step)
@@ -153,6 +225,15 @@
     }
     e.preventDefault()
     drawerWidth.commit()
+  }
+
+  function handleResizeDblclick() {
+    if (!drawerOpen) {
+      drawerOpen = true
+      persistDrawerOpen(true)
+      return
+    }
+    drawerWidth.reset()
   }
 
   // A drag outliving its handle would leave the body cursor and text
@@ -181,10 +262,7 @@
     if (railOnly) return
     skipWidthTransition = false
     drawerOpen = (e.currentTarget as HTMLInputElement).checked
-    syncDrawerOpenPreference(drawerOpen)
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(DRAWER_OPEN_KEY, String(drawerOpen))
-    }
+    persistDrawerOpen(drawerOpen)
   }
 
   const routeContext = getRouteContext()
@@ -272,18 +350,18 @@
       class:signal-drawer__panel--instant={skipWidthTransition || isResizing}
       style={effectivelyOpen ? `width: ${drawerWidth.rem}rem` : undefined}
     >
-      {#if effectivelyOpen && !railOnly}
+      {#if !railOnly}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <div
           class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
           class:col-resize-bar--active={isResizing}
           onpointerdown={handleResizeStart}
-          ondblclick={() => drawerWidth.reset()}
+          ondblclick={handleResizeDblclick}
           onkeydown={handleResizeKeydown}
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize the list"
+          aria-label={effectivelyOpen ? 'Resize the list' : 'Open the list'}
           aria-valuenow={Math.round(drawerWidth.rem)}
           aria-valuemin={MIN_DRAWER_WIDTH_REM}
           aria-valuemax={MAX_DRAWER_WIDTH_REM}
