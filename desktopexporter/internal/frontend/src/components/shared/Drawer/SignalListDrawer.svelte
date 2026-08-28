@@ -712,7 +712,13 @@
      251px, so it fits at every width down to the 22rem floor. */
   @container (width < 25rem) {
     .signal-drawer__header :global(.pane-header__tab-label) {
-      @apply sr-only;
+      /* The label's grid track collapses (see PaneHeader for the
+         mechanism); the negative margin swallows the flex gap the
+         zero-width label leaves behind, so the icon re-centres. */
+      grid-template-columns: 0fr;
+      opacity: 0;
+      /* -1 x the tab's gap-2. */
+      margin-left: -0.5rem;
     }
   }
 
