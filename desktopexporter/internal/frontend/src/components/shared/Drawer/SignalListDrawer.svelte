@@ -138,6 +138,25 @@
     }
   }
 
+  /* Two kinds of width change happen mid-drag and they need opposite
+   * treatment. Pointer tracking must be instant -- a tween on a value
+   * changing every pointermove makes the edge lag the cursor. The
+   * open/rail flip is the opposite: it is a 400px jump the pointer did
+   * not make, and rendering it in one frame reads as a glitch. So the
+   * flip briefly lifts the instant suppression and animates, then
+   * tracking snaps back to instant. */
+  const SNAP_TWEEN_MS = 220
+  let snapTween = $state(false)
+  let snapTimer: ReturnType<typeof setTimeout> | undefined
+
+  function beginSnapTween() {
+    snapTween = true
+    clearTimeout(snapTimer)
+    snapTimer = setTimeout(() => {
+      snapTween = false
+    }, SNAP_TWEEN_MS)
+  }
+
   function handleResizeStart(e: PointerEvent) {
     if (isResizing) return
     isResizing = true
@@ -161,8 +180,10 @@
         const overshoot = MIN_DRAWER_WIDTH_REM - lastDesired
         if (drawerOpen && overshoot > COLLAPSE_OVERSHOOT_REM) {
           drawerOpen = false
+          beginSnapTween()
         } else if (!drawerOpen && overshoot < REOPEN_OVERSHOOT_REM) {
           drawerOpen = true
+          beginSnapTween()
         }
       },
       onEnd: () => {
@@ -238,7 +259,10 @@
 
   // A drag outliving its handle would leave the body cursor and text
   // selection suppressed for the rest of the session.
-  onDestroy(() => drag?.cancel())
+  onDestroy(() => {
+    drag?.cancel()
+    clearTimeout(snapTimer)
+  })
 
   // Suppress width tween when remounting across signal routes (same preference).
   let skipWidthTransition = $state(
@@ -347,7 +371,10 @@
   <div class="drawer-side">
     <div
       class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
-      class:signal-drawer__panel--instant={skipWidthTransition || isResizing}
+      class:signal-drawer__panel--instant={(skipWidthTransition ||
+        isResizing) &&
+        !snapTween}
+      class:signal-drawer__panel--snap={snapTween}
       style={effectivelyOpen ? `width: ${drawerWidth.rem}rem` : undefined}
     >
       {#if !railOnly}
@@ -663,6 +690,13 @@
 
   .signal-drawer__panel--instant {
     transition: none !important;
+  }
+
+  /* The open/rail flip mid-drag: a fast, decisive deceleration. Duration
+     matches SNAP_TWEEN_MS in the script, which lifts --instant for
+     exactly this long before pointer tracking goes back to instant. */
+  .signal-drawer__panel--snap {
+    transition: width 220ms cubic-bezier(0.2, 0, 0, 1) !important;
   }
 
   /* Sits on the panel's trailing edge, over the border it replaces as the
