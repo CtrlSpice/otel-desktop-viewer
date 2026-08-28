@@ -689,14 +689,15 @@
   }
 
   /* Now that the drawer's width is a variable, its contents adapt by
-     container query -- the row badges fold to bare counts when narrow
-     (see SignalBadges). The container is this full-width child rather
-     than the panel itself: the panel's width feeds the daisyUI drawer
-     grid's side-track sizing, and inline-size containment zeroes an
-     element's intrinsic contribution to layout -- keeping containment
-     off the panel keeps that interaction off the table. The body
-     stretches to the panel's width, so querying it means the same
-     thing. */
+     container query -- the header wraps to two rows and the row badges
+     fold to bare counts (see SignalBadges) when narrow. The containers
+     are these full-width children rather than the panel itself: the
+     panel's width feeds the daisyUI drawer grid's side-track sizing,
+     and inline-size containment zeroes an element's intrinsic
+     contribution to layout -- keeping containment off the panel keeps
+     that interaction off the table. The children stretch to the
+     panel's width, so querying them means the same thing. */
+  .signal-drawer__header,
   .signal-drawer__body {
     container-type: inline-size;
   }
@@ -778,27 +779,34 @@
      chevron, rightmost, survives longest. The strip sits above the
      chrome and carries the header surface so covered icons are
      occluded, not blended through. */
-  .signal-drawer__header :global(.pane-header__tab-scroll) {
-    position: relative;
-    z-index: 20;
-    /* The layer is above the chrome, but only the tabs themselves are
-       solid: the tablist's flexible trail spans the icons, and an
-       opaque, clickable trail would both hide them and eat their
-       clicks. So the layer is click-transparent and paintless except
-       for the buttons, which re-enable pointer events and carry the
-       header surface (the active tab's own --tab-bg wins). */
-    pointer-events: none;
+  /* When one row cannot hold both the labeled tabs and the chrome, the
+     header takes a second row instead of truncating, scrolling, or
+     covering anything -- height is the one resource nothing else here
+     is competing for. The chrome moves to its own right-aligned row
+     ABOVE the tabs; the tabs stay the bottom row because lift tabs
+     visually merge into the surface below them.
+
+     The threshold is measured: strip 274.5px + chrome 120px + padding
+     is ~396.5px of single-row need, and 25.5rem (408px) is the clean
+     value above it. */
+  @container (width < 25.5rem) {
+    .signal-drawer__header :global(.pane-header__top--tabs) {
+      flex-wrap: wrap;
+    }
+
+    .signal-drawer__header :global(.pane-header__right) {
+      position: static;
+      order: -1;
+      flex-basis: 100%;
+      justify-content: flex-end;
+      padding-bottom: 0;
+    }
   }
 
-  .signal-drawer__header :global(.pane-header__tab) {
-    pointer-events: auto;
-    background-color: var(--tab-bg, var(--color-base-300));
-  }
-
-  /* No chrome reserve: tabs claim the row (see the tabs-outrank-chrome
-     rule above), and without a reserve the strip fits at every legal
-     width, so it never scrolls. A sliver of trailing padding keeps the
-     Logs tab's lifted corner off the panel edge. */
+  /* No chrome reserve needed in either mode: above the wrap threshold
+     the strip (274.5px) ends before the chrome zone begins, and below
+     it the chrome has its own row. A sliver of trailing padding keeps
+     the Logs tab's lifted corner off the panel edge. */
   .signal-drawer__header :global(.pane-header__tab-scroll) {
     padding-right: 0.75rem;
   }
