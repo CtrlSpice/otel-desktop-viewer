@@ -692,20 +692,6 @@
       color-mix(in oklab, var(--color-base-300) 70%, transparent);
   }
 
-  /* Now that the drawer's width is a variable, its contents adapt by
-     container query -- the header wraps to two rows and the row badges
-     fold to bare counts (see SignalBadges) when narrow. The containers
-     are these full-width children rather than the panel itself: the
-     panel's width feeds the daisyUI drawer grid's side-track sizing,
-     and inline-size containment zeroes an element's intrinsic
-     contribution to layout -- keeping containment off the panel keeps
-     that interaction off the table. The children stretch to the
-     panel's width, so querying them means the same thing. */
-  .signal-drawer__header,
-  .signal-drawer__body {
-    container-type: inline-size;
-  }
-
   .signal-drawer__panel--instant {
     transition: none !important;
   }
@@ -767,58 +753,41 @@
      on the strip floated the buttons 6px above the tab labels. Anchoring
      to the bottom and padding by (tab row 40px - button 32px) / 2 puts
      button centers on the label line instead. */
+  /* The one collapse pattern, settled after building the alternatives:
+     when the drawer narrows, the tab strip slides BEHIND the pinned
+     chrome and stays scrollable. Icon-only tabs, tabs-covering-chrome,
+     and a two-row header were each built and rejected; sliding-under
+     matches how the row badges collapse too, so the whole drawer
+     speaks one language. The chrome is opaque so covered tabs are
+     occluded rather than rendering through the icons, and its leading
+     edge carries a fade that says the strip continues beneath. The
+     fade resolves to the header surface, so while everything fits it
+     paints base-300 over base-300 and is invisible -- it appears
+     exactly when a tab is under it, no threshold to keep in sync. */
   .signal-drawer__header :global(.pane-header__right) {
     @apply absolute inset-y-0 right-0 z-10 flex items-end gap-2 pr-2;
     height: auto;
     margin: 0;
     padding-bottom: 4px;
+    background: var(--color-base-300);
   }
 
-  /* Tabs outrank the chrome: primary navigation never truncates,
-     scrolls, or hides. Without the old 7rem chrome reserve the full
-     labeled strip needs ~283px, which fits at every legal width down
-     to the 352px floor -- so the strip never overflows, and it is the
-     *icons* that yield instead, covered left to right as the drawer
-     narrows. Home goes first (the rail has one too); the collapse
-     chevron, rightmost, survives longest. The strip sits above the
-     chrome and carries the header surface so covered icons are
-     occluded, not blended through. */
-  /* When one row cannot hold both the labeled tabs and the chrome, the
-     header takes a second row instead of truncating, scrolling, or
-     covering anything -- height is the one resource nothing else here
-     is competing for. The chrome moves to its own right-aligned row
-     ABOVE the tabs; the tabs stay the bottom row because lift tabs
-     visually merge into the surface below them.
-
-     "This is the least annoying collapse option and we are going with
-     it until the home screen becomes useful once we implement the
-     resource.service.name view and cross-signal search." Icon-only
-     tabs and tabs-covering-chrome were both built and rejected;
-     revisit this header then, not before.
-
-     The threshold is measured: strip 274.5px + chrome 120px + padding
-     is ~396.5px of single-row need, and 25.5rem (408px) is the clean
-     value above it. */
-  @container (width < 25.5rem) {
-    .signal-drawer__header :global(.pane-header__top--tabs) {
-      flex-wrap: wrap;
-    }
-
-    .signal-drawer__header :global(.pane-header__right) {
-      position: static;
-      order: -1;
-      flex-basis: 100%;
-      justify-content: flex-end;
-      padding-bottom: 0;
-    }
+  .signal-drawer__header :global(.pane-header__right)::before {
+    content: '';
+    position: absolute;
+    right: 100%;
+    top: 0;
+    bottom: 0;
+    width: 2rem;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--color-base-300));
   }
 
-  /* No chrome reserve needed in either mode: above the wrap threshold
-     the strip (274.5px) ends before the chrome zone begins, and below
-     it the chrome has its own row. A sliver of trailing padding keeps
-     the Logs tab's lifted corner off the panel edge. */
+  /* The chrome reserve: trailing padding equal to the chrome zone, so
+     at maximum scroll the last tab sits fully clear of the icons --
+     everything remains reachable, just not all at once. */
   .signal-drawer__header :global(.pane-header__tab-scroll) {
-    padding-right: 0.75rem;
+    padding-right: 7rem;
   }
 
   /* Refresh + new-data indicator */
