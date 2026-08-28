@@ -700,7 +700,7 @@ func (h *JSONRPCHandler) getSpanNames(ctx context.Context, req *jsonrpc2.Request
 	}
 
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.GetSpanNames(ctx, db, term, int(limit))
+		return spans.GetSpanNames(ctx, db, term, limit)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

@@ -40,7 +40,7 @@ func namedSpans(names map[string]int) ptrace.Traces {
 	return tr
 }
 
-func spanNames(t *testing.T, s *store.Store, term string, limit int) []string {
+func spanNames(t *testing.T, s *store.Store, term string, limit int64) []string {
 	t.Helper()
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetSpanNames(t.Context(), db, term, limit)

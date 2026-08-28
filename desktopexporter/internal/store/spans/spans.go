@@ -539,7 +539,7 @@ func GetTraceAttributes(ctx context.Context, db *sql.DB, startTime, endTime int6
 // a literal % or _ in the term matches itself. An empty term returns the top
 // names by frequency, which is what the empty value position wants. limit is
 // clamped by the caller.
-func GetSpanNames(ctx context.Context, db *sql.DB, term string, limit int) (json.RawMessage, error) {
+func GetSpanNames(ctx context.Context, db *sql.DB, term string, limit int64) (json.RawMessage, error) {
 	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
 	query := `
 		select cast(coalesce(
