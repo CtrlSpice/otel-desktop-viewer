@@ -67,19 +67,31 @@ export function createSpanNameValueSource(
       comparison.getChild('Operator') ?? comparison.getChild('KeywordOperator')
     if (!op || context.pos <= op.to) return null
 
-    // The value region: everything after the operator. An opening quote is
-    // part of what gets replaced, so accepting a suggestion produces one
-    // consistently quoted value whether or not the user had started quoting.
+    // The value region: everything after the operator. When the user has
+    // opened a quote, the anchor sits AFTER it -- CodeMirror filters options
+    // against the text from the anchor to the cursor, and a label never
+    // starts with a quote, so anchoring on the quote filters everything out.
     const afterOp = context.state.sliceDoc(op.to, context.pos)
     const lead = afterOp.match(/^\s*/)?.[0].length ?? 0
     const valueFrom = op.to + lead
+    let from = valueFrom
     let typed = context.state.sliceDoc(valueFrom, context.pos)
+    let openQuote: '"' | "'" | null = null
     if (typed.startsWith('"') || typed.startsWith("'")) {
+      openQuote = typed[0] as '"' | "'"
+      from = valueFrom + 1
       typed = typed.slice(1)
     }
     // A quote later in the typed text means the value is already closed and
     // the cursor is beyond it; nothing useful to offer there.
     if (/["']/.test(typed)) return null
+
+    // closeBrackets() pairs the opening quote the moment it is typed, so the
+    // closing quote may already sit just past the cursor. Appending another
+    // would double it.
+    const autoClosed =
+      openQuote !== null &&
+      context.state.sliceDoc(context.pos, context.pos + 1) === openQuote
 
     let names: string[]
     try {
@@ -92,21 +104,25 @@ export function createSpanNameValueSource(
     }
     if (context.aborted || names.length === 0) return null
 
-    const options: Completion[] = names.map(name => ({
-      label: name,
-      type: 'text',
-      detail: 'span name',
+    const options: Completion[] = names.map(name => {
       // Quoted uniformly: a name with spaces is a parse error unquoted, and
-      // never varying the inserted shape beats varying it by content.
-      apply: `"${name.replace(/(["\\])/g, '\\$1')}"`,
-    }))
+      // never varying the inserted shape beats varying it by content. The
+      // user's own opening quote is kept; ours is added only when absent.
+      const q = openQuote ?? '"'
+      const escaped = name.replace(new RegExp(`([${q}\\\\])`, 'g'), '\\$1')
+      const apply = openQuote
+        ? escaped + (autoClosed ? '' : q)
+        : q + escaped + q
+      return { label: name, type: 'text', detail: 'span name', apply }
+    })
 
     return {
-      from: valueFrom,
+      from,
       options: options.slice(0, DISPLAY_CAP),
       // Filter the fetched list locally while the value is being typed
-      // rather than re-querying: the fetch is the expensive part.
-      validFor: /^["']?[^"']*$/,
+      // rather than re-querying: the fetch is the expensive part. Inside a
+      // quote, spaces are part of the value; outside, one ends the token.
+      validFor: openQuote ? /^[^"']*$/ : /^[^"'\s]*$/,
     }
   }
 }

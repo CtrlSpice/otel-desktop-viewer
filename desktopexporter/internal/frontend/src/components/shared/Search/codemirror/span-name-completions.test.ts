@@ -37,18 +37,41 @@ describe('span name value completions', () => {
     expect(r!.from).toBe('name = '.length)
   })
 
-  it('replaces an opening quote so the applied value is quoted once', async () => {
+  it('anchors after an opening quote so filtering sees the bare name', async () => {
+    // Anchoring ON the quote made CodeMirror filter labels against `"che`,
+    // which no label matches -- the popup came up empty in the live editor.
     const r = await run('name = "che')
     expect(r).not.toBeNull()
-    expect(r!.from).toBe('name = '.length)
-    const apply = r!.options[0].apply
-    expect(apply).toBe('"checkout/pay"')
+    expect(r!.from).toBe('name = "'.length)
+    // The user's quote is kept; the apply closes it.
+    expect(r!.options[0].apply).toBe('checkout/pay"')
+  })
+
+  it('does not double a closing quote closeBrackets already inserted', async () => {
+    // Typing " in the real editor auto-inserts the pair, leaving the cursor
+    // inside: name = "che|". The apply must not add a second closing quote.
+    const doc = 'name = "che"'
+    const { source } = makeSource()
+    const state = EditorState.create({ doc, extensions: [queryLanguage] })
+    const r = await source(
+      new CompletionContext(state, 'name = "che'.length, false)
+    )
+    expect(r).not.toBeNull()
+    expect(r!.options[0].apply).toBe('checkout/pay')
   })
 
   it('escapes quotes inside a name when applying', async () => {
     const r = await run('name = ')
     const db = r!.options.find(o => o.label === 'db select "users"')
     expect(db?.apply).toBe('"db select \\"users\\""')
+  })
+
+  it('keeps a single-quote opening and escapes accordingly', async () => {
+    const r = await run("name = 'db")
+    expect(r).not.toBeNull()
+    const db = r!.options.find(o => o.label === 'db select "users"')
+    // Inside single quotes the double quotes need no escape.
+    expect(db?.apply).toBe('db select "users"\'')
   })
 
   it('stays out of other fields, other signals, and free text', async () => {
