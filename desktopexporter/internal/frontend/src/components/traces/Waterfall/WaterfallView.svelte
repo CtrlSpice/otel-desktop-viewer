@@ -801,6 +801,20 @@
       return
     }
 
+    // Vim-unimpaired's bracket idiom: [ and ] page through status
+    // errors, the keyboard twin of the chevrons on the error badge.
+    // Same anchor as the badge (the selection), same nearest-directional
+    // behaviour, same refusal to wrap.
+    if (e.key === '[' || e.key === ']') {
+      const id = e.key === ']' ? nextErrorSpanID : previousErrorSpanID
+      if (id) {
+        e.preventDefault()
+        onSelectSpan(id)
+        void focusRowTr(id)
+      }
+      return
+    }
+
     const delta = KEY_DELTAS[e.key]
     if (!delta) return
 
@@ -843,37 +857,41 @@
     ariaLabel="Trace waterfall"
   >
     {#snippet badge()}
-      <SignalBadges
-        signal="trace"
-        spanCount={spans.length}
-        errorCount={headerErrorCount}
-      />
-    {/snippet}
-    {#snippet right()}
+      <!-- errorCount={0} suppresses the plain err badge: in this header
+           the badge IS the navigation (below), while drawer cards keep
+           the plain one. -->
+      <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />
       {#if errorSpans.length > 0}
-        <div role="group" aria-label="Error navigation" class="flex shrink-0">
+        <span
+          class="badge badge-xs badge-soft badge-error waterfall-view__error-nav shrink-0 tabular-nums"
+          role="group"
+          aria-label="Error navigation"
+        >
           <button
             type="button"
-            class="btn btn-ghost btn-xs btn-square tooltip tooltip-bottom"
-            data-tip="Previous error"
+            class="waterfall-view__error-nav-btn"
             onclick={selectPreviousError}
             disabled={previousErrorSpanID === null}
             aria-label="Previous error"
+            title="Previous error"
           >
-            <ArrowLeftIcon class="h-3.5 w-3.5" aria-hidden="true" />
+            <ArrowLeftIcon class="h-3 w-3" aria-hidden="true" />
           </button>
+          <span>{headerErrorCount} err</span>
           <button
             type="button"
-            class="btn btn-ghost btn-xs btn-square tooltip tooltip-bottom"
-            data-tip="Next error"
+            class="waterfall-view__error-nav-btn"
             onclick={selectNextError}
             disabled={nextErrorSpanID === null}
             aria-label="Next error"
+            title="Next error"
           >
-            <ArrowRightIcon class="h-3.5 w-3.5" aria-hidden="true" />
+            <ArrowRightIcon class="h-3 w-3" aria-hidden="true" />
           </button>
-        </div>
+        </span>
       {/if}
+    {/snippet}
+    {#snippet right()}
       {#if collapsibleSpanIDs.length > 0}
         <button
           type="button"
@@ -975,6 +993,28 @@
 
   .waterfall-view {
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-200 transition-opacity duration-200;
+  }
+
+  /* The error badge is the navigation: chevrons flank the count inside
+     one pill. Tight side padding so the chevrons read as part of the
+     badge rather than buttons that happen to be near it. */
+  .waterfall-view__error-nav {
+    @apply gap-0.5 pr-0.5 pl-0.5;
+  }
+
+  /* The visible target is small, so the hit target is quietly larger:
+     vertical padding cancelled by negative margin extends the clickable
+     area past the badge without changing its look. */
+  .waterfall-view__error-nav-btn {
+    @apply -my-1 inline-flex cursor-pointer items-center justify-center rounded-sm px-0.5 py-1;
+  }
+
+  .waterfall-view__error-nav-btn:hover:not(:disabled) {
+    @apply bg-error/20;
+  }
+
+  .waterfall-view__error-nav-btn:disabled {
+    @apply cursor-default opacity-35;
   }
 
   .waterfall-view__scroll {
