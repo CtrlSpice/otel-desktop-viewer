@@ -111,11 +111,6 @@
     activeID: string
     onSelect: (id: string) => void
     tabLayout?: PaneTabLayout
-    /** Show each tab's label as a daisyUI tooltip instead of a native
-     *  title. For strips whose labels can fold away (the drawer):
-     *  the caller flips this on exactly while labels are hidden, so a
-     *  visible label is never echoed by a tooltip. */
-    tabTooltips?: boolean
   }
 
   type TitleTabsProps = CommonProps & {
@@ -144,9 +139,6 @@
     props.rounded !== false ? 'pane-header--rounded' : 'pane-header--flush'
   )
   let tabSizeClass = $derived(props.rounded !== false ? 'tabs-sm' : '')
-  let tabTooltips = $derived(
-    props.mode === 'tabs' && props.tabTooltips === true
-  )
   let stackedClass = $derived(
     props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
@@ -221,11 +213,10 @@
           role="tab"
           class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
             ? 'tab-active [--tab-bg:var(--color-base-200)]'
-            : ''} {tabTooltips ? 'tooltip tooltip-bottom' : ''}"
+            : ''}"
           aria-selected={active}
           disabled={tab.disabled}
-          title={tabTooltips ? undefined : tab.label}
-          data-tip={tabTooltips ? tab.label : undefined}
+          title={tab.label}
           onclick={() => !tab.disabled && onSelect(tab.id)}
         >
           {#if tab.icon}
@@ -233,10 +224,7 @@
               {@render tab.icon()}
             </span>
           {/if}
-          <span class="pane-header__tab-label"
-            ><span class="pane-header__tab-label-text">{tab.label}</span
-            ></span
-          >
+          <span class="pane-header__tab-label">{tab.label}</span>
           {#if tab.count !== undefined}
             <span class="badge-count">{tab.count}</span>
           {/if}
@@ -560,27 +548,4 @@
     @apply min-w-4 shrink-0 grow self-stretch border-b border-base-300;
   }
 
-  /* The label rides in a grid track so a narrow container can fold it
-     to zero width smoothly: fr units animate, auto width does not. The
-     folding rule itself lives with the container (the drawer); this is
-     only the mechanism, inert anywhere nothing folds. The text stays in
-     the accessibility tree when visually collapsed. */
-  .pane-header__tab-label {
-    display: inline-grid;
-    grid-template-columns: 1fr;
-    transition:
-      grid-template-columns 200ms cubic-bezier(0.2, 0, 0, 1),
-      opacity 150ms ease-out,
-      margin-left 200ms cubic-bezier(0.2, 0, 0, 1);
-  }
-
-  .pane-header__tab-label-text {
-    @apply min-w-0 overflow-hidden whitespace-nowrap;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .pane-header__tab-label {
-      transition: none;
-    }
-  }
 </style>
