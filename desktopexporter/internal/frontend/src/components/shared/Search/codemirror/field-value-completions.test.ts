@@ -183,3 +183,52 @@ describe('IN array values', () => {
     expect(await units('unit IN ["ms"] ')).toBeNull()
   })
 })
+
+describe('operator gating', () => {
+  async function traces(doc: string) {
+    const source = createFieldValueSource(
+      createFieldValueCache(async () => NAMES, 'traces'),
+      () => getFieldsBySignal('traces')
+    )
+    const state = EditorState.create({ doc, extensions: [queryLanguage] })
+    return source(new CompletionContext(state, doc.length, false))
+  }
+
+  async function metrics(doc: string) {
+    const source = createFieldValueSource(
+      createFieldValueCache(async () => ['ms', 's'], 'metrics'),
+      () => getFieldsBySignal('metrics')
+    )
+    const state = EditorState.create({ doc, extensions: [queryLanguage] })
+    return source(new CompletionContext(state, doc.length, false))
+  }
+
+  it('declines an operator the field does not accept', async () => {
+    // span name takes no array operator, so completing inside one would help
+    // write exactly what the linter underlines.
+    expect(await traces('name IN [')).toBeNull()
+    expect(await traces('name IN ')).toBeNull()
+  })
+
+  it('offers the bracket after an array operator', async () => {
+    // Bare values there complete into `unit IN ms`, which does not parse.
+    const r = await metrics('unit IN ')
+    expect(r).not.toBeNull()
+    expect(r!.options.map(o => o.label)).toEqual(['['])
+    // A function rather than a string: it reopens completion on the values
+    // inside, so the bracket is one step rather than a dead end.
+    expect(typeof r!.options[0].apply).toBe('function')
+  })
+
+  it('offers values once the bracket is there', async () => {
+    const r = await metrics('unit IN [')
+    expect(r).not.toBeNull()
+    expect(r!.options.map(o => o.label)).toEqual(['ms', 's'])
+  })
+
+  it('still completes scalar operators normally', async () => {
+    const r = await metrics('unit = ')
+    expect(r).not.toBeNull()
+    expect(r!.options.map(o => o.label)).toEqual(['ms', 's'])
+  })
+})

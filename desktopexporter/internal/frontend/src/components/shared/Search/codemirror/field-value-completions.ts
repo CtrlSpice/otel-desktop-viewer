@@ -1,4 +1,5 @@
 import {
+  startCompletion,
   type CompletionContext,
   type CompletionResult,
   type Completion,
@@ -71,6 +72,19 @@ export function createFieldValueSource(
       comparison.getChild('Operator') ?? comparison.getChild('KeywordOperator')
     if (!op || context.pos <= op.to) return null
 
+    // The operator has to be one this field accepts, or completion helps
+    // write an expression the linter immediately flags -- `name IN [` was
+    // offering span names while being underlined as invalid, since name
+    // takes no array operator.
+    const opText = context.state.sliceDoc(op.from, op.to).toUpperCase()
+    const accepted = def.operators.some(o => o.symbol.toUpperCase() === opText)
+    if (!accepted) return null
+
+    // An array operator needs its brackets. Offering bare values after
+    // `unit IN ` completes into `unit IN {errors}`, which does not parse, so
+    // the bracket is offered instead -- one keystroke to the values.
+    const isArrayOp = opText === 'IN' || opText === 'NOT IN'
+
     // The value region: everything after the operator. When the user has
     // opened a quote, the anchor sits AFTER it -- CodeMirror filters options
     // against the text from the anchor to the cursor, and a label never
@@ -84,6 +98,32 @@ export function createFieldValueSource(
     // whole region -- is what completes. Anchor after the last bracket or
     // comma; everything before it is settled.
     const inArray = region.startsWith('[')
+    if (isArrayOp && !inArray) {
+      // Nothing typed yet, or something that is not an array: offer the
+      // opening bracket, which reopens completion on the values inside.
+      if (region.trim() !== '') return null
+      return {
+        from: valueFrom,
+        options: [
+          {
+            label: '[',
+            type: 'text',
+            detail: `list of ${def.name} values`,
+            // Reopens completion on the values inside: accepting a bracket
+            // and then facing a closed dropdown makes the suggestion look
+            // like it led nowhere.
+            apply: (view, _completion, applyFrom, applyTo) => {
+              view.dispatch({
+                changes: { from: applyFrom, to: applyTo, insert: '[' },
+                selection: { anchor: applyFrom + 1 },
+              })
+              startCompletion(view)
+            },
+          },
+        ],
+        validFor: /^$/,
+      }
+    }
     if (inArray && region.includes(']')) return null
     let itemFrom = valueFrom
     if (inArray) {
