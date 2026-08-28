@@ -1004,17 +1004,25 @@
 
   /* The visible target is small, so the hit target is quietly larger:
      vertical padding cancelled by negative margin extends the clickable
-     area past the badge without changing its look. */
+     area past the badge without changing its look.
+
+     Hover is a colour change, not a background: the chevrons rest a
+     step quieter than the count and come up to the badge's full colour
+     under the pointer. Derived from currentColor, so it follows the
+     badge through both themes. */
   .waterfall-view__error-nav-btn {
-    @apply -my-1 inline-flex cursor-pointer items-center justify-center rounded-sm px-0.5 py-1;
+    @apply -my-1 inline-flex cursor-pointer items-center justify-center px-0.5 py-1 transition-colors duration-100;
+    color: color-mix(in oklab, currentColor 60%, transparent);
   }
 
-  .waterfall-view__error-nav-btn:hover:not(:disabled) {
-    @apply bg-error/20;
+  .waterfall-view__error-nav-btn:hover:not(:disabled),
+  .waterfall-view__error-nav-btn:focus-visible {
+    color: inherit;
   }
 
   .waterfall-view__error-nav-btn:disabled {
-    @apply cursor-default opacity-35;
+    @apply cursor-default;
+    color: color-mix(in oklab, currentColor 30%, transparent);
   }
 
   .waterfall-view__scroll {
