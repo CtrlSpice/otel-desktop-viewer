@@ -137,3 +137,49 @@ describe('span name value completions', () => {
     ).toBeNull()
   })
 })
+
+describe('IN array values', () => {
+  // Metric `unit` is the field that actually offers IN among the
+  // discoverable ones; span name deliberately does not.
+  const UNITS = ['ms', 's', 'By']
+
+  async function units(doc: string, pos = doc.length) {
+    const source = createFieldValueSource(
+      createFieldValueCache(async () => UNITS, 'metrics'),
+      () => getFieldsBySignal('metrics')
+    )
+    const state = EditorState.create({ doc, extensions: [queryLanguage] })
+    return source(new CompletionContext(state, pos, false))
+  }
+
+  it('offers values for the first item in an array', async () => {
+    const r = await units('unit IN [')
+    expect(r).not.toBeNull()
+    expect(r!.from).toBe('unit IN ['.length)
+    expect(r!.options.map(o => o.label)).toEqual(UNITS)
+  })
+
+  it('anchors at the item being typed, not the bracket', async () => {
+    // Anchoring at the bracket made accepting replace the whole array with
+    // one bare value, destroying the items already listed.
+    const r = await units('unit IN ["ms", s')
+    expect(r).not.toBeNull()
+    expect(r!.from).toBe('unit IN ["ms", '.length)
+  })
+
+  it('anchors after an opening quote on a later item', async () => {
+    const r = await units('unit IN ["ms", "B')
+    expect(r).not.toBeNull()
+    expect(r!.from).toBe('unit IN ["ms", "'.length)
+    expect(r!.options[0].apply).toBe('ms"')
+  })
+
+  it('declines once an item is closed but the array is not', async () => {
+    // After `"ms"` only a comma or a bracket is valid, not another value.
+    expect(await units('unit IN ["ms"')).toBeNull()
+  })
+
+  it('declines once the array is closed', async () => {
+    expect(await units('unit IN ["ms"] ')).toBeNull()
+  })
+})

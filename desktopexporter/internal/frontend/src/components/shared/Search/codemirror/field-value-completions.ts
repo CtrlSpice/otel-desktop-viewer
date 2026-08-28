@@ -12,7 +12,8 @@ import type { FieldValueCache } from './field-value-cache'
 /**
  * Value completion for plain-column fields: `name = ` offers the names the
  * store actually holds (#412), and any field marked `discoverableValues`
- * works the same way.
+ * works the same way. Also completes items inside an `IN [...]` array, where
+ * each item completes independently of the ones already listed.
  *
  * @remarks
  * These are columns, not attributes, so the dictionary-backed value
@@ -77,23 +78,31 @@ export function createFieldValueSource(
     const afterOp = context.state.sliceDoc(op.to, context.pos)
     const lead = afterOp.match(/^\s*/)?.[0].length ?? 0
     const valueFrom = op.to + lead
-    let from = valueFrom
-    let typed = context.state.sliceDoc(valueFrom, context.pos)
+    const region = context.state.sliceDoc(valueFrom, context.pos)
+
+    // An IN array holds several values, so the item being typed -- not the
+    // whole region -- is what completes. Anchor after the last bracket or
+    // comma; everything before it is settled.
+    const inArray = region.startsWith('[')
+    if (inArray && region.includes(']')) return null
+    let itemFrom = valueFrom
+    if (inArray) {
+      const lastSep = Math.max(region.lastIndexOf('['), region.lastIndexOf(','))
+      const afterSep = region.slice(lastSep + 1)
+      itemFrom =
+        valueFrom + lastSep + 1 + (afterSep.match(/^\s*/)?.[0].length ?? 0)
+    }
+
+    let from = itemFrom
+    let typed = context.state.sliceDoc(itemFrom, context.pos)
     let openQuote: '"' | "'" | null = null
     if (typed.startsWith('"') || typed.startsWith("'")) {
       openQuote = typed[0] as '"' | "'"
-      from = valueFrom + 1
+      from = itemFrom + 1
       typed = typed.slice(1)
     }
-    // A quote later in the typed text means the value is already closed and
-    // the cursor is beyond it; nothing useful to offer there.
-    //
-    // This also declines inside an IN array, where the bracket and commas
-    // put a quote before the cursor. Deliberate for now: of the fields that
-    // offer IN, only `unit` is discoverable, and its values are few enough
-    // to type. Should a high-cardinality field ever gain IN, array
-    // completion is the thing to build -- completions.ts already has the
-    // anchoring and quote-parity logic to copy.
+    // A quote left in the typed text means this item is already closed and
+    // the cursor sits past it, where only a comma or a bracket is valid.
     if (/["']/.test(typed)) return null
 
     // closeBrackets() pairs the opening quote the moment it is typed, so the
