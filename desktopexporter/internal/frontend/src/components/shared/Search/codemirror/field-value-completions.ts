@@ -87,6 +87,13 @@ export function createFieldValueSource(
     }
     // A quote later in the typed text means the value is already closed and
     // the cursor is beyond it; nothing useful to offer there.
+    //
+    // This also declines inside an IN array, where the bracket and commas
+    // put a quote before the cursor. Deliberate for now: of the fields that
+    // offer IN, only `unit` is discoverable, and its values are few enough
+    // to type. Should a high-cardinality field ever gain IN, array
+    // completion is the thing to build -- completions.ts already has the
+    // anchoring and quote-parity logic to copy.
     if (/["']/.test(typed)) return null
 
     // closeBrackets() pairs the opening quote the moment it is typed, so the
