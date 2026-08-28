@@ -307,8 +307,12 @@ describe('SignalListDrawer drag to collapse and reopen', () => {
       button: 0,
       buttons: 1,
     }
-    el.dispatchEvent(new PointerEvent('pointerdown', { ...opts, clientX: fromX }))
-    window.dispatchEvent(new PointerEvent('pointermove', { ...opts, clientX: toX }))
+    el.dispatchEvent(
+      new PointerEvent('pointerdown', { ...opts, clientX: fromX })
+    )
+    window.dispatchEvent(
+      new PointerEvent('pointermove', { ...opts, clientX: toX })
+    )
     if (release) {
       window.dispatchEvent(
         new PointerEvent('pointerup', { ...opts, clientX: toX, buttons: 0 })
@@ -360,7 +364,11 @@ describe('SignalListDrawer drag to collapse and reopen', () => {
       new PointerEvent('pointermove', { ...opts, clientX: 500 - 4 * 16 })
     )
     window.dispatchEvent(
-      new PointerEvent('pointerup', { ...opts, clientX: 500 - 4 * 16, buttons: 0 })
+      new PointerEvent('pointerup', {
+        ...opts,
+        clientX: 500 - 4 * 16,
+        buttons: 0,
+      })
     )
     expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('true')
     // An ordinary resize: the pulled-back width is committed.
@@ -386,9 +394,8 @@ describe('SignalListDrawer drag to collapse and reopen', () => {
 
   it('closes on ArrowLeft at the floor and reopens on ArrowRight', async () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'true')
-    const { drawerWidth, MIN_DRAWER_WIDTH_REM } = await import(
-      '@/state/drawer-width.svelte'
-    )
+    const { drawerWidth, MIN_DRAWER_WIDTH_REM } =
+      await import('@/state/drawer-width.svelte')
     drawerWidth.preview(MIN_DRAWER_WIDTH_REM)
     renderDrawer()
     const user = userEvent.setup()

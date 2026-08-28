@@ -115,9 +115,10 @@ describe('MetricCard series counts', () => {
       onclick: vi.fn(),
     })
     expect(
-      screen.getByText((_, el) =>
-        el?.classList.contains('badge-count') === true &&
-        el.textContent?.replace(/\s+/g, ' ').trim() === '3 of 21 series'
+      screen.getByText(
+        (_, el) =>
+          el?.classList.contains('badge-count') === true &&
+          el.textContent?.replace(/\s+/g, ' ').trim() === '3 of 21 series'
       )
     ).toBeInTheDocument()
   })
@@ -129,9 +130,10 @@ describe('MetricCard series counts', () => {
       onclick: vi.fn(),
     })
     expect(
-      screen.getByText((_, el) =>
-        el?.classList.contains('badge-count') === true &&
-        el.textContent?.replace(/\s+/g, ' ').trim() === '21 series'
+      screen.getByText(
+        (_, el) =>
+          el?.classList.contains('badge-count') === true &&
+          el.textContent?.replace(/\s+/g, ' ').trim() === '21 series'
       )
     ).toBeInTheDocument()
     expect(screen.queryByText(/of 21 series/)).not.toBeInTheDocument()

@@ -22,9 +22,8 @@ describe('drawer width', () => {
       MIN_DRAWER_WIDTH_REM,
       MAX_DRAWER_WIDTH_REM,
     } = await freshStore()
-    const { PANEL_DEFAULT_REM, PANEL_MIN_REM, PANEL_MAX_REM } = await import(
-      './panel-width'
-    )
+    const { PANEL_DEFAULT_REM, PANEL_MIN_REM, PANEL_MAX_REM } =
+      await import('./panel-width')
     expect(DEFAULT_DRAWER_WIDTH_REM).toBe(PANEL_DEFAULT_REM)
     expect(MIN_DRAWER_WIDTH_REM).toBe(PANEL_MIN_REM)
     expect(MAX_DRAWER_WIDTH_REM).toBe(PANEL_MAX_REM)

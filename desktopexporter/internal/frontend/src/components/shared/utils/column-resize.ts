@@ -55,10 +55,7 @@ export function initialWidths(
   specs: ColumnSpec[],
   containerPx: number
 ): ColumnWidths {
-  const fixedTotal = specs.reduce(
-    (s, d) => (d.flex === 0 ? s + d.min : s),
-    0
-  )
+  const fixedTotal = specs.reduce((s, d) => (d.flex === 0 ? s + d.min : s), 0)
   const weightTotal = specs.reduce((s, d) => s + d.flex, 0)
   const available = Math.max(0, containerPx - fixedTotal)
 
@@ -212,10 +209,7 @@ export function barPositions(
   let cumulative = 0
   for (let i = 0; i < specs.length; i++) {
     cumulative += widths[specs[i].id] ?? 0
-    if (
-      specs[i].flex > 0 &&
-      specs.slice(i + 1).some(d => d.flex > 0)
-    ) {
+    if (specs[i].flex > 0 && specs.slice(i + 1).some(d => d.flex > 0)) {
       out.push({ id: specs[i].id, left: cumulative })
     }
   }

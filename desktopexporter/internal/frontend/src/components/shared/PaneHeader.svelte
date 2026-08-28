@@ -547,5 +547,4 @@
   .pane-header__tab-trail {
     @apply min-w-4 shrink-0 grow self-stretch border-b border-base-300;
   }
-
 </style>
