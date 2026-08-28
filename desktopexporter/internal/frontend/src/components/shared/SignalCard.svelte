@@ -161,6 +161,13 @@
      * .signal-row__time-label). Badges → badge-xs on the snippet markup.
      */
     --signal-card-row-h: 1.5rem;
+    /* The composited surface of this row, per state. The badge zone and
+       its fade must paint exactly what the row shows behind the title,
+       and the state backgrounds are translucent tints over the panel's
+       base-200 -- so each state declares its composite here (srgb mix,
+       matching alpha compositing). Hover is base-200/50 over base-200,
+       which composites back to base-200. */
+    --row-surface: var(--color-base-200);
     @apply flex w-full flex-col gap-0 px-3 py-1.5 text-left text-sm leading-snug transition-colors duration-100;
     @apply hover:bg-base-200/50;
     cursor: pointer;
@@ -174,10 +181,20 @@
   .signal-row--selected {
     @apply bg-primary/[0.07];
     box-shadow: inset 2px 0 0 0 var(--color-primary);
+    --row-surface: color-mix(
+      in srgb,
+      var(--color-primary) 7%,
+      var(--color-base-200)
+    );
   }
 
   .signal-row--selected:hover {
     @apply bg-primary/10;
+    --row-surface: color-mix(
+      in srgb,
+      var(--color-primary) 10%,
+      var(--color-base-200)
+    );
   }
 
   /* Single-line rows: fixed height + flex centering matches detail-cell
@@ -197,7 +214,7 @@
   }
 
   .signal-row__header {
-    @apply flex h-[var(--signal-card-row-h)] min-w-0 items-center gap-1;
+    @apply relative flex h-[var(--signal-card-row-h)] min-w-0 items-center gap-1;
   }
 
   .signal-row__title-cluster {
@@ -219,8 +236,25 @@
     color: var(--color-subtle);
   }
 
+  /* The badges are pinned; a long title slides BENEATH them and is
+     occluded -- the same collapse language as the drawer header's tab
+     strip under its chrome. Out of flow so the title owns the full row
+     width; opaque against the row's composited surface; a short fade on
+     the leading edge says the title continues underneath. */
   .signal-row__badge {
-    @apply ml-auto flex max-w-[55%] shrink-0 flex-wrap items-center justify-end gap-1;
+    @apply absolute inset-y-0 right-0 flex max-w-[55%] items-center justify-end gap-1;
+    background: var(--row-surface);
+  }
+
+  .signal-row__badge::before {
+    content: '';
+    position: absolute;
+    right: 100%;
+    top: 0;
+    bottom: 0;
+    width: 1.25rem;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--row-surface));
   }
 
   .signal-row__time {

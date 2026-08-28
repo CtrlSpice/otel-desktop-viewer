@@ -60,6 +60,12 @@
 
     // ── ResizablePanels config (only used when `detail` is set) ───
     defaultMainWidth?: number
+    /** Absolute default for the detail pane, in rem (see
+     * ResizablePanels.defaultRightRem). Signal pages pass
+     * PANEL_DEFAULT_REM so the detail pane and the drawer start at the
+     * same width; Home keeps its fraction default -- its detail pane
+     * is stats, not an inspector. */
+    defaultDetailRem?: number
     minMainWidth?: number
     minDetailWidth?: number
     /** Absolute pixel floor for the main pane. Use when fixed-size
@@ -92,6 +98,7 @@
     detail,
     pageFooter,
     defaultMainWidth = 0.7,
+    defaultDetailRem,
     minMainWidth = 0.3,
     minDetailWidth = 0.2,
     minMainPx,
@@ -131,6 +138,7 @@
         {#if detail}
           <ResizablePanels
             defaultLeftWidth={defaultMainWidth}
+            defaultRightRem={defaultDetailRem}
             minLeftWidth={minMainWidth}
             minRightWidth={minDetailWidth}
             minLeftPx={minMainPx}

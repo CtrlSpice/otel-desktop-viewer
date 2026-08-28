@@ -58,7 +58,13 @@ describe('TraceCard', () => {
 
   it('renders the span and error counts', () => {
     renderCard({ trace: makeTrace({ spanCount: 4, errorCount: 2 }) })
-    expect(screen.getByText('4 spans')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        (_, el) =>
+          el?.classList.contains('badge-count') === true &&
+          el.textContent?.replace(/\s+/g, ' ').trim() === '4 spans'
+      )
+    ).toBeInTheDocument()
     expect(screen.getByText('2 err')).toBeInTheDocument()
   })
 

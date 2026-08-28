@@ -239,7 +239,7 @@
 </script>
 
 <script lang="ts">
-  import { tick, untrack } from 'svelte'
+  import { onDestroy, tick, untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
@@ -402,14 +402,15 @@
 
   // --- Column widths (resizable) ---
   import {
-    fixed,
     flex,
-    computeInitialWidths,
-    redistributeWidths,
-    computeBarPositions,
-    applyColumnResize,
+    initialWidths,
+    fitWidths,
+    reconcileWidths,
+    barPositions as computeBarPositions,
     startColumnResize,
+    type ColumnWidths,
   } from '@/components/shared/utils/column-resize'
+  import type { DragHandle } from '@/components/shared/utils/drag'
 
   const wfCols = [
     flex('span', 140, 2),
@@ -417,29 +418,67 @@
     flex('timeline', 240, 4),
   ]
 
-  let activeResizeCol = $state<number | null>(null)
-  let colWidths = $state(wfCols.map(d => d.min))
+  /* Widths key by column id, never position: the column set is about to
+   * become user-configurable, and a stored or derived width must land on
+   * the column it belongs to no matter what was added or removed around
+   * it. Stored widths from a different column set reconcile on load. */
+  const COLUMN_WIDTHS_KEY = 'waterfall-column-widths'
 
-  let spanColWidth = $derived(colWidths[0])
-  let serviceColWidth = $derived(colWidths[1])
+  function loadStoredWidths(): ColumnWidths {
+    if (typeof localStorage === 'undefined') return {}
+    try {
+      const parsed: unknown = JSON.parse(
+        localStorage.getItem(COLUMN_WIDTHS_KEY) ?? 'null'
+      )
+      if (parsed === null || typeof parsed !== 'object') return {}
+      const out: ColumnWidths = {}
+      for (const [id, w] of Object.entries(parsed)) {
+        if (typeof w === 'number' && Number.isFinite(w)) out[id] = w
+      }
+      return out
+    } catch {
+      return {}
+    }
+  }
+
+  function saveColumnWidths() {
+    if (typeof localStorage === 'undefined') return
+    try {
+      localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(colWidths))
+    } catch {
+      // A full or blocked store costs the preference, not the drag.
+    }
+  }
+
+  let activeResizeCol = $state<string | null>(null)
+  let colWidths = $state<ColumnWidths>(initialWidths(wfCols, 800))
+  let colDrag: DragHandle | null = null
+
+  let spanColWidth = $derived(colWidths['span'] ?? 0)
+  let serviceColWidth = $derived(colWidths['service'] ?? 0)
 
   let barPositions = $derived(computeBarPositions(wfCols, colWidths))
 
-  function handleStartResize(colIndex: number, e: PointerEvent) {
-    activeResizeCol = colIndex
-    startColumnResize(
+  function handleStartResize(barId: string, e: PointerEvent) {
+    if (activeResizeCol !== null) return
+    activeResizeCol = barId
+    colDrag = startColumnResize(
       wfCols,
-      () => colWidths,
-      colIndex,
+      colWidths,
+      barId,
       e,
       next => {
         colWidths = next
       },
       () => {
         activeResizeCol = null
+        colDrag = null
+        saveColumnWidths()
       }
     )
   }
+
+  onDestroy(() => colDrag?.cancel())
 
   let scrollContainerEl = $state<HTMLDivElement | null>(null)
   let scrollContainerW = $state(800)
@@ -447,13 +486,17 @@
   $effect(() => {
     if (!scrollContainerEl) return
     untrack(() => {
-      colWidths = computeInitialWidths(wfCols, scrollContainerEl!.clientWidth)
+      colWidths = reconcileWidths(
+        wfCols,
+        loadStoredWidths(),
+        scrollContainerEl!.clientWidth
+      )
     })
     const ro = new ResizeObserver(entries => {
       const w = entries[0]?.contentRect.width ?? 800
       scrollContainerW = w
       if (activeResizeCol === null) {
-        colWidths = redistributeWidths(wfCols, colWidths, w)
+        colWidths = fitWidths(wfCols, colWidths, w)
       }
     })
     ro.observe(scrollContainerEl)
@@ -758,6 +801,20 @@
       return
     }
 
+    // Vim-unimpaired's bracket idiom: [ and ] page through status
+    // errors, the keyboard twin of the chevrons on the error badge.
+    // Same anchor as the badge (the selection), same nearest-directional
+    // behaviour, same refusal to wrap.
+    if (e.key === '[' || e.key === ']') {
+      const id = e.key === ']' ? nextErrorSpanID : previousErrorSpanID
+      if (id) {
+        e.preventDefault()
+        onSelectSpan(id)
+        void focusRowTr(id)
+      }
+      return
+    }
+
     const delta = KEY_DELTAS[e.key]
     if (!delta) return
 
@@ -800,37 +857,41 @@
     ariaLabel="Trace waterfall"
   >
     {#snippet badge()}
-      <SignalBadges
-        signal="trace"
-        spanCount={spans.length}
-        errorCount={headerErrorCount}
-      />
-    {/snippet}
-    {#snippet right()}
+      <!-- errorCount={0} suppresses the plain err badge: in this header
+           the badge IS the navigation (below), while drawer cards keep
+           the plain one. -->
+      <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />
       {#if errorSpans.length > 0}
-        <div role="group" aria-label="Error navigation" class="flex shrink-0">
+        <span
+          class="badge badge-xs badge-soft badge-error waterfall-view__error-nav shrink-0 tabular-nums"
+          role="group"
+          aria-label="Error navigation"
+        >
           <button
             type="button"
-            class="btn btn-ghost btn-xs btn-square tooltip tooltip-bottom"
-            data-tip="Previous error"
+            class="waterfall-view__error-nav-btn"
             onclick={selectPreviousError}
             disabled={previousErrorSpanID === null}
             aria-label="Previous error"
+            title="Previous error"
           >
-            <ArrowLeftIcon class="h-3.5 w-3.5" aria-hidden="true" />
+            <ArrowLeftIcon class="h-3 w-3" aria-hidden="true" />
           </button>
+          <span>{headerErrorCount} err</span>
           <button
             type="button"
-            class="btn btn-ghost btn-xs btn-square tooltip tooltip-bottom"
-            data-tip="Next error"
+            class="waterfall-view__error-nav-btn"
             onclick={selectNextError}
             disabled={nextErrorSpanID === null}
             aria-label="Next error"
+            title="Next error"
           >
-            <ArrowRightIcon class="h-3.5 w-3.5" aria-hidden="true" />
+            <ArrowRightIcon class="h-3 w-3" aria-hidden="true" />
           </button>
-        </div>
+        </span>
       {/if}
+    {/snippet}
+    {#snippet right()}
       {#if collapsibleSpanIDs.length > 0}
         <button
           type="button"
@@ -863,14 +924,7 @@
             tickLabelWidth={TICK_LABEL_SLOT_PX}
             {spanColWidth}
             {serviceColWidth}
-            onResizeSpanCol={w => {
-              const next = applyColumnResize(wfCols, colWidths, 0, w)
-              if (next !== colWidths) colWidths = next
-            }}
-            onResizeServiceCol={w => {
-              const next = applyColumnResize(wfCols, colWidths, 1, w)
-              if (next !== colWidths) colWidths = next
-            }}
+            onStartResize={handleStartResize}
           />
         </thead>
       </table>
@@ -914,15 +968,15 @@
           {/snippet}
         </VirtualList>
       </div>
-      {#each barPositions as bar}
+      {#each barPositions as bar (bar.id)}
         <div
           class="col-resize-bar col-resize-bar--guide"
-          class:col-resize-bar--active={activeResizeCol === bar.index}
+          class:col-resize-bar--active={activeResizeCol === bar.id}
           style:left="{bar.left}px"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize {wfCols[bar.index].id} column"
-          onpointerdown={e => handleStartResize(bar.index, e)}
+          aria-label="Resize {bar.id} column"
+          onpointerdown={e => handleStartResize(bar.id, e)}
         >
           <div class="col-resize-bar__line"></div>
         </div>
@@ -939,6 +993,36 @@
 
   .waterfall-view {
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-200 transition-opacity duration-200;
+  }
+
+  /* The error badge is the navigation: chevrons flank the count inside
+     one pill. Tight side padding so the chevrons read as part of the
+     badge rather than buttons that happen to be near it. */
+  .waterfall-view__error-nav {
+    @apply gap-0.5 pr-0.5 pl-0.5;
+  }
+
+  /* The visible target is small, so the hit target is quietly larger:
+     vertical padding cancelled by negative margin extends the clickable
+     area past the badge without changing its look.
+
+     Hover is a colour change, not a background: the chevrons rest a
+     step quieter than the count and come up to the badge's full colour
+     under the pointer. Derived from currentColor, so it follows the
+     badge through both themes. */
+  .waterfall-view__error-nav-btn {
+    @apply -my-1 inline-flex cursor-pointer items-center justify-center px-0.5 py-1 transition-colors duration-100;
+    color: color-mix(in oklab, currentColor 60%, transparent);
+  }
+
+  .waterfall-view__error-nav-btn:hover:not(:disabled),
+  .waterfall-view__error-nav-btn:focus-visible {
+    color: inherit;
+  }
+
+  .waterfall-view__error-nav-btn:disabled {
+    @apply cursor-default;
+    color: color-mix(in oklab, currentColor 30%, transparent);
   }
 
   .waterfall-view__scroll {

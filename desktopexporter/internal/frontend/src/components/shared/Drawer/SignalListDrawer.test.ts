@@ -286,3 +286,142 @@ describe('SignalListDrawer rail-only pages', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
+
+describe('SignalListDrawer drag to collapse and reopen', () => {
+  // The width store is a module singleton, so each case pins its own
+  // starting width instead of assuming a fresh module.
+  const WIDTH_KEY = 'signal-drawer-width'
+
+  function handle(open: boolean) {
+    return screen.getByRole('separator', {
+      name: open ? 'Resize the list' : 'Open the list',
+    })
+  }
+
+  function drag(el: Element, fromX: number, toX: number, release = true) {
+    const opts = {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      clientY: 100,
+      button: 0,
+      buttons: 1,
+    }
+    el.dispatchEvent(
+      new PointerEvent('pointerdown', { ...opts, clientX: fromX })
+    )
+    window.dispatchEvent(
+      new PointerEvent('pointermove', { ...opts, clientX: toX })
+    )
+    if (release) {
+      window.dispatchEvent(
+        new PointerEvent('pointerup', { ...opts, clientX: toX, buttons: 0 })
+      )
+    }
+  }
+
+  it('collapses when the drag overshoots the floor, keeping the remembered width', async () => {
+    localStorage.setItem(DRAWER_OPEN_KEY, 'true')
+    localStorage.setItem(WIDTH_KEY, '30')
+    const { drawerWidth } = await import('@/state/drawer-width.svelte')
+    drawerWidth.preview(30)
+    renderDrawer()
+    // jsdom has no root font size, so the component falls back to 16px/rem.
+    // From 30rem, the floor is 22 and the close threshold 16: 15rem of
+    // travel (240px) is decisively past it.
+    drag(handle(true), 500, 500 - 15 * 16)
+    expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('false')
+    // The floor the drag passed through was not committed.
+    expect(localStorage.getItem(WIDTH_KEY)).toBe('30')
+    expect(drawerWidth.rem).toBe(30)
+    // The handle survives the collapse, relabeled for its new job.
+    expect(
+      await screen.findByRole('separator', { name: 'Open the list' })
+    ).toBeInTheDocument()
+  })
+
+  it('reverses the collapse when the drag pulls back before release', async () => {
+    localStorage.setItem(DRAWER_OPEN_KEY, 'true')
+    localStorage.setItem(WIDTH_KEY, '30')
+    const { drawerWidth } = await import('@/state/drawer-width.svelte')
+    drawerWidth.preview(30)
+    renderDrawer()
+    const el = handle(true)
+    const opts = {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      clientY: 100,
+      button: 0,
+      buttons: 1,
+    }
+    el.dispatchEvent(new PointerEvent('pointerdown', { ...opts, clientX: 500 }))
+    // Past the close threshold, then back out to 26rem.
+    window.dispatchEvent(
+      new PointerEvent('pointermove', { ...opts, clientX: 500 - 15 * 16 })
+    )
+    window.dispatchEvent(
+      new PointerEvent('pointermove', { ...opts, clientX: 500 - 4 * 16 })
+    )
+    window.dispatchEvent(
+      new PointerEvent('pointerup', {
+        ...opts,
+        clientX: 500 - 4 * 16,
+        buttons: 0,
+      })
+    )
+    expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('true')
+    // An ordinary resize: the pulled-back width is committed.
+    expect(localStorage.getItem(WIDTH_KEY)).toBe('26')
+  })
+
+  it('reopens at the remembered width from a short outward tug on the rail', async () => {
+    localStorage.setItem(DRAWER_OPEN_KEY, 'false')
+    localStorage.setItem(WIDTH_KEY, '30')
+    const { drawerWidth } = await import('@/state/drawer-width.svelte')
+    drawerWidth.preview(30)
+    renderDrawer()
+    // 2rem outward crosses the reopen threshold but never clears the
+    // floor: that means "open it", not "open it at the floor".
+    drag(handle(false), 60, 60 + 2 * 16)
+    expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('true')
+    expect(localStorage.getItem(WIDTH_KEY)).toBe('30')
+    expect(drawerWidth.rem).toBe(30)
+    expect(
+      await screen.findByRole('separator', { name: 'Resize the list' })
+    ).toBeInTheDocument()
+  })
+
+  it('claims the Home key so resetting cannot also scroll the page', async () => {
+    // Every state-mutating branch must preventDefault, or the browser
+    // stacks its native handling (Home: scroll to top) on the reset.
+    localStorage.setItem(DRAWER_OPEN_KEY, 'true')
+    const { drawerWidth } = await import('@/state/drawer-width.svelte')
+    drawerWidth.preview(30)
+    renderDrawer()
+    const el = handle(true)
+    const ev = new KeyboardEvent('keydown', {
+      key: 'Home',
+      bubbles: true,
+      cancelable: true,
+    })
+    el.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(drawerWidth.rem).toBe(28)
+  })
+
+  it('closes on ArrowLeft at the floor and reopens on ArrowRight', async () => {
+    localStorage.setItem(DRAWER_OPEN_KEY, 'true')
+    const { drawerWidth, MIN_DRAWER_WIDTH_REM } =
+      await import('@/state/drawer-width.svelte')
+    drawerWidth.preview(MIN_DRAWER_WIDTH_REM)
+    renderDrawer()
+    const user = userEvent.setup()
+    handle(true).focus()
+    await user.keyboard('{ArrowLeft}')
+    expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('false')
+    handle(false).focus()
+    await user.keyboard('{ArrowRight}')
+    expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('true')
+  })
+})

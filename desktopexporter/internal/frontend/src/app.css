@@ -1652,6 +1652,9 @@ button:focus-visible:not(.btn) {
   margin-left: -0.25rem;
   width: var(--resize-bar-hit-width);
   -webkit-tap-highlight-color: transparent;
+  /* The browser's own scroll/zoom gesture would otherwise steal a drag that
+     starts on the handle, on a touchscreen or a precision trackpad. */
+  touch-action: none;
 }
 
 /* Strip + line start at first body row — keeps thead/tabs clear (matches --table-header-h) */

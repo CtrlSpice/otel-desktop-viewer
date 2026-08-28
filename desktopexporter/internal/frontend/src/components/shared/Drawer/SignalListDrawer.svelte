@@ -19,7 +19,7 @@
 
 <script lang="ts" generics="T">
   import type { Snippet } from 'svelte'
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import {
     ArrowRightIcon,
@@ -30,6 +30,12 @@
     HomeIcon,
   } from '@/icons'
   import ThemeToggle from '@/components/shared/ThemeToggle.svelte'
+  import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
+  import {
+    drawerWidth,
+    MIN_DRAWER_WIDTH_REM,
+    MAX_DRAWER_WIDTH_REM,
+  } from '@/state/drawer-width.svelte'
   import DrawerNavTabs from '@/components/shared/Drawer/DrawerNavTabs.svelte'
   import {
     NAV_ITEMS,
@@ -104,6 +110,164 @@
 
   const initialDrawerOpen = loadDrawerOpen()
   let drawerOpen = $state(initialDrawerOpen)
+  // Resize state. The width tween is suppressed while dragging: a 200ms
+  // transition on a value changing every pointermove makes the edge lag the
+  // cursor instead of tracking it.
+  let isResizing = $state(false)
+  let drag: DragHandle | null = null
+
+  function remPerPx(): number {
+    const root = parseFloat(getComputedStyle(document.documentElement).fontSize)
+    return Number.isFinite(root) && root > 0 ? 1 / root : 1 / 16
+  }
+
+  /* Dragging well past the floor collapses the drawer to its rail, and
+   * dragging outward from the rail opens it again -- the overshoot
+   * pattern IDE sidebars use. Distance, not a dwell timer: the drag
+   * already expresses intent as distance, the state change previews live
+   * under the pointer (pull back and it reverses), and nothing fires on
+   * someone who merely paused at the floor to think. The two thresholds
+   * differ so the boundary has hysteresis and cannot flicker. */
+  const COLLAPSE_OVERSHOOT_REM = 6
+  const REOPEN_OVERSHOOT_REM = 5
+
+  function persistDrawerOpen(open: boolean) {
+    syncDrawerOpenPreference(open)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(DRAWER_OPEN_KEY, String(open))
+    }
+  }
+
+  /* Two kinds of width change happen mid-drag and they need opposite
+   * treatment. Pointer tracking must be instant -- a tween on a value
+   * changing every pointermove makes the edge lag the cursor. The
+   * open/rail flip is the opposite: it is a 400px jump the pointer did
+   * not make, and rendering it in one frame reads as a glitch. So the
+   * flip briefly lifts the instant suppression and animates, then
+   * tracking snaps back to instant. */
+  const SNAP_TWEEN_MS = 220
+  let snapTween = $state(false)
+  let snapTimer: ReturnType<typeof setTimeout> | undefined
+
+  function beginSnapTween() {
+    snapTween = true
+    clearTimeout(snapTimer)
+    snapTimer = setTimeout(() => {
+      snapTween = false
+    }, SNAP_TWEEN_MS)
+  }
+
+  function handleResizeStart(e: PointerEvent) {
+    if (isResizing) return
+    isResizing = true
+    const wasOpen = drawerOpen
+    const rememberedRem = drawerWidth.rem
+    // Open drags measure from the current width. Closed drags seed just
+    // under the reopen threshold, so a short outward tug opens the drawer
+    // rather than demanding the pointer travel the whole missing width.
+    const seedRem = wasOpen
+      ? rememberedRem
+      : MIN_DRAWER_WIDTH_REM - COLLAPSE_OVERSHOOT_REM
+    const perPx = remPerPx()
+    let lastDesired = seedRem
+    drag = startDrag(e, {
+      axis: 'x',
+      onMove: delta => {
+        // Unclamped: the store pins the width at the floor, and the pixels
+        // past it are what measure intent to close or open.
+        lastDesired = seedRem + delta * perPx
+        drawerWidth.preview(lastDesired)
+        const overshoot = MIN_DRAWER_WIDTH_REM - lastDesired
+        if (drawerOpen && overshoot > COLLAPSE_OVERSHOOT_REM) {
+          drawerOpen = false
+          beginSnapTween()
+        } else if (!drawerOpen && overshoot < REOPEN_OVERSHOOT_REM) {
+          drawerOpen = true
+          beginSnapTween()
+        }
+      },
+      onEnd: () => {
+        isResizing = false
+        drag = null
+        if (!drawerOpen) {
+          // Ends closed -- whether it started that way or was closed by
+          // this drag, the remembered width survives uncommitted:
+          // reopening should restore the width the person actually chose,
+          // not the floor they dragged through on the way out.
+          drawerWidth.preview(rememberedRem)
+          if (wasOpen) persistDrawerOpen(false)
+          return
+        }
+        if (!wasOpen) {
+          persistDrawerOpen(true)
+          if (lastDesired < MIN_DRAWER_WIDTH_REM) {
+            // A tug that never cleared the floor means "open it", not
+            // "open it at the floor".
+            drawerWidth.preview(rememberedRem)
+            return
+          }
+        }
+        drawerWidth.commit()
+      },
+    })
+  }
+
+  // Keyboard resizing, because a divider that only answers to a mouse is not
+  // a control. Arrows nudge, Home restores the default -- and the collapse
+  // mirrors the drag: another ArrowLeft at the floor closes the drawer,
+  // ArrowRight or Enter on the closed handle opens it at its remembered
+  // width. The handle stays mounted in both states, so focus survives the
+  // toggle.
+  function handleResizeKeydown(e: KeyboardEvent) {
+    if (!drawerOpen) {
+      if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === 'Home') {
+        drawerOpen = true
+        persistDrawerOpen(true)
+        e.preventDefault()
+      }
+      return
+    }
+    const step = e.shiftKey ? 4 : 1
+    if (e.key === 'ArrowLeft') {
+      if (drawerWidth.rem <= MIN_DRAWER_WIDTH_REM) {
+        drawerOpen = false
+        persistDrawerOpen(false)
+        e.preventDefault()
+        return
+      }
+      drawerWidth.preview(drawerWidth.rem - step)
+    } else if (e.key === 'ArrowRight') {
+      drawerWidth.preview(drawerWidth.rem + step)
+    } else if (e.key === 'Home') {
+      // reset() persists itself; preventDefault still matters, or the
+      // browser adds its native Home handling -- a scroll jump to the
+      // top -- on top of the width reset.
+      drawerWidth.reset()
+      e.preventDefault()
+      return
+    } else {
+      return
+    }
+    e.preventDefault()
+    drawerWidth.commit()
+  }
+
+  function handleResizeDblclick() {
+    if (!drawerOpen) {
+      drawerOpen = true
+      persistDrawerOpen(true)
+      return
+    }
+    drawerWidth.reset()
+  }
+
+  // A drag outliving its handle would leave the body cursor and text
+  // selection suppressed for the rest of the session.
+  onDestroy(() => {
+    drag?.cancel()
+    clearTimeout(snapTimer)
+  })
+
   // Suppress width tween when remounting across signal routes (same preference).
   let skipWidthTransition = $state(
     shouldSkipDrawerWidthTransition(initialDrawerOpen)
@@ -126,10 +290,7 @@
     if (railOnly) return
     skipWidthTransition = false
     drawerOpen = (e.currentTarget as HTMLInputElement).checked
-    syncDrawerOpenPreference(drawerOpen)
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(DRAWER_OPEN_KEY, String(drawerOpen))
-    }
+    persistDrawerOpen(drawerOpen)
   }
 
   const routeContext = getRouteContext()
@@ -213,9 +374,33 @@
 
   <div class="drawer-side">
     <div
-      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-open:w-[28rem] is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
-      class:signal-drawer__panel--instant={skipWidthTransition}
+      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
+      class:signal-drawer__panel--instant={(skipWidthTransition ||
+        isResizing) &&
+        !snapTween}
+      class:signal-drawer__panel--snap={snapTween}
+      style={effectivelyOpen ? `width: ${drawerWidth.rem}rem` : undefined}
     >
+      {#if !railOnly}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <div
+          class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
+          class:col-resize-bar--active={isResizing}
+          onpointerdown={handleResizeStart}
+          ondblclick={handleResizeDblclick}
+          onkeydown={handleResizeKeydown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={effectivelyOpen ? 'Resize the list' : 'Open the list'}
+          aria-valuenow={Math.round(drawerWidth.rem)}
+          aria-valuemin={MIN_DRAWER_WIDTH_REM}
+          aria-valuemax={MAX_DRAWER_WIDTH_REM}
+          tabindex="0"
+        >
+          <div class="col-resize-bar__line"></div>
+        </div>
+      {/if}
       {#if !effectivelyOpen}
         <div class="signal-drawer__collapsed-rail">
           <div class="signal-drawer__collapsed-group">
@@ -502,13 +687,29 @@
   }
 
   .signal-drawer__panel {
-    @apply transition-[width] duration-200;
+    @apply relative transition-[width] duration-200;
     border-right: 1px solid
       color-mix(in oklab, var(--color-base-300) 70%, transparent);
   }
 
   .signal-drawer__panel--instant {
     transition: none !important;
+  }
+
+  /* The open/rail flip mid-drag: a fast, decisive deceleration. Duration
+     matches SNAP_TWEEN_MS in the script, which lifts --instant for
+     exactly this long before pointer tracking goes back to instant. */
+  .signal-drawer__panel--snap {
+    transition: width 220ms cubic-bezier(0.2, 0, 0, 1) !important;
+  }
+
+  /* Sits on the panel's trailing edge, over the border it replaces as the
+     grab target. The shared .col-resize-bar supplies the cursor, hit width
+     and line; this only places it. */
+  .signal-drawer__resize {
+    @apply absolute top-0 right-0 bottom-0 z-30;
+    margin-left: 0;
+    margin-right: calc(var(--resize-bar-hit-width) / -2);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -547,13 +748,44 @@
     padding-top: var(--layout-gap);
   }
 
-  /* Chrome vertically centered on the full header strip; tabs stay below. */
+  /* Chrome shares the tab row's centerline, not the header strip's. The
+     strip is taller than the tab row (12px of top padding), so centering
+     on the strip floated the buttons 6px above the tab labels. Anchoring
+     to the bottom and padding by (tab row 40px - button 32px) / 2 puts
+     button centers on the label line instead. */
+  /* The one collapse pattern, settled after building the alternatives:
+     when the drawer narrows, the tab strip slides BEHIND the pinned
+     chrome and stays scrollable. Icon-only tabs, tabs-covering-chrome,
+     and a two-row header were each built and rejected; sliding-under
+     matches how the row badges collapse too, so the whole drawer
+     speaks one language. The chrome is opaque so covered tabs are
+     occluded rather than rendering through the icons, and its leading
+     edge carries a fade that says the strip continues beneath. The
+     fade resolves to the header surface, so while everything fits it
+     paints base-300 over base-300 and is invisible -- it appears
+     exactly when a tab is under it, no threshold to keep in sync. */
   .signal-drawer__header :global(.pane-header__right) {
-    @apply absolute inset-y-0 right-0 z-10 flex items-center gap-2 pr-2;
+    @apply absolute inset-y-0 right-0 z-10 flex items-end gap-2 pr-2;
     height: auto;
     margin: 0;
+    padding-bottom: 4px;
+    background: var(--color-base-300);
   }
 
+  .signal-drawer__header :global(.pane-header__right)::before {
+    content: '';
+    position: absolute;
+    right: 100%;
+    top: 0;
+    bottom: 0;
+    width: 2rem;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--color-base-300));
+  }
+
+  /* The chrome reserve: trailing padding equal to the chrome zone, so
+     at maximum scroll the last tab sits fully clear of the icons --
+     everything remains reachable, just not all at once. */
   .signal-drawer__header :global(.pane-header__tab-scroll) {
     padding-right: 7rem;
   }

@@ -458,3 +458,54 @@ describe('WaterfallView collapse ownership', () => {
     )
   })
 })
+
+describe('WaterfallView error navigation, vim brackets', () => {
+  beforeEach(() => {
+    scrollMock.mockClear()
+    resetCollapseStoreForTests()
+  })
+
+  function grid(): HTMLElement {
+    const el = document.querySelector<HTMLElement>('[role="grid"]')
+    expect(el, 'grid host should exist').toBeTruthy()
+    return el!
+  }
+
+  function press(key: string) {
+    grid().dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    )
+  }
+
+  it('pages errors with [ and ], anchored to the selection like the badge', async () => {
+    const spans = navigationSpans()
+    const onSelectSpan = vi.fn()
+    const view = renderTree({ spans, onSelectSpan })
+    await tick()
+
+    press(']')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
+
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
+    })
+    press(']')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('error-2')
+
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: 'error-2', onSelectSpan },
+    })
+    press('[')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
+  })
+
+  it('refuses to wrap at either end, like the chevrons', async () => {
+    const spans = navigationSpans()
+    const onSelectSpan = vi.fn()
+    renderTree({ spans, onSelectSpan, selectedSpanID: 'error-2' })
+    await tick()
+
+    press(']')
+    expect(onSelectSpan).not.toHaveBeenCalled()
+  })
+})

@@ -89,7 +89,10 @@
     {/if}
   {/if}
 {:else if props.signal === 'trace'}
-  <span class="badge-count">
+  <span
+    class="badge-count"
+    title="{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}"
+  >
     {props.spanCount} span{props.spanCount !== 1 ? 's' : ''}
   </span>
   {#if props.errorCount > 0}

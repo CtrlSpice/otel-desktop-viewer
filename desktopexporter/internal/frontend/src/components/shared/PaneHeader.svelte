@@ -428,9 +428,16 @@
      Svelte's scoped selectors don't reach. Bounded to
      `.pane-header__badges` so it doesn't leak. Values mirror
      daisyUI's `.badge-sm` definition exactly. */
-  .pane-header__badges :global(.badge) {
-    --size: calc(var(--size-selector, 0.25rem) * 5);
-    font-size: 0.75rem;
+  .pane-header__badges :global(.badge),
+  .pane-header__badges :global(.badge-count) {
+    /* Height from daisyUI's `.badge-md`, type held a half-step under
+       md so the badges grow without shouting. The second selector is
+       load-bearing: `.badge-count` takes daisy's badge styles via
+       @apply, so the literal `badge` class never reaches its DOM and a
+       `.badge`-only rule silently missed it -- the span-count badge
+       stayed xs while its neighbours upsized. */
+    --size: calc(var(--size-selector, 0.25rem) * 6);
+    font-size: 0.8125rem;
   }
 
   /* Left layout (drawer / tabs-only): tabs pack to the start at intrinsic
