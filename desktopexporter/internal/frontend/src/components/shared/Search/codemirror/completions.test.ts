@@ -86,6 +86,32 @@ describe('operator positions', () => {
     expect(name?.apply).toBe('name ')
   })
 
+  it('stays quiet inside an unterminated quoted string', () => {
+    // An open string swallows the Comparison guard: the error-recovered node
+    // ends before the trailing space, so a field-shaped word inside the value
+    // looks like a field awaiting an operator. A string is unterminated the
+    // whole time it is being typed, so this is the common case.
+    // The source falls through to its usual fallback here; the contract is
+    // that operators are not offered, not that nothing is.
+    expect(labels('x = "name ')).not.toContain('=')
+    expect(labels('statusMessage = "error: name ')).not.toContain('CONTAINS')
+  })
+
+  it('is escape-aware about quotes when deciding a string is open', () => {
+    // The \" belongs to the value; counting it as a delimiter would make the
+    // string look closed and re-open the hole above.
+    expect(labels('x = "a\\" name ')).not.toContain('=')
+  })
+
+  it('replaces the whole word when accepting a field mid-name', () => {
+    // Anchored [from, to] across the word: accepting `name` at na|me used to
+    // keep the tail and produce "nameme".
+    const r = complete('name = x', 2)
+    expect(r).not.toBeNull()
+    expect(r!.from).toBe(0)
+    expect((r as { to?: number }).to).toBe(4)
+  })
+
   it("offers a field's own operators while typing one after its name", () => {
     const r = complete('name C')
     expect(r).not.toBeNull()

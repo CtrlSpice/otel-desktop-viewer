@@ -152,7 +152,9 @@ export function createQueryCompletionSource(
 
       // Still in or at end of field name → complete field names, not operators.
       if (field && pos <= field.to) {
-        return fieldCompletions(context, getFields(), field.from)
+        // Replace through the end of the word: accepting mid-name used to
+        // keep the tail, so `na|me` accepted as name became "name me".
+        return fieldCompletions(context, getFields(), field.from, field.to)
       }
 
       // After field: whitespace before operator → operators (not another field).
@@ -344,6 +346,26 @@ export function createQueryCompletionSource(
 }
 
 /**
+ * Whether text ends inside a quoted string that has not been closed.
+ *
+ * Escape-aware, unlike a bare quote count: generated queries contain \"
+ * inside values, and counting those as delimiters would flip the answer.
+ */
+function inOpenString(text: string): boolean {
+  let open: '"' | "'" | null = null
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (open) {
+      if (ch === '\\') i++
+      else if (ch === open) open = null
+    } else if (ch === '"' || ch === "'") {
+      open = ch
+    }
+  }
+  return open !== null
+}
+
+/**
  * Operators for a complete field name typed outside a Comparison.
  *
  * The trailing space is what marks the name as finished: while the cursor
@@ -354,6 +376,14 @@ function topLevelOperatorCompletions(
   context: CompletionContext,
   fields: FieldDefinition[]
 ): CompletionResult | null {
+  // An unterminated string swallows the guard this function relies on: the
+  // error-recovered Comparison node ends before the trailing space, so the
+  // cursor resolves outside it and a field name inside the value -- typing
+  // `x = "error: name ` -- looks exactly like a field awaiting an operator.
+  // A string is unterminated for as long as it is being typed, so this is
+  // the common case, not a corner.
+  if (inOpenString(context.state.sliceDoc(0, context.pos))) return null
+
   const before = context.matchBefore(/[\w.]+\s+/)
   if (!before) return null
   const word = before.text.trim()
@@ -368,7 +398,8 @@ function topLevelOperatorCompletions(
 function fieldCompletions(
   context: CompletionContext,
   fields: FieldDefinition[],
-  from?: number
+  from?: number,
+  to?: number
 ): CompletionResult | null {
   const options: Completion[] = fields
     .filter(
@@ -392,6 +423,7 @@ function fieldCompletions(
 
   return {
     from: from ?? context.pos,
+    ...(to !== undefined ? { to } : {}),
     options,
     validFor: /^[\w.]*$/,
   }
