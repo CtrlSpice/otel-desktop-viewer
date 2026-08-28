@@ -128,6 +128,13 @@
    * under the pointer (pull back and it reverses), and nothing fires on
    * someone who merely paused at the floor to think. The two thresholds
    * differ so the boundary has hysteresis and cannot flicker. */
+  /* Where the nav tabs fold to icon-only. One number, two homes: the
+   * container query in this file's styles holds the same literal
+   * (Svelte CSS cannot read script constants), and this copy gates the
+   * tab tooltips reactively -- a daisy tooltip exists exactly while the
+   * label it names is folded away. */
+  const TAB_FOLD_REM = 25
+
   const COLLAPSE_OVERSHOOT_REM = 6
   const REOPEN_OVERSHOOT_REM = 5
 
@@ -509,6 +516,7 @@
             }}
             rounded={false}
             ariaLabel="Primary"
+            tabTooltips={drawerWidth.rem < TAB_FOLD_REM}
           >
             {#snippet right()}
               <button
@@ -710,6 +718,7 @@
      clean value above that need, labels fold to sr-only (the accessible
      name survives) and each tab shrinks to its icon. Icon-only needs
      251px, so it fits at every width down to the 22rem floor. */
+  /* Keep the literal in sync with TAB_FOLD_REM in the script. */
   @container (width < 25rem) {
     .signal-drawer__header :global(.pane-header__tab-label) {
       /* The label's grid track collapses (see PaneHeader for the
@@ -719,6 +728,13 @@
       opacity: 0;
       /* -1 x the tab's gap-2. */
       margin-left: -0.5rem;
+    }
+
+    /* The strip's scroll clip would cut the tab tooltips off. Safe to
+       release exactly here: icon-only tabs always fit, so there is
+       nothing left to scroll. */
+    .signal-drawer__header :global(.pane-header__tab-scroll--left) {
+      overflow: visible;
     }
   }
 

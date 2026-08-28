@@ -111,6 +111,11 @@
     activeID: string
     onSelect: (id: string) => void
     tabLayout?: PaneTabLayout
+    /** Show each tab's label as a daisyUI tooltip instead of a native
+     *  title. For strips whose labels can fold away (the drawer):
+     *  the caller flips this on exactly while labels are hidden, so a
+     *  visible label is never echoed by a tooltip. */
+    tabTooltips?: boolean
   }
 
   type TitleTabsProps = CommonProps & {
@@ -139,6 +144,9 @@
     props.rounded !== false ? 'pane-header--rounded' : 'pane-header--flush'
   )
   let tabSizeClass = $derived(props.rounded !== false ? 'tabs-sm' : '')
+  let tabTooltips = $derived(
+    props.mode === 'tabs' && props.tabTooltips === true
+  )
   let stackedClass = $derived(
     props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
@@ -213,10 +221,11 @@
           role="tab"
           class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
             ? 'tab-active [--tab-bg:var(--color-base-200)]'
-            : ''}"
+            : ''} {tabTooltips ? 'tooltip tooltip-bottom' : ''}"
           aria-selected={active}
           disabled={tab.disabled}
-          title={tab.label}
+          title={tabTooltips ? undefined : tab.label}
+          data-tip={tabTooltips ? tab.label : undefined}
           onclick={() => !tab.disabled && onSelect(tab.id)}
         >
           {#if tab.icon}
