@@ -134,6 +134,14 @@ export function createQueryCompletionSource(
     if (!comparison) {
       const idHit = idPatternCompletions(context)
       if (idHit) return idHit
+
+      // A bare field name is not a Comparison yet -- `name` parses as
+      // FreeText, so the operator branch below is unreachable until an
+      // operator has already been typed, which is too late to suggest one.
+      // Once the name is complete and followed by a space, the only thing
+      // that can come next is an operator, so offer them here too.
+      const opHit = topLevelOperatorCompletions(context, getFields())
+      if (opHit) return opHit
     }
 
     if (comparison) {
@@ -144,7 +152,9 @@ export function createQueryCompletionSource(
 
       // Still in or at end of field name → complete field names, not operators.
       if (field && pos <= field.to) {
-        return fieldCompletions(context, getFields(), field.from)
+        // Replace through the end of the word: accepting mid-name used to
+        // keep the tail, so `na|me` accepted as name became "name me".
+        return fieldCompletions(context, getFields(), field.from, field.to)
       }
 
       // After field: whitespace before operator → operators (not another field).
@@ -335,10 +345,61 @@ export function createQueryCompletionSource(
   }
 }
 
+/**
+ * Whether text ends inside a quoted string that has not been closed.
+ *
+ * Escape-aware, unlike a bare quote count: generated queries contain \"
+ * inside values, and counting those as delimiters would flip the answer.
+ */
+function inOpenString(text: string): boolean {
+  let open: '"' | "'" | null = null
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (open) {
+      if (ch === '\\') i++
+      else if (ch === open) open = null
+    } else if (ch === '"' || ch === "'") {
+      open = ch
+    }
+  }
+  return open !== null
+}
+
+/**
+ * Operators for a complete field name typed outside a Comparison.
+ *
+ * The trailing space is what marks the name as finished: while the cursor
+ * still touches the word the user may be extending it, and field names stay
+ * the useful suggestion.
+ */
+function topLevelOperatorCompletions(
+  context: CompletionContext,
+  fields: FieldDefinition[]
+): CompletionResult | null {
+  // An unterminated string swallows the guard this function relies on: the
+  // error-recovered Comparison node ends before the trailing space, so the
+  // cursor resolves outside it and a field name inside the value -- typing
+  // `x = "error: name ` -- looks exactly like a field awaiting an operator.
+  // A string is unterminated for as long as it is being typed, so this is
+  // the common case, not a corner.
+  if (inOpenString(context.state.sliceDoc(0, context.pos))) return null
+
+  const before = context.matchBefore(/[\w.]+\s+/)
+  if (!before) return null
+  const word = before.text.trim()
+  const known = fields.some(
+    f =>
+      f.searchScope !== 'global' && f.name.toLowerCase() === word.toLowerCase()
+  )
+  if (!known) return null
+  return operatorCompletions(context, word, fields, context.pos)
+}
+
 function fieldCompletions(
   context: CompletionContext,
   fields: FieldDefinition[],
-  from?: number
+  from?: number,
+  to?: number
 ): CompletionResult | null {
   const options: Completion[] = fields
     .filter(
@@ -351,12 +412,18 @@ function fieldCompletions(
       detail: f.type,
       info: 'description' in f ? f.description : undefined,
       boost: f.searchScope === 'field' ? 1 : 0,
+      // Accepting a field inserts the trailing space that ends it, which is
+      // also what makes the operator list fire: picking `name` should leave
+      // the cursor somewhere the next suggestion is waiting, not somewhere
+      // the user has to guess that a space is expected.
+      apply: f.name + ' ',
     }))
 
   if (options.length === 0) return null
 
   return {
     from: from ?? context.pos,
+    ...(to !== undefined ? { to } : {}),
     options,
     validFor: /^[\w.]*$/,
   }
