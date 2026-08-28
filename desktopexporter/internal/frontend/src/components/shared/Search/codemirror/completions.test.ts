@@ -45,6 +45,47 @@ describe('field positions', () => {
 })
 
 describe('operator positions', () => {
+  // A bare field name parses as FreeText, not a Comparison, so before this
+  // the operator branch was unreachable until an operator had already been
+  // typed -- by which point suggesting one is too late (#413).
+  it('offers operators once a field name is complete and followed by a space', () => {
+    expect(labels('name ')).toEqual(
+      expect.arrayContaining(['=', '!=', 'CONTAINS'])
+    )
+  })
+
+  it("offers the field's own operators, not every operator", () => {
+    const ops = labels('duration ')
+    expect(ops).toEqual(expect.arrayContaining(['>', '<', '>=']))
+    expect(ops).not.toContain('CONTAINS')
+  })
+
+  it('offers operators after a field name inside a group', () => {
+    expect(labels('(name ')).toEqual(expect.arrayContaining(['=']))
+  })
+
+  it('keeps offering fields while the name may still be extended', () => {
+    // Cursor still touching the word: the user may be typing something
+    // longer, so field names remain the useful suggestion.
+    expect(labels('name')).toContain('traceID')
+  })
+
+  it('does not mistake a non-field word for a field name', () => {
+    // Both of these end in a space after a word, which is the shape the
+    // operator branch keys on -- neither is a field.
+    expect(labels('notafield ')).toContain('traceID')
+    expect(labels('name = x AND ')).toContain('statusCode')
+  })
+
+  it('accepting a field inserts the space that ends it', () => {
+    // Which is also what makes the operator list fire next, so picking a
+    // field leads to picking an operator without a guessed keystroke.
+    const r = complete('nam')
+    const name = r!.options.find(o => o.label === 'name') as
+      { apply?: string } | undefined
+    expect(name?.apply).toBe('name ')
+  })
+
   it("offers a field's own operators while typing one after its name", () => {
     const r = complete('name C')
     expect(r).not.toBeNull()

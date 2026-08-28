@@ -134,6 +134,14 @@ export function createQueryCompletionSource(
     if (!comparison) {
       const idHit = idPatternCompletions(context)
       if (idHit) return idHit
+
+      // A bare field name is not a Comparison yet -- `name` parses as
+      // FreeText, so the operator branch below is unreachable until an
+      // operator has already been typed, which is too late to suggest one.
+      // Once the name is complete and followed by a space, the only thing
+      // that can come next is an operator, so offer them here too.
+      const opHit = topLevelOperatorCompletions(context, getFields())
+      if (opHit) return opHit
     }
 
     if (comparison) {
@@ -335,6 +343,28 @@ export function createQueryCompletionSource(
   }
 }
 
+/**
+ * Operators for a complete field name typed outside a Comparison.
+ *
+ * The trailing space is what marks the name as finished: while the cursor
+ * still touches the word the user may be extending it, and field names stay
+ * the useful suggestion.
+ */
+function topLevelOperatorCompletions(
+  context: CompletionContext,
+  fields: FieldDefinition[]
+): CompletionResult | null {
+  const before = context.matchBefore(/[\w.]+\s+/)
+  if (!before) return null
+  const word = before.text.trim()
+  const known = fields.some(
+    f =>
+      f.searchScope !== 'global' && f.name.toLowerCase() === word.toLowerCase()
+  )
+  if (!known) return null
+  return operatorCompletions(context, word, fields, context.pos)
+}
+
 function fieldCompletions(
   context: CompletionContext,
   fields: FieldDefinition[],
@@ -351,6 +381,11 @@ function fieldCompletions(
       detail: f.type,
       info: 'description' in f ? f.description : undefined,
       boost: f.searchScope === 'field' ? 1 : 0,
+      // Accepting a field inserts the trailing space that ends it, which is
+      // also what makes the operator list fire: picking `name` should leave
+      // the cursor somewhere the next suggestion is waiting, not somewhere
+      // the user has to guess that a space is expected.
+      apply: f.name + ' ',
     }))
 
   if (options.length === 0) return null
