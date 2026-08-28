@@ -5,6 +5,7 @@ import {
 } from '@codemirror/autocomplete'
 import type { JsonAttributeMatch } from '@/types/wire-types'
 import type { FieldDefinition } from '@/constants/fields'
+import type { FieldValueCache } from './field-value-cache'
 
 /**
  * Value-first completion: the user types text they can see in the UI, and the
@@ -86,29 +87,10 @@ function optionsForMatch(match: JsonAttributeMatch): Completion[] {
 export function createValueDiscoverySource(
   search: (term: string) => Promise<JsonAttributeMatch[]>,
   getFields: () => FieldDefinition[],
-  fetchFieldValues?: (
-    signal: string,
-    field: string,
-    term: string,
-    limit: number
-  ) => Promise<string[]>,
-  signal?: string
+  // Column values come from the shared per-session cache; the dictionary
+  // lookup above stays per-keystroke because it is cheap and term-dependent.
+  fieldValues?: FieldValueCache
 ) {
-  // Column values are fetched once per field per session and filtered
-  // locally; the dictionary lookup stays per-keystroke because it is cheap
-  // and term-dependent. The promise is cached so concurrent triggers share
-  // one flight.
-  const columnCache = new Map<string, Promise<string[]>>()
-  const columnValues = (field: string): Promise<string[]> => {
-    if (!fetchFieldValues || !signal) return Promise.resolve([])
-    let hit = columnCache.get(field)
-    if (!hit) {
-      hit = fetchFieldValues(signal, field, '', 500)
-      columnCache.set(field, hit)
-    }
-    return hit
-  }
-
   return async function valueDiscoverySource(
     context: CompletionContext
   ): Promise<CompletionResult | null> {
@@ -185,11 +167,12 @@ export function createValueDiscoverySource(
         fieldDefs
           .filter(f => f.discoverableValues)
           .map(async f => {
+            if (!fieldValues) return []
             let values: string[]
             try {
-              values = await columnValues(f.name)
+              values = await fieldValues.values(f.name)
             } catch {
-              columnCache.delete(f.name)
+              // The cache evicts the failed fetch; nothing to offer here.
               return []
             }
             return values

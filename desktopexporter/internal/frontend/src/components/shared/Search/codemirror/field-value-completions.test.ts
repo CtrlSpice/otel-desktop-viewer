@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { EditorState } from '@codemirror/state'
 import { CompletionContext } from '@codemirror/autocomplete'
 import { createFieldValueSource } from './field-value-completions'
+import { createFieldValueCache } from './field-value-cache'
 import { getFieldsBySignal } from '@/constants/fields'
 import { queryLanguage } from './query-language'
 
@@ -17,7 +18,7 @@ function makeSource(
   ) => Promise<string[]> = async () => NAMES
 ) {
   return {
-    source: createFieldValueSource(fetch, signal, () =>
+    source: createFieldValueSource(createFieldValueCache(fetch, signal), () =>
       getFieldsBySignal(signal as 'traces' | 'logs' | 'metrics')
     ),
     fetch,

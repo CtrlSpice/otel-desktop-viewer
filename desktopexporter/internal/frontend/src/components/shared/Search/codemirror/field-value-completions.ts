@@ -7,6 +7,7 @@ import { syntaxTree } from '@codemirror/language'
 import type { SyntaxNode } from '@lezer/common'
 import { FieldName as FieldTerm } from './query.parser.terms'
 import type { FieldDefinition } from '@/constants/fields'
+import type { FieldValueCache } from './field-value-cache'
 
 /**
  * Value completion for plain-column fields: `name = ` offers the names the
@@ -31,9 +32,6 @@ import type { FieldDefinition } from '@/constants/fields'
  * frequency is not in the dropdown. It can still be typed.
  */
 
-/** Names fetched per session. ~15KB of payload at the extreme, once. */
-const FETCH_LIMIT = 500
-
 /** Options handed to CodeMirror per open. It renders the list eagerly, so
  *  this caps DOM size while leaving local filtering plenty to match into. */
 const DISPLAY_CAP = 64
@@ -46,28 +44,9 @@ function findAncestor(node: SyntaxNode, name: string): SyntaxNode | null {
 }
 
 export function createFieldValueSource(
-  fetchValues: (
-    signal: string,
-    field: string,
-    term: string,
-    limit: number
-  ) => Promise<string[]>,
-  signal: string,
+  cache: FieldValueCache,
   getFields: () => FieldDefinition[]
 ) {
-  // One fetch per field per editor session; every keystroke after filters
-  // the cached list locally. The promise is cached rather than the values so
-  // concurrent triggers share one flight.
-  const cache = new Map<string, Promise<string[]>>()
-  const fetchOnce = (field: string) => {
-    let hit = cache.get(field)
-    if (!hit) {
-      hit = fetchValues(signal, field, '', FETCH_LIMIT)
-      cache.set(field, hit)
-    }
-    return hit
-  }
-
   return async function fieldValueSource(
     context: CompletionContext
   ): Promise<CompletionResult | null> {
@@ -119,12 +98,10 @@ export function createFieldValueSource(
 
     let names: string[]
     try {
-      names = await fetchOnce(def.name)
+      names = await cache.values(def.name)
     } catch {
-      // Completion is a convenience; typing still works without it. Dropped
-      // from the cache so the next trigger retries rather than failing
-      // forever on one bad fetch.
-      cache.delete(def.name)
+      // Completion is a convenience; typing still works without it. The
+      // cache evicts the failed fetch itself, so the next trigger retries.
       return null
     }
     if (context.aborted || names.length === 0) return null

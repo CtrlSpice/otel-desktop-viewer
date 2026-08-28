@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { EditorState } from '@codemirror/state'
 import { CompletionContext } from '@codemirror/autocomplete'
 import { createValueDiscoverySource, matchToQuery } from './value-completions'
+import { createFieldValueCache } from './field-value-cache'
 import { queryLanguageSupport } from './query-language'
 import type { JsonAttributeMatch } from '@/types/wire-types'
 import { OPERATORS } from '@/constants/operators'
@@ -225,8 +226,7 @@ describe('bare-text discovery of enums and columns', () => {
     return createValueDiscoverySource(
       async () => [],
       () => fields,
-      fetch,
-      'traces'
+      createFieldValueCache(fetch, 'traces')
     )
   }
 
@@ -258,8 +258,7 @@ describe('bare-text discovery of enums and columns', () => {
     const source = createValueDiscoverySource(
       manyAttrs,
       () => fields,
-      async () => [],
-      'traces'
+      createFieldValueCache(async () => [], 'traces')
     )
     const r = await discover('Serv', source)
     expect(r).not.toBeNull()

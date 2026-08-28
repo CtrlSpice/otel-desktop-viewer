@@ -30,6 +30,7 @@
   import type { FilterDescriptor } from '@/components/shared/Toolbar/filter-types'
   import { queryLanguageSupport } from './codemirror/query-language'
   import { createQueryCompletionSource } from './codemirror/completions'
+  import { createFieldValueCache } from '@/components/shared/Search/codemirror/field-value-cache'
   import { createFieldValueSource } from '@/components/shared/Search/codemirror/field-value-completions'
   import { createValueDiscoverySource } from './codemirror/value-completions'
   import { createQueryLinter } from './codemirror/linter'
@@ -385,6 +386,12 @@
     const mountEl = editorContainer
     if (!mountEl) return
 
+    // One cache for the whole editor session, shared by both value sources.
+    const fieldValueCache = createFieldValueCache(
+      telemetryAPI.getFieldValues,
+      signal
+    )
+
     const state = EditorState.create({
       doc: '',
       extensions: [
@@ -398,16 +405,11 @@
             createValueDiscoverySource(
               telemetryAPI.searchAttributes,
               () => availableFields,
-              telemetryAPI.getFieldValues,
-              signal
+              fieldValueCache
             ),
-            // Column values for discoverable fields (`name = `, `unit = `).
-            // Fetches once per field and filters locally; see the source.
-            createFieldValueSource(
-              telemetryAPI.getFieldValues,
-              signal,
-              () => availableFields
-            ),
+            // Column values for discoverable fields (`name = `, `unit = `),
+            // from the same per-session cache bare-text discovery reads.
+            createFieldValueSource(fieldValueCache, () => availableFields),
           ],
           activateOnTyping: true,
           icons: false,
