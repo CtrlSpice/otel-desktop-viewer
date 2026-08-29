@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { tick } from 'svelte'
 import { screen } from '@testing-library/svelte'
 import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
-import type { MetricViewContext } from '@/contexts/metric-view-context.svelte'
+import {
+  aggregateToSlices,
+  type MetricViewContext,
+} from '@/contexts/metric-view-context.svelte'
 import type {
   MetricData,
   ResourceData,
@@ -33,6 +36,14 @@ function makeSumDatapoint(
   value: number
 ): SumDataPoint {
   const timestamp = BigInt(BASE_TIMESTAMP_MS + offsetMs) * 1_000_000n
+  return makeSumDatapointAt(id, timestamp, value)
+}
+
+function makeSumDatapointAt(
+  id: string,
+  timestamp: bigint,
+  value: number
+): SumDataPoint {
   return {
     id,
     timestamp,
@@ -125,17 +136,84 @@ function makeCumulativeSumMetric(): MetricData {
   }
 }
 
-function renderProbe(url: string): MetricViewContext {
-  setTestUrl(url)
-  let captured: MetricViewContext | undefined
-  renderWithContexts(MetricViewProbe, {
-    metric: makeCumulativeSumMetric(),
-    oncontext: (ctx: MetricViewContext) => {
-      captured = ctx
+function makeRateSelectionMetric() {
+  const metric = makeCumulativeSumMetric()
+  const base = BigInt(BASE_TIMESTAMP_MS) * 1_000_000n
+  const first = makeSumDatapointAt('rate-first', base + 100n, 1)
+  const middle = makeSumDatapointAt('rate-middle', base + 400n, 5)
+  const later = makeSumDatapointAt('rate-later', base + 900n, 9)
+  const series = metric.timeseries[0]!
+  series.datapoints = [later, middle, first]
+  series.datapointCount = 3
+  series.lastSeenNs = later.timestamp
+  series.views = [
+    {
+      bucketStart: base,
+      sampleCount: 1,
+      sum: 1,
+      avg: 1,
+      rate: null,
+      slope: null,
+      hasReset: false,
     },
+    {
+      bucketStart: base + 300n,
+      sampleCount: 1,
+      sum: 5,
+      avg: 5,
+      rate: 2,
+      slope: null,
+      hasReset: false,
+    },
+    {
+      bucketStart: base + 600n,
+      sampleCount: 1,
+      sum: 9,
+      avg: 9,
+      rate: 4,
+      slope: 6,
+      hasReset: false,
+    },
+  ]
+  series.rateStats = { min: 2, max: 4, avg: 3 }
+  metric.lastSeenNs = later.timestamp
+  return { metric, later, selectedBucketStart: base + 600n }
+}
+
+type ProbeOptions = {
+  metric?: MetricData
+  seriesDatapoints?: Readonly<Record<string, SumDataPoint[]>>
+}
+
+function renderProbeView(url: string, options: ProbeOptions = {}) {
+  setTestUrl(url)
+  const metric = options.metric ?? makeCumulativeSumMetric()
+  let captured: MetricViewContext | undefined
+  const oncontext = (ctx: MetricViewContext) => {
+    captured = ctx
+  }
+  const view = renderWithContexts(MetricViewProbe, {
+    metric,
+    seriesDatapoints: options.seriesDatapoints,
+    oncontext,
   })
   if (!captured) throw new Error('probe did not report a metric view context')
-  return captured
+  return {
+    context: captured,
+    setSeriesDatapoints: (
+      seriesDatapoints: Readonly<Record<string, SumDataPoint[]>>
+    ) =>
+      view.rerender({
+        componentProps: { metric, seriesDatapoints, oncontext },
+      }),
+  }
+}
+
+function renderProbe(
+  url: string,
+  options: ProbeOptions = {}
+): MetricViewContext {
+  return renderProbeView(url, options).context
 }
 
 function reportedAggregationView(): string {
@@ -144,6 +222,17 @@ function reportedAggregationView(): string {
 
 function reportedSelectedDatapointID(): string {
   return screen.getByTestId('selected-datapoint-id').textContent?.trim() ?? ''
+}
+
+function reportedResolvedDatapointID(): string {
+  return (
+    screen.getByTestId('selected-datapoint-resolved-id').textContent?.trim() ??
+    ''
+  )
+}
+
+function reportedSelectedSeriesKey(): string {
+  return screen.getByTestId('selected-series-key').textContent?.trim() ?? ''
 }
 
 function reportedAvailableAggregationViews(): string[] {
@@ -296,5 +385,257 @@ describe('metric view context datapoint URL sync', () => {
     await tick()
 
     expect(reportedSelectedDatapointID()).toBe('')
+  })
+
+  it('resolves a selected datapoint from the unreduced series cache', async () => {
+    const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
+    const ctx = renderProbe('/metrics/m1', {
+      seriesDatapoints: { 'route=/b': [raw] },
+    })
+
+    ctx.onDatapointClick(raw)
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('dp-raw-b')
+    expect(reportedResolvedDatapointID()).toBe('dp-raw-b')
+    expect(reportedSelectedSeriesKey()).toBe('route=/b')
+    expect(new URLSearchParams(window.location.search).get('dp')).toBe(
+      'dp-raw-b'
+    )
+    expect(new URLSearchParams(window.location.search).get('series')).toBe(
+      'route=/b'
+    )
+  })
+
+  it('resolves a cold-load raw datapoint only after its series loads', async () => {
+    const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
+    const view = renderProbeView('/metrics/m1?dp=dp-raw-b&series=route%3D%2Fb')
+
+    expect(reportedSelectedDatapointID()).toBe('')
+    expect(reportedResolvedDatapointID()).toBe('')
+    expect(reportedSelectedSeriesKey()).toBe('route=/b')
+    expect(view.context.expandedTimeseries.has('route=/b')).toBe(true)
+    expect(new URLSearchParams(window.location.search).get('dp')).toBe(
+      'dp-raw-b'
+    )
+
+    await view.setSeriesDatapoints({ 'route=/b': [raw] })
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('dp-raw-b')
+    expect(reportedResolvedDatapointID()).toBe('dp-raw-b')
+    expect(reportedSelectedSeriesKey()).toBe('route=/b')
+    expect(view.context.selectionSource).toBe('detail')
+  })
+
+  it('resolves a raw-only datapoint after Back triggers its lazy fetch', async () => {
+    const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
+    const view = renderProbeView('/metrics/m1')
+
+    externalNavigationTo('/metrics/m1?dp=dp-raw-b&series=route%3D%2Fb')
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('')
+    expect(view.context.expandedTimeseries.has('route=/b')).toBe(true)
+
+    await view.setSeriesDatapoints({ 'route=/b': [raw] })
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('dp-raw-b')
+    expect(reportedResolvedDatapointID()).toBe('dp-raw-b')
+    expect(view.context.selectionSource).toBe('detail')
+  })
+
+  it('does not resurrect a rejected pending datapoint without new navigation', async () => {
+    const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
+    const view = renderProbeView('/metrics/m1?dp=dp-raw-b&series=route%3D%2Fb')
+
+    await view.setSeriesDatapoints({ 'route=/b': [] })
+    await tick()
+    expect(reportedSelectedDatapointID()).toBe('')
+
+    await view.setSeriesDatapoints({ 'route=/b': [raw] })
+    navigateCurrentRoute(
+      withQueryPatch(readRoute().query, { start: '1000' }),
+      'replace'
+    )
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('')
+    expect(reportedResolvedDatapointID()).toBe('')
+
+    externalNavigationTo('/metrics/m1?series=route%3D%2Fb')
+    await tick()
+    externalNavigationTo('/metrics/m1?dp=dp-raw-b&series=route%3D%2Fb')
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('dp-raw-b')
+  })
+
+  it('rejects a URL datapoint owned by a different series', () => {
+    renderProbe('/metrics/m1?dp=dp-a1&series=route%3D%2Fb')
+
+    expect(reportedSelectedDatapointID()).toBe('')
+    expect(reportedSelectedSeriesKey()).toBe('route=/b')
+  })
+
+  it('keeps reduced chart and raw detail datapoints selectable together', async () => {
+    const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
+    const ctx = renderProbe('/metrics/m1', {
+      seriesDatapoints: { 'route=/b': [raw] },
+    })
+
+    ctx.onChartPointClick('route=/b', 'dp-b2')
+    await tick()
+    expect(reportedSelectedDatapointID()).toBe('dp-b2')
+    expect(reportedResolvedDatapointID()).toBe('dp-b2')
+    expect(ctx.selectionSource).toBe('chart')
+
+    ctx.onDatapointClick(raw)
+    await tick()
+    expect(reportedSelectedDatapointID()).toBe('dp-raw-b')
+    expect(reportedResolvedDatapointID()).toBe('dp-raw-b')
+    expect(reportedSelectedSeriesKey()).toBe('route=/b')
+    expect(ctx.selectionSource).toBe('detail')
+  })
+
+  it('maps a reduced raw selection onto its exact synthetic rate bucket', async () => {
+    const { metric, later, selectedBucketStart } = makeRateSelectionMetric()
+    const ctx = renderProbe('/metrics/m1?agg=rate', { metric })
+
+    ctx.onDatapointClick(later)
+    await tick()
+
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    expect(ctx.selectedRateSlope).toBe(6)
+    const selectedLine = ctx.transformedGaugeSumChartTimeseries.find(
+      series => series.key === 'route=/a'
+    )
+    expect(
+      selectedLine?.points.find(
+        point => point.timestampNs === selectedBucketStart
+      )?.value
+    ).toBe(4)
+  })
+
+  it('does not map a raw-only same-time selection onto a reduced rate bucket', async () => {
+    const { metric, later } = makeRateSelectionMetric()
+    const rawOnly = makeSumDatapointAt('rate-raw-only', later.timestamp, 99)
+    const ctx = renderProbe('/metrics/m1?agg=rate', {
+      metric,
+      seriesDatapoints: { 'route=/a': [rawOnly] },
+    })
+
+    ctx.onDatapointClick(rawOnly)
+    await tick()
+
+    expect(ctx.selectedDatapointID).toBe(rawOnly.id)
+    expect(ctx.selectedSeriesKey).toBe('route=/a')
+    expect(ctx.highlightedTimestamp).toBeNull()
+    expect(ctx.selectedRateSlope).toBeUndefined()
+  })
+
+  it('lets an exact chart selection supersede a pending URL datapoint', async () => {
+    const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
+    const view = renderProbeView('/metrics/m1?dp=dp-raw-b&series=route%3D%2Fb')
+
+    view.context.onChartPointClick('route=/a', 'dp-a1')
+    await view.setSeriesDatapoints({ 'route=/b': [raw] })
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('dp-a1')
+    expect(reportedResolvedDatapointID()).toBe('dp-a1')
+    expect(reportedSelectedSeriesKey()).toBe('route=/a')
+    expect(view.context.selectionSource).toBe('chart')
+  })
+
+  it('reuses the raw selection index across repeated lookups and URL sync', async () => {
+    const raw = Array.from({ length: 1_000 }, (_, index) =>
+      makeSumDatapoint(`dp-raw-${index}`, index, index)
+    )
+    let iterations = 0
+    const iterator = raw[Symbol.iterator].bind(raw)
+    Object.defineProperty(raw, Symbol.iterator, {
+      value: () => {
+        iterations++
+        return iterator()
+      },
+    })
+    const ctx = renderProbe('/metrics/m1', {
+      seriesDatapoints: { 'route=/b': raw },
+    })
+    const indexedAt = iterations
+
+    ctx.onDatapointClick(raw[999]!)
+    await tick()
+    void ctx.selectedDatapoint
+    void ctx.selectedSeriesKey
+    void ctx.selectedDatapoint
+
+    expect(iterations).toBe(indexedAt)
+  })
+
+  it('clears a chart-owned datapoint selection and its URL state', async () => {
+    const ctx = renderProbe('/metrics/m1')
+
+    ctx.onChartPointClick('route=/a', 'dp-a1')
+    await tick()
+    expect(reportedSelectedDatapointID()).toBe('dp-a1')
+
+    ctx.clearChartSelection()
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('')
+    expect(new URLSearchParams(window.location.search).get('dp')).toBeNull()
+  })
+
+  it('does not select a neighboring datapoint for an unknown source id', () => {
+    const ctx = renderProbe('/metrics/m1')
+
+    ctx.onChartPointClick('route=/a', 'missing-datapoint')
+
+    expect(reportedSelectedDatapointID()).toBe('')
+  })
+
+  it('does not clear a raw datapoint selected from the detail pane', async () => {
+    const datapoint = makeSumDatapoint('dp-raw-b', 30_000, 7)
+    const ctx = renderProbe('/metrics/m1', {
+      seriesDatapoints: { 'route=/b': [datapoint] },
+    })
+
+    ctx.onDatapointClick(datapoint)
+    await tick()
+    ctx.clearChartSelection()
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe(datapoint.id)
+    expect(reportedResolvedDatapointID()).toBe(datapoint.id)
+    expect(new URLSearchParams(window.location.search).get('dp')).toBe(
+      datapoint.id
+    )
+  })
+})
+
+describe('metric view context histogram aggregate decoding', () => {
+  it('keeps an explicit empty-bound catch-all as an explicit histogram', () => {
+    const [slice] = aggregateToSlices([
+      {
+        timestamp: String(BigInt(BASE_TIMESTAMP_MS) * 1_000_000n),
+        startTime: String(BigInt(BASE_TIMESTAMP_MS) * 1_000_000n),
+        count: 7,
+        sum: 0,
+        min: 0,
+        max: 0,
+        bucketCounts: [7],
+        explicitBounds: [],
+        quantiles: null,
+      },
+    ])
+
+    expect(slice).toMatchObject({
+      kind: 'histogram',
+      bounds: [],
+      counts: [7],
+    })
   })
 })

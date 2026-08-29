@@ -63,6 +63,18 @@ describe('TraceDetailView parent span link', () => {
   })
 })
 
+describe('TraceDetailView tabs', () => {
+  it('associates the selected tab with the visible detail panel', () => {
+    setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
+    renderWithContexts(TraceDetailView, { span: makeSpan() })
+    const fields = screen.getByRole('tab', { name: 'Fields' })
+    const panel = screen.getByRole('tabpanel')
+
+    expect(fields).toHaveAttribute('aria-controls', panel.id)
+    expect(panel).toHaveAttribute('aria-labelledby', fields.id)
+  })
+})
+
 describe('TraceDetailView paradox banner', () => {
   beforeEach(() => {
     setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')

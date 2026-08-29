@@ -30,6 +30,8 @@ cd otel-desktop-viewer
 make install
 ```
 
+This installs the frontend packages and the Chromium build used by the Playwright accessibility tests.
+
 ## Development workflow
 
 The app is a custom OpenTelemetry Collector binary plus a Svelte 5 UI. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full picture.
@@ -126,9 +128,9 @@ Production builds embed frontend output under `desktopexporter/internal/server/s
 make test
 ```
 
-That runs Go tests and frontend typechecking — the same bar we expect locally before review.
+That checks formatting, types, the embedded frontend build, Go and frontend unit tests, and browser accessibility tests.
 
-CI also builds on **Ubuntu, macOS, and Windows** on every pull request. Windows needs CGO + MSYS2, same as local dev.
+CI additionally checks generated parser output and guarded store access, then builds on **Ubuntu, macOS, and Windows** on every pull request. Windows needs CGO + MSYS2, same as local dev.
 
 In your PR description:
 

@@ -64,6 +64,7 @@ describe('buildVisibleSeriesQuantileChartTimeseries', () => {
       seriesKey: 'host=a',
       quantileKey: '0.5',
     })
+    expect(result[0]!.points[0]!.timestampNs).toBe(ts1)
   })
 
   it('respects legend visibility filter', () => {
@@ -79,6 +80,24 @@ describe('buildVisibleSeriesQuantileChartTimeseries', () => {
     )
     expect(result).toHaveLength(1)
     expect(result[0]!.key).toBe(quantileSeriesKey('host=a', '0.5'))
+  })
+
+  it('orders same-millisecond points by their exact timestamps', () => {
+    const earlier = 10_000_100n
+    const later = 10_000_900n
+    const result = buildVisibleSeriesQuantileChartTimeseries(
+      [
+        histSlice(later, 'host=a', [0, 50, 50, 0, 0]),
+        histSlice(earlier, 'host=a', [0, 50, 50, 0, 0]),
+      ],
+      [0.5],
+      new Set(['host=a'])
+    )
+
+    expect(result[0]!.points.map(point => point.timestampNs)).toEqual([
+      earlier,
+      later,
+    ])
   })
 })
 
@@ -149,6 +168,7 @@ describe('seriesBucketsToSlices', () => {
     // store decided where the buckets are.
     expect(slices).toHaveLength(2)
     expect(slices.map(s => s.timestamp)).toEqual([ts1, ts2])
+    expect(slices.map(s => s.sourceDatapointID)).toEqual(['a', 'b'])
     expect(slices.every(s => s.attributesKey === 'driver=ALO')).toBe(true)
     expect(slices[0]!.totals.count).toBe(3)
     expect(slices[1]!.totals.count).toBe(1)

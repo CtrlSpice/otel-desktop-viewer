@@ -12,11 +12,17 @@
 -- total -- the addition would be repeated at every call site, and the wire
 -- would depend on each one remembering it.
 create or replace macro aggregate_bucket_json(timestamp_, start_time, count_, sum_, scale, zero_threshold, zero_count, pos_fold, neg_fold, bounds, counts, quantiles) as (
-		case when bounds is not null and len(bounds) > 0 then
-			-- Explicit bounds. The exponential fields stay out entirely rather than
-			-- being emitted as nulls: a datapoint carries one representation or the
-			-- other, and a reader should not have to work out which by probing.
-			json_object(
+		case when bounds is not null then
+			-- Explicit bounds. Presence, not length, identifies the representation:
+			-- an empty bounds list is a valid explicit histogram with one catch-all
+			-- bucket, while exponential histograms have NULL here. The exponential
+			-- fields stay out entirely rather than being emitted as nulls: a
+			-- datapoint carries one representation or the other, and a reader should
+			-- not have to work out which by probing.
+			-- The empty-bounds patch removes both unknowable extents, matching
+			-- datapoint_json's established wire shape. Every other explicit shape
+			-- keeps the same fields it had before.
+			json_merge_patch(json_object(
 				'timestamp', timestamp_::varchar,
 				'startTime', start_time::varchar,
 				'count', count_,
@@ -28,7 +34,9 @@ create or replace macro aggregate_bucket_json(timestamp_, start_time, count_, su
 				-- Precomputed by get_metric.sql's agg_quantiles chain; null when
 				-- no quantiles were requested, as the old guard had it.
 				'quantiles', quantiles
-			)
+			), case when len(bounds) = 0
+				then json_object('min', null, 'max', null)
+				else json('{}') end)
 		else
 			json_object(
 				'timestamp', timestamp_::varchar,

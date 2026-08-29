@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { waitFor } from '@testing-library/svelte'
 import WaterfallView from './WaterfallView.svelte'
@@ -507,5 +507,144 @@ describe('WaterfallView error navigation, vim brackets', () => {
 
     press(']')
     expect(onSelectSpan).not.toHaveBeenCalled()
+  })
+})
+
+describe('WaterfallView column separators', () => {
+  let containerWidth = 800
+
+  beforeEach(() => {
+    containerWidth = 800
+    localStorage.clear()
+    resetCollapseStoreForTests()
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(
+      () => containerWidth
+    )
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function separators(): HTMLElement[] {
+    return [...document.querySelectorAll<HTMLElement>('[role="separator"]')]
+  }
+
+  function press(
+    separator: HTMLElement,
+    key: string,
+    shiftKey = false
+  ): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', {
+      key,
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    })
+    separator.dispatchEvent(event)
+    return event
+  }
+
+  it('exposes one focusable separator per boundary with its reachable range', async () => {
+    renderTree()
+    await tick()
+
+    const bars = separators()
+    expect(bars).toHaveLength(2)
+    for (const bar of bars) {
+      expect(bar).toHaveAttribute('tabindex', '0')
+      expect(Number(bar.getAttribute('aria-valuemin'))).toBeLessThanOrEqual(
+        Number(bar.getAttribute('aria-valuenow'))
+      )
+      expect(Number(bar.getAttribute('aria-valuenow'))).toBeLessThanOrEqual(
+        Number(bar.getAttribute('aria-valuemax'))
+      )
+    }
+
+    expect(
+      document.querySelectorAll('.resize-handle[role="separator"]')
+    ).toHaveLength(0)
+    expect(
+      document.querySelectorAll('.resize-handle[aria-hidden="true"]')
+    ).toHaveLength(2)
+    expect(
+      document.querySelector(
+        '[role="region"][aria-label="Span waterfall rows"]'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('nudges through the shared cascade and persists each keyboard change', async () => {
+    renderTree()
+    await tick()
+
+    const spanBar = separators()[0]!
+    spanBar.focus()
+    const start = Number(spanBar.getAttribute('aria-valuenow'))
+
+    const right = press(spanBar, 'ArrowRight')
+    expect(right.defaultPrevented).toBe(true)
+    await tick()
+    expect(spanBar).toHaveAttribute('aria-valuenow', String(start + 16))
+    expect(spanBar).toHaveFocus()
+
+    const afterRight = JSON.parse(
+      localStorage.getItem('waterfall-column-widths') ?? '{}'
+    ) as Record<string, number>
+    expect(afterRight.span).toBeGreaterThan(start)
+
+    const left = press(spanBar, 'ArrowLeft', true)
+    expect(left.defaultPrevented).toBe(true)
+    await tick()
+    expect(spanBar).toHaveAttribute('aria-valuenow', String(start - 48))
+  })
+
+  it('uses Home to restore and persist the current-container default', async () => {
+    containerWidth = 600
+    renderTree()
+    await tick()
+
+    const spanBar = separators()[0]!
+    const defaultPosition = spanBar.getAttribute('aria-valuenow')
+    press(spanBar, 'ArrowRight')
+    await tick()
+    expect(spanBar).not.toHaveAttribute('aria-valuenow', defaultPosition)
+
+    const home = press(spanBar, 'Home')
+    expect(home.defaultPrevented).toBe(true)
+    await tick()
+    expect(spanBar).toHaveAttribute('aria-valuenow', defaultPosition)
+
+    const stored = JSON.parse(
+      localStorage.getItem('waterfall-column-widths') ?? '{}'
+    ) as Record<string, number>
+    expect(stored.span + stored.service + stored.timeline).toBeCloseTo(600, 6)
+    expect(stored.span).toBeGreaterThanOrEqual(140)
+    expect(stored.service).toBeGreaterThanOrEqual(100)
+    expect(stored.timeline).toBeGreaterThanOrEqual(240)
+  })
+})
+
+describe('WaterfallView virtual row identity', () => {
+  it('keeps focus on the same span when rows reorder', async () => {
+    const spans = navigationSpans()
+    const view = renderTree({ spans, selectedSpanID: 'error-1' })
+    await tick()
+
+    const focused = document.querySelector<HTMLElement>(
+      'tr[data-span-id="error-1"]'
+    )!
+    focused.focus()
+
+    await view.rerender({
+      componentProps: {
+        spans: [...spans].reverse(),
+        selectedSpanID: 'error-1',
+        onSelectSpan: vi.fn(),
+      },
+    })
+    await tick()
+
+    expect(document.activeElement).toHaveAttribute('data-span-id', 'error-1')
   })
 })

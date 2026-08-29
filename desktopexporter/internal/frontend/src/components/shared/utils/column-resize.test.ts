@@ -155,8 +155,8 @@ describe('bar placement', () => {
   it('puts a bar after each flex column that has a flex column beyond it', () => {
     const w = initialWidths(abc, 600)
     expect(barPositions(abc, w)).toEqual([
-      { id: 'a', left: 200 },
-      { id: 'b', left: 400 },
+      { id: 'a', left: 200, min: 100, max: 400 },
+      { id: 'b', left: 400, min: 200, max: 500 },
     ])
   })
 
@@ -170,6 +170,16 @@ describe('bar placement', () => {
     const w = initialWidths(specs, 440)
     // The bar after a exists because b lies beyond, and its px position
     // includes the fixed gutter it sits before.
-    expect(barPositions(specs, w)).toEqual([{ id: 'a', left: w.a }])
+    expect(barPositions(specs, w)).toEqual([
+      { id: 'a', left: w.a, min: 100, max: 300 },
+    ])
+  })
+
+  it('reports ranges from the same cascade slack used by resizing', () => {
+    const widths = { a: 350, b: 100, c: 150 }
+    expect(barPositions(abc, widths)).toEqual([
+      { id: 'a', left: 350, min: 100, max: 400 },
+      { id: 'b', left: 450, min: 200, max: 500 },
+    ])
   })
 })

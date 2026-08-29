@@ -225,6 +225,26 @@ export function itemHref(
   return path + buildSearch(query)
 }
 
+/** Builds the bare list href for a signal while preserving route-wide query state. */
+export function signalHref(
+  signal: SignalName,
+  query: Record<string, string> = readRoute().query
+): string {
+  return signalPath(signal) + buildSearch(mergeItemQuery(query))
+}
+
+/** True when an anchor click should be handled by the client-side router. */
+export function isPlainLeftClick(event: MouseEvent): boolean {
+  return (
+    !event.defaultPrevented &&
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey
+  )
+}
+
 /**
  * Navigates to a signal item or bare list path.
  *

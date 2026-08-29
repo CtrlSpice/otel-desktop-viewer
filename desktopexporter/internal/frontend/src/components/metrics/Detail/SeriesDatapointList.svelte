@@ -1,28 +1,16 @@
 <script lang="ts">
   /*
-   * Inline datapoint rows for a single timeseries. Nested under an
-   * expanded series row in TimeseriesPanel. Selection, exemplar
-   * expansion, and histogram snapshot sync go through MetricViewContext.
-   *
-   * Long lists are windowed rather than truncated. This is the view that
-   * answers "what did my service actually send", so every datapoint has to be
-   * reachable -- a cap with a "showing 500 of 17,076" note would be a smaller
-   * lie than merged rows, but still a lie. Rendering a row per datapoint is not
-   * an option either: a dense stream is hundreds of thousands of rows and the
-   * DOM will not take it.
-   *
-   * So the rows exist in the array and only the visible slice exists in the
-   * DOM, with spacer rows standing in for the rest. Heights are measured rather
-   * than assumed, because an expanded exemplar row is several times the height
-   * of a plain one; unmeasured rows use an estimate and correct themselves as
-   * they scroll into view.
+   * Paginated datapoint rows for a single timeseries. Nested under an expanded
+   * series row in TimeseriesPanel. Selection, flags/exemplar expansion, and
+   * histogram snapshot sync go through MetricViewContext.
    */
-  import { SvelteMap } from 'svelte/reactivity'
+  import { tick } from 'svelte'
   import { formatDateTimeMs } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { formatMetricValuePlain } from '@/components/metrics/utils/format-metric-value'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
+  import DetailNav from '@/components/shared/DetailNav.svelte'
   import { itemHref, navigateToItem } from '@/route'
   import { SPAN_PARAM } from '@/route/query-params'
   import type { DataPoint, Exemplar } from '@/types/api-types'
@@ -48,107 +36,177 @@
 
   let metricUnit = $derived(ctx.metric?.unit ?? '')
 
-  // Below this a list renders whole: no scroller, no spacers, no measurement.
-  // Windowing a short list costs more than it saves and would put a second
-  // scroll region inside the detail pane for twenty rows.
-  const VIRTUALIZE_ABOVE = 200
-  // Rows above and below the viewport, so a fast scroll does not show gaps
-  // before the next frame fills them.
-  const OVERSCAN = 10
-  // Only used for rows that have never been on screen. Close to a plain row's
-  // real height, so the scrollbar barely shifts as measurements replace it.
-  const ESTIMATED_ROW_PX = 24
+  const PAGE_SIZES = [25, 50, 100] as const
+  type PageSize = (typeof PAGE_SIZES)[number]
 
-  let virtualize = $derived(datapoints.length > VIRTUALIZE_ABOVE)
+  let pageSize = $state<PageSize>(25)
+  let pageIndex = $state(0)
+  let listRoot = $state<HTMLDivElement>()
+  let keyboardFocusTarget: number | null = null
 
-  let scrollTop = $state(0)
-  let viewportPx = $state(0)
+  let pageCount = $derived(Math.max(1, Math.ceil(datapoints.length / pageSize)))
+  let rangeStart = $derived(pageIndex * pageSize)
+  let rangeEnd = $derived(Math.min(datapoints.length, rangeStart + pageSize))
+  let visible = $derived(datapoints.slice(rangeStart, rangeEnd))
+  let indexedDatapoints: DataPoint[] | undefined
+  let cachedDatapointIndexByID = new Map<string, number>()
+  let revealedDatapoints: DataPoint[] | undefined
+  let revealedSelectedID: string | null | undefined
 
-  // Measured heights, keyed by datapoint id rather than index: the array
-  // changes identity on every poll, and an id survives that.
-  const rowPx = new SvelteMap<string, number>()
-  const expansionPx = new SvelteMap<string, number>()
+  function datapointIndexByID(points: DataPoint[]): Map<string, number> {
+    if (points === indexedDatapoints) return cachedDatapointIndexByID
 
-  function heightOf(dp: DataPoint): number {
-    const base = rowPx.get(dp.id) ?? ESTIMATED_ROW_PX
-    if (!ctx.expandedDatapoints.has(dp.id)) return base
-    return base + (expansionPx.get(dp.id) ?? 0)
+    const indexByID = new Map<string, number>()
+    for (let index = 0; index < points.length; index++) {
+      indexByID.set(points[index]!.id, index)
+    }
+    indexedDatapoints = points
+    cachedDatapointIndexByID = indexByID
+    return cachedDatapointIndexByID
   }
 
-  // Cumulative offsets, one longer than the list: offsets[i] is where row i
-  // starts and offsets[n] is the total height. Recomputed when the list or a
-  // measurement changes -- not on scroll, which only searches it.
-  let offsets = $derived.by((): number[] => {
-    if (!virtualize) return []
-    const out = new Array<number>(datapoints.length + 1)
-    out[0] = 0
-    for (let i = 0; i < datapoints.length; i++) {
-      out[i + 1] = out[i]! + heightOf(datapoints[i]!)
+  function focusedInspectButton(): {
+    element: HTMLButtonElement
+    id: string
+    index: number
+  } | null {
+    const active = document.activeElement
+    if (
+      !(active instanceof HTMLButtonElement) ||
+      !listRoot?.contains(active) ||
+      active.dataset.dpId === undefined ||
+      active.dataset.dpIndex === undefined
+    ) {
+      return null
     }
-    return out
-  })
-
-  /** First index whose row ends after `px`. */
-  function indexAt(px: number): number {
-    let lo = 0
-    let hi = datapoints.length - 1
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1
-      if (offsets[mid + 1]! <= px) lo = mid + 1
-      else hi = mid
-    }
-    return lo
-  }
-
-  let range = $derived.by((): { start: number; end: number } => {
-    if (!virtualize) return { start: 0, end: datapoints.length }
-    // Before layout has measured the viewport, render a screenful rather than
-    // nothing -- otherwise the list is empty until the first scroll event.
-    const height = viewportPx || 400
-    const start = Math.max(0, indexAt(scrollTop) - OVERSCAN)
-    const end = Math.min(
-      datapoints.length,
-      indexAt(scrollTop + height) + 1 + OVERSCAN
-    )
-    return { start, end }
-  })
-
-  let visible = $derived(datapoints.slice(range.start, range.end))
-  let padTopPx = $derived(virtualize ? (offsets[range.start] ?? 0) : 0)
-  let padBottomPx = $derived(
-    virtualize
-      ? (offsets[datapoints.length] ?? 0) - (offsets[range.end] ?? 0)
-      : 0
-  )
-
-  let columnCount = $derived(showSwatch ? 2 : 1)
-
-  /** Report a rendered element's height, ignoring no-op changes so the
-   *  ResizeObserver cannot drive a render loop. */
-  function measure(
-    node: HTMLElement,
-    args: { id: string; into: SvelteMap<string, number> }
-  ) {
-    let current = args
-    const report = () => {
-      const px = node.getBoundingClientRect().height
-      if (px <= 0) return
-      const prev = current.into.get(current.id)
-      if (prev !== undefined && Math.abs(prev - px) < 0.5) return
-      current.into.set(current.id, px)
-    }
-    const observer = new ResizeObserver(report)
-    observer.observe(node)
-    report()
     return {
-      update(next: { id: string; into: SvelteMap<string, number> }) {
-        current = next
-        report()
-      },
-      destroy() {
-        observer.disconnect()
-      },
+      element: active,
+      id: active.dataset.dpId,
+      index: Number(active.dataset.dpIndex),
     }
+  }
+
+  async function restoreNearestInspectFocus(
+    preferredIndex: number,
+    previous: HTMLButtonElement
+  ): Promise<void> {
+    await tick()
+    const active = document.activeElement
+    // A pointer or keyboard action that focused something else after the data
+    // change wins. Body means the focused button was removed from the DOM.
+    if (active !== previous && active !== document.body) return
+
+    let nearest: HTMLButtonElement | undefined
+    let nearestDistance = Number.POSITIVE_INFINITY
+    for (const button of listRoot?.querySelectorAll<HTMLButtonElement>(
+      'button[data-dp-index]'
+    ) ?? []) {
+      const distance = Math.abs(Number(button.dataset.dpIndex) - preferredIndex)
+      if (distance < nearestDistance) {
+        nearest = button
+        nearestDistance = distance
+      }
+    }
+    nearest?.focus()
+  }
+
+  // Reconcile before Svelte removes the old page so a focused Inspect button
+  // can be identified. External focus is never moved; keyboard traversal owns
+  // its own explicit target below.
+  $effect.pre(() => {
+    const points = datapoints
+    const size = pageSize
+    const selectedID = ctx.selectedDatapointID
+    const focused = focusedInspectButton()
+    const indexByID = datapointIndexByID(points)
+    const selectedIndex = selectedID ? (indexByID.get(selectedID) ?? -1) : -1
+    const focusedIndex = focused ? (indexByID.get(focused.id) ?? -1) : -1
+    // Reveal is edge-triggered. Once handled, pagination belongs to the user
+    // until either the selected identity or the datapoints array changes.
+    const revealSelection =
+      points !== revealedDatapoints || selectedID !== revealedSelectedID
+    revealedDatapoints = points
+    revealedSelectedID = selectedID
+
+    const lastPage = Math.max(0, pageCount - 1)
+    let nextPage = Math.min(pageIndex, lastPage)
+    if (revealSelection && selectedIndex >= 0) {
+      nextPage = Math.floor(selectedIndex / size)
+    }
+
+    if (focused && keyboardFocusTarget === null) {
+      const start = nextPage * size
+      const end = Math.min(points.length, start + size)
+      const remainsMounted = focusedIndex >= start && focusedIndex < end
+      if (!remainsMounted && end > start) {
+        const preferred =
+          selectedIndex >= 0
+            ? selectedIndex
+            : Math.max(
+                start,
+                Math.min(
+                  focusedIndex >= 0 ? focusedIndex : focused.index,
+                  end - 1
+                )
+              )
+        void restoreNearestInspectFocus(preferred, focused.element)
+      }
+    }
+
+    if (nextPage !== pageIndex) pageIndex = nextPage
+  })
+
+  function setPage(next: number): void {
+    pageIndex = Math.max(0, Math.min(next, pageCount - 1))
+  }
+
+  function changePageSize(e: Event): void {
+    const next = Number((e.currentTarget as HTMLSelectElement).value)
+    if (next !== 25 && next !== 50 && next !== 100) return
+    pageIndex = 0
+    pageSize = next
+  }
+
+  async function focusDatapointAt(index: number): Promise<void> {
+    const target = Math.max(0, Math.min(index, datapoints.length - 1))
+    keyboardFocusTarget = target
+    pageIndex = Math.floor(target / pageSize)
+    await tick()
+    listRoot
+      ?.querySelector<HTMLButtonElement>(`button[data-dp-index="${target}"]`)
+      ?.focus()
+    if (keyboardFocusTarget === target) keyboardFocusTarget = null
+  }
+
+  function moveInspectFocus(e: KeyboardEvent, index: number): void {
+    let next: number | null = null
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'j':
+        next = index + 1
+        break
+      case 'ArrowUp':
+      case 'k':
+        next = index - 1
+        break
+      case 'PageDown':
+        next = index + pageSize
+        break
+      case 'PageUp':
+        next = index - pageSize
+        break
+      case 'Home':
+        next = 0
+        break
+      case 'End':
+        next = datapoints.length - 1
+        break
+    }
+    if (next === null) return
+
+    e.preventDefault()
+    const clamped = Math.max(0, Math.min(next, datapoints.length - 1))
+    if (clamped !== index) void focusDatapointAt(clamped)
   }
 
   function displayUnit(unit: string): string | null {
@@ -206,20 +264,29 @@
     }
     return { number: '—', unit: null }
   }
+
+  function inspectButtonLabel(
+    datapointID: string,
+    formattedTime: string,
+    valueParts: { number: string; unit: string | null }
+  ): string {
+    const value = valueParts.unit
+      ? `${valueParts.number} ${valueParts.unit}`
+      : valueParts.number
+    return `Inspect datapoint at ${formattedTime}, value ${value}, ID ${datapointID}`
+  }
 </script>
 
-{#snippet datapointRows(dp: DataPoint)}
+{#snippet datapointRows(dp: DataPoint, datapointIndex: number)}
   {@const selected = ctx.selectedDatapointID === dp.id}
   {@const hasExtra = dp.flags > 0 || dp.exemplars.length > 0}
   {@const expanded = hasExtra && ctx.expandedDatapoints.has(dp.id)}
   {@const valueParts = datapointValueParts(dp)}
+  {@const formattedTime = formatDatapointTime(dp.timestamp)}
   <tr
     class="dp-list__row"
     class:dp-list__row--selected={selected}
-    class:dp-list__row--expandable={hasExtra}
     data-dp-id={dp.id}
-    onclick={() => ctx.onDatapointClick(dp)}
-    use:measure={{ id: dp.id, into: rowPx }}
   >
     {#if showSwatch}
       <td class="dp-list__td dp-list__td--swatch">
@@ -230,45 +297,50 @@
         ></span>
       </td>
     {/if}
-    <td
-      class="dp-list__td dp-list__td--content"
-      colspan={showSwatch ? undefined : 1}
-    >
-      <div class="dp-list__row-main">
-        <span class="dp-list__time tabular-nums"
-          >{formatDatapointTime(dp.timestamp)}</span
-        >
-        <div class="dp-list__trail">
-          <span class="dp-list__value-group">
-            <span class="dp-list__value tabular-nums">{valueParts.number}</span>
-            {#if valueParts.unit}
-              <span class="dp-list__unit">{valueParts.unit}</span>
-            {/if}
-          </span>
-          {#if hasExtra}
-            {#if dp.exemplars.length > 0}
-              <span class="badge-count">
-                {#if withheld(dp)}
-                  {dp.exemplars.length} of {dp.exemplarCount} ex
-                {:else}
-                  {dp.exemplars.length} ex
-                {/if}
-              </span>
-            {/if}
-            {#if dp.flags > 0}
-              <span class="badge badge-xs badge-soft badge-warning">flags</span>
-            {/if}
+    <td class="dp-list__td dp-list__td--time tabular-nums">
+      {formattedTime}
+    </td>
+    <td class="dp-list__td dp-list__td--value">
+      <span class="dp-list__value-group">
+        <span class="dp-list__value tabular-nums">{valueParts.number}</span>
+        {#if valueParts.unit}
+          <span class="dp-list__unit">{valueParts.unit}</span>
+        {/if}
+      </span>
+    </td>
+    <td class="dp-list__td dp-list__td--details">
+      {#if dp.exemplars.length > 0}
+        <span class="badge-count">
+          {#if withheld(dp)}
+            {dp.exemplars.length} of {dp.exemplarCount} ex
+          {:else}
+            {dp.exemplars.length} ex
           {/if}
-        </div>
-      </div>
+        </span>
+      {/if}
+      {#if dp.flags > 0}
+        <span class="badge badge-xs badge-soft badge-warning">flags</span>
+      {/if}
+    </td>
+    <td class="dp-list__td dp-list__td--action">
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs"
+        data-dp-index={datapointIndex}
+        data-dp-id={dp.id}
+        aria-label={inspectButtonLabel(dp.id, formattedTime, valueParts)}
+        aria-pressed={selected}
+        aria-expanded={hasExtra ? expanded : undefined}
+        onclick={() => ctx.onDatapointClick(dp)}
+        onkeydown={e => moveInspectFocus(e, datapointIndex)}
+      >
+        Inspect
+      </button>
     </td>
   </tr>
   {#if expanded}
-    <tr
-      class="dp-list__expansion-row"
-      use:measure={{ id: dp.id, into: expansionPx }}
-    >
-      <td colspan={showSwatch ? 2 : 1} class="dp-list__expansion-cell">
+    <tr class="dp-list__expansion-row">
+      <td colspan={showSwatch ? 5 : 4} class="dp-list__expansion-cell">
         <div class="dp-list__expansion">
           {#if dp.flags > 0}
             <div class="dp-list__detail">
@@ -330,44 +402,77 @@
   <p class="dp-list__empty" class:dp-list__empty--flush={flush}>
     No datapoints
   </p>
-{:else if !virtualize}
-  <table class="dp-list" class:dp-list--flush={flush} aria-label="Datapoints">
-    <tbody>
-      {#each datapoints as dp (dp.id)}
-        {@render datapointRows(dp)}
-      {/each}
-    </tbody>
-  </table>
 {:else}
   <div
-    class="dp-list__scroller"
-    bind:clientHeight={viewportPx}
-    onscroll={e => (scrollTop = e.currentTarget.scrollTop)}
+    bind:this={listRoot}
+    class="dp-list__container"
+    class:dp-list__container--flush={flush}
   >
-    <table
-      class="dp-list"
-      class:dp-list--flush={flush}
-      aria-label="Datapoints"
-      aria-rowcount={datapoints.length}
-    >
-      <tbody>
-        <!-- Spacers stand in for the rows that are not in the DOM, so the
-             scrollbar reflects the whole list rather than the window. -->
-        {#if padTopPx > 0}
-          <tr aria-hidden="true" style:height="{padTopPx}px">
-            <td colspan={columnCount}></td>
+    <div class="dp-list__table-wrap">
+      <table
+        class="dp-list"
+        class:dp-list--flush={flush}
+        aria-label="Datapoints"
+      >
+        <thead>
+          <tr class="dp-list__header-row">
+            {#if showSwatch}
+              <th scope="col" class="dp-list__th dp-list__th--swatch">
+                <span class="sr-only">Series</span>
+              </th>
+            {/if}
+            <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
+            <th scope="col" class="dp-list__th dp-list__th--value"> Value </th>
+            <th scope="col" class="dp-list__th dp-list__th--details">
+              Details
+            </th>
+            <th scope="col" class="dp-list__th dp-list__th--action">
+              Action
+            </th>
           </tr>
-        {/if}
-        {#each visible as dp (dp.id)}
-          {@render datapointRows(dp)}
-        {/each}
-        {#if padBottomPx > 0}
-          <tr aria-hidden="true" style:height="{padBottomPx}px">
-            <td colspan={columnCount}></td>
-          </tr>
-        {/if}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each visible as dp, offset (dp.id)}
+            {@render datapointRows(dp, rangeStart + offset)}
+          {/each}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="dp-list__pagination">
+      <div class="dp-list__pagination-summary">
+        <span
+          class="dp-list__range tabular-nums"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {rangeStart + 1}-{rangeEnd} of {datapoints.length}
+          {datapoints.length === 1 ? 'datapoint' : 'datapoints'}
+        </span>
+        <label class="dp-list__page-size">
+          <span>Rows per page</span>
+          <select
+            class="select select-xs"
+            aria-label="Rows per page"
+            value={pageSize}
+            onchange={changePageSize}
+          >
+            {#each PAGE_SIZES as size}
+              <option value={size}>{size}</option>
+            {/each}
+          </select>
+        </label>
+      </div>
+      <DetailNav
+        index={pageIndex}
+        total={pageCount}
+        label="page"
+        onFirst={() => setPage(0)}
+        onPrev={() => setPage(pageIndex - 1)}
+        onNext={() => setPage(pageIndex + 1)}
+        onLast={() => setPage(pageCount - 1)}
+      />
+    </div>
   </div>
 {/if}
 
@@ -378,12 +483,14 @@
     @apply px-0;
   }
 
-  .dp-list--flush .dp-list__td--swatch {
+  .dp-list--flush .dp-list__td--swatch,
+  .dp-list--flush .dp-list__th--swatch {
     @apply pl-0;
   }
 
-  .dp-list--flush .dp-list__td--content {
-    @apply pl-0 pr-2;
+  .dp-list--flush .dp-list__td--time,
+  .dp-list--flush .dp-list__th--time {
+    @apply pl-0;
   }
 
   .dp-list__empty {
@@ -391,12 +498,8 @@
     color: var(--color-muted);
   }
 
-  /* Its own scroll region, so a long series does not push the rest of the
-     detail pane off screen. Only applied when the list is windowed. */
-  .dp-list__scroller {
-    @apply overflow-y-auto;
-    max-height: 24rem;
-    overscroll-behavior: contain;
+  .dp-list__table-wrap {
+    @apply overflow-x-auto;
   }
 
   .dp-list {
@@ -404,8 +507,23 @@
     border-collapse: collapse;
   }
 
+  .dp-list__header-row {
+    border-bottom: 1px solid
+      color-mix(in oklab, var(--color-base-300) 50%, transparent);
+  }
+
+  .dp-list__th {
+    @apply px-2 py-1 text-left text-xs font-medium;
+    color: var(--color-subtle);
+  }
+
+  .dp-list__th--value,
+  .dp-list__th--action {
+    @apply text-right;
+  }
+
   .dp-list__row {
-    @apply cursor-pointer transition-colors hover:bg-base-300/30;
+    @apply transition-colors hover:bg-base-300/30;
   }
 
   .dp-list__row--selected {
@@ -417,10 +535,11 @@
   }
 
   .dp-list__td {
-    @apply py-1 align-middle;
+    @apply px-2 py-1 align-middle;
   }
 
-  .dp-list__td--swatch {
+  .dp-list__td--swatch,
+  .dp-list__th--swatch {
     @apply pl-3 pr-1;
     width: 1.25rem;
   }
@@ -431,35 +550,57 @@
     height: 6px;
   }
 
-  .dp-list__td--content {
-    @apply w-full pl-1 pr-4;
-  }
-
-  .dp-list__row-main {
-    @apply flex w-full min-w-0 items-baseline justify-between gap-3;
-  }
-
-  .dp-list__trail {
-    @apply flex min-w-0 shrink items-baseline justify-end gap-2;
+  .dp-list__td--time {
+    @apply whitespace-nowrap pl-3;
+    color: var(--color-subtle);
   }
 
   .dp-list__value-group {
     @apply inline-flex min-w-0 items-baseline justify-end gap-1;
   }
 
-  .dp-list__time {
-    @apply shrink-0;
-    color: var(--color-subtle);
+  .dp-list__td--value,
+  .dp-list__td--action {
+    @apply text-right;
+  }
+
+  .dp-list__td--details {
+    @apply whitespace-nowrap;
   }
 
   .dp-list__value {
-    @apply min-w-0 truncate font-mono;
+    @apply font-mono;
     color: var(--color-base-content);
   }
 
   .dp-list__unit {
     @apply shrink-0;
     color: var(--color-subtle);
+  }
+
+  .dp-list__pagination {
+    @apply flex flex-wrap items-center justify-between gap-2 px-3 py-2;
+    border-top: 1px solid
+      color-mix(in oklab, var(--color-base-300) 30%, transparent);
+  }
+
+  .dp-list__container--flush .dp-list__pagination {
+    @apply px-0;
+  }
+
+  .dp-list__pagination-summary,
+  .dp-list__page-size {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .dp-list__range,
+  .dp-list__page-size {
+    @apply text-xs;
+    color: var(--color-subtle);
+  }
+
+  .dp-list__page-size :global(.select) {
+    @apply w-auto min-w-16;
   }
 
   .dp-list__expansion-row {

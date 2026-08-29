@@ -22,3 +22,5 @@ node_modules/
 desktopexporter/internal/frontend/dist/
 desktopexporter/internal/frontend/.vite/
 desktopexporter/internal/frontend/*.local
+desktopexporter/internal/frontend/playwright-report/
+desktopexporter/internal/frontend/test-results/

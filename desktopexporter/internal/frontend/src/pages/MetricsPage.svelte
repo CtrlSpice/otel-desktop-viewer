@@ -102,7 +102,7 @@
   import MetricChartView from '@/components/metrics/Charts/MetricChartView.svelte'
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
   import {
     PANEL_DEFAULT_REM,
@@ -116,6 +116,8 @@
     getMetricViewContext,
     type HistogramTab,
   } from '@/contexts/metric-view-context.svelte'
+
+  const METRIC_CHART_PANEL_ID = 'metric-chart-tabpanel'
 
   const SORT_OPTIONS: SortOption[] = [
     { value: 'lastSeen', label: 'Last Seen', defaultDirection: 'desc' },
@@ -205,7 +207,13 @@
   // stale series can never be shown under a new question. A SvelteMap because
   // the list reads it during render.
   let seriesDatapoints = new SvelteMap<string, DataPoint[]>()
-  let seriesDatapointsKey = $state('')
+  let seriesDatapointsKey = ''
+  let seriesDatapointsScopeKey = ''
+  let expandedSeriesSnapshot = new Set<string>()
+  let seriesDatapointsMetricID = $derived.by(() => {
+    const summaryID = page.selectedSummary?.id
+    return summaryID && selectedMetric?.id === summaryID ? summaryID : null
+  })
 
   // Each series merged over the selected heatmap column, fetched on click.
   //
@@ -247,6 +255,21 @@
 
   let showChartTitleTabs = $derived(
     showChartAggregationTabs || showChartHistogramTabs
+  )
+  let activeChartTabID = $derived(
+    showChartAggregationTabs
+      ? metricCtx.aggregationView
+      : metricCtx.activeHistogramTab
+  )
+  let chartTabPanelAttrs = $derived.by(() =>
+    showChartTitleTabs
+      ? {
+          id: METRIC_CHART_PANEL_ID,
+          role: 'tabpanel' as const,
+          'aria-labelledby': paneTabID(METRIC_CHART_PANEL_ID, activeChartTabID),
+          tabindex: 0,
+        }
+      : {}
   )
 
   // Re-fetch metric detail ONLY when the selected metric's identity changes --
@@ -434,38 +457,100 @@
   // 1,001 datapoints in 132 ms. Asking for all of them up front would put the
   // whole unreduced stream on the wire to render twenty rows.
   $effect(() => {
-    const summary = page.selectedSummary
+    const streamID = seriesDatapointsMetricID
     const expanded = [...metricCtx.expandedTimeseries]
-    const { start, end } = selectionToQueryRangeMs(
-      timeContext.selection,
-      Date.now()
+    const selection = timeContext.selection
+    const timezone = timeContext.tz
+    // This stable identity invalidates an old metric/window request even while
+    // every series is collapsed. Presets use their stored duration here; their
+    // moving absolute bounds are resolved only when a request is triggered.
+    const scopeKey = streamID
+      ? JSON.stringify([
+          streamID,
+          selection.start,
+          selection.end,
+          selection.type,
+          timezone,
+        ])
+      : ''
+    const scopeChanged = scopeKey !== seriesDatapointsScopeKey
+    if (scopeChanged) {
+      seriesDatapointsScopeKey = scopeKey
+      seriesDatapointsKey = ''
+      seriesDatapoints.clear()
+    }
+    const expansionTriggered = expanded.some(
+      seriesKey => !expandedSeriesSnapshot.has(seriesKey)
     )
-    // One key per (metric, window). When it changes every cached series is
-    // answering a question nobody asked any more.
-    const key = summary ? `${summary.id}:${start}:${end}:${timeContext.tz}` : ''
+    expandedSeriesSnapshot = new Set(expanded)
+    if (!streamID || expanded.length === 0) return
+    // Collapsing one row while another remains open is not a refetch trigger.
+    if (!scopeChanged && !expansionTriggered) return
+
+    const now = Date.now()
+    const { start, end } = selectionToQueryRangeMs(selection, now)
+    const fitToData = isDefaultUnboundedWindow(selection)
+    const timezoneOffsetNs = tzOffsetNs(now)
+    const timezoneName = tzName()
+    // Capture every input that can change the store's answer. A structured key
+    // avoids collisions with attribute-derived series and metric identifiers.
+    const key = JSON.stringify([
+      streamID,
+      start,
+      end,
+      timezone,
+      timezoneOffsetNs,
+      timezoneName ?? null,
+      fitToData,
+    ])
     if (key !== seriesDatapointsKey) {
       seriesDatapointsKey = key
       seriesDatapoints.clear()
     }
-    if (!summary || expanded.length === 0) return
 
     for (const seriesKey of expanded) {
-      if (seriesDatapoints.has(seriesKey)) continue
-      void fetchSeriesDatapoints(summary.id, seriesKey, start, end, key)
+      // Cache publication must not be a new live-window request trigger.
+      if (untrack(() => seriesDatapoints.has(seriesKey))) continue
+      void fetchSeriesDatapoints({
+        streamID,
+        seriesKey,
+        startTime: start,
+        endTime: end,
+        timezoneOffsetNs,
+        timezoneName,
+        fitToData,
+        cacheKey: key,
+      })
     }
   })
 
   const seriesInFlight = new Set<string>()
 
-  async function fetchSeriesDatapoints(
-    streamID: string,
-    seriesKey: string,
-    startTime: number,
-    endTime: number,
+  type SeriesDatapointsRequest = {
+    streamID: string
+    seriesKey: string
+    startTime: number
+    endTime: number
+    timezoneOffsetNs: number
+    timezoneName: string | undefined
+    fitToData: boolean
     cacheKey: string
-  ) {
-    if (seriesInFlight.has(seriesKey)) return
-    seriesInFlight.add(seriesKey)
+  }
+
+  async function fetchSeriesDatapoints(request: SeriesDatapointsRequest) {
+    const {
+      streamID,
+      seriesKey,
+      startTime,
+      endTime,
+      timezoneOffsetNs,
+      timezoneName,
+      fitToData,
+      cacheKey,
+    } = request
+    const requestKey = JSON.stringify([cacheKey, seriesKey])
+    if (seriesInFlight.has(requestKey)) return
+    seriesInFlight.add(requestKey)
     try {
       const result = await telemetryAPI.getMetric(
         streamID,
@@ -477,30 +562,33 @@
         // None: the list shows what arrived, and quantiles are a derived
         // statistic the client computes anyway.
         [],
-        tzOffsetNs(),
-        isDefaultUnboundedWindow(timeContext.selection),
+        timezoneOffsetNs,
+        fitToData,
         undefined,
         undefined,
         undefined,
         undefined,
-        tzName()
+        timezoneName
       )
       // The window may have moved while this was in flight; a late answer to a
       // superseded question must not land in the new cache.
       if (cacheKey !== seriesDatapointsKey) return
       const series = result?.timeseries.find(t => t.attributesKey === seriesKey)
-      if (series) seriesDatapoints.set(seriesKey, series.datapoints)
+      // An omitted series and a null response are both terminal answers. Cache
+      // an empty array so URL-backed pending selections can reject instead of
+      // waiting forever for a value that will never arrive.
+      seriesDatapoints.set(seriesKey, series?.datapoints ?? [])
     } catch (err) {
       console.error('Failed to fetch series datapoints:', err)
     } finally {
-      seriesInFlight.delete(seriesKey)
+      seriesInFlight.delete(requestKey)
     }
   }
 
   /** The offset to align store-side buckets to, in nanoseconds. */
-  function tzOffsetNs(): number {
+  function tzOffsetNs(now = Date.now()): number {
     if (timeContext.tz === 'UTC') return 0
-    return Number(localOffsetNs(BigInt(Date.now()) * 1_000_000n))
+    return Number(localOffsetNs(BigInt(now) * 1_000_000n))
   }
 
   /** The zone that offset was sampled from, so the store can resolve it per
@@ -831,6 +919,7 @@
               }
             }}
             ariaLabel="Metric chart"
+            tabPanelID={METRIC_CHART_PANEL_ID}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
           </PaneHeader>
@@ -846,22 +935,31 @@
         {/if}
       {/if}
       {#if displayError}
-        <div class="metrics-page__placeholder alert alert-error">
+        <div
+          {...chartTabPanelAttrs}
+          class="metrics-page__placeholder alert alert-error"
+        >
           <span>Error: {displayError}</span>
         </div>
       {:else if page.loading && !hasMetricRows}
-        <div class="metrics-page__placeholder metrics-empty">
+        <div
+          {...chartTabPanelAttrs}
+          class="metrics-page__placeholder metrics-empty"
+        >
           Loading metrics…
         </div>
       {:else if !page.loading && !hasMetricRows}
-        <div class="metrics-page__placeholder metrics-empty">
+        <div
+          {...chartTabPanelAttrs}
+          class="metrics-page__placeholder metrics-empty"
+        >
           <p class="text-rp-subtle">No metrics in this time range</p>
           <p class="mt-2 text-sm text-rp-muted">
             Send telemetry to the exporter or adjust the time range
           </p>
         </div>
       {:else}
-        <div class="metrics-page__chart">
+        <div {...chartTabPanelAttrs} class="metrics-page__chart">
           <MetricChartView />
         </div>
       {/if}

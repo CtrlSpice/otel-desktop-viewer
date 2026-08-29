@@ -9,6 +9,13 @@ import type { Attribute } from '@/types/api-types'
 export type ChartPoint = {
   date: Date
   value: number
+  /** Exact source or bucket timestamp when the chart's millisecond Date is a
+   * lossy rendering coordinate. Cursor reconciliation and column activation use
+   * this identity so two sub-millisecond points never collapse together. */
+  timestampNs?: bigint
+  /** Exact raw datapoint identity when this point still represents one source
+   * sample. Synthetic aggregates deliberately omit it and remain read-only. */
+  sourceDatapointID?: string
   /** Activity since the previous reading, computed by the store. Present only
    *  on Cumulative Sums, and null on a series' first point, which describes no
    *  interval. Derived views read this rather than differencing the points they

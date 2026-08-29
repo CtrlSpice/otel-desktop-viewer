@@ -196,21 +196,53 @@ export function resizeBar(
   return next
 }
 
+export type ColumnBarPosition = {
+  id: string
+  /** Current boundary position in px from the row's left edge. */
+  left: number
+  /** Furthest reachable left position without crossing a column minimum. */
+  min: number
+  /** Furthest reachable right position without crossing a column minimum. */
+  max: number
+}
+
 /**
- * Where the drag bars sit: after each flex column that has another flex
- * column somewhere beyond it. `left` is the cumulative width through the
- * named column, in px from the row's left edge.
+ * Where the resize bars sit and the range each can reach: after each flex
+ * column that has another flex column somewhere beyond it. The range uses
+ * the same per-side slack as resizeBar, so ARIA values and pointer geometry
+ * cannot disagree when a resize cascades across columns.
  */
 export function barPositions(
   specs: ColumnSpec[],
   widths: ColumnWidths
-): { id: string; left: number }[] {
-  const out: { id: string; left: number }[] = []
+): ColumnBarPosition[] {
+  const out: ColumnBarPosition[] = []
   let cumulative = 0
   for (let i = 0; i < specs.length; i++) {
     cumulative += widths[specs[i].id] ?? 0
     if (specs[i].flex > 0 && specs.slice(i + 1).some(d => d.flex > 0)) {
-      out.push({ id: specs[i].id, left: cumulative })
+      const beforeSlack = specs
+        .slice(0, i + 1)
+        .reduce(
+          (sum, d) =>
+            sum +
+            (d.flex > 0 ? Math.max(0, (widths[d.id] ?? d.min) - d.min) : 0),
+          0
+        )
+      const beyondSlack = specs
+        .slice(i + 1)
+        .reduce(
+          (sum, d) =>
+            sum +
+            (d.flex > 0 ? Math.max(0, (widths[d.id] ?? d.min) - d.min) : 0),
+          0
+        )
+      out.push({
+        id: specs[i].id,
+        left: cumulative,
+        min: cumulative - beforeSlack,
+        max: cumulative + beyondSlack,
+      })
     }
   }
   return out

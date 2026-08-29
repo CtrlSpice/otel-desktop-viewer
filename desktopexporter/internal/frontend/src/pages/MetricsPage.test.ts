@@ -1,14 +1,19 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { waitFor } from '@testing-library/svelte'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/svelte'
+import userEvent from '@testing-library/user-event'
+import { tick } from 'svelte'
 import MetricsPage from './MetricsPage.svelte'
 import type {
+  DataPoint,
   MetricSummary,
   MetricData,
   MetricType,
   Stats,
+  SumDataPoint,
 } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
 
 // A legend toggle fetches the aggregate at two grids: a bucketed one for the
 // heatmap, and a whole-window collapse for the summary distribution. Only a
@@ -70,7 +75,10 @@ function makeSummary(metricType: MetricType): MetricSummary {
   }
 }
 
-function makeMetric(metricType: MetricType): MetricData {
+function makeMetric(
+  metricType: MetricType,
+  datapoints: DataPoint[] = []
+): MetricData {
   return {
     lastSeenNs: 1_700_000_000_000_000_000n,
     id: 'metric-1',
@@ -92,7 +100,7 @@ function makeMetric(metricType: MetricType): MetricData {
         attributesKey: 'route=/checkout',
         attributes: [],
         resource: EMPTY_RESOURCE,
-        datapoints: [],
+        datapoints,
         stats: null,
         views: null,
         rateStats: null,
@@ -105,6 +113,36 @@ function makeMetric(metricType: MetricType): MetricData {
     boundsMismatch: null,
     window: { fittedToData: false, startNs: null, endNs: null },
   }
+}
+
+function makeSumDatapoint(
+  id: string,
+  timestampMs: number,
+  value: number
+): SumDataPoint {
+  const timestamp = BigInt(timestampMs) * 1_000_000n
+  return {
+    id,
+    timestamp,
+    timestampMs,
+    startTime: timestamp,
+    flags: 0,
+    exemplars: [],
+    metricType: 'Sum',
+    doubleValue: value,
+    intValue: null,
+    valueType: 'double',
+    isMonotonic: true,
+    aggregationTemporality: 'Cumulative',
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => {
+    resolve = next
+  })
+  return { promise, resolve }
 }
 
 function makeStats(): Stats {
@@ -126,10 +164,18 @@ beforeEach(() => {
   if (typeof Element.prototype.scrollTo !== 'function') {
     Element.prototype.scrollTo = () => {}
   }
+  if (typeof Element.prototype.scrollIntoView !== 'function') {
+    Element.prototype.scrollIntoView = () => {}
+  }
   searchMetricSummaries.mockReset()
   getStats.mockReset()
   getMetric.mockReset()
   getMetricAggregate.mockReset()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  localStorage.removeItem('time-selection')
 })
 
 async function renderSelected(metricType: MetricType) {
@@ -156,6 +202,10 @@ function wholeWindowCalls() {
   return getMetricAggregate.mock.calls.filter(args => args[3] === 1)
 }
 
+function rawSeriesCalls() {
+  return getMetric.mock.calls.filter(args => args[3] === 0)
+}
+
 describe('MetricsPage aggregate fetching', () => {
   it('asks for the whole-window merge for a histogram', async () => {
     await renderSelected('Histogram')
@@ -176,4 +226,151 @@ describe('MetricsPage aggregate fetching', () => {
     await new Promise(r => setTimeout(r, 400))
     expect(wholeWindowCalls()).toHaveLength(0)
   })
+})
+
+describe('MetricsPage raw series fetching', () => {
+  const reduced = makeSumDatapoint('dp-reduced', 1_700_000_000_000, 1)
+
+  function prepareRawSeriesTest() {
+    searchMetricSummaries.mockResolvedValue([makeSummary('Sum')])
+    getStats.mockResolvedValue(makeStats())
+    getMetricAggregate.mockResolvedValue({
+      aggregate: null,
+      scalarAggregate: null,
+    })
+  }
+
+  it('anchors a preset window when the series request is triggered', async () => {
+    const initialNow = 1_700_000_000_000
+    const requestNow = initialNow + 5 * 60_000
+    const duration = 15 * 60_000
+    vi.useFakeTimers()
+    vi.setSystemTime(initialNow)
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        start: initialNow - duration,
+        end: initialNow,
+        type: 'preset',
+        presetIndex: 1,
+      })
+    )
+    prepareRawSeriesTest()
+    getMetric.mockImplementation((...args: unknown[]) =>
+      Promise.resolve(
+        args[3] === 0 ? makeMetric('Sum') : makeMetric('Sum', [reduced])
+      )
+    )
+    setTestUrl('/metrics/metric-1')
+
+    renderWithContexts(MetricsPage)
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Expand default series' })
+      ).toBeInTheDocument()
+    )
+    expect(rawSeriesCalls()).toHaveLength(0)
+
+    vi.setSystemTime(requestNow)
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Expand default series' })
+    )
+    await tick()
+
+    expect(rawSeriesCalls()).toHaveLength(1)
+    expect(rawSeriesCalls()[0]?.slice(1, 3)).toEqual([
+      requestNow - duration,
+      requestNow,
+    ])
+  })
+
+  it('starts a new-window request while the old-window request is in flight', async () => {
+    prepareRawSeriesTest()
+    const stale = deferred<MetricData | null>()
+    const current = deferred<MetricData | null>()
+    let rawRequest = 0
+    getMetric.mockImplementation((...args: unknown[]) => {
+      if (args[3] !== 0) {
+        return Promise.resolve(makeMetric('Sum', [reduced]))
+      }
+      return rawRequest++ === 0 ? stale.promise : current.promise
+    })
+    setTestUrl(
+      '/metrics/metric-1?start=100&end=200&series=route%3D%2Fcheckout&dp=dp-current'
+    )
+
+    renderWithContexts(MetricsPage)
+    await waitFor(() => expect(rawSeriesCalls()).toHaveLength(1))
+    expect(rawSeriesCalls()[0]?.slice(0, 3)).toEqual(['metric-1', 100, 200])
+
+    navigateCurrentRoute(
+      withQueryPatch(readRoute().query, { start: '300', end: '400' }),
+      'replace'
+    )
+
+    await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
+    expect(rawSeriesCalls()[1]?.slice(0, 3)).toEqual(['metric-1', 300, 400])
+
+    current.resolve(
+      makeMetric('Sum', [makeSumDatapoint('dp-current', 1_700_000_000_300, 3)])
+    )
+    await waitFor(() =>
+      expect(
+        document.querySelector('tr[data-dp-id="dp-current"]')
+      ).not.toBeNull()
+    )
+
+    stale.resolve(
+      makeMetric('Sum', [makeSumDatapoint('dp-stale', 1_700_000_000_100, 2)])
+    )
+    await stale.promise
+    await tick()
+
+    expect(document.querySelector('tr[data-dp-id="dp-current"]')).not.toBeNull()
+    expect(document.querySelector('tr[data-dp-id="dp-stale"]')).toBeNull()
+  })
+
+  const terminalResponses: Array<[string, () => MetricData | null]> = [
+    ['a null result', () => null],
+    ['an omitted series', () => ({ ...makeMetric('Sum'), timeseries: [] })],
+    ['an empty requested series', () => makeMetric('Sum')],
+  ]
+
+  it.each(terminalResponses)(
+    'publishes terminal empty datapoints for %s',
+    async (_name, response) => {
+      prepareRawSeriesTest()
+      const raw = deferred<MetricData | null>()
+      getMetric.mockImplementation((...args: unknown[]) =>
+        args[3] === 0
+          ? raw.promise
+          : Promise.resolve(makeMetric('Sum', [reduced]))
+      )
+      setTestUrl(
+        '/metrics/metric-1?start=100&end=200&series=route%3D%2Fcheckout&dp=dp-missing'
+      )
+
+      renderWithContexts(MetricsPage)
+      await waitFor(() => expect(rawSeriesCalls()).toHaveLength(1))
+      expect(
+        document.querySelector('tr[data-dp-id="dp-reduced"]')
+      ).not.toBeNull()
+
+      raw.resolve(response())
+      await raw.promise
+      await waitFor(() =>
+        expect(document.querySelector('tr[data-dp-id="dp-reduced"]')).toBeNull()
+      )
+
+      const user = userEvent.setup()
+      await user.click(
+        screen.getByRole('button', { name: 'Collapse default series' })
+      )
+      await user.click(
+        screen.getByRole('button', { name: 'Expand default series' })
+      )
+      await tick()
+      expect(rawSeriesCalls()).toHaveLength(1)
+    }
+  )
 })

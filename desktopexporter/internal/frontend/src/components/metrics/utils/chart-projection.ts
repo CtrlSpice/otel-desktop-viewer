@@ -12,6 +12,49 @@ import type {
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
 /**
+ * Map one reduced raw Sum datapoint onto the store's synthetic Rate grid.
+ *
+ * The source id is used only to recover the exact raw nanosecond timestamp.
+ * Rate points do not represent individual datapoints and therefore cannot
+ * carry that id themselves. Keeping the lookup on `timeseries.datapoints`
+ * also means a raw-only detail datapoint omitted by reduction cannot be paired
+ * with an unrelated bucket merely because its millisecond coordinate is near.
+ */
+export function rateBucketStartForSourceDatapoint(
+  timeseries: Pick<MetricTimeseries, 'datapoints' | 'views'>,
+  datapointID: string
+): bigint | undefined {
+  const datapoint = timeseries.datapoints.find(
+    candidate => candidate.id === datapointID
+  )
+  if (datapoint?.metricType !== 'Sum' || !timeseries.views?.length) {
+    return undefined
+  }
+
+  // Views arrive ordered by bucket start. Find the greatest start at or before
+  // the raw timestamp: the store uses half-open [start, nextStart) buckets.
+  let low = 0
+  let high = timeseries.views.length
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (timeseries.views[middle]!.bucketStart <= datapoint.timestamp) {
+      low = middle + 1
+    } else {
+      high = middle
+    }
+  }
+
+  const bucket = timeseries.views[low - 1]
+  // A populated bucket with a null rate is the first cumulative bucket. The
+  // chart omits it because no preceding reading exists, so there is no honest
+  // point to select.
+  if (!bucket || bucket.sampleCount === 0 || bucket.rate === null) {
+    return undefined
+  }
+  return bucket.bucketStart
+}
+
+/**
  * Project backend-grouped MetricTimeseries into the {date, value}
  * shape layerchart wants. The grouping itself is already done -- the
  * backend emits one MetricTimeseries per (metric, attribute-set), and
@@ -63,6 +106,8 @@ export function timeseriesToChartTimeseries(
         // here cost one division per datapoint for no added precision.
         date: new Date(dp.timestampMs),
         value,
+        timestampNs: dp.timestamp,
+        sourceDatapointID: dp.id,
         // Cumulative Sums only; a Gauge has no interval to describe.
         delta: typed.metricType === 'Sum' ? (typed.delta ?? null) : null,
         isReset: typed.metricType === 'Sum' ? (typed.isReset ?? null) : null,

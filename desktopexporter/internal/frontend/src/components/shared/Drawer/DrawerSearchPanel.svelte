@@ -41,6 +41,8 @@
   let sortPopoverEl = $state<HTMLDivElement | null>(null)
   let sortTriggerEl = $state<HTMLButtonElement | null>(null)
   let sortPopoverOpen = $state(false)
+  let focusedSortIndex = $state(0)
+  let pendingMenuFocus: 'selected' | 'first' | 'last' = 'selected'
 
   const sortPopoverID = createPopoverID('sort-popover')
 
@@ -62,6 +64,11 @@
       anchor: 'below-end',
       onOpenChange: open => {
         sortPopoverOpen = open
+        if (open) {
+          const target = pendingMenuFocus
+          pendingMenuFocus = 'selected'
+          queueMicrotask(() => focusSortItem(target))
+        }
       },
     })
   })
@@ -73,6 +80,115 @@
 
   function selectSort(value: string, dir: 'asc' | 'desc') {
     onSortChange?.(value, dir)
+    sortPopoverEl?.hidePopover()
+    sortTriggerEl?.focus()
+  }
+
+  function sortMenuItems(): HTMLButtonElement[] {
+    return Array.from(
+      sortPopoverEl?.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitemradio"]'
+      ) ?? []
+    )
+  }
+
+  function focusSortItem(target: 'selected' | 'first' | 'last' | number) {
+    const menuItems = sortMenuItems()
+    if (menuItems.length === 0) {
+      sortTriggerEl?.focus()
+      return
+    }
+    const selectedIndex = Math.max(
+      0,
+      sortOptions.findIndex(option => option.value === sortValue)
+    )
+    const index =
+      typeof target === 'number'
+        ? target
+        : target === 'first'
+          ? 0
+          : target === 'last'
+            ? menuItems.length - 1
+            : selectedIndex
+    focusedSortIndex = index
+    menuItems[index]?.focus()
+  }
+
+  function openSortMenu(target: 'selected' | 'first' | 'last') {
+    pendingMenuFocus = target
+    if (sortPopoverOpen) {
+      focusSortItem(target)
+    } else {
+      sortPopoverEl?.showPopover()
+    }
+  }
+
+  function closeSortMenu() {
+    sortPopoverEl?.hidePopover()
+    sortTriggerEl?.focus()
+  }
+
+  function handleSortTriggerKeydown(event: KeyboardEvent) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      openSortMenu('first')
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      openSortMenu('last')
+    }
+  }
+
+  function handleSortMenuKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeSortMenu()
+      return
+    }
+
+    const menuItems = sortMenuItems()
+    const current = (
+      event.target as Element | null
+    )?.closest<HTMLButtonElement>('[role="menuitemradio"]')
+    const currentIndex = current ? menuItems.indexOf(current) : -1
+    if (currentIndex < 0 || menuItems.length === 0) return
+
+    let nextIndex: number
+    if (event.key === 'ArrowDown') {
+      nextIndex = (currentIndex + 1) % menuItems.length
+    } else if (event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + menuItems.length) % menuItems.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = menuItems.length - 1
+    } else if (
+      event.key.length === 1 &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey
+    ) {
+      const prefix = event.key.toLocaleLowerCase()
+      nextIndex = menuItems.findIndex((item, index) => {
+        const wrappedIndex = (currentIndex + index + 1) % menuItems.length
+        return menuItems[wrappedIndex].textContent
+          ?.trim()
+          .toLocaleLowerCase()
+          .startsWith(prefix)
+      })
+      if (nextIndex < 0) return
+      nextIndex = (currentIndex + nextIndex + 1) % menuItems.length
+    } else {
+      return
+    }
+
+    event.preventDefault()
+    focusSortItem(nextIndex)
+  }
+
+  function handleSortPopoverFocusout(event: FocusEvent) {
+    const next = event.relatedTarget
+    if (next instanceof Node && sortPopoverEl?.contains(next)) return
     sortPopoverEl?.hidePopover()
   }
 </script>
@@ -95,8 +211,11 @@
         class="drawer-header-btn drawer-header-btn--inactive shrink-0 tooltip tooltip-bottom"
         popovertarget={sortPopoverID}
         aria-expanded={sortPopoverOpen}
+        aria-haspopup="menu"
+        aria-controls={sortPopoverID}
         aria-label={sortAriaLabel}
         data-tip="Sort"
+        onkeydown={handleSortTriggerKeydown}
       >
         <SortingIcon class="h-[17px] w-[17px] shrink-0" />
       </button>
@@ -106,17 +225,25 @@
         popover="auto"
         id={sortPopoverID}
         class="anchor-popover anchor-popover--anchored anchor-popover--menu"
+        onfocusout={handleSortPopoverFocusout}
       >
-        <ul class="anchor-popover-menu" role="menu" aria-label="Sort by">
-          {#each sortOptions as opt (opt.value)}
+        <ul
+          class="anchor-popover-menu"
+          role="menu"
+          aria-label="Sort by"
+          onkeydown={handleSortMenuKeydown}
+        >
+          {#each sortOptions as opt, index (opt.value)}
             <li role="none">
               <button
                 type="button"
                 role="menuitemradio"
                 aria-checked={opt.value === sortValue}
+                tabindex={index === focusedSortIndex ? 0 : -1}
                 class="anchor-popover-menu__option {opt.value === sortValue
                   ? 'anchor-popover-menu__option--active'
                   : ''}"
+                onfocus={() => (focusedSortIndex = index)}
                 onclick={() => selectSort(opt.value, nextDirection(opt))}
               >
                 <span>{opt.label}</span>

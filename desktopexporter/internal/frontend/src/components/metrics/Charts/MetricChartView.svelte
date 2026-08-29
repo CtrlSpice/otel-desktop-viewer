@@ -128,7 +128,7 @@
             timeRange={ctx.chartDataTimeRange ?? null}
             plotPaddingBottom={chartPadding.bottom}
             onSelect={ctx.onHeatmapSelect}
-            selectedTimestamp={ctx.heatmapSelectedTimestamp}
+            selectedTimestamp={ctx.heatmapColumnStartNs}
           />
         {/if}
       {:else if ctx.activeHistogramTab === 'quantiles'}
@@ -200,6 +200,7 @@
       <MetricTimeSeriesChart
         timeseries={ctx.transformedGaugeSumChartTimeseries}
         highlightedTimestamp={ctx.highlightedTimestamp}
+        highlightedPointID={ctx.selectedDatapointID}
         selectedSeriesKey={ctx.selectedSeriesKey}
         unit={ctx.metric!.unit}
         height={plotHeight}

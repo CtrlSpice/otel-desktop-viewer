@@ -13,6 +13,7 @@
   import LogField from '@/components/logs/LogField.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import PaneHeader, {
+    paneTabID,
     type PaneTab,
   } from '@/components/shared/PaneHeader.svelte'
   import { itemHref, SPAN_PARAM } from '@/route'
@@ -41,6 +42,7 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
     { id: 'http', label: 'HTTP' },
     { id: 'grpc', label: 'gRPC' },
   ]
+  const ENDPOINT_PANEL_ID = 'otlp-endpoint-panel'
 
   let stats = $state<Stats | null>(null)
   let endpointTab = $state<EndpointTab>('http')
@@ -128,7 +130,7 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
             />
             <div class="min-w-0 py-2">
               <p
-                class="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary/80"
+                class="home-hero__eyebrow mb-2 text-xs font-semibold uppercase tracking-[0.12em]"
               >
                 Local-first telemetry
               </p>
@@ -165,6 +167,7 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
                 if (isEndpointTab(id)) endpointTab = id
               }}
               ariaLabel="OTLP endpoint protocol"
+              tabPanelID={ENDPOINT_PANEL_ID}
             >
               {#snippet right()}
                 <button
@@ -185,8 +188,18 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
                 </button>
               {/snippet}
             </PaneHeader>
-            <div class="home-endpoint-chrome__body">
-              <ReadonlyCodePanel code={OTLP_SNIPPETS[endpointTab]} embedded />
+            <div
+              class="home-endpoint-chrome__body"
+              id={ENDPOINT_PANEL_ID}
+              role="tabpanel"
+              aria-labelledby={paneTabID(ENDPOINT_PANEL_ID, endpointTab)}
+              tabindex="0"
+            >
+              <ReadonlyCodePanel
+                code={OTLP_SNIPPETS[endpointTab]}
+                ariaLabel="OTLP exporter environment variables"
+                embedded
+              />
             </div>
           </div>
         </section>
@@ -206,6 +219,7 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
             installed, you can send example data:
           </p>
           <ReadonlyCodePanel
+            ariaLabel="otel-cli example commands"
             code={`# start the desktop viewer
 $ otel-desktop-viewer
 
@@ -438,6 +452,15 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
 
   .home-page {
     @apply flex min-h-0 min-w-0 flex-1 flex-col;
+    --home-secondary-text: var(--color-subtle);
+    --home-accent-text: var(--color-primary);
+  }
+
+  /* Keep Dawn's Rosé Pine hierarchy, but use darker members of the same
+     purple family where this page renders small text on pale panels. */
+  :global(html[data-theme='rose-pine-dawn']) .home-page {
+    --home-secondary-text: var(--color-base-content);
+    --home-accent-text: #6e577f;
   }
 
   .home-page__main {
@@ -455,7 +478,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
 
   .home-detail__coming-soon {
     @apply shrink-0 px-3 pb-3 pt-1 text-center text-sm italic;
-    color: var(--color-muted);
+    color: var(--home-secondary-text);
   }
 
   .home-summary__header {
@@ -482,7 +505,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
 
   .home-summary__title {
     @apply truncate text-sm font-medium;
-    color: var(--color-subtle);
+    color: var(--home-secondary-text);
   }
 
   .home-summary__badge {
@@ -497,9 +520,13 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
     @apply mb-3 text-base font-semibold tracking-tight text-base-content;
   }
 
+  .home-hero__eyebrow {
+    color: var(--home-accent-text);
+  }
+
   .home-hero__lede,
   .section-description {
-    color: var(--color-subtle);
+    color: var(--home-secondary-text);
   }
 
   .section-description {
@@ -507,7 +534,8 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
   }
 
   .home-inline-code {
-    @apply rounded bg-base-300/60 px-1 py-0.5 font-mono text-[0.9em] text-base-content/80;
+    @apply rounded bg-base-300/60 px-1 py-0.5 font-mono text-[0.9em];
+    color: var(--home-secondary-text);
   }
 
   .home-endpoint-section .section-title {
@@ -526,12 +554,22 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
     --tab-bg: var(--color-base-100);
   }
 
+  .home-endpoint-chrome :global(.pane-header__tab:not(.tab-active)) {
+    color: var(--home-accent-text);
+  }
+
   .home-endpoint-chrome__body {
     @apply bg-base-100;
   }
 
   .external-link {
-    @apply link link-primary;
+    @apply link;
+    color: var(--home-accent-text);
+  }
+
+  .home-page__detail :global(.detail-cell__key),
+  .home-page__detail :global(.detail-cell__type) {
+    color: var(--home-secondary-text);
   }
 
   .home-page__footer {
@@ -539,10 +577,12 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
   }
 
   .home-page__footer-text {
-    @apply text-center text-sm text-base-content/60;
+    @apply text-center text-sm;
+    color: var(--home-secondary-text);
   }
 
   .home-page__footer-link {
-    @apply link link-primary;
+    @apply link;
+    color: var(--home-accent-text);
   }
 </style>

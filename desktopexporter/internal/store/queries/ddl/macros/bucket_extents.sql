@@ -15,7 +15,9 @@
 -- [bounds[n], +inf), and neither infinity is a value anything observed. A
 -- missing lower bound becomes 0 -- these metrics are non-negative in practice
 -- -- and a missing upper bound becomes that bucket's own lower bound, which is
--- the largest value the bucket can attest to.
+-- the largest value the bucket can attest to. If both ends are missing, as in
+-- an explicit histogram with no bounds and one catch-all bucket, the bucket
+-- attests to no finite extent at all and contributes NULL to both sides.
 create or replace macro bucket_extents(buckets) as (
     case
         when buckets is null then null
@@ -24,7 +26,9 @@ create or replace macro bucket_extents(buckets) as (
                 when len(nonempty) = 0 then null
                 else {
                     'min': list_min(list_transform(nonempty,
-                        lambda b: case when isfinite(b.lo) then b.lo else 0.0 end)),
+                        lambda b: case
+                            when b.lo is null and b.hi is null then null
+                            when isfinite(b.lo) then b.lo else 0.0 end)),
                     'max': list_max(list_transform(nonempty,
                         lambda b: case when isfinite(b.hi) then b.hi else b.lo end))
                 }

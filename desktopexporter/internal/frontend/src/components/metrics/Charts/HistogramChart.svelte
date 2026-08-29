@@ -1,6 +1,7 @@
 <script lang="ts">
   import { BarChart, Line, Rect, Tooltip, scaleInvert } from 'layerchart'
   import { scaleBand, scaleLinear } from 'd3-scale'
+  import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import ChartSelectionLegend, {
     type SelectionLegendRow,
@@ -15,15 +16,30 @@
   import { metricTypeSeriesColor } from '@/components/metrics/utils/metric-type'
   import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
   import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
+  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import {
+    isChartActivationKey,
+    moveOrderedCursor,
+    orderedCursorCommandForKey,
+    reconcileOrderedCursor,
+    type OrderedCursor,
+  } from '@/components/metrics/utils/chart-keyboard-cursor'
   import type {
     HistogramDataPoint,
     ExponentialHistogramDataPoint,
   } from '@/types/api-types'
 
   // lo/hi are the numeric bucket bounds; they may be -Infinity, +Infinity, or
-  // (for the exp-histogram zero bucket) both 0. Used to position quantile
+  // (for an exact exp-histogram zero bucket) both 0. Used to position quantile
   // markers within their bar.
-  type Bucket = { label: string; count: number; lo: number; hi: number }
+  type Bucket = {
+    key: string
+    label: string
+    count: number
+    lo: number
+    hi: number
+    zeroThreshold?: number
+  }
 
   type Props = {
     datapoint: HistogramDataPoint | ExponentialHistogramDataPoint
@@ -47,8 +63,10 @@
     enableValueBucketPin = false,
   }: Props = $props()
 
+  const metricViewContext = getMetricViewContext()
+
   let plotAreaHeight = $state(0)
-  let pinnedBucketLabel = $state<string | null>(null)
+  let pinnedBucketKey = $state<string | null>(null)
 
   // Hardcoded for now; the plan defers configurable quantiles to a future pass.
   // Keys must match Go's strconv.FormatFloat(q, 'f', -1, 64) output.
@@ -74,26 +92,121 @@
     return buildExpHistogramBuckets(datapoint)
   })
 
+  let bucketByKey = $derived(
+    new Map(buckets.map(bucket => [bucket.key, bucket]))
+  )
+
   let pinnedBucket = $derived.by((): Bucket | null => {
-    if (!pinnedBucketLabel) return null
-    return buckets.find(b => b.label === pinnedBucketLabel) ?? null
+    if (!pinnedBucketKey) return null
+    return bucketByKey.get(pinnedBucketKey) ?? null
   })
+
+  let keyboardBucketKeys = $derived(buckets.map(bucket => bucket.key))
+  let keyboardCursor = $state<OrderedCursor | null>(null)
+  let keyboardFocused = $state(false)
+  let initialKeyboardCursor = $derived(
+    pinnedBucketKey === null
+      ? null
+      : reconcileOrderedCursor(keyboardBucketKeys, {
+          key: pinnedBucketKey,
+          index: 0,
+        })
+  )
+  let activeKeyboardCursor = $derived(
+    reconcileOrderedCursor(
+      keyboardBucketKeys,
+      keyboardFocused
+        ? keyboardCursor
+        : (initialKeyboardCursor ?? keyboardCursor)
+    )
+  )
+
+  $effect(() => {
+    const next = activeKeyboardCursor
+    if (keyboardFocused && next !== keyboardCursor) keyboardCursor = next
+  })
+
+  let lastExternalKeyboardCursor: string | null | undefined
+  $effect(() => {
+    const next = pinnedBucketKey
+    if (next === lastExternalKeyboardCursor) return
+    lastExternalKeyboardCursor = next
+    if (keyboardFocused && next !== null) {
+      keyboardCursor = reconcileOrderedCursor(keyboardBucketKeys, {
+        key: next,
+        index: activeKeyboardCursor?.index ?? 0,
+      })
+    }
+  })
+
+  function handleKeyboardFocusChange(focused: boolean) {
+    keyboardFocused = focused
+    if (focused) {
+      keyboardCursor =
+        initialKeyboardCursor ??
+        reconcileOrderedCursor(keyboardBucketKeys, keyboardCursor)
+    }
+  }
+
+  let keyboardBucket = $derived.by((): Bucket | null => {
+    const cursor = activeKeyboardCursor
+    if (!cursor) return null
+    return bucketByKey.get(String(cursor.key)) ?? null
+  })
+
+  let keyboardReadout = $derived.by((): string => {
+    const cursor = activeKeyboardCursor
+    const bucket = keyboardBucket
+    if (!cursor || !bucket) return ''
+    const snapshot = selectionTimestamp
+      ? `Snapshot ${selectionTimestamp}. `
+      : ''
+    return (
+      `${snapshot}Bucket ${cursor.index + 1} of ${buckets.length}, ${formatBucketRange(bucket)}. ` +
+      `Count ${bucket.count}. ${formatPct(bucket.count)} of total.`
+    )
+  })
+  let keyboardShortcuts = $derived([
+    'ArrowLeft',
+    'ArrowRight',
+    'Home',
+    'End',
+    ...(enableValueBucketPin ? ['Enter', 'Space'] : []),
+    'Escape',
+  ])
 
   let pinDatapointID = $state<string | undefined>(undefined)
 
   $effect(() => {
     const id = datapoint.id
     if (pinDatapointID !== undefined && pinDatapointID !== id) {
-      pinnedBucketLabel = null
+      pinnedBucketKey = null
     }
     pinDatapointID = id
   })
 
   $effect(() => {
     if (!enableValueBucketPin) {
-      pinnedBucketLabel = null
+      pinnedBucketKey = null
     }
   })
+
+  function numberIdentity(value: number): string {
+    if (Number.isNaN(value)) return 'nan'
+    if (Object.is(value, -0)) return '-0'
+    if (value === Infinity) return '+infinity'
+    if (value === -Infinity) return '-infinity'
+    return String(value)
+  }
+
+  function bucketIdentity(
+    kind: string,
+    index: number,
+    lo: number,
+    hi: number
+  ): string {
+    return `${kind}:${index}:${numberIdentity(lo)}:${numberIdentity(hi)}`
+  }
 
   function buildHistogramBuckets(dp: HistogramDataPoint): Bucket[] {
     const bounds = dp.explicitBounds
@@ -103,7 +216,11 @@
       let label: string
       let lo: number
       let hi: number
-      if (i === 0) {
+      if (bounds.length === 0) {
+        label = 'all values'
+        lo = -Infinity
+        hi = Infinity
+      } else if (i === 0) {
         label = `(-∞, ${bounds[0]}]`
         lo = -Infinity
         hi = bounds[0]
@@ -116,7 +233,13 @@
         lo = bounds[bounds.length - 1]
         hi = Infinity
       }
-      result.push({ label, count: counts[i], lo, hi })
+      result.push({
+        key: bucketIdentity('explicit', i, lo, hi),
+        label,
+        count: counts[i],
+        lo,
+        hi,
+      })
     }
     return result
   }
@@ -124,6 +247,7 @@
   function buildExpHistogramBuckets(
     dp: ExponentialHistogramDataPoint
   ): Bucket[] {
+    const negativeCount = dp.negativeBucketCounts.length
     return expBuckets(
       dp.scale,
       dp.negativeBucketOffset,
@@ -131,15 +255,43 @@
       dp.zeroCount,
       dp.positiveBucketOffset,
       dp.positiveBucketCounts
-    ).map(b => ({
-      label:
-        b.lo === b.hi && b.lo === 0
-          ? '0'
-          : `(${formatBucketBound(b.lo)}, ${formatBucketBound(b.hi)}]`,
-      count: b.cnt,
-      lo: b.lo,
-      hi: b.hi,
-    }))
+    ).map((bucket, index) => {
+      let key: string
+      const zeroThreshold =
+        index === negativeCount ? dp.zeroThreshold : undefined
+      if (index < negativeCount) {
+        const exponent = dp.negativeBucketOffset + (negativeCount - index - 1)
+        key = `exponential:${dp.scale}:negative:${exponent}`
+      } else if (index === negativeCount) {
+        key = `exponential:zero:${numberIdentity(dp.zeroThreshold)}`
+      } else {
+        const exponent = dp.positiveBucketOffset + (index - negativeCount - 1)
+        key = `exponential:${dp.scale}:positive:${exponent}`
+      }
+      return {
+        key,
+        label:
+          zeroThreshold !== undefined
+            ? exponentialZeroBucketLabel(zeroThreshold)
+            : `(${formatBucketBound(bucket.lo)}, ${formatBucketBound(bucket.hi)}]`,
+        count: bucket.cnt,
+        lo:
+          zeroThreshold !== undefined && zeroThreshold > 0
+            ? -zeroThreshold
+            : bucket.lo,
+        hi:
+          zeroThreshold !== undefined && zeroThreshold > 0
+            ? zeroThreshold
+            : bucket.hi,
+        zeroThreshold,
+      }
+    })
+  }
+
+  function exponentialZeroBucketLabel(zeroThreshold: number): string {
+    if (!(zeroThreshold > 0)) return '0'
+    const threshold = formatBucketBound(zeroThreshold)
+    return `[-${threshold}, +${threshold}]`
   }
 
   function formatBucketBound(v: number): string {
@@ -172,9 +324,8 @@
   // marker. Returns null if no bucket matches (shouldn't happen for valid
   // quantile output, but we play it safe).
   //
-  // For unbounded edge buckets (-∞ or +∞ side) and the exp-histogram zero
-  // bucket, we can't compute a meaningful linear fraction, so we center the
-  // marker in the bar (fraction = 0.5).
+  // For unbounded edge buckets (-∞ or +∞ side) and exact-zero buckets, we
+  // can't compute a meaningful linear fraction, so we center the marker.
   function findBarPosition(
     v: number
   ): { index: number; fraction: number } | null {
@@ -241,7 +392,7 @@
 
     const drafts: Draft[] = quantileMarks.map(m => {
       const bucket = buckets[m.bucketIndex]
-      const x0 = xs(bucket.label)
+      const x0 = xs(bucket.key)
       const px = (x0 ?? 0) + bw * m.fraction
       const valueText = formatQuantileValue(m.value)
       return {
@@ -277,6 +428,10 @@
     return u ? `${formatted} ${u}` : formatted
   }
 
+  function bucketLabelForKey(key: unknown): string {
+    return bucketByKey.get(String(key))?.label ?? String(key)
+  }
+
   // Bar colour mirrors the metric-type badge so a glance at the chart
   // matches the colour you saw on the card. Histogram = warning, ExpHist
   // = secondary.
@@ -305,6 +460,60 @@
     return Math.max(parentWidth, natural)
   })
 
+  let histogramScroll = $state<HTMLElement | undefined>(undefined)
+
+  function togglePinnedBucket(bucket: Bucket) {
+    if (!enableValueBucketPin) return
+    pinnedBucketKey = pinnedBucketKey === bucket.key ? null : bucket.key
+  }
+
+  function handleChartKeyboard(event: KeyboardEvent) {
+    const command = orderedCursorCommandForKey(event)
+    if (command) {
+      event.preventDefault()
+      event.stopPropagation()
+      keyboardCursor = moveOrderedCursor(
+        keyboardBucketKeys,
+        activeKeyboardCursor,
+        command
+      )
+      return
+    }
+
+    if (isChartActivationKey(event.key)) {
+      if (!enableValueBucketPin || !keyboardBucket) return
+      event.preventDefault()
+      event.stopPropagation()
+      togglePinnedBucket(keyboardBucket)
+      return
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      pinnedBucketKey = null
+      metricViewContext.clearChartSelection()
+    }
+  }
+
+  $effect(() => {
+    if (!keyboardFocused) return
+    const viewport = histogramScroll
+    const bucket = keyboardBucket
+    const context = chartContext
+    if (!viewport || !bucket || !context) return
+    const x = context.xScale(bucket.key)
+    if (x == null) return
+    const width = context.xScale.bandwidth?.() ?? 0
+    const left = context.padding.left + x
+    const right = left + width
+    if (left < viewport.scrollLeft) {
+      viewport.scrollLeft = Math.max(0, left - context.padding.left)
+    } else if (right > viewport.scrollLeft + viewport.clientWidth) {
+      viewport.scrollLeft = right - viewport.clientWidth + context.padding.right
+    }
+  })
+
   function handlePlotClick(event: MouseEvent) {
     if (!enableValueBucketPin || !chartContext || buckets.length === 0) return
     const root = (event.currentTarget as HTMLElement).querySelector(
@@ -325,11 +534,11 @@
     const yMax = Math.max(yRange[0], yRange[1])
     if (plotX < xMin || plotX > xMax || plotY < yMin || plotY > yMax) return
 
-    const label = scaleInvert(xScale, plotX)
-    if (label == null) return
-    const bucket = buckets.find(b => b.label === label)
+    const key = scaleInvert(xScale, plotX)
+    if (key == null) return
+    const bucket = bucketByKey.get(String(key))
     if (!bucket) return
-    pinnedBucketLabel = pinnedBucketLabel === bucket.label ? null : bucket.label
+    togglePinnedBucket(bucket)
   }
 
   // --- Tooltip helpers ---
@@ -337,8 +546,13 @@
   function formatBucketRange(b: Bucket): string {
     const { lo, hi } = b
     const u = unit ? ` ${unit}` : ''
-    if (!Number.isFinite(lo) && !Number.isFinite(hi)) return b.label
-    if (!Number.isFinite(lo)) return `< ${formatNumber(hi)}${u}`
+    if (b.zeroThreshold !== undefined) {
+      return b.zeroThreshold > 0
+        ? `${exponentialZeroBucketLabel(b.zeroThreshold)}${u}`
+        : `= 0${u}`
+    }
+    if (!Number.isFinite(lo) && !Number.isFinite(hi)) return 'all values'
+    if (!Number.isFinite(lo)) return `≤ ${formatNumber(hi)}${u}`
     if (!Number.isFinite(hi)) return `> ${formatNumber(lo)}${u}`
     if (lo === hi) return `= ${formatNumber(lo)}${u}`
     return `${formatNumber(lo)} – ${formatNumber(hi)}${u}`
@@ -411,10 +625,7 @@
             <ChartSelectionLegend timestamp={selectionTimestamp} rows={[]} />
           {/if}
           {#if enableValueBucketPin && pinnedBucket}
-            <div
-              class="metric-histogram-bar-chart__value-pin-legend"
-              aria-live="polite"
-            >
+            <div class="metric-histogram-bar-chart__value-pin-legend">
               <ChartSelectionLegend
                 timestamp={formatBucketRange(pinnedBucket)}
                 rows={valuePinLegendRows}
@@ -425,20 +636,21 @@
       </div>
     {/if}
     <div
-      class="metric-histogram-bar-chart__plot"
+      class="metric-histogram-bar-chart__plot chart-keyboard-surface-host"
       bind:clientWidth={parentWidth}
       bind:clientHeight={plotAreaHeight}
     >
-      <div class="histogram-chart-scroll">
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="histogram-chart-scroll" bind:this={histogramScroll}>
+        <!-- Pointer coordinates stay on the chart-sized hit target; the
+             named outer surface owns all equivalent keyboard handling. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="histogram-chart-wrapper"
           class:histogram-chart-wrapper--clickable={enableValueBucketPin}
           style:width="{chartWidth}px"
           style:height="{chartRenderHeight}px"
           onclick={handlePlotClick}
-          role={enableValueBucketPin ? 'button' : undefined}
-          tabindex={enableValueBucketPin ? 0 : undefined}
         >
           <MetricChartPlot
             class="histogram-chart"
@@ -448,7 +660,7 @@
             <BarChart
               bind:context={chartContext}
               data={buckets}
-              x="label"
+              x="key"
               xScale={scaleBand()}
               y="count"
               yScale={scaleLinear()}
@@ -466,7 +678,10 @@
                   stroke: 'var(--color-base-300)',
                   strokeWidth: 1,
                 },
-                xAxis: axisBuckets(unit),
+                xAxis: {
+                  ...axisBuckets(unit),
+                  format: bucketLabelForKey,
+                },
                 yAxis: axisCount(),
               }}
             >
@@ -503,7 +718,7 @@
                     typeof xs.padding === 'function'
                       ? (xs.padding() * step) / 2
                       : 0}
-                  {@const x0 = xs(pinnedBucket.label)}
+                  {@const x0 = xs(pinnedBucket.key)}
                   <Rect
                     x={x0 != null ? x0 - outer : 0}
                     y={Math.min(yTop, yBot)}
@@ -512,8 +727,24 @@
                     class="value-bucket-pin-highlight"
                   />
                 {/if}
+                {#if keyboardFocused && keyboardBucket}
+                  {@const keyboardStep =
+                    typeof xs.step === 'function' ? xs.step() : bw}
+                  {@const keyboardOuter =
+                    typeof xs.padding === 'function'
+                      ? (xs.padding() * keyboardStep) / 2
+                      : 0}
+                  {@const keyboardX = xs(keyboardBucket.key)}
+                  <Rect
+                    x={keyboardX != null ? keyboardX - keyboardOuter : 0}
+                    y={Math.min(yTop, yBot)}
+                    width={keyboardStep}
+                    height={Math.abs(yBot - yTop)}
+                    class="chart-keyboard-cursor-band"
+                  />
+                {/if}
                 {#each quantileMarks as m (m.key)}
-                  {@const x0 = xs(buckets[m.bucketIndex].label)}
+                  {@const x0 = xs(buckets[m.bucketIndex].key)}
                   {@const px = x0 + bw * m.fraction}
                   <g class="quantile-marker" style:--marker-color={m.color}>
                     <title>{m.label} {formatQuantileValue(m.value)}</title>
@@ -560,6 +791,20 @@
           </MetricChartPlot>
         </div>
       </div>
+      <ChartKeyboardSurface
+        id="metric-histogram-keyboard-surface"
+        label={enableValueBucketPin
+          ? 'Histogram distribution chart'
+          : 'Histogram snapshot distribution chart'}
+        roleDescription="interactive histogram"
+        instructions={enableValueBucketPin
+          ? 'Use Left and Right to inspect buckets. Home and End move to the first and last buckets. Enter or Space pins the current bucket. Escape clears chart selection.'
+          : 'Use Left and Right to inspect snapshot buckets. Home and End move to the first and last buckets. Escape clears chart selection.'}
+        readout={keyboardReadout}
+        shortcuts={keyboardShortcuts}
+        onKeydown={handleChartKeyboard}
+        onFocusChange={handleKeyboardFocusChange}
+      />
     </div>
   </div>
 {:else}
@@ -627,11 +872,6 @@
 
   .histogram-chart-wrapper--clickable {
     cursor: pointer;
-  }
-
-  .histogram-chart-wrapper--clickable:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
   }
 
   /* Match heatmap: hover band must not eat column clicks. */

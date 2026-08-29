@@ -406,6 +406,7 @@
     initialWidths,
     fitWidths,
     reconcileWidths,
+    resizeBar,
     barPositions as computeBarPositions,
     startColumnResize,
     type ColumnWidths,
@@ -423,6 +424,8 @@
    * the column it belongs to no matter what was added or removed around
    * it. Stored widths from a different column set reconcile on load. */
   const COLUMN_WIDTHS_KEY = 'waterfall-column-widths'
+  const COLUMN_RESIZE_STEP_PX = 16
+  const COLUMN_RESIZE_LARGE_STEP_PX = 64
 
   function loadStoredWidths(): ColumnWidths {
     if (typeof localStorage === 'undefined') return {}
@@ -476,6 +479,32 @@
         saveColumnWidths()
       }
     )
+  }
+
+  function handleResizeKeydown(barId: string, e: KeyboardEvent) {
+    if (e.key === 'Home') {
+      e.preventDefault()
+      const containerPx = scrollContainerEl?.clientWidth || scrollContainerW
+      colWidths = reconcileWidths(wfCols, {}, containerPx)
+      saveColumnWidths()
+      return
+    }
+
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+
+    const amount = e.shiftKey
+      ? COLUMN_RESIZE_LARGE_STEP_PX
+      : COLUMN_RESIZE_STEP_PX
+    const next = resizeBar(
+      wfCols,
+      colWidths,
+      barId,
+      e.key === 'ArrowLeft' ? -amount : amount
+    )
+    if (next === colWidths) return
+    colWidths = next
+    saveColumnWidths()
   }
 
   onDestroy(() => colDrag?.cancel())
@@ -914,6 +943,27 @@
   </PaneHeader>
   <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
     <div class="col-resize-context waterfall-view__grid-host">
+      {#each barPositions as bar (bar.id)}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <div
+          class="col-resize-bar col-resize-bar--guide"
+          class:col-resize-bar--active={activeResizeCol === bar.id}
+          style:left="{bar.left}px"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize {bar.id} column"
+          aria-valuenow={Math.round(bar.left)}
+          aria-valuemin={Math.round(bar.min)}
+          aria-valuemax={Math.round(bar.max)}
+          aria-valuetext="{Math.round(bar.left)} pixels from left"
+          tabindex="0"
+          onpointerdown={e => handleStartResize(bar.id, e)}
+          onkeydown={e => handleResizeKeydown(bar.id, e)}
+        >
+          <div class="col-resize-bar__line"></div>
+        </div>
+      {/each}
       <table
         class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
       >
@@ -943,8 +993,10 @@
           items={visibleRows}
           defaultEstimatedItemHeight={WATERFALL_ROW_HEIGHT_PX}
           bufferSize={12}
+          itemKey={row => row.spanNode.spanData.spanID}
           containerClass="waterfall-vlist"
           viewportClass="waterfall-vlist-viewport"
+          viewportLabel="Span waterfall rows"
           itemsClass="waterfall-vlist-items"
         >
           {#snippet renderItem(row)}
@@ -968,19 +1020,6 @@
           {/snippet}
         </VirtualList>
       </div>
-      {#each barPositions as bar (bar.id)}
-        <div
-          class="col-resize-bar col-resize-bar--guide"
-          class:col-resize-bar--active={activeResizeCol === bar.id}
-          style:left="{bar.left}px"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize {bar.id} column"
-          onpointerdown={e => handleStartResize(bar.id, e)}
-        >
-          <div class="col-resize-bar__line"></div>
-        </div>
-      {/each}
     </div>
   </div>
   {#if footer}

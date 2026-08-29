@@ -42,15 +42,23 @@ export function createTooltipWarmth(
     }, graceMs)
   }
 
+  function reset() {
+    clearTimeout(coolTimer)
+    coolTimer = undefined
+    warm = false
+    setInstant(false)
+  }
+
   function destroy() {
     clearTimeout(coolTimer)
   }
 
-  return { enter, leave, destroy }
+  return { enter, leave, reset, destroy }
 }
 
 const TOOLTIP_SELECTOR = '.tooltip[data-tip]'
 const INSTANT_PROPERTY = '--tooltip-show-delay'
+const SUPPRESSED_ATTRIBUTE = 'data-tooltip-suppressed'
 
 /** Wires the controller to real pointer/focus events via delegation on
  * `root`, so newly-mounted tooltips are covered with no per-component setup.
@@ -68,28 +76,90 @@ export function initTooltipWarmth(
     }
   })
 
-  const onOver = (e: Event) => {
-    const el = (e.target as Element | null)?.closest(TOOLTIP_SELECTOR)
-    if (el) warmth.enter()
+  const pointerActive = new Set<Element>()
+  const focusActive = new Set<Element>()
+
+  function pruneDetached(active: Set<Element>) {
+    for (const tooltip of active) {
+      if (tooltip.isConnected) continue
+      active.delete(tooltip)
+      warmth.leave()
+    }
   }
-  const onOut = (e: Event) => {
-    const el = (e.target as Element | null)?.closest(TOOLTIP_SELECTOR)
-    if (el) warmth.leave()
+
+  function pruneDetachedTooltips() {
+    pruneDetached(pointerActive)
+    pruneDetached(focusActive)
+  }
+
+  function tooltipForEvent(e: Event): Element | null {
+    return (e.target as Element | null)?.closest(TOOLTIP_SELECTOR) ?? null
+  }
+
+  function stayedInside(e: Event, tooltip: Element): boolean {
+    const related = (e as FocusEvent | PointerEvent).relatedTarget
+    return related instanceof Node && tooltip.contains(related)
+  }
+
+  function enter(e: Event, active: Set<Element>) {
+    pruneDetachedTooltips()
+    const tooltip = tooltipForEvent(e)
+    if (!tooltip || stayedInside(e, tooltip) || active.has(tooltip)) return
+
+    if (!pointerActive.has(tooltip) && !focusActive.has(tooltip)) {
+      tooltip.removeAttribute(SUPPRESSED_ATTRIBUTE)
+    }
+    active.add(tooltip)
+    warmth.enter()
+  }
+
+  function leave(e: Event, active: Set<Element>) {
+    pruneDetachedTooltips()
+    const tooltip = tooltipForEvent(e)
+    if (!tooltip || stayedInside(e, tooltip) || !active.delete(tooltip)) return
+
+    warmth.leave()
+    if (!pointerActive.has(tooltip) && !focusActive.has(tooltip)) {
+      tooltip.removeAttribute(SUPPRESSED_ATTRIBUTE)
+    }
+  }
+
+  const onPointerOver = (e: Event) => enter(e, pointerActive)
+  const onPointerOut = (e: Event) => leave(e, pointerActive)
+  const onFocusIn = (e: Event) => enter(e, focusActive)
+  const onFocusOut = (e: Event) => leave(e, focusActive)
+  const onKeyDown = (e: Event) => {
+    pruneDetachedTooltips()
+    const keyboardEvent = e as KeyboardEvent
+    if (keyboardEvent.key !== 'Escape') return
+
+    const tooltip = tooltipForEvent(e)
+    if (!tooltip) return
+    tooltip.setAttribute(SUPPRESSED_ATTRIBUTE, '')
+    warmth.reset()
   }
 
   // pointerover/pointerout bubble and cover mouse + touch/pen; focusin/
   // focusout bubble (unlike focus/blur) and cover keyboard navigation, which
   // is how daisyUI shows tooltips for :focus-visible triggers too.
-  root.addEventListener('pointerover', onOver)
-  root.addEventListener('pointerout', onOut)
-  root.addEventListener('focusin', onOver)
-  root.addEventListener('focusout', onOut)
+  root.addEventListener('pointerover', onPointerOver)
+  root.addEventListener('pointerout', onPointerOut)
+  root.addEventListener('focusin', onFocusIn)
+  root.addEventListener('focusout', onFocusOut)
+  root.addEventListener('keydown', onKeyDown)
 
   return () => {
-    root.removeEventListener('pointerover', onOver)
-    root.removeEventListener('pointerout', onOut)
-    root.removeEventListener('focusin', onOver)
-    root.removeEventListener('focusout', onOut)
+    root.removeEventListener('pointerover', onPointerOver)
+    root.removeEventListener('pointerout', onPointerOut)
+    root.removeEventListener('focusin', onFocusIn)
+    root.removeEventListener('focusout', onFocusOut)
+    root.removeEventListener('keydown', onKeyDown)
+    for (const tooltip of root.querySelectorAll(TOOLTIP_SELECTOR)) {
+      tooltip.removeAttribute(SUPPRESSED_ATTRIBUTE)
+    }
+    if (root instanceof Element && root.matches(TOOLTIP_SELECTOR)) {
+      root.removeAttribute(SUPPRESSED_ATTRIBUTE)
+    }
     warmth.destroy()
     target.style.removeProperty(INSTANT_PROPERTY)
   }

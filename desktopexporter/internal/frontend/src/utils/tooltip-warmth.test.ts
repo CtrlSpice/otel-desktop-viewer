@@ -89,6 +89,18 @@ describe('createTooltipWarmth', () => {
     // destroy only stops the pending timer, it doesn't force a cool-down
     expect(setInstant).toHaveBeenCalledWith(true)
   })
+
+  it('reset immediately cools the next tooltip without losing active counts', () => {
+    const setInstant = vi.fn()
+    const { enter, leave, reset } = createTooltipWarmth(setInstant)
+    enter()
+    reset()
+    expect(setInstant).toHaveBeenLastCalledWith(false)
+
+    leave()
+    enter()
+    expect(setInstant).toHaveBeenLastCalledWith(false)
+  })
 })
 
 describe('initTooltipWarmth', () => {
@@ -122,6 +134,13 @@ describe('initTooltipWarmth', () => {
     el.dispatchEvent(new Event('pointerout', { bubbles: true }))
   }
 
+  function focusIn(el: Element) {
+    el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+  }
+  function focusOut(el: Element) {
+    el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+  }
+
   it('sets the instant delay only on a second, still-warm trigger', () => {
     const a = root.querySelector('#a')!
     const b = root.querySelector('#b')!
@@ -147,6 +166,56 @@ describe('initTooltipWarmth', () => {
     expect(target.style.getPropertyValue('--tooltip-show-delay')).toBe('')
   })
 
+  it('suppresses a focused tooltip on Escape and resets warmth', () => {
+    const a = root.querySelector('#a')!
+    const b = root.querySelector('#b')!
+    pointerOver(a)
+    pointerOut(a)
+    focusIn(b)
+    expect(target.style.getPropertyValue('--tooltip-show-delay')).toBe('0s')
+
+    b.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    )
+    expect(b).toHaveAttribute('data-tooltip-suppressed')
+    expect(target.style.getPropertyValue('--tooltip-show-delay')).toBe('')
+
+    focusOut(b)
+    focusIn(a)
+    expect(a).not.toHaveAttribute('data-tooltip-suppressed')
+    expect(target.style.getPropertyValue('--tooltip-show-delay')).toBe('')
+  })
+
+  it('keeps an escaped tooltip suppressed until pointer and focus both leave', () => {
+    const a = root.querySelector('#a')!
+    pointerOver(a)
+    focusIn(a)
+    a.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    )
+
+    focusOut(a)
+    expect(a).toHaveAttribute('data-tooltip-suppressed')
+    pointerOut(a)
+    expect(a).not.toHaveAttribute('data-tooltip-suppressed')
+  })
+
+  it('drops active state for a tooltip removed before its leave events', () => {
+    const a = root.querySelector('#a')!
+    const b = root.querySelector('#b')!
+    pointerOver(a)
+    focusIn(a)
+    a.remove()
+
+    pointerOver(b)
+    focusIn(b)
+    pointerOut(b)
+    focusOut(b)
+    vi.advanceTimersByTime(TOOLTIP_WARM_GRACE_MS)
+
+    expect(target.style.getPropertyValue('--tooltip-show-delay')).toBe('')
+  })
+
   it('cleanup removes listeners and any instant override', () => {
     const a = root.querySelector('#a')!
     const b = root.querySelector('#b')!
@@ -157,6 +226,7 @@ describe('initTooltipWarmth', () => {
 
     cleanup()
     expect(target.style.getPropertyValue('--tooltip-show-delay')).toBe('')
+    expect(b).not.toHaveAttribute('data-tooltip-suppressed')
 
     pointerOut(b)
     vi.advanceTimersByTime(TOOLTIP_WARM_GRACE_MS)

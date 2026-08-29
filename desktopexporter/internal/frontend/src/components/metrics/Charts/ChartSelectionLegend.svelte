@@ -78,6 +78,7 @@
     class="chart-selection-legend"
     class:chart-selection-legend--columns={variant === 'columns'}
     aria-live="polite"
+    aria-atomic="true"
   >
     {#if timestamp}
       <div class="chart-selection-legend__timestamp">{timestamp}</div>

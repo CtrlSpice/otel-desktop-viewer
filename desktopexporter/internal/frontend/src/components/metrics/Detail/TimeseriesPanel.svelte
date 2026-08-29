@@ -93,17 +93,6 @@
     else expandedDatapointSections.delete(key)
   }
 
-  function seriesKeyForDatapointID(dpID: string): string | null {
-    const m = ctx.metric
-    if (!m) return null
-    for (const ts of m.timeseries) {
-      if (ts.datapoints.some(dp => dp.id === dpID)) {
-        return ts.attributesKey
-      }
-    }
-    return null
-  }
-
   const STAT_LABEL: Record<SeriesStat, string> = {
     min: 'min',
     max: 'max',
@@ -132,13 +121,11 @@
 
   $effect(() => {
     const dpID = ctx.selectedDatapointID
-    if (!dpID || ctx.selectionSource === 'chart') return
+    const seriesKey = ctx.selectedSeriesKey
+    if (!dpID || !seriesKey || ctx.selectionSource === 'chart') return
 
-    const seriesKey = seriesKeyForDatapointID(dpID)
-    if (seriesKey) {
-      ctx.expandedTimeseries.add(seriesKey)
-      expandedDatapointSections.add(seriesKey)
-    }
+    ctx.expandedTimeseries.add(seriesKey)
+    expandedDatapointSections.add(seriesKey)
 
     tick().then(() => {
       document

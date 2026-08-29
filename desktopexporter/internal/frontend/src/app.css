@@ -211,6 +211,22 @@ html[data-theme='rose-pine-dawn'] {
   transition-delay: var(--tooltip-show-delay);
 }
 
+/* daisyUI's visibility rule uses :has(:focus-visible), which covers a
+   focusable child but not a tooltip class placed directly on a button. */
+.tooltip[data-tip]:not([data-tip='']):focus-visible::before,
+.tooltip[data-tip]:not([data-tip='']):focus-visible::after {
+  --tt-pos: 0rem;
+  opacity: 1;
+}
+
+/* Escape dismisses a focused tooltip without moving keyboard focus. The
+   warmth controller removes this marker once pointer and focus both leave. */
+.tooltip[data-tip][data-tooltip-suppressed]::before,
+.tooltip[data-tip][data-tooltip-suppressed]::after {
+  opacity: 0 !important;
+  transition-delay: 0s !important;
+}
+
 /* Rosé Pine text hierarchy utilities.
    text-base  = Text  (e0def4 moon / 575279 dawn) — primary reading
    text-subtle = Subtle (908caa moon / 797593 dawn) — secondary/label
@@ -252,6 +268,88 @@ html[data-theme='rose-pine-dawn'] {
 
 .metric-chart-view .metric-chart-view__subtitle .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* One keyboard focus stop and readout shared by every interactive metric chart. */
+.chart-keyboard-surface {
+  position: absolute;
+  z-index: 9;
+  inset: calc(var(--focus-ring-width) + var(--focus-ring-offset));
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--radius-box);
+  pointer-events: none;
+}
+
+.chart-keyboard-surface:focus {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.chart-keyboard-readout {
+  position: absolute;
+  z-index: 10;
+  top: 0.25rem;
+  left: 50%;
+  width: max-content;
+  max-width: min(90%, 42rem);
+  transform: translateX(-50%);
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-field);
+  background: color-mix(in oklab, var(--color-base-100) 94%, transparent);
+  color: var(--color-base-content);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
+  font-size: 0.75rem;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.chart-keyboard-surface:focus .chart-keyboard-readout {
+  opacity: 1;
+}
+
+.chart-keyboard-surface-host
+  :where(
+    .chart-keyboard-cursor,
+    .chart-keyboard-cursor-band,
+    .chart-keyboard-cursor-cell
+  ) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chart-keyboard-surface-host:has(> .chart-keyboard-surface:focus)
+  :where(
+    .chart-keyboard-cursor,
+    .chart-keyboard-cursor-band,
+    .chart-keyboard-cursor-cell
+  ) {
+  opacity: 1;
+}
+
+.metric-chart-view :where(.chart-keyboard-cursor-rule) {
+  stroke: var(--color-primary);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+
+.metric-chart-view :where(.chart-keyboard-cursor-point) {
+  stroke: var(--color-base-100);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.metric-chart-view
+  :where(.chart-keyboard-cursor-band, .chart-keyboard-cursor-cell) {
+  fill: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  pointer-events: none;
 }
 
 /* Histogram bar fill: softer on dawn, same as before on dark themes. */

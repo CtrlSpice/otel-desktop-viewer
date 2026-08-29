@@ -55,6 +55,18 @@
     count?: number
     /** Disabled tabs render greyed out and ignore clicks. */
     disabled?: boolean
+    /** Route destination; present only when the strip is navigation. */
+    href?: string
+  }
+
+  export type PaneNavigationTab = PaneTab & {
+    /** Real destination used when the strip is route navigation. */
+    href: string
+  }
+
+  /** Stable ID shared by a local tab and its associated tabpanel. */
+  export function paneTabID(panelID: string, tabID: string): string {
+    return `${panelID}-tab-${tabID}`
   }
 
   export type PaneBadge = {
@@ -109,8 +121,12 @@
     mode: 'tabs'
     tabs: PaneTab[]
     activeID: string
-    onSelect: (id: string) => void
+    onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
+    /** Route navigation renders real links instead of ARIA tabs. */
+    navigation?: boolean
+    /** ID of the local tabpanel controlled by every tab in this strip. */
+    tabPanelID?: string
   }
 
   type TitleTabsProps = CommonProps & {
@@ -120,8 +136,10 @@
     subtitle?: string
     tabs: PaneTab[]
     activeID: string
-    onSelect: (id: string) => void
+    onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
+    /** ID of the local tabpanel controlled by every tab in this strip. */
+    tabPanelID: string
   }
 
   type ToolbarProps = CommonProps & {
@@ -146,6 +164,47 @@
       ? 'pane-header--stacked'
       : ''
   )
+
+  function handleTablistKeydown(event: KeyboardEvent) {
+    const tablist = event.currentTarget as HTMLElement
+    const target = (event.target as Element | null)?.closest<HTMLButtonElement>(
+      '[role="tab"]'
+    )
+    if (!target || !tablist.contains(target)) return
+
+    const tabs = Array.from(
+      tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)')
+    )
+    const currentIndex = tabs.indexOf(target)
+    if (currentIndex < 0 || tabs.length === 0) return
+
+    let nextIndex: number
+    if (event.key === 'ArrowRight') {
+      nextIndex = (currentIndex + 1) % tabs.length
+    } else if (event.key === 'ArrowLeft') {
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = tabs.length - 1
+    } else {
+      return
+    }
+
+    event.preventDefault()
+    const next = tabs[nextIndex]
+    next.focus()
+    next.click()
+  }
+
+  function tabbableTabID(
+    tabs: PaneTab[],
+    activeID: string
+  ): string | undefined {
+    return tabs.some(tab => tab.id === activeID && !tab.disabled)
+      ? activeID
+      : tabs.find(tab => !tab.disabled)?.id
+  }
 </script>
 
 {#snippet metaRow()}
@@ -193,42 +252,72 @@
 {#snippet tabStrip(
   tabs: PaneTab[],
   activeID: string,
-  onSelect: (id: string) => void,
+  onSelect: (id: string, event?: MouseEvent) => void,
   ariaLabel: string,
-  layout: PaneTabLayout
+  layout: PaneTabLayout,
+  navigation = false,
+  tabPanelID?: string
 )}
   <div class="pane-header__tab-scroll pane-header__tab-scroll--{layout}">
     <div
-      role="tablist"
+      role={navigation ? 'navigation' : 'tablist'}
       aria-label={ariaLabel}
       class="tabs tabs-lift {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
+      onkeydown={navigation ? undefined : handleTablistKeydown}
     >
       {#if layout === 'right'}
         <span class="pane-header__tab-lead" aria-hidden="true"></span>
       {/if}
       {#each tabs as tab (tab.id)}
         {@const active = tab.id === activeID}
-        <button
-          type="button"
-          role="tab"
-          class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
-            ? 'tab-active [--tab-bg:var(--color-base-200)]'
-            : ''}"
-          aria-selected={active}
-          disabled={tab.disabled}
-          title={tab.label}
-          onclick={() => !tab.disabled && onSelect(tab.id)}
-        >
-          {#if tab.icon}
-            <span class="pane-header__tab-icon shrink-0">
-              {@render tab.icon()}
-            </span>
-          {/if}
-          <span class="pane-header__tab-label">{tab.label}</span>
-          {#if tab.count !== undefined}
-            <span class="badge-count">{tab.count}</span>
-          {/if}
-        </button>
+        {#if navigation && tab.href}
+          <a
+            href={tab.disabled ? undefined : tab.href}
+            class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
+              ? 'tab-active [--tab-bg:var(--color-base-200)]'
+              : ''}"
+            aria-current={active ? 'page' : undefined}
+            aria-disabled={tab.disabled ? 'true' : undefined}
+            tabindex={tab.disabled ? -1 : undefined}
+            title={tab.label}
+            onclick={event => !tab.disabled && onSelect(tab.id, event)}
+          >
+            {#if tab.icon}
+              <span class="pane-header__tab-icon shrink-0">
+                {@render tab.icon()}
+              </span>
+            {/if}
+            <span class="pane-header__tab-label">{tab.label}</span>
+            {#if tab.count !== undefined}
+              <span class="badge-count">{tab.count}</span>
+            {/if}
+          </a>
+        {:else}
+          <button
+            type="button"
+            role="tab"
+            id={tabPanelID ? paneTabID(tabPanelID, tab.id) : undefined}
+            aria-controls={tabPanelID}
+            class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
+              ? 'tab-active [--tab-bg:var(--color-base-200)]'
+              : ''}"
+            aria-selected={active}
+            tabindex={tab.id === tabbableTabID(tabs, activeID) ? 0 : -1}
+            disabled={tab.disabled}
+            title={tab.label}
+            onclick={event => !tab.disabled && onSelect(tab.id, event)}
+          >
+            {#if tab.icon}
+              <span class="pane-header__tab-icon shrink-0">
+                {@render tab.icon()}
+              </span>
+            {/if}
+            <span class="pane-header__tab-label">{tab.label}</span>
+            {#if tab.count !== undefined}
+              <span class="badge-count">{tab.count}</span>
+            {/if}
+          </button>
+        {/if}
       {/each}
       {#if layout === 'left'}
         <span class="pane-header__tab-trail" aria-hidden="true"></span>
@@ -267,7 +356,9 @@
         props.activeID,
         props.onSelect,
         props.ariaLabel ?? 'Pane tabs',
-        props.tabLayout ?? 'left'
+        props.tabLayout ?? 'left',
+        props.navigation ?? false,
+        props.tabPanelID
       )}
       {#if props.right}
         <div class="pane-header__right">{@render props.right()}</div>
@@ -306,7 +397,9 @@
         props.activeID,
         props.onSelect,
         props.ariaLabel ?? `${props.title} tabs`,
-        props.tabLayout ?? 'right'
+        props.tabLayout ?? 'right',
+        false,
+        props.tabPanelID
       )}
       {#if props.right}
         <div class="pane-header__right">{@render props.right()}</div>

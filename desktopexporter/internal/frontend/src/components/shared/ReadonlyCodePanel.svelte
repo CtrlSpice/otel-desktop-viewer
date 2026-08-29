@@ -8,14 +8,22 @@
   // module> so it's evaluated once per module load, not per component
   // instance, and so the heavy CodeMirror imports stay tree-shaken
   // when ReadonlyCodePanel isn't mounted.
+  const shellColors = {
+    subtle: `var(--readonly-code-subtle, ${c.subtle})`,
+    gold: `var(--readonly-code-gold, ${c.gold})`,
+    rose: `var(--readonly-code-rose, ${c.rose})`,
+    foam: `var(--readonly-code-foam, ${c.foam})`,
+    iris: `var(--readonly-code-iris, ${c.iris})`,
+  }
+
   const shellHighlightStyle = HighlightStyle.define([
-    { tag: t.comment, color: c.subtle, fontStyle: 'italic' },
-    { tag: t.string, color: c.gold },
-    { tag: t.number, color: c.rose },
-    { tag: t.variableName, color: c.foam },
-    { tag: t.keyword, color: c.iris },
-    { tag: t.operator, color: c.subtle },
-    { tag: t.meta, color: c.subtle },
+    { tag: t.comment, color: shellColors.subtle, fontStyle: 'italic' },
+    { tag: t.string, color: shellColors.gold },
+    { tag: t.number, color: shellColors.rose },
+    { tag: t.variableName, color: shellColors.foam },
+    { tag: t.keyword, color: shellColors.iris },
+    { tag: t.operator, color: shellColors.subtle },
+    { tag: t.meta, color: shellColors.subtle },
     { tag: t.name, color: c.text },
   ])
 
@@ -67,6 +75,8 @@
 
   type Props = {
     code: string
+    /** Accessible name for the readonly CodeMirror textbox. */
+    ariaLabel: string
     class?: string
     /** Accessible name for the copy control. */
     copyLabel?: string
@@ -76,6 +86,7 @@
 
   let {
     code,
+    ariaLabel,
     class: className = '',
     copyLabel = 'Copy to clipboard',
     embedded = false,
@@ -97,6 +108,7 @@
           shellLanguage,
           EditorState.readOnly.of(true),
           EditorView.editable.of(false),
+          EditorView.contentAttributes.of({ 'aria-label': ariaLabel }),
           EditorView.lineWrapping,
           ...readonlyCodeTheme,
         ],
@@ -162,6 +174,16 @@
 
   .readonly-code-panel {
     @apply relative w-full overflow-hidden rounded-xl border border-base-300 bg-base-100;
+  }
+
+  /* Rosé Pine Dawn's display accents are too light for 13px code on Base.
+     These stay in the same hue families while clearing AA for small text. */
+  :global(html[data-theme='rose-pine-dawn']) .readonly-code-panel {
+    --readonly-code-subtle: var(--color-base-content);
+    --readonly-code-gold: #6d4f00;
+    --readonly-code-rose: #8f435b;
+    --readonly-code-foam: var(--color-secondary);
+    --readonly-code-iris: #6e577f;
   }
 
   .readonly-code-panel--embedded {
