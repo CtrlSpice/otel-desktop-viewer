@@ -75,9 +75,17 @@ test.describe('home page accessibility', () => {
   test('starts keyboard traversal in primary navigation', async ({ page }) => {
     await page.keyboard.press('Tab')
 
-    await expect(
-      page.getByRole('link', { name: 'Traces', exact: true })
-    ).toBeFocused()
+    const tracesLink = page.getByRole('link', { name: 'Traces', exact: true })
+    await expect(tracesLink).toBeFocused()
+
+    const shape = await tracesLink.evaluate(element => {
+      const styles = getComputedStyle(element)
+      return {
+        radius: Number.parseFloat(styles.borderTopLeftRadius),
+        width: element.getBoundingClientRect().width,
+      }
+    })
+    expect(shape.radius).toBeGreaterThanOrEqual(shape.width / 2)
   })
 
   test('keeps visible endpoint labels in their accessible names', async ({
