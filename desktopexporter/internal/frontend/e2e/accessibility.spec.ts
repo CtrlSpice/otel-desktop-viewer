@@ -83,9 +83,11 @@ test.describe('home page accessibility', () => {
       return {
         radius: Number.parseFloat(styles.borderTopLeftRadius),
         width: element.getBoundingClientRect().width,
+        zIndex: Number.parseFloat(styles.zIndex),
       }
     })
     expect(shape.radius).toBeGreaterThanOrEqual(shape.width / 2)
+    expect(shape.zIndex).toBeGreaterThan(0)
   })
 
   test('keeps visible endpoint labels in their accessible names', async ({

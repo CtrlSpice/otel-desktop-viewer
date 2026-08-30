@@ -219,6 +219,12 @@ html[data-theme='rose-pine-dawn'] {
   opacity: 1;
 }
 
+/* daisyUI isolates focused buttons, which otherwise traps their tooltip below
+   later siblings such as the drawer's virtualized signal rows. */
+.tooltip[data-tip]:where(:focus-visible, :has(:focus-visible)) {
+  z-index: 1;
+}
+
 /* Escape dismisses a focused tooltip without moving keyboard focus. The
    warmth controller removes this marker once pointer and focus both leave. */
 .tooltip[data-tip][data-tooltip-suppressed]::before,
