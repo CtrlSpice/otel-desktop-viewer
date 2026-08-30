@@ -228,12 +228,12 @@ describe('SignalListDrawer navigation', () => {
 })
 
 describe('SignalListDrawer list keyboard navigation', () => {
-  it('labels the virtual-list viewport for the current signal', () => {
+  it('labels the viewport without making it a second list tab stop', async () => {
     setTestUrl('/traces')
     renderDrawer({ itemSnippet: keyboardItemSnippet })
-    expect(
-      screen.getByRole('region', { name: 'Traces list' })
-    ).toBeInTheDocument()
+    const viewport = screen.getByRole('region', { name: 'Traces list' })
+
+    await waitFor(() => expect(viewport).toHaveAttribute('tabindex', '-1'))
   })
 
   it('keeps one row in the tab order and moves focus with list keys', async () => {

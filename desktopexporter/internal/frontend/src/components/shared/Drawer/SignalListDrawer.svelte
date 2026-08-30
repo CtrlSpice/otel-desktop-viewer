@@ -406,6 +406,22 @@
     return mountedKeys[0] ?? null
   })
 
+  $effect(() => {
+    const body = drawerBodyEl
+    if (!effectivelyOpen || !body) return
+
+    // The virtual-list package makes its scroll viewport focusable. Rows own
+    // keyboard entry here, so leaving the viewport in the tab order creates a
+    // dead stop immediately before the roving summary control.
+    void tick().then(() => {
+      if (drawerBodyEl !== body) return
+      const viewport = body.querySelector<HTMLElement>(
+        '.signal-drawer__vlist-viewport'
+      )
+      if (viewport) viewport.tabIndex = -1
+    })
+  })
+
   function handleRenderedRange(range: { start: number; end: number }) {
     renderedRange = { start: range.start, end: range.end }
   }
