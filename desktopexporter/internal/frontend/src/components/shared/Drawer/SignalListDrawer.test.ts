@@ -32,6 +32,10 @@ const pageContent = createRawSnippet(() => ({
   render: () => '<p>page body</p>',
 }))
 
+const focusablePageContent = createRawSnippet(() => ({
+  render: () => '<button type="button">Page action</button>',
+}))
+
 const footer = createRawSnippet(() => ({
   render: () => '<p>2 traces</p>',
 }))
@@ -456,6 +460,19 @@ describe('SignalListDrawer collapse behaviour', () => {
 })
 
 describe('SignalListDrawer rail-only pages', () => {
+  it('puts primary navigation before page controls in the tab order', async () => {
+    setTestUrl('/')
+    renderDrawer({
+      railOnly: true,
+      items: [],
+      children: focusablePageContent,
+    })
+    const user = userEvent.setup()
+
+    await user.tab()
+    expect(screen.getByRole('link', { name: 'Traces' })).toHaveFocus()
+  })
+
   it('stays collapsed even when the stored preference says open', () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'true')
     setTestUrl('/')

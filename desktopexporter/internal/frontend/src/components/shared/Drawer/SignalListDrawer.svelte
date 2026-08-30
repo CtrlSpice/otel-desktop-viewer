@@ -547,10 +547,6 @@
     tabindex="-1"
   />
 
-  <div class="drawer-content min-h-0 min-w-0">
-    {@render children()}
-  </div>
-
   <div class="drawer-side">
     <div
       id={drawerPanelID}
@@ -861,6 +857,10 @@
         </div>
       {/if}
     </div>
+  </div>
+
+  <div class="drawer-content min-h-0 min-w-0">
+    {@render children()}
   </div>
 </div>
 

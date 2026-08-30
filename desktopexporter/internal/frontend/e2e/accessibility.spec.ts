@@ -72,6 +72,14 @@ test.describe('home page accessibility', () => {
     expect(scan.violations).toEqual([])
   })
 
+  test('starts keyboard traversal in primary navigation', async ({ page }) => {
+    await page.keyboard.press('Tab')
+
+    await expect(
+      page.getByRole('link', { name: 'Traces', exact: true })
+    ).toBeFocused()
+  })
+
   test('keeps visible endpoint labels in their accessible names', async ({
     page,
   }) => {
