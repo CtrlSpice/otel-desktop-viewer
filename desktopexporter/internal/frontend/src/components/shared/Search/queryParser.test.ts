@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseQuery, validateQuery } from './queryParser'
+import { parseQuery, parseSearchRequest, validateQuery } from './queryParser'
 import { OPERATORS } from '../../../constants/operators'
 import type { FieldDefinition } from '../../../constants/fields'
 
@@ -146,6 +146,78 @@ describe('plain text is still a global search', () => {
       fields
     ) as any
     expect(tree.type).toBe('group')
+  })
+})
+
+describe('LIMIT modifier syntax', () => {
+  it('keeps a structured predicate and limit as separate request fields', () => {
+    const request = parseSearchRequest('http.method = GET | LIMIT 25', fields)
+
+    expect(request?.predicate?.type).toBe('condition')
+    expect(request?.limit).toBe(25)
+  })
+
+  it('keeps multi-word free text intact before the modifier', () => {
+    const request = parseSearchRequest('rate limit reached | LIMIT 50', fields)
+    const predicate = request?.predicate as any
+
+    expect(predicate.query.field.searchScope).toBe('global')
+    expect(predicate.query.value).toBe('rate limit reached')
+    expect(request?.limit).toBe(50)
+  })
+
+  it('accepts a limit without a predicate', () => {
+    expect(parseSearchRequest('| LIMIT 10', fields)).toEqual({
+      predicate: null,
+      limit: 10,
+    })
+  })
+
+  it('accepts the lowercase keyword', () => {
+    expect(parseSearchRequest('checkout | limit 7', fields)?.limit).toBe(7)
+  })
+
+  it('does not split a pipe inside an unquoted value', () => {
+    const request = parseSearchRequest(
+      'http.method = GET|POST | LIMIT 5',
+      fields
+    )
+    const predicate = request?.predicate as any
+
+    expect(predicate.query.value).toBe('GET|POST')
+    expect(request?.limit).toBe(5)
+  })
+
+  it.each([
+    ['http.method = GET | LIMIT', /form \| LIMIT 100/],
+    ['http.method = GET | LIM 10', /form \| LIMIT 100/],
+    ['http.method = GET | LIMIT 0', /positive whole number/],
+    ['http.method = GET | LIMIT -1', /positive whole number/],
+    ['http.method = GET | LIMIT 1.5', /positive whole number/],
+    ['http.method = GET | LIMIT 9007199254740992', /positive whole number/],
+  ])('rejects invalid modifier %s', (input, message) => {
+    expect(() => parseSearchRequest(input, fields)).toThrow(message)
+    expect(
+      validateQuery(input, fields).some(e => message.test(e.message))
+    ).toBe(true)
+  })
+
+  it('rejects repeated modifiers', () => {
+    const input = 'http.method = GET | LIMIT 10 | LIMIT 5'
+    expect(() => parseSearchRequest(input, fields)).toThrow(/Only one LIMIT/)
+    expect(validateQuery(input, fields)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: 'Only one LIMIT modifier is allowed',
+        }),
+      ])
+    )
+  })
+
+  it('does not silently drop a limit for predicate-only callers', () => {
+    expect(() => parseQuery('http.method = GET | LIMIT 10', fields)).toThrow(
+      /not available/
+    )
   })
 })
 

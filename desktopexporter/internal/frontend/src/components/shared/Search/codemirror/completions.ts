@@ -256,7 +256,7 @@ export function createQueryCompletionSource(
       return fieldCompletions(context, getFields())
     }
 
-    if (node.name === 'Query') {
+    if (node.name === 'Query' || node.name === 'SearchRequest') {
       return fieldCompletions(context, getFields())
     }
 
@@ -285,7 +285,8 @@ export function createQueryCompletionSource(
       const before = context.state.sliceDoc(0, opPartial.from).trim()
       if (before !== '') {
         const t = parser.parse(before).topNode
-        const only = t.firstChild
+        const request = t.getChild('SearchRequest')
+        const only = request?.firstChild ?? t.firstChild
         if (
           only &&
           only.name === 'FreeText' &&
