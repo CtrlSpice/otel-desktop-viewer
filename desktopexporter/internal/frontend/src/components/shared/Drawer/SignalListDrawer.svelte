@@ -408,7 +408,7 @@
 
   $effect(() => {
     const body = drawerBodyEl
-    if (!effectivelyOpen || !body) return
+    if (!effectivelyOpen || showEmptyState || !body) return
 
     // The virtual-list package makes its scroll viewport focusable. Rows own
     // keyboard entry here, so leaving the viewport in the tab order creates a

@@ -142,6 +142,22 @@ describe('SignalListDrawer empty and loading states', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
+  it('removes the viewport tab stop when an empty list receives items', async () => {
+    setTestUrl('/traces')
+    const view = renderDrawer({ items: [] })
+    expect(
+      screen.queryByRole('region', { name: 'Traces list' })
+    ).not.toBeInTheDocument()
+
+    await view.rerender({
+      component: TypedDrawer,
+      componentProps: drawerProps(),
+    })
+
+    const viewport = await screen.findByRole('region', { name: 'Traces list' })
+    await waitFor(() => expect(viewport).toHaveAttribute('tabindex', '-1'))
+  })
+
   it('keeps the search and time controls reachable when there are no results', () => {
     setTestUrl('/traces')
     renderDrawer({ items: [], drawerSearch })
