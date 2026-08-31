@@ -228,6 +228,55 @@ describe('MetricsPage aggregate fetching', () => {
   })
 })
 
+describe('MetricsPage chart control keyboard navigation', () => {
+  it('toggles rate and overlays with Space while retaining focus', async () => {
+    const user = userEvent.setup()
+    const datapoints = [
+      makeSumDatapoint('dp-1', 1_700_000_000_000, 10),
+      makeSumDatapoint('dp-2', 1_700_000_001_000, 20),
+    ]
+    const metric = makeMetric('Sum', datapoints)
+    const template = metric.timeseries[0]!
+    metric.timeseries = Array.from({ length: 11 }, (_, index) => ({
+      ...template,
+      attributesKey: `series-${index}`,
+    }))
+
+    searchMetricSummaries.mockResolvedValue([
+      { ...makeSummary('Sum'), seriesCount: metric.timeseries.length },
+    ])
+    getStats.mockResolvedValue(makeStats())
+    getMetric.mockResolvedValue(metric)
+    getMetricAggregate.mockResolvedValue({
+      aggregate: null,
+      scalarAggregate: null,
+    })
+    setTestUrl('/metrics/metric-1')
+    renderWithContexts(MetricsPage)
+
+    const rate = await screen.findByRole('checkbox', {
+      name: 'Show rate across all series',
+    })
+    const overlays = screen.getByRole('checkbox', {
+      name: 'Show chart stat overlays',
+    })
+
+    rate.focus()
+    expect(rate).toHaveFocus()
+    expect(rate).not.toBeChecked()
+    await user.keyboard(' ')
+    expect(rate).toBeChecked()
+    expect(rate).toHaveFocus()
+
+    await user.tab()
+    expect(overlays).toHaveFocus()
+    expect(overlays).toBeChecked()
+    await user.keyboard(' ')
+    expect(overlays).not.toBeChecked()
+    expect(overlays).toHaveFocus()
+  })
+})
+
 describe('MetricsPage raw series fetching', () => {
   const reduced = makeSumDatapoint('dp-reduced', 1_700_000_000_000, 1)
 

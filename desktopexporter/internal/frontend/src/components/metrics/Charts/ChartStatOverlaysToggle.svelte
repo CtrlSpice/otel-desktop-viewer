@@ -10,7 +10,7 @@
 
 {#if ctx.showChartStatOverlaysToggleVisible}
   <label
-    class="chart-stat-overlays-toggle tooltip tooltip-top"
+    class="chart-stat-overlays-toggle chart-control-toggle tooltip tooltip-top"
     data-tip={ctx.rateSlopeOverlayAvailable
       ? 'Min/max + rate slope'
       : 'Min/max + avg'}
