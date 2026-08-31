@@ -1,4 +1,11 @@
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
+import {
+  exponentialBucketIdentity,
+  exponentialZeroBucketIdentity,
+  exponentialZeroBucketLabel,
+  formatHistogramBound,
+  histogramRangeIdentity,
+} from '@/components/metrics/utils/histogram-bucket'
 
 export type HeatmapDatum = {
   columnKey: string
@@ -51,27 +58,6 @@ type ExponentialSchema = {
   positiveOffset: number
   positiveCount: number
   descriptors: HeatmapBucketRow[]
-}
-
-function formatBound(value: number): string {
-  if (value === 0) return '0'
-  if (Math.abs(value) >= 1000) return value.toExponential(1)
-  if (Math.abs(value) < 0.01) return value.toExponential(1)
-  return value.toPrecision(3)
-}
-
-function numberIdentity(value: number): string {
-  if (Number.isNaN(value)) return 'nan'
-  if (Object.is(value, -0)) return '-0'
-  if (value === Infinity) return '+infinity'
-  if (value === -Infinity) return '-infinity'
-  return String(value)
-}
-
-function exponentialZeroLabel(zeroThreshold: number): string {
-  if (!(zeroThreshold > 0)) return '0'
-  const threshold = formatBound(zeroThreshold)
-  return `[-${threshold}, +${threshold}]`
 }
 
 function projectHistogramHeatmapData(
@@ -166,7 +152,7 @@ function projectHistogramHeatmapData(
         lo = -Infinity
         hi = Infinity
       } else if (bucketIndex === 0) {
-        label = `≤${formatBound(bounds[0]!)}`
+        label = `≤${formatHistogramBound(bounds[0]!)}`
         order = -Infinity
         lo = -Infinity
         hi = bounds[0]!
@@ -174,15 +160,15 @@ function projectHistogramHeatmapData(
         lo = bounds[bucketIndex - 1]!
         hi = bounds[bucketIndex]!
         order = (lo + hi) / 2
-        label = `(${formatBound(lo)}, ${formatBound(hi)}]`
+        label = `(${formatHistogramBound(lo)}, ${formatHistogramBound(hi)}]`
       } else {
         lo = bounds[bounds.length - 1]!
         hi = Infinity
         order = Infinity
-        label = `>${formatBound(lo)}`
+        label = `>${formatHistogramBound(lo)}`
       }
       descriptors.push({
-        key: `explicit:${numberIdentity(lo)}:${numberIdentity(hi)}`,
+        key: histogramRangeIdentity(lo, hi),
         label,
         order,
       })
@@ -259,14 +245,14 @@ function projectHistogramHeatmapData(
       const hi = -Math.pow(base, exponent)
       const order = (lo + hi) / 2
       descriptors.push({
-        key: `exponential:${point.scale}:negative:${exponent}`,
-        label: formatBound(order),
+        key: exponentialBucketIdentity(point.scale, 'negative', exponent),
+        label: formatHistogramBound(order),
         order,
       })
     }
     descriptors.push({
-      key: `exponential:zero:${numberIdentity(point.zeroThreshold)}`,
-      label: exponentialZeroLabel(point.zeroThreshold),
+      key: exponentialZeroBucketIdentity(point.zeroThreshold),
+      label: exponentialZeroBucketLabel(point.zeroThreshold),
       order: 0,
     })
     for (
@@ -279,8 +265,8 @@ function projectHistogramHeatmapData(
       const hi = Math.pow(base, exponent + 1)
       const order = (lo + hi) / 2
       descriptors.push({
-        key: `exponential:${point.scale}:positive:${exponent}`,
-        label: formatBound(order),
+        key: exponentialBucketIdentity(point.scale, 'positive', exponent),
+        label: formatHistogramBound(order),
         order,
       })
     }

@@ -25,7 +25,6 @@
   import ChartSelectionLegend from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
   import { histogramColumnSelectionLegendRows } from '@/components/metrics/utils/heatmap-column-selection'
   import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
-  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import {
     axisBucketBounds,
     axisTime,
@@ -33,15 +32,13 @@
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { formatDateTime } from '@/utils/time'
   import {
-    gridCursorAt,
     gridCursorCommandForKey,
     isChartActivationKey,
-    moveGridCursor,
-    reconcileGridCursor,
-    type GridCursor,
   } from '@/components/metrics/utils/chart-keyboard-cursor'
+  import { createGridChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
 
   const timeContext = getTimeContext()
   const ctx = getMetricViewContext()
@@ -65,6 +62,7 @@
     plotPaddingBottom?: number
     /** Metric unit for bucket-bound y-axis labelling (e.g. "ms"). */
     unit?: string
+    onClearSelection?: () => void
   }
 
   let {
@@ -75,6 +73,7 @@
     selectedTimestamp = null,
     plotPaddingBottom = chartPadding.bottom,
     unit = '',
+    onClearSelection,
   }: Props = $props()
 
   let plotAreaHeight = $state(0)
@@ -145,8 +144,6 @@
 
   let heatmapCountByCell = $derived(heatmapModel.countByColumn)
 
-  let keyboardCursor = $state<GridCursor | null>(null)
-  let keyboardFocused = $state(false)
   let selectedColumnKey = $derived.by(() => {
     if (selectedTimestamp === null || selectedTimestamp === undefined) {
       return null
@@ -156,48 +153,16 @@
         ?.key ?? null
     )
   })
-  let initialKeyboardCursor = $derived(
-    selectedColumnKey === null
-      ? null
-      : gridCursorAt(timeDomain, bucketDomain, selectedColumnKey, null)
+  const keyboardNavigation = createGridChartKeyboardCursor(
+    () => timeDomain,
+    () => bucketDomain,
+    () => selectedColumnKey
   )
-  let activeKeyboardCursor = $derived(
-    reconcileGridCursor(
-      timeDomain,
-      bucketDomain,
-      keyboardFocused
-        ? keyboardCursor
-        : (initialKeyboardCursor ?? keyboardCursor)
-    )
-  )
-
-  $effect(() => {
-    const next = activeKeyboardCursor
-    if (keyboardFocused && next !== keyboardCursor) keyboardCursor = next
-  })
-
-  let lastExternalColumnKey: string | null | undefined
-  $effect(() => {
-    const next = selectedColumnKey
-    if (next === lastExternalColumnKey) return
-    lastExternalColumnKey = next
-    if (keyboardFocused && next !== null) {
-      keyboardCursor = gridCursorAt(
-        timeDomain,
-        bucketDomain,
-        next,
-        activeKeyboardCursor?.rowKey ?? null
-      )
-    }
-  })
+  let activeKeyboardCursor = $derived(keyboardNavigation.current)
+  let keyboardFocused = $derived(keyboardNavigation.focused)
 
   function handleKeyboardFocusChange(focused: boolean) {
-    keyboardFocused = focused
-    if (focused) {
-      keyboardCursor =
-        initialKeyboardCursor ??
-        reconcileGridCursor(timeDomain, bucketDomain, keyboardCursor)
-    }
+    keyboardNavigation.setFocused(focused)
   }
 
   let keyboardReadout = $derived.by((): string => {
@@ -224,12 +189,7 @@
     if (command) {
       event.preventDefault()
       event.stopPropagation()
-      keyboardCursor = moveGridCursor(
-        timeDomain,
-        bucketDomain,
-        activeKeyboardCursor,
-        command
-      )
+      keyboardNavigation.move(command)
       return
     }
 
@@ -247,7 +207,7 @@
     if (event.key === 'Escape') {
       event.preventDefault()
       event.stopPropagation()
-      ctx.clearChartSelection()
+      onClearSelection?.()
     }
   }
 

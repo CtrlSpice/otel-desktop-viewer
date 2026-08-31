@@ -377,6 +377,20 @@ describe('metric view context datapoint URL sync', () => {
     expect(reportedSelectedDatapointID()).toBe('')
   })
 
+  it('does not guess a series for a cold raw-only URL without series', async () => {
+    const raw = makeSumDatapoint('dp-raw-b', 30_000, 7)
+    const view = renderProbeView('/metrics/m1?dp=dp-raw-b')
+
+    expect(reportedSelectedDatapointID()).toBe('')
+    expect(view.context.expandedTimeseries.size).toBe(0)
+
+    await view.setSeriesDatapoints({ 'route=/b': [raw] })
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('')
+    expect(reportedResolvedDatapointID()).toBe('')
+  })
+
   it('clears the selection when the browser goes back to a URL without dp', async () => {
     renderProbe('/metrics/m1?dp=dp-b2')
     expect(reportedSelectedDatapointID()).toBe('dp-b2')

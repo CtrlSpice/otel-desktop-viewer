@@ -628,6 +628,14 @@ describe('WaterfallView column separators', () => {
       expect(Number(bar.getAttribute('aria-valuenow'))).toBeLessThanOrEqual(
         Number(bar.getAttribute('aria-valuemax'))
       )
+      expect(Number(bar.getAttribute('aria-valuemin'))).toBeGreaterThanOrEqual(
+        0
+      )
+      expect(Number(bar.getAttribute('aria-valuemax'))).toBeLessThanOrEqual(100)
+      expect(bar).toHaveAttribute(
+        'aria-valuetext',
+        `${bar.getAttribute('aria-valuenow')} percent from left`
+      )
     }
 
     expect(
@@ -649,12 +657,16 @@ describe('WaterfallView column separators', () => {
 
     const spanBar = separators()[0]!
     spanBar.focus()
-    const start = Number(spanBar.getAttribute('aria-valuenow'))
+    const start = Number.parseFloat(spanBar.style.left)
+    const startPercent = Number(spanBar.getAttribute('aria-valuenow'))
 
     const right = press(spanBar, 'ArrowRight')
     expect(right.defaultPrevented).toBe(true)
     await tick()
-    expect(spanBar).toHaveAttribute('aria-valuenow', String(start + 16))
+    expect(Number.parseFloat(spanBar.style.left)).toBe(start + 16)
+    expect(Number(spanBar.getAttribute('aria-valuenow'))).toBeGreaterThan(
+      startPercent
+    )
     expect(spanBar).toHaveFocus()
 
     const afterRight = JSON.parse(
@@ -665,7 +677,7 @@ describe('WaterfallView column separators', () => {
     const left = press(spanBar, 'ArrowLeft', true)
     expect(left.defaultPrevented).toBe(true)
     await tick()
-    expect(spanBar).toHaveAttribute('aria-valuenow', String(start - 48))
+    expect(Number.parseFloat(spanBar.style.left)).toBe(start - 48)
   })
 
   it('uses Home to restore and persist the current-container default', async () => {

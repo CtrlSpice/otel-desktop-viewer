@@ -37,4 +37,7 @@
   untrack(() => oncontext?.(metricContext))
 </script>
 
-<TestComponent {...componentProps} />
+<TestComponent
+  onClearSelection={metricContext.clearChartSelection}
+  {...componentProps}
+/>

@@ -8,7 +8,6 @@
     formatRateSlopeValue,
   } from '@/components/metrics/utils/format-metric-value'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { formatDateTime } from '@/utils/time'
   import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
@@ -41,11 +40,9 @@
     isChartActivationKey,
     lineCursorAt,
     lineCursorCommandForKey,
-    moveLineCursor,
-    reconcileLineCursor,
     stablePointCursorKey,
-    type LineCursor,
   } from '@/components/metrics/utils/chart-keyboard-cursor'
+  import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
 
   /** Render order inside the Totals section: checked → all. */
   const AGG_TOTAL_ORDER: Record<string, number> = {
@@ -152,6 +149,7 @@
     /** Source point click -> exact datapoint selection. Synthetic points omit
      *  an id and remain inspectable but read-only. */
     onChartPointClick?: (seriesKey: string, datapointID: string) => void
+    onClearSelection?: () => void
     /** Per-series stats from the store, for the selected-series overlay.
      *  The chart used to fold its own from the drawn points, whose average is
      *  the mean of a reduced sample; these describe the window (raw views) or
@@ -173,11 +171,11 @@
     selectedRateSlope = undefined,
     timeRange = null,
     onChartPointClick,
+    onClearSelection,
     seriesStats,
   }: Props = $props()
 
   const timeContext = getTimeContext()
-  const metricViewContext = getMetricViewContext()
 
   /* One scale instance per chart, not a fresh one per render.
    *
@@ -256,8 +254,6 @@
         })),
       }))
   )
-  let keyboardCursor = $state<LineCursor | null>(null)
-  let keyboardFocused = $state(false)
   let initialKeyboardCursor = $derived.by(() => {
     const sourcePointID = aggregationView === 'rate' ? null : highlightedPointID
     if (sourcePointID === null && highlightedTimestamp === null) {
@@ -283,38 +279,15 @@
       requireExact: true,
     })
   })
-  let activeKeyboardCursor = $derived(
-    reconcileLineCursor(
-      keyboardLines,
-      keyboardFocused
-        ? keyboardCursor
-        : (initialKeyboardCursor ?? keyboardCursor)
-    )
+  const keyboardNavigation = createLineChartKeyboardCursor(
+    () => keyboardLines,
+    () => initialKeyboardCursor
   )
-
-  $effect(() => {
-    const next = activeKeyboardCursor
-    if (keyboardFocused && next !== keyboardCursor) keyboardCursor = next
-  })
-
-  let lastExternalKeyboardCursor: string | null | undefined
-  $effect(() => {
-    const next = initialKeyboardCursor
-    const identity = next
-      ? `${next.lineKey}\u0000${String(next.pointKey)}`
-      : null
-    if (identity === lastExternalKeyboardCursor) return
-    lastExternalKeyboardCursor = identity
-    if (keyboardFocused && next) keyboardCursor = next
-  })
+  let activeKeyboardCursor = $derived(keyboardNavigation.current)
+  let keyboardFocused = $derived(keyboardNavigation.focused)
 
   function handleKeyboardFocusChange(focused: boolean) {
-    keyboardFocused = focused
-    if (focused) {
-      keyboardCursor =
-        initialKeyboardCursor ??
-        reconcileLineCursor(keyboardLines, keyboardCursor)
-    }
+    keyboardNavigation.setFocused(focused)
   }
 
   let keyboardSeries = $derived.by(() => {
@@ -368,11 +341,7 @@
     if (command) {
       event.preventDefault()
       event.stopPropagation()
-      keyboardCursor = moveLineCursor(
-        keyboardLines,
-        activeKeyboardCursor,
-        command
-      )
+      keyboardNavigation.move(command)
       return
     }
 
@@ -388,7 +357,7 @@
     if (event.key === 'Escape') {
       event.preventDefault()
       event.stopPropagation()
-      metricViewContext.clearChartSelection()
+      onClearSelection?.()
     }
   }
 

@@ -462,6 +462,11 @@
 
   let barPositions = $derived(computeBarPositions(wfCols, colWidths))
 
+  function resizeBarPercent(positionPx: number): number {
+    if (scrollContainerW <= 0) return 0
+    return Math.round((positionPx / scrollContainerW) * 100)
+  }
+
   function handleStartResize(barId: string, e: PointerEvent) {
     if (activeResizeCol !== null) return
     activeResizeCol = barId
@@ -975,10 +980,10 @@
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize {bar.id} column"
-          aria-valuenow={Math.round(bar.left)}
-          aria-valuemin={Math.round(bar.min)}
-          aria-valuemax={Math.round(bar.max)}
-          aria-valuetext="{Math.round(bar.left)} pixels from left"
+          aria-valuenow={resizeBarPercent(bar.left)}
+          aria-valuemin={resizeBarPercent(bar.min)}
+          aria-valuemax={resizeBarPercent(bar.max)}
+          aria-valuetext="{resizeBarPercent(bar.left)} percent from left"
           tabindex="0"
           onpointerdown={e => handleStartResize(bar.id, e)}
           onkeydown={e => handleResizeKeydown(bar.id, e)}

@@ -31,11 +31,9 @@
     isChartActivationKey,
     lineCursorAt,
     lineCursorCommandForKey,
-    moveLineCursor,
-    reconcileLineCursor,
     stablePointCursorKey,
-    type LineCursor,
   } from '@/components/metrics/utils/chart-keyboard-cursor'
+  import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
 
   type QuantileLineMeta = {
     seriesKey: string
@@ -61,6 +59,7 @@
       timestampNs: bigint,
       quantileKey: string | null
     ) => void
+    onClearSelection?: () => void
   }
 
   let {
@@ -72,6 +71,7 @@
     timeRange = null,
     emptyMessage = 'No quantile data in range',
     onChartPointClick,
+    onClearSelection,
   }: Props = $props()
 
   const timeContext = getTimeContext()
@@ -194,8 +194,6 @@
         })),
       }))
   )
-  let keyboardCursor = $state<LineCursor | null>(null)
-  let keyboardFocused = $state(false)
   let initialKeyboardCursor = $derived.by(() => {
     if (ctx.heatmapColumnStartNs === null) return null
     const quantileKey = ctx.selectedQuantileKey
@@ -212,38 +210,15 @@
       requireExact: true,
     })
   })
-  let activeKeyboardCursor = $derived(
-    reconcileLineCursor(
-      keyboardLines,
-      keyboardFocused
-        ? keyboardCursor
-        : (initialKeyboardCursor ?? keyboardCursor)
-    )
+  const keyboardNavigation = createLineChartKeyboardCursor(
+    () => keyboardLines,
+    () => initialKeyboardCursor
   )
-
-  $effect(() => {
-    const next = activeKeyboardCursor
-    if (keyboardFocused && next !== keyboardCursor) keyboardCursor = next
-  })
-
-  let lastExternalKeyboardCursor: string | null | undefined
-  $effect(() => {
-    const next = initialKeyboardCursor
-    const identity = next
-      ? `${next.lineKey}\u0000${String(next.pointKey)}`
-      : null
-    if (identity === lastExternalKeyboardCursor) return
-    lastExternalKeyboardCursor = identity
-    if (keyboardFocused && next) keyboardCursor = next
-  })
+  let activeKeyboardCursor = $derived(keyboardNavigation.current)
+  let keyboardFocused = $derived(keyboardNavigation.focused)
 
   function handleKeyboardFocusChange(focused: boolean) {
-    keyboardFocused = focused
-    if (focused) {
-      keyboardCursor =
-        initialKeyboardCursor ??
-        reconcileLineCursor(keyboardLines, keyboardCursor)
-    }
+    keyboardNavigation.setFocused(focused)
   }
 
   let keyboardSeries = $derived.by(() => {
@@ -284,11 +259,7 @@
     if (command) {
       event.preventDefault()
       event.stopPropagation()
-      keyboardCursor = moveLineCursor(
-        keyboardLines,
-        activeKeyboardCursor,
-        command
-      )
+      keyboardNavigation.move(command)
       return
     }
 
@@ -312,7 +283,7 @@
     if (event.key === 'Escape') {
       event.preventDefault()
       event.stopPropagation()
-      ctx.clearChartSelection()
+      onClearSelection?.()
     }
   }
 

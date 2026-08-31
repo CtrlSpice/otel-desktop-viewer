@@ -16,14 +16,18 @@
   import { metricTypeSeriesColor } from '@/components/metrics/utils/metric-type'
   import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
   import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
-  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import {
+    exponentialBucketIdentity,
+    exponentialZeroBucketIdentity,
+    exponentialZeroBucketLabel,
+    formatHistogramBound,
+    indexedHistogramRangeIdentity,
+  } from '@/components/metrics/utils/histogram-bucket'
   import {
     isChartActivationKey,
-    moveOrderedCursor,
     orderedCursorCommandForKey,
-    reconcileOrderedCursor,
-    type OrderedCursor,
   } from '@/components/metrics/utils/chart-keyboard-cursor'
+  import { createOrderedChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
   import type {
     HistogramDataPoint,
     ExponentialHistogramDataPoint,
@@ -52,6 +56,7 @@
     selectionTimestamp?: string
     /** Whole-window mode: click a column to pin bucket summary in the header. */
     enableValueBucketPin?: boolean
+    onClearSelection?: () => void
   }
 
   let {
@@ -61,9 +66,8 @@
     timeRange = null,
     selectionTimestamp = '',
     enableValueBucketPin = false,
+    onClearSelection,
   }: Props = $props()
-
-  const metricViewContext = getMetricViewContext()
 
   let plotAreaHeight = $state(0)
   let pinnedBucketKey = $state<string | null>(null)
@@ -102,50 +106,15 @@
   })
 
   let keyboardBucketKeys = $derived(buckets.map(bucket => bucket.key))
-  let keyboardCursor = $state<OrderedCursor | null>(null)
-  let keyboardFocused = $state(false)
-  let initialKeyboardCursor = $derived(
-    pinnedBucketKey === null
-      ? null
-      : reconcileOrderedCursor(keyboardBucketKeys, {
-          key: pinnedBucketKey,
-          index: 0,
-        })
+  const keyboardNavigation = createOrderedChartKeyboardCursor(
+    () => keyboardBucketKeys,
+    () => pinnedBucketKey
   )
-  let activeKeyboardCursor = $derived(
-    reconcileOrderedCursor(
-      keyboardBucketKeys,
-      keyboardFocused
-        ? keyboardCursor
-        : (initialKeyboardCursor ?? keyboardCursor)
-    )
-  )
-
-  $effect(() => {
-    const next = activeKeyboardCursor
-    if (keyboardFocused && next !== keyboardCursor) keyboardCursor = next
-  })
-
-  let lastExternalKeyboardCursor: string | null | undefined
-  $effect(() => {
-    const next = pinnedBucketKey
-    if (next === lastExternalKeyboardCursor) return
-    lastExternalKeyboardCursor = next
-    if (keyboardFocused && next !== null) {
-      keyboardCursor = reconcileOrderedCursor(keyboardBucketKeys, {
-        key: next,
-        index: activeKeyboardCursor?.index ?? 0,
-      })
-    }
-  })
+  let activeKeyboardCursor = $derived(keyboardNavigation.current)
+  let keyboardFocused = $derived(keyboardNavigation.focused)
 
   function handleKeyboardFocusChange(focused: boolean) {
-    keyboardFocused = focused
-    if (focused) {
-      keyboardCursor =
-        initialKeyboardCursor ??
-        reconcileOrderedCursor(keyboardBucketKeys, keyboardCursor)
-    }
+    keyboardNavigation.setFocused(focused)
   }
 
   let keyboardBucket = $derived.by((): Bucket | null => {
@@ -191,23 +160,6 @@
     }
   })
 
-  function numberIdentity(value: number): string {
-    if (Number.isNaN(value)) return 'nan'
-    if (Object.is(value, -0)) return '-0'
-    if (value === Infinity) return '+infinity'
-    if (value === -Infinity) return '-infinity'
-    return String(value)
-  }
-
-  function bucketIdentity(
-    kind: string,
-    index: number,
-    lo: number,
-    hi: number
-  ): string {
-    return `${kind}:${index}:${numberIdentity(lo)}:${numberIdentity(hi)}`
-  }
-
   function buildHistogramBuckets(dp: HistogramDataPoint): Bucket[] {
     const bounds = dp.explicitBounds
     const counts = dp.bucketCounts
@@ -234,7 +186,7 @@
         hi = Infinity
       }
       result.push({
-        key: bucketIdentity('explicit', i, lo, hi),
+        key: indexedHistogramRangeIdentity(i, lo, hi),
         label,
         count: counts[i],
         lo,
@@ -261,19 +213,19 @@
         index === negativeCount ? dp.zeroThreshold : undefined
       if (index < negativeCount) {
         const exponent = dp.negativeBucketOffset + (negativeCount - index - 1)
-        key = `exponential:${dp.scale}:negative:${exponent}`
+        key = exponentialBucketIdentity(dp.scale, 'negative', exponent)
       } else if (index === negativeCount) {
-        key = `exponential:zero:${numberIdentity(dp.zeroThreshold)}`
+        key = exponentialZeroBucketIdentity(dp.zeroThreshold)
       } else {
         const exponent = dp.positiveBucketOffset + (index - negativeCount - 1)
-        key = `exponential:${dp.scale}:positive:${exponent}`
+        key = exponentialBucketIdentity(dp.scale, 'positive', exponent)
       }
       return {
         key,
         label:
           zeroThreshold !== undefined
             ? exponentialZeroBucketLabel(zeroThreshold)
-            : `(${formatBucketBound(bucket.lo)}, ${formatBucketBound(bucket.hi)}]`,
+            : `(${formatHistogramBound(bucket.lo)}, ${formatHistogramBound(bucket.hi)}]`,
         count: bucket.cnt,
         lo:
           zeroThreshold !== undefined && zeroThreshold > 0
@@ -286,20 +238,6 @@
         zeroThreshold,
       }
     })
-  }
-
-  function exponentialZeroBucketLabel(zeroThreshold: number): string {
-    if (!(zeroThreshold > 0)) return '0'
-    const threshold = formatBucketBound(zeroThreshold)
-    return `[-${threshold}, +${threshold}]`
-  }
-
-  function formatBucketBound(v: number): string {
-    if (!Number.isFinite(v)) return v > 0 ? '+∞' : '-∞'
-    if (v === 0) return '0'
-    if (Math.abs(v) >= 1000) return v.toExponential(1)
-    if (Math.abs(v) < 0.01) return v.toExponential(1)
-    return v.toPrecision(3)
   }
 
   type QuantileMark = {
@@ -472,11 +410,7 @@
     if (command) {
       event.preventDefault()
       event.stopPropagation()
-      keyboardCursor = moveOrderedCursor(
-        keyboardBucketKeys,
-        activeKeyboardCursor,
-        command
-      )
+      keyboardNavigation.move(command)
       return
     }
 
@@ -492,7 +426,7 @@
       event.preventDefault()
       event.stopPropagation()
       pinnedBucketKey = null
-      metricViewContext.clearChartSelection()
+      onClearSelection?.()
     }
   }
 

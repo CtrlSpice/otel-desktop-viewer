@@ -733,6 +733,29 @@ describe('HistogramHeatmap keyboard model', () => {
     expect(onSelect).toHaveBeenLastCalledWith(points[1]!.timestamp)
   })
 
+  it('keeps all-zero histogram structure keyboard navigable', async () => {
+    const point: HistogramSlicePoint = {
+      kind: 'histogram',
+      timestamp: BASE_NS,
+      attributesKey: '',
+      bounds: [1, 2],
+      counts: [0, 0, 0],
+      totals: { count: 0, sum: 0, min: 0, max: 0 },
+    }
+    const metric = metricWithDatapoints('Histogram', [
+      histogramDatapoint('all-zero', [1, 2], [0, 0, 0]),
+    ])
+    renderChart(HistogramHeatmap, { points: [point] }, metric)
+    const surface = screen.getByRole('application', {
+      name: 'Histogram heatmap',
+    })
+
+    expect(screen.queryByText('No bucket data in range')).toBeNull()
+    await fireEvent.focus(surface)
+    expect(readout()).toContain('Column 1 of 1')
+    expect(readout()).toContain('Count 0')
+  })
+
   it('describes an explicit histogram without bounds as one catch-all row', async () => {
     const point: HistogramSlicePoint = {
       kind: 'histogram',
