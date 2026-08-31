@@ -1816,21 +1816,19 @@ button:focus-visible:not(.btn) {
   opacity: 0.9;
 }
 
-/* Main + detail split (PageLayout): hit strip only — no visible line on
-   hover, focus, or drag. Cursor and keyboard resize unchanged. */
-.col-resize-bar.col-resize-bar--in-flow:hover .col-resize-bar__line,
-.col-resize-bar.col-resize-bar--in-flow:focus-visible .col-resize-bar__line,
-.col-resize-bar.col-resize-bar--in-flow.col-resize-bar--active
-  .col-resize-bar__line {
-  opacity: 0;
-}
-
 /* In-flow flex sibling (not absolute over a table) */
 .col-resize-bar.col-resize-bar--in-flow {
-  @apply relative self-stretch shrink-0;
+  @apply relative self-stretch shrink-0 items-center;
   inset: auto;
   margin-left: 0;
   z-index: 10;
+}
+
+.col-resize-bar--in-flow .col-resize-bar__line {
+  align-self: auto;
+  width: 0.1875rem;
+  height: 3rem;
+  min-height: 0;
 }
 
 /* Stacked panels: full-width hit strip, drag adjusts height split (row-resize) */
@@ -1850,10 +1848,25 @@ button:focus-visible:not(.btn) {
 
 .col-resize-bar--row-in-flow .col-resize-bar__line {
   align-self: auto;
-  width: 100%;
+  width: 3rem;
   min-width: 0;
-  height: 0.125rem;
-  min-height: 0.125rem;
+  height: 0.1875rem;
+  min-height: 0.1875rem;
+}
+
+.col-resize-bar:is(.col-resize-bar--in-flow, .col-resize-bar--row-in-flow):hover
+  .col-resize-bar__line {
+  background-color: var(--color-neutral);
+  opacity: 0.65;
+}
+
+.col-resize-bar:is(.col-resize-bar--in-flow, .col-resize-bar--row-in-flow):is(
+    :focus-visible,
+    .col-resize-bar--active
+  )
+  .col-resize-bar__line {
+  background-color: var(--color-primary);
+  opacity: 0.95;
 }
 
 /* Pagination Styles — rows left, pager cluster centered, delete label + button trailing */

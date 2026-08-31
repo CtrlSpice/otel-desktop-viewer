@@ -168,5 +168,30 @@ test.describe('home page accessibility', () => {
     await expect
       .poll(async () => Number(await separator.getAttribute('aria-valuenow')))
       .toBeGreaterThan(valueBefore)
+
+    await expect
+      .poll(() =>
+        separator.evaluate(element => {
+          const handle = element.querySelector<HTMLElement>(
+            '.col-resize-bar__line'
+          )
+          if (!handle) {
+            throw new Error('Resize handle is missing its visible line')
+          }
+          return Number(getComputedStyle(handle).opacity)
+        })
+      )
+      .toBeGreaterThan(0.8)
+
+    const handleSize = await separator.evaluate(element => {
+      const handle = element.querySelector<HTMLElement>('.col-resize-bar__line')
+      if (!handle) throw new Error('Resize handle is missing its visible line')
+      const handleRect = handle.getBoundingClientRect()
+      return {
+        height: handleRect.height,
+        separatorHeight: element.getBoundingClientRect().height,
+      }
+    })
+    expect(handleSize.height).toBeLessThan(handleSize.separatorHeight)
   })
 })
