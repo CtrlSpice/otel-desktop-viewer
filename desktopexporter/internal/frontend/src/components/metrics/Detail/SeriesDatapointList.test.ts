@@ -61,21 +61,22 @@ function renderedDatapointIDs(): string[] {
   ].map(row => row.dataset.dpId!)
 }
 
-function inspectButton(id: string): HTMLButtonElement {
-  const button = document.querySelector<HTMLButtonElement>(
-    `tr[data-dp-id="${id}"] button`
+function datapointRow(id: string): HTMLTableRowElement {
+  const row = document.querySelector<HTMLTableRowElement>(
+    `tr[data-dp-id="${id}"]`
   )
-  expect(button, `Inspect button for ${id} should exist`).not.toBeNull()
-  return button!
+  expect(row, `Datapoint row for ${id} should exist`).not.toBeNull()
+  return row!
 }
 
-function renderListView(datapoints: SumDataPoint[]) {
+function renderListView(datapoints: SumDataPoint[], unit = '1') {
   let context: MetricViewContext | undefined
   const oncontext = (ctx: MetricViewContext) => {
     context = ctx
   }
   const view = renderWithContexts(SeriesDatapointListHarness, {
     datapoints,
+    unit,
     oncontext,
   })
   if (!context) throw new Error('harness did not report a metric view context')
@@ -83,13 +84,13 @@ function renderListView(datapoints: SumDataPoint[]) {
     context,
     rerender: (nextDatapoints: SumDataPoint[]) =>
       view.rerender({
-        componentProps: { datapoints: nextDatapoints, oncontext },
+        componentProps: { datapoints: nextDatapoints, unit, oncontext },
       }),
   }
 }
 
-function renderList(datapoints: SumDataPoint[]): MetricViewContext {
-  return renderListView(datapoints).context
+function renderList(datapoints: SumDataPoint[], unit = '1'): MetricViewContext {
+  return renderListView(datapoints, unit).context
 }
 
 describe('SeriesDatapointList pagination and keyboard access', () => {
@@ -109,24 +110,59 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
       screen
         .getAllByRole('columnheader')
         .map(header => header.textContent?.trim())
-    ).toEqual(['Time', 'Value', 'Details', 'Action'])
+    ).toEqual(['Time', 'Value'])
     expect(renderedDatapointIDs()).toEqual(
       datapoints.slice(0, 25).map(dp => dp.id)
     )
     expect(screen.getByText('1-25 of 61 datapoints')).toBeInTheDocument()
+    expect(screen.getByText('1 / 3 pages')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Rows per page' })).toHaveValue(
       '25'
     )
+    const pagination = document.querySelector<HTMLElement>(
+      '.dp-list__pagination'
+    )!
+    expect(pagination.children[0]).toHaveClass('dp-list__range')
+    expect(pagination.children[1]).toHaveClass('dp-list__page-nav')
+    expect(pagination.children[2]).toHaveClass('dp-list__page-size')
     expect(
       screen
         .getAllByRole('option')
         .map(option => (option as HTMLOptionElement).value)
     ).toEqual(['25', '50', '100'])
+    expect(screen.queryByRole('columnheader', { name: 'Action' })).toBeNull()
+    expect(screen.getAllByRole('row', { name: /^Datapoint at / })).toHaveLength(
+      25
+    )
+    expect(datapointRow('dp-61')).toHaveAccessibleName(/value 61, ID dp-61$/)
+  })
+
+  it('shows the shared metric unit once in the Value header', () => {
+    renderList(makeDatapoints(2), 'ms')
+
     expect(
-      screen.getAllByRole('button', { name: /^Inspect datapoint at / })
-    ).toHaveLength(25)
-    expect(inspectButton('dp-61')).toHaveAccessibleName(/value 61, ID dp-61$/)
-    expect(inspectButton('dp-61')).toHaveTextContent('Inspect')
+      screen
+        .getAllByRole('columnheader')
+        .map(header => header.textContent?.trim())
+    ).toEqual(['Time', 'Value (ms)'])
+    expect(datapointRow('dp-1')).toHaveTextContent('1')
+    expect(datapointRow('dp-1')).not.toHaveTextContent('ms')
+    expect(datapointRow('dp-1')).toHaveAccessibleName(/value 1 ms, ID dp-1$/)
+  })
+
+  it('keeps Details hidden unless any datapoint in the set has details', async () => {
+    const user = userEvent.setup()
+    const datapoints = makeDatapoints(26)
+    datapoints[25] = makeDatapoint({ id: 'dp-26' })
+    renderList(datapoints)
+
+    expect(
+      screen.getByRole('columnheader', { name: 'Details' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('1 ex')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(screen.getByText('1 ex')).toBeInTheDocument()
   })
 
   it('gives same-millisecond, same-value datapoints unique accessible names', () => {
@@ -146,8 +182,8 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
       }),
     ])
 
-    const firstName = inspectButton('dp-same-1').getAttribute('aria-label')
-    const secondName = inspectButton('dp-same-2').getAttribute('aria-label')
+    const firstName = datapointRow('dp-same-1').getAttribute('aria-label')
+    const secondName = datapointRow('dp-same-2').getAttribute('aria-label')
     expect(firstName).toMatch(/value 42, ID dp-same-1$/)
     expect(secondName).toMatch(/value 42, ID dp-same-2$/)
     expect(firstName).not.toBe(secondName)
@@ -186,7 +222,7 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     const user = userEvent.setup()
     const datapoints = makeDatapoints(61)
     const context = renderList(datapoints)
-    await user.click(inspectButton('dp-1'))
+    await user.click(datapointRow('dp-1'))
 
     await user.click(screen.getByRole('button', { name: 'Next page' }))
     expect(screen.getByText('26-50 of 61 datapoints')).toBeInTheDocument()
@@ -227,7 +263,7 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     const context = renderList(datapoints)
 
     await user.click(screen.getByRole('button', { name: 'Last page' }))
-    await user.click(inspectButton('dp-61'))
+    await user.click(datapointRow('dp-61'))
     await user.selectOptions(
       screen.getByRole('combobox', { name: 'Rows per page' }),
       '50'
@@ -240,11 +276,11 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     expect(context.selectedDatapointID).toBe('dp-61')
   })
 
-  it('moves focus without inspecting and leaves Enter and Space to the button', async () => {
+  it('moves focus without selecting and activates rows with Enter or Space', async () => {
     const user = userEvent.setup()
     const context = renderList(makeDatapoints(3))
-    const first = inspectButton('dp-1')
-    const second = inspectButton('dp-2')
+    const first = datapointRow('dp-1')
+    const second = datapointRow('dp-2')
 
     first.focus()
     await user.keyboard('{ArrowDown}')
@@ -253,26 +289,26 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
 
     await user.keyboard('{Enter}')
     expect(context.selectedDatapointID).toBe('dp-2')
-    expect(second).toHaveAttribute('aria-pressed', 'true')
+    expect(second).toHaveAttribute('aria-selected', 'true')
 
     await user.keyboard(' ')
     expect(context.selectedDatapointID).toBeNull()
-    expect(second).toHaveAttribute('aria-pressed', 'false')
+    expect(second).toHaveAttribute('aria-selected', 'false')
   })
 
   it('moves focus across page boundaries without activating a row', async () => {
     const user = userEvent.setup()
     const context = renderList(makeDatapoints(26))
 
-    inspectButton('dp-25').focus()
+    datapointRow('dp-25').focus()
     await user.keyboard('{ArrowDown}')
 
-    await waitFor(() => expect(inspectButton('dp-26')).toHaveFocus())
+    await waitFor(() => expect(datapointRow('dp-26')).toHaveFocus())
     expect(renderedDatapointIDs()).toEqual(['dp-26'])
     expect(context.selectedDatapointID).toBeNull()
 
     await user.keyboard('{ArrowUp}')
-    await waitFor(() => expect(inspectButton('dp-25')).toHaveFocus())
+    await waitFor(() => expect(datapointRow('dp-25')).toHaveFocus())
     expect(renderedDatapointIDs()[0]).toBe('dp-1')
     expect(context.selectedDatapointID).toBeNull()
   })
@@ -281,40 +317,40 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     const user = userEvent.setup()
     const context = renderList(makeDatapoints(26))
 
-    await user.click(inspectButton('dp-25'))
+    await user.click(datapointRow('dp-25'))
     await user.keyboard('{ArrowDown}')
 
-    await waitFor(() => expect(inspectButton('dp-26')).toHaveFocus())
+    await waitFor(() => expect(datapointRow('dp-26')).toHaveFocus())
     expect(renderedDatapointIDs()).toEqual(['dp-26'])
     expect(context.selectedDatapointID).toBe('dp-25')
 
     await user.keyboard('{ArrowUp}')
-    await waitFor(() => expect(inspectButton('dp-25')).toHaveFocus())
+    await waitFor(() => expect(datapointRow('dp-25')).toHaveFocus())
     expect(screen.getByText('1-25 of 26 datapoints')).toBeInTheDocument()
     expect(context.selectedDatapointID).toBe('dp-25')
   })
 
-  it('moves focus to an externally selected Inspect button when the old page is removed', async () => {
+  it('moves focus to an externally selected row when the old page is removed', async () => {
     const datapoints = makeDatapoints(60)
     const context = renderList(datapoints)
-    inspectButton('dp-1').focus()
+    datapointRow('dp-1').focus()
 
     context.onDatapointClick(datapoints[39]!)
 
-    await waitFor(() => expect(inspectButton('dp-40')).toHaveFocus())
+    await waitFor(() => expect(datapointRow('dp-40')).toHaveFocus())
     expect(screen.getByText('26-50 of 60 datapoints')).toBeInTheDocument()
   })
 
-  it('moves focus to the nearest remaining Inspect button when the page clamps', async () => {
+  it('moves focus to the nearest remaining row when the page clamps', async () => {
     const user = userEvent.setup()
     const datapoints = makeDatapoints(51)
     const view = renderListView(datapoints)
     await user.click(screen.getByRole('button', { name: 'Last page' }))
-    inspectButton('dp-51').focus()
+    datapointRow('dp-51').focus()
 
     await view.rerender(datapoints.slice(0, 30))
 
-    await waitFor(() => expect(inspectButton('dp-30')).toHaveFocus())
+    await waitFor(() => expect(datapointRow('dp-30')).toHaveFocus())
     expect(screen.getByText('26-30 of 30 datapoints')).toBeInTheDocument()
   })
 
@@ -330,7 +366,7 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     await waitFor(() =>
       expect(screen.getByText('26-50 of 60 datapoints')).toBeInTheDocument()
     )
-    expect(inspectButton('dp-40')).toHaveAttribute('aria-pressed', 'true')
+    expect(datapointRow('dp-40')).toHaveAttribute('aria-selected', 'true')
     expect(outside).toHaveFocus()
     outside.remove()
   })
@@ -346,7 +382,7 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     await waitFor(() =>
       expect(screen.getByText('51-60 of 60 datapoints')).toBeInTheDocument()
     )
-    expect(inspectButton('dp-1')).toHaveAttribute('aria-pressed', 'true')
+    expect(datapointRow('dp-1')).toHaveAttribute('aria-selected', 'true')
   })
 
   it('does not rescan every datapoint when selection changes', async () => {
@@ -369,38 +405,38 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     context.onDatapointClick(datapoints[4_999]!)
 
     await waitFor(() =>
-      expect(inspectButton('dp-5000')).toHaveAttribute('aria-pressed', 'true')
+      expect(datapointRow('dp-5000')).toHaveAttribute('aria-selected', 'true')
     )
     // Rendering the destination page reads its visible rows. A linear lookup
     // would add another 5,000 reads before that render.
     expect(idReads).toBeLessThan(1_000)
   })
 
-  it('expands details for a flags-only datapoint through Inspect', async () => {
+  it('expands details for a flags-only datapoint through its row', async () => {
     const user = userEvent.setup()
     renderList([makeDatapoint({ id: 'dp-flags', flags: 4, exemplars: [] })])
-    const inspect = inspectButton('dp-flags')
+    const row = datapointRow('dp-flags')
 
-    expect(inspect).toHaveAttribute('aria-expanded', 'false')
-    await user.click(inspect)
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+    await user.click(row)
 
-    expect(inspect).toHaveAttribute('aria-expanded', 'true')
+    expect(row).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('4')).toBeInTheDocument()
   })
 
-  it('expands and collapses exemplar details through Inspect', async () => {
+  it('expands and collapses exemplar details through its row', async () => {
     const user = userEvent.setup()
     renderList([makeDatapoint()])
-    const inspect = inspectButton('dp-1')
+    const row = datapointRow('dp-1')
 
-    await user.click(inspect)
-    expect(inspect).toHaveAttribute('aria-expanded', 'true')
+    await user.click(row)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
     expect(
       screen.getByRole('link', { name: 'trace: trace-ex' })
     ).toBeInTheDocument()
 
-    await user.click(inspect)
-    expect(inspect).toHaveAttribute('aria-expanded', 'false')
+    await user.click(row)
+    expect(row).toHaveAttribute('aria-expanded', 'false')
     expect(
       screen.queryByRole('link', { name: 'trace: trace-ex' })
     ).not.toBeInTheDocument()

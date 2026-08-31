@@ -9,17 +9,18 @@
 
   type Props = {
     datapoints: DataPoint[]
+    unit?: string
     expandDatapointID?: string
     oncontext?: (ctx: MetricViewContext) => void
   }
-  let { datapoints, expandDatapointID, oncontext }: Props = $props()
+  let { datapoints, unit = '1', expandDatapointID, oncontext }: Props = $props()
 
   let metric = $derived<MetricData>({
     id: 'metric-list-harness',
     name: 'metric-list-harness',
     description: '',
     metadata: [],
-    unit: '1',
+    unit,
     metricType: datapoints[0]?.metricType ?? 'Empty',
     resourceDroppedAttributesCount: 0,
     resource: { attributes: [], droppedAttributesCount: 0 },

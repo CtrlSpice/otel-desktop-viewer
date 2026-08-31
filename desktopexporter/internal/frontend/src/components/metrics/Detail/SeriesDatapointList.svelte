@@ -35,6 +35,10 @@
   const timeContext = getTimeContext()
 
   let metricUnit = $derived(ctx.metric?.unit ?? '')
+  let valueUnit = $derived(displayUnit(metricUnit))
+  let hasDetails = $derived(
+    datapoints.some(dp => dp.flags > 0 || dp.exemplars.length > 0)
+  )
 
   const PAGE_SIZES = [25, 50, 100] as const
   type PageSize = (typeof PAGE_SIZES)[number]
@@ -65,14 +69,14 @@
     return cachedDatapointIndexByID
   }
 
-  function focusedInspectButton(): {
-    element: HTMLButtonElement
+  function focusedDatapointRow(): {
+    element: HTMLTableRowElement
     id: string
     index: number
   } | null {
     const active = document.activeElement
     if (
-      !(active instanceof HTMLButtonElement) ||
+      !(active instanceof HTMLTableRowElement) ||
       !listRoot?.contains(active) ||
       active.dataset.dpId === undefined ||
       active.dataset.dpIndex === undefined
@@ -86,38 +90,38 @@
     }
   }
 
-  async function restoreNearestInspectFocus(
+  async function restoreNearestDatapointFocus(
     preferredIndex: number,
-    previous: HTMLButtonElement
+    previous: HTMLTableRowElement
   ): Promise<void> {
     await tick()
     const active = document.activeElement
     // A pointer or keyboard action that focused something else after the data
-    // change wins. Body means the focused button was removed from the DOM.
+    // change wins. Body means the focused row was removed from the DOM.
     if (active !== previous && active !== document.body) return
 
-    let nearest: HTMLButtonElement | undefined
+    let nearest: HTMLTableRowElement | undefined
     let nearestDistance = Number.POSITIVE_INFINITY
-    for (const button of listRoot?.querySelectorAll<HTMLButtonElement>(
-      'button[data-dp-index]'
+    for (const row of listRoot?.querySelectorAll<HTMLTableRowElement>(
+      'tr[data-dp-index]'
     ) ?? []) {
-      const distance = Math.abs(Number(button.dataset.dpIndex) - preferredIndex)
+      const distance = Math.abs(Number(row.dataset.dpIndex) - preferredIndex)
       if (distance < nearestDistance) {
-        nearest = button
+        nearest = row
         nearestDistance = distance
       }
     }
     nearest?.focus()
   }
 
-  // Reconcile before Svelte removes the old page so a focused Inspect button
+  // Reconcile before Svelte removes the old page so a focused datapoint row
   // can be identified. External focus is never moved; keyboard traversal owns
   // its own explicit target below.
   $effect.pre(() => {
     const points = datapoints
     const size = pageSize
     const selectedID = ctx.selectedDatapointID
-    const focused = focusedInspectButton()
+    const focused = focusedDatapointRow()
     const indexByID = datapointIndexByID(points)
     const selectedIndex = selectedID ? (indexByID.get(selectedID) ?? -1) : -1
     const focusedIndex = focused ? (indexByID.get(focused.id) ?? -1) : -1
@@ -149,7 +153,7 @@
                   end - 1
                 )
               )
-        void restoreNearestInspectFocus(preferred, focused.element)
+        void restoreNearestDatapointFocus(preferred, focused.element)
       }
     }
 
@@ -173,12 +177,12 @@
     pageIndex = Math.floor(target / pageSize)
     await tick()
     listRoot
-      ?.querySelector<HTMLButtonElement>(`button[data-dp-index="${target}"]`)
+      ?.querySelector<HTMLTableRowElement>(`tr[data-dp-index="${target}"]`)
       ?.focus()
     if (keyboardFocusTarget === target) keyboardFocusTarget = null
   }
 
-  function moveInspectFocus(e: KeyboardEvent, index: number): void {
+  function moveDatapointFocus(e: KeyboardEvent, index: number): void {
     let next: number | null = null
     switch (e.key) {
       case 'ArrowDown':
@@ -207,6 +211,19 @@
     e.preventDefault()
     const clamped = Math.max(0, Math.min(next, datapoints.length - 1))
     if (clamped !== index) void focusDatapointAt(clamped)
+  }
+
+  function handleDatapointKeydown(
+    e: KeyboardEvent,
+    dp: DataPoint,
+    index: number
+  ): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      ctx.onDatapointClick(dp)
+      return
+    }
+    moveDatapointFocus(e, index)
   }
 
   function displayUnit(unit: string): string | null {
@@ -265,7 +282,7 @@
     return { number: '—', unit: null }
   }
 
-  function inspectButtonLabel(
+  function datapointRowLabel(
     datapointID: string,
     formattedTime: string,
     valueParts: { number: string; unit: string | null }
@@ -273,7 +290,7 @@
     const value = valueParts.unit
       ? `${valueParts.number} ${valueParts.unit}`
       : valueParts.number
-    return `Inspect datapoint at ${formattedTime}, value ${value}, ID ${datapointID}`
+    return `Datapoint at ${formattedTime}, value ${value}, ID ${datapointID}`
   }
 </script>
 
@@ -287,6 +304,13 @@
     class="dp-list__row"
     class:dp-list__row--selected={selected}
     data-dp-id={dp.id}
+    data-dp-index={datapointIndex}
+    tabindex="0"
+    aria-label={datapointRowLabel(dp.id, formattedTime, valueParts)}
+    aria-selected={selected}
+    aria-expanded={hasExtra ? expanded : undefined}
+    onclick={() => ctx.onDatapointClick(dp)}
+    onkeydown={e => handleDatapointKeydown(e, dp, datapointIndex)}
   >
     {#if showSwatch}
       <td class="dp-list__td dp-list__td--swatch">
@@ -303,44 +327,31 @@
     <td class="dp-list__td dp-list__td--value">
       <span class="dp-list__value-group">
         <span class="dp-list__value tabular-nums">{valueParts.number}</span>
-        {#if valueParts.unit}
-          <span class="dp-list__unit">{valueParts.unit}</span>
-        {/if}
       </span>
     </td>
-    <td class="dp-list__td dp-list__td--details">
-      {#if dp.exemplars.length > 0}
-        <span class="badge-count">
-          {#if withheld(dp)}
-            {dp.exemplars.length} of {dp.exemplarCount} ex
-          {:else}
-            {dp.exemplars.length} ex
-          {/if}
-        </span>
-      {/if}
-      {#if dp.flags > 0}
-        <span class="badge badge-xs badge-soft badge-warning">flags</span>
-      {/if}
-    </td>
-    <td class="dp-list__td dp-list__td--action">
-      <button
-        type="button"
-        class="btn btn-ghost btn-xs"
-        data-dp-index={datapointIndex}
-        data-dp-id={dp.id}
-        aria-label={inspectButtonLabel(dp.id, formattedTime, valueParts)}
-        aria-pressed={selected}
-        aria-expanded={hasExtra ? expanded : undefined}
-        onclick={() => ctx.onDatapointClick(dp)}
-        onkeydown={e => moveInspectFocus(e, datapointIndex)}
-      >
-        Inspect
-      </button>
-    </td>
+    {#if hasDetails}
+      <td class="dp-list__td dp-list__td--details">
+        {#if dp.exemplars.length > 0}
+          <span class="badge-count">
+            {#if withheld(dp)}
+              {dp.exemplars.length} of {dp.exemplarCount} ex
+            {:else}
+              {dp.exemplars.length} ex
+            {/if}
+          </span>
+        {/if}
+        {#if dp.flags > 0}
+          <span class="badge badge-xs badge-soft badge-warning">flags</span>
+        {/if}
+      </td>
+    {/if}
   </tr>
   {#if expanded}
     <tr class="dp-list__expansion-row">
-      <td colspan={showSwatch ? 5 : 4} class="dp-list__expansion-cell">
+      <td
+        colspan={2 + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)}
+        class="dp-list__expansion-cell"
+      >
         <div class="dp-list__expansion">
           {#if dp.flags > 0}
             <div class="dp-list__detail">
@@ -422,13 +433,16 @@
               </th>
             {/if}
             <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
-            <th scope="col" class="dp-list__th dp-list__th--value"> Value </th>
-            <th scope="col" class="dp-list__th dp-list__th--details">
-              Details
+            <th scope="col" class="dp-list__th dp-list__th--value">
+              Value{#if valueUnit}
+                <span class="dp-list__header-unit">{' '}({valueUnit})</span>
+              {/if}
             </th>
-            <th scope="col" class="dp-list__th dp-list__th--action">
-              Action
-            </th>
+            {#if hasDetails}
+              <th scope="col" class="dp-list__th dp-list__th--details">
+                Details
+              </th>
+            {/if}
           </tr>
         </thead>
         <tbody>
@@ -440,38 +454,38 @@
     </div>
 
     <div class="dp-list__pagination">
-      <div class="dp-list__pagination-summary">
-        <span
-          class="dp-list__range tabular-nums"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {rangeStart + 1}-{rangeEnd} of {datapoints.length}
-          {datapoints.length === 1 ? 'datapoint' : 'datapoints'}
-        </span>
-        <label class="dp-list__page-size">
-          <span>Rows per page</span>
-          <select
-            class="select select-xs"
-            aria-label="Rows per page"
-            value={pageSize}
-            onchange={changePageSize}
-          >
-            {#each PAGE_SIZES as size}
-              <option value={size}>{size}</option>
-            {/each}
-          </select>
-        </label>
+      <span
+        class="dp-list__range tabular-nums"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {rangeStart + 1}-{rangeEnd} of {datapoints.length}
+        {datapoints.length === 1 ? 'datapoint' : 'datapoints'}
+      </span>
+      <div class="dp-list__page-nav">
+        <DetailNav
+          index={pageIndex}
+          total={pageCount}
+          label="page"
+          onFirst={() => setPage(0)}
+          onPrev={() => setPage(pageIndex - 1)}
+          onNext={() => setPage(pageIndex + 1)}
+          onLast={() => setPage(pageCount - 1)}
+        />
       </div>
-      <DetailNav
-        index={pageIndex}
-        total={pageCount}
-        label="page"
-        onFirst={() => setPage(0)}
-        onPrev={() => setPage(pageIndex - 1)}
-        onNext={() => setPage(pageIndex + 1)}
-        onLast={() => setPage(pageCount - 1)}
-      />
+      <label class="dp-list__page-size">
+        <span>Rows per page</span>
+        <select
+          class="select select-xs"
+          aria-label="Rows per page"
+          value={pageSize}
+          onchange={changePageSize}
+        >
+          {#each PAGE_SIZES as size}
+            <option value={size}>{size}</option>
+          {/each}
+        </select>
+      </label>
     </div>
   </div>
 {/if}
@@ -498,6 +512,10 @@
     color: var(--color-muted);
   }
 
+  .dp-list__container {
+    container-type: inline-size;
+  }
+
   .dp-list__table-wrap {
     @apply overflow-x-auto;
   }
@@ -517,13 +535,19 @@
     color: var(--color-subtle);
   }
 
-  .dp-list__th--value,
-  .dp-list__th--action {
+  .dp-list__th--value {
     @apply text-right;
   }
 
   .dp-list__row {
-    @apply transition-colors hover:bg-base-300/30;
+    @apply cursor-pointer transition-colors hover:bg-base-300/30;
+  }
+
+  .dp-list__row:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: none;
+    box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
   }
 
   .dp-list__row--selected {
@@ -559,8 +583,7 @@
     @apply inline-flex min-w-0 items-baseline justify-end gap-1;
   }
 
-  .dp-list__td--value,
-  .dp-list__td--action {
+  .dp-list__td--value {
     @apply text-right;
   }
 
@@ -573,13 +596,22 @@
     color: var(--color-base-content);
   }
 
-  .dp-list__unit {
-    @apply shrink-0;
+  .dp-list__header-unit {
+    @apply font-normal;
     color: var(--color-subtle);
   }
 
+  @media (forced-colors: active) {
+    .dp-list__row:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+      box-shadow: none;
+    }
+  }
+
   .dp-list__pagination {
-    @apply flex flex-wrap items-center justify-between gap-2 px-3 py-2;
+    @apply grid items-center gap-2 px-3 py-2;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     border-top: 1px solid
       color-mix(in oklab, var(--color-base-300) 30%, transparent);
   }
@@ -588,9 +620,16 @@
     @apply px-0;
   }
 
-  .dp-list__pagination-summary,
   .dp-list__page-size {
     @apply flex flex-wrap items-center gap-2;
+  }
+
+  .dp-list__page-nav {
+    @apply justify-self-center;
+  }
+
+  .dp-list__page-size {
+    @apply justify-self-end;
   }
 
   .dp-list__range,
@@ -601,6 +640,51 @@
 
   .dp-list__page-size :global(.select) {
     @apply w-auto min-w-16;
+  }
+
+  @container (max-width: 30rem) {
+    .dp-list__pagination {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .dp-list__range {
+      grid-row: 1;
+      grid-column: 1;
+    }
+
+    .dp-list__page-nav {
+      grid-row: 2;
+      grid-column: 1 / -1;
+    }
+
+    .dp-list__page-size {
+      grid-row: 1;
+      grid-column: 2;
+    }
+  }
+
+  @container (max-width: 20rem) {
+    .dp-list__pagination {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dp-list__range,
+    .dp-list__page-nav,
+    .dp-list__page-size {
+      grid-column: 1;
+    }
+
+    .dp-list__range {
+      grid-row: 1;
+    }
+
+    .dp-list__page-nav {
+      grid-row: 2;
+    }
+
+    .dp-list__page-size {
+      grid-row: 3;
+    }
   }
 
   .dp-list__expansion-row {
