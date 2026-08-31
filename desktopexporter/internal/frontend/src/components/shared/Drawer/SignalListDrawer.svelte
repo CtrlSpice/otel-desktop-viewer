@@ -979,17 +979,15 @@
     @apply flex w-full min-w-0 shrink-0 flex-col;
   }
 
-  /* Top inset on the header bar (matches page-layout__region). */
+  /* Positioning context for the chrome pinned over the tab strip. PaneHeader's
+     own flush inset supplies the remaining vertical breathing room. */
   .signal-drawer__header :global(.pane-header.pane-header--flush) {
     @apply relative;
-    padding-top: var(--layout-gap);
   }
 
-  /* Chrome shares the tab row's centerline, not the header strip's. The
-     strip is taller than the tab row (12px of top padding), so centering
-     on the strip floated the buttons 6px above the tab labels. Anchoring
-     to the bottom and padding by (tab row 40px - button 32px) / 2 puts
-     button centers on the label line instead. */
+  /* Chrome shares the tab row's centerline. Anchoring to the bottom and
+     padding by (tab row 40px - button 32px) / 2 puts button centers on the
+     label line without depending on the header's top inset. */
   /* The one collapse pattern, settled after building the alternatives:
      when the drawer narrows, the tab strip slides BEHIND the pinned
      chrome and stays scrollable. Icon-only tabs, tabs-covering-chrome,
