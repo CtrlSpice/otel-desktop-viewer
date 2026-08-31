@@ -166,11 +166,31 @@ jobs:
     - name: Type check (svelte-check)
       run: npm run check
 
+    - name: Type check (Playwright)
+      run: npx tsc --project tsconfig.playwright.json
+
     - name: Unit tests (Vitest)
       run: npm test
 
     - name: Format check (Prettier)
       run: npm run format:check
+
+    - name: Install Chromium for Playwright
+      run: npx playwright install --with-deps chromium
+
+    - name: Accessibility tests (Playwright and axe)
+      run: npm run test:a11y
+
+    - name: Upload Playwright artifacts
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: playwright-accessibility-report
+        path: |
+          desktopexporter/internal/frontend/playwright-report/
+          desktopexporter/internal/frontend/test-results/
+        if-no-files-found: ignore
+        retention-days: 14
 
     # The built bundle is committed and served by the Go binary, so it can go
     # stale without any source file changing -- a dependency bump alone is

@@ -65,6 +65,7 @@ function renderRow(row: WaterfallRowData) {
       row,
       barGridPercents: [],
       selected: false,
+      tabbable: false,
       visible: true,
       subtreeCollapsed: false,
       spanColWidth: 200,

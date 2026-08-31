@@ -13,6 +13,7 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import PaneHeader, {
+    paneTabID,
     type PaneTab,
   } from '@/components/shared/PaneHeader.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
@@ -20,6 +21,8 @@
   import MetricField from './MetricField.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
+
+  const METRIC_DETAIL_PANEL_ID = 'metric-detail-tabpanel'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
@@ -126,9 +129,15 @@
       onSelect={id => (activeTab = id as 'fields' | 'series')}
       ariaLabel="Metric detail tabs"
       tabLayout="equal"
+      tabPanelID={METRIC_DETAIL_PANEL_ID}
     />
 
-    <div class="detail-view__scroll">
+    <div
+      class="detail-view__scroll"
+      id={METRIC_DETAIL_PANEL_ID}
+      role="tabpanel"
+      aria-labelledby={paneTabID(METRIC_DETAIL_PANEL_ID, activeTab)}
+    >
       {#if activeTab === 'fields'}
         <FieldGroup
           label="Metric"

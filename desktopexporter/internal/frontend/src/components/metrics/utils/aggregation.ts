@@ -386,29 +386,26 @@ export type RateSlopeBucketSegment = {
 }
 
 /**
- * Slope segment for the displayed rate series at `at`: Δrate/Δt between
- * the bucket nearest the selection and the previous bucket.
+ * Slope segment ending at one exact selected chart point.
  */
 export function rateSlopeBucketSegment(
   ratePoints: readonly ChartPoint[],
-  at: Date
+  selectedPoint: ChartPoint
 ): RateSlopeBucketSegment | undefined {
   if (ratePoints.length < 2) return undefined
 
-  // Geometry only: which two drawn points bracket the selection. The slope is
-  // the store's, computed for exactly this segment when the buckets were --
-  // differencing here would re-derive a number the response already carries.
-  // Points arrive in time order from the store's buckets.
-  const atMs = at.getTime()
-  let pointIdx = 0
-  let bestDist = Infinity
-  for (let i = 0; i < ratePoints.length; i++) {
-    const dist = Math.abs(ratePoints[i]!.date.getTime() - atMs)
-    if (dist < bestDist) {
-      bestDist = dist
-      pointIdx = i
-    }
-  }
+  // Source identity is authoritative when present. Otherwise exact
+  // nanoseconds identify the bucket; neither path falls back to milliseconds.
+  const pointIdx =
+    selectedPoint.sourceDatapointID !== undefined
+      ? ratePoints.findIndex(
+          point => point.sourceDatapointID === selectedPoint.sourceDatapointID
+        )
+      : selectedPoint.timestampNs !== undefined
+        ? ratePoints.findIndex(
+            point => point.timestampNs === selectedPoint.timestampNs
+          )
+        : ratePoints.indexOf(selectedPoint)
   if (pointIdx < 1) return undefined
 
   const from = ratePoints[pointIdx - 1]!

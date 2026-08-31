@@ -1663,13 +1663,16 @@
 		-- what aggregate_bucket_json hands its exp branch.
 		agg_qsrc as (
 			select f.bucket_start,
-				case when f.explicit_bounds is not null and len(f.explicit_bounds) > 0
+				-- A non-NULL list identifies an explicit histogram. The list may be
+				-- empty: that is the valid one-catch-all-bucket representation, not an
+				-- exponential histogram with its bucket vectors missing.
+				case when f.explicit_bounds is not null
 					then hist_buckets(f.explicit_bounds, f.bucket_counts)
 					else exp_buckets(f.scale,
 						f.neg_fold."offset", f.neg_fold.counts,
 						f.zero_count + f.pos_fold.folded + f.neg_fold.folded,
 						f.pos_fold."offset", f.pos_fold.counts) end as buckets,
-				(f.explicit_bounds is not null and len(f.explicit_bounds) > 0) as is_linear
+				(f.explicit_bounds is not null) as is_linear
 			from agg_folds f
 			where f.distinct_bounds <= 1
 			  and len((select quantiles from input)) > 0
@@ -1799,4 +1802,3 @@
 {{- end}}
 		) as varchar) as metric
 		from stream s left join representative r on true
-	

@@ -56,6 +56,7 @@
   import type { SpanData } from '@/types/api-types'
   import { BiohazardIcon } from '@/icons'
   import PaneHeader, {
+    paneTabID,
     type PaneTab,
   } from '@/components/shared/PaneHeader.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
@@ -66,6 +67,8 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { setSpanInQuery } from '@/route'
   import { LeftToRightListBulletIcon, LinkIcon, StopWatchIcon } from '@/icons'
+
+  const SPAN_DETAIL_PANEL_ID = 'span-detail-tabpanel'
 
   type Props = {
     span: SpanData | undefined
@@ -212,9 +215,15 @@
       onSelect={id => (activeTab = id as Tab)}
       ariaLabel="Span detail tabs"
       tabLayout="equal"
+      tabPanelID={SPAN_DETAIL_PANEL_ID}
     />
 
-    <div class="detail-view__scroll">
+    <div
+      class="detail-view__scroll"
+      id={SPAN_DETAIL_PANEL_ID}
+      role="tabpanel"
+      aria-labelledby={paneTabID(SPAN_DETAIL_PANEL_ID, activeTab)}
+    >
       {#if activeTab === 'fields'}
         {#if cyclePoint}
           <div

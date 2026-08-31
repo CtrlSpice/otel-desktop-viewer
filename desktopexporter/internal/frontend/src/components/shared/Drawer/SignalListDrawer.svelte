@@ -19,7 +19,7 @@
 
 <script lang="ts" generics="T">
   import type { Snippet } from 'svelte'
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import {
     ArrowRightIcon,
@@ -43,10 +43,20 @@
   } from '@/components/shared/Drawer/DrawerNavTabs.svelte'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import PaneHeader, {
-    type PaneTab,
+    type PaneNavigationTab,
   } from '@/components/shared/PaneHeader.svelte'
-  import { navigate, navigateToSignal, type SignalName } from '@/route'
+  import {
+    isPlainLeftClick,
+    navigate,
+    navigateToSignal,
+    signalHref,
+    type SignalName,
+  } from '@/route'
   import { getRouteContext } from '@/contexts/route-context.svelte'
+  import {
+    resolveNextPos,
+    type KeyDelta,
+  } from '@/components/shared/utils/table-keyboard-nav'
 
   type Props<T> = {
     items: T[]
@@ -286,18 +296,39 @@
   let effectivelyOpen = $derived(railOnly ? false : drawerOpen)
   let showEmptyState = $derived(items.length === 0 && !loading)
 
-  function handleToggleChange(e: Event) {
+  let openDrawerButton = $state<HTMLButtonElement | null>(null)
+  let collapseDrawerButton = $state<HTMLButtonElement | null>(null)
+  let drawerPanelID = $derived(`${drawerID}-panel`)
+
+  async function setDrawerOpen(open: boolean) {
     if (railOnly) return
     skipWidthTransition = false
-    drawerOpen = (e.currentTarget as HTMLInputElement).checked
-    persistDrawerOpen(drawerOpen)
+    drawerOpen = open
+    persistDrawerOpen(open)
+    await tick()
+    const nextButton = open ? collapseDrawerButton : openDrawerButton
+    nextButton?.focus()
   }
 
   const routeContext = getRouteContext()
   let activeNavID = $derived(
     NAV_ITEMS.find(n => isNavItemActive(n.id, routeContext.route.path))?.id ??
-      NAV_ITEMS[0].id
+      ''
   )
+
+  function handleSignalNavigation(id: string, event?: MouseEvent) {
+    if (!event || !isPlainLeftClick(event)) return
+    const item = NAV_ITEMS.find(n => n.id === id)
+    if (!item) return
+    event.preventDefault()
+    navigateToSignal(item.id as SignalName)
+  }
+
+  function handleHomeNavigation(event: MouseEvent) {
+    if (!isPlainLeftClick(event)) return
+    event.preventDefault()
+    navigate('/')
+  }
 
   // --- auto-scroll the virtual list when the selection changes ---
   // Only fires when `selectedID` actually changes (not on items reshuffles),
@@ -313,10 +344,173 @@
   let vlistRef = $state<VirtualListRef | null>(null)
   let drawerBodyEl = $state<HTMLDivElement | null>(null)
   let lastScrolledSelection: string | null = null
+  let preferredItemKey = $state<string | null>(null)
+  let lastRovingSelection: string | null | undefined
+  let renderedRange = $state({ start: 0, end: 1 })
+
+  type NavigableItemParams = { tabIndex: number }
+
+  function itemControl(node: HTMLElement): HTMLElement | null {
+    return (
+      node.querySelector<HTMLElement>(
+        ':scope > button, :scope > a[href], :scope > [tabindex]'
+      ) ?? node.querySelector<HTMLElement>('button, a[href], [tabindex]')
+    )
+  }
+
+  function navigableDrawerItem(
+    node: HTMLElement,
+    initial: NavigableItemParams
+  ) {
+    let params = initial
+    const apply = () => {
+      const control = itemControl(node)
+      if (!control) return
+      control.tabIndex = params.tabIndex
+    }
+    const observer = new MutationObserver(apply)
+    observer.observe(node, { childList: true, subtree: true })
+    apply()
+
+    return {
+      update(next: NavigableItemParams) {
+        params = next
+        apply()
+      },
+      destroy() {
+        observer.disconnect()
+      },
+    }
+  }
+
+  $effect(() => {
+    const keys = items.map(itemKey)
+    const selected = selectedID
+    if (selected !== lastRovingSelection) {
+      lastRovingSelection = selected
+      if (selected && keys.includes(selected)) preferredItemKey = selected
+    }
+    if (preferredItemKey && !keys.includes(preferredItemKey)) {
+      preferredItemKey = selected && keys.includes(selected) ? selected : null
+    }
+  })
+
+  let rovingItemKey = $derived.by(() => {
+    const start = Math.max(0, Math.min(renderedRange.start, items.length))
+    const end = Math.max(start, Math.min(renderedRange.end, items.length))
+    const mountedKeys = items.slice(start, end).map(itemKey)
+    if (preferredItemKey && mountedKeys.includes(preferredItemKey)) {
+      return preferredItemKey
+    }
+    if (selectedID && mountedKeys.includes(selectedID)) return selectedID
+    return mountedKeys[0] ?? null
+  })
+
+  $effect(() => {
+    const body = drawerBodyEl
+    if (!effectivelyOpen || showEmptyState || !body) return
+
+    // The virtual-list package makes its scroll viewport focusable. Rows own
+    // keyboard entry here, so leaving the viewport in the tab order creates a
+    // dead stop immediately before the roving summary control.
+    void tick().then(() => {
+      if (drawerBodyEl !== body) return
+      const viewport = body.querySelector<HTMLElement>(
+        '.signal-drawer__vlist-viewport'
+      )
+      if (viewport) viewport.tabIndex = -1
+    })
+  })
+
+  function handleRenderedRange(range: { start: number; end: number }) {
+    renderedRange = { start: range.start, end: range.end }
+  }
+
+  const DRAWER_LIST_PAGE_STEP = 10
+  const DRAWER_LIST_KEY_DELTAS: Record<string, KeyDelta> = {
+    ArrowDown: { kind: 'relative', offset: 1 },
+    j: { kind: 'relative', offset: 1 },
+    ArrowUp: { kind: 'relative', offset: -1 },
+    k: { kind: 'relative', offset: -1 },
+    PageDown: { kind: 'relative', offset: DRAWER_LIST_PAGE_STEP },
+    PageUp: { kind: 'relative', offset: -DRAWER_LIST_PAGE_STEP },
+    Home: { kind: 'absolute', position: 'first' },
+    End: { kind: 'absolute', position: 'last' },
+  }
+
+  function renderedItemControl(key: string): HTMLElement | null {
+    const wrappers = drawerBodyEl?.querySelectorAll<HTMLElement>(
+      '[data-drawer-item-key]'
+    )
+    if (!wrappers) return null
+    for (const wrapper of wrappers) {
+      if (wrapper.dataset.drawerItemKey === key) return itemControl(wrapper)
+    }
+    return null
+  }
+
+  async function focusDrawerItem(index: number) {
+    const item = items[index]
+    if (!item) return
+    const key = itemKey(item)
+    preferredItemKey = key
+    await tick()
+
+    const rendered = renderedItemControl(key)
+    if (rendered) {
+      rendered.focus()
+      void vlistRef?.scroll({
+        index,
+        align: 'nearest',
+        smoothScroll: false,
+        shouldThrowOnBounds: false,
+      })
+      return
+    }
+
+    await vlistRef?.scroll({
+      index,
+      align: 'nearest',
+      smoothScroll: false,
+      shouldThrowOnBounds: false,
+    })
+    await tick()
+    renderedItemControl(key)?.focus()
+  }
+
+  function drawerItemFromEvent(event: Event): HTMLElement | null {
+    const target = event.target as Element | null
+    const wrapper = target?.closest<HTMLElement>('[data-drawer-item-key]')
+    if (!wrapper || !drawerBodyEl?.contains(wrapper)) return null
+    const focusedControl = target?.closest<HTMLElement>(
+      'button, a[href], [tabindex]'
+    )
+    return focusedControl === itemControl(wrapper) ? wrapper : null
+  }
+
+  function handleListFocusin(event: FocusEvent) {
+    const key = drawerItemFromEvent(event)?.dataset.drawerItemKey
+    if (key) preferredItemKey = key
+  }
+
+  function handleListKeydown(event: KeyboardEvent) {
+    if (event.altKey || event.ctrlKey || event.metaKey) return
+    const wrapper = drawerItemFromEvent(event)
+    const key = wrapper?.dataset.drawerItemKey
+    const delta = DRAWER_LIST_KEY_DELTAS[event.key]
+    if (!key || !delta) return
+
+    const currentIndex = items.findIndex(item => itemKey(item) === key)
+    if (currentIndex < 0 || items.length === 0) return
+    event.preventDefault()
+    const nextIndex = resolveNextPos(delta, currentIndex, items.length - 1)
+    if (nextIndex !== currentIndex) void focusDrawerItem(nextIndex)
+  }
 
   $effect(() => {
     if (!effectivelyOpen) {
       lastScrolledSelection = null
+      renderedRange = { start: 0, end: 1 }
     }
   })
 
@@ -364,16 +558,14 @@
     type="checkbox"
     class="drawer-toggle signal-drawer-toggle"
     checked={effectivelyOpen}
-    disabled={railOnly}
-    onchange={handleToggleChange}
+    disabled
+    aria-hidden="true"
+    tabindex="-1"
   />
-
-  <div class="drawer-content min-h-0 min-w-0">
-    {@render children()}
-  </div>
 
   <div class="drawer-side">
     <div
+      id={drawerPanelID}
       class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
       class:signal-drawer__panel--instant={(skipWidthTransition ||
         isResizing) &&
@@ -421,17 +613,21 @@
               name ("Traces") reads as a filter, not an expander, and a visible
               label that disagrees with the accessible name trips WCAG 2.5.3.
             -->
-              <label
-                for={drawerID}
+              <button
+                bind:this={openDrawerButton}
+                type="button"
                 class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right cursor-pointer"
                 data-tip="Open sidebar"
                 aria-label="Open sidebar"
+                aria-controls={drawerPanelID}
+                aria-expanded="false"
+                onclick={() => setDrawerOpen(true)}
               >
                 <ArrowRightIcon
                   class="h-[17px] w-[17px] animate-[spin-half_200ms_ease-out]"
                   aria-hidden="true"
                 />
-              </label>
+              </button>
             {/if}
           </div>
 
@@ -496,51 +692,70 @@
         {#snippet logsIcon()}<LogIcon
             class="h-[15px] w-[15px] shrink-0"
           />{/snippet}
-        {@const navTabs: PaneTab[] = [
-          { id: 'traces', label: 'Traces', icon: tracesIcon },
-          { id: 'metrics', label: 'Metrics', icon: metricsIcon },
-          { id: 'logs', label: 'Logs', icon: logsIcon },
+        {@const navTabs: PaneNavigationTab[] = [
+          {
+            id: 'traces',
+            label: 'Traces',
+            icon: tracesIcon,
+            href: signalHref('traces', routeContext.route.query),
+          },
+          {
+            id: 'metrics',
+            label: 'Metrics',
+            icon: metricsIcon,
+            href: signalHref('metrics', routeContext.route.query),
+          },
+          {
+            id: 'logs',
+            label: 'Logs',
+            icon: logsIcon,
+            href: signalHref('logs', routeContext.route.query),
+          },
         ]}
         <div class="signal-drawer__header is-drawer-close:hidden">
           <PaneHeader
             mode="tabs"
             tabs={navTabs}
             activeID={activeNavID}
-            onSelect={id => {
-              const item = NAV_ITEMS.find(n => n.id === id)
-              // Switching signal is navigational: push (back returns to prior).
-              if (item) navigateToSignal(item.id as SignalName)
-            }}
+            onSelect={handleSignalNavigation}
+            navigation
             rounded={false}
             ariaLabel="Primary"
           >
             {#snippet right()}
-              <button
-                type="button"
+              <a
+                href="/"
                 class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom"
                 data-tip="Home"
-                onclick={() => navigate('/')}
+                onclick={handleHomeNavigation}
+                aria-current={routeContext.route.path === '/'
+                  ? 'page'
+                  : undefined}
                 aria-label="Home"
               >
                 <HomeIcon
                   class="h-[17px] w-[17px] shrink-0"
                   aria-hidden="true"
                 />
-              </button>
+              </a>
               <ThemeToggle
                 class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom"
               />
-              <label
-                for={drawerID}
+              <button
+                bind:this={collapseDrawerButton}
+                type="button"
                 class="drawer-header-btn drawer-header-btn--inactive cursor-pointer tooltip tooltip-bottom"
                 data-tip="Collapse sidebar"
                 aria-label="Collapse sidebar"
+                aria-controls={drawerPanelID}
+                aria-expanded="true"
+                onclick={() => setDrawerOpen(false)}
               >
                 <ArrowRightIcon
                   class="h-[17px] w-[17px] shrink-0 transition-transform duration-200 rotate-180"
                   aria-hidden="true"
                 />
-              </label>
+              </button>
             {/snippet}
           </PaneHeader>
 
@@ -605,7 +820,13 @@
 
       <!-- Expanded: list (unmounted when collapsed so footer/count cannot leak) -->
       {#if effectivelyOpen}
-        <div class="signal-drawer__body" bind:this={drawerBodyEl}>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="signal-drawer__body"
+          bind:this={drawerBodyEl}
+          onfocusin={handleListFocusin}
+          onkeydown={handleListKeydown}
+        >
           {#if showEmptyState}
             <div class="signal-drawer__empty" role="status">
               <p class="signal-drawer__empty-title">
@@ -619,14 +840,26 @@
             <VirtualList
               bind:this={vlistRef}
               {items}
+              {itemKey}
               defaultEstimatedItemHeight={72}
               bufferSize={10}
               containerClass="signal-drawer__vlist"
               viewportClass="signal-drawer__vlist-viewport"
+              viewportLabel={`${label} list`}
               itemsClass="signal-drawer__vlist-items"
+              onRangeChange={handleRenderedRange}
             >
               {#snippet renderItem(item)}
-                {@render itemSnippet(item, selectedID === itemKey(item))}
+                {@const key = itemKey(item)}
+                <div
+                  class="signal-drawer__item"
+                  data-drawer-item-key={key}
+                  use:navigableDrawerItem={{
+                    tabIndex: key === rovingItemKey ? 0 : -1,
+                  }}
+                >
+                  {@render itemSnippet(item, selectedID === key)}
+                </div>
               {/snippet}
             </VirtualList>
           {/if}
@@ -640,6 +873,10 @@
         </div>
       {/if}
     </div>
+  </div>
+
+  <div class="drawer-content min-h-0 min-w-0">
+    {@render children()}
   </div>
 </div>
 
@@ -742,17 +979,15 @@
     @apply flex w-full min-w-0 shrink-0 flex-col;
   }
 
-  /* Top inset on the header bar (matches page-layout__region). */
+  /* Positioning context for the chrome pinned over the tab strip. PaneHeader's
+     own flush inset supplies the remaining vertical breathing room. */
   .signal-drawer__header :global(.pane-header.pane-header--flush) {
     @apply relative;
-    padding-top: var(--layout-gap);
   }
 
-  /* Chrome shares the tab row's centerline, not the header strip's. The
-     strip is taller than the tab row (12px of top padding), so centering
-     on the strip floated the buttons 6px above the tab labels. Anchoring
-     to the bottom and padding by (tab row 40px - button 32px) / 2 puts
-     button centers on the label line instead. */
+  /* Chrome shares the tab row's centerline. Anchoring to the bottom and
+     padding by (tab row 40px - button 32px) / 2 puts button centers on the
+     label line without depending on the header's top inset. */
   /* The one collapse pattern, settled after building the alternatives:
      when the drawer narrows, the tab strip slides BEHIND the pinned
      chrome and stays scrollable. Icon-only tabs, tabs-covering-chrome,
@@ -853,6 +1088,10 @@
   /* ── Body (list) ── */
   .signal-drawer__body {
     @apply flex-1 min-h-0 overflow-hidden;
+  }
+
+  .signal-drawer__item {
+    @apply min-w-0;
   }
 
   /* ── Empty state (zero results with filters still reachable above) ── */

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   availableAggregationViews,
   defaultAggregationViewFor,
+  rateSlopeBucketSegment,
 } from '@/components/metrics/utils/aggregation'
 import type { ChartPoint } from '@/types/metric-chart-types'
 
@@ -102,5 +103,43 @@ describe('the default aggregation view agrees with the offered ones', () => {
     expect(defaultAggregationViewFor('Sum', 'Cumulative', false, 3)).toBe('raw')
     expect(defaultAggregationViewFor('Sum', 'Cumulative', null, 3)).toBe('raw')
     expect(defaultAggregationViewFor('Sum', 'Cumulative', true, 3)).toBe('rate')
+  })
+})
+
+describe('rateSlopeBucketSegment', () => {
+  it('selects an exact nanosecond bucket instead of a same-ms neighbor', () => {
+    const timestampMs = 1_700_000_000_000
+    const points: ChartPoint[] = [
+      {
+        date: new Date(timestampMs),
+        timestampNs: 1_700_000_000_000_000_100n,
+        value: 1,
+      },
+      {
+        date: new Date(timestampMs),
+        timestampNs: 1_700_000_000_000_000_900n,
+        value: 2,
+        slope: 10,
+      },
+      {
+        date: new Date(timestampMs + 1),
+        timestampNs: 1_700_000_000_001_000_100n,
+        value: 4,
+        slope: 20,
+      },
+    ]
+
+    expect(rateSlopeBucketSegment(points, points[1]!)).toEqual({
+      from: points[0],
+      to: points[1],
+      slope: 10,
+    })
+    expect(
+      rateSlopeBucketSegment(points, {
+        date: new Date(timestampMs),
+        timestampNs: 1_700_000_000_000_000_500n,
+        value: 3,
+      })
+    ).toBeUndefined()
   })
 })

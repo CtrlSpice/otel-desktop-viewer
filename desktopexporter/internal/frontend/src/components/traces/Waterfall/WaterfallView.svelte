@@ -258,7 +258,7 @@
     computeSearchCollapsedParents,
     buildStructuralMaps,
   } from './waterfall-tree'
-  import { ancestorIdsOf } from './waterfall-reveal'
+  import { ancestorIdsOf, keyboardAnchorSpanID } from './waterfall-reveal'
   import {
     collapsedForTrace,
     setCollapsedForTrace,
@@ -406,6 +406,7 @@
     initialWidths,
     fitWidths,
     reconcileWidths,
+    resizeBar,
     barPositions as computeBarPositions,
     startColumnResize,
     type ColumnWidths,
@@ -423,6 +424,8 @@
    * the column it belongs to no matter what was added or removed around
    * it. Stored widths from a different column set reconcile on load. */
   const COLUMN_WIDTHS_KEY = 'waterfall-column-widths'
+  const COLUMN_RESIZE_STEP_PX = 16
+  const COLUMN_RESIZE_LARGE_STEP_PX = 64
 
   function loadStoredWidths(): ColumnWidths {
     if (typeof localStorage === 'undefined') return {}
@@ -459,6 +462,11 @@
 
   let barPositions = $derived(computeBarPositions(wfCols, colWidths))
 
+  function resizeBarPercent(positionPx: number): number {
+    if (scrollContainerW <= 0) return 0
+    return Math.round((positionPx / scrollContainerW) * 100)
+  }
+
   function handleStartResize(barId: string, e: PointerEvent) {
     if (activeResizeCol !== null) return
     activeResizeCol = barId
@@ -476,6 +484,32 @@
         saveColumnWidths()
       }
     )
+  }
+
+  function handleResizeKeydown(barId: string, e: KeyboardEvent) {
+    if (e.key === 'Home') {
+      e.preventDefault()
+      const containerPx = scrollContainerEl?.clientWidth || scrollContainerW
+      colWidths = reconcileWidths(wfCols, {}, containerPx)
+      saveColumnWidths()
+      return
+    }
+
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+
+    const amount = e.shiftKey
+      ? COLUMN_RESIZE_LARGE_STEP_PX
+      : COLUMN_RESIZE_STEP_PX
+    const next = resizeBar(
+      wfCols,
+      colWidths,
+      barId,
+      e.key === 'ArrowLeft' ? -amount : amount
+    )
+    if (next === colWidths) return
+    colWidths = next
+    saveColumnWidths()
   }
 
   onDestroy(() => colDrag?.cancel())
@@ -661,6 +695,14 @@
     () => new Map(rows.map(row => [row.spanNode.spanData.spanID, row]))
   )
 
+  let keyboardAnchorID = $derived(
+    keyboardAnchorSpanID(
+      selectedSpanID,
+      visibleRows.map(row => row.spanNode.spanData.spanID),
+      parentBySpanID
+    )
+  )
+
   type VirtualListRef = {
     scroll: (options: {
       index: number
@@ -720,6 +762,21 @@
   // --- Focus & keyboard on the grid ---
 
   let gridHostEl = $state<HTMLDivElement | null>(null)
+
+  $effect(() => {
+    const grid = gridHostEl
+    if (!grid) return
+
+    // Rows own keyboard entry; the package's focusable scroll viewport would
+    // otherwise add a dead Tab stop immediately before the roving row.
+    void tick().then(() => {
+      if (gridHostEl !== grid) return
+      const viewport = grid.querySelector<HTMLElement>(
+        '.waterfall-vlist-viewport'
+      )
+      if (viewport) viewport.tabIndex = -1
+    })
+  })
 
   async function focusRowTr(spanID: string) {
     await tick()
@@ -784,10 +841,9 @@
 
     const focused = document.activeElement as HTMLElement | null
     const focusedID =
-      focused?.dataset.spanID ??
-      (selectedSpanID && focused?.closest(`tr[data-span-id]`)
-        ? selectedSpanID
-        : null)
+      focused
+        ?.closest<HTMLTableRowElement>('tr[data-span-id]')
+        ?.getAttribute('data-span-id') ?? null
 
     if (handleTreeKeys(e, focusedID ?? selectedSpanID)) return
 
@@ -914,6 +970,27 @@
   </PaneHeader>
   <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
     <div class="col-resize-context waterfall-view__grid-host">
+      {#each barPositions as bar (bar.id)}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <div
+          class="col-resize-bar col-resize-bar--guide"
+          class:col-resize-bar--active={activeResizeCol === bar.id}
+          style:left="{bar.left}px"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize {bar.id} column"
+          aria-valuenow={resizeBarPercent(bar.left)}
+          aria-valuemin={resizeBarPercent(bar.min)}
+          aria-valuemax={resizeBarPercent(bar.max)}
+          aria-valuetext="{resizeBarPercent(bar.left)} percent from left"
+          tabindex="0"
+          onpointerdown={e => handleStartResize(bar.id, e)}
+          onkeydown={e => handleResizeKeydown(bar.id, e)}
+        >
+          <div class="col-resize-bar__line"></div>
+        </div>
+      {/each}
       <table
         class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
       >
@@ -943,8 +1020,10 @@
           items={visibleRows}
           defaultEstimatedItemHeight={WATERFALL_ROW_HEIGHT_PX}
           bufferSize={12}
+          itemKey={row => row.spanNode.spanData.spanID}
           containerClass="waterfall-vlist"
           viewportClass="waterfall-vlist-viewport"
+          viewportLabel="Span waterfall rows"
           itemsClass="waterfall-vlist-items"
         >
           {#snippet renderItem(row)}
@@ -953,6 +1032,7 @@
               {row}
               {barGridPercents}
               selected={sid === selectedSpanID}
+              tabbable={sid === keyboardAnchorID}
               visible={true}
               subtreeCollapsed={effectiveCollapsed.has(sid)}
               matched={hasActiveSearch && matchedIDs.has(sid)}
@@ -968,19 +1048,6 @@
           {/snippet}
         </VirtualList>
       </div>
-      {#each barPositions as bar (bar.id)}
-        <div
-          class="col-resize-bar col-resize-bar--guide"
-          class:col-resize-bar--active={activeResizeCol === bar.id}
-          style:left="{bar.left}px"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize {bar.id} column"
-          onpointerdown={e => handleStartResize(bar.id, e)}
-        >
-          <div class="col-resize-bar__line"></div>
-        </div>
-      {/each}
     </div>
   </div>
   {#if footer}

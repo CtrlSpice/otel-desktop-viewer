@@ -90,6 +90,31 @@ describe('DrawerSearchPanel toolbar segment', () => {
     )
   })
 
+  it('focuses the selected option when the trigger opens the menu', async () => {
+    renderPanel({ segment: 'toolbar' })
+    await openSortMenu()
+    expect(
+      screen.getByRole('menuitemradio', { name: 'Duration' })
+    ).toHaveFocus()
+  })
+
+  it('opens to the first or last option with ArrowDown or ArrowUp', async () => {
+    renderPanel({ segment: 'toolbar' })
+    const user = userEvent.setup()
+    const trigger = screen.getByRole('button', { name: /^Sort by/ })
+    trigger.focus()
+
+    await user.keyboard('{ArrowDown}')
+    expect(
+      screen.getByRole('menuitemradio', { name: 'Start time' })
+    ).toHaveFocus()
+    await user.keyboard('{Escape}')
+    await user.keyboard('{ArrowUp}')
+    expect(
+      screen.getByRole('menuitemradio', { name: 'Span count' })
+    ).toHaveFocus()
+  })
+
   it('lists every sort option in the open sort menu', async () => {
     renderPanel({ segment: 'toolbar' })
     await openSortMenu()
@@ -109,6 +134,41 @@ describe('DrawerSearchPanel toolbar segment', () => {
     expect(
       screen.getByRole('menuitemradio', { name: 'Start time' })
     ).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('moves focus with arrows and Home/End, wrapping at the menu edges', async () => {
+    renderPanel({ segment: 'toolbar' })
+    const user = userEvent.setup()
+    await openSortMenu()
+
+    await user.keyboard('{ArrowDown}')
+    expect(
+      screen.getByRole('menuitemradio', { name: 'Span count' })
+    ).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(
+      screen.getByRole('menuitemradio', { name: 'Start time' })
+    ).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(
+      screen.getByRole('menuitemradio', { name: 'Span count' })
+    ).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(
+      screen.getByRole('menuitemradio', { name: 'Start time' })
+    ).toHaveFocus()
+  })
+
+  it('closes on Escape and restores focus to the trigger', async () => {
+    renderPanel({ segment: 'toolbar' })
+    const user = userEvent.setup()
+    await openSortMenu()
+    await user.keyboard('{Escape}')
+
+    expect(
+      screen.queryByRole('menu', { name: 'Sort by' })
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Sort by/ })).toHaveFocus()
   })
 
   it('requests descending order when a magnitude field is chosen first', async () => {
@@ -170,6 +230,7 @@ describe('DrawerSearchPanel toolbar segment', () => {
     expect(
       screen.queryByRole('menu', { name: 'Sort by' })
     ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Sort by/ })).toHaveFocus()
   })
 
   it('leaves out the query editor', () => {

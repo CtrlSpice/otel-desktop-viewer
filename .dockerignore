@@ -1,7 +1,14 @@
 .git
 .github
+.claude
+.clinerules
+.vscode
+**/.DS_Store
 **/node_modules
 desktopexporter/internal/frontend/dist
+desktopexporter/internal/frontend/playwright-report
+desktopexporter/internal/frontend/test-results
+desktopexporter/internal/frontend/blob-report
 otel-desktop-viewer
 *.duckdb
 *.db

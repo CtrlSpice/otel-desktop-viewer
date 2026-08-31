@@ -757,6 +757,13 @@ func TestMacros_BucketExtents(t *testing.T) {
 			wantNull: true,
 		},
 		{
+			// One catch-all bucket says how many observations arrived, but with no
+			// bounds it says nothing finite about where any observation lies.
+			name:     "explicit: empty bounds have no finite extents",
+			expr:     `hist_buckets([]::double[], [7]::bigint[])`,
+			wantNull: true,
+		},
+		{
 			// The range spans observed buckets, not the whole layout: counts
 			// only in (1,2] must not report a max of 5.
 			name: "explicit: only a middle bucket holds counts",
@@ -783,9 +790,11 @@ func TestMacros_BucketExtents(t *testing.T) {
 			).Scan(&mn, &mx))
 			if tc.wantNull {
 				assert.False(t, mn.Valid, "expected no extents, got min %v", mn.Float64)
+				assert.False(t, mx.Valid, "expected no extents, got max %v", mx.Float64)
 				return
 			}
-			require.True(t, mn.Valid, "expected extents, got NULL")
+			require.True(t, mn.Valid, "expected min extent, got NULL")
+			require.True(t, mx.Valid, "expected max extent, got NULL")
 			assert.Equal(t, tc.min, mn.Float64, "min")
 			assert.Equal(t, tc.max, mx.Float64, "max")
 		})

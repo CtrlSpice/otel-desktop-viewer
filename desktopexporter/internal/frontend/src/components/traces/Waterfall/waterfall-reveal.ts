@@ -20,3 +20,21 @@ export function ancestorIdsOf(
   }
   return ancestors
 }
+
+/** Choose the single visible row through which keyboard focus enters the tree. */
+export function keyboardAnchorSpanID(
+  selectedSpanID: string | null,
+  visibleSpanIDs: readonly string[],
+  parentOf: ReadonlyMap<string, string | null>
+): string | null {
+  const firstVisibleID = visibleSpanIDs[0] ?? null
+  if (!selectedSpanID) return firstVisibleID
+
+  const visible = new Set(visibleSpanIDs)
+  if (visible.has(selectedSpanID)) return selectedSpanID
+
+  return (
+    ancestorIdsOf(selectedSpanID, parentOf).find(id => visible.has(id)) ??
+    firstVisibleID
+  )
+}

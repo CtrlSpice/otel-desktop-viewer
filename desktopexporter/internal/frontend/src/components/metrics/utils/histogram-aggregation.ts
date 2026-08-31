@@ -19,6 +19,7 @@ export type HistogramSlicePoint =
   | {
       kind: 'histogram'
       timestamp: bigint
+      sourceDatapointID?: string
       attributesKey: string
       bounds: number[]
       counts: number[]
@@ -29,6 +30,7 @@ export type HistogramSlicePoint =
   | {
       kind: 'expHistogram'
       timestamp: bigint
+      sourceDatapointID?: string
       attributesKey: string
       scale: number
       zeroThreshold: number
@@ -206,9 +208,20 @@ function quantilePointsFromMergedSlices(
     points.push({
       date: new Date(Number(slice.timestamp / 1_000_000n)),
       value,
+      timestampNs: slice.timestamp,
+      sourceDatapointID: slice.sourceDatapointID,
     })
   }
-  points.sort((a, b) => a.date.getTime() - b.date.getTime())
+  points.sort((a, b) => {
+    const millisecondOrder = a.date.getTime() - b.date.getTime()
+    if (millisecondOrder !== 0) return millisecondOrder
+    if (a.timestampNs === undefined || b.timestampNs === undefined) return 0
+    return a.timestampNs < b.timestampNs
+      ? -1
+      : a.timestampNs > b.timestampNs
+        ? 1
+        : 0
+  })
   return points
 }
 
@@ -258,6 +271,7 @@ export function seriesBucketsToSlices(
         out.push({
           kind: 'histogram',
           timestamp: dp.timestamp,
+          sourceDatapointID: dp.id,
           attributesKey: ts.attributesKey,
           bounds: dp.explicitBounds ?? [],
           counts: dp.bucketCounts ?? [],
@@ -269,6 +283,7 @@ export function seriesBucketsToSlices(
       out.push({
         kind: 'expHistogram',
         timestamp: dp.timestamp,
+        sourceDatapointID: dp.id,
         attributesKey: ts.attributesKey,
         scale: dp.scale ?? 0,
         zeroThreshold: dp.zeroThreshold ?? 0,

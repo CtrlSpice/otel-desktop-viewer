@@ -1,19 +1,18 @@
 <script module lang="ts">
   /*
    * PaneHeader: the single header strip used by every pane in the
-   * unified layout. Three modes, one visual contract.
+   * unified layout. Four modes, one visual contract.
    *
    * Modes
-   *   • title       — plain bold label on the bar background, no lift.
+   *   • title       — plain bold label on the bar background, no tabs.
    *                   Use for panes with no tab navigation (e.g. "Fields",
    *                   "Timeseries", "Log Record").
-   *   • tabs        — daisyUI tabs-lift strip. Active tab lifts into the
-   *                   pane body below. Use when the pane has 2+ navigable
-   *                   views.
-   *   • title-tabs  — flat title on the left + lift tabs on the right.
+   *   • tabs        — flat tab strip with an underlined active item. Use
+   *                   when the pane has 2+ views or route destinations.
+   *   • title-tabs  — flat title on the left + local tabs on the right.
    *                   Use when the pane has a stable label AND tabs that
    *                   switch a sub-view inside the same pane.
-   *   • toolbar     — chrome strip with no title or lift tabs. Use the
+   *   • toolbar     — chrome strip with no title or tabs. Use the
    *                   `right` snippet for a full-width control row (e.g.
    *                   time-range preset pills in the datetime popover).
    *
@@ -34,8 +33,8 @@
    *   right-aligned via the bar's own flex layout.
    *
    * Consumer contract
-   *   The active lift tab merges into the surface directly below the
-   *   header (bg-base-200 pane body). The header itself is bg-base-300.
+   *   The header is bg-base-300. Selection is drawn inside each tab without
+   *   manufacturing borders around or between the header and pane body.
    */
   import type { Snippet } from 'svelte'
   import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
@@ -55,6 +54,18 @@
     count?: number
     /** Disabled tabs render greyed out and ignore clicks. */
     disabled?: boolean
+    /** Route destination; present only when the strip is navigation. */
+    href?: string
+  }
+
+  export type PaneNavigationTab = PaneTab & {
+    /** Real destination used when the strip is route navigation. */
+    href: string
+  }
+
+  /** Stable ID shared by a local tab and its associated tabpanel. */
+  export function paneTabID(panelID: string, tabID: string): string {
+    return `${panelID}-tab-${tabID}`
   }
 
   export type PaneBadge = {
@@ -109,8 +120,12 @@
     mode: 'tabs'
     tabs: PaneTab[]
     activeID: string
-    onSelect: (id: string) => void
+    onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
+    /** Route navigation renders real links instead of ARIA tabs. */
+    navigation?: boolean
+    /** ID of the local tabpanel controlled by every tab in this strip. */
+    tabPanelID?: string
   }
 
   type TitleTabsProps = CommonProps & {
@@ -120,8 +135,10 @@
     subtitle?: string
     tabs: PaneTab[]
     activeID: string
-    onSelect: (id: string) => void
+    onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
+    /** ID of the local tabpanel controlled by every tab in this strip. */
+    tabPanelID: string
   }
 
   type ToolbarProps = CommonProps & {
@@ -146,6 +163,47 @@
       ? 'pane-header--stacked'
       : ''
   )
+
+  function handleTablistKeydown(event: KeyboardEvent) {
+    const tablist = event.currentTarget as HTMLElement
+    const target = (event.target as Element | null)?.closest<HTMLButtonElement>(
+      '[role="tab"]'
+    )
+    if (!target || !tablist.contains(target)) return
+
+    const tabs = Array.from(
+      tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)')
+    )
+    const currentIndex = tabs.indexOf(target)
+    if (currentIndex < 0 || tabs.length === 0) return
+
+    let nextIndex: number
+    if (event.key === 'ArrowRight') {
+      nextIndex = (currentIndex + 1) % tabs.length
+    } else if (event.key === 'ArrowLeft') {
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = tabs.length - 1
+    } else {
+      return
+    }
+
+    event.preventDefault()
+    const next = tabs[nextIndex]
+    next.focus()
+    next.click()
+  }
+
+  function tabbableTabID(
+    tabs: PaneTab[],
+    activeID: string
+  ): string | undefined {
+    return tabs.some(tab => tab.id === activeID && !tab.disabled)
+      ? activeID
+      : tabs.find(tab => !tab.disabled)?.id
+  }
 </script>
 
 {#snippet metaRow()}
@@ -193,42 +251,72 @@
 {#snippet tabStrip(
   tabs: PaneTab[],
   activeID: string,
-  onSelect: (id: string) => void,
+  onSelect: (id: string, event?: MouseEvent) => void,
   ariaLabel: string,
-  layout: PaneTabLayout
+  layout: PaneTabLayout,
+  navigation = false,
+  tabPanelID?: string
 )}
   <div class="pane-header__tab-scroll pane-header__tab-scroll--{layout}">
     <div
-      role="tablist"
+      role={navigation ? 'navigation' : 'tablist'}
       aria-label={ariaLabel}
-      class="tabs tabs-lift {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
+      class="tabs {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
+      onkeydown={navigation ? undefined : handleTablistKeydown}
     >
       {#if layout === 'right'}
         <span class="pane-header__tab-lead" aria-hidden="true"></span>
       {/if}
       {#each tabs as tab (tab.id)}
         {@const active = tab.id === activeID}
-        <button
-          type="button"
-          role="tab"
-          class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
-            ? 'tab-active [--tab-bg:var(--color-base-200)]'
-            : ''}"
-          aria-selected={active}
-          disabled={tab.disabled}
-          title={tab.label}
-          onclick={() => !tab.disabled && onSelect(tab.id)}
-        >
-          {#if tab.icon}
-            <span class="pane-header__tab-icon shrink-0">
-              {@render tab.icon()}
-            </span>
-          {/if}
-          <span class="pane-header__tab-label">{tab.label}</span>
-          {#if tab.count !== undefined}
-            <span class="badge-count">{tab.count}</span>
-          {/if}
-        </button>
+        {#if navigation && tab.href}
+          <a
+            href={tab.disabled ? undefined : tab.href}
+            class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
+              ? 'tab-active'
+              : ''}"
+            aria-current={active ? 'page' : undefined}
+            aria-disabled={tab.disabled ? 'true' : undefined}
+            tabindex={tab.disabled ? -1 : undefined}
+            title={tab.label}
+            onclick={event => !tab.disabled && onSelect(tab.id, event)}
+          >
+            {#if tab.icon}
+              <span class="pane-header__tab-icon shrink-0">
+                {@render tab.icon()}
+              </span>
+            {/if}
+            <span class="pane-header__tab-label">{tab.label}</span>
+            {#if tab.count !== undefined}
+              <span class="badge-count">{tab.count}</span>
+            {/if}
+          </a>
+        {:else}
+          <button
+            type="button"
+            role="tab"
+            id={tabPanelID ? paneTabID(tabPanelID, tab.id) : undefined}
+            aria-controls={tabPanelID}
+            class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
+              ? 'tab-active'
+              : ''}"
+            aria-selected={active}
+            tabindex={tab.id === tabbableTabID(tabs, activeID) ? 0 : -1}
+            disabled={tab.disabled}
+            title={tab.label}
+            onclick={event => !tab.disabled && onSelect(tab.id, event)}
+          >
+            {#if tab.icon}
+              <span class="pane-header__tab-icon shrink-0">
+                {@render tab.icon()}
+              </span>
+            {/if}
+            <span class="pane-header__tab-label">{tab.label}</span>
+            {#if tab.count !== undefined}
+              <span class="badge-count">{tab.count}</span>
+            {/if}
+          </button>
+        {/if}
       {/each}
       {#if layout === 'left'}
         <span class="pane-header__tab-trail" aria-hidden="true"></span>
@@ -267,7 +355,9 @@
         props.activeID,
         props.onSelect,
         props.ariaLabel ?? 'Pane tabs',
-        props.tabLayout ?? 'left'
+        props.tabLayout ?? 'left',
+        props.navigation ?? false,
+        props.tabPanelID
       )}
       {#if props.right}
         <div class="pane-header__right">{@render props.right()}</div>
@@ -306,7 +396,9 @@
         props.activeID,
         props.onSelect,
         props.ariaLabel ?? `${props.title} tabs`,
-        props.tabLayout ?? 'right'
+        props.tabLayout ?? 'right',
+        false,
+        props.tabPanelID
       )}
       {#if props.right}
         <div class="pane-header__right">{@render props.right()}</div>
@@ -344,7 +436,7 @@
     @apply pt-1;
   }
 
-  /* Title-only: centered vertically since there are no lift tabs.
+  /* Title-only: centered vertically since there are no tabs.
      px-3 matches FieldGroup headings and detail row inset. */
   .pane-header--title {
     @apply items-center px-3 py-2;
@@ -512,16 +604,46 @@
 
   /* DaisyUI's `.tabs` is `display:flex; flex-wrap:wrap` and each
      `.tab` is itself `inline-flex; flex-wrap:wrap`. Both layers
-     can wrap when the pane gets narrow, which knocks the lift
-     tabs out of alignment. Force nowrap on both for every layout. */
+     can wrap when the pane gets narrow, which knocks the tabs out
+     of alignment. Force nowrap on both for every layout. */
   .pane-header :global(.tabs.pane-header__tabs) {
     flex-wrap: nowrap !important;
     align-items: flex-end;
+    @apply gap-1;
   }
 
   .pane-header :global(.tabs.pane-header__tabs > .tab) {
     flex-wrap: nowrap !important;
     white-space: nowrap;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* One selection language everywhere: Daisy's lifted borders stay absent,
+     while the inset underline does not alter tab or header geometry. */
+  .pane-header :global(.pane-header__tabs > .pane-header__tab.tab-active) {
+    color: var(--color-base-content);
+    background: var(
+      --pane-tab-active-bg,
+      color-mix(in oklab, var(--color-primary) 7%, transparent)
+    );
+    box-shadow: inset 0 -2px var(--color-primary);
+  }
+
+  .pane-header :global(.pane-header__tabs > .pane-header__tab:focus-visible) {
+    color: var(--color-base-content);
+    outline: none;
+    background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+    box-shadow: inset 0 -3px var(--color-primary);
+  }
+
+  @media (forced-colors: active) {
+    .pane-header :global(.pane-header__tabs > .pane-header__tab:focus-visible) {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
   }
 
   /* Equal layout: each tab gets 1fr of the row. No trail; no
@@ -536,12 +658,8 @@
      gaps. Override at the call site with style="--pane-tab-min: …"
      if a future tab strip uses longer labels.
 
-     Note: do NOT set `overflow: hidden` on the tab — daisyUI's
-     tabs-lift draws the rounded outer corners via a ::before pseudo
-     that extends past the tab box, so clipping overflow erases the
-     notch. The pixel min on the resize panel (minDetailPx) is what
-     prevents these mins from ever forcing the strip wider than the
-     pane. */
+     The pixel min on the resize panel (minDetailPx) prevents these mins from
+     ever forcing the strip wider than the pane. */
   .pane-header :global(.tabs.pane-header__tabs--equal) {
     --pane-tab-min: 7rem;
   }
@@ -552,6 +670,6 @@
   }
 
   .pane-header__tab-trail {
-    @apply min-w-4 shrink-0 grow self-stretch border-b border-base-300;
+    @apply min-w-4 shrink-0 grow self-stretch;
   }
 </style>

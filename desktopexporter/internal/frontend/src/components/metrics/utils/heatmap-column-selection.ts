@@ -132,11 +132,7 @@ export function heatmapColumnSelectionAt(
   timestampNs: bigint,
   temporality: string
 ): HeatmapColumnSelection | null {
-  let idx = series.findIndex(s => s.timestamp === timestampNs)
-  if (idx < 0) {
-    const targetMs = Number(timestampNs / 1_000_000n)
-    idx = series.findIndex(s => Number(s.timestamp / 1_000_000n) === targetMs)
-  }
+  const idx = series.findIndex(s => s.timestamp === timestampNs)
   if (idx < 0) return null
 
   const slice = series[idx]!

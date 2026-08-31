@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { createRawSnippet } from 'svelte'
-import { screen } from '@testing-library/svelte'
+import { screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import SignalListDrawer from './SignalListDrawer.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -21,8 +21,19 @@ const itemSnippet = createRawSnippet<[DrawerItem, boolean]>(
   })
 )
 
+const keyboardItemSnippet = createRawSnippet<[DrawerItem, boolean]>(
+  (item, selected) => ({
+    render: () =>
+      `<button type="button">${item().name}${selected() ? ' (selected)' : ''}</button>`,
+  })
+)
+
 const pageContent = createRawSnippet(() => ({
   render: () => '<p>page body</p>',
+}))
+
+const focusablePageContent = createRawSnippet(() => ({
+  render: () => '<button type="button">Page action</button>',
 }))
 
 const footer = createRawSnippet(() => ({
@@ -50,8 +61,8 @@ beforeAll(() => {
 // the bare component would collapse T to unknown and reject our snippet.
 const TypedDrawer = SignalListDrawer<DrawerItem>
 
-function renderDrawer(props: Record<string, unknown> = {}) {
-  return renderWithContexts(TypedDrawer, {
+function drawerProps(props: Record<string, unknown> = {}) {
+  return {
     items,
     selectedID: null,
     drawerID: 'traces-drawer',
@@ -59,7 +70,20 @@ function renderDrawer(props: Record<string, unknown> = {}) {
     itemSnippet,
     children: pageContent,
     ...props,
-  })
+  }
+}
+
+function renderDrawer(props: Record<string, unknown> = {}) {
+  return renderWithContexts(TypedDrawer, drawerProps(props))
+}
+
+function mountedRows() {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('.signal-drawer__item')
+  ).map(wrapper => ({
+    key: wrapper.dataset.drawerItemKey,
+    control: wrapper.querySelector<HTMLButtonElement>('button')!,
+  }))
 }
 
 describe('SignalListDrawer', () => {
@@ -118,49 +142,223 @@ describe('SignalListDrawer empty and loading states', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
+  it('removes the viewport tab stop when an empty list receives items', async () => {
+    setTestUrl('/traces')
+    const view = renderDrawer({ items: [] })
+    expect(
+      screen.queryByRole('region', { name: 'Traces list' })
+    ).not.toBeInTheDocument()
+
+    await view.rerender({
+      component: TypedDrawer,
+      componentProps: drawerProps(),
+    })
+
+    const viewport = await screen.findByRole('region', { name: 'Traces list' })
+    await waitFor(() => expect(viewport).toHaveAttribute('tabindex', '-1'))
+  })
+
   it('keeps the search and time controls reachable when there are no results', () => {
     setTestUrl('/traces')
     renderDrawer({ items: [], drawerSearch })
     expect(screen.getByText('search box')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Traces' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Traces' })).toBeInTheDocument()
   })
 })
 
 describe('SignalListDrawer navigation', () => {
-  it('marks the tab for the signal in the URL as selected', () => {
+  it('marks the destination for the signal in the URL as current', () => {
     setTestUrl('/metrics')
     renderDrawer({ label: 'Metrics' })
-    expect(screen.getByRole('tab', { name: 'Metrics' })).toHaveAttribute(
-      'aria-selected',
-      'true'
+    expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute(
+      'aria-current',
+      'page'
     )
-    expect(screen.getByRole('tab', { name: 'Traces' })).toHaveAttribute(
-      'aria-selected',
-      'false'
+    expect(screen.getByRole('link', { name: 'Traces' })).not.toHaveAttribute(
+      'aria-current'
     )
   })
 
-  it('falls back to the first tab when the URL matches no signal', () => {
+  it('marks no signal destination current when the URL matches no signal', () => {
     setTestUrl('/')
     renderDrawer()
-    expect(screen.getByRole('tab', { name: 'Traces' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
+    for (const name of ['Traces', 'Metrics', 'Logs']) {
+      expect(screen.getByRole('link', { name })).not.toHaveAttribute(
+        'aria-current'
+      )
+    }
   })
 
   it('navigates to another signal when its tab is clicked', async () => {
     setTestUrl('/traces')
     renderDrawer()
-    await userEvent.click(screen.getByRole('tab', { name: 'Logs' }))
+    await userEvent.click(screen.getByRole('link', { name: 'Logs' }))
     expect(window.location.pathname).toBe('/logs')
   })
 
   it('navigates home when the home button is clicked', async () => {
     setTestUrl('/traces')
     renderDrawer()
-    await userEvent.click(screen.getByRole('button', { name: 'Home' }))
+    await userEvent.click(screen.getByRole('link', { name: 'Home' }))
     expect(window.location.pathname).toBe('/')
+  })
+
+  it('uses real hrefs that preserve the active time window', () => {
+    setTestUrl('/traces?start=10&end=20&span=old')
+    renderDrawer()
+    expect(screen.getByRole('link', { name: 'Logs' })).toHaveAttribute(
+      'href',
+      '/logs?start=10&end=20'
+    )
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute(
+      'href',
+      '/'
+    )
+  })
+
+  it('does not intercept modified signal or Home clicks', () => {
+    setTestUrl('/traces')
+    renderDrawer()
+    for (const name of ['Logs', 'Home']) {
+      const link = screen.getByRole('link', { name })
+      const event = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        metaKey: true,
+      })
+      let preventedByComponent = false
+      link.addEventListener(
+        'click',
+        clickEvent => {
+          preventedByComponent = clickEvent.defaultPrevented
+          clickEvent.preventDefault()
+        },
+        { once: true }
+      )
+
+      link.dispatchEvent(event)
+      expect(preventedByComponent).toBe(false)
+    }
+    expect(window.location.pathname).toBe('/traces')
+  })
+})
+
+describe('SignalListDrawer list keyboard navigation', () => {
+  it('labels the viewport without making it a second list tab stop', async () => {
+    setTestUrl('/traces')
+    renderDrawer({ itemSnippet: keyboardItemSnippet })
+    const viewport = screen.getByRole('region', { name: 'Traces list' })
+
+    await waitFor(() => expect(viewport).toHaveAttribute('tabindex', '-1'))
+  })
+
+  it('keeps one row in the tab order and moves focus with list keys', async () => {
+    setTestUrl('/traces')
+    renderDrawer({ itemSnippet: keyboardItemSnippet })
+    const user = userEvent.setup()
+    const first = screen.getByRole('button', { name: 'GET /checkout' })
+    const second = screen.getByRole('button', { name: 'POST /orders' })
+
+    await waitFor(() => expect(first).toHaveAttribute('tabindex', '0'))
+    expect(second).toHaveAttribute('tabindex', '-1')
+    first.focus()
+    await user.keyboard('{ArrowDown}')
+    await waitFor(() => expect(second).toHaveFocus())
+    expect(first).toHaveAttribute('tabindex', '-1')
+    expect(second).toHaveAttribute('tabindex', '0')
+
+    await user.keyboard('{Home}')
+    await waitFor(() => expect(first).toHaveFocus())
+  })
+
+  it('preserves a mounted roving item through a long-list reorder', async () => {
+    const longItems = Array.from({ length: 40 }, (_, index) => ({
+      id: `item-${index}`,
+      name: `Item ${index}`,
+    }))
+    setTestUrl('/traces')
+    const view = renderDrawer({
+      items: longItems,
+      itemSnippet: keyboardItemSnippet,
+    })
+    const stable = await screen.findByRole('button', { name: 'Item 5' })
+    stable.focus()
+    await waitFor(() => expect(stable).toHaveAttribute('tabindex', '0'))
+
+    const reordered = [
+      ...longItems.slice(0, 4),
+      longItems[5],
+      longItems[4],
+      ...longItems.slice(6),
+    ]
+    await view.rerender({
+      component: TypedDrawer,
+      componentProps: drawerProps({
+        items: reordered,
+        itemSnippet: keyboardItemSnippet,
+      }),
+    })
+
+    const stableAfter = await screen.findByRole('button', { name: 'Item 5' })
+    await waitFor(() => expect(stableAfter).toHaveAttribute('tabindex', '0'))
+    expect(stableAfter).toHaveFocus()
+  })
+
+  it('chooses one mounted fallback after long-list reorder and replacement without stealing external focus', async () => {
+    const longItems = Array.from({ length: 40 }, (_, index) => ({
+      id: `item-${index}`,
+      name: `Item ${index}`,
+    }))
+    setTestUrl('/traces')
+    const view = renderDrawer({
+      items: longItems,
+      itemSnippet: keyboardItemSnippet,
+    })
+    const oldRoving = await screen.findByRole('button', { name: 'Item 5' })
+    oldRoving.focus()
+    await waitFor(() => expect(oldRoving).toHaveAttribute('tabindex', '0'))
+    const external = screen.getByRole('link', { name: 'Home' })
+    external.focus()
+
+    const reordered = [
+      ...longItems.filter(item => item.id !== 'item-5'),
+      longItems[5],
+    ]
+    await view.rerender({
+      component: TypedDrawer,
+      componentProps: drawerProps({
+        items: reordered,
+        itemSnippet: keyboardItemSnippet,
+      }),
+    })
+
+    await waitFor(() => {
+      const rows = mountedRows()
+      expect(rows.length).toBeLessThan(longItems.length)
+      const tabbable = rows.filter(row => row.control.tabIndex === 0)
+      expect(tabbable).toHaveLength(1)
+      expect(tabbable[0].key).not.toBe('item-5')
+    })
+    expect(external).toHaveFocus()
+
+    const replacement = Array.from({ length: 40 }, (_, index) => ({
+      id: `replacement-${index}`,
+      name: `Replacement ${index}`,
+    }))
+    await view.rerender({
+      component: TypedDrawer,
+      componentProps: drawerProps({
+        items: replacement,
+        itemSnippet: keyboardItemSnippet,
+      }),
+    })
+
+    await waitFor(() => {
+      const tabbable = mountedRows().filter(row => row.control.tabIndex === 0)
+      expect(tabbable).toHaveLength(1)
+      expect(tabbable[0].key).toMatch(/^replacement-/)
+    })
+    expect(external).toHaveFocus()
   })
 })
 
@@ -199,7 +397,7 @@ describe('SignalListDrawer collapse behaviour', () => {
   it('opens by default when no preference is stored', () => {
     setTestUrl('/traces')
     renderDrawer()
-    expect(screen.getByRole('tab', { name: 'Traces' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Traces' })).toBeInTheDocument()
     expect(screen.queryByLabelText('Open sidebar')).not.toBeInTheDocument()
   })
 
@@ -208,9 +406,25 @@ describe('SignalListDrawer collapse behaviour', () => {
     renderDrawer()
     await userEvent.click(screen.getByLabelText('Collapse sidebar'))
     expect(screen.getByLabelText('Open sidebar')).toBeInTheDocument()
-    expect(
-      screen.queryByRole('tab', { name: 'Traces' })
-    ).not.toBeInTheDocument()
+    expect(document.querySelector('.signal-drawer__header')).toBeNull()
+  })
+
+  it('keeps focus on the corresponding toggle as the drawer changes state', async () => {
+    setTestUrl('/traces')
+    renderDrawer()
+    const collapse = screen.getByRole('button', { name: 'Collapse sidebar' })
+    collapse.focus()
+    await userEvent.click(collapse)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Open sidebar' })).toHaveFocus()
+    )
+
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Collapse sidebar' })
+      ).toHaveFocus()
+    )
   })
 
   it('drops the list and footer when collapsed', async () => {
@@ -256,19 +470,30 @@ describe('SignalListDrawer collapse behaviour', () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'false')
     setTestUrl('/traces')
     renderDrawer()
-    await userEvent.click(screen.getByRole('button', { name: 'Metrics' }))
+    await userEvent.click(screen.getByRole('link', { name: 'Metrics' }))
     expect(window.location.pathname).toBe('/metrics')
   })
 })
 
 describe('SignalListDrawer rail-only pages', () => {
+  it('puts primary navigation before page controls in the tab order', async () => {
+    setTestUrl('/')
+    renderDrawer({
+      railOnly: true,
+      items: [],
+      children: focusablePageContent,
+    })
+    const user = userEvent.setup()
+
+    await user.tab()
+    expect(screen.getByRole('link', { name: 'Traces' })).toHaveFocus()
+  })
+
   it('stays collapsed even when the stored preference says open', () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'true')
     setTestUrl('/')
     renderDrawer({ railOnly: true, items: [] })
-    expect(
-      screen.queryByRole('tab', { name: 'Traces' })
-    ).not.toBeInTheDocument()
+    expect(document.querySelector('.signal-drawer__header')).toBeNull()
     expect(screen.getByText('page body')).toBeInTheDocument()
   })
 
@@ -276,7 +501,7 @@ describe('SignalListDrawer rail-only pages', () => {
     setTestUrl('/')
     renderDrawer({ railOnly: true, items: [] })
     expect(screen.queryByLabelText('Open sidebar')).not.toBeInTheDocument()
-    expect(screen.getByRole('checkbox')).toBeDisabled()
+    expect(document.querySelector('input[type="checkbox"]')).toBeDisabled()
   })
 
   it('shows neither the list nor the empty state', () => {

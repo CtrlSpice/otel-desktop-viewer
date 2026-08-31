@@ -9,19 +9,22 @@
     Tooltip,
   } from 'layerchart'
   import { scaleBand, scaleThreshold } from 'd3-scale'
+  import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
   import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
   import { computeHeatmapColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import {
     computeHeatmapLayout,
     computeHeatmapPlotHeight,
   } from '@/components/metrics/utils/heatmap-layout'
-  import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
+  import {
+    buildHistogramHeatmapData,
+    type HeatmapDatum,
+  } from '@/components/metrics/utils/histogram-heatmap-data'
   import { themeSignal } from '@/state/theme.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import ChartSelectionLegend from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
   import { histogramColumnSelectionLegendRows } from '@/components/metrics/utils/heatmap-column-selection'
   import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
-  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import {
     axisBucketBounds,
     axisTime,
@@ -29,24 +32,16 @@
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { formatDateTime } from '@/utils/time'
+  import {
+    gridCursorCommandForKey,
+    isChartActivationKey,
+  } from '@/components/metrics/utils/chart-keyboard-cursor'
+  import { createGridChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
 
   const timeContext = getTimeContext()
   const ctx = getMetricViewContext()
-
-  // `time` is the raw bucket-start timestamp in milliseconds. We
-  // intentionally do NOT pre-format it here -- a formatted string
-  // would silently collapse two datapoints sharing the same wall-clock
-  // time-of-day on different days into a single column. Keeping the
-  // band scale's domain numeric is the cheap fix; the axis formatter
-  // and tooltip render the human label at display time only.
-  type HeatmapDatum = {
-    time: number
-    bucket: string
-    /** Numeric sort key for the y band scale (low → high). */
-    bucketOrder: number
-    count: number
-  }
 
   // The fetch was lifted up to MetricViewContext so the Heatmap and
   // Aggregated tabs can share one bucket-series request. This component is
@@ -59,14 +54,15 @@
     points: HistogramSlicePoint[]
     height?: number
     timeRange?: { startMs: number; endMs: number } | null
-    /** Click handler. Receives the bucket-start timestamp in ms. */
-    onSelect?: (timestampMs: number) => void
-    /** When set, the matching column gets a highlight. ms timestamp. */
-    selectedTimestamp?: number | null
+    /** Click handler. Receives the exact bucket-start timestamp. */
+    onSelect?: (timestampNs: bigint) => void
+    /** Exact bucket-start timestamp for the highlighted column. */
+    selectedTimestamp?: bigint | null
     /** Bottom inset inside the LayerChart plot (room for x-axis labels). */
     plotPaddingBottom?: number
     /** Metric unit for bucket-bound y-axis labelling (e.g. "ms"). */
     unit?: string
+    onClearSelection?: () => void
   }
 
   let {
@@ -77,14 +73,11 @@
     selectedTimestamp = null,
     plotPaddingBottom = chartPadding.bottom,
     unit = '',
+    onClearSelection,
   }: Props = $props()
 
   let plotAreaHeight = $state(0)
   let plotBoxHeight = $derived(plotAreaHeight > 0 ? plotAreaHeight : height)
-
-  function tsToMs(ts: bigint): number {
-    return Number(ts / 1_000_000n)
-  }
 
   // Tooltip header uses the project-standard datetime formatter at
   // millisecond resolution. Includes the timezone suffix so the user
@@ -93,142 +86,36 @@
     return formatDateTime(ms, timeContext.tz, 'milliseconds')
   }
 
-  function formatBound(v: number): string {
-    if (v === 0) return '0'
-    if (Math.abs(v) >= 1000) return v.toExponential(1)
-    if (Math.abs(v) < 0.01) return v.toExponential(1)
-    return v.toPrecision(3)
-  }
+  // Rendering and count lookup retain nonzero cells only. The separate column
+  // and row arrays describe missing intersections as logical zero cells.
+  let heatmapModel = $derived(buildHistogramHeatmapData(points))
+  let heatmapColumns = $derived(heatmapModel.columns)
+  let heatmapData = $derived(heatmapModel.cells)
 
-  let heatmapData = $derived.by((): HeatmapDatum[] => {
-    if (points.length === 0) return []
-    const first = points[0]
-    if (first.kind === 'histogram') {
-      return buildHistogramData(points)
-    }
-    return buildExpHistogramData(points)
-  })
+  // Exact domains are O(columns + rows), independent of conceptual cells.
+  let timeDomain = $derived(heatmapColumns.map(column => column.key))
 
-  function buildHistogramData(pts: HistogramSlicePoint[]): HeatmapDatum[] {
-    const data: HeatmapDatum[] = []
-    for (const pt of pts) {
-      if (pt.kind !== 'histogram') continue
-      const time = tsToMs(pt.timestamp)
-      const bounds = pt.bounds
-      const counts = pt.counts
-      for (let i = 0; i < counts.length; i++) {
-        // Skip empty buckets so "no data here" shows the chart background
-        // instead of the ramp's lowest swatch. Without this, count=0
-        // cells map to the same colour as count=1 cells (both fall in
-        // the first quantize band), and the user can't tell "this bucket
-        // never received a sample" from "this bucket got a single hit".
-        // ExpHistogram already does this implicitly by only emitting
-        // buckets inside its offset range; this brings Histogram in line.
-        if (counts[i] === 0) continue
-        let label: string
-        let bucketOrder: number
-        if (i === 0) {
-          label = bounds.length > 0 ? `≤${formatBound(bounds[0])}` : '0'
-          bucketOrder = bounds.length > 0 ? bounds[0]! : 0
-        } else if (i < bounds.length) {
-          bucketOrder = (bounds[i - 1]! + bounds[i]!) / 2
-          label = formatBound(bucketOrder)
-        } else {
-          bucketOrder = bounds.length > 0 ? bounds[bounds.length - 1]! : 0
-          label =
-            bounds.length > 0
-              ? `≥${formatBound(bounds[bounds.length - 1])}`
-              : '0'
-        }
-        data.push({ time, bucket: label, bucketOrder, count: counts[i] })
-      }
-    }
-    return data
-  }
+  let columnByKey = $derived(
+    new Map(heatmapColumns.map(column => [column.key, column]))
+  )
 
-  function buildExpHistogramData(pts: HistogramSlicePoint[]): HeatmapDatum[] {
-    const data: HeatmapDatum[] = []
-    for (const pt of pts) {
-      if (pt.kind !== 'expHistogram') continue
-      const time = tsToMs(pt.timestamp)
-      const buckets = expBuckets(
-        pt.scale,
-        pt.negativeOffset,
-        pt.negativeCounts,
-        pt.zeroCount,
-        pt.positiveOffset,
-        pt.positiveCounts
-      )
-      for (const bucket of buckets) {
-        if (bucket.cnt === 0) continue
-        const bucketOrder =
-          bucket.lo === bucket.hi ? bucket.lo : (bucket.lo + bucket.hi) / 2
-        const label =
-          bucket.lo === bucket.hi && bucket.lo === 0
-            ? '0'
-            : formatBound(bucketOrder)
-        data.push({
-          time,
-          bucket: label,
-          bucketOrder,
-          count: bucket.cnt,
-        })
-      }
-    }
-    return data
-  }
+  let bucketDomain = $derived(heatmapModel.rows.map(row => row.key))
 
-  // Ordered domain arrays for band scales — preserve time ordering and
-  // bucket ordering (by numeric value, ascending bottom-to-top).
-  // timeDomain is the de-duplicated list of bucket-start timestamps in
-  // their first-seen order. Backend already returns bucket rows in
-  // time order, so first-seen == sorted-ascending without an extra
-  // sort. Using a Set (not Map + indexOf) so dedup is O(n), not O(n^2).
-  let timeDomain = $derived.by(() => {
-    const seen = new Set<number>()
-    const ordered: number[] = []
-    for (const d of heatmapData) {
-      if (!seen.has(d.time)) {
-        seen.add(d.time)
-        ordered.push(d.time)
-      }
-    }
-    return ordered
-  })
-
-  let bucketDomain = $derived.by(() => {
-    const orderByLabel = new Map<string, number>()
-    for (const d of heatmapData) {
-      const prev = orderByLabel.get(d.bucket)
-      if (prev === undefined || d.bucketOrder < prev) {
-        orderByLabel.set(d.bucket, d.bucketOrder)
-      }
-    }
-    return [...orderByLabel.entries()]
-      .sort((a, b) => a[1] - b[1])
-      .map(([label]) => label)
-      .reverse()
-  })
+  let bucketLabelByKey = $derived(
+    new Map(heatmapModel.rows.map(row => [row.key, row.label]))
+  )
 
   // Anchor cDomain at 0 (not min) so blank-ish cells visually correspond to
   // "nothing happened" rather than "the lowest observed count" -- otherwise
   // an all-medium map and an all-low map look the same.
-  let maxCount = $derived.by(() => {
-    let m = 0
-    for (const d of heatmapData) if (d.count > m) m = d.count
-    return m
-  })
+  let maxCount = $derived(heatmapModel.maxCount)
 
   // Adaptive step count over the **non-zero** distinct values. 0 isn't part
   // of the active ramp -- it's its own swatch (base-200, matches the chart
   // surface), and the heatmap colour scale (scaleThreshold below) maps any
   // value < 1 to that swatch. So a chart that's all zeros and a single
   // positive value still gets a sensible 1-step ramp.
-  let distinctNonZeroCounts = $derived.by(() => {
-    const seen = new Set<number>()
-    for (const d of heatmapData) if (d.count > 0) seen.add(d.count)
-    return seen.size
-  })
+  let distinctNonZeroCounts = $derived(heatmapModel.distinctNonZeroCount)
 
   let colorScale = $derived.by(() =>
     computeHeatmapColorScale({
@@ -254,6 +141,75 @@
     const step = Math.ceil(n / 7)
     return timeDomain.filter((_, i) => i % step === 0)
   })
+
+  let heatmapCountByCell = $derived(heatmapModel.countByColumn)
+
+  let selectedColumnKey = $derived.by(() => {
+    if (selectedTimestamp === null || selectedTimestamp === undefined) {
+      return null
+    }
+    return (
+      heatmapColumns.find(column => column.timestampNs === selectedTimestamp)
+        ?.key ?? null
+    )
+  })
+  const keyboardNavigation = createGridChartKeyboardCursor(
+    () => timeDomain,
+    () => bucketDomain,
+    () => selectedColumnKey
+  )
+  let activeKeyboardCursor = $derived(keyboardNavigation.current)
+  let keyboardFocused = $derived(keyboardNavigation.focused)
+
+  function handleKeyboardFocusChange(focused: boolean) {
+    keyboardNavigation.setFocused(focused)
+  }
+
+  let keyboardReadout = $derived.by((): string => {
+    const cursor = activeKeyboardCursor
+    if (!cursor) return ''
+    const column = columnByKey.get(String(cursor.columnKey))
+    const bucketKey = String(cursor.rowKey)
+    if (!column) return ''
+    const bucket = bucketLabelByKey.get(bucketKey) ?? bucketKey
+    const count = heatmapCountByCell.get(column.key)?.get(bucketKey) ?? 0
+    const unitSuffix =
+      unit.trim() && unit.trim() !== '1' ? ` ${unit.trim()}` : ''
+    const bucketWithUnit =
+      bucket === 'all values' ? bucket : `${bucket}${unitSuffix}`
+    return (
+      `Column ${cursor.columnIndex + 1} of ${timeDomain.length}, ${formatTooltipTime(column.timestampMs)}. ` +
+      `Row ${cursor.rowIndex + 1} of ${bucketDomain.length}, bucket ${bucketWithUnit}. ` +
+      `Count ${count}.`
+    )
+  })
+
+  function handleChartKeyboard(event: KeyboardEvent) {
+    const command = gridCursorCommandForKey(event)
+    if (command) {
+      event.preventDefault()
+      event.stopPropagation()
+      keyboardNavigation.move(command)
+      return
+    }
+
+    if (isChartActivationKey(event.key)) {
+      const cursor = activeKeyboardCursor
+      if (!cursor || !onSelect) return
+      const column = columnByKey.get(String(cursor.columnKey))
+      if (!column) return
+      event.preventDefault()
+      event.stopPropagation()
+      onSelect(column.timestampNs)
+      return
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      onClearSelection?.()
+    }
+  }
 
   // --- Cell sizing ---
   //
@@ -308,6 +264,23 @@
 
   let yBandScale = $derived(scaleBand().paddingOuter(0).padding(0))
 
+  let heatmapScrollElement = $state<HTMLElement | undefined>(undefined)
+
+  $effect(() => {
+    if (!keyboardFocused) return
+    const viewport = heatmapScrollElement
+    const cursor = activeKeyboardCursor
+    if (!viewport || !cursor || columnPitch <= 0) return
+    const left = heatmapPlotPadding.left + cursor.columnIndex * columnPitch
+    const right = left + columnPitch
+    if (left < viewport.scrollLeft) {
+      viewport.scrollLeft = Math.max(0, left - heatmapPlotPadding.left)
+    } else if (right > viewport.scrollLeft + viewport.clientWidth) {
+      viewport.scrollLeft =
+        right - viewport.clientWidth + heatmapPlotPadding.right
+    }
+  })
+
   function handleHeatmapClick(event: MouseEvent) {
     if (!onSelect || timeDomain.length === 0 || columnPitch <= 0) return
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
@@ -315,13 +288,14 @@
     if (plotX < 0 || plotX > plotWidth) return
     const idx = Math.floor(plotX / columnPitch)
     if (idx < 0 || idx >= timeDomain.length) return
-    onSelect(timeDomain[idx])
+    const column = columnByKey.get(timeDomain[idx]!)
+    if (!column) return
+    onSelect(column.timestampNs)
   }
 
   let selectedColumnX = $derived.by(() => {
-    if (selectedTimestamp === null || selectedTimestamp === undefined)
-      return null
-    const idx = timeDomain.indexOf(selectedTimestamp)
+    if (selectedColumnKey === null) return null
+    const idx = timeDomain.indexOf(selectedColumnKey)
     if (idx < 0) return null
     return idx * columnPitch
   })
@@ -341,9 +315,39 @@
   let hasColumnSelectionSummary = $derived(
     columnSelectionRowColumns.some(column => column.length > 0)
   )
+
+  let keyboardRowHeight = $derived(
+    bucketDomain.length > 0 ? maxPlotHeight / bucketDomain.length : 0
+  )
+  let keyboardShortcuts = $derived([
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowUp',
+    'ArrowDown',
+    'Home',
+    'End',
+    'Control+Home',
+    'Control+End',
+    'Meta+Home',
+    'Meta+End',
+    ...(onSelect ? ['Enter', 'Space'] : []),
+    'Escape',
+  ])
+  let keyboardInstructions = $derived(
+    `Use Left and Right to inspect time columns and Up and Down to inspect bucket rows. Home and End move to row boundaries; Control or Command plus Home or End move to grid boundaries.${onSelect ? ' Enter or Space selects the current time column.' : ''} Escape clears chart selection.`
+  )
+
+  function formatTimeTick(key: unknown): string {
+    const column = columnByKey.get(String(key))
+    return column ? axisTime(timeContext.tz).format(column.timestampMs) : ''
+  }
+
+  function formatBucketTick(key: unknown): string {
+    return bucketLabelByKey.get(String(key)) ?? String(key)
+  }
 </script>
 
-{#if heatmapData.length === 0}
+{#if timeDomain.length === 0 || bucketDomain.length === 0}
   <MetricChartEmpty {height} message="No bucket data in range" />
 {:else}
   <div class="metric-heatmap-chart" style:height="{height}px">
@@ -371,32 +375,32 @@
       </div>
     {/if}
     <div
-      class="metric-heatmap-chart__plot"
+      class="metric-heatmap-chart__plot chart-keyboard-surface-host"
       bind:clientWidth={containerWidth}
       bind:clientHeight={plotAreaHeight}
     >
-      <div class="heatmap-scroll" class:heatmap-scroll--active={heatmapScrolls}>
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div
+        class="heatmap-scroll"
+        class:heatmap-scroll--active={heatmapScrolls}
+        bind:this={heatmapScrollElement}
+      >
+        <!-- Pointer coordinates stay on the scroll-sized chart target; the
+             named outer surface owns all equivalent keyboard handling. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="heatmap-wrapper"
           class:heatmap-wrapper--clickable={!!onSelect}
           style:width="{scrollChartWidth}px"
           style:height="{chartRenderHeight}px"
           onclick={handleHeatmapClick}
-          onkeydown={e => {
-            if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
-              e.preventDefault()
-            }
-          }}
-          role={onSelect ? 'button' : undefined}
-          tabindex={onSelect ? 0 : undefined}
         >
           <Chart
             data={heatmapData}
-            x="time"
+            x="columnKey"
             xScale={xBandScale}
             xDomain={timeDomain}
-            y="bucket"
+            y="bucketKey"
             yScale={yBandScale}
             yDomain={bucketDomain}
             c="count"
@@ -413,13 +417,15 @@
                 placement="bottom"
                 {...axisTime(timeContext.tz)}
                 ticks={visibleTimeTicks}
+                format={formatTimeTick}
               />
               <Axis
                 placement="left"
                 {...axisBucketBounds(unit)}
                 ticks={visibleBucketTicks}
+                format={formatBucketTick}
               />
-              <Cell x="time" y="bucket" fill="count" />
+              <Cell x="columnKey" y="bucketKey" fill="count" />
               {#if selectedColumnX !== null}
                 <Rect
                   x={selectedColumnX}
@@ -430,14 +436,23 @@
                 />
               {/if}
               <Highlight area={{ class: 'heatmap-hover-column' }} axis="x" />
+              {#if keyboardFocused && activeKeyboardCursor && keyboardRowHeight > 0}
+                <Rect
+                  x={activeKeyboardCursor.columnIndex * columnPitch}
+                  y={activeKeyboardCursor.rowIndex * keyboardRowHeight}
+                  width={columnPitch}
+                  height={keyboardRowHeight}
+                  class="chart-keyboard-cursor-cell"
+                />
+              {/if}
             </Layer>
             <Tooltip.Root>
               {#snippet children({ data }: { data: HeatmapDatum })}
                 <Tooltip.Header class="text-center"
-                  >{formatTooltipTime(data.time)}</Tooltip.Header
+                  >{formatTooltipTime(data.timestampMs)}</Tooltip.Header
                 >
                 <Tooltip.List>
-                  <Tooltip.Item label="bucket" value={data.bucket} />
+                  <Tooltip.Item label="bucket" value={data.bucketLabel} />
                   <Tooltip.Separator />
                   <Tooltip.Item
                     label="count"
@@ -450,6 +465,16 @@
           </Chart>
         </div>
       </div>
+      <ChartKeyboardSurface
+        id="metric-heatmap-keyboard-surface"
+        label="Histogram heatmap"
+        roleDescription="interactive heatmap"
+        instructions={keyboardInstructions}
+        readout={keyboardReadout}
+        shortcuts={keyboardShortcuts}
+        onKeydown={handleChartKeyboard}
+        onFocusChange={handleKeyboardFocusChange}
+      />
     </div>
   </div>
 {/if}
@@ -543,20 +568,15 @@
     @apply overflow-x-auto;
   }
 
-  .heatmap-wrapper :global(.lc-rect) {
+  .heatmap-wrapper
+    :global(.lc-rect:not(.heatmap-selection):not(.chart-keyboard-cursor-cell)) {
     stroke: none;
     shape-rendering: crispEdges;
   }
 
-  /* Cursor affordance + light keyboard-focus ring when the heatmap is
-     interactive. Only applied when onSelect is wired so non-interactive
-     surfaces (Gauge/Sum, where the heatmap isn't even rendered, but
-     defensive) don't lie about being clickable. */
+  /* Pointer affordance applies only when column selection is wired. */
   .heatmap-wrapper--clickable {
     @apply cursor-pointer;
-  }
-  .heatmap-wrapper--clickable:focus-visible {
-    @apply outline outline-2 outline-offset-2 outline-primary/60;
   }
 
   /* Full-column hover band (Highlight axis="x"). */

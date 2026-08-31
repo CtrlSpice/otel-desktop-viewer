@@ -3,10 +3,12 @@
 .PHONY: install
 install:
 	cd desktopexporter/internal/frontend && npm install
+	cd desktopexporter/internal/frontend && npx playwright install chromium
 
 .PHONY: install-clean
 install-clean:
 	cd desktopexporter/internal/frontend && rm -rf node_modules package-lock.json && npm install
+	cd desktopexporter/internal/frontend && npx playwright install chromium
 
 .PHONY: build-go
 build-go:
@@ -134,9 +136,17 @@ format-ts-check:
 validate-ts:
 	cd desktopexporter/internal/frontend && npm run check
 
+.PHONY: validate-playwright
+validate-playwright:
+	cd desktopexporter/internal/frontend && npx tsc --project tsconfig.playwright.json
+
 .PHONY: test-ts
 test-ts:
 	cd desktopexporter/internal/frontend && npm test
+
+.PHONY: test-a11y
+test-a11y:
+	cd desktopexporter/internal/frontend && npm run test:a11y
 
 .PHONY: build
 build: build-ts build-go
@@ -145,14 +155,14 @@ build: build-ts build-go
 run: build-ts
 	go run . --browser-port 8000
 
-# Mirrors what CI enforces, so a green `make test` means a green PR. The
-# format checks run first because they cost seconds and the test suites cost
-# minutes -- and because the formatting gap is what actually bit: prettier is
-# part of the frontend CI job, `format-ts` only rewrites files, and nothing
-# local ran `format:check`, so seven unformatted files went out across several
-# commits before CI caught them.
+# Runs the primary local quality gate. CI also checks generated parser output,
+# guarded store access, and platform builds. The format checks run first because
+# they cost seconds and the test suites cost minutes -- and because the
+# formatting gap is what actually bit: prettier is part of the frontend CI job,
+# `format-ts` only rewrites files, and nothing local ran `format:check`, so seven
+# unformatted files went out across several commits before CI caught them.
 .PHONY: test
-test: format-go-check format-ts-check validate-ts build-ts-check test-go test-ts
+test: format-go-check format-ts-check validate-ts validate-playwright build-ts-check test-go test-ts test-a11y
 
 .PHONY: release-dry-run
 release-dry-run:
@@ -175,13 +185,15 @@ help:
 	@echo "Available targets:"
 	@echo ""
 	@echo "Frontend:"
-	@echo "  install           - Install frontend dependencies"
-	@echo "  install-clean     - Clean install (removes node_modules first)"
+	@echo "  install           - Install frontend dependencies and Playwright Chromium"
+	@echo "  install-clean     - Clean install, including Playwright Chromium"
 	@echo "  build-ts          - Build frontend"
 	@echo "  format-ts         - Format frontend code (Prettier)"
 	@echo "  format-ts-check   - Fail if any frontend file needs Prettier"
 	@echo "  validate-ts       - Type check frontend"
+	@echo "  validate-playwright - Type check Playwright tests"
 	@echo "  test-ts           - Run frontend unit tests (Vitest)"
+	@echo "  test-a11y         - Run browser accessibility tests (Playwright + axe)"
 	@echo "  dev-ts            - Start frontend dev server (Vite)"
 	@echo ""
 	@echo "Server:"
@@ -199,7 +211,7 @@ help:
 	@echo "Convenience:"
 	@echo "  build             - Build frontend and Go binary"
 	@echo "  run               - Build frontend, then run server (in-memory)"
-	@echo "  test              - Run Go tests, frontend type check, and frontend unit tests"
+	@echo "  test              - Run the primary local formatting, build, and test gate"
 	@echo "  dev-go            - Kill port, start server, seed traces + logs + metrics"
 	@echo ""
 	@echo "Other:"

@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "test:a11y": "playwright test",
     "test:watch": "vitest",
     "generate:grammar": "node scripts/generate-grammar.mjs"
   },
@@ -40,7 +41,9 @@
     "svelte": "^5.56.9"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@lezer/generator": "^1.8.0",
+    "@playwright/test": "1.62.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",

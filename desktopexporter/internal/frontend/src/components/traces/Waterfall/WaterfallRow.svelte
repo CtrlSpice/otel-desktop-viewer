@@ -11,6 +11,7 @@
     row: WaterfallRowData
     barGridPercents: readonly number[]
     selected: boolean
+    tabbable: boolean
     visible: boolean
     subtreeCollapsed: boolean
     spanColWidth: number
@@ -25,6 +26,7 @@
     row,
     barGridPercents,
     selected,
+    tabbable,
     visible,
     subtreeCollapsed,
     spanColWidth,
@@ -93,7 +95,7 @@
   class:waterfall-row--matched={matched}
   data-span-id={span.spanID}
   style:visibility={visible ? 'visible' : 'collapse'}
-  tabindex={selected && visible ? 0 : -1}
+  tabindex={tabbable && visible ? 0 : -1}
   onclick={onRowClick}
   aria-hidden={!visible ? true : undefined}
   aria-level={ariaLevel}

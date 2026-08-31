@@ -173,11 +173,6 @@
     cursor: pointer;
   }
 
-  .signal-row:focus-visible {
-    outline: var(--focus-ring-width) solid var(--focus-ring-color);
-    outline-offset: var(--focus-ring-offset);
-  }
-
   .signal-row--selected {
     @apply bg-primary/[0.07];
     box-shadow: inset 2px 0 0 0 var(--color-primary);
@@ -195,6 +190,24 @@
       var(--color-primary) 10%,
       var(--color-base-200)
     );
+  }
+
+  .signal-row:focus-visible {
+    --row-surface: color-mix(
+      in srgb,
+      var(--color-primary) 12%,
+      var(--color-base-200)
+    );
+    outline: none;
+    background: var(--row-surface);
+    box-shadow: inset 3px 0 0 0 var(--color-primary);
+  }
+
+  @media (forced-colors: active) {
+    .signal-row:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
   }
 
   /* Single-line rows: fixed height + flex centering matches detail-cell

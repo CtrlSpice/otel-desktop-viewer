@@ -8,6 +8,7 @@
   import { scaleTime } from 'd3-scale'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { formatDateTime } from '@/utils/time'
+  import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import ChartSelectionLegend, {
     type SelectionLegendRow,
@@ -26,6 +27,13 @@
     quantileLabelForKey,
   } from '@/components/metrics/utils/histogram-aggregation'
   import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
+  import {
+    isChartActivationKey,
+    lineCursorAt,
+    lineCursorCommandForKey,
+    stablePointCursorKey,
+  } from '@/components/metrics/utils/chart-keyboard-cursor'
+  import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
 
   type QuantileLineMeta = {
     seriesKey: string
@@ -48,9 +56,10 @@
     emptyMessage?: string
     onChartPointClick?: (
       seriesKey: string,
-      clickedAt: Date,
+      timestampNs: bigint,
       quantileKey: string | null
     ) => void
+    onClearSelection?: () => void
   }
 
   let {
@@ -62,6 +71,7 @@
     timeRange = null,
     emptyMessage = 'No quantile data in range',
     onChartPointClick,
+    onClearSelection,
   }: Props = $props()
 
   const timeContext = getTimeContext()
@@ -160,10 +170,153 @@
   let yAxisLabel = $derived(unit.trim() || 'value')
 
   let selectedDate = $derived.by((): Date | null => {
-    const ts = ctx.heatmapSelectedTimestamp
+    const ts = ctx.heatmapColumnStartNs
     if (ts === null || ts === undefined) return null
-    return new Date(ts)
+    return new Date(Number(ts / 1_000_000n))
   })
+
+  let keyboardLines = $derived(
+    chartSeries
+      .filter(series => series.data.length > 0)
+      .map(series => ({
+        key: series.key,
+        points: series.data.map((point, pointIndex) => ({
+          key: stablePointCursorKey(
+            {
+              sourceKey: point.sourceDatapointID,
+              timestampNs: point.timestampNs,
+              timestampMs: point.date.getTime(),
+            },
+            pointIndex
+          ),
+          timestampMs: point.date.getTime(),
+          timestampNs: point.timestampNs,
+        })),
+      }))
+  )
+  let initialKeyboardCursor = $derived.by(() => {
+    if (ctx.heatmapColumnStartNs === null) return null
+    const quantileKey = ctx.selectedQuantileKey
+    const preferredLine = quantileKey
+      ? timeseries.find(
+          series =>
+            parseQuantileSeriesKey(series.key)?.quantileKey === quantileKey
+        )?.key
+      : null
+    return lineCursorAt(keyboardLines, {
+      lineKey: preferredLine,
+      timestampMs: selectedDate?.getTime() ?? null,
+      timestampNs: ctx.heatmapColumnStartNs,
+      requireExact: true,
+    })
+  })
+  const keyboardNavigation = createLineChartKeyboardCursor(
+    () => keyboardLines,
+    () => initialKeyboardCursor
+  )
+  let activeKeyboardCursor = $derived(keyboardNavigation.current)
+  let keyboardFocused = $derived(keyboardNavigation.focused)
+
+  function handleKeyboardFocusChange(focused: boolean) {
+    keyboardNavigation.setFocused(focused)
+  }
+
+  let keyboardSeries = $derived.by(() => {
+    if (!activeKeyboardCursor) return undefined
+    return chartSeries.find(
+      series => series.key === activeKeyboardCursor.lineKey
+    )
+  })
+  let keyboardPoint = $derived.by(() => {
+    const cursor = activeKeyboardCursor
+    const series = keyboardSeries
+    if (!cursor || !series) return undefined
+    return series.data[cursor.pointIndex]
+  })
+  let keyboardReadout = $derived.by((): string => {
+    const cursor = activeKeyboardCursor
+    const series = keyboardSeries
+    const point = keyboardPoint
+    if (!cursor || !series || !point) return ''
+    const timestamp = formatDateTime(
+      point.date.getTime(),
+      timeContext.tz,
+      'milliseconds'
+    )
+    const trimmedUnit = unit.trim()
+    const value = `${formatMetricValue(point.value)}${
+      trimmedUnit && trimmedUnit !== '1' ? ` ${trimmedUnit}` : ''
+    }`
+    return (
+      `Line ${cursor.lineIndex + 1} of ${keyboardLines.length}, ${series.label}. ` +
+      `Point ${cursor.pointIndex + 1} of ${series.data.length}, ${timestamp}. ` +
+      `Value ${value}.`
+    )
+  })
+
+  function handleChartKeyboard(event: KeyboardEvent) {
+    const command = lineCursorCommandForKey(event)
+    if (command) {
+      event.preventDefault()
+      event.stopPropagation()
+      keyboardNavigation.move(command)
+      return
+    }
+
+    if (isChartActivationKey(event.key)) {
+      const cursor = activeKeyboardCursor
+      const point = keyboardPoint
+      if (!cursor || point?.timestampNs === undefined || !onChartPointClick) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      const meta = lineMetaByKey.get(cursor.lineKey)
+      onChartPointClick(
+        meta?.seriesKey ?? cursor.lineKey,
+        point.timestampNs,
+        meta?.quantileKey ?? null
+      )
+      return
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      onClearSelection?.()
+    }
+  }
+
+  let keyboardCursorMark = $derived.by(() => {
+    if (!keyboardFocused) return null
+    const series = keyboardSeries
+    const point = keyboardPoint
+    if (!series || !point) return null
+    return { date: point.date, value: point.value, color: series.color }
+  })
+  let keyboardCanActivate = $derived(
+    !!onChartPointClick &&
+      chartSeries.some(series =>
+        series.data.some(point => point.timestampNs !== undefined)
+      )
+  )
+  let keyboardShortcuts = $derived([
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowUp',
+    'ArrowDown',
+    'Home',
+    'End',
+    'Control+Home',
+    'Control+End',
+    'Meta+Home',
+    'Meta+End',
+    ...(keyboardCanActivate ? ['Enter', 'Space'] : []),
+    'Escape',
+  ])
+  let keyboardInstructions = $derived(
+    `Use Left and Right to inspect points. Use Up and Down to inspect lines. Home and End move to line boundaries; Control or Command plus Home or End move to chart boundaries.${keyboardCanActivate ? ' Enter or Space selects the current quantile column.' : ''} Escape clears chart selection.`
+  )
 
   let selectionTimestamp = $derived.by((): string => {
     const sel = ctx.quantilePointSelection
@@ -215,7 +368,8 @@
   )
 
   let selectionDots = $derived.by(() => {
-    if (selectedDate === null) return []
+    const selectedTimestampNs = ctx.heatmapColumnStartNs
+    if (selectedTimestampNs === null) return []
     const quantileFilter = ctx.selectedQuantileKey
     const dots: {
       key: string
@@ -225,12 +379,14 @@
     for (const group of quantileGroups) {
       for (const line of group.lines) {
         if (quantileFilter && line.quantileKey !== quantileFilter) continue
-        const value = nearestValueAt(line.points, selectedDate)
-        if (value === undefined || !Number.isFinite(value)) continue
+        const point = line.points.find(
+          candidate => candidate.timestampNs === selectedTimestampNs
+        )
+        if (!point || !Number.isFinite(point.value)) continue
         dots.push({
           key: `${group.seriesKey}:${line.quantileKey}`,
           color: group.color,
-          value,
+          value: point.value,
         })
       }
     }
@@ -274,13 +430,65 @@
     return null
   }
 
+  function chartPointValue(data: unknown): number | undefined {
+    if (data == null || typeof data !== 'object') return undefined
+    const row = data as {
+      value?: number
+      y?: number
+      data?: { value?: number; y?: number }
+    }
+    const value = row.value ?? row.y ?? row.data?.value ?? row.data?.y
+    return value !== undefined && Number.isFinite(value) ? value : undefined
+  }
+
+  function chartPointTimestampNs(
+    data: unknown,
+    lineKey?: string
+  ): bigint | null {
+    const row =
+      data != null && typeof data === 'object'
+        ? (data as { timestampNs?: unknown; data?: unknown })
+        : null
+    if (typeof row?.timestampNs === 'bigint') return row.timestampNs
+    if (row?.data != null && typeof row.data === 'object') {
+      const nested = row.data as { timestampNs?: unknown }
+      if (typeof nested.timestampNs === 'bigint') return nested.timestampNs
+    }
+
+    const date = chartPointDate(data)
+    if (!date) return null
+    const candidates = (
+      lineKey
+        ? chartSeries.filter(series => series.key === lineKey)
+        : chartSeries
+    ).flatMap(series =>
+      series.data.filter(point => point.date.getTime() === date.getTime())
+    )
+    const exactTimestamps = new Set(
+      candidates
+        .map(point => point.timestampNs)
+        .filter((value): value is bigint => value !== undefined)
+    )
+    if (exactTimestamps.size === 1) return [...exactTimestamps][0]!
+
+    const value = chartPointValue(data)
+    if (value === undefined) return null
+    const valueTimestamps = new Set(
+      candidates
+        .filter(point => point.value === value)
+        .map(point => point.timestampNs)
+        .filter((timestamp): timestamp is bigint => timestamp !== undefined)
+    )
+    return valueTimestamps.size === 1 ? [...valueTimestamps][0]! : null
+  }
+
   function dispatchPointClick(
-    date: Date,
+    timestampNs: bigint,
     seriesKey?: string,
     quantileKey: string | null = null
   ) {
     if (!onChartPointClick) return
-    onChartPointClick(seriesKey ?? '', date, quantileKey)
+    onChartPointClick(seriesKey ?? '', timestampNs, quantileKey)
   }
 
   // layerchart 2.0 stable invokes onPointClick with { point, data } (no
@@ -293,19 +501,24 @@
       point?: { seriesKey?: string; data?: unknown }
     }
   ) {
-    const date =
-      chartPointDate(details.point?.data) ?? chartPointDate(details.data)
-    if (!date) return
-    e.stopPropagation()
     const key = details.point?.seriesKey ?? ''
+    const timestampNs =
+      chartPointTimestampNs(details.data, key) ??
+      chartPointTimestampNs(details.point?.data, key)
+    if (timestampNs === null) return
+    e.stopPropagation()
     const meta = lineMetaByKey.get(key)
-    dispatchPointClick(date, meta?.seriesKey ?? key, meta?.quantileKey ?? null)
+    dispatchPointClick(
+      timestampNs,
+      meta?.seriesKey ?? key,
+      meta?.quantileKey ?? null
+    )
   }
 
   function handleTooltipClick(e: MouseEvent, detail: { data: unknown }) {
-    const date = chartPointDate(detail.data)
-    if (!date) return
-    dispatchPointClick(date, '', null)
+    const timestampNs = chartPointTimestampNs(detail.data)
+    if (timestampNs === null) return
+    dispatchPointClick(timestampNs, '', null)
   }
 </script>
 
@@ -343,7 +556,7 @@
       </div>
     {/if}
     <div
-      class="metric-quantile-area-chart__plot"
+      class="metric-quantile-area-chart__plot chart-keyboard-surface-host"
       bind:clientHeight={plotAreaHeight}
     >
       <MetricChartPlot height={plotAreaHeight > 0 ? plotAreaHeight : height}>
@@ -443,9 +656,41 @@
                 {/each}
               </g>
             {/if}
+            {#if keyboardCursorMark && context.yScale}
+              {@const keyboardX = context.xScale(keyboardCursorMark.date)}
+              {@const keyboardY = context.yScale(keyboardCursorMark.value)}
+              {@const keyboardTop = context.yRange[1]}
+              {@const keyboardBottom = context.yRange[0]}
+              <g class="chart-keyboard-cursor" aria-hidden="true">
+                <Line
+                  x1={keyboardX}
+                  x2={keyboardX}
+                  y1={keyboardTop}
+                  y2={keyboardBottom}
+                  class="chart-keyboard-cursor-rule"
+                />
+                <circle
+                  cx={keyboardX}
+                  cy={keyboardY}
+                  r="6"
+                  fill={keyboardCursorMark.color}
+                  class="chart-keyboard-cursor-point"
+                />
+              </g>
+            {/if}
           {/snippet}
         </LineChart>
       </MetricChartPlot>
+      <ChartKeyboardSurface
+        id="metric-quantile-keyboard-surface"
+        label="Histogram quantile chart"
+        roleDescription="interactive quantile chart"
+        instructions={keyboardInstructions}
+        readout={keyboardReadout}
+        shortcuts={keyboardShortcuts}
+        onKeydown={handleChartKeyboard}
+        onFocusChange={handleKeyboardFocusChange}
+      />
     </div>
   </div>
 {:else}

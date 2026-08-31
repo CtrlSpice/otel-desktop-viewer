@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { waitFor } from '@testing-library/svelte'
 import WaterfallView from './WaterfallView.svelte'
@@ -78,6 +78,14 @@ function rowIDs(): string[] {
   return [...document.querySelectorAll('tr[data-span-id]')].map(r =>
     r.getAttribute('data-span-id')!
   )
+}
+
+function spanRow(id: string): HTMLTableRowElement {
+  const row = document.querySelector<HTMLTableRowElement>(
+    `tr[data-span-id="${id}"]`
+  )
+  expect(row, `row ${id} should exist`).toBeTruthy()
+  return row!
 }
 
 function navigationSpans(): SpanNode[] {
@@ -507,5 +515,217 @@ describe('WaterfallView error navigation, vim brackets', () => {
 
     press(']')
     expect(onSelectSpan).not.toHaveBeenCalled()
+  })
+})
+
+describe('WaterfallView row keyboard navigation', () => {
+  beforeEach(() => {
+    scrollMock.mockClear()
+    resetCollapseStoreForTests()
+  })
+
+  async function press(
+    row: HTMLTableRowElement,
+    key: string,
+    expectedFocusedID: string
+  ) {
+    row.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    )
+    await waitFor(() => expect(spanRow(expectedFocusedID)).toHaveFocus())
+  }
+
+  it('enters through the first span and traverses rows with Vim or arrow keys', async () => {
+    const onSelectSpan = vi.fn()
+    renderTree({ onSelectSpan })
+    await tick()
+
+    expect(spanRow('a')).toHaveAttribute('tabindex', '0')
+    for (const id of ALL_IDS.slice(1)) {
+      expect(spanRow(id)).toHaveAttribute('tabindex', '-1')
+    }
+
+    spanRow('a').focus()
+    await press(spanRow('a'), 'j', 'b')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('b')
+
+    await press(spanRow('b'), 'ArrowDown', 'c')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('c')
+
+    await press(spanRow('c'), 'k', 'b')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('b')
+
+    await press(spanRow('b'), 'ArrowUp', 'a')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('a')
+  })
+
+  it('enters through the selected span when it is visible', async () => {
+    renderTree({ selectedSpanID: 'c' })
+    await tick()
+
+    expect(spanRow('a')).toHaveAttribute('tabindex', '-1')
+    expect(spanRow('c')).toHaveAttribute('tabindex', '0')
+  })
+
+  it('removes the virtual scroll viewport from the row tab sequence', async () => {
+    renderTree()
+    await tick()
+
+    expect(
+      document.querySelector(
+        '[role="region"][aria-label="Span waterfall rows"]'
+      )
+    ).toHaveAttribute('tabindex', '-1')
+  })
+})
+
+describe('WaterfallView column separators', () => {
+  let containerWidth = 800
+
+  beforeEach(() => {
+    containerWidth = 800
+    localStorage.clear()
+    resetCollapseStoreForTests()
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(
+      () => containerWidth
+    )
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function separators(): HTMLElement[] {
+    return [...document.querySelectorAll<HTMLElement>('[role="separator"]')]
+  }
+
+  function press(
+    separator: HTMLElement,
+    key: string,
+    shiftKey = false
+  ): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', {
+      key,
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    })
+    separator.dispatchEvent(event)
+    return event
+  }
+
+  it('exposes one focusable separator per boundary with its reachable range', async () => {
+    renderTree()
+    await tick()
+
+    const bars = separators()
+    expect(bars).toHaveLength(2)
+    for (const bar of bars) {
+      expect(bar).toHaveAttribute('tabindex', '0')
+      expect(Number(bar.getAttribute('aria-valuemin'))).toBeLessThanOrEqual(
+        Number(bar.getAttribute('aria-valuenow'))
+      )
+      expect(Number(bar.getAttribute('aria-valuenow'))).toBeLessThanOrEqual(
+        Number(bar.getAttribute('aria-valuemax'))
+      )
+      expect(Number(bar.getAttribute('aria-valuemin'))).toBeGreaterThanOrEqual(
+        0
+      )
+      expect(Number(bar.getAttribute('aria-valuemax'))).toBeLessThanOrEqual(100)
+      expect(bar).toHaveAttribute(
+        'aria-valuetext',
+        `${bar.getAttribute('aria-valuenow')} percent from left`
+      )
+    }
+
+    expect(
+      document.querySelectorAll('.resize-handle[role="separator"]')
+    ).toHaveLength(0)
+    expect(
+      document.querySelectorAll('.resize-handle[aria-hidden="true"]')
+    ).toHaveLength(2)
+    expect(
+      document.querySelector(
+        '[role="region"][aria-label="Span waterfall rows"]'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('nudges through the shared cascade and persists each keyboard change', async () => {
+    renderTree()
+    await tick()
+
+    const spanBar = separators()[0]!
+    spanBar.focus()
+    const start = Number.parseFloat(spanBar.style.left)
+    const startPercent = Number(spanBar.getAttribute('aria-valuenow'))
+
+    const right = press(spanBar, 'ArrowRight')
+    expect(right.defaultPrevented).toBe(true)
+    await tick()
+    expect(Number.parseFloat(spanBar.style.left)).toBe(start + 16)
+    expect(Number(spanBar.getAttribute('aria-valuenow'))).toBeGreaterThan(
+      startPercent
+    )
+    expect(spanBar).toHaveFocus()
+
+    const afterRight = JSON.parse(
+      localStorage.getItem('waterfall-column-widths') ?? '{}'
+    ) as Record<string, number>
+    expect(afterRight.span).toBeGreaterThan(start)
+
+    const left = press(spanBar, 'ArrowLeft', true)
+    expect(left.defaultPrevented).toBe(true)
+    await tick()
+    expect(Number.parseFloat(spanBar.style.left)).toBe(start - 48)
+  })
+
+  it('uses Home to restore and persist the current-container default', async () => {
+    containerWidth = 600
+    renderTree()
+    await tick()
+
+    const spanBar = separators()[0]!
+    const defaultPosition = spanBar.getAttribute('aria-valuenow')
+    press(spanBar, 'ArrowRight')
+    await tick()
+    expect(spanBar).not.toHaveAttribute('aria-valuenow', defaultPosition)
+
+    const home = press(spanBar, 'Home')
+    expect(home.defaultPrevented).toBe(true)
+    await tick()
+    expect(spanBar).toHaveAttribute('aria-valuenow', defaultPosition)
+
+    const stored = JSON.parse(
+      localStorage.getItem('waterfall-column-widths') ?? '{}'
+    ) as Record<string, number>
+    expect(stored.span + stored.service + stored.timeline).toBeCloseTo(600, 6)
+    expect(stored.span).toBeGreaterThanOrEqual(140)
+    expect(stored.service).toBeGreaterThanOrEqual(100)
+    expect(stored.timeline).toBeGreaterThanOrEqual(240)
+  })
+})
+
+describe('WaterfallView virtual row identity', () => {
+  it('keeps focus on the same span when rows reorder', async () => {
+    const spans = navigationSpans()
+    const view = renderTree({ spans, selectedSpanID: 'error-1' })
+    await tick()
+
+    const focused = document.querySelector<HTMLElement>(
+      'tr[data-span-id="error-1"]'
+    )!
+    focused.focus()
+
+    await view.rerender({
+      componentProps: {
+        spans: [...spans].reverse(),
+        selectedSpanID: 'error-1',
+        onSelectSpan: vi.fn(),
+      },
+    })
+    await tick()
+
+    expect(document.activeElement).toHaveAttribute('data-span-id', 'error-1')
   })
 })

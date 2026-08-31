@@ -37,7 +37,10 @@ import type {
   ScalarAggregate,
   SparklinePoint,
 } from '@/types/api-types'
-import { timeseriesToChartTimeseries } from '@/components/metrics/utils/chart-projection'
+import {
+  rateBucketStartForSourceDatapoint,
+  timeseriesToChartTimeseries,
+} from '@/components/metrics/utils/chart-projection'
 import {
   distinguishingResourceAttributes,
   seriesLabelsByKey,
@@ -231,6 +234,8 @@ export interface MetricViewContext {
    *  or not -- would be a lot of work for a boolean. */
   readonly gaugeSumSeriesKeys: readonly string[]
   readonly gaugeSumLegendTimeseries: LegendTimeseries[]
+  /** Exact timestamp of the displayed selected point. Raw views use the source
+   * datapoint timestamp; Rate uses the synthetic bucket containing that source. */
   readonly highlightedTimestamp: bigint | null
   /** Attributes key of the timeseries owning `selectedDatapoint`, or
    *  `null` when nothing is selected. Used by the chart to draw the
@@ -312,7 +317,6 @@ export interface MetricViewContext {
   readonly histogramChartError: BucketSeriesError | null
   readonly activeHistogramDp:
     HistogramDataPoint | ExponentialHistogramDataPoint | undefined
-  readonly heatmapSelectedTimestamp: number | null
   /**
    * The selected column's exact bounds in nanoseconds, for the page to fetch.
    *
@@ -377,17 +381,19 @@ export interface MetricViewContext {
   /** Toggle selection + (optionally) expansion + jump to the
    * histogram tab in bucket scope. Used by the detail view. */
   onDatapointClick(dp: DataPoint): void
-  /** Heatmap column click: toggle the selected time bucket (stay on heatmap). */
-  onHeatmapSelect(timestampMs: number): void
-  /** Time-series chart point click: resolve series + x to a datapoint
-   * and sync selection with the Series tab. Aggregate lines are ignored. */
-  onChartPointClick(seriesKey: string, clickedAt: Date): void
+  /** Heatmap column click: toggle the exact selected time bucket. */
+  onHeatmapSelect(timestampNs: bigint): void
+  /** Time-series chart point click: select one exact source datapoint. */
+  onChartPointClick(seriesKey: string, datapointID: string): void
   /** Quantiles tab: toggle sticky bucket selection at the clicked x. */
   onQuantileChartPointClick(
     seriesKey: string,
-    clickedAt: Date,
+    timestampNs: bigint,
     quantileKey?: string | null
   ): void
+  /** Clear only selection owned by a chart interaction. Detail-pane datapoint
+   * selection remains intact when a histogram cursor clears its transient cell. */
+  clearChartSelection(): void
   setActiveQuantileOverlay(quantileKey: string): void
 }
 
@@ -400,7 +406,7 @@ export interface MetricViewContext {
  * scale alignment, zero-threshold folding and the vector sums, so this only
  * maps field names and widens the counts to numbers.
  */
-function aggregateToSlices(
+export function aggregateToSlices(
   buckets: JsonAggregateBucket[] | null
 ): HistogramSlicePoint[] {
   if (!buckets) return []
@@ -417,12 +423,12 @@ function aggregateToSlices(
     // fields left every explicit-bounds histogram with empty arrays and an
     // empty chart, while its totals and quantiles were right -- which is why it
     // looked like a rendering problem rather than a missing branch.
-    if (b.explicitBounds && b.explicitBounds.length > 0) {
+    if (b.explicitBounds !== undefined || b.bucketCounts !== undefined) {
       return {
         kind: 'histogram' as const,
         timestamp: BigInt(b.timestamp),
         attributesKey: '',
-        bounds: b.explicitBounds,
+        bounds: b.explicitBounds ?? [],
         counts: b.bucketCounts ?? [],
         totals,
         quantiles: b.quantiles ?? null,
@@ -542,27 +548,95 @@ export function createMetricViewContext(
   // no `agg` was showing, so it is what an absent param restores.
   let seededAggregationView: AggregationView = 'raw'
 
+  type PendingUrlDatapoint = { id: string; seriesKey: string }
+
+  // A raw-only datapoint cannot be validated until its URL-named series has
+  // been fetched. Keep that identity private until it resolves so chart
+  // selection continues to see either one exact datapoint or no datapoint.
+  let pendingUrlDatapoint = $state<PendingUrlDatapoint | null>(null)
+  // Once a loaded series proves a pending id absent, suppress that same URL
+  // request until navigation leaves it. A later cache refresh must not make a
+  // datapoint appear selected without a new navigation event.
+  let rejectedUrlDatapoint: PendingUrlDatapoint | null = null
+
   function metricParseContext(): MetricViewParseContext {
-    const datapointIDs = new Set<string>()
-    for (const dp of allDatapoints(getMetric())) datapointIDs.add(dp.id)
-    const seriesKeys = new Set<string>()
-    for (const ts of getMetric()?.timeseries ?? [])
-      seriesKeys.add(ts.attributesKey)
+    const index = selectableDatapointIndex
     return {
       isHistogramKind,
       allowedAggs: availableAggregationViewsList,
-      datapointIDs,
-      seriesKeys,
+      datapointIDs: index.datapointIDs,
+      seriesKeys: index.seriesKeys,
+    }
+  }
+
+  type ParsedMetricUrl = {
+    query: MetricViewQuery
+    pending: PendingUrlDatapoint | null
+  }
+
+  function samePendingDatapoint(
+    a: PendingUrlDatapoint | null,
+    b: PendingUrlDatapoint | null
+  ): boolean {
+    return (
+      a !== null && b !== null && a.id === b.id && a.seriesKey === b.seriesKey
+    )
+  }
+
+  /** Parse the current URL, admitting an unknown datapoint only while its
+   * validated series has not loaded. Known datapoints must belong to the URL's
+   * series; legacy datapoint-only links remain valid. */
+  function parseMetricUrl(): ParsedMetricUrl {
+    const routeQuery = readRoute().query
+    const parsed = parseMetricViewQuery(routeQuery, metricParseContext())
+    const requestedID = routeQuery.dp || null
+    const rawRequest =
+      requestedID && parsed.series
+        ? { id: requestedID, seriesKey: parsed.series }
+        : null
+
+    if (
+      rejectedUrlDatapoint &&
+      !samePendingDatapoint(rejectedUrlDatapoint, rawRequest)
+    ) {
+      rejectedUrlDatapoint = null
+    }
+
+    if (!requestedID) return { query: parsed, pending: null }
+
+    if (samePendingDatapoint(rejectedUrlDatapoint, rawRequest)) {
+      return { query: { ...parsed, dp: null }, pending: null }
+    }
+
+    const index = selectableDatapointIndex
+    const owner = index.seriesKeyByDatapointID.get(requestedID)
+    if (owner !== undefined) {
+      const ownedByUrlSeries = parsed.series === null || parsed.series === owner
+      return {
+        query: { ...parsed, dp: ownedByUrlSeries ? requestedID : null },
+        pending: null,
+      }
+    }
+
+    if (!rawRequest || index.loadedRawSeries.has(rawRequest.seriesKey)) {
+      return { query: { ...parsed, dp: null }, pending: null }
+    }
+
+    return {
+      query: { ...parsed, dp: rawRequest.id },
+      pending: rawRequest,
     }
   }
 
   function viewStateToMetricViewQuery(): MetricViewQuery {
+    const datapointID =
+      view.selectedDatapointID ?? pendingUrlDatapoint?.id ?? null
     if (isHistogramKind) {
       return {
         kind: 'histogram',
         htab: view.activeHistogramTab,
         hscope: view.histogramScope,
-        dp: view.selectedDatapointID,
+        dp: datapointID,
         series: selectedSeriesKey,
       }
     }
@@ -572,7 +646,7 @@ export function createMetricViewContext(
       // chose raw" and "nobody ever wrote an aggregation" the same URL, and
       // nothing downstream could tell them apart (#235).
       agg: view.aggregationView,
-      dp: view.selectedDatapointID,
+      dp: datapointID,
       series: selectedSeriesKey,
     }
   }
@@ -587,9 +661,10 @@ export function createMetricViewContext(
    * the aggregation out, so a param-free URL is one the app never wrote, and
    * going back to it returns to the metric's default rather than to raw (#235).
    */
-  function applyMetricUrlToView(): void {
-    const q = parseMetricViewQuery(readRoute().query, metricParseContext())
+  function applyMetricUrlToView(parsed = parseMetricUrl()): void {
+    const q = parsed.query
     urlMetricViewSnapshot = q
+    pendingUrlDatapoint = parsed.pending
 
     if (q.kind === 'timeseries') {
       view.aggregationView = (q.agg as AggregationView) ?? seededAggregationView
@@ -598,7 +673,7 @@ export function createMetricViewContext(
       view.histogramScope = q.hscope
     }
 
-    if (q.dp) {
+    if (q.dp && selectableDatapointIndex.datapointByID.has(q.dp)) {
       view.selectedDatapointID = q.dp
       view.selectionSource = 'detail'
     } else {
@@ -617,6 +692,10 @@ export function createMetricViewContext(
     // series 40 of 63 would otherwise land on a chart that does not contain
     // it. Adding rather than replacing keeps the rest of the user's view.
     if (q.series) revealSeries(q.series)
+
+    // This is the fetch trigger for a raw-only URL datapoint. TimeseriesPanel
+    // opens the nested datapoint section after the exact id resolves.
+    if (parsed.pending) view.expandedTimeseries.add(parsed.pending.seriesKey)
   }
 
   /**
@@ -655,6 +734,50 @@ export function createMetricViewContext(
       for (const dp of ts.datapoints) yield dp
     }
   }
+
+  /** Cached selection lookup over reduced chart rows plus fetched raw rows.
+   * Rebuilt only when either source changes; every selection, URL, and pruning
+   * check after that is O(1), even for a raw series with hundreds of thousands
+   * of datapoints. Raw rows are indexed last so the detail source wins if the
+   * reduced response retained the same id. */
+  const selectableDatapointIndex = $derived.by(() => {
+    const datapointByID = new Map<string, DataPoint>()
+    const seriesKeyByDatapointID = new Map<string, string>()
+    const datapointIDs = new Set<string>()
+    const seriesKeys = new Set<string>()
+    const loadedRawSeries = new Set<string>()
+    const m = getMetric()
+
+    if (m) {
+      for (const ts of m.timeseries) {
+        const seriesKey = ts.attributesKey
+        seriesKeys.add(seriesKey)
+
+        for (const datapoint of ts.datapoints) {
+          datapointByID.set(datapoint.id, datapoint)
+          seriesKeyByDatapointID.set(datapoint.id, seriesKey)
+          datapointIDs.add(datapoint.id)
+        }
+
+        const raw = getSeriesDatapoints(seriesKey)
+        if (raw === undefined) continue
+        loadedRawSeries.add(seriesKey)
+        for (const datapoint of raw) {
+          datapointByID.set(datapoint.id, datapoint)
+          seriesKeyByDatapointID.set(datapoint.id, seriesKey)
+          datapointIDs.add(datapoint.id)
+        }
+      }
+    }
+
+    return {
+      datapointByID,
+      seriesKeyByDatapointID,
+      datapointIDs,
+      seriesKeys,
+      loadedRawSeries,
+    }
+  })
 
   const temporality = $derived.by(() => {
     const m = getMetric()
@@ -835,6 +958,7 @@ export function createMetricViewContext(
         out.push({
           date: new Date(Number(b.bucketStart / 1_000_000n)),
           value: 0,
+          timestampNs: b.bucketStart,
           slope,
         })
         continue
@@ -842,6 +966,7 @@ export function createMetricViewContext(
       out.push({
         date: new Date(Number(b.bucketStart / 1_000_000n)),
         value,
+        timestampNs: b.bucketStart,
         slope,
       })
     }
@@ -860,6 +985,7 @@ export function createMetricViewContext(
     return points.map(p => ({
       date: new Date(Number(p.timestamp / 1_000_000n)),
       value: p.value,
+      timestampNs: p.timestamp,
     }))
   }
 
@@ -1237,20 +1363,29 @@ export function createMetricViewContext(
 
   // -- Selection-derived values --
   const selectedDatapoint = $derived.by((): DataPoint | undefined => {
-    const m = getMetric()
-    if (!m || !view.selectedDatapointID) return undefined
-    for (const dp of allDatapoints(m)) {
-      if (dp.id === view.selectedDatapointID) return dp
-    }
-    return undefined
+    const id = view.selectedDatapointID
+    return id === null
+      ? undefined
+      : selectableDatapointIndex.datapointByID.get(id)
   })
 
   const highlightedTimestamp = $derived.by((): bigint | null => {
     const dp = selectedDatapoint
-    if (dp && (dp.metricType === 'Gauge' || dp.metricType === 'Sum')) {
-      return dp.timestamp
+    if (!dp || (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum')) {
+      return null
     }
-    return null
+    if (view.aggregationView !== 'rate') return dp.timestamp
+
+    const datapointID = view.selectedDatapointID
+    if (datapointID === null) return null
+    const owner =
+      selectableDatapointIndex.seriesKeyByDatapointID.get(datapointID)
+    const series = getMetric()?.timeseries.find(
+      candidate => candidate.attributesKey === owner
+    )
+    return series
+      ? (rateBucketStartForSourceDatapoint(series, datapointID) ?? null)
+      : null
   })
 
   /** Attributes key of the timeseries that owns `selectedDatapoint`, or
@@ -1266,9 +1401,8 @@ export function createMetricViewContext(
     // the series and the point within it.
     const id = view.selectedDatapointID
     if (id !== null) {
-      for (const ts of m.timeseries) {
-        if (ts.datapoints.some(dp => dp.id === id)) return ts.attributesKey
-      }
+      const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(id)
+      if (owner !== undefined) return owner
     }
 
     // Otherwise fall back to an explicitly chosen series. This is what a link
@@ -1289,8 +1423,12 @@ export function createMetricViewContext(
     if (!key || highlightedTimestamp === null) return undefined
     const series = transformedGaugeSumChartTimeseries.find(s => s.key === key)
     if (!series) return undefined
-    const at = new Date(Number(highlightedTimestamp / 1_000_000n))
-    return rateSlopeBucketSegment(series.points, at)?.slope
+    const point = series.points.find(
+      candidate => candidate.timestampNs === highlightedTimestamp
+    )
+    return point
+      ? rateSlopeBucketSegment(series.points, point)?.slope
+      : undefined
   })
 
   // -- Histogram chart wiring --
@@ -1460,11 +1598,6 @@ export function createMetricViewContext(
     const pinned = histogramBucketDatapoint
     if (pinned) return pinned
     return latestHistogramDp
-  })
-
-  const heatmapSelectedTimestamp = $derived.by((): number | null => {
-    if (view.selectedHistogramBucketStart === null) return null
-    return Number(view.selectedHistogramBucketStart / 1_000_000n)
   })
 
   const heatmapColumnStartNs = $derived(view.selectedHistogramBucketStart)
@@ -1674,6 +1807,8 @@ export function createMetricViewContext(
   function seedForMetric(m: MetricData | undefined) {
     const streamID = m?.id
 
+    pendingUrlDatapoint = null
+    rejectedUrlDatapoint = null
     view.selectedDatapointID = null
     view.selectionSource = null
     view.selectedHistogramBucketStart = null
@@ -1789,17 +1924,20 @@ export function createMetricViewContext(
   // own writes are skipped as a no-op echo.
   $effect(() => {
     const unsubscribe = subscribeToRoute(() => {
-      const fromUrl = parseMetricViewQuery(
-        readRoute().query,
-        metricParseContext()
-      )
-      if (
-        urlMetricViewSnapshot &&
-        metricViewQueriesEqual(fromUrl, urlMetricViewSnapshot)
-      ) {
-        return
-      }
-      applyMetricUrlToView()
+      // subscribeToRoute invokes synchronously on registration. Keep those
+      // reads out of this effect so cache updates cannot masquerade as route
+      // changes by recreating the subscription.
+      untrack(() => {
+        const parsed = parseMetricUrl()
+        const fromUrl = parsed.query
+        if (
+          urlMetricViewSnapshot &&
+          metricViewQueriesEqual(fromUrl, urlMetricViewSnapshot)
+        ) {
+          return
+        }
+        applyMetricUrlToView(parsed)
+      })
     })
     return unsubscribe
   })
@@ -1864,6 +2002,46 @@ export function createMetricViewContext(
     }
   })
 
+  // Resolve a raw-only URL datapoint exactly once, after its named series has
+  // produced a loaded array. An empty/missing result rejects this URL attempt;
+  // later cache churn cannot resurrect it until navigation leaves and returns.
+  $effect(() => {
+    const pending = pendingUrlDatapoint
+    if (!pending) return
+
+    const raw = getSeriesDatapoints(pending.seriesKey)
+    if (raw === undefined) return
+
+    pendingUrlDatapoint = null
+    const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(
+      pending.id
+    )
+    const ownerVisible =
+      !hasSeriesFilter || view.visibleSeries.has(pending.seriesKey)
+    if (owner !== pending.seriesKey || !ownerVisible) {
+      rejectedUrlDatapoint = pending
+      if (
+        urlMetricViewSnapshot?.dp === pending.id &&
+        urlMetricViewSnapshot.series === pending.seriesKey
+      ) {
+        urlMetricViewSnapshot = { ...urlMetricViewSnapshot, dp: null }
+      }
+      if (
+        view.selectedDatapointID === null &&
+        view.selectionSource === 'detail'
+      ) {
+        view.selectionSource = null
+      }
+      return
+    }
+
+    view.selectedDatapointID = pending.id
+    // A transient heatmap/quantile selection can coexist with this exact detail
+    // datapoint. Preserve its chart ownership until clearChartSelection restores
+    // the detail source.
+    if (view.selectionSource !== 'chart') view.selectionSource = 'detail'
+  })
+
   // (2c) Auto-clear selection when its owning timeseries goes hidden.
   //
   // The datapoints panel scopes what's shown by the visible set, so a
@@ -1880,14 +2058,8 @@ export function createMetricViewContext(
     const m = getMetric()
     if (!m) return
 
-    let ownerKey: string | null = null
-    for (const ts of m.timeseries) {
-      if (ts.datapoints.some(dp => dp.id === id)) {
-        ownerKey = ts.attributesKey
-        break
-      }
-    }
-    if (ownerKey === null) {
+    const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(id)
+    if (owner === undefined) {
       // Stale id (data refresh dropped the datapoint). Clear so the
       // detail pane doesn't render against ghost data.
       view.selectedDatapointID = null
@@ -1898,7 +2070,7 @@ export function createMetricViewContext(
     // Shapes with no legend filter never seed a selection, and an unseeded
     // empty set would read as "nothing is checked" and clear the selection.
     if (!hasSeriesFilter) return
-    if (!view.visibleSeries.has(ownerKey)) {
+    if (!view.visibleSeries.has(owner)) {
       view.selectedDatapointID = null
       view.selectionSource = null
     }
@@ -2003,6 +2175,8 @@ export function createMetricViewContext(
   }
 
   function onDatapointClick(dp: DataPoint) {
+    pendingUrlDatapoint = null
+    rejectedUrlDatapoint = null
     view.selectionSource = 'detail'
     view.selectedHistogramBucketStart = null
     view.selectedQuantileKey = null
@@ -2016,7 +2190,7 @@ export function createMetricViewContext(
     } else if (isHistogramKind && view.selectedDatapointID === null) {
       view.histogramScope = 'window'
     }
-    if (dp.exemplars.length > 0) {
+    if (dp.flags > 0 || dp.exemplars.length > 0) {
       if (view.expandedDatapoints.has(dp.id)) {
         view.expandedDatapoints.delete(dp.id)
       } else {
@@ -2028,29 +2202,19 @@ export function createMetricViewContext(
     writeMetricUrl('push')
   }
 
-  function onHeatmapSelect(timestampMs: number) {
-    let tsNs = BigInt(timestampMs) * 1_000_000n
-    const series = heatmapBucketSeries
-    if (series) {
-      const match = series.find(
-        s => Number(s.timestamp / 1_000_000n) === timestampMs
-      )
-      if (match) tsNs = match.timestamp
-    }
-    if (view.selectedHistogramBucketStart === tsNs) {
+  function onHeatmapSelect(timestampNs: bigint) {
+    if (view.selectedHistogramBucketStart === timestampNs) {
       view.selectedHistogramBucketStart = null
       view.selectedQuantileKey = null
-      if (view.selectionSource === 'chart') {
-        view.selectionSource = null
-      }
+      if (view.selectionSource === 'chart') restoreDetailSelectionSource()
       return
     }
     view.selectionSource = 'chart'
-    view.selectedHistogramBucketStart = tsNs
+    view.selectedHistogramBucketStart = timestampNs
     view.selectedQuantileKey = null
   }
 
-  function onChartPointClick(seriesKey: string, clickedAt: Date) {
+  function onChartPointClick(seriesKey: string, datapointID: string) {
     if (
       seriesKey === AGG_KEY_SELECTED ||
       seriesKey === AGG_KEY_ALL ||
@@ -2061,74 +2225,67 @@ export function createMetricViewContext(
     const m = getMetric()
     if (!m) return
     const ts = m.timeseries.find(t => t.attributesKey === seriesKey)
-    if (!ts || ts.datapoints.length === 0) return
+    if (!ts?.datapoints.some(datapoint => datapoint.id === datapointID)) return
 
-    const targetMs = clickedAt.getTime()
-    const targetNs = BigInt(targetMs) * 1_000_000n
-
-    for (const dp of ts.datapoints) {
-      if (dp.timestamp === targetNs) {
-        view.selectionSource = 'chart'
-        view.selectedDatapointID = dp.id
-        writeMetricUrl('push')
-        return
-      }
-    }
-
-    let best: DataPoint | undefined
-    let bestDist = Infinity
-    for (const dp of ts.datapoints) {
-      const ms = Number(dp.timestamp / 1_000_000n)
-      const dist = Math.abs(ms - targetMs)
-      if (dist < bestDist) {
-        bestDist = dist
-        best = dp
-      }
-    }
-    if (best) {
-      view.selectionSource = 'chart'
-      view.selectedDatapointID = best.id
-      writeMetricUrl('push')
-    }
+    pendingUrlDatapoint = null
+    rejectedUrlDatapoint = null
+    view.selectionSource = 'chart'
+    view.selectedDatapointID = datapointID
+    writeMetricUrl('push')
   }
 
   function onQuantileChartPointClick(
     _seriesKey: string,
-    clickedAt: Date,
+    timestampNs: bigint,
     quantileKey: string | null = null
   ) {
-    let tsNs = BigInt(clickedAt.getTime()) * 1_000_000n
-    const series = heatmapBucketSeries
-    if (series) {
-      const match = series.find(
-        s => Number(s.timestamp / 1_000_000n) === clickedAt.getTime()
-      )
-      if (match) tsNs = match.timestamp
-    }
     if (quantileKey === null) {
       // Plot/tooltip click: same bucket toggles off (heatmap parity).
-      if (view.selectedHistogramBucketStart === tsNs) {
+      if (view.selectedHistogramBucketStart === timestampNs) {
         view.selectedHistogramBucketStart = null
         view.selectedQuantileKey = null
-        if (view.selectionSource === 'chart') {
-          view.selectionSource = null
-        }
+        if (view.selectionSource === 'chart') restoreDetailSelectionSource()
         return
       }
     } else if (
-      view.selectedHistogramBucketStart === tsNs &&
+      view.selectedHistogramBucketStart === timestampNs &&
       view.selectedQuantileKey === quantileKey
     ) {
       view.selectedHistogramBucketStart = null
       view.selectedQuantileKey = null
-      if (view.selectionSource === 'chart') {
-        view.selectionSource = null
-      }
+      if (view.selectionSource === 'chart') restoreDetailSelectionSource()
       return
     }
     view.selectionSource = 'chart'
-    view.selectedHistogramBucketStart = tsNs
+    view.selectedHistogramBucketStart = timestampNs
     view.selectedQuantileKey = quantileKey
+  }
+
+  function clearChartSelection() {
+    const hadHistogramSelection =
+      view.selectedHistogramBucketStart !== null ||
+      view.selectedQuantileKey !== null
+    if (hadHistogramSelection) {
+      view.selectedHistogramBucketStart = null
+      view.selectedQuantileKey = null
+      if (view.selectionSource === 'chart') {
+        // A heatmap/quantile pick can coexist with a raw histogram datapoint
+        // selected in the detail pane. Clearing the transient chart cell must
+        // reveal that selection again rather than erase it.
+        restoreDetailSelectionSource()
+      }
+      return
+    }
+
+    if (view.selectionSource !== 'chart') return
+    const hadDatapointSelection = view.selectedDatapointID !== null
+    view.selectedDatapointID = null
+    view.selectionSource = null
+    if (hadDatapointSelection) writeMetricUrl('push')
+  }
+
+  function restoreDetailSelectionSource() {
+    view.selectionSource = view.selectedDatapointID === null ? null : 'detail'
   }
 
   const ctx: MetricViewContext = {
@@ -2269,9 +2426,6 @@ export function createMetricViewContext(
     get heatmapColumnEndNs() {
       return heatmapColumnEndNs
     },
-    get heatmapSelectedTimestamp() {
-      return heatmapSelectedTimestamp
-    },
     get selectedQuantileKey() {
       return view.selectedQuantileKey
     },
@@ -2330,6 +2484,7 @@ export function createMetricViewContext(
     onHeatmapSelect,
     onChartPointClick,
     onQuantileChartPointClick,
+    clearChartSelection,
     setActiveQuantileOverlay,
   }
 

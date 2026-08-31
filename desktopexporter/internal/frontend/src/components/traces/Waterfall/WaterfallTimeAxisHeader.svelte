@@ -242,9 +242,7 @@
     Span
     <div
       class="resize-handle"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize span column"
+      aria-hidden="true"
       onpointerdown={e => onStartResize('span', e)}
     ></div>
   </th>
@@ -256,9 +254,7 @@
     Service
     <div
       class="resize-handle"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize service column"
+      aria-hidden="true"
       onpointerdown={e => onStartResize('service', e)}
     ></div>
   </th>

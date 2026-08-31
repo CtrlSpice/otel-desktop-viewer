@@ -9,6 +9,7 @@
   } from '@/components/metrics/utils/format-metric-value'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { formatDateTime } from '@/utils/time'
+  import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import MetricChartPlot, {
     axisTime,
@@ -35,6 +36,13 @@
     type SeriesStats,
   } from '@/components/metrics/utils/aggregation'
   import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
+  import {
+    isChartActivationKey,
+    lineCursorAt,
+    lineCursorCommandForKey,
+    stablePointCursorKey,
+  } from '@/components/metrics/utils/chart-keyboard-cursor'
+  import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
 
   /** Render order inside the Totals section: checked → all. */
   const AGG_TOTAL_ORDER: Record<string, number> = {
@@ -104,10 +112,12 @@
      *  so the chart trusts every entry here is meant to render. */
     timeseries: ChartTimeseries[]
     height?: number
-    /** Timestamp (ns, as bigint) of a datapoint to highlight on the
-     * chart. When set, draws a vertical rule at that x-coordinate so
-     * a click on the datapoints list visually anchors to its point. */
+    /** Exact timestamp of the displayed selection. This is a source timestamp
+     * for ordinary lines and the containing synthetic bucket in Rate view. */
     highlightedTimestamp?: bigint | null
+    /** Exact source id for ordinary raw lines. Rate points are synthetic and
+     * resolve by `highlightedTimestamp` instead. */
+    highlightedPointID?: string | null
     /** Attributes key of the timeseries owning the selected datapoint.
      *  When set alongside `highlightedTimestamp`, the chart draws a
      *  colored dot on the rule at that series's value. Aggregates
@@ -136,9 +146,10 @@
     selectedRateSlope?: number | undefined
     /** Plotted data window; rendered as a permanent legend card above the plot. */
     timeRange?: { startMs: number; endMs: number } | null
-    /** Chart point click → caller resolves to a datapoint and syncs
-     *  the Series tab. Aggregate synthetic lines should no-op upstream. */
-    onChartPointClick?: (seriesKey: string, clickedAt: Date) => void
+    /** Source point click -> exact datapoint selection. Synthetic points omit
+     *  an id and remain inspectable but read-only. */
+    onChartPointClick?: (seriesKey: string, datapointID: string) => void
+    onClearSelection?: () => void
     /** Per-series stats from the store, for the selected-series overlay.
      *  The chart used to fold its own from the drawn points, whose average is
      *  the mean of a reduced sample; these describe the window (raw views) or
@@ -150,6 +161,7 @@
     timeseries,
     height = DEFAULT_METRIC_CHART_HEIGHT,
     highlightedTimestamp = null,
+    highlightedPointID = null,
     selectedSeriesKey = null,
     unit = '',
     colorByKey,
@@ -159,6 +171,7 @@
     selectedRateSlope = undefined,
     timeRange = null,
     onChartPointClick,
+    onClearSelection,
     seriesStats,
   }: Props = $props()
 
@@ -221,6 +234,164 @@
       ...seriesLineProps(ts.key),
     }))
   })
+
+  let keyboardLines = $derived(
+    chartSeries
+      .filter(series => series.data.length > 0)
+      .map(series => ({
+        key: series.key,
+        points: series.data.map((point, pointIndex) => ({
+          key: stablePointCursorKey(
+            {
+              sourceKey: point.sourceDatapointID,
+              timestampNs: point.timestampNs,
+              timestampMs: point.date.getTime(),
+            },
+            pointIndex
+          ),
+          timestampMs: point.date.getTime(),
+          timestampNs: point.timestampNs,
+        })),
+      }))
+  )
+  let initialKeyboardCursor = $derived.by(() => {
+    const sourcePointID = aggregationView === 'rate' ? null : highlightedPointID
+    if (sourcePointID === null && highlightedTimestamp === null) {
+      return null
+    }
+    const timestampMs =
+      highlightedTimestamp == null
+        ? null
+        : Number(highlightedTimestamp / 1_000_000n)
+    return lineCursorAt(keyboardLines, {
+      lineKey: selectedSeriesKey,
+      pointKey: sourcePointID
+        ? stablePointCursorKey(
+            {
+              sourceKey: sourcePointID,
+              timestampMs: timestampMs ?? 0,
+            },
+            0
+          )
+        : null,
+      timestampMs,
+      timestampNs: highlightedTimestamp,
+      requireExact: true,
+    })
+  })
+  const keyboardNavigation = createLineChartKeyboardCursor(
+    () => keyboardLines,
+    () => initialKeyboardCursor
+  )
+  let activeKeyboardCursor = $derived(keyboardNavigation.current)
+  let keyboardFocused = $derived(keyboardNavigation.focused)
+
+  function handleKeyboardFocusChange(focused: boolean) {
+    keyboardNavigation.setFocused(focused)
+  }
+
+  let keyboardSeries = $derived.by(() => {
+    if (!activeKeyboardCursor) return undefined
+    return chartSeries.find(
+      series => series.key === activeKeyboardCursor.lineKey
+    )
+  })
+  let keyboardPoint = $derived.by(() => {
+    const cursor = activeKeyboardCursor
+    const series = keyboardSeries
+    if (!cursor || !series) return undefined
+    return series.data[cursor.pointIndex]
+  })
+
+  function keyboardValueText(value: number): string {
+    const formatted = formatMetricValue(value)
+    const trimmedUnit = unit.trim()
+    if (aggregationView === 'rate') {
+      return trimmedUnit && trimmedUnit !== '1'
+        ? `${formatted} ${trimmedUnit}/s`
+        : `${formatted}/s`
+    }
+    return trimmedUnit && trimmedUnit !== '1'
+      ? `${formatted} ${trimmedUnit}`
+      : formatted
+  }
+
+  let keyboardReadout = $derived.by((): string => {
+    const cursor = activeKeyboardCursor
+    const series = keyboardSeries
+    const point = keyboardPoint
+    if (!cursor || !series || !point) return ''
+    const timestamp = formatDateTime(
+      point.date.getTime(),
+      timeContext.tz,
+      'milliseconds'
+    )
+    const readOnly = point.sourceDatapointID
+      ? ''
+      : ' Read-only synthetic point.'
+    return (
+      `Line ${cursor.lineIndex + 1} of ${keyboardLines.length}, ${series.label}. ` +
+      `Point ${cursor.pointIndex + 1} of ${series.data.length}, ${timestamp}. ` +
+      `Value ${keyboardValueText(point.value)}.${readOnly}`
+    )
+  })
+
+  function handleChartKeyboard(event: KeyboardEvent) {
+    const command = lineCursorCommandForKey(event)
+    if (command) {
+      event.preventDefault()
+      event.stopPropagation()
+      keyboardNavigation.move(command)
+      return
+    }
+
+    if (isChartActivationKey(event.key)) {
+      const point = keyboardPoint
+      if (!point?.sourceDatapointID || !onChartPointClick) return
+      event.preventDefault()
+      event.stopPropagation()
+      onChartPointClick(activeKeyboardCursor!.lineKey, point.sourceDatapointID)
+      return
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      onClearSelection?.()
+    }
+  }
+
+  let keyboardCursorMark = $derived.by(() => {
+    if (!keyboardFocused) return null
+    const cursor = activeKeyboardCursor
+    const series = keyboardSeries
+    const point = keyboardPoint
+    if (!cursor || !series || !point) return null
+    return { date: point.date, value: point.value, color: series.color }
+  })
+  let keyboardCanActivate = $derived(
+    !!onChartPointClick &&
+      chartSeries.some(series =>
+        series.data.some(point => point.sourceDatapointID !== undefined)
+      )
+  )
+  let keyboardShortcuts = $derived([
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowUp',
+    'ArrowDown',
+    'Home',
+    'End',
+    'Control+Home',
+    'Control+End',
+    'Meta+Home',
+    'Meta+End',
+    ...(keyboardCanActivate ? ['Enter', 'Space'] : []),
+    'Escape',
+  ])
+  let keyboardInstructions = $derived(
+    `Use Left and Right to inspect points. Use Up and Down to inspect lines. Home and End move to line boundaries; Control or Command plus Home or End move to chart boundaries.${keyboardCanActivate ? ' Enter or Space selects a source datapoint when the current point is selectable.' : ''} Escape clears chart selection.`
+  )
 
   function chartPointDate(data: unknown): Date | null {
     if (data == null || typeof data !== 'object') return null
@@ -358,6 +529,67 @@
     return bestKey
   }
 
+  function sourcePointForChartPoint(
+    seriesKey: string,
+    data: unknown,
+    date: Date
+  ): ChartPoint | null {
+    const series = chartSeries.find(candidate => candidate.key === seriesKey)
+    if (!series) return null
+
+    const row =
+      data != null && typeof data === 'object'
+        ? (data as {
+            sourceDatapointID?: unknown
+            timestampNs?: unknown
+            data?: unknown
+          })
+        : null
+    const nested =
+      row?.data != null && typeof row.data === 'object'
+        ? (row.data as {
+            sourceDatapointID?: unknown
+            timestampNs?: unknown
+          })
+        : null
+    const sourceDatapointID =
+      typeof row?.sourceDatapointID === 'string'
+        ? row.sourceDatapointID
+        : typeof nested?.sourceDatapointID === 'string'
+          ? nested.sourceDatapointID
+          : null
+    if (sourceDatapointID) {
+      return (
+        series.data.find(
+          point => point.sourceDatapointID === sourceDatapointID
+        ) ?? null
+      )
+    }
+
+    const timestampNs =
+      typeof row?.timestampNs === 'bigint'
+        ? row.timestampNs
+        : typeof nested?.timestampNs === 'bigint'
+          ? nested.timestampNs
+          : null
+    if (timestampNs !== null) {
+      return (
+        series.data.find(point => point.timestampNs === timestampNs) ?? null
+      )
+    }
+
+    const sameMillisecond = series.data.filter(
+      point => point.date.getTime() === date.getTime()
+    )
+    if (sameMillisecond.length === 1) return sameMillisecond[0]!
+    const clickedValue = chartPointValue(data)
+    if (clickedValue === undefined) return null
+    const sameValue = sameMillisecond.filter(
+      point => point.value === clickedValue
+    )
+    return sameValue.length === 1 ? sameValue[0]! : null
+  }
+
   function dispatchChartPointClick(
     e: MouseEvent,
     detail: unknown,
@@ -383,8 +615,9 @@
       key = seriesKeyForChartPoint(payload, fromHighlight)
     }
     if (!key || isAggregateKey(key)) return
-
-    onChartPointClick(key, date)
+    const point = sourcePointForChartPoint(key, payload, date)
+    if (!point?.sourceDatapointID) return
+    onChartPointClick(key, point.sourceDatapointID)
   }
 
   /** Highlight circle click. LineChart types `{ data, series }`; Highlight
@@ -448,19 +681,34 @@
     yAxis: axisValue(yAxisLabel),
   })
 
-  /** Series the selection rule should drop colored dots on. Always
-   *  empty when nothing is selected. Otherwise: the user-selected
-   *  series (if it's still in `chartSeries`) plus every aggregate
-   *  currently rendered. Aggregates included unconditionally so users
-   *  can read each aggregate's value at the selected x-coordinate
-   *  without hover-tracking the cursor. Values resolved via the same
-   *  `nearestValueAt` lookup the tooltip uses, so raw and aggregate
-   *  grids that disagree on exact timestamps still produce dots. */
+  /** Series the selection rule should drop colored dots on. Persistent dots
+   * use source identity for the selected series and exact nanoseconds for
+   * aggregates; a line without that exact point honestly gets no dot. */
   type SelectionDot = {
     key: string
     color: string
     value: number
     isSelected: boolean
+  }
+
+  function exactSelectionPoint(series: {
+    key: string
+    data: readonly ChartPoint[]
+  }): ChartPoint | undefined {
+    if (
+      aggregationView !== 'rate' &&
+      series.key === selectedSeriesKey &&
+      highlightedPointID !== null &&
+      highlightedPointID !== undefined
+    ) {
+      return series.data.find(
+        point => point.sourceDatapointID === highlightedPointID
+      )
+    }
+    if (highlightedTimestamp === null || highlightedTimestamp === undefined) {
+      return undefined
+    }
+    return series.data.find(point => point.timestampNs === highlightedTimestamp)
   }
   /** First point at an extremum (earliest timestamp on ties). */
   function extremumPoint(
@@ -557,7 +805,10 @@
     }
 
     if (aggregationView === 'rate') {
-      const segment = rateSlopeBucketSegment(series.data, highlightDate)
+      const selectedPoint = exactSelectionPoint(series)
+      const segment = selectedPoint
+        ? rateSlopeBucketSegment(series.data, selectedPoint)
+        : undefined
       if (segment && Number.isFinite(segment.slope)) {
         const valueText = formatRateSlopeValue(segment.slope, unit)
         marks.push({
@@ -597,7 +848,7 @@
     if (!selectedSeriesKey || isAggregateKey(selectedSeriesKey)) return null
     const series = chartSeries.find(s => s.key === selectedSeriesKey)
     if (!series) return null
-    const value = nearestValueAt(series.data, highlightDate)
+    const value = exactSelectionPoint(series)?.value
     if (value === undefined || !Number.isFinite(value)) return null
     if (
       aggregationView === 'rate' &&
@@ -660,7 +911,7 @@
       const isSelected = s.key === selectedSeriesKey
       const isAggregate = isAggregateKey(s.key)
       if (!isSelected && !isAggregate) continue
-      const v = nearestValueAt(s.data, highlightDate)
+      const v = exactSelectionPoint(s)?.value
       if (v === undefined || !Number.isFinite(v)) continue
       dots.push({ key: s.key, color: s.color, value: v, isSelected })
     }
@@ -731,7 +982,7 @@
       </div>
     {/if}
     <div
-      class="metric-time-series-chart__plot"
+      class="metric-time-series-chart__plot chart-keyboard-surface-host"
       bind:clientHeight={plotAreaHeight}
     >
       <MetricChartPlot height={plotAreaHeight > 0 ? plotAreaHeight : height}>
@@ -985,6 +1236,26 @@
                 {/each}
               </g>
             {/if}
+            {#if keyboardCursorMark}
+              {@const keyboardX = context.xScale(keyboardCursorMark.date)}
+              {@const keyboardY = context.yScale(keyboardCursorMark.value)}
+              <g class="chart-keyboard-cursor" aria-hidden="true">
+                <Line
+                  x1={keyboardX}
+                  x2={keyboardX}
+                  y1={yTop}
+                  y2={yBot}
+                  class="chart-keyboard-cursor-rule"
+                />
+                <circle
+                  cx={keyboardX}
+                  cy={keyboardY}
+                  r="6"
+                  fill={keyboardCursorMark.color}
+                  class="chart-keyboard-cursor-point"
+                />
+              </g>
+            {/if}
           {/snippet}
         </LineChart>
         {#each seriesStatTooltipPlacements as mark (mark.kind)}
@@ -1017,6 +1288,16 @@
           </div>
         {/each}
       </MetricChartPlot>
+      <ChartKeyboardSurface
+        id="metric-time-series-keyboard-surface"
+        label="Metric time series chart"
+        roleDescription="interactive time series chart"
+        instructions={keyboardInstructions}
+        readout={keyboardReadout}
+        shortcuts={keyboardShortcuts}
+        onKeydown={handleChartKeyboard}
+        onFocusChange={handleKeyboardFocusChange}
+      />
     </div>
   </div>
 {:else}

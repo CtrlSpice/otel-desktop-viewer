@@ -14,7 +14,7 @@
 </script>
 
 {#if ctx.showAllSeriesAggregateToggleVisible}
-  <label class="all-series-aggregate-toggle" title={label}>
+  <label class="all-series-aggregate-toggle chart-control-toggle" title={label}>
     <input
       type="checkbox"
       class="checkbox checkbox-xs checkbox-soft all-series-aggregate-toggle__checkbox"

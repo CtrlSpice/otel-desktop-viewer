@@ -211,6 +211,28 @@ html[data-theme='rose-pine-dawn'] {
   transition-delay: var(--tooltip-show-delay);
 }
 
+/* daisyUI's visibility rule uses :has(:focus-visible), which covers a
+   focusable child but not a tooltip class placed directly on a button. */
+.tooltip[data-tip]:not([data-tip='']):focus-visible::before,
+.tooltip[data-tip]:not([data-tip='']):focus-visible::after {
+  --tt-pos: 0rem;
+  opacity: 1;
+}
+
+/* daisyUI isolates focused buttons, which otherwise traps their tooltip below
+   later siblings such as the drawer's virtualized signal rows. */
+.tooltip[data-tip]:where(:focus-visible, :has(:focus-visible)) {
+  z-index: 1;
+}
+
+/* Escape dismisses a focused tooltip without moving keyboard focus. The
+   warmth controller removes this marker once pointer and focus both leave. */
+.tooltip[data-tip][data-tooltip-suppressed]::before,
+.tooltip[data-tip][data-tooltip-suppressed]::after {
+  opacity: 0 !important;
+  transition-delay: 0s !important;
+}
+
 /* Rosé Pine text hierarchy utilities.
    text-base  = Text  (e0def4 moon / 575279 dawn) — primary reading
    text-subtle = Subtle (908caa moon / 797593 dawn) — secondary/label
@@ -252,6 +274,88 @@ html[data-theme='rose-pine-dawn'] {
 
 .metric-chart-view .metric-chart-view__subtitle .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* One keyboard focus stop and readout shared by every interactive metric chart. */
+.chart-keyboard-surface {
+  position: absolute;
+  z-index: 9;
+  inset: calc(var(--focus-ring-width) + var(--focus-ring-offset));
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--radius-box);
+  pointer-events: none;
+}
+
+.chart-keyboard-surface:focus {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.chart-keyboard-readout {
+  position: absolute;
+  z-index: 10;
+  top: 0.25rem;
+  left: 50%;
+  width: max-content;
+  max-width: min(90%, 42rem);
+  transform: translateX(-50%);
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-field);
+  background: color-mix(in oklab, var(--color-base-100) 94%, transparent);
+  color: var(--color-base-content);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
+  font-size: 0.75rem;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.chart-keyboard-surface:focus .chart-keyboard-readout {
+  opacity: 1;
+}
+
+.chart-keyboard-surface-host
+  :where(
+    .chart-keyboard-cursor,
+    .chart-keyboard-cursor-band,
+    .chart-keyboard-cursor-cell
+  ) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chart-keyboard-surface-host:has(> .chart-keyboard-surface:focus)
+  :where(
+    .chart-keyboard-cursor,
+    .chart-keyboard-cursor-band,
+    .chart-keyboard-cursor-cell
+  ) {
+  opacity: 1;
+}
+
+.metric-chart-view :where(.chart-keyboard-cursor-rule) {
+  stroke: var(--color-primary);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+
+.metric-chart-view :where(.chart-keyboard-cursor-point) {
+  stroke: var(--color-base-100);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.metric-chart-view
+  :where(.chart-keyboard-cursor-band, .chart-keyboard-cursor-cell) {
+  fill: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  pointer-events: none;
 }
 
 /* Histogram bar fill: softer on dawn, same as before on dark themes. */
@@ -1004,7 +1108,7 @@ svg {
   @apply border-transparent bg-primary/15 text-base-content shadow-sm shadow-primary/10;
 }
 
-/* Pane lift tabs — inactive = primary, active = base text. */
+/* Pane tabs — inactive = primary, active = base text. */
 .pane-header :where(.tab:not(.tab-active)) {
   color: var(--color-primary);
 }
@@ -1058,6 +1162,7 @@ svg {
 .drawer-header-btn:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
+  border-radius: 9999px;
 }
 
 /* Signal drawer — circle controls in the search editor (header join + footer join). */
@@ -1711,21 +1816,19 @@ button:focus-visible:not(.btn) {
   opacity: 0.9;
 }
 
-/* Main + detail split (PageLayout): hit strip only — no visible line on
-   hover, focus, or drag. Cursor and keyboard resize unchanged. */
-.col-resize-bar.col-resize-bar--in-flow:hover .col-resize-bar__line,
-.col-resize-bar.col-resize-bar--in-flow:focus-visible .col-resize-bar__line,
-.col-resize-bar.col-resize-bar--in-flow.col-resize-bar--active
-  .col-resize-bar__line {
-  opacity: 0;
-}
-
 /* In-flow flex sibling (not absolute over a table) */
 .col-resize-bar.col-resize-bar--in-flow {
-  @apply relative self-stretch shrink-0;
+  @apply relative self-stretch shrink-0 items-center;
   inset: auto;
   margin-left: 0;
   z-index: 10;
+}
+
+.col-resize-bar--in-flow .col-resize-bar__line {
+  align-self: auto;
+  width: 0.1875rem;
+  height: 3rem;
+  min-height: 0;
 }
 
 /* Stacked panels: full-width hit strip, drag adjusts height split (row-resize) */
@@ -1745,10 +1848,25 @@ button:focus-visible:not(.btn) {
 
 .col-resize-bar--row-in-flow .col-resize-bar__line {
   align-self: auto;
-  width: 100%;
+  width: 3rem;
   min-width: 0;
-  height: 0.125rem;
-  min-height: 0.125rem;
+  height: 0.1875rem;
+  min-height: 0.1875rem;
+}
+
+.col-resize-bar:is(.col-resize-bar--in-flow, .col-resize-bar--row-in-flow):hover
+  .col-resize-bar__line {
+  background-color: var(--color-neutral);
+  opacity: 0.65;
+}
+
+.col-resize-bar:is(.col-resize-bar--in-flow, .col-resize-bar--row-in-flow):is(
+    :focus-visible,
+    .col-resize-bar--active
+  )
+  .col-resize-bar__line {
+  background-color: var(--color-primary);
+  opacity: 0.95;
 }
 
 /* Pagination Styles — rows left, pager cluster centered, delete label + button trailing */

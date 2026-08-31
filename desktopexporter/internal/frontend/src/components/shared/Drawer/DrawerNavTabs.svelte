@@ -50,7 +50,12 @@
 </script>
 
 <script lang="ts">
-  import { navigateToSignal, type SignalName } from '@/route'
+  import {
+    isPlainLeftClick,
+    navigateToSignal,
+    signalHref,
+    type SignalName,
+  } from '@/route'
   import { getRouteContext } from '@/contexts/route-context.svelte'
 
   type Props = {
@@ -63,7 +68,11 @@
   // NAV_ITEMS are all signal tabs, so navigate through the helper to carry the
   // active time window across signals.
   // Switching signal is navigational: push so back returns to the prior signal.
-  const goto = (item: NavItem) => navigateToSignal(item.id as SignalName)
+  function goto(event: MouseEvent, item: NavItem) {
+    if (!isPlainLeftClick(event)) return
+    event.preventDefault()
+    navigateToSignal(item.id as SignalName)
+  }
 </script>
 
 {#if collapsed}
@@ -71,18 +80,18 @@
     {#each NAV_ITEMS as item (item.id)}
       {@const active = isNavItemActive(item.id, routeContext.route.path)}
       {@const Icon = item.icon}
-      <button
-        type="button"
+      <a
+        href={signalHref(item.id as SignalName, routeContext.route.query)}
         class="drawer-header-btn tooltip tooltip-right {active
           ? 'drawer-header-btn--active'
           : 'drawer-header-btn--inactive'}"
         data-tip={item.label}
         aria-current={active ? 'page' : undefined}
         aria-label={item.label}
-        onclick={() => goto(item)}
+        onclick={event => goto(event, item)}
       >
         <Icon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
-      </button>
+      </a>
     {/each}
   </nav>
 {:else}
@@ -90,17 +99,17 @@
     {#each NAV_ITEMS as item (item.id)}
       {@const active = isNavItemActive(item.id, routeContext.route.path)}
       {@const Icon = item.icon}
-      <button
-        type="button"
+      <a
+        href={signalHref(item.id as SignalName, routeContext.route.query)}
         class="drawer-tab {active
           ? 'drawer-tab--active'
           : 'drawer-tab--inactive'}"
         aria-current={active ? 'page' : undefined}
-        onclick={() => goto(item)}
+        onclick={event => goto(event, item)}
       >
         <Icon class="h-[15px] w-[15px] shrink-0" aria-hidden="true" />
         <span class="truncate">{item.label}</span>
-      </button>
+      </a>
     {/each}
   </nav>
 {/if}

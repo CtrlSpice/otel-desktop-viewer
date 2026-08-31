@@ -4118,6 +4118,111 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 	assert.InDelta(t, 16.0, a["max"], 1e-9, "upper edge of the last populated bucket")
 }
 
+// TestGetMetric_EmptyExplicitBoundsAggregate covers the valid explicit
+// histogram shape with no boundaries and one catch-all bucket. Representation
+// is identified by the presence of explicitBounds, not by whether it contains
+// an element: treating [] as exponential drops the only bucket vector from the
+// heatmap aggregate even though its top-level count still looks plausible.
+func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	fixture := makeHistogramFixtureT("agg.catch-all", pmetric.AggregationTemporalityDelta, []histTestDP{
+		{
+			timestamp: base, attrs: map[string]string{"route": "/a"},
+			bounds: nil, counts: []uint64{7}, count: 7, sum: 3.5,
+		},
+		{
+			timestamp: base.Add(time.Second), attrs: map[string]string{"route": "/b"},
+			bounds: nil, counts: []uint64{5}, count: 5, sum: 2.5,
+		},
+	})
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+
+	streamID := findMetricID(t, s, ctx, "agg.catch-all")
+	end := base.Add(time.Hour).UnixNano()
+	// Poison the inactive exponential columns with a finite distribution. A
+	// Histogram must ignore them because explicit_bounds is present even when
+	// empty. This is a branch canary for agg_qsrc: the old len(bounds) > 0 test
+	// reads these sentinels and returns a finite p50, while the explicit catch-all
+	// bucket correctly has no computable quantile.
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `update datapoints set
+			scale = 0,
+			zero_count = 0,
+			zero_threshold = 0,
+			positive_bucket_offset = 0,
+			positive_bucket_counts = [count],
+			negative_bucket_offset = 0,
+			negative_bucket_counts = []
+			where stream_id = ?::uuid`, streamID)
+		return err
+	}))
+
+	assertCatchAll := func(a map[string]any) {
+		t.Helper()
+		require.Contains(t, a, "explicitBounds")
+		require.IsType(t, []any{}, a["explicitBounds"])
+		assert.Empty(t, a["explicitBounds"])
+		assert.Equal(t, []any{float64(12)}, a["bucketCounts"])
+		assert.Equal(t, float64(12), a["count"])
+		assert.NotContains(t, a, "min")
+		assert.NotContains(t, a, "max")
+		assert.NotContains(t, a, "scale")
+		assert.NotContains(t, a, "positiveBucketCounts")
+		quantiles, ok := a["quantiles"].(map[string]any)
+		require.True(t, ok,
+			"requesting a quantile must exercise the aggregate quantile classification")
+		require.Contains(t, quantiles, "0.5")
+		assert.Nil(t, quantiles["0.5"],
+			"a catch-all bucket without finite boundaries has no computable quantile")
+	}
+
+	full, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, streamID, 0, end, 1, nil,
+			[]float64{0.5}, 0, false, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(full, &metric))
+
+	series := metric["timeseries"].([]any)
+	require.Len(t, series, 2)
+	var seriesBucketTotal float64
+	for _, rawSeries := range series {
+		dps := rawSeries.(map[string]any)["datapoints"].([]any)
+		require.Len(t, dps, 1, "a whole-window request merges each series once")
+		dp := dps[0].(map[string]any)
+		require.IsType(t, []any{}, dp["explicitBounds"])
+		assert.Empty(t, dp["explicitBounds"])
+		assert.NotContains(t, dp, "min")
+		assert.NotContains(t, dp, "max")
+		counts := dp["bucketCounts"].([]any)
+		require.Len(t, counts, 1)
+		seriesBucketTotal += counts[0].(float64)
+	}
+	assert.Equal(t, float64(12), seriesBucketTotal,
+		"whole-window per-series histograms must retain both catch-all buckets")
+
+	aggregate := metric["aggregate"].([]any)
+	require.Len(t, aggregate, 1)
+	assertCatchAll(aggregate[0].(map[string]any))
+
+	only, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, nil,
+			[]float64{0.5}, 0, false, 0, nil, "")
+	})
+	require.NoError(t, err)
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal(only, &envelope))
+	onlyAggregate := envelope["aggregate"].([]any)
+	require.Len(t, onlyAggregate, 1)
+	assertCatchAll(onlyAggregate[0].(map[string]any))
+}
+
 // TestGetMetric_TimezoneAlignedBuckets covers bucket boundaries landing where
 // the reader's calendar puts them rather than where the epoch does.
 //

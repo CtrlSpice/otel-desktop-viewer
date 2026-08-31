@@ -50,7 +50,7 @@ describe('DrawerNavTabs (expanded)', () => {
     setTestUrl('/traces')
     renderTabs()
     for (const label of ['Traces', 'Metrics', 'Logs']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
       expect(screen.getByText(label)).toBeVisible()
     }
   })
@@ -58,14 +58,14 @@ describe('DrawerNavTabs (expanded)', () => {
   it('marks the tab matching the current URL as the current page', () => {
     setTestUrl('/metrics')
     renderTabs()
-    expect(screen.getByRole('button', { name: 'Metrics' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute(
       'aria-current',
       'page'
     )
-    expect(screen.getByRole('button', { name: 'Traces' })).not.toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Traces' })).not.toHaveAttribute(
       'aria-current'
     )
-    expect(screen.getByRole('button', { name: 'Logs' })).not.toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Logs' })).not.toHaveAttribute(
       'aria-current'
     )
   })
@@ -73,7 +73,7 @@ describe('DrawerNavTabs (expanded)', () => {
   it('marks a signal tab as current while an item of that signal is open', () => {
     setTestUrl('/logs/log-42')
     renderTabs()
-    expect(screen.getByRole('button', { name: 'Logs' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Logs' })).toHaveAttribute(
       'aria-current',
       'page'
     )
@@ -83,7 +83,7 @@ describe('DrawerNavTabs (expanded)', () => {
     setTestUrl('/')
     renderTabs()
     for (const label of ['Traces', 'Metrics', 'Logs']) {
-      expect(screen.getByRole('button', { name: label })).not.toHaveAttribute(
+      expect(screen.getByRole('link', { name: label })).not.toHaveAttribute(
         'aria-current'
       )
     }
@@ -92,19 +92,19 @@ describe('DrawerNavTabs (expanded)', () => {
   it('navigates to the signal list when its tab is clicked', async () => {
     setTestUrl('/traces')
     renderTabs()
-    await userEvent.click(screen.getByRole('button', { name: 'Logs' }))
+    await userEvent.click(screen.getByRole('link', { name: 'Logs' }))
     expect(window.location.pathname).toBe('/logs')
   })
 
   it('moves the current-page marker to the tab that was clicked', async () => {
     setTestUrl('/traces')
     renderTabs()
-    await userEvent.click(screen.getByRole('button', { name: 'Metrics' }))
-    expect(screen.getByRole('button', { name: 'Metrics' })).toHaveAttribute(
+    await userEvent.click(screen.getByRole('link', { name: 'Metrics' }))
+    expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute(
       'aria-current',
       'page'
     )
-    expect(screen.getByRole('button', { name: 'Traces' })).not.toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Traces' })).not.toHaveAttribute(
       'aria-current'
     )
   })
@@ -112,7 +112,40 @@ describe('DrawerNavTabs (expanded)', () => {
   it('leaves the trace item path for the trace list when Traces is clicked', async () => {
     setTestUrl('/traces/abc')
     renderTabs()
-    await userEvent.click(screen.getByRole('button', { name: 'Traces' }))
+    await userEvent.click(screen.getByRole('link', { name: 'Traces' }))
+    expect(window.location.pathname).toBe('/traces')
+  })
+
+  it('preserves the active time window in each real href', () => {
+    setTestUrl('/traces?start=10&end=20&span=old')
+    renderTabs()
+    expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute(
+      'href',
+      '/metrics?start=10&end=20'
+    )
+  })
+
+  it('leaves modified clicks to native anchor handling', () => {
+    setTestUrl('/traces')
+    renderTabs()
+    const link = screen.getByRole('link', { name: 'Logs' })
+    const event = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+    })
+    let preventedByComponent = false
+    link.addEventListener(
+      'click',
+      clickEvent => {
+        preventedByComponent = clickEvent.defaultPrevented
+        clickEvent.preventDefault()
+      },
+      { once: true }
+    )
+
+    link.dispatchEvent(event)
+    expect(preventedByComponent).toBe(false)
     expect(window.location.pathname).toBe('/traces')
   })
 })

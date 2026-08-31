@@ -6,6 +6,7 @@ import {
   buildSearch,
   mergeItemQuery,
   parseRoute,
+  signalHref,
   signalIdFromPath,
   withoutParams,
   withQueryPatch,
@@ -157,6 +158,19 @@ describe('mergeItemQuery', () => {
       SIGNAL_ITEM_QUERY_PARAMS
     )
     expect(stripped).toEqual({ start: '0' })
+  })
+})
+
+describe('signalHref', () => {
+  it('preserves route-wide query state and strips item-scoped state', () => {
+    expect(
+      signalHref('metrics', {
+        start: '10',
+        end: '20',
+        span: 'span-1',
+        event: '2',
+      })
+    ).toBe('/metrics?start=10&end=20')
   })
 })
 

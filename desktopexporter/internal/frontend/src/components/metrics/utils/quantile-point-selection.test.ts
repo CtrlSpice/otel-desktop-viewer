@@ -83,4 +83,27 @@ describe('quantilePointSelectionAt', () => {
     )
     expect(got).toBeNull()
   })
+
+  it('matches merged selection by exact nanoseconds without same-ms fallback', () => {
+    const firstNs = COLUMN_START + 100n
+    const secondNs = COLUMN_START + 900n
+    const merged = [slice('merged', firstNs, 42), slice('merged', secondNs, 99)]
+    const exact = quantilePointSelectionAt(
+      [slice('pod=a', secondNs, 99)],
+      merged,
+      secondNs,
+      null,
+      'Delta'
+    )
+    const missing = quantilePointSelectionAt(
+      [slice('pod=a', secondNs, 99)],
+      merged,
+      COLUMN_START + 500n,
+      null,
+      'Delta'
+    )
+
+    expect(exact?.merged?.quantiles['0.95']).toBe(99)
+    expect(missing?.merged).toBeNull()
+  })
 })
