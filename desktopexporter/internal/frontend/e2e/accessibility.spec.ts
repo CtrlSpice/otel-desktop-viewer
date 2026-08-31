@@ -135,6 +135,16 @@ test.describe('home page accessibility', () => {
     await expect(httpTab).toHaveAttribute('aria-selected', 'false')
     await expect(httpTab).toHaveAttribute('tabindex', '-1')
 
+    const selectedStyle = await grpcTab.evaluate(element => {
+      const styles = getComputedStyle(element)
+      return {
+        borderWidth: styles.borderTopWidth,
+        boxShadow: styles.boxShadow,
+      }
+    })
+    expect(selectedStyle.borderWidth).toBe('0px')
+    expect(selectedStyle.boxShadow).toContain('inset')
+
     await page.keyboard.press('Tab')
     await expect(
       page.getByRole('button', { name: 'Copy snippet' })

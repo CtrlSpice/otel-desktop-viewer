@@ -1108,7 +1108,8 @@ svg {
   @apply border-transparent bg-primary/15 text-base-content shadow-sm shadow-primary/10;
 }
 
-/* Pane lift tabs — inactive = primary, active = base text. */
+/* Pane tabs — inactive = primary, active = base text unless navigation uses
+   PaneHeader's stronger active-destination treatment. */
 .pane-header :where(.tab:not(.tab-active)) {
   color: var(--color-primary);
 }

@@ -1,19 +1,19 @@
 <script module lang="ts">
   /*
    * PaneHeader: the single header strip used by every pane in the
-   * unified layout. Three modes, one visual contract.
+   * unified layout. Four modes, one visual contract.
    *
    * Modes
-   *   • title       — plain bold label on the bar background, no lift.
+   *   • title       — plain bold label on the bar background, no tabs.
    *                   Use for panes with no tab navigation (e.g. "Fields",
    *                   "Timeseries", "Log Record").
-   *   • tabs        — daisyUI tabs-lift strip. Active tab lifts into the
-   *                   pane body below. Use when the pane has 2+ navigable
-   *                   views.
-   *   • title-tabs  — flat title on the left + lift tabs on the right.
+   *   • tabs        — context-aware tab strip. Route navigation highlights
+   *                   the active destination with a capsule; local tabs use
+   *                   an underline. Use when the pane has 2+ views.
+   *   • title-tabs  — flat title on the left + local tabs on the right.
    *                   Use when the pane has a stable label AND tabs that
    *                   switch a sub-view inside the same pane.
-   *   • toolbar     — chrome strip with no title or lift tabs. Use the
+   *   • toolbar     — chrome strip with no title or tabs. Use the
    *                   `right` snippet for a full-width control row (e.g.
    *                   time-range preset pills in the datetime popover).
    *
@@ -34,8 +34,8 @@
    *   right-aligned via the bar's own flex layout.
    *
    * Consumer contract
-   *   The active lift tab merges into the surface directly below the
-   *   header (bg-base-200 pane body). The header itself is bg-base-300.
+   *   The header is bg-base-300. Selection is drawn inside each tab without
+   *   manufacturing borders around or between the header and pane body.
    */
   import type { Snippet } from 'svelte'
   import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
@@ -262,7 +262,7 @@
     <div
       role={navigation ? 'navigation' : 'tablist'}
       aria-label={ariaLabel}
-      class="tabs tabs-lift {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
+      class="tabs {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
       onkeydown={navigation ? undefined : handleTablistKeydown}
     >
       {#if layout === 'right'}
@@ -274,7 +274,7 @@
           <a
             href={tab.disabled ? undefined : tab.href}
             class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
-              ? 'tab-active [--tab-bg:var(--color-base-200)]'
+              ? 'tab-active'
               : ''}"
             aria-current={active ? 'page' : undefined}
             aria-disabled={tab.disabled ? 'true' : undefined}
@@ -299,7 +299,7 @@
             id={tabPanelID ? paneTabID(tabPanelID, tab.id) : undefined}
             aria-controls={tabPanelID}
             class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
-              ? 'tab-active [--tab-bg:var(--color-base-200)]'
+              ? 'tab-active'
               : ''}"
             aria-selected={active}
             tabindex={tab.id === tabbableTabID(tabs, activeID) ? 0 : -1}
@@ -437,7 +437,7 @@
     @apply pt-1;
   }
 
-  /* Title-only: centered vertically since there are no lift tabs.
+  /* Title-only: centered vertically since there are no tabs.
      px-3 matches FieldGroup headings and detail row inset. */
   .pane-header--title {
     @apply items-center px-3 py-2;
@@ -605,8 +605,8 @@
 
   /* DaisyUI's `.tabs` is `display:flex; flex-wrap:wrap` and each
      `.tab` is itself `inline-flex; flex-wrap:wrap`. Both layers
-     can wrap when the pane gets narrow, which knocks the lift
-     tabs out of alignment. Force nowrap on both for every layout. */
+     can wrap when the pane gets narrow, which knocks the tabs out
+     of alignment. Force nowrap on both for every layout. */
   .pane-header :global(.tabs.pane-header__tabs) {
     flex-wrap: nowrap !important;
     align-items: flex-end;
@@ -615,6 +615,42 @@
   .pane-header :global(.tabs.pane-header__tabs > .tab) {
     flex-wrap: nowrap !important;
     white-space: nowrap;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* Daisy's lifted-tab borders are deliberately absent. Navigation and local
+     tabs represent different actions, so their active treatments differ too. */
+  .pane-header :global(.pane-header__tabs[role='navigation']) {
+    @apply items-center gap-1;
+  }
+
+  .pane-header
+    :global(.pane-header__tabs[role='navigation'] > .pane-header__tab) {
+    @apply my-1 h-8 rounded-lg;
+  }
+
+  .pane-header
+    :global(
+      .pane-header__tabs[role='navigation'] > .pane-header__tab.tab-active
+    ) {
+    color: var(--color-primary);
+    background: color-mix(in oklab, var(--color-primary) 15%, transparent);
+  }
+
+  .pane-header :global(.pane-header__tabs[role='tablist'] > .pane-header__tab) {
+    border-radius: 0;
+  }
+
+  .pane-header
+    :global(.pane-header__tabs[role='tablist'] > .pane-header__tab.tab-active) {
+    color: var(--color-base-content);
+    background: var(
+      --pane-tab-active-bg,
+      color-mix(in oklab, var(--color-primary) 7%, transparent)
+    );
+    box-shadow: inset 0 -2px var(--color-primary);
   }
 
   /* Equal layout: each tab gets 1fr of the row. No trail; no
@@ -629,12 +665,8 @@
      gaps. Override at the call site with style="--pane-tab-min: …"
      if a future tab strip uses longer labels.
 
-     Note: do NOT set `overflow: hidden` on the tab — daisyUI's
-     tabs-lift draws the rounded outer corners via a ::before pseudo
-     that extends past the tab box, so clipping overflow erases the
-     notch. The pixel min on the resize panel (minDetailPx) is what
-     prevents these mins from ever forcing the strip wider than the
-     pane. */
+     The pixel min on the resize panel (minDetailPx) prevents these mins from
+     ever forcing the strip wider than the pane. */
   .pane-header :global(.tabs.pane-header__tabs--equal) {
     --pane-tab-min: 7rem;
   }
@@ -645,6 +677,6 @@
   }
 
   .pane-header__tab-trail {
-    @apply min-w-4 shrink-0 grow self-stretch border-b border-base-300;
+    @apply min-w-4 shrink-0 grow self-stretch;
   }
 </style>

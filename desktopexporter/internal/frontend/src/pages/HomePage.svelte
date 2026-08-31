@@ -551,7 +551,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
   }
 
   .home-endpoint-chrome :global(.pane-header__tab.tab-active) {
-    --tab-bg: var(--color-base-100);
+    --pane-tab-active-bg: var(--color-base-100);
   }
 
   .home-endpoint-chrome :global(.pane-header__tab:not(.tab-active)) {

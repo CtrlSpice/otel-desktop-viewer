@@ -35,6 +35,7 @@ describe('PaneHeader local tabs', () => {
     expect(fields).toHaveAttribute('tabindex', '0')
     expect(links).toHaveAttribute('aria-controls', 'detail-panel')
     expect(links).toHaveAttribute('tabindex', '-1')
+    expect(fields.closest('[role="tablist"]')).not.toHaveClass('tabs-lift')
   })
 
   it('moves and activates with arrow keys, wrapping and skipping disabled tabs', async () => {
