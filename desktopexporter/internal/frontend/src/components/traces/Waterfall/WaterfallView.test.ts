@@ -80,6 +80,14 @@ function rowIDs(): string[] {
   )
 }
 
+function spanRow(id: string): HTMLTableRowElement {
+  const row = document.querySelector<HTMLTableRowElement>(
+    `tr[data-span-id="${id}"]`
+  )
+  expect(row, `row ${id} should exist`).toBeTruthy()
+  return row!
+}
+
 function navigationSpans(): SpanNode[] {
   const spans = [
     spanNode('healthy-before', null, 0),
@@ -507,6 +515,67 @@ describe('WaterfallView error navigation, vim brackets', () => {
 
     press(']')
     expect(onSelectSpan).not.toHaveBeenCalled()
+  })
+})
+
+describe('WaterfallView row keyboard navigation', () => {
+  beforeEach(() => {
+    scrollMock.mockClear()
+    resetCollapseStoreForTests()
+  })
+
+  async function press(
+    row: HTMLTableRowElement,
+    key: string,
+    expectedFocusedID: string
+  ) {
+    row.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    )
+    await waitFor(() => expect(spanRow(expectedFocusedID)).toHaveFocus())
+  }
+
+  it('enters through the first span and traverses rows with Vim or arrow keys', async () => {
+    const onSelectSpan = vi.fn()
+    renderTree({ onSelectSpan })
+    await tick()
+
+    expect(spanRow('a')).toHaveAttribute('tabindex', '0')
+    for (const id of ALL_IDS.slice(1)) {
+      expect(spanRow(id)).toHaveAttribute('tabindex', '-1')
+    }
+
+    spanRow('a').focus()
+    await press(spanRow('a'), 'j', 'b')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('b')
+
+    await press(spanRow('b'), 'ArrowDown', 'c')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('c')
+
+    await press(spanRow('c'), 'k', 'b')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('b')
+
+    await press(spanRow('b'), 'ArrowUp', 'a')
+    expect(onSelectSpan).toHaveBeenLastCalledWith('a')
+  })
+
+  it('enters through the selected span when it is visible', async () => {
+    renderTree({ selectedSpanID: 'c' })
+    await tick()
+
+    expect(spanRow('a')).toHaveAttribute('tabindex', '-1')
+    expect(spanRow('c')).toHaveAttribute('tabindex', '0')
+  })
+
+  it('removes the virtual scroll viewport from the row tab sequence', async () => {
+    renderTree()
+    await tick()
+
+    expect(
+      document.querySelector(
+        '[role="region"][aria-label="Span waterfall rows"]'
+      )
+    ).toHaveAttribute('tabindex', '-1')
   })
 })
 

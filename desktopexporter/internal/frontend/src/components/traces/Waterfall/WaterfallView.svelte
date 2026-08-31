@@ -258,7 +258,7 @@
     computeSearchCollapsedParents,
     buildStructuralMaps,
   } from './waterfall-tree'
-  import { ancestorIdsOf } from './waterfall-reveal'
+  import { ancestorIdsOf, keyboardAnchorSpanID } from './waterfall-reveal'
   import {
     collapsedForTrace,
     setCollapsedForTrace,
@@ -690,6 +690,14 @@
     () => new Map(rows.map(row => [row.spanNode.spanData.spanID, row]))
   )
 
+  let keyboardAnchorID = $derived(
+    keyboardAnchorSpanID(
+      selectedSpanID,
+      visibleRows.map(row => row.spanNode.spanData.spanID),
+      parentBySpanID
+    )
+  )
+
   type VirtualListRef = {
     scroll: (options: {
       index: number
@@ -749,6 +757,21 @@
   // --- Focus & keyboard on the grid ---
 
   let gridHostEl = $state<HTMLDivElement | null>(null)
+
+  $effect(() => {
+    const grid = gridHostEl
+    if (!grid) return
+
+    // Rows own keyboard entry; the package's focusable scroll viewport would
+    // otherwise add a dead Tab stop immediately before the roving row.
+    void tick().then(() => {
+      if (gridHostEl !== grid) return
+      const viewport = grid.querySelector<HTMLElement>(
+        '.waterfall-vlist-viewport'
+      )
+      if (viewport) viewport.tabIndex = -1
+    })
+  })
 
   async function focusRowTr(spanID: string) {
     await tick()
@@ -813,10 +836,9 @@
 
     const focused = document.activeElement as HTMLElement | null
     const focusedID =
-      focused?.dataset.spanID ??
-      (selectedSpanID && focused?.closest(`tr[data-span-id]`)
-        ? selectedSpanID
-        : null)
+      focused
+        ?.closest<HTMLTableRowElement>('tr[data-span-id]')
+        ?.getAttribute('data-span-id') ?? null
 
     if (handleTreeKeys(e, focusedID ?? selectedSpanID)) return
 
@@ -1005,6 +1027,7 @@
               {row}
               {barGridPercents}
               selected={sid === selectedSpanID}
+              tabbable={sid === keyboardAnchorID}
               visible={true}
               subtreeCollapsed={effectiveCollapsed.has(sid)}
               matched={hasActiveSearch && matchedIDs.has(sid)}
