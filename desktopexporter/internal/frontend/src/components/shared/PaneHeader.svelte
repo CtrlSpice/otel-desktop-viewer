@@ -7,9 +7,8 @@
    *   • title       — plain bold label on the bar background, no tabs.
    *                   Use for panes with no tab navigation (e.g. "Fields",
    *                   "Timeseries", "Log Record").
-   *   • tabs        — context-aware tab strip. Route navigation highlights
-   *                   the active destination with a capsule; local tabs use
-   *                   an underline. Use when the pane has 2+ views.
+   *   • tabs        — flat tab strip with an underlined active item. Use
+   *                   when the pane has 2+ views or route destinations.
    *   • title-tabs  — flat title on the left + local tabs on the right.
    *                   Use when the pane has a stable label AND tabs that
    *                   switch a sub-view inside the same pane.
@@ -610,41 +609,21 @@
   .pane-header :global(.tabs.pane-header__tabs) {
     flex-wrap: nowrap !important;
     align-items: flex-end;
+    @apply gap-1;
   }
 
   .pane-header :global(.tabs.pane-header__tabs > .tab) {
     flex-wrap: nowrap !important;
     white-space: nowrap;
     border: 0;
+    border-radius: 0;
     background: transparent;
     box-shadow: none;
   }
 
-  /* Daisy's lifted-tab borders are deliberately absent. Navigation and local
-     tabs represent different actions, so their active treatments differ too. */
-  .pane-header :global(.pane-header__tabs[role='navigation']) {
-    @apply items-center gap-1;
-  }
-
-  .pane-header
-    :global(.pane-header__tabs[role='navigation'] > .pane-header__tab) {
-    @apply my-1 h-8 rounded-lg;
-  }
-
-  .pane-header
-    :global(
-      .pane-header__tabs[role='navigation'] > .pane-header__tab.tab-active
-    ) {
-    color: var(--color-primary);
-    background: color-mix(in oklab, var(--color-primary) 15%, transparent);
-  }
-
-  .pane-header :global(.pane-header__tabs[role='tablist'] > .pane-header__tab) {
-    border-radius: 0;
-  }
-
-  .pane-header
-    :global(.pane-header__tabs[role='tablist'] > .pane-header__tab.tab-active) {
+  /* One selection language everywhere: Daisy's lifted borders stay absent,
+     while the inset underline does not alter tab or header geometry. */
+  .pane-header :global(.pane-header__tabs > .pane-header__tab.tab-active) {
     color: var(--color-base-content);
     background: var(
       --pane-tab-active-bg,
