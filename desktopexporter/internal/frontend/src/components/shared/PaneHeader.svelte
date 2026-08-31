@@ -632,6 +632,20 @@
     box-shadow: inset 0 -2px var(--color-primary);
   }
 
+  .pane-header :global(.pane-header__tabs > .pane-header__tab:focus-visible) {
+    color: var(--color-base-content);
+    outline: none;
+    background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+    box-shadow: inset 0 -3px var(--color-primary);
+  }
+
+  @media (forced-colors: active) {
+    .pane-header :global(.pane-header__tabs > .pane-header__tab:focus-visible) {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+  }
+
   /* Equal layout: each tab gets 1fr of the row. No trail; no
      horizontal scroll — labels truncate before the row overflows. */
   .pane-header :global(.tabs.pane-header__tabs--equal) {

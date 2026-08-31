@@ -140,10 +140,12 @@ test.describe('home page accessibility', () => {
       return {
         borderWidth: styles.borderTopWidth,
         boxShadow: styles.boxShadow,
+        outlineStyle: styles.outlineStyle,
       }
     })
     expect(selectedStyle.borderWidth).toBe('0px')
     expect(selectedStyle.boxShadow).toContain('inset')
+    expect(selectedStyle.outlineStyle).toBe('none')
 
     await page.keyboard.press('Tab')
     await expect(
