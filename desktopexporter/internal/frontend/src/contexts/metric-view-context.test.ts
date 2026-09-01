@@ -180,6 +180,23 @@ function makeRateSelectionMetric() {
   return { metric, later, selectedBucketStart: base + 600n }
 }
 
+function makeHistogramMetric(): MetricData {
+  const metric = makeCumulativeSumMetric()
+  return {
+    ...metric,
+    id: 'histogram-m1',
+    metricType: 'Histogram',
+    aggregationTemporality: 'Delta',
+    isMonotonic: null,
+    timeseries: metric.timeseries.map(timeseries => ({
+      ...timeseries,
+      datapoints: [],
+      datapointCount: 0,
+      lastSeenNs: null,
+    })),
+  }
+}
+
 type ProbeOptions = {
   metric?: MetricData
   seriesDatapoints?: Readonly<Record<string, SumDataPoint[]>>
@@ -363,6 +380,39 @@ describe('metric view context visibility seeding', () => {
     const ctx = renderProbe('/metrics/m1')
     expect(ctx.isHistogramKind).toBe(false)
     expect([...ctx.visibleSeries].sort()).toEqual(['route=/a', 'route=/b'])
+  })
+
+  it('restores a shared visible set and rewrites it after a legend change', async () => {
+    const ctx = renderProbe('/metrics/m1?visible=route%3D%2Fb')
+    expect([...ctx.visibleSeries]).toEqual(['route=/b'])
+
+    ctx.toggleTimeseriesVisible('route=/a', true)
+    await tick()
+
+    expect(new URLSearchParams(window.location.search).get('visible')).toBe(
+      'route=/a,route=/b'
+    )
+
+    ctx.clearAllTimeseriesVisible()
+    await tick()
+
+    expect(new URLSearchParams(window.location.search).get('visible')).toBe('-')
+  })
+})
+
+describe('metric view context quantile URL sync', () => {
+  it('restores and rewrites the active quantile overlay', async () => {
+    const ctx = renderProbe('/metrics/histogram-m1?quantiles=0.95', {
+      metric: makeHistogramMetric(),
+    })
+    expect([...ctx.activeQuantileOverlays]).toEqual(['0.95'])
+
+    ctx.setActiveQuantileOverlay('0.99')
+    await tick()
+
+    expect(new URLSearchParams(window.location.search).get('quantiles')).toBe(
+      '0.99'
+    )
   })
 })
 

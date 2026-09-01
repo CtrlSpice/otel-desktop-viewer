@@ -524,10 +524,11 @@ export function createMetricViewContext(
   // --- URL <-> metric sub-view sync ---------------------------------
   //
   // The selected metric lives in the path (`/metrics/<id>`, owned by
-  // MetricsPage); these four item-scoped query params carry the sub-view so a
+  // MetricsPage); these item-scoped query params carry the sub-view so a
   // shared snapshot link and the browser back/forward buttons restore it:
   //   agg=<aggregationView>   htab=<activeHistogramTab>
   //   hscope=<histogramScope> dp=<selectedDatapointID>
+  //   visible=<visibleSeries> quantiles=<activeQuantileOverlays>
   // Tab/datapoint picks push a history entry (navigational); aggregation/scope
   // adjustments replace (silent). The heatmap/quantile bucket selection stays
   // transient (not a stable datapoint id) and is out of the URL this iteration.
@@ -542,6 +543,8 @@ export function createMetricViewContext(
   // The metric sub-view currently frozen in the URL. Null until the
   // per-metric effect first applies the URL.
   let urlMetricViewSnapshot: MetricViewQuery | null = null
+  let urlVisibleSeries = false
+  let urlQuantileOverlays = false
 
   // What seeding resolved the aggregation to for the current metric
   // (persisted choice, else the smart default). This is the state a URL with
@@ -566,6 +569,9 @@ export function createMetricViewContext(
       allowedAggs: availableAggregationViewsList,
       datapointIDs: index.datapointIDs,
       seriesKeys: index.seriesKeys,
+      quantileKeys: new Set(
+        DEFAULT_HISTOGRAM_QUANTILES.map(quantileKeyFromValue)
+      ),
     }
   }
 
@@ -638,6 +644,10 @@ export function createMetricViewContext(
         hscope: view.histogramScope,
         dp: datapointID,
         series: selectedSeriesKey,
+        ...(urlVisibleSeries ? { visible: [...view.visibleSeries] } : {}),
+        ...(urlQuantileOverlays
+          ? { quantiles: [...view.activeQuantileOverlays] }
+          : {}),
       }
     }
     return {
@@ -648,6 +658,7 @@ export function createMetricViewContext(
       agg: view.aggregationView,
       dp: datapointID,
       series: selectedSeriesKey,
+      ...(urlVisibleSeries ? { visible: [...view.visibleSeries] } : {}),
     }
   }
 
@@ -665,12 +676,21 @@ export function createMetricViewContext(
     const q = parsed.query
     urlMetricViewSnapshot = q
     pendingUrlDatapoint = parsed.pending
+    urlVisibleSeries = q.visible !== undefined
+    urlQuantileOverlays = q.kind === 'histogram' && q.quantiles !== undefined
+
+    if (q.visible !== undefined) {
+      view.visibleSeries = new SvelteSet(q.visible)
+    }
 
     if (q.kind === 'timeseries') {
       view.aggregationView = (q.agg as AggregationView) ?? seededAggregationView
     } else {
       view.activeHistogramTab = q.htab
       view.histogramScope = q.hscope
+      if (q.quantiles !== undefined) {
+        view.activeQuantileOverlays = new SvelteSet(q.quantiles)
+      }
     }
 
     if (q.dp && selectableDatapointIndex.datapointByID.has(q.dp)) {
@@ -691,7 +711,7 @@ export function createMetricViewContext(
     // default visible set is the first MAX_VISIBLE_TIMESERIES, so a link to
     // series 40 of 63 would otherwise land on a chart that does not contain
     // it. Adding rather than replacing keeps the rest of the user's view.
-    if (q.series) revealSeries(q.series)
+    if (q.series && q.visible === undefined) revealSeries(q.series)
 
     // This is the fetch trigger for a raw-only URL datapoint. TimeseriesPanel
     // opens the nested datapoint section after the exact id resolves.
@@ -711,7 +731,13 @@ export function createMetricViewContext(
     if (!view.visibleSeries.has(key)) view.visibleSeries.add(key)
   }
 
-  function writeMetricUrl(mode: HistoryMode): void {
+  function writeMetricUrl(
+    mode: HistoryMode,
+    includeVisibleSeries = false,
+    includeQuantileOverlays = false
+  ): void {
+    if (includeVisibleSeries) urlVisibleSeries = true
+    if (includeQuantileOverlays) urlQuantileOverlays = true
     const q = viewStateToMetricViewQuery()
     urlMetricViewSnapshot = q
     setMetricViewQuery(q, mode)
@@ -2135,6 +2161,7 @@ export function createMetricViewContext(
 
   function setActiveQuantileOverlay(quantileKey: string) {
     view.activeQuantileOverlays = new SvelteSet([quantileKey])
+    writeMetricUrl('replace', false, true)
   }
 
   function setShowSelectionStatOverlays(next: boolean) {
@@ -2165,6 +2192,7 @@ export function createMetricViewContext(
     else next.delete(key)
     view.visibleSeries = next
     if (streamID) savePersistedTimeseriesVisible(streamID, next)
+    writeMetricUrl('replace', true)
   }
 
   function clearAllTimeseriesVisible() {
@@ -2172,6 +2200,7 @@ export function createMetricViewContext(
     const streamID = getMetric()?.id
     view.visibleSeries = new SvelteSet()
     if (streamID) savePersistedTimeseriesVisible(streamID, view.visibleSeries)
+    writeMetricUrl('replace', true)
   }
 
   function onDatapointClick(dp: DataPoint) {

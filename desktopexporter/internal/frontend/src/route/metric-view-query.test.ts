@@ -12,6 +12,7 @@ const timeseriesCtx = {
   allowedAggs: ['raw', 'sum', 'avg', 'rate'],
   datapointIDs: new Set(['dp-1', 'dp-2']),
   seriesKeys: new Set(['series-1', 'series-2']),
+  quantileKeys: new Set(['0.5', '0.95', '0.99']),
 }
 
 const histogramCtx = {
@@ -19,6 +20,7 @@ const histogramCtx = {
   allowedAggs: ['raw'],
   datapointIDs: new Set(['dp-h1']),
   seriesKeys: new Set(['series-h1']),
+  quantileKeys: new Set(['0.5', '0.95', '0.99']),
 }
 
 describe('parseMetricViewQuery', () => {
@@ -270,5 +272,34 @@ describe('series param', () => {
     const merged = mergeRouteQueryWithMetricView({ start: '1' }, view)
     expect(merged.series).toBe('series-2')
     expect(parseMetricViewQuery(merged, timeseriesCtx)).toEqual(view)
+  })
+})
+
+describe('shareable legend state', () => {
+  it('round-trips known visible series and quantile overlays', () => {
+    const q = parseMetricViewQuery(
+      { visible: 'series-h1,missing', quantiles: '0.99,unknown,0.5' },
+      histogramCtx
+    )
+
+    expect(q).toMatchObject({
+      kind: 'histogram',
+      visible: ['series-h1'],
+      quantiles: ['0.5', '0.99'],
+    })
+    expect(metricViewQueryToParams(q)).toMatchObject({
+      visible: 'series-h1',
+      quantiles: '0.5,0.99',
+    })
+  })
+
+  it('does not turn an entirely unknown set into an explicit empty view', () => {
+    const q = parseMetricViewQuery(
+      { visible: 'missing', quantiles: 'unknown' },
+      histogramCtx
+    )
+
+    expect(q).not.toHaveProperty('visible')
+    expect(q).not.toHaveProperty('quantiles')
   })
 })

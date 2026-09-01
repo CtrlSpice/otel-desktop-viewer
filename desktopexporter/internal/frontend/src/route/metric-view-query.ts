@@ -14,6 +14,7 @@ export type TimeseriesMetricViewQuery = {
   agg: string | null
   dp: string | null
   series: string | null
+  visible?: readonly string[]
 }
 
 export type HistogramMetricViewQuery = {
@@ -22,6 +23,8 @@ export type HistogramMetricViewQuery = {
   hscope: 'window' | 'bucket'
   dp: string | null
   series: string | null
+  visible?: readonly string[]
+  quantiles?: readonly string[]
 }
 
 export type MetricViewQuery =
@@ -33,6 +36,8 @@ export type MetricViewParseContext = {
   datapointIDs: ReadonlySet<string>
   /** Series ids present on the current metric. */
   seriesKeys: ReadonlySet<string>
+  /** Quantile overlay keys supported by the histogram chart. */
+  quantileKeys: ReadonlySet<string>
 }
 
 const HTAB_VALUES = ['heatmap', 'quantiles', 'histogram'] as const
@@ -91,6 +96,19 @@ function parseSeriesParam(
   return series && seriesKeys.has(series) ? series : null
 }
 
+function parseKnownSetParam(
+  raw: string | undefined,
+  known: ReadonlySet<string>
+): readonly string[] | undefined {
+  if (!raw) return undefined
+  if (raw === '-') return []
+
+  const values = [
+    ...new Set(raw.split(',').filter(value => known.has(value))),
+  ].sort()
+  return values.length > 0 ? values : undefined
+}
+
 function parseOptionalMember(
   raw: string | undefined,
   allowed: readonly string[]
@@ -128,7 +146,9 @@ function parseEnumMember<T extends string>(
 function parseHistogramMetricViewQuery(
   query: Record<string, string>,
   dp: string | null,
-  series: string | null
+  series: string | null,
+  visible: readonly string[] | undefined,
+  quantiles: readonly string[] | undefined
 ): HistogramMetricViewQuery {
   return {
     kind: 'histogram',
@@ -136,6 +156,8 @@ function parseHistogramMetricViewQuery(
     hscope: parseEnumMember(query.hscope, HSCOPE_VALUES, 'window'),
     dp,
     series,
+    ...(visible === undefined ? {} : { visible }),
+    ...(quantiles === undefined ? {} : { quantiles }),
   }
 }
 
@@ -153,13 +175,15 @@ function parseTimeseriesMetricViewQuery(
   query: Record<string, string>,
   allowedAggs: readonly string[],
   dp: string | null,
-  series: string | null
+  series: string | null,
+  visible: readonly string[] | undefined
 ): TimeseriesMetricViewQuery {
   return {
     kind: 'timeseries',
     agg: parseOptionalMember(query.agg, allowedAggs),
     dp,
     series,
+    ...(visible === undefined ? {} : { visible }),
   }
 }
 
@@ -178,9 +202,33 @@ export function parseMetricViewQuery(
 ): MetricViewQuery {
   const dp = parseDatapointParam(query, ctx.datapointIDs)
   const series = parseSeriesParam(query, ctx.seriesKeys)
+  const visible = parseKnownSetParam(query.visible, ctx.seriesKeys)
   return ctx.isHistogramKind
-    ? parseHistogramMetricViewQuery(query, dp, series)
-    : parseTimeseriesMetricViewQuery(query, ctx.allowedAggs, dp, series)
+    ? parseHistogramMetricViewQuery(
+        query,
+        dp,
+        series,
+        visible,
+        parseKnownSetParam(query.quantiles, ctx.quantileKeys)
+      )
+    : parseTimeseriesMetricViewQuery(
+        query,
+        ctx.allowedAggs,
+        dp,
+        series,
+        visible
+      )
+}
+
+function querySetsEqual(
+  a: readonly string[] | undefined,
+  b: readonly string[] | undefined
+): boolean {
+  if (a === undefined || b === undefined) return a === b
+  if (a.length !== b.length) return false
+  const left = [...a].sort()
+  const right = [...b].sort()
+  return left.every((value, index) => value === right[index])
 }
 
 /**
@@ -199,8 +247,14 @@ export function metricViewQueriesEqual(
 ): boolean {
   if (a.dp !== b.dp) return false
   if (a.series !== b.series) return false
+  if (!querySetsEqual(a.visible, b.visible)) return false
   if (a.kind === 'histogram') {
-    return b.kind === 'histogram' && a.htab === b.htab && a.hscope === b.hscope
+    return (
+      b.kind === 'histogram' &&
+      a.htab === b.htab &&
+      a.hscope === b.hscope &&
+      querySetsEqual(a.quantiles, b.quantiles)
+    )
   }
   return b.kind === 'timeseries' && a.agg === b.agg
 }
@@ -218,10 +272,25 @@ export function metricViewQueriesEqual(
 export function metricViewQueryToParams(
   q: MetricViewQuery
 ): Partial<Record<MetricViewParam, string>> {
-  const { kind: _, ...fields } = q
-  return Object.fromEntries(
-    Object.entries(fields).filter(([, v]) => v != null)
+  const params = Object.fromEntries(
+    Object.entries({
+      ...(q.kind === 'histogram'
+        ? { htab: q.htab, hscope: q.hscope }
+        : { agg: q.agg }),
+      dp: q.dp,
+      series: q.series,
+    }).filter(([, value]) => value != null)
   ) as Partial<Record<MetricViewParam, string>>
+
+  if (q.visible !== undefined) {
+    params.visible =
+      q.visible.length > 0 ? [...q.visible].sort().join(',') : '-'
+  }
+  if (q.kind === 'histogram' && q.quantiles !== undefined) {
+    params.quantiles =
+      q.quantiles.length > 0 ? [...q.quantiles].sort().join(',') : '-'
+  }
+  return params
 }
 
 /**
