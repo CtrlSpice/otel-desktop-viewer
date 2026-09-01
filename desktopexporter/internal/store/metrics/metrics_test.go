@@ -240,6 +240,78 @@ func searchSummariesAll(t *testing.T, s *store.Store, ctx context.Context) []map
 	return out
 }
 
+func TestSearchMetricSummariesLimit(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+	}))
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.SearchSummariesWithLimit(ctx, db, 0, maxNano, nil, 2)
+	})
+	require.NoError(t, err)
+	var summaries []map[string]any
+	require.NoError(t, json.Unmarshal(raw, &summaries))
+	require.Len(t, summaries, 2)
+	require.Equal(t, "exponential_histogram_metric", summaries[0]["name"])
+	require.Equal(t, "histogram_metric", summaries[1]["name"])
+
+	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.SearchSummariesWithLimit(ctx, db, 0, maxNano, nil, 0)
+	})
+	require.ErrorIs(t, err, metrics.ErrInvalidMetricLimit)
+}
+
+func TestSearchMetricSummariesSortBeforeLimit(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	data := pmetric.NewMetrics()
+	rm := data.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "sort-test")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("sort-test")
+	base := time.Now().UnixNano()
+	for _, fixture := range []struct {
+		name      string
+		timestamp int64
+		points    int
+	}{
+		{name: "dense", timestamp: base, points: 3},
+		{name: "sparse", timestamp: base + int64(time.Second), points: 1},
+	} {
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName(fixture.name)
+		gauge := metric.SetEmptyGauge()
+		for i := 0; i < fixture.points; i++ {
+			dp := gauge.DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.Timestamp(fixture.timestamp + int64(i)))
+			dp.SetDoubleValue(float64(i))
+			dp.Attributes().PutInt("series", int64(i))
+		}
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	limit := int64(1)
+	for _, field := range []string{"dataPointCount", "seriesCount"} {
+		t.Run(field, func(t *testing.T) {
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.SearchSummariesWithOptions(ctx, db, 0, maxNano, nil, search.ResultOptions{
+					Limit: &limit,
+					Sort:  &search.Sort{Field: field, Direction: "desc"},
+				})
+			})
+			require.NoError(t, err)
+			var summaries []map[string]any
+			require.NoError(t, json.Unmarshal(raw, &summaries))
+			require.Len(t, summaries, 1)
+			require.Equal(t, "dense", summaries[0]["name"], "aggregate sort must run before LIMIT")
+		})
+	}
+}
+
 func findSummary(t *testing.T, summaries []map[string]any, name string) map[string]any {
 	t.Helper()
 	for _, s := range summaries {

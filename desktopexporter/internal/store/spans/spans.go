@@ -23,6 +23,7 @@ import (
 var (
 	ErrTraceIDNotFound    = errors.New("trace ID not found")
 	ErrInvalidTraceQuery  = errors.New("invalid trace search query")
+	ErrInvalidTraceLimit  = errors.New("invalid trace search limit")
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
@@ -318,7 +319,20 @@ func appendPass(
 
 // SearchTraces returns trace summaries in the time range matching the optional criteria.
 func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
-	finalQuery, args, err := searchTracesSQL(startTime, endTime, criteria)
+	return searchTraces(ctx, db, startTime, endTime, criteria, search.ResultOptions{})
+}
+
+// SearchTracesWithLimit returns at most limit trace summaries.
+func SearchTracesWithLimit(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit int64) (json.RawMessage, error) {
+	return searchTraces(ctx, db, startTime, endTime, criteria, search.ResultOptions{Limit: &limit})
+}
+
+func SearchTracesWithOptions(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchTraces(ctx, db, startTime, endTime, criteria, options)
+}
+
+func searchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	finalQuery, args, err := searchTracesSQL(startTime, endTime, criteria, options)
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +350,7 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 // searchTracesSQL renders the trace-summary query and its bound arguments.
 // Split out for the same reason as searchSpansSQL: so a golden test can pin the
 // rendered text without standing up a store.
-func searchTracesSQL(startTime, endTime int64, criteria any) (string, []any, error) {
+func searchTracesSQL(startTime, endTime int64, criteria any, options search.ResultOptions) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -363,16 +377,60 @@ func searchTracesSQL(startTime, endTime int64, criteria any) (string, []any, err
 	// computed from the min/max across ALL spans). startTime and
 	// durationNs are precomputed from span bounds so the summary always
 	// reflects wall-clock coverage.
+	orderBy, err := traceSummaryOrderBy(options.Sort)
+	if err != nil {
+		return "", nil, err
+	}
+	limitClause := ""
+	if options.Limit != nil {
+		if *options.Limit < 1 {
+			return "", nil, fmt.Errorf("SearchTraces: limit must be positive: %w", ErrInvalidTraceLimit)
+		}
+		limitClause = "\n\t\t\tlimit ?"
+		args = append(args, *options.Limit)
+	}
+
 	finalQuery, err := queries.Render(queries.SearchTraces, searchTracesParams{
 		CTEs:  cteSQL,
 		From:  spanSearchFrom,
 		Where: whereClause,
+		Order: orderBy,
+		Limit: limitClause,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
 	}
 
 	return finalQuery, args, nil
+}
+
+func traceSummaryOrderBy(sortOption *search.Sort) (string, error) {
+	if sortOption == nil {
+		return "trace_start_time desc, trace_id asc", nil
+	}
+	expressions := map[string]string{
+		"serviceName":  "coalesce(service_name, '')",
+		"rootSpanName": "coalesce(root_name, '')",
+		"startTime":    "trace_start_time",
+		"duration":     "(trace_end_time - trace_start_time)",
+		"spanCount":    "span_count",
+		"errorCount":   "error_count",
+	}
+	expression, ok := expressions[sortOption.Field]
+	if !ok {
+		return "", fmt.Errorf("unsupported trace sort field %q: %w", sortOption.Field, search.ErrInvalidSort)
+	}
+	direction, err := search.SortDirectionSQL(sortOption.Direction)
+	if err != nil {
+		return "", err
+	}
+	nulls := "nulls last"
+	if sortOption.Field == "duration" && direction == "desc" {
+		// compareByOptionalBigintField in frontend/src/utils/compare.ts puts
+		// missing values after defined ones before descending reverses the order.
+		nulls = "nulls first"
+	}
+	return fmt.Sprintf("%s %s %s, trace_id asc", expression, direction, nulls), nil
 }
 
 // SearchSpans returns spans for a single trace, optionally filtered by search criteria.

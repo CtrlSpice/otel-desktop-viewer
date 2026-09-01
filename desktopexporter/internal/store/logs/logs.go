@@ -32,6 +32,7 @@ func resourceServiceName(attrs pcommon.Map) string {
 
 var (
 	ErrInvalidLogQuery   = errors.New("invalid log search query")
+	ErrInvalidLogLimit   = errors.New("invalid log search limit")
 	ErrLogsStoreInternal = errors.New("logs store internal error")
 	ErrLogIDNotFound     = errors.New("log ID not found")
 )
@@ -271,6 +272,19 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 //
 // `bodyPreview` is server-truncated by the body_preview macro.
 func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
+	return searchLogs(ctx, db, startTime, endTime, criteria, search.ResultOptions{})
+}
+
+// SearchWithLimit returns at most limit log summaries.
+func SearchWithLimit(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit int64) (json.RawMessage, error) {
+	return searchLogs(ctx, db, startTime, endTime, criteria, search.ResultOptions{Limit: &limit})
+}
+
+func SearchWithOptions(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchLogs(ctx, db, startTime, endTime, criteria, options)
+}
+
+func searchLogs(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -287,10 +301,24 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 
 	logTimeExpr := `(case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end)`
 	whereWithTime := strings.ReplaceAll(whereClause, "l.log_time", logTimeExpr)
+	orderBy, err := logSummaryOrderBy(options.Sort)
+	if err != nil {
+		return nil, err
+	}
+	limitClause := ""
+	if options.Limit != nil {
+		if *options.Limit < 1 {
+			return nil, fmt.Errorf("Search: limit must be positive: %w", ErrInvalidLogLimit)
+		}
+		limitClause = "\n\t\t\tlimit ?"
+		args = append(args, *options.Limit)
+	}
 	finalQuery, err := queries.Render(queries.SearchLogs, searchLogsParams{
 		CTEs:  cteSQL,
 		From:  logSearchFrom,
 		Where: whereWithTime,
+		Order: orderBy,
+		Limit: limitClause,
 	})
 	if err != nil {
 		return nil, err
@@ -304,6 +332,27 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 		return json.RawMessage("[]"), nil
 	}
 	return json.RawMessage(raw), nil
+}
+
+func logSummaryOrderBy(sortOption *search.Sort) (string, error) {
+	if sortOption == nil {
+		return "coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc, l.id asc", nil
+	}
+	expressions := map[string]string{
+		"timestamp": "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)",
+		"severity":  "coalesce(l.severity_number, 0)",
+		"service":   "coalesce(l.service_name, '')",
+		"body":      "coalesce(body_preview(l.body), '')",
+	}
+	expression, ok := expressions[sortOption.Field]
+	if !ok {
+		return "", fmt.Errorf("unsupported log sort field %q: %w", sortOption.Field, search.ErrInvalidSort)
+	}
+	direction, err := search.SortDirectionSQL(sortOption.Direction)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s %s, l.id asc", expression, direction), nil
 }
 
 // Get returns the full LogData for a single log identified by its
@@ -557,4 +606,6 @@ type searchLogsParams struct {
 	CTEs  string
 	From  string
 	Where string
+	Order string
+	Limit string
 }

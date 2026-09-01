@@ -33,11 +33,11 @@ import (
 // named call to them is refused with a message saying so, which is the honest
 // answer.
 var methodParamNames = map[string][]string{
-	"searchTraces":          {"startTime", "endTime", "query"},
+	"searchTraces":          {"startTime", "endTime", "query", "limit", "sort"},
 	"searchSpans":           {"traceID", "query"},
-	"searchLogs":            {"startTime", "endTime", "query"},
+	"searchLogs":            {"startTime", "endTime", "query", "limit", "sort"},
 	"getLog":                {"logID"},
-	"searchMetricSummaries": {"startTime", "endTime", "query"},
+	"searchMetricSummaries": {"startTime", "endTime", "query", "limit", "sort"},
 	"getMetric": {
 		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
 		"quantiles", "tzOffsetNs", "fitToData", "viewBuckets",

@@ -24,6 +24,12 @@ export type QueryNode =
       }
     }
 
+/** A parsed search keeps result controls outside the boolean predicate tree. */
+export type ParsedSearchRequest = {
+  predicate: QueryNode | null
+  limit: number | null
+}
+
 // Generate unique ID
 let nextID = 0
 export function generateID(): string {
