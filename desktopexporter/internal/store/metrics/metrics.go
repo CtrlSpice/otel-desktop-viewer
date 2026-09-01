@@ -815,15 +815,19 @@ func numberDataPointValue(dp pmetric.NumberDataPoint) (doubleVal any, intVal any
 // ingests match. The summary aggregation then runs over the matched
 // streams' in-range datapoints, identical to before.
 func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
-	return searchSummaries(ctx, db, startTime, endTime, criteria, nil)
+	return searchSummaries(ctx, db, startTime, endTime, criteria, search.ResultOptions{})
 }
 
 // SearchSummariesWithLimit returns at most limit metric stream summaries.
 func SearchSummariesWithLimit(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit int64) (json.RawMessage, error) {
-	return searchSummaries(ctx, db, startTime, endTime, criteria, &limit)
+	return searchSummaries(ctx, db, startTime, endTime, criteria, search.ResultOptions{Limit: &limit})
 }
 
-func searchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit *int64) (json.RawMessage, error) {
+func SearchSummariesWithOptions(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchSummaries(ctx, db, startTime, endTime, criteria, options)
+}
+
+func searchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -837,19 +841,31 @@ func searchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 	}
 
-	limitClause := ""
-	if limit != nil {
-		if *limit < 1 {
+	candidateOrder, summaryOrder, earlyLimit, err := metricSummaryOrderBy(options.Sort)
+	if err != nil {
+		return nil, err
+	}
+	candidateLimit := ""
+	summaryLimit := ""
+	if options.Limit != nil {
+		if *options.Limit < 1 {
 			return nil, fmt.Errorf("SearchSummaries: limit must be positive: %w", ErrInvalidMetricLimit)
 		}
-		limitClause = "\n\t\t\tlimit ?"
-		args = append(args, *limit)
+		if earlyLimit {
+			candidateLimit = "\n\t\t\tlimit ?"
+		} else {
+			summaryLimit = "\n\t\t\tlimit ?"
+		}
+		args = append(args, *options.Limit)
 	}
 	query, err := queries.Render(queries.SearchMetricSummaries, searchSummariesParams{
-		CTEs:  cteSQL,
-		From:  metricSearchFrom,
-		Where: whereClause,
-		Limit: limitClause,
+		CTEs:           cteSQL,
+		From:           metricSearchFrom,
+		Where:          whereClause,
+		CandidateOrder: candidateOrder,
+		CandidateLimit: candidateLimit,
+		SummaryOrder:   summaryOrder,
+		SummaryLimit:   summaryLimit,
 	})
 	if err != nil {
 		return nil, err
@@ -862,6 +878,40 @@ func searchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 		return json.RawMessage("[]"), nil
 	}
 	return json.RawMessage(raw), nil
+}
+
+func metricSummaryOrderBy(sortOption *search.Sort) (candidateOrder, summaryOrder string, earlyLimit bool, err error) {
+	field := "lastSeen"
+	direction := "desc"
+	if sortOption != nil {
+		field = sortOption.Field
+		direction, err = search.SortDirectionSQL(sortOption.Direction)
+		if err != nil {
+			return "", "", false, err
+		}
+	}
+	type metricSortSpec struct {
+		candidate string
+		summary   string
+		early     bool
+	}
+	spec, ok := map[string]metricSortSpec{
+		"lastSeen":       {candidate: "sldp.last_dp_ts", summary: "last_dp_ts", early: true},
+		"name":           {candidate: "fs.name", summary: "name", early: true},
+		"metricType":     {candidate: "fs.metric_type", summary: "metric_type", early: true},
+		"serviceName":    {candidate: "fs.service_name", summary: "service_name", early: true},
+		"description":    {summary: "coalesce(description, '')"},
+		"dataPointCount": {summary: "coalesce(datapoint_count, 0)"},
+		"seriesCount":    {summary: "coalesce(series_count, 0)"},
+	}[field]
+	if !ok {
+		return "", "", false, fmt.Errorf("unsupported metric sort field %q: %w", field, search.ErrInvalidSort)
+	}
+	if spec.early {
+		candidateOrder = fmt.Sprintf("%s %s nulls last, fs.id asc", spec.candidate, direction)
+	}
+	summaryOrder = fmt.Sprintf("%s %s nulls last, id asc", spec.summary, direction)
+	return candidateOrder, summaryOrder, spec.early, nil
 }
 
 // fieldValueQueries names the metric columns whose values the search box may
@@ -1544,7 +1594,9 @@ type searchSummariesParams struct {
 	// From is the shared FROM/JOIN chain for metric search.
 	From string
 	// Where is the predicate, "true" when there are no criteria.
-	Where string
-	// Limit caps selected streams before their card summaries are aggregated.
-	Limit string
+	Where          string
+	CandidateOrder string
+	CandidateLimit string
+	SummaryOrder   string
+	SummaryLimit   string
 }

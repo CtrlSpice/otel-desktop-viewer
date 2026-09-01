@@ -38,6 +38,6 @@ with search_params as (select ? as time_start, ? as time_end),
 			end,
 			'spanCount',    sub.span_count,
 			'errorCount',   sub.error_count
-		) order by sub.trace_start_time desc, sub.trace_id asc
+		) order by trace_start_time desc, trace_id asc
 		)), '[]') as varchar) as summaries
 		from selected_summaries sub

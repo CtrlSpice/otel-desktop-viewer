@@ -172,7 +172,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	baseTime := time.Now().UnixNano()
-	traces, trace1Hex, _, trace3Hex := buildTracesForSummaryOrdering(baseTime)
+	traces, trace1Hex, trace2Hex, trace3Hex := buildTracesForSummaryOrdering(baseTime)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	}))
@@ -184,6 +184,18 @@ func TestTraceSummaryLimit(t *testing.T) {
 	var summaries []traceSummaryJSON
 	require.NoError(t, json.Unmarshal(raw, &summaries))
 	require.Equal(t, []string{trace3Hex, trace1Hex}, []string{summaries[0].TraceID, summaries[1].TraceID})
+
+	limit := int64(1)
+	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchTracesWithOptions(ctx, db, 0, 1<<63-1, nil, search.ResultOptions{
+			Limit: &limit,
+			Sort:  &search.Sort{Field: "duration", Direction: "desc"},
+		})
+	})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &summaries))
+	require.Len(t, summaries, 1)
+	require.Equal(t, trace2Hex, summaries[0].TraceID, "sort must select the longest trace before applying LIMIT")
 
 	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchTracesWithLimit(ctx, db, 0, 1<<63-1, nil, 0)

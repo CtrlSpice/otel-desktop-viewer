@@ -18,7 +18,7 @@
 		selected_summaries as (
 			select *
 			from trace_summaries
-			order by trace_start_time desc, trace_id asc{{.Limit}}
+			order by {{.Order}}{{.Limit}}
 		)
 		select cast(coalesce(to_json(list(json_object(
 			'traceID',      replace(sub.trace_id::varchar, '-', ''),
@@ -36,6 +36,6 @@
 			end,
 			'spanCount',    sub.span_count,
 			'errorCount',   sub.error_count
-		) order by sub.trace_start_time desc, sub.trace_id asc
+		) order by {{.Order}}
 		)), '[]') as varchar) as summaries
 		from selected_summaries sub

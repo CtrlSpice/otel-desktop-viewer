@@ -193,6 +193,18 @@ func TestSearchLogsLimit(t *testing.T) {
 	require.Len(t, entries, 2)
 	require.Equal(t, []string{"ERROR", "WARN"}, []string{entries[0].SeverityText, entries[1].SeverityText})
 
+	limit := int64(1)
+	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.SearchWithOptions(ctx, db, 0, 1<<63-1, nil, search.ResultOptions{
+			Limit: &limit,
+			Sort:  &search.Sort{Field: "severity", Direction: "asc"},
+		})
+	})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &entries))
+	require.Len(t, entries, 1)
+	require.Equal(t, "INFO", entries[0].SeverityText, "sort must select the lowest severity before applying LIMIT")
+
 	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.SearchWithLimit(ctx, db, 0, 1<<63-1, nil, 0)
 	})

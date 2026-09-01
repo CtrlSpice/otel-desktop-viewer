@@ -309,6 +309,67 @@ func TestSearchLogs(t *testing.T) {
 	})
 }
 
+func TestSearchSortParams(t *testing.T) {
+	maxTime := strconv.FormatInt(1<<63-1, 10)
+	valid := []struct {
+		method string
+		field  string
+	}{
+		{method: "searchTraces", field: "duration"},
+		{method: "searchLogs", field: "severity"},
+		{method: "searchMetricSummaries", field: "dataPointCount"},
+	}
+	for _, tc := range valid {
+		t.Run(tc.method+" accepts sort", func(t *testing.T) {
+			handler, teardown := setupHandler(t)
+			defer teardown()
+
+			result, err := handler.Handle(context.Background(), createRequest(tc.method, []any{
+				"0", maxTime, nil, 1,
+				map[string]any{"field": tc.field, "direction": "desc"},
+			}))
+			require.NoError(t, err)
+			require.JSONEq(t, `[]`, string(result.(json.RawMessage)))
+		})
+
+		t.Run(tc.method+" rejects unsupported field", func(t *testing.T) {
+			handler, teardown := setupHandler(t)
+			defer teardown()
+
+			result, err := handler.Handle(context.Background(), createRequest(tc.method, []any{
+				"0", maxTime, nil, 1,
+				map[string]any{"field": "unsupported", "direction": "desc"},
+			}))
+			assert.Nil(t, result)
+			assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+		})
+	}
+
+	t.Run("rejects invalid direction", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{
+			"0", maxTime, nil, 1,
+			map[string]any{"field": "duration", "direction": "descending"},
+		}))
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+	})
+
+	t.Run("rejects malformed object", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{
+			"0", maxTime, nil, 1,
+			map[string]any{"field": "duration"},
+		}))
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+	})
+}
+
 func TestGetTraceAttributes(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		handler, teardown := setupHandler(t)

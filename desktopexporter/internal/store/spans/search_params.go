@@ -30,6 +30,8 @@ type searchTracesParams struct {
 	From string
 	// Where is the predicate, "true" when there are no criteria.
 	Where string
+	// Order is assembled from an allowlisted summary expression and direction.
+	Order string
 	// Limit is empty for the existing unbounded search and "limit ?" when
 	// the search request includes a result cap.
 	Limit string

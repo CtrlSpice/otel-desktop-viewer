@@ -491,6 +491,52 @@ describe('request parameters', () => {
     }
   )
 
+  it.each([
+    [
+      'traces',
+      () =>
+        telemetryAPI.searchTraces(2, 5, undefined, 25, {
+          field: 'duration',
+          direction: 'desc',
+        }),
+      'searchTraces',
+      'duration',
+    ],
+    [
+      'logs',
+      () =>
+        telemetryAPI.searchLogs(2, 5, undefined, 25, {
+          field: 'severity',
+          direction: 'asc',
+        }),
+      'searchLogs',
+      'severity',
+    ],
+    [
+      'metrics',
+      () =>
+        telemetryAPI.searchMetricSummaries(2, 5, undefined, 25, {
+          field: 'dataPointCount',
+          direction: 'desc',
+        }),
+      'searchMetricSummaries',
+      'dataPointCount',
+    ],
+  ])(
+    'includes the selected %s sort with a result limit',
+    async (_signal, invoke, method, field) => {
+      const sent = captureRequest()
+      await invoke().catch(() => {})
+      expect(sent()).toMatchObject({
+        method,
+        params: {
+          limit: 25,
+          sort: { field, direction: field === 'severity' ? 'asc' : 'desc' },
+        },
+      })
+    }
+  )
+
   // The deliberate exceptions. parseIDParams reads the whole params array as
   // the id list, so wrapping it in an object would nest the array a level
   // deeper and delete nothing.

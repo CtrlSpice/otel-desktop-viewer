@@ -2,7 +2,7 @@
 		filtered as (
 			select l.* {{.From}}
 			where {{.Where}}
-			order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc, l.id asc{{.Limit}}
+			order by {{.Order}}{{.Limit}}
 		)
 		select cast(coalesce(to_json(list(json_object(
 			'id',             l.id,
@@ -11,5 +11,5 @@
 			'severityNumber', l.severity_number,
 			'serviceName',    l.service_name,
 			'bodyPreview',    body_preview(l.body)
-		) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp) desc, l.id asc)), '[]') as varchar) as logs
+		) order by {{.Order}})), '[]') as varchar) as logs
 		from filtered l

@@ -16,7 +16,7 @@
   } from '@/constants/fields'
   import { parseSearchRequest } from './queryParser'
   import type { QueryNode } from './queryTree'
-  import { telemetryAPI } from '@/services/telemetry-service'
+  import { telemetryAPI, type SearchSort } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -45,6 +45,8 @@
   // --- types ---
   type SearchEditorProps = {
     signal: 'traces' | 'metrics' | 'logs'
+    sortValue: string
+    sortDirection: 'asc' | 'desc'
     onSearchResults?: (event: SearchResultEvent) => void
     /** Toolbar layout: panel chrome on the search wrapper only (not the action row). */
     inToolbar?: boolean
@@ -68,23 +70,35 @@
 
   const searchDispatch: Record<
     string,
-    (ctx: SearchContext, q?: QueryNode, limit?: number) => () => Promise<any>
+    (
+      ctx: SearchContext,
+      q?: QueryNode,
+      limit?: number,
+      sort?: SearchSort
+    ) => () => Promise<any>
   > = {
-    traces: (ctx, q, limit) => () =>
-      telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q, limit),
-    logs: (ctx, q, limit) => () =>
-      telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q, limit),
-    metrics: (ctx, q, limit) => () =>
-      telemetryAPI.searchMetricSummaries(ctx.startTime, ctx.endTime, q, limit),
+    traces: (ctx, q, limit, sort) => () =>
+      telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q, limit, sort),
+    logs: (ctx, q, limit, sort) => () =>
+      telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q, limit, sort),
+    metrics: (ctx, q, limit, sort) => () =>
+      telemetryAPI.searchMetricSummaries(
+        ctx.startTime,
+        ctx.endTime,
+        q,
+        limit,
+        sort
+      ),
   }
 
   /** Build the API call for a signal, or null if unsupported. */
   function buildSearchFn(
     ctx: SearchContext,
     queryTree?: QueryNode,
-    limit?: number
+    limit?: number,
+    sort?: SearchSort
   ): (() => Promise<any>) | null {
-    return searchDispatch[ctx.signal]?.(ctx, queryTree, limit) ?? null
+    return searchDispatch[ctx.signal]?.(ctx, queryTree, limit, sort) ?? null
   }
 
   /**
@@ -114,6 +128,8 @@
   // --- context ---
   let {
     signal,
+    sortValue,
+    sortDirection,
     onSearchResults,
     inToolbar = false,
     variant = 'default',
@@ -323,10 +339,12 @@
       }
 
       const searchCtx = currentSearchContext()
+      const sort = { field: sortValue, direction: sortDirection }
       const searchFn = buildSearchFn(
         searchCtx,
         queryTree ?? undefined,
-        limit ?? undefined
+        limit ?? undefined,
+        sort
       )
       if (!searchFn) {
         fetchClean(beginListUpdate(signal))

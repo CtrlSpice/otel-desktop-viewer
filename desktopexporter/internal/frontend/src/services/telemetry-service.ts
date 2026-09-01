@@ -70,6 +70,11 @@ export class JsonRpcError extends Error {
   }
 }
 
+export type SearchSort = {
+  field: string
+  direction: 'asc' | 'desc'
+}
+
 // Custom error codes minted by the backend (internal/server/errors.go).
 const ERR_CODE_METRIC_NOT_FOUND = -32003
 
@@ -509,7 +514,8 @@ export let telemetryAPI = {
     startTime: number,
     endTime: number,
     queryTree?: QueryNode,
-    limit?: number
+    limit?: number,
+    sort?: SearchSort
   ): Promise<TraceSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -521,6 +527,7 @@ export let telemetryAPI = {
         endTime: endTimeNs,
         query: queryTree && convertQueryTreeForBackend(queryTree),
         limit,
+        sort,
       })
     )
     return traceSummariesFromJSON(rawData)
@@ -558,7 +565,8 @@ export let telemetryAPI = {
     startTime: number,
     endTime: number,
     queryTree?: QueryNode,
-    limit?: number
+    limit?: number,
+    sort?: SearchSort
   ): Promise<LogSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -569,6 +577,7 @@ export let telemetryAPI = {
         endTime: endTimeNs,
         query: queryTree && convertQueryTreeForBackend(queryTree),
         limit,
+        sort,
       })
     )
     return logSummariesFromJSON(rawData)
@@ -588,7 +597,8 @@ export let telemetryAPI = {
     startTime: number,
     endTime: number,
     queryTree?: QueryNode,
-    limit?: number
+    limit?: number,
+    sort?: SearchSort
   ): Promise<MetricSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -599,6 +609,7 @@ export let telemetryAPI = {
         endTime: endTimeNs,
         query: queryTree && convertQueryTreeForBackend(queryTree),
         limit,
+        sort,
       })
     )
     return metricSummariesFromJSON(rawData)
