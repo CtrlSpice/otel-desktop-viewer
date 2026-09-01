@@ -8,15 +8,23 @@
 			select s.* from metric_streams s
 			where s.id in (select distinct stream_id from filtered_ingests)
 		),
-		filtered_dps as (
-			select d.* from datapoints d
+		stream_latest_dp as (
+			select d.stream_id, max(d.timestamp) as last_dp_ts
+			from datapoints d
 			inner join filtered_streams fs on d.stream_id = fs.id, search_params
 			where d.timestamp >= time_start and d.timestamp <= time_end
+			group by d.stream_id
 		),
-		stream_latest_dp as (
-			select stream_id, max(timestamp) as last_dp_ts
-			from filtered_dps
-			group by stream_id
+		selected_streams as (
+			select fs.*
+			from filtered_streams fs
+			left join stream_latest_dp sldp on sldp.stream_id = fs.id
+			order by sldp.last_dp_ts desc nulls last, fs.id asc{{.Limit}}
+		),
+		filtered_dps as (
+			select d.* from datapoints d
+			inner join selected_streams fs on d.stream_id = fs.id, search_params
+			where d.timestamp >= time_start and d.timestamp <= time_end
 		),
 		ingest_latest_dp as (
 			select metric_ingest_id, max(timestamp) as last_dp_ts
@@ -28,7 +36,7 @@
 				arg_max(mi.description, ild.last_dp_ts) as description
 			from metric_ingests mi
 			inner join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
-			where mi.stream_id in (select id from filtered_streams)
+			where mi.stream_id in (select id from selected_streams)
 			group by mi.stream_id
 		),
 		-- Two counts, because the card was showing one number that could mean
@@ -56,7 +64,7 @@
 		stream_series_cardinality as (
 			select stream_id, count(*) as series_cardinality
 			from metric_series
-			where stream_id in (select id from filtered_streams)
+			where stream_id in (select id from selected_streams)
 			group by stream_id
 		),
 		stream_datapoint_count as (
@@ -69,7 +77,7 @@
 				d.stream_id,
 				arg_max(coalesce(d.double_value, d.int_value), d.timestamp) as last_value
 			from filtered_dps d
-			inner join filtered_streams fs on fs.id = d.stream_id
+			inner join selected_streams fs on fs.id = d.stream_id
 			where fs.metric_type in ('Gauge', 'Sum')
 			group by d.stream_id
 		)
@@ -90,12 +98,11 @@
 			'dataPointCount', sdc.datapoint_count,
 			'lastValue', slv.last_value,
 			'lastSeen', sldp.last_dp_ts::varchar
-		) order by sldp.last_dp_ts desc nulls last)), '[]') as varchar) as summaries
-		from filtered_streams fs
+		) order by sldp.last_dp_ts desc nulls last, fs.id asc)), '[]') as varchar) as summaries
+		from selected_streams fs
 		left join stream_latest_dp sldp on sldp.stream_id = fs.id
 		left join stream_description sd on sd.stream_id = fs.id
 		left join stream_series_count ssc on ssc.stream_id = fs.id
 		left join stream_series_cardinality ssx on ssx.stream_id = fs.id
 		left join stream_datapoint_count sdc on sdc.stream_id = fs.id
 		left join stream_last_value slv on slv.stream_id = fs.id
-	

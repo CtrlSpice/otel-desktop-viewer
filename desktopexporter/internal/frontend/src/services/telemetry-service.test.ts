@@ -457,6 +457,40 @@ describe('request parameters', () => {
     expect(params.query).toMatchObject({ id: 'q1', type: 'condition' })
   })
 
+  it('includes a trace result limit without requiring a query tree', async () => {
+    const sent = captureRequest()
+    await telemetryAPI.searchTraces(2, 5, undefined, 250).catch(() => {})
+    expect(sent().params).toEqual({
+      startTime: '2000000',
+      endTime: '5000000',
+      limit: 250,
+    })
+  })
+
+  it.each([
+    ['logs', () => telemetryAPI.searchLogs(2, 5, undefined, 250), 'searchLogs'],
+    [
+      'metrics',
+      () => telemetryAPI.searchMetricSummaries(2, 5, undefined, 250),
+      'searchMetricSummaries',
+    ],
+  ])(
+    'includes a %s result limit without requiring a query tree',
+    async (_signal, invoke, method) => {
+      const sent = captureRequest()
+      await invoke().catch(() => {})
+      expect(sent()).toMatchObject({
+        method,
+        params: {
+          startTime: '2000000',
+          endTime: '5000000',
+          limit: 250,
+        },
+      })
+      expect('query' in sent().params).toBe(false)
+    }
+  )
+
   // The deliberate exceptions. parseIDParams reads the whole params array as
   // the id list, so wrapping it in an object would nest the array a level
   // deeper and delete nothing.

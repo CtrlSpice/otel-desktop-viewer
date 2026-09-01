@@ -23,6 +23,7 @@ import (
 var (
 	ErrTraceIDNotFound    = errors.New("trace ID not found")
 	ErrInvalidTraceQuery  = errors.New("invalid trace search query")
+	ErrInvalidTraceLimit  = errors.New("invalid trace search limit")
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
@@ -318,7 +319,16 @@ func appendPass(
 
 // SearchTraces returns trace summaries in the time range matching the optional criteria.
 func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
-	finalQuery, args, err := searchTracesSQL(startTime, endTime, criteria)
+	return searchTraces(ctx, db, startTime, endTime, criteria, nil)
+}
+
+// SearchTracesWithLimit returns at most limit trace summaries.
+func SearchTracesWithLimit(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit int64) (json.RawMessage, error) {
+	return searchTraces(ctx, db, startTime, endTime, criteria, &limit)
+}
+
+func searchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit *int64) (json.RawMessage, error) {
+	finalQuery, args, err := searchTracesSQL(startTime, endTime, criteria, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +346,7 @@ func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 // searchTracesSQL renders the trace-summary query and its bound arguments.
 // Split out for the same reason as searchSpansSQL: so a golden test can pin the
 // rendered text without standing up a store.
-func searchTracesSQL(startTime, endTime int64, criteria any) (string, []any, error) {
+func searchTracesSQL(startTime, endTime int64, criteria any, limit *int64) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -363,10 +373,20 @@ func searchTracesSQL(startTime, endTime int64, criteria any) (string, []any, err
 	// computed from the min/max across ALL spans). startTime and
 	// durationNs are precomputed from span bounds so the summary always
 	// reflects wall-clock coverage.
+	limitClause := ""
+	if limit != nil {
+		if *limit < 1 {
+			return "", nil, fmt.Errorf("SearchTraces: limit must be positive: %w", ErrInvalidTraceLimit)
+		}
+		limitClause = "\n\t\t\tlimit ?"
+		args = append(args, *limit)
+	}
+
 	finalQuery, err := queries.Render(queries.SearchTraces, searchTracesParams{
 		CTEs:  cteSQL,
 		From:  spanSearchFrom,
 		Where: whereClause,
+		Limit: limitClause,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)

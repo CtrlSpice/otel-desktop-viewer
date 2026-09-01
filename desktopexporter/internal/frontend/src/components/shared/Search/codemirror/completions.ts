@@ -29,9 +29,15 @@ const LOGICAL_COMPLETIONS: Completion[] = [
   },
 ]
 
+const RESULT_LIMIT_COMPLETION: Completion = {
+  label: '| LIMIT',
+  type: 'keyword',
+  apply: '| LIMIT ',
+}
+
 /**
  * Whether the text is a complete, error-free structured expression -- the
- * state after which AND and OR are the only tokens the grammar accepts.
+ * state after which boolean continuations or a result limit are accepted.
  *
  * Unclosed groups are balanced before parsing, so a condition typed inside
  * parentheses still counts as complete: `(a = 1` continues with AND/OR just
@@ -230,7 +236,7 @@ export function createQueryCompletionSource(
       }
     }
 
-    // A finished expression continues with AND or OR and nothing else --
+    // A finished expression continues with AND, OR, or a result limit --
     // this is the branch that makes the logical operators actually appear.
     // The comparison-scoped branch above only fires while the cursor still
     // resolves inside the Comparison node, which one space past the value it
@@ -243,10 +249,18 @@ export function createQueryCompletionSource(
         partial ? partial.from : context.pos
       )
       if (expressionIsComplete(before)) {
+        const unclosedGroups = [...before].reduce((depth, char) => {
+          if (char === '(') return depth + 1
+          if (char === ')') return Math.max(0, depth - 1)
+          return depth
+        }, 0)
         return {
           from: partial?.from ?? context.pos,
-          options: LOGICAL_COMPLETIONS,
-          validFor: /^(AND|OR)?$/i,
+          options:
+            unclosedGroups > 0
+              ? LOGICAL_COMPLETIONS
+              : [...LOGICAL_COMPLETIONS, RESULT_LIMIT_COMPLETION],
+          validFor: /^(?:(?:AND|OR)|(?:\|\s*(?:LIMIT)?))?$/i,
         }
       }
     }

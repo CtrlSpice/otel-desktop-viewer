@@ -120,7 +120,7 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	if len(params) < 2 || len(params) > 3 {
+	if len(params) < 2 || len(params) > 4 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -135,17 +135,38 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 	}
 
 	var query any
-	if len(params) == 3 {
+	if len(params) >= 3 {
 		query = params[2]
+	}
+	limit, err := h.parseSearchLimit(params)
+	if err != nil {
+		return nil, err
 	}
 
 	summaries, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		if limit != nil {
+			return spans.SearchTracesWithLimit(ctx, db, startTime, endTime, query, *limit)
+		}
 		return spans.SearchTraces(ctx, db, startTime, endTime, query)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
 	return summaries, nil
+}
+
+func (h *JSONRPCHandler) parseSearchLimit(params []any) (*int64, error) {
+	if len(params) < 4 || params[3] == nil {
+		return nil, nil
+	}
+	limit, err := h.parseTimestampParam(params[3], "limit")
+	if err != nil {
+		return nil, err
+	}
+	if limit < 1 {
+		return nil, fmt.Errorf("limit must be positive: %w", jsonrpc2.ErrInvalidParams)
+	}
+	return &limit, nil
 }
 
 func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -200,7 +221,7 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	if len(params) < 2 || len(params) > 3 {
+	if len(params) < 2 || len(params) > 4 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	startTime, err := h.parseTimestampParam(params[0], "startTime")
@@ -212,10 +233,17 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 		return nil, err
 	}
 	var query any
-	if len(params) == 3 {
+	if len(params) >= 3 {
 		query = params[2]
 	}
+	limit, err := h.parseSearchLimit(params)
+	if err != nil {
+		return nil, err
+	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		if limit != nil {
+			return logs.SearchWithLimit(ctx, db, startTime, endTime, query, *limit)
+		}
 		return logs.Search(ctx, db, startTime, endTime, query)
 	})
 	if err != nil {
@@ -270,7 +298,7 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	if len(params) < 2 || len(params) > 3 {
+	if len(params) < 2 || len(params) > 4 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	startTime, err := h.parseTimestampParam(params[0], "startTime")
@@ -282,10 +310,17 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 		return nil, err
 	}
 	var query any
-	if len(params) == 3 {
+	if len(params) >= 3 {
 		query = params[2]
 	}
+	limit, err := h.parseSearchLimit(params)
+	if err != nil {
+		return nil, err
+	}
 	summaries, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		if limit != nil {
+			return metrics.SearchSummariesWithLimit(ctx, db, startTime, endTime, query, *limit)
+		}
 		return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
 	})
 	if err != nil {

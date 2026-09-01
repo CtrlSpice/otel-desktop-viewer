@@ -176,6 +176,29 @@ func searchLogsAll(t *testing.T, s *store.Store, ctx context.Context) []logSumma
 	return entries
 }
 
+func TestSearchLogsLimit(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	baseTime := time.Now().UnixNano()
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime), s.FlushedIDs())
+	}))
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.SearchWithLimit(ctx, db, 0, 1<<63-1, nil, 2)
+	})
+	require.NoError(t, err)
+	var entries []logSummaryJSON
+	require.NoError(t, json.Unmarshal(raw, &entries))
+	require.Len(t, entries, 2)
+	require.Equal(t, []string{"ERROR", "WARN"}, []string{entries[0].SeverityText, entries[1].SeverityText})
+
+	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.SearchWithLimit(ctx, db, 0, 1<<63-1, nil, 0)
+	})
+	require.ErrorIs(t, err, logs.ErrInvalidLogLimit)
+}
+
 // getLogFull fetches the full LogData for one log via logs.Get and
 // unmarshals it into the rich fixture struct used by the detail-
 // shape assertions below.

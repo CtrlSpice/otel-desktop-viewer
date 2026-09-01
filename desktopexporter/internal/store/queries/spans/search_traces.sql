@@ -1,4 +1,25 @@
-{{.CTEs}}
+{{.CTEs}},
+		trace_summaries as (
+			select distinct on (s.trace_id)
+				s.trace_id,
+				(s.parent_span_id is null) as has_root_span,
+				case when s.parent_span_id is null then nullif(s.service_name, '') end as service_name,
+				case when s.parent_span_id is null then s.name end as root_name,
+				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
+				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
+				count(*) over (partition by s.trace_id) as span_count,
+				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
+			{{.From}}
+			where {{.Where}}
+			order by
+				s.trace_id,
+				case when s.parent_span_id is null then 0 else 1 end
+		),
+		selected_summaries as (
+			select *
+			from trace_summaries
+			order by trace_start_time desc, trace_id asc{{.Limit}}
+		)
 		select cast(coalesce(to_json(list(json_object(
 			'traceID',      replace(sub.trace_id::varchar, '-', ''),
 			'hasRootSpan',  sub.has_root_span,
@@ -15,21 +36,6 @@
 			end,
 			'spanCount',    sub.span_count,
 			'errorCount',   sub.error_count
-		) order by sub.trace_start_time desc
+		) order by sub.trace_start_time desc, sub.trace_id asc
 		)), '[]') as varchar) as summaries
-		from (
-			select distinct on (s.trace_id)
-				s.trace_id,
-				(s.parent_span_id is null) as has_root_span,
-				case when s.parent_span_id is null then nullif(s.service_name, '') end as service_name,
-				case when s.parent_span_id is null then s.name end as root_name,
-				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
-				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
-				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
-			{{.From}}
-			where {{.Where}}
-			order by
-				s.trace_id,
-				case when s.parent_span_id is null then 0 else 1 end
-		) sub
+		from selected_summaries sub

@@ -240,6 +240,29 @@ func searchSummariesAll(t *testing.T, s *store.Store, ctx context.Context) []map
 	return out
 }
 
+func TestSearchMetricSummariesLimit(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+	}))
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.SearchSummariesWithLimit(ctx, db, 0, maxNano, nil, 2)
+	})
+	require.NoError(t, err)
+	var summaries []map[string]any
+	require.NoError(t, json.Unmarshal(raw, &summaries))
+	require.Len(t, summaries, 2)
+	require.Equal(t, "exponential_histogram_metric", summaries[0]["name"])
+	require.Equal(t, "histogram_metric", summaries[1]["name"])
+
+	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.SearchSummariesWithLimit(ctx, db, 0, maxNano, nil, 0)
+	})
+	require.ErrorIs(t, err, metrics.ErrInvalidMetricLimit)
+}
+
 func findSummary(t *testing.T, summaries []map[string]any, name string) map[string]any {
 	t.Helper()
 	for _, s := range summaries {

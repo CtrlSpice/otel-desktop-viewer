@@ -103,7 +103,7 @@ func TestSearchSpansSQLBindsTraceID(t *testing.T) {
 func TestSearchTracesSQLGolden(t *testing.T) {
 	for _, tc := range goldenCases {
 		t.Run(tc.name, func(t *testing.T) {
-			query, _, err := searchTracesSQL(0, 1<<62, tc.criteria)
+			query, _, err := searchTracesSQL(0, 1<<62, tc.criteria, nil)
 			require.NoError(t, err)
 
 			path := filepath.Join("testdata", "search_traces_"+tc.name+".sql")
@@ -118,4 +118,14 @@ func TestSearchTracesSQLGolden(t *testing.T) {
 				"rendered SQL changed. If deliberate, re-run with -update-golden and read the diff carefully")
 		})
 	}
+}
+
+func TestSearchTracesSQLBindsLimit(t *testing.T) {
+	t.Parallel()
+	limit := int64(3)
+	query, args, err := searchTracesSQL(0, 1<<62, nil, &limit)
+	require.NoError(t, err)
+	require.Equal(t, limit, args[len(args)-1])
+	require.Contains(t, query, "limit ?")
+	require.NotContains(t, query, "limit 3")
 }

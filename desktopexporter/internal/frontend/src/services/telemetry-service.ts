@@ -508,7 +508,8 @@ export let telemetryAPI = {
   searchTraces: async (
     startTime: number,
     endTime: number,
-    queryTree?: QueryNode
+    queryTree?: QueryNode,
+    limit?: number
   ): Promise<TraceSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -519,6 +520,7 @@ export let telemetryAPI = {
         startTime: startTimeNs,
         endTime: endTimeNs,
         query: queryTree && convertQueryTreeForBackend(queryTree),
+        limit,
       })
     )
     return traceSummariesFromJSON(rawData)
@@ -555,7 +557,8 @@ export let telemetryAPI = {
   searchLogs: async (
     startTime: number,
     endTime: number,
-    queryTree?: QueryNode
+    queryTree?: QueryNode,
+    limit?: number
   ): Promise<LogSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -565,6 +568,7 @@ export let telemetryAPI = {
         startTime: startTimeNs,
         endTime: endTimeNs,
         query: queryTree && convertQueryTreeForBackend(queryTree),
+        limit,
       })
     )
     return logSummariesFromJSON(rawData)
@@ -583,7 +587,8 @@ export let telemetryAPI = {
   searchMetricSummaries: async (
     startTime: number,
     endTime: number,
-    queryTree?: QueryNode
+    queryTree?: QueryNode,
+    limit?: number
   ): Promise<MetricSummary[]> => {
     const startTimeNs = toNanoseconds(startTime)
     const endTimeNs = toNanoseconds(endTime)
@@ -593,6 +598,7 @@ export let telemetryAPI = {
         startTime: startTimeNs,
         endTime: endTimeNs,
         query: queryTree && convertQueryTreeForBackend(queryTree),
+        limit,
       })
     )
     return metricSummariesFromJSON(rawData)

@@ -32,6 +32,7 @@ func resourceServiceName(attrs pcommon.Map) string {
 
 var (
 	ErrInvalidLogQuery   = errors.New("invalid log search query")
+	ErrInvalidLogLimit   = errors.New("invalid log search limit")
 	ErrLogsStoreInternal = errors.New("logs store internal error")
 	ErrLogIDNotFound     = errors.New("log ID not found")
 )
@@ -271,6 +272,15 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 //
 // `bodyPreview` is server-truncated by the body_preview macro.
 func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
+	return searchLogs(ctx, db, startTime, endTime, criteria, nil)
+}
+
+// SearchWithLimit returns at most limit log summaries.
+func SearchWithLimit(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit int64) (json.RawMessage, error) {
+	return searchLogs(ctx, db, startTime, endTime, criteria, &limit)
+}
+
+func searchLogs(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit *int64) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -287,10 +297,19 @@ func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria 
 
 	logTimeExpr := `(case when l.timestamp is null or l.timestamp = 0 then l.observed_timestamp else l.timestamp end)`
 	whereWithTime := strings.ReplaceAll(whereClause, "l.log_time", logTimeExpr)
+	limitClause := ""
+	if limit != nil {
+		if *limit < 1 {
+			return nil, fmt.Errorf("Search: limit must be positive: %w", ErrInvalidLogLimit)
+		}
+		limitClause = "\n\t\t\tlimit ?"
+		args = append(args, *limit)
+	}
 	finalQuery, err := queries.Render(queries.SearchLogs, searchLogsParams{
 		CTEs:  cteSQL,
 		From:  logSearchFrom,
 		Where: whereWithTime,
+		Limit: limitClause,
 	})
 	if err != nil {
 		return nil, err
@@ -557,4 +576,5 @@ type searchLogsParams struct {
 	CTEs  string
 	From  string
 	Where string
+	Limit string
 }

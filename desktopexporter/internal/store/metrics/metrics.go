@@ -21,6 +21,7 @@ import (
 
 var (
 	ErrInvalidMetricQuery   = errors.New("invalid metric search query")
+	ErrInvalidMetricLimit   = errors.New("invalid metric search limit")
 	ErrStreamIDNotFound     = errors.New("metric stream ID not found")
 	ErrMetricsStoreInternal = errors.New("metrics store internal error")
 )
@@ -814,6 +815,15 @@ func numberDataPointValue(dp pmetric.NumberDataPoint) (doubleVal any, intVal any
 // ingests match. The summary aggregation then runs over the matched
 // streams' in-range datapoints, identical to before.
 func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
+	return searchSummaries(ctx, db, startTime, endTime, criteria, nil)
+}
+
+// SearchSummariesWithLimit returns at most limit metric stream summaries.
+func SearchSummariesWithLimit(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit int64) (json.RawMessage, error) {
+	return searchSummaries(ctx, db, startTime, endTime, criteria, &limit)
+}
+
+func searchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit *int64) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -827,10 +837,19 @@ func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 	}
 
+	limitClause := ""
+	if limit != nil {
+		if *limit < 1 {
+			return nil, fmt.Errorf("SearchSummaries: limit must be positive: %w", ErrInvalidMetricLimit)
+		}
+		limitClause = "\n\t\t\tlimit ?"
+		args = append(args, *limit)
+	}
 	query, err := queries.Render(queries.SearchMetricSummaries, searchSummariesParams{
 		CTEs:  cteSQL,
 		From:  metricSearchFrom,
 		Where: whereClause,
+		Limit: limitClause,
 	})
 	if err != nil {
 		return nil, err
@@ -1526,4 +1545,6 @@ type searchSummariesParams struct {
 	From string
 	// Where is the predicate, "true" when there are no criteria.
 	Where string
+	// Limit caps selected streams before their card summaries are aggregated.
+	Limit string
 }

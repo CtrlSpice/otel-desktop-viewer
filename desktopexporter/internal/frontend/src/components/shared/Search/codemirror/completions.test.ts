@@ -145,13 +145,13 @@ describe('operator positions', () => {
 })
 
 describe('after a complete expression', () => {
-  it('offers exactly AND and OR', () => {
-    expect(labels('kind = Server ')).toEqual(['AND', 'OR'])
+  it('offers boolean continuations and a result limit', () => {
+    expect(labels('kind = Server ')).toEqual(['AND', 'OR', '| LIMIT'])
   })
 
   it('filters to AND while typing it', () => {
     const r = complete('kind = Server A')
-    expect(r!.options.map(o => o.label)).toEqual(['AND', 'OR'])
+    expect(r!.options.map(o => o.label)).toEqual(['AND', 'OR', '| LIMIT'])
     expect(r!.from).toBe('kind = Server '.length)
   })
 
@@ -160,7 +160,7 @@ describe('after a complete expression', () => {
   })
 
   it('but an empty open group is not a complete expression', () => {
-    expect(labels('(ki')).not.toEqual(['AND', 'OR'])
+    expect(labels('(ki')).not.toEqual(['AND', 'OR', '| LIMIT'])
   })
 })
 
