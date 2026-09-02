@@ -372,6 +372,12 @@ No global store library. State uses Svelte **context modules** (`.svelte.ts`) an
 
 Each signal page owns list/selection state locally, through the factory above.
 
+Timezone is a browser preference stored as `time-tz`. It may follow the
+machine, use UTC, or name an IANA timezone such as `America/New_York`. All query
+ranges remain Unix timestamps; the selected zone controls wall-clock formatting
+and is also sent with metric requests so calendar-aligned bucket boundaries
+follow the same clock, including daylight-saving transitions.
+
 ### UI layout pattern
 
 Three-pane model via `PageLayout.svelte` and `SignalListDrawer.svelte`:

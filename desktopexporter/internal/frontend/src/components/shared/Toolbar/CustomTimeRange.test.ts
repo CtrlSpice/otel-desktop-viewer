@@ -97,4 +97,50 @@ describe('CustomTimeRange', () => {
     expect(localStorage.getItem('time-selection')).toBeNull()
     expect(window.location.search).toBe('')
   })
+
+  it('interprets absolute wall-clock input in a named timezone', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-16T00:00:00Z'))
+    localStorage.setItem('time-tz', 'America/New_York')
+    renderComponent()
+
+    fireEvent.input(screen.getByLabelText(/Start/i), {
+      target: { value: '2026-01-15, 07:00:00.000' },
+    })
+    fireEvent.input(screen.getByLabelText(/End/i), {
+      target: { value: '2026-01-15, 08:00:00.000' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+
+    const saved = JSON.parse(localStorage.getItem('time-selection')!)
+    expect(saved.start).toBe(new Date('2026-01-15T12:00:00Z').getTime())
+    expect(saved.end).toBe(new Date('2026-01-15T13:00:00Z').getTime())
+  })
+
+  it('round-trips an offset-disambiguated range during a DST overlap', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-02T00:00:00Z'))
+    localStorage.setItem('time-tz', 'America/New_York')
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        type: 'custom',
+        start: new Date('2026-11-01T05:30:00Z').getTime(),
+        end: new Date('2026-11-01T07:30:00Z').getTime(),
+      })
+    )
+    renderComponent()
+
+    expect(screen.getByLabelText(/Start/i)).toHaveValue(
+      '2026-11-01T01:30:00.000-04:00'
+    )
+    expect(screen.getByLabelText(/End/i)).toHaveValue(
+      '2026-11-01T02:30:00.000-05:00'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+
+    const saved = JSON.parse(localStorage.getItem('time-selection')!)
+    expect(saved.start).toBe(new Date('2026-11-01T05:30:00Z').getTime())
+    expect(saved.end).toBe(new Date('2026-11-01T07:30:00Z').getTime())
+  })
 })

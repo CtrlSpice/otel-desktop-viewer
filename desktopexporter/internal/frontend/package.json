@@ -38,6 +38,7 @@
     "d3-shape": "^3.2.0",
     "daisyui": "^5.7.22",
     "layerchart": "^2.3.1",
+    "moment-timezone": "^0.6.3",
     "svelte": "^5.56.10"
   },
   "devDependencies": {

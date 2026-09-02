@@ -77,7 +77,6 @@
   import {
     DEFAULT_HISTOGRAM_QUANTILES,
     HEATMAP_BUCKET_TARGET,
-    localOffsetNs,
   } from '@/components/metrics/utils/histogram-aggregation'
   import type { JsonAggregateBucket } from '@/types/wire-types'
   import { untrack } from 'svelte'
@@ -88,6 +87,7 @@
     isDefaultUnboundedWindow,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
+  import { resolveTimezoneName, timezoneOffsetMinutes } from '@/utils/time'
   import { navigateToItem } from '@/route'
   import type { DataPoint, MetricData, MetricStats } from '@/types/api-types'
   import {
@@ -587,8 +587,7 @@
 
   /** The offset to align store-side buckets to, in nanoseconds. */
   function tzOffsetNs(now = Date.now()): number {
-    if (timeContext.tz === 'UTC') return 0
-    return Number(localOffsetNs(BigInt(now) * 1_000_000n))
+    return timezoneOffsetMinutes(timeContext.tz, now) * 60 * 1_000_000_000
   }
 
   /** The zone that offset was sampled from, so the store can resolve it per
@@ -596,8 +595,8 @@
    *  crossing a DST transition changes offset partway through. Undefined in
    *  UTC, which has no transitions to resolve. */
   function tzName(): string | undefined {
-    if (timeContext.tz === 'UTC') return undefined
-    return Intl.DateTimeFormat().resolvedOptions().timeZone
+    const name = resolveTimezoneName(timeContext.tz)
+    return name === 'UTC' ? undefined : name
   }
 
   // Fetch the clicked heatmap column's per-series distribution.

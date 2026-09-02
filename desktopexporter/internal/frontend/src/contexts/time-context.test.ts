@@ -4,7 +4,7 @@ import { tick } from 'svelte'
 import { screen } from '@testing-library/svelte'
 import type { TimeContext } from '@/contexts/time-context.svelte'
 import { isDefaultUnboundedWindow } from '@/contexts/time-context.svelte'
-import { loadRecentTimeRanges } from '@/utils/time'
+import { loadRecentTimeRanges, normalizeTimezone } from '@/utils/time'
 import TimeProbe from '@/test/TimeProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
@@ -229,6 +229,25 @@ describe('time context setTz', () => {
     setTestUrl('/traces')
     renderProbe()
     expect(reportedTz()).toBe('local')
+    expect(localStorage.getItem('time-tz')).toBeNull()
+  })
+
+  it('restores a named IANA timezone', () => {
+    localStorage.setItem('time-tz', 'America/New_York')
+    setTestUrl('/traces')
+    renderProbe()
+    expect(reportedTz()).toBe('America/New_York')
+  })
+
+  it('persists a canonical named IANA timezone', async () => {
+    const timezone = normalizeTimezone('America/New_York')
+    if (!timezone) throw new Error('Test runtime lacks America/New_York')
+    setTestUrl('/traces')
+    const context = renderProbe()
+    context.setTz(timezone)
+    await tick()
+    expect(reportedTz()).toBe('America/New_York')
+    expect(localStorage.getItem('time-tz')).toBe('America/New_York')
   })
 })
 

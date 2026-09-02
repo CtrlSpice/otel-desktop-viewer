@@ -176,6 +176,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   localStorage.removeItem('time-selection')
+  localStorage.removeItem('time-tz')
 })
 
 async function renderSelected(metricType: MetricType) {
@@ -207,6 +208,14 @@ function rawSeriesCalls() {
 }
 
 describe('MetricsPage aggregate fetching', () => {
+  it('passes a named timezone through for calendar bucket alignment', async () => {
+    localStorage.setItem('time-tz', 'America/New_York')
+    await renderSelected('Gauge')
+    const detailCall = getMetric.mock.calls[0]
+    expect(detailCall[6]).toEqual(expect.any(Number))
+    expect(detailCall[12]).toBe('America/New_York')
+  })
+
   it('asks for the whole-window merge for a histogram', async () => {
     await renderSelected('Histogram')
     await waitFor(() => expect(wholeWindowCalls().length).toBe(1))
