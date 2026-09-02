@@ -49,7 +49,6 @@ describe('CustomTimeRange', () => {
       'aria-pressed',
       'true'
     )
-    expect(screen.getByText(/Now · .*12:00:00\.123 UTC/)).toBeInTheDocument()
   })
 
   it('applies a millisecond-precise range ending now', async () => {

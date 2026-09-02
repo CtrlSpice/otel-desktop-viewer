@@ -10,11 +10,9 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { ArrowLeftIcon, ArrowRightIcon, CheckmarkCircleIcon } from '@/icons'
   import {
-    formatDateTime,
     formatEditableDateTime,
     formatTimezoneLabel,
     parseDateTimeInTimezone,
-    resolveTimezoneName,
     type WallClockDisambiguation,
   } from '@/utils/time'
 
@@ -75,9 +73,6 @@
       }
 
   let today = $derived(calendarDateForTimestamp(nowTimestamp))
-  let nowPreview = $derived(
-    `Now · ${formatDateTime(nowTimestamp, ctx.tz, 'milliseconds')}`
-  )
 
   function editableParts(timestamp: number): { date: string; time: string } {
     const formatted = formatEditableDateTime(timestamp, ctx.tz)
@@ -515,10 +510,6 @@
         </button>
       </div>
 
-      {#if endIsNow}
-        <p class="now-preview" aria-live="off">{nowPreview}</p>
-      {/if}
-
       {#if endAmbiguity}
         <div
           class="ambiguity-choices"
@@ -560,9 +551,6 @@
       {/if}
 
       <div class="custom-range-footer">
-        <span class="timezone-context" title={resolveTimezoneName(ctx.tz)}>
-          Times use {resolveTimezoneName(ctx.tz)}
-        </span>
         <button type="submit" class="apply-range btn btn-sm">
           <CheckmarkCircleIcon class="h-3.5 w-3.5" />
           Apply range
@@ -659,10 +647,6 @@
     @apply bg-primary text-primary-content;
   }
 
-  .now-preview {
-    @apply truncate px-3 font-mono text-[0.6875rem] text-base-content/55 tabular-nums;
-  }
-
   .ambiguity-choices {
     @apply grid grid-cols-2 gap-1 px-1;
   }
@@ -677,11 +661,7 @@
   }
 
   .custom-range-footer {
-    @apply flex min-w-0 items-center justify-between gap-2 pt-1;
-  }
-
-  .timezone-context {
-    @apply min-w-0 truncate text-[0.6875rem] text-base-content/50;
+    @apply flex min-w-0 items-center justify-end pt-1;
   }
 
   .apply-range {
