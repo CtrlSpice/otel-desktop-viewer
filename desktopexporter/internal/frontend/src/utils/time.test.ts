@@ -6,6 +6,7 @@ import {
   formatDateTimeRangeLabel,
   formatDuration,
   formatDurationParts,
+  formatEditableDateTime,
   formatTimestamp,
   formatTimestampParts,
   formatTimezoneLabel,
@@ -13,8 +14,11 @@ import {
   getOffset,
   loadRecentTimeRanges,
   MAX_RECENT_TIME_RANGES,
+  normalizeTimezone,
+  parseDateTimeInTimezone,
   parseDuration,
   recordRecentTimeRange,
+  timezoneOffsetMinutes,
   traceSummaryDurationNs,
   type RecentTimeRange,
 } from './time'
@@ -22,6 +26,8 @@ import {
 const winterDate = new Date('2024-01-15T08:30:00.123456789Z')
 const winterMs = winterDate.getTime()
 const winterNs = BigInt(winterMs) * 1_000_000n + 456_789n
+const newYork = normalizeTimezone('America/New_York')
+if (!newYork) throw new Error('Test runtime lacks America/New_York')
 
 const oneUsNs = 1_000n
 const oneMsNs = 1_000_000n
@@ -239,6 +245,13 @@ describe('formatDateTimeMs', () => {
     expect(result.dateTime).toContain('08:30:00')
     expect(result.timezone).toBe('UTC')
   })
+
+  it('formats in a named IANA timezone', () => {
+    const result = formatDateTimeMs(winterMs, newYork)
+    expect(result.dateTime).toContain('2024-01-15')
+    expect(result.dateTime).toContain('03:30:00')
+    expect(result.timezone).toBe('EST')
+  })
 })
 
 describe('formatDateTime', () => {
@@ -328,6 +341,17 @@ describe('formatDateTimeRangeLabel', () => {
     })
     expect(formatted).toContain('UTC')
   })
+
+  it('labels both sides when a named-zone range crosses a DST change', () => {
+    const formatted = formatDateTimeRangeLabel(
+      new Date('2026-03-08T06:30:00Z').getTime(),
+      new Date('2026-03-08T07:30:00Z').getTime(),
+      newYork,
+      { includeTimezone: true }
+    )
+    expect(formatted).toContain('01:30:00.000 EST')
+    expect(formatted).toContain('03:30:00.000 EDT')
+  })
 })
 
 describe('getOffset', () => {
@@ -362,6 +386,137 @@ describe('formatTimezoneLabel', () => {
     vi.stubEnv('TZ', 'America/Los_Angeles')
     const laWinter = new Date('2024-01-15T08:30:00Z')
     expect(formatTimezoneLabel('local', laWinter)).toBe('PST')
+  })
+})
+
+describe('named timezone support', () => {
+  it('canonicalizes valid names and rejects unknown zones', () => {
+    expect(normalizeTimezone('America/New_York')).toBe('America/New_York')
+    expect(normalizeTimezone('Mars/Standard')).toBeNull()
+    expect(normalizeTimezone('+01:00')).toBeNull()
+  })
+
+  it('resolves the offset in force at each instant', () => {
+    expect(timezoneOffsetMinutes(newYork, winterMs)).toBe(-300)
+    expect(
+      timezoneOffsetMinutes(newYork, new Date('2024-07-15T08:30:00Z').getTime())
+    ).toBe(-240)
+  })
+
+  it('parses an absolute wall-clock time in the selected zone', () => {
+    const result = parseDateTimeInTimezone(
+      '2026-01-15, 07:00:00.000',
+      newYork,
+      new Date('2026-01-16T00:00:00Z').getTime()
+    )
+    expect(result).toEqual({
+      success: true,
+      timestamp: new Date('2026-01-15T12:00:00Z').getTime(),
+    })
+  })
+
+  it('keeps elapsed hours absolute but calendar days on the selected wall clock', () => {
+    const now = new Date('2026-03-08T16:00:00Z').getTime()
+    expect(parseDateTimeInTimezone('1 hour ago', newYork, now)).toEqual({
+      success: true,
+      timestamp: new Date('2026-03-08T15:00:00Z').getTime(),
+    })
+    expect(parseDateTimeInTimezone('1 day ago', newYork, now)).toEqual({
+      success: true,
+      timestamp: new Date('2026-03-07T17:00:00Z').getTime(),
+    })
+  })
+
+  it('rejects a wall time skipped by spring-forward', () => {
+    const result = parseDateTimeInTimezone(
+      '2026-03-08 02:30',
+      newYork,
+      new Date('2026-03-09T00:00:00Z').getTime()
+    )
+    expect(result).toEqual({
+      success: false,
+      error:
+        'This time does not exist in America/New_York because the clocks changed',
+    })
+  })
+
+  it('rejects an ambiguous wall time unless an offset is explicit', () => {
+    const ambiguous = parseDateTimeInTimezone(
+      '2026-11-01 01:30',
+      newYork,
+      new Date('2026-11-02T00:00:00Z').getTime()
+    )
+    expect(ambiguous).toEqual({
+      success: false,
+      error:
+        'This time occurs twice in America/New_York; include an explicit UTC offset',
+    })
+
+    const explicit = parseDateTimeInTimezone(
+      '2026-11-01T01:30:00-04:00',
+      newYork
+    )
+    expect(explicit).toEqual({
+      success: true,
+      timestamp: new Date('2026-11-01T05:30:00Z').getTime(),
+    })
+  })
+
+  it('formats editable values with the offset that disambiguates overlaps', () => {
+    expect(
+      formatEditableDateTime(
+        new Date('2026-11-01T05:30:00Z').getTime(),
+        newYork
+      )
+    ).toBe('2026-11-01T01:30:00.000-04:00')
+    expect(
+      formatEditableDateTime(
+        new Date('2026-11-01T06:30:00Z').getTime(),
+        newYork
+      )
+    ).toBe('2026-11-01T01:30:00.000-05:00')
+  })
+
+  it('preserves historical second-precision offsets', () => {
+    const monrovia = normalizeTimezone('Africa/Monrovia')
+    if (!monrovia) throw new Error('Test runtime lacks Africa/Monrovia')
+    const result = parseDateTimeInTimezone(
+      '1971-01-01 00:00:00',
+      monrovia,
+      new Date('1971-01-02T00:00:00Z').getTime()
+    )
+    expect(result).toEqual({
+      success: true,
+      timestamp: new Date('1971-01-01T00:44:30Z').getTime(),
+    })
+    if (!result.success) throw new Error(result.error)
+    const editable = formatEditableDateTime(result.timestamp, monrovia)
+    expect(editable).toBe('1971-01-01T00:00:00.000-00:44:30')
+    expect(parseDateTimeInTimezone(editable, monrovia)).toEqual(result)
+  })
+
+  it('parses explicit negative-zero-hour offsets without losing their sign', () => {
+    expect(
+      parseDateTimeInTimezone('2026-01-01T00:00:00.000-00:30', newYork)
+    ).toEqual({
+      success: true,
+      timestamp: new Date('2026-01-01T00:30:00Z').getTime(),
+    })
+    expect(
+      parseDateTimeInTimezone('2026-01-01T00:00:00.000-0030', newYork)
+    ).toEqual({
+      success: true,
+      timestamp: new Date('2026-01-01T00:30:00Z').getTime(),
+    })
+  })
+
+  it('round-trips named-zone instants in years below 100', () => {
+    const timestamp = new Date('0050-01-01T12:00:00Z').getTime()
+    const editable = formatEditableDateTime(timestamp, newYork)
+    expect(parseDateTimeInTimezone(editable, newYork)).toEqual({
+      success: true,
+      timestamp,
+    })
   })
 })
 

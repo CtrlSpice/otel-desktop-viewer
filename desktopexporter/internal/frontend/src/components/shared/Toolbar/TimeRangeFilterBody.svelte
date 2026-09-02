@@ -1,7 +1,16 @@
 <script lang="ts">
-  import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { getLocalTimezoneName, formatTimezoneLabel } from '@/utils/time'
-  import { GlobalIcon, CustomizeIcon } from '@/icons'
+  import { tick } from 'svelte'
+  import {
+    getTimeContext,
+    selectionToQueryRangeMs,
+  } from '@/contexts/time-context.svelte'
+  import {
+    formatTimezoneLabel,
+    getLocalTimezoneName,
+    getSupportedTimezones,
+    resolveTimezoneName,
+  } from '@/utils/time'
+  import { FilterIcon, GlobalIcon, CustomizeIcon } from '@/icons'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import CustomTimeRange from './CustomTimeRange.svelte'
   import RecentTimeRanges from './RecentTimeRanges.svelte'
@@ -12,6 +21,73 @@
       'Time context not found. Ensure createTimeContext() runs at app root.'
     )
   }
+
+  function normalizeTimezoneSearch(value: string): string {
+    return value
+      .toLocaleLowerCase()
+      .replace(/[_/+\-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  const localTimezone = resolveTimezoneName('local')
+  const namedTimezones = getSupportedTimezones()
+    .filter(timezone => timezone !== localTimezone)
+    .map(timezone => ({ name: timezone }))
+  let timezoneOpen = $state(false)
+  let timezoneSearch = $state('')
+  let timezoneList: HTMLDivElement | undefined = $state()
+  let timezoneReferenceDate = $state(new Date())
+  let historicalAbbreviationSearch = $state(new Map<string, string>())
+  let historicalAbbreviationLoad: Promise<void> | undefined
+  let timezoneOptions = $derived(
+    namedTimezones.map(timezone => ({
+      ...timezone,
+      shortLabel: formatTimezoneLabel(timezone.name, timezoneReferenceDate),
+      searchText: normalizeTimezoneSearch(
+        `${timezone.name} ${historicalAbbreviationSearch.get(timezone.name) ?? ''}`
+      ),
+    }))
+  )
+  let filteredTimezones = $derived(
+    timezoneOptions.filter(timezone =>
+      `${timezone.searchText} ${normalizeTimezoneSearch(timezone.shortLabel)}`.includes(
+        normalizeTimezoneSearch(timezoneSearch)
+      )
+    )
+  )
+  let selectedTimezoneLabel = $derived(
+    ctx.tz === 'local' || ctx.tz === 'UTC'
+      ? formatTimezoneLabel(ctx.tz)
+      : ctx.tz
+  )
+
+  function loadHistoricalAbbreviations(): Promise<void> {
+    historicalAbbreviationLoad ??= import('moment-timezone').then(
+      ({ default: moment }) => {
+        historicalAbbreviationSearch = new Map(
+          namedTimezones.map(({ name }) => [
+            name,
+            [...new Set(moment.tz.zone(name)?.abbrs ?? [])].join(' '),
+          ])
+        )
+      }
+    )
+    return historicalAbbreviationLoad
+  }
+
+  $effect(() => {
+    if (!timezoneOpen) return
+    void loadHistoricalAbbreviations()
+    timezoneSearch = ''
+    const { end } = selectionToQueryRangeMs(ctx.selection, Date.now())
+    timezoneReferenceDate = new Date(end)
+    tick().then(() => {
+      timezoneList
+        ?.querySelector<HTMLElement>('[aria-pressed="true"]')
+        ?.scrollIntoView?.({ block: 'center', inline: 'nearest' })
+    })
+  })
 </script>
 
 <!-- Shared body: custom range, timezone group, recents group. -->
@@ -24,34 +100,87 @@
     <CustomTimeRange />
   </FieldGroup>
 
-  <FieldGroup label="Timezone" open={false}>
+  <FieldGroup label="Timezone" bind:open={timezoneOpen}>
     {#snippet heading()}
       <GlobalIcon class="h-3.5 w-3.5 shrink-0 text-base-content/55" />
       <span>Timezone</span>
-      <span class="badge-count">{formatTimezoneLabel(ctx.tz)}</span>
-    {/snippet}
-    <button
-      type="button"
-      class="tz-option"
-      class:tz-option--active={ctx.tz === 'local'}
-      onclick={() => ctx.setTz('local')}
-    >
-      <!-- "(Local)" disambiguates from the UTC row when the machine timezone
-           is itself UTC, and flags that this option follows the machine. -->
-      <span class="min-w-0 flex-1 truncate"
-        >{getLocalTimezoneName()} (Local)</span
+      <span
+        class="badge-count max-w-40 truncate"
+        title={selectedTimezoneLabel}
+        aria-live="polite">{selectedTimezoneLabel}</span
       >
-      <span class="tz-badge badge-count">{formatTimezoneLabel('local')}</span>
-    </button>
-    <button
-      type="button"
-      class="tz-option"
-      class:tz-option--active={ctx.tz === 'UTC'}
-      onclick={() => ctx.setTz('UTC')}
-    >
-      <span class="min-w-0 flex-1 truncate">Coordinated Universal Time</span>
-      <span class="tz-badge badge-count">UTC</span>
-    </button>
+    {/snippet}
+    {#if timezoneOpen}
+      <div class="timezone-search">
+        <div class="typed-field-group join w-full">
+          <label
+            for="timezone-filter"
+            class="typed-field-label join-item"
+            title="Filter timezones"
+          >
+            <FilterIcon class="h-3.5 w-3.5" />
+            <span class="sr-only">Filter timezones</span>
+          </label>
+          <input
+            id="timezone-filter"
+            type="search"
+            class="typed-field input input-sm join-item"
+            placeholder="Filter timezones"
+            autocomplete="off"
+            spellcheck="false"
+            bind:value={timezoneSearch}
+          />
+        </div>
+      </div>
+      <div
+        class="timezone-list"
+        aria-label="Timezone options"
+        bind:this={timezoneList}
+      >
+        <button
+          type="button"
+          class="tz-option"
+          class:tz-option--active={ctx.tz === 'local'}
+          aria-pressed={ctx.tz === 'local'}
+          onclick={() => ctx.setTz('local')}
+        >
+          <!-- "(Local)" disambiguates from UTC when the machine follows UTC. -->
+          <span class="min-w-0 flex-1 truncate"
+            >{getLocalTimezoneName()} (Local)</span
+          >
+          <span class="tz-badge">{formatTimezoneLabel('local')}</span>
+        </button>
+        <button
+          type="button"
+          class="tz-option"
+          class:tz-option--active={ctx.tz === 'UTC'}
+          aria-pressed={ctx.tz === 'UTC'}
+          onclick={() => ctx.setTz('UTC')}
+        >
+          <span class="min-w-0 flex-1 truncate">Coordinated Universal Time</span
+          >
+          <span class="tz-badge">UTC</span>
+        </button>
+        <div class="timezone-list__separator" role="separator"></div>
+        {#each filteredTimezones as timezone (timezone.name)}
+          <button
+            type="button"
+            class="tz-option"
+            class:tz-option--active={ctx.tz === timezone.name}
+            aria-pressed={ctx.tz === timezone.name}
+            onclick={() => ctx.setTz(timezone.name)}
+          >
+            <span class="min-w-0 flex-1 truncate font-mono text-xs"
+              >{timezone.name}</span
+            >
+            <span class="tz-badge">{timezone.shortLabel}</span>
+          </button>
+        {/each}
+        {#if filteredTimezones.length === 0}
+          <p class="timezone-list__empty">No matching named timezones</p>
+        {/if}
+      </div>
+    {/if}
   </FieldGroup>
 
   <RecentTimeRanges />
@@ -74,6 +203,23 @@
   }
 
   .tz-badge {
-    @apply ml-auto shrink-0;
+    @apply ml-auto shrink-0 font-mono text-xs text-base-content/55 tabular-nums;
+  }
+
+  .timezone-list {
+    @apply max-h-72 overflow-y-auto border-b border-base-300/50;
+    scrollbar-width: thin;
+  }
+
+  .timezone-search {
+    @apply py-2;
+  }
+
+  .timezone-list__separator {
+    @apply border-t border-base-300;
+  }
+
+  .timezone-list__empty {
+    @apply py-3 text-xs text-base-content/55;
   }
 </style>

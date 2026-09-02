@@ -1,8 +1,7 @@
 <script lang="ts">
-  import * as chrono from 'chrono-node'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { formatDateTimeMs } from '@/utils/time'
+  import { formatEditableDateTime, parseDateTimeInTimezone } from '@/utils/time'
 
   // Get time context
   let ctx = getTimeContext()
@@ -33,14 +32,11 @@
         invalidFields: ('start' | 'end')[]
       }
 
-  type ParseResult =
-    { success: true; timestamp: number } | { success: false; error: string }
-
   // Initialize custom text fields when in custom mode
   $effect(() => {
     if (ctx.selection.type === 'custom') {
-      customStartText = formatDateTimeMs(ctx.selection.start, ctx.tz).dateTime
-      customEndText = formatDateTimeMs(ctx.selection.end, ctx.tz).dateTime
+      customStartText = formatEditableDateTime(ctx.selection.start, ctx.tz)
+      customEndText = formatEditableDateTime(ctx.selection.end, ctx.tz)
       customFieldIssue = null
     } else {
       // Reset fields when selection changes to non-custom type
@@ -66,7 +62,7 @@
     }
 
     // Parse start and end times
-    let startResult = parseNaturalLanguage(customStartText)
+    let startResult = parseDateTimeInTimezone(customStartText, ctx.tz)
     if (!startResult.success) {
       return {
         isValid: false,
@@ -75,7 +71,7 @@
       }
     }
 
-    let endResult = parseNaturalLanguage(customEndText)
+    let endResult = parseDateTimeInTimezone(customEndText, ctx.tz)
     if (!endResult.success) {
       return {
         isValid: false,
@@ -126,26 +122,6 @@
       start: validation.start,
       end: validation.end,
     })
-  }
-
-  function parseNaturalLanguage(text: string): ParseResult {
-    if (!text.trim()) {
-      return { success: false, error: 'Please enter a time' }
-    }
-
-    try {
-      let parsed = chrono.parseDate(text)
-      if (parsed) {
-        return { success: true, timestamp: parsed.getTime() }
-      } else {
-        return {
-          success: false,
-          error: 'Could not understand this time format',
-        }
-      }
-    } catch (error) {
-      return { success: false, error: 'Invalid time format' }
-    }
   }
 </script>
 
