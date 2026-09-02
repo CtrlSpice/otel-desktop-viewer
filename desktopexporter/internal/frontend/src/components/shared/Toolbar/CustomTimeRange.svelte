@@ -414,12 +414,11 @@
         <input
           id="custom-start-date"
           type="text"
-          inputmode="numeric"
           placeholder="YYYY-MM-DD"
           class="typed-field input input-sm join-item endpoint-date"
           class:input-error={startInputInvalid}
           aria-invalid={startInputInvalid}
-          aria-describedby={customFieldIssue
+          aria-describedby={startInputInvalid
             ? 'custom-time-range-error'
             : undefined}
           oninput={() => editEndpoint('start')}
@@ -428,13 +427,12 @@
         <input
           id="custom-start-time"
           type="text"
-          inputmode="decimal"
           aria-label="Start time"
           placeholder="HH:mm:ss.SSS"
           class="typed-field input input-sm join-item endpoint-time"
           class:input-error={startInputInvalid}
           aria-invalid={startInputInvalid}
-          aria-describedby={customFieldIssue
+          aria-describedby={startInputInvalid
             ? 'custom-time-range-error'
             : undefined}
           oninput={() => editEndpoint('start')}
@@ -482,31 +480,27 @@
         <input
           id="custom-end-date"
           type="text"
-          inputmode="numeric"
           placeholder="YYYY-MM-DD"
           class="typed-field input input-sm join-item endpoint-date"
           class:input-error={endInputInvalid}
           aria-invalid={endInputInvalid}
-          aria-describedby={customFieldIssue
+          aria-describedby={endInputInvalid
             ? 'custom-time-range-error'
             : undefined}
-          onfocus={() => editEndpoint('end')}
           oninput={() => editEndpoint('end')}
           bind:value={endDateText}
         />
         <input
           id="custom-end-time"
           type="text"
-          inputmode="decimal"
           aria-label="End time"
           placeholder="HH:mm:ss.SSS"
           class="typed-field input input-sm join-item endpoint-time"
           class:input-error={endInputInvalid}
           aria-invalid={endInputInvalid}
-          aria-describedby={customFieldIssue
+          aria-describedby={endInputInvalid
             ? 'custom-time-range-error'
             : undefined}
-          onfocus={() => editEndpoint('end')}
           oninput={() => editEndpoint('end')}
           bind:value={endTimeText}
         />

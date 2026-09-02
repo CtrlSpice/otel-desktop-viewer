@@ -41,6 +41,10 @@ describe('CustomTimeRange', () => {
     expect(screen.getByLabelText('Start time')).toHaveValue('00:00:00.000')
     expect(screen.getByLabelText('End')).toHaveValue('2026-01-15')
     expect(screen.getByLabelText('End time')).toHaveValue('12:00:00.123')
+    expect(screen.getByLabelText('Start')).not.toHaveAttribute('inputmode')
+    expect(screen.getByLabelText('Start time')).not.toHaveAttribute('inputmode')
+    expect(screen.getByLabelText('End')).not.toHaveAttribute('inputmode')
+    expect(screen.getByLabelText('End time')).not.toHaveAttribute('inputmode')
     expect(screen.getByRole('button', { name: 'Now' })).toHaveAttribute(
       'aria-pressed',
       'true'
@@ -96,6 +100,14 @@ describe('CustomTimeRange', () => {
     expect(
       screen.getByText('Enter start time as HH:mm:ss.SSS')
     ).toBeInTheDocument()
+    expect(screen.getByLabelText('Start')).toHaveAttribute(
+      'aria-describedby',
+      'custom-time-range-error'
+    )
+    expect(screen.getByLabelText('End')).not.toHaveAttribute('aria-describedby')
+    expect(screen.getByLabelText('End time')).not.toHaveAttribute(
+      'aria-describedby'
+    )
 
     await setEndpoint('Start', '2026-01-15', '11:00:00.000')
     await setEndpoint('End', '2026-01-15', '10:00:00.000')
@@ -120,6 +132,27 @@ describe('CustomTimeRange', () => {
     ).toBeInTheDocument()
     expect(localStorage.getItem('time-selection')).toBeNull()
     expect(window.location.search).toBe('')
+  })
+
+  it('keeps now active while focus moves through the end fields', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
+    renderComponent()
+
+    await fireEvent.focus(screen.getByLabelText('End'))
+    await fireEvent.focus(screen.getByLabelText('End time'))
+    expect(screen.getByRole('button', { name: 'Now' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+
+    await fireEvent.input(screen.getByLabelText('End time'), {
+      target: { value: '11:00:00.000' },
+    })
+    expect(screen.getByRole('button', { name: 'Now' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
   })
 
   it('interprets structured wall-clock fields in a named timezone', async () => {
