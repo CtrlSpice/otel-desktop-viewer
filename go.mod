@@ -36,7 +36,7 @@ require (
 	go.uber.org/zap v1.28.0
 	golang.org/x/exp/jsonrpc2 v0.0.0-20260718201538-764159d718ef
 	golang.org/x/sys v0.47.0
-	google.golang.org/grpc v1.83.1
+	google.golang.org/grpc v1.83.2
 )
 
 require (
