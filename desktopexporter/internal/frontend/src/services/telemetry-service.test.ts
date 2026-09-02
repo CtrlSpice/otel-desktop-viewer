@@ -457,6 +457,86 @@ describe('request parameters', () => {
     expect(params.query).toMatchObject({ id: 'q1', type: 'condition' })
   })
 
+  it('includes a trace result limit without requiring a query tree', async () => {
+    const sent = captureRequest()
+    await telemetryAPI.searchTraces(2, 5, undefined, 250).catch(() => {})
+    expect(sent().params).toEqual({
+      startTime: '2000000',
+      endTime: '5000000',
+      limit: 250,
+    })
+  })
+
+  it.each([
+    ['logs', () => telemetryAPI.searchLogs(2, 5, undefined, 250), 'searchLogs'],
+    [
+      'metrics',
+      () => telemetryAPI.searchMetricSummaries(2, 5, undefined, 250),
+      'searchMetricSummaries',
+    ],
+  ])(
+    'includes a %s result limit without requiring a query tree',
+    async (_signal, invoke, method) => {
+      const sent = captureRequest()
+      await invoke().catch(() => {})
+      expect(sent()).toMatchObject({
+        method,
+        params: {
+          startTime: '2000000',
+          endTime: '5000000',
+          limit: 250,
+        },
+      })
+      expect('query' in sent().params).toBe(false)
+    }
+  )
+
+  it.each([
+    [
+      'traces',
+      () =>
+        telemetryAPI.searchTraces(2, 5, undefined, 25, {
+          field: 'duration',
+          direction: 'desc',
+        }),
+      'searchTraces',
+      'duration',
+    ],
+    [
+      'logs',
+      () =>
+        telemetryAPI.searchLogs(2, 5, undefined, 25, {
+          field: 'severity',
+          direction: 'asc',
+        }),
+      'searchLogs',
+      'severity',
+    ],
+    [
+      'metrics',
+      () =>
+        telemetryAPI.searchMetricSummaries(2, 5, undefined, 25, {
+          field: 'dataPointCount',
+          direction: 'desc',
+        }),
+      'searchMetricSummaries',
+      'dataPointCount',
+    ],
+  ])(
+    'includes the selected %s sort with a result limit',
+    async (_signal, invoke, method, field) => {
+      const sent = captureRequest()
+      await invoke().catch(() => {})
+      expect(sent()).toMatchObject({
+        method,
+        params: {
+          limit: 25,
+          sort: { field, direction: field === 'severity' ? 'asc' : 'desc' },
+        },
+      })
+    }
+  )
+
   // The deliberate exceptions. parseIDParams reads the whole params array as
   // the id list, so wrapping it in an object would nest the array a level
   // deeper and delete nothing.

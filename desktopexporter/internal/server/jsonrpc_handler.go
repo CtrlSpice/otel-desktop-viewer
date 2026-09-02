@@ -13,6 +13,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/stats"
 	"github.com/google/uuid"
@@ -120,7 +121,7 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	if len(params) < 2 || len(params) > 3 {
+	if len(params) < 2 || len(params) > 5 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -135,17 +136,59 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 	}
 
 	var query any
-	if len(params) == 3 {
+	if len(params) >= 3 {
 		query = params[2]
+	}
+	options, err := h.parseSearchOptions(params)
+	if err != nil {
+		return nil, err
 	}
 
 	summaries, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTraces(ctx, db, startTime, endTime, query)
+		return spans.SearchTracesWithOptions(ctx, db, startTime, endTime, query, options)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
 	}
 	return summaries, nil
+}
+
+func (h *JSONRPCHandler) parseSearchLimit(params []any) (*int64, error) {
+	if len(params) < 4 || params[3] == nil {
+		return nil, nil
+	}
+	limit, err := h.parseTimestampParam(params[3], "limit")
+	if err != nil {
+		return nil, err
+	}
+	if limit < 1 {
+		return nil, fmt.Errorf("limit must be positive: %w", jsonrpc2.ErrInvalidParams)
+	}
+	return &limit, nil
+}
+
+func (h *JSONRPCHandler) parseSearchOptions(params []any) (search.ResultOptions, error) {
+	limit, err := h.parseSearchLimit(params)
+	if err != nil {
+		return search.ResultOptions{}, err
+	}
+	if len(params) < 5 || params[4] == nil {
+		return search.ResultOptions{Limit: limit}, nil
+	}
+
+	rawSort, ok := params[4].(map[string]any)
+	if !ok {
+		return search.ResultOptions{}, fmt.Errorf("sort must be an object: %w", jsonrpc2.ErrInvalidParams)
+	}
+	field, fieldOK := rawSort["field"].(string)
+	direction, directionOK := rawSort["direction"].(string)
+	if !fieldOK || !directionOK || len(rawSort) != 2 {
+		return search.ResultOptions{}, fmt.Errorf("sort must contain only string field and direction properties: %w", jsonrpc2.ErrInvalidParams)
+	}
+	return search.ResultOptions{
+		Limit: limit,
+		Sort:  &search.Sort{Field: field, Direction: direction},
+	}, nil
 }
 
 func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -200,7 +243,7 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	if len(params) < 2 || len(params) > 3 {
+	if len(params) < 2 || len(params) > 5 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	startTime, err := h.parseTimestampParam(params[0], "startTime")
@@ -212,11 +255,15 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 		return nil, err
 	}
 	var query any
-	if len(params) == 3 {
+	if len(params) >= 3 {
 		query = params[2]
 	}
+	options, err := h.parseSearchOptions(params)
+	if err != nil {
+		return nil, err
+	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.Search(ctx, db, startTime, endTime, query)
+		return logs.SearchWithOptions(ctx, db, startTime, endTime, query, options)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)
@@ -270,7 +317,7 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 	if err := decodeParams(req.Params, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	if len(params) < 2 || len(params) > 3 {
+	if len(params) < 2 || len(params) > 5 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	startTime, err := h.parseTimestampParam(params[0], "startTime")
@@ -282,11 +329,15 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 		return nil, err
 	}
 	var query any
-	if len(params) == 3 {
+	if len(params) >= 3 {
 		query = params[2]
 	}
+	options, err := h.parseSearchOptions(params)
+	if err != nil {
+		return nil, err
+	}
 	summaries, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+		return metrics.SearchSummariesWithOptions(ctx, db, startTime, endTime, query, options)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(err)

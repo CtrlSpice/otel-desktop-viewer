@@ -1,6 +1,14 @@
 @precedence { and @left, or @left }
 
-@top Query { expression }
+@top Query { SearchRequest }
+
+SearchRequest { expression LimitClause? | LimitClause }
+
+LimitClause { ModifierPipe Limit LimitValue }
+
+ModifierPipe { @specialize<Word, "|"> }
+Limit        { @specialize<Word, "LIMIT"> | @specialize<Word, "limit"> }
+LimitValue   { Word }
 
 expression { condition | AndExpression | OrExpression }
 

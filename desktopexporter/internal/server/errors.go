@@ -66,6 +66,9 @@ func mapStoreError(err error) error {
 	case errors.Is(err, spans.ErrInvalidTraceQuery), errors.Is(err, logs.ErrInvalidLogQuery),
 		errors.Is(err, metrics.ErrInvalidMetricQuery), errors.Is(err, search.ErrInvalidQuery):
 		return ErrInvalidQuery
+	case errors.Is(err, spans.ErrInvalidTraceLimit), errors.Is(err, logs.ErrInvalidLogLimit),
+		errors.Is(err, metrics.ErrInvalidMetricLimit), errors.Is(err, search.ErrInvalidSort):
+		return jsonrpc2.ErrInvalidParams
 	case errors.Is(err, store.ErrStoreConnectionClosed):
 		return jsonrpc2.ErrInternal
 	default:

@@ -152,6 +152,24 @@ func TestSearchTraces(t *testing.T) {
 		assert.NoError(t, json.Unmarshal(raw, &summaries))
 		assert.Empty(t, summaries)
 	})
+
+	t.Run("Limit", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		maxTime := strconv.FormatInt(1<<63-1, 10)
+		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{"0", maxTime, nil, 1}))
+		require.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		require.True(t, ok)
+		var summaries []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &summaries))
+		require.Len(t, summaries, 1)
+
+		result, err = handler.Handle(context.Background(), createRequest("searchTraces", []any{"0", maxTime, nil, 0}))
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+	})
 }
 
 func TestSearchSpans(t *testing.T) {
@@ -270,6 +288,85 @@ func TestSearchLogs(t *testing.T) {
 		var entries []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &entries))
 		assert.Empty(t, entries)
+	})
+
+	t.Run("Limit", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+		maxTime := strconv.FormatInt(1<<63-1, 10)
+
+		result, err := handler.Handle(context.Background(), createRequest("searchLogs", []any{"0", maxTime, nil, 1}))
+		require.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		require.True(t, ok)
+		var entries []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &entries))
+		require.Len(t, entries, 1)
+
+		result, err = handler.Handle(context.Background(), createRequest("searchLogs", []any{"0", maxTime, nil, 0}))
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+	})
+}
+
+func TestSearchSortParams(t *testing.T) {
+	maxTime := strconv.FormatInt(1<<63-1, 10)
+	valid := []struct {
+		method string
+		field  string
+	}{
+		{method: "searchTraces", field: "duration"},
+		{method: "searchLogs", field: "severity"},
+		{method: "searchMetricSummaries", field: "dataPointCount"},
+	}
+	for _, tc := range valid {
+		t.Run(tc.method+" accepts sort", func(t *testing.T) {
+			handler, teardown := setupHandler(t)
+			defer teardown()
+
+			result, err := handler.Handle(context.Background(), createRequest(tc.method, []any{
+				"0", maxTime, nil, 1,
+				map[string]any{"field": tc.field, "direction": "desc"},
+			}))
+			require.NoError(t, err)
+			require.JSONEq(t, `[]`, string(result.(json.RawMessage)))
+		})
+
+		t.Run(tc.method+" rejects unsupported field", func(t *testing.T) {
+			handler, teardown := setupHandler(t)
+			defer teardown()
+
+			result, err := handler.Handle(context.Background(), createRequest(tc.method, []any{
+				"0", maxTime, nil, 1,
+				map[string]any{"field": "unsupported", "direction": "desc"},
+			}))
+			assert.Nil(t, result)
+			assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+		})
+	}
+
+	t.Run("rejects invalid direction", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{
+			"0", maxTime, nil, 1,
+			map[string]any{"field": "duration", "direction": "descending"},
+		}))
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+	})
+
+	t.Run("rejects malformed object", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{
+			"0", maxTime, nil, 1,
+			map[string]any{"field": "duration"},
+		}))
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 	})
 }
 
@@ -872,6 +969,24 @@ func TestSearchMetricSummaries(t *testing.T) {
 		require.NoError(t, json.Unmarshal(raw, &summaries))
 		require.Len(t, summaries, 1)
 		assert.Equal(t, "test.gauge", summaries[0]["name"])
+	})
+
+	t.Run("Limit", func(t *testing.T) {
+		handler, teardown := setupHandlerWithMetrics(t)
+		defer teardown()
+		maxTime := strconv.FormatInt(1<<63-1, 10)
+
+		result, err := handler.Handle(context.Background(), createRequest("searchMetricSummaries", []any{"0", maxTime, nil, 1}))
+		require.NoError(t, err)
+		raw, ok := result.(json.RawMessage)
+		require.True(t, ok)
+		var summaries []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &summaries))
+		require.Len(t, summaries, 1)
+
+		result, err = handler.Handle(context.Background(), createRequest("searchMetricSummaries", []any{"0", maxTime, nil, 0}))
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 	})
 }
 

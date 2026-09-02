@@ -267,6 +267,8 @@
   {#if segment === 'full' || segment === 'search'}
     <SearchEditor
       {signal}
+      {sortValue}
+      {sortDirection}
       variant="drawer"
       {onSearchResults}
       {onSearchError}

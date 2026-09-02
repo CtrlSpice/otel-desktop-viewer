@@ -14,9 +14,9 @@
     getDynamicAttributes,
     type FieldDefinition,
   } from '@/constants/fields'
-  import { parseQuery } from './queryParser'
+  import { parseSearchRequest } from './queryParser'
   import type { QueryNode } from './queryTree'
-  import { telemetryAPI } from '@/services/telemetry-service'
+  import { telemetryAPI, type SearchSort } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -45,6 +45,8 @@
   // --- types ---
   type SearchEditorProps = {
     signal: 'traces' | 'metrics' | 'logs'
+    sortValue: string
+    sortDirection: 'asc' | 'desc'
     onSearchResults?: (event: SearchResultEvent) => void
     /** Toolbar layout: panel chrome on the search wrapper only (not the action row). */
     inToolbar?: boolean
@@ -68,22 +70,35 @@
 
   const searchDispatch: Record<
     string,
-    (ctx: SearchContext, q?: QueryNode) => () => Promise<any>
+    (
+      ctx: SearchContext,
+      q?: QueryNode,
+      limit?: number,
+      sort?: SearchSort
+    ) => () => Promise<any>
   > = {
-    traces: (ctx, q) => () =>
-      telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q),
-    logs: (ctx, q) => () =>
-      telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q),
-    metrics: (ctx, q) => () =>
-      telemetryAPI.searchMetricSummaries(ctx.startTime, ctx.endTime, q),
+    traces: (ctx, q, limit, sort) => () =>
+      telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q, limit, sort),
+    logs: (ctx, q, limit, sort) => () =>
+      telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q, limit, sort),
+    metrics: (ctx, q, limit, sort) => () =>
+      telemetryAPI.searchMetricSummaries(
+        ctx.startTime,
+        ctx.endTime,
+        q,
+        limit,
+        sort
+      ),
   }
 
   /** Build the API call for a signal, or null if unsupported. */
   function buildSearchFn(
     ctx: SearchContext,
-    queryTree?: QueryNode
+    queryTree?: QueryNode,
+    limit?: number,
+    sort?: SearchSort
   ): (() => Promise<any>) | null {
-    return searchDispatch[ctx.signal]?.(ctx, queryTree) ?? null
+    return searchDispatch[ctx.signal]?.(ctx, queryTree, limit, sort) ?? null
   }
 
   /**
@@ -113,6 +128,8 @@
   // --- context ---
   let {
     signal,
+    sortValue,
+    sortDirection,
     onSearchResults,
     inToolbar = false,
     variant = 'default',
@@ -300,21 +317,35 @@
     }
 
     try {
-      const queryTree: QueryNode | null = parseQuery(text, availableFields)
+      const request = parseSearchRequest(text, availableFields)
       searchError = null
-      if (!queryTree) {
+      if (!request) {
         fetchClean(beginListUpdate(signal))
         return
       }
 
-      const durationErr = normalizeDurationValues(queryTree)
-      if (durationErr) {
-        searchError = durationErr
+      const { predicate: queryTree, limit } = request
+      if (!queryTree && limit === null) {
+        fetchClean(beginListUpdate(signal))
         return
       }
 
+      if (queryTree) {
+        const durationErr = normalizeDurationValues(queryTree)
+        if (durationErr) {
+          searchError = durationErr
+          return
+        }
+      }
+
       const searchCtx = currentSearchContext()
-      const searchFn = buildSearchFn(searchCtx, queryTree)
+      const sort = { field: sortValue, direction: sortDirection }
+      const searchFn = buildSearchFn(
+        searchCtx,
+        queryTree ?? undefined,
+        limit ?? undefined,
+        sort
+      )
       if (!searchFn) {
         fetchClean(beginListUpdate(signal))
         return
@@ -323,7 +354,7 @@
       const updateSeq = beginListUpdate(signal)
       searchFn()
         .then(results => {
-          emitResults(results, queryTree, updateSeq)
+          emitResults(results, queryTree ?? undefined, updateSeq)
         })
         .catch(err => {
           if (!alive) return
@@ -621,6 +652,10 @@
         Quote values containing spaces:
         <code class="q-value">"Red Bull Racing"</code> — keywords work lowercase too
       </p>
+      <p>
+        Cap the returned results by appending
+        <code class="q-logic">| LIMIT 100</code>
+      </p>
     </div>
 
     <h3 class="help-section-heading">Operators</h3>
@@ -702,7 +737,9 @@
     {#if signal === 'traces'}
       <pre class="help-example"><code class="q-field">name</code> <code
           class="q-operator">CONTAINS</code
-        > <code class="q-value">http</code></pre>
+        > <code class="q-value">http</code> <code class="q-logic"
+          >| LIMIT 100</code
+        ></pre>
       <pre class="help-example"><code class="q-field">kind</code> <code
           class="q-operator">=</code
         > <code class="q-value">Server</code> <code class="q-logic">AND</code

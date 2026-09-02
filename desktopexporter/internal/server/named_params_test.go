@@ -72,6 +72,28 @@ func TestNamedParamsGapsBecomeNull(t *testing.T) {
 	require.Equal(t, []any{"a"}, out[4])
 }
 
+func TestNamedSearchLimitLeavesNullQueryGap(t *testing.T) {
+	for _, method := range []string{"searchTraces", "searchLogs", "searchMetricSummaries"} {
+		t.Run(method, func(t *testing.T) {
+			got, err := normalizeParams(method, json.RawMessage(
+				`{"startTime":"1","endTime":"2","limit":5}`))
+			require.NoError(t, err)
+			require.JSONEq(t, `["1","2",null,5]`, string(got))
+		})
+	}
+}
+
+func TestNamedSearchSortLeavesEarlierGapsNull(t *testing.T) {
+	for _, method := range []string{"searchTraces", "searchLogs", "searchMetricSummaries"} {
+		t.Run(method, func(t *testing.T) {
+			got, err := normalizeParams(method, json.RawMessage(
+				`{"startTime":"1","endTime":"2","sort":{"field":"name","direction":"asc"}}`))
+			require.NoError(t, err)
+			require.JSONEq(t, `["1","2",null,null,{"field":"name","direction":"asc"}]`, string(got))
+		})
+	}
+}
+
 func TestNamedParamsRejectUnknownNames(t *testing.T) {
 	// Silence here would hand back results for a window the caller did not
 	// ask for, which is worse than any error.

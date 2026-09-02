@@ -1,6 +1,10 @@
 import { type FieldDefinition } from '@/constants/fields'
 import { OPERATORS, type Operator } from '@/constants/operators'
-import { type QueryNode, generateID } from './queryTree'
+import {
+  type ParsedSearchRequest,
+  type QueryNode,
+  generateID,
+} from './queryTree'
 import { parser } from './codemirror/query.parser'
 import type { SyntaxNode } from '@lezer/common'
 
@@ -142,7 +146,10 @@ function namedChildren(node: SyntaxNode): SyntaxNode[] {
 // counting Groups turned every parenthetical remark into a hard parse
 // error. The old lexer's heuristic was "has an operator or logical token",
 // and this is that rule expressed over the tree.
-function surveyTree(tree: ReturnType<typeof parser.parse>): {
+function surveyTree(
+  tree: ReturnType<typeof parser.parse>,
+  predicateEnd = Number.POSITIVE_INFINITY
+): {
   structured: boolean
   firstError: { from: number; to: number } | null
 } {
@@ -150,6 +157,7 @@ function surveyTree(tree: ReturnType<typeof parser.parse>): {
   let firstError: { from: number; to: number } | null = null
   tree.iterate({
     enter(n) {
+      if (n.from >= predicateEnd) return false
       if (
         n.name === 'Comparison' ||
         n.name === 'AndExpression' ||
@@ -165,6 +173,69 @@ function surveyTree(tree: ReturnType<typeof parser.parse>): {
     },
   })
   return { structured, firstError }
+}
+
+function searchRequestNode(tree: ReturnType<typeof parser.parse>): SyntaxNode {
+  return tree.topNode.getChild('SearchRequest') ?? tree.topNode
+}
+
+function findPredicateNode(request: SyntaxNode): SyntaxNode | null {
+  return (
+    namedChildren(request).find(child => child.name !== 'LimitClause') ?? null
+  )
+}
+
+function findLimitClauses(tree: ReturnType<typeof parser.parse>): SyntaxNode[] {
+  const clauses: SyntaxNode[] = []
+  tree.iterate({
+    enter(node) {
+      if (node.name === 'LimitClause') clauses.push(node.node)
+    },
+  })
+  return clauses
+}
+
+function firstErrorFrom(
+  tree: ReturnType<typeof parser.parse>,
+  from: number
+): { from: number; to: number } | null {
+  let first: { from: number; to: number } | null = null
+  tree.iterate({
+    enter(node) {
+      if (node.from < from) return
+      if (node.type.isError && !first) {
+        first = { from: node.from, to: node.to }
+      }
+    },
+  })
+  return first
+}
+
+function walkLimit(ctx: WalkContext, clause: SyntaxNode): number | null {
+  const keyword = clause.getChild('Limit')
+  const value = clause.getChild('LimitValue')
+  if (!keyword || !value || !/^(?:LIMIT|limit)$/.test(text(ctx, keyword))) {
+    fail(
+      ctx,
+      clause.from,
+      Math.max(clause.to, clause.from + 1),
+      'Result limits use the form | LIMIT 100'
+    )
+    return null
+  }
+
+  const raw = text(ctx, value)
+  if (!/^\d+$/.test(raw)) {
+    fail(ctx, value.from, value.to, 'LIMIT must be a positive whole number')
+    return null
+  }
+
+  const limit = Number(raw)
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    fail(ctx, value.from, value.to, 'LIMIT must be a positive whole number')
+    return null
+  }
+  return limit
 }
 
 function walkExpression(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
@@ -331,27 +402,68 @@ function createGlobalTextSearch(input: string): QueryNode {
   }
 }
 
-// Main Parse Function
+// Parse the complete search language. Result controls are siblings of the
+// predicate rather than fake boolean nodes, so adding sorting or pagination
+// later does not change what QueryNode means.
+export function parseSearchRequest(
+  input: string,
+  availableFields: FieldDefinition[]
+): ParsedSearchRequest | null {
+  if (!input.trim()) return null
+
+  const tree = parser.parse(input)
+  const request = searchRequestNode(tree)
+  const limitClauses = findLimitClauses(tree)
+  if (limitClauses.length > 1) {
+    throw new Error('Only one LIMIT modifier is allowed')
+  }
+
+  const limitClause = limitClauses[0] ?? null
+  const predicateEnd = limitClause?.from ?? input.length
+  const predicateText = input.slice(0, predicateEnd).trim()
+  const { structured, firstError } = surveyTree(tree, predicateEnd)
+
+  const ctx: WalkContext = { input, availableFields, errors: null }
+  let predicate: QueryNode | null = null
+
+  if (predicateText) {
+    if (!structured) {
+      predicate = createGlobalTextSearch(predicateText)
+    } else {
+      if (firstError) {
+        throw new Error(
+          unexpectedTokenMessage(input.slice(firstError.from, firstError.to))
+        )
+      }
+      const predicateNode = findPredicateNode(request)
+      predicate = predicateNode ? walkExpression(ctx, predicateNode) : null
+    }
+  }
+
+  let limit: number | null = null
+  if (limitClause) {
+    limit = walkLimit(ctx, limitClause)
+    const trailingError = firstErrorFrom(tree, limitClause.to)
+    if (trailingError) {
+      throw new Error('LIMIT must be the final search modifier')
+    }
+  }
+
+  return { predicate, limit }
+}
+
+// Existing callers still ask for a predicate alone. Refuse a result modifier
+// rather than silently dropping it; SearchEditor moves to parseSearchRequest
+// when the transport slice starts carrying limits.
 export function parseQuery(
   input: string,
   availableFields: FieldDefinition[]
 ): QueryNode | null {
-  if (!input.trim()) return null
-
-  const tree = parser.parse(input)
-  const { structured, firstError } = surveyTree(tree)
-
-  if (!structured) return createGlobalTextSearch(input)
-
-  if (firstError) {
-    throw new Error(
-      unexpectedTokenMessage(input.slice(firstError.from, firstError.to))
-    )
+  const request = parseSearchRequest(input, availableFields)
+  if (request?.limit !== null && request?.limit !== undefined) {
+    throw new Error('LIMIT is not available for this search yet')
   }
-
-  const ctx: WalkContext = { input, availableFields, errors: null }
-  const root = tree.topNode.firstChild
-  return root ? walkExpression(ctx, root) : null
+  return request?.predicate ?? null
 }
 
 // Lightweight validator: same tree, same walk, but collects every problem
@@ -363,12 +475,17 @@ export function validateQuery(
   if (!input.trim()) return []
 
   const tree = parser.parse(input)
-  const { structured, firstError } = surveyTree(tree)
+  const request = searchRequestNode(tree)
+  const limitClauses = findLimitClauses(tree)
+  const limitClause = limitClauses[0] ?? null
+  const predicateEnd = limitClause?.from ?? input.length
+  const predicateText = input.slice(0, predicateEnd).trim()
+  const { structured, firstError } = surveyTree(tree, predicateEnd)
 
-  if (!structured) return []
+  if (!structured && !limitClause) return []
 
   const errors: ValidationError[] = []
-  if (firstError) {
+  if (structured && firstError) {
     errors.push({
       from: firstError.from,
       to: Math.max(firstError.to, firstError.from + 1),
@@ -379,7 +496,29 @@ export function validateQuery(
   }
 
   const ctx: WalkContext = { input, availableFields, errors }
-  const root = tree.topNode.firstChild
-  if (root) walkExpression(ctx, root)
+  if (structured && predicateText) {
+    const predicateNode = findPredicateNode(request)
+    if (predicateNode) walkExpression(ctx, predicateNode)
+  }
+
+  if (limitClauses.length > 1) {
+    const repeated = limitClauses[1]
+    errors.push({
+      from: repeated.from,
+      to: repeated.to,
+      message: 'Only one LIMIT modifier is allowed',
+    })
+  }
+  if (limitClause) {
+    walkLimit(ctx, limitClause)
+    const trailingError = firstErrorFrom(tree, limitClause.to)
+    if (trailingError) {
+      errors.push({
+        from: trailingError.from,
+        to: Math.max(trailingError.to, trailingError.from + 1),
+        message: 'LIMIT must be the final search modifier',
+      })
+    }
+  }
   return errors
 }
