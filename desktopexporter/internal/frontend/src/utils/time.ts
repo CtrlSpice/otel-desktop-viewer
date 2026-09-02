@@ -17,6 +17,7 @@ type TimestampResolution = DateTimeResolution | 'microseconds' | 'nanoseconds'
 
 export type ParsedDateTime =
   { success: true; timestamp: number } | { success: false; error: string }
+export type WallClockDisambiguation = 'reject' | 'earlier' | 'later'
 
 const zonedPartsFormatters = new Map<string, Intl.DateTimeFormat>()
 const EXPLICIT_OFFSET_DATE_TIME =
@@ -215,7 +216,8 @@ function parseExplicitOffsetDateTime(
 export function parseDateTimeInTimezone(
   text: string,
   timezone: Timezone,
-  now: number = Date.now()
+  now: number = Date.now(),
+  disambiguation: WallClockDisambiguation = 'reject'
 ): ParsedDateTime {
   if (!text.trim()) return { success: false, error: 'Please enter a time' }
 
@@ -266,6 +268,12 @@ export function parseDateTimeInTimezone(
       }
     }
     if (candidates.length > 1) {
+      if (disambiguation === 'earlier') {
+        return { success: true, timestamp: candidates[0] }
+      }
+      if (disambiguation === 'later') {
+        return { success: true, timestamp: candidates[candidates.length - 1] }
+      }
       return {
         success: false,
         error: `This time occurs twice in ${name}; include an explicit UTC offset`,

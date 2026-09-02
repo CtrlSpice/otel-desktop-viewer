@@ -29,6 +29,7 @@
     "@hugeicons/core-free-icons": "^4.3.0",
     "@hugeicons/svelte": "^1.1.5",
     "@humanspeak/svelte-virtual-list": "^0.5.14",
+    "@internationalized/date": "^3.12.4",
     "@lezer/highlight": "^1.2.3",
     "@lezer/lr": "^1.4.10",
     "bits-ui": "^2.19.0",

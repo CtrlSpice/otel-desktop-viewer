@@ -105,7 +105,7 @@
       <GlobalIcon class="h-3.5 w-3.5 shrink-0 text-base-content/55" />
       <span>Timezone</span>
       <span
-        class="badge-count max-w-40 truncate"
+        class="timezone-summary"
         title={selectedTimezoneLabel}
         aria-live="polite">{selectedTimezoneLabel}</span
       >
@@ -145,9 +145,7 @@
           onclick={() => ctx.setTz('local')}
         >
           <!-- "(Local)" disambiguates from UTC when the machine follows UTC. -->
-          <span class="min-w-0 flex-1 truncate"
-            >{getLocalTimezoneName()} (Local)</span
-          >
+          <span class="tz-name">{getLocalTimezoneName()} (Local)</span>
           <span class="tz-badge">{formatTimezoneLabel('local')}</span>
         </button>
         <button
@@ -157,8 +155,7 @@
           aria-pressed={ctx.tz === 'UTC'}
           onclick={() => ctx.setTz('UTC')}
         >
-          <span class="min-w-0 flex-1 truncate">Coordinated Universal Time</span
-          >
+          <span class="tz-name">Coordinated Universal Time</span>
           <span class="tz-badge">UTC</span>
         </button>
         <div class="timezone-list__separator" role="separator"></div>
@@ -170,9 +167,7 @@
             aria-pressed={ctx.tz === timezone.name}
             onclick={() => ctx.setTz(timezone.name)}
           >
-            <span class="min-w-0 flex-1 truncate font-mono text-xs"
-              >{timezone.name}</span
-            >
+            <span class="tz-name">{timezone.name}</span>
             <span class="tz-badge">{timezone.shortLabel}</span>
           </button>
         {/each}
@@ -195,11 +190,15 @@
     min-height: var(--table-row-h);
     @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-left text-sm transition-colors;
     @apply text-base-content/90 hover:bg-base-300/40;
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
+    @apply focus-visible:bg-base-300/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
   }
 
   .tz-option--active {
     @apply text-primary;
+  }
+
+  .tz-name {
+    @apply min-w-0 flex-1 truncate text-sm;
   }
 
   .tz-badge {
@@ -207,16 +206,20 @@
   }
 
   .timezone-list {
-    @apply max-h-72 overflow-y-auto border-b border-base-300/50;
+    @apply max-h-72 overflow-y-auto;
     scrollbar-width: thin;
   }
 
   .timezone-search {
-    @apply py-2;
+    @apply py-1.5;
+  }
+
+  .timezone-summary {
+    @apply ml-auto max-w-40 truncate font-mono text-xs text-base-content/55;
   }
 
   .timezone-list__separator {
-    @apply border-t border-base-300;
+    @apply border-t border-base-300/50;
   }
 
   .timezone-list__empty {

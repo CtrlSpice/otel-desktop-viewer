@@ -462,6 +462,27 @@ describe('named timezone support', () => {
     })
   })
 
+  it('resolves an ambiguous wall time when the picker disambiguates it', () => {
+    const now = new Date('2026-11-02T00:00:00Z').getTime()
+    expect(
+      parseDateTimeInTimezone(
+        '2026-11-01 01:30:00.123',
+        newYork,
+        now,
+        'earlier'
+      )
+    ).toEqual({
+      success: true,
+      timestamp: new Date('2026-11-01T05:30:00.123Z').getTime(),
+    })
+    expect(
+      parseDateTimeInTimezone('2026-11-01 01:30:00.123', newYork, now, 'later')
+    ).toEqual({
+      success: true,
+      timestamp: new Date('2026-11-01T06:30:00.123Z').getTime(),
+    })
+  })
+
   it('formats editable values with the offset that disambiguates overlaps', () => {
     expect(
       formatEditableDateTime(

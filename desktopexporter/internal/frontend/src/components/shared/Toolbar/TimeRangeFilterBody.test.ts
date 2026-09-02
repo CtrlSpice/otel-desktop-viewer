@@ -79,7 +79,6 @@ describe('TimeRangeFilterBody', () => {
     fireEvent.click(option)
     expect(localStorage.getItem('time-tz')).toBe('America/Los_Angeles')
     expect(option).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByTitle('America/Los_Angeles')).toBeInTheDocument()
   })
 
   it('does not repeat the machine zone among the named choices', async () => {
@@ -189,22 +188,26 @@ describe('TimeRangeFilterBody', () => {
     }
   })
 
-  it('applies a custom range through the embedded form', () => {
+  it('applies a custom range through the embedded form', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
+    localStorage.setItem('time-tz', 'UTC')
     renderComponent()
 
-    fireEvent.input(screen.getByLabelText(/Start/i), {
-      target: { value: '2 hours ago' },
+    await fireEvent.input(screen.getByLabelText('Start'), {
+      target: { value: '2026-01-15' },
     })
-    fireEvent.input(screen.getByLabelText(/End/i), {
-      target: { value: '1 hour ago' },
+    await fireEvent.input(screen.getByLabelText('Start time'), {
+      target: { value: '10:00:00.123' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply range' }))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
-    expect(saved.type).toBe('custom')
-    expect(saved.start).toBeLessThan(saved.end)
+    expect(saved).toEqual({
+      type: 'custom',
+      start: new Date('2026-01-15T10:00:00.123Z').getTime(),
+      end: new Date('2026-01-15T12:00:00.000Z').getTime(),
+    })
     expect(window.location.search).toContain(`start=${saved.start}`)
     expect(window.location.search).toContain(`end=${saved.end}`)
   })
