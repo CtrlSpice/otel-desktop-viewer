@@ -4,8 +4,8 @@
  * @remarks
  * A browser preference, not telemetry state: it describes the person's screen
  * rather than the data, so it lives in localStorage and stays out of the URL
- * and the store -- the same line `notes/saved-views.md` draws for theme and
- * panel widths.
+ * and the store -- the same line `docs/snapshot-save-share.md` draws for theme
+ * and panel widths.
  *
  * Rem rather than pixels so the drawer keeps its proportion to the text it
  * holds when the root font size changes.

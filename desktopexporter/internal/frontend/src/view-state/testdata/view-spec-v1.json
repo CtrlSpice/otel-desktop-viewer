@@ -1,0 +1,141 @@
+[
+  {
+    "name": "home",
+    "input": {
+      "version": 1,
+      "time": { "kind": "all" },
+      "destination": { "signal": "home" }
+    },
+    "canonical": "{\"version\":1,\"time\":{\"kind\":\"all\"},\"destination\":{\"signal\":\"home\"}}",
+    "id": "v1_g74W0CYmWN75-Z5tuh2bhNuSdcK-sgxBbYk8hU-1Ijg"
+  },
+  {
+    "name": "trace",
+    "input": {
+      "version": 1,
+      "time": { "kind": "absolute", "startMs": 100, "endMs": 200 },
+      "destination": {
+        "signal": "traces",
+        "traceID": "0123456789ABCDEF0123456789ABCDEF",
+        "spanID": "ABCDEF0123456789",
+        "eventIndex": 2
+      },
+      "list": {
+        "search": "status = error",
+        "sort": { "field": "duration", "direction": "desc" }
+      }
+    },
+    "canonical": "{\"version\":1,\"time\":{\"kind\":\"absolute\",\"startMs\":100,\"endMs\":200},\"destination\":{\"signal\":\"traces\",\"traceID\":\"0123456789abcdef0123456789abcdef\",\"spanID\":\"abcdef0123456789\",\"eventIndex\":2},\"list\":{\"search\":\"status = error\",\"sort\":{\"field\":\"duration\",\"direction\":\"desc\"}}}",
+    "id": "v1_l725pdesS8MN0poZNk7YuprzCO_gt-fOxPDDCi5-6Zs"
+  },
+  {
+    "name": "log with escaped text",
+    "input": {
+      "version": 1,
+      "time": { "kind": "all" },
+      "destination": {
+        "signal": "logs",
+        "logID": "20000000-0000-4000-8000-000000000001"
+      },
+      "list": {
+        "search": "body = \"line\n<&> 😀\"",
+        "sort": { "field": "body", "direction": "asc" }
+      }
+    },
+    "canonical": "{\"version\":1,\"time\":{\"kind\":\"all\"},\"destination\":{\"signal\":\"logs\",\"logID\":\"20000000-0000-4000-8000-000000000001\"},\"list\":{\"search\":\"body = \\\"line\\n<&> 😀\\\"\",\"sort\":{\"field\":\"body\",\"direction\":\"asc\"}}}",
+    "id": "v1_HG6Yx45R6oBpZZK45x9sAmKJ0lVVqzHw-sCh_PKvErU"
+  },
+  {
+    "name": "timeseries metric",
+    "input": {
+      "version": 1,
+      "time": { "kind": "absolute", "startMs": 1000, "endMs": 2000 },
+      "destination": {
+        "signal": "metrics",
+        "metricID": "10000000-0000-4000-8000-000000000001",
+        "detail": {
+          "kind": "timeseries",
+          "aggregation": "rate",
+          "queryTimezone": {
+            "kind": "iana",
+            "name": "America/New_York"
+          },
+          "selectedSeries": "10000000-0000-4000-8000-000000000102",
+          "selectedDatapoint": "10000000-0000-4000-8000-000000000201",
+          "visibleSeries": [
+            "10000000-0000-4000-8000-000000000102",
+            "10000000-0000-4000-8000-000000000101"
+          ],
+          "showAllSeriesAggregate": true,
+          "showSelectionStatOverlays": false
+        }
+      },
+      "list": {
+        "search": "service.name = \"checkout<&> 😀\" LIMIT 22",
+        "sort": { "field": "lastSeen", "direction": "desc" }
+      }
+    },
+    "canonical": "{\"version\":1,\"time\":{\"kind\":\"absolute\",\"startMs\":1000,\"endMs\":2000},\"destination\":{\"signal\":\"metrics\",\"metricID\":\"10000000-0000-4000-8000-000000000001\",\"detail\":{\"kind\":\"timeseries\",\"aggregation\":\"rate\",\"queryTimezone\":{\"kind\":\"iana\",\"name\":\"America/New_York\"},\"selectedSeries\":\"10000000-0000-4000-8000-000000000102\",\"selectedDatapoint\":\"10000000-0000-4000-8000-000000000201\",\"visibleSeries\":[\"10000000-0000-4000-8000-000000000101\",\"10000000-0000-4000-8000-000000000102\"],\"showAllSeriesAggregate\":true,\"showSelectionStatOverlays\":false}},\"list\":{\"search\":\"service.name = \\\"checkout<&> 😀\\\" LIMIT 22\",\"sort\":{\"field\":\"lastSeen\",\"direction\":\"desc\"}}}",
+    "id": "v1_pynmJyjWzxSNU9DQeTa5ou0rMXTmUuEVBuRc1PIcMj4"
+  },
+  {
+    "name": "histogram metric",
+    "input": {
+      "version": 1,
+      "time": { "kind": "absolute", "startMs": 1000, "endMs": 2000 },
+      "destination": {
+        "signal": "metrics",
+        "metricID": "10000000-0000-4000-8000-000000000001",
+        "detail": {
+          "kind": "histogram",
+          "tab": "quantiles",
+          "scope": "bucket",
+          "queryTimezone": {
+            "kind": "offset",
+            "utcOffsetMinutes": -300
+          },
+          "selectedSeries": "10000000-0000-4000-8000-000000000101",
+          "selectedDatapoint": null,
+          "visibleSeries": [
+            "10000000-0000-4000-8000-000000000102",
+            "10000000-0000-4000-8000-000000000101"
+          ],
+          "activeQuantile": "0.95"
+        }
+      },
+      "list": {
+        "search": "",
+        "sort": { "field": "name", "direction": "asc" }
+      }
+    },
+    "canonical": "{\"version\":1,\"time\":{\"kind\":\"absolute\",\"startMs\":1000,\"endMs\":2000},\"destination\":{\"signal\":\"metrics\",\"metricID\":\"10000000-0000-4000-8000-000000000001\",\"detail\":{\"kind\":\"histogram\",\"tab\":\"quantiles\",\"scope\":\"bucket\",\"queryTimezone\":{\"kind\":\"offset\",\"utcOffsetMinutes\":-300},\"selectedSeries\":\"10000000-0000-4000-8000-000000000101\",\"selectedDatapoint\":null,\"visibleSeries\":[\"10000000-0000-4000-8000-000000000101\",\"10000000-0000-4000-8000-000000000102\"],\"activeQuantile\":\"0.95\"}},\"list\":{\"search\":\"\",\"sort\":{\"field\":\"name\",\"direction\":\"asc\"}}}",
+    "id": "v1__zTb9kBkN_ohuLkmHZYS1rwYPJXQZcYhiBFx8Q7-nR0"
+  },
+  {
+    "name": "explicit empty metric visibility",
+    "input": {
+      "version": 1,
+      "time": { "kind": "all" },
+      "destination": {
+        "signal": "metrics",
+        "metricID": "10000000-0000-4000-8000-000000000001",
+        "detail": {
+          "kind": "timeseries",
+          "aggregation": "raw",
+          "queryTimezone": { "kind": "iana", "name": "UTC" },
+          "selectedSeries": null,
+          "selectedDatapoint": null,
+          "visibleSeries": [],
+          "showAllSeriesAggregate": false,
+          "showSelectionStatOverlays": true
+        }
+      },
+      "list": {
+        "search": "",
+        "sort": { "field": "lastSeen", "direction": "desc" }
+      }
+    },
+    "canonical": "{\"version\":1,\"time\":{\"kind\":\"all\"},\"destination\":{\"signal\":\"metrics\",\"metricID\":\"10000000-0000-4000-8000-000000000001\",\"detail\":{\"kind\":\"timeseries\",\"aggregation\":\"raw\",\"queryTimezone\":{\"kind\":\"iana\",\"name\":\"UTC\"},\"selectedSeries\":null,\"selectedDatapoint\":null,\"visibleSeries\":[],\"showAllSeriesAggregate\":false,\"showSelectionStatOverlays\":true}},\"list\":{\"search\":\"\",\"sort\":{\"field\":\"lastSeen\",\"direction\":\"desc\"}}}",
+    "id": "v1_vU2r6i2Q-Lxbqs9qxvSC6iY1BeUbFDAWtkE-UyPoKkE"
+  }
+]
