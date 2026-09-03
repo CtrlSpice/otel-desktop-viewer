@@ -12,7 +12,7 @@
 			select d.stream_id, max(d.timestamp) as last_dp_ts
 			from datapoints d
 			inner join filtered_streams fs on d.stream_id = fs.id, search_params
-			where d.timestamp >= time_start and d.timestamp <= time_end
+			{{.DatapointWhere}}
 			group by d.stream_id
 		),
 		candidate_streams as (
@@ -24,7 +24,7 @@
 		filtered_dps as (
 			select d.* from datapoints d
 			inner join candidate_streams fs on d.stream_id = fs.id, search_params
-			where d.timestamp >= time_start and d.timestamp <= time_end
+			{{.DatapointWhere}}
 		),
 		ingest_latest_dp as (
 			select metric_ingest_id, max(timestamp) as last_dp_ts

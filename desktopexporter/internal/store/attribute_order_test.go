@@ -114,12 +114,12 @@ func TestAttributeDiscoveryOrderIsTotal(t *testing.T) {
 		Type  string `json:"type"`
 	}
 
-	fetch := func(t *testing.T, get func(context.Context, *sql.DB, int64, int64) (json.RawMessage, error)) (string, []attrDef) {
+	fetch := func(t *testing.T, get func(context.Context, *sql.DB) (json.RawMessage, error)) (string, []attrDef) {
 		t.Helper()
 		var raw json.RawMessage
 		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 			var err error
-			raw, err = get(ctx, db, base-int64(time.Hour), base+int64(time.Hour))
+			raw, err = get(ctx, db)
 			return err
 		}))
 		var defs []attrDef
@@ -129,7 +129,7 @@ func TestAttributeDiscoveryOrderIsTotal(t *testing.T) {
 
 	endpoints := []struct {
 		name string
-		get  func(context.Context, *sql.DB, int64, int64) (json.RawMessage, error)
+		get  func(context.Context, *sql.DB) (json.RawMessage, error)
 	}{
 		{"traces", spans.GetTraceAttributes},
 		{"logs", logs.GetLogAttributes},

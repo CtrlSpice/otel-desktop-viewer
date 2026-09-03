@@ -112,7 +112,7 @@
 			  and exists (
 				select 1 from datapoints d
 				where d.metric_ingest_id = m.id
-				  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
+				  {{.TimeFilter}}
 			  )
 		),
 		-- Datapoints inherit aggregation_temporality / is_monotonic from
@@ -143,7 +143,7 @@
 			left join histogram_bounds hb on hb.id = d.bounds_id,
 				input, stream s
 			where d.stream_id = input.stream_id
-			  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
+			  {{.TimeFilter}}
 			  -- Narrowing here rather than after the merge: the reduction and
 			  -- every alignment stage downstream then run over only the series
 			  -- asked for, instead of merging series the caller will discard.
@@ -334,10 +334,26 @@
 			select min(timestamp) as min_ts, max(timestamp) as max_ts
 			from filtered_dps
 		),
+		effective_window as (
+			select case
+					when i.fit_to_data and i.time_start is not null and i.time_end is not null
+						then e.min_ts
+					else coalesce(i.time_start, e.min_ts)
+				end as start_ns,
+				case
+					when i.fit_to_data and i.time_start is not null and i.time_end is not null
+						then e.max_ts
+					else coalesce(i.time_end, e.max_ts)
+				end as end_ns
+			from input i, data_extent e
+		),
 		reduction_span as (
 			select case
 				when i.fit_to_data then coalesce(
-					(select max_ts - min_ts + 1 from data_extent),
+					(select least(
+						end_ns::hugeint - start_ns::hugeint + 1,
+						9223372036854775807::hugeint)::bigint
+					 from effective_window),
 					i.time_end - i.time_start
 				)
 				else i.time_end - i.time_start
@@ -1795,9 +1811,9 @@
 			'window', json_object(
 				'fittedToData', (select fit_to_data from input),
 				'startNs', case when (select fit_to_data from input)
-					then (select min_ts from data_extent)::varchar end,
+					then (select start_ns from effective_window)::varchar end,
 				'endNs', case when (select fit_to_data from input)
-					then (select max_ts from data_extent)::varchar end
+					then (select end_ns from effective_window)::varchar end
 			)
 {{- end}}
 		) as varchar) as metric

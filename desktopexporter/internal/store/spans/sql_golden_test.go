@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/stretchr/testify/require"
@@ -104,7 +105,7 @@ func TestSearchSpansSQLBindsTraceID(t *testing.T) {
 func TestSearchTracesSQLGolden(t *testing.T) {
 	for _, tc := range goldenCases {
 		t.Run(tc.name, func(t *testing.T) {
-			query, _, err := searchTracesSQL(0, 1<<62, tc.criteria, search.ResultOptions{})
+			query, _, err := searchTracesSQL(store.BoundedTimeRange(0, 1<<62), tc.criteria, search.ResultOptions{})
 			require.NoError(t, err)
 
 			path := filepath.Join("testdata", "search_traces_"+tc.name+".sql")
@@ -124,7 +125,7 @@ func TestSearchTracesSQLGolden(t *testing.T) {
 func TestSearchTracesSQLBindsLimit(t *testing.T) {
 	t.Parallel()
 	limit := int64(3)
-	query, args, err := searchTracesSQL(0, 1<<62, nil, search.ResultOptions{Limit: &limit})
+	query, args, err := searchTracesSQL(store.BoundedTimeRange(0, 1<<62), nil, search.ResultOptions{Limit: &limit})
 	require.NoError(t, err)
 	require.Equal(t, limit, args[len(args)-1])
 	require.Contains(t, query, "limit ?")

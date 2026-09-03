@@ -95,6 +95,45 @@ func createRequest(method string, params any) *jsonrpc2.Request {
 	}
 }
 
+type rpcNullableRangeCase struct {
+	name       string
+	start, end any
+	named      bool
+}
+
+func rpcNullableRangeCases() []rpcNullableRangeCase {
+	maxTime := strconv.FormatInt(1<<63-1, 10)
+	return []rpcNullableRangeCase{
+		{"positional null/null", nil, nil, false},
+		{"positional start only", "0", nil, false},
+		{"positional end only", nil, maxTime, false},
+		{"named null/null", nil, nil, true},
+		{"named start only", "0", nil, true},
+		{"named end only", nil, maxTime, true},
+	}
+}
+
+func searchRangeParams(tc rpcNullableRangeCase) any {
+	if !tc.named {
+		return []any{tc.start, tc.end}
+	}
+	// limit deliberately leaves query absent, forcing normalizeParams to retain
+	// the interior null slot before the later named parameter.
+	return map[string]any{"startTime": tc.start, "endTime": tc.end, "limit": 1}
+}
+
+func metricRangeParams(streamID string, tc rpcNullableRangeCase) any {
+	if !tc.named {
+		return []any{streamID, tc.start, tc.end}
+	}
+	// viewBuckets exercises all optional null holes between the range and a
+	// later named parameter.
+	return map[string]any{
+		"streamID": streamID, "startTime": tc.start, "endTime": tc.end,
+		"viewBuckets": 0,
+	}
+}
+
 const testTraceIDHex = "00000000000000000000000000000001"
 
 func TestSearchTraces(t *testing.T) {
@@ -170,6 +209,53 @@ func TestSearchTraces(t *testing.T) {
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 	})
+}
+
+func TestSearchHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
+	handler, teardown := setupHandlerWithData(t)
+	defer teardown()
+
+	for _, method := range []struct {
+		name   string
+		assert func(*testing.T, json.RawMessage)
+	}{
+		{"searchTraces", func(t *testing.T, raw json.RawMessage) {
+			var got []map[string]any
+			require.NoError(t, json.Unmarshal(raw, &got))
+			require.Len(t, got, 1)
+			require.Equal(t, testTraceIDHex, got[0]["traceID"])
+		}},
+		{"searchLogs", func(t *testing.T, raw json.RawMessage) {
+			var got []map[string]any
+			require.NoError(t, json.Unmarshal(raw, &got))
+			require.Len(t, got, 1)
+			require.Equal(t, "test log message", got[0]["bodyPreview"])
+		}},
+	} {
+		t.Run(method.name, func(t *testing.T) {
+			for _, tc := range rpcNullableRangeCases() {
+				t.Run(tc.name, func(t *testing.T) {
+					result, err := handler.Handle(context.Background(), createRequest(method.name, searchRangeParams(tc)))
+					require.NoError(t, err)
+					method.assert(t, result.(json.RawMessage))
+				})
+			}
+		})
+	}
+
+	metricHandler, metricTeardown := setupHandlerWithMetrics(t)
+	defer metricTeardown()
+	for _, tc := range rpcNullableRangeCases() {
+		t.Run("searchMetricSummaries/"+tc.name, func(t *testing.T) {
+			result, err := metricHandler.Handle(context.Background(), createRequest("searchMetricSummaries", searchRangeParams(tc)))
+			require.NoError(t, err)
+			var got []map[string]any
+			require.NoError(t, json.Unmarshal(result.(json.RawMessage), &got))
+			require.Len(t, got, 1)
+			require.Equal(t, "test.gauge", got[0]["name"])
+			require.Equal(t, float64(1), got[0]["dataPointCount"])
+		})
+	}
 }
 
 func TestSearchSpans(t *testing.T) {
@@ -1089,6 +1175,55 @@ func TestGetMetric(t *testing.T) {
 	})
 }
 
+func TestMetricHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
+	handler, teardown := setupHandlerWithMetrics(t)
+	defer teardown()
+
+	summaryResult, err := handler.Handle(context.Background(), createRequest(
+		"searchMetricSummaries", []any{nil, nil}))
+	require.NoError(t, err)
+	var summaries []map[string]any
+	require.NoError(t, json.Unmarshal(summaryResult.(json.RawMessage), &summaries))
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+
+	for _, tc := range rpcNullableRangeCases() {
+		t.Run("getMetric/"+tc.name, func(t *testing.T) {
+			result, err := handler.Handle(context.Background(), createRequest(
+				"getMetric", metricRangeParams(streamID, tc)))
+			require.NoError(t, err)
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(result.(json.RawMessage), &got))
+			require.Equal(t, "test.gauge", got["name"])
+			require.Equal(t, float64(1), got["datapointCount"])
+
+			lastSeen := got["lastSeenNs"].(string)
+			window := got["window"].(map[string]any)
+			require.Equal(t, true, window["fittedToData"])
+			switch {
+			case tc.start == nil && tc.end == nil:
+				require.Equal(t, lastSeen, window["startNs"])
+				require.Equal(t, lastSeen, window["endNs"])
+			case tc.start != nil:
+				require.Equal(t, "0", window["startNs"])
+				require.Equal(t, lastSeen, window["endNs"])
+			default:
+				require.Equal(t, lastSeen, window["startNs"])
+				require.Equal(t, strconv.FormatInt(1<<63-1, 10), window["endNs"])
+			}
+		})
+
+		t.Run("getMetricAggregate/"+tc.name, func(t *testing.T) {
+			result, err := handler.Handle(context.Background(), createRequest(
+				"getMetricAggregate", metricRangeParams(streamID, tc)))
+			require.NoError(t, err)
+			require.JSONEq(t,
+				`{"aggregate":null,"scalarAggregate":{"selected":[],"all":[]}}`,
+				string(result.(json.RawMessage)))
+		})
+	}
+}
+
 // searchAttributes is the value-first counterpart to the getXAttributes
 // discovery methods: given text seen in the UI, which keys hold it. It takes no
 // time range and no signal, because the dictionary it reads is shared by all
@@ -1275,6 +1410,67 @@ func TestTimestampParamErrorsSayWhatIsWrong(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), `"not-a-number"`)
 	})
+}
+
+func TestOptionalTimestampParam(t *testing.T) {
+	h := &JSONRPCHandler{}
+
+	got, err := h.parseOptionalTimestampParam(nil, "startTime")
+	require.NoError(t, err)
+	require.Nil(t, got)
+
+	got, err = h.parseOptionalTimestampParam(json.Number("1787348704416123457"), "endTime")
+	require.NoError(t, err)
+	require.Equal(t, int64(1787348704416123457), *got)
+
+	got, err = h.parseOptionalTimestampParam("42", "startTime")
+	require.NoError(t, err)
+	require.Equal(t, int64(42), *got)
+
+	_, err = h.parseOptionalTimestampParam(true, "endTime")
+	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+
+	_, err = h.parseTimestampParam(nil, "targetBuckets")
+	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams,
+		"non-bound numeric fields must remain non-null")
+
+	start, end := json.Number("10"), json.Number("20")
+	for _, tc := range []struct {
+		name             string
+		startParam       any
+		endParam         any
+		wantStartPresent bool
+		wantEndPresent   bool
+	}{
+		{"unbounded", nil, nil, false, false},
+		{"end only", nil, end, false, true},
+		{"start only", start, nil, true, false},
+		{"bounded", start, end, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			timeRange, err := h.parseTimeRange(tc.startParam, tc.endParam)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantStartPresent, timeRange.Start != nil)
+			require.Equal(t, tc.wantEndPresent, timeRange.End != nil)
+		})
+	}
+}
+
+func TestAttributeMethodsAcceptNoParams(t *testing.T) {
+	handler, teardown := setupHandler(t)
+	defer teardown()
+
+	for _, method := range []string{"getTraceAttributes", "getLogAttributes", "getMetricAttributes"} {
+		t.Run(method, func(t *testing.T) {
+			result, err := handler.Handle(context.Background(), createRequest(method, []any{}))
+			require.NoError(t, err)
+			require.JSONEq(t, `[]`, string(result.(json.RawMessage)))
+
+			result, err = handler.Handle(context.Background(), createRequest(method, []any{nil, nil}))
+			require.NoError(t, err, "legacy two-parameter form accepts nullable bounds")
+			require.JSONEq(t, `[]`, string(result.(json.RawMessage)))
+		})
+	}
 }
 
 // getFieldValues is the search box's value-completion source. Its guards are

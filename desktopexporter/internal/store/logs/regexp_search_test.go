@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
@@ -50,7 +51,7 @@ func TestRegexpSearchExecutes(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, 0, time.Now().UnixNano()+int64(time.Hour), tree)
+			return logs.Search(ctx, db, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), tree)
 		})
 		require.NoError(t, err, "%s must execute", operator)
 		var out []any

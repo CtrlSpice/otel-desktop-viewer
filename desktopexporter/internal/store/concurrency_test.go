@@ -90,7 +90,7 @@ func TestConcurrentIngestQueryAndRetention(t *testing.T) {
 			defer wg.Done()
 			for time.Now().Before(deadline) {
 				err := s.WithDBRead(func(db *sql.DB) error {
-					_, err := spans.SearchTraces(ctx, db, 0, time.Now().UnixNano(), nil)
+					_, err := spans.SearchTraces(ctx, db, BoundedTimeRange(0, time.Now().UnixNano()), nil)
 					return err
 				})
 				if err != nil {
@@ -152,7 +152,7 @@ func TestConcurrentCloseAndRead(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
 				err := s.WithDBRead(func(db *sql.DB) error {
-					_, err := spans.SearchTraces(ctx, db, 0, time.Now().UnixNano(), nil)
+					_, err := spans.SearchTraces(ctx, db, BoundedTimeRange(0, time.Now().UnixNano()), nil)
 					return err
 				})
 				if err != nil && !errors.Is(err, ErrStoreConnectionClosed) {

@@ -12,6 +12,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
@@ -814,20 +815,20 @@ func numberDataPointValue(dp pmetric.NumberDataPoint) (doubleVal any, intVal any
 // metric_ingests (per-batch) level: a stream appears if any of its
 // ingests match. The summary aggregation then runs over the matched
 // streams' in-range datapoints, identical to before.
-func SearchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
-	return searchSummaries(ctx, db, startTime, endTime, criteria, search.ResultOptions{})
+func SearchSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any) (json.RawMessage, error) {
+	return searchSummaries(ctx, db, timeRange, criteria, search.ResultOptions{})
 }
 
 // SearchSummariesWithLimit returns at most limit metric stream summaries.
-func SearchSummariesWithLimit(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit int64) (json.RawMessage, error) {
-	return searchSummaries(ctx, db, startTime, endTime, criteria, search.ResultOptions{Limit: &limit})
+func SearchSummariesWithLimit(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, limit int64) (json.RawMessage, error) {
+	return searchSummaries(ctx, db, timeRange, criteria, search.ResultOptions{Limit: &limit})
 }
 
-func SearchSummariesWithOptions(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
-	return searchSummaries(ctx, db, startTime, endTime, criteria, options)
+func SearchSummariesWithOptions(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchSummaries(ctx, db, timeRange, criteria, options)
 }
 
-func searchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+func searchSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -836,7 +837,7 @@ func searchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 			return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 		}
 	}
-	cteSQL, whereClause, args, err := buildMetricSQL(searchTree, startTime, endTime)
+	cteSQL, whereClause, args, err := buildMetricSQL(searchTree, timeRange)
 	if err != nil {
 		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 	}
@@ -862,6 +863,7 @@ func searchSummaries(ctx context.Context, db *sql.DB, startTime, endTime int64, 
 		CTEs:           cteSQL,
 		From:           metricSearchFrom,
 		Where:          whereClause,
+		DatapointWhere: metricDatapointWhere(timeRange),
 		CandidateOrder: candidateOrder,
 		CandidateLimit: candidateLimit,
 		SummaryOrder:   summaryOrder,
@@ -991,20 +993,17 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 // for a caller that cannot name the series it wants because it picks them from
 // this very response; it takes the first N in the response's own order. Nil
 // and 0 mean every series ships them.
-// fitToData says the window is the absence of a choice rather than a request,
-// which lets the reduction divide the data's own extent instead of the window.
-// It matters most at the widest windows: "All" spans decades, so dividing it
-// into targetBuckets gave buckets over a year wide and merged whole sessions
-// into one datapoint per series. The caller owns the time picker and so owns
-// this decision; the store obeys it. The window actually used comes back in the
-// response, so nobody has to infer it from bucketed timestamps.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
-	return getMetric(ctx, db, getMetricParams{}, streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedSeriesIDs, tzName, datapointSeriesIDs, datapointSeriesLimit)
+// A null endpoint now expresses fitting directly: that endpoint is omitted from
+// filtering and derived from the filtered data extent. fitToData remains only
+// as temporary compatibility for the current frontend's concrete "All" range;
+// the next frontend change can remove the flag once it sends null bounds.
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
+	return getMetric(ctx, db, getMetricParams{}, streamID, timeRange, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedSeriesIDs, tzName, datapointSeriesIDs, datapointSeriesLimit)
 }
 
 // getMetric runs the query in whichever shape params asks for. Both shapes take
 // the same arguments and the same CTEs; only the projection differs.
-func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
+func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
 	// Deduplicate the quantile list, keeping first-occurrence order.
 	//
 	// The quantile CTEs build the wire object with map(), and DuckDB raises
@@ -1030,6 +1029,7 @@ func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID
 	// one datapoint in the time window." All identity columns the JSON
 	// projection needs come from the metric_streams row directly via
 	// the stream CTE.
+	params.TimeFilter = metricDetailTimeFilter(timeRange)
 	query, err := queries.Render(queries.GetMetric, params)
 	if err != nil {
 		return nil, err
@@ -1067,6 +1067,14 @@ func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID
 	if datapointSeriesIDs != nil {
 		datapointArg = datapointSeriesIDs
 	}
+	var startTime, endTime any
+	if timeRange.Start != nil {
+		startTime = *timeRange.Start
+	}
+	if timeRange.End != nil {
+		endTime = *timeRange.End
+	}
+	fitToData = fitToData || timeRange.Start == nil || timeRange.End == nil
 	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
@@ -1109,7 +1117,7 @@ func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID
 //
 // The rule the two share: narrowing decides what is *sent*, never what is
 // *aggregated*.
-func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startTime, endTime int64, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
+func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
 	// Ask SQL for the aggregate shape rather than the whole metric.
 	//
 	// This used to call GetMetric and then unmarshal its response in Go to
@@ -1126,7 +1134,7 @@ func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startT
 	// caller reading this does not have to work out that the pruning already
 	// covers them.
 	raw, err := getMetric(ctx, db, aggregateShapeFor(ctx, db, streamID),
-		streamID, startTime, endTime, targetBuckets, seriesIDs, quantiles,
+		streamID, timeRange, targetBuckets, seriesIDs, quantiles,
 		tzOffsetNs, fitToData, viewBuckets, 0, selectedSeriesIDs, tzName,
 		[]string{}, 0)
 	if err != nil {
@@ -1136,14 +1144,13 @@ func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, startT
 }
 
 // GetMetricAttributes returns every metric-side attribute name/scope/type this
-// store knows about. The time range is accepted and ignored -- see the note on
-// spans.GetTraceAttributes.
+// store knows about. See the note on spans.GetTraceAttributes.
 //
 // Datapoint and exemplar attributes are included, which the windowed version
 // deliberately excluded: it was scoped to the per-batch resource/scope rows
 // because reaching datapoint labels meant a second join through a table where
 // they were 82% of the rows. From the dictionary they are the same select.
-func GetMetricAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
+func GetMetricAttributes(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetMetricAttributes, nil)
 	if err != nil {
 		return nil, err
@@ -1243,9 +1250,32 @@ func DeleteMetricStream(ctx context.Context, db *sql.DB, streamID string) error 
 //
 // Search-level field expressions still use the "m.<col>" / "s.<col>"
 // shape so callers don't need to know about the internal join.
-func buildMetricSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteSQL string, whereSQL string, args []any, err error) {
-	timeCondition := "exists (select 1 from datapoints d where d.metric_ingest_id = m.id and d.timestamp >= time_start and d.timestamp <= time_end)"
-	return search.BuildSearchSQL(queryNode, startTime, endTime, metricFieldMapper(), timeCondition)
+func buildMetricSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, whereSQL string, args []any, err error) {
+	dpCondition, timeParams := search.TimePredicate("d.timestamp", timeRange.Start, timeRange.End)
+	timeCondition := "exists (select 1 from datapoints d where d.metric_ingest_id = m.id"
+	if dpCondition != "" {
+		timeCondition += " and " + dpCondition
+	}
+	timeCondition += ")"
+	return search.BuildSearchSQL(queryNode, metricFieldMapper(), timeCondition, timeParams)
+}
+
+func metricDatapointWhere(timeRange timerange.TimeRange) string {
+	predicate, _ := search.TimePredicate("d.timestamp", timeRange.Start, timeRange.End)
+	if predicate == "" {
+		return ""
+	}
+	return "where " + predicate
+}
+
+func metricDetailTimeFilter(timeRange timerange.TimeRange) string {
+	predicate, _ := search.TimePredicate("d.timestamp", timeRange.Start, timeRange.End)
+	if predicate == "" {
+		return ""
+	}
+	predicate = strings.ReplaceAll(predicate, "time_start", "input.time_start")
+	predicate = strings.ReplaceAll(predicate, "time_end", "input.time_end")
+	return "and " + predicate
 }
 
 // metricColumns lists field names the search expression syntax can
@@ -1544,6 +1574,7 @@ func boolValueToIdentityString(v driver.Value, metricType string) string {
 // 21-series histogram: the full projection plans in 212ms and runs in 314ms,
 // the aggregate-only one in 67ms and 150ms.
 type getMetricParams struct {
+	TimeFilter string
 	// AggregateOnly emits just the cross-series aggregates, which is all
 	// GetMetricAggregate returns. It drops `timeseries` -- the field that
 	// carries the per-series pipelines and most of the planning cost.
@@ -1595,6 +1626,7 @@ type searchSummariesParams struct {
 	From string
 	// Where is the predicate, "true" when there are no criteria.
 	Where          string
+	DatapointWhere string
 	CandidateOrder string
 	CandidateLimit string
 	SummaryOrder   string

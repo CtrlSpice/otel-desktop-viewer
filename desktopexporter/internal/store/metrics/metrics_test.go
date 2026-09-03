@@ -221,7 +221,7 @@ func createTestMetricsPdata() pmetric.Metrics {
 func searchMetricsAll(t *testing.T, s *store.Store, ctx context.Context) []map[string]any {
 	t.Helper()
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.SearchSummaries(ctx, db, 0, maxNano, nil)
+		return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(0, maxNano), nil)
 	})
 	assert.NoError(t, err)
 	var out []map[string]any
@@ -232,12 +232,60 @@ func searchMetricsAll(t *testing.T, s *store.Store, ctx context.Context) []map[s
 func searchSummariesAll(t *testing.T, s *store.Store, ctx context.Context) []map[string]any {
 	t.Helper()
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.SearchSummaries(ctx, db, 0, maxNano, nil)
+		return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(0, maxNano), nil)
 	})
 	require.NoError(t, err)
 	var out []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &out))
 	return out
+}
+
+func TestSearchMetricSummariesNullableTimeRangesExecute(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	data := pmetric.NewMetrics()
+	rm := data.ResourceMetrics().AppendEmpty()
+	sm := rm.ScopeMetrics().AppendEmpty()
+	metric := sm.Metrics().AppendEmpty()
+	metric.SetName("nullable.summary")
+	gauge := metric.SetEmptyGauge()
+	for _, timestamp := range []int64{100, 200, 300} {
+		dp := gauge.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(timestamp))
+		dp.SetIntValue(timestamp)
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	start, end := int64(200), int64(200)
+	for _, tc := range []struct {
+		name          string
+		timeRange     store.TimeRange
+		wantCount     float64
+		wantLastSeen  string
+		wantLastValue float64
+	}{
+		{"unbounded", store.TimeRange{}, 3, "300", 300},
+		{"end only", store.TimeRange{End: &end}, 2, "200", 200},
+		{"start only", store.TimeRange{Start: &start}, 2, "300", 300},
+		{"bounded", store.TimeRange{Start: &start, End: &end}, 1, "200", 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.SearchSummaries(ctx, db, tc.timeRange, nil)
+			})
+			require.NoError(t, err)
+			var got []map[string]any
+			require.NoError(t, json.Unmarshal(raw, &got))
+			require.Len(t, got, 1)
+			require.Equal(t, "nullable.summary", got[0]["name"])
+			require.Equal(t, tc.wantCount, got[0]["dataPointCount"])
+			require.Equal(t, tc.wantLastSeen, got[0]["lastSeen"])
+			require.Equal(t, tc.wantLastValue, got[0]["lastValue"])
+		})
+	}
 }
 
 func TestSearchMetricSummariesLimit(t *testing.T) {
@@ -248,7 +296,7 @@ func TestSearchMetricSummariesLimit(t *testing.T) {
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.SearchSummariesWithLimit(ctx, db, 0, maxNano, nil, 2)
+		return metrics.SearchSummariesWithLimit(ctx, db, store.BoundedTimeRange(0, maxNano), nil, 2)
 	})
 	require.NoError(t, err)
 	var summaries []map[string]any
@@ -258,7 +306,7 @@ func TestSearchMetricSummariesLimit(t *testing.T) {
 	require.Equal(t, "histogram_metric", summaries[1]["name"])
 
 	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.SearchSummariesWithLimit(ctx, db, 0, maxNano, nil, 0)
+		return metrics.SearchSummariesWithLimit(ctx, db, store.BoundedTimeRange(0, maxNano), nil, 0)
 	})
 	require.ErrorIs(t, err, metrics.ErrInvalidMetricLimit)
 }
@@ -298,10 +346,11 @@ func TestSearchMetricSummariesSortBeforeLimit(t *testing.T) {
 	for _, field := range []string{"dataPointCount", "seriesCount"} {
 		t.Run(field, func(t *testing.T) {
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.SearchSummariesWithOptions(ctx, db, 0, maxNano, nil, search.ResultOptions{
+				return metrics.SearchSummariesWithOptions(ctx, db, store.BoundedTimeRange(0, maxNano), nil, search.ResultOptions{
 					Limit: &limit,
 					Sort:  &search.Sort{Field: field, Direction: "desc"},
 				})
+
 			})
 			require.NoError(t, err)
 			var summaries []map[string]any
@@ -329,7 +378,7 @@ func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, 0, maxNano, 0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(0, maxNano), 0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -477,7 +526,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -504,7 +553,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -524,7 +573,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -544,7 +593,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -569,7 +618,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -588,7 +637,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -607,7 +656,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -626,7 +675,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -646,7 +695,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -666,7 +715,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -686,7 +735,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -705,7 +754,7 @@ func TestMetricSuite(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, startTime, endTime, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		var metrics []map[string]any
@@ -1670,7 +1719,7 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, 0, time.Now().UnixNano()+int64(time.Hour), query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), query)
 		})
 		require.NoError(t, err)
 		var out []map[string]any
@@ -1756,7 +1805,7 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 				},
 			}
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.SearchSummaries(ctx, db, 0, time.Now().UnixNano()+int64(time.Hour), query)
+				return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), query)
 			})
 			require.NoError(t, err)
 			var out []map[string]any
@@ -1856,7 +1905,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	require.True(t, ok)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -1988,8 +2037,10 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(0,
+			time.Now().UnixNano()+int64(time.Hour)),
+			0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2092,7 +2143,7 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 	streamID, ok := summaries[0]["id"].(string)
 	require.True(t, ok)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, time.Now().UnixNano()+int64(time.Hour), 0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2157,8 +2208,10 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	// Resolution 1 puts both datapoints in a single bucket, which is what makes
 	// them merge at all.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 1, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(0,
+			time.Now().UnixNano()+int64(time.Hour)),
+			1, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2228,9 +2281,11 @@ func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
 	// from filtered_dps and carry their labels regardless, which is exactly the
 	// blind spot this covers.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			1, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2316,9 +2371,11 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 	// an unfitted window the ladder would pick hour-wide buckets and the whole
 	// series would land in one, which is a different test.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-6*time.Hour).UnixNano(), base.Add(6*time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-6*time.Hour).UnixNano(), base.Add(6*time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 12, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -2423,9 +2480,11 @@ func TestGetMetric_RateSlopeAndStats(t *testing.T) {
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 12, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -2548,9 +2607,11 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 
 	get := func(targetBuckets int64) []map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID,
-				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 				targetBuckets, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2642,9 +2703,11 @@ func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			1, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -2708,9 +2771,11 @@ func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(3*time.Hour).UnixNano(),
+		return metrics.GetMetricAggregate(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(3*time.Hour).UnixNano()),
+
 			1, nil, []float64{0.5}, 0, true, 0, nil, "")
+
 	})
 	require.NoError(t, err)
 	var envelope map[string]any
@@ -2783,10 +2848,11 @@ func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
 
 	const limit = 3
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
-			// Reduced, which is what puts merged rows on bucket timestamps.
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			20, nil, nil, 0, true, 0, 0, nil, "", nil, limit)
+
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -2853,9 +2919,11 @@ func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
 
 	get := func(targetBuckets int64) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID,
-				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 				targetBuckets, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -2932,11 +3000,11 @@ func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
-			// 120 view buckets over 20 readings: six times more buckets than
-			// the series has intervals.
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 120, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -2992,9 +3060,11 @@ func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
 	}
 	require.NotEmpty(t, denseID)
 	denseRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, denseID,
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, denseID, store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 120, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var dm map[string]any
@@ -3037,9 +3107,11 @@ func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
 
 	// Narrowed hard: datapoints for one series of four.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 0, 0, nil, "", nil, 1)
+
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -3104,9 +3176,11 @@ func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
 	hraw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		// Reduced to a handful of buckets, so the merge collapses 30 datapoints
 		// into far fewer rows.
-		return metrics.GetMetric(ctx, db, histID,
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, histID, store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			5, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var hm map[string]any
@@ -3168,9 +3242,11 @@ func TestGetMetric_Deterministic(t *testing.T) {
 
 	get := func(targetBuckets int64) json.RawMessage {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID,
-				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 				targetBuckets, nil, nil, 0, true, 4, 2, nil, "", nil, 0)
+
 		})
 		require.NoError(t, err)
 		return raw
@@ -3282,9 +3358,11 @@ func TestGetMetric_DatapointNarrowing(t *testing.T) {
 
 	get := func(dpSeries []string, limit int64) []any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID,
-				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 				0, nil, nil, 0, true, 12, 8, nil, "", dpSeries, limit)
+
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -3410,9 +3488,11 @@ func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
 
 	get := func(selected []string) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID,
-				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 				0, nil, nil, 0, true, 12, 0, selected, "", nil, 0)
+
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -3545,9 +3625,11 @@ func TestGetMetric_Sparkline(t *testing.T) {
 
 	const buckets = 8
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID,
-			base.Add(-time.Hour).UnixNano(), base.Add(6*time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(6*time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 0, buckets, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -3592,9 +3674,11 @@ func TestGetMetric_Sparkline(t *testing.T) {
 	// Asking for no buckets is how a caller that draws no sparklines avoids
 	// paying for them, and it has to be legible as "absent" rather than empty.
 	rawNone, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID,
-			base.Add(-time.Hour).UnixNano(), base.Add(6*time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(6*time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var none map[string]any
@@ -3650,9 +3734,11 @@ func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
 	// Target 1 puts both datapoints in one bucket, which is what makes them
 	// merge at all.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			1, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -3727,9 +3813,11 @@ func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			1, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -3789,7 +3877,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 
 	seriesKeys := func(ids []string) []string {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, ids, nil, 0, false, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, end), 0, ids, nil, 0, false, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -3849,7 +3937,7 @@ func TestGetMetric_Quantiles(t *testing.T) {
 
 	datapoint := func(qs []float64) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, 0, end, 0, nil, qs, 0, false, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, end), 0, nil, qs, 0, false, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4009,7 +4097,7 @@ func TestGetMetric_QuantileHandWorked(t *testing.T) {
 	quantileOf := func(name string, q float64) (any, bool) {
 		id := findMetricID(t, s, ctx, name)
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, id, 0, end, 0, nil, []float64{q}, 0, false, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(0, end), 0, nil, []float64{q}, 0, false, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4066,8 +4154,9 @@ func TestGetMetric_QuantileHandWorked(t *testing.T) {
 	t.Run("duplicate quantiles are tolerated", func(t *testing.T) {
 		id := findMetricID(t, s, ctx, "hw.exp.0")
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, id, 0, end, 0, nil,
+			return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(0, end), 0, nil,
 				[]float64{0.5, 0.5, 0.95, 0.5}, 0, false, 0, 0, nil, "", nil, 0)
+
 		})
 		require.NoError(t, err, "a duplicated quantile must not fail the request")
 		var m map[string]any
@@ -4090,7 +4179,7 @@ func TestGetMetric_QuantileHandWorked(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "hw.merge")
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetricAggregate(ctx, db, id, 0, end, 1, nil, []float64{0.5}, 0, false, 1, nil, "")
+			return metrics.GetMetricAggregate(ctx, db, id, store.BoundedTimeRange(0, end), 1, nil, []float64{0.5}, 0, false, 1, nil, "")
 		})
 		require.NoError(t, err)
 		var env map[string]any
@@ -4147,8 +4236,10 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), 0,
-			time.Now().UnixNano()+int64(time.Hour), 1, nil, []float64{0.5}, 0, false, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(0,
+			time.Now().UnixNano()+int64(time.Hour)),
+			1, nil, []float64{0.5}, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -4254,8 +4345,9 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 	}
 
 	full, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, end, 1, nil,
+		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil,
 			[]float64{0.5}, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -4284,8 +4376,9 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 	assertCatchAll(aggregate[0].(map[string]any))
 
 	only, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, nil,
+		return metrics.GetMetricAggregate(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil,
 			[]float64{0.5}, 0, false, 0, nil, "")
+
 	})
 	require.NoError(t, err)
 	var envelope map[string]any
@@ -4338,7 +4431,7 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 
 	bucketCount := func(offsetNs int64) int {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, start, end, 3, nil, nil, offsetNs, false, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(start, end), 3, nil, nil, offsetNs, false, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4410,7 +4503,7 @@ func TestGetMetric_FitToDataSpansTheData(t *testing.T) {
 
 	get := func(fit bool) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, start, end, 8, nil, nil, 0, fit, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(start, end), 8, nil, nil, 0, fit, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4451,12 +4544,114 @@ func TestGetMetric_FitToDataSpansTheData(t *testing.T) {
 	// says a metric stopped reporting.
 	tight := base.Add(-6 * time.Hour).UnixNano()
 	rawTight, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, tight, end, 8, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(tight, end), 8, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var mTight map[string]any
 	require.NoError(t, json.Unmarshal(rawTight, &mTight))
 	assert.Positive(t, buckets(mTight), "an explicit window still buckets")
+}
+
+func TestGetMetric_NullableBoundsFitEffectiveWindow(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	data := pmetric.NewMetrics()
+	rm := data.ResourceMetrics().AppendEmpty()
+	sm := rm.ScopeMetrics().AppendEmpty()
+	metric := sm.Metrics().AppendEmpty()
+	metric.SetName("nullable.window")
+	gauge := metric.SetEmptyGauge()
+	for _, timestamp := range []int64{100, 200, 300} {
+		dp := gauge.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(timestamp))
+		dp.SetIntValue(timestamp)
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	summariesRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.SearchSummaries(ctx, db, store.TimeRange{}, nil)
+	})
+	require.NoError(t, err)
+	var summaries []map[string]any
+	require.NoError(t, json.Unmarshal(summariesRaw, &summaries))
+	require.Len(t, summaries, 1)
+	streamID := summaries[0]["id"].(string)
+
+	start, end := int64(200), int64(200)
+	for _, tc := range []struct {
+		name      string
+		timeRange store.TimeRange
+		wantStart string
+		wantEnd   string
+		wantCount float64
+	}{
+		{"unbounded", store.TimeRange{}, "100", "300", 3},
+		{"start only", store.TimeRange{Start: &start}, "200", "300", 2},
+		{"end only", store.TimeRange{End: &end}, "100", "200", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetric(ctx, db, streamID, tc.timeRange,
+					2, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+			})
+			require.NoError(t, err)
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(raw, &got))
+			require.Equal(t, tc.wantCount, got["datapointCount"])
+			window := got["window"].(map[string]any)
+			require.Equal(t, true, window["fittedToData"])
+			require.Equal(t, tc.wantStart, window["startNs"])
+			require.Equal(t, tc.wantEnd, window["endNs"])
+
+			aggregate, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetricAggregate(ctx, db, streamID, tc.timeRange,
+					2, nil, nil, 0, false, 0, nil, "")
+			})
+			require.NoError(t, err, "nullable bounds must reach the aggregate reduction path")
+			require.JSONEq(t,
+				`{"aggregate":null,"scalarAggregate":{"selected":[],"all":[]}}`,
+				string(aggregate))
+		})
+	}
+
+	after, before := int64(400), int64(50)
+	for _, tc := range []struct {
+		name      string
+		timeRange store.TimeRange
+		wantStart any
+		wantEnd   any
+	}{
+		{"empty after start", store.TimeRange{Start: &after}, "400", nil},
+		{"empty before end", store.TimeRange{End: &before}, nil, "50"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetric(ctx, db, streamID, tc.timeRange,
+					2, nil, nil, 0, false, 2, 2, nil, "", nil, 0)
+			})
+			require.NoError(t, err, "an empty fitted extent must not perform invalid null arithmetic")
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(raw, &got))
+			require.Equal(t, float64(0), got["datapointCount"])
+			require.Empty(t, got["timeseries"])
+			window := got["window"].(map[string]any)
+			require.Equal(t, true, window["fittedToData"])
+			require.Equal(t, tc.wantStart, window["startNs"])
+			require.Equal(t, tc.wantEnd, window["endNs"])
+
+			aggregate, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetricAggregate(ctx, db, streamID, tc.timeRange,
+					2, nil, nil, 0, false, 2, nil, "")
+			})
+			require.NoError(t, err, "aggregate reduction must tolerate an empty effective window")
+			require.JSONEq(t,
+				`{"aggregate":null,"scalarAggregate":{"selected":[],"all":[]}}`,
+				string(aggregate))
+		})
+	}
 }
 
 // TestGetMetric_MergedRowsCarryTheirBucket covers a merged histogram row
@@ -4506,9 +4701,11 @@ func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
 	streamID := summaries[0]["id"].(string)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID,
-			base.UnixNano(), base.Add(60*time.Second).UnixNano(),
+		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+			base.UnixNano(), base.Add(60*time.Second).UnixNano()),
+
 			6, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -4601,7 +4798,7 @@ func TestGetMetricAggregate(t *testing.T) {
 
 	// Same arguments to both calls.
 	full, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0, false, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil, []float64{0.5}, 0, false, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -4609,7 +4806,7 @@ func TestGetMetricAggregate(t *testing.T) {
 	fromFull, _ := json.Marshal(m["aggregate"])
 
 	only, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, nil, []float64{0.5}, 0, false, 0, nil, "")
+		return metrics.GetMetricAggregate(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil, []float64{0.5}, 0, false, 0, nil, "")
 	})
 	require.NoError(t, err)
 
@@ -4637,7 +4834,7 @@ func TestGetMetricAggregate(t *testing.T) {
 	allCount := agg[0]["count"].(float64)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, 0, end, 1, []string{}, nil, 0, false, 0, nil, "")
+		return metrics.GetMetricAggregate(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, []string{}, nil, 0, false, 0, nil, "")
 	})
 	require.NoError(t, err)
 	var emptyEnvelope map[string]any
@@ -4677,7 +4874,7 @@ func TestGetMetricAggregate(t *testing.T) {
 		scalarID := findMetricID(t, s, ctx, "agg.scalar")
 
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetricAggregate(ctx, db, scalarID, 0, end, 1, nil, nil, 0, false, 4, nil, "")
+			return metrics.GetMetricAggregate(ctx, db, scalarID, store.BoundedTimeRange(0, end), 1, nil, nil, 0, false, 4, nil, "")
 		})
 		require.NoError(t, err)
 		var env map[string]any
@@ -4758,9 +4955,11 @@ func TestGetMetric_BucketsFollowTheZoneAcrossDST(t *testing.T) {
 	dayBuckets := func(tzName string, tzOffsetNs int64) []any {
 		t.Helper()
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-				morning.Add(-time.Minute).UnixNano(), monday.Add(time.Minute).UnixNano(),
+			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+				morning.Add(-time.Minute).UnixNano(), monday.Add(time.Minute).UnixNano()),
+
 				0, nil, nil, tzOffsetNs, true, 2, 0, nil, tzName, nil, 0)
+
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4846,9 +5045,11 @@ func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 	shape := func(tzName string, tzOffsetNs int64) []string {
 		t.Helper()
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-				morning.Add(-time.Minute).UnixNano(), monday.Add(time.Minute).UnixNano(),
+			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+				morning.Add(-time.Minute).UnixNano(), monday.Add(time.Minute).UnixNano()),
+
 				2, nil, nil, tzOffsetNs, true, 0, 0, nil, tzName, nil, 0)
+
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4927,9 +5128,11 @@ func TestGetMetric_ExemplarsAreCappedPerBucket(t *testing.T) {
 	// One target bucket, so the whole run reduces to a single bucket and the
 	// per-bucket ceiling is the whole response's ceiling.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			1, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var got map[string]any
@@ -4992,9 +5195,11 @@ func TestGetMetric_ExemplarListIsCappedAndCounted(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var got map[string]any
@@ -5052,9 +5257,11 @@ func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var got map[string]any
@@ -5144,9 +5351,11 @@ func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 	// One bucket for the whole run, so the per-bucket carrier cap is what
 	// decides the answer.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			1, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var got map[string]any
@@ -5229,8 +5438,9 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	p95 := func(target, from, to int64, fitToData bool, atTimestamp *int64) float64 {
 		t.Helper()
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, id, from, to,
+			return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(from, to),
 				target, nil, []float64{0.95}, 0, fitToData, 0, 0, nil, "", nil, 0)
+
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -5257,8 +5467,9 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 
 	// Find a column boundary the way the UI does: the heatmap's own grid.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, windowStart, windowEnd,
+		return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(windowStart, windowEnd),
 			100, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var heat map[string]any
@@ -5308,8 +5519,9 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	perColumn := columnWidth / (10 * int64(time.Second)) // readings inside one column
 	require.Positive(t, perColumn)
 	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, columnStart, columnEnd,
+		return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(columnStart, columnEnd),
 			1, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var merged map[string]any
@@ -5369,9 +5581,11 @@ func TestHistogramBoundsAreStoredOnce(t *testing.T) {
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			0, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var got map[string]any
@@ -5441,7 +5655,7 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 	summarise := func(from, to time.Time) map[string]any {
 		t.Helper()
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, from.UnixNano(), to.UnixNano(), nil)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(from.UnixNano(), to.UnixNano()), nil)
 		})
 		require.NoError(t, err)
 		var rows []map[string]any
@@ -5497,9 +5711,11 @@ func TestIngest_SingleBucketHistogram(t *testing.T) {
 	require.Len(t, summaries, 1, "the metric must be readable after ingest")
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano(),
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+
 			0, nil, nil, 0, false, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
@@ -5645,7 +5861,7 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 	// metadata scope now (see TestSearchSummariesByMetricMetadata), so hiding
 	// it would be the dangling half.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAttributes(ctx, db, 0, maxNano)
+		return metrics.GetMetricAttributes(ctx, db)
 	})
 	require.NoError(t, err)
 	var defs []map[string]any
@@ -5699,7 +5915,7 @@ func TestSearchSummariesByMetricMetadata(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, 0, end, query)
+			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(0, end), query)
 		})
 		require.NoError(t, err)
 		var out []map[string]any
@@ -5718,7 +5934,7 @@ func TestSearchSummariesByMetricMetadata(t *testing.T) {
 
 	// Discovery lists the key under its scope, so the dropdown can offer it.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAttributes(ctx, db, 0, end)
+		return metrics.GetMetricAttributes(ctx, db)
 	})
 	require.NoError(t, err)
 	var attrs []map[string]any

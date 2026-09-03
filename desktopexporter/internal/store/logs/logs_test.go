@@ -168,12 +168,55 @@ func searchLogsAll(t *testing.T, s *store.Store, ctx context.Context) []logSumma
 	t.Helper()
 	const maxNano = 1<<63 - 1
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.Search(ctx, db, 0, maxNano, nil)
+		return logs.Search(ctx, db, store.BoundedTimeRange(0, maxNano), nil)
 	})
 	assert.NoError(t, err)
 	var entries []logSummaryJSON
 	assert.NoError(t, json.Unmarshal(raw, &entries))
 	return entries
+}
+
+func TestSearchLogsNullableTimeRangesExecute(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	data := plog.NewLogs()
+	rl := data.ResourceLogs().AppendEmpty()
+	sl := rl.ScopeLogs().AppendEmpty()
+	for _, timestamp := range []int64{100, 200, 300} {
+		record := sl.LogRecords().AppendEmpty()
+		record.SetTimestamp(pcommon.Timestamp(timestamp))
+		record.Body().SetStr(fmt.Sprintf("log-%d", timestamp))
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	start, end := int64(200), int64(200)
+	for _, tc := range []struct {
+		name           string
+		timeRange      store.TimeRange
+		wantTimestamps []string
+	}{
+		{"unbounded", store.TimeRange{}, []string{"300", "200", "100"}},
+		{"end only", store.TimeRange{End: &end}, []string{"200", "100"}},
+		{"start only", store.TimeRange{Start: &start}, []string{"300", "200"}},
+		{"bounded", store.TimeRange{Start: &start, End: &end}, []string{"200"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return logs.Search(ctx, db, tc.timeRange, nil)
+			})
+			require.NoError(t, err)
+			var got []logSummaryJSON
+			require.NoError(t, json.Unmarshal(raw, &got))
+			timestamps := make([]string, len(got))
+			for i := range got {
+				timestamps[i] = got[i].Timestamp
+			}
+			require.Equal(t, tc.wantTimestamps, timestamps)
+		})
+	}
 }
 
 func TestSearchLogsLimit(t *testing.T) {
@@ -185,7 +228,7 @@ func TestSearchLogsLimit(t *testing.T) {
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.SearchWithLimit(ctx, db, 0, 1<<63-1, nil, 2)
+		return logs.SearchWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 2)
 	})
 	require.NoError(t, err)
 	var entries []logSummaryJSON
@@ -195,10 +238,11 @@ func TestSearchLogsLimit(t *testing.T) {
 
 	limit := int64(1)
 	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.SearchWithOptions(ctx, db, 0, 1<<63-1, nil, search.ResultOptions{
+		return logs.SearchWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{
 			Limit: &limit,
 			Sort:  &search.Sort{Field: "severity", Direction: "asc"},
 		})
+
 	})
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(raw, &entries))
@@ -206,7 +250,7 @@ func TestSearchLogsLimit(t *testing.T) {
 	require.Equal(t, "INFO", entries[0].SeverityText, "sort must select the lowest severity before applying LIMIT")
 
 	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.SearchWithLimit(ctx, db, 0, 1<<63-1, nil, 0)
+		return logs.SearchWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 0)
 	})
 	require.ErrorIs(t, err, logs.ErrInvalidLogLimit)
 }
@@ -524,7 +568,7 @@ type attributeDef struct {
 func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context, startTime, endTime int64) []attributeDef {
 	t.Helper()
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetLogAttributes(ctx, db, startTime, endTime)
+		return logs.GetLogAttributes(ctx, db)
 	})
 	require.NoError(t, err)
 	var out []attributeDef
@@ -755,7 +799,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -777,7 +821,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -797,7 +841,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -815,7 +859,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -834,7 +878,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -856,7 +900,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -874,7 +918,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -895,7 +939,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage trace ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
@@ -912,7 +956,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage span ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
@@ -929,7 +973,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -952,7 +996,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -973,7 +1017,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -991,7 +1035,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -1015,7 +1059,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -1035,7 +1079,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -1056,7 +1100,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -1077,7 +1121,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -1102,7 +1146,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)
@@ -1127,7 +1171,7 @@ func TestSearchLogs(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.Search(ctx, db, startTime, endTime, query)
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		entries := parseSummaries(raw)

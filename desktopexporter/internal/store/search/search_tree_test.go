@@ -525,7 +525,9 @@ func TestBuildSearchSQL_NilQuery(t *testing.T) {
 		return []string{field.Name}, nil
 	}
 
-	cte, where, args, err := BuildSearchSQL(nil, 1000, 2000, mapper, "StartTime >= time_start AND StartTime <= time_end")
+	start, end := int64(1000), int64(2000)
+	timeCondition, timeParams := TimePredicate("StartTime", &start, &end)
+	cte, where, args, err := BuildSearchSQL(nil, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
 	assert.Equal(t, "with search_params as (select ? as time_start, ? as time_end)", cte)
 	assert.Equal(t, "StartTime >= time_start AND StartTime <= time_end", where)
@@ -547,7 +549,9 @@ func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
 		},
 	}
 
-	cte, where, args, err := BuildSearchSQL(query, 1000, 2000, mapper, "StartTime >= time_start AND StartTime <= time_end")
+	start, end := int64(1000), int64(2000)
+	timeCondition, timeParams := TimePredicate("StartTime", &start, &end)
+	cte, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
 	assert.Equal(t, "with search_params as (select ? as time_start, ? as time_end, ? as value_2)", cte)
 	assert.Equal(t, "(Name = value_2) AND StartTime >= time_start AND StartTime <= time_end", where)
@@ -587,7 +591,9 @@ func TestBuildSearchSQL_GroupAND(t *testing.T) {
 		},
 	}
 
-	cte, where, args, err := BuildSearchSQL(query, 1000, 2000, mapper, "StartTime >= time_start AND StartTime <= time_end")
+	start, end := int64(1000), int64(2000)
+	timeCondition, timeParams := TimePredicate("StartTime", &start, &end)
+	cte, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
 	assert.Contains(t, cte, "value_2")
 	assert.Contains(t, cte, "value_3")
@@ -615,7 +621,9 @@ func TestBuildSearchSQL_GlobalORs(t *testing.T) {
 		},
 	}
 
-	_, where, args, err := BuildSearchSQL(query, 1000, 2000, mapper, "StartTime >= time_start AND StartTime <= time_end")
+	start, end := int64(1000), int64(2000)
+	timeCondition, timeParams := TimePredicate("StartTime", &start, &end)
+	_, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
 	assert.Contains(t, where, "SearchText LIKE value_2 OR Name LIKE value_3")
 	assert.Contains(t, args, "%test%")
@@ -658,9 +666,32 @@ func TestMultiExpressionNamedFieldJoinsWithAND(t *testing.T) {
 	mapper := func(field *FieldDefinition, query *Query, params *[]NamedParam) ([]string, error) {
 		return []string{"a.col", "b.col"}, nil
 	}
-	cte, where, args, err := BuildSearchSQL(node, 0, 10, mapper, "t >= time_start")
+	start := int64(0)
+	timeCondition, timeParams := TimePredicate("t", &start, nil)
+	cte, where, args, err := BuildSearchSQL(node, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
-	assert.Equal(t, "((a.col = value_2 AND b.col = value_3)) AND t >= time_start", where)
-	assert.Contains(t, cte, "value_2")
-	assert.Len(t, args, 4)
+	assert.Equal(t, "((a.col = value_1 AND b.col = value_2)) AND t >= time_start", where)
+	assert.Contains(t, cte, "value_1")
+	assert.Len(t, args, 3)
+}
+
+func TestTimePredicateShapes(t *testing.T) {
+	start, end := int64(10), int64(20)
+	for _, tc := range []struct {
+		name       string
+		start, end *int64
+		wantSQL    string
+		wantArgs   []NamedParam
+	}{
+		{"unbounded", nil, nil, "", nil},
+		{"end only", nil, &end, "ts <= time_end", []NamedParam{{Name: "time_end", Value: end}}},
+		{"start only", &start, nil, "ts >= time_start", []NamedParam{{Name: "time_start", Value: start}}},
+		{"bounded", &start, &end, "ts >= time_start AND ts <= time_end", []NamedParam{{Name: "time_start", Value: start}, {Name: "time_end", Value: end}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotSQL, gotArgs := TimePredicate("ts", tc.start, tc.end)
+			assert.Equal(t, tc.wantSQL, gotSQL)
+			assert.Equal(t, tc.wantArgs, gotArgs)
+		})
+	}
 }
