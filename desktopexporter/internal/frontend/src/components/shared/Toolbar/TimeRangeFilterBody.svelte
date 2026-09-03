@@ -80,8 +80,9 @@
     if (!timezoneOpen) return
     void loadHistoricalAbbreviations()
     timezoneSearch = ''
-    const { end } = selectionToQueryRangeMs(ctx.selection, Date.now())
-    timezoneReferenceDate = new Date(end)
+    const now = Date.now()
+    const { endTime } = selectionToQueryRangeMs(ctx.selection, now)
+    timezoneReferenceDate = new Date(endTime ?? now)
     tick().then(() => {
       timezoneList
         ?.querySelector<HTMLElement>('[aria-pressed="true"]')
