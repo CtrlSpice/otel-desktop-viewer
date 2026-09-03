@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* Benchmark chrome uses plain CSS so its source cannot alter production output. */
+@source not "../benchmark";
 @import 'layerchart/daisyui-5.css';
 @plugin "daisyui" {
   logs: false;

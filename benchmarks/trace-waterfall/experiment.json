@@ -1,0 +1,142 @@
+{
+  "protocolVersion": 1,
+  "experiment": "trace-waterfall-ownership",
+  "status": "protocol-only",
+  "orderSeed": 20260902,
+  "practicalEquivalenceMargin": 0.05,
+  "headlineMetric": "otlpBytesToStableWaterfall",
+  "arms": [
+    {
+      "id": "A",
+      "enabled": true,
+      "schema": "current",
+      "queryShape": "recursive-tree",
+      "treeOwner": "duckdb",
+      "wireShape": "production-json"
+    },
+    {
+      "id": "B",
+      "enabled": false,
+      "schema": "current",
+      "queryShape": "flat-rows",
+      "treeOwner": "go",
+      "wireShape": "production-json"
+    },
+    {
+      "id": "C",
+      "enabled": true,
+      "schema": "current",
+      "queryShape": "flat-rows",
+      "treeOwner": "browser",
+      "wireShape": "neutral-flat-json"
+    }
+  ],
+  "fixtures": {
+    "headline": {
+      "name": "realistic-159",
+      "spanCount": 159,
+      "maximumDepth": 14,
+      "rootDepth": 0,
+      "uniqueSiblingStartTimes": true,
+      "uniqueEventTimes": true,
+      "serializedFormat": "otlp-protobuf"
+    },
+    "correctnessOnly": [
+      "single-span",
+      "wide",
+      "deep",
+      "multiple-roots",
+      "orphan",
+      "cycle"
+    ]
+  },
+  "measurements": {
+    "warmSelection": {
+      "processReplicates": 5,
+      "warmupsPerArm": 10,
+      "measuredPairsPerProcess": 50,
+      "reuseStoreWithinProcess": true,
+      "reuseBrowserContextWithinProcess": true,
+      "pairedOrder": "balanced-seeded-shuffle"
+    },
+    "otlpBytesToStableWaterfall": {
+      "measuredPairs": 30,
+      "freshStorePerArm": true,
+      "freshBrowserContextPerArm": true,
+      "sharedStateWithinPair": false,
+      "identicalFixtureBytesWithinPair": true,
+      "pairedOrder": "balanced-seeded-shuffle"
+    }
+  },
+  "browser": {
+    "engine": "chromium",
+    "versionSource": "package-lock",
+    "workers": 1,
+    "retries": 0,
+    "bundle": "vite-production",
+    "transport": "localhost"
+  },
+  "stableWaterfall": {
+    "fontsReady": true,
+    "svelteFlushes": 1,
+    "animationFrames": 2,
+    "requiresNonZeroViewport": true,
+    "requiresExpectedNodeCount": true,
+    "requiresExpectedRoot": true
+  },
+  "correctness": {
+    "mismatchPolicy": "invalidate-run",
+    "canonicalProjection": [
+      "traceId",
+      "spanId",
+      "parentSpanId",
+      "preorderIndex",
+      "depth",
+      "startTime",
+      "endTime",
+      "serviceName",
+      "operationName",
+      "status",
+      "eventsTimestampOrderedSequence",
+      "linksCanonicalMultiset",
+      "resourceCanonicalValue",
+      "scopeCanonicalValue",
+      "spanAttributesCanonicalValue"
+    ],
+    "excludeStorageIdentifiers": true
+  },
+  "reporting": {
+    "summaries": [
+      "median",
+      "p95",
+      "medianPairedLatencyRatioCOverA",
+      "pairedLatencyRatioPercentileBootstrap95CI"
+    ],
+    "pairedEffect": "exp-median-log-ratio-c-over-a",
+    "equivalenceRatioInterval": [0.95, 1.05],
+    "classification": {
+      "equivalent": "ci-entirely-within-equivalence-interval",
+      "material": "ci-entirely-below-or-above-equivalence-interval",
+      "inconclusive": "all-other-ci-overlap"
+    },
+    "bootstrap": {
+      "draws": 10000,
+      "confidence": 0.95,
+      "intervalMethod": "percentile",
+      "seedSource": "orderSeed",
+      "warmSelectionResampling": "process-then-pair-cluster-bootstrap",
+      "headlineResampling": "whole-pair-bootstrap"
+    },
+    "rawFormat": "jsonl",
+    "excludePilots": true,
+    "separateMalformedFixtureTimings": true,
+    "requireCleanWorktreeForAcceptedSamples": true
+  },
+  "alternateSchema": {
+    "enabled": false,
+    "repository": "https://github.com/smithclay/duckdb-otlp",
+    "sourceRevision": "8e627d8e45637316f14ad5e62493ad754b8c34a1",
+    "requiredDuckDBVersion": "1.5.5",
+    "requireArtifactChecksum": true
+  }
+}

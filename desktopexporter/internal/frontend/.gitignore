@@ -8,6 +8,7 @@ lerna-debug.log*
 
 # Build outputs
 dist/
+dist-benchmark/
 dist-ssr/
 *.local
 
@@ -93,5 +94,4 @@ temp/
 
 # Vite
 .vite
-
 

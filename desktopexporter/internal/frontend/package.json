@@ -6,13 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:benchmark": "vite build --config benchmark/vite.config.ts",
     "preview": "vite preview",
+    "preview:benchmark": "vite preview --config benchmark/vite.config.ts",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:a11y": "playwright test",
+    "test:benchmark": "npm run build:benchmark && playwright test --config benchmark/playwright.config.ts",
     "test:watch": "vitest",
     "generate:grammar": "node scripts/generate-grammar.mjs"
   },

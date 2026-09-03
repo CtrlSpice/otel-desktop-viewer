@@ -11,7 +11,12 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.d.ts", "src/**/*.ts", "src/**/*.svelte"],
+  "include": [
+    "src/**/*.d.ts",
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "benchmark/main.ts"
+  ],
   "references": [
     {
       "path": "./tsconfig.node.json"

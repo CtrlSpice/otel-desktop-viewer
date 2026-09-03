@@ -8,5 +8,11 @@
     "target": "ES2022",
     "types": ["node", "@playwright/test"]
   },
-  "include": ["playwright.config.ts", "e2e/**/*.ts"]
+  "include": [
+    "playwright.config.ts",
+    "e2e/**/*.ts",
+    "benchmark/vite.config.ts",
+    "benchmark/playwright.config.ts",
+    "benchmark/tests/**/*.ts"
+  ]
 }
