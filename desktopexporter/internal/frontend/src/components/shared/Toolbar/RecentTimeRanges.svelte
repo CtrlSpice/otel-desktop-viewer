@@ -41,21 +41,34 @@
   {#if recentTimeRanges.length === 0}
     <div class="recent-range-empty">No recent time ranges</div>
   {:else}
-    {#each recentTimeRanges as entry, index}
-      {@const startFmt = formatDateTimeMs(entry.start, ctx.tz)}
-      {@const endFmt = formatDateTimeMs(entry.end, ctx.tz)}
-      <button
-        class="recent-range-button"
-        class:recent-range-button--active={ctx.selection.type === 'recent' &&
+    <ul class="recent-range-list" aria-label="Recently used time ranges">
+      {#each recentTimeRanges as entry, index}
+        {@const startFmt = formatDateTimeMs(entry.start, ctx.tz)}
+        {@const endFmt = formatDateTimeMs(entry.end, ctx.tz)}
+        {@const active =
+          ctx.selection.type === 'recent' &&
           entry.start === ctx.selection.start &&
           entry.end === ctx.selection.end}
-        onclick={() => applyRecentTimeRange(index)}
-      >
-        <span class="recent-range-value">{startFmt.dateTime}</span>
-        <span class="recent-range-sep" aria-hidden="true">-</span>
-        <span class="recent-range-value">{endFmt.dateTime}</span>
-      </button>
-    {/each}
+        <li class="recent-range-item">
+          <button
+            type="button"
+            class="recent-range-button"
+            class:recent-range-button--active={active}
+            aria-pressed={active}
+            onclick={() => applyRecentTimeRange(index)}
+          >
+            <span class="recent-range-endpoint">
+              <span class="recent-range-label">Start</span>
+              <span class="recent-range-value">{startFmt.dateTime}</span>
+            </span>
+            <span class="recent-range-endpoint">
+              <span class="recent-range-label">End</span>
+              <span class="recent-range-value">{endFmt.dateTime}</span>
+            </span>
+          </button>
+        </li>
+      {/each}
+    </ul>
   {/if}
 </FieldGroup>
 
@@ -66,12 +79,22 @@
     @apply py-2 text-sm text-base-content/60;
   }
 
+  .recent-range-list {
+    margin-block: 0;
+    margin-inline: calc(var(--fg-inline) * -1);
+    @apply list-none border-y border-base-300/50 bg-base-100/30 p-0;
+  }
+
+  .recent-range-item + .recent-range-item {
+    @apply border-t border-base-300/50;
+  }
+
   .recent-range-button {
     box-sizing: border-box;
-    min-height: var(--table-row-h);
-    @apply flex w-full items-center gap-1.5 whitespace-nowrap rounded-none border-none bg-transparent px-0 py-0 text-left text-sm leading-snug;
+    padding-inline: var(--fg-inline);
+    @apply grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-none border-none bg-transparent py-1.5 text-left leading-snug;
     @apply text-base-content transition-colors duration-150;
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
+    @apply focus-visible:outline-none;
     @apply cursor-pointer;
   }
 
@@ -80,16 +103,28 @@
     @apply bg-base-300/40;
   }
 
+  .recent-range-button:focus-visible {
+    box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+  }
+
   .recent-range-button--active {
-    @apply text-primary;
+    @apply bg-primary/10 text-primary;
+  }
+
+  .recent-range-button--active:hover,
+  .recent-range-button--active:focus-visible {
+    @apply bg-primary/15;
+  }
+
+  .recent-range-endpoint {
+    display: contents;
+  }
+
+  .recent-range-label {
+    @apply text-[0.625rem] font-medium text-base-content/45;
   }
 
   .recent-range-value {
-    @apply text-xs font-mono tracking-tight tabular-nums;
-  }
-
-  .recent-range-sep {
-    @apply text-xs;
-    color: var(--color-subtle);
+    @apply min-w-0 truncate text-left font-mono text-xs tracking-tight tabular-nums;
   }
 </style>

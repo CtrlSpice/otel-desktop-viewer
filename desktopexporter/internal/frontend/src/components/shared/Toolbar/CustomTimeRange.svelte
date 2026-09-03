@@ -2,6 +2,10 @@
   import { untrack } from 'svelte'
   import { slide } from 'svelte/transition'
   import { Calendar } from 'bits-ui'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import ArrowLeft01Icon from '@hugeicons/core-free-icons/ArrowLeft01Icon'
+  import ArrowRight01Icon from '@hugeicons/core-free-icons/ArrowRight01Icon'
+  import Calendar03Icon from '@hugeicons/core-free-icons/Calendar03Icon'
   import {
     CalendarDate,
     parseDate,
@@ -9,7 +13,6 @@
   } from '@internationalized/date'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { ArrowLeftIcon, ArrowRightIcon, DateTimeIcon } from '@/icons'
   import {
     formatEditableDateTime,
     formatTimezoneLabel,
@@ -334,11 +337,19 @@
         {#snippet children({ months, weekdays })}
           <Calendar.Header class="calendar-header">
             <Calendar.PrevButton class="calendar-nav">
-              <ArrowLeftIcon class="h-3.5 w-3.5" />
+              <HugeiconsIcon
+                icon={ArrowLeft01Icon}
+                size={14}
+                aria-hidden="true"
+              />
             </Calendar.PrevButton>
             <Calendar.Heading class="calendar-heading" />
             <Calendar.NextButton class="calendar-nav">
-              <ArrowRightIcon class="h-3.5 w-3.5" />
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                size={14}
+                aria-hidden="true"
+              />
             </Calendar.NextButton>
           </Calendar.Header>
 
@@ -413,7 +424,7 @@
           />
           <button
             type="button"
-            class="typed-field typed-field--action endpoint-calendar-button btn btn-sm join-item"
+            class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
             class:endpoint-calendar-button--active={openCalendar === 'start'}
             aria-label="Choose start date"
             aria-expanded={openCalendar === 'start'}
@@ -421,7 +432,7 @@
             onclick={() =>
               (openCalendar = openCalendar === 'start' ? null : 'start')}
           >
-            <DateTimeIcon class="h-3.5 w-3.5" />
+            <HugeiconsIcon icon={Calendar03Icon} size={14} aria-hidden="true" />
           </button>
         </div>
 
@@ -502,7 +513,7 @@
           />
           <button
             type="button"
-            class="typed-field typed-field--action endpoint-calendar-button btn btn-sm join-item"
+            class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
             class:endpoint-calendar-button--active={openCalendar === 'end'}
             aria-label="Choose end date"
             aria-expanded={openCalendar === 'end'}
@@ -510,7 +521,7 @@
             onclick={() =>
               (openCalendar = openCalendar === 'end' ? null : 'end')}
           >
-            <DateTimeIcon class="h-3.5 w-3.5" />
+            <HugeiconsIcon icon={Calendar03Icon} size={14} aria-hidden="true" />
           </button>
         </div>
 
@@ -597,11 +608,16 @@
   }
 
   .range-editor-row:focus-within {
-    outline-offset: -2px;
+    z-index: 1;
+    outline: none;
+    box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
   }
 
-  .range-editor-row > .typed-field-label,
-  .range-editor-row > .typed-field--action.join-item {
+  .range-editor-row:has(> .input-error):focus-within {
+    box-shadow: inset 0 0 0 var(--focus-ring-width) var(--color-error);
+  }
+
+  .range-editor-row > .typed-field-label {
     @apply rounded-none;
   }
 
@@ -618,7 +634,7 @@
   }
 
   :global(.calendar-nav) {
-    @apply btn btn-ghost btn-xs btn-square text-base-content/60 hover:bg-base-300/40 hover:text-base-content;
+    @apply btn btn-circle btn-ghost btn-xs text-base-content/60 hover:bg-base-300/40 hover:text-base-content;
   }
 
   :global(.calendar-grid) {
@@ -634,7 +650,7 @@
   }
 
   :global(.calendar-day) {
-    @apply relative inline-flex h-7 w-full items-center justify-center rounded-sm border border-transparent bg-transparent p-0 text-xs text-base-content/80;
+    @apply relative inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent bg-transparent p-0 text-xs text-base-content/80;
     @apply hover:bg-base-300/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35;
   }
 
@@ -667,7 +683,7 @@
   }
 
   .endpoint-calendar-button {
-    @apply w-8 shrink-0 border-l border-base-300/70 px-0 text-base-content/50;
+    @apply mr-0.5 h-7 min-h-7 w-7 shrink-0 self-center border-transparent p-0 text-base-content/50 shadow-none;
     @apply hover:bg-base-300/40 hover:text-base-content;
   }
 
@@ -706,5 +722,9 @@
 
   .apply-range:hover {
     @apply border-0 bg-primary/15 text-primary;
+  }
+
+  .apply-range:focus-visible {
+    outline-offset: -2px;
   }
 </style>

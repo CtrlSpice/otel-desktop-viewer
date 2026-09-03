@@ -37,8 +37,14 @@ describe('CustomTimeRange', () => {
       screen.getByRole('button', { name: 'Choose start date' })
     ).toHaveAttribute('aria-expanded', 'false')
     expect(
+      screen.getByRole('button', { name: 'Choose start date' })
+    ).toHaveClass('btn-circle')
+    expect(
       screen.getByRole('button', { name: 'Choose end date' })
     ).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Choose end date' })).toHaveClass(
+      'btn-circle'
+    )
     expect(screen.getByLabelText('Start')).toHaveValue('')
     expect(screen.getByLabelText('Start time')).toHaveValue('00:00:00.000')
     expect(screen.getByLabelText('End')).toHaveValue('2026-01-15')

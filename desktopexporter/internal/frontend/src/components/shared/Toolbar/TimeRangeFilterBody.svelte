@@ -215,7 +215,7 @@
   }
 
   .timezone-summary {
-    @apply ml-auto max-w-40 truncate font-mono text-xs text-base-content/55;
+    @apply min-w-0 flex-1 truncate text-right font-mono text-xs text-base-content/55;
   }
 
   .timezone-list__separator {

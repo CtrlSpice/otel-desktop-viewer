@@ -194,4 +194,134 @@ test.describe('home page accessibility', () => {
     })
     expect(handleSize.height).toBeLessThan(handleSize.separatorHeight)
   })
+
+  test('keeps custom range controls circular and focus treatment inset', async ({
+    page,
+  }) => {
+    await page.goto('/traces')
+    await page.getByRole('button', { name: /Change time range/i }).click()
+
+    const startDate = page.getByRole('textbox', { name: 'Start', exact: true })
+    const startCalendar = page.getByRole('button', {
+      name: 'Choose start date',
+    })
+
+    await startDate.focus()
+    const focusTreatment = await startDate.locator('..').evaluate(element => {
+      const styles = getComputedStyle(element)
+      return {
+        boxShadow: styles.boxShadow,
+        outlineStyle: styles.outlineStyle,
+      }
+    })
+    expect(focusTreatment.boxShadow).toContain('inset')
+    expect(focusTreatment.outlineStyle).toBe('none')
+
+    await startCalendar.hover()
+    const triggerShape = await startCalendar.evaluate(element => {
+      const styles = getComputedStyle(element)
+      const bounds = element.getBoundingClientRect()
+      return {
+        radius: Number.parseFloat(styles.borderTopLeftRadius),
+        width: bounds.width,
+        height: bounds.height,
+      }
+    })
+    expect(triggerShape.width).toBe(triggerShape.height)
+    expect(triggerShape.radius).toBeGreaterThanOrEqual(triggerShape.width / 2)
+
+    await startCalendar.click()
+    await expect(startCalendar).toHaveAttribute('aria-expanded', 'true')
+
+    for (const name of ['Previous', 'Next'] as const) {
+      const navigationButton = page.getByRole('button', { name, exact: true })
+      const shape = await navigationButton.evaluate(element => {
+        const styles = getComputedStyle(element)
+        const bounds = element.getBoundingClientRect()
+        return {
+          radius: Number.parseFloat(styles.borderTopLeftRadius),
+          width: bounds.width,
+          height: bounds.height,
+        }
+      })
+      expect(shape.width).toBe(shape.height)
+      expect(shape.radius).toBeGreaterThanOrEqual(shape.width / 2)
+    }
+
+    const dayShape = await page
+      .locator('.calendar-day')
+      .first()
+      .evaluate(element => {
+        const styles = getComputedStyle(element)
+        const bounds = element.getBoundingClientRect()
+        return {
+          radius: Number.parseFloat(styles.borderTopLeftRadius),
+          width: bounds.width,
+          height: bounds.height,
+        }
+      })
+    expect(dayShape.width).toBe(dayShape.height)
+    expect(dayShape.radius).toBeGreaterThanOrEqual(dayShape.width / 2)
+
+    await startCalendar.click()
+    await startDate.focus()
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Tab')
+    await expect(startCalendar).toBeFocused()
+  })
+
+  test('extends recent range selection to the section edges', async ({
+    page,
+  }) => {
+    const end = Date.UTC(2026, 0, 15, 12)
+    await page.evaluate(
+      ({ ranges, selection }) => {
+        localStorage.setItem('datetime-filter-recent', JSON.stringify(ranges))
+        localStorage.setItem('time-selection', JSON.stringify(selection))
+      },
+      {
+        ranges: [
+          { start: end - 600_000, end, usedAt: end },
+          {
+            start: end - 1_200_000,
+            end: end - 600_000,
+            usedAt: end - 1_000,
+          },
+        ],
+        selection: { type: 'recent', start: end - 600_000, end },
+      }
+    )
+    await page.goto('/traces')
+    await page.getByRole('button', { name: /Change time range/i }).click()
+
+    const list = page.getByRole('list', {
+      name: 'Recently used time ranges',
+    })
+    const firstRange = list.getByRole('button').first()
+    const section = list.locator('xpath=ancestor::details')
+    const bounds = await Promise.all([
+      section.boundingBox(),
+      list.boundingBox(),
+      firstRange.boundingBox(),
+    ])
+
+    expect(bounds.every(Boolean)).toBe(true)
+    const [sectionBounds, listBounds, buttonBounds] = bounds
+    expect(listBounds!.x).toBeCloseTo(sectionBounds!.x, 0)
+    expect(listBounds!.x + listBounds!.width).toBeCloseTo(
+      sectionBounds!.x + sectionBounds!.width,
+      0
+    )
+    expect(buttonBounds!.x).toBeCloseTo(listBounds!.x, 0)
+    expect(buttonBounds!.x + buttonBounds!.width).toBeCloseTo(
+      listBounds!.x + listBounds!.width,
+      0
+    )
+
+    await expect(firstRange).toHaveAttribute('aria-pressed', 'true')
+    const backgroundColor = await firstRange.evaluate(
+      element => getComputedStyle(element).backgroundColor
+    )
+    expect(backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+  })
 })

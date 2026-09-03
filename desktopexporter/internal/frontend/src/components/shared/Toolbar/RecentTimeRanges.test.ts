@@ -22,7 +22,7 @@ describe('RecentTimeRanges', () => {
     expect(screen.getByText('No recent time ranges')).toBeInTheDocument()
   })
 
-  it('renders seeded recent ranges and applies one when clicked', () => {
+  it('renders seeded recent ranges and applies one when clicked', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
 
@@ -42,11 +42,16 @@ describe('RecentTimeRanges', () => {
 
     renderComponent()
 
+    const list = screen.getByRole('list', {
+      name: 'Recently used time ranges',
+    })
+    expect(list).toHaveClass('recent-range-list')
     const buttons = screen.getAllByRole('button')
     expect(buttons).toHaveLength(2)
+    expect(buttons[0]).toHaveAttribute('aria-pressed', 'false')
     expect(screen.queryByText('No recent time ranges')).not.toBeInTheDocument()
 
-    fireEvent.click(buttons[0])
+    await fireEvent.click(buttons[0])
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
     expect(saved).toMatchObject({
@@ -54,6 +59,7 @@ describe('RecentTimeRanges', () => {
       start: recents[0].start,
       end: recents[0].end,
     })
+    expect(buttons[0]).toHaveAttribute('aria-pressed', 'true')
     expect(window.location.search).toContain(`start=${recents[0].start}`)
     expect(window.location.search).toContain(`end=${recents[0].end}`)
   })
