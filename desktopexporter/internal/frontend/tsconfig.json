@@ -15,7 +15,9 @@
     "src/**/*.d.ts",
     "src/**/*.ts",
     "src/**/*.svelte",
-    "benchmark/main.ts"
+    "benchmark/main.ts",
+    "benchmark/canonical-oracle.ts",
+    "benchmark/canonical-oracle.test.ts"
   ],
   "references": [
     {

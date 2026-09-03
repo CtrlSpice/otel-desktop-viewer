@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "name": "realistic-159",
+      "filename": "realistic-159.otlp.pb",
+      "sha256": "c17499d65a3d9d75290dfb5e327aae2bb5fe5bc1bc82b74f40e0e6fa9d0d365b",
+      "bytes": 165954,
+      "traceId": "574154455246414c4c00000000000001",
+      "spanCount": 159,
+      "expectedDisplayedSpanCount": 159,
+      "expectedMaximumDisplayedDepth": 14,
+      "expectedFirstSpanId": "0000000000000001",
+      "topology": "rooted-tree"
+    },
+    {
+      "name": "single-span",
+      "filename": "single-span.otlp.pb",
+      "sha256": "3027cd123dda3b837175e99c32de77bd316e7409a5fd0f6463e3c0d1124b389d",
+      "bytes": 1326,
+      "traceId": "574154455246414c4c00000000000002",
+      "spanCount": 1,
+      "expectedDisplayedSpanCount": 1,
+      "expectedMaximumDisplayedDepth": 0,
+      "expectedFirstSpanId": "0000000000000001",
+      "topology": "rooted-tree"
+    },
+    {
+      "name": "wide",
+      "filename": "wide.otlp.pb",
+      "sha256": "ce5b63eadb2a47d4f3f5a159a6ed2989dbf84f52b83c7f84f5c1f9bffd9c5349",
+      "bytes": 15621,
+      "traceId": "574154455246414c4c00000000000003",
+      "spanCount": 25,
+      "expectedDisplayedSpanCount": 25,
+      "expectedMaximumDisplayedDepth": 1,
+      "expectedFirstSpanId": "0000000000000001",
+      "topology": "rooted-tree"
+    },
+    {
+      "name": "deep",
+      "filename": "deep.otlp.pb",
+      "sha256": "90428090f9c4f811eae1485468479f508b0cc291eb135047ae87ee62b303528b",
+      "bytes": 11349,
+      "traceId": "574154455246414c4c00000000000004",
+      "spanCount": 18,
+      "expectedDisplayedSpanCount": 18,
+      "expectedMaximumDisplayedDepth": 17,
+      "expectedFirstSpanId": "0000000000000001",
+      "topology": "rooted-tree"
+    },
+    {
+      "name": "multiple-roots",
+      "filename": "multiple-roots.otlp.pb",
+      "sha256": "e80bc1e5fb8bc92d9ceb8aa75966d2a69a1edb72d9d16227f50c97e6a305e8f7",
+      "bytes": 4199,
+      "traceId": "574154455246414c4c00000000000005",
+      "spanCount": 6,
+      "expectedDisplayedSpanCount": 6,
+      "expectedMaximumDisplayedDepth": 1,
+      "expectedFirstSpanId": "0000000000000001",
+      "topology": "multiple-roots"
+    },
+    {
+      "name": "orphan",
+      "filename": "orphan.otlp.pb",
+      "sha256": "555bf33a03ff19ef37b0ddd159c58e4a353a3ca4fddc2b4d1e7074a0663f68c8",
+      "bytes": 3057,
+      "traceId": "574154455246414c4c00000000000006",
+      "spanCount": 4,
+      "expectedDisplayedSpanCount": 4,
+      "expectedMaximumDisplayedDepth": 1,
+      "expectedFirstSpanId": "0000000000000001",
+      "topology": "orphan"
+    },
+    {
+      "name": "cycle",
+      "filename": "cycle.otlp.pb",
+      "sha256": "1353780f89b99eac90e3ad1109305e80f7695bdf50473ba05872c7a7f688b3f8",
+      "bytes": 2489,
+      "traceId": "574154455246414c4c00000000000007",
+      "spanCount": 3,
+      "expectedDisplayedSpanCount": 3,
+      "expectedMaximumDisplayedDepth": 2,
+      "expectedFirstSpanId": "0000000000000001",
+      "topology": "cycle"
+    }
+  ]
+}

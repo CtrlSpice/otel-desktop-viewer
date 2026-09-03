@@ -12,6 +12,7 @@
     "playwright.config.ts",
     "e2e/**/*.ts",
     "benchmark/vite.config.ts",
+    "benchmark/vitest.config.ts",
     "benchmark/playwright.config.ts",
     "benchmark/tests/**/*.ts"
   ]

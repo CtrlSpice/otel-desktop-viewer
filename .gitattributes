@@ -9,3 +9,8 @@ desktopexporter/internal/server/static/** linguist-generated=true
 # byte against fragments Go builds with LF. Pinning eol=lf keeps one canonical
 # form everywhere.
 *.sql text eol=lf
+
+# Benchmark inputs are protobuf request bodies; never line-normalize or diff
+# them as text. The generated manifest remains reviewable and byte-stable.
+desktopexporter/internal/cmd/waterfallbench/testdata/*.otlp.pb binary
+desktopexporter/internal/cmd/waterfallbench/testdata/manifest.json text eol=lf
