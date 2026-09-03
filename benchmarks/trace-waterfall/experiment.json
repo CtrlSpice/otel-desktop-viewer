@@ -1,7 +1,7 @@
 {
   "protocolVersion": 1,
   "experiment": "trace-waterfall-ownership",
-  "status": "phase-2-complete",
+  "status": "phase-3-complete",
   "orderSeed": 20260902,
   "practicalEquivalenceMargin": 0.05,
   "headlineMetric": "otlpBytesToStableWaterfall",

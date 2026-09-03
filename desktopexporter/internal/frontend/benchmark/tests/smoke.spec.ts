@@ -8,4 +8,12 @@ test('serves only the benchmark entrypoint', async ({ page }) => {
     'data-benchmark-sentinel',
     '__WATERFALL_BENCHMARK__'
   )
+  await expect(page.locator('#app')).toHaveText(
+    'Trace waterfall benchmark Arm A ready'
+  )
+  expect(
+    await page.evaluate(
+      () => typeof window.__TRACE_WATERFALL_BENCHMARK__?.runArmA
+    )
+  ).toBe('function')
 })

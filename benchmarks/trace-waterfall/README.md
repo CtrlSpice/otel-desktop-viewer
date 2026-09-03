@@ -11,9 +11,9 @@ Any change made after collecting non-pilot measurements must increment `protocol
 
 ## Current Status
 
-Phase 2 is complete.
-The benchmark boundary, positive-control programs, deterministic Go fixture generator, checked OTLP request bodies, and browser semantic oracle exist.
-No query arm or result in this directory is suitable for a performance claim yet.
+Phase 3 is complete.
+The benchmark boundary, positive-control programs, deterministic fixtures, browser semantic oracle, and Arm A correctness path exist.
+No paired runner or result in this directory is suitable for a performance claim yet.
 
 The first implementation comparison will be Arm A versus Arm C on the current application schema.
 Arm B and alternate-schema work remain disabled until that comparison is correct and reviewable.
@@ -106,6 +106,22 @@ Any mismatch invalidates the timing run rather than becoming a performance resul
 The projection is built from semantic fields available after production wire rehydration; private storage UUIDs are not part of the oracle.
 
 The browser oracle must also confirm that `WaterfallView` receives the expected number of nodes, that its viewport has non-zero geometry, and that the first visible row belongs to the expected root.
+
+### Arm A Correctness Path
+
+The tagged benchmark command preloads every checked fixture into one fresh in-memory current-schema store, then starts the production HTTP server and JSON-RPC dispatcher with telemetry disabled.
+This shared store exists only for correctness coverage and must not be used for fresh-state or warm-selection timing samples.
+
+Run it from the repository root:
+
+```sh
+go run -tags=waterfallbench ./desktopexporter/internal/cmd/waterfallbench serve --listen=127.0.0.1:8001
+```
+
+The benchmark frontend proxies `/rpc` to that server and calls the production `telemetryAPI.searchSpans` method.
+That path preserves the current recursive DuckDB query, DuckDB-owned JSON projection, JSON-RPC envelope, browser JSON parsing, and production wire rehydration before mounting the real `WaterfallView`.
+The browser correctness suite exercises all seven fixtures, including production orphan ordering and cycle salvage, and computes the semantic hash only after the registered rendering-stability checks pass.
+Arm A hashes are repeatability evidence and future cross-arm comparison inputs, not normative expected values; cross-arm acceptance begins only when Arm C can be compared in the same run.
 
 ## Measurement Layers
 

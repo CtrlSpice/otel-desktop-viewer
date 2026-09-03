@@ -262,7 +262,7 @@ func TestExperimentPinsHeadlineFixture(t *testing.T) {
 		} `json:"fixtures"`
 	}
 	require.NoError(t, json.Unmarshal(data, &experiment))
-	require.Equal(t, "phase-2-complete", experiment.Status)
+	require.Equal(t, "phase-3-complete", experiment.Status)
 	require.Equal(t, "../../desktopexporter/internal/cmd/waterfallbench/testdata/manifest.json", experiment.Fixtures.Manifest)
 	require.Equal(t, "realistic-159", experiment.Fixtures.Headline.Name)
 

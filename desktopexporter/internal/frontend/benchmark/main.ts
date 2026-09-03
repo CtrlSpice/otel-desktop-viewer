@@ -1,5 +1,6 @@
 import '../src/fonts.css'
 import '../src/app.css'
+import { createArmABenchmarkAPI } from './arm-a'
 
 const benchmarkSentinel = '__WATERFALL_BENCHMARK__'
 const target = document.querySelector<HTMLDivElement>('#app')
@@ -9,4 +10,5 @@ if (!target) {
 }
 
 target.dataset.benchmarkSentinel = benchmarkSentinel
-target.textContent = 'Trace waterfall benchmark isolation check'
+target.textContent = 'Trace waterfall benchmark Arm A ready'
+window.__TRACE_WATERFALL_BENCHMARK__ = createArmABenchmarkAPI(target)

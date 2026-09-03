@@ -4,6 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 const baseURL = 'http://127.0.0.1:4174'
 const benchmarkURL = `${baseURL}/benchmark/`
 const frontendRoot = fileURLToPath(new URL('..', import.meta.url))
+const repositoryRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 
 export default defineConfig({
   testDir: './tests',
@@ -24,11 +25,22 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'npm run preview:benchmark',
-    cwd: frontendRoot,
-    url: benchmarkURL,
-    reuseExistingServer: false,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command:
+        'go run -tags=waterfallbench ./desktopexporter/internal/cmd/waterfallbench serve --listen=127.0.0.1:8001',
+      cwd: repositoryRoot,
+      url: 'http://127.0.0.1:8001/',
+      reuseExistingServer: false,
+      timeout: 180_000,
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 25_000 },
+    },
+    {
+      command: 'npm run preview:benchmark',
+      cwd: frontendRoot,
+      url: benchmarkURL,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+  ],
 })

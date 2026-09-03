@@ -16,6 +16,9 @@
     "src/**/*.ts",
     "src/**/*.svelte",
     "benchmark/main.ts",
+    "benchmark/api-types.ts",
+    "benchmark/arm-a.ts",
+    "benchmark/ArmAHarness.svelte",
     "benchmark/canonical-oracle.ts",
     "benchmark/canonical-oracle.test.ts"
   ],
