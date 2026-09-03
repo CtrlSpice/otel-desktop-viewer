@@ -45,3 +45,9 @@
 <output data-testid="available-aggregation-views"
   >{metricCtx.availableAggregationViews.join(',')}</output
 >
+<output data-testid="chart-time-start"
+  >{metricCtx.chartDataTimeRange?.startMs ?? ''}</output
+>
+<output data-testid="chart-time-end"
+  >{metricCtx.chartDataTimeRange?.endMs ?? ''}</output
+>

@@ -26,13 +26,19 @@ import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
 // This is the client side: that it asks for the second grid only when the
 // metric can answer.
 
-const { searchMetricSummaries, getStats, getMetric, getMetricAggregate } =
-  vi.hoisted(() => ({
-    searchMetricSummaries: vi.fn(),
-    getStats: vi.fn(),
-    getMetric: vi.fn(),
-    getMetricAggregate: vi.fn(),
-  }))
+const {
+  searchMetricSummaries,
+  getStats,
+  getMetric,
+  getMetricAggregate,
+  getMetricAttributes,
+} = vi.hoisted(() => ({
+  searchMetricSummaries: vi.fn(),
+  getStats: vi.fn(),
+  getMetric: vi.fn(),
+  getMetricAggregate: vi.fn(),
+  getMetricAttributes: vi.fn(),
+}))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
   const actual =
@@ -45,6 +51,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       getStats,
       getMetric,
       getMetricAggregate,
+      getMetricAttributes,
     },
   }
 })
@@ -111,7 +118,13 @@ function makeMetric(
     ],
     datapointCount: 4,
     boundsMismatch: null,
-    window: { fittedToData: false, startNs: null, endNs: null },
+    window: {
+      requested: { startNs: null, endNs: null },
+      effective: {
+        startNs: 1_700_000_000_000_000_000n,
+        endNs: 1_700_000_001_000_000_000n,
+      },
+    },
   }
 }
 
@@ -171,6 +184,8 @@ beforeEach(() => {
   getStats.mockReset()
   getMetric.mockReset()
   getMetricAggregate.mockReset()
+  getMetricAttributes.mockReset()
+  getMetricAttributes.mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -207,6 +222,34 @@ function rawSeriesCalls() {
 }
 
 describe('MetricsPage aggregate fetching', () => {
+  it('uses an unbounded detail request and its effective window for aggregates', async () => {
+    await renderSelected('Histogram')
+    const detail = getMetric.mock.calls.find(args => args[3] !== 0)
+    expect(detail?.slice(1, 3)).toEqual([null, null])
+    expect(getMetricAggregate.mock.calls[0]?.slice(1, 3)).toEqual([
+      1_700_000_000_000_000_000n,
+      1_700_000_001_000_000_000n,
+    ])
+  })
+
+  it('does not issue aggregate queries for an empty unbounded effective window', async () => {
+    searchMetricSummaries.mockResolvedValue([makeSummary('Histogram')])
+    getStats.mockResolvedValue(makeStats())
+    const metric = makeMetric('Histogram')
+    metric.window.effective = { startNs: null, endNs: null }
+    getMetric.mockResolvedValue(metric)
+    getMetricAggregate.mockResolvedValue({
+      aggregate: null,
+      scalarAggregate: null,
+    })
+    setTestUrl('/metrics/metric-1')
+    renderWithContexts(MetricsPage)
+
+    await waitFor(() => expect(getMetric).toHaveBeenCalled())
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(getMetricAggregate).not.toHaveBeenCalled()
+  })
+
   it('asks for the whole-window merge for a histogram', async () => {
     await renderSelected('Histogram')
     await waitFor(() => expect(wholeWindowCalls().length).toBe(1))
@@ -298,10 +341,9 @@ describe('MetricsPage raw series fetching', () => {
     localStorage.setItem(
       'time-selection',
       JSON.stringify({
-        start: initialNow - duration,
-        end: initialNow,
         type: 'preset',
         presetIndex: 1,
+        durationMs: duration,
       })
     )
     prepareRawSeriesTest()

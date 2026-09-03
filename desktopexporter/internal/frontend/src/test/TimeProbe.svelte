@@ -21,11 +21,20 @@
 </script>
 
 <output data-testid="selection-type">{timeContext.selection.type}</output>
-<output data-testid="selection-start">{timeContext.selection.start}</output>
-<output data-testid="selection-end">{timeContext.selection.end}</output>
+<output data-testid="selection-start">
+  {'start' in timeContext.selection ? timeContext.selection.start : ''}
+</output>
+<output data-testid="selection-end">
+  {'end' in timeContext.selection ? timeContext.selection.end : ''}
+</output>
 <output data-testid="selection-preset-index">
   {timeContext.selection.type === 'preset'
     ? timeContext.selection.presetIndex
+    : ''}
+</output>
+<output data-testid="selection-duration">
+  {timeContext.selection.type === 'preset'
+    ? timeContext.selection.durationMs
     : ''}
 </output>
 <output data-testid="tz">{timeContext.tz}</output>

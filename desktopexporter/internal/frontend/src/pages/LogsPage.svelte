@@ -74,7 +74,7 @@
     compare: (a, b, col, dir) =>
       compareLogs(a, b, col as LogSortColumn, dir as LogSortDirection),
     fetchList: async () => {
-      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+      const { startTime, endTime } = selectionToQueryRangeMs(
         timeContext.selection,
         Date.now()
       )

@@ -114,10 +114,6 @@ import {
   type TimeseriesColorByKey,
 } from '@/components/metrics/utils/metric-timeseries-colors'
 import {
-  getTimeContext,
-  selectionToQueryRangeMs,
-} from '@/contexts/time-context.svelte'
-import {
   metricViewQueriesEqual,
   parseMetricViewQuery,
   readRoute,
@@ -284,9 +280,6 @@ export interface MetricViewContext {
    *  no legend filter never seed it: ask hasSeriesFilter before reading an
    *  empty set as "the user unchecked everything". */
   readonly visibleSeries: SvelteSet<string>
-  /** True when the chart narrowed itself to the data because no window was
-   *  asked for, so the axis can say so rather than quietly cropping. */
-  readonly histogramAxisFitToData: boolean
   /**
    * The datapoints a series actually carries, as sent, or undefined until they
    * have been fetched.
@@ -487,8 +480,6 @@ export function createMetricViewContext(
    */
   getColumnDistribution: () => MetricData | undefined = () => undefined
 ): MetricViewContext {
-  const timeContext = getTimeContext()
-
   // The ONE per-metric mutable cell. Reset by the effect below when
   // the metric identity changes; otherwise written only by methods
   // on this context.
@@ -825,10 +816,6 @@ export function createMetricViewContext(
   // them only for the series being drawn, and the reduction thins those, so on
   // a 22-series Gauge the header read 5,908 of 19,319.
   const totalDatapointCount = $derived(getMetric()?.datapointCount ?? 0)
-
-  const queryRange = $derived(
-    selectionToQueryRangeMs(timeContext.selection, Date.now())
-  )
 
   // -- Gauge/Sum chart + legend --
 
@@ -1238,70 +1225,22 @@ export function createMetricViewContext(
     })
   })
 
-  /**
-   * The window the chart draws, and whether it was narrowed to the data.
-   *
-   * "All" is the absence of a choice, so a chart may fit its own data: two
-   * hours of a race across a fifty-six year axis is a hairline, and the
-   * emptiness around it carries nothing. Any other selection is a request, and
-   * the gap between what was asked for and what arrived is part of the answer
-   * -- a metric that stopped reporting should look like one.
-   *
-   * Gauges and Sums have always fitted, by taking the extent of their own
-   * points; histograms were the one signal drawn against the raw query range,
-   * which is the asymmetry this closes.
-   *
-   * Derived from the metric, not from the clock, so polling cannot slide the
-   * axis under someone mid-read.
-   */
-  const histogramAxisWindow = $derived.by(() => {
-    const qr = selectionToQueryRangeMs(timeContext.selection, Date.now())
-    const asked = {
-      startNs: BigInt(qr.start) * 1_000_000n,
-      endNs: BigInt(qr.end) * 1_000_000n,
-      fitToData: false,
-    }
-    // The store reports the window it reduced over, so the axis draws the same
-    // window the buckets were cut from. Scanning the returned datapoints
-    // instead measured bucket *starts* -- the reduction's own output -- and so
-    // could never reveal that the reduction had collapsed.
-    const w = getMetric()?.window
-    if (!w?.fittedToData || w.startNs === null || w.endNs === null) return asked
-    if (w.endNs <= w.startNs) return asked
-    // End is exclusive downstream, so a point on the last timestamp still
-    // lands inside the final bucket.
-    return { startNs: w.startNs, endNs: w.endNs + 1n, fitToData: true }
-  })
-
+  /** The effective store window. Null endpoints mean an unbounded request found
+   * no data, so there is deliberately no chart domain to manufacture. */
   const chartDataTimeRange = $derived.by(
     (): { startMs: number; endMs: number } | undefined => {
-      if (isHistogramKind) {
-        // The same window the buckets were built over -- the header states
-        // what was drawn, not what was requested.
-        const { startNs, endNs } = histogramAxisWindow
-        return {
-          startMs: Number(startNs / 1_000_000n),
-          endMs: Number(endNs / 1_000_000n),
-        }
+      const effective = getMetric()?.window.effective
+      if (
+        !effective ||
+        effective.startNs === null ||
+        effective.endNs === null ||
+        effective.endNs < effective.startNs
+      ) {
+        return undefined
       }
-      if (metricType === 'Gauge' || metricType === 'Sum') {
-        // Read off the datapoints' epoch milliseconds rather than projected
-        // points. This is the extent of the data, so it needs no chart points --
-        // and asking for them here would force every series in the response to
-        // be projected, including ones no line is drawn for.
-        let min = Infinity
-        let max = -Infinity
-        for (const ts of gaugeSumGroups.timeseries) {
-          for (const dp of ts.datapoints) {
-            const t = dp.timestampMs
-            if (t < min) min = t
-            if (t > max) max = t
-          }
-        }
-        if (!Number.isFinite(min)) return undefined
-        return { startMs: min, endMs: max }
-      }
-      return undefined
+      const startMs = Number(effective.startNs / 1_000_000n)
+      const endMs = Number(effective.endNs / 1_000_000n)
+      return { startMs, endMs: Math.max(startMs + 1, endMs) }
     }
   )
 
@@ -1624,11 +1563,12 @@ export function createMetricViewContext(
     if (startNs === null) return null
     const series = heatmapBucketSeries
     if (!series || series.length === 0) return null
-    const qr = selectionToQueryRangeMs(timeContext.selection, Date.now())
+    const windowEndNs = getMetric()?.window.effective.endNs
+    if (windowEndNs === null || windowEndNs === undefined) return null
     return columnEndNs(
       series.map(s => s.timestamp),
       startNs,
-      BigInt(Math.trunc(qr.end)) * 1_000_000n
+      windowEndNs
     )
   })
 
@@ -2391,9 +2331,6 @@ export function createMetricViewContext(
     },
     get visibleSeries() {
       return view.visibleSeries
-    },
-    get histogramAxisFitToData() {
-      return histogramAxisWindow.fitToData
     },
     seedForMetric,
     seriesDatapoints(seriesKey: string) {

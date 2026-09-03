@@ -110,11 +110,6 @@ export function formatDateTimeRangeLabel(
   const { includeTimezone = false } = options
   const tz = formatTimezoneLabel(timezone, new Date(end))
 
-  if (start === 0) {
-    const range = `Before ${formatDateTimeMs(end, timezone).dateTime}`
-    return includeTimezone ? `${range} ${tz}` : range
-  }
-
   const startLabel = formatDateTimeMs(start, timezone).dateTime
   const endLabel = formatDateTimeMs(end, timezone).dateTime
   const range = `${startLabel} - ${endLabel}`
@@ -260,10 +255,19 @@ export function loadRecentTimeRanges(): RecentTimeRange[] {
     if (!saved) return []
     const parsed: unknown = JSON.parse(saved)
     if (!Array.isArray(parsed)) return []
-    const rows = parsed as RecentTimeRange[]
+    const parsedRows = parsed as RecentTimeRange[]
+    const rows = parsedRows.filter(
+      row =>
+        row !== null &&
+        typeof row === 'object' &&
+        Number.isFinite(row.start) &&
+        Number.isFinite(row.end) &&
+        Number.isFinite(row.usedAt) &&
+        row.start < row.end
+    )
     const sorted = [...rows].sort((a, b) => b.usedAt - a.usedAt)
     const trimmed = sorted.slice(0, MAX_RECENT_TIME_RANGES)
-    if (trimmed.length < rows.length) {
+    if (trimmed.length < parsedRows.length) {
       localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(trimmed))
     }
     return trimmed
@@ -278,6 +282,7 @@ export function recordRecentTimeRange(
   end: number,
   usedAt: number
 ): void {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) return
   let recentTimeRanges = loadRecentTimeRanges()
   const existingIndex = recentTimeRanges.findIndex(
     e => e.start === start && e.end === end

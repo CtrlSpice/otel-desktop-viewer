@@ -315,9 +315,10 @@ describe('formatDateTimeRangeLabel', () => {
     expect(formatted).toContain('UTC')
   })
 
-  it('labels a range starting at zero as Before the end time', () => {
+  it('labels a range starting at the epoch as bounded', () => {
     const formatted = formatDateTimeRangeLabel(0, endMs, 'UTC')
-    expect(formatted).toMatch(/^Before /)
+    expect(formatted).not.toMatch(/^Before /)
+    expect(formatted).toContain('1970-01-01')
     expect(formatted).toContain('08:30:00')
   })
 

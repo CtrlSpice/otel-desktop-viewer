@@ -120,7 +120,10 @@ function metricWithDatapoints(
     scopeDroppedAttributesCount: 0,
     scope: EMPTY_SCOPE,
     datapointCount: datapoints.length,
-    window: { fittedToData: false, startNs: null, endNs: null },
+    window: {
+      requested: { startNs: null, endNs: null },
+      effective: { startNs: BASE_NS, endNs: BASE_NS + 60_000_000_000n },
+    },
     lastSeenNs: datapoints[0]?.timestamp ?? null,
     boundsMismatch: null,
     timeseries: [

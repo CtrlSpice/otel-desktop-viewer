@@ -92,9 +92,10 @@ function toNanoseconds(milliseconds: number): string {
  * the next column's start, and rounding that to milliseconds would drop the
  * column's last millisecond of readings.
  */
-export type QueryTimeBound = number | bigint
+export type QueryTimeBound = number | bigint | null
 
-function boundToNanoseconds(bound: QueryTimeBound): string {
+function boundToNanoseconds(bound: QueryTimeBound): string | null {
+  if (bound === null) return null
   return typeof bound === 'bigint' ? bound.toString() : toNanoseconds(bound)
 }
 
@@ -358,11 +359,14 @@ function metricDataFromJSON(json: JsonMetricData): MetricData {
     boundsMismatch: json.boundsMismatch ?? null,
     lastSeenNs: parseNullableBigInt(json.lastSeenNs ?? null),
     window: {
-      // Tolerated as absent so a response from a store that predates the field
-      // still renders, on the same window the caller asked for.
-      fittedToData: json.window?.fittedToData ?? false,
-      startNs: parseNullableBigInt(json.window?.startNs ?? null),
-      endNs: parseNullableBigInt(json.window?.endNs ?? null),
+      requested: {
+        startNs: parseNullableBigInt(json.window.requested.startNs),
+        endNs: parseNullableBigInt(json.window.requested.endNs),
+      },
+      effective: {
+        startNs: parseNullableBigInt(json.window.effective.startNs),
+        endNs: parseNullableBigInt(json.window.effective.endNs),
+      },
     },
   }
 }
@@ -443,16 +447,9 @@ export let telemetryAPI = {
   },
 
   // Trace methods
-  getTraceAttributes: async (
-    startTime: number,
-    endTime: number
-  ): Promise<FieldDefinition[]> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getTraceAttributes',
-      named({ startTime: startTimeNs, endTime: endTimeNs })
-    )
+  getTraceAttributes: async (): Promise<FieldDefinition[]> => {
+    const rawData =
+      await callRPC<JsonAttributeDefinition[]>('getTraceAttributes')
 
     // Validate that we received an array
     if (!Array.isArray(rawData)) {
@@ -487,16 +484,8 @@ export let telemetryAPI = {
     return convertAttributesToFieldDefinitions(rawData)
   },
 
-  getLogAttributes: async (
-    startTime: number,
-    endTime: number
-  ): Promise<FieldDefinition[]> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
-    const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getLogAttributes',
-      named({ startTime: startTimeNs, endTime: endTimeNs })
-    )
+  getLogAttributes: async (): Promise<FieldDefinition[]> => {
+    const rawData = await callRPC<JsonAttributeDefinition[]>('getLogAttributes')
 
     if (!Array.isArray(rawData)) {
       console.warn(
@@ -511,14 +500,14 @@ export let telemetryAPI = {
   },
 
   searchTraces: async (
-    startTime: number,
-    endTime: number,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
     queryTree?: QueryNode,
     limit?: number,
     sort?: SearchSort
   ): Promise<TraceSummary[]> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
+    const startTimeNs = boundToNanoseconds(startTime)
+    const endTimeNs = boundToNanoseconds(endTime)
 
     const rawData = await callRPC<JsonTraceSummary[]>(
       'searchTraces',
@@ -562,14 +551,14 @@ export let telemetryAPI = {
   // without bodies/attributes/etc. Use getLog(id) to fetch the
   // full LogData for one row when the detail pane opens.
   searchLogs: async (
-    startTime: number,
-    endTime: number,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
     queryTree?: QueryNode,
     limit?: number,
     sort?: SearchSort
   ): Promise<LogSummary[]> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
+    const startTimeNs = boundToNanoseconds(startTime)
+    const endTimeNs = boundToNanoseconds(endTime)
     const rawData = await callRPC<JsonLogSummary[]>(
       'searchLogs',
       named({
@@ -594,14 +583,14 @@ export let telemetryAPI = {
 
   // Metric methods
   searchMetricSummaries: async (
-    startTime: number,
-    endTime: number,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
     queryTree?: QueryNode,
     limit?: number,
     sort?: SearchSort
   ): Promise<MetricSummary[]> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
+    const startTimeNs = boundToNanoseconds(startTime)
+    const endTimeNs = boundToNanoseconds(endTime)
     const rawData = await callRPC<JsonMetricSummary[]>(
       'searchMetricSummaries',
       named({
@@ -634,11 +623,6 @@ export let telemetryAPI = {
     /** The viewer's UTC offset in nanoseconds, so bucket boundaries fall where
      *  the reader's calendar puts them. Omit for UTC. */
     tzOffsetNs?: number,
-    /** Whether this window is the absence of a choice rather than a request.
-     *  The store then divides the data's own extent instead of the window,
-     *  which is what keeps "All" from merging a whole session into one bucket.
-     *  Omit to treat the window as a request. */
-    fitToData?: boolean,
     /** Resolution for the Sum / Average / Rate views, which bucket for a
      *  different chart than the election thins for. Omit for none. */
     viewBuckets?: number,
@@ -647,6 +631,10 @@ export let telemetryAPI = {
      *  question again -- the election thins for the main chart, the views
      *  bucket for another, this fits a list row. Omit for none. */
     sparklineBuckets?: number,
+    /** Which series are checked for the scalar Selected pool. */
+    selectedSeriesIDs?: string[],
+    /** The IANA zone bucket boundaries should follow. */
+    tzName?: string,
     /** Which series should carry their datapoints -- almost the whole payload.
      *  Every series still arrives with its row, stats, view buckets and
      *  sparkline. Omit to leave it to `datapointSeriesLimit`; pass an empty
@@ -655,12 +643,7 @@ export let telemetryAPI = {
     /** How many series carry datapoints when they cannot be named, in the
      *  response's own order. For the first visit to a metric, where the visible
      *  set is chosen from the response being fetched. */
-    datapointSeriesLimit?: number,
-    /** The IANA zone bucket boundaries should follow. `tzOffsetNs` is one
-     *  sample of this zone, taken at request time; a window that crosses a DST
-     *  transition needs the zone itself, and the store prefers it when both
-     *  arrive. Omit to keep the single offset. */
-    tzName?: string
+    datapointSeriesLimit?: number
   ): Promise<MetricData | null> => {
     const startTimeNs = boundToNanoseconds(startTime)
     const endTimeNs = boundToNanoseconds(endTime)
@@ -679,15 +662,12 @@ export let telemetryAPI = {
           seriesIDs,
           quantiles,
           tzOffsetNs,
-          fitToData,
           viewBuckets,
           sparklineBuckets,
-          // selectedSeriesIDs is deliberately absent: getMetric does not narrow
-          // by the scalar Selected pool. Positionally it had to be sent as a
-          // null placeholder so the parameters after it could be reached.
+          selectedSeriesIDs,
+          tzName,
           datapointSeriesIDs,
           datapointSeriesLimit,
-          tzName,
         })
       )
       return metricDataFromJSON(rawData)
@@ -708,8 +688,8 @@ export let telemetryAPI = {
    *  worth refetching on a toggle. */
   getMetricAggregate: async (
     streamID: string,
-    startTime: number,
-    endTime: number,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
     targetBuckets: number,
     /** Narrows what the query sees at all, so it decides what the histogram
      *  merge folds. Null for a scalar metric: its All pool must keep folding
@@ -718,7 +698,6 @@ export let telemetryAPI = {
     seriesIDs: string[] | null,
     quantiles: number[],
     tzOffsetNs: number,
-    fitToData: boolean,
     viewBuckets = 0,
     /** Which series are checked, for the scalar Selected pool.
      *
@@ -732,8 +711,8 @@ export let telemetryAPI = {
      *  per-series lines beneath them. */
     tzName?: string
   ): Promise<MetricAggregateEnvelope | null> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
+    const startTimeNs = boundToNanoseconds(startTime)
+    const endTimeNs = boundToNanoseconds(endTime)
     try {
       const raw = await callRPC<JsonMetricAggregateEnvelope | null>(
         'getMetricAggregate',
@@ -745,15 +724,7 @@ export let telemetryAPI = {
           seriesIDs,
           quantiles,
           tzOffsetNs,
-          // Must match what getMetric sent for the same view, or the
-          // aggregate is bucketed against a different window than the series
-          // beneath it.
-          fitToData,
           viewBuckets,
-          // sparklineBuckets, datapointSeriesIDs and datapointSeriesLimit are
-          // simply not sent: this method drops the timeseries and returns no
-          // datapoints. Positionally each had to be filled with a placeholder
-          // so that tzName, which sits past them, could be reached at all.
           selectedSeriesIDs: selectedSeriesIDs ?? null,
           tzName,
         })
@@ -774,15 +745,9 @@ export let telemetryAPI = {
     }
   },
 
-  getMetricAttributes: async (
-    startTime: number,
-    endTime: number
-  ): Promise<FieldDefinition[]> => {
-    const startTimeNs = toNanoseconds(startTime)
-    const endTimeNs = toNanoseconds(endTime)
+  getMetricAttributes: async (): Promise<FieldDefinition[]> => {
     const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getMetricAttributes',
-      named({ startTime: startTimeNs, endTime: endTimeNs })
+      'getMetricAttributes'
     )
 
     if (!Array.isArray(rawData)) {

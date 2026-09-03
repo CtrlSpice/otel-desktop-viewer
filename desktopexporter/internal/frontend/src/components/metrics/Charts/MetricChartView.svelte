@@ -17,7 +17,6 @@
     type BucketSeriesError,
   } from '@/contexts/metric-view-context.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { selectionToQueryRangeMs } from '@/contexts/time-context.svelte'
   import MetricTimeSeriesChart from '@/components/metrics/Charts/MetricTimeSeriesChart.svelte'
   import MetricQuantileAreaChart from '@/components/metrics/Charts/MetricQuantileAreaChart.svelte'
   import HistogramChart from '@/components/metrics/Charts/HistogramChart.svelte'
@@ -71,14 +70,6 @@
     }
     return 'No quantile data in range'
   })
-
-  // Time window for the chart (used by histogram heatmap + aggregated
-  // chart bounds). Re-derived here rather than read from the context
-  // so the context doesn't need to expose a window field; this is
-  // cheap.
-  let queryRange = $derived(
-    selectionToQueryRangeMs(timeContext.selection, Date.now())
-  )
 
   /** Plot area inside the chart pane (flex slot below tabs / subtitle). */
   let plotHostHeight = $state(0)

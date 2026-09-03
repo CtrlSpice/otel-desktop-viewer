@@ -3,7 +3,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import { tick } from 'svelte'
 import { screen } from '@testing-library/svelte'
 import type { TimeContext } from '@/contexts/time-context.svelte'
-import { isDefaultUnboundedWindow } from '@/contexts/time-context.svelte'
+import { selectionToQueryRangeMs } from '@/contexts/time-context.svelte'
 import { loadRecentTimeRanges } from '@/utils/time'
 import TimeProbe from '@/test/TimeProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -36,17 +36,20 @@ function selectionPresetIndex(): string {
   return (screen.getByTestId('selection-preset-index').textContent ?? '').trim()
 }
 
+function selectionDuration(): number {
+  return Number(screen.getByTestId('selection-duration').textContent)
+}
+
 function reportedTz(): string {
   return screen.getByTestId('tz').textContent ?? ''
 }
 
 describe('time context default load', () => {
-  it('loads the default preset (index 0, start 0) with no saved selection or URL params', () => {
+  it('loads All with no saved selection or URL params', () => {
     setTestUrl('/traces')
     renderProbe()
-    expect(selectionType()).toBe('preset')
-    expect(selectionPresetIndex()).toBe('0')
-    expect(selectionStart()).toBe(0)
+    expect(selectionType()).toBe('all')
+    expect(selectionPresetIndex()).toBe('')
   })
 })
 
@@ -63,13 +66,33 @@ describe('time context localStorage restore', () => {
     expect(selectionEnd()).toBe(222)
   })
 
-  it('falls back to the default preset when the saved selection is corrupted JSON', () => {
+  it('falls back to All when the saved selection is corrupted JSON', () => {
     localStorage.setItem('time-selection', '{not valid json')
     setTestUrl('/traces')
     expect(() => renderProbe()).not.toThrow()
+    expect(selectionType()).toBe('all')
+  })
+
+  it('does not migrate the old preset storage shape', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({ type: 'preset', presetIndex: 0, start: 0, end: 222 })
+    )
+    setTestUrl('/traces')
+    renderProbe()
+    expect(selectionType()).toBe('all')
+  })
+
+  it('restores a finite preset only from the new duration shape', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({ type: 'preset', presetIndex: 2, durationMs: 900_000 })
+    )
+    setTestUrl('/traces')
+    renderProbe()
     expect(selectionType()).toBe('preset')
-    expect(selectionPresetIndex()).toBe('0')
-    expect(selectionStart()).toBe(0)
+    expect(selectionPresetIndex()).toBe('2')
+    expect(selectionDuration()).toBe(900_000)
   })
 })
 
@@ -83,6 +106,24 @@ describe('time context URL precedence', () => {
     renderProbe()
     expect(selectionType()).toBe('custom')
     expect(selectionStart()).toBe(333)
+    expect(selectionEnd()).toBe(444)
+  })
+
+  it('prefers explicit time=all over localStorage and bounded params', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({ start: 111, end: 222, type: 'custom' })
+    )
+    setTestUrl('/traces?time=all&start=333&end=444')
+    renderProbe()
+    expect(selectionType()).toBe('all')
+  })
+
+  it('keeps a bounded epoch-start URL as custom', () => {
+    setTestUrl('/traces?start=0&end=444')
+    renderProbe()
+    expect(selectionType()).toBe('custom')
+    expect(selectionStart()).toBe(0)
     expect(selectionEnd()).toBe(444)
   })
 
@@ -115,7 +156,7 @@ describe('time context setSelection', () => {
   it('updates the reactive selection', async () => {
     setTestUrl('/traces')
     const context = renderProbe()
-    context.setSelection(1000, 2000, 'custom')
+    context.setSelection({ type: 'custom', start: 1000, end: 2000 })
     await tick()
     expect(selectionType()).toBe('custom')
     expect(selectionStart()).toBe(1000)
@@ -125,7 +166,7 @@ describe('time context setSelection', () => {
   it('persists the selection to localStorage', () => {
     setTestUrl('/traces')
     const context = renderProbe()
-    context.setSelection(1000, 2000, 'custom')
+    context.setSelection({ type: 'custom', start: 1000, end: 2000 })
     expect(JSON.parse(localStorage.getItem('time-selection')!)).toEqual({
       start: 1000,
       end: 2000,
@@ -136,7 +177,7 @@ describe('time context setSelection', () => {
   it('records a recent time range', () => {
     setTestUrl('/traces')
     const context = renderProbe()
-    context.setSelection(1000, 2000, 'custom')
+    context.setSelection({ type: 'custom', start: 1000, end: 2000 })
     const recents = loadRecentTimeRanges()
     expect(recents.some(r => r.start === 1000 && r.end === 2000)).toBe(true)
   })
@@ -145,11 +186,22 @@ describe('time context setSelection', () => {
     setTestUrl('/traces')
     const context = renderProbe()
     const before = window.history.length
-    context.setSelection(1000, 2000, 'custom')
+    context.setSelection({ type: 'custom', start: 1000, end: 2000 })
     expect(window.history.length).toBe(before)
     const params = new URLSearchParams(window.location.search)
     expect(params.get('start')).toBe('1000')
     expect(params.get('end')).toBe('2000')
+  })
+
+  it('writes explicit time=all, clears bounds, and does not add a recent', () => {
+    setTestUrl('/traces?start=1000&end=2000')
+    const context = renderProbe()
+    context.setSelection({ type: 'all' })
+    const params = new URLSearchParams(window.location.search)
+    expect(params.get('time')).toBe('all')
+    expect(params.get('start')).toBeNull()
+    expect(params.get('end')).toBeNull()
+    expect(loadRecentTimeRanges()).toEqual([])
   })
 })
 
@@ -172,7 +224,11 @@ describe('time context preset anchoring on write', () => {
     vi.setSystemTime(writtenAt)
 
     const oneHourMs = 60 * 60_000
-    context.setSelection(0, oneHourMs, 'preset', 2)
+    context.setSelection({
+      type: 'preset',
+      presetIndex: 2,
+      durationMs: oneHourMs,
+    })
 
     const params = new URLSearchParams(window.location.search)
     expect(params.get('end')).toBe(String(writtenAt))
@@ -194,6 +250,17 @@ describe('time context external URL adoption', () => {
     expect(selectionStart()).toBe(500)
     expect(selectionEnd()).toBe(900)
   })
+
+  it('adopts explicit All after a bounded snapshot', async () => {
+    setTestUrl('/traces?start=100&end=200')
+    renderProbe()
+
+    window.history.replaceState(null, '', '/traces?time=all')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    await tick()
+
+    expect(selectionType()).toBe('all')
+  })
 })
 
 describe('time context own-write echo', () => {
@@ -201,7 +268,11 @@ describe('time context own-write echo', () => {
     setTestUrl('/traces')
     const context = renderProbe()
 
-    context.setSelection(0, 60 * 60_000, 'preset', 1)
+    context.setSelection({
+      type: 'preset',
+      presetIndex: 1,
+      durationMs: 60 * 60_000,
+    })
     await tick()
     expect(selectionType()).toBe('preset')
 
@@ -232,27 +303,33 @@ describe('time context setTz', () => {
   })
 })
 
-describe('isDefaultUnboundedWindow', () => {
-  it('treats a start at the epoch as the unbounded default, whatever produced it', () => {
-    // The test is the window, not the route taken to it: the "All" preset, a
-    // recent re-entry of it, and a custom range from zero are the same window.
-    for (const type of ['preset', 'custom', 'recent'] as const) {
-      expect(
-        isDefaultUnboundedWindow({ type, start: 0, end: 1000, presetIndex: 3 })
-      ).toBe(true)
-    }
+describe('selectionToQueryRangeMs', () => {
+  it('converts All to independently unbounded bounds', () => {
+    expect(selectionToQueryRangeMs({ type: 'all' }, 1234)).toEqual({
+      startTime: null,
+      endTime: null,
+    })
   })
 
-  it('treats any bounded start as a request', () => {
-    // Including the case the removed branch used to misread: preset index 0
-    // with a nonzero start would have claimed unbounded by route alone.
+  it('reanchors a finite preset every time it is converted', () => {
+    const preset = {
+      type: 'preset',
+      presetIndex: 1,
+      durationMs: 300_000,
+    } as const
+    expect(selectionToQueryRangeMs(preset, 1_000_000)).toEqual({
+      startTime: 700_000,
+      endTime: 1_000_000,
+    })
+    expect(selectionToQueryRangeMs(preset, 1_060_000)).toEqual({
+      startTime: 760_000,
+      endTime: 1_060_000,
+    })
+  })
+
+  it('keeps an epoch-start custom range bounded', () => {
     expect(
-      isDefaultUnboundedWindow({
-        type: 'preset',
-        start: 1_000,
-        end: 2_000,
-        presetIndex: 0,
-      })
-    ).toBe(false)
+      selectionToQueryRangeMs({ type: 'custom', start: 0, end: 1000 }, 9999)
+    ).toEqual({ startTime: 0, endTime: 1000 })
   })
 })

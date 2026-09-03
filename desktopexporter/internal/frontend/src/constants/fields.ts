@@ -162,17 +162,12 @@ export function sameFieldDefinition(
 
 // Function to get dynamic attributes
 export async function getDynamicAttributes(
-  startTime: number,
-  endTime: number,
   signal: 'traces' | 'logs' | 'metrics'
 ): Promise<FieldDefinition[]> {
   switch (signal) {
     case 'traces':
       try {
-        const attributes = await telemetryAPI.getTraceAttributes(
-          startTime,
-          endTime
-        )
+        const attributes = await telemetryAPI.getTraceAttributes()
         return attributes
       } catch (error) {
         console.warn('Failed to load dynamic attributes:', error)
@@ -181,10 +176,7 @@ export async function getDynamicAttributes(
 
     case 'logs':
       try {
-        const attributes = await telemetryAPI.getLogAttributes(
-          startTime,
-          endTime
-        )
+        const attributes = await telemetryAPI.getLogAttributes()
         return attributes
       } catch (error) {
         console.warn('Failed to load dynamic log attributes:', error)
@@ -193,10 +185,7 @@ export async function getDynamicAttributes(
 
     case 'metrics':
       try {
-        const attributes = await telemetryAPI.getMetricAttributes(
-          startTime,
-          endTime
-        )
+        const attributes = await telemetryAPI.getMetricAttributes()
         return attributes
       } catch (error) {
         console.warn('Failed to load dynamic metric attributes:', error)

@@ -48,16 +48,15 @@ describe('PresetTimeRanges', () => {
     expect(saved).toMatchObject({
       type: 'preset',
       presetIndex: 1,
-      start: Date.now() - 300_000,
-      end: Date.now(),
+      durationMs: 300_000,
     })
-    expect(window.location.search).toContain(`start=${saved.start}`)
-    expect(window.location.search).toContain(`end=${saved.end}`)
+    expect(window.location.search).toContain(`start=${Date.now() - 300_000}`)
+    expect(window.location.search).toContain(`end=${Date.now()}`)
     expect(getPresetButton('5m')).toHaveAttribute('aria-pressed', 'true')
     expect(getPresetButton('All')).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('applies the All preset with a start of 0', () => {
+  it('applies All as an explicit unbounded selection', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
     renderComponent()
@@ -65,13 +64,8 @@ describe('PresetTimeRanges', () => {
     fireEvent.click(getPresetButton('All'))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
-    expect(saved).toMatchObject({
-      type: 'preset',
-      presetIndex: 0,
-      start: 0,
-      end: Date.now(),
-    })
-    expect(window.location.search).toContain('start=0')
-    expect(window.location.search).toContain(`end=${saved.end}`)
+    expect(saved).toEqual({ type: 'all' })
+    expect(window.location.search).toBe('?time=all')
+    expect(localStorage.getItem('datetime-filter-recent')).toBeNull()
   })
 })

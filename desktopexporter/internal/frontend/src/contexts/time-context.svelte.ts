@@ -7,135 +7,129 @@ import {
   withQueryPatch,
 } from '@/route'
 
-// Base interface with common fields
-interface BaseTimeSelection {
-  start: number // Unix timestamp (ms)
-  end: number // Unix timestamp (ms)
-}
+type TimeSelection =
+  | { type: 'all' }
+  | { type: 'preset'; presetIndex: number; durationMs: number }
+  | { type: 'custom' | 'recent'; start: number; end: number }
 
-// Type-specific extensions using discriminated unions
-type TimeSelection = BaseTimeSelection &
-  (
-    | { type: 'preset'; presetIndex: number }
-    | { type: 'custom' }
-    | { type: 'recent' }
-  )
+export type QueryTimeRangeMs = {
+  startTime: number | null
+  endTime: number | null
+}
 
 /**
  * Unix ms range for search/export APIs.
- * Presets use stored start/end only as a duration, anchored so the window ends at `nowMs`.
+ * Presets store their duration and are anchored so the window ends at `nowMs`.
  * Custom and recent use the stored bounds as-is.
  */
 export function selectionToQueryRangeMs(
   selection: TimeSelection,
   nowMs: number
-): { start: number; end: number } {
-  if (selection.type === 'preset') {
-    const duration = selection.end - selection.start
-    const end = nowMs
-    const start = end - duration
-    return { start, end }
+): QueryTimeRangeMs {
+  if (selection.type === 'all') {
+    return { startTime: null, endTime: null }
   }
-  return { start: selection.start, end: selection.end }
+  if (selection.type === 'preset') {
+    return { startTime: nowMs - selection.durationMs, endTime: nowMs }
+  }
+  return { startTime: selection.start, endTime: selection.end }
 }
 
 interface TimeContext {
   selection: TimeSelection
   tz: Timezone
-  setSelection: (
-    start: number,
-    end: number,
-    type: 'preset' | 'custom' | 'recent',
-    presetIndex?: number
-  ) => void
+  setSelection: (selection: TimeSelection) => void
   setTz: (tz: Timezone) => void
 }
 
-/** Default preset row index for `PresetTimeRanges` PRESETS (0 = All). */
-const DEFAULT_PRESET_INDEX_ALL = 0
-
-/**
- * Whether the window is the unbounded default rather than something asked for.
- *
- * "All" is the absence of a choice, not a choice: it means "I have not told you
- * what I am interested in". A view is free to fit itself to its own data in
- * that case. Every other selection -- a preset like 15m, a custom range, a
- * bounded recent one -- is a request, and cropping it would hide the emptiness
- * that is part of the answer.
- *
- * The test is the window, not the route taken to it. `setSelection` records
- * every selection into the recents list, the default "All" included, so
- * clicking that chip re-enters the identical window as type `recent`. Keying on
- * `presetIndex` made the same window draw two different ways depending on which
- * control produced it, which is not a distinction anyone asked for.
- *
- * A start at the epoch is what "All" is: nobody chooses 1970 as a lower bound.
- * The end is not part of the test -- an unbounded start already says the window
- * was never about time. The "All" preset carries start === 0 by construction,
- * so no preset-index check is needed -- keeping one would reintroduce the
- * route-taken distinction this comment just argued against.
- */
-export function isDefaultUnboundedWindow(selection: TimeSelection): boolean {
-  return selection.start === 0
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
 }
 
-/** Build selection state; `preset` uses `presetIndex ?? DEFAULT_PRESET_INDEX_ALL` when omitted. */
-function timeSelectionFromArgs(
-  start: number,
-  end: number,
-  type: 'preset' | 'custom' | 'recent',
-  presetIndex?: number
-): TimeSelection {
-  return type === 'preset'
-    ? {
-        start,
-        end,
-        type: 'preset',
-        presetIndex: presetIndex ?? DEFAULT_PRESET_INDEX_ALL,
-      }
-    : { start, end, type }
+function hasOnlyKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[]
+): boolean {
+  const actual = Object.keys(value)
+  return actual.length === keys.length && keys.every(key => key in value)
 }
 
-/** Restore from localStorage string, or default preset (0 → now) via `timeSelectionFromArgs`. */
-function loadTimeSelection(raw: string | null, nowMs: number): TimeSelection {
-  if (!raw) {
-    return timeSelectionFromArgs(0, nowMs, 'preset')
-  }
-
-  let parsed: TimeSelection
-  try {
-    parsed = JSON.parse(raw) as TimeSelection
-  } catch {
-    return timeSelectionFromArgs(0, nowMs, 'preset')
-  }
-
-  return timeSelectionFromArgs(
-    parsed.start,
-    parsed.end,
-    parsed.type,
-    'presetIndex' in parsed ? parsed.presetIndex : undefined
+function isBoundedSelection(
+  value: unknown
+): value is Extract<TimeSelection, { type: 'custom' | 'recent' }> {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  return (
+    (candidate.type === 'custom' || candidate.type === 'recent') &&
+    hasOnlyKeys(candidate, ['type', 'start', 'end']) &&
+    isFiniteNumber(candidate.start) &&
+    isFiniteNumber(candidate.end) &&
+    candidate.start < candidate.end
   )
+}
+
+function isTimeSelection(value: unknown): value is TimeSelection {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  if (candidate.type === 'all') return hasOnlyKeys(candidate, ['type'])
+  if (isBoundedSelection(candidate)) return true
+  return (
+    candidate.type === 'preset' &&
+    hasOnlyKeys(candidate, ['type', 'presetIndex', 'durationMs']) &&
+    Number.isInteger(candidate.presetIndex) &&
+    Number(candidate.presetIndex) > 0 &&
+    isFiniteNumber(candidate.durationMs) &&
+    candidate.durationMs > 0
+  )
+}
+
+/** Restore a current persisted shape, otherwise use the unbounded default. */
+function loadTimeSelection(raw: string | null): TimeSelection {
+  if (!raw) return { type: 'all' }
+
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return isTimeSelection(parsed) ? parsed : { type: 'all' }
+  } catch {
+    return { type: 'all' }
+  }
 }
 
 function parseTimezone(value: string | null): Timezone | null {
   return value === 'local' || value === 'UTC' ? value : null
 }
 
-/** Parse `start`/`end` from the route query (Unix ms). */
+type RouteTimeSnapshot =
+  { type: 'all' } | { type: 'bounded'; start: number; end: number }
+
+/** Parse explicit All or a bounded `start`/`end` pair from the route. */
 function parseTimeQuery(
   query: Record<string, string>
-): { start: number; end: number } | null {
+): RouteTimeSnapshot | null {
+  if (query.time === 'all') return { type: 'all' }
   const start = Number(query.start)
   const end = Number(query.end)
   if (
     !query.start ||
     !query.end ||
     !Number.isFinite(start) ||
-    !Number.isFinite(end)
+    !Number.isFinite(end) ||
+    start >= end
   ) {
     return null
   }
-  return { start, end }
+  return { type: 'bounded', start, end }
+}
+
+function sameRouteTime(
+  left: RouteTimeSnapshot | null,
+  right: RouteTimeSnapshot | null
+): boolean {
+  if (left?.type !== right?.type) return false
+  if (!left || !right || left.type === 'all' || right.type === 'all') {
+    return left?.type === right?.type
+  }
+  return left.start === right.start && left.end === right.end
 }
 
 /**
@@ -150,13 +144,14 @@ function createTimeContext(): TimeContext {
   const savedSelection = localStorage.getItem('time-selection')
   const savedTz = localStorage.getItem('time-tz')
 
-  const now = Date.now()
   const urlTime = parseTimeQuery(readRoute().query)
 
   let selection = $state<TimeSelection>(
-    urlTime
-      ? timeSelectionFromArgs(urlTime.start, urlTime.end, 'custom')
-      : loadTimeSelection(savedSelection, now)
+    urlTime?.type === 'all'
+      ? { type: 'all' }
+      : urlTime?.type === 'bounded'
+        ? { type: 'custom', start: urlTime.start, end: urlTime.end }
+        : loadTimeSelection(savedSelection)
   )
   let tz = $state<Timezone>(parseTimezone(savedTz) ?? 'local')
 
@@ -165,32 +160,32 @@ function createTimeContext(): TimeContext {
   // start/end snapshot, so the two legitimately disagree — the router
   // subscription compares against this, not the live selection, to tell
   // external changes (back/forward, shared links) from our own writes.
-  let urlWindowSnapshot: { start: number; end: number } | null = urlTime
-    ? { start: urlTime.start, end: urlTime.end }
-    : null
+  let urlWindowSnapshot: RouteTimeSnapshot | null = urlTime
 
   function syncUrl() {
     const range = selectionToQueryRangeMs(selection, Date.now())
-    urlWindowSnapshot = range
+    urlWindowSnapshot =
+      range.startTime === null || range.endTime === null
+        ? { type: 'all' }
+        : { type: 'bounded', start: range.startTime, end: range.endTime }
     navigateCurrentRoute(
       withQueryPatch(readRoute().query, {
-        start: String(range.start),
-        end: String(range.end),
+        time: selection.type === 'all' ? 'all' : null,
+        start: range.startTime === null ? null : String(range.startTime),
+        end: range.endTime === null ? null : String(range.endTime),
       }),
       'replace'
     )
   }
 
-  function setSelection(
-    start: number,
-    end: number,
-    type: 'preset' | 'custom' | 'recent',
-    presetIndex?: number
-  ) {
+  function setSelection(next: TimeSelection) {
     const now = Date.now()
-    selection = timeSelectionFromArgs(start, end, type, presetIndex)
+    selection = next
     localStorage.setItem('time-selection', JSON.stringify(selection))
-    recordRecentTimeRange(start, end, now)
+    const range = selectionToQueryRangeMs(selection, now)
+    if (range.startTime !== null && range.endTime !== null) {
+      recordRecentTimeRange(range.startTime, range.endTime, now)
+    }
     syncUrl()
   }
 
@@ -207,15 +202,12 @@ function createTimeContext(): TimeContext {
     const unsubscribe = subscribeToRoute(() => {
       const fromUrl = parseTimeQuery(readRoute().query)
       if (!fromUrl) return
-      if (
-        urlWindowSnapshot &&
-        fromUrl.start === urlWindowSnapshot.start &&
-        fromUrl.end === urlWindowSnapshot.end
-      ) {
-        return
-      }
-      urlWindowSnapshot = { start: fromUrl.start, end: fromUrl.end }
-      selection = timeSelectionFromArgs(fromUrl.start, fromUrl.end, 'custom')
+      if (sameRouteTime(fromUrl, urlWindowSnapshot)) return
+      urlWindowSnapshot = fromUrl
+      selection =
+        fromUrl.type === 'all'
+          ? { type: 'all' }
+          : { type: 'custom', start: fromUrl.start, end: fromUrl.end }
     })
     return unsubscribe
   })

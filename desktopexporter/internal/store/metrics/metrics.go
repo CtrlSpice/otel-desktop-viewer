@@ -969,9 +969,9 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 // reduction, and the caller gets every datapoint. Reduction is opt-in because
 // it changes which datapoints exist in the response, and a caller that has not
 // asked for it should not have to discover that.
-// seriesIDs narrows the response to those series; nil or empty returns every
-// series in the stream. The filter is applied before the reduction, so a
-// caller asking for two of ten series pays for two.
+// seriesIDs narrows the response to those series; nil returns every series and
+// an empty slice returns none. The filter is applied before the reduction, so
+// a caller asking for two of ten series pays for two.
 // quantiles are computed per histogram datapoint and returned keyed by the
 // quantile; empty skips the work.
 // viewBuckets is the resolution the Sum / Average / Rate views aggregate onto,
@@ -993,17 +993,15 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 // for a caller that cannot name the series it wants because it picks them from
 // this very response; it takes the first N in the response's own order. Nil
 // and 0 mean every series ships them.
-// A null endpoint now expresses fitting directly: that endpoint is omitted from
-// filtering and derived from the filtered data extent. fitToData remains only
-// as temporary compatibility for the current frontend's concrete "All" range;
-// the next frontend change can remove the flag once it sends null bounds.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
-	return getMetric(ctx, db, getMetricParams{}, streamID, timeRange, targetBuckets, seriesIDs, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedSeriesIDs, tzName, datapointSeriesIDs, datapointSeriesLimit)
+// A null endpoint is omitted from filtering and derived from the filtered data
+// extent. A concrete endpoint remains the effective endpoint.
+func GetMetric(ctx context.Context, db *sql.DB, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
+	return getMetric(ctx, db, getMetricParams{}, streamID, timeRange, targetBuckets, seriesIDs, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedSeriesIDs, tzName, datapointSeriesIDs, datapointSeriesLimit)
 }
 
 // getMetric runs the query in whichever shape params asks for. Both shapes take
 // the same arguments and the same CTEs; only the projection differs.
-func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
+func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
 	// Deduplicate the quantile list, keeping first-occurrence order.
 	//
 	// The quantile CTEs build the wire object with map(), and DuckDB raises
@@ -1074,8 +1072,7 @@ func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID
 	if timeRange.End != nil {
 		endTime = *timeRange.End
 	}
-	fitToData = fitToData || timeRange.Start == nil || timeRange.End == nil
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, fitToData, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
 		}
@@ -1117,7 +1114,7 @@ func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID
 //
 // The rule the two share: narrowing decides what is *sent*, never what is
 // *aggregated*.
-func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, fitToData bool, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
+func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
 	// Ask SQL for the aggregate shape rather than the whole metric.
 	//
 	// This used to call GetMetric and then unmarshal its response in Go to
@@ -1135,7 +1132,7 @@ func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, timeRa
 	// covers them.
 	raw, err := getMetric(ctx, db, aggregateShapeFor(ctx, db, streamID),
 		streamID, timeRange, targetBuckets, seriesIDs, quantiles,
-		tzOffsetNs, fitToData, viewBuckets, 0, selectedSeriesIDs, tzName,
+		tzOffsetNs, viewBuckets, 0, selectedSeriesIDs, tzName,
 		[]string{}, 0)
 	if err != nil {
 		return nil, err

@@ -121,7 +121,11 @@
     }
 
     // Set selection in time context
-    ctx.setSelection(validation.start, validation.end, 'custom')
+    ctx.setSelection({
+      type: 'custom',
+      start: validation.start,
+      end: validation.end,
+    })
   }
 
   function parseNaturalLanguage(text: string): ParseResult {

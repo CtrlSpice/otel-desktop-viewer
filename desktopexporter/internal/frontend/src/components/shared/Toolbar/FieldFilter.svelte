@@ -7,7 +7,10 @@
     type FieldDefinition,
     type ColumnVisibility,
   } from '@/constants/fields'
-  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import {
+    getTimeContext,
+    selectionToQueryRangeMs,
+  } from '@/contexts/time-context.svelte'
   import type { TimeContext } from '@/contexts/time-context.svelte'
 
   type Props = {
@@ -57,11 +60,8 @@
     let cancelled = false
     const t = window.setTimeout(async () => {
       try {
-        const dynamicAttrs = await getDynamicAttributes(
-          tc.selection.start,
-          tc.selection.end,
-          signal
-        )
+        void selectionToQueryRangeMs(tc.selection, Date.now())
+        const dynamicAttrs = await getDynamicAttributes(signal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
       } catch {

@@ -62,9 +62,25 @@ describe('DateTimeFilter', () => {
     expect(saved).toMatchObject({
       type: 'preset',
       presetIndex: 1,
-      start: Date.now() - 300_000,
-      end: Date.now(),
+      durationMs: 300_000,
     })
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    )
+  })
+
+  it('closes when All is clicked while All is already selected', async () => {
+    renderComponent()
+    await tick()
+    const trigger = screen.getByRole('button', { name: /All time/i })
+    const popover = getPopover()
+    popover.showPopover()
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'All time' }))
+
     await waitFor(() =>
       expect(trigger).toHaveAttribute('aria-expanded', 'false')
     )

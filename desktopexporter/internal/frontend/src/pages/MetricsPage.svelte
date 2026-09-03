@@ -82,10 +82,12 @@
   import type { JsonAggregateBucket } from '@/types/wire-types'
   import { untrack } from 'svelte'
   import { SvelteMap } from 'svelte/reactivity'
-  import { telemetryAPI } from '@/services/telemetry-service'
+  import {
+    telemetryAPI,
+    type QueryTimeBound,
+  } from '@/services/telemetry-service'
   import {
     getTimeContext,
-    isDefaultUnboundedWindow,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import { navigateToItem } from '@/route'
@@ -150,7 +152,7 @@
     compare: (a, b, col, dir) =>
       compareMetrics(a, b, col as MetricSortColumn, dir as MetricSortDirection),
     fetchList: async () => {
-      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+      const { startTime, endTime } = selectionToQueryRangeMs(
         timeContext.selection,
         Date.now()
       )
@@ -272,12 +274,10 @@
       : {}
   )
 
-  // Re-fetch metric detail ONLY when the selected metric's identity changes --
-  // not when the summary object reference churns. Polling rebuilds the list
-  // every few seconds with fresh object references; depending on the summary
-  // object directly would re-fetch on every poll and clobber per-metric view
-  // state (AggregationView, legend selections, etc.).
+  // Re-fetch when the selected metric identity or time selection changes, but
+  // not when polling merely replaces the summary object with an equivalent one.
   $effect(() => {
+    void timeContext.selection
     const id = page.selectedSummary
       ? metricSummaryKey(page.selectedSummary)
       : null
@@ -330,13 +330,20 @@
       selectedScalarAggregate = null
       return
     }
+    const bounds = effectiveMetricBounds(selectedMetric)
+    if (!bounds) {
+      selectedAggregate = null
+      selectedAggregateSummary = null
+      selectedScalarAggregate = null
+      return
+    }
 
     // Coalesce rapid toggles into one request. Ticking through five series
     // should ask the store once, not five times.
     clearTimeout(aggregateTimer)
     const token = ++aggregateToken
     aggregateTimer = setTimeout(() => {
-      void fetchAggregate(summary, visibleKeys, token)
+      void fetchAggregate(summary, visibleKeys, bounds, token)
     }, 120)
 
     return () => clearTimeout(aggregateTimer)
@@ -345,20 +352,17 @@
   async function fetchAggregate(
     summary: MetricSummary,
     visibleKeys: string[],
+    bounds: { startTime: bigint; endTime: bigint },
     token: number
   ) {
     try {
-      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
-        timeContext.selection,
-        Date.now()
-      )
+      const { startTime, endTime } = bounds
       // The store's quantiles, computed once per datapoint from its bucket
       // vector. Recomputing them per render costs seconds on the main thread:
       // 2,700 bucket walks for one render of this metric.
       const quantiles = DEFAULT_HISTOGRAM_QUANTILES as unknown as number[]
       // Same answer as the detail fetch gives, so the aggregate is bucketed
       // over the window the series beneath it were bucketed over.
-      const fit = isDefaultUnboundedWindow(timeContext.selection)
       // Both shapes of the same question, issued together so they cannot
       // disagree about the window or the selection.
       // The narrowing parameter belongs to the histogram merge alone. A scalar
@@ -382,7 +386,6 @@
           narrowTo,
           quantiles,
           tzOffsetNs(),
-          fit,
           // The same grid getMetric asked for, or the pooled lines would be
           // bucketed against different boundaries than the per-series lines
           // drawn beneath them.
@@ -410,7 +413,6 @@
               narrowTo,
               quantiles,
               tzOffsetNs(),
-              fit,
               // This call collapses to one bucket, but that bucket's
               // boundaries still follow the calendar the other call's do.
               0,
@@ -442,6 +444,14 @@
     page.selectItem(key)
   }
 
+  function effectiveMetricBounds(
+    metric: MetricData
+  ): { startTime: bigint; endTime: bigint } | null {
+    const { startNs, endNs } = metric.window.effective
+    if (startNs === null || endNs === null || endNs < startNs) return null
+    return { startTime: startNs, endTime: endNs }
+  }
+
   // Expanding a series fetches that series as it was sent: no reduction, no
   // quantiles, one series.
   //
@@ -465,13 +475,7 @@
     // every series is collapsed. Presets use their stored duration here; their
     // moving absolute bounds are resolved only when a request is triggered.
     const scopeKey = streamID
-      ? JSON.stringify([
-          streamID,
-          selection.start,
-          selection.end,
-          selection.type,
-          timezone,
-        ])
+      ? JSON.stringify([streamID, selection, timezone])
       : ''
     const scopeChanged = scopeKey !== seriesDatapointsScopeKey
     if (scopeChanged) {
@@ -488,20 +492,18 @@
     if (!scopeChanged && !expansionTriggered) return
 
     const now = Date.now()
-    const { start, end } = selectionToQueryRangeMs(selection, now)
-    const fitToData = isDefaultUnboundedWindow(selection)
+    const { startTime, endTime } = selectionToQueryRangeMs(selection, now)
     const timezoneOffsetNs = tzOffsetNs(now)
     const timezoneName = tzName()
     // Capture every input that can change the store's answer. A structured key
     // avoids collisions with attribute-derived series and metric identifiers.
     const key = JSON.stringify([
       streamID,
-      start,
-      end,
+      startTime,
+      endTime,
       timezone,
       timezoneOffsetNs,
       timezoneName ?? null,
-      fitToData,
     ])
     if (key !== seriesDatapointsKey) {
       seriesDatapointsKey = key
@@ -514,11 +516,10 @@
       void fetchSeriesDatapoints({
         streamID,
         seriesKey,
-        startTime: start,
-        endTime: end,
+        startTime,
+        endTime,
         timezoneOffsetNs,
         timezoneName,
-        fitToData,
         cacheKey: key,
       })
     }
@@ -529,11 +530,10 @@
   type SeriesDatapointsRequest = {
     streamID: string
     seriesKey: string
-    startTime: number
-    endTime: number
+    startTime: QueryTimeBound
+    endTime: QueryTimeBound
     timezoneOffsetNs: number
     timezoneName: string | undefined
-    fitToData: boolean
     cacheKey: string
   }
 
@@ -545,7 +545,6 @@
       endTime,
       timezoneOffsetNs,
       timezoneName,
-      fitToData,
       cacheKey,
     } = request
     const requestKey = JSON.stringify([cacheKey, seriesKey])
@@ -563,8 +562,6 @@
         // statistic the client computes anyway.
         [],
         timezoneOffsetNs,
-        fitToData,
-        undefined,
         undefined,
         undefined,
         undefined,
@@ -604,8 +601,7 @@
   //
   // targetBuckets is 1 and the window is the column, so the store merges each
   // series across exactly that range -- the same merge it does for the
-  // aggregate, but one entry per series rather than one across them. fitToData
-  // is false because the window here *is* the request, not the absence of one.
+  // aggregate, but one entry per series rather than one across them.
   $effect(() => {
     // Read as two primitives, so a recomputation landing on the same column is
     // not a change. The heatmap array gets a new identity on every aggregate
@@ -635,10 +631,8 @@
           undefined,
           DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
           tzOffsetNs(),
-          false,
           0,
           0,
-          undefined,
           undefined,
           tzName()
         )
@@ -709,7 +703,7 @@
     const token = ++detailToken
     try {
       detailLoading = true
-      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+      const { startTime, endTime } = selectionToQueryRangeMs(
         timeContext.selection,
         Date.now()
       )
@@ -754,12 +748,6 @@
           // Bucket boundaries follow the reader's calendar rather than the
           // epoch. 0 is UTC, which is what the store assumes without this.
           tzOffsetNs(),
-          // "All" is the absence of a choice, so the store divides the data's
-          // own extent instead of the window. Without this the reduction
-          // divided decades: a two-hour session came back as a single bucket
-          // per series, and no amount of client-side axis fitting could put
-          // back the resolution that was never sent.
-          isDefaultUnboundedWindow(timeContext.selection),
           // Resolution for the Sum / Average / Rate views, which bucket for a
           // different chart than the election thins for.
           SCALAR_VIEW_BUCKETS,
@@ -767,14 +755,16 @@
           // every series, checked or not, because the sparkline is how the
           // reader decides which series is worth checking.
           SPARKLINE_BUCKETS,
+          // The separate aggregate request carries the live legend selection.
+          undefined,
+          tzName(),
           // Datapoints only for the series that will be drawn -- the rest of
           // each series still arrives. A previous visit's selection can be
           // named outright; a first visit cannot, because the selection is
           // chosen from this very response, so the store takes the same "first
           // N" the seeding would.
           datapointSeries ?? persistedVisibleKeys(summary.id) ?? undefined,
-          DEFAULT_VISIBLE_TIMESERIES,
-          tzName()
+          DEFAULT_VISIBLE_TIMESERIES
         )) ?? undefined
       // A slower earlier request must not overwrite a newer answer.
       if (token !== detailToken) return

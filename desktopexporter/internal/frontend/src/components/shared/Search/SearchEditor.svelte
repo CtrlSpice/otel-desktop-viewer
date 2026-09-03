@@ -64,8 +64,8 @@
 
   type SearchContext = {
     signal: 'traces' | 'logs' | 'metrics'
-    startTime: number
-    endTime: number
+    startTime: number | null
+    endTime: number | null
   }
 
   const searchDispatch: Record<
@@ -191,7 +191,7 @@
     })
   })
 
-  /** Fetch dynamic attributes by time range. */
+  /** Fetch dynamic attributes from the shared dictionary. */
   $effect(() => {
     const base = [...staticFieldsList]
     availableFields = base
@@ -202,8 +202,8 @@
     let cancelled = false
     const t = window.setTimeout(async () => {
       try {
-        const { start, end } = selectionToQueryRangeMs(tc.selection, Date.now())
-        const dynamicAttrs = await getDynamicAttributes(start, end, signal)
+        void selectionToQueryRangeMs(tc.selection, Date.now())
+        const dynamicAttrs = await getDynamicAttributes(signal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
       } catch (error) {
@@ -271,9 +271,9 @@
 
   /** Build a SearchContext from the current component state. */
   function currentSearchContext(): SearchContext {
-    const { start: startTime, end: endTime } = timeContext
+    const { startTime, endTime } = timeContext
       ? selectionToQueryRangeMs(timeContext.selection, Date.now())
-      : { start: 0, end: Date.now() }
+      : { startTime: null, endTime: null }
 
     return { signal, startTime, endTime }
   }

@@ -40,19 +40,15 @@ var methodParamNames = map[string][]string{
 	"searchMetricSummaries": {"startTime", "endTime", "query", "limit", "sort"},
 	"getMetric": {
 		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
-		"quantiles", "tzOffsetNs", "fitToData", "viewBuckets",
-		"sparklineBuckets", "selectedSeriesIDs", "datapointSeriesIDs",
-		"datapointSeriesLimit", "tzName",
+		"quantiles", "tzOffsetNs", "viewBuckets",
+		"sparklineBuckets", "selectedSeriesIDs", "tzName",
+		"datapointSeriesIDs", "datapointSeriesLimit",
 	},
 	"getMetricAggregate": {
 		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
-		"quantiles", "tzOffsetNs", "fitToData", "viewBuckets",
-		"sparklineBuckets", "selectedSeriesIDs", "datapointSeriesIDs",
-		"datapointSeriesLimit", "tzName",
+		"quantiles", "tzOffsetNs", "viewBuckets",
+		"selectedSeriesIDs", "tzName",
 	},
-	"getTraceAttributes":     {"startTime", "endTime"},
-	"getLogAttributes":       {"startTime", "endTime"},
-	"getMetricAttributes":    {"startTime", "endTime"},
 	"searchAttributes":       {"term"},
 	"getFieldValues":         {"signal", "field", "term", "limit"},
 	"getAttributesByTraceID": {"traceID"},
@@ -62,9 +58,7 @@ var methodParamNames = map[string][]string{
 
 // normalizeParams rewrites object-form params into the positional array form.
 //
-// Array params and absent params pass through untouched, so this cannot
-// change the behaviour of any existing caller -- the frontend sends arrays and
-// keeps doing so.
+// Array params and absent params pass through untouched.
 //
 // Two decisions worth stating. A gap between named parameters becomes an
 // explicit null rather than a shorter array, because the handlers gate
