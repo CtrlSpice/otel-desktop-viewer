@@ -28,27 +28,36 @@ describe('CustomTimeRange', () => {
     vi.useRealTimers()
   })
 
-  it('renders a themed calendar and a resolved now boundary by default', () => {
+  it('renders exact fields with the calendar collapsed by default', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.123Z'))
     renderComponent()
+    expect(screen.queryByRole('application')).not.toBeInTheDocument()
     expect(
-      screen.getByRole('application', {
-        name: /Custom time range January 2026/,
-      })
-    ).toBeInTheDocument()
+      screen.getByRole('button', { name: 'Choose start date' })
+    ).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      screen.getByRole('button', { name: 'Choose end date' })
+    ).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByLabelText('Start')).toHaveValue('')
     expect(screen.getByLabelText('Start time')).toHaveValue('00:00:00.000')
     expect(screen.getByLabelText('End')).toHaveValue('2026-01-15')
-    expect(screen.getByLabelText('End time')).toHaveValue('12:00:00.123')
+    expect(screen.getByLabelText('End')).toHaveAttribute(
+      'placeholder',
+      'YYYY-MM-DD'
+    )
+    expect(screen.getByLabelText('End time')).toHaveValue('')
+    expect(screen.getByLabelText('End time')).toHaveAttribute(
+      'placeholder',
+      'right now'
+    )
     expect(screen.getByLabelText('Start')).not.toHaveAttribute('inputmode')
     expect(screen.getByLabelText('Start time')).not.toHaveAttribute('inputmode')
     expect(screen.getByLabelText('End')).not.toHaveAttribute('inputmode')
     expect(screen.getByLabelText('End time')).not.toHaveAttribute('inputmode')
-    expect(screen.getByRole('button', { name: 'Now' })).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    )
+    expect(
+      screen.queryByRole('button', { name: 'Now' })
+    ).not.toBeInTheDocument()
   })
 
   it('applies a millisecond-precise range ending now', async () => {
@@ -69,24 +78,87 @@ describe('CustomTimeRange', () => {
     expect(window.location.search).toContain(`end=${saved.end}`)
   })
 
-  it('updates date drafts from calendar range selection', async () => {
+  it('requires a complete endpoint after the end fallback is edited', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
+    renderComponent()
+
+    await setEndpoint('Start', '2026-01-15', '10:00:00.000')
+    await fireEvent.input(screen.getByLabelText('End'), {
+      target: { value: '2026-01-14' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply range' }))
+
+    expect(
+      screen.getByText('Enter end time as HH:mm:ss.SSS')
+    ).toBeInTheDocument()
+    expect(localStorage.getItem('time-selection')).toBeNull()
+  })
+
+  it('selects each endpoint from its own calendar', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-20T12:00:00.000Z'))
     renderComponent()
 
     await fireEvent.click(
+      screen.getByRole('button', { name: 'Choose start date' })
+    )
+    expect(
+      screen.getByRole('application', {
+        name: /Start date January 2026/,
+      })
+    ).toBeInTheDocument()
+    await fireEvent.click(
       screen.getByRole('button', { name: 'Wednesday, January 14, 2026' })
+    )
+
+    expect(screen.getByLabelText('Start')).toHaveValue('2026-01-14')
+    expect(
+      screen.getByRole('button', { name: 'Choose start date' })
+    ).toHaveAttribute('aria-expanded', 'false')
+
+    await vi.advanceTimersByTimeAsync(150)
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Choose end date' })
+    )
+    expect(
+      screen.getByRole('application', {
+        name: /End date January 2026/,
+      })
+    ).toBeInTheDocument()
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Friday, January 16, 2026' })
+    )
+
+    expect(screen.getByLabelText('End')).toHaveValue('2026-01-16')
+    expect(screen.getByLabelText('End time')).toHaveValue('12:00:00.000')
+    expect(
+      screen.getByRole('button', { name: 'Choose end date' })
+    ).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('does not couple start and end calendar selections', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-20T12:00:00.000Z'))
+    renderComponent()
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Choose start date' })
     )
     await fireEvent.click(
       screen.getByRole('button', { name: 'Friday, January 16, 2026' })
     )
 
-    expect(screen.getByLabelText('Start')).toHaveValue('2026-01-14')
-    expect(screen.getByLabelText('End')).toHaveValue('2026-01-16')
-    expect(screen.getByRole('button', { name: 'Now' })).toHaveAttribute(
-      'aria-pressed',
-      'false'
+    await vi.advanceTimersByTimeAsync(150)
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Choose end date' })
     )
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Wednesday, January 14, 2026' })
+    )
+
+    expect(screen.getByLabelText('Start')).toHaveValue('2026-01-16')
+    expect(screen.getByLabelText('End')).toHaveValue('2026-01-14')
   })
 
   it('validates the exact time format and endpoint order', async () => {
@@ -133,25 +205,20 @@ describe('CustomTimeRange', () => {
     expect(window.location.search).toBe('')
   })
 
-  it('keeps now active while focus moves through the end fields', async () => {
+  it("uses now again when today's explicit end time is cleared", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
     renderComponent()
 
-    await fireEvent.focus(screen.getByLabelText('End'))
-    await fireEvent.focus(screen.getByLabelText('End time'))
-    expect(screen.getByRole('button', { name: 'Now' })).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    )
-
+    await setEndpoint('Start', '2026-01-15', '10:00:00.000')
+    await setEndpoint('End', '2026-01-15', '11:00:00.000')
     await fireEvent.input(screen.getByLabelText('End time'), {
-      target: { value: '11:00:00.000' },
+      target: { value: '' },
     })
-    expect(screen.getByRole('button', { name: 'Now' })).toHaveAttribute(
-      'aria-pressed',
-      'false'
-    )
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply range' }))
+
+    const saved = JSON.parse(localStorage.getItem('time-selection')!)
+    expect(saved.end).toBe(new Date('2026-01-15T12:00:00.000Z').getTime())
   })
 
   it('interprets structured wall-clock fields in a named timezone', async () => {
@@ -236,26 +303,5 @@ describe('CustomTimeRange', () => {
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
     expect(saved.start).toBe(new Date('2026-11-01T05:30:00Z').getTime())
     expect(saved.end).toBe(new Date('2026-11-01T07:30:00Z').getTime())
-  })
-
-  it('does not reset edited drafts when the now preview ticks', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-01-15T12:00:00Z'))
-    localStorage.setItem(
-      'time-selection',
-      JSON.stringify({
-        type: 'custom',
-        start: new Date('2026-01-15T10:00:00Z').getTime(),
-        end: new Date('2026-01-15T11:00:00Z').getTime(),
-      })
-    )
-    renderComponent()
-
-    await fireEvent.input(screen.getByLabelText('Start time'), {
-      target: { value: '10:15:00.123' },
-    })
-    await vi.advanceTimersByTimeAsync(1000)
-
-    expect(screen.getByLabelText('Start time')).toHaveValue('10:15:00.123')
   })
 })
