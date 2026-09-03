@@ -23,23 +23,23 @@
 
   const popoverID = createPopoverID('datetime-popover')
 
-  let previousStartTime = $state(ctx.selection?.start)
-  let previousEndTime = $state(ctx.selection?.end)
+  let previousSelection = $state(ctx.selection)
 
   $effect(() => {
-    const currentStartTime = ctx.selection?.start
-    const currentEndTime = ctx.selection?.end
-
-    const startTimeChanged = currentStartTime !== previousStartTime
-    const endTimeChanged = currentEndTime !== previousEndTime
-
-    if (startTimeChanged || endTimeChanged) {
+    const currentSelection = ctx.selection
+    if (currentSelection !== previousSelection) {
       popoverEl?.hidePopover()
     }
-
-    previousStartTime = currentStartTime
-    previousEndTime = currentEndTime
+    previousSelection = currentSelection
   })
+
+  function presetLabel(durationMs: number): string {
+    const day = 24 * 60 * 60_000
+    const hour = 60 * 60_000
+    if (durationMs % day === 0) return `${durationMs / day}d`
+    if (durationMs % hour === 0) return `${durationMs / hour}h`
+    return `${durationMs / 60_000}m`
+  }
 
   $effect(() => {
     const popover = popoverEl
@@ -57,12 +57,17 @@
 
   let ariaLabel = $derived.by(() => {
     if (!ctx?.selection) return 'Change time range'
-    const label = formatDateTimeRangeLabel(
-      ctx.selection.start,
-      ctx.selection.end,
-      ctx.tz,
-      { includeTimezone: true }
-    )
+    const label =
+      ctx.selection.type === 'all'
+        ? 'All time'
+        : ctx.selection.type === 'preset'
+          ? `Last ${presetLabel(ctx.selection.durationMs)}`
+          : formatDateTimeRangeLabel(
+              ctx.selection.start,
+              ctx.selection.end,
+              ctx.tz,
+              { includeTimezone: true }
+            )
     return `Change time range, ${label}`
   })
 

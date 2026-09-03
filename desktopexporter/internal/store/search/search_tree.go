@@ -436,13 +436,27 @@ func ConvertValueForArrayType(value, arrayType string) any {
 	}
 }
 
-// BuildSearchSQL builds the search_params CTE, WHERE clause, and args for any signal.
-// timeCondition must reference time_start and time_end.
-func BuildSearchSQL(queryNode *QueryNode, startTime, endTime int64, mapper FieldMapper, timeCondition string) (cteSQL, whereSQL string, args []any, err error) {
-	params := []NamedParam{
-		{Name: "time_start", Value: startTime},
-		{Name: "time_end", Value: endTime},
+// TimePredicate builds the direct predicate for a nullable inclusive range.
+// Only concrete endpoints become parameters and SQL conditions.
+func TimePredicate(column string, startTime, endTime *int64) (string, []NamedParam) {
+	var conditions []string
+	var params []NamedParam
+	if startTime != nil {
+		conditions = append(conditions, column+" >= time_start")
+		params = append(params, NamedParam{Name: "time_start", Value: *startTime})
 	}
+	if endTime != nil {
+		conditions = append(conditions, column+" <= time_end")
+		params = append(params, NamedParam{Name: "time_end", Value: *endTime})
+	}
+	return strings.Join(conditions, " AND "), params
+}
+
+// BuildSearchSQL builds the search_params CTE, WHERE clause, and args for any
+// signal. timeCondition is empty when time is unbounded; timeParams contains
+// only the concrete endpoints referenced by it.
+func BuildSearchSQL(queryNode *QueryNode, mapper FieldMapper, timeCondition string, timeParams []NamedParam) (cteSQL, whereSQL string, args []any, err error) {
+	params := append([]NamedParam(nil), timeParams...)
 
 	var conditions []string
 	if queryNode != nil {
@@ -451,15 +465,19 @@ func BuildSearchSQL(queryNode *QueryNode, startTime, endTime int64, mapper Field
 		}
 	}
 
-	if len(conditions) > 0 {
+	if len(conditions) > 0 && timeCondition != "" {
 		// One condition or one group reaches here as exactly one string --
 		// buildCondition and buildGroup each append a single joined element --
 		// so a multi-element list means a caller bug. Join defensively with
 		// AND rather than the bare space this once was, which produced
 		// syntactically invalid SQL the first time anything appended two.
 		whereSQL = "(" + strings.Join(conditions, " AND ") + ") AND " + timeCondition
-	} else {
+	} else if len(conditions) > 0 {
+		whereSQL = "(" + strings.Join(conditions, " AND ") + ")"
+	} else if timeCondition != "" {
 		whereSQL = timeCondition
+	} else {
+		whereSQL = "true"
 	}
 
 	args = make([]any, len(params))
@@ -468,6 +486,10 @@ func BuildSearchSQL(queryNode *QueryNode, startTime, endTime int64, mapper Field
 		args[i] = p.Value
 		cteParams[i] = fmt.Sprintf("? as %s", p.Name)
 	}
-	cteSQL = fmt.Sprintf("with search_params as (select %s)", strings.Join(cteParams, ", "))
+	if len(cteParams) == 0 {
+		cteSQL = "with search_params as (select true as unbounded)"
+	} else {
+		cteSQL = fmt.Sprintf("with search_params as (select %s)", strings.Join(cteParams, ", "))
+	}
 	return cteSQL, whereSQL, args, nil
 }

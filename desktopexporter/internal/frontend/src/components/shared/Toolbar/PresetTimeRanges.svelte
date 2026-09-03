@@ -20,22 +20,23 @@
   ] as const
 
   function applyPreset(index: number) {
-    let start = 0
-    let now = Date.now()
-    let preset = PRESETS[index]
-
-    if (preset.duration !== undefined) {
-      start = now - preset.duration
-    }
-
-    ctx.setSelection(start, now, 'preset', index)
+    const preset = PRESETS[index]
+    if (!preset) return
+    ctx.setSelection(
+      preset.duration === undefined
+        ? { type: 'all' }
+        : { type: 'preset', presetIndex: index, durationMs: preset.duration }
+    )
   }
 </script>
 
 <div class="preset-time-ranges">
   {#each PRESETS as preset, index (preset.label)}
     {@const selected =
-      ctx.selection.type === 'preset' && ctx.selection.presetIndex === index}
+      index === 0
+        ? ctx.selection.type === 'all'
+        : ctx.selection.type === 'preset' &&
+          ctx.selection.presetIndex === index}
     <button
       type="button"
       class="chrome-btn {selected

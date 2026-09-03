@@ -24,11 +24,14 @@ import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 // SignalListDrawer.test.ts), so nothing extra is mocked here beyond the
 // three telemetryAPI calls TracesPage itself drives.
 
-const { searchTraces, getStats, searchSpans } = vi.hoisted(() => ({
-  searchTraces: vi.fn(),
-  getStats: vi.fn(),
-  searchSpans: vi.fn(),
-}))
+const { searchTraces, getStats, searchSpans, getTraceAttributes } = vi.hoisted(
+  () => ({
+    searchTraces: vi.fn(),
+    getStats: vi.fn(),
+    searchSpans: vi.fn(),
+    getTraceAttributes: vi.fn(),
+  })
+)
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
   const actual =
@@ -40,6 +43,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       searchTraces,
       getStats,
       searchSpans,
+      getTraceAttributes,
     },
   }
 })
@@ -134,6 +138,8 @@ beforeEach(() => {
   searchTraces.mockReset()
   getStats.mockReset()
   searchSpans.mockReset()
+  getTraceAttributes.mockReset()
+  getTraceAttributes.mockResolvedValue([])
 })
 
 /** Collapses the template's line-wrapped whitespace into single spaces so
@@ -143,6 +149,11 @@ function normalizedText(el: HTMLElement): string {
 }
 
 describe('TracesPage unplaced spans banner', () => {
+  it('queries the list with null bounds for the default All selection', async () => {
+    await renderSelectedTrace(0)
+    expect(searchTraces).toHaveBeenCalledWith(null, null)
+  })
+
   it('renders no banner when every span was placed', async () => {
     await renderSelectedTrace(0)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

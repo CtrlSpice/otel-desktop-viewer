@@ -84,7 +84,13 @@ function makeCumulativeSumMetric(): MetricData {
     datapointCount: 0,
     // The window as the caller asked for it: this fixture's assertions are
     // about aggregation views, not about the axis.
-    window: { fittedToData: false, startNs: null, endNs: null },
+    window: {
+      requested: { startNs: null, endNs: null },
+      effective: {
+        startNs: BigInt(BASE_TIMESTAMP_MS) * 1_000_000n,
+        endNs: BigInt(BASE_TIMESTAMP_MS + 60_000) * 1_000_000n,
+      },
+    },
     lastSeenNs: BigInt(BASE_TIMESTAMP_MS + 60_000) * 1_000_000n,
     // No merge was refused; this fixture's histograms-that-aren't have no
     // bounds to disagree about.
@@ -240,6 +246,26 @@ function reportedAvailableAggregationViews(): string[] {
     screen.getByTestId('available-aggregation-views').textContent?.trim() ?? ''
   return text ? text.split(',') : []
 }
+
+describe('metric effective window', () => {
+  it('uses concrete effective bounds for the chart domain', () => {
+    renderProbe('/metrics/m1')
+    expect(screen.getByTestId('chart-time-start')).toHaveTextContent(
+      String(BASE_TIMESTAMP_MS)
+    )
+    expect(screen.getByTestId('chart-time-end')).toHaveTextContent(
+      String(BASE_TIMESTAMP_MS + 60_000)
+    )
+  })
+
+  it('leaves the chart domain empty when effective bounds are unresolved', () => {
+    const metric = makeCumulativeSumMetric()
+    metric.window.effective = { startNs: null, endNs: null }
+    renderProbe('/metrics/m1', { metric })
+    expect(screen.getByTestId('chart-time-start')).toHaveTextContent('')
+    expect(screen.getByTestId('chart-time-end')).toHaveTextContent('')
+  })
+})
 
 /**
  * Browser back/forward as the context sees it: the URL changes behind its

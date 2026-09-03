@@ -111,12 +111,58 @@ func searchTracesAll(t *testing.T, s *store.Store, ctx context.Context) []traceS
 	t.Helper()
 	const maxNano = 1<<63 - 1
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTraces(ctx, db, 0, maxNano, nil)
+		return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, maxNano), nil)
 	})
 	assert.NoError(t, err)
 	var summaries []traceSummaryJSON
 	assert.NoError(t, json.Unmarshal(raw, &summaries))
 	return summaries
+}
+
+func TestSearchTracesNullableTimeRangesExecute(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	data := ptrace.NewTraces()
+	rs := data.ResourceSpans().AppendEmpty()
+	ss := rs.ScopeSpans().AppendEmpty()
+	traceID := [16]byte{15: 1}
+	for i, timestamp := range []int64{100, 200, 300} {
+		span := ss.Spans().AppendEmpty()
+		span.SetTraceID(traceID)
+		span.SetSpanID([8]byte{7: byte(i + 1)})
+		span.SetName(fmt.Sprintf("span-%d", timestamp))
+		span.SetStartTimestamp(pcommon.Timestamp(timestamp))
+		span.SetEndTimestamp(pcommon.Timestamp(timestamp + 10))
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	start, end := int64(200), int64(200)
+	for _, tc := range []struct {
+		name      string
+		timeRange store.TimeRange
+		wantCount float64
+		wantStart string
+	}{
+		{"unbounded", store.TimeRange{}, 3, "100"},
+		{"end only", store.TimeRange{End: &end}, 2, "100"},
+		{"start only", store.TimeRange{Start: &start}, 2, "200"},
+		{"bounded", store.TimeRange{Start: &start, End: &end}, 1, "200"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return spans.SearchTraces(ctx, db, tc.timeRange, nil)
+			})
+			require.NoError(t, err)
+			var got []traceSummaryJSON
+			require.NoError(t, json.Unmarshal(raw, &got))
+			require.Len(t, got, 1)
+			require.Equal(t, tc.wantCount, got[0].SpanCount)
+			require.Equal(t, tc.wantStart, got[0].StartTime)
+		})
+	}
 }
 
 type traceSummaryJSON struct {
@@ -178,7 +224,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTracesWithLimit(ctx, db, 0, 1<<63-1, nil, 2)
+		return spans.SearchTracesWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 2)
 	})
 	require.NoError(t, err)
 	var summaries []traceSummaryJSON
@@ -187,10 +233,11 @@ func TestTraceSummaryLimit(t *testing.T) {
 
 	limit := int64(1)
 	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTracesWithOptions(ctx, db, 0, 1<<63-1, nil, search.ResultOptions{
+		return spans.SearchTracesWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{
 			Limit: &limit,
 			Sort:  &search.Sort{Field: "duration", Direction: "desc"},
 		})
+
 	})
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(raw, &summaries))
@@ -198,7 +245,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 	require.Equal(t, trace2Hex, summaries[0].TraceID, "sort must select the longest trace before applying LIMIT")
 
 	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTracesWithLimit(ctx, db, 0, 1<<63-1, nil, 0)
+		return spans.SearchTracesWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 0)
 	})
 	require.ErrorIs(t, err, spans.ErrInvalidTraceLimit)
 }
@@ -384,11 +431,8 @@ func TestTraceSuite(t *testing.T) {
 	})
 
 	t.Run("AttributeDiscovery", func(t *testing.T) {
-		now := time.Now().UnixNano()
-		start := now - 24*int64(time.Hour)
-		end := now + 24*int64(time.Hour)
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.GetTraceAttributes(ctx, db, start, end)
+			return spans.GetTraceAttributes(ctx, db)
 		})
 		assert.NoError(t, err, "failed to get trace attributes")
 
@@ -463,7 +507,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -482,7 +526,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -501,7 +545,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -520,7 +564,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -539,7 +583,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -558,7 +602,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -577,7 +621,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -596,7 +640,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -619,7 +663,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -643,7 +687,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -667,7 +711,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -691,7 +735,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -715,7 +759,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -739,7 +783,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -763,7 +807,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -787,7 +831,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -811,7 +855,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -835,7 +879,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -859,7 +903,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -879,7 +923,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -900,7 +944,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -919,7 +963,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -938,7 +982,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -957,7 +1001,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -977,7 +1021,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -997,7 +1041,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1021,7 +1065,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1042,7 +1086,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage trace ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
@@ -1059,7 +1103,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage span ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
@@ -1076,7 +1120,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, startTime, endTime, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage link trace ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
@@ -1893,7 +1937,7 @@ func TestSearchTracesByFlags(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, 0, 10_000, query)
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 10_000), query)
 		})
 		require.NoError(t, err)
 		var out []map[string]any

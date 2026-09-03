@@ -12,6 +12,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
@@ -318,21 +319,21 @@ func appendPass(
 }
 
 // SearchTraces returns trace summaries in the time range matching the optional criteria.
-func SearchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
-	return searchTraces(ctx, db, startTime, endTime, criteria, search.ResultOptions{})
+func SearchTraces(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any) (json.RawMessage, error) {
+	return searchTraces(ctx, db, timeRange, criteria, search.ResultOptions{})
 }
 
 // SearchTracesWithLimit returns at most limit trace summaries.
-func SearchTracesWithLimit(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit int64) (json.RawMessage, error) {
-	return searchTraces(ctx, db, startTime, endTime, criteria, search.ResultOptions{Limit: &limit})
+func SearchTracesWithLimit(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, limit int64) (json.RawMessage, error) {
+	return searchTraces(ctx, db, timeRange, criteria, search.ResultOptions{Limit: &limit})
 }
 
-func SearchTracesWithOptions(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
-	return searchTraces(ctx, db, startTime, endTime, criteria, options)
+func SearchTracesWithOptions(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchTraces(ctx, db, timeRange, criteria, options)
 }
 
-func searchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
-	finalQuery, args, err := searchTracesSQL(startTime, endTime, criteria, options)
+func searchTraces(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	finalQuery, args, err := searchTracesSQL(timeRange, criteria, options)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +351,7 @@ func searchTraces(ctx context.Context, db *sql.DB, startTime, endTime int64, cri
 // searchTracesSQL renders the trace-summary query and its bound arguments.
 // Split out for the same reason as searchSpansSQL: so a golden test can pin the
 // rendered text without standing up a store.
-func searchTracesSQL(startTime, endTime int64, criteria any, options search.ResultOptions) (string, []any, error) {
+func searchTracesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -360,7 +361,7 @@ func searchTracesSQL(startTime, endTime int64, criteria any, options search.Resu
 		}
 	}
 
-	cteSQL, whereClause, args, err := buildTraceSQL(searchTree, startTime, endTime)
+	cteSQL, whereClause, args, err := buildTraceSQL(searchTree, timeRange)
 	if err != nil {
 		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 	}
@@ -572,11 +573,9 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, 
 }
 
 // GetTraceAttributes returns every attribute name/scope/type this store knows
-// about, for the search field dropdowns.
-//
-// The time range is accepted and ignored, and that is a deliberate behaviour
-// change. These used to be an indexed join from attributes to spans over the
-// window; with attributes deduped into a dictionary, honouring the window would
+// about, for the search field dropdowns. These used to be an indexed join from
+// attributes to spans over a window; with attributes deduped into a dictionary,
+// honouring a window would
 // mean unnesting every span's array and joining back -- on the interactive path
 // that populates a dropdown. The dictionary is small and already bounded by
 // retention, so it answers directly. The semantics become "keys this store
@@ -585,7 +584,7 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, 
 //
 // This is why scope is part of dictionary identity: without it, attributeScope
 // could not be produced without the unnest this exists to avoid.
-func GetTraceAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
+func GetTraceAttributes(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 	return traceAttributeKeys(ctx, db)
 }
 
@@ -696,8 +695,10 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	return nil
 }
 
-func buildTraceSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteSQL string, whereSQL string, args []any, err error) {
-	return search.BuildSearchSQL(queryNode, startTime, endTime, traceFieldMapper(), "s.start_time >= time_start and s.start_time <= time_end")
+func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, whereSQL string, args []any, err error) {
+	timeCondition, timeParams := search.TimePredicate("s.start_time", timeRange.Start, timeRange.End)
+	timeCondition = strings.ReplaceAll(timeCondition, " AND ", " and ")
+	return search.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams)
 }
 
 // Two idioms compare a trace id in this file, and they are not

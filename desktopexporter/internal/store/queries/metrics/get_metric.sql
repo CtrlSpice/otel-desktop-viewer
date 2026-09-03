@@ -4,8 +4,8 @@
 				?::bigint as time_start,
 				?::bigint as time_end,
 				?::bigint as target_buckets,
-				-- Which series the caller cares about. Empty means all of them,
-				-- which is the unfiltered behaviour every existing caller gets.
+				-- Which series the caller cares about. Null means all of them;
+				-- an empty list means none.
 				--
 				-- Bound as varchar[] and cast in SQL rather than as a uuid list:
 				-- the driver corrupts a bound []duckdb.UUID silently, matching
@@ -27,22 +27,6 @@
 				-- so a shared link renders in the recipient's calendar rather than
 				-- the sender's.
 				?::bigint as tz_offset_ns,
-				-- Whether the caller's window is a request or the absence of one.
-				--
-				-- The reduction divides a span by target_buckets, and the span it
-				-- divided was always the *requested* one. Ask for "All" -- epoch to
-				-- now, fifty-six years -- and a bucket is 414 days wide, so an
-				-- entire two-hour race merges into one datapoint per series. The
-				-- chart was not misdrawing a fine reduction; it was drawing the one
-				-- bucket it was sent.
-				--
-				-- A caller that never chose a window is not asking about the fifty-
-				-- six years, so with this set the span comes from the data instead
-				-- (see data_extent). The decision stays with the caller, which owns
-				-- the time picker and knows whether a window was chosen; the store
-				-- only obeys. Inferring it here from time_start = 0 would put the
-				-- same rule in two languages, to drift apart later.
-				?::boolean as fit_to_data,
 				-- How many buckets the Sum / Average / Rate views aggregate onto.
 				--
 				-- Deliberately not target_buckets. The election's job is to keep
@@ -112,7 +96,7 @@
 			  and exists (
 				select 1 from datapoints d
 				where d.metric_ingest_id = m.id
-				  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
+				  {{.TimeFilter}}
 			  )
 		),
 		-- Datapoints inherit aggregation_temporality / is_monotonic from
@@ -143,7 +127,7 @@
 			left join histogram_bounds hb on hb.id = d.bounds_id,
 				input, stream s
 			where d.stream_id = input.stream_id
-			  and d.timestamp >= input.time_start and d.timestamp <= input.time_end
+			  {{.TimeFilter}}
 			  -- Narrowing here rather than after the merge: the reduction and
 			  -- every alignment stage downstream then run over only the series
 			  -- asked for, instead of merging series the caller will discard.
@@ -317,32 +301,30 @@
 		-- lambda body, where DuckDB rejects it: "subqueries in lambda
 		-- expressions are not supported". Reading from `input` as a relation
 		-- keeps the arguments plain.
-		-- The extent the data actually occupies inside the requested window,
-		-- and the span the reduction divides.
+		-- The extent the filtered data occupies and the span the reduction
+		-- divides. Each missing requested endpoint is filled independently from
+		-- this extent; concrete endpoints remain unchanged.
 		--
 		-- +1 because both ends are inclusive: a stream with a single datapoint
 		-- spans one nanosecond, not zero, and a zero span would divide to a
-		-- zero-width bucket. coalesce covers the empty result, where there is
-		-- no extent to fit and the requested window is all there is.
-		--
-		-- Only consulted when the caller said its window was not a choice. An
-		-- explicit window keeps dividing itself, so its buckets stay anchored
-		-- to the window: panning slides data through fixed boundaries instead
-		-- of re-cutting them per request, and a metric that stopped reporting
-		-- keeps the empty space that says so.
+		-- zero-width bucket. An empty filtered extent leaves an unresolved null
+		-- endpoint null, and therefore disables reduction safely.
 		data_extent as (
 			select min(timestamp) as min_ts, max(timestamp) as max_ts
 			from filtered_dps
 		),
+		effective_window as (
+			select coalesce(i.time_start, e.min_ts) as start_ns,
+				coalesce(i.time_end, e.max_ts) as end_ns
+			from input i, data_extent e
+		),
 		reduction_span as (
 			select case
-				when i.fit_to_data then coalesce(
-					(select max_ts - min_ts + 1 from data_extent),
-					i.time_end - i.time_start
-				)
-				else i.time_end - i.time_start
+				when start_ns is not null and end_ns is not null then least(
+					end_ns::hugeint - start_ns::hugeint + 1,
+					9223372036854775807::hugeint)::bigint
 			end as span_ns
-			from input i
+			from effective_window
 		),
 		reduction as (
 			select case
@@ -1300,8 +1282,7 @@
 			group by series_id
 		),
 		-- Which series ship datapoints. A named list wins; failing that a limit
-		-- applies; failing both, every series does, which is what a caller that
-		-- predates these parameters gets.
+		-- applies; failing both, every series does.
 		datapoint_series_allowed as (
 			select r.series_id
 			from datapoint_series_rank r, input i
@@ -1773,15 +1754,11 @@
 			'datapointCount', coalesce((select sum(dp_count) from (
 				select count(*) as dp_count from filtered_dps group by series_id
 			)), 0),
-			-- The window the reduction actually divided, and whether it came
-			-- from the data or from the caller.
+			-- The requested bounds and the effective bounds the reduction uses.
 			--
-			-- Reported rather than left to be inferred: the client drew its axis
+			-- Reported rather than left to be inferred: a client drawing its axis
 			-- by scanning the timestamps it got back, which are bucket starts,
-			-- so its axis and the server's bucketing were two answers to one
-			-- question -- and the client's was derived from the very reduction
-			-- it was trying to describe. Null start/end when the window is the
-			-- caller's own: it already knows it.
+			-- would derive the window from the very reduction it is describing.
 			-- Null when nothing was refused, so the client tests one field
 			-- rather than two counts it would have to know to compare to zero.
 			'boundsMismatch', (
@@ -1793,11 +1770,14 @@
 				from bounds_mismatch
 			),
 			'window', json_object(
-				'fittedToData', (select fit_to_data from input),
-				'startNs', case when (select fit_to_data from input)
-					then (select min_ts from data_extent)::varchar end,
-				'endNs', case when (select fit_to_data from input)
-					then (select max_ts from data_extent)::varchar end
+				'requested', json_object(
+					'startNs', (select time_start from input)::varchar,
+					'endNs', (select time_end from input)::varchar
+				),
+				'effective', json_object(
+					'startNs', (select start_ns from effective_window)::varchar,
+					'endNs', (select end_ns from effective_window)::varchar
+				)
 			)
 {{- end}}
 		) as varchar) as metric

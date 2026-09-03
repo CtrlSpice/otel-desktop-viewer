@@ -42,7 +42,7 @@ func BenchmarkSearchLogsLimit(b *testing.B) {
 			for b.Loop() {
 				if err := s.WithDBRead(func(db *sql.DB) error {
 					var queryErr error
-					raw, queryErr = logs.SearchWithOptions(ctx, db, 0, 1<<63-1, nil, search.ResultOptions{Limit: &limit, Sort: bc.sort})
+					raw, queryErr = logs.SearchWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{Limit: &limit, Sort: bc.sort})
 					return queryErr
 				}); err != nil {
 					b.Fatal(err)

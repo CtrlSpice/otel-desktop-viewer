@@ -146,19 +146,19 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, err, "metrics table should exist and accept data")
 
 			// Verify data was inserted correctly
-			summariesRaw, err := spans.SearchTraces(ctx, s.db, 0, 1<<63-1, nil)
+			summariesRaw, err := spans.SearchTraces(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries")
 			var summaries []map[string]any
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 			assert.Len(t, summaries, 2, "should have two traces")
 
-			logsRaw, err := logs.Search(ctx, s.db, 0, 1<<63-1, nil)
+			logsRaw, err := logs.Search(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve logs")
 			var logEntries []any
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 			assert.Len(t, logEntries, 3, "should have three logs")
 
-			metricsRaw, err := metrics.SearchSummaries(ctx, s.db, 0, 1<<63-1, nil)
+			metricsRaw, err := metrics.SearchSummaries(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve metrics")
 			var metricEntries []any
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
@@ -175,15 +175,15 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
 
 			// Verify data after reopening
-			summariesRaw, err = spans.SearchTraces(ctx, s.db, 0, 1<<63-1, nil)
+			summariesRaw, err = spans.SearchTraces(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 
-			logsRaw, err = logs.Search(ctx, s.db, 0, 1<<63-1, nil)
+			logsRaw, err = logs.Search(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve logs after reopening")
 			assert.NoError(t, json.Unmarshal(logsRaw, &logEntries))
 
-			metricsRaw, err = metrics.SearchSummaries(ctx, s.db, 0, 1<<63-1, nil)
+			metricsRaw, err = metrics.SearchSummaries(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve metrics after reopening")
 			assert.NoError(t, json.Unmarshal(metricsRaw, &metricEntries))
 

@@ -53,12 +53,20 @@ describe('telemetryAPI.getMetric', () => {
         unit: 'bytes',
         metricType: 'Gauge',
         timeseries: [],
+        window: {
+          requested: { startNs: null, endNs: null },
+          effective: { startNs: '10', endNs: '20' },
+        },
       },
     })
     const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
     expect(metric).not.toBeNull()
     expect(metric!.name).toBe('test.gauge')
     expect(metric!.timeseries).toEqual([])
+    expect(metric!.window).toEqual({
+      requested: { startNs: null, endNs: null },
+      effective: { startNs: 10n, endNs: 20n },
+    })
   })
 })
 
@@ -351,24 +359,9 @@ describe('request parameters', () => {
       { term: 'http' },
     ],
     [
-      'getTraceAttributes',
-      () => telemetryAPI.getTraceAttributes(2, 5),
-      { startTime: '2000000', endTime: '5000000' },
-    ],
-    [
       'getAttributesByTraceID',
       () => telemetryAPI.getAttributesByTraceID('abc'),
       { traceID: 'abc' },
-    ],
-    [
-      'getLogAttributes',
-      () => telemetryAPI.getLogAttributes(2, 5),
-      { startTime: '2000000', endTime: '5000000' },
-    ],
-    [
-      'getMetricAttributes',
-      () => telemetryAPI.getMetricAttributes(2, 5),
-      { startTime: '2000000', endTime: '5000000' },
     ],
     [
       'searchTraces',
@@ -561,6 +554,9 @@ describe('request parameters', () => {
   // Methods with nothing to name send no params at all, rather than an empty
   // object or an empty array.
   it.each([
+    ['getTraceAttributes', () => telemetryAPI.getTraceAttributes()],
+    ['getLogAttributes', () => telemetryAPI.getLogAttributes()],
+    ['getMetricAttributes', () => telemetryAPI.getMetricAttributes()],
     ['clearTraces', () => telemetryAPI.clearTraces()],
     ['clearLogs', () => telemetryAPI.clearLogs()],
     ['clearMetrics', () => telemetryAPI.clearMetrics()],
@@ -570,5 +566,101 @@ describe('request parameters', () => {
     const request = sent()
     expect(request.method).toBe(method)
     expect('params' in request).toBe(false)
+  })
+
+  it.each([
+    ['searchTraces', () => telemetryAPI.searchTraces(null, null)],
+    ['searchLogs', () => telemetryAPI.searchLogs(null, null)],
+    [
+      'searchMetricSummaries',
+      () => telemetryAPI.searchMetricSummaries(null, null),
+    ],
+    ['getMetric', () => telemetryAPI.getMetric('stream-1', null, null)],
+    [
+      'getMetricAggregate',
+      () =>
+        telemetryAPI.getMetricAggregate(
+          'stream-1',
+          null,
+          null,
+          10,
+          null,
+          [],
+          0
+        ),
+    ],
+  ])('%s serializes unbounded bounds as null', async (method, invoke) => {
+    const sent = captureRequest()
+    await invoke().catch(() => {})
+    expect(sent()).toMatchObject({
+      method,
+      params: { startTime: null, endTime: null },
+    })
+  })
+
+  it('getMetric sends the final named parameter contract exactly', async () => {
+    const sent = captureRequest()
+    await telemetryAPI
+      .getMetric(
+        'stream-1',
+        2,
+        5,
+        10,
+        ['series-1'],
+        [0.5],
+        7,
+        8,
+        9,
+        ['selected-1'],
+        'America/New_York',
+        ['datapoints-1'],
+        3
+      )
+      .catch(() => {})
+    expect(sent().params).toEqual({
+      streamID: 'stream-1',
+      startTime: '2000000',
+      endTime: '5000000',
+      targetBuckets: 10,
+      seriesIDs: ['series-1'],
+      quantiles: [0.5],
+      tzOffsetNs: 7,
+      viewBuckets: 8,
+      sparklineBuckets: 9,
+      selectedSeriesIDs: ['selected-1'],
+      tzName: 'America/New_York',
+      datapointSeriesIDs: ['datapoints-1'],
+      datapointSeriesLimit: 3,
+    })
+  })
+
+  it('getMetricAggregate sends the final named parameter contract exactly', async () => {
+    const sent = captureRequest()
+    await telemetryAPI
+      .getMetricAggregate(
+        'stream-1',
+        2n,
+        5n,
+        10,
+        ['series-1'],
+        [0.95],
+        7,
+        8,
+        ['selected-1'],
+        'UTC'
+      )
+      .catch(() => {})
+    expect(sent().params).toEqual({
+      streamID: 'stream-1',
+      startTime: '2',
+      endTime: '5',
+      targetBuckets: 10,
+      seriesIDs: ['series-1'],
+      quantiles: [0.95],
+      tzOffsetNs: 7,
+      viewBuckets: 8,
+      selectedSeriesIDs: ['selected-1'],
+      tzName: 'UTC',
+    })
   })
 })

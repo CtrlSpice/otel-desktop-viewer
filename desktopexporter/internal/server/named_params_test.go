@@ -26,8 +26,6 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 			`{"traceID":"abc"}`, `["abc"]`},
 		{"getLog",
 			`{"logID":"L1"}`, `["L1"]`},
-		{"getTraceAttributes",
-			`{"startTime":1,"endTime":2}`, `[1,2]`},
 		{"searchAttributes",
 			`{"term":"http"}`, `["http"]`},
 		// Order in the object must not matter.
@@ -37,10 +35,15 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 		{"getMetric",
 			`{"tzName":"UTC","streamID":"s","startTime":"1","endTime":"2",
 			  "targetBuckets":10,"seriesIDs":["a"],"quantiles":[0.5],
-			  "tzOffsetNs":0,"fitToData":true,"viewBuckets":5,
+			  "tzOffsetNs":0,"viewBuckets":5,
 			  "sparklineBuckets":6,"selectedSeriesIDs":["b"],
 			  "datapointSeriesIDs":["c"],"datapointSeriesLimit":7}`,
-			`["s","1","2",10,["a"],[0.5],0,true,5,6,["b"],["c"],7,"UTC"]`},
+			`["s","1","2",10,["a"],[0.5],0,5,6,["b"],"UTC",["c"],7]`},
+		{"getMetricAggregate",
+			`{"tzName":"UTC","streamID":"s","startTime":"1","endTime":"2",
+			  "targetBuckets":10,"seriesIDs":["a"],"quantiles":[0.5],
+			  "tzOffsetNs":0,"viewBuckets":5,"selectedSeriesIDs":["b"]}`,
+			`["s","1","2",10,["a"],[0.5],0,5,["b"],"UTC"]`},
 	}
 
 	for _, tc := range cases {
@@ -54,6 +57,18 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 			require.Equal(t, b, a, "named form must equal the positional form")
 		})
 	}
+}
+
+func TestMetricNamedParamContracts(t *testing.T) {
+	require.Equal(t, []string{
+		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
+		"quantiles", "tzOffsetNs", "viewBuckets", "sparklineBuckets",
+		"selectedSeriesIDs", "tzName", "datapointSeriesIDs", "datapointSeriesLimit",
+	}, methodParamNames["getMetric"])
+	require.Equal(t, []string{
+		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
+		"quantiles", "tzOffsetNs", "viewBuckets", "selectedSeriesIDs", "tzName",
+	}, methodParamNames["getMetricAggregate"])
 }
 
 func TestNamedParamsGapsBecomeNull(t *testing.T) {
@@ -124,6 +139,9 @@ func TestEveryMethodHasParamNames(t *testing.T) {
 	unnamed := map[string]bool{
 		"clearTraces": true, "clearLogs": true, "clearMetrics": true,
 		"getStats":             true,
+		"getTraceAttributes":   true,
+		"getLogAttributes":     true,
+		"getMetricAttributes":  true,
 		"deleteSpansByTraceID": true,
 		"deleteLogByID":        true,
 	}

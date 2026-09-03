@@ -19,16 +19,14 @@
   let recentTimeRanges = $state<RecentTimeRange[]>([])
 
   $effect(() => {
-    void ctx.selection.start
-    void ctx.selection.end
-    void ctx.selection.type
+    void ctx.selection
     recentTimeRanges = loadRecentTimeRanges().slice(0, MAX_RECENT_TIME_RANGES)
   })
 
   function applyRecentTimeRange(index: number) {
     let entry = recentTimeRanges[index]
     if (!entry) return
-    ctx.setSelection(entry.start, entry.end, 'recent')
+    ctx.setSelection({ type: 'recent', start: entry.start, end: entry.end })
   }
 </script>
 

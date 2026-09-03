@@ -391,16 +391,10 @@ export type MetricData = {
   datapointCount: number
   /** Merges refused for disagreeing explicit bounds; null when none were. */
   boundsMismatch: BoundsMismatch | null
-  /** The window the store's reduction actually divided.
-   *
-   *  Bounds are the data's own extent, and are null unless the caller said its
-   *  window was the absence of a choice. A chart draws this rather than
-   *  re-deriving it: the timestamps in the response are bucket starts, so
-   *  measuring them describes the reduction using its own output. */
+  /** Requested bounds and the bounds the store's reduction actually divided. */
   window: {
-    fittedToData: boolean
-    startNs: bigint | null
-    endNs: bigint | null
+    requested: { startNs: bigint | null; endNs: bigint | null }
+    effective: { startNs: bigint | null; endNs: bigint | null }
   }
 }
 

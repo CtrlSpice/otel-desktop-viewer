@@ -41,7 +41,7 @@ func BenchmarkSearchMetricSummariesLimit(b *testing.B) {
 			for b.Loop() {
 				if err := s.WithDBRead(func(db *sql.DB) error {
 					var queryErr error
-					raw, queryErr = metrics.SearchSummariesWithOptions(ctx, db, 0, maxNano, nil, search.ResultOptions{Limit: &limit, Sort: bc.sort})
+					raw, queryErr = metrics.SearchSummariesWithOptions(ctx, db, store.BoundedTimeRange(0, maxNano), nil, search.ResultOptions{Limit: &limit, Sort: bc.sort})
 					return queryErr
 				}); err != nil {
 					b.Fatal(err)

@@ -19,10 +19,11 @@ import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 // property of the data rather than of this page, which is the reason to pin
 // the behaviour rather than rely on it.
 
-const { searchLogs, getLog, getStats } = vi.hoisted(() => ({
+const { searchLogs, getLog, getStats, getLogAttributes } = vi.hoisted(() => ({
   searchLogs: vi.fn(),
   getLog: vi.fn(),
   getStats: vi.fn(),
+  getLogAttributes: vi.fn(),
 }))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
@@ -30,7 +31,13 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     await importOriginal<typeof import('@/services/telemetry-service')>()
   return {
     ...actual,
-    telemetryAPI: { ...actual.telemetryAPI, searchLogs, getLog, getStats },
+    telemetryAPI: {
+      ...actual.telemetryAPI,
+      searchLogs,
+      getLog,
+      getStats,
+      getLogAttributes,
+    },
   }
 })
 
@@ -87,6 +94,8 @@ beforeEach(() => {
   searchLogs.mockReset()
   getLog.mockReset()
   getStats.mockReset()
+  getLogAttributes.mockReset()
+  getLogAttributes.mockResolvedValue([])
 })
 
 async function renderSelectedLog() {
@@ -99,6 +108,11 @@ async function renderSelectedLog() {
 }
 
 describe('LogsPage refresh', () => {
+  it('queries the list with null bounds for the default All selection', async () => {
+    await renderSelectedLog()
+    expect(searchLogs).toHaveBeenCalledWith(null, null, undefined)
+  })
+
   it('refetches the open record, not just the list', async () => {
     await renderSelectedLog()
 

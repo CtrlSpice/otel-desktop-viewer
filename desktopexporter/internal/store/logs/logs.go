@@ -12,6 +12,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
@@ -271,20 +272,20 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 // users.
 //
 // `bodyPreview` is server-truncated by the body_preview macro.
-func Search(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any) (json.RawMessage, error) {
-	return searchLogs(ctx, db, startTime, endTime, criteria, search.ResultOptions{})
+func Search(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any) (json.RawMessage, error) {
+	return searchLogs(ctx, db, timeRange, criteria, search.ResultOptions{})
 }
 
 // SearchWithLimit returns at most limit log summaries.
-func SearchWithLimit(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, limit int64) (json.RawMessage, error) {
-	return searchLogs(ctx, db, startTime, endTime, criteria, search.ResultOptions{Limit: &limit})
+func SearchWithLimit(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, limit int64) (json.RawMessage, error) {
+	return searchLogs(ctx, db, timeRange, criteria, search.ResultOptions{Limit: &limit})
 }
 
-func SearchWithOptions(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
-	return searchLogs(ctx, db, startTime, endTime, criteria, options)
+func SearchWithOptions(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchLogs(ctx, db, timeRange, criteria, options)
 }
 
-func searchLogs(ctx context.Context, db *sql.DB, startTime, endTime int64, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+func searchLogs(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -294,7 +295,7 @@ func searchLogs(ctx context.Context, db *sql.DB, startTime, endTime int64, crite
 		}
 	}
 
-	cteSQL, whereClause, args, err := buildLogSQL(searchTree, startTime, endTime)
+	cteSQL, whereClause, args, err := buildLogSQL(searchTree, timeRange)
 	if err != nil {
 		return nil, fmt.Errorf("Search: %w: %w", ErrInvalidLogQuery, err)
 	}
@@ -383,10 +384,9 @@ func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error)
 }
 
 // GetLogAttributes returns every log-side attribute name/scope/type this store
-// knows about. The time range is accepted and ignored -- see the note on
-// spans.GetTraceAttributes for why the dictionary answers this directly instead
-// of unnesting every log in the window.
-func GetLogAttributes(ctx context.Context, db *sql.DB, startTime, endTime int64) (json.RawMessage, error) {
+// knows about. See spans.GetTraceAttributes for why the dictionary answers this
+// directly instead of unnesting every log in a window.
+func GetLogAttributes(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetLogAttributes, nil)
 	if err != nil {
 		return nil, err
@@ -436,8 +436,9 @@ func DeleteLogsByIDs(ctx context.Context, db *sql.DB, logIDs []any) error {
 	return nil
 }
 
-func buildLogSQL(queryNode *search.QueryNode, startTime, endTime int64) (cteSQL string, whereSQL string, args []any, err error) {
-	return search.BuildSearchSQL(queryNode, startTime, endTime, logFieldMapper(), "l.log_time >= time_start AND l.log_time <= time_end")
+func buildLogSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, whereSQL string, args []any, err error) {
+	timeCondition, timeParams := search.TimePredicate("l.log_time", timeRange.Start, timeRange.End)
+	return search.BuildSearchSQL(queryNode, logFieldMapper(), timeCondition, timeParams)
 }
 
 // logSearchFrom is the FROM clause log search predicates are written against.

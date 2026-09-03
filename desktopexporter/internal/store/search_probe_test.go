@@ -159,7 +159,7 @@ func TestFastPathAgreesWithValueComparison(t *testing.T) {
 		}
 		var n int
 		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-			raw, err := spans.SearchTraces(ctx, db, 0, 1<<62, query)
+			raw, err := spans.SearchTraces(ctx, db, BoundedTimeRange(0, 1<<62), query)
 			if err != nil {
 				return err
 			}

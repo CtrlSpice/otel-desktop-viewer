@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
@@ -131,8 +132,9 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	// One bucket over everything, so the merge is last-minus-first across both
 	// collections.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(storeCtx, db, summaries[0]["id"].(string),
-			0, 1<<62, 1, nil, nil, 0, true, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(storeCtx, db, summaries[0]["id"].(string), store.TimeRange{},
+			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var got map[string]any

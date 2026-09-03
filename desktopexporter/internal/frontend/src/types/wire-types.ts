@@ -418,16 +418,12 @@ export type JsonMetricData = {
    *  from one that never had data, which is why this is reported rather than
    *  left to be noticed. */
   boundsMismatch: JsonBoundsMismatch | null
-  /** The window the reduction actually divided.
-   *
-   *  `fittedToData` echoes what was asked for; `startNs` / `endNs` are the
-   *  data's own extent and are null unless it was. Reported rather than
-   *  inferred: the timestamps in the response are bucket starts, so deriving
-   *  the axis from them describes the reduction with its own output. */
+  /** Requested bounds and the concrete bounds the reduction used. A missing
+   * requested endpoint is independently filled from the filtered data extent;
+   * it remains null in `effective` when the result has no such extent. */
   window: {
-    fittedToData: boolean
-    startNs: string | null
-    endNs: string | null
+    requested: { startNs: string | null; endNs: string | null }
+    effective: { startNs: string | null; endNs: string | null }
   }
 }
 

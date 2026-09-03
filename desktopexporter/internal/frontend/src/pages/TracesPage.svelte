@@ -113,7 +113,7 @@
         dir as TraceSummarySortDirection
       ),
     fetchList: async () => {
-      const { start: startTime, end: endTime } = selectionToQueryRangeMs(
+      const { startTime, endTime } = selectionToQueryRangeMs(
         timeContext.selection,
         Date.now()
       )

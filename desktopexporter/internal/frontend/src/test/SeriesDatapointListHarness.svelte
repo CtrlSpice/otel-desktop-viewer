@@ -51,7 +51,13 @@
     datapointCount: datapoints.length,
     boundsMismatch: null,
     lastSeenNs: datapoints.at(-1)?.timestamp ?? null,
-    window: { fittedToData: false, startNs: null, endNs: null },
+    window: {
+      requested: { startNs: null, endNs: null },
+      effective: {
+        startNs: datapoints[0]?.timestamp ?? null,
+        endNs: datapoints.at(-1)?.timestamp ?? null,
+      },
+    },
   })
 
   const ctx = createMetricViewContext(
