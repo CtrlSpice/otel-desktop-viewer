@@ -1,21 +1,30 @@
 import { mount, tick, unmount } from 'svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import type { TraceData } from '@/types/api-types'
-import ArmAHarness from './ArmAHarness.svelte'
+import { loadWithAbortTimeout } from './abortable-load'
+import { loadArmCTrace } from './arm-c'
+import WaterfallHarness from './WaterfallHarness.svelte'
 import {
   hashTraceWaterfallProjection,
   projectTraceWaterfall,
 } from './canonical-oracle'
 import type {
-  ArmARunContract,
-  ArmARunResult,
+  ArmRunContract,
+  ArmRunResult,
   BigIntRehydrationProof,
   BigIntValueProof,
   TraceWaterfallBenchmarkAPI,
   ViewportGeometry,
 } from './api-types'
 
+type ArmID = ArmRunResult['arm']
+type TraceLoader = (
+  contract: ArmRunContract,
+  signal: AbortSignal
+) => Promise<TraceData>
+
 const READINESS_TIMEOUT_MS = 15_000
+const LOAD_TIMEOUT_MS = 30_000
 const POLL_INTERVAL_MS = 16
 const GRID_SELECTOR = '[role="grid"][aria-label="Span waterfall"]'
 const VIEWPORT_SELECTOR = '.waterfall-vlist-viewport'
@@ -44,11 +53,23 @@ function requireSafeInteger(
   }
 }
 
-function validateContract(contract: ArmARunContract): void {
+function validateContract(contract: ArmRunContract): void {
   if (contract === null || typeof contract !== 'object') {
-    throw new TypeError('Arm A contract must be an object')
+    throw new TypeError('benchmark contract must be an object')
   }
   requireNonemptyString(contract.fixtureName, 'fixtureName')
+  if (!/^[0-9a-f]{64}$/.test(contract.fixtureSHA256)) {
+    throw new TypeError('fixtureSHA256 must be 32 lowercase hexadecimal bytes')
+  }
+  requireSafeInteger(contract.fixtureBytes, 'fixtureBytes', 1)
+  requireSafeInteger(contract.inputSpanCount, 'inputSpanCount', 1)
+  if (
+    !['rooted-tree', 'multiple-roots', 'orphan', 'cycle'].includes(
+      contract.fixtureTopology
+    )
+  ) {
+    throw new TypeError('fixtureTopology is not registered')
+  }
   requireNonemptyString(contract.traceID, 'traceID')
   requireSafeInteger(
     contract.expectedDisplayedSpanCount,
@@ -61,6 +82,11 @@ function validateContract(contract: ArmARunContract): void {
     0
   )
   requireNonemptyString(contract.expectedFirstSpanID, 'expectedFirstSpanID')
+  if (contract.expectedDisplayedSpanCount > contract.inputSpanCount) {
+    throw new TypeError(
+      'expectedDisplayedSpanCount must not exceed inputSpanCount'
+    )
+  }
 }
 
 function emptyGeometry(): ViewportGeometry {
@@ -113,7 +139,7 @@ function inspectRender(target: Element): RenderState {
   }
 }
 
-function isReady(state: RenderState, contract: ArmARunContract): boolean {
+function isReady(state: RenderState, contract: ArmRunContract): boolean {
   return (
     state.ariaRowCount === contract.expectedDisplayedSpanCount &&
     state.viewportGeometry.width > 0 &&
@@ -124,7 +150,7 @@ function isReady(state: RenderState, contract: ArmARunContract): boolean {
 
 function readinessDescription(
   state: RenderState,
-  contract: ArmARunContract
+  contract: ArmRunContract
 ): string {
   return (
     `expected aria-rowcount=${contract.expectedDisplayedSpanCount}, ` +
@@ -142,7 +168,8 @@ function delay(milliseconds: number): Promise<void> {
 
 async function waitForReady(
   target: Element,
-  contract: ArmARunContract
+  contract: ArmRunContract,
+  arm: ArmID
 ): Promise<RenderState> {
   const deadline = performance.now() + READINESS_TIMEOUT_MS
   let state = inspectRender(target)
@@ -154,7 +181,7 @@ async function waitForReady(
 
   if (!isReady(state, contract)) {
     throw new Error(
-      `Arm A fixture "${contract.fixtureName}" did not stabilize within ` +
+      `Arm ${arm} fixture "${contract.fixtureName}" did not stabilize within ` +
         `${READINESS_TIMEOUT_MS}ms: ${readinessDescription(state, contract)}`
     )
   }
@@ -218,13 +245,14 @@ function proveBigIntRehydration(trace: TraceData): BigIntRehydrationProof {
 
 function assertProjectionMatchesContract(
   result: Pick<
-    ArmARunResult,
+    ArmRunResult,
     | 'traceID'
     | 'displayedSpanCount'
     | 'maximumDisplayedDepth'
     | 'firstDisplayedSpanID'
   >,
-  contract: ArmARunContract
+  contract: ArmRunContract,
+  arm: ArmID
 ): void {
   const mismatches: string[] = []
   if (result.traceID !== contract.traceID) {
@@ -241,13 +269,13 @@ function assertProjectionMatchesContract(
   }
   if (mismatches.length > 0) {
     throw new Error(
-      `Arm A fixture "${contract.fixtureName}" violated its contract: ` +
+      `Arm ${arm} fixture "${contract.fixtureName}" violated its contract: ` +
         mismatches.join(', ')
     )
   }
 }
 
-export function createArmABenchmarkAPI(
+export function createTraceWaterfallBenchmarkAPI(
   target: HTMLElement
 ): TraceWaterfallBenchmarkAPI {
   let activeHarness: Record<string, unknown> | null = null
@@ -262,21 +290,30 @@ export function createArmABenchmarkAPI(
     target.replaceChildren()
   }
 
-  async function runArmA(contract: ArmARunContract): Promise<ArmARunResult> {
+  async function runArm(
+    arm: ArmID,
+    contract: ArmRunContract,
+    loadTrace: TraceLoader
+  ): Promise<ArmRunResult> {
     validateContract(contract)
     if (runInProgress) {
-      throw new Error('Arm A does not permit concurrent runs')
+      throw new Error(
+        'trace waterfall benchmark does not permit concurrent runs'
+      )
     }
     runInProgress = true
 
     try {
       await clearPreviousRun()
 
-      // Calling with only traceID is the production no-search path. Its private
-      // traceDataFromJSON reviver remains the sole owner of wire rehydration.
-      const trace = await telemetryAPI.searchSpans(contract.traceID)
+      const trace = await loadWithAbortTimeout(
+        signal => loadTrace(contract, signal),
+        LOAD_TIMEOUT_MS,
+        `Arm ${arm} fixture "${contract.fixtureName}" did not load within ` +
+          `${LOAD_TIMEOUT_MS}ms`
+      )
 
-      activeHarness = mount(ArmAHarness, {
+      activeHarness = mount(WaterfallHarness, {
         target,
         props: { trace },
       })
@@ -285,10 +322,10 @@ export function createArmABenchmarkAPI(
       await withTimeout(
         document.fonts.ready,
         READINESS_TIMEOUT_MS,
-        `Arm A fixture "${contract.fixtureName}" fonts did not become ready ` +
+        `Arm ${arm} fixture "${contract.fixtureName}" fonts did not become ready ` +
           `within ${READINESS_TIMEOUT_MS}ms`
       )
-      await waitForReady(target, contract)
+      await waitForReady(target, contract, arm)
 
       await nextAnimationFrame()
       await nextAnimationFrame()
@@ -296,7 +333,7 @@ export function createArmABenchmarkAPI(
       const stableRender = inspectRender(target)
       if (!isReady(stableRender, contract)) {
         throw new Error(
-          `Arm A fixture "${contract.fixtureName}" became unstable after two ` +
+          `Arm ${arm} fixture "${contract.fixtureName}" became unstable after two ` +
             `animation frames: ${readinessDescription(stableRender, contract)}`
         )
       }
@@ -312,9 +349,13 @@ export function createArmABenchmarkAPI(
         .filter(span => span.depth === 0)
         .map(span => span.spanID)
 
-      const result: ArmARunResult = {
-        arm: 'A',
+      const result: ArmRunResult = {
+        arm,
         fixtureName: contract.fixtureName,
+        fixtureSHA256: contract.fixtureSHA256,
+        fixtureBytes: contract.fixtureBytes,
+        inputSpanCount: contract.inputSpanCount,
+        fixtureTopology: contract.fixtureTopology,
         traceID: projection.traceID,
         displayedSpanCount: projection.spans.length,
         maximumDisplayedDepth,
@@ -334,7 +375,7 @@ export function createArmABenchmarkAPI(
         })),
       }
 
-      assertProjectionMatchesContract(result, contract)
+      assertProjectionMatchesContract(result, contract, arm)
       JSON.stringify(result)
       return result
     } finally {
@@ -342,5 +383,16 @@ export function createArmABenchmarkAPI(
     }
   }
 
-  return { runArmA }
+  const runArmA = (contract: ArmRunContract): Promise<ArmRunResult> =>
+    runArm('A', contract, (current, signal) => {
+      // This is the production no-search path. Its private reviver remains the
+      // sole owner of Arm A wire rehydration.
+      return telemetryAPI.searchSpans(current.traceID, undefined, signal)
+    })
+  const runArmC = (contract: ArmRunContract): Promise<ArmRunResult> =>
+    runArm('C', contract, (current, signal) =>
+      loadArmCTrace(current.traceID, signal)
+    )
+
+  return { runArmA, runArmC }
 }

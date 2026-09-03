@@ -28,9 +28,9 @@ export default defineConfig({
   webServer: [
     {
       command:
-        'go run -tags=waterfallbench ./desktopexporter/internal/cmd/waterfallbench serve --listen=127.0.0.1:8001',
+        'go run -tags=waterfallbench ./desktopexporter/internal/cmd/waterfallbench serve --listen=127.0.0.1:8001 --benchmark-listen=127.0.0.1:8002',
       cwd: repositoryRoot,
-      url: 'http://127.0.0.1:8001/',
+      url: 'http://127.0.0.1:8002/benchmark-api/healthz',
       reuseExistingServer: false,
       timeout: 180_000,
       gracefulShutdown: { signal: 'SIGTERM', timeout: 25_000 },

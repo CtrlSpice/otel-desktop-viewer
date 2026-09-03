@@ -9,11 +9,16 @@ test('serves only the benchmark entrypoint', async ({ page }) => {
     '__WATERFALL_BENCHMARK__'
   )
   await expect(page.locator('#app')).toHaveText(
-    'Trace waterfall benchmark Arm A ready'
+    'Trace waterfall benchmark Arms A and C ready'
   )
   expect(
     await page.evaluate(
       () => typeof window.__TRACE_WATERFALL_BENCHMARK__?.runArmA
+    )
+  ).toBe('function')
+  expect(
+    await page.evaluate(
+      () => typeof window.__TRACE_WATERFALL_BENCHMARK__?.runArmC
     )
   ).toBe('function')
 })

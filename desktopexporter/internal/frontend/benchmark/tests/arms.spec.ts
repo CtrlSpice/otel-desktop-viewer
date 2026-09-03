@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page, type Request } from '@playwright/test'
-import type { ArmARunContract, ArmARunResult } from '../api-types'
+import { ARM_C_FLAT_FORMAT, ARM_C_FLAT_PATH } from '../api-types'
+import type {
+  ArmRunContract,
+  ArmRunResult,
+  FixtureTopology,
+} from '../api-types'
 
 type FixtureManifestEntry = {
   name: string
@@ -12,7 +17,7 @@ type FixtureManifestEntry = {
   expectedDisplayedSpanCount: number
   expectedMaximumDisplayedDepth: number
   expectedFirstSpanId: string
-  topology: 'rooted-tree' | 'multiple-roots' | 'orphan' | 'cycle'
+  topology: FixtureTopology
 }
 
 type FixtureManifest = {
@@ -63,6 +68,11 @@ function isRPCRequest(request: Request): boolean {
   return url.port === '4174' && url.pathname === '/rpc'
 }
 
+function isArmCRequest(request: Request): boolean {
+  const url = new URL(request.url())
+  return url.port === '4174' && url.pathname === ARM_C_FLAT_PATH
+}
+
 function collectBrowserErrors(page: Page): string[] {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(`pageerror: ${error.message}`))
@@ -74,9 +84,13 @@ function collectBrowserErrors(page: Page): string[] {
   return errors
 }
 
-function contractFor(fixture: FixtureManifestEntry): ArmARunContract {
+function contractFor(fixture: FixtureManifestEntry): ArmRunContract {
   return {
     fixtureName: fixture.name,
+    fixtureSHA256: fixture.sha256,
+    fixtureBytes: fixture.bytes,
+    inputSpanCount: fixture.spanCount,
+    fixtureTopology: fixture.topology,
     traceID: fixture.traceId,
     expectedDisplayedSpanCount: fixture.expectedDisplayedSpanCount,
     expectedMaximumDisplayedDepth: fixture.expectedMaximumDisplayedDepth,
@@ -104,7 +118,18 @@ function assertProductionRequest(
   return body.id as number
 }
 
-function assertBigIntProof(result: ArmARunResult): void {
+function assertArmCRequest(
+  requests: Request[],
+  fixture: FixtureManifestEntry
+): void {
+  expect(requests).toHaveLength(1)
+  const request = requests[0]!
+  expect(request.method()).toBe('POST')
+  expect(request.headers()['content-type']).toBe('application/json')
+  expect(request.postDataJSON()).toEqual({ traceID: fixture.traceId })
+}
+
+function assertBigIntProof(result: ArmRunResult): void {
   const proof = result.bigintRehydration
   expect(proof.allSpanStartAndEndTimesAreBigInts).toBe(true)
   expect(proof.allEventTimestampsAreBigInts).toBe(true)
@@ -172,9 +197,113 @@ function assertHeadlineWireShape(response: JsonRpcResponse): void {
   expect(firstEvent.timestamp).toEqual(expect.any(String))
 }
 
+function exactKeys(
+  value: unknown,
+  description: string,
+  expected: string[]
+): Record<string, unknown> {
+  const record = asRecord(value, description)
+  expect(Object.keys(record).sort()).toEqual([...expected].sort())
+  return record
+}
+
+function assertArmCWireShape(
+  response: unknown,
+  fixture: FixtureManifestEntry
+): void {
+  const trace = exactKeys(response, 'Arm C response', [
+    'format',
+    'resources',
+    'rows',
+    'scopes',
+    'traceID',
+  ])
+  expect(trace.format).toBe(ARM_C_FLAT_FORMAT)
+  expect(trace.traceID).toBe(fixture.traceId)
+  const resources = asRecord(trace.resources, 'Arm C resources')
+  const scopes = asRecord(trace.scopes, 'Arm C scopes')
+  expect(Object.keys(resources).length).toBeGreaterThan(0)
+  expect(Object.keys(scopes).length).toBeGreaterThan(0)
+  expect(Array.isArray(trace.rows)).toBe(true)
+  const rows = trace.rows as unknown[]
+  expect(rows).toHaveLength(fixture.spanCount)
+
+  for (const [index, candidate] of rows.entries()) {
+    const row = exactKeys(candidate, `Arm C rows[${index}]`, [
+      'attributes',
+      'droppedAttributesCount',
+      'droppedEventsCount',
+      'droppedLinksCount',
+      'endTime',
+      'events',
+      'flags',
+      'kind',
+      'links',
+      'name',
+      'parentSpanID',
+      'resourceRef',
+      'scopeRef',
+      'spanID',
+      'startTime',
+      'statusCode',
+      'statusMessage',
+      'traceState',
+    ])
+    expect(row.startTime).toEqual(expect.any(String))
+    expect(row.endTime).toEqual(expect.any(String))
+    expect(resources).toHaveProperty(String(row.resourceRef))
+    expect(scopes).toHaveProperty(String(row.scopeRef))
+    expect(Array.isArray(row.attributes)).toBe(true)
+    expect(Array.isArray(row.events)).toBe(true)
+    expect(Array.isArray(row.links)).toBe(true)
+    for (const event of row.events as unknown[]) {
+      expect(asRecord(event, 'Arm C event').timestamp).toEqual(
+        expect.any(String)
+      )
+    }
+  }
+}
+
+function assertArmResult(
+  result: ArmRunResult,
+  fixture: FixtureManifestEntry,
+  arm: 'A' | 'C'
+): void {
+  expect(result).toMatchObject({
+    arm,
+    fixtureName: fixture.name,
+    fixtureSHA256: fixture.sha256,
+    fixtureBytes: fixture.bytes,
+    inputSpanCount: fixture.spanCount,
+    fixtureTopology: fixture.topology,
+    traceID: fixture.traceId,
+    displayedSpanCount: fixture.expectedDisplayedSpanCount,
+    maximumDisplayedDepth: fixture.expectedMaximumDisplayedDepth,
+    firstDisplayedSpanID: fixture.expectedFirstSpanId,
+    unplacedSpanCount: 0,
+  })
+  expect(result.displayedSpanCount).toBe(fixture.spanCount)
+  expect(result.topology).toHaveLength(fixture.expectedDisplayedSpanCount)
+  expect(result.displayRootSpanIDs[0]).toBe(fixture.expectedFirstSpanId)
+  expect(result.viewportGeometry.width).toBeGreaterThan(0)
+  expect(result.viewportGeometry.height).toBeGreaterThan(0)
+  expect(result.mountedRowCount).toBeGreaterThan(0)
+  expect(result.mountedRowCount).toBeLessThanOrEqual(
+    fixture.expectedDisplayedSpanCount
+  )
+  assertBigIntProof(result)
+  expect(result.semanticHash.format).toBe('odv.trace-waterfall.semantic.v1+jcs')
+  expect(result.semanticHash.hash).toMatch(/^[0-9a-f]{64}$/)
+  expect(() => JSON.stringify(result)).not.toThrow()
+  if (fixture.name === 'realistic-159') {
+    expect(result.mountedRowCount).toBeLessThan(159)
+  }
+  assertMalformedTopology(fixture, result)
+}
+
 function assertMalformedTopology(
   fixture: FixtureManifestEntry,
-  result: ArmARunResult
+  result: ArmRunResult
 ): void {
   if (fixture.topology === 'orphan') {
     expect(result.unplacedSpanCount).toBe(0)
@@ -240,66 +369,70 @@ function assertMalformedTopology(
   }
 }
 
+function runArm(
+  page: Page,
+  arm: 'A' | 'C',
+  contract: ArmRunContract
+): Promise<ArmRunResult> {
+  return page.evaluate(
+    async ({ selectedArm, runContract }): Promise<ArmRunResult> =>
+      selectedArm === 'A'
+        ? window.__TRACE_WATERFALL_BENCHMARK__.runArmA(runContract)
+        : window.__TRACE_WATERFALL_BENCHMARK__.runArmC(runContract),
+    { selectedArm: arm, runContract: contract }
+  )
+}
+
 for (const fixture of manifest.fixtures) {
-  test(`Arm A renders checked fixture: ${fixture.name}`, async ({ page }) => {
+  test(`Arms A and C agree for checked fixture: ${fixture.name}`, async ({
+    page,
+  }) => {
     const browserErrors = collectBrowserErrors(page)
     const rpcRequests: Request[] = []
+    const armCRequests: Request[] = []
     page.on('request', request => {
       if (isRPCRequest(request)) rpcRequests.push(request)
+      if (isArmCRequest(request)) armCRequests.push(request)
     })
 
     await page.goto('/benchmark/')
     expect(new URL(page.url()).port).toBe('4174')
 
-    const responsePromise = page.waitForResponse(response =>
+    const armAResponsePromise = page.waitForResponse(response =>
       isRPCRequest(response.request())
     )
-    const result = await page.evaluate(
-      async (contract): Promise<ArmARunResult> =>
-        window.__TRACE_WATERFALL_BENCHMARK__.runArmA(contract),
-      contractFor(fixture)
-    )
-    const rpcResponse = await responsePromise
-    const rawResponse = (await rpcResponse.json()) as JsonRpcResponse
+    const armA = await runArm(page, 'A', contractFor(fixture))
+    const armAResponse = await armAResponsePromise
+    const rawArmA = (await armAResponse.json()) as JsonRpcResponse
 
-    expect(rpcResponse.status()).toBe(200)
+    const armCResponsePromise = page.waitForResponse(response =>
+      isArmCRequest(response.request())
+    )
+    const armC = await runArm(page, 'C', contractFor(fixture))
+    const armCResponse = await armCResponsePromise
+    const rawArmC: unknown = await armCResponse.json()
+
+    expect(armAResponse.status()).toBe(200)
     const requestID = assertProductionRequest(rpcRequests, fixture)
-    assertProductionResponse(rawResponse, requestID)
-    expect(result).toMatchObject({
-      arm: 'A',
-      fixtureName: fixture.name,
-      traceID: fixture.traceId,
-      displayedSpanCount: fixture.expectedDisplayedSpanCount,
-      maximumDisplayedDepth: fixture.expectedMaximumDisplayedDepth,
-      firstDisplayedSpanID: fixture.expectedFirstSpanId,
-      unplacedSpanCount: 0,
-    })
-    expect(result.displayedSpanCount).toBe(fixture.spanCount)
-    expect(result.topology).toHaveLength(fixture.expectedDisplayedSpanCount)
-    expect(result.displayRootSpanIDs[0]).toBe(fixture.expectedFirstSpanId)
-    expect(result.viewportGeometry.width).toBeGreaterThan(0)
-    expect(result.viewportGeometry.height).toBeGreaterThan(0)
-    expect(result.mountedRowCount).toBeGreaterThan(0)
-    expect(result.mountedRowCount).toBeLessThanOrEqual(
-      fixture.expectedDisplayedSpanCount
-    )
-    assertBigIntProof(result)
-    expect(result.semanticHash.format).toBe(
-      'odv.trace-waterfall.semantic.v1+jcs'
-    )
-    expect(result.semanticHash.hash).toMatch(/^[0-9a-f]{64}$/)
-    expect(() => JSON.stringify(result)).not.toThrow()
+    assertProductionResponse(rawArmA, requestID)
+    assertArmResult(armA, fixture, 'A')
+    if (fixture.name === 'realistic-159') assertHeadlineWireShape(rawArmA)
 
-    if (fixture.name === 'realistic-159') {
-      assertHeadlineWireShape(rawResponse)
-      expect(result.mountedRowCount).toBeLessThan(159)
-    }
-    assertMalformedTopology(fixture, result)
+    expect(armCResponse.status()).toBe(200)
+    assertArmCRequest(armCRequests, fixture)
+    assertArmCWireShape(rawArmC, fixture)
+    assertArmResult(armC, fixture, 'C')
+
+    expect(armC.semanticHash).toEqual(armA.semanticHash)
+    expect(armC.topology).toEqual(armA.topology)
+    expect(armC.displayRootSpanIDs).toEqual(armA.displayRootSpanIDs)
+    expect(armC.displayedSpanCount).toBe(armA.displayedSpanCount)
+    expect(armC.maximumDisplayedDepth).toBe(armA.maximumDisplayedDepth)
     expect(browserErrors).toEqual([])
   })
 }
 
-test('Arm A resets same-page state and rejects overlapping runs', async ({
+test('both arms share same-page lifecycle and overlap protection', async ({
   page,
 }) => {
   const browserErrors = collectBrowserErrors(page)
@@ -311,9 +444,27 @@ test('Arm A resets same-page state and rejects overlapping runs', async ({
 
   await page.goto('/benchmark/')
 
-  const overlap = await page.evaluate(
+  const aThenCOverlap = await page.evaluate(
     async ({ first, second }) => {
       const firstRun = window.__TRACE_WATERFALL_BENCHMARK__.runArmA(first)
+      let overlappingError = ''
+      try {
+        await window.__TRACE_WATERFALL_BENCHMARK__.runArmC(second)
+      } catch (error) {
+        overlappingError = String(error)
+      }
+      return { firstResult: await firstRun, overlappingError }
+    },
+    { first: contractFor(single), second: contractFor(wide) }
+  )
+  expect(aThenCOverlap.firstResult.fixtureName).toBe(single.name)
+  expect(aThenCOverlap.overlappingError).toContain(
+    'does not permit concurrent runs'
+  )
+
+  const cThenAOverlap = await page.evaluate(
+    async ({ first, second }) => {
+      const firstRun = window.__TRACE_WATERFALL_BENCHMARK__.runArmC(first)
       let overlappingError = ''
       try {
         await window.__TRACE_WATERFALL_BENCHMARK__.runArmA(second)
@@ -324,8 +475,19 @@ test('Arm A resets same-page state and rejects overlapping runs', async ({
     },
     { first: contractFor(single), second: contractFor(wide) }
   )
-  expect(overlap.firstResult.fixtureName).toBe(single.name)
-  expect(overlap.overlappingError).toContain('does not permit concurrent runs')
+  expect(cThenAOverlap.firstResult.fixtureName).toBe(single.name)
+  expect(cThenAOverlap.overlappingError).toContain(
+    'does not permit concurrent runs'
+  )
+
+  const failedRoute = `**${ARM_C_FLAT_PATH}`
+  await page.route(failedRoute, route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+  )
+  await expect(runArm(page, 'C', contractFor(wide))).rejects.toThrow(
+    /flatTrace must contain exactly/
+  )
+  await page.unroute(failedRoute)
 
   const invalidContract = {
     ...contractFor(wide),
@@ -333,20 +495,19 @@ test('Arm A resets same-page state and rejects overlapping runs', async ({
   }
   await expect(
     page.evaluate(
-      contract => window.__TRACE_WATERFALL_BENCHMARK__.runArmA(contract),
+      contract => window.__TRACE_WATERFALL_BENCHMARK__.runArmC(contract),
       invalidContract
     )
   ).rejects.toThrow(/violated its contract/)
 
-  const firstWide = await page.evaluate(
-    contract => window.__TRACE_WATERFALL_BENCHMARK__.runArmA(contract),
-    contractFor(wide)
-  )
-  const secondWide = await page.evaluate(
-    contract => window.__TRACE_WATERFALL_BENCHMARK__.runArmA(contract),
-    contractFor(wide)
-  )
-  expect(secondWide.semanticHash).toEqual(firstWide.semanticHash)
+  const firstA = await runArm(page, 'A', contractFor(wide))
+  const firstC = await runArm(page, 'C', contractFor(wide))
+  const secondA = await runArm(page, 'A', contractFor(wide))
+  const secondC = await runArm(page, 'C', contractFor(wide))
+  expect(secondA.semanticHash).toEqual(firstA.semanticHash)
+  expect(secondC.semanticHash).toEqual(firstC.semanticHash)
+  expect(firstC.semanticHash).toEqual(firstA.semanticHash)
+  expect(secondC.semanticHash).toEqual(secondA.semanticHash)
   await expect(
     page.locator('[role="grid"][aria-label="Span waterfall"]')
   ).toHaveCount(1)

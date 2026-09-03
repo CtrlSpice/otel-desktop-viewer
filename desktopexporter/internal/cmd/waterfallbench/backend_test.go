@@ -24,6 +24,12 @@ func TestRunWithoutArgumentsPrintsPositiveControl(t *testing.T) {
 	require.Equal(t, benchmarkSentinel+"\n", stdout.String())
 }
 
+func TestRunHelpPrintsUsageWithoutError(t *testing.T) {
+	var stdout bytes.Buffer
+	require.NoError(t, run(context.Background(), []string{"serve", "--help"}, &stdout))
+	require.Equal(t, serveUsage+"\n", stdout.String())
+}
+
 func TestParseCommand(t *testing.T) {
 	tests := []struct {
 		name string
@@ -31,9 +37,10 @@ func TestParseCommand(t *testing.T) {
 		want commandOptions
 	}{
 		{name: "positive control", want: commandOptions{}},
-		{name: "serve defaults", args: []string{"serve"}, want: commandOptions{serve: true, listen: defaultListen}},
-		{name: "custom listen", args: []string{"serve", "--listen", "127.0.0.1:0"}, want: commandOptions{serve: true, listen: "127.0.0.1:0"}},
-		{name: "equals syntax", args: []string{"serve", "--listen=localhost:9000"}, want: commandOptions{serve: true, listen: "localhost:9000"}},
+		{name: "serve defaults", args: []string{"serve"}, want: commandOptions{serve: true, listen: defaultListen, armCListen: defaultArmCListen}},
+		{name: "custom listen", args: []string{"serve", "--listen", "127.0.0.1:0"}, want: commandOptions{serve: true, listen: "127.0.0.1:0", armCListen: defaultArmCListen}},
+		{name: "custom benchmark listen", args: []string{"serve", "--benchmark-listen", "127.0.0.1:0"}, want: commandOptions{serve: true, listen: defaultListen, armCListen: "127.0.0.1:0"}},
+		{name: "equals syntax", args: []string{"serve", "--listen=localhost:9000", "--benchmark-listen=localhost:9001"}, want: commandOptions{serve: true, listen: "localhost:9000", armCListen: "localhost:9001"}},
 	}
 
 	for _, test := range tests {

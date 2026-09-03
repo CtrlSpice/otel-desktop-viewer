@@ -1,7 +1,7 @@
 {
   "protocolVersion": 1,
   "experiment": "trace-waterfall-ownership",
-  "status": "phase-3-complete",
+  "status": "phase-4-complete",
   "orderSeed": 20260902,
   "practicalEquivalenceMargin": 0.05,
   "headlineMetric": "otlpBytesToStableWaterfall",
@@ -28,7 +28,12 @@
       "schema": "current",
       "queryShape": "flat-rows",
       "treeOwner": "browser",
-      "wireShape": "neutral-flat-json"
+      "wireShape": "neutral-flat-json",
+      "wireContract": {
+        "format": "odv.trace-waterfall.flat.v1",
+        "endpoint": "POST /benchmark-api/trace-waterfall/flat-rows",
+        "rowOrder": "non-semantic"
+      }
     }
   ],
   "fixtures": {

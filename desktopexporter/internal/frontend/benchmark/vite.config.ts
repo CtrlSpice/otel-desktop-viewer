@@ -33,6 +33,10 @@ export default defineConfig({
     port: 4174,
     strictPort: true,
     proxy: {
+      '/benchmark-api': {
+        target: 'http://127.0.0.1:8002',
+        changeOrigin: true,
+      },
       '/rpc': {
         target: 'http://127.0.0.1:8001',
         changeOrigin: true,

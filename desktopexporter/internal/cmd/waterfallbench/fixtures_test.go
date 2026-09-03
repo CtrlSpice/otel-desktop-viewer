@@ -252,7 +252,15 @@ func TestExperimentPinsHeadlineFixture(t *testing.T) {
 	require.NoError(t, err)
 
 	var experiment struct {
-		Status   string `json:"status"`
+		Status string `json:"status"`
+		Arms   []struct {
+			ID           string `json:"id"`
+			WireContract struct {
+				Format   string `json:"format"`
+				Endpoint string `json:"endpoint"`
+				RowOrder string `json:"rowOrder"`
+			} `json:"wireContract"`
+		} `json:"arms"`
 		Fixtures struct {
 			Manifest string `json:"manifest"`
 			Headline struct {
@@ -262,9 +270,20 @@ func TestExperimentPinsHeadlineFixture(t *testing.T) {
 		} `json:"fixtures"`
 	}
 	require.NoError(t, json.Unmarshal(data, &experiment))
-	require.Equal(t, "phase-3-complete", experiment.Status)
+	require.Equal(t, "phase-4-complete", experiment.Status)
 	require.Equal(t, "../../desktopexporter/internal/cmd/waterfallbench/testdata/manifest.json", experiment.Fixtures.Manifest)
 	require.Equal(t, "realistic-159", experiment.Fixtures.Headline.Name)
+	armCFound := false
+	for _, arm := range experiment.Arms {
+		if arm.ID != "C" {
+			continue
+		}
+		armCFound = true
+		require.Equal(t, armCFlatFormat, arm.WireContract.Format)
+		require.Equal(t, "POST "+armCFlatPath, arm.WireContract.Endpoint)
+		require.Equal(t, "non-semantic", arm.WireContract.RowOrder)
+	}
+	require.True(t, armCFound, "experiment must register Arm C")
 
 	manifestData, err := os.ReadFile(filepath.Join("testdata", "manifest.json"))
 	require.NoError(t, err)

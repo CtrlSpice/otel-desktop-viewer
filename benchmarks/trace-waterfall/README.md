@@ -11,8 +11,8 @@ Any change made after collecting non-pilot measurements must increment `protocol
 
 ## Current Status
 
-Phase 3 is complete.
-The benchmark boundary, positive-control programs, deterministic fixtures, browser semantic oracle, and Arm A correctness path exist.
+Phase 4 is complete.
+The benchmark boundary, positive-control programs, deterministic fixtures, browser semantic oracle, and Arm A/C correctness paths exist.
 No paired runner or result in this directory is suitable for a performance claim yet.
 
 The first implementation comparison will be Arm A versus Arm C on the current application schema.
@@ -62,9 +62,9 @@ The experiment should answer these questions in order:
 The headline fixture contains 159 spans with level widths `[1, 4, 8, 12, 16, 20, 22, 20, 16, 12, 10, 8, 5, 3, 2]` and a maximum depth of 14, where the root has depth zero.
 It includes deterministic resources, scopes, attributes, events, links, status values, and payload sizes representative of a real trace-viewer workload.
 
-Timed fixtures must give siblings unique start timestamps.
+Every cross-arm fixture must give siblings and roots within each ordering class unique start timestamps.
 The current application does not define a stable final tie-breaker for every equal-time relationship, so equal timestamps would turn an ordering ambiguity into benchmark noise.
-Timed fixtures must also give events unique timestamps.
+Every cross-arm fixture must also give events unique timestamps.
 The current schema does not persist a link ordinal, so link arrays are compared as canonical multisets rather than by incidental query order.
 
 Correctness-only fixtures cover a single span, a wide trace, a deep trace, multiple roots, an orphan, and a cycle.
@@ -122,6 +122,90 @@ The benchmark frontend proxies `/rpc` to that server and calls the production `t
 That path preserves the current recursive DuckDB query, DuckDB-owned JSON projection, JSON-RPC envelope, browser JSON parsing, and production wire rehydration before mounting the real `WaterfallView`.
 The browser correctness suite exercises all seven fixtures, including production orphan ordering and cycle salvage, and computes the semantic hash only after the registered rendering-stability checks pass.
 Arm A hashes are repeatability evidence and future cross-arm comparison inputs, not normative expected values; cross-arm acceptance begins only when Arm C can be compared in the same run.
+
+### Arm C Correctness Path
+
+The same tagged command starts a second benchmark-only listener on `127.0.0.1:8002`.
+`POST /benchmark-api/trace-waterfall/flat-rows` queries the populated current-schema store through benchmark-owned non-recursive SQL and returns the closed `odv.trace-waterfall.flat.v1` contract.
+The endpoint and SQL live under the tagged benchmark command; they are not registered with the production JSON-RPC dispatcher or production query catalog.
+
+The top-level flat response contains exactly `format`, `traceID`, `resources`, `scopes`, and `rows`.
+Resource and scope maps use transport-only decimal keys, and each row refers to them through `resourceRef` and `scopeRef`.
+Each row carries the complete semantic span payload with absolute span and event timestamps encoded as unsigned decimal strings.
+The row array is non-semantic and contains no preorder, depth, matched, salvage, cycle-point, child, sort-path, storage UUID, fixture expectation, hash, or timing field.
+
+The versioned wire contract is:
+
+```ts
+type FlatTraceV1 = {
+  format: "odv.trace-waterfall.flat.v1"
+  traceID: string
+  resources: Record<string, ResourceV1>
+  scopes: Record<string, ScopeV1>
+  rows: FlatSpanV1[]
+}
+
+type FlatSpanV1 = {
+  spanID: string
+  parentSpanID: string | null
+  traceState: string
+  flags: number
+  name: string
+  kind: string
+  startTime: string
+  endTime: string
+  attributes: AttributeV1[]
+  events: EventV1[]
+  links: LinkV1[]
+  resourceRef: string
+  scopeRef: string
+  droppedAttributesCount: number
+  droppedEventsCount: number
+  droppedLinksCount: number
+  statusCode: string
+  statusMessage: string
+}
+
+type AttributeV1 = { key: string; type: string; value: string }
+type ResourceV1 = {
+  attributes: AttributeV1[]
+  droppedAttributesCount: number
+}
+type ScopeV1 = {
+  name: string
+  version: string
+  attributes: AttributeV1[]
+  droppedAttributesCount: number
+}
+type EventV1 = {
+  name: string
+  timestamp: string
+  attributes: AttributeV1[]
+  droppedAttributesCount: number
+}
+type LinkV1 = {
+  traceID: string
+  spanID: string
+  traceState: string
+  flags: number
+  attributes: AttributeV1[]
+  droppedAttributesCount: number
+}
+```
+
+Every shown field is required, empty collections are `[]`, and an absent parent is `null`.
+Unknown fields are rejected recursively so a tree field cannot move back across the browser-ownership boundary unnoticed.
+
+The browser validates that closed wire shape, promotes timestamps directly to `bigint`, resolves resources and scopes, and builds the display tree without depending on incoming row order.
+It emits genuine roots before promoted orphans, orders each class and sibling set by start time, walks healthy trees in depth-first preorder, and salvages stranded cycles from the earliest `(startTime, spanID)` entry.
+Promoted orphans retain their reported missing parent ID, while salvaged rows receive the same `salvaged` and `cyclePoint` semantics as production Arm A.
+
+Arm A and Arm C use one lifecycle coordinator and the same production `WaterfallView`, font gate, Svelte flush, viewport/root checks, and two animation frames.
+The browser correctness suite runs both arms sequentially for every checked fixture and requires same-run equality of semantic hashes, topology, roots, counts, and maximum depth.
+Neither arm's hash is stored as a normative golden.
+The shared all-fixture store remains correctness-only and must not be used for Phase 5 samples.
+The Phase 4 equivalence claim is limited to the registered fixtures: Arm C rejects equal-time healthy roots or siblings because production defines no final tie-breaker, and the checked cycle is intentionally unbranched because production does not totally order branched salvage rows at one depth.
+Checked fixtures also keep every relative start offset and duration within the JSON safe-integer range used by Arm A; Arm C's absolute decimal strings do not broaden that Arm A contract.
 
 ## Measurement Layers
 

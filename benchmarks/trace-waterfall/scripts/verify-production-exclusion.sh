@@ -4,6 +4,7 @@ set -euo pipefail
 
 readonly sentinel='__WATERFALL_BENCHMARK__'
 readonly fixture_digest='c17499d65a3d9d75290dfb5e327aae2bb5fe5bc1bc82b74f40e0e6fa9d0d365b'
+readonly arm_c_marker='odv.trace-waterfall.flat.v1'
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly script_dir
 repo_root="$(cd "${script_dir}/../../.." && pwd)"
@@ -78,6 +79,9 @@ require_present "${sentinel}" "${temporary_dir}/waterfallbench"
 require_absent "${fixture_digest}" "${temporary_dir}/otel-desktop-viewer"
 require_absent "${fixture_digest}" "${temporary_dir}/otel-desktop-viewer-tagged"
 require_present "${fixture_digest}" "${temporary_dir}/waterfallbench"
+require_absent "${arm_c_marker}" "${temporary_dir}/otel-desktop-viewer"
+require_absent "${arm_c_marker}" "${temporary_dir}/otel-desktop-viewer-tagged"
+require_present "${arm_c_marker}" "${temporary_dir}/waterfallbench"
 
 npm --prefix "${frontend}" run build -- --outDir "${temporary_dir}/frontend-production"
 npm --prefix "${frontend}" run build:benchmark -- --outDir "${temporary_dir}/frontend-benchmark"
@@ -87,6 +91,9 @@ require_absent "${sentinel}" "${repo_root}/desktopexporter/internal/server/stati
 require_present "${sentinel}" "${temporary_dir}/frontend-benchmark"
 require_absent "${fixture_digest}" "${temporary_dir}/frontend-production"
 require_absent "${fixture_digest}" "${repo_root}/desktopexporter/internal/server/static"
+require_absent "${arm_c_marker}" "${temporary_dir}/frontend-production"
+require_absent "${arm_c_marker}" "${repo_root}/desktopexporter/internal/server/static"
+require_present "${arm_c_marker}" "${temporary_dir}/frontend-benchmark"
 
 if ! git -C "${repo_root}" check-ignore -q desktopexporter/internal/frontend/dist-benchmark/example; then
   fail 'dist-benchmark is not ignored'
@@ -100,4 +107,4 @@ if [[ -e "${repo_root}/desktopexporter/internal/server/static/benchmark" ]]; the
   fail 'benchmark frontend exists under production embedded assets'
 fi
 
-printf 'Production artifacts exclude benchmark code and fixture inputs; benchmark artifacts contain both.\n'
+printf 'Production artifacts exclude benchmark code and fixture inputs; tagged benchmark artifacts contain their registered positive controls.\n'

@@ -16,12 +16,14 @@ import (
 const (
 	benchmarkSentinel = "__WATERFALL_BENCHMARK__"
 	defaultListen     = "127.0.0.1:8001"
-	serveUsage        = "usage: waterfallbench serve [--listen address]"
+	defaultArmCListen = "127.0.0.1:8002"
+	serveUsage        = "usage: waterfallbench serve [--listen address] [--benchmark-listen address]"
 )
 
 type commandOptions struct {
-	serve  bool
-	listen string
+	serve      bool
+	listen     string
+	armCListen string
 }
 
 func main() {
@@ -43,8 +45,8 @@ func main() {
 func run(ctx context.Context, args []string, stdout io.Writer) error {
 	options, err := parseCommand(args)
 	if errors.Is(err, flag.ErrHelp) {
-		_, err = fmt.Fprintln(stdout, serveUsage)
-		return err
+		_, printErr := fmt.Fprintln(stdout, serveUsage)
+		return printErr
 	}
 	if err != nil {
 		return err
@@ -53,7 +55,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		_, err := fmt.Fprintln(stdout, benchmarkSentinel)
 		return err
 	}
-	return serve(ctx, options.listen, stdout)
+	return serve(ctx, options.listen, options.armCListen, stdout)
 }
 
 func parseCommand(args []string) (commandOptions, error) {
@@ -64,10 +66,11 @@ func parseCommand(args []string) (commandOptions, error) {
 		return commandOptions{}, fmt.Errorf("unknown command %q; expected \"serve\"", args[0])
 	}
 
-	options := commandOptions{serve: true, listen: defaultListen}
+	options := commandOptions{serve: true, listen: defaultListen, armCListen: defaultArmCListen}
 	flags := flag.NewFlagSet("waterfallbench serve", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&options.listen, "listen", defaultListen, "HTTP listen address")
+	flags.StringVar(&options.armCListen, "benchmark-listen", defaultArmCListen, "benchmark HTTP listen address")
 	if err := flags.Parse(args[1:]); err != nil {
 		return commandOptions{}, fmt.Errorf("serve: %w", err)
 	}

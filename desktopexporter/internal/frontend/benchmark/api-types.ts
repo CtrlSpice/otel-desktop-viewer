@@ -1,5 +1,16 @@
-export type ArmARunContract = {
+export const ARM_C_FLAT_FORMAT = 'odv.trace-waterfall.flat.v1' as const
+export const ARM_C_FLAT_PATH =
+  '/benchmark-api/trace-waterfall/flat-rows' as const
+
+export type FixtureTopology =
+  'rooted-tree' | 'multiple-roots' | 'orphan' | 'cycle'
+
+export type ArmRunContract = {
   fixtureName: string
+  fixtureSHA256: string
+  fixtureBytes: number
+  inputSpanCount: number
+  fixtureTopology: FixtureTopology
   traceID: string
   expectedDisplayedSpanCount: number
   expectedMaximumDisplayedDepth: number
@@ -35,9 +46,13 @@ export type BenchmarkSpanTopology = {
   cyclePoint: boolean
 }
 
-export type ArmARunResult = {
-  arm: 'A'
+export type ArmRunResult = {
+  arm: 'A' | 'C'
   fixtureName: string
+  fixtureSHA256: string
+  fixtureBytes: number
+  inputSpanCount: number
+  fixtureTopology: FixtureTopology
   traceID: string
   displayedSpanCount: number
   maximumDisplayedDepth: number
@@ -55,7 +70,8 @@ export type ArmARunResult = {
 }
 
 export type TraceWaterfallBenchmarkAPI = {
-  runArmA: (contract: ArmARunContract) => Promise<ArmARunResult>
+  runArmA: (contract: ArmRunContract) => Promise<ArmRunResult>
+  runArmC: (contract: ArmRunContract) => Promise<ArmRunResult>
 }
 
 declare global {

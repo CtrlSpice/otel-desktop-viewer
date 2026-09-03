@@ -16,7 +16,7 @@
   const ignoreSelection: (spanID: string) => void = () => undefined
 </script>
 
-<div class="arm-a-waterfall-host">
+<div class="waterfall-benchmark-host">
   <WaterfallView
     spans={trace.spans}
     selectedSpanID={null}
@@ -26,7 +26,7 @@
 </div>
 
 <style>
-  .arm-a-waterfall-host {
+  .waterfall-benchmark-host {
     box-sizing: border-box;
     width: 100vw;
     height: 100vh;

@@ -21,7 +21,7 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
-func serve(ctx context.Context, listen string, stdout io.Writer) (err error) {
+func serve(ctx context.Context, listen, armCListen string, stdout io.Writer) (err error) {
 	benchmarkStore, err := store.NewStore(ctx, "", zap.NewNop())
 	if err != nil {
 		return fmt.Errorf("create store: %w", err)
@@ -38,11 +38,11 @@ func serve(ctx context.Context, listen string, stdout io.Writer) (err error) {
 		return err
 	}
 
-	benchmarkServer, err := server.NewServer(listen, benchmarkStore, zap.NewNop(), telemetry.Disabled())
+	productionServer, err := server.NewServer(listen, benchmarkStore, zap.NewNop(), telemetry.Disabled())
 	if err != nil {
 		return fmt.Errorf("create server: %w", err)
 	}
-	if err := benchmarkServer.Start(); err != nil {
+	if err := productionServer.Start(); err != nil {
 		return fmt.Errorf("start server on %s: %w", listen, err)
 	}
 	// This cleanup is registered after store cleanup so LIFO order drains HTTP
@@ -50,12 +50,24 @@ func serve(ctx context.Context, listen string, stdout io.Writer) (err error) {
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
-		if shutdownErr := benchmarkServer.Shutdown(shutdownCtx); shutdownErr != nil {
+		if shutdownErr := productionServer.Shutdown(shutdownCtx); shutdownErr != nil {
 			err = errors.Join(err, fmt.Errorf("shut down server: %w", shutdownErr))
 		}
 	}()
 
-	if _, err := fmt.Fprintf(stdout, "%s listening on %s\n", benchmarkSentinel, listen); err != nil {
+	flatServer := newArmCServer(armCListen, benchmarkStore)
+	if err := flatServer.Start(); err != nil {
+		return fmt.Errorf("start Arm C server on %s: %w", armCListen, err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if shutdownErr := flatServer.Shutdown(shutdownCtx); shutdownErr != nil {
+			err = errors.Join(err, fmt.Errorf("shut down Arm C server: %w", shutdownErr))
+		}
+	}()
+
+	if _, err := fmt.Fprintf(stdout, "%s listening on %s and %s\n", benchmarkSentinel, listen, armCListen); err != nil {
 		return fmt.Errorf("print readiness: %w", err)
 	}
 	<-ctx.Done()
