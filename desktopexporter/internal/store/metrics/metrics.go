@@ -685,16 +685,13 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, ingestID, datapointI
 			u := duckdb.UUID(tid)
 			traceUUID = &u
 		}
-		var spanUUID *duckdb.UUID
+		var spanID any
 		if sid := ex.SpanID(); !sid.IsEmpty() {
-			var padded [16]byte
-			copy(padded[8:], sid[:])
-			u := duckdb.UUID(padded)
-			spanUUID = &u
+			spanID = util.SpanIDUint64(sid)
 		}
 		_, exAttrIDs := ingest.AttributeSet(ex.FilteredAttributes(), ingest.ScopeExemplar)
 		if err := appenders["exemplars"].AppendRow(
-			exemplarID, datapointID, int64(ex.Timestamp()), ex.DoubleValue(), traceUUID, spanUUID,
+			exemplarID, datapointID, int64(ex.Timestamp()), ex.DoubleValue(), traceUUID, spanID,
 			ingest.NonNil(exAttrIDs),
 		); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)

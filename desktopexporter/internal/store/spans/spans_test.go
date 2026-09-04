@@ -1164,7 +1164,7 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 
 	// Sample the first span, the last one before the mid-batch flush, and the
 	// first one after it -- the boundary is where a split-brain would show.
-	// SpanID for index i is (i+1) as 16-char hex; UUID format is 8-4-4-4-12.
+	// SpanID for index i is stored as the native integer i+1.
 	//
 	// Attributes are no longer rows owned by a span, so "did this span's
 	// attributes survive the flush?" is now asked by unnesting the span's
@@ -1173,14 +1173,13 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	// is precisely the split-brain the two-pass ingest could produce if a
 	// mid-batch flush landed between the passes.
 	for _, spanIndex := range []int{0, spans.FlushInterval - 1, spans.FlushInterval} {
-		spanIDHex := fmt.Sprintf("%016x", spanIndex+1)
-		spanUUID := "00000000-0000-0000-0000-" + spanIDHex[4:]
+		spanID := fmt.Sprintf("%d", spanIndex+1)
 		attrCount := countRows(t, s, ctx, `
 			select count(*)
-			from (select unnest(attribute_ids) as id from spans where span_id = ?) x
+			from (select unnest(attribute_ids) as id from spans where span_id = ?::ubigint) x
 			join attributes a on a.id = x.id
 			where a.scope = 'span' and a.key in ('span.index', 'flush_test')
-		`, spanUUID)
+		`, spanID)
 		assert.GreaterOrEqual(t, attrCount, 2, "span %d should have span.index and flush_test attributes", spanIndex)
 	}
 
@@ -1188,23 +1187,23 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	// scope_id. These used to be re-written once per owning span; they are now
 	// one deduped row each, so the assertion goes through the reference rather
 	// than looking for a span-keyed copy.
-	span1UUID := "00000000-0000-0000-0000-000000000001"
+	span1ID := "1"
 	resAttr := countRows(t, s, ctx, `
 		select count(*)
 		from spans s
 		join resources r on r.id = s.resource_id
 		join (select id, key, scope from attributes) a
 		  on list_contains(r.attribute_ids, a.id)
-		where s.span_id = ? and a.scope = 'resource'
-	`, span1UUID)
+		where s.span_id = ?::ubigint and a.scope = 'resource'
+	`, span1ID)
 	scopeAttr := countRows(t, s, ctx, `
 		select count(*)
 		from spans s
 		join scopes sc on sc.id = s.scope_id
 		join (select id, key, scope from attributes) a
 		  on list_contains(sc.attribute_ids, a.id)
-		where s.span_id = ? and a.scope = 'scope'
-	`, span1UUID)
+		where s.span_id = ?::ubigint and a.scope = 'scope'
+	`, span1ID)
 	assert.GreaterOrEqual(t, resAttr, 1)
 	assert.GreaterOrEqual(t, scopeAttr, 1)
 }
@@ -1949,4 +1948,98 @@ func TestSearchTracesByFlags(t *testing.T) {
 	assert.Len(t, run("flags", "9"), 0, "flags = 9 matches nothing")
 	assert.Len(t, run("link.flags", "1"), 1, "link.flags = 1 finds the span whose link is sampled")
 	assert.Len(t, run("link.flags", "2"), 0)
+}
+
+func TestSpanIDsRoundTripAtUint64Boundaries(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	const traceIDHex = "000000000000000000000000000000f1"
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "native-span-ids")
+	ss := rs.ScopeSpans().AppendEmpty()
+	traceID := mustDecodeTraceID(traceIDHex)
+
+	add := func(name, spanID, parentID string, start int64) ptrace.Span {
+		sp := ss.Spans().AppendEmpty()
+		sp.SetTraceID(traceID)
+		sp.SetSpanID(mustDecodeSpanID(spanID))
+		if parentID != "" {
+			sp.SetParentSpanID(mustDecodeSpanID(parentID))
+		}
+		sp.SetName(name)
+		sp.SetStartTimestamp(pcommon.Timestamp(start))
+		sp.SetEndTimestamp(pcommon.Timestamp(start + 1))
+		return sp
+	}
+
+	add("leading", "0000000000000001", "", 1)
+	add("high-bit", "8000000000000000", "0000000000000001", 2)
+	maxSpan := add("max", "ffffffffffffffff", "8000000000000000", 3)
+	maxSpan.Events().AppendEmpty().SetName("max-event")
+	maxLink := maxSpan.Links().AppendEmpty()
+	maxLink.SetTraceID(mustDecodeTraceID("000000000000000000000000000000f2"))
+	maxLink.SetSpanID(mustDecodeSpanID("ffffffffffffffff"))
+	// Invalid/empty linked contexts have historically been exposed as concrete
+	// zero IDs. Keep that API behavior even though nullable parent/log/exemplar
+	// IDs are represented as SQL NULL.
+	maxSpan.Links().AppendEmpty()
+	add("duplicate-max", "ffffffffffffffff", "8000000000000000", 4)
+
+	rep, err := ingestReport(t, s, traces)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Count(), "the repeated max ID is a same-batch duplicate")
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchSpans(ctx, db, traceIDHex, nil)
+	})
+	require.NoError(t, err)
+	var out struct {
+		Spans []struct {
+			Depth    int `json:"depth"`
+			SpanData struct {
+				Name         string  `json:"name"`
+				SpanID       string  `json:"spanID"`
+				ParentSpanID *string `json:"parentSpanID"`
+				Events       []struct {
+					Name string `json:"name"`
+				} `json:"events"`
+				Links []struct {
+					SpanID string `json:"spanID"`
+				} `json:"links"`
+			} `json:"spanData"`
+		} `json:"spans"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &out))
+	require.Len(t, out.Spans, 3)
+	require.Equal(t, []string{
+		"0000000000000001", "8000000000000000", "ffffffffffffffff",
+	}, []string{
+		out.Spans[0].SpanData.SpanID,
+		out.Spans[1].SpanData.SpanID,
+		out.Spans[2].SpanData.SpanID,
+	})
+	require.Nil(t, out.Spans[0].SpanData.ParentSpanID)
+	require.Equal(t, "0000000000000001", *out.Spans[1].SpanData.ParentSpanID)
+	require.Equal(t, "8000000000000000", *out.Spans[2].SpanData.ParentSpanID)
+	require.Equal(t, []int{0, 1, 2}, []int{out.Spans[0].Depth, out.Spans[1].Depth, out.Spans[2].Depth})
+	require.Equal(t, "max-event", out.Spans[2].SpanData.Events[0].Name,
+		"the UBIGINT event foreign key must attach to the max-ID span")
+	require.ElementsMatch(t, []string{"ffffffffffffffff", "0000000000000000"}, []string{
+		out.Spans[2].SpanData.Links[0].SpanID,
+		out.Spans[2].SpanData.Links[1].SpanID,
+	})
+
+	var rootsWithNullParent int
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select count(*) from spans where parent_span_id is null`).Scan(&rootsWithNullParent)
+	}))
+	require.Equal(t, 1, rootsWithNullParent)
+
+	rep, err = ingestReport(t, s, traces)
+	require.NoError(t, err)
+	require.Equal(t, 4, rep.Count(), "the array probe must recognize all stored boundary IDs")
+	require.ErrorIs(t, rep.Reason(), spans.ErrSpanAlreadyStored,
+		"high-bit IDs must be classified by the UBIGINT duplicate probe")
 }

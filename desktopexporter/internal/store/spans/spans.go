@@ -114,7 +114,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 			for _, span := range scopeSpan.Spans().All() {
 				spanKeys = append(spanKeys, spanKey{
 					trace: duckdb.UUID(span.TraceID()),
-					span:  spanUUID(span.SpanID()),
+					span:  util.SpanIDUint64(span.SpanID()),
 				})
 				spanAttrs = append(spanAttrs, dict.AddAttributes(span.Attributes(), ingest.ScopeSpan))
 				for _, event := range span.Events().All() {
@@ -207,17 +207,11 @@ func appendPass(
 
 				traceUUID := duckdb.UUID(span.TraceID())
 
-				spanID := span.SpanID()
-				var spanPadded [16]byte
-				copy(spanPadded[8:], spanID[:])
-				spanUUID := duckdb.UUID(spanPadded)
+				spanID := util.SpanIDUint64(span.SpanID())
 
-				var parentSpanUUID *duckdb.UUID
+				var parentSpanID any
 				if pid := span.ParentSpanID(); !pid.IsEmpty() {
-					var parentPadded [16]byte
-					copy(parentPadded[8:], pid[:])
-					u := duckdb.UUID(parentPadded)
-					parentSpanUUID = &u
+					parentSpanID = util.SpanIDUint64(pid)
 				}
 
 				// Hashed in pass 1. NonNil because AttributeSet returns nil for
@@ -229,8 +223,8 @@ func appendPass(
 				err := appenders["spans"].AppendRow(
 					traceUUID,                     // TraceID UUID
 					span.TraceState().AsRaw(),     // TraceState VARCHAR
-					spanUUID,                      // SpanID UUID
-					parentSpanUUID,                // ParentSpanID UUID
+					spanID,                        // SpanID UBIGINT
+					parentSpanID,                  // ParentSpanID UBIGINT or NULL
 					uint32(span.Flags()),          // Flags UINTEGER
 					span.Name(),                   // Name VARCHAR
 					span.Kind().String(),          // Kind VARCHAR
@@ -258,7 +252,7 @@ func appendPass(
 					err = appenders["events"].AppendRow(
 						duckdb.UUID(uuid.New()),        // ID UUID
 						traceUUID,                      // TraceID UUID
-						spanUUID,                       // SpanID UUID
+						spanID,                         // SpanID UBIGINT
 						event.Name(),                   // Name VARCHAR
 						int64(event.Timestamp()),       // Timestamp BIGINT
 						eventAttrIDs,                   // AttributeIDs UUID[]
@@ -271,19 +265,18 @@ func appendPass(
 
 				for _, link := range span.Links().All() {
 					linkTraceUUID := duckdb.UUID(link.TraceID())
-					linkSpanID := link.SpanID()
-					var linkSpanPadded [16]byte
-					copy(linkSpanPadded[8:], linkSpanID[:])
-					linkSpanUUID := duckdb.UUID(linkSpanPadded)
+					// Preserve the established API contract for an empty linked
+					// span ID: it is emitted as sixteen zeroes, not JSON null.
+					linkSpanID := util.SpanIDUint64(link.SpanID())
 
 					linkAttrIDs := ingest.NonNil(linkAttrs[linkCur])
 					linkCur++
 					err = appenders["links"].AppendRow(
 						duckdb.UUID(uuid.New()),       // ID UUID
 						traceUUID,                     // TraceID UUID (owner)
-						spanUUID,                      // SpanID UUID (owner)
+						spanID,                        // SpanID UBIGINT (owner)
 						linkTraceUUID,                 // LinkedTraceID UUID
-						linkSpanUUID,                  // LinkedSpanID UUID
+						linkSpanID,                    // LinkedSpanID UBIGINT
 						link.TraceState().AsRaw(),     // TraceState VARCHAR
 						linkAttrIDs,                   // AttributeIDs UUID[]
 						link.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
@@ -878,11 +871,11 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 			return "", fmt.Errorf("link field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		colExpr := "l." + snake
-		// Compare IDs in wire form: the stored uuid is zero-padded for span
-		// IDs, and raw uuid-column comparisons error on malformed input.
+		// Compare IDs in wire form so malformed input matches nothing instead
+		// of being cast to the native integer type.
 		switch snake {
 		case "linked_span_id":
-			colExpr = "right(replace(l." + snake + "::varchar, '-', ''), 16)"
+			colExpr = "span_id_wire(l." + snake + ")"
 		case "linked_trace_id":
 			colExpr = "replace(l.linked_trace_id::varchar, '-', '')"
 		}
@@ -893,7 +886,7 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 	}
 	if field.Name == "spanID" || field.Name == "parentSpanID" {
 		col := util.CamelToSnake(field.Name)
-		return "right(replace(s." + col + "::varchar, '-', ''), 16)", nil
+		return "span_id_wire(s." + col + ")", nil
 	}
 	if field.Name == "traceID" {
 		// Wire-form comparison, same reasoning as the link.traceID branch.
@@ -993,8 +986,8 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 func mapTraceGlobalExpressions() ([]string, error) {
 	return []string{
 		"replace(s.trace_id::varchar, '-', '') {COND}",
-		"right(replace(s.span_id::varchar, '-', ''), 16) {COND}",
-		"right(replace(s.parent_span_id::varchar, '-', ''), 16) {COND}",
+		"span_id_wire(s.span_id) {COND}",
+		"span_id_wire(s.parent_span_id) {COND}",
 		"CAST(s.name AS VARCHAR) {COND}",
 		"CAST(s.kind AS VARCHAR) {COND}",
 		"CAST(s.status_code AS VARCHAR) {COND}",
@@ -1003,7 +996,7 @@ func mapTraceGlobalExpressions() ([]string, error) {
 		"CAST(sc.name AS VARCHAR) {COND}",
 		"CAST(sc.version AS VARCHAR) {COND}",
 		"exists(select 1 from events e where " + eventOwner + " and CAST(e.name AS VARCHAR) {COND})",
-		"exists(select 1 from links l where " + linkOwner + " and (replace(l.linked_trace_id::varchar, '-', '') {COND} or CAST(l.trace_state AS VARCHAR) {COND} or right(replace(l.linked_span_id::varchar, '-', ''), 16) {COND}))",
+		"exists(select 1 from links l where " + linkOwner + " and (replace(l.linked_trace_id::varchar, '-', '') {COND} or CAST(l.trace_state AS VARCHAR) {COND} or span_id_wire(l.linked_span_id) {COND}))",
 		// Free-text search over attributes now takes three clauses where it used
 		// to take one. Under the old schema every attribute a span could reach
 		// -- its own, its resource's, its scope's, and every event's and link's

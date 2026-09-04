@@ -4,7 +4,7 @@ create table if not exists exemplars (
 		timestamp bigint,
 		value double,
 		trace_id uuid,
-		span_id uuid,
+		span_id ubigint,
 		attribute_ids uuid[] not null,
 		foreign key (datapoint_id) references datapoints(id)
 	)

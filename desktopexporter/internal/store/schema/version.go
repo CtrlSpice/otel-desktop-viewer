@@ -80,7 +80,11 @@ package schema
 // bounded samples array -- the most recent refused spans, both halves of each
 // identity, newest first. A version 8 file keeps the old columns, so the
 // rejection insert and the stats read would both fail against it.
-const Version = 9
+//
+// Version 10 stores every 8-byte OTLP span ID as DuckDB UBIGINT rather than a
+// zero-padded UUID. This changes seven existing columns across spans, events,
+// links, logs, and exemplars, so a version 9 file is incompatible.
+const Version = 10
 
 // VersionTableQuery creates the version table.
 //

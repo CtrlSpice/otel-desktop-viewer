@@ -52,7 +52,7 @@ func seedSpans(t *testing.T, s *Store, n int) {
 	_, err = s.db.Exec(`
 		insert into spans (trace_id, span_id, name, start_time, end_time,
 		                   resource_id, scope_id, attribute_ids)
-		select uuid(), uuid(), 'span-' || range, range * 1000000, range * 1000000 + 500,
+		select uuid(), range::ubigint, 'span-' || range, range * 1000000, range * 1000000 + 500,
 		       ?::uuid, ?::uuid,
 		       [attr_id('pad', repeat('x', 500) || range, 'string', 'span')]
 		from range(?)`, seedResourceID, seedScopeID, n)
@@ -316,7 +316,7 @@ func TestEnforceRetentionPrunesChildrenByTraceAndSpan(t *testing.T) {
 	// One span id, two traces: old will fall to the prune, new must survive
 	// whole. now is far above every seeded timestamp, so the cutoff -- a
 	// quantile over start_time -- lands between the bulk and the new probe.
-	const sharedSpanID = "00000000-0000-0000-dddd-dddddddddddd"
+	const sharedSpanID = "15987178197214944733"
 	const oldTrace = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	const newTrace = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	now := int64(1) << 60
@@ -331,17 +331,17 @@ func TestEnforceRetentionPrunesChildrenByTraceAndSpan(t *testing.T) {
 		_, err = s.db.Exec(`
 			insert into spans (trace_id, span_id, name, start_time, end_time,
 			                   resource_id, scope_id, attribute_ids)
-			values (?::uuid, ?::uuid, 'probe', ?, ?, ?::uuid, ?::uuid, [])`,
+			values (?::uuid, ?::ubigint, 'probe', ?, ?, ?::uuid, ?::uuid, [])`,
 			tr.trace, sharedSpanID, tr.start, tr.start+1, seedResourceID, seedScopeID)
 		require.NoError(t, err)
 		_, err = s.db.Exec(`
 			insert into events (id, trace_id, span_id, name, timestamp, attribute_ids)
-			values (uuid(), ?::uuid, ?::uuid, 'probe-event', ?, [])`,
+			values (uuid(), ?::uuid, ?::ubigint, 'probe-event', ?, [])`,
 			tr.trace, sharedSpanID, tr.start)
 		require.NoError(t, err)
 		_, err = s.db.Exec(`
 			insert into links (id, trace_id, span_id, attribute_ids)
-			values (uuid(), ?::uuid, ?::uuid, [])`,
+			values (uuid(), ?::uuid, ?::ubigint, [])`,
 			tr.trace, sharedSpanID)
 		require.NoError(t, err)
 	}

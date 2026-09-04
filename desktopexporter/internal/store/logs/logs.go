@@ -167,12 +167,9 @@ func appendPass(
 					u := duckdb.UUID(tid)
 					traceUUID = &u
 				}
-				var spanUUID *duckdb.UUID
+				var spanID any
 				if sid := log.SpanID(); !sid.IsEmpty() {
-					var padded [16]byte
-					copy(padded[8:], sid[:])
-					u := duckdb.UUID(padded)
-					spanUUID = &u
+					spanID = util.SpanIDUint64(sid)
 				}
 
 				bodyValue, bodyType := util.ValueToStringAndType(log.Body())
@@ -185,7 +182,7 @@ func appendPass(
 					int64(log.Timestamp()),         // Timestamp BIGINT
 					int64(log.ObservedTimestamp()), // ObservedTimestamp BIGINT
 					traceUUID,                      // TraceID UUID
-					spanUUID,                       // SpanID UUID
+					spanID,                         // SpanID UBIGINT or NULL
 					log.SeverityText(),             // SeverityText VARCHAR
 					int32(log.SeverityNumber()),    // SeverityNumber INTEGER
 					bodyValue,                      // Body VARCHAR
@@ -500,7 +497,7 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 		// NOT cast to uuid. Convert the column to wire form instead, same
 		// as the trace-search spanID branch, so pasted IDs compare as
 		// strings and typos match nothing rather than erroring.
-		return "right(replace(l.span_id::varchar, '-', ''), 16)", nil
+		return "span_id_wire(l.span_id)", nil
 	case "severityText":
 		return "l.severity_text", nil
 	case "severityNumber":
@@ -573,7 +570,7 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 func mapLogGlobalExpressions() ([]string, error) {
 	return []string{
 		"replace(l.trace_id::varchar, '-', '') {COND}",
-		"right(replace(l.span_id::varchar, '-', ''), 16) {COND}",
+		"span_id_wire(l.span_id) {COND}",
 		"CAST(l.body AS VARCHAR) {COND}",
 		"CAST(l.severity_text AS VARCHAR) {COND}",
 		"CAST(l.severity_number AS VARCHAR) {COND}",

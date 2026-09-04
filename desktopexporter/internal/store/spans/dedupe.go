@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 )
@@ -21,14 +22,7 @@ var ErrSpanAlreadyStored = errors.New("span already stored")
 // its trace, so the trace is part of the identity rather than context.
 type spanKey struct {
 	trace duckdb.UUID
-	span  duckdb.UUID
-}
-
-// spanUUID is the span's 8-byte id widened into a uuid, zero-padded high.
-func spanUUID(id [8]byte) duckdb.UUID {
-	var padded [16]byte
-	copy(padded[8:], id[:])
-	return duckdb.UUID(padded)
+	span  uint64
 }
 
 // skipAlreadyStored returns the ordinals the store already holds, or which
@@ -75,18 +69,18 @@ func storedSpans(ctx context.Context, conn driver.Conn, keys []spanKey) (map[spa
 	}
 
 	traces := make([]string, len(keys))
-	spanIDs := make([]string, len(keys))
+	spanIDs := make([]uint64, len(keys))
 	for i, k := range keys {
 		traces[i] = k.trace.String()
-		spanIDs[i] = k.span.String()
+		spanIDs[i] = k.span
 	}
 
 	// The two arrays are unnested together so they stay paired: a span id is
 	// only looked for under the trace it arrived with.
-	const q = `select s.trace_id::varchar, s.span_id::varchar
+	const q = `select s.trace_id::varchar, s.span_id
 		from spans s
 		join (select unnest(?::varchar[])::uuid as trace_id,
-		             unnest(?::varchar[])::uuid as span_id) w
+		             unnest(?::ubigint[]) as span_id) w
 			on w.trace_id = s.trace_id and w.span_id = s.span_id`
 
 	traceArg, err := prepareSpanArg(conn, traces)
@@ -114,7 +108,7 @@ func storedSpans(ctx context.Context, conn driver.Conn, keys []spanKey) (map[spa
 			break
 		}
 		traceText, ok1 := dest[0].(string)
-		spanText, ok2 := dest[1].(string)
+		spanID, ok2 := dest[1].(uint64)
 		if !ok1 || !ok2 {
 			continue
 		}
@@ -122,11 +116,7 @@ func storedSpans(ctx context.Context, conn driver.Conn, keys []spanKey) (map[spa
 		if err != nil {
 			return nil, fmt.Errorf("storedSpans: %w: %w", ErrSpansStoreInternal, err)
 		}
-		span, err := parseUUIDText(spanText)
-		if err != nil {
-			return nil, fmt.Errorf("storedSpans: %w: %w", ErrSpansStoreInternal, err)
-		}
-		out[spanKey{trace: trace, span: span}] = struct{}{}
+		out[spanKey{trace: trace, span: spanID}] = struct{}{}
 	}
 	return out, nil
 }
@@ -157,16 +147,9 @@ func prepareSpanArg(conn driver.Conn, v any) (driver.Value, error) {
 	return driver.DefaultParameterConverter.ConvertValue(v)
 }
 
-// traceIDWire and spanIDWire render stored uuids the way OTLP and the UI do:
-// dash-less hex, the low 16 characters for a span. Mirrors the trace_id_wire
-// and span_id_wire macros.
+// traceIDWire renders stored trace UUIDs the way OTLP and the UI do.
 func traceIDWire(id duckdb.UUID) string {
 	return strings.ReplaceAll(id.String(), "-", "")
-}
-
-func spanIDWire(id duckdb.UUID) string {
-	hex := traceIDWire(id)
-	return hex[len(hex)-16:]
 }
 
 // recordSpanRejections tallies what this batch was refused, one row per kind.
@@ -191,7 +174,7 @@ func recordSpanRejections(ctx context.Context, conn driver.Conn, r ingest.Reject
 			}
 			// Wire form, matching trace_id_wire / span_id_wire: dash-less
 			// hex, the low 16 for a span, which is what the routes expect.
-			return traceIDWire(keys[ordinal].trace), spanIDWire(keys[ordinal].span)
+			return traceIDWire(keys[ordinal].trace), util.SpanIDWire(keys[ordinal].span)
 		})
 	return ingest.RecordRejections(ctx, conn, records)
 }

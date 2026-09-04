@@ -3,7 +3,7 @@ create table if not exists logs (
 		timestamp bigint,
 		observed_timestamp bigint,
 		trace_id uuid,
-		span_id uuid,
+		span_id ubigint,
 		severity_text varchar,
 		severity_number integer,
 		body varchar,

@@ -763,6 +763,57 @@ func TestMetricSuite(t *testing.T) {
 	})
 }
 
+func TestExemplarSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	data := pmetric.NewMetrics()
+	rm := data.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "native-span-ids")
+	m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("exemplar_span_ids")
+	gauge := m.SetEmptyGauge()
+	dp := gauge.DataPoints().AppendEmpty()
+	dp.SetTimestamp(100)
+	dp.SetDoubleValue(1)
+	traceID := mustDecodeTraceIDMetrics("000000000000000000000000000000f4")
+	for i, spanID := range []string{
+		"0000000000000001", "8000000000000000", "ffffffffffffffff", "",
+	} {
+		ex := dp.Exemplars().AppendEmpty()
+		ex.SetTimestamp(pcommon.Timestamp(i + 1))
+		ex.SetDoubleValue(float64(i + 1))
+		ex.SetTraceID(traceID)
+		if spanID != "" {
+			ex.SetSpanID(mustDecodeSpanIDMetrics(spanID))
+		}
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	got := getMetricFullByName(t, s, ctx, "exemplar_span_ids")
+	datapoints := metricDatapoints(got)
+	require.Len(t, datapoints, 1)
+	exemplars := datapoints[0].(map[string]any)["exemplars"].([]any)
+	require.Len(t, exemplars, 4)
+	byValue := make(map[float64]any, len(exemplars))
+	for _, raw := range exemplars {
+		ex := raw.(map[string]any)
+		byValue[ex["value"].(float64)] = ex["spanID"]
+	}
+	require.Equal(t, "0000000000000001", byValue[1])
+	require.Equal(t, "8000000000000000", byValue[2])
+	require.Equal(t, "ffffffffffffffff", byValue[3])
+	require.Nil(t, byValue[4])
+
+	var nullSpanIDs int
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select count(*) from exemplars where span_id is null`).Scan(&nullSpanIDs)
+	}))
+	require.Equal(t, 1, nullSpanIDs)
+}
+
 func requireMetric(t *testing.T, m map[string]any, name string) {
 	t.Helper()
 	assert.NotNil(t, m, "metric %q not found", name)
