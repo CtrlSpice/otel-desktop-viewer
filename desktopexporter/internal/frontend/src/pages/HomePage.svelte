@@ -1,13 +1,12 @@
 <script lang="ts">
   import { onMount, type Component } from 'svelte'
-  import {
-    BarChartHorizontalIcon,
-    ChartHistogramIcon,
-    AlertIcon,
-    CheckmarkCircleIcon,
-    CopyIcon,
-    LogIcon,
-  } from '@/icons'
+  import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/svelte'
+  import Alert02Icon from '@hugeicons/core-free-icons/Alert02Icon'
+  import BarChartHorizontalIcon from '@hugeicons/core-free-icons/BarChartHorizontalIcon'
+  import ChartHistogramIcon from '@hugeicons/core-free-icons/ChartHistogramIcon'
+  import CheckmarkCircle02Icon from '@hugeicons/core-free-icons/CheckmarkCircle02Icon'
+  import Copy01Icon from '@hugeicons/core-free-icons/Copy01Icon'
+  import { LogIcon } from '@/icons'
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import LogField from '@/components/logs/LogField.svelte'
@@ -178,12 +177,21 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
                   aria-label={endpointCopied ? 'Copied' : 'Copy snippet'}
                 >
                   {#if endpointCopied}
-                    <CheckmarkCircleIcon
+                    <HugeiconsIcon
+                      icon={CheckmarkCircle02Icon}
+                      size="1em"
+                      strokeWidth={1.5}
                       class="h-4 w-4 shrink-0"
                       aria-hidden="true"
                     />
                   {:else}
-                    <CopyIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <HugeiconsIcon
+                      icon={Copy01Icon}
+                      size="1em"
+                      strokeWidth={1.5}
+                      class="h-4 w-4 shrink-0"
+                      aria-hidden="true"
+                    />
                   {/if}
                 </button>
               {/snippet}
@@ -241,7 +249,8 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
           {#snippet signalOverviewHeader(
             href: string,
             label: string,
-            Icon: Component,
+            icon: IconSvgElement | null,
+            CustomIcon: Component | null,
             count: number
           )}
             <div class="home-summary__header">
@@ -250,7 +259,17 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
                 class="home-summary__icon-link"
                 aria-label="View all {label.toLowerCase()}"
               >
-                <Icon class="h-4 w-4 shrink-0" aria-hidden="true" />
+                {#if icon}
+                  <HugeiconsIcon
+                    {icon}
+                    size="1em"
+                    strokeWidth={1.5}
+                    class="h-4 w-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                {:else if CustomIcon}
+                  <CustomIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+                {/if}
               </a>
               <span class="home-summary__title">{label}</span>
               <span class="badge-count home-summary__badge">{count}</span>
@@ -263,6 +282,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
                 '/traces',
                 'Traces',
                 BarChartHorizontalIcon,
+                null,
                 stats?.traces.traceCount ?? 0
               )}
             {/snippet}
@@ -304,6 +324,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
                 '/metrics',
                 'Metrics',
                 ChartHistogramIcon,
+                null,
                 stats?.metrics.metricCount ?? 0
               )}
             {/snippet}
@@ -332,6 +353,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
               {@render signalOverviewHeader(
                 '/logs',
                 'Logs',
+                null,
                 LogIcon,
                 stats?.logs.logCount ?? 0
               )}
@@ -364,7 +386,12 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
                     class="home-summary__icon-link home-summary__icon-link--warning"
                     aria-hidden="true"
                   >
-                    <AlertIcon class="h-4 w-4 shrink-0" />
+                    <HugeiconsIcon
+                      icon={Alert02Icon}
+                      size="1em"
+                      strokeWidth={1.5}
+                      class="h-4 w-4 shrink-0"
+                    />
                   </span>
                   <span class="home-summary__title">Dropped on ingest</span>
                   <span

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { TrashIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import Delete02Icon from '@hugeicons/core-free-icons/Delete02Icon'
 
   type SignalLabel = 'trace' | 'log' | 'metric'
 
@@ -32,7 +33,13 @@
     onclick={onDeleteAll}
     aria-label={deleteAriaLabel}
   >
-    <TrashIcon class="h-3 w-3" aria-hidden="true" />
+    <HugeiconsIcon
+      icon={Delete02Icon}
+      size="1em"
+      strokeWidth={1.5}
+      class="h-3 w-3"
+      aria-hidden="true"
+    />
     Delete all
   </button>
 </div>

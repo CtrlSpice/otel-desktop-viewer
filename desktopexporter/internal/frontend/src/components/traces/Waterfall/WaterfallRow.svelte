@@ -4,7 +4,8 @@
   import { formatDuration } from '@/utils/time'
   import { getServiceName } from '@/utils/resource'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
-  import { BiohazardIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import BiohazardIcon from '@hugeicons/core-free-icons/BiohazardIcon'
   import WaterfallEventDots from './WaterfallEventDots.svelte'
 
   type Props = {
@@ -128,7 +129,12 @@
           aria-label={cycleLabel}
         >
           {#if row.spanNode.cyclePoint}
-            <BiohazardIcon aria-hidden="true" />
+            <HugeiconsIcon
+              icon={BiohazardIcon}
+              size="1em"
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
           {:else}
             <span aria-hidden="true">{'\u26A0'}</span>
           {/if}

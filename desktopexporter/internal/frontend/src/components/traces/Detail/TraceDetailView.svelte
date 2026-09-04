@@ -54,7 +54,11 @@
 
 <script lang="ts">
   import type { SpanData } from '@/types/api-types'
-  import { BiohazardIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import BiohazardIcon from '@hugeicons/core-free-icons/BiohazardIcon'
+  import LeftToRightListBulletIcon from '@hugeicons/core-free-icons/LeftToRightListBulletIcon'
+  import Link01Icon from '@hugeicons/core-free-icons/Link01Icon'
+  import StopWatchIcon from '@hugeicons/core-free-icons/StopWatchIcon'
   import PaneHeader, {
     paneTabID,
     type PaneTab,
@@ -66,7 +70,6 @@
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { setSpanInQuery } from '@/route'
-  import { LeftToRightListBulletIcon, LinkIcon, StopWatchIcon } from '@/icons'
 
   const SPAN_DETAIL_PANEL_ID = 'span-detail-tabpanel'
 
@@ -196,10 +199,22 @@
 </script>
 
 {#if span}
-  {#snippet fieldsIcon()}<LeftToRightListBulletIcon />{/snippet}
+  {#snippet fieldsIcon()}<HugeiconsIcon
+      icon={LeftToRightListBulletIcon}
+      size="1em"
+      strokeWidth={1.5}
+    />{/snippet}
 
-  {#snippet eventsIcon()}<StopWatchIcon />{/snippet}
-  {#snippet linksIcon()}<LinkIcon />{/snippet}
+  {#snippet eventsIcon()}<HugeiconsIcon
+      icon={StopWatchIcon}
+      size="1em"
+      strokeWidth={1.5}
+    />{/snippet}
+  {#snippet linksIcon()}<HugeiconsIcon
+      icon={Link01Icon}
+      size="1em"
+      strokeWidth={1.5}
+    />{/snippet}
 
   {@const tabs: PaneTab[] = [
     { id: 'fields', label: 'Fields', icon: fieldsIcon },
@@ -230,9 +245,14 @@
             class="detail-view__paradox detail-view__paradox--offender"
             role="alert"
           >
-            <BiohazardIcon aria-hidden="true" /> This span causes a cycle: its parent
-            span id points into its own subtree, so nothing here can be reached from
-            the trace root. Likely an instrumentation bug in the emitting service.
+            <HugeiconsIcon
+              icon={BiohazardIcon}
+              size="1em"
+              strokeWidth={1.5}
+              aria-hidden="true"
+            /> This span causes a cycle: its parent span id points into its own subtree,
+            so nothing here can be reached from the trace root. Likely an instrumentation
+            bug in the emitting service.
           </div>
         {:else if salvaged}
           <div class="detail-view__paradox" role="alert">

@@ -244,7 +244,9 @@
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
-  import { ArrowLeftIcon, ArrowRightIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import ChevronLeftIcon from '@hugeicons/core-free-icons/ChevronLeftIcon'
+  import ChevronRightIcon from '@hugeicons/core-free-icons/ChevronRightIcon'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
@@ -931,7 +933,13 @@
             aria-label="Previous error"
             title="Previous error"
           >
-            <ArrowLeftIcon class="h-3 w-3" aria-hidden="true" />
+            <HugeiconsIcon
+              icon={ChevronLeftIcon}
+              size="1em"
+              strokeWidth={1.5}
+              class="h-3 w-3"
+              aria-hidden="true"
+            />
           </button>
           <span>{headerErrorCount} err</span>
           <button
@@ -942,7 +950,13 @@
             aria-label="Next error"
             title="Next error"
           >
-            <ArrowRightIcon class="h-3 w-3" aria-hidden="true" />
+            <HugeiconsIcon
+              icon={ChevronRightIcon}
+              size="1em"
+              strokeWidth={1.5}
+              class="h-3 w-3"
+              aria-hidden="true"
+            />
           </button>
         </span>
       {/if}
