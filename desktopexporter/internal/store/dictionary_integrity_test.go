@@ -336,6 +336,44 @@ func TestFlushedIDsPopulatesAndClears(t *testing.T) {
 		"ids the sweep did not delete -- the shared resource, scope, and log/metric attributes -- must stay marked")
 }
 
+// Metric metadata has its own owner column and dictionary scope, so it needs
+// the same cache-invalidation proof as ordinary attribute_ids arrays. Keep the
+// other signals alive to prove the sweep invalidates precisely rather than
+// falling back to forgetting the whole cache.
+func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+
+	ingestAll(t, s, 1)
+	before := s.FlushedIDs().Len()
+	require.Equal(t, 1, countIn(t, s,
+		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)))
+
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return metrics.Clear(ctx, db)
+	}))
+	sweep(t, s)
+
+	afterSweep := s.FlushedIDs().Len()
+	assert.Less(t, afterSweep, before, "deleted metric dictionary ids must leave the cache")
+	assert.Positive(t, afterSweep, "live trace and log dictionary ids must remain cached")
+	assert.Zero(t, countIn(t, s,
+		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)),
+		"metadata with no metric ingest owner must be collected")
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, integrityMetrics(1), s.FlushedIDs())
+	}))
+	assertNoDanglingRefs(t, s, "after re-ingesting swept metric metadata")
+	assert.Equal(t, 1, countIn(t, s,
+		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)),
+		"re-ingest must restore metadata removed by the sweep")
+	assert.Equal(t, before, s.FlushedIDs().Len(),
+		"re-ingest must restore the metric dictionary ids without forgetting live signal ids")
+}
+
 // A store must never consult another store's set. Two stores are two databases;
 // ids written to one say nothing about the other, and skipping on that basis
 // would leave dangling references. This is the bug the first prototype hit.
