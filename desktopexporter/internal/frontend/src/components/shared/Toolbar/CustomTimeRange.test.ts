@@ -84,6 +84,101 @@ describe('CustomTimeRange', () => {
     expect(window.location.search).toContain(`end=${saved.end}`)
   })
 
+  it('advances the implicit end at midnight in the selected timezone', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-15T04:59:59.000Z'))
+    localStorage.setItem('time-tz', 'America/New_York')
+    setTestUrl('/traces')
+    renderWithContexts(CustomTimeRange)
+
+    expect(screen.getByLabelText('End')).toHaveValue('2026-01-14')
+    await setEndpoint('Start', '2026-01-14', '23:00:00.000')
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(screen.getByLabelText('End')).toHaveValue('2026-01-15')
+    expect(screen.getByLabelText('End time')).toHaveValue('')
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply range' }))
+    expect(JSON.parse(localStorage.getItem('time-selection')!)).toEqual({
+      type: 'custom',
+      start: new Date('2026-01-15T04:00:00.000Z').getTime(),
+      end: new Date('2026-01-15T05:00:00.000Z').getTime(),
+    })
+  })
+
+  it('updates an open calendar maximum at midnight', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-15T04:59:59.000Z'))
+    localStorage.setItem('time-tz', 'America/New_York')
+    setTestUrl('/traces')
+    renderWithContexts(CustomTimeRange)
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Choose end date' })
+    )
+    const newDay = screen.getByRole('button', {
+      name: 'Thursday, January 15, 2026',
+    })
+    expect(newDay).toHaveAttribute('aria-disabled', 'true')
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(newDay).toHaveAttribute('aria-disabled', 'false')
+  })
+
+  it('refreshes the implicit end on apply before the clock timer runs', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-15T23:59:59.000Z'))
+    renderComponent()
+    await setEndpoint('Start', '2026-01-15', '23:00:00.000')
+
+    vi.setSystemTime(new Date('2026-01-16T00:00:00.123Z'))
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply range' }))
+
+    expect(screen.queryByText(/Enter end time/)).not.toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem('time-selection')!)).toEqual({
+      type: 'custom',
+      start: new Date('2026-01-15T23:00:00.000Z').getTime(),
+      end: new Date('2026-01-16T00:00:00.123Z').getTime(),
+    })
+  })
+
+  it('does not advance an incomplete explicit end at midnight', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-15T23:59:59.000Z'))
+    renderComponent()
+    await setEndpoint('Start', '2026-01-15', '22:00:00.000')
+    await fireEvent.input(screen.getByLabelText('End'), {
+      target: { value: '2026-01-14' },
+    })
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(screen.getByLabelText('End')).toHaveValue('2026-01-14')
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply range' }))
+    expect(
+      screen.getByText('Enter end time as HH:mm:ss.SSS')
+    ).toBeInTheDocument()
+  })
+
+  it('tracks civil-date reversals without assuming dates are monotonic', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('1987-10-25T02:59:59.000Z'))
+    localStorage.setItem('time-tz', 'America/Goose_Bay')
+    setTestUrl('/traces')
+    renderWithContexts(CustomTimeRange)
+
+    expect(screen.getByLabelText('End')).toHaveValue('1987-10-24')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(screen.getByLabelText('End')).toHaveValue('1987-10-25')
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(screen.getByLabelText('End')).toHaveValue('1987-10-24')
+
+    await vi.advanceTimersByTimeAsync(59 * 60_000)
+    expect(screen.getByLabelText('End')).toHaveValue('1987-10-25')
+  })
+
   it('requires a complete endpoint after the end fallback is edited', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
