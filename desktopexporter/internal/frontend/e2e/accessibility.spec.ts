@@ -195,6 +195,35 @@ test.describe('home page accessibility', () => {
     expect(handleSize.height).toBeLessThan(handleSize.separatorHeight)
   })
 
+  test('uses theme text colors for preset labels', async ({ page }) => {
+    await page.goto('/traces')
+    await page.getByRole('button', { name: /Change time range/i }).click()
+
+    const presetColors = await page
+      .locator('.preset-time-ranges')
+      .evaluate(element => {
+        const active = element.querySelector('.chrome-btn--active')
+        const inactive = element.querySelector('.chrome-btn--inactive')
+        if (!active || !inactive) throw new Error('Preset state is missing')
+
+        const probe = document.createElement('span')
+        document.body.append(probe)
+        probe.style.color = 'var(--color-primary)'
+        const primary = getComputedStyle(probe).color
+        probe.style.color = 'var(--color-base-content)'
+        const baseContent = getComputedStyle(probe).color
+        probe.remove()
+        return {
+          active: getComputedStyle(active).color,
+          inactive: getComputedStyle(inactive).color,
+          primary,
+          baseContent,
+        }
+      })
+    expect(presetColors.inactive).toBe(presetColors.baseContent)
+    expect(presetColors.active).toBe(presetColors.primary)
+  })
+
   test('keeps custom range controls circular and focus treatment inset', async ({
     page,
   }) => {
@@ -232,6 +261,14 @@ test.describe('home page accessibility', () => {
 
     await startCalendar.click()
     await expect(startCalendar).toHaveAttribute('aria-expanded', 'true')
+    const activeTreatment = await startCalendar.evaluate(element => ({
+      backgroundColor: getComputedStyle(element).backgroundColor,
+      borderColor: getComputedStyle(element).borderTopColor,
+      rowBoxShadow: getComputedStyle(element.parentElement!).boxShadow,
+    }))
+    expect(activeTreatment.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(activeTreatment.borderColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(activeTreatment.rowBoxShadow).toBe('none')
 
     for (const name of ['Previous', 'Next'] as const) {
       const navigationButton = page.getByRole('button', { name, exact: true })
@@ -295,18 +332,33 @@ test.describe('home page accessibility', () => {
     await page.getByRole('button', { name: /Change time range/i }).click()
 
     const list = page.getByRole('list', {
-      name: 'Recently used time ranges',
+      name: 'Recent time ranges',
     })
-    const firstRange = list.getByRole('button').first()
+    const firstRange = list.locator('.recent-range-button').first()
+    const firstRemove = list
+      .getByRole('button', { name: /Remove recent range from/ })
+      .first()
     const section = list.locator('xpath=ancestor::details')
     const bounds = await Promise.all([
       section.boundingBox(),
       list.boundingBox(),
       firstRange.boundingBox(),
+      firstRange.locator('.recent-range-label').first().boundingBox(),
+      firstRemove.boundingBox(),
+      section.locator(':scope > summary .field-group__caret').boundingBox(),
+      firstRemove.locator('svg').boundingBox(),
     ])
 
     expect(bounds.every(Boolean)).toBe(true)
-    const [sectionBounds, listBounds, buttonBounds] = bounds
+    const [
+      sectionBounds,
+      listBounds,
+      buttonBounds,
+      labelBounds,
+      removeBounds,
+      caretBounds,
+      removeIconBounds,
+    ] = bounds
     expect(listBounds!.x).toBeCloseTo(sectionBounds!.x, 0)
     expect(listBounds!.x + listBounds!.width).toBeCloseTo(
       sectionBounds!.x + sectionBounds!.width,
@@ -323,5 +375,74 @@ test.describe('home page accessibility', () => {
       element => getComputedStyle(element).backgroundColor
     )
     expect(backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(
+      await firstRange
+        .locator('.recent-range-value')
+        .first()
+        .evaluate(element => getComputedStyle(element).textAlign)
+    ).toBe('center')
+    const recentLeftInset = labelBounds!.x - listBounds!.x
+    expect(recentLeftInset).toBeCloseTo(16, 0)
+    expect(removeBounds!.width).toBeGreaterThanOrEqual(24)
+    expect(removeBounds!.height).toBeGreaterThanOrEqual(24)
+    expect(removeIconBounds!.x + removeIconBounds!.width / 2).toBeCloseTo(
+      caretBounds!.x + caretBounds!.width / 2,
+      0
+    )
+  })
+
+  test('keeps timezone options full width with inset content', async ({
+    page,
+  }) => {
+    await page.goto('/traces')
+    await page.getByRole('button', { name: /Change time range/i }).click()
+    const timezoneSummary = page.getByText('Timezone', { exact: true })
+    const timezoneSection = timezoneSummary.locator('xpath=ancestor::details')
+    await timezoneSummary.click()
+
+    const timezoneList = timezoneSection.locator('.timezone-list')
+    const timezoneOption = timezoneList.locator('.tz-option').first()
+    const timezoneFilter = page.getByRole('searchbox', {
+      name: 'Filter timezones',
+    })
+    const bounds = await Promise.all([
+      timezoneSection.boundingBox(),
+      timezoneList.boundingBox(),
+      timezoneOption.boundingBox(),
+      timezoneFilter.boundingBox(),
+      timezoneOption.locator('.tz-name').boundingBox(),
+      timezoneOption.locator('.tz-badge').boundingBox(),
+    ])
+    expect(bounds.every(Boolean)).toBe(true)
+    const [
+      timezoneSectionBounds,
+      timezoneListBounds,
+      timezoneOptionBounds,
+      timezoneFilterBounds,
+      timezoneNameBounds,
+      timezoneBadgeBounds,
+    ] = bounds
+    expect(timezoneListBounds!.x).toBeCloseTo(timezoneSectionBounds!.x, 0)
+    expect(timezoneListBounds!.x + timezoneListBounds!.width).toBeCloseTo(
+      timezoneSectionBounds!.x + timezoneSectionBounds!.width,
+      0
+    )
+    expect(timezoneOptionBounds!.x).toBeCloseTo(timezoneListBounds!.x, 0)
+    expect(timezoneOptionBounds!.width).toBeCloseTo(
+      timezoneListBounds!.width,
+      0
+    )
+    expect(timezoneFilterBounds!.x).toBeGreaterThan(timezoneSectionBounds!.x)
+    expect(timezoneFilterBounds!.x + timezoneFilterBounds!.width).toBeLessThan(
+      timezoneSectionBounds!.x + timezoneSectionBounds!.width
+    )
+    const timezoneLeftInset = timezoneNameBounds!.x - timezoneListBounds!.x
+    const timezoneRightInset =
+      timezoneListBounds!.x +
+      timezoneListBounds!.width -
+      timezoneBadgeBounds!.x -
+      timezoneBadgeBounds!.width
+    expect(timezoneLeftInset).toBeCloseTo(16, 0)
+    expect(timezoneRightInset).toBeCloseTo(timezoneLeftInset, 0)
   })
 })

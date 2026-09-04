@@ -4,7 +4,9 @@
 
   type Props = {
     label: string
-    /** Optional snippet replacing the default label text (for icons, rich content). */
+    /** Optional icon rendered before the heading. */
+    icon?: Snippet
+    /** Optional snippet replacing the default label text with rich content. */
     heading?: Snippet
     /** Header row action (e.g. nav link). Uses a separate expand control — not nested in summary. */
     headerAction?: Snippet
@@ -19,6 +21,7 @@
 
   let {
     label,
+    icon,
     heading,
     headerAction,
     badge,
@@ -33,6 +36,20 @@
     else open = next
   }
 </script>
+
+{#snippet headingBody()}
+  {#if heading}
+    {@render heading()}
+  {:else}
+    <span>{label}</span>
+  {/if}
+  {#if badge}
+    <span class="badge-count">{badge}</span>
+  {/if}
+  {#if count !== undefined}
+    <span class="badge-count">{count}</span>
+  {/if}
+{/snippet}
 
 {#if headerAction}
   <div class="field-group" class:field-group--open={open}>
@@ -62,16 +79,13 @@
     ontoggle={e => setOpen((e.currentTarget as HTMLDetailsElement).open)}
   >
     <summary class="field-group__heading">
-      {#if heading}
-        {@render heading()}
+      {#if icon}
+        {@render icon()}
+        <span class="field-group__heading-content">
+          {@render headingBody()}
+        </span>
       {:else}
-        <span>{label}</span>
-      {/if}
-      {#if badge}
-        <span class="badge-count">{badge}</span>
-      {/if}
-      {#if count !== undefined}
-        <span class="badge-count">{count}</span>
+        {@render headingBody()}
       {/if}
       <ArrowDownIcon class="field-group__caret" aria-hidden="true" />
     </summary>
@@ -86,13 +100,13 @@
 
   .field-group {
     @apply border-b-0;
-    --fg-inline: 0.75rem;
+    --fg-inline: var(--field-group-inline, 0.75rem);
+    --fg-caret-size: 0.875rem;
   }
 
   /* Content aligns with heading inset (icon or label). */
   .field-group__content {
-    padding-inline-start: var(--fg-inline);
-    padding-inline-end: var(--fg-inline);
+    padding-inline: var(--fg-inline);
     @apply pb-2 pt-0;
   }
 
@@ -102,7 +116,9 @@
   }
 
   .field-group__header-row :global(.field-group__caret) {
-    @apply h-3.5 w-3.5 shrink-0 transition-transform duration-150;
+    width: var(--fg-caret-size);
+    height: var(--fg-caret-size);
+    @apply shrink-0 transition-transform duration-150;
     color: var(--color-muted);
     transform: rotate(-90deg);
   }
@@ -126,13 +142,19 @@
     color: var(--color-subtle);
   }
 
+  .field-group__heading-content {
+    @apply flex min-w-0 flex-1 items-center gap-2;
+  }
+
   .field-group__heading::marker,
   .field-group__heading::-webkit-details-marker {
     display: none;
   }
 
   .field-group__heading :global(.field-group__caret) {
-    @apply ml-auto h-3.5 w-3.5 transition-transform duration-150;
+    width: var(--fg-caret-size);
+    height: var(--fg-caret-size);
+    @apply ml-auto transition-transform duration-150;
     color: var(--color-muted);
     transform: rotate(-90deg);
   }

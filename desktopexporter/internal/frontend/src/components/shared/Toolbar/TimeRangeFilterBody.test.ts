@@ -37,7 +37,7 @@ describe('TimeRangeFilterBody', () => {
     renderComponent()
     expect(screen.getByText('Custom Range')).toBeInTheDocument()
     expect(screen.getByText('Timezone')).toBeInTheDocument()
-    expect(screen.getByText('Recently Used')).toBeInTheDocument()
+    expect(screen.getByText('Recent')).toBeInTheDocument()
   })
 
   it('switches the timezone from local to UTC', async () => {
@@ -210,5 +210,41 @@ describe('TimeRangeFilterBody', () => {
     })
     expect(window.location.search).toContain(`start=${saved.start}`)
     expect(window.location.search).toContain(`end=${saved.end}`)
+  })
+
+  it('preserves only dirty fields when selecting a named timezone', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-16T00:30:00.000Z'))
+    localStorage.setItem('time-tz', 'UTC')
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        type: 'custom',
+        start: new Date('2026-01-15T20:00:00.000Z').getTime(),
+        end: new Date('2026-01-16T00:00:00.456Z').getTime(),
+      })
+    )
+    renderComponent()
+
+    await fireEvent.input(screen.getByLabelText('Start time'), {
+      target: { value: '15:00:00.123' },
+    })
+    await openTimezoneOptions()
+    await fireEvent.click(
+      screen.getByRole('button', { name: /^America\/Los_Angeles/ })
+    )
+
+    expect(screen.getByLabelText('Start')).toHaveValue('2026-01-15')
+    expect(screen.getByLabelText('Start time')).toHaveValue('15:00:00.123')
+    expect(screen.getByLabelText('End')).toHaveValue('2026-01-15')
+    expect(screen.getByLabelText('End time')).toHaveValue('16:00:00.456')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply range' }))
+
+    expect(JSON.parse(localStorage.getItem('time-selection')!)).toEqual({
+      type: 'custom',
+      start: new Date('2026-01-15T23:00:00.123Z').getTime(),
+      end: new Date('2026-01-16T00:00:00.456Z').getTime(),
+    })
   })
 })

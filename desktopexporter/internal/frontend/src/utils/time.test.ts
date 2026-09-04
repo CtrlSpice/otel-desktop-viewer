@@ -18,6 +18,7 @@ import {
   parseDateTimeInTimezone,
   parseDuration,
   recordRecentTimeRange,
+  removeRecentTimeRange,
   timezoneOffsetMinutes,
   traceSummaryDurationNs,
   type RecentTimeRange,
@@ -623,5 +624,19 @@ describe('recordRecentTimeRange', () => {
     recordRecentTimeRange(5, 6, 200)
     const ranges = loadRecentTimeRanges()
     expect(ranges.map(r => r.usedAt)).toEqual([300, 200, 100])
+  })
+})
+
+describe('removeRecentTimeRange', () => {
+  it('removes only the matching range and clears empty storage', () => {
+    recordRecentTimeRange(1, 2, 100)
+    recordRecentTimeRange(3, 4, 200)
+
+    removeRecentTimeRange(3, 4)
+    expect(loadRecentTimeRanges()).toEqual([{ start: 1, end: 2, usedAt: 100 }])
+
+    removeRecentTimeRange(1, 2)
+    expect(loadRecentTimeRanges()).toEqual([])
+    expect(localStorage.getItem('datetime-filter-recent')).toBeNull()
   })
 })

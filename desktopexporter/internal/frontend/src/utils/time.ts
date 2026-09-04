@@ -611,3 +611,19 @@ export function recordRecentTimeRange(
 
   localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(recentTimeRanges))
 }
+
+/** Remove one exact range and return the remaining recents. */
+export function removeRecentTimeRange(
+  start: number,
+  end: number
+): RecentTimeRange[] {
+  const recentTimeRanges = loadRecentTimeRanges().filter(
+    range => range.start !== start || range.end !== end
+  )
+  if (recentTimeRanges.length === 0) {
+    localStorage.removeItem(RECENT_STORAGE_KEY)
+    return []
+  }
+  localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(recentTimeRanges))
+  return recentTimeRanges
+}

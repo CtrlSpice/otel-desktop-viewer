@@ -192,7 +192,11 @@ function createTimeContext(): TimeContext {
     selection = next
     localStorage.setItem('time-selection', JSON.stringify(selection))
     const range = selectionToQueryRangeMs(selection, now)
-    if (range.startTime !== null && range.endTime !== null) {
+    if (
+      (selection.type === 'custom' || selection.type === 'recent') &&
+      range.startTime !== null &&
+      range.endTime !== null
+    ) {
       recordRecentTimeRange(range.startTime, range.endTime, now)
     }
     syncUrl()

@@ -1,5 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import CustomizeIcon from '@hugeicons/core-free-icons/CustomizeIcon'
+  import GlobalIcon from '@hugeicons/core-free-icons/GlobalIcon'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -10,7 +13,7 @@
     getSupportedTimezones,
     resolveTimezoneName,
   } from '@/utils/time'
-  import { FilterIcon, GlobalIcon, CustomizeIcon } from '@/icons'
+  import { FilterIcon } from '@/icons'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import CustomTimeRange from './CustomTimeRange.svelte'
   import RecentTimeRanges from './RecentTimeRanges.svelte'
@@ -92,18 +95,31 @@
 </script>
 
 <!-- Shared body: custom range, timezone group, recents group. -->
-<div class="flex min-w-0 flex-col text-sm">
+<div class="time-range-groups">
   <FieldGroup label="Custom Range">
-    {#snippet heading()}
-      <CustomizeIcon class="h-3.5 w-3.5 shrink-0 text-base-content/55" />
-      <span>Custom Range</span>
+    {#snippet icon()}
+      <HugeiconsIcon
+        icon={CustomizeIcon}
+        size={14}
+        strokeWidth={1.5}
+        class="shrink-0 text-base-content/55"
+        aria-hidden="true"
+      />
     {/snippet}
     <CustomTimeRange />
   </FieldGroup>
 
   <FieldGroup label="Timezone" bind:open={timezoneOpen}>
+    {#snippet icon()}
+      <HugeiconsIcon
+        icon={GlobalIcon}
+        size={14}
+        strokeWidth={1.5}
+        class="shrink-0 text-base-content/55"
+        aria-hidden="true"
+      />
+    {/snippet}
     {#snippet heading()}
-      <GlobalIcon class="h-3.5 w-3.5 shrink-0 text-base-content/55" />
       <span>Timezone</span>
       <span
         class="timezone-summary"
@@ -185,11 +201,17 @@
 <style lang="postcss">
   @reference "../../../app.css";
 
+  .time-range-groups {
+    --field-group-inline: 1rem;
+    @apply flex min-w-0 flex-col text-sm;
+  }
+
   .tz-option {
     box-sizing: border-box;
     height: var(--table-row-h);
     min-height: var(--table-row-h);
-    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-left text-sm transition-colors;
+    padding-inline: var(--fg-inline);
+    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none bg-transparent py-0 text-left text-sm transition-colors;
     @apply text-base-content/90 hover:bg-base-300/40;
     @apply focus-visible:bg-base-300/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
   }
@@ -207,6 +229,7 @@
   }
 
   .timezone-list {
+    margin-inline: calc(var(--fg-inline) * -1);
     @apply max-h-72 overflow-y-auto;
     scrollbar-width: thin;
   }
@@ -224,6 +247,7 @@
   }
 
   .timezone-list__empty {
+    padding-inline: var(--fg-inline);
     @apply py-3 text-xs text-base-content/55;
   }
 </style>

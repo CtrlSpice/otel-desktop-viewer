@@ -174,12 +174,30 @@ describe('time context setSelection', () => {
     })
   })
 
-  it('records a recent time range', () => {
+  it('records a custom time range', () => {
     setTestUrl('/traces')
     const context = renderProbe()
     context.setSelection({ type: 'custom', start: 1000, end: 2000 })
     const recents = loadRecentTimeRanges()
     expect(recents.some(r => r.start === 1000 && r.end === 2000)).toBe(true)
+  })
+
+  it('promotes a reused recent range', () => {
+    localStorage.setItem(
+      'datetime-filter-recent',
+      JSON.stringify([
+        { start: 1000, end: 2000, usedAt: 2 },
+        { start: 3000, end: 4000, usedAt: 1 },
+      ])
+    )
+    setTestUrl('/traces')
+    const context = renderProbe()
+
+    context.setSelection({ type: 'recent', start: 3000, end: 4000 })
+
+    expect(loadRecentTimeRanges().map(range => range.start)).toEqual([
+      3000, 1000,
+    ])
   })
 
   it('mirrors the window into the URL without adding a history entry', () => {
@@ -233,6 +251,7 @@ describe('time context preset anchoring on write', () => {
     const params = new URLSearchParams(window.location.search)
     expect(params.get('end')).toBe(String(writtenAt))
     expect(params.get('start')).toBe(String(writtenAt - oneHourMs))
+    expect(loadRecentTimeRanges()).toEqual([])
   })
 })
 

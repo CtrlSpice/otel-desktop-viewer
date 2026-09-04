@@ -44,6 +44,9 @@
   let endChoice = $state<Choice | null>(null)
   let startAmbiguity = $state<Ambiguity | null>(null)
   let endAmbiguity = $state<Ambiguity | null>(null)
+  let startDirty = false
+  let endDirty = false
+  let previousSelection = ctx.selection
   let customFieldIssue = $state<{
     message: string
     invalidFields: Endpoint[]
@@ -127,9 +130,11 @@
 
   function editEndpoint(endpoint: Endpoint) {
     if (endpoint === 'start') {
+      startDirty = true
       startChoice = null
       startAmbiguity = null
     } else {
+      endDirty = true
       endChoice = null
       endAmbiguity = null
     }
@@ -143,10 +148,12 @@
     if (!value) return
 
     if (endpoint === 'start') {
+      startDirty = true
       startDateText = value.toString()
       startChoice = null
       startAmbiguity = null
     } else {
+      endDirty = true
       endDateText = value.toString()
       if (!endTimeText) endTimeText = editableParts(nowTimestamp).time
       endChoice = null
@@ -192,19 +199,28 @@
   }
 
   $effect(() => {
-    if (ctx.selection.type === 'custom') {
-      const start = editableParts(ctx.selection.start)
-      const end = editableParts(ctx.selection.end)
+    const selection = ctx.selection
+    const preserveStart =
+      selection === previousSelection && untrack(() => startDirty)
+    const preserveEnd =
+      selection === previousSelection && untrack(() => endDirty)
+    const startDraft = preserveStart
+      ? untrack(() => ({ date: startDateText, time: startTimeText }))
+      : null
+    const endDraft = preserveEnd
+      ? untrack(() => ({ date: endDateText, time: endTimeText }))
+      : null
+    previousSelection = selection
+
+    if (selection.type === 'custom') {
+      const start = editableParts(selection.start)
+      const end = editableParts(selection.end)
       const initializedStart = initializeChoice(
         start.date,
         start.time,
-        ctx.selection.start
+        selection.start
       )
-      const initializedEnd = initializeChoice(
-        end.date,
-        end.time,
-        ctx.selection.end
-      )
+      const initializedEnd = initializeChoice(end.date, end.time, selection.end)
       startDateText = start.date
       startTimeText = start.time
       endDateText = end.date
@@ -225,6 +241,20 @@
       startAmbiguity = null
       endAmbiguity = null
     }
+    if (startDraft) {
+      startDateText = startDraft.date
+      startTimeText = startDraft.time
+      startChoice = null
+      startAmbiguity = null
+    }
+    if (endDraft) {
+      endDateText = endDraft.date
+      endTimeText = endDraft.time
+      endChoice = null
+      endAmbiguity = null
+    }
+    startDirty = preserveStart
+    endDirty = preserveEnd
     customFieldIssue = null
   })
 
@@ -293,6 +323,8 @@
       return
     }
 
+    startDirty = false
+    endDirty = false
     ctx.setSelection({
       type: 'custom',
       start: validation.start,
@@ -457,6 +489,7 @@
               class:ambiguity-choice--active={startChoice === 'earlier'}
               aria-pressed={startChoice === 'earlier'}
               onclick={() => {
+                startDirty = true
                 startChoice = 'earlier'
                 customFieldIssue = null
               }}
@@ -469,6 +502,7 @@
               class:ambiguity-choice--active={startChoice === 'later'}
               aria-pressed={startChoice === 'later'}
               onclick={() => {
+                startDirty = true
                 startChoice = 'later'
                 customFieldIssue = null
               }}
@@ -546,6 +580,7 @@
               class:ambiguity-choice--active={endChoice === 'earlier'}
               aria-pressed={endChoice === 'earlier'}
               onclick={() => {
+                endDirty = true
                 endChoice = 'earlier'
                 customFieldIssue = null
               }}
@@ -558,6 +593,7 @@
               class:ambiguity-choice--active={endChoice === 'later'}
               aria-pressed={endChoice === 'later'}
               onclick={() => {
+                endDirty = true
                 endChoice = 'later'
                 customFieldIssue = null
               }}
@@ -607,13 +643,13 @@
     @apply border-t border-base-300/70;
   }
 
-  .range-editor-row:focus-within {
+  .range-editor-row:has(> input:focus) {
     z-index: 1;
     outline: none;
     box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
   }
 
-  .range-editor-row:has(> .input-error):focus-within {
+  .range-editor-row:has(> input.input-error:focus) {
     box-shadow: inset 0 0 0 var(--focus-ring-width) var(--color-error);
   }
 
@@ -688,7 +724,7 @@
   }
 
   .endpoint-calendar-button--active {
-    @apply bg-base-300/50 text-primary;
+    @apply border-primary/40 bg-base-300/50 text-primary;
   }
 
   .endpoint-calendar-panel {
