@@ -2,6 +2,7 @@
   import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import CustomizeIcon from '@hugeicons/core-free-icons/CustomizeIcon'
+  import FilterIcon from '@hugeicons/core-free-icons/FilterIcon'
   import GlobalIcon from '@hugeicons/core-free-icons/GlobalIcon'
   import {
     getTimeContext,
@@ -13,7 +14,6 @@
     getSupportedTimezones,
     resolveTimezoneName,
   } from '@/utils/time'
-  import { FilterIcon } from '@/icons'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import CustomTimeRange from './CustomTimeRange.svelte'
   import RecentTimeRanges from './RecentTimeRanges.svelte'
@@ -135,7 +135,13 @@
             class="typed-field-label join-item"
             title="Filter timezones"
           >
-            <FilterIcon class="h-3.5 w-3.5" />
+            <HugeiconsIcon
+              icon={FilterIcon}
+              size="1em"
+              strokeWidth={1.5}
+              class="h-3.5 w-3.5 shrink-0"
+              aria-hidden="true"
+            />
             <span class="sr-only">Filter timezones</span>
           </label>
           <input

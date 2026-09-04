@@ -1,10 +1,9 @@
 <script lang="ts">
-  import {
-    ArrowLeftDoubleIcon,
-    ArrowLeftIcon,
-    ArrowRightDoubleIcon,
-    ArrowRightIcon,
-  } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import ArrowLeftDoubleIcon from '@hugeicons/core-free-icons/ArrowLeftDoubleIcon'
+  import ArrowRightDoubleIcon from '@hugeicons/core-free-icons/ArrowRightDoubleIcon'
+  import ChevronLeftIcon from '@hugeicons/core-free-icons/ChevronLeftIcon'
+  import ChevronRightIcon from '@hugeicons/core-free-icons/ChevronRightIcon'
 
   type Props = {
     /** 0-based index of current selection in the list, or -1 if nothing is selected */
@@ -35,7 +34,13 @@
     disabled={!canGoPrev}
     aria-label="First {label}"
   >
-    <ArrowLeftDoubleIcon class="h-3.5 w-3.5" aria-hidden="true" />
+    <HugeiconsIcon
+      icon={ArrowLeftDoubleIcon}
+      size="1em"
+      strokeWidth={1.5}
+      class="h-3.5 w-3.5"
+      aria-hidden="true"
+    />
   </button>
   <button
     type="button"
@@ -45,7 +50,13 @@
     disabled={!canGoPrev}
     aria-label="Previous {label}"
   >
-    <ArrowLeftIcon class="h-3.5 w-3.5" aria-hidden="true" />
+    <HugeiconsIcon
+      icon={ChevronLeftIcon}
+      size="1em"
+      strokeWidth={1.5}
+      class="h-3.5 w-3.5"
+      aria-hidden="true"
+    />
   </button>
   <span class="detail-nav__counter tabular-nums" aria-live="polite">
     {displayPosition} / {total}
@@ -59,7 +70,13 @@
     disabled={!canGoNext}
     aria-label="Next {label}"
   >
-    <ArrowRightIcon class="h-3.5 w-3.5" aria-hidden="true" />
+    <HugeiconsIcon
+      icon={ChevronRightIcon}
+      size="1em"
+      strokeWidth={1.5}
+      class="h-3.5 w-3.5"
+      aria-hidden="true"
+    />
   </button>
   <button
     type="button"
@@ -69,7 +86,13 @@
     disabled={!canGoNext}
     aria-label="Last {label}"
   >
-    <ArrowRightDoubleIcon class="h-3.5 w-3.5" aria-hidden="true" />
+    <HugeiconsIcon
+      icon={ArrowRightDoubleIcon}
+      size="1em"
+      strokeWidth={1.5}
+      class="h-3.5 w-3.5"
+      aria-hidden="true"
+    />
   </button>
 </div>
 

@@ -36,7 +36,9 @@
   import { createQueryLinter } from './codemirror/linter'
   import { queryTheme, ensureTooltipStyles } from './codemirror/theme'
   import { createQueryKeymap } from './codemirror/keymap'
-  import { HelpCircleIcon, CancelIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import Cancel01Icon from '@hugeicons/core-free-icons/Cancel01Icon'
+  import HelpCircleIcon from '@hugeicons/core-free-icons/HelpCircleIcon'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
 
   import type { SearchEditorAPI } from './search-editor-api'
@@ -524,7 +526,13 @@
             aria-label="Search query help"
             data-tip="Query help"
           >
-            <HelpCircleIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <HugeiconsIcon
+              icon={HelpCircleIcon}
+              size="1em"
+              strokeWidth={1.5}
+              class="h-3.5 w-3.5 shrink-0"
+              aria-hidden="true"
+            />
           </button>
           <button
             type="button"
@@ -533,7 +541,13 @@
             aria-label="Clear search"
             data-tip="Clear search"
           >
-            <CancelIcon class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <HugeiconsIcon
+              icon={Cancel01Icon}
+              size="1em"
+              strokeWidth={1.5}
+              class="h-3.5 w-3.5 shrink-0"
+              aria-hidden="true"
+            />
           </button>
         </div>
       </div>
@@ -558,7 +572,13 @@
           aria-label="Search query help"
           data-tip="Query help"
         >
-          <HelpCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+          <HugeiconsIcon
+            icon={HelpCircleIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
         </button>
         <button
           type="button"
@@ -567,7 +587,13 @@
           aria-label="Clear search"
           data-tip="Clear search"
         >
-          <CancelIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+          <HugeiconsIcon
+            icon={Cancel01Icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
         </button>
         <button
           type="button"

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { ArrowDownIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import ChevronDownIcon from '@hugeicons/core-free-icons/ChevronDownIcon'
 
   type Props = {
     label: string
@@ -63,7 +64,13 @@
         data-tip="{open ? 'Collapse' : 'Expand'} {label}"
         onclick={() => setOpen(!open)}
       >
-        <ArrowDownIcon class="field-group__caret" aria-hidden="true" />
+        <HugeiconsIcon
+          icon={ChevronDownIcon}
+          size="1em"
+          strokeWidth={1.5}
+          class="field-group__caret"
+          aria-hidden="true"
+        />
       </button>
     </div>
     {#if open}
@@ -87,7 +94,13 @@
       {:else}
         {@render headingBody()}
       {/if}
-      <ArrowDownIcon class="field-group__caret" aria-hidden="true" />
+      <HugeiconsIcon
+        icon={ChevronDownIcon}
+        size="1em"
+        strokeWidth={1.5}
+        class="field-group__caret"
+        aria-hidden="true"
+      />
     </summary>
     <div class="field-group__content">
       {@render children()}

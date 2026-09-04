@@ -1,24 +1,29 @@
 <script module lang="ts">
   import type { Component } from 'svelte'
-  import {
-    HomeIcon,
-    BarChartHorizontalIcon,
-    ChartHistogramIcon,
-    LogIcon,
-  } from '@/icons'
+  import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/svelte'
+  import BarChartHorizontalIcon from '@hugeicons/core-free-icons/BarChartHorizontalIcon'
+  import ChartHistogramIcon from '@hugeicons/core-free-icons/ChartHistogramIcon'
+  import Home12Icon from '@hugeicons/core-free-icons/Home12Icon'
+  import { LogIcon } from '@/icons'
 
-  export type NavItem = {
+  type NavItemBase = {
     id: string
     label: string
     path: string
-    icon: Component
   }
+
+  export type NavItem = NavItemBase &
+    (
+      | { iconType: 'hugeicon'; icon: IconSvgElement }
+      | { iconType: 'component'; icon: Component }
+    )
 
   export const HOME_NAV: NavItem = {
     id: 'home',
     label: 'Home',
     path: '/',
-    icon: HomeIcon,
+    iconType: 'hugeicon',
+    icon: Home12Icon,
   }
 
   export const NAV_ITEMS: NavItem[] = [
@@ -26,15 +31,23 @@
       id: 'traces',
       label: 'Traces',
       path: '/traces',
+      iconType: 'hugeicon',
       icon: BarChartHorizontalIcon,
     },
     {
       id: 'metrics',
       label: 'Metrics',
       path: '/metrics',
+      iconType: 'hugeicon',
       icon: ChartHistogramIcon,
     },
-    { id: 'logs', label: 'Logs', path: '/logs', icon: LogIcon },
+    {
+      id: 'logs',
+      label: 'Logs',
+      path: '/logs',
+      iconType: 'component',
+      icon: LogIcon,
+    },
   ]
 
   const ACTIVE_RULES: Record<string, (p: string) => boolean> = {
@@ -79,7 +92,6 @@
   <nav class="drawer-nav-tabs drawer-nav-tabs--collapsed" aria-label="Primary">
     {#each NAV_ITEMS as item (item.id)}
       {@const active = isNavItemActive(item.id, routeContext.route.path)}
-      {@const Icon = item.icon}
       <a
         href={signalHref(item.id as SignalName, routeContext.route.query)}
         class="drawer-header-btn tooltip tooltip-right {active
@@ -90,7 +102,18 @@
         aria-label={item.label}
         onclick={event => goto(event, item)}
       >
-        <Icon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
+        {#if item.iconType === 'component'}
+          {@const Icon = item.icon}
+          <Icon class="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
+        {:else}
+          <HugeiconsIcon
+            icon={item.icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-[17px] w-[17px] shrink-0"
+            aria-hidden="true"
+          />
+        {/if}
       </a>
     {/each}
   </nav>
@@ -98,7 +121,6 @@
   <nav class="drawer-nav-tabs drawer-nav-tabs--expanded" aria-label="Primary">
     {#each NAV_ITEMS as item (item.id)}
       {@const active = isNavItemActive(item.id, routeContext.route.path)}
-      {@const Icon = item.icon}
       <a
         href={signalHref(item.id as SignalName, routeContext.route.query)}
         class="drawer-tab {active
@@ -107,7 +129,18 @@
         aria-current={active ? 'page' : undefined}
         onclick={event => goto(event, item)}
       >
-        <Icon class="h-[15px] w-[15px] shrink-0" aria-hidden="true" />
+        {#if item.iconType === 'component'}
+          {@const Icon = item.icon}
+          <Icon class="h-[15px] w-[15px] shrink-0" aria-hidden="true" />
+        {:else}
+          <HugeiconsIcon
+            icon={item.icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-[15px] w-[15px] shrink-0"
+            aria-hidden="true"
+          />
+        {/if}
         <span class="truncate">{item.label}</span>
       </a>
     {/each}

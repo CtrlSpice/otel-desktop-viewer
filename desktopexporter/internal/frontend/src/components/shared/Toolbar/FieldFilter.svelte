@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { FilterIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import FilterIcon from '@hugeicons/core-free-icons/FilterIcon'
   import {
     getStaticFieldsForSearch,
     getDynamicAttributes,
@@ -122,7 +123,13 @@
     aria-expanded={popoverOpen}
   >
     <span class="toolbar-filter-trigger__icon" aria-hidden="true">
-      <FilterIcon />
+      <HugeiconsIcon
+        icon={FilterIcon}
+        size="1em"
+        strokeWidth={1.5}
+        class="h-4 w-4 shrink-0"
+        aria-hidden="true"
+      />
     </span>
     {#if label}
       <span class="toolbar-filter-trigger__label">{label}</span>

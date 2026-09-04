@@ -1,6 +1,7 @@
 <script lang="ts">
   import DetailNav from './DetailNav.svelte'
-  import { TrashIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import Delete02Icon from '@hugeicons/core-free-icons/Delete02Icon'
 
   type Props = {
     index: number
@@ -39,7 +40,13 @@
         onclick={onDelete}
         aria-label="Delete this {label}"
       >
-        <TrashIcon class="h-3.5 w-3.5" aria-hidden="true" />
+        <HugeiconsIcon
+          icon={Delete02Icon}
+          size="1em"
+          strokeWidth={1.5}
+          class="h-3.5 w-3.5"
+          aria-hidden="true"
+        />
       </button>
     </div>
   {:else}

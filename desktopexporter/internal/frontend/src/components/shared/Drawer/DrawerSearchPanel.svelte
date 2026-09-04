@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { ArrowUpIcon, SortingIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import ArrowUp02Icon from '@hugeicons/core-free-icons/ArrowUp02Icon'
+  import Sorting05Icon from '@hugeicons/core-free-icons/Sorting05Icon'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import {
@@ -217,7 +219,12 @@
         data-tip="Sort"
         onkeydown={handleSortTriggerKeydown}
       >
-        <SortingIcon class="h-[17px] w-[17px] shrink-0" />
+        <HugeiconsIcon
+          icon={Sorting05Icon}
+          size="1em"
+          strokeWidth={1.5}
+          class="h-[17px] w-[17px] shrink-0"
+        />
       </button>
 
       <div
@@ -248,7 +255,10 @@
               >
                 <span>{opt.label}</span>
                 {#if opt.value === sortValue}
-                  <ArrowUpIcon
+                  <HugeiconsIcon
+                    icon={ArrowUp02Icon}
+                    size="1em"
+                    strokeWidth={1.5}
                     class="anchor-popover-menu__option-icon {sortDirection ===
                     'desc'
                       ? 'rotate-180'

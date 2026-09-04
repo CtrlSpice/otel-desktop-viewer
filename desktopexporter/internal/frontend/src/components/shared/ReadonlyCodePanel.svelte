@@ -71,7 +71,9 @@
   import { EditorState } from '@codemirror/state'
   import { StreamLanguage } from '@codemirror/language'
   import { shell } from '@codemirror/legacy-modes/mode/shell'
-  import { CheckmarkCircleIcon, CopyIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import CheckmarkCircle02Icon from '@hugeicons/core-free-icons/CheckmarkCircle02Icon'
+  import Copy01Icon from '@hugeicons/core-free-icons/Copy01Icon'
 
   type Props = {
     code: string
@@ -159,9 +161,21 @@
         aria-label={copied ? 'Copied' : copyLabel}
       >
         {#if copied}
-          <CheckmarkCircleIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+          <HugeiconsIcon
+            icon={CheckmarkCircle02Icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
         {:else}
-          <CopyIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+          <HugeiconsIcon
+            icon={Copy01Icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
         {/if}
       </button>
     </div>

@@ -21,14 +21,13 @@
   import type { Snippet } from 'svelte'
   import { onDestroy, onMount, tick } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
-  import {
-    ArrowRightIcon,
-    ReloadIcon,
-    BarChartHorizontalIcon,
-    ChartHistogramIcon,
-    LogIcon,
-    HomeIcon,
-  } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import BarChartHorizontalIcon from '@hugeicons/core-free-icons/BarChartHorizontalIcon'
+  import ChartHistogramIcon from '@hugeicons/core-free-icons/ChartHistogramIcon'
+  import ChevronRightIcon from '@hugeicons/core-free-icons/ChevronRightIcon'
+  import Home12Icon from '@hugeicons/core-free-icons/Home12Icon'
+  import RefreshIcon from '@hugeicons/core-free-icons/RefreshIcon'
+  import { LogIcon } from '@/icons'
   import ThemeToggle from '@/components/shared/ThemeToggle.svelte'
   import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
   import {
@@ -602,7 +601,10 @@
                 data-tip="Waiting for data"
                 aria-disabled="true"
               >
-                <ArrowRightIcon
+                <HugeiconsIcon
+                  icon={ChevronRightIcon}
+                  size="1em"
+                  strokeWidth={1.5}
                   class="h-[17px] w-[17px] opacity-40"
                   aria-hidden="true"
                 />
@@ -623,7 +625,10 @@
                 aria-expanded="false"
                 onclick={() => setDrawerOpen(true)}
               >
-                <ArrowRightIcon
+                <HugeiconsIcon
+                  icon={ChevronRightIcon}
+                  size="1em"
+                  strokeWidth={1.5}
                   class="h-[17px] w-[17px] animate-[spin-half_200ms_ease-out]"
                   aria-hidden="true"
                 />
@@ -668,7 +673,10 @@
                   <span class="signal-drawer__new-data-dot" aria-hidden="true"
                   ></span>
                 {/if}
-                <ReloadIcon
+                <HugeiconsIcon
+                  icon={RefreshIcon}
+                  size="1em"
+                  strokeWidth={1.5}
                   class="relative z-[1] h-[17px] w-[17px] shrink-0"
                   aria-hidden="true"
                 />
@@ -683,10 +691,16 @@
 
       <!-- Expanded: unified header panel (tabs + chrome + search + toolbar) -->
       {#if effectivelyOpen}
-        {#snippet tracesIcon()}<BarChartHorizontalIcon
+        {#snippet tracesIcon()}<HugeiconsIcon
+            icon={BarChartHorizontalIcon}
+            size="1em"
+            strokeWidth={1.5}
             class="h-[15px] w-[15px] shrink-0"
           />{/snippet}
-        {#snippet metricsIcon()}<ChartHistogramIcon
+        {#snippet metricsIcon()}<HugeiconsIcon
+            icon={ChartHistogramIcon}
+            size="1em"
+            strokeWidth={1.5}
             class="h-[15px] w-[15px] shrink-0"
           />{/snippet}
         {#snippet logsIcon()}<LogIcon
@@ -733,7 +747,10 @@
                   : undefined}
                 aria-label="Home"
               >
-                <HomeIcon
+                <HugeiconsIcon
+                  icon={Home12Icon}
+                  size="1em"
+                  strokeWidth={1.5}
                   class="h-[17px] w-[17px] shrink-0"
                   aria-hidden="true"
                 />
@@ -751,7 +768,10 @@
                 aria-expanded="true"
                 onclick={() => setDrawerOpen(false)}
               >
-                <ArrowRightIcon
+                <HugeiconsIcon
+                  icon={ChevronRightIcon}
+                  size="1em"
+                  strokeWidth={1.5}
                   class="h-[17px] w-[17px] shrink-0 transition-transform duration-200 rotate-180"
                   aria-hidden="true"
                 />
@@ -796,7 +816,10 @@
                         aria-hidden="true"
                       ></span>
                     {/if}
-                    <ReloadIcon
+                    <HugeiconsIcon
+                      icon={RefreshIcon}
+                      size="1em"
+                      strokeWidth={1.5}
                       class="relative z-[1] h-[17px] w-[17px] shrink-0"
                       aria-hidden="true"
                     />

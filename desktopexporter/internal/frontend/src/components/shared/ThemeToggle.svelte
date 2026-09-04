@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
-  import { SunIcon, MoonIcon, FallingStarIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import FallingStarIcon from '@hugeicons/core-free-icons/FallingStarIcon'
+  import Moon02Icon from '@hugeicons/core-free-icons/Moon02Icon'
+  import Sun03Icon from '@hugeicons/core-free-icons/Sun03Icon'
 
   type ThemeName = 'rose-pine-dawn' | 'rose-pine-moon' | 'rose-pine'
 
@@ -67,11 +70,26 @@
     {#key currentTheme}
       <span class="theme-toggle__fade" transition:fade={{ duration: 300 }}>
         {#if currentTheme === 'rose-pine-dawn'}
-          <SunIcon class="h-[17px] w-[17px] shrink-0" />
+          <HugeiconsIcon
+            icon={Sun03Icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-[17px] w-[17px] shrink-0"
+          />
         {:else if currentTheme === 'rose-pine-moon'}
-          <MoonIcon class="h-[17px] w-[17px] shrink-0" />
+          <HugeiconsIcon
+            icon={Moon02Icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-[17px] w-[17px] shrink-0"
+          />
         {:else}
-          <FallingStarIcon class="h-[17px] w-[17px] shrink-0" />
+          <HugeiconsIcon
+            icon={FallingStarIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-[17px] w-[17px] shrink-0"
+          />
         {/if}
       </span>
     {/key}

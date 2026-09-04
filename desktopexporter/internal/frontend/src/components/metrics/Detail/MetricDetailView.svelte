@@ -17,7 +17,9 @@
     type PaneTab,
   } from '@/components/shared/PaneHeader.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import { LeftToRightListBulletIcon, BarChartHorizontalIcon } from '@/icons'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import BarChartHorizontalIcon from '@hugeicons/core-free-icons/BarChartHorizontalIcon'
+  import LeftToRightListBulletIcon from '@hugeicons/core-free-icons/LeftToRightListBulletIcon'
   import MetricField from './MetricField.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
@@ -113,8 +115,16 @@
 {:else}
   {@const metric = ctx.metric}
 
-  {#snippet fieldsIcon()}<LeftToRightListBulletIcon />{/snippet}
-  {#snippet seriesIcon()}<BarChartHorizontalIcon />{/snippet}
+  {#snippet fieldsIcon()}<HugeiconsIcon
+      icon={LeftToRightListBulletIcon}
+      size="1em"
+      strokeWidth={1.5}
+    />{/snippet}
+  {#snippet seriesIcon()}<HugeiconsIcon
+      icon={BarChartHorizontalIcon}
+      size="1em"
+      strokeWidth={1.5}
+    />{/snippet}
 
   {@const tabs: PaneTab[] = [
     { id: 'fields', label: 'Fields', icon: fieldsIcon },
