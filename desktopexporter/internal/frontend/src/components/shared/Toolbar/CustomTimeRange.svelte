@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { slide } from 'svelte/transition'
   import { Calendar } from 'bits-ui'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -33,13 +33,16 @@
 
   const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
   const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}$/
+  const CLOCK_REFRESH_MS = 1000
+  const initialNow = Date.now()
 
   let startDateText = $state('')
   let startTimeText = $state('00:00:00.000')
   let endDateText = $state('')
   let endTimeText = $state('')
+  let endTracksNow = $state(true)
   let openCalendar = $state<Endpoint | null>(null)
-  let nowTimestamp = $state(Date.now())
+  let nowTimestamp = $state(initialNow)
   let startChoice = $state<Choice | null>(null)
   let endChoice = $state<Choice | null>(null)
   let startAmbiguity = $state<Ambiguity | null>(null)
@@ -71,7 +74,7 @@
         invalidFields: Endpoint[]
       }
 
-  let today = $derived(calendarDateForTimestamp(nowTimestamp))
+  let today = $state(calendarDateForTimestamp(initialNow))
 
   function editableParts(timestamp: number): { date: string; time: string } {
     const formatted = formatEditableDateTime(timestamp, ctx.tz)
@@ -90,6 +93,21 @@
   function calendarDateForTimestamp(timestamp: number): CalendarDate {
     return parseDate(editableParts(timestamp).date)
   }
+
+  function refreshCurrentDay(timestamp: number = Date.now()) {
+    const nextToday = calendarDateForTimestamp(timestamp)
+    nowTimestamp = timestamp
+    if (nextToday.compare(today) !== 0) today = nextToday
+    if (endTracksNow && endDateText !== nextToday.toString()) {
+      endDateText = nextToday.toString()
+      endTimeText = ''
+    }
+  }
+
+  onMount(() => {
+    const timer = setInterval(refreshCurrentDay, CLOCK_REFRESH_MS)
+    return () => clearInterval(timer)
+  })
 
   function wallClockText(date: string, time: string): string {
     return `${date} ${time}`
@@ -128,16 +146,24 @@
     }
   }
 
-  function editEndpoint(endpoint: Endpoint) {
-    if (endpoint === 'start') {
-      startDirty = true
-      startChoice = null
-      startAmbiguity = null
-    } else {
-      endDirty = true
-      endChoice = null
-      endAmbiguity = null
-    }
+  function editStart() {
+    startDirty = true
+    startChoice = null
+    startAmbiguity = null
+    customFieldIssue = null
+  }
+
+  function editEndField(field: 'date' | 'time', value: string) {
+    const now = Date.now()
+    const currentDate = editableParts(now).date
+    endDirty = true
+    endChoice = null
+    endAmbiguity = null
+    endTracksNow =
+      field === 'date'
+        ? value === currentDate && endTimeText === ''
+        : endDateText === currentDate && value === ''
+    refreshCurrentDay(now)
     customFieldIssue = null
   }
 
@@ -154,6 +180,7 @@
       startAmbiguity = null
     } else {
       endDirty = true
+      endTracksNow = false
       endDateText = value.toString()
       if (!endTimeText) endTimeText = editableParts(nowTimestamp).time
       endChoice = null
@@ -208,9 +235,17 @@
       ? untrack(() => ({ date: startDateText, time: startTimeText }))
       : null
     const endDraft = preserveEnd
-      ? untrack(() => ({ date: endDateText, time: endTimeText }))
+      ? untrack(() => ({
+          date: endDateText,
+          time: endTimeText,
+          tracksNow: endTracksNow,
+        }))
       : null
     previousSelection = selection
+    const now = Date.now()
+    const currentDay = calendarDateForTimestamp(now)
+    nowTimestamp = now
+    today = currentDay
 
     if (selection.type === 'custom') {
       const start = editableParts(selection.start)
@@ -229,13 +264,13 @@
       endChoice = initializedEnd.choice
       startAmbiguity = initializedStart.ambiguity
       endAmbiguity = initializedEnd.ambiguity
+      endTracksNow = false
     } else {
-      const now = Date.now()
-      nowTimestamp = now
       startDateText = ''
       startTimeText = '00:00:00.000'
-      endDateText = editableParts(now).date
+      endDateText = currentDay.toString()
       endTimeText = ''
+      endTracksNow = true
       startChoice = null
       endChoice = null
       startAmbiguity = null
@@ -248,8 +283,9 @@
       startAmbiguity = null
     }
     if (endDraft) {
-      endDateText = endDraft.date
-      endTimeText = endDraft.time
+      endDateText = endDraft.tracksNow ? currentDay.toString() : endDraft.date
+      endTimeText = endDraft.tracksNow ? '' : endDraft.time
+      endTracksNow = endDraft.tracksNow
       endChoice = null
       endAmbiguity = null
     }
@@ -258,7 +294,8 @@
     customFieldIssue = null
   })
 
-  function validateCustomRange(): ValidationResult {
+  function validateCustomRange(now: number = Date.now()): ValidationResult {
+    refreshCurrentDay(now)
     const startResult = resolveEndpoint(
       'start',
       startDateText,
@@ -274,11 +311,9 @@
       }
     }
 
-    const now = Date.now()
-    const endResult: EndpointResult =
-      endDateText === editableParts(now).date && !endTimeText
-        ? { isValid: true, timestamp: now }
-        : resolveEndpoint('end', endDateText, endTimeText, endChoice)
+    const endResult: EndpointResult = endTracksNow
+      ? { isValid: true, timestamp: now }
+      : resolveEndpoint('end', endDateText, endTimeText, endChoice)
     if (!endResult.isValid) {
       endAmbiguity = endResult.ambiguity ?? null
       return {
@@ -296,7 +331,7 @@
       }
     }
 
-    if (endResult.timestamp > Date.now()) {
+    if (endResult.timestamp > now) {
       return {
         isValid: false,
         error: 'End time cannot be in the future',
@@ -437,7 +472,7 @@
             aria-describedby={startInputInvalid
               ? 'custom-time-range-error'
               : undefined}
-            oninput={() => editEndpoint('start')}
+            oninput={editStart}
             bind:value={startDateText}
           />
           <input
@@ -451,7 +486,7 @@
             aria-describedby={startInputInvalid
               ? 'custom-time-range-error'
               : undefined}
-            oninput={() => editEndpoint('start')}
+            oninput={editStart}
             bind:value={startTimeText}
           />
           <button
@@ -528,7 +563,7 @@
             aria-describedby={endInputInvalid
               ? 'custom-time-range-error'
               : undefined}
-            oninput={() => editEndpoint('end')}
+            oninput={event => editEndField('date', event.currentTarget.value)}
             bind:value={endDateText}
           />
           <input
@@ -542,7 +577,7 @@
             aria-describedby={endInputInvalid
               ? 'custom-time-range-error'
               : undefined}
-            oninput={() => editEndpoint('end')}
+            oninput={event => editEndField('time', event.currentTarget.value)}
             bind:value={endTimeText}
           />
           <button
