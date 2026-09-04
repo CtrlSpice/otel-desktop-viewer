@@ -1,6 +1,7 @@
 package util
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"strconv"
@@ -8,6 +9,16 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
+
+// SpanIDUint64 converts an OTLP 8-byte span ID to its native integer value.
+func SpanIDUint64(id [8]byte) uint64 {
+	return binary.BigEndian.Uint64(id[:])
+}
+
+// SpanIDWire renders a native span ID in canonical OTLP wire form.
+func SpanIDWire(id uint64) string {
+	return fmt.Sprintf("%016x", id)
+}
 
 // CamelToSnake converts camelCase or PascalCase to snake_case (e.g. traceID -> trace_id).
 func CamelToSnake(s string) string {

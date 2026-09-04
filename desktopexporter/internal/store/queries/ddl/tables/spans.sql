@@ -1,8 +1,8 @@
 create table if not exists spans (
 		trace_id uuid,
 		trace_state varchar,
-		span_id uuid not null,
-		parent_span_id uuid,
+		span_id ubigint not null,
+		parent_span_id ubigint,
 		-- W3C trace flags plus the is_remote bit for the parent context.
 		-- Logs and metric datapoints have always stored theirs; spans and
 		-- links did not, which was an oversight rather than a decision.

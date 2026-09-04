@@ -100,3 +100,23 @@ func TestDriverStillReturnsRawBytesForUnscastUUIDs(t *testing.T) {
 	require.NoError(t, db.QueryRow(`select (?::uuid)::varchar`, want).Scan(&cast))
 	assert.Equal(t, want, cast, "the explicit cast is what produces usable text")
 }
+
+// DuckDB supports UBIGINT, but database/sql's fallback converter rejects a
+// scalar uint64 above MaxInt64 before duckdb-go can infer its native type.
+// Lists take duckdb-go's NamedValueChecker path and preserve the full range,
+// which is why the span duplicate probe binds []uint64 rather than one scalar
+// parameter per span.
+func TestDriverStillCannotBindHighBitUint64Scalar(t *testing.T) {
+	db, err := sql.Open("duckdb", "")
+	require.NoError(t, err)
+	defer db.Close()
+
+	max := ^uint64(0)
+	var got uint64
+	err = db.QueryRow(`select ?::ubigint`, max).Scan(&got)
+	require.Error(t, err,
+		"plain scalar uint64 now binds safely; revisit query workarounds that avoid it")
+
+	require.NoError(t, db.QueryRow(`select unnest(?::ubigint[])`, []uint64{max}).Scan(&got))
+	assert.Equal(t, max, got, "uint64 arrays must preserve values above MaxInt64")
+}

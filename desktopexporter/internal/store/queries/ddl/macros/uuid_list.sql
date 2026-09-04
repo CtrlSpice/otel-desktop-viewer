@@ -2,7 +2,7 @@
 --
 -- Callers write a static statement:
 --
---   delete from spans where span_id in (select id from uuid_list(?))
+--   delete from logs where id in (select id from uuid_list(?))
 --
 -- and bind the whole id set as a single []string argument. The alternative --
 -- building one ?::uuid placeholder per id and appending one argument per

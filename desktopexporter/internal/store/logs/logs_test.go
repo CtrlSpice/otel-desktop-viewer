@@ -360,6 +360,60 @@ func TestLogOrdering(t *testing.T) {
 	assert.Equal(t, "INFO", entries[2].SeverityText)
 }
 
+func TestLogSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	data := plog.NewLogs()
+	rl := data.ResourceLogs().AppendEmpty()
+	rl.Resource().Attributes().PutStr("service.name", "native-span-ids")
+	sl := rl.ScopeLogs().AppendEmpty()
+	traceID := mustDecodeTraceIDLogs("000000000000000000000000000000f3")
+	for i, tc := range []struct{ body, spanID string }{
+		{"leading", "0000000000000001"},
+		{"high-bit", "8000000000000000"},
+		{"max", "ffffffffffffffff"},
+		{"empty", ""},
+	} {
+		rec := sl.LogRecords().AppendEmpty()
+		rec.SetTimestamp(pcommon.Timestamp(i + 1))
+		rec.SetObservedTimestamp(pcommon.Timestamp(i + 1))
+		rec.SetTraceID(traceID)
+		if tc.spanID != "" {
+			rec.SetSpanID(mustDecodeSpanIDLogs(tc.spanID))
+		}
+		rec.Body().SetStr(tc.body)
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	for _, tc := range []struct{ body, spanID string }{
+		{"leading", "0000000000000001"},
+		{"high-bit", "8000000000000000"},
+		{"max", "ffffffffffffffff"},
+		{"empty", ""},
+	} {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			var id string
+			if err := db.QueryRow(`select id::varchar from logs where body = ?`, tc.body).Scan(&id); err != nil {
+				return nil, err
+			}
+			return logs.Get(ctx, db, id)
+		})
+		require.NoError(t, err)
+		var got logEntryJSON
+		require.NoError(t, json.Unmarshal(raw, &got))
+		require.Equal(t, tc.spanID, got.SpanID, tc.body)
+	}
+
+	var nullSpanIDs int
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select count(*) from logs where span_id is null`).Scan(&nullSpanIDs)
+	}))
+	require.Equal(t, 1, nullSpanIDs)
+}
+
 // TestEmptyLogs verifies handling of empty log lists and empty store.
 func TestEmptyLogs(t *testing.T) {
 	t.Parallel()

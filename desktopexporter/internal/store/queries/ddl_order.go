@@ -34,7 +34,7 @@ import (
 //
 //	logs.trace_id, logs.span_id
 //	exemplars.trace_id, exemplars.span_id
-//	links.trace_id            (the linked trace, as opposed to links.span_id)
+//	links.linked_trace_id, links.linked_span_id
 //
 // These point at spans, but nothing enforces that the span exists. That is
 // required, not an oversight. Signals arrive independently and out of order: a
@@ -44,8 +44,8 @@ import (
 // would do so most often under exactly the conditions a debugging tool exists
 // for -- a partial or failed trace.
 //
-// So logs and exemplars impose no ordering against spans, and none should be
-// inferred from the fact that they reference them. Adding an FK to any column
+// So logs and exemplars impose no ordering against spans, and linked targets do
+// not add another ordering constraint to links. Adding an FK to any column
 // listed above would break ingest for out-of-order arrival, which no test that
 // ingests a complete trace would catch.
 var (

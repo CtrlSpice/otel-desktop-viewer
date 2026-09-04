@@ -39,7 +39,7 @@ func TestIngestDedupesAcrossSpans(t *testing.T) {
 		sp.SetTraceID(pcommon.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})
 		var sid [8]byte
 		for b := 0; b < 8; b++ {
-			sid[b] = byte(i >> (b * 8))
+			sid[b] = byte((i + 1) >> (b * 8))
 		}
 		sp.SetSpanID(sid)
 		sp.SetName("GET /cart")

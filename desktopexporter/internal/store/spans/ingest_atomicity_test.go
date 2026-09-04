@@ -92,6 +92,36 @@ func TestIngest_OneDuplicateDoesNotCostTheBatch(t *testing.T) {
 	assert.Equal(t, 599, countRows(t, s, ctx, "select count(*) from links"))
 }
 
+func TestIngest_EmptySpanIDIsRefused(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	tr := ptrace.NewTraces()
+	ss := tr.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	traceID := mustDecodeTraceID("000000000000000000000000000000ab")
+	for _, tc := range []struct {
+		name   string
+		spanID string
+	}{
+		{name: "invalid"},
+		{name: "valid", spanID: "0000000000000001"},
+	} {
+		span := ss.Spans().AppendEmpty()
+		span.SetTraceID(traceID)
+		if tc.spanID != "" {
+			span.SetSpanID(mustDecodeSpanID(tc.spanID))
+		}
+		span.SetName(tc.name)
+	}
+
+	rep, err := ingestReport(t, s, tr)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Count())
+	require.ErrorIs(t, rep.Reason(), spans.ErrInvalidSpanID)
+	require.Equal(t, 1, countRows(t, s, ctx, "select count(*) from spans"))
+	require.Equal(t, 0, countRows(t, s, ctx, "select count(*) from spans where span_id = 0"))
+}
+
 // Several bad spans, still only they are lost.
 //
 // DuckDB names only the first violation it hits, so the count cannot come from

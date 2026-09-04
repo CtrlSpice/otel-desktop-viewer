@@ -54,6 +54,35 @@ describe('LinksPanel trace correlation', () => {
       { [SPAN_PARAM]: 'linked-span' }
     )
   })
+
+  it('keeps an invalid link without inventing zero IDs or navigation', () => {
+    renderWithContexts(LinksPanel, {
+      links: [makeLink({ traceID: null, spanID: null })],
+    })
+
+    expect(screen.getByText('Invalid link target')).toBeInTheDocument()
+    expect(screen.getByTitle('Invalid link target')).toHaveClass(
+      'links-panel__warning'
+    )
+    expect(screen.getByTitle('Invalid link target')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
+    expect(screen.getAllByText('null')).toHaveLength(2)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('links only the trace when the linked span ID is missing', () => {
+    renderWithContexts(LinksPanel, {
+      links: [makeLink({ spanID: null })],
+    })
+
+    expect(screen.getByRole('link', { name: 'linked-trace' })).toHaveAttribute(
+      'href',
+      '/traces/linked-trace?start=0&end=1'
+    )
+    expect(screen.getByText('null').closest('a')).toBeNull()
+  })
 })
 
 // The header badge counts the rows the panel renders, and the two are computed

@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
 type rejectionRow struct {
@@ -75,4 +77,23 @@ func TestRejections_RepeatedResendsAccumulateInOneRow(t *testing.T) {
 	assert.EqualValues(t, 27, got[0].occurrences, "3 resends of 9 spans")
 	assert.EqualValues(t, 9, got[0].samples,
 		"the same nine identities re-refused must dedupe, not fill the bound")
+}
+
+func TestRejections_EmptySpanIDIsRefusedWithoutLinkableSample(t *testing.T) {
+	t.Parallel()
+	s, _ := storetest.New(t)
+
+	traces := ptrace.NewTraces()
+	span := traces.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetTraceID(mustDecodeTraceID("000000000000000000000000000000ac"))
+
+	rep, err := ingestReport(t, s, traces)
+	require.NoError(t, err)
+	require.ErrorIs(t, rep.Reason(), spans.ErrInvalidSpanID)
+
+	got := readRejections(t, s)
+	require.Len(t, got, 1)
+	assert.Equal(t, "span_refused", got[0].kind)
+	assert.EqualValues(t, 1, got[0].occurrences)
+	assert.Zero(t, got[0].samples, "an empty ID must not become an all-zero route")
 }

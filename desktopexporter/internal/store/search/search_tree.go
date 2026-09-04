@@ -177,11 +177,10 @@ func buildGroup(group *QueryGroup, conditions *[]string, params *[]NamedParam, m
 	return nil
 }
 
-// wireIDFields are field names whose values are trace/span IDs: served in
-// OTLP wire form (dash-less lowercase hex) but stored in uuid columns.
-// Signal mappers convert those columns to wire form for comparison, and
-// values are normalized here to match, so dashed or uppercase input still
-// works and malformed IDs match nothing instead of erroring on a uuid cast.
+// wireIDFields are field names whose values are trace/span IDs. Signal mappers
+// convert their native UUID or UBIGINT columns to OTLP wire form for comparison,
+// and values are normalized here to match, so dashed or uppercase input still
+// works and malformed IDs match nothing instead of causing a cast error.
 var wireIDFields = map[string]struct{}{
 	"traceID":      {},
 	"traceId":      {},

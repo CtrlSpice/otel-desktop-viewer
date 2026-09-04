@@ -3,7 +3,7 @@ create table if not exists events (
 		-- The owning span's trace. Part of the key that reaches it: a span id
 		-- alone does not identify a span across traces.
 		trace_id uuid not null,
-		span_id uuid not null,
+		span_id ubigint not null,
 		name varchar,
 		timestamp bigint,
 		attribute_ids uuid[] not null,

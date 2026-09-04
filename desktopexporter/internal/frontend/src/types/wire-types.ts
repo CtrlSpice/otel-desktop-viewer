@@ -60,9 +60,9 @@ export type JsonEventData = {
 }
 
 export type JsonLinkData = {
-  traceID: string
-  // The linked target span (OTLP link.spanID), 16-char hex.
-  spanID: string
+  traceID: string | null
+  // The linked target span (OTLP link.spanID), 16-char hex when valid.
+  spanID: string | null
   traceState: string
   droppedAttributesCount: number
   /** W3C trace flags for the linked context. Same reasoning as on the span. */

@@ -96,6 +96,27 @@ func TestVersionMismatchIsRefused(t *testing.T) {
 	assert.Equal(t, int64(schema.Version), fields["expected_version"])
 }
 
+// Version 9 stored 8-byte span IDs as zero-padded UUIDs. Pin that exact
+// predecessor so this incompatible schema transition cannot lose its bump.
+func TestVersionNineDatabaseIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v9.db")
+
+	s := newFileStore(t, path)
+	require.NoError(t, s.Close())
+
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`delete from schema_meta`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into schema_meta (version) values (9)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible,
+		"a database with UUID-backed span IDs must be refused")
+}
+
 // A file holding data but carrying no stamp predates versioning, so its shape
 // is unknown and it must be refused too.
 //
@@ -123,12 +144,11 @@ func TestPreVersioningDatabaseIsRefused(t *testing.T) {
 		}
 		_, err := db.Exec(`
 			insert into spans (trace_id, span_id, resource_id, scope_id, attribute_ids)
-			values (?::uuid, ?::uuid,
+			values (?::uuid, 1::ubigint,
 				'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
 				'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid,
 				[]::uuid[])`,
-			"11111111-1111-1111-1111-111111111111",
-			"22222222-2222-2222-2222-222222222222")
+			"11111111-1111-1111-1111-111111111111")
 		return err
 	})
 	require.NoError(t, err)

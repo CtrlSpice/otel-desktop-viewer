@@ -38,7 +38,7 @@ func BenchmarkGetFieldValues(b *testing.B) {
 				_, err := db.Exec(`insert into spans
 					(trace_id, span_id, name, start_time, end_time,
 					 resource_id, scope_id, attribute_ids)
-					select uuid(), uuid(),
+					select uuid(), range::ubigint,
 						'svc-' || (range % 20) || '/op-' || (range % 400),
 						range, range + 1,
 						'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
