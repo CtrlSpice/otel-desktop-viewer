@@ -1,12 +1,23 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { screen, fireEvent } from '@testing-library/svelte'
+import { tick } from 'svelte'
 import TimeRangeFilterBody from './TimeRangeFilterBody.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function renderComponent() {
   setTestUrl('/traces')
   return renderWithContexts(TimeRangeFilterBody)
+}
+
+async function openTimezoneOptions() {
+  const heading = screen.getByText('Timezone').closest('summary')
+  if (!heading) throw new Error('Timezone heading not found')
+  const details = heading.closest('details')
+  if (!details) throw new Error('Timezone details not found')
+  details.open = true
+  await fireEvent(details, new Event('toggle'))
+  await tick()
 }
 
 describe('TimeRangeFilterBody', () => {
@@ -26,11 +37,12 @@ describe('TimeRangeFilterBody', () => {
     renderComponent()
     expect(screen.getByText('Custom Range')).toBeInTheDocument()
     expect(screen.getByText('Timezone')).toBeInTheDocument()
-    expect(screen.getByText('Recently Used')).toBeInTheDocument()
+    expect(screen.getByText('Recent')).toBeInTheDocument()
   })
 
-  it('switches the timezone from local to UTC', () => {
+  it('switches the timezone from local to UTC', async () => {
     renderComponent()
+    await openTimezoneOptions()
     // Exact name: on a UTC machine the local option's accessible name also
     // starts with "Coordinated Universal Time" (plus its "(Local)" marker).
     fireEvent.click(
@@ -39,30 +51,200 @@ describe('TimeRangeFilterBody', () => {
     expect(localStorage.getItem('time-tz')).toBe('UTC')
   })
 
-  it('marks the machine timezone option as local', () => {
+  it('marks the machine timezone option as local', async () => {
     renderComponent()
+    await openTimezoneOptions()
     expect(
       screen.getByRole('button', { name: /\(Local\)/ })
     ).toBeInTheDocument()
   })
 
-  it('applies a custom range through the embedded form', () => {
+  it('places local and UTC before a separator and named timezones', async () => {
+    renderComponent()
+    await openTimezoneOptions()
+    const list = screen.getByLabelText('Timezone options')
+    const options = list.querySelectorAll('button')
+    expect(options[0]).toHaveAccessibleName(/\(Local\)/)
+    expect(options[1]).toHaveAccessibleName('Coordinated Universal Time UTC')
+    expect(options[2]).toHaveTextContent('/')
+    expect(list.children[2]).toHaveAttribute('role', 'separator')
+  })
+
+  it('selects and persists a named IANA timezone from the list', async () => {
+    renderComponent()
+    await openTimezoneOptions()
+    const option = screen.getByRole('button', {
+      name: /^America\/Los_Angeles/,
+    })
+    fireEvent.click(option)
+    expect(localStorage.getItem('time-tz')).toBe('America/Los_Angeles')
+    expect(option).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('does not repeat the machine zone among the named choices', async () => {
+    renderComponent()
+    await openTimezoneOptions()
+    expect(
+      screen.queryByRole('button', { name: /^America\/New_York/ })
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the timezone choices in one scrollable list', async () => {
+    renderComponent()
+    await openTimezoneOptions()
+    const list = screen.getByLabelText('Timezone options')
+    expect(list).toHaveClass('timezone-list')
+    expect(list.querySelectorAll('button').length).toBeGreaterThan(100)
+    expect(
+      screen.queryByRole('button', { name: 'Use named timezone' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('combobox', { name: 'Named timezone' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('filters named timezones by city and historical abbreviation', async () => {
+    renderComponent()
+    await openTimezoneOptions()
+    const filter = screen.getByRole('searchbox', { name: 'Filter timezones' })
+
+    await fireEvent.input(filter, { target: { value: 'los angeles' } })
+    expect(
+      screen.getByRole('button', { name: /^America\/Los_Angeles/ })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /^America\/Chicago/ })
+    ).not.toBeInTheDocument()
+
+    await fireEvent.input(filter, { target: { value: 'PWT' } })
+    expect(
+      await screen.findByRole('button', { name: /^America\/Los_Angeles/ })
+    ).toBeInTheDocument()
+
+    await fireEvent.input(filter, { target: { value: 'PST' } })
+    expect(
+      screen.getByRole('button', { name: /^America\/Los_Angeles/ })
+    ).toBeInTheDocument()
+  })
+
+  it('returns every matching zone for an ambiguous abbreviation', async () => {
+    renderComponent()
+    await openTimezoneOptions()
+
+    await fireEvent.input(
+      screen.getByRole('searchbox', { name: 'Filter timezones' }),
+      { target: { value: 'CST' } }
+    )
+    expect(
+      await screen.findByRole('button', { name: /^America\/Chicago/ })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /^Asia\/Shanghai/ })
+    ).toBeInTheDocument()
+  })
+
+  it('shows abbreviations for the selected historical range', async () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        type: 'custom',
+        start: Date.parse('2020-01-14T12:00:00.000Z'),
+        end: Date.parse('2020-01-15T12:00:00.000Z'),
+      })
+    )
+    renderComponent()
+    await openTimezoneOptions()
+
+    expect(
+      screen.getByRole('button', { name: 'America/Los_Angeles PST' })
+    ).toBeInTheDocument()
+  })
+
+  it('scrolls the selected timezone into view when opened', async () => {
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'scrollIntoView'
+    )
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    try {
+      localStorage.setItem('time-tz', 'America/Los_Angeles')
+      renderComponent()
+      await openTimezoneOptions()
+      await vi.waitFor(() => expect(scrollIntoView).toHaveBeenCalledOnce())
+      expect(scrollIntoView.mock.contexts[0]).toHaveAccessibleName(
+        /^America\/Los_Angeles/
+      )
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', original)
+      } else {
+        delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView
+      }
+    }
+  })
+
+  it('applies a custom range through the embedded form', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
+    localStorage.setItem('time-tz', 'UTC')
     renderComponent()
 
-    fireEvent.input(screen.getByLabelText(/Start/i), {
-      target: { value: '2 hours ago' },
+    await fireEvent.input(screen.getByLabelText('Start'), {
+      target: { value: '2026-01-15' },
     })
-    fireEvent.input(screen.getByLabelText(/End/i), {
-      target: { value: '1 hour ago' },
+    await fireEvent.input(screen.getByLabelText('Start time'), {
+      target: { value: '10:00:00.123' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply range' }))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
-    expect(saved.type).toBe('custom')
-    expect(saved.start).toBeLessThan(saved.end)
+    expect(saved).toEqual({
+      type: 'custom',
+      start: new Date('2026-01-15T10:00:00.123Z').getTime(),
+      end: new Date('2026-01-15T12:00:00.000Z').getTime(),
+    })
     expect(window.location.search).toContain(`start=${saved.start}`)
     expect(window.location.search).toContain(`end=${saved.end}`)
+  })
+
+  it('preserves only dirty fields when selecting a named timezone', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-16T00:30:00.000Z'))
+    localStorage.setItem('time-tz', 'UTC')
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        type: 'custom',
+        start: new Date('2026-01-15T20:00:00.000Z').getTime(),
+        end: new Date('2026-01-16T00:00:00.456Z').getTime(),
+      })
+    )
+    renderComponent()
+
+    await fireEvent.input(screen.getByLabelText('Start time'), {
+      target: { value: '15:00:00.123' },
+    })
+    await openTimezoneOptions()
+    await fireEvent.click(
+      screen.getByRole('button', { name: /^America\/Los_Angeles/ })
+    )
+
+    expect(screen.getByLabelText('Start')).toHaveValue('2026-01-15')
+    expect(screen.getByLabelText('Start time')).toHaveValue('15:00:00.123')
+    expect(screen.getByLabelText('End')).toHaveValue('2026-01-15')
+    expect(screen.getByLabelText('End time')).toHaveValue('16:00:00.456')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply range' }))
+
+    expect(JSON.parse(localStorage.getItem('time-selection')!)).toEqual({
+      type: 'custom',
+      start: new Date('2026-01-15T23:00:00.123Z').getTime(),
+      end: new Date('2026-01-16T00:00:00.456Z').getTime(),
+    })
   })
 })

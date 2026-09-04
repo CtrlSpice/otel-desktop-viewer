@@ -13,11 +13,8 @@ import BarChartHorizontalIcon from './BarChartHorizontalIcon.svelte'
 import ChartHistogramIcon from './ChartHistogramIcon.svelte'
 import CancelIcon from './CancelIcon.svelte'
 import CheckmarkCircleIcon from './CheckmarkCircleIcon.svelte'
-import CustomizeIcon from './CustomizeIcon.svelte'
 import CopyIcon from './CopyIcon.svelte'
-import DateTimeIcon from './DateTimeIcon.svelte'
 import FilterIcon from './FilterIcon.svelte'
-import GlobalIcon from './GlobalIcon.svelte'
 import LeftToRightListBulletIcon from './LeftToRightListBullet.svelte'
 import LinkIcon from './LinkIcon.svelte'
 import LogIcon from './LogIcon.svelte'
@@ -46,11 +43,8 @@ export {
   CancelIcon,
   ChartHistogramIcon,
   CheckmarkCircleIcon,
-  CustomizeIcon,
   CopyIcon,
-  DateTimeIcon,
   FilterIcon,
-  GlobalIcon,
   LeftToRightListBulletIcon,
   LinkIcon,
   LogIcon,

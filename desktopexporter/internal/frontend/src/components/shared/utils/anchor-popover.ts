@@ -42,9 +42,14 @@ export function positionAnchorPopover(
     popover.style.right = `${window.innerWidth - rect.right}px`
 
     const popRect = popover.getBoundingClientRect()
-    if (popRect.width > 0 && popRect.left < VIEWPORT_MARGIN_PX) {
+    if (
+      popRect.width > 0 &&
+      (popRect.left < VIEWPORT_MARGIN_PX ||
+        popRect.right > window.innerWidth - VIEWPORT_MARGIN_PX)
+    ) {
+      const maxLeft = window.innerWidth - VIEWPORT_MARGIN_PX - popRect.width
       popover.style.right = 'auto'
-      popover.style.left = `${VIEWPORT_MARGIN_PX}px`
+      popover.style.left = `${Math.max(VIEWPORT_MARGIN_PX, Math.min(popRect.left, maxLeft))}px`
     }
   } else {
     popover.style.top = `${rect.bottom + inwardGapPx()}px`

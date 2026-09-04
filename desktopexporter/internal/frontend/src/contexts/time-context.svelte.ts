@@ -1,5 +1,9 @@
 import { setContext, getContext } from 'svelte'
-import { type Timezone, recordRecentTimeRange } from '@/utils/time'
+import {
+  type Timezone,
+  normalizeTimezone,
+  recordRecentTimeRange,
+} from '@/utils/time'
 import {
   navigateCurrentRoute,
   readRoute,
@@ -96,7 +100,7 @@ function loadTimeSelection(raw: string | null): TimeSelection {
 }
 
 function parseTimezone(value: string | null): Timezone | null {
-  return value === 'local' || value === 'UTC' ? value : null
+  return value ? normalizeTimezone(value) : null
 }
 
 type RouteTimeSnapshot =
@@ -143,6 +147,11 @@ function sameRouteTime(
 function createTimeContext(): TimeContext {
   const savedSelection = localStorage.getItem('time-selection')
   const savedTz = localStorage.getItem('time-tz')
+  const restoredTz = parseTimezone(savedTz)
+  if (savedTz && !restoredTz) localStorage.removeItem('time-tz')
+  else if (restoredTz && restoredTz !== savedTz) {
+    localStorage.setItem('time-tz', restoredTz)
+  }
 
   const urlTime = parseTimeQuery(readRoute().query)
 
@@ -153,7 +162,7 @@ function createTimeContext(): TimeContext {
         ? { type: 'custom', start: urlTime.start, end: urlTime.end }
         : loadTimeSelection(savedSelection)
   )
-  let tz = $state<Timezone>(parseTimezone(savedTz) ?? 'local')
+  let tz = $state<Timezone>(restoredTz ?? 'local')
 
   // The absolute window currently frozen in the URL. Presets stay live in
   // memory (duration anchored to now) while the URL holds this fixed
@@ -183,7 +192,11 @@ function createTimeContext(): TimeContext {
     selection = next
     localStorage.setItem('time-selection', JSON.stringify(selection))
     const range = selectionToQueryRangeMs(selection, now)
-    if (range.startTime !== null && range.endTime !== null) {
+    if (
+      (selection.type === 'custom' || selection.type === 'recent') &&
+      range.startTime !== null &&
+      range.endTime !== null
+    ) {
       recordRecentTimeRange(range.startTime, range.endTime, now)
     }
     syncUrl()

@@ -1,4 +1,4 @@
-import type { Timezone } from '@/utils/time'
+import { resolveTimezoneName, type Timezone } from '@/utils/time'
 
 export type ChartTimeRangeLabels = {
   start: string
@@ -13,7 +13,7 @@ function calendarDayKey(ms: number, timezone: Timezone): string {
     day: '2-digit',
     hour12: false,
   }
-  if (timezone === 'UTC') opts.timeZone = 'UTC'
+  opts.timeZone = resolveTimezoneName(timezone)
   return new Intl.DateTimeFormat('en-CA', opts).format(new Date(ms))
 }
 
@@ -23,7 +23,7 @@ function formatChartAxisDate(ms: number, timezone: Timezone): string {
     month: 'long',
     day: 'numeric',
   }
-  if (timezone === 'UTC') opts.timeZone = 'UTC'
+  opts.timeZone = resolveTimezoneName(timezone)
   return new Intl.DateTimeFormat('en', opts).format(new Date(ms))
 }
 
@@ -39,7 +39,7 @@ export function formatChartAxisTime(
     second: '2-digit',
     hour12: false,
   }
-  if (timezone === 'UTC') opts.timeZone = 'UTC'
+  opts.timeZone = resolveTimezoneName(timezone)
   return new Intl.DateTimeFormat('en', opts).format(new Date(ms))
 }
 

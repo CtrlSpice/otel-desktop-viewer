@@ -4,7 +4,7 @@ import { tick } from 'svelte'
 import { screen } from '@testing-library/svelte'
 import type { TimeContext } from '@/contexts/time-context.svelte'
 import { selectionToQueryRangeMs } from '@/contexts/time-context.svelte'
-import { loadRecentTimeRanges } from '@/utils/time'
+import { loadRecentTimeRanges, normalizeTimezone } from '@/utils/time'
 import TimeProbe from '@/test/TimeProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
@@ -174,12 +174,30 @@ describe('time context setSelection', () => {
     })
   })
 
-  it('records a recent time range', () => {
+  it('records a custom time range', () => {
     setTestUrl('/traces')
     const context = renderProbe()
     context.setSelection({ type: 'custom', start: 1000, end: 2000 })
     const recents = loadRecentTimeRanges()
     expect(recents.some(r => r.start === 1000 && r.end === 2000)).toBe(true)
+  })
+
+  it('promotes a reused recent range', () => {
+    localStorage.setItem(
+      'datetime-filter-recent',
+      JSON.stringify([
+        { start: 1000, end: 2000, usedAt: 2 },
+        { start: 3000, end: 4000, usedAt: 1 },
+      ])
+    )
+    setTestUrl('/traces')
+    const context = renderProbe()
+
+    context.setSelection({ type: 'recent', start: 3000, end: 4000 })
+
+    expect(loadRecentTimeRanges().map(range => range.start)).toEqual([
+      3000, 1000,
+    ])
   })
 
   it('mirrors the window into the URL without adding a history entry', () => {
@@ -233,6 +251,7 @@ describe('time context preset anchoring on write', () => {
     const params = new URLSearchParams(window.location.search)
     expect(params.get('end')).toBe(String(writtenAt))
     expect(params.get('start')).toBe(String(writtenAt - oneHourMs))
+    expect(loadRecentTimeRanges()).toEqual([])
   })
 })
 
@@ -300,6 +319,25 @@ describe('time context setTz', () => {
     setTestUrl('/traces')
     renderProbe()
     expect(reportedTz()).toBe('local')
+    expect(localStorage.getItem('time-tz')).toBeNull()
+  })
+
+  it('restores a named IANA timezone', () => {
+    localStorage.setItem('time-tz', 'America/New_York')
+    setTestUrl('/traces')
+    renderProbe()
+    expect(reportedTz()).toBe('America/New_York')
+  })
+
+  it('persists a canonical named IANA timezone', async () => {
+    const timezone = normalizeTimezone('America/New_York')
+    if (!timezone) throw new Error('Test runtime lacks America/New_York')
+    setTestUrl('/traces')
+    const context = renderProbe()
+    context.setTz(timezone)
+    await tick()
+    expect(reportedTz()).toBe('America/New_York')
+    expect(localStorage.getItem('time-tz')).toBe('America/New_York')
   })
 })
 

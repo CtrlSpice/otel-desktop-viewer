@@ -57,4 +57,12 @@
   .preset-time-ranges {
     @apply flex min-w-0 w-full flex-nowrap items-center justify-evenly gap-1;
   }
+
+  .preset-time-ranges .chrome-btn--inactive {
+    color: var(--color-base-content);
+  }
+
+  .preset-time-ranges .chrome-btn--active {
+    color: var(--color-primary);
+  }
 </style>

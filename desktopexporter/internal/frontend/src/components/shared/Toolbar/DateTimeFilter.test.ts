@@ -39,7 +39,7 @@ describe('DateTimeFilter', () => {
     ).toBeInTheDocument()
     expect(popover).toHaveTextContent('Custom Range')
     expect(popover).toHaveTextContent('Timezone')
-    expect(popover).toHaveTextContent('Recently Used')
+    expect(popover).toHaveTextContent('Recent')
   })
 
   it('opens the popover and applies a preset selection end-to-end', async () => {

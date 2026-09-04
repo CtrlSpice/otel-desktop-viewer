@@ -29,6 +29,7 @@
     "@hugeicons/core-free-icons": "^4.3.0",
     "@hugeicons/svelte": "^1.1.5",
     "@humanspeak/svelte-virtual-list": "^0.5.14",
+    "@internationalized/date": "^3.12.4",
     "@lezer/highlight": "^1.2.3",
     "@lezer/lr": "^1.4.10",
     "bits-ui": "^2.19.0",
@@ -38,6 +39,7 @@
     "d3-shape": "^3.2.0",
     "daisyui": "^5.7.22",
     "layerchart": "^2.3.1",
+    "moment-timezone": "^0.6.3",
     "svelte": "^5.56.10"
   },
   "devDependencies": {
