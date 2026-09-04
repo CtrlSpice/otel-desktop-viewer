@@ -167,7 +167,7 @@ func appendPass(
 					u := duckdb.UUID(tid)
 					traceUUID = &u
 				}
-				var spanID any
+				var spanID driver.Value
 				if sid := log.SpanID(); !sid.IsEmpty() {
 					spanID = util.SpanIDUint64(sid)
 				}

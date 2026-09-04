@@ -95,8 +95,8 @@ export type EventData = {
 }
 
 export type LinkData = {
-  traceID: string
-  spanID: string
+  traceID: string | null
+  spanID: string | null
   traceState: string
   attributes: Attributes
   droppedAttributesCount: number

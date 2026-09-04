@@ -4,6 +4,8 @@
   import SpanField from './SpanField.svelte'
   import { itemHref, navigateToItem } from '@/route'
   import { SPAN_PARAM } from '@/route/query-params'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import Alert02Icon from '@hugeicons/core-free-icons/Alert02Icon'
 
   type Props = {
     links: LinkData[]
@@ -28,41 +30,68 @@
 
   function goToLink(e: MouseEvent, link: LinkData) {
     e.preventDefault()
+    if (!link.traceID) return
     navigateToItem('traces', link.traceID, 'push', spanPatch(link))
   }
 </script>
 
+{#snippet invalidLinkIcon()}
+  <span
+    class="links-panel__warning"
+    title="Invalid link target"
+    aria-hidden="true"
+  >
+    <HugeiconsIcon icon={Alert02Icon} size="1em" strokeWidth={1.5} />
+  </span>
+{/snippet}
+
 {#each links as link, index (index)}
   {@const patch = spanPatch(link)}
+  {@const href = link.traceID ? itemHref('traces', link.traceID, patch) : null}
+  {@const invalid = !link.traceID || !link.spanID}
   <FieldGroup
-    label={link.traceID}
+    label={link.traceID ?? 'Invalid link target'}
+    icon={invalid ? invalidLinkIcon : undefined}
     count={linkFieldCount(link)}
     open={index === 0}
   >
-    <table class="detail-fields w-full" aria-label="Link {link.traceID}">
+    <table
+      class="detail-fields w-full"
+      aria-label="Link {link.traceID ?? 'invalid target'}"
+    >
       <tbody>
         <tr class="table-row">
           <td class="detail-cell">
             <span class="detail-cell__key">
-              trace id <span class="detail-cell__type">(string)</span>:
+              trace id <span class="detail-cell__type">(string | null)</span>:
             </span>
-            <a
-              class="detail-cell__value link link-primary font-mono"
-              href={itemHref('traces', link.traceID, patch)}
-              onclick={e => goToLink(e, link)}>{link.traceID}</a
-            >
+            {#if href}
+              <a
+                class="detail-cell__value link link-primary font-mono"
+                {href}
+                onclick={e => goToLink(e, link)}>{link.traceID}</a
+              >
+            {:else}
+              <span class="detail-cell__value font-mono">null</span>
+            {/if}
           </td>
         </tr>
         <tr class="table-row">
           <td class="detail-cell">
             <span class="detail-cell__key">
-              span id <span class="detail-cell__type">(string)</span>:
+              span id <span class="detail-cell__type">(string | null)</span>:
             </span>
-            <a
-              class="detail-cell__value link link-primary font-mono"
-              href={itemHref('traces', link.traceID, patch)}
-              onclick={e => goToLink(e, link)}>{link.spanID}</a
-            >
+            {#if href && link.spanID}
+              <a
+                class="detail-cell__value link link-primary font-mono"
+                {href}
+                onclick={e => goToLink(e, link)}>{link.spanID}</a
+              >
+            {:else}
+              <span class="detail-cell__value font-mono"
+                >{link.spanID ?? 'null'}</span
+              >
+            {/if}
           </td>
         </tr>
         <SpanField
@@ -102,5 +131,9 @@
   .detail-cell__type {
     color: var(--color-subtle);
     @apply font-normal;
+  }
+
+  .links-panel__warning {
+    @apply text-warning inline-flex flex-none text-sm;
   }
 </style>

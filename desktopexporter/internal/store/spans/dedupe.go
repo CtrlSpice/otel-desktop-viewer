@@ -172,6 +172,9 @@ func recordSpanRejections(ctx context.Context, conn driver.Conn, r ingest.Reject
 			if ordinal < 0 || ordinal >= len(keys) {
 				return "", ""
 			}
+			if keys[ordinal].span == 0 {
+				return traceIDWire(keys[ordinal].trace), ""
+			}
 			// Wire form, matching trace_id_wire / span_id_wire: dash-less
 			// hex, the low 16 for a span, which is what the routes expect.
 			return traceIDWire(keys[ordinal].trace), util.SpanIDWire(keys[ordinal].span)

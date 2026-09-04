@@ -1981,9 +1981,8 @@ func TestSpanIDsRoundTripAtUint64Boundaries(t *testing.T) {
 	maxLink := maxSpan.Links().AppendEmpty()
 	maxLink.SetTraceID(mustDecodeTraceID("000000000000000000000000000000f2"))
 	maxLink.SetSpanID(mustDecodeSpanID("ffffffffffffffff"))
-	// Invalid/empty linked contexts have historically been exposed as concrete
-	// zero IDs. Keep that API behavior even though nullable parent/log/exemplar
-	// IDs are represented as SQL NULL.
+	// Invalid/empty linked contexts remain visible, but their missing IDs are
+	// represented as null rather than synthetic all-zero strings.
 	maxSpan.Links().AppendEmpty()
 	add("duplicate-max", "ffffffffffffffff", "8000000000000000", 4)
 
@@ -2006,7 +2005,8 @@ func TestSpanIDsRoundTripAtUint64Boundaries(t *testing.T) {
 					Name string `json:"name"`
 				} `json:"events"`
 				Links []struct {
-					SpanID string `json:"spanID"`
+					TraceID *string `json:"traceID"`
+					SpanID  *string `json:"spanID"`
 				} `json:"links"`
 			} `json:"spanData"`
 		} `json:"spans"`
@@ -2026,10 +2026,16 @@ func TestSpanIDsRoundTripAtUint64Boundaries(t *testing.T) {
 	require.Equal(t, []int{0, 1, 2}, []int{out.Spans[0].Depth, out.Spans[1].Depth, out.Spans[2].Depth})
 	require.Equal(t, "max-event", out.Spans[2].SpanData.Events[0].Name,
 		"the UBIGINT event foreign key must attach to the max-ID span")
-	require.ElementsMatch(t, []string{"ffffffffffffffff", "0000000000000000"}, []string{
-		out.Spans[2].SpanData.Links[0].SpanID,
-		out.Spans[2].SpanData.Links[1].SpanID,
-	})
+	require.Len(t, out.Spans[2].SpanData.Links, 2)
+	require.Equal(t, "ffffffffffffffff", *out.Spans[2].SpanData.Links[0].SpanID)
+	require.Nil(t, out.Spans[2].SpanData.Links[1].TraceID)
+	require.Nil(t, out.Spans[2].SpanData.Links[1].SpanID)
+
+	var nullLinkTargets int
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select count(*) from links where linked_trace_id is null and linked_span_id is null`).Scan(&nullLinkTargets)
+	}))
+	require.Equal(t, 1, nullLinkTargets)
 
 	var rootsWithNullParent int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {

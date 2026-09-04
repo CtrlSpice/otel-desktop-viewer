@@ -685,7 +685,7 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, ingestID, datapointI
 			u := duckdb.UUID(tid)
 			traceUUID = &u
 		}
-		var spanID any
+		var spanID driver.Value
 		if sid := ex.SpanID(); !sid.IsEmpty() {
 			spanID = util.SpanIDUint64(sid)
 		}

@@ -25,6 +25,7 @@ var (
 	ErrTraceIDNotFound    = errors.New("trace ID not found")
 	ErrInvalidTraceQuery  = errors.New("invalid trace search query")
 	ErrInvalidTraceLimit  = errors.New("invalid trace search limit")
+	ErrInvalidSpanID      = errors.New("span ID is empty")
 	ErrSpansStoreInternal = errors.New("spans store internal error")
 )
 
@@ -137,6 +138,11 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 	if err != nil {
 		return ingest.Rejected{}, err
 	}
+	for ordinal, key := range spanKeys {
+		if key.span == 0 {
+			skip[ordinal] = ErrInvalidSpanID
+		}
+	}
 
 	// Pass 2: append, retrying in halves so a bad row costs only itself. The
 	// skipped ordinals go in as pre-rejected rather than being tallied on
@@ -209,7 +215,7 @@ func appendPass(
 
 				spanID := util.SpanIDUint64(span.SpanID())
 
-				var parentSpanID any
+				var parentSpanID driver.Value
 				if pid := span.ParentSpanID(); !pid.IsEmpty() {
 					parentSpanID = util.SpanIDUint64(pid)
 				}
@@ -264,10 +270,14 @@ func appendPass(
 				}
 
 				for _, link := range span.Links().All() {
-					linkTraceUUID := duckdb.UUID(link.TraceID())
-					// Preserve the established API contract for an empty linked
-					// span ID: it is emitted as sixteen zeroes, not JSON null.
-					linkSpanID := util.SpanIDUint64(link.SpanID())
+					var linkTraceUUID driver.Value
+					if tid := link.TraceID(); !tid.IsEmpty() {
+						linkTraceUUID = duckdb.UUID(tid)
+					}
+					var linkSpanID driver.Value
+					if sid := link.SpanID(); !sid.IsEmpty() {
+						linkSpanID = util.SpanIDUint64(sid)
+					}
 
 					linkAttrIDs := ingest.NonNil(linkAttrs[linkCur])
 					linkCur++
@@ -275,8 +285,8 @@ func appendPass(
 						duckdb.UUID(uuid.New()),       // ID UUID
 						traceUUID,                     // TraceID UUID (owner)
 						spanID,                        // SpanID UBIGINT (owner)
-						linkTraceUUID,                 // LinkedTraceID UUID
-						linkSpanID,                    // LinkedSpanID UBIGINT
+						linkTraceUUID,                 // LinkedTraceID UUID or NULL
+						linkSpanID,                    // LinkedSpanID UBIGINT or NULL
 						link.TraceState().AsRaw(),     // TraceState VARCHAR
 						linkAttrIDs,                   // AttributeIDs UUID[]
 						link.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
