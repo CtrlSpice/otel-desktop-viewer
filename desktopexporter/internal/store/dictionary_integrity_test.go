@@ -2,9 +2,8 @@ package store
 
 // Referential integrity for the attribute dictionary.
 //
-// Every owner -- spans, events, links, logs, datapoints, exemplars, resources,
-// scopes -- holds a uuid[] of attribute ids, and DuckDB cannot put a foreign key
-// into a LIST. So the one relationship the schema most depends on is the one
+// Every owner holds a uuid[] of attribute ids, and DuckDB cannot put a foreign
+// key into a LIST. So the one relationship the schema most depends on is the one
 // relationship it cannot enforce. Under the previous schema this was an FK;
 // these tests are what replaced it.
 //
@@ -32,19 +31,21 @@ import (
 	"go.uber.org/zap"
 )
 
-// ownerArrays is every table carrying an attribute_ids column, paired with the
-// dictionary scope its entries must have. Listed explicitly rather than
-// discovered from the catalog: a new owner table should force someone to think
-// about which scope it stores, not be silently covered by a loop.
-var ownerArrays = []struct{ table, scope string }{
-	{"spans", ingest.ScopeSpan},
-	{"events", ingest.ScopeEvent},
-	{"links", ingest.ScopeLink},
-	{"logs", ingest.ScopeLog},
-	{"datapoints", ingest.ScopeDatapoint},
-	{"exemplars", ingest.ScopeExemplar},
-	{"resources", ingest.ScopeResource},
-	{"scopes", ingest.ScopeScope},
+// ownerArrays is every dictionary-reference array, paired with the dictionary
+// scope its entries must have. Listed explicitly rather than discovered from
+// the catalog: a new owner should force someone to think about which scope it
+// stores, not be silently covered by a loop.
+var ownerArrays = []struct{ table, column, scope string }{
+	{"spans", "attribute_ids", ingest.ScopeSpan},
+	{"events", "attribute_ids", ingest.ScopeEvent},
+	{"links", "attribute_ids", ingest.ScopeLink},
+	{"logs", "attribute_ids", ingest.ScopeLog},
+	{"datapoints", "attribute_ids", ingest.ScopeDatapoint},
+	{"metric_series", "attribute_ids", ingest.ScopeDatapoint},
+	{"exemplars", "attribute_ids", ingest.ScopeExemplar},
+	{"metric_ingests", "metadata_ids", ingest.ScopeMetricMetadata},
+	{"resources", "attribute_ids", ingest.ScopeResource},
+	{"scopes", "attribute_ids", ingest.ScopeScope},
 }
 
 // assertNoDanglingRefs checks that every id in every owner array resolves to a
@@ -61,18 +62,18 @@ func assertNoDanglingRefs(t *testing.T, s *Store, when string) {
 		for _, o := range ownerArrays {
 			var dangling int
 			err := db.QueryRow(fmt.Sprintf(`
-				select count(*) from (select unnest(attribute_ids) as id from %s) r
-				where not exists (select 1 from attributes a where a.id = r.id)`, o.table)).Scan(&dangling)
+				select count(*) from (select unnest(%s) as id from %s) r
+				where not exists (select 1 from attributes a where a.id = r.id)`, o.column, o.table)).Scan(&dangling)
 			require.NoError(t, err)
-			assert.Zero(t, dangling, "%s: %s references attribute ids that do not exist", when, o.table)
+			assert.Zero(t, dangling, "%s: %s.%s references attribute ids that do not exist", when, o.table, o.column)
 
 			var wrongScope int
 			err = db.QueryRow(fmt.Sprintf(`
-				select count(*) from (select unnest(attribute_ids) as id from %s) r
+				select count(*) from (select unnest(%s) as id from %s) r
 				join attributes a on a.id = r.id
-				where a.scope <> ?`, o.table), o.scope).Scan(&wrongScope)
+				where a.scope <> ?`, o.column, o.table), o.scope).Scan(&wrongScope)
 			require.NoError(t, err)
-			assert.Zero(t, wrongScope, "%s: %s holds ids whose scope is not %q", when, o.table, o.scope)
+			assert.Zero(t, wrongScope, "%s: %s.%s holds ids whose scope is not %q", when, o.table, o.column, o.scope)
 		}
 		return nil
 	}))
@@ -152,6 +153,7 @@ func integrityMetrics(seed byte) pmetric.Metrics {
 	m := sm.Metrics().AppendEmpty()
 	m.SetName("http.server.duration")
 	m.SetUnit("ms")
+	m.Metadata().PutStr("metric.owner", "checkout-team")
 	dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
 	dp.SetTimestamp(pcommon.Timestamp(1_700_000_000_000_000_000 + int64(seed)))
 	dp.SetDoubleValue(12.5)
@@ -225,6 +227,9 @@ func TestDictionaryIntegrityAcrossClearAndReingest(t *testing.T) {
 
 	assert.Equal(t, 1, countIn(t, s, `select count(*) from resources`),
 		"the resource is still referenced by logs and metrics, so the sweep must keep it")
+	assert.Equal(t, 1, countIn(t, s,
+		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)),
+		"live metric metadata must survive a sweep triggered by clearing another signal")
 	assert.Zero(t, countIn(t, s,
 		fmt.Sprintf(`select count(*) from attributes where scope in ('%s','%s','%s')`,
 			ingest.ScopeSpan, ingest.ScopeEvent, ingest.ScopeLink)),
@@ -329,6 +334,44 @@ func TestFlushedIDsPopulatesAndClears(t *testing.T) {
 	assert.Less(t, after, first, "the sweep must forget the ids it actually deleted")
 	assert.Positive(t, after,
 		"ids the sweep did not delete -- the shared resource, scope, and log/metric attributes -- must stay marked")
+}
+
+// Metric metadata has its own owner column and dictionary scope, so it needs
+// the same cache-invalidation proof as ordinary attribute_ids arrays. Keep the
+// other signals alive to prove the sweep invalidates precisely rather than
+// falling back to forgetting the whole cache.
+func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+
+	ingestAll(t, s, 1)
+	before := s.FlushedIDs().Len()
+	require.Equal(t, 1, countIn(t, s,
+		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)))
+
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		return metrics.Clear(ctx, db)
+	}))
+	sweep(t, s)
+
+	afterSweep := s.FlushedIDs().Len()
+	assert.Less(t, afterSweep, before, "deleted metric dictionary ids must leave the cache")
+	assert.Positive(t, afterSweep, "live trace and log dictionary ids must remain cached")
+	assert.Zero(t, countIn(t, s,
+		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)),
+		"metadata with no metric ingest owner must be collected")
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, integrityMetrics(1), s.FlushedIDs())
+	}))
+	assertNoDanglingRefs(t, s, "after re-ingesting swept metric metadata")
+	assert.Equal(t, 1, countIn(t, s,
+		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)),
+		"re-ingest must restore metadata removed by the sweep")
+	assert.Equal(t, before, s.FlushedIDs().Len(),
+		"re-ingest must restore the metric dictionary ids without forgetting live signal ids")
 }
 
 // A store must never consult another store's set. Two stores are two databases;

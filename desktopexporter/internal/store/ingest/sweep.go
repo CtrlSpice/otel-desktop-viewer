@@ -26,7 +26,7 @@ type ExecContext interface {
 //
 // This is the price of the dictionary: DuckDB cannot put a foreign key into a
 // LIST, so there is no anti-join to run and no refcount to consult. The live set
-// has to be rebuilt by unnesting all eight owner arrays.
+// has to be rebuilt by unnesting all ten owner arrays.
 //
 // UNION rather than UNION ALL: the whole point is a distinct set, and letting
 // DuckDB dedupe during the union is cheaper than materialising ~10^6 duplicate
@@ -38,6 +38,7 @@ const liveAttributeIDs = `
 	union select unnest(attribute_ids) from logs
 	union select unnest(attribute_ids) from datapoints
 	union select unnest(attribute_ids) from metric_series
+	union select unnest(metadata_ids) from metric_ingests
 	union select unnest(attribute_ids) from exemplars
 	union select unnest(attribute_ids) from resources
 	union select unnest(attribute_ids) from scopes`
