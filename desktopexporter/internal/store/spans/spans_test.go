@@ -1697,6 +1697,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	cycleWithSubtree := "000000000000000000000000000000a4"
 	twoCycles := "000000000000000000000000000000a5"
 	orphanAndCycle := "000000000000000000000000000000a6"
+	cycleWithEarlyChild := "000000000000000000000000000000a7"
 
 	traces := ptrace.NewTraces()
 	// Healthy: root with two children.
@@ -1724,6 +1725,12 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	add(traces, orphanAndCycle, "0000000000000052", "00000000000000ff", 10)
 	add(traces, orphanAndCycle, "0000000000000053", "0000000000000054", 20)
 	add(traces, orphanAndCycle, "0000000000000054", "0000000000000053", 30)
+	// A child whose earlier timestamp makes it a separate salvage entry. Its
+	// parent is recovered too, but under the cycle's entry rather than beneath
+	// the child, so the child did not close a cycle.
+	add(traces, cycleWithEarlyChild, "0000000000000063", "0000000000000061", 0)
+	add(traces, cycleWithEarlyChild, "0000000000000061", "0000000000000062", 10)
+	add(traces, cycleWithEarlyChild, "0000000000000062", "0000000000000061", 20)
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
@@ -1734,6 +1741,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		unplaced   int
 		salvaged   int
 		cyclePoint int
+		cycleIDs   []string
 	}
 	get := func(traceHex string) walked {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -1745,6 +1753,9 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 			Spans             []struct {
 				Salvaged   bool `json:"salvaged"`
 				CyclePoint bool `json:"cyclePoint"`
+				SpanData   struct {
+					SpanID string `json:"spanID"`
+				} `json:"spanData"`
 			} `json:"spans"`
 		}
 		require.NoError(t, json.Unmarshal(raw, &td))
@@ -1755,6 +1766,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 			}
 			if sp.CyclePoint {
 				w.cyclePoint++
+				w.cycleIDs = append(w.cycleIDs, sp.SpanData.SpanID)
 			}
 		}
 		return w
@@ -1766,6 +1778,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 0, w.salvaged, "nothing to salvage in a well-formed trace")
 		assert.Equal(t, 0, w.cyclePoint)
+		assert.Empty(t, w.cycleIDs)
 	})
 
 	t.Run("cycle members are salvaged, not dropped", func(t *testing.T) {
@@ -1776,6 +1789,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced, "salvage recovered everything")
 		assert.Equal(t, 2, w.salvaged, "both cycle members flagged as salvaged")
 		assert.Equal(t, 1, w.cyclePoint, "exactly one span carries the blame")
+		assert.Equal(t, []string{"0000000000000012"}, w.cycleIDs)
 	})
 
 	t.Run("a subtree hanging off a cycle comes back too", func(t *testing.T) {
@@ -1786,6 +1800,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 4, w.salvaged)
 		assert.Equal(t, 1, w.cyclePoint, "only the closing link is at fault")
+		assert.Equal(t, []string{"0000000000000031"}, w.cycleIDs)
 	})
 
 	t.Run("two independent cycles are blamed separately", func(t *testing.T) {
@@ -1796,6 +1811,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 4, w.salvaged)
 		assert.Equal(t, 2, w.cyclePoint, "each cycle names its own offender")
+		assert.Equal(t, []string{"0000000000000041", "0000000000000043"}, w.cycleIDs)
 	})
 
 	t.Run("an orphan and a cycle in one trace stay distinct", func(t *testing.T) {
@@ -1806,6 +1822,17 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 2, w.salvaged, "the orphan walks normally; only the cycle is salvaged")
 		assert.Equal(t, 1, w.cyclePoint)
+		assert.Equal(t, []string{"0000000000000053"}, w.cycleIDs)
+	})
+
+	t.Run("an earlier descendant is not blamed for its ancestor cycle", func(t *testing.T) {
+		w := get(cycleWithEarlyChild)
+		assert.Equal(t, 3, w.placed)
+		assert.Equal(t, 0, w.unplaced)
+		assert.Equal(t, 3, w.salvaged)
+		assert.Equal(t, 1, w.cyclePoint)
+		assert.Equal(t, []string{"0000000000000061"}, w.cycleIDs,
+			"only the display root whose parent is in the same recovered chain closes the cycle")
 	})
 
 	t.Run("a trace that is entirely a cycle still renders", func(t *testing.T) {
@@ -1816,6 +1843,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 1, w.salvaged)
 		assert.Equal(t, 1, w.cyclePoint, "its parent link points at itself")
+		assert.Equal(t, []string{"0000000000000021"}, w.cycleIDs)
 	})
 }
 
