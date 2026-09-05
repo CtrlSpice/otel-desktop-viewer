@@ -291,10 +291,49 @@ function logDataFromJSON(json: JsonLogData): LogData {
   }
 }
 
+function exemplarDoubleFromJSON(
+  value: number | 'NaN' | 'Infinity' | '-Infinity'
+): number {
+  if (typeof value === 'number') return value
+  switch (value) {
+    case 'NaN':
+      return Number.NaN
+    case 'Infinity':
+      return Number.POSITIVE_INFINITY
+    case '-Infinity':
+      return Number.NEGATIVE_INFINITY
+  }
+}
+
 function exemplarFromJSON(json: JsonExemplar): Exemplar {
-  return {
-    ...json,
+  const base = {
     timestamp: parseBigInt(json.timestamp),
+    traceID: json.traceID,
+    spanID: json.spanID,
+    filteredAttributes: json.filteredAttributes,
+  }
+  switch (json.valueType) {
+    case 'Double':
+      return {
+        ...base,
+        valueType: 'Double',
+        doubleValue: exemplarDoubleFromJSON(json.doubleValue),
+        intValue: null,
+      }
+    case 'Int':
+      return {
+        ...base,
+        valueType: 'Int',
+        doubleValue: null,
+        intValue: parseBigInt(json.intValue),
+      }
+    case 'Empty':
+      return {
+        ...base,
+        valueType: 'Empty',
+        doubleValue: null,
+        intValue: null,
+      }
   }
 }
 

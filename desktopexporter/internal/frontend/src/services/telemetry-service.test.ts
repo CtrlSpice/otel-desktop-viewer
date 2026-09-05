@@ -68,6 +68,145 @@ describe('telemetryAPI.getMetric', () => {
       effective: { startNs: 10n, endNs: 20n },
     })
   })
+
+  it('revives typed exemplar values without losing int64 precision', async () => {
+    stubRpcResponse({
+      jsonrpc: '2.0',
+      id: 1,
+      result: {
+        name: 'test.gauge',
+        unit: '1',
+        metricType: 'Gauge',
+        timeseries: [
+          {
+            attributesKey: 'series-1',
+            attributes: [],
+            resource: { attributes: [], droppedAttributesCount: 0 },
+            datapoints: [
+              {
+                id: 'dp-1',
+                timestamp: '100',
+                timestampMs: 0,
+                startTime: '0',
+                flags: 0,
+                metricType: 'Gauge',
+                doubleValue: 1,
+                intValue: null,
+                valueType: 'Double',
+                exemplars: [
+                  {
+                    timestamp: '101',
+                    valueType: 'Int',
+                    doubleValue: null,
+                    intValue: '9223372036854775807',
+                    traceID: null,
+                    spanID: null,
+                    filteredAttributes: [],
+                  },
+                  {
+                    timestamp: '102',
+                    valueType: 'Double',
+                    doubleValue: 1.25,
+                    intValue: null,
+                    traceID: null,
+                    spanID: null,
+                    filteredAttributes: [],
+                  },
+                  {
+                    timestamp: '103',
+                    valueType: 'Empty',
+                    doubleValue: null,
+                    intValue: null,
+                    traceID: null,
+                    spanID: null,
+                    filteredAttributes: [],
+                  },
+                  {
+                    timestamp: '104',
+                    valueType: 'Double',
+                    doubleValue: 'NaN',
+                    intValue: null,
+                    traceID: null,
+                    spanID: null,
+                    filteredAttributes: [],
+                  },
+                  {
+                    timestamp: '105',
+                    valueType: 'Double',
+                    doubleValue: 'Infinity',
+                    intValue: null,
+                    traceID: null,
+                    spanID: null,
+                    filteredAttributes: [],
+                  },
+                  {
+                    timestamp: '106',
+                    valueType: 'Double',
+                    doubleValue: '-Infinity',
+                    intValue: null,
+                    traceID: null,
+                    spanID: null,
+                    filteredAttributes: [],
+                  },
+                ],
+              },
+            ],
+            stats: null,
+            datapointCount: 1,
+            lastSeenNs: '100',
+            views: null,
+            rateStats: null,
+            sparkline: null,
+          },
+        ],
+        window: {
+          requested: { startNs: null, endNs: null },
+          effective: { startNs: '100', endNs: '100' },
+        },
+      },
+    })
+
+    const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    const exemplars = metric!.timeseries[0]!.datapoints[0]!.exemplars
+    expect(exemplars).toEqual([
+      expect.objectContaining({
+        timestamp: 101n,
+        valueType: 'Int',
+        doubleValue: null,
+        intValue: 9_223_372_036_854_775_807n,
+      }),
+      expect.objectContaining({
+        timestamp: 102n,
+        valueType: 'Double',
+        doubleValue: 1.25,
+        intValue: null,
+      }),
+      expect.objectContaining({
+        timestamp: 103n,
+        valueType: 'Empty',
+        doubleValue: null,
+        intValue: null,
+      }),
+      expect.objectContaining({
+        timestamp: 104n,
+        valueType: 'Double',
+        doubleValue: Number.NaN,
+        intValue: null,
+      }),
+      expect.objectContaining({
+        timestamp: 105n,
+        valueType: 'Double',
+        doubleValue: Number.POSITIVE_INFINITY,
+        intValue: null,
+      }),
+      expect.objectContaining({
+        timestamp: 106n,
+        valueType: 'Double',
+        doubleValue: Number.NEGATIVE_INFINITY,
+        intValue: null,
+      }),
+    ])
+  })
 })
 
 // searchSpans ships a compressed wire shape -- resource and scope as

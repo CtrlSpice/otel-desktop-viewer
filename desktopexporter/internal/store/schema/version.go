@@ -84,7 +84,12 @@ package schema
 // Version 10 stores every 8-byte OTLP span ID as DuckDB UBIGINT rather than a
 // zero-padded UUID. This changes seven existing columns across spans, events,
 // links, logs, and exemplars, so a version 9 file is incompatible.
-const Version = 10
+//
+// Version 11 replaces exemplars.value with separate double_value and int_value
+// columns. The old DOUBLE column had already rounded integer exemplars during
+// ingest, so a version 10 file cannot provide the typed, exact values this
+// build's queries expect.
+const Version = 11
 
 // VersionTableQuery creates the version table.
 //

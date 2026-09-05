@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -502,7 +503,9 @@ func TestMetricSuite(t *testing.T) {
 		exemplars, _ := dp0["exemplars"].([]any)
 		assert.Len(t, exemplars, 1, "gauge datapoint should have one exemplar")
 		ex, _ := exemplars[0].(map[string]any)
-		assert.Equal(t, 1000.0, ex["value"], "exemplar value")
+		assert.Equal(t, "Double", ex["valueType"], "exemplar value type")
+		assert.Equal(t, 1000.0, ex["doubleValue"], "exemplar double value")
+		assert.Nil(t, ex["intValue"], "a double exemplar has no integer arm")
 		assert.NotEmpty(t, ex["traceID"], "exemplar traceID")
 		assert.NotEmpty(t, ex["spanID"], "exemplar spanID")
 	})
@@ -800,7 +803,7 @@ func TestExemplarSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
 	byValue := make(map[float64]any, len(exemplars))
 	for _, raw := range exemplars {
 		ex := raw.(map[string]any)
-		byValue[ex["value"].(float64)] = ex["spanID"]
+		byValue[ex["doubleValue"].(float64)] = ex["spanID"]
 	}
 	require.Equal(t, "0000000000000001", byValue[1])
 	require.Equal(t, "8000000000000000", byValue[2])
@@ -812,6 +815,68 @@ func TestExemplarSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
 		return db.QueryRow(`select count(*) from exemplars where span_id is null`).Scan(&nullSpanIDs)
 	}))
 	require.Equal(t, 1, nullSpanIDs)
+}
+
+func TestExemplarValuesRoundTripByType(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	data := pmetric.NewMetrics()
+	rm := data.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "typed-exemplars")
+	m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("typed_exemplars")
+	gauge := m.SetEmptyGauge()
+	base := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC).UnixNano()
+
+	tests := []struct {
+		name        string
+		setValue    func(pmetric.Exemplar)
+		valueType   string
+		doubleValue any
+		intValue    any
+	}{
+		{"double", func(ex pmetric.Exemplar) { ex.SetDoubleValue(1.25) }, "Double", 1.25, nil},
+		{"NaN", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.NaN()) }, "Double", "NaN", nil},
+		{"positive infinity", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.Inf(1)) }, "Double", "Infinity", nil},
+		{"negative infinity", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.Inf(-1)) }, "Double", "-Infinity", nil},
+		{"integer zero", func(ex pmetric.Exemplar) { ex.SetIntValue(0) }, "Int", nil, "0"},
+		{"above 2^53", func(ex pmetric.Exemplar) { ex.SetIntValue(9_007_199_254_740_993) }, "Int", nil, "9007199254740993"},
+		{"minimum int64", func(ex pmetric.Exemplar) { ex.SetIntValue(-1 << 63) }, "Int", nil, "-9223372036854775808"},
+		{"maximum int64", func(ex pmetric.Exemplar) { ex.SetIntValue(1<<63 - 1) }, "Int", nil, "9223372036854775807"},
+		{"empty", func(pmetric.Exemplar) {}, "Empty", nil, nil},
+	}
+	for i, tc := range tests {
+		dp := gauge.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(base + int64(i)*int64(time.Second)))
+		dp.SetDoubleValue(1)
+		ex := dp.Exemplars().AppendEmpty()
+		ex.SetTimestamp(pcommon.Timestamp(base + int64(i)))
+		tc.setValue(ex)
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	got := getMetricFullByName(t, s, ctx, "typed_exemplars")
+	byTimestamp := make(map[string]map[string]any, len(tests))
+	for _, rawDP := range metricDatapoints(got) {
+		exemplars := rawDP.(map[string]any)["exemplars"].([]any)
+		require.Len(t, exemplars, 1)
+		ex := exemplars[0].(map[string]any)
+		byTimestamp[ex["timestamp"].(string)] = ex
+	}
+	require.Len(t, byTimestamp, len(tests))
+
+	for i, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ex := byTimestamp[strconv.FormatInt(base+int64(i), 10)]
+			require.NotNil(t, ex)
+			assert.Equal(t, tc.valueType, ex["valueType"])
+			assert.Equal(t, tc.doubleValue, ex["doubleValue"])
+			assert.Equal(t, tc.intValue, ex["intValue"])
+		})
+	}
 }
 
 func requireMetric(t *testing.T, m map[string]any, name string) {
@@ -5293,7 +5358,7 @@ func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
 
 	var values []float64
 	for _, e := range dps[0].(map[string]any)["exemplars"].([]any) {
-		values = append(values, e.(map[string]any)["value"].(float64))
+		values = append(values, e.(map[string]any)["doubleValue"].(float64))
 	}
 	sort.Float64s(values)
 
@@ -5309,6 +5374,58 @@ func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
 	assert.NotContains(t, values, 110.0,
 		"and the middle of the range is what the cap should be spending its "+
 			"budget on last")
+}
+
+// Adjacent int64 values at this magnitude all have the same float64
+// representation. Give their rows ids in ascending value order: a ranking that
+// compared only the rounded DOUBLE would deterministically keep the first five
+// and drop the true maximum.
+func TestGetMetric_IntegerExemplarSelectionRemainsExactAbove2Pow53(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	const n = 20
+	const baseValue int64 = 1 << 62
+	data := pmetric.NewMetrics()
+	rm := data.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "integer-exemplar-extremes")
+	m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("integer_exemplar_extremes")
+	dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+	dp.SetTimestamp(100)
+	dp.SetDoubleValue(1)
+	for i := range n {
+		ex := dp.Exemplars().AppendEmpty()
+		ex.SetTimestamp(pcommon.Timestamp(i + 1))
+		ex.SetIntValue(baseValue + int64(i))
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		for i := range n {
+			id := fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1)
+			if _, err := db.Exec(`update exemplars set id = ?::uuid where int_value = ?`,
+				id, baseValue+int64(i)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+
+	got := getMetricFullByName(t, s, ctx, "integer_exemplar_extremes")
+	dps := metricDatapoints(got)
+	require.Len(t, dps, 1)
+	var values []string
+	for _, raw := range dps[0].(map[string]any)["exemplars"].([]any) {
+		values = append(values, raw.(map[string]any)["intValue"].(string))
+	}
+	require.Len(t, values, 5)
+	assert.Contains(t, values, strconv.FormatInt(baseValue, 10))
+	assert.Contains(t, values, strconv.FormatInt(baseValue+n-1, 10),
+		"the exact maximum must survive even though all values share one float64 approximation")
+	assert.NotContains(t, values, strconv.FormatInt(baseValue+n/2, 10),
+		"the middle of the exact integer range should be ranked after both extremes")
 }
 
 // TestGetMetric_ExemplarCarriersAreTheExtremeOnes is the per-bucket half of the
@@ -5385,7 +5502,7 @@ func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 	var shipped []float64
 	for _, d := range dps {
 		for _, e := range d.(map[string]any)["exemplars"].([]any) {
-			shipped = append(shipped, e.(map[string]any)["value"].(float64))
+			shipped = append(shipped, e.(map[string]any)["doubleValue"].(float64))
 		}
 	}
 	sort.Float64s(shipped)
