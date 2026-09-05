@@ -120,8 +120,11 @@
 		--
 		-- cycle_point marks the span whose parent link is the lie: it is a
 		-- display root of a salvaged chain whose own parent turns up further
-		-- down that chain. Sorting salvaged trees after every real root keeps
-		-- them out of the way of a trace that is otherwise fine.
+		-- down that same chain. The entry match is load-bearing: an earlier
+		-- descendant can also become a display root, but its parent belongs to
+		-- another salvaged chain and did not close this walk. Sorting salvaged
+		-- trees after every real root keeps them out of the way of a trace that
+		-- is otherwise fine.
 		walked as (
 			select trace_id, span_id, parent_span_id, start_time, depth, sort_path,
 				false as salvaged, false as cycle_point
@@ -133,7 +136,11 @@
 				array[1000000 + sv.entry_rank::int] ||
 					case when sv.depth = 0 then []::int[] else array[sv.depth] end,
 				true,
-				sv.depth = 0 and sv.parent_span_id in (select span_id from salvaged)
+				sv.depth = 0 and exists (
+					select 1 from salvaged p
+					where p.entry_rank = sv.entry_rank
+						and p.span_id = sv.parent_span_id
+				)
 			from salvaged sv
 		),
 
@@ -347,4 +354,3 @@
 		-- cycle-aware walk could not reach, which would be a bug worth seeing.
 		(select n from unplaced_count) as unplaced
 		from ordered_spans
-	
