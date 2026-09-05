@@ -96,6 +96,27 @@ func TestVersionMismatchIsRefused(t *testing.T) {
 	assert.Equal(t, int64(schema.Version), fields["expected_version"])
 }
 
+// Version 10 stored every exemplar value as DOUBLE. Pin that exact predecessor
+// so this incompatible schema transition cannot lose its bump.
+func TestVersionTenDatabaseIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v10.db")
+
+	s := newFileStore(t, path)
+	require.NoError(t, s.Close())
+
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`delete from schema_meta`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into schema_meta (version) values (10)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible,
+		"a database with DOUBLE-only exemplar values must be refused")
+}
+
 // Version 9 stored 8-byte span IDs as zero-padded UUIDs. Pin that exact
 // predecessor so this incompatible schema transition cannot lose its bump.
 func TestVersionNineDatabaseIsRefused(t *testing.T) {

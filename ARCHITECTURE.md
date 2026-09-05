@@ -179,7 +179,7 @@ Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file
 | `metric_series` | One row per chart line: `(stream_id, resource_id, attribute_ids)` under a content-hashed id |
 | `metric_ingests` | One row per OTLP batch arrival for a stream (description, `resource_id`, `scope_id`) |
 | `datapoints` | All metric data points in one table; `metric_type` discriminates gauge/sum/histogram/exponential histogram; `series_id` names the line |
-| `exemplars` | Metric exemplars (normalized) |
+| `exemplars` | Metric exemplars (normalized); separate nullable `double_value` / `int_value` arms preserve the OTLP oneof |
 
 **Design themes**
 
@@ -187,6 +187,7 @@ Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file
 - **Attributes are a content-addressed dictionary.** One row per distinct `(key, value, type, scope)` for the whole database, with `id = sha256(...)` truncated to 16 bytes and computed in Go at unwrap. Every owner holds an inline `uuid[]`, deduped and sorted by id. Because identity is the content, ingest knows every id before it writes and needs no read-back, and repeat writes are `on conflict (id) do nothing`.
 - **Scope is part of dictionary identity**, not a free-form tag. That is what lets attribute discovery answer from `select distinct key, scope, type from attributes` alone, instead of unnesting every owner array. The cost is that the same triple used as both a resource and a span attribute is two rows.
 - **Normalized nested data.** Events, links, and exemplars live in separate tables—not nested arrays or DuckDB UNION types.
+- **Exemplar values keep their OTLP type.** Doubles and signed 64-bit integers occupy separate nullable columns; both NULL means the source exemplar had no value. The wire carries an explicit `valueType`, finite doubles as JSON numbers, non-finite doubles as the standard `"NaN"` / `"Infinity"` / `"-Infinity"` strings, and integers as decimal strings so JavaScript never rounds them before the frontend revives them as `bigint`.
 - **Empty IDs never become synthetic zero strings.** Optional parent, log, exemplar, and link target IDs are SQL NULL and JSON `null`. A span's own ID is required for its identity, so an empty one is refused through the ingest diagnostics path instead of being stored as zero.
 - **Single `datapoints` table.** Type-specific columns use NULLs for irrelevant fields; `metric_type` + CHECK constraints enforce the discriminated union. Columnar compression makes sparse rows cheap.
 - **`metric_streams` + `metric_ingests`.** Stream identity is deduplicated across batches; per-batch metadata varies without splitting logical metrics.
@@ -255,7 +256,7 @@ Ordered aggregation is `to_json(list(x order by k))` rather than `json_group_arr
 - **Sparklines**, a third, coarser resolution sized for a ~128px row rather than a full-width chart.
 - **Cross-series pools** ("Selected" and "All"), folding checked series or every series in the stream into one aggregate line, computed from the same per-series view rows so the pooled line aligns with the per-series lines drawn beneath it.
 
-**Exemplars are capped in two independent directions.** Per datapoint, at most 5 exemplars are listed, ranked by distance from either extreme of the datapoint's own exemplar values (so the set spans the range rather than clustering at one end); a datapoint carries `exemplarCount` only when its actual count exceeds what was listed, so its absence can be read as "nothing was withheld." Per bucket, at most 2 exemplar-bearing datapoints are retained as carriers — again ranked from both ends, this time by how far their exemplars reach — so a bucket a few pixels wide caps at six datapoints total (four from M4 plus up to two exemplar carriers) rather than costing as much as the densest stream that landed in it.
+**Exemplars are capped in two independent directions.** Per datapoint, at most 5 exemplars are listed, ranked by distance from either extreme of the datapoint's own exemplar values (so the set spans the range rather than clustering at one end); a datapoint carries `exemplarCount` only when its actual count exceeds what was listed, so its absence can be read as "nothing was withheld." Mixed integer/double ranking uses a DOUBLE ordering key plus a HUGEINT tie-break, preserving exact order between adjacent integers above JavaScript's safe range. Empty and non-finite values sort after finite values. Per bucket, at most 2 exemplar-bearing datapoints are retained as carriers — again ranked from both ends, this time by how far their exemplars reach — so a bucket a few pixels wide caps at six datapoints total (four from M4 plus up to two exemplar carriers) rather than costing as much as the densest stream that landed in it.
 
 ### Search
 

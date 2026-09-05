@@ -690,14 +690,26 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, ingestID, datapointI
 			spanID = util.SpanIDUint64(sid)
 		}
 		_, exAttrIDs := ingest.AttributeSet(ex.FilteredAttributes(), ingest.ScopeExemplar)
+		doubleVal, intVal := exemplarValue(ex)
 		if err := appenders["exemplars"].AppendRow(
-			exemplarID, datapointID, int64(ex.Timestamp()), ex.DoubleValue(), traceUUID, spanID,
+			exemplarID, datapointID, int64(ex.Timestamp()), doubleVal, intVal, traceUUID, spanID,
 			ingest.NonNil(exAttrIDs),
 		); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 		}
 	}
 	return nil
+}
+
+func exemplarValue(ex pmetric.Exemplar) (doubleVal any, intVal any) {
+	switch ex.ValueType() {
+	case pmetric.ExemplarValueTypeDouble:
+		return ex.DoubleValue(), nil
+	case pmetric.ExemplarValueTypeInt:
+		return nil, ex.IntValue()
+	default:
+		return nil, nil
+	}
 }
 
 func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, streamID, ingestID duckdb.UUID, dps pmetric.NumberDataPointSlice, idents []dpIdentity, cur *int) error {
