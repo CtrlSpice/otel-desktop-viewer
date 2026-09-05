@@ -1778,6 +1778,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 0, w.salvaged, "nothing to salvage in a well-formed trace")
 		assert.Equal(t, 0, w.cyclePoint)
+		assert.Empty(t, w.cycleIDs)
 	})
 
 	t.Run("cycle members are salvaged, not dropped", func(t *testing.T) {
@@ -1788,6 +1789,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced, "salvage recovered everything")
 		assert.Equal(t, 2, w.salvaged, "both cycle members flagged as salvaged")
 		assert.Equal(t, 1, w.cyclePoint, "exactly one span carries the blame")
+		assert.Equal(t, []string{"0000000000000012"}, w.cycleIDs)
 	})
 
 	t.Run("a subtree hanging off a cycle comes back too", func(t *testing.T) {
@@ -1798,6 +1800,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 4, w.salvaged)
 		assert.Equal(t, 1, w.cyclePoint, "only the closing link is at fault")
+		assert.Equal(t, []string{"0000000000000031"}, w.cycleIDs)
 	})
 
 	t.Run("two independent cycles are blamed separately", func(t *testing.T) {
@@ -1808,6 +1811,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 4, w.salvaged)
 		assert.Equal(t, 2, w.cyclePoint, "each cycle names its own offender")
+		assert.Equal(t, []string{"0000000000000041", "0000000000000043"}, w.cycleIDs)
 	})
 
 	t.Run("an orphan and a cycle in one trace stay distinct", func(t *testing.T) {
@@ -1818,6 +1822,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 2, w.salvaged, "the orphan walks normally; only the cycle is salvaged")
 		assert.Equal(t, 1, w.cyclePoint)
+		assert.Equal(t, []string{"0000000000000053"}, w.cycleIDs)
 	})
 
 	t.Run("an earlier descendant is not blamed for its ancestor cycle", func(t *testing.T) {
@@ -1838,6 +1843,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 1, w.salvaged)
 		assert.Equal(t, 1, w.cyclePoint, "its parent link points at itself")
+		assert.Equal(t, []string{"0000000000000021"}, w.cycleIDs)
 	})
 }
 
