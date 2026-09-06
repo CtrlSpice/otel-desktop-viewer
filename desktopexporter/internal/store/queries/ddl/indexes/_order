@@ -26,4 +26,3 @@ idx_datapoints_stream_time.sql
 idx_datapoints_series.sql
 idx_metric_series_stream.sql
 idx_exemplars_datapoint.sql
-idx_exemplars_trace.sql
