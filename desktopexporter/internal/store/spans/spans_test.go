@@ -1710,11 +1710,15 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	add(traces, withCycle, "0000000000000013", "0000000000000012", 20)
 	// Nothing but a self-parenting span: no root exists at all.
 	add(traces, allCycle, "0000000000000021", "0000000000000021", 0)
-	// A two-span cycle with a healthy two-span subtree beneath one member.
+	// A genuine root, plus a two-span cycle with a branched subtree beneath one
+	// member. Span 34 has to stay beside parent 33, before sibling 35.
+	add(traces, cycleWithSubtree, "0000000000000030", "", 50)
 	add(traces, cycleWithSubtree, "0000000000000031", "0000000000000032", 0)
 	add(traces, cycleWithSubtree, "0000000000000032", "0000000000000031", 10)
 	add(traces, cycleWithSubtree, "0000000000000033", "0000000000000031", 20)
 	add(traces, cycleWithSubtree, "0000000000000034", "0000000000000033", 30)
+	// Same timestamp as sibling 33: span id is the deterministic tie-break.
+	add(traces, cycleWithSubtree, "0000000000000035", "0000000000000031", 20)
 	// Two cycles that share nothing.
 	add(traces, twoCycles, "0000000000000041", "0000000000000042", 0)
 	add(traces, twoCycles, "0000000000000042", "0000000000000041", 10)
@@ -1736,16 +1740,25 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	}))
 
+	type placement struct {
+		spanID       string
+		parentSpanID string
+		depth        int
+		matched      bool
+		salvaged     bool
+		cyclePoint   bool
+	}
 	type walked struct {
 		placed     int
 		unplaced   int
 		salvaged   int
 		cyclePoint int
 		cycleIDs   []string
+		spans      []placement
 	}
-	get := func(traceHex string) walked {
+	fetch := func(traceHex string, criteria any) walked {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchSpans(ctx, db, traceHex, nil)
+			return spans.SearchSpans(ctx, db, traceHex, criteria)
 		})
 		require.NoError(t, err)
 		var td struct {
@@ -1753,14 +1766,25 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 			Spans             []struct {
 				Salvaged   bool `json:"salvaged"`
 				CyclePoint bool `json:"cyclePoint"`
+				Depth      int  `json:"depth"`
+				Matched    bool `json:"matched"`
 				SpanData   struct {
-					SpanID string `json:"spanID"`
+					SpanID       string `json:"spanID"`
+					ParentSpanID string `json:"parentSpanID"`
 				} `json:"spanData"`
 			} `json:"spans"`
 		}
 		require.NoError(t, json.Unmarshal(raw, &td))
 		w := walked{placed: len(td.Spans), unplaced: td.UnplacedSpanCount}
 		for _, sp := range td.Spans {
+			w.spans = append(w.spans, placement{
+				spanID:       sp.SpanData.SpanID,
+				parentSpanID: sp.SpanData.ParentSpanID,
+				depth:        sp.Depth,
+				matched:      sp.Matched,
+				salvaged:     sp.Salvaged,
+				cyclePoint:   sp.CyclePoint,
+			})
 			if sp.Salvaged {
 				w.salvaged++
 			}
@@ -1771,6 +1795,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		}
 		return w
 	}
+	get := func(traceHex string) walked { return fetch(traceHex, nil) }
 
 	t.Run("healthy trace carries no flags", func(t *testing.T) {
 		w := get(healthy)
@@ -1792,15 +1817,53 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, []string{"0000000000000012"}, w.cycleIDs)
 	})
 
-	t.Run("a subtree hanging off a cycle comes back too", func(t *testing.T) {
+	t.Run("a branched subtree hanging off a cycle keeps depth-first order", func(t *testing.T) {
 		// Salvage must not stop at the cycle members: spans descended from one
-		// are perfectly well-formed and were stranded only by association.
+		// are perfectly well-formed and were stranded only by association. The
+		// full path is also structural data: the frontend derives display parents
+		// from preorder plus depth, so 34 must precede its parent's next sibling.
 		w := get(cycleWithSubtree)
-		assert.Equal(t, 4, w.placed, "both cycle members plus the two below them")
+		assert.Equal(t, 6, w.placed, "the genuine root and every recovered span appear once")
 		assert.Equal(t, 0, w.unplaced)
-		assert.Equal(t, 4, w.salvaged)
+		assert.Equal(t, 5, w.salvaged)
 		assert.Equal(t, 1, w.cyclePoint, "only the closing link is at fault")
 		assert.Equal(t, []string{"0000000000000031"}, w.cycleIDs)
+
+		want := []placement{
+			{spanID: "0000000000000030", depth: 0, matched: true},
+			{spanID: "0000000000000031", parentSpanID: "0000000000000032", depth: 0, matched: true, salvaged: true, cyclePoint: true},
+			{spanID: "0000000000000032", parentSpanID: "0000000000000031", depth: 1, matched: true, salvaged: true},
+			{spanID: "0000000000000033", parentSpanID: "0000000000000031", depth: 1, matched: true, salvaged: true},
+			{spanID: "0000000000000034", parentSpanID: "0000000000000033", depth: 2, matched: true, salvaged: true},
+			{spanID: "0000000000000035", parentSpanID: "0000000000000031", depth: 1, matched: true, salvaged: true},
+		}
+		assert.Equal(t, want, w.spans,
+			"genuine roots lead; each recovered subtree is contiguous in sibling order")
+
+		seen := make(map[string]struct{}, len(w.spans))
+		for _, sp := range w.spans {
+			seen[sp.spanID] = struct{}{}
+		}
+		assert.Len(t, seen, len(w.spans), "the competing salvage entries must not duplicate a span")
+
+		criteria := map[string]any{
+			"id":   "nested-match",
+			"type": "condition",
+			"query": map[string]any{
+				"field":         map[string]any{"name": "name", "searchScope": "field"},
+				"fieldOperator": "=",
+				"value":         "span-0000000000000034",
+			},
+		}
+		searched := fetch(cycleWithSubtree, criteria)
+		wantSearched := append([]placement(nil), want...)
+		for i := range wantSearched {
+			wantSearched[i].matched = wantSearched[i].spanID == "0000000000000034"
+		}
+		assert.Equal(t, wantSearched, searched.spans,
+			"search annotates the same depth-first tree rather than changing its topology")
+		assert.Equal(t, w.unplaced, searched.unplaced)
+		assert.Equal(t, w.cycleIDs, searched.cycleIDs)
 	})
 
 	t.Run("two independent cycles are blamed separately", func(t *testing.T) {
