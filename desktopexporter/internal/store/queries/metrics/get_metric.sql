@@ -172,6 +172,27 @@
 		-- Non-finite and missing values sort last rather than winning: DuckDB
 		-- orders NaN above every number, so a single NaN exemplar would otherwise
 		-- take the high slot in every bucket it appeared in.
+		-- A DOUBLE primary key preserves native double ordering; the HUGEINT
+		-- tie-break keeps adjacent int64 values distinct where DOUBLE cannot.
+		-- Finite doubles that can tie an int64 are exactly representable as
+		-- HUGEINT, while wider doubles need no tie-break because they cannot tie
+		-- any stored integer. Empty and non-finite values retain the old null-last
+		-- treatment.
+		exemplars_valued as (
+			select e.*,
+				case
+					when e.int_value is not null then struct_pack(
+						approx := e.int_value::double,
+						exact_int := e.int_value::hugeint
+					)
+					when isfinite(e.double_value) then struct_pack(
+						approx := e.double_value,
+						exact_int := try_cast(e.double_value as hugeint)
+					)
+				end as value_order
+			from exemplars e
+			where e.datapoint_id in (select id from filtered_dps)
+		),
 		exemplars_ranked as (
 			select e.*,
 				row_number() over (partition by e.datapoint_id
@@ -180,14 +201,11 @@
 				select e.*,
 					least(
 						row_number() over (partition by e.datapoint_id
-							order by case when isfinite(e.value) then e.value end
-							         asc nulls last, e.id),
+							order by e.value_order asc nulls last, e.id),
 						row_number() over (partition by e.datapoint_id
-							order by case when isfinite(e.value) then e.value end
-							         desc nulls last, e.id)
+							order by e.value_order desc nulls last, e.id)
 					) as from_end
-				from exemplars e
-				where e.datapoint_id in (select id from filtered_dps)
+				from exemplars_valued e
 			) e
 		),
 
@@ -195,8 +213,8 @@
 		-- carrier cap below can rank datapoints the same way.
 		exemplar_extents as (
 			select datapoint_id,
-				min(value) filter (where isfinite(value)) as low,
-				max(value) filter (where isfinite(value)) as high
+				min(value_order) as low,
+				max(value_order) as high
 			from exemplars_ranked
 			group by datapoint_id
 		),

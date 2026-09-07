@@ -255,6 +255,17 @@
     navigateToItem('traces', ex.traceID, 'push', exemplarSpanPatch(ex))
   }
 
+  function exemplarValue(ex: Exemplar): number | bigint | string {
+    switch (ex.valueType) {
+      case 'Double':
+        return ex.doubleValue
+      case 'Int':
+        return ex.intValue
+      case 'Empty':
+        return '—'
+    }
+  }
+
   function datapointValueParts(dp: DataPoint): {
     number: string
     unit: string | null
@@ -373,7 +384,9 @@
             <div class="dp-list__exemplar">
               <span class="dp-list__detail-label">exemplar {i + 1}</span>
               <div class="dp-list__exemplar-fields">
-                <span class="dp-list__detail-value">value: {ex.value}</span>
+                <span class="dp-list__detail-value"
+                  >value: {exemplarValue(ex)}</span
+                >
                 <span class="dp-list__detail-value tabular-nums">
                   time: {formatDatapointTime(ex.timestamp)}
                 </span>
