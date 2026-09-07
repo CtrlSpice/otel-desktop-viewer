@@ -5428,6 +5428,66 @@ func TestGetMetric_IntegerExemplarSelectionRemainsExactAbove2Pow53(t *testing.T)
 		"the middle of the exact integer range should be ranked after both extremes")
 }
 
+// Doubles and adjacent integers at this magnitude share one float64
+// approximation. Deterministic ids favor the earliest rows, so ranking on the
+// approximation alone would fill the cap before reaching the true integer max.
+func TestGetMetric_MixedExemplarSelectionUsesExactIntegerTieBreak(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	const n = 20
+	const baseValue int64 = 1 << 62
+	data := pmetric.NewMetrics()
+	rm := data.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "mixed-exemplar-extremes")
+	m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("mixed_exemplar_extremes")
+	dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+	dp.SetTimestamp(100)
+	dp.SetDoubleValue(1)
+	for i := range n {
+		ex := dp.Exemplars().AppendEmpty()
+		ex.SetTimestamp(pcommon.Timestamp(i + 1))
+		if i%2 == 0 {
+			ex.SetDoubleValue(float64(baseValue + int64(i)))
+		} else {
+			ex.SetIntValue(baseValue + int64(i))
+		}
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		for i := range n {
+			id := fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1)
+			if _, err := db.Exec(`update exemplars set id = ?::uuid where timestamp = ?`, id, i+1); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+
+	got := getMetricFullByName(t, s, ctx, "mixed_exemplar_extremes")
+	dps := metricDatapoints(got)
+	require.Len(t, dps, 1)
+	exemplars := dps[0].(map[string]any)["exemplars"].([]any)
+	require.Len(t, exemplars, 5)
+
+	var sawDoubleMinimum, sawIntegerMaximum bool
+	for _, raw := range exemplars {
+		ex := raw.(map[string]any)
+		switch ex["valueType"] {
+		case "Double":
+			sawDoubleMinimum = sawDoubleMinimum || ex["doubleValue"] == float64(baseValue)
+		case "Int":
+			sawIntegerMaximum = sawIntegerMaximum || ex["intValue"] == strconv.FormatInt(baseValue+n-1, 10)
+		}
+	}
+	assert.True(t, sawDoubleMinimum, "the shared double minimum must survive the cap")
+	assert.True(t, sawIntegerMaximum,
+		"the exact integer maximum must survive rows with the same float64 approximation")
+}
+
 // TestGetMetric_ExemplarCarriersAreTheExtremeOnes is the per-bucket half of the
 // same question: of the datapoints a bucket could retain for their exemplars,
 // which two does it keep? The ones whose exemplars reach lowest and highest,
