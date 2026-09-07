@@ -2041,6 +2041,65 @@ func TestSearchTracesByFlags(t *testing.T) {
 	assert.Len(t, run("link.flags", "2"), 0)
 }
 
+// TestSearchTracesByDurationList covers "is one of" on a numeric field, which
+// the search registry offers for every int64 field on all three signals.
+//
+// Values reach the store as strings, and for a scalar comparison that is
+// harmless: DuckDB casts the parameter to the column's type. A list is not
+// harmless. `x IN param` binds as contains(param, x), and DuckDB will not
+// deduce a template type shared by a VARCHAR[] and a BIGINT column, so the
+// query failed to bind and the search returned an error instead of rows.
+func TestSearchTracesByDurationList(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "duration-search")
+
+	add := func(traceByte, spanByte byte, name string, duration int64) {
+		sp := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		sp.SetTraceID([16]byte{traceByte})
+		sp.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, spanByte})
+		sp.SetName(name)
+		sp.SetStartTimestamp(1000)
+		sp.SetEndTimestamp(pcommon.Timestamp(1000 + duration))
+	}
+	add(0xa1, 1, "quick", 1000)
+	add(0xa2, 2, "middling", 2000)
+	add(0xa3, 3, "slow", 3000)
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+	}))
+
+	run := func(operator, value string) []map[string]any {
+		query := &search.QueryNode{
+			ID:   "q1",
+			Type: "condition",
+			Query: &search.Query{
+				Field:         &search.FieldDefinition{Name: "duration", SearchScope: "field", Type: "int64"},
+				FieldOperator: operator,
+				Value:         value,
+			},
+		}
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 10_000), query)
+		})
+		require.NoError(t, err)
+		var out []map[string]any
+		require.NoError(t, json.Unmarshal(raw, &out))
+		return out
+	}
+
+	// The query parser serializes `duration IN [1000, 3000]` as a JSON array
+	// of strings, so that is the shape the store is handed.
+	assert.Len(t, run("IN", `["1000","3000"]`), 2, "IN keeps the two named durations")
+	assert.Len(t, run("NOT IN", `["1000","3000"]`), 1, "NOT IN keeps the rest")
+	assert.Len(t, run("IN", `["4000"]`), 0, "a duration nothing has matches nothing")
+	assert.Len(t, run("=", "2000"), 1, "equality on the same field is unaffected")
+}
+
 func TestSpanIDsRoundTripAtUint64Boundaries(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)

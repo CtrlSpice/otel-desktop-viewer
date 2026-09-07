@@ -250,12 +250,7 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 	// the Go struct declares Value as string. For int64 fields (e.g. duration),
 	// DuckDB needs an integer bind parameter — parse the string here as a
 	// workaround until the wire format carries typed values.
-	var bindValue any = value
-	if query.Field != nil && query.Field.Type == "int64" {
-		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
-			bindValue = n
-		}
-	}
+	bindValue := bindScalarValue(query.Field, value)
 
 	switch operator {
 	case "=", "!=", ">", ">=", "<", "<=":
@@ -289,6 +284,17 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN/NOT IN requires at least one value: %w", ErrInvalidQuery)
 		}
+		// Element by element, the same conversion the comparisons above get.
+		// A scalar varchar parameter is cast to the column's type and works,
+		// so the list looked like it would too, but `x IN param` binds as
+		// contains(param, x): a template function, which DuckDB refuses to
+		// instantiate with a VARCHAR[] against a BIGINT column. The array
+		// branch already types its elements, see handleArrayOperator.
+		for i, v := range values {
+			if s, ok := v.(string); ok {
+				values[i] = bindScalarValue(query.Field, s)
+			}
+		}
 		*params = append(*params, NamedParam{paramName, values})
 		operatorString = operator + " " + paramName
 	default:
@@ -299,6 +305,19 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		return strings.ReplaceAll(expression, condToken, operatorString), nil
 	}
 	return expression + " " + operatorString, nil
+}
+
+// bindScalarValue converts one wire value to the type its column expects. See
+// the note at the call site in BuildOperatorCondition for why every value
+// arrives as a string. A value the declared type cannot hold is handed on
+// unchanged, so malformed input reaches DuckDB exactly as it did before.
+func bindScalarValue(field *FieldDefinition, value string) any {
+	if field != nil && field.Type == "int64" {
+		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return n
+		}
+	}
+	return value
 }
 
 func mapArrayTypeToDuckDB(frontendType string) (string, error) {

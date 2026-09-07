@@ -1098,6 +1098,32 @@ func TestSearchLogs(t *testing.T) {
 		assert.Equal(t, int32(17), entries[0].SeverityNumber)
 	})
 
+	// "Warnings and errors, not info" is the query this field exists for, and
+	// it is an int64 field, so the list of severities reaches the store as
+	// text. Bound that way it is a VARCHAR[] against a BIGINT column, which
+	// DuckDB cannot bind, and the search failed instead of narrowing.
+	t.Run("Field_SeverityNumber_In", func(t *testing.T) {
+		query := &search.QueryNode{
+			ID:   "q5c2",
+			Type: "condition",
+			Query: &search.Query{
+				Field: &search.FieldDefinition{
+					Name: "severityNumber", SearchScope: "field", Type: "int64",
+				},
+				FieldOperator: "IN",
+				Value:         `["13","17"]`, // WARN and ERROR, not INFO
+			},
+		}
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+		})
+		require.NoError(t, err)
+		entries := parseSummaries(raw)
+		require.Len(t, entries, 2)
+		assert.ElementsMatch(t, []int32{13, 17},
+			[]int32{entries[0].SeverityNumber, entries[1].SeverityNumber})
+	})
+
 	t.Run("Field_Body", func(t *testing.T) {
 		// Search predicate runs against the full body column; the
 		// summary only carries the preview. The fixture's body

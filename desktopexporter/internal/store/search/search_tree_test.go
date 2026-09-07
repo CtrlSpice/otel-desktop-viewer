@@ -115,6 +115,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 		name           string
 		expression     string
 		fieldName      string
+		fieldType      string
 		operator       string
 		value          string
 		expectedSQL    string
@@ -229,6 +230,62 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expectedParams: []NamedParam{{"value_2", []any{"a,b", "c"}}},
 		},
 		{
+			// Every int64 field the search registry offers, on all three
+			// signals, is reachable by "is one of". The list arrives as JSON
+			// strings like every other value, and bound that way it is a
+			// VARCHAR[] tested against a BIGINT column: DuckDB binds `x IN p`
+			// as contains(p, x) and cannot deduce a template type across the
+			// two, so the whole search failed rather than returning rows.
+			name:           "IN on an int64 field binds integers",
+			expression:     "(s.end_time - s.start_time)",
+			fieldType:      "int64",
+			operator:       "IN",
+			value:          `["1000","3000"]`,
+			expectedSQL:    "(s.end_time - s.start_time) IN value_2",
+			expectedParams: []NamedParam{{"value_2", []any{int64(1000), int64(3000)}}},
+		},
+		{
+			name:           "NOT IN on an int64 field binds integers",
+			expression:     "l.severity_number",
+			fieldType:      "int64",
+			operator:       "NOT IN",
+			value:          `["13","17"]`,
+			expectedSQL:    "l.severity_number NOT IN value_2",
+			expectedParams: []NamedParam{{"value_2", []any{int64(13), int64(17)}}},
+		},
+		{
+			// The conversion follows the field's declared type, so a string
+			// field keeps binding text and a numeric-looking name is still a
+			// name.
+			name:           "IN on a string field still binds strings",
+			expression:     "s.name",
+			fieldType:      "string",
+			operator:       "IN",
+			value:          `["200","404"]`,
+			expectedSQL:    "s.name IN value_2",
+			expectedParams: []NamedParam{{"value_2", []any{"200", "404"}}},
+		},
+		{
+			// An element an int64 column cannot hold is left as it arrived,
+			// which is what the scalar comparisons already do with it.
+			name:           "an int64 element that will not parse stays text",
+			expression:     "s.flags",
+			fieldType:      "int64",
+			operator:       "IN",
+			value:          `["1","many"]`,
+			expectedSQL:    "s.flags IN value_2",
+			expectedParams: []NamedParam{{"value_2", []any{int64(1), "many"}}},
+		},
+		{
+			name:           "equality on an int64 field binds an integer",
+			expression:     "(s.end_time - s.start_time)",
+			fieldType:      "int64",
+			operator:       "=",
+			value:          "1000",
+			expectedSQL:    "(s.end_time - s.start_time) = value_2",
+			expectedParams: []NamedParam{{"value_2", int64(1000)}},
+		},
+		{
 			name:       "unsupported operator",
 			expression: "Name",
 			operator:   "UNSUPPORTED",
@@ -280,7 +337,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			}
 
 			query := &Query{
-				Field:         &FieldDefinition{Type: "", Name: tt.fieldName},
+				Field:         &FieldDefinition{Type: tt.fieldType, Name: tt.fieldName},
 				FieldOperator: tt.operator,
 				Value:         tt.value,
 			}
