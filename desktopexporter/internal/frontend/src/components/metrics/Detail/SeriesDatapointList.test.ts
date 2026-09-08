@@ -31,7 +31,9 @@ function makeDatapoint(overrides: Partial<SumDataPoint> = {}): SumDataPoint {
     aggregationTemporality: 'Cumulative',
     exemplars: [
       {
-        value: 42,
+        valueType: 'Double',
+        doubleValue: 42,
+        intValue: null,
         timestamp: 1_700_000_000_000_000_000n,
         traceID: 'trace-ex',
         spanID: 'span-ex',
@@ -440,6 +442,39 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     expect(
       screen.queryByRole('link', { name: 'trace: trace-ex' })
     ).not.toBeInTheDocument()
+  })
+
+  it('renders integer exemplars exactly and empty exemplars without a zero', () => {
+    renderWithContexts(SeriesDatapointListHarness, {
+      datapoints: [
+        makeDatapoint({
+          exemplars: [
+            {
+              valueType: 'Int',
+              doubleValue: null,
+              intValue: 9_223_372_036_854_775_807n,
+              timestamp: 1_700_000_000_000_000_000n,
+              traceID: null,
+              spanID: null,
+              filteredAttributes: [],
+            },
+            {
+              valueType: 'Empty',
+              doubleValue: null,
+              intValue: null,
+              timestamp: 1_700_000_000_000_000_001n,
+              traceID: null,
+              spanID: null,
+              filteredAttributes: [],
+            },
+          ],
+        }),
+      ],
+      expandDatapointID: 'dp-1',
+    })
+
+    expect(screen.getByText('value: 9223372036854775807')).toBeInTheDocument()
+    expect(screen.getByText('value: —')).toBeInTheDocument()
   })
 })
 
