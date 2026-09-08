@@ -150,13 +150,19 @@ export type LogSummary = {
 export type MetricType =
   'Empty' | 'Gauge' | 'Sum' | 'Histogram' | 'ExponentialHistogram'
 
-export type Exemplar = {
+type ExemplarBase = {
   timestamp: bigint
-  value: number
   filteredAttributes: Attributes
   traceID: string | null
   spanID: string | null
 }
+
+export type Exemplar = ExemplarBase &
+  (
+    | { valueType: 'Double'; doubleValue: number; intValue: null }
+    | { valueType: 'Int'; doubleValue: null; intValue: bigint }
+    | { valueType: 'Empty'; doubleValue: null; intValue: null }
+  )
 
 // One measurement sample. Attributes do not live here -- they belong
 // to the parent MetricTimeseries, which is what makes a sample "this

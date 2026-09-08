@@ -203,13 +203,21 @@ export type JsonLogData = {
 export type JsonMetricType =
   'Empty' | 'Gauge' | 'Sum' | 'Histogram' | 'ExponentialHistogram'
 
-export type JsonExemplar = {
+type JsonExemplarBase = {
   timestamp: string
-  value: number
   traceID: string | null
   spanID: string | null
   filteredAttributes: JsonAttribute[]
 }
+
+type JsonExemplarDouble = number | 'NaN' | 'Infinity' | '-Infinity'
+
+export type JsonExemplar = JsonExemplarBase &
+  (
+    | { valueType: 'Double'; doubleValue: JsonExemplarDouble; intValue: null }
+    | { valueType: 'Int'; doubleValue: null; intValue: string }
+    | { valueType: 'Empty'; doubleValue: null; intValue: null }
+  )
 
 // Datapoints are json_merge_patch(base, per-type object); the per-type
 // field sets mirror the DataPoint union in api-types.ts exactly (they carry

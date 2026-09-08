@@ -71,6 +71,27 @@ func TestSpanIDColumnTypesAndNullability(t *testing.T) {
 	}
 }
 
+func TestExemplarValueColumnTypes(t *testing.T) {
+	db := freshDB(t)
+
+	for _, tc := range []struct{ column, dataType string }{
+		{"double_value", "DOUBLE"},
+		{"int_value", "BIGINT"},
+	} {
+		t.Run(tc.column, func(t *testing.T) {
+			var dataType, nullable string
+			err := db.QueryRow(`
+				select data_type, is_nullable
+				from information_schema.columns
+				where table_name = 'exemplars' and column_name = ?`, tc.column).
+				Scan(&dataType, &nullable)
+			require.NoError(t, err)
+			require.Equal(t, tc.dataType, dataType)
+			require.Equal(t, "YES", nullable)
+		})
+	}
+}
+
 func TestSpanIDWireMacro(t *testing.T) {
 	db := macroDB(t)
 

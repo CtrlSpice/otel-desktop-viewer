@@ -43,11 +43,11 @@
 		ranked as materialized (
 			select t.*,
 				row_number() over (
-					partition by t.parent_span_id order by t.start_time
+					partition by t.parent_span_id order by t.start_time, t.span_id
 				) as sibling_rank,
 				row_number() over (order by
 					case when t.parent_span_id is null then 0 else 1 end,
-					t.start_time
+					t.start_time, t.span_id
 				) as root_rank
 			from trace_spans t
 		),
@@ -56,7 +56,7 @@
 			select
 				r.trace_id, r.span_id, r.parent_span_id, r.start_time,
 				0 as depth,
-				array[r.root_rank] as sort_path
+				array[0, r.root_rank] as sort_path
 			from ranked r
 			where r.parent_span_id is null
 				or r.parent_span_id not in (select span_id from trace_spans)
@@ -98,17 +98,23 @@
 		),
 
 		-- The walk that may enter a cycle, so it carries its own ancestry and
-		-- refuses to revisit. DuckDB has no CYCLE clause; this is the pattern
-		-- its docs prescribe for traversing a graph that may contain one.
+		-- refuses to revisit. relative_path mirrors the normal walk's complete
+		-- sibling path: depth alone would group grandchildren after every sibling,
+		-- but the frontend needs each subtree contiguous to recover display parents.
+		-- DuckDB has no CYCLE clause; this is the pattern its docs prescribe for
+		-- traversing a graph that may contain one.
 		salvage_walk as (
 			select sd.span_id, sd.parent_span_id, sd.trace_id, sd.start_time,
-				sd.entry_rank, 0 as depth, [sd.span_id] as visited
+				sd.entry_rank, 0 as depth, []::bigint[] as relative_path,
+				[sd.span_id] as visited
 			from salvage_seed sd
 
 			union all
 
 			select r.span_id, r.parent_span_id, r.trace_id, r.start_time,
-				sw.entry_rank, sw.depth + 1, list_append(sw.visited, r.span_id)
+				sw.entry_rank, sw.depth + 1,
+				sw.relative_path || array[r.sibling_rank],
+				list_append(sw.visited, r.span_id)
 			from salvage_seed r
 			join salvage_walk sw on r.parent_span_id = sw.span_id
 			where list_position(sw.visited, r.span_id) is null
@@ -116,7 +122,8 @@
 
 		-- One placement per span: the earliest entry that reaches it.
 		salvaged as materialized (
-			select span_id, parent_span_id, trace_id, start_time, depth, entry_rank
+			select span_id, parent_span_id, trace_id, start_time, depth, entry_rank,
+				relative_path
 			from salvage_walk
 			qualify row_number() over (
 				partition by span_id order by entry_rank, depth
@@ -140,8 +147,7 @@
 			union all
 
 			select sv.trace_id, sv.span_id, sv.parent_span_id, sv.start_time, sv.depth,
-				array[1000000 + sv.entry_rank::int] ||
-					case when sv.depth = 0 then []::int[] else array[sv.depth] end,
+				array[1, sv.entry_rank] || sv.relative_path,
 				true,
 				sv.depth = 0 and exists (
 					select 1 from salvaged p
