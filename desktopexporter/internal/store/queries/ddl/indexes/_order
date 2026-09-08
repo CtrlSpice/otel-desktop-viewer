@@ -10,9 +10,6 @@ idx_spans_parentspanid.sql
 idx_spans_service.sql
 idx_spans_resource.sql
 idx_spans_scope.sql
-idx_events_span.sql
-idx_links_span.sql
-idx_links_trace.sql
 idx_logs_traceid.sql
 idx_logs_severitynumber.sql
 idx_logs_service.sql
@@ -22,7 +19,6 @@ idx_metric_streams_name.sql
 idx_metric_streams_service.sql
 idx_metric_ingests_stream.sql
 idx_metric_ingests_resource.sql
-idx_datapoints_stream_time.sql
 idx_datapoints_series.sql
 idx_metric_series_stream.sql
 idx_exemplars_datapoint.sql

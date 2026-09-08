@@ -4,9 +4,10 @@ package schema
 //
 // Bump it whenever a change makes an existing database file unreadable by this
 // build -- a dropped or renamed column, a changed constraint, a different
-// meaning for existing data. Additive changes that `create table if not exists`
-// and `create index if not exists` apply cleanly to an older file do not need a
-// bump.
+// meaning for existing data -- or when a compatible cleanup must apply to
+// existing files rather than only new ones. Additive changes that
+// `create table if not exists` and `create index if not exists` apply cleanly
+// to an older file do not need a bump.
 //
 // There is no migration machinery. This exists so an incompatible file is
 // reported clearly instead of failing later with something opaque: without it,
@@ -89,7 +90,14 @@ package schema
 // columns. The old DOUBLE column had already rounded integer exemplars during
 // ingest, so a version 10 file cannot provide the typed, exact values this
 // build's queries expect.
-const Version = 11
+//
+// Version 12 stops creating four explicit multicolumn ART indexes on events,
+// links, and datapoints. DuckDB 1.5.5 cannot use multicolumn indexes for index
+// scans; measurements found only write, delete, and storage costs. Merely
+// removing their creation queries would leave the indexes in existing version
+// 11 files, so the bump applies the completed cleanup under the no-migration
+// policy.
+const Version = 12
 
 // VersionTableQuery creates the version table.
 //
