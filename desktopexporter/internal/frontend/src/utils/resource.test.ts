@@ -25,14 +25,11 @@ describe('getServiceName', () => {
     expect(getServiceName(resourceWith([]))).toBeUndefined()
   })
 
-  it('returns whatever value is stored, even if not a string at runtime', () => {
-    // The Attribute type declares `value: string`, but the function performs
-    // no runtime check -- it returns whatever is found. This models data that
-    // has bypassed the type system (e.g. parsed straight from JSON).
+  it('rejects a non-string service name that bypassed wire validation', () => {
     const resource = resourceWith([
       { key: 'service.name', value: 'checkout', type: 'string' },
     ])
     Object.defineProperty(resource.attributes[0], 'value', { value: 123 })
-    expect(getServiceName(resource)).toBe(123)
+    expect(getServiceName(resource)).toBeUndefined()
   })
 })

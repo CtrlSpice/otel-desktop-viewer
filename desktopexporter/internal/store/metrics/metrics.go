@@ -1365,18 +1365,18 @@ func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 		return "s.name", nil
 	case "unit":
 		return "s.unit", nil
-	case "scope.name", "scopeName":
+	case "scope.name":
 		return "s.scope_name", nil
-	case "scope.version", "scopeVersion":
+	case "scope.version":
 		return "s.scope_version", nil
 	case "description":
 		return "m.description", nil
 	// The two dropped counts moved off metric_ingests onto the resources and
 	// scopes rows it now references, so they resolve through the joins rather
 	// than as columns on m.
-	case "resource.droppedAttributesCount", "resourceDroppedAttributesCount":
+	case "resource.droppedAttributesCount":
 		return "r.dropped_attributes_count", nil
-	case "scope.droppedAttributesCount", "scopeDroppedAttributesCount":
+	case "scope.droppedAttributesCount":
 		return "sc.dropped_attributes_count", nil
 	default:
 		col := util.CamelToSnake(name)

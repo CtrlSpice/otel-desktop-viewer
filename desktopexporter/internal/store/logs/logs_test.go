@@ -619,7 +619,7 @@ type attributeDef struct {
 	Type           string `json:"type"`
 }
 
-func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context, startTime, endTime int64) []attributeDef {
+func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context) []attributeDef {
 	t.Helper()
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogAttributes(ctx, db)
@@ -630,28 +630,9 @@ func getLogAttributeDefs(t *testing.T, s *store.Store, ctx context.Context, star
 	return out
 }
 
-// TestGetLogAttributes pins a deliberate behaviour change: GetLogAttributes
-// accepts a time range and ignores it, returning every log-side attribute
-// definition (scopes resource, scope, log) the store knows about.
-//
-// It used to window, because attribute rows were per-log and could be joined
-// back to a timestamp. The dictionary has no owner and therefore no time: one
-// row covers every log that ever carried that (key, value, type), so there is
-// nothing to filter on. Answering from the few hundred dictionary rows is also
-// why this got cheap enough to stop windowing in the first place.
-//
-// The old test asserted that an out-of-range window returned "[]", which is now
-// exactly backwards. Two assertions replace it, and both fail if the function
-// silently reverted to windowing:
-//
-//  1. An out-of-range window returns the same set as a covering one.
-//  2. A window that covers only the first batch still reports attributes that
-//     only the second, much later batch introduced.
-//
-// (1) alone would be weak: the fixture's second record has timestamp 0, so a
-// windowed implementation asked for [0,1] would return a non-empty subset
-// rather than nothing. (2) has no such escape -- those keys exist only outside
-// the window.
+// GetLogAttributes returns every log-side attribute definition (resource,
+// scope, and log) in the ownerless dictionary. A later ingest must therefore
+// add its definitions to the same result rather than creating a windowed view.
 func TestGetLogAttributes(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -661,9 +642,7 @@ func TestGetLogAttributes(t *testing.T) {
 		return logs.Ingest(ctx, conn, createTestLogsPdata(baseTime), s.FlushedIDs())
 	}))
 
-	startTime := baseTime - int64(time.Hour)
-	endTime := baseTime + int64(time.Hour)
-	attributes := getLogAttributeDefs(t, s, ctx, startTime, endTime)
+	attributes := getLogAttributeDefs(t, s, ctx)
 
 	// The full set for this fixture, exactly. Compared as a set rather than a
 	// slice: the query orders by (key, scope), and the two log.list entries tie
@@ -686,23 +665,18 @@ func TestGetLogAttributes(t *testing.T) {
 			"results must be ordered by key then scope")
 	}
 
-	// (1) The range is ignored, not merely generous.
-	assert.ElementsMatch(t, attributes, getLogAttributeDefs(t, s, ctx, 0, 1),
-		"GetLogAttributes must ignore its time range")
-
-	// (2) A second batch two hours later, carrying keys the first batch never
+	// A second batch two hours later carries keys the first batch never
 	// used -- including a scope-scoped one, so all three scopes are covered.
 	laterTime := baseTime + int64(2*time.Hour)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, createTestLogsPdataN(laterTime, 1), s.FlushedIDs())
 	}))
 
-	// Queried with the ORIGINAL window, which ends an hour before that batch.
 	names := map[string]string{}
-	for _, a := range getLogAttributeDefs(t, s, ctx, startTime, endTime) {
+	for _, a := range getLogAttributeDefs(t, s, ctx) {
 		names[a.Name] = a.AttributeScope
 	}
-	assert.Equal(t, "log", names["log.index"], "attributes outside the window must still be reported")
+	assert.Equal(t, "log", names["log.index"], "later attributes must be reported")
 	assert.Equal(t, "log", names["flush_test"])
 	assert.Equal(t, "resource", names["resource.key"])
 	assert.Equal(t, "scope", names["scope.key"], "scope-scoped attributes belong to the log-side set")

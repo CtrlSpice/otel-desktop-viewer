@@ -36,15 +36,12 @@ const oneSecondNs = 1_000_000_000n
 const oneMinuteNs = 60_000_000_000n
 const oneHourNs = 3_600_000_000_000n
 
-// Accepts string to mirror raw JSON payloads, which the implementation parses at runtime.
-function makeSummary(
-  durationNs: bigint | string | null | undefined
-): TraceSummary {
+function makeSummary(durationNs: bigint | null): TraceSummary {
   return {
     traceID: 't1',
     hasRootSpan: true,
     startTime: 0n,
-    durationNs: durationNs as bigint | null,
+    durationNs,
     spanCount: 1,
     errorCount: 0,
   }
@@ -217,21 +214,12 @@ describe('traceSummaryDurationNs', () => {
     expect(traceSummaryDurationNs(makeSummary(12345n))).toBe(12345n)
   })
 
-  it('parses a string duration into nanoseconds', () => {
-    expect(traceSummaryDurationNs(makeSummary('12345'))).toBe(12345n)
-  })
-
   it('returns undefined for null', () => {
     expect(traceSummaryDurationNs(makeSummary(null))).toBeUndefined()
   })
 
-  it('returns undefined for undefined', () => {
-    expect(traceSummaryDurationNs(makeSummary(undefined))).toBeUndefined()
-  })
-
   it('returns undefined for negative durations', () => {
     expect(traceSummaryDurationNs(makeSummary(-1n))).toBeUndefined()
-    expect(traceSummaryDurationNs(makeSummary('-1'))).toBeUndefined()
   })
 
   it('returns zero for a zero duration', () => {

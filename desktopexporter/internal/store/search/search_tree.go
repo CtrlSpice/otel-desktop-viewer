@@ -285,7 +285,10 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		*params = append(*params, NamedParam{paramName, "%" + value})
 		operatorString = "LIKE " + paramName
 	case "IN", "NOT IN":
-		values := ParseArrayValue(value)
+		values, err := ParseArrayValue(value)
+		if err != nil {
+			return "", err
+		}
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN/NOT IN requires at least one value: %w", ErrInvalidQuery)
 		}
@@ -330,7 +333,11 @@ func handleArrayOperator(expression string, query *Query, params *[]NamedParam) 
 	switch operator {
 	case "=", "!=":
 		if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
-			*params = append(*params, NamedParam{paramName, ParseArrayValue(value)})
+			values, err := ParseArrayValue(value)
+			if err != nil {
+				return "", err
+			}
+			*params = append(*params, NamedParam{paramName, values})
 		} else {
 			*params = append(*params, NamedParam{paramName, value})
 		}
@@ -347,7 +354,10 @@ func handleArrayOperator(expression string, query *Query, params *[]NamedParam) 
 		return fmt.Sprintf("NOT list_contains(%s, %s)", expression, paramName), nil
 
 	case "IN":
-		values := ParseArrayValue(value)
+		values, err := ParseArrayValue(value)
+		if err != nil {
+			return "", err
+		}
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN requires at least one value: %w", ErrInvalidQuery)
 		}
@@ -363,7 +373,10 @@ func handleArrayOperator(expression string, query *Query, params *[]NamedParam) 
 		return fmt.Sprintf("list_has_all(%s, %s)", expression, paramName), nil
 
 	case "NOT IN":
-		values := ParseArrayValue(value)
+		values, err := ParseArrayValue(value)
+		if err != nil {
+			return "", err
+		}
 		if len(values) == 0 {
 			return "", fmt.Errorf("NOT IN requires at least one value: %w", ErrInvalidQuery)
 		}
@@ -383,33 +396,21 @@ func handleArrayOperator(expression string, query *Query, params *[]NamedParam) 
 	}
 }
 
-// ParseArrayValue parses an array value off the wire. The parser sends JSON
-// -- `["a,b","c"]` -- because a quoted element may contain commas, which the
-// legacy "[a,b,c]" comma split corrupted into three wrong values. The split
-// remains as the fallback for values that are not valid JSON arrays.
-func ParseArrayValue(value string) []any {
+// ParseArrayValue parses the JSON string array sent over the query wire format.
+func ParseArrayValue(value string) ([]any, error) {
 	var decoded []string
-	if err := json.Unmarshal([]byte(value), &decoded); err == nil {
-		// nil for empty, matching the legacy path: callers branch on len.
-		var result []any
-		for _, v := range decoded {
-			result = append(result, v)
-		}
-		return result
+	if err := json.Unmarshal([]byte(value), &decoded); err != nil {
+		return nil, fmt.Errorf("array value must be a JSON string array: %w", ErrInvalidQuery)
+	}
+	if decoded == nil {
+		return nil, fmt.Errorf("array value must be a JSON string array: %w", ErrInvalidQuery)
 	}
 
-	value = strings.Trim(value, "[]")
-	parts := strings.Split(value, ",")
-	var result []any
-
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
+	result := make([]any, len(decoded))
+	for i, v := range decoded {
+		result[i] = v
 	}
-
-	return result
+	return result, nil
 }
 
 // ConvertValueForArrayType converts a string value to the appropriate type for array operations

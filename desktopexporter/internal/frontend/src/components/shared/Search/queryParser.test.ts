@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { parseQuery, parseSearchRequest, validateQuery } from './queryParser'
 import { OPERATORS } from '../../../constants/operators'
 import type { FieldDefinition } from '../../../constants/fields'
+import type { QueryNode } from './queryTree'
 
 const fields: FieldDefinition[] = [
   {
@@ -49,9 +50,26 @@ const contractFields: FieldDefinition[] = [
   },
 ]
 
-const valueOf = (input: string): unknown => {
-  const tree = parseQuery(input, fields) as any
-  return (tree?.query ?? tree)?.value
+function expectCondition(
+  node: QueryNode | null | undefined
+): Extract<QueryNode, { type: 'condition' }> {
+  if (!node || node.type !== 'condition') {
+    throw new Error('Expected a condition query')
+  }
+  return node
+}
+
+function expectGroup(
+  node: QueryNode | null | undefined
+): Extract<QueryNode, { type: 'group' }> {
+  if (!node || node.type !== 'group') {
+    throw new Error('Expected a group query')
+  }
+  return node
+}
+
+function valueOf(input: string): string {
+  return expectCondition(parseQuery(input, fields)).query.value
 }
 
 describe('queryParser value normalization', () => {
@@ -135,16 +153,18 @@ describe('plain text is still a global search', () => {
   // Free text has no operator, so it must not be dragged into the structured
   // path by the stricter parse -- multi-word global search is the common case.
   it('multi-word text becomes a global contains', () => {
-    const tree = parseQuery('Red Bull Racing', fields) as any
+    const tree = expectCondition(parseQuery('Red Bull Racing', fields))
     expect(tree.query.field.searchScope).toBe('global')
     expect(tree.query.value).toBe('Red Bull Racing')
   })
 
   it('structured queries with logical operators still parse whole', () => {
-    const tree = parseQuery(
-      'http.method = GET AND service.name = "Red Bull Racing"',
-      fields
-    ) as any
+    const tree = expectGroup(
+      parseQuery(
+        'http.method = GET AND service.name = "Red Bull Racing"',
+        fields
+      )
+    )
     expect(tree.type).toBe('group')
   })
 })
@@ -159,7 +179,7 @@ describe('LIMIT modifier syntax', () => {
 
   it('keeps multi-word free text intact before the modifier', () => {
     const request = parseSearchRequest('rate limit reached | LIMIT 50', fields)
-    const predicate = request?.predicate as any
+    const predicate = expectCondition(request?.predicate)
 
     expect(predicate.query.field.searchScope).toBe('global')
     expect(predicate.query.value).toBe('rate limit reached')
@@ -182,7 +202,7 @@ describe('LIMIT modifier syntax', () => {
       'http.method = GET|POST | LIMIT 5',
       fields
     )
-    const predicate = request?.predicate as any
+    const predicate = expectCondition(request?.predicate)
 
     expect(predicate.query.value).toBe('GET|POST')
     expect(request?.limit).toBe(5)
@@ -225,47 +245,48 @@ describe('LIMIT modifier syntax', () => {
 // either impossible or silently wrong under the hand-written parser.
 describe('unified grammar contract', () => {
   it('AND binds tighter than OR', () => {
-    const n: any = parseQuery(
-      'body = a OR body = b AND body = c',
-      contractFields
+    const group = expectGroup(
+      parseQuery('body = a OR body = b AND body = c', contractFields)
     )
-    expect(n.type).toBe('group')
-    expect(n.group.operator).toBe('OR')
-    const [left, right] = n.group.children
-    expect(left.type).toBe('condition')
-    expect(right.type).toBe('group')
-    expect(right.group.operator).toBe('AND')
+    expect(group.group.operator).toBe('OR')
+    const [left, right] = group.group.children
+    expectCondition(left)
+    expect(expectGroup(right).group.operator).toBe('AND')
   })
 
   it('a bare NULL is the null check, carried as an explicit operator', () => {
-    const q: any = parseQuery('body = NULL', contractFields)
+    const q = expectCondition(parseQuery('body = NULL', contractFields))
     expect(q.query.operator.symbol).toBe('IS NULL')
-    const q2: any = parseQuery('body != nil', contractFields)
+    const q2 = expectCondition(parseQuery('body != nil', contractFields))
     expect(q2.query.operator.symbol).toBe('IS NOT NULL')
   })
 
   it('a quoted "NULL" is the literal string, not the null check', () => {
-    const q: any = parseQuery('body = "NULL"', contractFields)
+    const q = expectCondition(parseQuery('body = "NULL"', contractFields))
     expect(q.query.operator.symbol).toBe('=')
     expect(q.query.value).toBe('NULL')
   })
 
   it('array values travel as JSON, so quoted commas survive', () => {
-    const q: any = parseQuery('statusCode IN ["a,b", "c"]', contractFields)
+    const q = expectCondition(
+      parseQuery('statusCode IN ["a,b", "c"]', contractFields)
+    )
     expect(JSON.parse(q.query.value)).toEqual(['a,b', 'c'])
   })
 
   it('=~ and !~ are the PromQL spellings of the regex operators', () => {
-    const q: any = parseQuery('body =~ foo.*', contractFields)
+    const q = expectCondition(parseQuery('body =~ foo.*', contractFields))
     expect(q.query.operator.symbol).toBe('REGEXP')
-    const q2: any = parseQuery('body !~ foo.*', contractFields)
+    const q2 = expectCondition(parseQuery('body !~ foo.*', contractFields))
     expect(q2.query.operator.symbol).toBe('NOT REGEXP')
   })
 
   it('keyword operators are case-insensitive in lowercase form', () => {
-    const q: any = parseQuery('body contains foo', contractFields)
+    const q = expectCondition(parseQuery('body contains foo', contractFields))
     expect(q.query.operator.symbol).toBe('CONTAINS')
-    const q2: any = parseQuery('statusCode not in [a, b]', contractFields)
+    const q2 = expectCondition(
+      parseQuery('statusCode not in [a, b]', contractFields)
+    )
     expect(q2.query.operator.symbol).toBe('NOT IN')
   })
 
@@ -284,17 +305,18 @@ describe('unified grammar contract', () => {
     // ':'). '=' cannot be: with no-space comparisons like http.method=GET in
     // the language, an '=' inside an unquoted value would be indistinguishable
     // from the operator. A URL with query parameters needs quotes.
-    const q: any = parseQuery('body = http://example.com/x', contractFields)
+    const q = expectCondition(
+      parseQuery('body = http://example.com/x', contractFields)
+    )
     expect(q.query.value).toBe('http://example.com/x')
-    const q2: any = parseQuery(
-      'body = "http://example.com/x?y=1"',
-      contractFields
+    const q2 = expectCondition(
+      parseQuery('body = "http://example.com/x?y=1"', contractFields)
     )
     expect(q2.query.value).toBe('http://example.com/x?y=1')
   })
 
   it('plain words are still a global text search', () => {
-    const q: any = parseQuery('checkout latency', contractFields)
+    const q = expectCondition(parseQuery('checkout latency', contractFields))
     expect(q.query.field.searchScope).toBe('global')
     expect(q.query.value).toBe('checkout latency')
   })
@@ -314,23 +336,25 @@ describe('keyword-prefixed words', () => {
     ['body = nothing', 'nothing'],
     ['body = ANDES', 'ANDES'],
   ])('%s keeps the value intact', (input, want) => {
-    const q: any = parseQuery(input, contractFields)
+    const q = expectCondition(parseQuery(input, contractFields))
     expect(q.query.value).toBe(want)
   })
 
   it('free text starting with a keyword prefix stays free text', () => {
-    const q: any = parseQuery('orderly android', contractFields)
+    const q = expectCondition(parseQuery('orderly android', contractFields))
     expect(q.query.field.searchScope).toBe('global')
     expect(q.query.value).toBe('orderly android')
   })
 
   it('mixed precedence with keyword-prefixed values', () => {
-    const n: any = parseQuery(
-      'body = Server OR body = Client AND body contains orders',
-      contractFields
+    const group = expectGroup(
+      parseQuery(
+        'body = Server OR body = Client AND body contains orders',
+        contractFields
+      )
     )
-    expect(n.group.operator).toBe('OR')
-    expect(n.group.children[1].group.operator).toBe('AND')
+    expect(group.group.operator).toBe('OR')
+    expect(expectGroup(group.group.children[1]).group.operator).toBe('AND')
   })
 })
 
@@ -345,7 +369,7 @@ describe('review findings', () => {
       '(retrying) connection failed',
       '(500) internal error',
     ]) {
-      const q: any = parseQuery(input, contractFields)
+      const q = expectCondition(parseQuery(input, contractFields))
       expect(q.query.field.searchScope, input).toBe('global')
       expect(q.query.value).toBe(input)
       expect(validateQuery(input, contractFields)).toEqual([])
@@ -353,8 +377,7 @@ describe('review findings', () => {
   })
 
   it('grouped conditions are still structured', () => {
-    const n: any = parseQuery('(body = a OR body = b)', contractFields)
-    expect(n.type).toBe('group')
+    expectGroup(parseQuery('(body = a OR body = b)', contractFields))
   })
 
   it('a lone operator is still an error, not free text', () => {

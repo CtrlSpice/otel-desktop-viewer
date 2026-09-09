@@ -445,16 +445,14 @@ export function getLocalTimezoneName(): string {
 // --- Duration formatting & parsing ---
 
 import type { TraceSummary } from '@/types/api-types'
-import { parseBigInt } from '@/utils/bigint'
 
 /** Nanoseconds of trace coverage for list display/sort (server-precomputed). */
 export function traceSummaryDurationNs(
   summary: TraceSummary
 ): bigint | undefined {
   const ns = summary.durationNs
-  if (ns === null || ns === undefined) return undefined
-  const bi = typeof ns === 'bigint' ? ns : parseBigInt(ns)
-  return bi >= 0n ? bi : undefined
+  if (ns === null) return undefined
+  return ns >= 0n ? ns : undefined
 }
 
 const DURATION_UNITS: Record<string, bigint> = {
