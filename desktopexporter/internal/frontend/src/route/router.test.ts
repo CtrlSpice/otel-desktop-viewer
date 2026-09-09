@@ -54,13 +54,11 @@ describe('buildSearch', () => {
   })
 
   it('omits null values', () => {
-    expect(buildSearch({ a: '1', b: null as unknown as string })).toBe('?a=1')
+    expect(buildSearch({ a: '1', b: null })).toBe('?a=1')
   })
 
   it('omits undefined values', () => {
-    expect(buildSearch({ a: '1', b: undefined as unknown as string })).toBe(
-      '?a=1'
-    )
+    expect(buildSearch({ a: '1', b: undefined })).toBe('?a=1')
   })
 
   it('returns an empty string, not "?", when the result is empty', () => {

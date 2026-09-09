@@ -11,32 +11,26 @@ const rightPanel = createRawSnippet(() => ({ render: () => '<p>detail</p>' }))
 // jsdom has no layout, so the component's ResizeObserver never fires on its
 // own. This stub records instances so a test can hand the component a
 // container measurement, which is all the real observer ever did for it.
-const observers: { cb: ResizeObserverCallback }[] = []
+class ResizeObserverStub implements ResizeObserver {
+  constructor(readonly cb: ResizeObserverCallback) {
+    observers.push(this)
+  }
+  observe(_target: Element, _options?: ResizeObserverOptions) {}
+  unobserve(_target: Element) {}
+  disconnect() {}
+}
+
+const observers: ResizeObserverStub[] = []
 beforeEach(() => {
   observers.length = 0
   localStorage.clear()
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      cb: ResizeObserverCallback
-      constructor(cb: ResizeObserverCallback) {
-        this.cb = cb
-        observers.push(this)
-      }
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-  )
+  vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 })
 
 async function measure(width: number, height = 600) {
   await tick()
   for (const o of observers) {
-    o.cb(
-      [{ contentRect: { width, height } } as ResizeObserverEntry],
-      null as unknown as ResizeObserver
-    )
+    o.cb([{ contentRect: { width, height } } as ResizeObserverEntry], o)
   }
   await tick()
 }

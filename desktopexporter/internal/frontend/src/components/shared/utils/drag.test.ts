@@ -11,14 +11,16 @@ function handle() {
   return el
 }
 
-function down(el: HTMLElement, x = 100, y = 100): PointerEvent {
-  const e = new MouseEvent('pointerdown', {
-    clientX: x,
-    clientY: y,
-    bubbles: true,
-    cancelable: true,
-  }) as unknown as PointerEvent
-  Object.defineProperty(e, 'pointerId', { value: 1 })
+function down(el: HTMLElement, x = 100, y = 100) {
+  const e = Object.assign(
+    new MouseEvent('pointerdown', {
+      clientX: x,
+      clientY: y,
+      bubbles: true,
+      cancelable: true,
+    }),
+    { pointerId: 1 }
+  )
   Object.defineProperty(e, 'currentTarget', { value: el })
   return e
 }

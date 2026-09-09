@@ -58,7 +58,9 @@ export function parseRoute(href: string): Route {
  *
  * @example `{ a: '1' }` → `?a=1`
  */
-export function buildSearch(query: Record<string, string>): string {
+export function buildSearch(
+  query: Record<string, string | null | undefined>
+): string {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== null && value !== '') {

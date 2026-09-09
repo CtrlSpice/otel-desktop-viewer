@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type {
+  DataPoint,
   ExponentialHistogramDataPoint,
   HistogramDataPoint,
+  MetricTimeseries,
 } from '@/types/api-types'
 import {
   HEATMAP_BUCKET_TARGET,
@@ -16,6 +18,24 @@ import {
 
 const ts1 = 1_000_000_000n
 const ts2 = 2_000_000_000n
+
+function metricSeries(
+  attributesKey: string,
+  datapoints: DataPoint[]
+): MetricTimeseries {
+  return {
+    attributesKey,
+    attributes: [],
+    resource: { attributes: [], droppedAttributesCount: 0 },
+    datapoints,
+    stats: null,
+    datapointCount: datapoints.length,
+    lastSeenNs: datapoints[0]?.timestamp ?? null,
+    views: null,
+    rateStats: null,
+    sparkline: null,
+  }
+}
 
 function histSlice(
   timestamp: bigint,
@@ -128,39 +148,41 @@ describe('HEATMAP_BUCKET_TARGET', () => {
 describe('seriesBucketsToSlices', () => {
   it('emits one slice per store bucket, keyed by its series', () => {
     const series = [
-      {
-        attributesKey: 'driver=ALO',
-        attributes: [],
-        datapoints: [
-          {
-            id: 'a',
-            metricType: 'Histogram',
-            timestamp: ts1,
-            count: 3,
-            sum: 6,
-            min: 1,
-            max: 3,
-            explicitBounds: [1, 2],
-            bucketCounts: [1, 1, 1],
-            exemplars: [],
-            flags: 0,
-          },
-          {
-            id: 'b',
-            metricType: 'Histogram',
-            timestamp: ts2,
-            count: 1,
-            sum: 5,
-            min: 5,
-            max: 5,
-            explicitBounds: [1, 2],
-            bucketCounts: [0, 0, 1],
-            exemplars: [],
-            flags: 0,
-          },
-        ],
-      },
-    ] as unknown as Parameters<typeof seriesBucketsToSlices>[0]
+      metricSeries('driver=ALO', [
+        {
+          id: 'a',
+          metricType: 'Histogram',
+          timestamp: ts1,
+          timestampMs: 1000,
+          startTime: ts1,
+          count: 3,
+          sum: 6,
+          min: 1,
+          max: 3,
+          explicitBounds: [1, 2],
+          bucketCounts: [1, 1, 1],
+          exemplars: [],
+          flags: 0,
+          aggregationTemporality: 'Cumulative',
+        },
+        {
+          id: 'b',
+          metricType: 'Histogram',
+          timestamp: ts2,
+          timestampMs: 2000,
+          startTime: ts2,
+          count: 1,
+          sum: 5,
+          min: 5,
+          max: 5,
+          explicitBounds: [1, 2],
+          bucketCounts: [0, 0, 1],
+          exemplars: [],
+          flags: 0,
+          aggregationTemporality: 'Cumulative',
+        },
+      ]),
+    ]
 
     const slices = seriesBucketsToSlices(series)
 
@@ -176,31 +198,30 @@ describe('seriesBucketsToSlices', () => {
 
   it('carries the exponential fields through untouched', () => {
     const series = [
-      {
-        attributesKey: 'driver=VER',
-        attributes: [],
-        datapoints: [
-          {
-            id: 'c',
-            metricType: 'ExponentialHistogram',
-            timestamp: ts1,
-            count: 4,
-            sum: 8,
-            min: 1,
-            max: 4,
-            scale: 2,
-            zeroCount: 1,
-            zeroThreshold: 0.5,
-            positiveBucketOffset: 3,
-            positiveBucketCounts: [1, 2],
-            negativeBucketOffset: 0,
-            negativeBucketCounts: [],
-            exemplars: [],
-            flags: 0,
-          },
-        ],
-      },
-    ] as unknown as Parameters<typeof seriesBucketsToSlices>[0]
+      metricSeries('driver=VER', [
+        {
+          id: 'c',
+          metricType: 'ExponentialHistogram',
+          timestamp: ts1,
+          timestampMs: 1000,
+          startTime: ts1,
+          count: 4,
+          sum: 8,
+          min: 1,
+          max: 4,
+          scale: 2,
+          zeroCount: 1,
+          zeroThreshold: 0.5,
+          positiveBucketOffset: 3,
+          positiveBucketCounts: [1, 2],
+          negativeBucketOffset: 0,
+          negativeBucketCounts: [],
+          exemplars: [],
+          flags: 0,
+          aggregationTemporality: 'Cumulative',
+        },
+      ]),
+    ]
 
     const slices = seriesBucketsToSlices(series)
     expect(slices).toHaveLength(1)
