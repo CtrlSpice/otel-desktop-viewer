@@ -163,6 +163,9 @@ jobs:
         npm run generate:grammar
         git diff --exit-code src/components/shared/Search/codemirror/
 
+    - name: Lint (Oxlint)
+      run: npm run lint
+
     - name: Type check (svelte-check)
       run: npm run check
 
