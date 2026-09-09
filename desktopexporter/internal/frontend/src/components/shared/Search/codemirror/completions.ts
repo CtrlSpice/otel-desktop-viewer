@@ -436,12 +436,13 @@ function fieldCompletions(
 
   if (options.length === 0) return null
 
-  return {
+  const result: CompletionResult = {
     from: from ?? context.pos,
-    ...(to !== undefined ? { to } : {}),
     options,
     validFor: /^[\w.]*$/,
   }
+  if (to !== undefined) result.to = to
+  return result
 }
 
 function operatorCompletions(
