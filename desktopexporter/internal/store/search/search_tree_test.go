@@ -165,7 +165,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			name:           "IN operator",
 			expression:     "Name",
 			operator:       "IN",
-			value:          "[test1,test2,test3]",
+			value:          `["test1","test2","test3"]`,
 			expectedSQL:    "Name IN value_2",
 			expectedParams: []NamedParam{{"value_2", []any{"test1", "test2", "test3"}}},
 		},
@@ -227,6 +227,13 @@ func TestBuildOperatorCondition(t *testing.T) {
 			value:          `["a,b","c"]`,
 			expectedSQL:    "Name IN value_2",
 			expectedParams: []NamedParam{{"value_2", []any{"a,b", "c"}}},
+		},
+		{
+			name:       "IN rejects pseudo-array",
+			expression: "Name",
+			operator:   "IN",
+			value:      "[test1,test2]",
+			wantErr:    true,
 		},
 		{
 			name:       "unsupported operator",
@@ -355,7 +362,7 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			expression:     "a.Value",
 			fieldType:      "string[]",
 			operator:       "IN",
-			value:          "[one,two,three]",
+			value:          `["one","two","three"]`,
 			expectedSQL:    "list_has_all(CAST(a.Value AS VARCHAR[]), value_2)",
 			expectedParams: []NamedParam{{"value_2", []any{"one", "two", "three"}}},
 		},
@@ -364,7 +371,7 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			expression:     "a.Value",
 			fieldType:      "string[]",
 			operator:       "NOT IN",
-			value:          "[bad1,bad2]",
+			value:          `["bad1","bad2"]`,
 			expectedSQL:    "NOT list_has_all(CAST(a.Value AS VARCHAR[]), value_2)",
 			expectedParams: []NamedParam{{"value_2", []any{"bad1", "bad2"}}},
 		},
@@ -382,7 +389,7 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			expression:     "a.Value",
 			fieldType:      "string[]",
 			operator:       "=",
-			value:          "[one,two,three]",
+			value:          `["one","two","three"]`,
 			expectedSQL:    "CAST(a.Value AS VARCHAR[]) = value_2",
 			expectedParams: []NamedParam{{"value_2", []any{"one", "two", "three"}}},
 		},
@@ -400,7 +407,7 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			expression:     "a.Value",
 			fieldType:      "string[]",
 			operator:       "!=",
-			value:          "[x,y]",
+			value:          `["x","y"]`,
 			expectedSQL:    "CAST(a.Value AS VARCHAR[]) != value_2",
 			expectedParams: []NamedParam{{"value_2", []any{"x", "y"}}},
 		},
@@ -419,6 +426,22 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			fieldType:  "map[]",
 			operator:   "CONTAINS",
 			value:      "x",
+			wantErr:    true,
+		},
+		{
+			name:       "array IN rejects pseudo-array",
+			expression: "a.Value",
+			fieldType:  "string[]",
+			operator:   "IN",
+			value:      "[one,two]",
+			wantErr:    true,
+		},
+		{
+			name:       "array equality rejects pseudo-array",
+			expression: "a.Value",
+			fieldType:  "string[]",
+			operator:   "=",
+			value:      "[one,two]",
 			wantErr:    true,
 		},
 	}
@@ -459,37 +482,68 @@ func TestParseArrayValue(t *testing.T) {
 		name     string
 		input    string
 		expected []any
+		wantErr  bool
 	}{
 		{
 			name:     "simple array",
-			input:    "[value1,value2,value3]",
+			input:    `["value1","value2","value3"]`,
 			expected: []any{"value1", "value2", "value3"},
 		},
 		{
 			name:     "array with spaces",
-			input:    "[ value1 , value2 , value3 ]",
+			input:    `[ "value1" , "value2" , "value3" ]`,
 			expected: []any{"value1", "value2", "value3"},
 		},
 		{
 			name:     "empty array",
 			input:    "[]",
-			expected: nil,
+			expected: []any{},
 		},
 		{
 			name:     "single value",
-			input:    "[single]",
+			input:    `["single"]`,
 			expected: []any{"single"},
 		},
 		{
-			name:     "array with empty values",
-			input:    "[value1,,value3]",
-			expected: []any{"value1", "value3"},
+			name:     "array preserves empty values",
+			input:    `["value1","","value3"]`,
+			expected: []any{"value1", "", "value3"},
+		},
+		{
+			name:     "array preserves embedded commas",
+			input:    `["value1,value2","value3"]`,
+			expected: []any{"value1,value2", "value3"},
+		},
+		{
+			name:    "rejects pseudo-array",
+			input:   "[value1,value2]",
+			wantErr: true,
+		},
+		{
+			name:    "rejects non-array JSON",
+			input:   `"value1"`,
+			wantErr: true,
+		},
+		{
+			name:    "rejects null",
+			input:   "null",
+			wantErr: true,
+		},
+		{
+			name:    "rejects non-string elements",
+			input:   `[1,2]`,
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ParseArrayValue(tt.input)
+			result, err := ParseArrayValue(tt.input)
+			if tt.wantErr {
+				assert.ErrorIs(t, err, ErrInvalidQuery)
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
