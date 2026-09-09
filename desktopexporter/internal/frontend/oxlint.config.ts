@@ -22,6 +22,7 @@ export default defineConfig({
   ],
   rules: {
     'oxc/no-accumulating-spread': 'error',
+    'anti-slop/no-array-filter-map': 'error',
     'anti-slop/no-chained-type-assertions': 'error',
     'anti-slop/no-conditional-empty-object-spread': 'error',
     'anti-slop/no-reduce-accumulator-copy': 'error',

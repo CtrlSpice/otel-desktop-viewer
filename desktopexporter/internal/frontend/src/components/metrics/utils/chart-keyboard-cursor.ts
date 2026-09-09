@@ -133,9 +133,11 @@ function nearestPointIndex(
 }
 
 function inspectableLines(lines: readonly KeyboardLine[]) {
-  return lines
-    .map((line, lineIndex) => ({ line, lineIndex }))
-    .filter(({ line }) => line.points.length > 0)
+  const inspectable: { line: KeyboardLine; lineIndex: number }[] = []
+  for (const [lineIndex, line] of lines.entries()) {
+    if (line.points.length > 0) inspectable.push({ line, lineIndex })
+  }
+  return inspectable
 }
 
 function makeLineCursor(
