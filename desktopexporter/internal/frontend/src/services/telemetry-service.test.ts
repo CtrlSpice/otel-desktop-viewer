@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { telemetryAPI, JsonRpcError } from './telemetry-service'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
 import { OPERATORS } from '@/constants/operators'
+import type {
+  JsonMetricData,
+  JsonTraceData,
+  JsonTraceSummary,
+} from '@/types/wire-types'
 
 // The backend signals not-found with JSON-RPC errors (one convention across
 // all signals; see internal/server/errors.go). getMetric's callers expect
@@ -16,6 +21,40 @@ function stubRpcResponse(body: unknown) {
       json: async () => body,
     })
   )
+}
+
+function stubRpcResult<T>(result: T) {
+  stubRpcResponse({ jsonrpc: '2.0', id: 1, result })
+}
+
+function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
+  return {
+    lastSeenNs: null,
+    id: 'some-stream',
+    name: 'test.gauge',
+    description: '',
+    metadata: [],
+    unit: '1',
+    metricType: 'Gauge',
+    aggregationTemporality: '',
+    isMonotonic: false,
+    resourceDroppedAttributesCount: 0,
+    resource: { attributes: [], droppedAttributesCount: 0 },
+    scopeName: '',
+    scopeVersion: '',
+    scopeDroppedAttributesCount: 0,
+    scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
+    timeseries: [],
+    aggregate: null,
+    scalarAggregate: null,
+    datapointCount: 0,
+    boundsMismatch: null,
+    window: {
+      requested: { startNs: null, endNs: null },
+      effective: { startNs: null, endNs: null },
+    },
+    ...overrides,
+  }
 }
 
 afterEach(() => {
@@ -46,20 +85,15 @@ describe('telemetryAPI.getMetric', () => {
   })
 
   it('parses a successful result into MetricData', async () => {
-    stubRpcResponse({
-      jsonrpc: '2.0',
-      id: 1,
-      result: {
-        name: 'test.gauge',
+    stubRpcResult(
+      metricResult({
         unit: 'bytes',
-        metricType: 'Gauge',
-        timeseries: [],
         window: {
           requested: { startNs: null, endNs: null },
           effective: { startNs: '10', endNs: '20' },
         },
-      },
-    })
+      })
+    )
     const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
     expect(metric).not.toBeNull()
     expect(metric!.name).toBe('test.gauge')
@@ -71,10 +105,8 @@ describe('telemetryAPI.getMetric', () => {
   })
 
   it('revives typed exemplar values without losing int64 precision', async () => {
-    stubRpcResponse({
-      jsonrpc: '2.0',
-      id: 1,
-      result: {
+    stubRpcResult(
+      metricResult({
         name: 'test.gauge',
         unit: '1',
         metricType: 'Gauge',
@@ -164,8 +196,8 @@ describe('telemetryAPI.getMetric', () => {
           requested: { startNs: null, endNs: null },
           effective: { startNs: '100', endNs: '100' },
         },
-      },
-    })
+      })
+    )
 
     const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
     const exemplars = metric!.timeseries[0]!.datapoints[0]!.exemplars
@@ -206,6 +238,31 @@ describe('telemetryAPI.getMetric', () => {
         doubleValue: Number.NEGATIVE_INFINITY,
         intValue: null,
       }),
+    ])
+  })
+})
+
+describe('telemetryAPI.searchTraces', () => {
+  it('promotes wire timestamps and durations to bigint values', async () => {
+    const summaries: JsonTraceSummary[] = [
+      {
+        traceID: 'trace-1',
+        hasRootSpan: true,
+        rootSpan: { serviceName: 'checkout', name: 'GET /checkout' },
+        startTime: '1700000000000000000',
+        durationNs: '12345',
+        spanCount: 2,
+        errorCount: 0,
+      },
+    ]
+    stubRpcResult(summaries)
+
+    await expect(telemetryAPI.searchTraces(0, 1)).resolves.toMatchObject([
+      {
+        traceID: 'trace-1',
+        startTime: 1700000000000000000n,
+        durationNs: 12345n,
+      },
     ])
   })
 })
@@ -251,6 +308,7 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           traceState: '',
           spanID: 'aaaa',
           parentSpanID: null,
+          flags: 0,
           name: 'root',
           kind: 'Server',
           start: 0,
@@ -281,6 +339,7 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           traceState: '',
           spanID: 'bbbb',
           parentSpanID: 'aaaa',
+          flags: 0,
           name: 'child',
           kind: 'Internal',
           start: 1_200_000_000,
@@ -300,10 +359,10 @@ describe('telemetryAPI.searchSpans rehydration', () => {
         matched: true,
       },
     ],
-  }
+  } satisfies JsonTraceData
 
   async function fetchTrace() {
-    stubRpcResponse({ jsonrpc: '2.0', id: 1, result: wire })
+    stubRpcResult<JsonTraceData>(wire)
     return telemetryAPI.searchSpans('abc123')
   }
 
@@ -356,13 +415,9 @@ describe('telemetryAPI.searchSpans rehydration', () => {
   })
 
   it('shares resolved resources rather than copying them per span', async () => {
-    stubRpcResponse({
-      jsonrpc: '2.0',
-      id: 1,
-      result: {
-        ...wire,
-        spans: [wire.spans[0], { ...wire.spans[0], depth: 1 }],
-      },
+    stubRpcResult<JsonTraceData>({
+      ...wire,
+      spans: [wire.spans[0], { ...wire.spans[0], depth: 1 }],
     })
     const trace = await telemetryAPI.searchSpans('abc123')
     // Copying would rebuild client-side the duplication the wire format
@@ -389,24 +444,9 @@ describe('telemetryAPI.searchSpans rehydration', () => {
   })
 
   it('preserves unplacedSpanCount when the wire reports spans stranded on a cycle', async () => {
-    stubRpcResponse({
-      jsonrpc: '2.0',
-      id: 1,
-      result: { ...wire, unplacedSpanCount: 3 },
-    })
+    stubRpcResult<JsonTraceData>({ ...wire, unplacedSpanCount: 3 })
     const trace = await telemetryAPI.searchSpans('abc123')
     expect(trace.unplacedSpanCount).toBe(3)
-  })
-
-  it('defaults unplacedSpanCount to 0 when an older store omits the field', async () => {
-    const { unplacedSpanCount: _drop, ...wireWithoutField } = wire
-    stubRpcResponse({
-      jsonrpc: '2.0',
-      id: 1,
-      result: wireWithoutField,
-    })
-    const trace = await telemetryAPI.searchSpans('abc123')
-    expect(trace.unplacedSpanCount).toBe(0)
   })
 
   it('does not invent salvaged or cyclePoint on spans the wire never flagged', async () => {
@@ -418,38 +458,34 @@ describe('telemetryAPI.searchSpans rehydration', () => {
   })
 
   it('preserves salvaged and cyclePoint on a span recovered from a cycle', async () => {
-    stubRpcResponse({
-      jsonrpc: '2.0',
-      id: 1,
-      result: {
-        ...wire,
-        unplacedSpanCount: 0,
-        spans: [
-          ...wire.spans,
-          {
-            spanData: {
-              ...wire.spans[1].spanData,
-              spanID: 'cccc',
-              parentSpanID: 'dddd',
-            },
-            depth: 0,
-            matched: true,
-            salvaged: true,
-            cyclePoint: false,
+    stubRpcResult<JsonTraceData>({
+      ...wire,
+      unplacedSpanCount: 0,
+      spans: [
+        ...wire.spans,
+        {
+          spanData: {
+            ...wire.spans[1].spanData,
+            spanID: 'cccc',
+            parentSpanID: 'dddd',
           },
-          {
-            spanData: {
-              ...wire.spans[1].spanData,
-              spanID: 'dddd',
-              parentSpanID: 'cccc',
-            },
-            depth: 1,
-            matched: true,
-            salvaged: true,
-            cyclePoint: true,
+          depth: 0,
+          matched: true,
+          salvaged: true,
+          cyclePoint: false,
+        },
+        {
+          spanData: {
+            ...wire.spans[1].spanData,
+            spanID: 'dddd',
+            parentSpanID: 'cccc',
           },
-        ],
-      },
+          depth: 1,
+          matched: true,
+          salvaged: true,
+          cyclePoint: true,
+        },
+      ],
     })
     const trace = await telemetryAPI.searchSpans('abc123')
 

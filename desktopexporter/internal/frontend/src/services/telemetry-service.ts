@@ -232,11 +232,7 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
 
   return {
     traceID: json.traceID,
-    // The query always emits this, so the fallback is not version skew --
-    // frontend and backend ship in the same binary and cannot disagree. It
-    // guards a hand-rolled or replayed response, and keeps the field a plain
-    // number so no caller has to consider undefined.
-    unplacedSpanCount: json.unplacedSpanCount ?? 0,
+    unplacedSpanCount: json.unplacedSpanCount,
     // events is coalesced to [] server-side and matched is always
     // emitted (literal true when no search criteria), so no fallbacks;
     // links rides the spanData spread untouched.

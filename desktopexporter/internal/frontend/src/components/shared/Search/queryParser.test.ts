@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { parseQuery, parseSearchRequest, validateQuery } from './queryParser'
 import { OPERATORS } from '../../../constants/operators'
 import type { FieldDefinition } from '../../../constants/fields'
+import type { QueryNode } from './queryTree'
 
 const fields: FieldDefinition[] = [
   {
@@ -49,9 +50,26 @@ const contractFields: FieldDefinition[] = [
   },
 ]
 
-const valueOf = (input: string): unknown => {
-  const tree = parseQuery(input, fields) as any
-  return (tree?.query ?? tree)?.value
+function expectCondition(
+  node: QueryNode | null | undefined
+): Extract<QueryNode, { type: 'condition' }> {
+  if (!node || node.type !== 'condition') {
+    throw new Error('Expected a condition query')
+  }
+  return node
+}
+
+function expectGroup(
+  node: QueryNode | null | undefined
+): Extract<QueryNode, { type: 'group' }> {
+  if (!node || node.type !== 'group') {
+    throw new Error('Expected a group query')
+  }
+  return node
+}
+
+function valueOf(input: string): string {
+  return expectCondition(parseQuery(input, fields)).query.value
 }
 
 describe('queryParser value normalization', () => {
@@ -135,16 +153,18 @@ describe('plain text is still a global search', () => {
   // Free text has no operator, so it must not be dragged into the structured
   // path by the stricter parse -- multi-word global search is the common case.
   it('multi-word text becomes a global contains', () => {
-    const tree = parseQuery('Red Bull Racing', fields) as any
+    const tree = expectCondition(parseQuery('Red Bull Racing', fields))
     expect(tree.query.field.searchScope).toBe('global')
     expect(tree.query.value).toBe('Red Bull Racing')
   })
 
   it('structured queries with logical operators still parse whole', () => {
-    const tree = parseQuery(
-      'http.method = GET AND service.name = "Red Bull Racing"',
-      fields
-    ) as any
+    const tree = expectGroup(
+      parseQuery(
+        'http.method = GET AND service.name = "Red Bull Racing"',
+        fields
+      )
+    )
     expect(tree.type).toBe('group')
   })
 })
@@ -159,7 +179,7 @@ describe('LIMIT modifier syntax', () => {
 
   it('keeps multi-word free text intact before the modifier', () => {
     const request = parseSearchRequest('rate limit reached | LIMIT 50', fields)
-    const predicate = request?.predicate as any
+    const predicate = expectCondition(request?.predicate)
 
     expect(predicate.query.field.searchScope).toBe('global')
     expect(predicate.query.value).toBe('rate limit reached')
@@ -182,7 +202,7 @@ describe('LIMIT modifier syntax', () => {
       'http.method = GET|POST | LIMIT 5',
       fields
     )
-    const predicate = request?.predicate as any
+    const predicate = expectCondition(request?.predicate)
 
     expect(predicate.query.value).toBe('GET|POST')
     expect(request?.limit).toBe(5)
