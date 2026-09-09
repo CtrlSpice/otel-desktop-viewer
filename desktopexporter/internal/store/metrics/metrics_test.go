@@ -629,25 +629,6 @@ func TestMetricSuite(t *testing.T) {
 		assert.Len(t, metrics, 5)
 	})
 
-	t.Run("Field_scopeName", func(t *testing.T) {
-		query := map[string]any{
-			"id":   "f4b",
-			"type": "condition",
-			"query": map[string]any{
-				"field":         map[string]any{"name": "scopeName", "searchScope": "field"},
-				"fieldOperator": "=",
-				"value":         "test-scope",
-			},
-		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
-		})
-		assert.NoError(t, err)
-		var metrics []map[string]any
-		assert.NoError(t, json.Unmarshal(raw, &metrics))
-		assert.Len(t, metrics, 5)
-	})
-
 	t.Run("Field_scope.version", func(t *testing.T) {
 		query := map[string]any{
 			"id":   "f5",
@@ -667,32 +648,12 @@ func TestMetricSuite(t *testing.T) {
 		assert.Len(t, metrics, 5)
 	})
 
-	t.Run("Field_scopeVersion", func(t *testing.T) {
-		query := map[string]any{
-			"id":   "f5b",
-			"type": "condition",
-			"query": map[string]any{
-				"field":         map[string]any{"name": "scopeVersion", "searchScope": "field"},
-				"fieldOperator": "=",
-				"value":         "v1.0.0",
-			},
-		}
-		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
-		})
-		assert.NoError(t, err)
-		var metrics []map[string]any
-		assert.NoError(t, json.Unmarshal(raw, &metrics))
-		assert.Len(t, metrics, 5)
-	})
-
-	t.Run("Field_default", func(t *testing.T) {
-		// default branch: cap first letter -> m.ResourceDroppedAttributesCount
+	t.Run("Field_resource.droppedAttributesCount", func(t *testing.T) {
 		query := map[string]any{
 			"id":   "f6",
 			"type": "condition",
 			"query": map[string]any{
-				"field":         map[string]any{"name": "resourceDroppedAttributesCount", "searchScope": "field"},
+				"field":         map[string]any{"name": "resource.droppedAttributesCount", "searchScope": "field"},
 				"fieldOperator": "=",
 				"value":         "0",
 			},
@@ -704,6 +665,29 @@ func TestMetricSuite(t *testing.T) {
 		var metrics []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &metrics))
 		assert.Len(t, metrics, 5)
+	})
+
+	t.Run("Rejects_legacy_field_aliases", func(t *testing.T) {
+		for _, name := range []string{
+			"scopeName",
+			"scopeVersion",
+			"resourceDroppedAttributesCount",
+			"scopeDroppedAttributesCount",
+		} {
+			query := map[string]any{
+				"id":   "legacy-field",
+				"type": "condition",
+				"query": map[string]any{
+					"field":         map[string]any{"name": name, "searchScope": "field"},
+					"fieldOperator": "=",
+					"value":         "value",
+				},
+			}
+			_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.SearchSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			})
+			assert.ErrorIs(t, err, metrics.ErrInvalidMetricQuery, name)
+		}
 	})
 
 	// Global search (mapMetricGlobalExpressions: explicit fields + attributes)
