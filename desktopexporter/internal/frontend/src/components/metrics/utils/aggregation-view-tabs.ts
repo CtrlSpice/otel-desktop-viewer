@@ -14,7 +14,10 @@ export const AGGREGATION_VIEW_TAB_OPTIONS: ReadonlyArray<{
 
 /** Lift tabs for views that are meaningful for the current metric. */
 export function aggregationViewTabs(available: AggregationView[]): PaneTab[] {
-  return AGGREGATION_VIEW_TAB_OPTIONS.filter(o =>
-    available.includes(o.value)
-  ).map(o => ({ id: o.value, label: o.label }))
+  const tabs: PaneTab[] = []
+  for (const option of AGGREGATION_VIEW_TAB_OPTIONS) {
+    if (!available.includes(option.value)) continue
+    tabs.push({ id: option.value, label: option.label })
+  }
+  return tabs
 }

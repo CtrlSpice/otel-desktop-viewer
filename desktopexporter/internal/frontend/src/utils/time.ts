@@ -160,11 +160,14 @@ function instantsForWallClock(wall: WallClock, timezone: Timezone): number[] {
     offsets.add(timezoneOffsetMilliseconds(timezone, naive - offset))
   }
 
-  return [...offsets]
-    .map(offset => naive - offset)
-    .filter(timestamp => sameWallClock(wallClockAt(timestamp, name), wall))
-    .filter((timestamp, index, values) => values.indexOf(timestamp) === index)
-    .sort((a, b) => a - b)
+  const instants = new Set<number>()
+  for (const offset of offsets) {
+    const timestamp = naive - offset
+    if (sameWallClock(wallClockAt(timestamp, name), wall)) {
+      instants.add(timestamp)
+    }
+  }
+  return [...instants].sort((a, b) => a - b)
 }
 
 function parseExplicitOffsetDateTime(

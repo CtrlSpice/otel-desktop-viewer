@@ -866,16 +866,17 @@ function fieldTypeFromWire(type: JsonAttributeType): FieldType {
 function convertAttributesToFieldDefinitions(
   attributes: JsonAttributeDefinition[]
 ): FieldDefinition[] {
-  return attributes
-    .filter(attr => attr && attr.name && attr.type && attr.attributeScope) // Filter out invalid entries
-    .map(attr => {
-      const type = fieldTypeFromWire(attr.type)
-      return {
-        name: attr.name,
-        type,
-        searchScope: 'attribute' as const,
-        attributeScope: attr.attributeScope,
-        operators: getOperatorsForFieldType(type),
-      }
+  const definitions: FieldDefinition[] = []
+  for (const attr of attributes) {
+    if (!attr?.name || !attr.type || !attr.attributeScope) continue
+    const type = fieldTypeFromWire(attr.type)
+    definitions.push({
+      name: attr.name,
+      type,
+      searchScope: 'attribute',
+      attributeScope: attr.attributeScope,
+      operators: getOperatorsForFieldType(type),
     })
+  }
+  return definitions
 }

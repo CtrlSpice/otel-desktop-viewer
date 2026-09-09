@@ -416,23 +416,22 @@ function fieldCompletions(
   from?: number,
   to?: number
 ): CompletionResult | null {
-  const options: Completion[] = fields
-    .filter(
-      (f): f is Exclude<FieldDefinition, { searchScope: 'global' }> =>
-        f.searchScope !== 'global'
-    )
-    .map(f => ({
-      label: f.name,
+  const options: Completion[] = []
+  for (const field of fields) {
+    if (field.searchScope === 'global') continue
+    options.push({
+      label: field.name,
       type: 'property',
-      detail: f.type,
-      info: 'description' in f ? f.description : undefined,
-      boost: f.searchScope === 'field' ? 1 : 0,
+      detail: field.type,
+      info: 'description' in field ? field.description : undefined,
+      boost: field.searchScope === 'field' ? 1 : 0,
       // Accepting a field inserts the trailing space that ends it, which is
       // also what makes the operator list fire: picking `name` should leave
       // the cursor somewhere the next suggestion is waiting, not somewhere
       // the user has to guess that a space is expected.
-      apply: f.name + ' ',
-    }))
+      apply: field.name + ' ',
+    })
+  }
 
   if (options.length === 0) return null
 
