@@ -132,6 +132,10 @@ format-ts:
 format-ts-check:
 	cd desktopexporter/internal/frontend && npm run format:check
 
+.PHONY: lint-ts
+lint-ts:
+	cd desktopexporter/internal/frontend && npm run lint
+
 .PHONY: validate-ts
 validate-ts:
 	cd desktopexporter/internal/frontend && npm run check
@@ -162,7 +166,7 @@ run: build-ts
 # `format-ts` only rewrites files, and nothing local ran `format:check`, so seven
 # unformatted files went out across several commits before CI caught them.
 .PHONY: test
-test: format-go-check format-ts-check validate-ts validate-playwright build-ts-check test-go test-ts test-a11y
+test: format-go-check format-ts-check lint-ts validate-ts validate-playwright build-ts-check test-go test-ts test-a11y
 
 .PHONY: release-dry-run
 release-dry-run:
@@ -190,6 +194,7 @@ help:
 	@echo "  build-ts          - Build frontend"
 	@echo "  format-ts         - Format frontend code (Prettier)"
 	@echo "  format-ts-check   - Fail if any frontend file needs Prettier"
+	@echo "  lint-ts           - Lint frontend code (Oxlint and zero-debt policy rules)"
 	@echo "  validate-ts       - Type check frontend"
 	@echo "  validate-playwright - Type check Playwright tests"
 	@echo "  test-ts           - Run frontend unit tests (Vitest)"
