@@ -220,7 +220,7 @@
     curve: curveStepAfter,
   } as const
 
-  function seriesLineProps(key: string): Record<string, unknown> {
+  function seriesLineProps(key: string) {
     if (isAggregateKey(key)) return { props: AGG_LINE_PROPS }
     return {}
   }
