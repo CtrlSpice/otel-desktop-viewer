@@ -243,7 +243,7 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
     spans: json.spans.map(spanNode => {
       const { r, s, start, dur, ...rest } = spanNode.spanData
       const startTime = traceStart + BigInt(start)
-      return {
+      const node: TraceData['spans'][number] = {
         spanData: {
           ...rest,
           traceID: json.traceID,
@@ -258,11 +258,13 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
         },
         depth: spanNode.depth,
         matched: spanNode.matched,
-        // Spread only when present: absent on every span of a healthy trace.
-        ...(spanNode.salvaged
-          ? { salvaged: spanNode.salvaged, cyclePoint: spanNode.cyclePoint }
-          : {}),
       }
+      // Keep both properties absent on every span of a healthy trace.
+      if (spanNode.salvaged) {
+        node.salvaged = true
+        node.cyclePoint = spanNode.cyclePoint
+      }
+      return node
     }),
   }
 }
