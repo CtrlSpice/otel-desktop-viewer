@@ -660,7 +660,7 @@ export let telemetryAPI = {
     seriesIDs?: string[],
     /** Quantiles to compute per histogram datapoint, keyed by the quantile in
      *  the response. Omit to skip the work. */
-    quantiles?: number[],
+    quantiles?: readonly number[],
     /** The viewer's UTC offset in nanoseconds, so bucket boundaries fall where
      *  the reader's calendar puts them. Omit for UTC. */
     tzOffsetNs?: number,
@@ -737,7 +737,7 @@ export let telemetryAPI = {
      *  every series, and narrowing here would redefine the answer rather than
      *  trim the payload. */
     seriesIDs: string[] | null,
-    quantiles: number[],
+    quantiles: readonly number[],
     tzOffsetNs: number,
     viewBuckets = 0,
     /** Which series are checked, for the scalar Selected pool.

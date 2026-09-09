@@ -29,10 +29,10 @@ describe('getServiceName', () => {
     // The Attribute type declares `value: string`, but the function performs
     // no runtime check -- it returns whatever is found. This models data that
     // has bypassed the type system (e.g. parsed straight from JSON).
-    const resource = {
-      attributes: [{ key: 'service.name', value: 123, type: 'int' }],
-      droppedAttributesCount: 0,
-    } as unknown as ResourceData
+    const resource = resourceWith([
+      { key: 'service.name', value: 'checkout', type: 'string' },
+    ])
+    Object.defineProperty(resource.attributes[0], 'value', { value: 123 })
     expect(getServiceName(resource)).toBe(123)
   })
 })

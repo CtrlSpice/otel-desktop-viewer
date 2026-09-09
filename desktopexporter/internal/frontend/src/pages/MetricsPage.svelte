@@ -360,7 +360,7 @@
       // The store's quantiles, computed once per datapoint from its bucket
       // vector. Recomputing them per render costs seconds on the main thread:
       // 2,700 bucket walks for one render of this metric.
-      const quantiles = DEFAULT_HISTOGRAM_QUANTILES as unknown as number[]
+      const quantiles = DEFAULT_HISTOGRAM_QUANTILES
       // Same answer as the detail fetch gives, so the aggregate is bucketed
       // over the window the series beneath it were bucketed over.
       // Both shapes of the same question, issued together so they cannot
@@ -628,7 +628,7 @@
           endNs,
           1,
           undefined,
-          DEFAULT_HISTOGRAM_QUANTILES as unknown as number[],
+          DEFAULT_HISTOGRAM_QUANTILES,
           tzOffsetNs(),
           0,
           0,
@@ -741,9 +741,7 @@
           // a Gauge or Sum has no answer to give, and asking for one is not
           // free: on a 22-series Gauge it costs 2,937 ms against 298 ms, for
           // byte-identical output.
-          isHistogramMetric
-            ? (DEFAULT_HISTOGRAM_QUANTILES as unknown as number[])
-            : undefined,
+          isHistogramMetric ? DEFAULT_HISTOGRAM_QUANTILES : undefined,
           // Bucket boundaries follow the reader's calendar rather than the
           // epoch. 0 is UTC, which is what the store assumes without this.
           tzOffsetNs(),

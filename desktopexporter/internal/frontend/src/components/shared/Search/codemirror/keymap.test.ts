@@ -21,9 +21,12 @@ import { createQueryKeymap } from './keymap'
 
 type Binding = { key: string; run: unknown }
 
-function bindings(): Binding[] {
-  const ext = createQueryKeymap(() => {}) as unknown as { value?: Binding[] }
-  return ext.value ?? []
+function bindings(onSubmit = () => {}): Binding[] {
+  const value = Object.getOwnPropertyDescriptor(
+    createQueryKeymap(onSubmit),
+    'value'
+  )?.value
+  return Array.isArray(value) ? value : []
 }
 
 describe('query keymap', () => {
@@ -35,8 +38,7 @@ describe('query keymap', () => {
 
   it('routes the second Enter binding to the submit callback', () => {
     const onSubmit = vi.fn()
-    const ext = createQueryKeymap(onSubmit) as unknown as { value?: Binding[] }
-    const enter = (ext.value ?? []).filter(b => b.key === 'Enter')
+    const enter = bindings(onSubmit).filter(b => b.key === 'Enter')
     ;(enter[1].run as (v: unknown) => boolean)({} as never)
     expect(onSubmit).toHaveBeenCalledOnce()
   })

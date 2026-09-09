@@ -5,6 +5,7 @@ import { screen } from '@testing-library/svelte'
 import SignalListPageProbe from '@/test/SignalListPageProbe.svelte'
 import { navigateToItem } from '@/route'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import type { LogSummary } from '@/types/api-types'
 import {
   beginListUpdate,
   cancelPendingListUpdates,
@@ -13,6 +14,18 @@ import {
 } from '@/components/shared/utils/list-update-seq'
 
 type Item = { id: string; name: string }
+
+function searchResult(id: string, name: string): LogSummary & Item {
+  return {
+    id,
+    name,
+    timestamp: 0n,
+    severityText: '',
+    severityNumber: 0,
+    serviceName: '',
+    bodyPreview: '',
+  }
+}
 
 function renderProbe(
   url: string,
@@ -144,8 +157,8 @@ describe('createSignalListPage integration', () => {
     page!.handleSearchResults({
       signal: 'logs',
       updateSeq: searchSeq,
-      results: [{ id: 'search-only', name: 'search-only' }],
-    } as unknown as import('@/types/api-types').SearchResultEvent)
+      results: [searchResult('search-only', 'search-only')],
+    })
     await tick()
 
     expect(screen.getByTestId('item-ids').textContent).toBe('search-only')
@@ -190,8 +203,8 @@ describe('createSignalListPage integration', () => {
     page!.handleSearchResults({
       signal: 'logs',
       updateSeq: staleSearchSeq,
-      results: [{ id: 'stale-search', name: 'stale' }],
-    } as unknown as import('@/types/api-types').SearchResultEvent)
+      results: [searchResult('stale-search', 'stale')],
+    })
     await tick()
 
     expect(screen.getByTestId('item-ids').textContent).toBe('a')

@@ -32,7 +32,12 @@ export type DragOptions = {
 /** Ends a drag early, for a component unmounting mid-gesture. */
 export type DragHandle = { cancel: () => void }
 
-export function startDrag(e: PointerEvent, opts: DragOptions): DragHandle {
+type DragStartEvent = Pick<
+  PointerEvent,
+  'clientX' | 'clientY' | 'currentTarget' | 'pointerId' | 'preventDefault'
+>
+
+export function startDrag(e: DragStartEvent, opts: DragOptions): DragHandle {
   // Stops the browser starting a text selection or a native drag from the
   // same press. Without it the first pointermove selects whatever the handle
   // happens to sit on.

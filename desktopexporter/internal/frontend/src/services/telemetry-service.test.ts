@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { telemetryAPI, JsonRpcError } from './telemetry-service'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
+import { OPERATORS } from '@/constants/operators'
 
 // The backend signals not-found with JSON-RPC errors (one convention across
 // all signals; see internal/server/errors.go). getMetric's callers expect
@@ -572,11 +573,11 @@ describe('request parameters', () => {
       id: 'q1',
       type: 'condition',
       query: {
-        field: { name: 'name', type: 'string', searchScope: 'global' },
-        operator: { symbol: 'contains' },
+        field: { searchScope: 'global' },
+        operator: OPERATORS.CONTAINS,
         value: 'checkout',
       },
-    } as unknown as QueryNode
+    } satisfies QueryNode
 
     const sent = captureRequest()
     await telemetryAPI.searchTraces(2, 5, tree).catch(() => {})

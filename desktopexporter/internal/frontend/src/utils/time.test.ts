@@ -44,7 +44,7 @@ function makeSummary(
     traceID: 't1',
     hasRootSpan: true,
     startTime: 0n,
-    durationNs: durationNs as unknown as bigint | null,
+    durationNs: durationNs as bigint | null,
     spanCount: 1,
     errorCount: 0,
   }

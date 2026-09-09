@@ -5,20 +5,25 @@ import type { MetricTimeseries } from '@/types/api-types'
 const series = (
   key: string,
   resourceAttrs: Array<[string, string]>
-): MetricTimeseries =>
-  ({
-    attributesKey: key,
-    attributes: [{ key: 'http.route', value: '/checkout', type: 'string' }],
-    resource: {
-      attributes: resourceAttrs.map(([k, v]) => ({
-        key: k,
-        value: v,
-        type: 'string',
-      })),
-      droppedAttributesCount: 0,
-    },
-    datapoints: [],
-  }) as unknown as MetricTimeseries
+): MetricTimeseries => ({
+  attributesKey: key,
+  attributes: [{ key: 'http.route', value: '/checkout', type: 'string' }],
+  resource: {
+    attributes: resourceAttrs.map(([k, v]) => ({
+      key: k,
+      value: v,
+      type: 'string',
+    })),
+    droppedAttributesCount: 0,
+  },
+  datapoints: [],
+  stats: null,
+  datapointCount: 0,
+  lastSeenNs: null,
+  views: null,
+  rateStats: null,
+  sparkline: null,
+})
 
 describe('distinguishingResourceAttributes', () => {
   // The case the whole feature exists for: two replicas of one service emit
