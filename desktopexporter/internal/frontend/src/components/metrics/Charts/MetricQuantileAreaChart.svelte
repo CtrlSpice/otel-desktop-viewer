@@ -420,13 +420,13 @@
 
   function tooltipXDate(context: {
     tooltip: { data: unknown }
-    x: (d: unknown) => unknown
+    x: (d: unknown) => Date | string | number | null | undefined
   }): Date | null {
     const d = context.tooltip.data
     if (d == null) return null
     const v = context.x(d)
     if (v instanceof Date) return v
-    if (v != null) return new Date(v as string | number)
+    if (v != null) return new Date(v)
     return null
   }
 
