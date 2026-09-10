@@ -132,9 +132,10 @@
 
 		-- The two walks, unioned, with the flags the UI needs.
 		--
-		-- cycle_point marks the span whose parent link is the lie: it is a
-		-- display root of a salvaged chain whose own parent turns up further
-		-- down that same chain. The entry match is load-bearing: an earlier
+		-- cycle_point marks a retained display cut: it is a display root of a
+		-- salvaged chain whose reported parent turns up further down that same
+		-- chain. It does not identify which parent assignment is wrong. The
+		-- entry match is load-bearing: an earlier
 		-- descendant can also become a display root, but its parent belongs to
 		-- another salvaged chain and did not close this walk. Sorting salvaged
 		-- trees after every real root keeps them out of the way of a trace that

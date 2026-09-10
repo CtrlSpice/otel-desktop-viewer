@@ -15,6 +15,7 @@
     tabbable: boolean
     visible: boolean
     subtreeCollapsed: boolean
+    rowIndex: number
     spanColWidth: number
     serviceColWidth: number
     matched?: boolean
@@ -30,6 +31,7 @@
     tabbable,
     visible,
     subtreeCollapsed,
+    rowIndex,
     spanColWidth,
     serviceColWidth,
     matched = false,
@@ -44,18 +46,19 @@
    * Two different messages, because the spans are in two different positions.
    * Every span in a stranded subtree is *affected*: it was recovered by the
    * cycle-aware walk and would otherwise be missing entirely. Exactly one is
-   * the *cause* -- its parent link points back into its own subtree, which is
-   * what stranded the rest.
+   * the retained cycle point: its reported parent is at or below it in the
+   * recovered branch, but that does not identify which parent link is wrong.
    */
   let cycleLabel = $derived(
-    row.spanNode.cyclePoint
-      ? 'This span causes the cycle: its parent is inside its own subtree, ' +
-          'so nothing here can be reached from the trace root. Likely an ' +
-          'instrumentation bug in the service that emitted it.'
-      : row.spanNode.salvaged
-        ? 'Recovered from a broken part of this trace: a parent link forms a ' +
+    row.spanNode.salvaged
+      ? row.spanNode.cyclePoint
+        ? "Cycle detected: this span's reported parent is at or below it in " +
+          'the recovered branch, so following parent IDs would loop instead ' +
+          'of reaching the trace root. Check the parent assignments in the ' +
+          'emitting service.'
+        : 'Recovered from a broken part of this trace: a parent link forms a ' +
           'loop, so these spans have no place under the root.'
-        : ''
+      : ''
   )
   let durationLabel = $derived(formatDuration(span.endTime - span.startTime))
   let serviceName = $derived(getServiceName(span.resource) ?? 'unknown')
@@ -89,7 +92,10 @@
   })
 </script>
 
+<!-- The virtual list wraps this row in divs, so its production role must be explicit. -->
+<!-- svelte-ignore a11y_no_redundant_roles -->
 <tr
+  role="row"
   class="waterfall-row"
   class:table-row--selected={selected}
   class:waterfall-row--error={row.isError}
@@ -100,10 +106,12 @@
   onclick={onRowClick}
   aria-hidden={!visible ? true : undefined}
   aria-level={ariaLevel}
+  aria-rowindex={rowIndex}
   aria-selected={selected}
   aria-expanded={hasChildren ? !subtreeCollapsed : undefined}
 >
   <td
+    role="rowheader"
     class="waterfall-row__td-name p-0 pl-2 align-middle"
     style:width="{spanColWidth}px"
   >
@@ -121,12 +129,19 @@
       >
         {span.name}
       </span>
+      {#if matched}
+        <span
+          class="badge badge-xs badge-soft badge-primary waterfall-row__match flex-none"
+          >Match</span
+        >
+      {/if}
       {#if cycleLabel}
         <span
           class="waterfall-row__cycle"
-          class:waterfall-row__cycle--offender={row.spanNode.cyclePoint}
+          class:waterfall-row__cycle--cycle-point={row.spanNode.cyclePoint}
           title={cycleLabel}
           aria-label={cycleLabel}
+          role="img"
         >
           {#if row.spanNode.cyclePoint}
             <HugeiconsIcon
@@ -144,6 +159,7 @@
     </div>
   </td>
   <td
+    role="gridcell"
     class="waterfall-row__td-service p-0 align-middle text-sm"
     title={serviceName}
     style:width="{serviceColWidth}px"
@@ -151,7 +167,7 @@
     <span class="block truncate pl-2 pr-1">{serviceName}</span>
     <span class="col-resize-marker" aria-hidden="true"></span>
   </td>
-  <td class="waterfall-row__td-bar p-0 align-middle">
+  <td role="gridcell" class="waterfall-row__td-bar p-0 align-middle">
     <div class="waterfall-row__bar-area" style:--bar-color={row.color}>
       <div
         class="waterfall-row__bar"
@@ -228,18 +244,18 @@
   /* Marks a span the cycle-aware walk recovered. flex-none so it survives the
      title's truncation rather than being squeezed out of a narrow column --
      the badge is the reason the row is worth reading. One glyph, two colors:
-     every stranded span warns in the theme's warning gold, and only the span
-     whose parent link caused it escalates to the error red. */
+     every stranded span warns in the theme's warning gold, and only the
+     retained cycle point escalates to the error red. */
   .waterfall-row__cycle {
     @apply flex-none text-warning text-xs leading-none;
   }
 
-  .waterfall-row__cycle--offender {
+  .waterfall-row__cycle--cycle-point {
     @apply text-error text-sm font-bold;
   }
 
   .waterfall-row__td-service {
-    color: var(--color-subtle);
+    color: var(--color-base-content);
   }
 
   .waterfall-row__bar-area {
@@ -310,7 +326,7 @@
     @apply absolute z-[4] text-[9px] tabular-nums whitespace-nowrap leading-none;
     top: 50%;
     transform: translateY(-50%);
-    color: var(--color-subtle);
+    color: var(--color-base-content);
   }
 
   .waterfall-row--error .waterfall-row__title {

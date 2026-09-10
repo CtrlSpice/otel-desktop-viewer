@@ -242,7 +242,7 @@
       {#if activeTab === 'fields'}
         {#if cyclePoint}
           <div
-            class="detail-view__paradox detail-view__paradox--offender"
+            class="detail-view__paradox detail-view__paradox--cycle-point"
             role="alert"
           >
             <HugeiconsIcon
@@ -250,9 +250,9 @@
               size="1em"
               strokeWidth={1.5}
               aria-hidden="true"
-            /> This span causes a cycle: its parent span id points into its own subtree,
-            so nothing here can be reached from the trace root. Likely an instrumentation
-            bug in the emitting service.
+            /> Cycle detected: this span's reported parent is at or below it in the
+            recovered branch, so following parent IDs would loop instead of reaching
+            the trace root. Check the parent assignments in the emitting service.
           </div>
         {:else if salvaged}
           <div class="detail-view__paradox" role="alert">
@@ -499,13 +499,13 @@
 
   /* Repeats the waterfall's cycle marks where the reader is actually
      looking. Same split as the rows: warning gold for every stranded span,
-     error red for the one whose parent link caused it. */
+     error red for the retained cycle point. */
   .detail-view__paradox {
     @apply m-2 rounded px-3 py-2 text-xs text-warning;
     background: color-mix(in srgb, var(--color-warning) 12%, transparent);
   }
 
-  .detail-view__paradox--offender {
+  .detail-view__paradox--cycle-point {
     @apply text-error;
     background: color-mix(in srgb, var(--color-error) 12%, transparent);
   }

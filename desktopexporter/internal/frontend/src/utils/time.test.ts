@@ -281,12 +281,18 @@ describe('formatTimestamp', () => {
 
   it('includes microseconds at microsecond resolution', () => {
     const formatted = formatTimestamp(winterNs, 'UTC', 'microseconds')
-    expect(formatted).toContain('.456789')
+    expect(formatted).toContain('.123456')
   })
 
   it('includes nanoseconds at nanosecond resolution', () => {
     const formatted = formatTimestamp(winterNs, 'UTC', 'nanoseconds')
-    expect(formatted).toContain('.456789789')
+    expect(formatted).toContain('.123456789')
+  })
+
+  it('preserves milliseconds when no finer fraction is present', () => {
+    const ns =
+      BigInt(new Date('2024-01-15T08:30:00.500Z').getTime()) * 1_000_000n
+    expect(formatTimestamp(ns, 'UTC', 'nanoseconds')).toContain('.500000000')
   })
 })
 

@@ -325,6 +325,7 @@
   type Props = {
     spans: SpanNode[]
     selectedSpanID: string | null
+    searchActive?: boolean
     onSelectSpan: (spanID: string) => void
     onSelectEvent?: (spanID: string, eventIndex: number) => void
     loading?: boolean
@@ -334,6 +335,7 @@
   let {
     spans,
     selectedSpanID,
+    searchActive = false,
     onSelectSpan,
     onSelectEvent,
     loading = false,
@@ -342,6 +344,9 @@
 
   let bounds = $derived(getTraceBounds(spans))
   let rows = $derived(buildWaterfallRows(spans, bounds, themeSignal.value))
+  let rowIndexBySpanID = $derived(
+    new Map(rows.map((row, index) => [row.spanNode.spanData.spanID, index + 1]))
+  )
 
   let traceTimeRange = $derived.by(
     (): { startMs: number; endMs: number } | undefined => {
@@ -565,10 +570,6 @@
     new Set(spans.filter(n => n.matched).map(n => n.spanData.spanID))
   )
 
-  let hasActiveSearch = $derived(
-    spans.length > 0 && matchedIDs.size > 0 && spans.some(n => !n.matched)
-  )
-
   // Structural, not parentSpanID-based: collapse, visibility and reveal all
   // operate on the tree as rendered, so orphans and salvaged cycle entries at
   // depth 0 behave as roots instead of being hidden by their own "children".
@@ -612,7 +613,7 @@
   // scoped to this response. Clearing the search puts the reader's own
   // arrangement back exactly, because it was never touched.
   let searchShape = $derived.by((): Set<string> | null =>
-    hasActiveSearch
+    searchActive
       ? computeSearchCollapsedParents(
           spans,
           matchedIDs,
@@ -767,16 +768,25 @@
 
   $effect(() => {
     const grid = gridHostEl
+    const rowCount = rows.length
     if (!grid) return
 
-    // Rows own keyboard entry; the package's focusable scroll viewport would
-    // otherwise add a dead Tab stop immediately before the roving row.
+    // The package owns the scroll viewport, so apply the treegrid semantics to
+    // that element after mount. Generic wrappers beneath it stay transparent
+    // to the accessibility tree and the virtual rows have a valid parent.
     void tick().then(() => {
       if (gridHostEl !== grid) return
       const viewport = grid.querySelector<HTMLElement>(
         '.waterfall-vlist-viewport'
       )
-      if (viewport) viewport.tabIndex = -1
+      if (!viewport) return
+      viewport.role = 'treegrid'
+      viewport.setAttribute('aria-label', 'Span waterfall')
+      viewport.setAttribute('aria-rowcount', String(rowCount))
+      viewport.setAttribute('aria-colcount', '3')
+      // Rows own keyboard entry; the viewport would otherwise add a redundant
+      // Tab stop immediately before the roving row.
+      viewport.tabIndex = -1
     })
   })
 
@@ -1019,14 +1029,11 @@
           />
         </thead>
       </table>
+      <!-- Keyboard events bubble from the runtime treegrid; this host stays semantic. -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         bind:this={gridHostEl}
         class="waterfall-view__vlist-host"
-        role="grid"
-        aria-label="Span waterfall"
-        aria-rowcount={visibleRows.length}
-        aria-colcount={3}
-        tabindex="-1"
         onkeydown={handleGridKeydown}
       >
         <VirtualList
@@ -1040,7 +1047,7 @@
           viewportLabel="Span waterfall rows"
           itemsClass="waterfall-vlist-items"
         >
-          {#snippet renderItem(row)}
+          {#snippet renderItem(row, index)}
             {@const sid = row.spanNode.spanData.spanID}
             <WaterfallRow
               {row}
@@ -1049,7 +1056,8 @@
               tabbable={sid === keyboardAnchorID}
               visible={true}
               subtreeCollapsed={effectiveCollapsed.has(sid)}
-              matched={hasActiveSearch && matchedIDs.has(sid)}
+              rowIndex={rowIndexBySpanID.get(sid) ?? index + 1}
+              matched={searchActive && matchedIDs.has(sid)}
               {spanColWidth}
               {serviceColWidth}
               onRowClick={() => {

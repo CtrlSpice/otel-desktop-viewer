@@ -382,6 +382,7 @@
         <WaterfallView
           spans={traceData.spans}
           {selectedSpanID}
+          searchActive={activeQueryTree !== undefined}
           onSelectSpan={handleSelectSpan}
           onSelectEvent={handleSelectEvent}
           loading={detailLoading}
