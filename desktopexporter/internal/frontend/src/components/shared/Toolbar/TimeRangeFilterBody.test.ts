@@ -183,7 +183,7 @@ describe('TimeRangeFilterBody', () => {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', original)
       } else {
-        delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView
+        Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
       }
     }
   })

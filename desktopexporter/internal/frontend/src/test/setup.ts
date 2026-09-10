@@ -58,7 +58,7 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
         addListener: () => {},
         removeListener: () => {},
         dispatchEvent: () => false,
-      }) as MediaQueryList,
+      }) satisfies MediaQueryList,
   })
 }
 
@@ -187,7 +187,7 @@ if (
     const target = event.target
     if (!(target instanceof Element)) return
     const invoker = target.closest('button[popovertarget]')
-    if (!invoker || (invoker as HTMLButtonElement).disabled) return
+    if (!(invoker instanceof HTMLButtonElement) || invoker.disabled) return
     const id = invoker.getAttribute('popovertarget')
     const popover = id ? document.getElementById(id) : null
     if (!(popover instanceof HTMLElement) || !popover.hasAttribute('popover')) {

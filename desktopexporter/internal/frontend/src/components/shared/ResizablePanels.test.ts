@@ -29,8 +29,15 @@ beforeEach(() => {
 
 async function measure(width: number, height = 600) {
   await tick()
+  const entry = {
+    target: document.body,
+    contentRect: new DOMRect(0, 0, width, height),
+    borderBoxSize: [],
+    contentBoxSize: [],
+    devicePixelContentBoxSize: [],
+  } satisfies ResizeObserverEntry
   for (const o of observers) {
-    o.cb([{ contentRect: { width, height } } as ResizeObserverEntry], o)
+    o.cb([entry], o)
   }
   await tick()
 }
