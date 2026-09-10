@@ -128,9 +128,7 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     expect(pagination.children[1]).toHaveClass('dp-list__page-nav')
     expect(pagination.children[2]).toHaveClass('dp-list__page-size')
     expect(
-      screen
-        .getAllByRole('option')
-        .map(option => (option as HTMLOptionElement).value)
+      screen.getAllByRole('option').map(option => option.getAttribute('value'))
     ).toEqual(['25', '50', '100'])
     expect(screen.queryByRole('columnheader', { name: 'Action' })).toBeNull()
     expect(screen.getAllByRole('row', { name: /^Datapoint at / })).toHaveLength(
