@@ -190,11 +190,7 @@
                     style:color={fg}
                     {checked}
                     disabled={checkboxDisabled}
-                    onchange={e =>
-                      toggle(
-                        ts.key,
-                        (e.currentTarget as HTMLInputElement).checked
-                      )}
+                    onchange={e => toggle(ts.key, e.currentTarget.checked)}
                   />
                 </label>
                 <div class="ts-row__attrs" title={tooltip}>
