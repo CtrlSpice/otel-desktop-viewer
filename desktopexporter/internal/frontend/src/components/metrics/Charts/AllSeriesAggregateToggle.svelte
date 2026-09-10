@@ -20,10 +20,7 @@
       class="checkbox checkbox-xs checkbox-soft all-series-aggregate-toggle__checkbox"
       checked={ctx.showAllSeriesAggregate}
       aria-label={label}
-      onchange={e =>
-        ctx.setShowAllSeriesAggregate(
-          (e.currentTarget as HTMLInputElement).checked
-        )}
+      onchange={e => ctx.setShowAllSeriesAggregate(e.currentTarget.checked)}
     />
     <span class="all-series-aggregate-toggle__label">{label}</span>
   </label>
