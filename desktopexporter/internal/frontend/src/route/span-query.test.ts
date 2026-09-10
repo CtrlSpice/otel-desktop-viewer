@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, afterEach, type Mock } from 'vitest'
 import {
   getEventFromQuery,
   getSpanFromQuery,
@@ -13,7 +13,16 @@ function stubWindow(href: string) {
     location: { href },
     addEventListener: vi.fn(),
   })
-  vi.stubGlobal('history', { pushState: vi.fn(), replaceState: vi.fn() })
+  const historyDouble = {
+    pushState: vi.fn<History['pushState']>(),
+    replaceState: vi.fn<History['replaceState']>(),
+  } satisfies Pick<History, 'pushState' | 'replaceState'>
+  vi.stubGlobal('history', historyDouble)
+  return historyDouble
+}
+
+function navigationURL(method: Mock<History['pushState']>): string {
+  return method.mock.calls[0]?.[2]?.toString() ?? ''
 }
 
 describe('getEventFromQuery', () => {
@@ -43,10 +52,11 @@ describe('setSpanInQuery', () => {
   })
 
   it('clears event when span changes', () => {
-    stubWindow('http://local/traces/t1?span=s1&event=2&start=0')
+    const { replaceState } = stubWindow(
+      'http://local/traces/t1?span=s1&event=2&start=0'
+    )
     setSpanInQuery('s2')
-    const url = (history.replaceState as ReturnType<typeof vi.fn>).mock
-      .calls[0]![2] as string
+    const url = navigationURL(replaceState)
     expect(parseRoute(url)).toEqual({
       path: '/traces/t1',
       query: { start: '0', span: 's2' },
@@ -60,10 +70,9 @@ describe('selectSpanEvent', () => {
   })
 
   it('sets span and event together', () => {
-    stubWindow('http://local/traces/t1?start=0')
+    const { pushState } = stubWindow('http://local/traces/t1?start=0')
     selectSpanEvent('s1', 3)
-    const url = (history.pushState as ReturnType<typeof vi.fn>).mock
-      .calls[0]![2] as string
+    const url = navigationURL(pushState)
     expect(parseRoute(url)).toEqual({
       path: '/traces/t1',
       query: { start: '0', span: 's1', event: '3' },
@@ -77,10 +86,11 @@ describe('setEventInQuery', () => {
   })
 
   it('sets event without changing span', () => {
-    stubWindow('http://local/traces/t1?span=s1&start=0')
+    const { replaceState } = stubWindow(
+      'http://local/traces/t1?span=s1&start=0'
+    )
     setEventInQuery(1)
-    const url = (history.replaceState as ReturnType<typeof vi.fn>).mock
-      .calls[0]![2] as string
+    const url = navigationURL(replaceState)
     expect(parseRoute(url)).toEqual({
       path: '/traces/t1',
       query: { start: '0', span: 's1', event: '1' },
@@ -88,10 +98,11 @@ describe('setEventInQuery', () => {
   })
 
   it('clears event when passed null', () => {
-    stubWindow('http://local/traces/t1?span=s1&event=1&start=0')
+    const { replaceState } = stubWindow(
+      'http://local/traces/t1?span=s1&event=1&start=0'
+    )
     setEventInQuery(null)
-    const url = (history.replaceState as ReturnType<typeof vi.fn>).mock
-      .calls[0]![2] as string
+    const url = navigationURL(replaceState)
     expect(parseRoute(url)).toEqual({
       path: '/traces/t1',
       query: { start: '0', span: 's1' },
