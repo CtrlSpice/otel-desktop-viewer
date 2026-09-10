@@ -448,11 +448,11 @@
     }
   })
 
-  function handlePlotClick(event: MouseEvent) {
+  function handlePlotClick(
+    event: MouseEvent & { currentTarget: HTMLDivElement }
+  ) {
     if (!enableValueBucketPin || !chartContext || buckets.length === 0) return
-    const root = (event.currentTarget as HTMLElement).querySelector(
-      '.lc-root-container'
-    )
+    const root = event.currentTarget.querySelector('.lc-root-container')
     if (!root) return
     const rect = root.getBoundingClientRect()
     const pointX = event.clientX - rect.left

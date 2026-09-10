@@ -281,9 +281,11 @@
     }
   })
 
-  function handleHeatmapClick(event: MouseEvent) {
+  function handleHeatmapClick(
+    event: MouseEvent & { currentTarget: HTMLDivElement }
+  ) {
     if (!onSelect || timeDomain.length === 0 || columnPitch <= 0) return
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    const rect = event.currentTarget.getBoundingClientRect()
     const plotX = event.clientX - rect.left - heatmapPlotPadding.left
     if (plotX < 0 || plotX > plotWidth) return
     const idx = Math.floor(plotX / columnPitch)
