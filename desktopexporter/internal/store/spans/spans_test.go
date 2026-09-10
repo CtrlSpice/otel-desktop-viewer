@@ -1700,10 +1700,11 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	cycleWithEarlyChild := "000000000000000000000000000000a7"
 
 	traces := ptrace.NewTraces()
-	// Healthy: root with two children.
+	// Healthy: tied roots and tied siblings, inserted in reverse id order.
+	add(traces, healthy, "0000000000000004", "", 0)
 	add(traces, healthy, "0000000000000001", "", 0)
+	add(traces, healthy, "0000000000000003", "0000000000000001", 10)
 	add(traces, healthy, "0000000000000002", "0000000000000001", 10)
-	add(traces, healthy, "0000000000000003", "0000000000000001", 20)
 	// A reachable root plus a two-span cycle hanging off nothing.
 	add(traces, withCycle, "0000000000000011", "", 0)
 	add(traces, withCycle, "0000000000000012", "0000000000000013", 10)
@@ -1799,11 +1800,17 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 
 	t.Run("healthy trace carries no flags", func(t *testing.T) {
 		w := get(healthy)
-		assert.Equal(t, 3, w.placed, "all three spans placed")
+		assert.Equal(t, 4, w.placed, "all four spans placed")
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 0, w.salvaged, "nothing to salvage in a well-formed trace")
 		assert.Equal(t, 0, w.cyclePoint)
 		assert.Empty(t, w.cycleIDs)
+		assert.Equal(t, []placement{
+			{spanID: "0000000000000001", depth: 0, matched: true},
+			{spanID: "0000000000000002", parentSpanID: "0000000000000001", depth: 1, matched: true},
+			{spanID: "0000000000000003", parentSpanID: "0000000000000001", depth: 1, matched: true},
+			{spanID: "0000000000000004", depth: 0, matched: true},
+		}, w.spans, "equal timestamps use span id as the deterministic tie-break")
 	})
 
 	t.Run("cycle members are salvaged, not dropped", func(t *testing.T) {
