@@ -25,7 +25,7 @@
 		-- Sibling order, decided once, before the walk.
 		--
 		-- A span's rank among its siblings is a property of the trace, not of
-		-- the traversal: it depends only on parent and start time, both known
+		-- the traversal: it depends only on parent, start time, and span id, all known
 		-- before the first row is walked. Computing it with a window inside
 		-- the recursive arm instead re-runs a WINDOW operator once per level
 		-- of the tree, paying full operator setup each time to rank a handful
@@ -43,11 +43,11 @@
 		ranked as materialized (
 			select t.*,
 				row_number() over (
-					partition by t.parent_span_id order by t.start_time
+					partition by t.parent_span_id order by t.start_time, t.span_id
 				) as sibling_rank,
 				row_number() over (order by
 					case when t.parent_span_id is null then 0 else 1 end,
-					t.start_time
+					t.start_time, t.span_id
 				) as root_rank
 			from trace_spans t
 		),
@@ -280,4 +280,3 @@
 		-- whole thing this split exists to avoid.
 		(select n from unplaced_count) as unplaced
 		from ordered_spans
-	
