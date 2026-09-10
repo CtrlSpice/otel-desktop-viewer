@@ -7,8 +7,12 @@ import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 // The popover JS API comes from the shared polyfill in src/test/setup.ts.
 
-function getPopover() {
-  return document.querySelector('[popover="auto"]') as HTMLElement
+function getPopover(): HTMLElement {
+  const popover = document.querySelector('[popover="auto"]')
+  if (!(popover instanceof HTMLElement)) {
+    throw new Error('Expected the time-range popover')
+  }
+  return popover
 }
 
 function renderComponent() {

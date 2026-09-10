@@ -33,6 +33,17 @@ const EMPTY_SCOPE: ScopeData = {
   droppedAttributesCount: 0,
 }
 
+function queryHTMLElement(
+  selector: string,
+  root: ParentNode = document
+): HTMLElement {
+  const element = root.querySelector(selector)
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Expected HTMLElement matching ${selector}`)
+  }
+  return element
+}
+
 function gaugeDatapoint(id: string, timestamp: bigint, value: number) {
   return {
     id,
@@ -525,25 +536,10 @@ describe('HistogramChart keyboard model', () => {
     const surface = screen.getByRole('application', {
       name: 'Histogram distribution chart',
     })
-    const scroller = document.querySelector(
-      '.histogram-chart-scroll'
-    ) as HTMLElement
-    const wrapper = document.querySelector(
-      '.histogram-chart-wrapper'
-    ) as HTMLElement
-    const root = wrapper.querySelector('.lc-root-container') as HTMLElement
-    root.getBoundingClientRect = () =>
-      ({
-        x: 0,
-        y: 0,
-        left: 0,
-        top: 0,
-        right: 630,
-        bottom: 320,
-        width: 630,
-        height: 320,
-        toJSON: () => ({}),
-      }) as DOMRect
+    const scroller = queryHTMLElement('.histogram-chart-scroll')
+    const wrapper = queryHTMLElement('.histogram-chart-wrapper')
+    const root = queryHTMLElement('.lc-root-container', wrapper)
+    root.getBoundingClientRect = () => new DOMRect(0, 0, 630, 320)
     Object.defineProperty(scroller, 'clientWidth', {
       configurable: true,
       value: 80,
@@ -653,7 +649,7 @@ describe('HistogramHeatmap keyboard model', () => {
     const surface = screen.getByRole('application', {
       name: 'Histogram heatmap',
     })
-    const scroller = document.querySelector('.heatmap-scroll') as HTMLElement
+    const scroller = queryHTMLElement('.heatmap-scroll')
     scroller.scrollLeft = 17
     expect(document.querySelector('.chart-keyboard-cursor-cell')).toBeNull()
 
