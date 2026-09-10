@@ -197,6 +197,37 @@ type HistogramTimeseriesGroup = {
   pointCount: number
 }
 
+type MetricViewState = {
+  selectedDatapointID: string | null
+  selectedSeriesKey: string | null
+  selectionSource: 'chart' | 'detail' | null
+  expandedDatapoints: SvelteSet<string>
+  expandedTimeseries: SvelteSet<string>
+  activeHistogramTab: HistogramTab
+  histogramScope: HistogramScope
+  selectedHistogramBucketStart: bigint | null
+  selectedQuantileKey: string | null
+  visibleSeries: SvelteSet<string>
+  timeseriesColorByKey: TimeseriesColorByKey
+  aggregationView: AggregationView
+  showAllSeriesAggregate: boolean
+  showSelectionStatOverlays: boolean
+  activeQuantileOverlays: SvelteSet<string>
+}
+
+type TransformedSeries = {
+  series: ChartTimeseries[]
+  resets: ResetIndicesByKey
+}
+
+type HistogramAggregationResult = {
+  perAttribute: HistogramSlicePoint[]
+  heatmap: HistogramSlicePoint[]
+  summary: HistogramSlicePoint | null
+  error: BucketSeriesError | null
+  aggregatedError: BucketSeriesError | null
+}
+
 export interface MetricViewContext {
   // -- Metric identity / shape --
   readonly metric: MetricData | undefined
@@ -483,25 +514,25 @@ export function createMetricViewContext(
   // The ONE per-metric mutable cell. Reset by the effect below when
   // the metric identity changes; otherwise written only by methods
   // on this context.
-  const view = $state({
-    selectedDatapointID: null as string | null,
+  const view = $state<MetricViewState>({
+    selectedDatapointID: null,
     // Explicitly chosen series, independent of any datapoint selection.
-    selectedSeriesKey: null as string | null,
-    selectionSource: null as 'chart' | 'detail' | null,
+    selectedSeriesKey: null,
+    selectionSource: null,
     expandedDatapoints: new SvelteSet<string>(),
     expandedTimeseries: new SvelteSet<string>(),
-    activeHistogramTab: 'heatmap' as HistogramTab,
-    histogramScope: 'window' as HistogramScope,
-    selectedHistogramBucketStart: null as bigint | null,
-    selectedQuantileKey: null as string | null,
+    activeHistogramTab: 'heatmap',
+    histogramScope: 'window',
+    selectedHistogramBucketStart: null,
+    selectedQuantileKey: null,
     visibleSeries: new SvelteSet<string>(),
-    timeseriesColorByKey: new Map<string, string>() as TimeseriesColorByKey,
+    timeseriesColorByKey: new Map<string, string>(),
     // Aggregation-view state. `aggregationView` defaults to 'raw' (Gauge metrics never
     // touch this); the per-metric reset effect re-derives the smart
     // default from (temporality, isMonotonic) when the user navigates
     // between metrics. When histograms grow their own overlays we'll add
     // histogram-specific state next to this, not generalize prematurely.
-    aggregationView: 'raw' as AggregationView,
+    aggregationView: 'raw',
     showAllSeriesAggregate: false,
     showSelectionStatOverlays: true,
     activeQuantileOverlays: new SvelteSet([
@@ -658,7 +689,7 @@ export function createMetricViewContext(
     pendingUrlDatapoint = parsed.pending
 
     if (q.kind === 'timeseries') {
-      view.aggregationView = (q.agg as AggregationView) ?? seededAggregationView
+      view.aggregationView = q.agg ?? seededAggregationView
     } else {
       view.activeHistogramTab = q.htab
       view.histogramScope = q.hscope
@@ -726,6 +757,17 @@ export function createMetricViewContext(
     }
   }
 
+  function datapointTemporality(dp: DataPoint): string | undefined {
+    switch (dp.metricType) {
+      case 'Sum':
+      case 'Histogram':
+      case 'ExponentialHistogram':
+        return dp.aggregationTemporality
+      case 'Gauge':
+        return undefined
+    }
+  }
+
   /** Cached selection lookup over reduced chart rows plus fetched raw rows.
    * Rebuilt only when either source changes; every selection, URL, and pruning
    * check after that is O(1), even for a raw series with hundreds of thousands
@@ -774,8 +816,7 @@ export function createMetricViewContext(
     const m = getMetric()
     if (m?.aggregationTemporality) return m.aggregationTemporality
     for (const dp of allDatapoints(m)) {
-      const t = (dp as { aggregationTemporality?: string })
-        .aggregationTemporality
+      const t = datapointTemporality(dp)
       if (t) return t
     }
     return ''
@@ -804,8 +845,7 @@ export function createMetricViewContext(
       return false
     }
     for (const dp of allDatapoints(getMetric())) {
-      const t = (dp as { aggregationTemporality?: string })
-        .aggregationTemporality
+      const t = datapointTemporality(dp)
       if (t === 'Unspecified') return true
     }
     return false
@@ -1013,11 +1053,11 @@ export function createMetricViewContext(
    *    naturally and you can see *which* series is contributing to
    *    the aggregate rate. Bucket count is shared with the
    *    aggregate so step boundaries line up. */
-  const rawTransformed = $derived.by(() => {
+  const rawTransformed = $derived.by((): TransformedSeries => {
     if (gaugeSumGroups.keys.length === 0)
       return {
-        series: [] as ChartTimeseries[],
-        resets: new Map() as ResetIndicesByKey,
+        series: [],
+        resets: new Map<string, number[]>(),
       }
     // Rate draws the store's per-series buckets, which are keyed by series and
     // carry their own points, so this branch projects nothing: only the key and
@@ -1033,7 +1073,7 @@ export function createMetricViewContext(
     // series.
     return {
       series: gaugeSumGroups.projectVisible(view.visibleSeries),
-      resets: new Map() as ResetIndicesByKey,
+      resets: new Map<string, number[]>(),
     }
   })
 
@@ -1145,7 +1185,8 @@ export function createMetricViewContext(
   const aggregatedTransformed = $derived.by((): AggregateResult => {
     const pools = getScalarAggregate()
     if (!pools) return { lines: [], presentKeys: [] }
-    const v = view.aggregationView as 'sum' | 'avg' | 'rate'
+    const v = view.aggregationView
+    if (v === 'raw') return { lines: [], presentKeys: [] }
     const allPoints = viewPoints(pools.all, v)
     if (allPoints.length === 0) return { lines: [], presentKeys: [] }
 
@@ -1382,7 +1423,7 @@ export function createMetricViewContext(
       )
         continue
       if (!best || dp.timestamp > best.timestamp) {
-        best = dp as HistogramDataPoint | ExponentialHistogramDataPoint
+        best = dp
       }
     }
     return best
@@ -1404,14 +1445,14 @@ export function createMetricViewContext(
     }
   )
 
-  const histogramAggregation = $derived.by(() => {
+  const histogramAggregation = $derived.by((): HistogramAggregationResult => {
     const m = getMetric()
     const empty = {
-      perAttribute: [] as HistogramSlicePoint[],
-      heatmap: [] as HistogramSlicePoint[],
-      summary: null as HistogramSlicePoint | null,
-      error: null as BucketSeriesError | null,
-      aggregatedError: null as BucketSeriesError | null,
+      perAttribute: [],
+      heatmap: [],
+      summary: null,
+      error: null,
+      aggregatedError: null,
     }
     if (!m || !isHistogramKind) return empty
     if (isUnspecifiedTemporality) {
@@ -1515,7 +1556,7 @@ export function createMetricViewContext(
         (dp.metricType === 'Histogram' ||
           dp.metricType === 'ExponentialHistogram')
       ) {
-        return dp as HistogramDataPoint | ExponentialHistogramDataPoint
+        return dp
       }
       return undefined
     }

@@ -4,6 +4,7 @@ import {
   metricViewQueriesEqual,
   metricViewQueryToParams,
   parseMetricViewQuery,
+  type MetricViewParseContext,
   type MetricViewQuery,
 } from './metric-view-query'
 
@@ -12,14 +13,14 @@ const timeseriesCtx = {
   allowedAggs: ['raw', 'sum', 'avg', 'rate'],
   datapointIDs: new Set(['dp-1', 'dp-2']),
   seriesKeys: new Set(['series-1', 'series-2']),
-}
+} satisfies MetricViewParseContext
 
 const histogramCtx = {
   isHistogramKind: true,
   allowedAggs: ['raw'],
   datapointIDs: new Set(['dp-h1']),
   seriesKeys: new Set(['series-h1']),
-}
+} satisfies MetricViewParseContext
 
 describe('parseMetricViewQuery', () => {
   it('parses timeseries params and strips histogram keys', () => {

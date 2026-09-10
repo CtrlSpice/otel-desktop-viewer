@@ -5,13 +5,14 @@ import {
   type HistoryMode,
 } from './router'
 import { METRIC_VIEW_PARAMS, type MetricViewParam } from './query-params'
+import type { AggregationView } from '@/components/metrics/utils/aggregation'
 
 export type { MetricViewParam }
 export { METRIC_VIEW_PARAMS }
 
 export type TimeseriesMetricViewQuery = {
   kind: 'timeseries'
-  agg: string | null
+  agg: AggregationView | null
   dp: string | null
   series: string | null
 }
@@ -29,7 +30,7 @@ export type MetricViewQuery =
 
 export type MetricViewParseContext = {
   isHistogramKind: boolean
-  allowedAggs: readonly string[]
+  allowedAggs: readonly AggregationView[]
   datapointIDs: ReadonlySet<string>
   /** Series ids present on the current metric. */
   seriesKeys: ReadonlySet<string>
@@ -91,11 +92,14 @@ function parseSeriesParam(
   return series && seriesKeys.has(series) ? series : null
 }
 
-function parseOptionalMember(
+function parseOptionalMember<T extends string>(
   raw: string | undefined,
-  allowed: readonly string[]
-): string | null {
-  return raw && allowed.includes(raw) ? raw : null
+  allowed: readonly T[]
+): T | null {
+  for (const member of allowed) {
+    if (member === raw) return member
+  }
+  return null
 }
 
 /**
@@ -113,7 +117,10 @@ function parseEnumMember<T extends string>(
   allowed: readonly T[],
   fallback: T
 ): T {
-  return raw && allowed.includes(raw as T) ? (raw as T) : fallback
+  for (const member of allowed) {
+    if (member === raw) return member
+  }
+  return fallback
 }
 
 /**
@@ -151,7 +158,7 @@ function parseHistogramMetricViewQuery(
  */
 function parseTimeseriesMetricViewQuery(
   query: Record<string, string>,
-  allowedAggs: readonly string[],
+  allowedAggs: readonly AggregationView[],
   dp: string | null,
   series: string | null
 ): TimeseriesMetricViewQuery {
@@ -218,10 +225,18 @@ export function metricViewQueriesEqual(
 export function metricViewQueryToParams(
   q: MetricViewQuery
 ): Partial<Record<MetricViewParam, string>> {
-  const { kind: _, ...fields } = q
-  return Object.fromEntries(
-    Object.entries(fields).filter(([, v]) => v != null)
-  ) as Partial<Record<MetricViewParam, string>>
+  const params: Partial<Record<MetricViewParam, string>> = {}
+
+  if (q.kind === 'timeseries') {
+    if (q.agg !== null) params.agg = q.agg
+  } else {
+    params.htab = q.htab
+    params.hscope = q.hscope
+  }
+  if (q.dp !== null) params.dp = q.dp
+  if (q.series !== null) params.series = q.series
+
+  return params
 }
 
 /**
