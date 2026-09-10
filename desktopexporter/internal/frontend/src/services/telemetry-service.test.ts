@@ -493,9 +493,9 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     expect(recovered.salvaged).toBe(true)
     expect(recovered.cyclePoint).toBe(false)
 
-    const offender = trace.spans.find(s => s.spanData.spanID === 'dddd')!
-    expect(offender.salvaged).toBe(true)
-    expect(offender.cyclePoint).toBe(true)
+    const cyclePoint = trace.spans.find(s => s.spanData.spanID === 'dddd')!
+    expect(cyclePoint.salvaged).toBe(true)
+    expect(cyclePoint.cyclePoint).toBe(true)
 
     // The two healthy spans from the base fixture are untouched.
     expect('salvaged' in trace.spans[0]).toBe(false)

@@ -421,6 +421,7 @@ describe('WaterfallView collapse ownership', () => {
       componentProps: {
         spans: searched,
         selectedSpanID: null,
+        searchActive: true,
         onSelectSpan: vi.fn(),
       },
     })
@@ -428,6 +429,8 @@ describe('WaterfallView collapse ownership', () => {
     const during = rowIDs()
     expect(during).toContain('c')
     expect(during).not.toContain('f')
+    expect(spanRow('c')).toHaveTextContent('Match')
+    expect(spanRow('b')).not.toHaveTextContent('Match')
 
     // Clearing the search puts back exactly what the reader had: 'e' still
     // collapsed, nothing else touched.
@@ -435,11 +438,21 @@ describe('WaterfallView collapse ownership', () => {
       componentProps: {
         spans: deepTree(),
         selectedSpanID: null,
+        searchActive: false,
         onSelectSpan: vi.fn(),
       },
     })
     await tick()
     expect(rowIDs()).toEqual(['a', 'b', 'c', 'd', 'e'])
+  })
+
+  it('labels every direct match when an active search matches every span', async () => {
+    renderTree({ searchActive: true })
+    await tick()
+
+    expect(document.querySelectorAll('.waterfall-row__match')).toHaveLength(
+      ALL_IDS.length
+    )
   })
 
   it('center-scrolls a newly selected visible span', async () => {
@@ -474,8 +487,8 @@ describe('WaterfallView error navigation, vim brackets', () => {
   })
 
   function grid(): HTMLElement {
-    const el = document.querySelector<HTMLElement>('[role="grid"]')
-    expect(el, 'grid host should exist').toBeTruthy()
+    const el = document.querySelector<HTMLElement>('[role="treegrid"]')
+    expect(el, 'treegrid host should exist').toBeTruthy()
     return el!
   }
 
@@ -515,6 +528,47 @@ describe('WaterfallView error navigation, vim brackets', () => {
 
     press(']')
     expect(onSelectSpan).not.toHaveBeenCalled()
+  })
+})
+
+describe('WaterfallView hierarchy semantics', () => {
+  beforeEach(() => resetCollapseStoreForTests())
+
+  it('exposes the complete logical tree through virtualized rows', async () => {
+    renderTree()
+    await tick()
+
+    const treegrid = document.querySelector('[role="treegrid"]')
+    expect(treegrid).toHaveAttribute('aria-rowcount', '6')
+    expect(treegrid).toHaveAttribute('aria-colcount', '3')
+
+    expect(spanRow('a')).toHaveAttribute('role', 'row')
+    expect(spanRow('a')).toHaveAttribute('aria-rowindex', '1')
+    expect(spanRow('b')).toHaveAttribute('aria-rowindex', '2')
+    expect(spanRow('b')).toHaveAttribute('aria-level', '2')
+    expect(spanRow('b')).toHaveAttribute('aria-expanded', 'true')
+    expect(spanRow('a').cells[0]).toHaveAttribute('role', 'rowheader')
+    expect(spanRow('a').cells[1]).toHaveAttribute('role', 'gridcell')
+    expect(spanRow('a').cells[2]).toHaveAttribute('role', 'gridcell')
+  })
+
+  it('keeps full-tree row positions when a branch is collapsed', async () => {
+    const spans = [
+      spanNode('root', null, 0),
+      spanNode('branch', 'root', 1),
+      spanNode('hidden', 'branch', 2),
+      spanNode('sibling', 'root', 1),
+    ]
+    renderTree({ spans })
+    await tick()
+    await collapseRow('branch')
+
+    expect(rowIDs()).toEqual(['root', 'branch', 'sibling'])
+    expect(document.querySelector('[role="treegrid"]')).toHaveAttribute(
+      'aria-rowcount',
+      '4'
+    )
+    expect(spanRow('sibling')).toHaveAttribute('aria-rowindex', '4')
   })
 })
 
@@ -567,14 +621,12 @@ describe('WaterfallView row keyboard navigation', () => {
     expect(spanRow('c')).toHaveAttribute('tabindex', '0')
   })
 
-  it('removes the virtual scroll viewport from the row tab sequence', async () => {
+  it('keeps the treegrid scroll viewport out of the row tab sequence', async () => {
     renderTree()
     await tick()
 
     expect(
-      document.querySelector(
-        '[role="region"][aria-label="Span waterfall rows"]'
-      )
+      document.querySelector('[role="treegrid"][aria-label="Span waterfall"]')
     ).toHaveAttribute('tabindex', '-1')
   })
 })
@@ -645,9 +697,7 @@ describe('WaterfallView column separators', () => {
       document.querySelectorAll('.resize-handle[aria-hidden="true"]')
     ).toHaveLength(2)
     expect(
-      document.querySelector(
-        '[role="region"][aria-label="Span waterfall rows"]'
-      )
+      document.querySelector('[role="treegrid"][aria-label="Span waterfall"]')
     ).toBeInTheDocument()
   })
 

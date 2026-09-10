@@ -130,9 +130,9 @@ export type JsonSpanNode = {
    */
   salvaged?: true
   /**
-   * Present alongside `salvaged`. True on the one span whose parent link is
-   * the lie: it heads a salvaged chain, and its own parent turns up further
-   * down that same chain.
+   * Present alongside `salvaged`. True on the retained root of a salvaged
+   * chain when its reported parent appears further down that same chain.
+   * This identifies the display cut, not which parent assignment is wrong.
    */
   cyclePoint?: boolean
 }

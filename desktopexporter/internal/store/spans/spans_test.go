@@ -1820,7 +1820,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 3, w.placed, "root plus both cycle members")
 		assert.Equal(t, 0, w.unplaced, "salvage recovered everything")
 		assert.Equal(t, 2, w.salvaged, "both cycle members flagged as salvaged")
-		assert.Equal(t, 1, w.cyclePoint, "exactly one span carries the blame")
+		assert.Equal(t, 1, w.cyclePoint, "exactly one retained cycle cut")
 		assert.Equal(t, []string{"0000000000000012"}, w.cycleIDs)
 	})
 
@@ -1833,7 +1833,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, 6, w.placed, "the genuine root and every recovered span appear once")
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 5, w.salvaged)
-		assert.Equal(t, 1, w.cyclePoint, "only the closing link is at fault")
+		assert.Equal(t, 1, w.cyclePoint, "one retained cycle cut")
 		assert.Equal(t, []string{"0000000000000031"}, w.cycleIDs)
 
 		want := []placement{
@@ -1873,14 +1873,14 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, w.cycleIDs, searched.cycleIDs)
 	})
 
-	t.Run("two independent cycles are blamed separately", func(t *testing.T) {
+	t.Run("two independent cycles get separate cut points", func(t *testing.T) {
 		// One cyclePoint per cycle, not one for the trace -- otherwise the
 		// second loop is invisible once the first is reported.
 		w := get(twoCycles)
 		assert.Equal(t, 4, w.placed)
 		assert.Equal(t, 0, w.unplaced)
 		assert.Equal(t, 4, w.salvaged)
-		assert.Equal(t, 2, w.cyclePoint, "each cycle names its own offender")
+		assert.Equal(t, 2, w.cyclePoint, "each cycle has its own retained cut")
 		assert.Equal(t, []string{"0000000000000041", "0000000000000043"}, w.cycleIDs)
 	})
 
@@ -1895,7 +1895,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 		assert.Equal(t, []string{"0000000000000053"}, w.cycleIDs)
 	})
 
-	t.Run("an earlier descendant is not blamed for its ancestor cycle", func(t *testing.T) {
+	t.Run("an earlier descendant is not marked for its ancestor cycle", func(t *testing.T) {
 		w := get(cycleWithEarlyChild)
 		assert.Equal(t, 3, w.placed)
 		assert.Equal(t, 0, w.unplaced)

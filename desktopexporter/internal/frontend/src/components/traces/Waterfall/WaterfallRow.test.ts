@@ -7,9 +7,8 @@ import WaterfallRowHarness from '@/test/WaterfallRowHarness.svelte'
 
 // The cycle badge is the only UI that reads `salvaged` / `cyclePoint`
 // directly: it must stay silent on every healthy span, appear once a span
-// is salvaged, and switch to the heavier "offender" presentation on the one
-// span that actually caused the cycle -- with wording that lets a reader
-// tell the two states apart.
+// is salvaged, and switch to the heavier cycle-point presentation on the
+// retained cut -- with wording that lets a reader tell the two states apart.
 
 function makeSpanData(overrides: Partial<SpanData> = {}): SpanData {
   return {
@@ -59,7 +58,7 @@ function makeRow(spanNodeOverrides: Partial<SpanNode> = {}): WaterfallRowData {
   }
 }
 
-function renderRow(row: WaterfallRowData) {
+function renderRow(row: WaterfallRowData, matched = false) {
   return render(WaterfallRowHarness, {
     props: {
       row,
@@ -68,8 +67,10 @@ function renderRow(row: WaterfallRowData) {
       tabbable: false,
       visible: true,
       subtreeCollapsed: false,
+      rowIndex: 1,
       spanColWidth: 200,
       serviceColWidth: 100,
+      matched,
       onRowClick: () => {},
       onToggleExpand: () => {},
       onSelectEvent: vi.fn(),
@@ -81,6 +82,16 @@ function cycleBadge(container: HTMLElement): HTMLElement | null {
   return container.querySelector('.waterfall-row__cycle')
 }
 
+describe('WaterfallRow direct match badge', () => {
+  it('shows a visible badge only for a direct search match', () => {
+    const { queryByText: queryWithoutMatch } = renderRow(makeRow())
+    expect(queryWithoutMatch('Match')).toBeNull()
+
+    const { getByText } = renderRow(makeRow(), true)
+    expect(getByText('Match')).toBeVisible()
+  })
+})
+
 describe('WaterfallRow cycle badge', () => {
   it('renders no badge on a healthy span', () => {
     const { container } = renderRow(makeRow())
@@ -88,65 +99,63 @@ describe('WaterfallRow cycle badge', () => {
   })
 
   it('renders no badge when cyclePoint is set but salvaged is not', () => {
-    // Guards against a badge keyed off cyclePoint alone -- the wire format
-    // never emits cyclePoint without salvaged, but the component's own
-    // `cycleLabel` derivation checks cyclePoint first.
+    // The wire format never emits this state, but the component still guards
+    // against a malformed payload on its own.
     const { container } = renderRow(
-      makeRow({ salvaged: undefined, cyclePoint: undefined })
+      makeRow({ salvaged: undefined, cyclePoint: true })
     )
     expect(cycleBadge(container)).toBeNull()
   })
 
-  it('shows the recovered badge on a salvaged, non-offending span', () => {
+  it('shows the recovered badge on a salvaged, non-cycle-point span', () => {
     const { container } = renderRow(
       makeRow({ salvaged: true, cyclePoint: false })
     )
     const badge = cycleBadge(container)
     expect(badge).not.toBeNull()
-    expect(badge).not.toHaveClass('waterfall-row__cycle--offender')
+    expect(badge).not.toHaveClass('waterfall-row__cycle--cycle-point')
     expect(badge!.getAttribute('aria-label')).toContain(
       'Recovered from a broken part of this trace'
     )
+    expect(badge).toHaveAttribute('role', 'img')
     expect(badge!.getAttribute('title')).toContain(
       'Recovered from a broken part of this trace'
     )
-    // Warning glyph in the warning tint: no offender escalation, no biohazard.
+    // Warning glyph in the warning tint: no cycle-point escalation or biohazard.
     expect(badge!.textContent).toContain('⚠')
     expect(badge!.querySelector('svg')).toBeNull()
-    expect(badge!.classList.contains('waterfall-row__cycle--offender')).toBe(
+    expect(badge!.classList.contains('waterfall-row__cycle--cycle-point')).toBe(
       false
     )
   })
 
-  it('shows the offender badge and distinct wording when cyclePoint is true', () => {
+  it('shows the cycle-point badge and distinct wording when cyclePoint is true', () => {
     const { container } = renderRow(
       makeRow({ salvaged: true, cyclePoint: true })
     )
     const badge = cycleBadge(container)
     expect(badge).not.toBeNull()
-    expect(badge).toHaveClass('waterfall-row__cycle--offender')
-    expect(badge!.getAttribute('aria-label')).toContain(
-      'This span causes the cycle'
-    )
+    expect(badge).toHaveClass('waterfall-row__cycle--cycle-point')
+    expect(badge!.getAttribute('aria-label')).toContain('Cycle detected')
     // The biohazard svg, not the warning glyph.
     expect(badge!.querySelector('svg')).not.toBeNull()
     expect(badge!.textContent).not.toContain('⚠')
-    expect(badge!.classList.contains('waterfall-row__cycle--offender')).toBe(
+    expect(badge!.classList.contains('waterfall-row__cycle--cycle-point')).toBe(
       true
     )
   })
 
-  it('gives the offender and the spans it stranded distinguishable labels', () => {
+  it('gives the cycle point and other recovered spans distinguishable labels', () => {
     const { container: recoveredContainer } = renderRow(
       makeRow({ salvaged: true, cyclePoint: false })
     )
-    const { container: offenderContainer } = renderRow(
+    const { container: cyclePointContainer } = renderRow(
       makeRow({ salvaged: true, cyclePoint: true })
     )
     const recoveredLabel =
       cycleBadge(recoveredContainer)!.getAttribute('aria-label')
-    const offenderLabel =
-      cycleBadge(offenderContainer)!.getAttribute('aria-label')
-    expect(recoveredLabel).not.toBe(offenderLabel)
+    const cyclePointLabel =
+      cycleBadge(cyclePointContainer)!.getAttribute('aria-label')
+    expect(recoveredLabel).not.toBe(cyclePointLabel)
   })
 })

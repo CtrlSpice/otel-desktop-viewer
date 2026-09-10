@@ -36,7 +36,7 @@ export type SpanNode = {
   matched: boolean
   /** Recovered from a stranded (cyclic) part of the trace; absent normally. */
   salvaged?: true
-  /** The span whose parent link closes the loop. */
+  /** Retained cycle cut whose reported parent appears below it. */
   cyclePoint?: boolean
 }
 

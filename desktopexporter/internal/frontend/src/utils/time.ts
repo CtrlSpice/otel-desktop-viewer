@@ -392,20 +392,16 @@ export function formatTimestamp(
   resolution: TimestampResolution = 'nanoseconds'
 ): string {
   let epochMs = Number(ns / 1_000_000n)
-  let subMs = ns % 1_000_000n
+  let fractionalNs = ((ns % 1_000_000_000n) + 1_000_000_000n) % 1_000_000_000n
+  let fractional = fractionalNs.toString().padStart(9, '0')
   let date = new Date(epochMs)
   let formatted = `${formatWallClock(date, timezone, resolution)} ${formatTimezoneLabel(timezone, date)}`
 
   if (resolution === 'microseconds') {
-    let micros = Number(subMs).toString().padStart(6, '0')
-    return formatted.replace(/\.\d{3}(\s)/, `.${micros}$1`)
+    return formatted.replace(/\.\d{3}(\s)/, `.${fractional.slice(0, 6)}$1`)
   }
   if (resolution === 'nanoseconds') {
-    let nanos = Number(subMs).toString().padStart(6, '0')
-    let extraNanos = Number(ns % 1000n)
-      .toString()
-      .padStart(3, '0')
-    return formatted.replace(/\.\d{3}(\s)/, `.${nanos}${extraNanos}$1`)
+    return formatted.replace(/\.\d{3}(\s)/, `.${fractional}$1`)
   }
   return formatted
 }
