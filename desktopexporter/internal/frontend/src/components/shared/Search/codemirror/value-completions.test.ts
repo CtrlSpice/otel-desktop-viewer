@@ -248,9 +248,9 @@ describe('bare-text discovery of enums and columns', () => {
     // Eight attribute matches would fill the cap on their own; the quota
     // keeps room so `kind = Server` still surfaces.
     const manyAttrs = async (): Promise<JsonAttributeMatch[]> =>
-      Array.from({ length: 8 }, (_, i) => ({
+      Array.from({ length: 8 }, (_, i): JsonAttributeMatch => ({
         name: 'service.name',
-        attributeScope: 'resource' as AttributeScope,
+        attributeScope: 'resource',
         type: 'string',
         matchCount: 1,
         sampleValues: [`service-${i}`],

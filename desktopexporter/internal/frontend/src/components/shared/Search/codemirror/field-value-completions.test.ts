@@ -7,9 +7,10 @@ import { getFieldsBySignal } from '@/constants/fields'
 import { queryLanguage } from './query-language'
 
 const NAMES = ['checkout/pay', 'checkout/verify', 'db select "users"']
+type Signal = Parameters<typeof getFieldsBySignal>[0]
 
 function makeSource(
-  signal = 'traces',
+  signal: Signal = 'traces',
   fetch: (
     signal: string,
     field: string,
@@ -19,7 +20,7 @@ function makeSource(
 ) {
   return {
     source: createFieldValueSource(createFieldValueCache(fetch, signal), () =>
-      getFieldsBySignal(signal as 'traces' | 'logs' | 'metrics')
+      getFieldsBySignal(signal)
     ),
     fetch,
   }
@@ -27,7 +28,7 @@ function makeSource(
 
 async function run(
   doc: string,
-  signal = 'traces',
+  signal: Signal = 'traces',
   fetch?: () => Promise<string[]>
 ) {
   const { source } = makeSource(signal, fetch)
@@ -217,7 +218,7 @@ describe('operator gating', () => {
     expect(r!.options.map(o => o.label)).toEqual(['['])
     // A function rather than a string: it reopens completion on the values
     // inside, so the bracket is one step rather than a dead end.
-    expect(typeof r!.options[0].apply).toBe('function')
+    expect(r!.options[0].apply).toBeTypeOf('function')
   })
 
   it('offers values once the bracket is there', async () => {
