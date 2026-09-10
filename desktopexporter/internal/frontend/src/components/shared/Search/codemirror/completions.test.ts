@@ -15,11 +15,7 @@ const source = createQueryCompletionSource(() => fields)
 
 function complete(doc: string, pos = doc.length, explicit = false) {
   const state = EditorState.create({ doc, extensions: [queryLanguage] })
-  return source(new CompletionContext(state, pos, explicit)) as {
-    from: number
-    options: { label: string }[]
-    validFor?: RegExp
-  } | null
+  return source(new CompletionContext(state, pos, explicit))
 }
 
 function labels(doc: string, pos?: number): string[] | null {
@@ -81,8 +77,7 @@ describe('operator positions', () => {
     // Which is also what makes the operator list fire next, so picking a
     // field leads to picking an operator without a guessed keystroke.
     const r = complete('nam')
-    const name = r!.options.find(o => o.label === 'name') as
-      { apply?: string } | undefined
+    const name = r!.options.find(o => o.label === 'name')
     expect(name?.apply).toBe('name ')
   })
 
@@ -109,7 +104,7 @@ describe('operator positions', () => {
     const r = complete('name = x', 2)
     expect(r).not.toBeNull()
     expect(r!.from).toBe(0)
-    expect((r as { to?: number }).to).toBe(4)
+    expect(r!.to).toBe(4)
   })
 
   it("offers a field's own operators while typing one after its name", () => {
@@ -130,9 +125,13 @@ describe('operator positions', () => {
 
   it('marks further typing as continuation, so the list filters not closes', () => {
     const r = complete('name C')
-    expect(r!.validFor).toBeInstanceOf(RegExp)
-    expect((r!.validFor as RegExp).test('CONT')).toBe(true)
-    expect((r!.validFor as RegExp).test('!=')).toBe(true)
+    const validFor = r!.validFor
+    expect(validFor).toBeInstanceOf(RegExp)
+    if (!(validFor instanceof RegExp)) {
+      throw new Error('Expected validFor to be a regular expression')
+    }
+    expect(validFor.test('CONT')).toBe(true)
+    expect(validFor.test('!=')).toBe(true)
   })
 
   it('never offers the derived wire operators', () => {
@@ -211,8 +210,7 @@ describe('array quote and group edges', () => {
   it('closes a manually typed opening quote on accept', () => {
     const r = complete('statusCode IN ["O')
     expect(r).not.toBeNull()
-    const ok = r!.options.find(o => o.label === 'Ok') as
-      { label: string; apply?: string } | undefined
+    const ok = r!.options.find(o => o.label === 'Ok')
     expect(ok?.apply).toBe('Ok"')
   })
 

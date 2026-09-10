@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest'
 import { acceptCompletion } from '@codemirror/autocomplete'
+import { EditorState } from '@codemirror/state'
+import { EditorView, keymap, type KeyBinding } from '@codemirror/view'
 import { createQueryKeymap } from './keymap'
 
 /**
@@ -12,21 +15,16 @@ import { createQueryKeymap } from './keymap'
  * acceptCompletion never got a turn — suggestions could only be taken with the
  * mouse, which is not how anyone uses a search box.
  *
- * These assert the wiring rather than the runtime behaviour: constructing a
- * live EditorView needs a real layout that this jsdom setup does not provide.
- * The wiring is the change, and the failure mode if acceptCompletion declines
- * is simply the previous behaviour, so the risk of the untested half is
- * bounded.
+ * These assert the wiring through CodeMirror's public keymap facet. The submit
+ * command itself performs no layout work, so a detached EditorView is enough to
+ * exercise it with the real command contract.
  */
 
-type Binding = { key: string; run: unknown }
-
-function bindings(onSubmit = () => {}): Binding[] {
-  const value = Object.getOwnPropertyDescriptor(
-    createQueryKeymap(onSubmit),
-    'value'
-  )?.value
-  return Array.isArray(value) ? value : []
+function bindings(onSubmit = () => {}): readonly KeyBinding[] {
+  const state = EditorState.create({
+    extensions: [createQueryKeymap(onSubmit)],
+  })
+  return state.facet(keymap).flat()
 }
 
 describe('query keymap', () => {
@@ -38,9 +36,22 @@ describe('query keymap', () => {
 
   it('routes the second Enter binding to the submit callback', () => {
     const onSubmit = vi.fn()
-    const enter = bindings(onSubmit).filter(b => b.key === 'Enter')
-    ;(enter[1].run as (v: unknown) => boolean)({} as never)
-    expect(onSubmit).toHaveBeenCalledOnce()
+    const view = new EditorView({
+      extensions: [createQueryKeymap(onSubmit)],
+    })
+    try {
+      const enter = view.state
+        .facet(keymap)
+        .flat()
+        .filter(binding => binding.key === 'Enter')
+      const submit = enter[1]?.run
+      expect(submit).toBeDefined()
+      if (!submit) throw new Error('Expected a submit binding')
+      expect(submit(view)).toBe(true)
+      expect(onSubmit).toHaveBeenCalledOnce()
+    } finally {
+      view.destroy()
+    }
   })
 
   it('binds Escape once, conditionally', () => {
