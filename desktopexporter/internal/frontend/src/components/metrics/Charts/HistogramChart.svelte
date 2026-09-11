@@ -1,6 +1,13 @@
 <script lang="ts">
-  import { BarChart, Line, Rect, Tooltip, scaleInvert } from 'layerchart'
-  import { scaleBand, scaleLinear } from 'd3-scale'
+  import {
+    BarChart,
+    Line,
+    Rect,
+    Tooltip,
+    scaleInvert,
+    type ChartState,
+  } from 'layerchart'
+  import { scaleBand, scaleLinear, type ScaleBand } from 'd3-scale'
   import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import ChartSelectionLegend, {
@@ -43,6 +50,12 @@
     lo: number
     hi: number
     zeroThreshold?: number
+  }
+
+  function histogramBandScale(context: ChartState): ScaleBand<string> {
+    // SAFETY: This BarChart receives scaleBand() below. LayerChart copies that
+    // scale while preserving its kind, but its public context erases the type.
+    return context.xScale as ScaleBand<string>
   }
 
   type Props = {
@@ -308,9 +321,9 @@
     const ctx = chartContext
     if (!ctx || quantileMarks.length === 0) return []
 
-    const xs = ctx.xScale
+    const xs = histogramBandScale(ctx)
     const ys = ctx.yScale
-    const bw = typeof xs.bandwidth === 'function' ? xs.bandwidth() : 0
+    const bw = xs.bandwidth()
     const plotLeft = ctx.padding.left
     const plotTop = ctx.padding.top
     const plotCeiling = ctx.yRange[1] + plotTop + 4
@@ -366,8 +379,8 @@
     return u ? `${formatted} ${u}` : formatted
   }
 
-  function bucketLabelForKey(key: unknown): string {
-    return bucketByKey.get(String(key))?.label ?? String(key)
+  function bucketLabelForKey(key: string): string {
+    return bucketByKey.get(key)?.label ?? key
   }
 
   // Bar colour mirrors the metric-type badge so a glance at the chart
@@ -387,7 +400,7 @@
   const MIN_CHART_WIDTH = 280
 
   let parentWidth = $state(0)
-  let chartContext = $state<any>(undefined)
+  let chartContext = $state<ChartState | undefined>(undefined)
 
   let chartRenderHeight = $derived(plotAreaHeight > 0 ? plotAreaHeight : height)
 
@@ -436,9 +449,10 @@
     const bucket = keyboardBucket
     const context = chartContext
     if (!viewport || !bucket || !context) return
-    const x = context.xScale(bucket.key)
+    const xs = histogramBandScale(context)
+    const x = xs(bucket.key)
     if (x == null) return
-    const width = context.xScale.bandwidth?.() ?? 0
+    const width = xs.bandwidth()
     const left = context.padding.left + x
     const right = left + width
     if (left < viewport.scrollLeft) {
@@ -457,7 +471,8 @@
     const rect = root.getBoundingClientRect()
     const pointX = event.clientX - rect.left
     const pointY = event.clientY - rect.top
-    const { padding, xScale, xRange, yRange } = chartContext
+    const { padding, xRange, yRange } = chartContext
+    const xScale = histogramBandScale(chartContext)
 
     // Same plot coords as layerchart tooltip band mode (TooltipContext bisect-band).
     const plotX = pointX - padding.left
@@ -595,7 +610,7 @@
               bind:context={chartContext}
               data={buckets}
               x="key"
-              xScale={scaleBand()}
+              xScale={scaleBand<string>()}
               y="count"
               yScale={scaleLinear()}
               yNice
@@ -640,18 +655,14 @@
                 </Tooltip.Root>
               {/snippet}
 
-              {#snippet aboveMarks({ context }: { context: any })}
-                {@const xs = context.xScale}
-                {@const bw =
-                  typeof xs.bandwidth === 'function' ? xs.bandwidth() : 0}
+              {#snippet aboveMarks({ context }: { context: ChartState })}
+                {@const xs = histogramBandScale(context)}
+                {@const bw = xs.bandwidth()}
                 {@const yTop = context.yRange[1]}
                 {@const yBot = context.yRange[0]}
                 {#if pinnedBucket}
-                  {@const step = typeof xs.step === 'function' ? xs.step() : bw}
-                  {@const outer =
-                    typeof xs.padding === 'function'
-                      ? (xs.padding() * step) / 2
-                      : 0}
+                  {@const step = xs.step()}
+                  {@const outer = (xs.padding() * step) / 2}
                   {@const x0 = xs(pinnedBucket.key)}
                   <Rect
                     x={x0 != null ? x0 - outer : 0}
@@ -662,12 +673,8 @@
                   />
                 {/if}
                 {#if keyboardFocused && keyboardBucket}
-                  {@const keyboardStep =
-                    typeof xs.step === 'function' ? xs.step() : bw}
-                  {@const keyboardOuter =
-                    typeof xs.padding === 'function'
-                      ? (xs.padding() * keyboardStep) / 2
-                      : 0}
+                  {@const keyboardStep = xs.step()}
+                  {@const keyboardOuter = (xs.padding() * keyboardStep) / 2}
                   {@const keyboardX = xs(keyboardBucket.key)}
                   <Rect
                     x={keyboardX != null ? keyboardX - keyboardOuter : 0}
@@ -678,7 +685,7 @@
                   />
                 {/if}
                 {#each quantileMarks as m (m.key)}
-                  {@const x0 = xs(buckets[m.bucketIndex].key)}
+                  {@const x0 = xs(buckets[m.bucketIndex].key) ?? 0}
                   {@const px = x0 + bw * m.fraction}
                   <g class="quantile-marker" style:--marker-color={m.color}>
                     <title>{m.label} {formatQuantileValue(m.value)}</title>
