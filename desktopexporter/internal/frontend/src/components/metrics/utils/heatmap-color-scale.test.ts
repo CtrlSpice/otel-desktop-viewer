@@ -5,6 +5,15 @@ import {
 } from '@/components/metrics/utils/heatmap-color-scale'
 
 describe('computeHeatmapColorScale', () => {
+  it('rejects invalid threshold array lengths', () => {
+    expect(() => heatmapCountThresholds(10, Number.NaN)).toThrow(RangeError)
+    expect(() => heatmapCountThresholds(10, Number.POSITIVE_INFINITY)).toThrow(
+      RangeError
+    )
+    expect(() => heatmapCountThresholds(10, 2.5)).toThrow(RangeError)
+    expect(() => heatmapCountThresholds(10, 2 ** 32)).toThrow(RangeError)
+  })
+
   it('builds matching thresholds, range, and legend bands', () => {
     const scale = computeHeatmapColorScale({
       maxCount: 100,

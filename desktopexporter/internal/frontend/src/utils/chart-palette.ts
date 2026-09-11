@@ -49,12 +49,15 @@ const DEFAULT_HEATMAP_ENDPOINTS = HEATMAP_ENDPOINTS['rose-pine-moon']
  */
 export function heatmapSwatches(steps: number, theme: string = ''): string[] {
   const safeSteps = Math.max(1, Math.floor(steps))
+  if (!Number.isFinite(safeSteps) || safeSteps >= 2 ** 32) {
+    throw new RangeError('steps must produce a valid array length')
+  }
   const [start, end] = HEATMAP_ENDPOINTS[theme] ?? DEFAULT_HEATMAP_ENDPOINTS
   if (safeSteps === 1) return [end]
   const interpolator = interpolateHcl(start, end)
-  const out: string[] = new Array(safeSteps)
+  const out: string[] = []
   for (let i = 0; i < safeSteps; i++) {
-    out[i] = interpolator((i + 1) / safeSteps)
+    out.push(interpolator((i + 1) / safeSteps))
   }
   return out
 }
@@ -156,6 +159,9 @@ export function categoricalPalette(
   theme: string = ''
 ): string[] {
   const safeCount = Math.max(0, Math.floor(count))
+  if (!Number.isFinite(safeCount) || safeCount >= 2 ** 32) {
+    throw new RangeError('count must produce a valid array length')
+  }
   if (safeCount === 0) return []
 
   const palette = CATEGORICAL_PALETTES[theme] ?? DEFAULT_CATEGORICAL_PALETTE
@@ -186,17 +192,17 @@ export function categoricalPalette(
     interpolateHcl(hexAt(seg), hexAt(seg + 1))
   )
 
-  const out: string[] = new Array(safeCount)
+  const out: string[] = []
   for (let i = 0; i < safeCount; i++) {
     const t = (i / (safeCount - 1)) * segmentCount
     const seg = Math.min(Math.floor(t), segmentCount - 1)
     const segT = t - seg
     if (segT === 0) {
-      out[i] = hexAt(seg)
+      out.push(hexAt(seg))
     } else if (segT === 1 && seg === segmentCount - 1) {
-      out[i] = hexAt(waypointCount - 1)
+      out.push(hexAt(waypointCount - 1))
     } else {
-      out[i] = interps[seg](segT)
+      out.push(interps[seg](segT))
     }
   }
   return out

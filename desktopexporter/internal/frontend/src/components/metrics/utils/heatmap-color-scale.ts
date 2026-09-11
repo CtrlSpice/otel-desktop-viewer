@@ -32,11 +32,15 @@ export function heatmapCountThresholds(
   swatchSteps: number
 ): number[] {
   if (swatchSteps <= 0 || maxCount <= 0) return []
-  const out: number[] = new Array(swatchSteps)
-  out[0] = 1
+  if (!Number.isInteger(swatchSteps) || swatchSteps >= 2 ** 32) {
+    throw new RangeError('swatchSteps must be a valid array length')
+  }
+  let previous = 1
+  const out = [previous]
   for (let i = 1; i < swatchSteps; i++) {
     const next = Math.ceil((i * maxCount) / swatchSteps)
-    out[i] = next <= out[i - 1]! ? out[i - 1]! + 1 : next
+    previous = next <= previous ? previous + 1 : next
+    out.push(previous)
   }
   return out
 }
