@@ -3,15 +3,16 @@
   import type { SignalListPage } from '@/contexts/signal-list-page.svelte'
 
   type Item = { id: string; name: string }
+  type ItemSortColumn = 'name'
 
   interface Props {
     fetchList: () => Promise<Item[]>
-    onContext?: (ctx: SignalListPage<Item>) => void
+    onContext?: (ctx: SignalListPage<Item, ItemSortColumn>) => void
   }
 
   let { fetchList, onContext }: Props = $props()
 
-  const page = createSignalListPage<Item>({
+  const page = createSignalListPage<Item, ItemSortColumn>({
     signal: 'logs',
     getItemID: item => item.id,
     fetchList: () => fetchList(),

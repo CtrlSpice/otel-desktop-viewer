@@ -26,37 +26,37 @@ import {
 
 export type SortDirection = 'asc' | 'desc'
 
-export type SortOption = {
-  value: string
+export type SortOption<TSortColumn extends string> = {
+  value: TSortColumn
   label: string
   /** Direction a first click on this column lands on. Magnitude and time
    * columns want the largest/newest first; text columns read A–Z. */
   defaultDirection?: SortDirection
 }
 
-export type SignalListPageOptions<TItem> = {
+export type SignalListPageOptions<TItem, TSortColumn extends string> = {
   signal: SignalName
   getItemID: (item: TItem) => string
   fetchList: () => Promise<TItem[]>
   compare: (
     a: TItem,
     b: TItem,
-    column: string,
+    column: TSortColumn,
     direction: SortDirection
   ) => number
-  initialSort: { column: string; direction: SortDirection }
+  initialSort: { column: TSortColumn; direction: SortDirection }
   /** Called after each poll interval; update polled stat counters here. */
   pollStats?: () => Promise<void>
   /** Derive refresh pulse + aside tip from baseline vs polled counters. */
   refreshFromStats?: () => { pulse: boolean; tip: string }
 }
 
-export type SignalListPage<TItem> = {
+export type SignalListPage<TItem, TSortColumn extends string> = {
   readonly items: TItem[]
   readonly loading: boolean
   readonly error: string | null
   readonly mounted: boolean
-  readonly sortColumn: string
+  readonly sortColumn: TSortColumn
   readonly sortDirection: SortDirection
   readonly sortedItems: TItem[]
   readonly selectedID: string | null
@@ -65,7 +65,7 @@ export type SignalListPage<TItem> = {
   readonly refreshPulse: boolean
   readonly refreshAsideTip: string
   searchEditorApi: SearchEditorAPI | null
-  handleSortChange(value: string, direction: SortDirection): void
+  handleSortChange(value: TSortColumn, direction: SortDirection): void
   selectItem(id: string, mode?: HistoryMode): void
   selectByOffset(delta: number): void
   selectFirst(): void
@@ -106,9 +106,9 @@ export function resolveFallbackIndex(
   return Math.min(lastValidIndex, listLength - 1)
 }
 
-export function createSignalListPage<TItem>(
-  opts: SignalListPageOptions<TItem>
-): SignalListPage<TItem> {
+export function createSignalListPage<TItem, TSortColumn extends string>(
+  opts: SignalListPageOptions<TItem, TSortColumn>
+): SignalListPage<TItem, TSortColumn> {
   const timeContext = getTimeContext()
   const routeContext = getRouteContext()
 
@@ -211,7 +211,7 @@ export function createSignalListPage<TItem>(
     }
   }
 
-  function handleSortChange(value: string, direction: SortDirection) {
+  function handleSortChange(value: TSortColumn, direction: SortDirection) {
     sortColumn = value
     sortDirection = direction
   }

@@ -54,7 +54,7 @@
   import LogDetailPanel from '@/components/logs/LogDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
 
-  const SORT_OPTIONS: SortOption[] = [
+  const SORT_OPTIONS: SortOption<LogSortColumn>[] = [
     { value: 'timestamp', label: 'Timestamp', defaultDirection: 'desc' },
     { value: 'body', label: 'Body' },
     { value: 'service', label: 'Service Name' },
@@ -67,12 +67,11 @@
   let polledLogCount = $state(0)
   let actionError = $state<string | null>(null)
 
-  const page = createSignalListPage<LogSummary>({
+  const page = createSignalListPage<LogSummary, LogSortColumn>({
     signal: 'logs',
     getItemID: log => log.id,
     initialSort: { column: 'timestamp', direction: 'desc' },
-    compare: (a, b, col, dir) =>
-      compareLogs(a, b, col as LogSortColumn, dir as LogSortDirection),
+    compare: compareLogs,
     fetchList: async () => {
       const { startTime, endTime } = selectionToQueryRangeMs(
         timeContext.selection,

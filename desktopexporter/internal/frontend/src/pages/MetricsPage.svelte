@@ -121,7 +121,7 @@
 
   const METRIC_CHART_PANEL_ID = 'metric-chart-tabpanel'
 
-  const SORT_OPTIONS: SortOption[] = [
+  const SORT_OPTIONS: SortOption<MetricSortColumn>[] = [
     { value: 'lastSeen', label: 'Last Seen', defaultDirection: 'desc' },
     { value: 'name', label: 'Name' },
     { value: 'metricType', label: 'Type' },
@@ -145,12 +145,11 @@
   let polledStats = $state<MetricStats | null>(null)
   let actionError = $state<string | null>(null)
 
-  const page = createSignalListPage<MetricSummary>({
+  const page = createSignalListPage<MetricSummary, MetricSortColumn>({
     signal: 'metrics',
     getItemID: metricSummaryKey,
     initialSort: { column: 'lastSeen', direction: 'desc' },
-    compare: (a, b, col, dir) =>
-      compareMetrics(a, b, col as MetricSortColumn, dir as MetricSortDirection),
+    compare: compareMetrics,
     fetchList: async () => {
       const { startTime, endTime } = selectionToQueryRangeMs(
         timeContext.selection,
