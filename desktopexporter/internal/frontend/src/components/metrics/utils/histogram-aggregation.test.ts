@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type {
-  DataPoint,
-  ExponentialHistogramDataPoint,
-  HistogramDataPoint,
-  MetricTimeseries,
-} from '@/types/api-types'
+import type { DataPoint, MetricTimeseries } from '@/types/api-types'
 import {
   HEATMAP_BUCKET_TARGET,
   seriesBucketsToSlices,
@@ -18,6 +13,27 @@ import {
 
 const ts1 = 1_000_000_000n
 const ts2 = 2_000_000_000n
+
+describe('isHistogramAggregationError', () => {
+  it.each(['unspecified', 'boundsMismatch'] as const)(
+    'accepts the %s error contract',
+    kind => {
+      expect(
+        isHistogramAggregationError({ kind, message: 'Cannot merge' })
+      ).toBe(true)
+    }
+  )
+
+  it.each([
+    null,
+    'unspecified',
+    { kind: 'other', message: 'Cannot merge' },
+    { kind: 'unspecified' },
+    { kind: 'boundsMismatch', message: 42 },
+  ])('rejects malformed error candidates', candidate => {
+    expect(isHistogramAggregationError(candidate)).toBe(false)
+  })
+})
 
 function metricSeries(
   attributesKey: string,

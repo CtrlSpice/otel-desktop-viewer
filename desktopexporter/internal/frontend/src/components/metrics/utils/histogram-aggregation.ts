@@ -55,8 +55,9 @@ export function isHistogramAggregationError(
     typeof value === 'object' &&
     value !== null &&
     'kind' in value &&
-    ((value as HistogramAggregationError).kind === 'unspecified' ||
-      (value as HistogramAggregationError).kind === 'boundsMismatch')
+    'message' in value &&
+    typeof value.message === 'string' &&
+    (value.kind === 'unspecified' || value.kind === 'boundsMismatch')
   )
 }
 

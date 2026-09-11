@@ -186,12 +186,11 @@ export function lineCursorAt(
       : available.find(entry => entry.line.key === target.lineKey)
   if (target.requireExact && target.lineKey != null && !requested) return null
   const entry = requested ?? available[0]!
+  const pointKey = target.pointKey
   const keyedIndex =
-    target.pointKey == null
+    pointKey == null
       ? -1
-      : entry.line.points.findIndex(point =>
-          sameKey(point.key, target.pointKey as CursorKey)
-        )
+      : entry.line.points.findIndex(point => sameKey(point.key, pointKey))
   const timestampIndex =
     target.timestampNs == null
       ? -1
