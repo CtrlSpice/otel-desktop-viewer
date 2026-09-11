@@ -29,6 +29,31 @@ export type ChartPoint = {
   slope?: number | null
 }
 
+export type LayerChartSeriesDatum<TData> = TData & { seriesKey: string }
+
+export type LayerChartHighlightPointData<TX = Date, TY = number> = {
+  x: TX
+  y: TY
+}
+
+/** LayerChart 2.3.1 emits raw series data plus `point`; its public LineChart
+ * declaration instead describes projected data plus `series`. */
+export type LayerChartPointClickDetail<TData, TX = Date, TY = number> = {
+  data:
+    | LayerChartSeriesDatum<TData>
+    | (LayerChartHighlightPointData<TX, TY> &
+        Partial<LayerChartSeriesDatum<TData>>)
+  point?: {
+    data: LayerChartHighlightPointData<TX, TY>
+    seriesKey?: string
+  }
+  series?: { key: string }
+}
+
+export type LayerChartTooltipClickDetail<TData> = {
+  data: LayerChartSeriesDatum<TData>
+}
+
 /**
  * One per-attribute timeseries projected for layerchart. The
  * MetricTimeSeriesChart component renders one line per timeseries

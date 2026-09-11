@@ -4,6 +4,11 @@ import {
   heatmapColumnSelectionAt,
   type HeatmapColumnSelection,
 } from '@/components/metrics/utils/heatmap-column-selection'
+import type {
+  ChartPoint,
+  ChartTimeseries,
+  LayerChartPointClickDetail,
+} from '@/types/metric-chart-types'
 
 export type QuantileSeriesSelection = {
   seriesKey: string
@@ -14,6 +19,43 @@ export type QuantilePointSelection = {
   timestampMs: number
   series: QuantileSeriesSelection[]
   merged: HeatmapColumnSelection | null
+}
+
+export type QuantileChartPointSelection = {
+  lineKey: string
+  timestampNs: bigint
+}
+
+export function quantileChartPointSelection(
+  detail: LayerChartPointClickDetail<ChartPoint>,
+  timeseries: readonly ChartTimeseries[]
+): QuantileChartPointSelection | null {
+  const clickedPoint = detail.point
+  if (clickedPoint?.seriesKey === undefined) return null
+  const lineKey = clickedPoint.seriesKey
+
+  if (detail.data.seriesKey === lineKey) {
+    const timestampNs = detail.data.timestampNs
+    return timestampNs === undefined ? null : { lineKey, timestampNs }
+  }
+
+  const projected = clickedPoint.data
+  let timestampNs: bigint | null = null
+  for (const series of timeseries) {
+    if (series.key !== lineKey) continue
+    for (const point of series.points) {
+      if (
+        point.date.getTime() !== projected.x.getTime() ||
+        point.value !== projected.y ||
+        point.timestampNs === undefined
+      ) {
+        continue
+      }
+      if (timestampNs !== null && timestampNs !== point.timestampNs) return null
+      timestampNs = point.timestampNs
+    }
+  }
+  return timestampNs === null ? null : { lineKey, timestampNs }
 }
 
 /**
