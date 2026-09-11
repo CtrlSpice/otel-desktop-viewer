@@ -68,6 +68,9 @@ export function initTooltipWarmth(
   root: Document | HTMLElement = document,
   target: HTMLElement = document.documentElement
 ) {
+  const rootWindow =
+    root.ownerDocument?.defaultView ??
+    ('defaultView' in root ? root.defaultView : null)
   const warmth = createTooltipWarmth(instant => {
     if (instant) {
       target.style.setProperty(INSTANT_PROPERTY, '0s')
@@ -93,12 +96,27 @@ export function initTooltipWarmth(
   }
 
   function tooltipForEvent(e: Event): Element | null {
-    return (e.target as Element | null)?.closest(TOOLTIP_SELECTOR) ?? null
+    const eventTarget = e.target
+    const element =
+      rootWindow && eventTarget instanceof rootWindow.Element
+        ? eventTarget
+        : rootWindow && eventTarget instanceof rootWindow.Node
+          ? eventTarget.parentElement
+          : null
+    return element?.closest(TOOLTIP_SELECTOR) ?? null
   }
 
   function stayedInside(e: Event, tooltip: Element): boolean {
-    const related = (e as FocusEvent | PointerEvent).relatedTarget
-    return related instanceof Node && tooltip.contains(related)
+    const related =
+      rootWindow &&
+      (e instanceof rootWindow.FocusEvent || e instanceof rootWindow.MouseEvent)
+        ? e.relatedTarget
+        : null
+    return Boolean(
+      rootWindow &&
+      related instanceof rootWindow.Node &&
+      tooltip.contains(related)
+    )
   }
 
   function enter(e: Event, active: Set<Element>) {
@@ -130,8 +148,12 @@ export function initTooltipWarmth(
   const onFocusOut = (e: Event) => leave(e, focusActive)
   const onKeyDown = (e: Event) => {
     pruneDetachedTooltips()
-    const keyboardEvent = e as KeyboardEvent
-    if (keyboardEvent.key !== 'Escape') return
+    if (
+      !rootWindow ||
+      !(e instanceof rootWindow.KeyboardEvent) ||
+      e.key !== 'Escape'
+    )
+      return
 
     const tooltip = tooltipForEvent(e)
     if (!tooltip) return
@@ -157,7 +179,11 @@ export function initTooltipWarmth(
     for (const tooltip of root.querySelectorAll(TOOLTIP_SELECTOR)) {
       tooltip.removeAttribute(SUPPRESSED_ATTRIBUTE)
     }
-    if (root instanceof Element && root.matches(TOOLTIP_SELECTOR)) {
+    if (
+      rootWindow &&
+      root instanceof rootWindow.Element &&
+      root.matches(TOOLTIP_SELECTOR)
+    ) {
       root.removeAttribute(SUPPRESSED_ATTRIBUTE)
     }
     warmth.destroy()
