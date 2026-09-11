@@ -30,6 +30,11 @@
   type Endpoint = 'start' | 'end'
   type Choice = Exclude<WallClockDisambiguation, 'reject'>
   type Ambiguity = { earlier: number; later: number }
+  type EditableParts = { date: string; time: string }
+  type InitializedChoice = {
+    ambiguity: Ambiguity | null
+    choice: Choice | null
+  }
 
   const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
   const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}$/
@@ -76,7 +81,7 @@
 
   let today = $state(calendarDateForTimestamp(initialNow))
 
-  function editableParts(timestamp: number): { date: string; time: string } {
+  function editableParts(timestamp: number): EditableParts {
     const formatted = formatEditableDateTime(timestamp, ctx.tz)
     return { date: formatted.slice(0, 10), time: formatted.slice(11, 23) }
   }
@@ -137,7 +142,7 @@
     date: string,
     time: string,
     timestamp: number
-  ): { ambiguity: Ambiguity | null; choice: Choice | null } {
+  ): InitializedChoice {
     const ambiguity = ambiguityFor(date, time)
     if (!ambiguity) return { ambiguity: null, choice: null }
     return {
