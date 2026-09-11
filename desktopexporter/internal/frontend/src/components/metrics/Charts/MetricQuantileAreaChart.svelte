@@ -34,6 +34,12 @@
     stablePointCursorKey,
   } from '@/components/metrics/utils/chart-keyboard-cursor'
   import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
+  import { quantileChartPointSelection } from '@/components/metrics/utils/quantile-point-selection'
+  import type {
+    LayerChartPointClickDetail,
+    LayerChartSeriesDatum,
+    LayerChartTooltipClickDetail,
+  } from '@/types/metric-chart-types'
 
   type QuantileLineMeta = {
     seriesKey: string
@@ -407,20 +413,11 @@
     return (dl <= dh ? points[lo] : points[hi])!.value
   }
 
-  function chartPointDate(data: unknown): Date | null {
-    if (data == null || typeof data !== 'object') return null
-    const row = data as { date?: unknown; x?: unknown; data?: ChartPoint }
-    if (row.date instanceof Date) return row.date
-    if (row.date != null) return new Date(row.date as string | number)
-    if (row.data?.date instanceof Date) return row.data.date
-    if (row.x instanceof Date) return row.x
-    if (row.x != null) return new Date(row.x as string | number)
-    return null
-  }
-
   function tooltipXDate(context: {
-    tooltip: { data: unknown }
-    x: (d: unknown) => Date | string | number | null | undefined
+    tooltip: { data: LayerChartSeriesDatum<ChartPoint> | null }
+    x: (
+      d: LayerChartSeriesDatum<ChartPoint>
+    ) => Date | string | number | null | undefined
   }): Date | null {
     const d = context.tooltip.data
     if (d == null) return null
@@ -428,58 +425,6 @@
     if (v instanceof Date) return v
     if (v != null) return new Date(v)
     return null
-  }
-
-  function chartPointValue(data: unknown): number | undefined {
-    if (data == null || typeof data !== 'object') return undefined
-    const row = data as {
-      value?: number
-      y?: number
-      data?: { value?: number; y?: number }
-    }
-    const value = row.value ?? row.y ?? row.data?.value ?? row.data?.y
-    return value !== undefined && Number.isFinite(value) ? value : undefined
-  }
-
-  function chartPointTimestampNs(
-    data: unknown,
-    lineKey?: string
-  ): bigint | null {
-    const row =
-      data != null && typeof data === 'object'
-        ? (data as { timestampNs?: unknown; data?: unknown })
-        : null
-    if (typeof row?.timestampNs === 'bigint') return row.timestampNs
-    if (row?.data != null && typeof row.data === 'object') {
-      const nested = row.data as { timestampNs?: unknown }
-      if (typeof nested.timestampNs === 'bigint') return nested.timestampNs
-    }
-
-    const date = chartPointDate(data)
-    if (!date) return null
-    const candidates = (
-      lineKey
-        ? chartSeries.filter(series => series.key === lineKey)
-        : chartSeries
-    ).flatMap(series =>
-      series.data.filter(point => point.date.getTime() === date.getTime())
-    )
-    const exactTimestamps = new Set(
-      candidates
-        .map(point => point.timestampNs)
-        .filter((value): value is bigint => value !== undefined)
-    )
-    if (exactTimestamps.size === 1) return [...exactTimestamps][0]!
-
-    const value = chartPointValue(data)
-    if (value === undefined) return null
-    const valueTimestamps = new Set(
-      candidates
-        .filter(point => point.value === value)
-        .map(point => point.timestampNs)
-        .filter((timestamp): timestamp is bigint => timestamp !== undefined)
-    )
-    return valueTimestamps.size === 1 ? [...valueTimestamps][0]! : null
   }
 
   function dispatchPointClick(
@@ -491,34 +436,27 @@
     onChartPointClick(seriesKey ?? '', timestampNs, quantileKey)
   }
 
-  // layerchart 2.0 stable invokes onPointClick with { point, data } (no
-  // `series`): `point.seriesKey` identifies the series and `point.data` is
-  // the highlighted { x, y } pair, while `data` is the raw tooltip datum.
   function handlePointClick(
     e: MouseEvent,
-    details: {
-      data: unknown
-      point?: { seriesKey?: string; data?: unknown }
-    }
+    details: LayerChartPointClickDetail<ChartPoint>
   ) {
-    const key = details.point?.seriesKey ?? ''
-    const timestampNs =
-      chartPointTimestampNs(details.data, key) ??
-      chartPointTimestampNs(details.point?.data, key)
-    if (timestampNs === null) return
+    const selection = quantileChartPointSelection(details, timeseries)
+    if (selection === null) return
     e.stopPropagation()
-    const meta = lineMetaByKey.get(key)
+    const meta = lineMetaByKey.get(selection.lineKey)
     dispatchPointClick(
-      timestampNs,
-      meta?.seriesKey ?? key,
+      selection.timestampNs,
+      meta?.seriesKey ?? selection.lineKey,
       meta?.quantileKey ?? null
     )
   }
 
-  function handleTooltipClick(e: MouseEvent, detail: { data: unknown }) {
-    const timestampNs = chartPointTimestampNs(detail.data)
-    if (timestampNs === null) return
-    dispatchPointClick(timestampNs, '', null)
+  function handleTooltipClick(
+    e: MouseEvent,
+    detail: LayerChartTooltipClickDetail<ChartPoint>
+  ) {
+    if (detail.data.timestampNs === undefined) return
+    dispatchPointClick(detail.data.timestampNs, '', null)
   }
 </script>
 

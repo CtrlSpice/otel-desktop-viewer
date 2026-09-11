@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { quantilePointSelectionAt } from './quantile-point-selection'
+import {
+  quantileChartPointSelection,
+  quantilePointSelectionAt,
+} from './quantile-point-selection'
 import type { HistogramSlicePoint } from './histogram-aggregation'
 
 function slice(
@@ -19,6 +22,103 @@ function slice(
 }
 
 const COLUMN_START = 1_000_000_000_000n
+
+describe('quantileChartPointSelection', () => {
+  it('reads exact identity and the line key from the LayerChart runtime wrappers', () => {
+    const timestampNs = COLUMN_START + 123n
+
+    expect(
+      quantileChartPointSelection(
+        {
+          data: {
+            date: new Date(Number(COLUMN_START / 1_000_000n)),
+            value: 42,
+            timestampNs,
+            seriesKey: 'pod=a::0.95',
+          },
+          point: {
+            data: { x: new Date(0), y: 42 },
+            seriesKey: 'pod=a::0.95',
+          },
+        },
+        []
+      )
+    ).toEqual({ lineKey: 'pod=a::0.95', timestampNs })
+  })
+
+  it('does not infer identity from LayerChart projected highlight data', () => {
+    expect(
+      quantileChartPointSelection(
+        {
+          data: { x: new Date(0), y: 42 },
+          series: { key: 'pod=a::0.95' },
+        },
+        []
+      )
+    ).toBeNull()
+  })
+
+  it('uses the clicked line projection when the raw datum belongs to another series', () => {
+    const date = new Date(Number(COLUMN_START / 1_000_000n))
+    const timestampNs = COLUMN_START + 900n
+
+    expect(
+      quantileChartPointSelection(
+        {
+          data: {
+            date,
+            value: 11,
+            timestampNs: COLUMN_START + 100n,
+            seriesKey: 'pod=a::0.95',
+          },
+          point: {
+            data: { x: date, y: 22 },
+            seriesKey: 'pod=b::0.95',
+          },
+        },
+        [
+          {
+            key: 'pod=b::0.95',
+            label: 'pod b p95',
+            points: [
+              { date, value: 11, timestampNs: COLUMN_START + 200n },
+              { date, value: 22, timestampNs },
+            ],
+          },
+        ]
+      )
+    ).toEqual({ lineKey: 'pod=b::0.95', timestampNs })
+  })
+
+  it('rejects an ambiguous projected point', () => {
+    const date = new Date(Number(COLUMN_START / 1_000_000n))
+    const detail = {
+      data: {
+        date,
+        value: 11,
+        timestampNs: COLUMN_START + 100n,
+        seriesKey: 'pod=a::0.95',
+      },
+      point: {
+        data: { x: date, y: 22 },
+        seriesKey: 'pod=b::0.95',
+      },
+    }
+
+    expect(
+      quantileChartPointSelection(detail, [
+        {
+          key: 'pod=b::0.95',
+          label: 'pod b p95',
+          points: [
+            { date, value: 22, timestampNs: COLUMN_START + 200n },
+            { date, value: 22, timestampNs: COLUMN_START + 900n },
+          ],
+        },
+      ])
+    ).toBeNull()
+  })
+})
 
 describe('quantilePointSelectionAt', () => {
   // The bug this replaced: the caller passed every per-series slice in the
