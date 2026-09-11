@@ -35,7 +35,13 @@
     rateSlopeBucketSegment,
     type SeriesStats,
   } from '@/components/metrics/utils/aggregation'
-  import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
+  import type {
+    ChartPoint,
+    ChartTimeseries,
+    LayerChartPointClickDetail,
+    LayerChartSeriesDatum,
+    LayerChartTooltipClickDetail,
+  } from '@/types/metric-chart-types'
   import {
     isChartActivationKey,
     lineCursorAt,
@@ -43,6 +49,7 @@
     stablePointCursorKey,
   } from '@/components/metrics/utils/chart-keyboard-cursor'
   import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
+  import { timeSeriesChartPointSelection } from '@/components/metrics/utils/time-series-point-selection'
 
   /** Render order inside the Totals section: checked → all. */
   const AGG_TOTAL_ORDER: Record<string, number> = {
@@ -93,8 +100,10 @@
   }
 
   function tooltipXDate(context: {
-    tooltip: { data: unknown }
-    x: (d: unknown) => Date | string | number | null | undefined
+    tooltip: { data: LayerChartSeriesDatum<ChartPoint> | null }
+    x: (
+      d: LayerChartSeriesDatum<ChartPoint>
+    ) => Date | string | number | null | undefined
     valueAxis: string
   }): Date | null {
     const d = context.tooltip.data
@@ -393,23 +402,6 @@
     `Use Left and Right to inspect points. Use Up and Down to inspect lines. Home and End move to line boundaries; Control or Command plus Home or End move to chart boundaries.${keyboardCanActivate ? ' Enter or Space selects a source datapoint when the current point is selectable.' : ''} Escape clears chart selection.`
   )
 
-  function chartPointDate(data: unknown): Date | null {
-    if (data == null || typeof data !== 'object') return null
-    const row = data as { date?: unknown; x?: unknown }
-    if (row.date instanceof Date) return row.date
-    if (row.date != null) return new Date(row.date as string | number)
-    if (row.x instanceof Date) return row.x
-    if (row.x != null) return new Date(row.x as string | number)
-    return null
-  }
-
-  function chartPointValue(data: unknown): number | undefined {
-    if (data == null || typeof data !== 'object') return undefined
-    const row = data as { value?: number; y?: number }
-    const v = row.value ?? row.y
-    return v !== undefined && Number.isFinite(v) ? v : undefined
-  }
-
   let lineChartContext = $state<ChartState<ChartPoint> | undefined>(undefined)
   /** Plot area height after the selection legend claims its row. */
   let plotAreaHeight = $state(0)
@@ -446,31 +438,21 @@
     return bestKey
   }
 
-  function highlightSeriesKey(details: unknown): string | null {
-    if (details == null || typeof details !== 'object') return null
-    const d = details as {
-      point?: { seriesKey?: string }
-      series?: { key?: string }
-    }
-    return d.point?.seriesKey ?? d.series?.key ?? null
-  }
-
   /** Map a chart row back to a raw series key. With multiple series at the
    *  same x, match on y/value before falling back to per-series lookup. */
   function seriesKeyForChartPoint(
-    data: unknown,
+    data: LayerChartSeriesDatum<ChartPoint>,
     explicitKey?: string | null
   ): string | null {
     if (explicitKey && !isAggregateKey(explicitKey)) {
       return explicitKey
     }
 
-    const date = chartPointDate(data)
-    if (date === null) return null
+    const date = data.date
     const t = date.getTime()
-    const clickedValue = chartPointValue(data)
+    const clickedValue = data.value
 
-    if (clickedValue !== undefined) {
+    if (Number.isFinite(clickedValue)) {
       for (const s of timeseries) {
         if (isAggregateKey(s.key)) continue
         for (const p of s.points) {
@@ -531,33 +513,13 @@
 
   function sourcePointForChartPoint(
     seriesKey: string,
-    data: unknown,
+    data: LayerChartSeriesDatum<ChartPoint>,
     date: Date
   ): ChartPoint | null {
     const series = chartSeries.find(candidate => candidate.key === seriesKey)
     if (!series) return null
 
-    const row =
-      data != null && typeof data === 'object'
-        ? (data as {
-            sourceDatapointID?: unknown
-            timestampNs?: unknown
-            data?: unknown
-          })
-        : null
-    const nested =
-      row?.data != null && typeof row.data === 'object'
-        ? (row.data as {
-            sourceDatapointID?: unknown
-            timestampNs?: unknown
-          })
-        : null
-    const sourceDatapointID =
-      typeof row?.sourceDatapointID === 'string'
-        ? row.sourceDatapointID
-        : typeof nested?.sourceDatapointID === 'string'
-          ? nested.sourceDatapointID
-          : null
+    const sourceDatapointID = data.sourceDatapointID
     if (sourceDatapointID) {
       return (
         series.data.find(
@@ -566,13 +528,8 @@
       )
     }
 
-    const timestampNs =
-      typeof row?.timestampNs === 'bigint'
-        ? row.timestampNs
-        : typeof nested?.timestampNs === 'bigint'
-          ? nested.timestampNs
-          : null
-    if (timestampNs !== null) {
+    const timestampNs = data.timestampNs
+    if (timestampNs !== undefined) {
       return (
         series.data.find(point => point.timestampNs === timestampNs) ?? null
       )
@@ -582,60 +539,46 @@
       point => point.date.getTime() === date.getTime()
     )
     if (sameMillisecond.length === 1) return sameMillisecond[0]!
-    const clickedValue = chartPointValue(data)
-    if (clickedValue === undefined) return null
     const sameValue = sameMillisecond.filter(
-      point => point.value === clickedValue
+      point => point.value === data.value
     )
     return sameValue.length === 1 ? sameValue[0]! : null
   }
 
-  function dispatchChartPointClick(
+  function dispatchTooltipClick(
     e: MouseEvent,
-    detail: unknown,
-    explicitKey?: string | null,
-    source: 'point' | 'plot' = 'plot'
+    data: LayerChartSeriesDatum<ChartPoint>
   ) {
     if (!onChartPointClick) return
-    const payload =
-      typeof detail === 'object' && detail !== null && 'data' in detail
-        ? (detail as { data: unknown }).data
-        : detail
-    const date = chartPointDate(payload)
-    if (date === null) return
-
-    const fromHighlight = explicitKey ?? highlightSeriesKey(detail)
-    let key =
-      fromHighlight && !isAggregateKey(fromHighlight)
-        ? fromHighlight
-        : source === 'plot'
-          ? seriesKeyAtPointerY(e, date)
-          : null
+    const date = data.date
+    let key = seriesKeyAtPointerY(e, date)
     if (!key) {
-      key = seriesKeyForChartPoint(payload, fromHighlight)
+      key = seriesKeyForChartPoint(data)
     }
     if (!key || isAggregateKey(key)) return
-    const point = sourcePointForChartPoint(key, payload, date)
+    const point = sourcePointForChartPoint(key, data, date)
     if (!point?.sourceDatapointID) return
     onChartPointClick(key, point.sourceDatapointID)
   }
 
-  /** Highlight circle click. LineChart types `{ data, series }`; Highlight
-   *  runtime passes `{ point, data }` with `point.seriesKey`. */
   function handlePointClick(
     e: MouseEvent,
-    details: { data: { x: unknown; y: unknown }; series: { key: string } }
+    details: LayerChartPointClickDetail<ChartPoint>
   ) {
-    const key = highlightSeriesKey(details) ?? details.series?.key
-    if (key && isAggregateKey(key)) return
+    if (details.point?.seriesKey === undefined) return
     e.stopPropagation()
-    dispatchChartPointClick(e, details, highlightSeriesKey(details), 'point')
+    const selection = timeSeriesChartPointSelection(details, timeseries)
+    if (selection === null || isAggregateKey(selection.seriesKey)) return
+    onChartPointClick?.(selection.seriesKey, selection.sourceDatapointID)
   }
 
   /** Chart-area click under bisect-x tooltip — disambiguate series by
    *  pointer y, not the bisected row's value (wrong with many series). */
-  function handleTooltipClick(e: MouseEvent, detail: { data: unknown }) {
-    dispatchChartPointClick(e, detail, null, 'plot')
+  function handleTooltipClick(
+    e: MouseEvent,
+    detail: LayerChartTooltipClickDetail<ChartPoint>
+  ) {
+    dispatchTooltipClick(e, detail.data)
   }
 
   // Total visible point count -- if every series is empty (or all
