@@ -164,8 +164,10 @@
     pageIndex = Math.max(0, Math.min(next, pageCount - 1))
   }
 
-  function changePageSize(e: Event): void {
-    const next = Number((e.currentTarget as HTMLSelectElement).value)
+  function changePageSize(
+    e: Event & { currentTarget: HTMLSelectElement }
+  ): void {
+    const next = Number(e.currentTarget.value)
     if (next !== 25 && next !== 50 && next !== 100) return
     pageIndex = 0
     pageSize = next
@@ -266,10 +268,7 @@
     }
   }
 
-  function datapointValueParts(dp: DataPoint): {
-    number: string
-    unit: string | null
-  } {
+  function datapointValueParts(dp: DataPoint) {
     const unit = displayUnit(metricUnit)
     if (dp.metricType === 'Gauge' || dp.metricType === 'Sum') {
       const raw = dp.doubleValue ?? dp.intValue
