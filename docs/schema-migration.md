@@ -1,4 +1,4 @@
-# Schema migration — design notes
+# Schema migration
 
 Working notes, not a plan of record. The decision so far is deliberate
 non-support: every version bump hard-fails on mismatch, and this file records

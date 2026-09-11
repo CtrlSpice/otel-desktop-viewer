@@ -123,12 +123,15 @@ desktopexporter/
   internal/store/                     # DuckDB schema, ingestion, and queries
   internal/frontend/                  # Svelte 5 application
 scripts/                              # OTLP seed data for local development
-docs/                                 # Design notes and documentation assets
+docs/                                 # All design notes and documentation assets
 ```
 
 The root Go module builds the collector binary. The `desktop` exporter writes telemetry through the store owned by the `duckdb` extension. The frontend communicates with the server through JSON-RPC and builds into committed embedded assets.
 
 ## Change conventions
+
+Keep repository documentation under `docs/`. Working notes that are worth
+preserving belong there too; do not create a parallel `notes/` directory.
 
 ### Go
 

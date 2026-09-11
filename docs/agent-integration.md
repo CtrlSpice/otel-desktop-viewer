@@ -1,4 +1,4 @@
-# Agent integration — design notes
+# Agent integration
 
 Working notes, not a plan of record. Written while the query layer was being
 optimised, so several numbers below come from that work rather than from
