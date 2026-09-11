@@ -402,7 +402,7 @@ export function buildHistogramHeatmapData(
 /** Pure instrumentation entry point for structural projection tests. */
 export function buildHistogramHeatmapDataWithStats(
   points: readonly HistogramSlicePoint[]
-): { data: HistogramHeatmapData; stats: HistogramHeatmapBuildStats } {
+) {
   const stats: HistogramHeatmapBuildStats = {
     explicitSchemaCount: 0,
     exponentialSchemaCount: 0,
