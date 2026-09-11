@@ -127,11 +127,17 @@ describe('initTooltipWarmth', () => {
     vi.useRealTimers()
   })
 
-  function pointerOver(el: Element) {
-    el.dispatchEvent(new Event('pointerover', { bubbles: true }))
+  function pointerOver(el: Node, relatedTarget: EventTarget | null = null) {
+    const view = el.ownerDocument?.defaultView ?? window
+    el.dispatchEvent(
+      new view.MouseEvent('pointerover', { bubbles: true, relatedTarget })
+    )
   }
-  function pointerOut(el: Element) {
-    el.dispatchEvent(new Event('pointerout', { bubbles: true }))
+  function pointerOut(el: Node, relatedTarget: EventTarget | null = null) {
+    const view = el.ownerDocument?.defaultView ?? window
+    el.dispatchEvent(
+      new view.MouseEvent('pointerout', { bubbles: true, relatedTarget })
+    )
   }
 
   function focusIn(el: Element) {
@@ -156,6 +162,62 @@ describe('initTooltipWarmth', () => {
   it('ignores pointer events outside any tooltip trigger', () => {
     pointerOver(root.querySelector('#plain')!)
     expect(target.style.getPropertyValue('--tooltip-show-delay')).toBe('')
+  })
+
+  it('handles delegated pointer events from a tooltip text node', () => {
+    const a = root.querySelector('#a')!
+    const text = a.appendChild(document.createTextNode('Home'))
+    const b = root.querySelector('#b')!
+
+    pointerOver(text)
+    pointerOut(text)
+    pointerOver(b)
+
+    expect(target.style.getPropertyValue('--tooltip-show-delay')).toBe('0s')
+  })
+
+  it('keeps the tooltip active while the pointer moves within it', () => {
+    const a = root.querySelector('#a')!
+    const child = a.appendChild(document.createElement('span'))
+    const b = root.querySelector('#b')!
+
+    pointerOver(child)
+    pointerOut(child, a)
+    vi.advanceTimersByTime(TOOLTIP_WARM_GRACE_MS)
+    pointerOver(b)
+
+    expect(target.style.getPropertyValue('--tooltip-show-delay')).toBe('0s')
+  })
+
+  it('uses the delegated document realm for event and target checks', () => {
+    const iframe = document.body.appendChild(document.createElement('iframe'))
+    const iframeDocument = iframe.contentDocument!
+    iframeDocument.body.innerHTML = `
+      <button class="tooltip" data-tip="Home" id="frame-a">Home</button>
+      <button class="tooltip" data-tip="Settings" id="frame-b"></button>
+    `
+    const iframeCleanup = initTooltipWarmth(
+      iframeDocument,
+      iframeDocument.documentElement
+    )
+
+    try {
+      const a = iframeDocument.querySelector('#frame-a')!
+      const text = a.firstChild!
+      const b = iframeDocument.querySelector('#frame-b')!
+      pointerOver(text)
+      pointerOut(text)
+      pointerOver(b)
+
+      expect(
+        iframeDocument.documentElement.style.getPropertyValue(
+          '--tooltip-show-delay'
+        )
+      ).toBe('0s')
+    } finally {
+      iframeCleanup()
+      iframe.remove()
+    }
   })
 
   it('restores the delay after the grace period with nothing hovered', () => {
