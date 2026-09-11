@@ -109,7 +109,10 @@ describe('createSignalListPage integration', () => {
       { id: 'b', name: 'bravo' },
     ]
     let page:
-      | import('@/contexts/signal-list-page.svelte').SignalListPage<Item>
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<
+          Item,
+          'name'
+        >
       | undefined
 
     setTestUrl('/logs/a')
@@ -141,7 +144,10 @@ describe('createSignalListPage integration', () => {
     })
 
     let page:
-      | import('@/contexts/signal-list-page.svelte').SignalListPage<Item>
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<
+          Item,
+          'name'
+        >
       | undefined
     setTestUrl('/logs')
     renderWithContexts(SignalListPageProbe, {
@@ -187,7 +193,10 @@ describe('createSignalListPage integration', () => {
     })
 
     let page:
-      | import('@/contexts/signal-list-page.svelte').SignalListPage<Item>
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<
+          Item,
+          'name'
+        >
       | undefined
     setTestUrl('/logs')
     renderWithContexts(SignalListPageProbe, {

@@ -85,7 +85,7 @@
     remToPx,
   } from '@/state/panel-width'
 
-  const SORT_OPTIONS: SortOption[] = [
+  const SORT_OPTIONS: SortOption<TraceSummarySortColumn>[] = [
     { value: 'startTime', label: 'Start Time', defaultDirection: 'desc' },
     { value: 'duration', label: 'Duration', defaultDirection: 'desc' },
     { value: 'rootSpanName', label: 'Root Span Name' },
@@ -101,17 +101,11 @@
   let polledStats = $state<TraceStats | null>(null)
   let actionError = $state<string | null>(null)
 
-  const page = createSignalListPage<TraceSummary>({
+  const page = createSignalListPage<TraceSummary, TraceSummarySortColumn>({
     signal: 'traces',
     getItemID: trace => trace.traceID,
     initialSort: { column: 'startTime', direction: 'desc' },
-    compare: (a, b, col, dir) =>
-      compareTraceSummaries(
-        a,
-        b,
-        col as TraceSummarySortColumn,
-        dir as TraceSummarySortDirection
-      ),
+    compare: compareTraceSummaries,
     fetchList: async () => {
       const { startTime, endTime } = selectionToQueryRangeMs(
         timeContext.selection,

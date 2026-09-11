@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang="ts" generics="TSortColumn extends string">
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import ArrowUp02Icon from '@hugeicons/core-free-icons/ArrowUp02Icon'
   import Sorting05Icon from '@hugeicons/core-free-icons/Sorting05Icon'
@@ -11,7 +11,10 @@
   import type { SearchResultEvent } from '@/types/api-types'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
 
-  import type { SortOption } from '@/contexts/signal-list-page.svelte'
+  import type {
+    SortDirection,
+    SortOption,
+  } from '@/contexts/signal-list-page.svelte'
 
   type DrawerSearchPanelSegment = 'full' | 'toolbar' | 'search'
 
@@ -19,10 +22,10 @@
     /** `toolbar` = sort/time/refresh · `search` = editor · `full` = both */
     segment?: DrawerSearchPanelSegment
     signal: 'traces' | 'metrics' | 'logs'
-    sortOptions: SortOption[]
-    sortValue: string
-    sortDirection: 'asc' | 'desc'
-    onSortChange?: (value: string, direction: 'asc' | 'desc') => void
+    sortOptions: SortOption<TSortColumn>[]
+    sortValue: TSortColumn
+    sortDirection: SortDirection
+    onSortChange?: (value: TSortColumn, direction: SortDirection) => void
     onSearchResults?: (event: SearchResultEvent) => void
     onSearchError?: (error: string | null) => void
     onSearchReady?: (api: SearchEditorAPI) => void
@@ -75,12 +78,12 @@
     })
   })
 
-  function nextDirection(opt: SortOption): 'asc' | 'desc' {
+  function nextDirection(opt: SortOption<TSortColumn>): SortDirection {
     if (opt.value !== sortValue) return opt.defaultDirection ?? 'asc'
     return sortDirection === 'asc' ? 'desc' : 'asc'
   }
 
-  function selectSort(value: string, dir: 'asc' | 'desc') {
+  function selectSort(value: TSortColumn, dir: SortDirection) {
     onSortChange?.(value, dir)
     sortPopoverEl?.hidePopover()
     sortTriggerEl?.focus()

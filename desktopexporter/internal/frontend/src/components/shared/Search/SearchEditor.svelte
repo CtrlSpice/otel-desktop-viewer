@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang="ts" generics="TSortColumn extends string">
   import { onMount, onDestroy, type Snippet } from 'svelte'
   import {
     EditorView,
@@ -42,13 +42,14 @@
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
 
   import type { SearchEditorAPI } from './search-editor-api'
+  import type { SortDirection } from '@/contexts/signal-list-page.svelte'
   import { parseDuration } from '@/utils/time'
 
   // --- types ---
   type SearchEditorProps = {
     signal: 'traces' | 'metrics' | 'logs'
-    sortValue: string
-    sortDirection: 'asc' | 'desc'
+    sortValue: TSortColumn
+    sortDirection: SortDirection
     onSearchResults?: (event: SearchResultEvent) => void
     /** Toolbar layout: panel chrome on the search wrapper only (not the action row). */
     inToolbar?: boolean
