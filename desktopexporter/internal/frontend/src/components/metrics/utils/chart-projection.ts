@@ -4,11 +4,7 @@
 // module, can call it -- svelte-check won't resolve exports from
 // .svelte files into a .ts importer.
 
-import type {
-  GaugeDataPoint,
-  MetricTimeseries,
-  SumDataPoint,
-} from '@/types/api-types'
+import type { MetricTimeseries } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
 /**
@@ -96,8 +92,7 @@ export function timeseriesToChartTimeseries(
     for (let i = ts.datapoints.length - 1; i >= 0; i--) {
       const dp = ts.datapoints[i]!
       if (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum') continue
-      const typed = dp as GaugeDataPoint | SumDataPoint
-      const value = typed.doubleValue ?? typed.intValue ?? 0
+      const value = dp.doubleValue ?? dp.intValue ?? 0
       points.push({
         // The store sends epoch milliseconds; dividing the nanosecond BigInt
         // here cost one division per datapoint for no added precision.
@@ -106,8 +101,8 @@ export function timeseriesToChartTimeseries(
         timestampNs: dp.timestamp,
         sourceDatapointID: dp.id,
         // Cumulative Sums only; a Gauge has no interval to describe.
-        delta: typed.metricType === 'Sum' ? (typed.delta ?? null) : null,
-        isReset: typed.metricType === 'Sum' ? (typed.isReset ?? null) : null,
+        delta: dp.metricType === 'Sum' ? (dp.delta ?? null) : null,
+        isReset: dp.metricType === 'Sum' ? (dp.isReset ?? null) : null,
       })
     }
     chartTimeseries.push({
