@@ -66,6 +66,9 @@ export function rateBucketStartForSourceDatapoint(
  * LineChart wants monotonically-increasing x, so this walks each series
  * backwards. It used to build forwards and sort, which re-ordered data the
  * store had already ordered.
+ *
+ * @returns Projected chart series and their keys. `keys` preserves the input
+ * order so callers can seed `visibleKeys` without mapping over the series.
  */
 export function timeseriesToChartTimeseries(
   timeseries: MetricTimeseries[],
@@ -75,13 +78,7 @@ export function timeseriesToChartTimeseries(
    *  which resource attributes distinguish them), which this function is not
    *  always given, so the caller supplies it. */
   labelFor?: (ts: MetricTimeseries) => string
-): {
-  chartTimeseries: ChartTimeseries[]
-  /** Convenience: same `key` strings the timeseries have, in the
-   * same order. Caller can seed `visibleKeys` from this without
-   * having to map over `chartTimeseries`. */
-  keys: string[]
-} {
+) {
   const chartTimeseries: ChartTimeseries[] = []
   const keys: string[] = []
 
