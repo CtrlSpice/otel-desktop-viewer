@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { heatmapSwatches, readableTextColor } from './chart-palette'
+import {
+  categoricalPalette,
+  heatmapSwatches,
+  readableTextColor,
+} from './chart-palette'
 
 describe('heatmapSwatches', () => {
   it('returns the hot endpoint colour for a single step', () => {
@@ -35,6 +39,22 @@ describe('heatmapSwatches', () => {
     expect(heatmapSwatches(-5, 'rose-pine')).toEqual(
       heatmapSwatches(1, 'rose-pine')
     )
+  })
+
+  it('rejects non-finite step counts', () => {
+    expect(() => heatmapSwatches(Number.NaN)).toThrow(RangeError)
+    expect(() => heatmapSwatches(Number.POSITIVE_INFINITY)).toThrow(RangeError)
+    expect(() => heatmapSwatches(2 ** 32)).toThrow(RangeError)
+  })
+})
+
+describe('categoricalPalette', () => {
+  it('rejects non-finite color counts', () => {
+    expect(() => categoricalPalette(Number.NaN, 'pine')).toThrow(RangeError)
+    expect(() => categoricalPalette(Number.POSITIVE_INFINITY, 'pine')).toThrow(
+      RangeError
+    )
+    expect(() => categoricalPalette(2 ** 32, 'pine')).toThrow(RangeError)
   })
 })
 
