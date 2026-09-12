@@ -12,6 +12,11 @@ export type FormattedDateTime = {
   timezone: string
 }
 
+export type FormattedValueParts = {
+  value: string
+  unit: string
+}
+
 type DateTimeResolution = 'minutes' | 'seconds' | 'milliseconds'
 type TimestampResolution = DateTimeResolution | 'microseconds' | 'nanoseconds'
 
@@ -498,10 +503,7 @@ export function formatDuration(nanoseconds: bigint): string {
 }
 
 /** Value + unit for labeled duration display (e.g. drawer cards). */
-export function formatDurationParts(nanoseconds: bigint): {
-  value: string
-  unit: string
-} {
+export function formatDurationParts(nanoseconds: bigint): FormattedValueParts {
   if (nanoseconds >= 1_000_000_000n) {
     const seconds = Number(nanoseconds) / 1_000_000_000
     return { value: seconds.toFixed(3), unit: 's' }
@@ -522,7 +524,7 @@ export function formatTimestampParts(
   ns: bigint,
   timezone: Timezone,
   resolution: TimestampResolution = 'nanoseconds'
-): { value: string; unit: string } {
+): FormattedValueParts {
   const formatted = formatTimestamp(ns, timezone, resolution)
   const lastSpace = formatted.lastIndexOf(' ')
   if (lastSpace === -1) return { value: formatted, unit: '' }
