@@ -23,12 +23,12 @@ import { interpolateHcl } from 'd3-interpolate'
 // Per-theme heatmap endpoints. base-200 on the cold end so the lowest swatch
 // blends into the chart surface; the "hot" end varies by theme so the ramp
 // reads as theme-native rather than imported.
-const HEATMAP_ENDPOINTS: Record<string, readonly [string, string]> = {
-  'rose-pine': ['#1f1d2e', '#eb6f92'], // base-200 → error (love)
-  'rose-pine-moon': ['#2a273f', '#eb6f92'], // base-200 → error (love)
-  'rose-pine-dawn': ['#faf4ed', '#907aa9'], // base-200 → primary (iris)
-}
-const DEFAULT_HEATMAP_ENDPOINTS = HEATMAP_ENDPOINTS['rose-pine-moon']
+const DEFAULT_HEATMAP_ENDPOINTS = ['#2a273f', '#eb6f92'] as const
+const HEATMAP_ENDPOINTS = new Map<string, readonly [string, string]>([
+  ['rose-pine', ['#1f1d2e', '#eb6f92']], // base-200 → error (love)
+  ['rose-pine-moon', DEFAULT_HEATMAP_ENDPOINTS], // base-200 → error (love)
+  ['rose-pine-dawn', ['#faf4ed', '#907aa9']], // base-200 → primary (iris)
+])
 
 /**
  * Visually-stepped colour ramp for a heatmap with `steps` swatches. Interpolates
@@ -52,7 +52,7 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
   if (!Number.isFinite(safeSteps) || safeSteps >= 2 ** 32) {
     throw new RangeError('steps must produce a valid array length')
   }
-  const [start, end] = HEATMAP_ENDPOINTS[theme] ?? DEFAULT_HEATMAP_ENDPOINTS
+  const [start, end] = HEATMAP_ENDPOINTS.get(theme) ?? DEFAULT_HEATMAP_ENDPOINTS
   if (safeSteps === 1) return [end]
   const interpolator = interpolateHcl(start, end)
   const out: string[] = []
@@ -108,30 +108,36 @@ type StemPalette = {
   iris: string
 }
 
-const CATEGORICAL_PALETTES: Record<string, StemPalette> = {
-  'rose-pine': {
-    pine: '#31748f',
-    foam: '#9ccfd8',
-    gold: '#f6c177',
-    rose: '#ebbcba',
-    iris: '#c4a7e7',
-  },
-  'rose-pine-moon': {
-    pine: '#3e8fb0',
-    foam: '#9ccfd8',
-    gold: '#f6c177',
-    rose: '#ea9a97',
-    iris: '#c4a7e7',
-  },
-  'rose-pine-dawn': {
-    pine: '#286983',
-    foam: '#56949f',
-    gold: '#ea9d34',
-    rose: '#d7827e',
-    iris: '#907aa9',
-  },
-}
-const DEFAULT_CATEGORICAL_PALETTE = CATEGORICAL_PALETTES['rose-pine-moon']
+const DEFAULT_CATEGORICAL_PALETTE = {
+  pine: '#3e8fb0',
+  foam: '#9ccfd8',
+  gold: '#f6c177',
+  rose: '#ea9a97',
+  iris: '#c4a7e7',
+} satisfies StemPalette
+const CATEGORICAL_PALETTES = new Map<string, StemPalette>([
+  [
+    'rose-pine',
+    {
+      pine: '#31748f',
+      foam: '#9ccfd8',
+      gold: '#f6c177',
+      rose: '#ebbcba',
+      iris: '#c4a7e7',
+    },
+  ],
+  ['rose-pine-moon', DEFAULT_CATEGORICAL_PALETTE],
+  [
+    'rose-pine-dawn',
+    {
+      pine: '#286983',
+      foam: '#56949f',
+      gold: '#ea9d34',
+      rose: '#d7827e',
+      iris: '#907aa9',
+    },
+  ],
+])
 
 /**
  * Categorical chart palette of length `count`, sampled evenly across the
@@ -164,7 +170,7 @@ export function categoricalPalette(
   }
   if (safeCount === 0) return []
 
-  const palette = CATEGORICAL_PALETTES[theme] ?? DEFAULT_CATEGORICAL_PALETTE
+  const palette = CATEGORICAL_PALETTES.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
 
   // Rotate WAYPOINT_ORDER so `start` is at index 0. Walk continues
   // forward through pine→foam→gold→rose→iris, wrapping the *waypoint

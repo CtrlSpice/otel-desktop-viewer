@@ -31,6 +31,12 @@ describe('heatmapSwatches', () => {
     expect(heatmapSwatches(2)).toEqual(heatmapSwatches(2, 'rose-pine-moon'))
   })
 
+  it('falls back for inherited object property names', () => {
+    expect(heatmapSwatches(2, 'toString')).toEqual(
+      heatmapSwatches(2, 'rose-pine-moon')
+    )
+  })
+
   it('floors fractional steps and clamps non-positive steps to 1', () => {
     expect(heatmapSwatches(2.9, 'rose-pine')).toHaveLength(2)
     expect(heatmapSwatches(0, 'rose-pine')).toEqual(
@@ -49,6 +55,12 @@ describe('heatmapSwatches', () => {
 })
 
 describe('categoricalPalette', () => {
+  it('falls back for inherited object property names', () => {
+    expect(categoricalPalette(5, 'pine', 'constructor')).toEqual(
+      categoricalPalette(5, 'pine', 'rose-pine-moon')
+    )
+  })
+
   it('rejects non-finite color counts', () => {
     expect(() => categoricalPalette(Number.NaN, 'pine')).toThrow(RangeError)
     expect(() => categoricalPalette(Number.POSITIVE_INFINITY, 'pine')).toThrow(
