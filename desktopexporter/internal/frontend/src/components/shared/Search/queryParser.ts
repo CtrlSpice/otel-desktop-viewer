@@ -86,27 +86,27 @@ function findOperator(symbol: string): Operator | undefined {
 // The symbol an operator node resolves to. Symbol operators mostly map to
 // themselves; the regex sigils are spelled the PromQL way in query text and
 // the SQL way on the wire.
-const SIGIL_ALIASES: Record<string, string> = {
-  '=~': 'REGEXP',
-  '!~': 'NOT REGEXP',
-}
+const SIGIL_ALIASES = new Map<string, string>([
+  ['=~', 'REGEXP'],
+  ['!~', 'NOT REGEXP'],
+])
 
-const KEYWORD_SYMBOLS: Record<string, string> = {
-  Contains: 'CONTAINS',
-  Regexp: 'REGEXP',
-  In: 'IN',
-  NotContains: 'NOT CONTAINS',
-  NotIn: 'NOT IN',
-}
+const KEYWORD_SYMBOLS = new Map<string, string>([
+  ['Contains', 'CONTAINS'],
+  ['Regexp', 'REGEXP'],
+  ['In', 'IN'],
+  ['NotContains', 'NOT CONTAINS'],
+  ['NotIn', 'NOT IN'],
+])
 
 // Which operator a field must allow for a derived operator to be legal.
 // `field = NULL` has always been legal wherever `=` is, so IS NULL rides on
 // =; the negations ride on what they negate.
-const COMPAT_ALIASES: Record<string, string> = {
-  'IS NULL': '=',
-  'IS NOT NULL': '!=',
-  'NOT REGEXP': 'REGEXP',
-}
+const COMPAT_ALIASES = new Map<string, string>([
+  ['IS NULL', '='],
+  ['IS NOT NULL', '!='],
+  ['NOT REGEXP', 'REGEXP'],
+])
 
 interface WalkContext {
   input: string
@@ -146,13 +146,15 @@ function namedChildren(node: SyntaxNode): SyntaxNode[] {
 // counting Groups turned every parenthetical remark into a hard parse
 // error. The old lexer's heuristic was "has an operator or logical token",
 // and this is that rule expressed over the tree.
+type TreeSurvey = {
+  structured: boolean
+  firstError: { from: number; to: number } | null
+}
+
 function surveyTree(
   tree: ReturnType<typeof parser.parse>,
   predicateEnd = Number.POSITIVE_INFINITY
-): {
-  structured: boolean
-  firstError: { from: number; to: number } | null
-} {
+): TreeSurvey {
   let structured = false
   let firstError: { from: number; to: number } | null = null
   tree.iterate({
@@ -304,10 +306,10 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   let symbol: string
   if (opNode.name === 'Operator') {
     const raw = text(ctx, opNode)
-    symbol = SIGIL_ALIASES[raw] ?? raw
+    symbol = SIGIL_ALIASES.get(raw) ?? raw
   } else {
     const kw = opNode.firstChild
-    symbol = kw ? (KEYWORD_SYMBOLS[kw.name] ?? '') : ''
+    symbol = kw ? (KEYWORD_SYMBOLS.get(kw.name) ?? '') : ''
   }
 
   if (!valueNode) {
@@ -369,7 +371,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   }
 
   if (field) {
-    const required = COMPAT_ALIASES[symbol] ?? symbol
+    const required = COMPAT_ALIASES.get(symbol) ?? symbol
     if (!field.operators.some(op => op.symbol === required)) {
       fail(
         ctx,
