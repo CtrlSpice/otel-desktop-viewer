@@ -13,6 +13,7 @@
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import type { TimeContext } from '@/contexts/time-context.svelte'
+  import { isNodeTarget } from '@/components/shared/utils/dom-target'
 
   type Props = {
     signal: 'traces' | 'metrics' | 'logs'
@@ -96,7 +97,7 @@
     if (!popoverOpen) return
     const target = event.target
     if (
-      target instanceof Node &&
+      isNodeTarget(target) &&
       (buttonEl?.contains(target) || popoverEl?.contains(target))
     )
       return
@@ -104,10 +105,11 @@
   }
 
   $effect(() => {
-    if (popoverOpen) {
-      document.addEventListener('click', handleClickOutside, true)
+    const ownerDocument = buttonEl?.ownerDocument
+    if (popoverOpen && ownerDocument) {
+      ownerDocument.addEventListener('click', handleClickOutside, true)
       return () =>
-        document.removeEventListener('click', handleClickOutside, true)
+        ownerDocument.removeEventListener('click', handleClickOutside, true)
     }
   })
 

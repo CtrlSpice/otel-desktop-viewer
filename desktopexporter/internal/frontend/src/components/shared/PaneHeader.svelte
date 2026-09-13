@@ -37,6 +37,7 @@
    *   manufacturing borders around or between the header and pane body.
    */
   import type { Snippet } from 'svelte'
+  import { isElementTarget } from '@/components/shared/utils/dom-target'
   import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import PaneTimestampHeader from '@/components/shared/PaneTimestampHeader.svelte'
 
@@ -165,12 +166,11 @@
   )
 
   function handleTablistKeydown(event: KeyboardEvent) {
-    if (!(event.currentTarget instanceof HTMLElement)) return
+    if (!isElementTarget(event.currentTarget)) return
     const tablist = event.currentTarget
-    const target =
-      event.target instanceof Element
-        ? event.target.closest<HTMLButtonElement>('[role="tab"]')
-        : null
+    const target = isElementTarget(event.target)
+      ? event.target.closest<HTMLButtonElement>('[role="tab"]')
+      : null
     if (!target || !tablist.contains(target)) return
 
     const tabs = Array.from(

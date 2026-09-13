@@ -18,6 +18,7 @@
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import { chartNeutral } from '@/utils/chart-palette'
+  import { isElementTarget } from '@/components/shared/utils/dom-target'
   import ChartAggregateSummaryRows from '@/components/metrics/Charts/ChartAggregateSummaryRows.svelte'
   import ChartSelectionLegend, {
     type SelectionLegendRow,
@@ -410,10 +411,9 @@
   function pointerYDataValue(e: MouseEvent): number | undefined {
     const ctx = lineChartContext
     if (!ctx?.yScale?.invert) return undefined
-    const root =
-      e.target instanceof Element
-        ? e.target.closest('.lc-root-container')
-        : null
+    const root = isElementTarget(e.target)
+      ? e.target.closest('.lc-root-container')
+      : null
     if (!root) return undefined
     const rect = root.getBoundingClientRect()
     const plotY = e.clientY - rect.top - ctx.padding.top

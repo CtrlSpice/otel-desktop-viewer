@@ -104,6 +104,25 @@ describe('startDrag', () => {
     expect(onEnd).toHaveBeenCalledOnce()
   })
 
+  it('captures a handle from a foreign document', () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const foreignDocument = iframe.contentDocument
+    if (!foreignDocument) throw new Error('Expected iframe document')
+    const foreignHandle = foreignDocument.createElement('div')
+    foreignHandle.setPointerCapture = vi.fn()
+    foreignHandle.releasePointerCapture = vi.fn()
+    foreignHandle.hasPointerCapture = vi.fn(() => true)
+    foreignDocument.body.appendChild(foreignHandle)
+
+    startDrag(down(foreignHandle), { axis: 'x', onMove: () => {} })
+
+    expect(foreignHandle).not.toBeInstanceOf(HTMLElement)
+    expect(foreignHandle.setPointerCapture).toHaveBeenCalledWith(1)
+    window.dispatchEvent(new MouseEvent('pointerup'))
+    expect(foreignHandle.releasePointerCapture).toHaveBeenCalledWith(1)
+  })
+
   it('ends once, whichever way the drag finishes', () => {
     const onEnd = vi.fn()
     startDrag(down(handle()), { axis: 'x', onMove: () => {}, onEnd })

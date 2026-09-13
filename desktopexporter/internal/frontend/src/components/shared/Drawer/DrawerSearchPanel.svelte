@@ -5,6 +5,10 @@
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import {
+    isElementTarget,
+    isNodeTarget,
+  } from '@/components/shared/utils/dom-target'
+  import {
     createPopoverID,
     setupAnchorPopover,
   } from '@/components/shared/utils/anchor-popover'
@@ -152,10 +156,9 @@
     }
 
     const menuItems = sortMenuItems()
-    const current =
-      event.target instanceof Element
-        ? event.target.closest<HTMLButtonElement>('[role="menuitemradio"]')
-        : null
+    const current = isElementTarget(event.target)
+      ? event.target.closest<HTMLButtonElement>('[role="menuitemradio"]')
+      : null
     const currentIndex = current ? menuItems.indexOf(current) : -1
     if (currentIndex < 0 || menuItems.length === 0) return
 
@@ -194,7 +197,7 @@
 
   function handleSortPopoverFocusout(event: FocusEvent) {
     const next = event.relatedTarget
-    if (next instanceof Node && sortPopoverEl?.contains(next)) return
+    if (isNodeTarget(next) && sortPopoverEl?.contains(next)) return
     sortPopoverEl?.hidePopover()
   }
 </script>

@@ -1,3 +1,5 @@
+import { isElementTarget } from './dom-target'
+
 type KeyDelta =
   | { kind: 'relative'; offset: number }
   | { kind: 'absolute'; position: 'first' | 'last' }
@@ -30,7 +32,7 @@ function resolveNextPos(
 }
 
 function shouldHandle(el: EventTarget | null, root: HTMLElement): boolean {
-  if (!(el instanceof Element) || !root.contains(el)) return false
+  if (!isElementTarget(el) || !root.contains(el)) return false
   if (el.closest('input, textarea, select, [contenteditable="true"]'))
     return false
   if (el.closest('button')) return false
@@ -98,7 +100,9 @@ export function tableNav(node: HTMLElement, opts: TableNavOptions) {
     const rows = getRows()
     if (rows.length === 0) return
 
-    const currentIdx = rows.findIndex(row => row === document.activeElement)
+    const currentIdx = rows.findIndex(
+      row => row === node.ownerDocument.activeElement
+    )
     const focused = rows[currentIdx]
     const currentID = focused?.dataset[dataKey()] ?? null
 

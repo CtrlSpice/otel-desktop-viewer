@@ -30,6 +30,7 @@
   import { LogIcon } from '@/icons'
   import ThemeToggle from '@/components/shared/ThemeToggle.svelte'
   import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
+  import { isElementTarget } from '@/components/shared/utils/dom-target'
   import {
     drawerWidth,
     MIN_DRAWER_WIDTH_REM,
@@ -479,7 +480,7 @@
 
   function drawerItemFromEvent(event: Event): HTMLElement | null {
     const target = event.target
-    if (!(target instanceof Element)) return null
+    if (!isElementTarget(target)) return null
     const wrapper = target.closest<HTMLElement>('[data-drawer-item-key]')
     if (!wrapper || !drawerBodyEl?.contains(wrapper)) return null
     const focusedControl = target.closest<HTMLElement>(

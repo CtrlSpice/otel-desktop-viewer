@@ -256,6 +256,7 @@
     resolveNextPos,
     type KeyDelta,
   } from '@/components/shared/utils/table-keyboard-nav'
+  import { isElementTarget } from '@/components/shared/utils/dom-target'
   import {
     computeSearchCollapsedParents,
     buildStructuralMaps,
@@ -801,7 +802,7 @@
   }
 
   function shouldHandleGridKey(el: EventTarget | null): boolean {
-    if (!(el instanceof Element) || !gridHostEl?.contains(el)) return false
+    if (!isElementTarget(el) || !gridHostEl?.contains(el)) return false
     if (el.closest('input, textarea, select, [contenteditable="true"]'))
       return false
     if (el.closest('button')) return false
@@ -851,7 +852,7 @@
     if (!shouldHandleGridKey(e.target)) return
     if (visibleRows.length === 0) return
 
-    const focused = document.activeElement
+    const focused = gridHostEl?.ownerDocument.activeElement
     const focusedID =
       focused
         ?.closest<HTMLTableRowElement>('tr[data-span-id]')

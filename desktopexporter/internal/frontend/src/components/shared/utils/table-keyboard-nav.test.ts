@@ -2,8 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { tableNav } from './table-keyboard-nav'
 
-function setupTable() {
-  const table = document.createElement('table')
+function setupTable(ownerDocument: Document = document) {
+  const table = ownerDocument.createElement('table')
   const first = table.insertRow()
   const second = table.insertRow()
   first.dataset.rowId = 'first'
@@ -12,7 +12,7 @@ function setupTable() {
   second.tabIndex = -1
   first.scrollIntoView = vi.fn()
   second.scrollIntoView = vi.fn()
-  document.body.appendChild(table)
+  ownerDocument.body.appendChild(table)
   return { table, first, second }
 }
 
@@ -58,6 +58,30 @@ describe('tableNav DOM targets', () => {
 
     expect(onSelect).toHaveBeenCalledWith('second')
     expect(second).toHaveFocus()
+    action.destroy()
+  })
+
+  it('navigates rows owned by a foreign document', () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const foreignDocument = iframe.contentDocument
+    if (!foreignDocument) throw new Error('Expected iframe document')
+    const { table, first, second } = setupTable(foreignDocument)
+    const onSelect = vi.fn()
+    const action = tableNav(table, { rowIdAttr: 'row-id', onSelect })
+    first.focus()
+
+    first.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+
+    expect(table).not.toBeInstanceOf(HTMLElement)
+    expect(onSelect).toHaveBeenCalledWith('second')
+    expect(foreignDocument.activeElement).toBe(second)
     action.destroy()
   })
 })
