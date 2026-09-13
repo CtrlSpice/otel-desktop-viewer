@@ -816,6 +816,28 @@ describe('WaterfallView column separators', () => {
     )
   })
 
+  it('rejects extreme finite widths before layout arithmetic overflows', async () => {
+    localStorage.setItem(
+      'waterfall-column-widths',
+      JSON.stringify({
+        span: Number.MAX_VALUE,
+        service: Number.MAX_VALUE,
+        timeline: Number.MAX_VALUE,
+      })
+    )
+
+    renderTree()
+    await tick()
+
+    for (const separator of separators()) {
+      expect(Number.isFinite(Number.parseFloat(separator.style.left))).toBe(
+        true
+      )
+      expect(separator.getAttribute('aria-valuenow')).not.toContain('NaN')
+      expect(separator.getAttribute('aria-valuenow')).not.toContain('Infinity')
+    }
+  })
+
   it('keeps resizing usable when width persistence is blocked', async () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('blocked')

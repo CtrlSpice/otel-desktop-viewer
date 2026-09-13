@@ -439,7 +439,11 @@
   }
 
   function isFiniteWidth(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value)
+    return (
+      typeof value === 'number' &&
+      Number.isFinite(value) &&
+      Math.abs(value) <= Number.MAX_SAFE_INTEGER
+    )
   }
 
   function loadStoredWidths(): ColumnWidths {

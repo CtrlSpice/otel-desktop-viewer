@@ -1,6 +1,7 @@
 import { setContext, getContext } from 'svelte'
 import {
   type Timezone,
+  isDateTimestamp,
   normalizeTimezone,
   recordRecentTimeRange,
 } from '@/utils/time'
@@ -15,6 +16,17 @@ type TimeSelection =
   | { type: 'all' }
   | { type: 'preset'; presetIndex: number; durationMs: number }
   | { type: 'custom' | 'recent'; start: number; end: number }
+
+export const TIME_RANGE_PRESETS = [
+  { label: 'All', duration: undefined },
+  { label: '5m', duration: 300_000 },
+  { label: '15m', duration: 900_000 },
+  { label: '30m', duration: 1_800_000 },
+  { label: '1h', duration: 3_600_000 },
+  { label: '6h', duration: 21_600_000 },
+  { label: '24h', duration: 86_400_000 },
+  { label: '7d', duration: 604_800_000 },
+] as const
 
 export type QueryTimeRangeMs = {
   startTime: number | null
@@ -76,8 +88,8 @@ function isBoundedSelection(
   return (
     (value.type === 'custom' || value.type === 'recent') &&
     hasOnlyKeys(value, ['type', 'start', 'end']) &&
-    isFiniteNumber(value.start) &&
-    isFiniteNumber(value.end) &&
+    isDateTimestamp(value.start) &&
+    isDateTimestamp(value.end) &&
     value.start < value.end
   )
 }
@@ -86,15 +98,16 @@ function isTimeSelection(value: unknown): value is TimeSelection {
   if (!isTimeSelectionFields(value)) return false
   if (value.type === 'all') return hasOnlyKeys(value, ['type'])
   if (isBoundedSelection(value)) return true
-  return (
-    value.type === 'preset' &&
-    hasOnlyKeys(value, ['type', 'presetIndex', 'durationMs']) &&
-    isFiniteNumber(value.presetIndex) &&
-    Number.isInteger(value.presetIndex) &&
-    value.presetIndex > 0 &&
-    isFiniteNumber(value.durationMs) &&
-    value.durationMs > 0
-  )
+  if (
+    value.type !== 'preset' ||
+    !hasOnlyKeys(value, ['type', 'presetIndex', 'durationMs']) ||
+    !isFiniteNumber(value.presetIndex) ||
+    !Number.isInteger(value.presetIndex) ||
+    !isFiniteNumber(value.durationMs)
+  ) {
+    return false
+  }
+  return TIME_RANGE_PRESETS[value.presetIndex]?.duration === value.durationMs
 }
 
 /** Restore a current persisted shape, otherwise use the unbounded default. */
@@ -126,8 +139,8 @@ function parseTimeQuery(
   if (
     !query.start ||
     !query.end ||
-    !Number.isFinite(start) ||
-    !Number.isFinite(end) ||
+    !isDateTimestamp(start) ||
+    !isDateTimestamp(end) ||
     start >= end
   ) {
     return null

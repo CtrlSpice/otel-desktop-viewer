@@ -621,6 +621,34 @@ describe('loadRecentTimeRanges', () => {
     })
     expect(loadRecentTimeRanges()).toEqual([])
   })
+
+  it('returns salvaged rows when the cleanup write is blocked', () => {
+    const saved = JSON.stringify([
+      { start: 1, end: 2, usedAt: 100 },
+      { start: 3, end: '4', usedAt: 200 },
+    ])
+    vi.stubGlobal('localStorage', {
+      getItem: () => saved,
+      setItem() {
+        throw new Error('blocked')
+      },
+    })
+
+    expect(loadRecentTimeRanges()).toEqual([{ start: 1, end: 2, usedAt: 100 }])
+  })
+
+  it('salvages valid rows while rejecting Date-domain overflow', () => {
+    localStorage.setItem(
+      'datetime-filter-recent',
+      JSON.stringify([
+        { start: 1, end: 2, usedAt: 100 },
+        { start: 3, end: 8_640_000_000_000_001, usedAt: 200 },
+        { start: 5, end: 6, usedAt: 8_640_000_000_000_001 },
+      ])
+    )
+
+    expect(loadRecentTimeRanges()).toEqual([{ start: 1, end: 2, usedAt: 100 }])
+  })
 })
 
 describe('recordRecentTimeRange', () => {

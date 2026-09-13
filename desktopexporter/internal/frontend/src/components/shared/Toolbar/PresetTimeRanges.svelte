@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import {
+    getTimeContext,
+    TIME_RANGE_PRESETS,
+  } from '@/contexts/time-context.svelte'
 
   let ctx = getTimeContext()
   if (!ctx) {
@@ -8,19 +11,8 @@
     )
   }
 
-  const PRESETS = [
-    { label: 'All', duration: undefined },
-    { label: '5m', duration: 300000 },
-    { label: '15m', duration: 900000 },
-    { label: '30m', duration: 1800000 },
-    { label: '1h', duration: 3600000 },
-    { label: '6h', duration: 21600000 },
-    { label: '24h', duration: 86400000 },
-    { label: '7d', duration: 604800000 },
-  ] as const
-
   function applyPreset(index: number) {
-    const preset = PRESETS[index]
+    const preset = TIME_RANGE_PRESETS[index]
     if (!preset) return
     ctx.setSelection(
       preset.duration === undefined
@@ -31,7 +23,7 @@
 </script>
 
 <div class="preset-time-ranges">
-  {#each PRESETS as preset, index (preset.label)}
+  {#each TIME_RANGE_PRESETS as preset, index (preset.label)}
     {@const selected =
       index === 0
         ? ctx.selection.type === 'all'

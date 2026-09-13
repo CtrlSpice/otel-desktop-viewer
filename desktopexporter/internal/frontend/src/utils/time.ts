@@ -558,8 +558,14 @@ export type RecentTimeRange = {
   usedAt: number
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
+const MAX_DATE_TIMESTAMP = 8_640_000_000_000_000
+
+export function isDateTimestamp(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    Math.abs(value) <= MAX_DATE_TIMESTAMP
+  )
 }
 
 function isRecentTimeRange(value: unknown): value is RecentTimeRange {
@@ -569,9 +575,9 @@ function isRecentTimeRange(value: unknown): value is RecentTimeRange {
     'start' in value &&
     'end' in value &&
     'usedAt' in value &&
-    isFiniteNumber(value.start) &&
-    isFiniteNumber(value.end) &&
-    isFiniteNumber(value.usedAt) &&
+    isDateTimestamp(value.start) &&
+    isDateTimestamp(value.end) &&
+    isDateTimestamp(value.usedAt) &&
     value.start < value.end
   )
 }
@@ -586,7 +592,11 @@ export function loadRecentTimeRanges(): RecentTimeRange[] {
     const sorted = [...rows].sort((a, b) => b.usedAt - a.usedAt)
     const trimmed = sorted.slice(0, MAX_RECENT_TIME_RANGES)
     if (trimmed.length < parsed.length) {
-      localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(trimmed))
+      try {
+        localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(trimmed))
+      } catch {
+        // Cleanup is opportunistic; successfully decoded rows remain usable.
+      }
     }
     return trimmed
   } catch {

@@ -8,6 +8,7 @@ import {
   repairEmptyPersistedVisibleKeys,
   resolveTimeseriesVisible,
   savePersistedAggregationView,
+  savePersistedShowAllSeriesAggregate,
   savePersistedTimeseriesVisible,
 } from '@/components/metrics/utils/metric-timeseries-visible'
 
@@ -59,6 +60,9 @@ describe('repairEmptyPersistedVisibleKeys', () => {
     expect(stored.showAllSeriesAggregate).toBe(true)
     expect(stored.futurePreference).toBe('preserved')
     expect(stored.visibleKeys).toBeUndefined()
+    expect(loadPersistedAggregationView('m1', ['raw', 'rate'])).toBe('rate')
+    expect(loadPersistedShowAllSeriesAggregate('m1')).toBe(true)
+    expect(resolveTimeseriesVisible(keys, 'm1')).toEqual(keys)
   })
 
   it('leaves a non-empty selection alone', () => {
@@ -97,6 +101,25 @@ describe('repairEmptyPersistedVisibleKeys', () => {
     expect(() => repairEmptyPersistedVisibleKeys()).not.toThrow()
     vi.restoreAllMocks()
     expect(localStorage.getItem('metrics:view:storage-version')).toBeNull()
+  })
+
+  it('does not recreate an empty selection when settings change after repair', () => {
+    localStorage.setItem(
+      metricViewStorageKey('m5'),
+      JSON.stringify({
+        visibleKeys: [],
+        aggregationView: 'rate',
+        showAllSeriesAggregate: true,
+      })
+    )
+    repairEmptyPersistedVisibleKeys()
+
+    savePersistedAggregationView('m5', 'sum')
+    savePersistedShowAllSeriesAggregate('m5', false)
+
+    const stored = JSON.parse(localStorage.getItem(metricViewStorageKey('m5'))!)
+    expect(stored).toEqual({ aggregationView: 'sum' })
+    expect(resolveTimeseriesVisible(keys, 'm5')).toEqual(keys)
   })
 })
 
@@ -173,7 +196,9 @@ describe('persisted metric view decoding', () => {
   it('preserves a deliberate empty selection after migration', () => {
     repairEmptyPersistedVisibleKeys()
     savePersistedTimeseriesVisible('empty', [])
+    savePersistedAggregationView('empty', 'sum')
     repairEmptyPersistedVisibleKeys()
     expect(persistedVisibleKeys('empty')).toEqual([])
+    expect(loadPersistedAggregationView('empty', ['sum'])).toBe('sum')
   })
 })

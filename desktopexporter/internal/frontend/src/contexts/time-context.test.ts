@@ -3,7 +3,10 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import { tick } from 'svelte'
 import { screen } from '@testing-library/svelte'
 import type { TimeContext } from '@/contexts/time-context.svelte'
-import { selectionToQueryRangeMs } from '@/contexts/time-context.svelte'
+import {
+  selectionToQueryRangeMs,
+  TIME_RANGE_PRESETS,
+} from '@/contexts/time-context.svelte'
 import { loadRecentTimeRanges, normalizeTimezone } from '@/utils/time'
 import TimeProbe from '@/test/TimeProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -95,6 +98,39 @@ describe('time context localStorage restore', () => {
     expect(selectionDuration()).toBe(900_000)
   })
 
+  for (const [presetIndex, preset] of TIME_RANGE_PRESETS.entries()) {
+    if (preset.duration === undefined) continue
+    it(`restores the current ${preset.label} preset pair`, () => {
+      localStorage.setItem(
+        'time-selection',
+        JSON.stringify({
+          type: 'preset',
+          presetIndex,
+          durationMs: preset.duration,
+        })
+      )
+      setTestUrl('/traces')
+      renderProbe()
+      expect(selectionType()).toBe('preset')
+      expect(selectionPresetIndex()).toBe(String(presetIndex))
+      expect(selectionDuration()).toBe(preset.duration)
+    })
+  }
+
+  it('rejects a preset duration that does not match its index', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        type: 'preset',
+        presetIndex: 2,
+        durationMs: 300_000,
+      })
+    )
+    setTestUrl('/traces')
+    renderProbe()
+    expect(selectionType()).toBe('all')
+  })
+
   it('rejects saved selections with fields outside their exact variant', () => {
     localStorage.setItem(
       'time-selection',
@@ -138,6 +174,36 @@ describe('time context localStorage restore', () => {
     localStorage.setItem(
       'time-selection',
       JSON.stringify({ type: 'recent', start: 222, end: 111 })
+    )
+    setTestUrl('/traces')
+    renderProbe()
+    expect(selectionType()).toBe('all')
+  })
+
+  it('accepts bounds at the edge of the Date timestamp domain', () => {
+    const maxDateTimestamp = 8_640_000_000_000_000
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        type: 'custom',
+        start: maxDateTimestamp - 1,
+        end: maxDateTimestamp,
+      })
+    )
+    setTestUrl('/traces')
+    renderProbe()
+    expect(selectionStart()).toBe(maxDateTimestamp - 1)
+    expect(selectionEnd()).toBe(maxDateTimestamp)
+  })
+
+  it('rejects bounds outside the Date timestamp domain', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        type: 'custom',
+        start: 0,
+        end: 8_640_000_000_000_001,
+      })
     )
     setTestUrl('/traces')
     renderProbe()
@@ -196,6 +262,17 @@ describe('time context URL precedence', () => {
     setTestUrl('/traces?start=abc&end=def')
     renderProbe()
     expect(selectionType()).toBe('custom')
+    expect(selectionStart()).toBe(111)
+    expect(selectionEnd()).toBe(222)
+  })
+
+  it('falls back to localStorage when URL bounds exceed the Date domain', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({ start: 111, end: 222, type: 'custom' })
+    )
+    setTestUrl('/traces?start=333&end=8640000000000001')
+    renderProbe()
     expect(selectionStart()).toBe(111)
     expect(selectionEnd()).toBe(222)
   })
