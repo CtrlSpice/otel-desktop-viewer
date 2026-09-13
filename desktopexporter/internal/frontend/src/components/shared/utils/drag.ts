@@ -1,4 +1,4 @@
-import { isElementTarget } from './dom-target'
+import { isHTMLElementTarget } from './dom-target'
 
 /**
  * The mechanics every drag handle needs, and nothing about what a drag means.
@@ -46,7 +46,10 @@ export function startDrag(e: DragStartEvent, opts: DragOptions): DragHandle {
   e.preventDefault()
 
   const start = opts.axis === 'x' ? e.clientX : e.clientY
-  const target = isElementTarget(e.currentTarget) ? e.currentTarget : null
+  const target = isHTMLElementTarget(e.currentTarget) ? e.currentTarget : null
+  const ownerDocument = target?.ownerDocument ?? document
+  const ownerWindow = ownerDocument.defaultView ?? window
+  const body = ownerDocument.body
 
   // Capture routes every later pointer event to this element, so a fast drag
   // that outruns the cursor -- or leaves the window -- keeps resizing instead
@@ -62,10 +65,10 @@ export function startDrag(e: DragStartEvent, opts: DragOptions): DragHandle {
   // usually over some other element, and that element's cursor would win.
   // Same for selection -- suppressing it on the handle does nothing once the
   // pointer is over the text being selected.
-  const prevCursor = document.body.style.cursor
-  const prevSelect = document.body.style.userSelect
-  document.body.style.cursor = opts.axis === 'x' ? 'col-resize' : 'row-resize'
-  document.body.style.userSelect = 'none'
+  const prevCursor = body.style.cursor
+  const prevSelect = body.style.userSelect
+  body.style.cursor = opts.axis === 'x' ? 'col-resize' : 'row-resize'
+  body.style.userSelect = 'none'
 
   let done = false
 
@@ -77,11 +80,11 @@ export function startDrag(e: DragStartEvent, opts: DragOptions): DragHandle {
   function end() {
     if (done) return
     done = true
-    document.body.style.cursor = prevCursor
-    document.body.style.userSelect = prevSelect
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', end)
-    window.removeEventListener('pointercancel', end)
+    body.style.cursor = prevCursor
+    body.style.userSelect = prevSelect
+    ownerWindow.removeEventListener('pointermove', move)
+    ownerWindow.removeEventListener('pointerup', end)
+    ownerWindow.removeEventListener('pointercancel', end)
     try {
       if (target?.hasPointerCapture(e.pointerId)) {
         target.releasePointerCapture(e.pointerId)
@@ -92,9 +95,9 @@ export function startDrag(e: DragStartEvent, opts: DragOptions): DragHandle {
     opts.onEnd?.()
   }
 
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', end)
-  window.addEventListener('pointercancel', end)
+  ownerWindow.addEventListener('pointermove', move)
+  ownerWindow.addEventListener('pointerup', end)
+  ownerWindow.addEventListener('pointercancel', end)
 
   return { cancel: end }
 }

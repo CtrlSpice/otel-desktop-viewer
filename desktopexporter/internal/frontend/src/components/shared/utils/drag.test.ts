@@ -108,19 +108,42 @@ describe('startDrag', () => {
     const iframe = document.createElement('iframe')
     document.body.appendChild(iframe)
     const foreignDocument = iframe.contentDocument
-    if (!foreignDocument) throw new Error('Expected iframe document')
+    const foreignWindow = iframe.contentWindow
+    if (!foreignDocument || !foreignWindow) {
+      throw new Error('Expected iframe browsing context')
+    }
     const foreignHandle = foreignDocument.createElement('div')
     foreignHandle.setPointerCapture = vi.fn()
     foreignHandle.releasePointerCapture = vi.fn()
     foreignHandle.hasPointerCapture = vi.fn(() => true)
     foreignDocument.body.appendChild(foreignHandle)
+    foreignDocument.body.style.cursor = 'wait'
+    const onMove = vi.fn()
+    const onEnd = vi.fn()
 
-    startDrag(down(foreignHandle), { axis: 'x', onMove: () => {} })
+    startDrag(down(foreignHandle), { axis: 'x', onMove, onEnd })
 
     expect(foreignHandle).not.toBeInstanceOf(HTMLElement)
     expect(foreignHandle.setPointerCapture).toHaveBeenCalledWith(1)
-    window.dispatchEvent(new MouseEvent('pointerup'))
+    expect(foreignDocument.body.style.cursor).toBe('col-resize')
+    expect(foreignDocument.body.style.userSelect).toBe('none')
+    expect(document.body.style.cursor).toBe('')
+
+    foreignWindow.dispatchEvent(
+      new MouseEvent('pointermove', { clientX: 140, clientY: 100 })
+    )
+    expect(onMove).toHaveBeenCalledWith(40)
+    foreignWindow.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(onEnd).toHaveBeenCalledOnce()
     expect(foreignHandle.releasePointerCapture).toHaveBeenCalledWith(1)
+    expect(foreignDocument.body.style.cursor).toBe('wait')
+    expect(foreignDocument.body.style.userSelect).toBe('')
+
+    foreignWindow.dispatchEvent(
+      new MouseEvent('pointermove', { clientX: 180, clientY: 100 })
+    )
+    expect(onMove).toHaveBeenCalledOnce()
   })
 
   it('ends once, whichever way the drag finishes', () => {
