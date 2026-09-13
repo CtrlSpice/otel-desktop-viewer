@@ -16,12 +16,12 @@ Previously cleared rules also promoted to the standard gate are
 `no-array-filter-map`, `no-chained-type-assertions`,
 `no-conditional-empty-object-spread`, and `no-unknown-returns`.
 
-The complete preset now reports **104 diagnostics**:
+The complete preset now reports **76 diagnostics**:
 
 | Rule | Remaining findings |
 | --- | ---: |
-| `require-safety-comment-for-type-assertion` | 35 |
-| `no-known-value-widening` | 26 |
+| `require-safety-comment-for-type-assertion` | 32 |
+| `no-known-value-widening` | 1 |
 | `no-runtime-typeof` | 24 |
 | `no-unsafe-dictionary-type` | 12 |
 | `no-module-mocking` | 5 |
@@ -40,8 +40,14 @@ predicates are accepted. Non-predicate checks still report 24 errors. Do not
 promote this rule to standard lint until that count reaches zero.
 
 After that policy change, PR #486 resolved four more module-mocking findings,
-taking the current total from 108 to 104. This is another source fix; it does
-not change the eight-finding policy reclassification above.
+taking the total from 108 to 104. This is another source fix; it does not change
+the eight-finding policy reclassification above.
+
+The finite lookup and correlated search-result slices resolve 28 more source
+findings from that latest-main count: 25 known-value widenings and three result
+or finite-lookup assertions. The remaining `no-known-value-widening` finding
+belongs to persistence parsing, so that rule remains evaluation-only rather
+than joining the standard lint gate.
 
 Next slices address finite lookups, inferred or named contracts, DOM narrowing,
 and typed component harnesses. Persistence parsing must preserve salvage

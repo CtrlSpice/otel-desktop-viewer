@@ -3,6 +3,7 @@ import {
   readRoute,
   withoutParams,
   type HistoryMode,
+  type RouteQuery,
 } from './router'
 import { METRIC_VIEW_PARAMS, type MetricViewParam } from './query-params'
 import type { AggregationView } from '@/components/metrics/utils/aggregation'
@@ -249,9 +250,9 @@ export function metricViewQueryToParams(
  * @example Keeps `start` and `end` while swapping `agg`, `htab`, `hscope`, and `dp`.
  */
 export function mergeRouteQueryWithMetricView(
-  routeQuery: Record<string, string>,
+  routeQuery: RouteQuery,
   q: MetricViewQuery
-): Record<string, string> {
+): RouteQuery {
   return {
     ...withoutParams(routeQuery, METRIC_VIEW_PARAMS),
     ...metricViewQueryToParams(q),
