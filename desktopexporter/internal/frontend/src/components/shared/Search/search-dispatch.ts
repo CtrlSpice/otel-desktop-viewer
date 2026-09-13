@@ -40,33 +40,24 @@ export type SearchEventFactory = (
 
 export function createSearchDispatch(api: SearchAPI) {
   return {
-    traces: (
-      ctx,
-      queryTree = undefined,
-      limit = undefined,
-      sort = undefined
-    ) => () =>
-      api.searchTraces(ctx.startTime, ctx.endTime, queryTree, limit, sort),
-    logs: (
-      ctx,
-      queryTree = undefined,
-      limit = undefined,
-      sort = undefined
-    ) => () =>
-      api.searchLogs(ctx.startTime, ctx.endTime, queryTree, limit, sort),
-    metrics: (
-      ctx,
-      queryTree = undefined,
-      limit = undefined,
-      sort = undefined
-    ) => () =>
-      api.searchMetricSummaries(
-        ctx.startTime,
-        ctx.endTime,
-        queryTree,
-        limit,
-        sort
-      ),
+    traces:
+      (ctx, queryTree = undefined, limit = undefined, sort = undefined) =>
+      () =>
+        api.searchTraces(ctx.startTime, ctx.endTime, queryTree, limit, sort),
+    logs:
+      (ctx, queryTree = undefined, limit = undefined, sort = undefined) =>
+      () =>
+        api.searchLogs(ctx.startTime, ctx.endTime, queryTree, limit, sort),
+    metrics:
+      (ctx, queryTree = undefined, limit = undefined, sort = undefined) =>
+      () =>
+        api.searchMetricSummaries(
+          ctx.startTime,
+          ctx.endTime,
+          queryTree,
+          limit,
+          sort
+        ),
   } satisfies SearchDispatch
 }
 
