@@ -253,8 +253,8 @@
   import WaterfallRow from './WaterfallRow.svelte'
   import {
     escapeForSelector,
+    keyDeltaFor,
     resolveNextPos,
-    type KeyDelta,
   } from '@/components/shared/utils/table-keyboard-nav'
   import {
     computeSearchCollapsedParents,
@@ -268,17 +268,6 @@
 
   const WATERFALL_ROW_HEIGHT_PX = 28
   const GRID_PAGE_STEP = 8
-
-  const KEY_DELTAS: Record<string, KeyDelta> = {
-    ArrowDown: { kind: 'relative', offset: 1 },
-    j: { kind: 'relative', offset: 1 },
-    ArrowUp: { kind: 'relative', offset: -1 },
-    k: { kind: 'relative', offset: -1 },
-    PageDown: { kind: 'relative', offset: GRID_PAGE_STEP },
-    PageUp: { kind: 'relative', offset: -GRID_PAGE_STEP },
-    Home: { kind: 'absolute', position: 'first' },
-    End: { kind: 'absolute', position: 'last' },
-  }
 
   // --- Visibility from collapse state (pure) ---
 
@@ -896,7 +885,7 @@
       return
     }
 
-    const delta = KEY_DELTAS[e.key]
+    const delta = keyDeltaFor(e.key, GRID_PAGE_STEP)
     if (!delta) return
 
     e.preventDefault()

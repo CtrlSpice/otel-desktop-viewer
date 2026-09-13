@@ -457,15 +457,34 @@ export function traceSummaryDurationNs(
   return ns >= 0n ? ns : undefined
 }
 
-const DURATION_UNITS: Record<string, bigint> = {
+type DurationUnit = 'ns' | 'us' | 'µs' | 'ms' | 's' | 'm' | 'min' | 'h'
+
+const DURATION_UNITS = {
   ns: 1n,
   us: 1_000n,
-  '\u00b5s': 1_000n, // µs
+  µs: 1_000n,
   ms: 1_000_000n,
   s: 1_000_000_000n,
   m: 60_000_000_000n,
   min: 60_000_000_000n,
   h: 3_600_000_000_000n,
+} satisfies Record<DurationUnit, bigint>
+
+function parseDurationUnit(unit: string): DurationUnit | null {
+  const normalized = unit.toLowerCase()
+  switch (normalized) {
+    case 'ns':
+    case 'us':
+    case 'µs':
+    case 'ms':
+    case 's':
+    case 'm':
+    case 'min':
+    case 'h':
+      return normalized
+    default:
+      return null
+  }
 }
 
 const DURATION_RE = /^(\d+(?:\.\d+)?)\s*(ns|us|µs|ms|s|min|m|h)$/i
@@ -485,9 +504,10 @@ export function parseDuration(input: string): bigint | null {
   const match = trimmed.match(DURATION_RE)
   if (!match) return null
 
-  const [, numStr, unit] = match
-  const multiplier = DURATION_UNITS[unit.toLowerCase()]
-  if (multiplier === undefined) return null
+  const [, numStr, unitText] = match
+  const unit = parseDurationUnit(unitText)
+  if (unit === null) return null
+  const multiplier = DURATION_UNITS[unit]
 
   const num = parseFloat(numStr)
   if (!isFinite(num) || num < 0) return null

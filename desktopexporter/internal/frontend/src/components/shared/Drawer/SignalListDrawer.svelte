@@ -53,8 +53,8 @@
   } from '@/route'
   import { getRouteContext } from '@/contexts/route-context.svelte'
   import {
+    keyDeltaFor,
     resolveNextPos,
-    type KeyDelta,
   } from '@/components/shared/utils/table-keyboard-nav'
 
   type Props<T> = {
@@ -426,16 +426,6 @@
   }
 
   const DRAWER_LIST_PAGE_STEP = 10
-  const DRAWER_LIST_KEY_DELTAS: Record<string, KeyDelta> = {
-    ArrowDown: { kind: 'relative', offset: 1 },
-    j: { kind: 'relative', offset: 1 },
-    ArrowUp: { kind: 'relative', offset: -1 },
-    k: { kind: 'relative', offset: -1 },
-    PageDown: { kind: 'relative', offset: DRAWER_LIST_PAGE_STEP },
-    PageUp: { kind: 'relative', offset: -DRAWER_LIST_PAGE_STEP },
-    Home: { kind: 'absolute', position: 'first' },
-    End: { kind: 'absolute', position: 'last' },
-  }
 
   function renderedItemControl(key: string): HTMLElement | null {
     const wrappers = drawerBodyEl?.querySelectorAll<HTMLElement>(
@@ -496,7 +486,7 @@
     if (event.altKey || event.ctrlKey || event.metaKey) return
     const wrapper = drawerItemFromEvent(event)
     const key = wrapper?.dataset.drawerItemKey
-    const delta = DRAWER_LIST_KEY_DELTAS[event.key]
+    const delta = keyDeltaFor(event.key, DRAWER_LIST_PAGE_STEP)
     if (!key || !delta) return
 
     const currentIndex = items.findIndex(item => itemKey(item) === key)

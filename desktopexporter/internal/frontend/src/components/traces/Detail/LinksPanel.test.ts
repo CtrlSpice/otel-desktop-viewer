@@ -1,18 +1,10 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import { screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import LinksPanel from './LinksPanel.svelte'
 import type { LinkData } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
-import { SPAN_PARAM } from '@/route/query-params'
-
-const navigateToItem = vi.hoisted(() => vi.fn())
-
-vi.mock('@/route', async importOriginal => {
-  const actual = await importOriginal<typeof import('@/route')>()
-  return { ...actual, navigateToItem }
-})
 
 function makeLink(overrides: Partial<LinkData> = {}): LinkData {
   return {
@@ -28,8 +20,7 @@ function makeLink(overrides: Partial<LinkData> = {}): LinkData {
 
 describe('LinksPanel trace correlation', () => {
   beforeEach(() => {
-    navigateToItem.mockClear()
-    setTestUrl('/traces/trace-1?start=0&end=1')
+    setTestUrl('/traces/trace-1?start=0&end=1&span=current-span&event=3')
   })
 
   it('links trace and span ids with span in the href', () => {
@@ -44,15 +35,15 @@ describe('LinksPanel trace correlation', () => {
     )
   })
 
-  it('navigates with span patch when a span link is clicked', async () => {
+  it('drops stale trace state when navigating to a linked span', async () => {
     renderWithContexts(LinksPanel, { links: [makeLink()] })
+    const historyLength = window.history.length
+
     await userEvent.click(screen.getByRole('link', { name: 'linked-span' }))
-    expect(navigateToItem).toHaveBeenCalledWith(
-      'traces',
-      'linked-trace',
-      'push',
-      { [SPAN_PARAM]: 'linked-span' }
-    )
+
+    expect(window.location.pathname).toBe('/traces/linked-trace')
+    expect(window.location.search).toBe('?start=0&end=1&span=linked-span')
+    expect(window.history.length).toBe(historyLength + 1)
   })
 
   it('keeps an invalid link without inventing zero IDs or navigation', () => {

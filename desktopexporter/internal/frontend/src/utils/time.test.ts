@@ -130,6 +130,8 @@ describe('parseDuration', () => {
     expect(parseDuration('abc')).toBeNull()
     expect(parseDuration('1x')).toBeNull()
     expect(parseDuration('1.2.3ms')).toBeNull()
+    expect(parseDuration('1toString')).toBeNull()
+    expect(parseDuration('1constructor')).toBeNull()
   })
 
   it('returns null for negative numbers', () => {

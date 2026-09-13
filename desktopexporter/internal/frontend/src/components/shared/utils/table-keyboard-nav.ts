@@ -2,17 +2,40 @@ type KeyDelta =
   | { kind: 'relative'; offset: number }
   | { kind: 'absolute'; position: 'first' | 'last' }
 
+type FixedNavigationKey = 'ArrowDown' | 'j' | 'ArrowUp' | 'k' | 'Home' | 'End'
+
 const PAGE_STEP = 10
 
-const KEY_DELTAS: Record<string, KeyDelta> = {
+const KEY_DELTAS = {
   ArrowDown: { kind: 'relative', offset: 1 },
   j: { kind: 'relative', offset: 1 },
   ArrowUp: { kind: 'relative', offset: -1 },
   k: { kind: 'relative', offset: -1 },
-  PageDown: { kind: 'relative', offset: PAGE_STEP },
-  PageUp: { kind: 'relative', offset: -PAGE_STEP },
   Home: { kind: 'absolute', position: 'first' },
   End: { kind: 'absolute', position: 'last' },
+} satisfies Record<FixedNavigationKey, KeyDelta>
+
+function isFixedNavigationKey(key: string): key is FixedNavigationKey {
+  switch (key) {
+    case 'ArrowDown':
+    case 'j':
+    case 'ArrowUp':
+    case 'k':
+    case 'Home':
+    case 'End':
+      return true
+    default:
+      return false
+  }
+}
+
+export function keyDeltaFor(
+  key: string,
+  pageStep: number = PAGE_STEP
+): KeyDelta | undefined {
+  if (key === 'PageDown') return { kind: 'relative', offset: pageStep }
+  if (key === 'PageUp') return { kind: 'relative', offset: -pageStep }
+  return isFixedNavigationKey(key) ? KEY_DELTAS[key] : undefined
 }
 
 function resolveNextPos(
@@ -113,17 +136,7 @@ export function tableNav(node: HTMLElement, opts: TableNavOptions) {
       return
     }
 
-    const step = current.pageStep ?? PAGE_STEP
-    const deltas: Record<string, KeyDelta> =
-      step === PAGE_STEP
-        ? KEY_DELTAS
-        : {
-            ...KEY_DELTAS,
-            PageDown: { kind: 'relative', offset: step },
-            PageUp: { kind: 'relative', offset: -step },
-          }
-
-    const delta = deltas[e.key]
+    const delta = keyDeltaFor(e.key, current.pageStep)
     if (!delta) return
 
     e.preventDefault()
